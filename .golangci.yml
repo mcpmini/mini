@@ -1,0 +1,29 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - govet          # copylocks (mutex copy), shadow, printf, composite literal
+    - staticcheck    # SA2xxx sync misuse, SA4xxx dead code, and broader quality
+    - errorlint      # errors formatted with %v instead of %w in fmt.Errorf
+    - nilerr         # returning nil error when a non-nil error was just checked
+    - forcetypeassert # unchecked type assertions that can panic
+    - durationcheck  # two time.Duration values multiplied together (almost always a bug)
+
+    # Hygiene
+    - bodyclose      # unclosed HTTP response bodies
+    - noctx          # HTTP/exec calls missing context propagation
+    - ineffassign    # assigned value never used (can mask dropped errors)
+    - misspell       # common English misspellings in identifiers and comments
+
+  exclusions:
+    rules:
+      # Test code intentionally uses simplified HTTP/exec APIs and unsafe assertions.
+      - path: _test\.go
+        linters: [noctx, bodyclose, forcetypeassert]
+      # CLI and daemon entry points have no ambient request context by design.
+      - path: ^cmd/
+        linters: [noctx]
+      - path: ^internal/(daemon|auth)/
+        linters: [noctx]

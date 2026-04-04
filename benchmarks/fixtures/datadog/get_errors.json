@@ -1,0 +1,53 @@
+{
+  "data": [
+    {
+      "id": "AQAAAYb12345xyz",
+      "type": "log",
+      "attributes": {
+        "status": "error",
+        "service": "webapp-api",
+        "host": "prod-api-03.us-east-1",
+        "timestamp": "2026-03-14T23:41:00Z",
+        "message": "upstream connect error or disconnect/reset before headers. reset reason: remote connection failure, transport failure reason: delayed connect error: 111: Connection refused",
+        "http": { "status_code": 503, "method": "POST", "url": "/api/v2/responses" },
+        "network": { "client": { "ip": "10.0.1.45" } },
+        "error": {
+          "kind": "upstream_connect_error",
+          "message": "503 Service Unavailable — upstream MCP: connection refused",
+          "stack": "at ResponseStore.WritePair (internal/response/storage.go:34)\nat server.handleExecute (internal/server/handlers.go:95)\nat http.HandlerFunc.ServeHTTP (net/http/server.go:2136)"
+        },
+        "count": 847,
+        "first_seen": "2026-03-14T22:10:00Z",
+        "last_seen": "2026-03-14T23:41:00Z",
+        "tags": ["env:production", "service:webapp-api", "version:1.4.2", "region:us-east-1"]
+      }
+    },
+    {
+      "id": "AQAAAYb67890abc",
+      "type": "log",
+      "attributes": {
+        "status": "error",
+        "service": "webapp-api",
+        "host": "prod-api-01.us-east-1",
+        "timestamp": "2026-03-14T23:38:00Z",
+        "message": "disk quota exceeded writing response cache",
+        "http": { "status_code": 503, "method": "GET", "url": "/api/v2/list" },
+        "error": {
+          "kind": "DiskQuotaExceeded",
+          "message": "write /var/cache/webapp/responses: disk quota exceeded",
+          "stack": "at os.WriteFile (os/file.go:680)\nat ResponseStore.WritePair (internal/response/storage.go:34)\nat server.buildEnvelope (internal/server/handlers.go:178)"
+        },
+        "count": 1243,
+        "first_seen": "2026-03-14T19:00:00Z",
+        "last_seen": "2026-03-14T23:38:00Z",
+        "tags": ["env:production", "service:webapp-api", "version:1.4.2", "region:us-east-1"]
+      }
+    }
+  ],
+  "meta": {
+    "elapsed": 132,
+    "request_id": "req-abc123",
+    "status": "done",
+    "page": { "after": null }
+  }
+}

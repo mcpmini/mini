@@ -1,0 +1,59 @@
+list_issues:
+  include: [nodes, pageInfo]
+  array_limits:
+    nodes: 25
+  depth_limit: 3
+  exclude_always: [sortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, customerTicketCount, previousIdentifiers, snoozedUntilAt, subIssueSortOrder, trashed]
+  string_limits:
+    description: 500
+  strip_markup: true
+
+get_issue:
+  depth_limit: 4
+  exclude_always: [sortOrder, archivedAt, autoArchivedAt, previousIdentifiers, snoozedUntilAt, subIssueSortOrder, trashed, history, integrationResources]
+  string_limits:
+    description: 3000
+    body: 3000
+  strip_markup: true
+
+search_issues:
+  include: [nodes, pageInfo, totalCount]
+  array_limits:
+    nodes: 20
+  depth_limit: 3
+  string_limits:
+    description: 300
+  strip_markup: true
+
+list_projects:
+  include: [nodes, pageInfo]
+  array_limits:
+    nodes: 20
+  depth_limit: 2
+  exclude_always: [sortOrder, archivedAt, autoArchivedAt, trashed]
+
+list_teams:
+  include: [nodes]
+  array_limits:
+    nodes: 20
+  depth_limit: 2
+
+list_cycles:
+  include: [nodes]
+  array_limits:
+    nodes: 10
+  depth_limit: 2
+  exclude_always: [archivedAt, autoArchivedAt]
+
+list_comments:
+  include: [nodes, pageInfo]
+  array_limits:
+    nodes: 30
+  depth_limit: 2
+  string_limits:
+    body: 1000
+  strip_markup: true
+
+"*":
+  depth_limit: 3
+  auto_strip_threshold: 500

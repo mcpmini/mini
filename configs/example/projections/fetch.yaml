@@ -1,0 +1,13 @@
+# Default projections for mcp-server-fetch (uvx mcp-server-fetch).
+# Install to ~/.mini/projections/fetch.yaml
+#
+# fetch converts web pages to markdown. Responses can be large (full HTML pages).
+# Aggressive string truncation keeps responses manageable.
+
+fetch:
+  string_limits:
+    content: 5000
+    text: 5000
+    markdown: 5000
+  strip_markup: true
+  exclude_always: [headers, raw_html, metadata]

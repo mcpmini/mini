@@ -1,0 +1,2990 @@
+[
+  {
+    "id": "4500000001",
+    "shortId": "AUTH-001",
+    "title": "AuthenticationError: JWT signature verification failed - invalid algorithm",
+    "culprit": "auth/middleware.go in ValidateToken",
+    "permalink": "https://acme.sentry.io/issues/4500000001/",
+    "logger": null,
+    "level": "fatal",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": true,
+    "isBookmarked": true,
+    "project": {
+      "id": "10001",
+      "slug": "auth-service",
+      "name": "Auth Service",
+      "platform": "python",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "JWT signature verification failed: token specifies alg:none but server requires HS256 or RS256",
+      "type": "AuthenticationError",
+      "filename": "auth/middleware.go",
+      "function": "ValidateToken",
+      "display_title_with_tree_label": true
+    },
+    "numComments": 8,
+    "assignedTo": {
+      "type": "user",
+      "id": "200001",
+      "name": "alice",
+      "email": "alice@acme.example.com"
+    },
+    "isSubscribed": true,
+    "isShared": false,
+    "seen": "2026-03-14T23:47:00Z",
+    "annotations": [],
+    "platform": "python",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "fatal",
+        "count": 2847,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 2847,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "server_name",
+        "name": "server_name",
+        "value": "prod-auth-01.us-east-1.internal",
+        "count": 1203,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "release",
+        "name": "release",
+        "value": "auth-service@3.0.0-beta.7",
+        "count": 2847,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "transaction",
+        "name": "transaction",
+        "value": "POST /auth/token",
+        "count": 2847,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "alg_header",
+        "name": "JWT alg header",
+        "value": "none",
+        "count": 2847,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "2847",
+    "userCount": 2847,
+    "firstSeen": "2026-03-14T23:47:13Z",
+    "lastSeen": "2026-03-15T08:31:02Z",
+    "times_seen": 2847,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          50
+        ],
+        [
+          1710324000,
+          51
+        ],
+        [
+          1710327600,
+          52
+        ],
+        [
+          1710331200,
+          53
+        ],
+        [
+          1710334800,
+          54
+        ],
+        [
+          1710338400,
+          55
+        ],
+        [
+          1710342000,
+          56
+        ],
+        [
+          1710345600,
+          57
+        ],
+        [
+          1710349200,
+          58
+        ],
+        [
+          1710352800,
+          59
+        ],
+        [
+          1710356400,
+          60
+        ],
+        [
+          1710360000,
+          61
+        ],
+        [
+          1710363600,
+          62
+        ],
+        [
+          1710367200,
+          63
+        ],
+        [
+          1710370800,
+          64
+        ],
+        [
+          1710374400,
+          65
+        ],
+        [
+          1710378000,
+          66
+        ],
+        [
+          1710381600,
+          67
+        ],
+        [
+          1710385200,
+          150
+        ],
+        [
+          1710388800,
+          150
+        ],
+        [
+          1710392400,
+          400
+        ],
+        [
+          1710396000,
+          400
+        ],
+        [
+          1710399600,
+          400
+        ],
+        [
+          1710403200,
+          400
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          100
+        ],
+        [
+          1709366400,
+          102
+        ],
+        [
+          1709452800,
+          104
+        ],
+        [
+          1709539200,
+          106
+        ],
+        [
+          1709625600,
+          108
+        ],
+        [
+          1709712000,
+          110
+        ],
+        [
+          1709798400,
+          112
+        ],
+        [
+          1709884800,
+          114
+        ],
+        [
+          1709971200,
+          116
+        ],
+        [
+          1710057600,
+          118
+        ],
+        [
+          1710144000,
+          120
+        ],
+        [
+          1710230400,
+          300
+        ],
+        [
+          1710316800,
+          200
+        ],
+        [
+          1710403200,
+          400
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": true,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [
+      {
+        "type": "user",
+        "id": "200001",
+        "name": "alice",
+        "email": "alice@acme.example.com"
+      },
+      {
+        "type": "user",
+        "id": "200002",
+        "name": "bob",
+        "email": "bob@acme.example.com"
+      }
+    ],
+    "activity": [
+      {
+        "type": "note",
+        "user": {
+          "id": "200002",
+          "name": "bob"
+        },
+        "dateCreated": "2026-03-15T00:15:00Z",
+        "data": {
+          "text": "This is the JWT alg:none bypass \u2014 CVE class vulnerability. Opening PR #840."
+        }
+      }
+    ],
+    "inbox": {
+      "reason": 0,
+      "reason_details": null,
+      "date_added": "2026-03-14T23:47:13Z"
+    }
+  },
+  {
+    "id": "4500000002",
+    "shortId": "AUTH-002",
+    "title": "AuthenticationError: Token audience claim validation bypass",
+    "culprit": "auth/jwt.go in VerifyClaims",
+    "permalink": "https://acme.sentry.io/issues/4500000002/",
+    "logger": null,
+    "level": "error",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": true,
+    "isBookmarked": true,
+    "project": {
+      "id": "10001",
+      "slug": "auth-service",
+      "name": "Auth Service",
+      "platform": "python",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "Token accepted with aud claim for 'email-service' on API endpoint \u2014 audience validation not enforced",
+      "type": "AuthenticationError",
+      "filename": "auth/jwt.go",
+      "function": "VerifyClaims"
+    },
+    "numComments": 4,
+    "assignedTo": {
+      "type": "user",
+      "id": "200002",
+      "name": "bob",
+      "email": "bob@acme.example.com"
+    },
+    "isSubscribed": true,
+    "isShared": false,
+    "seen": "2026-03-15T01:20:00Z",
+    "annotations": [],
+    "platform": "python",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "error",
+        "count": 1203,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 1203,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "transaction",
+        "name": "transaction",
+        "value": "GET /auth/validate",
+        "count": 1203,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "aud_claim",
+        "name": "JWT aud claim",
+        "value": "email-service",
+        "count": 1203,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "release",
+        "name": "release",
+        "value": "auth-service@3.0.0-beta.7",
+        "count": 1203,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "1203",
+    "userCount": 1203,
+    "firstSeen": "2026-03-10T14:22:00Z",
+    "lastSeen": "2026-03-15T08:29:00Z",
+    "times_seen": 1203,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          30
+        ],
+        [
+          1710324000,
+          31
+        ],
+        [
+          1710327600,
+          32
+        ],
+        [
+          1710331200,
+          33
+        ],
+        [
+          1710334800,
+          34
+        ],
+        [
+          1710338400,
+          35
+        ],
+        [
+          1710342000,
+          36
+        ],
+        [
+          1710345600,
+          37
+        ],
+        [
+          1710349200,
+          38
+        ],
+        [
+          1710352800,
+          39
+        ],
+        [
+          1710356400,
+          40
+        ],
+        [
+          1710360000,
+          41
+        ],
+        [
+          1710363600,
+          42
+        ],
+        [
+          1710367200,
+          43
+        ],
+        [
+          1710370800,
+          44
+        ],
+        [
+          1710374400,
+          45
+        ],
+        [
+          1710378000,
+          46
+        ],
+        [
+          1710381600,
+          47
+        ],
+        [
+          1710385200,
+          90
+        ],
+        [
+          1710388800,
+          90
+        ],
+        [
+          1710392400,
+          240
+        ],
+        [
+          1710396000,
+          240
+        ],
+        [
+          1710399600,
+          240
+        ],
+        [
+          1710403200,
+          240
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          60
+        ],
+        [
+          1709366400,
+          62
+        ],
+        [
+          1709452800,
+          64
+        ],
+        [
+          1709539200,
+          66
+        ],
+        [
+          1709625600,
+          68
+        ],
+        [
+          1709712000,
+          70
+        ],
+        [
+          1709798400,
+          72
+        ],
+        [
+          1709884800,
+          74
+        ],
+        [
+          1709971200,
+          76
+        ],
+        [
+          1710057600,
+          78
+        ],
+        [
+          1710144000,
+          80
+        ],
+        [
+          1710230400,
+          120
+        ],
+        [
+          1710316800,
+          240
+        ],
+        [
+          1710403200,
+          120
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": false,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [
+      {
+        "type": "user",
+        "id": "200002",
+        "name": "bob"
+      }
+    ],
+    "activity": [],
+    "inbox": {
+      "reason": 2,
+      "reason_details": null,
+      "date_added": "2026-03-10T14:22:00Z"
+    }
+  },
+  {
+    "id": "4500000003",
+    "shortId": "AUTH-003",
+    "title": "AuthenticationError: JWT public key not found in cache after rotation",
+    "culprit": "auth/keycache.go in GetPublicKey",
+    "permalink": "https://acme.sentry.io/issues/4500000003/",
+    "logger": "auth.keycache",
+    "level": "error",
+    "status": "resolved",
+    "isPublic": false,
+    "hasSeen": true,
+    "isBookmarked": false,
+    "project": {
+      "id": "10001",
+      "slug": "auth-service",
+      "name": "Auth Service",
+      "platform": "python",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "Public key with kid='2026-03-15-v2' not found in in-memory key cache; cache initialized at startup and not refreshed",
+      "type": "AuthenticationError",
+      "filename": "auth/keycache.go",
+      "function": "GetPublicKey"
+    },
+    "numComments": 12,
+    "assignedTo": {
+      "type": "user",
+      "id": "200002",
+      "name": "bob",
+      "email": "bob@acme.example.com"
+    },
+    "isSubscribed": true,
+    "isShared": false,
+    "seen": "2026-03-15T08:20:00Z",
+    "annotations": [],
+    "platform": "python",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "error",
+        "count": 2400,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 2400,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "transaction",
+        "name": "transaction",
+        "value": "POST /auth/token",
+        "count": 1800,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "kid_missing",
+        "name": "Missing key ID",
+        "value": "2026-03-15-v2",
+        "count": 2400,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "release",
+        "name": "release",
+        "value": "auth-service@3.0.0-beta.7",
+        "count": 2400,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "2400",
+    "userCount": 2400,
+    "firstSeen": "2026-03-15T00:00:07Z",
+    "lastSeen": "2026-03-15T08:12:44Z",
+    "times_seen": 2400,
+    "timeSpentTotal": 54000000,
+    "timeSpentCount": 12,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          0
+        ],
+        [
+          1710324000,
+          1
+        ],
+        [
+          1710327600,
+          2
+        ],
+        [
+          1710331200,
+          3
+        ],
+        [
+          1710334800,
+          4
+        ],
+        [
+          1710338400,
+          5
+        ],
+        [
+          1710342000,
+          6
+        ],
+        [
+          1710345600,
+          7
+        ],
+        [
+          1710349200,
+          8
+        ],
+        [
+          1710352800,
+          9
+        ],
+        [
+          1710356400,
+          10
+        ],
+        [
+          1710360000,
+          11
+        ],
+        [
+          1710363600,
+          12
+        ],
+        [
+          1710367200,
+          13
+        ],
+        [
+          1710370800,
+          14
+        ],
+        [
+          1710374400,
+          15
+        ],
+        [
+          1710378000,
+          16
+        ],
+        [
+          1710381600,
+          17
+        ],
+        [
+          1710385200,
+          0
+        ],
+        [
+          1710388800,
+          0
+        ],
+        [
+          1710392400,
+          0
+        ],
+        [
+          1710396000,
+          0
+        ],
+        [
+          1710399600,
+          0
+        ],
+        [
+          1710403200,
+          0
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          0
+        ],
+        [
+          1709366400,
+          2
+        ],
+        [
+          1709452800,
+          4
+        ],
+        [
+          1709539200,
+          6
+        ],
+        [
+          1709625600,
+          8
+        ],
+        [
+          1709712000,
+          10
+        ],
+        [
+          1709798400,
+          12
+        ],
+        [
+          1709884800,
+          14
+        ],
+        [
+          1709971200,
+          16
+        ],
+        [
+          1710057600,
+          18
+        ],
+        [
+          1710144000,
+          20
+        ],
+        [
+          1710230400,
+          0
+        ],
+        [
+          1710316800,
+          0
+        ],
+        [
+          1710403200,
+          0
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": false,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {
+      "inRelease": "auth-service@3.0.0-beta.8"
+    },
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [],
+    "activity": [
+      {
+        "type": "set_resolved",
+        "user": {
+          "id": "200002",
+          "name": "bob"
+        },
+        "dateCreated": "2026-03-15T08:15:00Z",
+        "data": {
+          "text": "Fixed in PR #821 \u2014 merged. Key cache now has TTL and rotation event hook."
+        }
+      }
+    ],
+    "inbox": null
+  },
+  {
+    "id": "4500000004",
+    "shortId": "DB-001",
+    "title": "DatabaseTimeoutError: connection pool exhausted acquiring connection after 30s",
+    "culprit": "db/pool.go in AcquireConnection",
+    "permalink": "https://acme.sentry.io/issues/4500000004/",
+    "logger": "db.pool",
+    "level": "error",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": true,
+    "isBookmarked": false,
+    "project": {
+      "id": "10002",
+      "slug": "postgres-service",
+      "name": "Postgres Service",
+      "platform": "python",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "context deadline exceeded after 30000ms waiting for available connection: pool size=100 in_use=100 idle=0 waiting=47",
+      "type": "DatabaseTimeoutError",
+      "filename": "db/pool.go",
+      "function": "AcquireConnection"
+    },
+    "numComments": 3,
+    "assignedTo": {
+      "type": "user",
+      "id": "200004",
+      "name": "diana",
+      "email": "diana@acme.example.com"
+    },
+    "isSubscribed": false,
+    "isShared": false,
+    "seen": "2026-03-13T09:00:00Z",
+    "annotations": [],
+    "platform": "python",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "error",
+        "count": 156,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 156,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "db_host",
+        "name": "db_host",
+        "value": "prod-postgres-primary.us-east-1.internal",
+        "count": 156,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "query_type",
+        "name": "query_type",
+        "value": "SELECT",
+        "count": 89,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "table",
+        "name": "table",
+        "value": "user_sessions",
+        "count": 67,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "156",
+    "userCount": 89,
+    "firstSeen": "2026-03-08T03:17:00Z",
+    "lastSeen": "2026-03-14T22:44:00Z",
+    "times_seen": 156,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          5
+        ],
+        [
+          1710324000,
+          6
+        ],
+        [
+          1710327600,
+          7
+        ],
+        [
+          1710331200,
+          8
+        ],
+        [
+          1710334800,
+          9
+        ],
+        [
+          1710338400,
+          10
+        ],
+        [
+          1710342000,
+          11
+        ],
+        [
+          1710345600,
+          12
+        ],
+        [
+          1710349200,
+          13
+        ],
+        [
+          1710352800,
+          14
+        ],
+        [
+          1710356400,
+          15
+        ],
+        [
+          1710360000,
+          16
+        ],
+        [
+          1710363600,
+          17
+        ],
+        [
+          1710367200,
+          18
+        ],
+        [
+          1710370800,
+          19
+        ],
+        [
+          1710374400,
+          20
+        ],
+        [
+          1710378000,
+          21
+        ],
+        [
+          1710381600,
+          22
+        ],
+        [
+          1710385200,
+          23
+        ],
+        [
+          1710388800,
+          24
+        ],
+        [
+          1710392400,
+          25
+        ],
+        [
+          1710396000,
+          26
+        ],
+        [
+          1710399600,
+          27
+        ],
+        [
+          1710403200,
+          28
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          8
+        ],
+        [
+          1709366400,
+          10
+        ],
+        [
+          1709452800,
+          12
+        ],
+        [
+          1709539200,
+          14
+        ],
+        [
+          1709625600,
+          16
+        ],
+        [
+          1709712000,
+          32
+        ],
+        [
+          1709798400,
+          16
+        ],
+        [
+          1709884800,
+          22
+        ],
+        [
+          1709971200,
+          24
+        ],
+        [
+          1710057600,
+          26
+        ],
+        [
+          1710144000,
+          28
+        ],
+        [
+          1710230400,
+          24
+        ],
+        [
+          1710316800,
+          24
+        ],
+        [
+          1710403200,
+          24
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": false,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [],
+    "activity": [],
+    "inbox": {
+      "reason": 0,
+      "reason_details": null,
+      "date_added": "2026-03-08T03:17:00Z"
+    }
+  },
+  {
+    "id": "4500000005",
+    "shortId": "DB-002",
+    "title": "DatabaseTimeoutError: query exceeded 10s timeout in analytics aggregation",
+    "culprit": "analytics/queries.go in AggregateUserEvents",
+    "permalink": "https://acme.sentry.io/issues/4500000005/",
+    "logger": "analytics.queries",
+    "level": "warning",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": false,
+    "isBookmarked": false,
+    "project": {
+      "id": "10002",
+      "slug": "postgres-service",
+      "name": "Postgres Service",
+      "platform": "python",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "pq: canceling statement due to statement timeout: SELECT COUNT(*), DATE_TRUNC('hour', created_at) FROM events WHERE ... GROUP BY 2 -- exceeded 10000ms",
+      "type": "DatabaseTimeoutError",
+      "filename": "analytics/queries.go",
+      "function": "AggregateUserEvents"
+    },
+    "numComments": 1,
+    "assignedTo": {
+      "type": "user",
+      "id": "200003",
+      "name": "charlie",
+      "email": "charlie@acme.example.com"
+    },
+    "isSubscribed": false,
+    "isShared": false,
+    "seen": "2026-03-10T00:00:00Z",
+    "annotations": [],
+    "platform": "python",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "warning",
+        "count": 43,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 43,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "query",
+        "name": "query",
+        "value": "AggregateUserEvents",
+        "count": 43,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "table",
+        "name": "table",
+        "value": "events",
+        "count": 43,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "43",
+    "userCount": 0,
+    "firstSeen": "2026-03-05T11:00:00Z",
+    "lastSeen": "2026-03-15T02:17:00Z",
+    "times_seen": 43,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          2
+        ],
+        [
+          1710324000,
+          3
+        ],
+        [
+          1710327600,
+          4
+        ],
+        [
+          1710331200,
+          5
+        ],
+        [
+          1710334800,
+          6
+        ],
+        [
+          1710338400,
+          7
+        ],
+        [
+          1710342000,
+          8
+        ],
+        [
+          1710345600,
+          9
+        ],
+        [
+          1710349200,
+          10
+        ],
+        [
+          1710352800,
+          11
+        ],
+        [
+          1710356400,
+          12
+        ],
+        [
+          1710360000,
+          13
+        ],
+        [
+          1710363600,
+          14
+        ],
+        [
+          1710367200,
+          15
+        ],
+        [
+          1710370800,
+          16
+        ],
+        [
+          1710374400,
+          17
+        ],
+        [
+          1710378000,
+          18
+        ],
+        [
+          1710381600,
+          19
+        ],
+        [
+          1710385200,
+          20
+        ],
+        [
+          1710388800,
+          21
+        ],
+        [
+          1710392400,
+          22
+        ],
+        [
+          1710396000,
+          23
+        ],
+        [
+          1710399600,
+          24
+        ],
+        [
+          1710403200,
+          25
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          3
+        ],
+        [
+          1709366400,
+          5
+        ],
+        [
+          1709452800,
+          7
+        ],
+        [
+          1709539200,
+          9
+        ],
+        [
+          1709625600,
+          11
+        ],
+        [
+          1709712000,
+          13
+        ],
+        [
+          1709798400,
+          15
+        ],
+        [
+          1709884800,
+          17
+        ],
+        [
+          1709971200,
+          19
+        ],
+        [
+          1710057600,
+          21
+        ],
+        [
+          1710144000,
+          23
+        ],
+        [
+          1710230400,
+          9
+        ],
+        [
+          1710316800,
+          9
+        ],
+        [
+          1710403200,
+          9
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": false,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [],
+    "activity": [],
+    "inbox": {
+      "reason": 0,
+      "reason_details": null,
+      "date_added": "2026-03-05T11:00:00Z"
+    }
+  },
+  {
+    "id": "4500000006",
+    "shortId": "PAY-001",
+    "title": "NullPointerException: payment.Method is null when processing card charge",
+    "culprit": "com.acme.payment.ChargeService.processCharge(ChargeService.java:187)",
+    "permalink": "https://acme.sentry.io/issues/4500000006/",
+    "logger": "com.acme.payment",
+    "level": "error",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": true,
+    "isBookmarked": false,
+    "project": {
+      "id": "10003",
+      "slug": "payment-service",
+      "name": "Payment Service",
+      "platform": "java",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "Cannot invoke \"com.acme.payment.Method.getType()\" because \"payment.method\" is null \u2014 charge attempted with no payment method attached to order",
+      "type": "NullPointerException",
+      "filename": "ChargeService.java",
+      "function": "processCharge"
+    },
+    "numComments": 6,
+    "assignedTo": {
+      "type": "user",
+      "id": "200005",
+      "name": "eve",
+      "email": "eve@acme.example.com"
+    },
+    "isSubscribed": false,
+    "isShared": false,
+    "seen": "2026-03-12T14:30:00Z",
+    "annotations": [],
+    "platform": "java",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "error",
+        "count": 78,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 78,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "order_state",
+        "name": "order_state",
+        "value": "pending_payment",
+        "count": 78,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "payment_provider",
+        "name": "payment_provider",
+        "value": "stripe",
+        "count": 78,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "java_version",
+        "name": "java_version",
+        "value": "21.0.2",
+        "count": 78,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "78",
+    "userCount": 72,
+    "firstSeen": "2026-03-09T08:11:00Z",
+    "lastSeen": "2026-03-15T07:44:00Z",
+    "times_seen": 78,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          3
+        ],
+        [
+          1710324000,
+          4
+        ],
+        [
+          1710327600,
+          5
+        ],
+        [
+          1710331200,
+          6
+        ],
+        [
+          1710334800,
+          7
+        ],
+        [
+          1710338400,
+          8
+        ],
+        [
+          1710342000,
+          9
+        ],
+        [
+          1710345600,
+          10
+        ],
+        [
+          1710349200,
+          11
+        ],
+        [
+          1710352800,
+          12
+        ],
+        [
+          1710356400,
+          13
+        ],
+        [
+          1710360000,
+          14
+        ],
+        [
+          1710363600,
+          15
+        ],
+        [
+          1710367200,
+          16
+        ],
+        [
+          1710370800,
+          17
+        ],
+        [
+          1710374400,
+          18
+        ],
+        [
+          1710378000,
+          19
+        ],
+        [
+          1710381600,
+          20
+        ],
+        [
+          1710385200,
+          21
+        ],
+        [
+          1710388800,
+          22
+        ],
+        [
+          1710392400,
+          23
+        ],
+        [
+          1710396000,
+          24
+        ],
+        [
+          1710399600,
+          25
+        ],
+        [
+          1710403200,
+          26
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          5
+        ],
+        [
+          1709366400,
+          7
+        ],
+        [
+          1709452800,
+          9
+        ],
+        [
+          1709539200,
+          11
+        ],
+        [
+          1709625600,
+          13
+        ],
+        [
+          1709712000,
+          15
+        ],
+        [
+          1709798400,
+          17
+        ],
+        [
+          1709884800,
+          19
+        ],
+        [
+          1709971200,
+          10
+        ],
+        [
+          1710057600,
+          20
+        ],
+        [
+          1710144000,
+          10
+        ],
+        [
+          1710230400,
+          15
+        ],
+        [
+          1710316800,
+          15
+        ],
+        [
+          1710403200,
+          15
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": true,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [],
+    "activity": [],
+    "inbox": {
+      "reason": 0,
+      "reason_details": null,
+      "date_added": "2026-03-09T08:11:00Z"
+    }
+  },
+  {
+    "id": "4500000007",
+    "shortId": "PAY-002",
+    "title": "NullPointerException: refund.TransactionId is null in RefundService",
+    "culprit": "com.acme.payment.RefundService.initiateRefund(RefundService.java:94)",
+    "permalink": "https://acme.sentry.io/issues/4500000007/",
+    "logger": "com.acme.payment",
+    "level": "error",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": false,
+    "isBookmarked": false,
+    "project": {
+      "id": "10003",
+      "slug": "payment-service",
+      "name": "Payment Service",
+      "platform": "java",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "Cannot invoke \"String.equals()\" because refund.getOriginalTransactionId() is null \u2014 original charge may have been created before transaction_id column was added",
+      "type": "NullPointerException",
+      "filename": "RefundService.java",
+      "function": "initiateRefund"
+    },
+    "numComments": 2,
+    "assignedTo": null,
+    "isSubscribed": false,
+    "isShared": false,
+    "seen": "2026-03-01T00:00:00Z",
+    "annotations": [],
+    "platform": "java",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "error",
+        "count": 23,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 23,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "refund_type",
+        "name": "refund_type",
+        "value": "full",
+        "count": 15,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "refund_type",
+        "name": "refund_type",
+        "value": "partial",
+        "count": 8,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "23",
+    "userCount": 23,
+    "firstSeen": "2026-02-28T19:30:00Z",
+    "lastSeen": "2026-03-14T16:22:00Z",
+    "times_seen": 23,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          1
+        ],
+        [
+          1710324000,
+          2
+        ],
+        [
+          1710327600,
+          3
+        ],
+        [
+          1710331200,
+          4
+        ],
+        [
+          1710334800,
+          5
+        ],
+        [
+          1710338400,
+          6
+        ],
+        [
+          1710342000,
+          7
+        ],
+        [
+          1710345600,
+          8
+        ],
+        [
+          1710349200,
+          9
+        ],
+        [
+          1710352800,
+          10
+        ],
+        [
+          1710356400,
+          11
+        ],
+        [
+          1710360000,
+          12
+        ],
+        [
+          1710363600,
+          13
+        ],
+        [
+          1710367200,
+          14
+        ],
+        [
+          1710370800,
+          15
+        ],
+        [
+          1710374400,
+          16
+        ],
+        [
+          1710378000,
+          17
+        ],
+        [
+          1710381600,
+          18
+        ],
+        [
+          1710385200,
+          19
+        ],
+        [
+          1710388800,
+          20
+        ],
+        [
+          1710392400,
+          21
+        ],
+        [
+          1710396000,
+          22
+        ],
+        [
+          1710399600,
+          23
+        ],
+        [
+          1710403200,
+          24
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          2
+        ],
+        [
+          1709366400,
+          4
+        ],
+        [
+          1709452800,
+          6
+        ],
+        [
+          1709539200,
+          8
+        ],
+        [
+          1709625600,
+          10
+        ],
+        [
+          1709712000,
+          12
+        ],
+        [
+          1709798400,
+          14
+        ],
+        [
+          1709884800,
+          16
+        ],
+        [
+          1709971200,
+          18
+        ],
+        [
+          1710057600,
+          20
+        ],
+        [
+          1710144000,
+          22
+        ],
+        [
+          1710230400,
+          6
+        ],
+        [
+          1710316800,
+          6
+        ],
+        [
+          1710403200,
+          6
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": true,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [],
+    "activity": [],
+    "inbox": {
+      "reason": 0,
+      "reason_details": null,
+      "date_added": "2026-02-28T19:30:00Z"
+    }
+  },
+  {
+    "id": "4500000008",
+    "shortId": "GW-001",
+    "title": "RateLimitError: downstream service returned 429 Too Many Requests",
+    "culprit": "gateway/proxy.go in ForwardRequest",
+    "permalink": "https://acme.sentry.io/issues/4500000008/",
+    "logger": "gateway.proxy",
+    "level": "warning",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": true,
+    "isBookmarked": false,
+    "project": {
+      "id": "10004",
+      "slug": "api-gateway",
+      "name": "API Gateway",
+      "platform": "go",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "upstream auth-service returned HTTP 429: X-RateLimit-Limit: 100, X-RateLimit-Remaining: 0, X-RateLimit-Reset: 1710403260",
+      "type": "RateLimitError",
+      "filename": "gateway/proxy.go",
+      "function": "ForwardRequest"
+    },
+    "numComments": 0,
+    "assignedTo": null,
+    "isSubscribed": false,
+    "isShared": false,
+    "seen": "2026-03-14T00:00:00Z",
+    "annotations": [],
+    "platform": "go",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "warning",
+        "count": 312,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 312,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "upstream_service",
+        "name": "upstream_service",
+        "value": "auth-service",
+        "count": 312,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "upstream_status",
+        "name": "upstream_status",
+        "value": "429",
+        "count": 312,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "route",
+        "name": "route",
+        "value": "POST /api/v1/login",
+        "count": 312,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "312",
+    "userCount": 0,
+    "firstSeen": "2026-03-13T04:00:00Z",
+    "lastSeen": "2026-03-15T08:28:00Z",
+    "times_seen": 312,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          12
+        ],
+        [
+          1710324000,
+          13
+        ],
+        [
+          1710327600,
+          14
+        ],
+        [
+          1710331200,
+          15
+        ],
+        [
+          1710334800,
+          16
+        ],
+        [
+          1710338400,
+          17
+        ],
+        [
+          1710342000,
+          18
+        ],
+        [
+          1710345600,
+          19
+        ],
+        [
+          1710349200,
+          20
+        ],
+        [
+          1710352800,
+          21
+        ],
+        [
+          1710356400,
+          22
+        ],
+        [
+          1710360000,
+          23
+        ],
+        [
+          1710363600,
+          24
+        ],
+        [
+          1710367200,
+          25
+        ],
+        [
+          1710370800,
+          26
+        ],
+        [
+          1710374400,
+          27
+        ],
+        [
+          1710378000,
+          28
+        ],
+        [
+          1710381600,
+          29
+        ],
+        [
+          1710385200,
+          30
+        ],
+        [
+          1710388800,
+          31
+        ],
+        [
+          1710392400,
+          32
+        ],
+        [
+          1710396000,
+          33
+        ],
+        [
+          1710399600,
+          34
+        ],
+        [
+          1710403200,
+          35
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          15
+        ],
+        [
+          1709366400,
+          17
+        ],
+        [
+          1709452800,
+          19
+        ],
+        [
+          1709539200,
+          21
+        ],
+        [
+          1709625600,
+          23
+        ],
+        [
+          1709712000,
+          25
+        ],
+        [
+          1709798400,
+          27
+        ],
+        [
+          1709884800,
+          29
+        ],
+        [
+          1709971200,
+          31
+        ],
+        [
+          1710057600,
+          33
+        ],
+        [
+          1710144000,
+          30
+        ],
+        [
+          1710230400,
+          60
+        ],
+        [
+          1710316800,
+          30
+        ],
+        [
+          1710403200,
+          45
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": false,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [],
+    "activity": [],
+    "inbox": {
+      "reason": 0,
+      "reason_details": null,
+      "date_added": "2026-03-13T04:00:00Z"
+    }
+  },
+  {
+    "id": "4500000009",
+    "shortId": "FE-001",
+    "title": "UnhandledPromiseRejectionWarning: TypeError: Cannot read properties of undefined (reading 'avatarUrl')",
+    "culprit": "UserAvatar.tsx in renderAvatar",
+    "permalink": "https://acme.sentry.io/issues/4500000009/",
+    "logger": null,
+    "level": "error",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": false,
+    "isBookmarked": false,
+    "project": {
+      "id": "10005",
+      "slug": "webapp-frontend",
+      "name": "Webapp Frontend",
+      "platform": "javascript",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "TypeError: Cannot read properties of undefined (reading 'avatarUrl') at UserAvatar.tsx:42:18 \u2014 user object undefined when profile fetch races with render",
+      "type": "TypeError",
+      "filename": "UserAvatar.tsx",
+      "function": "renderAvatar"
+    },
+    "numComments": 4,
+    "assignedTo": {
+      "type": "user",
+      "id": "200002",
+      "name": "bob",
+      "email": "bob@acme.example.com"
+    },
+    "isSubscribed": false,
+    "isShared": false,
+    "seen": "2026-03-01T00:00:00Z",
+    "annotations": [],
+    "platform": "javascript",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "error",
+        "count": 891,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 891,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "browser",
+        "name": "browser",
+        "value": "Chrome 122.0.0",
+        "count": 534,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "browser",
+        "name": "browser",
+        "value": "Safari 17.3",
+        "count": 201,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "browser",
+        "name": "browser",
+        "value": "Firefox 124.0",
+        "count": 156,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "os",
+        "name": "os",
+        "value": "macOS 14.4",
+        "count": 432,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "os",
+        "name": "os",
+        "value": "Windows 11",
+        "count": 289,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "transaction",
+        "name": "transaction",
+        "value": "/dashboard",
+        "count": 891,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "891",
+    "userCount": 634,
+    "firstSeen": "2026-02-20T12:00:00Z",
+    "lastSeen": "2026-03-15T08:25:00Z",
+    "times_seen": 891,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          35
+        ],
+        [
+          1710324000,
+          36
+        ],
+        [
+          1710327600,
+          37
+        ],
+        [
+          1710331200,
+          38
+        ],
+        [
+          1710334800,
+          39
+        ],
+        [
+          1710338400,
+          40
+        ],
+        [
+          1710342000,
+          41
+        ],
+        [
+          1710345600,
+          42
+        ],
+        [
+          1710349200,
+          43
+        ],
+        [
+          1710352800,
+          44
+        ],
+        [
+          1710356400,
+          45
+        ],
+        [
+          1710360000,
+          46
+        ],
+        [
+          1710363600,
+          47
+        ],
+        [
+          1710367200,
+          48
+        ],
+        [
+          1710370800,
+          49
+        ],
+        [
+          1710374400,
+          50
+        ],
+        [
+          1710378000,
+          51
+        ],
+        [
+          1710381600,
+          52
+        ],
+        [
+          1710385200,
+          53
+        ],
+        [
+          1710388800,
+          54
+        ],
+        [
+          1710392400,
+          55
+        ],
+        [
+          1710396000,
+          56
+        ],
+        [
+          1710399600,
+          57
+        ],
+        [
+          1710403200,
+          58
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          55
+        ],
+        [
+          1709366400,
+          57
+        ],
+        [
+          1709452800,
+          59
+        ],
+        [
+          1709539200,
+          61
+        ],
+        [
+          1709625600,
+          63
+        ],
+        [
+          1709712000,
+          65
+        ],
+        [
+          1709798400,
+          110
+        ],
+        [
+          1709884800,
+          220
+        ],
+        [
+          1709971200,
+          110
+        ],
+        [
+          1710057600,
+          73
+        ],
+        [
+          1710144000,
+          75
+        ],
+        [
+          1710230400,
+          165
+        ],
+        [
+          1710316800,
+          165
+        ],
+        [
+          1710403200,
+          165
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": true,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [],
+    "activity": [],
+    "inbox": {
+      "reason": 0,
+      "reason_details": null,
+      "date_added": "2026-02-20T12:00:00Z"
+    }
+  },
+  {
+    "id": "4500000010",
+    "shortId": "FE-002",
+    "title": "UnhandledPromiseRejectionWarning: NetworkError: Failed to fetch /api/v1/analytics/summary",
+    "culprit": "AnalyticsDashboard.tsx in fetchSummary",
+    "permalink": "https://acme.sentry.io/issues/4500000010/",
+    "logger": null,
+    "level": "warning",
+    "status": "unresolved",
+    "isPublic": false,
+    "hasSeen": false,
+    "isBookmarked": false,
+    "project": {
+      "id": "10005",
+      "slug": "webapp-frontend",
+      "name": "Webapp Frontend",
+      "platform": "javascript",
+      "isBookmarked": false,
+      "isMember": true,
+      "hasAccess": true,
+      "dateCreated": "2021-03-15T09:00:00.000Z",
+      "firstEvent": "2021-04-01T00:00:00.000Z",
+      "features": [
+        "alerts-v2",
+        "performance-view",
+        "releases",
+        "issue-percent-filters"
+      ],
+      "status": "active",
+      "color": "#3b4a6b",
+      "isInternal": false,
+      "isPublic": false,
+      "avatar": {
+        "avatarType": "letter_avatar",
+        "avatarUuid": null
+      },
+      "organization": {
+        "id": "900001",
+        "slug": "acme",
+        "name": "Acme Corp",
+        "dateCreated": "2021-01-01T00:00:00.000Z",
+        "status": {
+          "id": "active",
+          "name": "Active"
+        },
+        "links": {
+          "organizationUrl": "https://sentry.io/organizations/acme/",
+          "regionUrl": "https://us.sentry.io"
+        }
+      }
+    },
+    "metadata": {
+      "value": "NetworkError: Failed to fetch \u2014 CORS preflight rejected; likely caused by OPTIONS returning 401 from auth middleware (see PR #830)",
+      "type": "NetworkError",
+      "filename": "AnalyticsDashboard.tsx",
+      "function": "fetchSummary"
+    },
+    "numComments": 2,
+    "assignedTo": {
+      "type": "user",
+      "id": "200001",
+      "name": "alice",
+      "email": "alice@acme.example.com"
+    },
+    "isSubscribed": false,
+    "isShared": false,
+    "seen": "2026-03-01T00:00:00Z",
+    "annotations": [],
+    "platform": "javascript",
+    "tags": [
+      {
+        "key": "level",
+        "name": "level",
+        "value": "warning",
+        "count": 447,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "environment",
+        "name": "environment",
+        "value": "production",
+        "count": 447,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "transaction",
+        "name": "transaction",
+        "value": "/analytics",
+        "count": 447,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "http.method",
+        "name": "http.method",
+        "value": "OPTIONS",
+        "count": 447,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      },
+      {
+        "key": "http.status_code",
+        "name": "http.status_code",
+        "value": "401",
+        "count": 447,
+        "lastSeen": "2026-03-15T08:30:00Z",
+        "firstSeen": "2026-03-01T00:00:00Z"
+      }
+    ],
+    "count": "447",
+    "userCount": 341,
+    "firstSeen": "2026-03-01T09:00:00Z",
+    "lastSeen": "2026-03-15T08:10:00Z",
+    "times_seen": 447,
+    "timeSpentTotal": 0,
+    "timeSpentCount": 0,
+    "stats": {
+      "24h": [
+        [
+          1710320400,
+          18
+        ],
+        [
+          1710324000,
+          19
+        ],
+        [
+          1710327600,
+          20
+        ],
+        [
+          1710331200,
+          21
+        ],
+        [
+          1710334800,
+          22
+        ],
+        [
+          1710338400,
+          23
+        ],
+        [
+          1710342000,
+          24
+        ],
+        [
+          1710345600,
+          25
+        ],
+        [
+          1710349200,
+          26
+        ],
+        [
+          1710352800,
+          27
+        ],
+        [
+          1710356400,
+          28
+        ],
+        [
+          1710360000,
+          29
+        ],
+        [
+          1710363600,
+          30
+        ],
+        [
+          1710367200,
+          31
+        ],
+        [
+          1710370800,
+          32
+        ],
+        [
+          1710374400,
+          33
+        ],
+        [
+          1710378000,
+          34
+        ],
+        [
+          1710381600,
+          35
+        ],
+        [
+          1710385200,
+          36
+        ],
+        [
+          1710388800,
+          37
+        ],
+        [
+          1710392400,
+          38
+        ],
+        [
+          1710396000,
+          39
+        ],
+        [
+          1710399600,
+          40
+        ],
+        [
+          1710403200,
+          41
+        ]
+      ],
+      "14d": [
+        [
+          1709280000,
+          28
+        ],
+        [
+          1709366400,
+          30
+        ],
+        [
+          1709452800,
+          32
+        ],
+        [
+          1709539200,
+          34
+        ],
+        [
+          1709625600,
+          36
+        ],
+        [
+          1709712000,
+          38
+        ],
+        [
+          1709798400,
+          40
+        ],
+        [
+          1709884800,
+          56
+        ],
+        [
+          1709971200,
+          112
+        ],
+        [
+          1710057600,
+          56
+        ],
+        [
+          1710144000,
+          48
+        ],
+        [
+          1710230400,
+          84
+        ],
+        [
+          1710316800,
+          84
+        ],
+        [
+          1710403200,
+          84
+        ]
+      ]
+    },
+    "type": "error",
+    "isUnhandled": true,
+    "pluginActions": [],
+    "pluginContexts": [],
+    "pluginIssues": [],
+    "seenBy": [],
+    "statusDetails": {},
+    "subscriptionDetails": null,
+    "userReport": null,
+    "shareId": null,
+    "participants": [],
+    "activity": [],
+    "inbox": {
+      "reason": 0,
+      "reason_details": null,
+      "date_added": "2026-03-01T09:00:00Z"
+    }
+  }
+]

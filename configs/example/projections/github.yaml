@@ -1,0 +1,71 @@
+# Default projections for GitHub MCP tools.
+# Install to ~/.mini/projections/github.yaml
+#
+# GitHub MCP already returns lean responses — we mainly need to:
+# - Truncate long string fields (body, patch, content)
+# - Cap array sizes
+# - Strip HTML/Markdown from user-generated text
+# - Exclude noise fields (node_id, internal URLs, etc.)
+
+list_issues:
+  array_limits:
+    issues: 20
+  exclude_always: [node_id, body, active_lock_reason, performed_via_github_app, timeline_url, reactions]
+
+list_pull_requests:
+  array_limits:
+    pullRequests: 20
+  exclude_always: [node_id, body, active_lock_reason, auto_merge, performed_via_github_app, _links]
+
+search_issues:
+  array_limits:
+    nodes: 20
+    edges: 20
+  exclude_always: [node_id, body, reactions, timeline_url, active_lock_reason]
+
+search_pull_requests:
+  array_limits:
+    nodes: 20
+    edges: 20
+  exclude_always: [node_id, body, active_lock_reason, auto_merge, _links]
+
+list_commits:
+  array_limits:
+    commits: 20
+  string_limits:
+    message: 200
+  exclude_always: [node_id, url, comments_url]
+
+get_file_contents:
+  string_limits:
+    content: 3000
+
+issue_read:
+  exclude_always: [node_id, reactions, active_lock_reason, performed_via_github_app, timeline_url, sub_issues_summary]
+  string_limits:
+    body: 2000
+  strip_markup: true
+
+pull_request_read:
+  exclude_always: [node_id, _links, active_lock_reason, auto_merge, performed_via_github_app]
+  string_limits:
+    body: 2000
+  strip_markup: true
+
+search_code:
+  array_limits:
+    items: 10
+    text_matches: 3
+  exclude_always: [node_id, git_url, download_url]
+
+list_branches:
+  array_limits:
+    branches: 30
+  exclude_always: [node_id]
+
+get_commit:
+  exclude_always: [node_id, url, comments_url]
+  array_limits:
+    files: 20
+  string_limits:
+    patch: 1000

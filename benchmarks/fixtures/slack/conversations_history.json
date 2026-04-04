@@ -1,0 +1,949 @@
+{
+  "ok": true,
+  "messages": [
+    {
+      "type": "message",
+      "subtype": "bot_message",
+      "ts": "1710403200.000100",
+      "bot_id": "B0DATAD001",
+      "username": "Datadog",
+      "team": "T0ACMECORP",
+      "text": ":red_circle: *[ALERT - P1]* auth-service error rate exceeded 5% threshold (currently 8.3%) over 5-minute window. Triggered at 2026-03-15 08:00:00 UTC.",
+      "client_msg_id": "bot-dd-001",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_27946",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":red_circle: *[ALERT - P1]* auth-service error rate exceeded 5% threshold (currently 8.3%) over 5-minute window. Triggered at 2026-03-15 08:00:00 UTC."
+          },
+          "fields": null
+        },
+        {
+          "type": "divider",
+          "block_id": "divider_001"
+        }
+      ],
+      "attachments": [
+        {
+          "color": "#FF0000",
+          "fallback": "P1 Alert: auth-service error rate > 5%",
+          "title": "P1 Alert: auth-service error rate > 5%",
+          "title_link": "https://acme.datadoghq.com/monitors/123456",
+          "text": "Error rate is 8.3% (threshold: 5%). Affected endpoints: POST /auth/token (12.1% errors), GET /auth/validate (6.7% errors). Last healthy: 2026-03-15 07:54:00 UTC.",
+          "footer": "Datadog Monitors",
+          "footer_icon": "https://platform.slack-edge.com/img/default_application_icon.png",
+          "ts": 1710403200,
+          "fields": [
+            {
+              "title": "Service",
+              "value": "auth-service",
+              "short": true
+            },
+            {
+              "title": "Environment",
+              "value": "production",
+              "short": true
+            },
+            {
+              "title": "Host",
+              "value": "prod-auth-03.us-east-1.internal",
+              "short": true
+            },
+            {
+              "title": "Alert Policy",
+              "value": "P1 - Auth Latency SLO",
+              "short": true
+            }
+          ],
+          "actions": [],
+          "mrkdwn_in": [
+            "text",
+            "pretext"
+          ]
+        }
+      ],
+      "reactions": [],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710403320.000200",
+      "user": "U0AL1CE001",
+      "text": "I'm seeing this too - auth latency spiked about 10 minutes ago. Checking the token validation service now. @charlie can you pull the DB connection stats?",
+      "client_msg_id": "cm-alice-001",
+      "team": "T0ACMECORP",
+      "edited": null,
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_01692",
+          "text": {
+            "type": "mrkdwn",
+            "text": "I'm seeing this too - auth latency spiked about 10 minutes ago. Checking the token validation service now. @charlie can you pull the DB connection stats?"
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "eyes",
+          "count": 3,
+          "users": [
+            "U0B0B00002",
+            "U0CHARL003",
+            "U0DIANA004"
+          ]
+        },
+        {
+          "name": "fire",
+          "count": 2,
+          "users": [
+            "U0EV30E005",
+            "U0AL1CE001"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": true,
+      "last_read": "1710403320.000200",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710403380.000300",
+      "user": "U0CHARL003",
+      "text": "DB connections look fine - pool at 45/100. But I see something weird: the JWT verify function is throwing `key not found` errors for tokens issued after midnight. Looks like the key rotation cron job ran but the in-memory key cache wasn't invalidated.",
+      "client_msg_id": "cm-charlie-001",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_93631",
+          "text": {
+            "type": "mrkdwn",
+            "text": "DB connections look fine - pool at 45/100. But I see something weird: the JWT verify function is throwing `key not found` errors for tokens issued after midnight. Looks like the key rotation cron job ran but the in-memory key cache wasn't invalidated."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "this",
+          "count": 4,
+          "users": [
+            "U0AL1CE001",
+            "U0B0B00002",
+            "U0DIANA004",
+            "U0EV30E005"
+          ]
+        },
+        {
+          "name": "detective",
+          "count": 2,
+          "users": [
+            "U0AL1CE001",
+            "U0CHARL003"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710403440.000400",
+      "user": "U0B0B00002",
+      "text": "Root cause confirmed: `TokenKeyCache.Refresh()` is only called on startup. When key rotation ran at 00:00 UTC and replaced the signing keys, the cache still held the old public keys. All tokens issued after rotation fail validation.\n\nFix: add a cache TTL (suggest 5min) and hook the rotation event to trigger an async refresh. PR incoming.",
+      "client_msg_id": "cm-bob-001",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_01119",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Root cause confirmed: `TokenKeyCache.Refresh()` is only called on startup. When key rotation ran at 00:00 UTC and replaced the signing keys, the cache still held the old public keys. All tokens issued after rotation fail validation.\n\nFix: add a cache TTL (suggest 5min) and hook the rotation event to trigger an async refresh. PR incoming."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "+1",
+          "count": 5,
+          "users": [
+            "U0AL1CE001",
+            "U0CHARL003",
+            "U0DIANA004",
+            "U0EV30E005",
+            "U0B0B00002"
+          ]
+        },
+        {
+          "name": "rocket",
+          "count": 3,
+          "users": [
+            "U0AL1CE001",
+            "U0DIANA004",
+            "U0CHARL003"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710403500.000500",
+      "user": "U0DIANA004",
+      "text": "While bob works on the fix - mitigation option: restart auth-service pods to reload keys from disk. Will cause ~30s of degraded availability but clears the stale cache. Shall I proceed?",
+      "client_msg_id": "cm-diana-001",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_40702",
+          "text": {
+            "type": "mrkdwn",
+            "text": "While bob works on the fix - mitigation option: restart auth-service pods to reload keys from disk. Will cause ~30s of degraded availability but clears the stale cache. Shall I proceed?"
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "white_check_mark",
+          "count": 3,
+          "users": [
+            "U0AL1CE001",
+            "U0CHARL003",
+            "U0EV30E005"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710403560.000600",
+      "user": "U0AL1CE001",
+      "text": ":white_check_mark: Go ahead @diana. I'll be in the war room channel. @eve can you update the status page?",
+      "client_msg_id": "cm-alice-002",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_85203",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":white_check_mark: Go ahead @diana. I'll be in the war room channel. @eve can you update the status page?"
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "subtype": "bot_message",
+      "ts": "1710403620.000700",
+      "bot_id": "B0GITHUB02",
+      "username": "GitHub",
+      "team": "T0ACMECORP",
+      "text": ":merged: PR #821 *fix: token refresh race condition in auth middleware* was merged into `main` by @bob. CI passed in 4m 32s.",
+      "client_msg_id": "bot-gh-001",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_20965",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":merged: PR #821 *fix: token refresh race condition in auth middleware* was merged into `main` by @bob. CI passed in 4m 32s."
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_gh_pr_821",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*acme-org/webapp* \u00b7 <https://github.com/acme-org/webapp/pull/821|#821 fix: token refresh race condition in auth middleware>"
+          },
+          "accessory": {
+            "type": "button",
+            "text": {
+              "type": "plain_text",
+              "text": "View PR"
+            },
+            "url": "https://github.com/acme-org/webapp/pull/821",
+            "action_id": "view_pr"
+          }
+        }
+      ],
+      "attachments": [],
+      "reactions": [
+        {
+          "name": "merged",
+          "count": 2,
+          "users": [
+            "U0AL1CE001",
+            "U0CHARL003"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710403740.000800",
+      "user": "U0EV30E005",
+      "text": "Status page updated: `https://status.acme.example.com` - showing 'Investigating authentication service degradation'. ETA for resolution posted as 30 minutes.",
+      "client_msg_id": "cm-eve-001",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_22084",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Status page updated: `https://status.acme.example.com` - showing 'Investigating authentication service degradation'. ETA for resolution posted as 30 minutes."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "pray",
+          "count": 2,
+          "users": [
+            "U0AL1CE001",
+            "U0B0B00002"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710403860.000900",
+      "user": "U0DIANA004",
+      "text": "Auth-service pods restarted. Error rate dropping: 8.3% \u2192 3.1% \u2192 0.8%. Looking stable. Datadog alert should auto-resolve in the next check cycle.",
+      "client_msg_id": "cm-diana-002",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_41859",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Auth-service pods restarted. Error rate dropping: 8.3% \u2192 3.1% \u2192 0.8%. Looking stable. Datadog alert should auto-resolve in the next check cycle."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "tada",
+          "count": 4,
+          "users": [
+            "U0AL1CE001",
+            "U0B0B00002",
+            "U0CHARL003",
+            "U0EV30E005"
+          ]
+        },
+        {
+          "name": "white_check_mark",
+          "count": 3,
+          "users": [
+            "U0AL1CE001",
+            "U0CHARL003",
+            "U0B0B00002"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "subtype": "bot_message",
+      "ts": "1710403920.001000",
+      "bot_id": "B0DATAD001",
+      "username": "Datadog",
+      "team": "T0ACMECORP",
+      "text": ":large_green_circle: *[RECOVERED]* auth-service error rate is now 0.4% (below 5% threshold). Alert resolved.",
+      "client_msg_id": "bot-dd-002",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_82095",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":large_green_circle: *[RECOVERED]* auth-service error rate is now 0.4% (below 5% threshold). Alert resolved."
+          },
+          "fields": null
+        }
+      ],
+      "attachments": [
+        {
+          "color": "#36a64f",
+          "fallback": "RECOVERED: auth-service error rate back to normal",
+          "title": "RECOVERED: auth-service error rate back to normal",
+          "title_link": "https://acme.datadoghq.com/monitors/123456",
+          "text": "Error rate: 0.4% (was 8.3%). Recovery time: 12 minutes. Pods restarted: 3. Root cause: stale JWT key cache after rotation.",
+          "footer": "Datadog Monitors",
+          "footer_icon": "https://platform.slack-edge.com/img/default_application_icon.png",
+          "ts": 1710403920,
+          "fields": [
+            {
+              "title": "Service",
+              "value": "auth-service",
+              "short": true
+            },
+            {
+              "title": "Environment",
+              "value": "production",
+              "short": true
+            },
+            {
+              "title": "Host",
+              "value": "prod-auth-03.us-east-1.internal",
+              "short": true
+            },
+            {
+              "title": "Alert Policy",
+              "value": "P1 - Auth Latency SLO",
+              "short": true
+            }
+          ],
+          "actions": [],
+          "mrkdwn_in": [
+            "text",
+            "pretext"
+          ]
+        }
+      ],
+      "reactions": [
+        {
+          "name": "green_heart",
+          "count": 3,
+          "users": [
+            "U0AL1CE001",
+            "U0CHARL003",
+            "U0DIANA004"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710404400.001100",
+      "user": "U0CHARL003",
+      "text": ":mega: *Standup update* (I know it's an incident day but let's keep it going)\n\n*Yesterday:* Reviewed PR #828 (rate limiting), added benchmark tests for the new Redis integration.\n*Today:* Postmortem writeup for the JWT key cache incident, then back to PR #822 (N+1 query fix).\n*Blockers:* None right now, but will need a staging DB refresh to validate the batch query changes.",
+      "client_msg_id": "cm-charlie-002",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_15262",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":mega: *Standup update* (I know it's an incident day but let's keep it going)"
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_26024",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Yesterday:* Reviewed PR #828 (rate limiting), added benchmark tests for the new Redis integration.\n*Today:* Postmortem writeup for the JWT key cache incident, then back to PR #822 (N+1 query fix).\n*Blockers:* None right now, but will need a staging DB refresh to validate the batch query changes."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "+1",
+          "count": 2,
+          "users": [
+            "U0AL1CE001",
+            "U0B0B00002"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710404460.001200",
+      "user": "U0B0B00002",
+      "text": ":mega: *Standup*\n*Yesterday:* Hotfix PR #821 (token refresh race condition). Also opened #840 and #841 for the JWT validation bypass issues we found during the incident postmortem.\n*Today:* Get #840 and #841 reviewed and merged ASAP. Will need at least 2 reviewers for the security fixes.\n*Blockers:* Need someone to prioritize review on the security PRs \u2014 they're on `hotfix/auth-regression`.",
+      "client_msg_id": "cm-bob-002",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_28625",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":mega: *Standup*"
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_80232",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Yesterday:* Hotfix PR #821 (token refresh race condition). Also opened #840 and #841 for the JWT validation bypass issues we found during the incident postmortem.\n*Today:* Get #840 and #841 reviewed and merged ASAP. Will need at least 2 reviewers for the security fixes.\n*Blockers:* Need someone to prioritize review on the security PRs \u2014 they're on `hotfix/auth-regression`."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "fire",
+          "count": 2,
+          "users": [
+            "U0AL1CE001",
+            "U0CHARL003"
+          ]
+        },
+        {
+          "name": "eyes",
+          "count": 3,
+          "users": [
+            "U0DIANA004",
+            "U0EV30E005",
+            "U0AL1CE001"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710404520.001300",
+      "user": "U0AL1CE001",
+      "text": "On it @bob - I'll review #840 and #841 now. @diana and @eve can you also take a pass? These need two approvals before we merge to hotfix. All other work is lower priority until these are in.",
+      "client_msg_id": "cm-alice-003",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_11572",
+          "text": {
+            "type": "mrkdwn",
+            "text": "On it @bob - I'll review #840 and #841 now. @diana and @eve can you also take a pass? These need two approvals before we merge to hotfix. All other work is lower priority until these are in."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "white_check_mark",
+          "count": 3,
+          "users": [
+            "U0DIANA004",
+            "U0EV30E005",
+            "U0CHARL003"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "subtype": "bot_message",
+      "ts": "1710404700.001400",
+      "bot_id": "B0GITHUB02",
+      "username": "GitHub",
+      "team": "T0ACMECORP",
+      "text": ":ci-fail: CI failed on PR #826 *feat: dark mode support for dashboard* \u00b7 2 checks failed: `test-frontend` (snapshot mismatch), `a11y-check` (contrast ratio below WCAG AA). <https://github.com/acme-org/webapp/pull/826/checks|View checks>",
+      "client_msg_id": "bot-gh-002",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_98462",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":ci-fail: CI failed on PR #826 *feat: dark mode support for dashboard*"
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_35055",
+          "text": {
+            "type": "mrkdwn",
+            "text": "2 checks failed:\n\u2022 `test-frontend` \u2014 snapshot mismatch in 3 components\n\u2022 `a11y-check` \u2014 contrast ratio below WCAG AA on dark background for secondary text"
+          },
+          "fields": null
+        }
+      ],
+      "attachments": [],
+      "reactions": [
+        {
+          "name": "face-palm",
+          "count": 1,
+          "users": [
+            "U0B0B00002"
+          ]
+        }
+      ],
+      "reply_count": 1,
+      "reply_users": [
+        "U0B0B00002"
+      ],
+      "latest_reply": "1710404760.001450",
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": "1710404700.001400"
+    },
+    {
+      "type": "message",
+      "ts": "1710404760.001450",
+      "user": "U0B0B00002",
+      "text": "Yeah that's on me - the dark mode charts use #6B7280 on #1F2937 which is only 3.2:1. Need at least 4.5:1 for WCAG AA. Will fix and push.",
+      "client_msg_id": "cm-bob-003",
+      "team": "T0ACMECORP",
+      "thread_ts": "1710404700.001400",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_96918",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Yeah that's on me - the dark mode charts use #6B7280 on #1F2937 which is only 3.2:1. Need at least 4.5:1 for WCAG AA. Will fix and push."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000"
+    },
+    {
+      "type": "message",
+      "ts": "1710405000.001500",
+      "user": "U0EV30E005",
+      "text": ":mega: *Standup*\n*Yesterday:* Set up the eval harness for minimcp benchmarks. Wrote fixtures for Slack, GitHub, Sentry. Also updated the status page during the incident.\n*Today:* Finish Jira fixtures, run the full eval suite, report token savings numbers to the team.\n*Blockers:* Need prod-like data volumes \u2014 currently fabricating realistic fixtures by hand which is slow.",
+      "client_msg_id": "cm-eve-002",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_28625",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":mega: *Standup*"
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_06004",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Yesterday:* Set up the eval harness for minimcp benchmarks. Wrote fixtures for Slack, GitHub, Sentry. Also updated the status page during the incident.\n*Today:* Finish Jira fixtures, run the full eval suite, report token savings numbers to the team.\n*Blockers:* Need prod-like data volumes \u2014 currently fabricating realistic fixtures by hand which is slow."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "+1",
+          "count": 2,
+          "users": [
+            "U0AL1CE001",
+            "U0CHARL003"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710405120.001600",
+      "user": "U0DIANA004",
+      "text": ":mega: *Standup*\n*Yesterday:* Restarted auth-service pods during incident. Reviewed PRs #827 (WebSocket memory leak) and #832 (session timeout propagation) \u2014 both LGTM, left comments.\n*Today:* Review security PRs #840\u2013#844 on hotfix branch. After that: investigating the DB timeout spike we saw last week (separate from today's auth incident).\n*Blockers:* Waiting on charlie for staging DB refresh so I can reproduce the timeout issue.",
+      "client_msg_id": "cm-diana-003",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_28625",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":mega: *Standup*"
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_26004",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Yesterday:* Restarted auth-service pods during incident. Reviewed PRs #827 (WebSocket memory leak) and #832 (session timeout propagation) \u2014 both LGTM, left comments.\n*Today:* Review security PRs #840\u2013#844 on hotfix branch. After that: investigating the DB timeout spike we saw last week (separate from today's auth incident).\n*Blockers:* Waiting on charlie for staging DB refresh so I can reproduce the timeout issue."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "subtype": "bot_message",
+      "ts": "1710405300.001700",
+      "bot_id": "B0PAGERDU3",
+      "username": "PagerDuty",
+      "team": "T0ACMECORP",
+      "text": ":pagerduty: *RESOLVED* - Incident #INC-2847 `auth-service: JWT validation failures` has been resolved. Duration: 18 minutes. Responders: alice, bob, charlie, diana, eve.",
+      "client_msg_id": "bot-pd-001",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_52718",
+          "text": {
+            "type": "mrkdwn",
+            "text": ":pagerduty: *RESOLVED* - Incident #INC-2847 `auth-service: JWT validation failures` has been resolved."
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_75169",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*Duration:* 18 minutes\n*Responders:* alice, bob, charlie, diana, eve\n*Root cause:* Stale JWT public key cache after scheduled key rotation\n*Resolution:* Pod restart to clear in-memory cache; permanent fix in review (PR #821)"
+          },
+          "fields": null
+        }
+      ],
+      "attachments": [],
+      "reactions": [
+        {
+          "name": "tada",
+          "count": 5,
+          "users": [
+            "U0AL1CE001",
+            "U0B0B00002",
+            "U0CHARL003",
+            "U0DIANA004",
+            "U0EV30E005"
+          ]
+        },
+        {
+          "name": "100",
+          "count": 3,
+          "users": [
+            "U0AL1CE001",
+            "U0B0B00002",
+            "U0DIANA004"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710405600.001800",
+      "user": "U0AL1CE001",
+      "text": "Good work everyone. Quick debrief:\n1. Root cause: `TokenKeyCache` only refreshed on startup \u2014 fixed in #821 (already merged)\n2. Additional JWT security issues found: PRs #840 and #841 open on `hotfix/auth-regression` \u2014 *please review today*\n3. Postmortem doc: https://www.notion.so/acme/INC-2847-JWT-Cache-Postmortem \u2014 @charlie is leading\n4. Status page updated to 'Resolved'\n\nThis could have been much worse. The JWT bypass (#840) is critical and unrelated to today's incident \u2014 good catch @bob.",
+      "client_msg_id": "cm-alice-004",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_26666",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Good work everyone. Quick debrief:"
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_61667",
+          "text": {
+            "type": "mrkdwn",
+            "text": "1. Root cause: `TokenKeyCache` only refreshed on startup \u2014 fixed in #821 (already merged)\n2. Additional JWT security issues found: PRs #840 and #841 open on `hotfix/auth-regression` \u2014 *please review today*\n3. Postmortem doc: https://www.notion.so/acme/INC-2847-JWT-Cache-Postmortem \u2014 @charlie is leading\n4. Status page updated to 'Resolved'"
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_97632",
+          "text": {
+            "type": "mrkdwn",
+            "text": "This could have been much worse. The JWT bypass (#840) is critical and unrelated to today's incident \u2014 good catch @bob."
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "+1",
+          "count": 4,
+          "users": [
+            "U0B0B00002",
+            "U0CHARL003",
+            "U0DIANA004",
+            "U0EV30E005"
+          ]
+        },
+        {
+          "name": "heart",
+          "count": 3,
+          "users": [
+            "U0CHARL003",
+            "U0DIANA004",
+            "U0EV30E005"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    },
+    {
+      "type": "message",
+      "ts": "1710405900.001900",
+      "user": "U0CHARL003",
+      "text": "Postmortem doc is live: https://www.notion.so/acme/INC-2847-JWT-Cache-Postmortem\n\nTimeline, impact (estimated 2,400 failed auth requests over 18 min), contributing factors, and action items are all drafted. Action items:\n- [ ] Add TTL to `TokenKeyCache` (owner: bob, due: today)\n- [ ] Add cache invalidation hook on key rotation event (owner: bob, due: this week)\n- [ ] Add alert for key cache staleness > 5min (owner: diana, due: this week)\n- [ ] Audit other in-memory caches for similar issues (owner: charlie, due: sprint end)\n- [ ] Review and merge #840 and #841 (owner: all, due: today)",
+      "client_msg_id": "cm-charlie-003",
+      "team": "T0ACMECORP",
+      "blocks": [
+        {
+          "type": "section",
+          "block_id": "blk_10610",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Postmortem doc is live: https://www.notion.so/acme/INC-2847-JWT-Cache-Postmortem"
+          },
+          "fields": null
+        },
+        {
+          "type": "section",
+          "block_id": "blk_05201",
+          "text": {
+            "type": "mrkdwn",
+            "text": "Action items:\n\u2022 Add TTL to `TokenKeyCache` \u2014 bob, today\n\u2022 Add cache invalidation hook on key rotation \u2014 bob, this week\n\u2022 Add alert for key cache staleness > 5min \u2014 diana, this week\n\u2022 Audit other in-memory caches \u2014 charlie, sprint end\n\u2022 Review and merge #840 and #841 \u2014 all, today"
+          },
+          "fields": null
+        }
+      ],
+      "reactions": [
+        {
+          "name": "white_check_mark",
+          "count": 4,
+          "users": [
+            "U0AL1CE001",
+            "U0B0B00002",
+            "U0DIANA004",
+            "U0EV30E005"
+          ]
+        }
+      ],
+      "reply_count": 0,
+      "reply_users": [],
+      "latest_reply": null,
+      "subscribed": false,
+      "last_read": "0000000000.000000",
+      "thread_ts": null
+    }
+  ],
+  "has_more": false,
+  "response_metadata": {
+    "next_cursor": "",
+    "messages": [],
+    "warnings": []
+  }
+}

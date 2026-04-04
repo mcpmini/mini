@@ -1,0 +1,12 @@
+name: notion
+command: npx
+args: [-y, "@notionhq/notion-mcp-server"]
+# After adding this server, authorize it:
+#   mini auth notion
+auth:
+  type: oauth2
+  client_id: "${NOTION_CLIENT_ID}"
+  client_secret: "${NOTION_CLIENT_SECRET}"
+  auth_url: https://api.notion.com/v1/oauth/authorize
+  token_url: https://api.notion.com/v1/oauth/token
+  scopes: []

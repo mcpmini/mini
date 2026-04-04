@@ -1,0 +1,110 @@
+{
+  "total_count": 134,
+  "incomplete_results": false,
+  "items": [
+    {
+      "name": "auth.go",
+      "path": "internal/auth/auth.go",
+      "sha": "abc123def456abc123def456abc123def456abc1",
+      "url": "https://api.github.com/repos/acme/webapp/contents/internal/auth/auth.go?ref=main",
+      "git_url": "https://api.github.com/repos/acme/webapp/git/blobs/abc123def456",
+      "html_url": "https://github.com/acme/webapp/blob/main/internal/auth/auth.go",
+      "repository": {
+        "id": 99887766,
+        "node_id": "R_kgDOABCDEF",
+        "name": "webapp",
+        "full_name": "acme/webapp",
+        "private": false,
+        "owner": {"login": "acme", "id": 9876543, "type": "Organization"},
+        "html_url": "https://github.com/acme/webapp",
+        "description": "Main web application",
+        "fork": false,
+        "url": "https://api.github.com/repos/acme/webapp",
+        "forks_url": "https://api.github.com/repos/acme/webapp/forks",
+        "keys_url": "https://api.github.com/repos/acme/webapp/keys{/key_id}",
+        "collaborators_url": "https://api.github.com/repos/acme/webapp/collaborators{/collaborator}",
+        "teams_url": "https://api.github.com/repos/acme/webapp/teams",
+        "hooks_url": "https://api.github.com/repos/acme/webapp/hooks",
+        "issue_events_url": "https://api.github.com/repos/acme/webapp/issues/events{/number}",
+        "events_url": "https://api.github.com/repos/acme/webapp/events",
+        "assignees_url": "https://api.github.com/repos/acme/webapp/assignees{/user}",
+        "branches_url": "https://api.github.com/repos/acme/webapp/branches{/branch}",
+        "tags_url": "https://api.github.com/repos/acme/webapp/tags",
+        "blobs_url": "https://api.github.com/repos/acme/webapp/git/blobs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/acme/webapp/git/tags{/sha}",
+        "git_refs_url": "https://api.github.com/repos/acme/webapp/git/refs{/sha}",
+        "trees_url": "https://api.github.com/repos/acme/webapp/git/trees{/sha}",
+        "statuses_url": "https://api.github.com/repos/acme/webapp/statuses/{sha}",
+        "languages_url": "https://api.github.com/repos/acme/webapp/languages",
+        "stargazers_url": "https://api.github.com/repos/acme/webapp/stargazers",
+        "contributors_url": "https://api.github.com/repos/acme/webapp/contributors",
+        "subscribers_url": "https://api.github.com/repos/acme/webapp/subscribers",
+        "subscription_url": "https://api.github.com/repos/acme/webapp/subscription",
+        "commits_url": "https://api.github.com/repos/acme/webapp/commits{/sha}",
+        "git_commits_url": "https://api.github.com/repos/acme/webapp/git/commits{/sha}",
+        "comments_url": "https://api.github.com/repos/acme/webapp/comments{/number}",
+        "issue_comment_url": "https://api.github.com/repos/acme/webapp/issues/comments{/number}",
+        "contents_url": "https://api.github.com/repos/acme/webapp/contents/{+path}",
+        "compare_url": "https://api.github.com/repos/acme/webapp/compare/{base}...{head}",
+        "merges_url": "https://api.github.com/repos/acme/webapp/merges",
+        "archive_url": "https://api.github.com/repos/acme/webapp/{archive_format}{/ref}",
+        "downloads_url": "https://api.github.com/repos/acme/webapp/downloads",
+        "issues_url": "https://api.github.com/repos/acme/webapp/issues{/number}",
+        "pulls_url": "https://api.github.com/repos/acme/webapp/pulls{/number}",
+        "milestones_url": "https://api.github.com/repos/acme/webapp/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/acme/webapp/notifications{?since,all,participating}",
+        "labels_url": "https://api.github.com/repos/acme/webapp/labels{/name}",
+        "releases_url": "https://api.github.com/repos/acme/webapp/releases{/id}",
+        "deployments_url": "https://api.github.com/repos/acme/webapp/deployments"
+      },
+      "score": 1.0,
+      "text_matches": [
+        {
+          "object_url": "https://api.github.com/repos/acme/webapp/contents/internal/auth/auth.go",
+          "object_type": "FileContent",
+          "property": "content",
+          "fragment": "func NewOAuth2Handler(cfg *config.ServerConfig) (*OAuth2Handler, error) {\n\tif cfg.Auth.ClientID == \"\" {\n\t\treturn nil, fmt.Errorf(\"oauth2: client_id required\")\n\t}\n\treturn &OAuth2Handler{cfg: cfg}, nil\n}",
+          "matches": [{"text": "OAuth2Handler", "indices": [5, 18]}]
+        }
+      ]
+    },
+    {
+      "name": "pkce.go",
+      "path": "internal/auth/pkce.go",
+      "sha": "bcd234efa567bcd234efa567bcd234efa567bcd2",
+      "url": "https://api.github.com/repos/acme/webapp/contents/internal/auth/pkce.go?ref=main",
+      "git_url": "https://api.github.com/repos/acme/webapp/git/blobs/bcd234efa567",
+      "html_url": "https://github.com/acme/webapp/blob/main/internal/auth/pkce.go",
+      "repository": {"id": 99887766, "name": "webapp", "full_name": "acme/webapp", "private": false},
+      "score": 0.98,
+      "text_matches": [
+        {
+          "object_url": "https://api.github.com/repos/acme/webapp/contents/internal/auth/pkce.go",
+          "object_type": "FileContent",
+          "property": "content",
+          "fragment": "func generateCodeVerifier() (string, error) {\n\tb := make([]byte, 32)\n\tif _, err := rand.Read(b); err != nil {\n\t\treturn \"\", err\n\t}\n\treturn base64.RawURLEncoding.EncodeToString(b), nil\n}",
+          "matches": [{"text": "generateCodeVerifier", "indices": [5, 25]}]
+        }
+      ]
+    },
+    {
+      "name": "token.go",
+      "path": "internal/auth/token.go",
+      "sha": "cde345fgb678cde345fgb678cde345fgb678cde3",
+      "url": "https://api.github.com/repos/acme/webapp/contents/internal/auth/token.go?ref=main",
+      "git_url": "https://api.github.com/repos/acme/webapp/git/blobs/cde345fgb678",
+      "html_url": "https://github.com/acme/webapp/blob/main/internal/auth/token.go",
+      "repository": {"id": 99887766, "name": "webapp", "full_name": "acme/webapp", "private": false},
+      "score": 0.95,
+      "text_matches": [
+        {
+          "object_url": "https://api.github.com/repos/acme/webapp/contents/internal/auth/token.go",
+          "object_type": "FileContent",
+          "property": "content",
+          "fragment": "func (s *TokenStore) Save(serverName string, tok *oauth2.Token) error {\n\tif !config.ValidServerName.MatchString(serverName) {\n\t\treturn fmt.Errorf(\"invalid server name: %q\", serverName)\n\t}",
+          "matches": [{"text": "ValidServerName", "indices": [7, 22]}]
+        }
+      ]
+    }
+  ]
+}

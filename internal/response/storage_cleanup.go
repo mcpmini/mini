@@ -1,0 +1,90 @@
+package response
+
+import (
+	"log/slog"
+	"os"
+	"time"
+)
+
+func (s *Store) cleanupLoop(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.evictExpired()
+		case <-s.done:
+			return
+		}
+	}
+}
+
+func (s *Store) evictExpired() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	kept := s.files[:0]
+	for _, f := range s.files {
+		if f.expires.After(now) {
+			kept = append(kept, f)
+			continue
+		}
+		s.usedBytes -= f.size
+		warnRemoveErr(os.Remove(f.path))
+		if f.rawPath != "" {
+			warnRemoveErr(os.Remove(f.rawPath))
+		}
+	}
+	s.files = kept
+}
+
+func (s *Store) evictIfNeeded(incoming int64) {
+	if s.budgetBytes == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for s.usedBytes+incoming > s.budgetBytes && len(s.files) > 0 {
+		oldest := s.files[0]
+		s.files = s.files[1:]
+		s.usedBytes -= oldest.size
+		warnRemoveErr(os.Remove(oldest.path))
+		if oldest.rawPath != "" {
+			warnRemoveErr(os.Remove(oldest.rawPath))
+		}
+	}
+}
+
+// evictOvershoot removes oldest files until usedBytes is within the budget.
+// Must be called with s.mu held. Returns the removed entries so the caller can
+// delete the files after releasing the lock (file I/O must not run under the mutex).
+// Keeps at least one file (the one just written) even if the budget is tight.
+func (s *Store) evictOvershoot() []storedFile {
+	if s.budgetBytes == 0 || s.usedBytes <= s.budgetBytes {
+		return nil
+	}
+	var out []storedFile
+	for s.usedBytes > s.budgetBytes && len(s.files) > 1 {
+		out = append(out, s.files[0])
+		s.usedBytes -= s.files[0].size
+		s.files = s.files[1:]
+	}
+	return out
+}
+
+func removeFiles(files []storedFile) {
+	for _, f := range files {
+		warnRemoveErr(os.Remove(f.path))
+		if f.rawPath != "" {
+			warnRemoveErr(os.Remove(f.rawPath))
+		}
+	}
+}
+
+func warnRemoveErr(err error) {
+	if err != nil && !os.IsNotExist(err) {
+		slog.Default().Warn("response store: remove file failed", "err", err)
+	}
+}

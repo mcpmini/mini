@@ -1,0 +1,96 @@
+list_pull_requests:
+  include: [number, title, state, draft, user, created_at, updated_at, labels, assignees, head, base, milestone]
+  array_limits:
+    default: 20
+    labels: 5
+    assignees: 3
+    requested_reviewers: 3
+  string_limits:
+    body: 300
+  strip_markup: true
+  depth_limit: 2
+
+list_issues:
+  include: [number, title, state, user, created_at, updated_at, labels, assignees, milestone, comments]
+  array_limits:
+    default: 20
+    labels: 5
+    assignees: 3
+  string_limits:
+    body: 300
+  strip_markup: true
+  depth_limit: 2
+
+get_issue:
+  include: [number, title, state, user, created_at, updated_at, labels, assignees, milestone, body, comments]
+  string_limits:
+    body: 5000
+  strip_markup: true
+  depth_limit: 3
+
+get_pull_request:
+  include: [number, title, state, draft, user, created_at, updated_at, labels, assignees, head, base, body, mergeable, merged, additions, deletions, changed_files]
+  string_limits:
+    body: 2000
+  strip_markup: true
+  depth_limit: 3
+
+list_pull_request_files:
+  include: [filename, status, additions, deletions, changes, patch]
+  array_limits:
+    default: 100
+  string_limits:
+    patch: 3000
+  depth_limit: 1
+
+search_code:
+  include: [total_count, items]
+  array_limits:
+    items: 20
+    text_matches: 3
+  string_limits:
+    fragment: 500
+  depth_limit: 3
+  exclude_always: [score, git_url, download_url, _links]
+
+get_file_contents:
+  include: [type, name, path, size, sha, content, encoding]
+  depth_limit: 2
+
+list_commits:
+  include: [sha, commit, author, committer]
+  array_limits:
+    default: 20
+  depth_limit: 2
+  string_limits:
+    message: 200
+
+get_commit:
+  include: [sha, commit, author, committer, stats, files]
+  array_limits:
+    files: 50
+  string_limits:
+    message: 500
+    patch: 2000
+  depth_limit: 2
+
+list_repository_contents:
+  include: [name, path, type, size, sha]
+  array_limits:
+    default: 200
+  depth_limit: 1
+
+search_repositories:
+  include: [total_count, items]
+  array_limits:
+    items: 15
+    topics: 5
+  string_limits:
+    description: 200
+  depth_limit: 2
+  exclude_always: [node_id, subscribers_url, subscription_url, notifications_url, hooks_url, teams_url, keys_url, score]
+
+"*":
+  depth_limit: 3
+  auto_strip_threshold: 500
+  exclude_always: [node_id, url, html_url, diff_url, patch_url, issue_url, comments_url, review_comments_url, statuses_url, commits_url, pulls_url, issue_events_url, events_url, labels_url, collaborators_url, teams_url, hooks_url, issue_search_url, issues_url, keys_url, forks_url, git_url, ssh_url, clone_url, svn_url, mirror_url, archive_url, downloads_url, stargazers_url, contributors_url, subscribers_url, subscription_url, merges_url, compare_url, contents_url, blobs_url, git_tags_url, git_refs_url, trees_url, statuses_url, languages_url, milestones_url, notifications_url, assignees_url, branches_url, tags_url, _links]

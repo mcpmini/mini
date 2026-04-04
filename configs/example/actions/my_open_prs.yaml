@@ -1,0 +1,7 @@
+name: my_open_prs
+description: List my open pull requests across repos
+server: github
+tool: list_pull_requests
+default_args:
+  state: "open"
+  author: "${GITHUB_USER}"

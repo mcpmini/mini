@@ -1,0 +1,18 @@
+{
+  "type": "file",
+  "encoding": "base64",
+  "size": 4821,
+  "name": "handlers.go",
+  "path": "internal/server/handlers.go",
+  "content": "cGFja2FnZSBzZXJ2ZXIKCmltcG9ydCAoCgkiY29udGV4dCIKCSJlbmNvZGluZy9qc29uIgoJImZtdCIKCgkiZ2l0aHViLmNvbS9taW5pbWNwL21pbmltY3AvaW50ZXJuYWwvY29uZmlnIgoJImdpdGh1Yi5jb20vbWluaW1jcC9taW5pbWNwL2ludGVybmFsL3Byb2plY3Rpb24iCgkiZ2l0aHViLmNvbS9taW5pbWNwL21pbmltY3AvaW50ZXJuYWwvcmVnaXN0cnkiCgkiZ2l0aHViLmNvbS9taW5pbWNwL21pbmltY3AvaW50ZXJuYWwvcmVzcG9uc2UiCikK",
+  "sha": "abc123def456abc123def456abc123def456abc1",
+  "url": "https://api.github.com/repos/acme/webapp/contents/internal/server/handlers.go?ref=main",
+  "git_url": "https://api.github.com/repos/acme/webapp/git/blobs/abc123def456",
+  "html_url": "https://github.com/acme/webapp/blob/main/internal/server/handlers.go",
+  "download_url": "https://raw.githubusercontent.com/acme/webapp/main/internal/server/handlers.go",
+  "_links": {
+    "self": "https://api.github.com/repos/acme/webapp/contents/internal/server/handlers.go?ref=main",
+    "git": "https://api.github.com/repos/acme/webapp/git/blobs/abc123def456",
+    "html": "https://github.com/acme/webapp/blob/main/internal/server/handlers.go"
+  }
+}

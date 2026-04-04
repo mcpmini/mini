@@ -1,0 +1,28 @@
+# binaries
+/mini
+/minimcp
+/fakemcp
+/funclen
+/params
+/returns
+test_escape
+*.test
+
+# review and audit artifacts
+*-review-*.md
+*-review.md
+review-*.md
+REVIEW.md
+pre-release-*.md
+test-audit-*.md
+test-plan.md
+funclen-refactor-*.md
+spec-compliance-*.md
+implementation-review-*.md
+security-review-*.md
+
+# tooling
+.claude/
+.DS_Store
+*.env
+.env*

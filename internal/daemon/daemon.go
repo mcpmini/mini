@@ -1,0 +1,85 @@
+// Package daemon provides helpers for detecting, starting, and communicating
+// with a running mini daemon process.
+package daemon
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// PortFile returns the path to the daemon port file in configDir.
+func PortFile(configDir string) string {
+	return filepath.Join(configDir, "daemon.port")
+}
+
+// RunningPort returns the TCP port the daemon is listening on, or 0 if not running.
+func RunningPort(configDir string) int {
+	data, err := os.ReadFile(PortFile(configDir))
+	if err != nil {
+		return 0
+	}
+	port, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return 0
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+	if err != nil {
+		return 0
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	return port
+}
+
+// Start launches a daemon in the background and waits up to timeout for it to be ready.
+func Start(configDir string, timeout time.Duration) (int, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return 0, fmt.Errorf("find executable: %w", err)
+	}
+	if err := spawnDaemon(exe, configDir); err != nil {
+		return 0, err
+	}
+	return waitForDaemon(configDir, timeout)
+}
+
+func spawnDaemon(exe, configDir string) error {
+	logFile, closeLog := openDaemonLog(configDir)
+	defer closeLog() // safe: cmd.Start() dups the fd into the child process
+	cmd := exec.Command(exe, "--config", configDir, "daemon")
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start daemon: %w", err)
+	}
+	return nil
+}
+
+func openDaemonLog(configDir string) (*os.File, func()) {
+	logPath := filepath.Join(configDir, "daemon.log")
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return os.Stderr, func() {}
+	}
+	return f, func() { f.Close() }
+}
+
+func waitForDaemon(configDir string, timeout time.Duration) (int, error) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if port := RunningPort(configDir); port != 0 {
+			return port, nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return 0, fmt.Errorf("daemon did not start within %v", timeout)
+}

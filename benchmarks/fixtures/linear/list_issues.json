@@ -1,0 +1,53 @@
+{
+  "nodes": [
+    {
+      "id": "abc-123", "identifier": "ENG-1234",
+      "title": "Implement queue depth limit for upstream connections",
+      "description": "When an upstream MCP becomes unresponsive, requests queue up consuming goroutines and memory. We need a configurable `max_pending_requests` setting per server that rejects new requests immediately when the limit is reached rather than queuing indefinitely.\n\n**Acceptance criteria:**\n- Config: `max_pending_requests: N` in server YAML\n- When limit reached, return structured error immediately\n- Semaphore slot released on timeout/cancellation\n- Status command shows current pending count",
+      "state": {"id": "state-1", "name": "In Progress", "type": "started", "color": "#f2c94c"},
+      "priority": 1, "priorityLabel": "Urgent",
+      "assignee": {"id": "user-1", "name": "Alex Beaumont", "email": "alex@acme.com", "displayName": "abeaumont"},
+      "creator": {"id": "user-2", "name": "SRE Team", "displayName": "sre_team"},
+      "team": {"id": "team-1", "name": "Platform", "key": "PLAT"},
+      "labels": {"nodes": [{"id": "label-1", "name": "reliability", "color": "#0e8a16"}]},
+      "comments": {"totalCount": 5},
+      "createdAt": "2026-03-08T15:45:00Z", "updatedAt": "2026-03-13T11:00:00Z",
+      "dueDate": "2026-03-20",
+      "estimate": 3,
+      "sortOrder": -1234.56,
+      "subIssueSortOrder": -5678.90,
+      "archivedAt": null, "autoArchivedAt": null, "autoClosedAt": null,
+      "canceledAt": null, "completedAt": null, "snoozedUntilAt": null,
+      "trashed": false,
+      "previousIdentifiers": [],
+      "customerTicketCount": 3
+    },
+    {
+      "id": "abc-124", "identifier": "ENG-1233",
+      "title": "Add minimcp bench CLI command",
+      "description": "Add a `minimcp bench` subcommand that shows token reduction statistics for each configured server by running fixture-based benchmarks.\n\nOutput should show: server, tool, raw tokens, projected tokens, stripped tokens, reduction %",
+      "state": {"id": "state-2", "name": "Todo", "type": "unstarted", "color": "#e2e2e2"},
+      "priority": 2, "priorityLabel": "High",
+      "assignee": null,
+      "labels": {"nodes": [{"id": "label-2", "name": "dx", "color": "#e4e669"}]},
+      "comments": {"totalCount": 2},
+      "createdAt": "2026-03-11T14:00:00Z", "updatedAt": "2026-03-12T09:00:00Z",
+      "sortOrder": -1233.00, "subIssueSortOrder": 0,
+      "trashed": false, "previousIdentifiers": [], "customerTicketCount": 0
+    },
+    {
+      "id": "abc-125", "identifier": "ENG-1232",
+      "title": "Init wizard: import from Cursor, Windsurf, Gemini configs",
+      "description": "Extend `minimcp init` to detect and import MCP configs from:\n- `~/.cursor/mcp.json`\n- `~/.codeium/windsurf/mcp_config.json`\n- `~/.gemini/settings.json`\n- `~/.codex/config.json`",
+      "state": {"id": "state-2", "name": "Todo", "type": "unstarted", "color": "#e2e2e2"},
+      "priority": 2, "priorityLabel": "High",
+      "assignee": null,
+      "labels": {"nodes": [{"id": "label-3", "name": "feature", "color": "#84b6eb"}]},
+      "comments": {"totalCount": 1},
+      "createdAt": "2026-03-10T09:00:00Z", "updatedAt": "2026-03-11T10:00:00Z",
+      "sortOrder": -1232.00, "subIssueSortOrder": 0,
+      "trashed": false, "previousIdentifiers": [], "customerTicketCount": 0
+    }
+  ],
+  "pageInfo": {"hasNextPage": true, "hasPreviousPage": false, "startCursor": "abc-123", "endCursor": "abc-125"}
+}

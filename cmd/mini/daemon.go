@@ -1,0 +1,114 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/server"
+)
+
+func runDaemon(configDir string, args []string) {
+	port, logLevel := parseDaemonFlags(args)
+	cfg, servers, err := config.Load(configDir)
+	if err != nil {
+		fatalf("load config: %v", err)
+	}
+	logger := buildLogger(cfg, logLevel)
+	portFile := daemon.PortFile(configDir)
+	if daemon.RunningPort(configDir) != 0 {
+		fatalf("daemon already running (port file: %s)", portFile)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	injectOAuthTokens(ctx, configDir, servers)
+	srv := buildAndConnectServer(ctx, cfg, configDir, logger, servers)
+	defer srv.Close()
+	startDaemonHTTP(ctx, cfg, servers, srv, portFile, port)
+}
+
+func parseDaemonFlags(args []string) (int, string) {
+	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
+	port := fs.Int("port", -1, "port to listen on (-1 = use daemon_port from config; 0 = OS-assigned random port)")
+	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
+	fs.Parse(args) //nolint:errcheck
+	return *port, *logLevel
+}
+
+func startDaemonHTTP(ctx context.Context, cfg *config.Config, servers []config.ServerConfig, srv *server.Server, portFile string, flagPort int) {
+	listenPort := cfg.DaemonPort
+	if flagPort >= 0 {
+		listenPort = flagPort
+	}
+	ln, actualPort := bindPort(listenPort)
+	writePortFile(portFile, actualPort)
+	defer os.Remove(portFile)
+	httpSrv := daemonHTTPServer(srv)
+	go httpSrv.Serve(ln) //nolint:errcheck
+	go srv.RunSessionEviction(ctx, 30*time.Minute)
+	<-ctx.Done()
+	httpSrv.Shutdown(context.Background()) //nolint:errcheck
+}
+
+func bindPort(port int) (net.Listener, int) {
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		fatalf("listen: %v", err)
+	}
+	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+	if !ok {
+		fatalf("listener address is not TCP: %T", ln.Addr())
+	}
+	return ln, tcpAddr.Port
+}
+
+func writePortFile(portFile string, port int) {
+	if err := os.WriteFile(portFile, []byte(strconv.Itoa(port)), 0600); err != nil {
+		fatalf("write port file: %v", err)
+	}
+}
+
+func daemonHTTPServer(srv *server.Server) *http.Server {
+	return &http.Server{
+		Handler:           srv,
+		ReadHeaderTimeout: 5 * time.Second,
+		// No WriteTimeout: per-call deadlines are enforced by ToolTimeout.
+		// A fixed WriteTimeout would silently truncate any tool configured
+		// with tool_timeout longer than the cap.
+		MaxHeaderBytes: 64 << 10,
+	}
+}
+
+func runDaemonStatus(configDir string) {
+	portFile := daemon.PortFile(configDir)
+	data, err := os.ReadFile(portFile)
+	if err != nil {
+		fmt.Println("daemon: not running")
+		return
+	}
+	portNum, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || portNum < 1 || portNum > 65535 {
+		fmt.Printf("daemon: port file %s contains invalid port\n", portFile)
+		return
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", portNum))
+	if err != nil {
+		fmt.Printf("daemon: port file exists (port %d) but not responding\n", portNum)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Printf("daemon: running on port %d — %s\n", portNum, body)
+}

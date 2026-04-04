@@ -1,0 +1,261 @@
+package server
+
+import (
+	"encoding/json"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
+)
+
+type Session struct {
+	mu          sync.RWMutex
+	projections map[string]*config.ProjectionConfig
+	conns       map[string]transport.Connection
+	lastUsed    time.Time
+	notifyCh    chan json.RawMessage // non-nil only in stdio sessions; set by Serve
+	dialMu      sync.Mutex
+	dialMap     map[string]*dialOnce
+
+	totalCalls     atomic.Int64
+	totalErrors    atomic.Int64
+	totalLatencyMs atomic.Int64
+	estTokensSaved atomic.Int64
+}
+
+// dialOnce coordinates at most one in-flight dial per (server, session) pair.
+type dialOnce struct {
+	mu   sync.Mutex
+	conn transport.Connection
+	err  error
+	done bool
+}
+
+func (s *Session) dialOnceFor(serverName string, dial func() (transport.Connection, error)) (transport.Connection, error) {
+	s.dialMu.Lock()
+	d, ok := s.dialMap[serverName]
+	if !ok {
+		d = &dialOnce{}
+		s.dialMap[serverName] = d
+	}
+	s.dialMu.Unlock()
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.done {
+		return d.conn, d.err
+	}
+	d.conn, d.err = dial()
+	if d.err == nil {
+		d.done = true
+	}
+	return d.conn, d.err
+}
+
+func newSession() *Session {
+	return &Session{
+		projections: make(map[string]*config.ProjectionConfig),
+		conns:       make(map[string]transport.Connection),
+		dialMap:     make(map[string]*dialOnce),
+		lastUsed:    time.Now(),
+	}
+}
+
+func (s *Session) SetProjection(toolFullName string, p *config.ProjectionConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.projections[toolFullName] = p
+	s.lastUsed = time.Now()
+}
+
+func (s *Session) GetProjection(toolFullName string) *config.ProjectionConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.projections[toolFullName]
+}
+
+func (s *Session) GetConn(serverName string) transport.Connection {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.conns[serverName]
+}
+
+// GetOrSetConn atomically stores conn for serverName if no connection exists yet.
+// If a connection was already set (by a concurrent goroutine), conn is closed and
+// the existing connection is returned. This prevents duplicate dial races.
+func (s *Session) GetOrSetConn(serverName string, conn transport.Connection) transport.Connection {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing := s.conns[serverName]; existing != nil {
+		conn.Close()
+		return existing
+	}
+	s.conns[serverName] = conn
+	return conn
+}
+
+func (s *Session) RemoveConn(serverName string) {
+	s.mu.Lock()
+	conn := s.conns[serverName]
+	delete(s.conns, serverName)
+	s.mu.Unlock()
+	if conn != nil {
+		conn.Close()
+	}
+	// Also clear the dialOnce so the next call attempts a fresh dial rather
+	// than reusing the now-broken connection stored in the old dialOnce entry.
+	s.dialMu.Lock()
+	delete(s.dialMap, serverName)
+	s.dialMu.Unlock()
+}
+
+func (s *Session) Close() {
+	s.mu.Lock()
+	for _, conn := range s.conns {
+		conn.Close()
+	}
+	s.conns = make(map[string]transport.Connection)
+	s.mu.Unlock()
+}
+
+// enableNotifications creates the buffered channel that carries server-initiated
+// notifications (e.g. tools/list_changed) to the client during Serve.
+func (s *Session) enableNotifications() chan json.RawMessage {
+	ch := make(chan json.RawMessage, 16)
+	s.mu.Lock()
+	s.notifyCh = ch
+	s.mu.Unlock()
+	return ch
+}
+
+// disableNotifications nils the notification channel so future notify() calls
+// are no-ops. Must be called before the channel is closed to prevent any
+// goroutine from sending to a closed channel.
+func (s *Session) disableNotifications() {
+	s.mu.Lock()
+	s.notifyCh = nil
+	s.mu.Unlock()
+}
+
+func (s *Session) notify(msg json.RawMessage) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.notifyCh == nil {
+		return
+	}
+	select {
+	case s.notifyCh <- msg:
+	default:
+	}
+}
+
+func (s *Session) touch() {
+	s.mu.Lock()
+	s.lastUsed = time.Now()
+	s.mu.Unlock()
+}
+
+func (s *Session) recordCall(latencyMs, tokensSaved int64, isErr bool) {
+	s.totalCalls.Add(1)
+	s.totalLatencyMs.Add(latencyMs)
+	s.estTokensSaved.Add(tokensSaved)
+	if isErr {
+		s.totalErrors.Add(1)
+	}
+}
+
+func (s *Session) idleSince(deadline time.Time) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.notifyCh != nil {
+		return false
+	}
+	return s.lastUsed.Before(deadline)
+}
+
+type sessionStore struct {
+	mu       sync.Mutex
+	sessions map[string]*Session
+}
+
+func newSessionStore() *sessionStore {
+	return &sessionStore{sessions: make(map[string]*Session)}
+}
+
+func (st *sessionStore) getOrCreate(id string) *Session {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	s, ok := st.sessions[id]
+	if !ok {
+		s = newSession()
+		st.sessions[id] = s
+	}
+	s.touch()
+	return s
+}
+
+func (st *sessionStore) delete(id string) {
+	st.mu.Lock()
+	s := st.sessions[id]
+	delete(st.sessions, id)
+	st.mu.Unlock()
+	if s != nil {
+		s.Close()
+	}
+}
+
+func (st *sessionStore) count() int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return len(st.sessions)
+}
+
+func (st *sessionStore) snapshotSessions() []*Session {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	out := make([]*Session, 0, len(st.sessions))
+	for _, s := range st.sessions {
+		out = append(out, s)
+	}
+	return out
+}
+
+func (st *sessionStore) aggregateMetrics() map[string]any {
+	sessions := st.snapshotSessions()
+	var totalCalls, totalErrors, totalLatencyMs, totalTokensSaved int64
+	for _, s := range sessions {
+		totalCalls += s.totalCalls.Load()
+		totalErrors += s.totalErrors.Load()
+		totalLatencyMs += s.totalLatencyMs.Load()
+		totalTokensSaved += s.estTokensSaved.Load()
+	}
+	m := map[string]any{
+		"active":           len(sessions),
+		"calls":            totalCalls,
+		"errors":           totalErrors,
+		"est_tokens_saved": totalTokensSaved,
+	}
+	if totalCalls > 0 {
+		m["avg_latency_ms"] = totalLatencyMs / totalCalls
+	}
+	return m
+}
+
+func (st *sessionStore) evictIdle(maxAge time.Duration) {
+	deadline := time.Now().Add(-maxAge)
+	st.mu.Lock()
+	var toClose []*Session
+	for id, s := range st.sessions {
+		if s.idleSince(deadline) {
+			toClose = append(toClose, s)
+			delete(st.sessions, id)
+		}
+	}
+	st.mu.Unlock()
+	for _, s := range toClose {
+		s.Close()
+	}
+}
+

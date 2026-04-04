@@ -1,0 +1,19 @@
+{
+  "rows": [
+    {"id": 1, "server_name": "github", "tool_name": "list_pull_requests", "raw_bytes": 14464, "projected_bytes": 3610, "stripped_bytes": 2674, "created_at": "2026-03-14T09:00:00Z", "session_id": "sess-abc123", "oid": 12345, "xmin": 1234, "xmax": 0, "cmin": 0, "cmax": 0, "ctid": "(0,1)", "tableoid": 16384},
+    {"id": 2, "server_name": "github", "tool_name": "search_code", "raw_bytes": 8921, "projected_bytes": 2180, "stripped_bytes": 1650, "created_at": "2026-03-14T09:01:00Z", "session_id": "sess-abc123", "oid": 12346, "xmin": 1235, "xmax": 0, "cmin": 0, "cmax": 0, "ctid": "(0,2)", "tableoid": 16384},
+    {"id": 3, "server_name": "linear", "tool_name": "list_issues", "raw_bytes": 6543, "projected_bytes": 1890, "stripped_bytes": 1200, "created_at": "2026-03-14T09:02:00Z", "session_id": "sess-abc123", "oid": 12347, "xmin": 1236, "xmax": 0, "cmin": 0, "cmax": 0, "ctid": "(0,3)", "tableoid": 16384},
+    {"id": 4, "server_name": "slack", "tool_name": "conversations_history", "raw_bytes": 4892, "projected_bytes": 1456, "stripped_bytes": 980, "created_at": "2026-03-14T09:03:00Z", "session_id": "sess-abc123", "oid": 12348, "xmin": 1237, "xmax": 0, "cmin": 0, "cmax": 0, "ctid": "(0,4)", "tableoid": 16384},
+    {"id": 5, "server_name": "notion", "tool_name": "search", "raw_bytes": 3210, "projected_bytes": 980, "stripped_bytes": 720, "created_at": "2026-03-14T09:04:00Z", "session_id": "sess-abc123", "oid": 12349, "xmin": 1238, "xmax": 0, "cmin": 0, "cmax": 0, "ctid": "(0,5)", "tableoid": 16384}
+  ],
+  "rowCount": 5,
+  "fields": [
+    {"name": "id", "dataTypeID": 23, "tableID": 16384, "columnID": 1, "dataTypeSize": 4, "dataTypeModifier": -1, "format": "text"},
+    {"name": "server_name", "dataTypeID": 25, "tableID": 16384, "columnID": 2, "dataTypeSize": -1, "dataTypeModifier": -1, "format": "text"},
+    {"name": "tool_name", "dataTypeID": 25, "tableID": 16384, "columnID": 3, "dataTypeSize": -1, "dataTypeModifier": -1, "format": "text"},
+    {"name": "raw_bytes", "dataTypeID": 23, "tableID": 16384, "columnID": 4, "dataTypeSize": 4, "dataTypeModifier": -1, "format": "text"},
+    {"name": "projected_bytes", "dataTypeID": 23, "tableID": 16384, "columnID": 5, "dataTypeSize": 4, "dataTypeModifier": -1, "format": "text"},
+    {"name": "oid", "dataTypeID": 26, "tableID": 16384, "columnID": 10, "dataTypeSize": 4, "dataTypeModifier": -1, "format": "text"}
+  ],
+  "command": "SELECT"
+}

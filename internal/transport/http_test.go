@@ -1,0 +1,294 @@
+package transport
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+)
+
+func okRPCResponse(id any) []byte {
+	return []byte(fmt.Sprintf(`{"jsonrpc":"2.0","id":%v,"result":{"ok":true}}`, id))
+}
+
+func newHungServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-done:
+		case <-r.Context().Done():
+		}
+	}))
+	t.Cleanup(func() { close(done); srv.Close() })
+	return srv
+}
+
+func newJSONRPCServer(t *testing.T, handler func(http.ResponseWriter, *http.Request)) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(handler))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func mustHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection {
+	t.Helper()
+	conn, err := NewHTTPConnection(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	return conn
+}
+
+func expectCallErrorContains(t *testing.T, conn *HTTPConnection, want string) {
+	t.Helper()
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected call error")
+	}
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("error should mention %s, got: %v", want, err)
+	}
+}
+
+func assertFastTimeout(t *testing.T, start time.Time) {
+	t.Helper()
+	if time.Since(start) > 5*time.Second {
+		t.Errorf("timeout took too long: %v", time.Since(start))
+	}
+}
+
+func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
+	t.Helper()
+	got, err := conn.ListTools(context.Background())
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	return got
+}
+
+func TestHTTPConnection_versionHeaderSent(t *testing.T) {
+	var receivedVersion string
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		receivedVersion = r.Header.Get("X-Minimcp-Version")
+		json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": 1, "result": map[string]any{},
+		})
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+
+	if receivedVersion != Version {
+		t.Errorf("expected X-Minimcp-Version: %s, got %q", Version, receivedVersion)
+	}
+}
+
+func TestHTTPConnection_versionHeaderDisabled(t *testing.T) {
+	var receivedVersion string
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		receivedVersion = r.Header.Get("X-Minimcp-Version")
+		json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": 1, "result": map[string]any{},
+		})
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true})
+	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+
+	if receivedVersion != "" {
+		t.Errorf("expected no X-Minimcp-Version header, got %q", receivedVersion)
+	}
+}
+
+func TestHTTPConnection_customHeadersSent(t *testing.T) {
+	var gotAuth string
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": 1, "result": map[string]any{},
+		})
+	})
+	headers := map[string]string{"Authorization": "Bearer mytoken"}
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Headers: headers, NoVersionHeader: true})
+	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+
+	if gotAuth != "Bearer mytoken" {
+		t.Errorf("expected Authorization header, got %q", gotAuth)
+	}
+}
+
+func TestHTTPConnection_sessionIDPersisted(t *testing.T) {
+	callCount := 0
+	var receivedSessionID string
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			w.Header().Set("Mcp-Session-Id", "sess-abc")
+		} else {
+			receivedSessionID = r.Header.Get("Mcp-Session-Id")
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0", "id": callCount, "result": map[string]any{},
+		})
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true})
+	conn.Call(t.Context(), "first", nil)  //nolint:errcheck
+	conn.Call(t.Context(), "second", nil) //nolint:errcheck
+
+	if receivedSessionID != "sess-abc" {
+		t.Errorf("expected session ID sess-abc on second call, got %q", receivedSessionID)
+	}
+}
+
+func TestHTTPConnection_4xxError(t *testing.T) {
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not authorized", http.StatusUnauthorized)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true})
+	expectCallErrorContains(t, conn, "401")
+}
+
+func TestHTTPConnection_5xxError(t *testing.T) {
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true})
+	expectCallErrorContains(t, conn, "500")
+}
+
+func TestHTTPConnection_redirectBlocked(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("redirect was followed — session token could be exfiltrated")
+		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "result": map[string]any{}})
+	}))
+	defer target.Close()
+
+	redirecter := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer redirecter.Close()
+
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL, NoVersionHeader: true})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	_ = err
+}
+
+func TestHTTPClientTimeout_firesForHungServer(t *testing.T) {
+	srv := newHungServer(t)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true, ClientTimeout: 100 * time.Millisecond})
+	start := time.Now()
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected timeout error for hung server")
+	}
+	assertFastTimeout(t, start)
+}
+
+func TestHTTPClientTimeout_defaultAllowsLongRunning(t *testing.T) {
+	slow := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.Write(okRPCResponse(1))
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: slow.URL, NoVersionHeader: true})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err != nil {
+		t.Fatalf("unexpected error for slow-but-valid server: %v", err)
+	}
+}
+
+func TestHTTPClientTimeout_contextFiresBeforeClientTimeout(t *testing.T) {
+	srv := newHungServer(t)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true, ClientTimeout: 10 * time.Minute})
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := conn.Call(ctx, "ping", nil)
+	if err == nil {
+		t.Fatal("expected context deadline error")
+	}
+	assertFastTimeout(t, start)
+}
+
+func newHandshakeServer(t *testing.T, toolsResult any, calls *int) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req)
+		if calls != nil {
+			*calls++
+		}
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"protocolVersion": ProtocolVersion},
+			})
+		case "tools/list":
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"tools": toolsResult},
+			})
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestListTools_successfulHandshakeAndList(t *testing.T) {
+	var calls int
+	tools := []any{map[string]any{"name": "do_thing", "description": "does a thing", "inputSchema": map[string]any{}}}
+	srv := newHandshakeServer(t, tools, &calls)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	got := mustListTools(t, conn)
+	if len(got) != 1 || got[0].Name != "do_thing" {
+		t.Errorf("unexpected tools: %+v", got)
+	}
+	if calls != 3 {
+		t.Errorf("expected 3 calls (initialize + notifications/initialized + tools/list), got %d", calls)
+	}
+}
+
+func TestListTools_propagatesInputSchema(t *testing.T) {
+	schema := `{"type":"object","properties":{"path":{"type":"string"}}}`
+	tools := []any{map[string]any{"name": "read_file", "inputSchema": json.RawMessage(schema)}}
+	srv := newHandshakeServer(t, tools, nil)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	got := mustListTools(t, conn)
+	if string(got[0].InputSchema) != schema {
+		t.Errorf("schema mismatch: got %s", got[0].InputSchema)
+	}
+}
+
+func TestHealth_returns200(t *testing.T) {
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	if err := conn.Health(context.Background()); err != nil {
+		t.Errorf("expected healthy, got: %v", err)
+	}
+}
+
+func TestHealth_returns500_isError(t *testing.T) {
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	if err := conn.Health(context.Background()); err == nil {
+		t.Error("expected error for 500 response")
+	}
+}
+
+func TestClose_isNoop(t *testing.T) {
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: "http://localhost:1"})
+	if err := conn.Close(); err != nil {
+		t.Errorf("Close() returned unexpected error: %v", err)
+	}
+	if err := conn.Close(); err != nil {
+		t.Errorf("second Close() returned error: %v", err)
+	}
+}
