@@ -5,7 +5,6 @@ import "github.com/mcpmini/mini/internal/config"
 // Defaults are the global fallback limits when no projection config exists.
 type Defaults struct {
 	StringLimit        int
-	ArrayLimit         int
 	DepthLimit         int
 	ContentFields      []string // field names auto-stripped when >= AutoStripThreshold chars
 	AutoStripThreshold int      // 0 = disabled
@@ -59,7 +58,6 @@ func mergeWithDefaults(cfg *config.ProjectionConfig, d *Defaults) *effectiveConf
 
 func effectiveFromDefaults(d *Defaults) *effectiveConfig {
 	e := &effectiveConfig{
-		defaultArrayLimit:  d.ArrayLimit,
 		defaultStringLimit: d.StringLimit,
 		depthLimit:         d.DepthLimit,
 		autoStripThreshold: d.AutoStripThreshold,

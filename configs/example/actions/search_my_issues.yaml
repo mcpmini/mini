@@ -1,6 +1,0 @@
-name: search_my_issues
-description: Search GitHub issues assigned to me
-server: github
-tool: search_issues
-default_args:
-  query: "assignee:${GITHUB_USER} is:open"

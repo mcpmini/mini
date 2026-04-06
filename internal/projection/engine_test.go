@@ -11,7 +11,6 @@ import (
 
 var defaultLimits = &projection.Defaults{
 	StringLimit:        1000,
-	ArrayLimit:         3,
 	DepthLimit:         3,
 	ContentFields:      []string{"body", "description", "text", "readme", "content", "message", "summary", "patch"},
 	AutoStripThreshold: 500,
@@ -65,18 +64,29 @@ func TestExcludeAlways(t *testing.T) {
 }
 
 func TestArrayLimit(t *testing.T) {
-	value := map[string]any{
-		"steps": []any{"a", "b", "c", "d", "e"},
-	}
-	result := projection.Apply(value, nil, &projection.Defaults{ArrayLimit: 2, StringLimit: 1000, DepthLimit: 5})
-	m := result.Summary.(map[string]any)
-	steps := m["steps"].([]any)
-	if len(steps) != 3 { // 2 items + sentinel
-		t.Errorf("expected 2 items + sentinel = 3, got %d", len(steps))
-	}
-	if steps[2] != "...+3 more" {
-		t.Errorf("expected sentinel, got %v", steps[2])
-	}
+	t.Run("per-projection limit truncates with sentinel", func(t *testing.T) {
+		value := map[string]any{"steps": []any{"a", "b", "c", "d", "e"}}
+		cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"steps": 2}}
+		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+		m := result.Summary.(map[string]any)
+		steps := m["steps"].([]any)
+		if len(steps) != 3 { // 2 items + sentinel
+			t.Errorf("expected 2 items + sentinel = 3, got %d", len(steps))
+		}
+		if steps[2] != "...+3 more" {
+			t.Errorf("expected sentinel, got %v", steps[2])
+		}
+	})
+
+	t.Run("no limit returns all items", func(t *testing.T) {
+		value := map[string]any{"steps": []any{"a", "b", "c", "d", "e"}}
+		result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+		m := result.Summary.(map[string]any)
+		steps := m["steps"].([]any)
+		if len(steps) != 5 {
+			t.Errorf("expected all 5 items with no limit, got %d", len(steps))
+		}
+	})
 }
 
 func TestStringTruncation(t *testing.T) {
@@ -86,7 +96,7 @@ func TestStringTruncation(t *testing.T) {
 	}
 	value := map[string]any{"body": string(long)}
 
-	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, ArrayLimit: 10, DepthLimit: 5})
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
 	m := result.Summary.(map[string]any)
 
 	body := m["body"].(string)
@@ -112,7 +122,7 @@ func TestDepthLimit(t *testing.T) {
 		},
 	}
 
-	result := projection.Apply(value, nil, &projection.Defaults{DepthLimit: 2, StringLimit: 1000, ArrayLimit: 10})
+	result := projection.Apply(value, nil, &projection.Defaults{DepthLimit: 2, StringLimit: 1000})
 	m := result.Summary.(map[string]any)
 	a := m["a"].(map[string]any)
 
@@ -196,7 +206,7 @@ func namedArrayLimitsResult(t *testing.T) map[string]any {
 		"issues":     []any{1, 2, 3, 4, 5, 6, 7},
 		"other_list": []any{"a", "b", "c", "d", "e"},
 	}
-	limits := &projection.Defaults{StringLimit: 1000, ArrayLimit: 2, DepthLimit: 5,
+	limits := &projection.Defaults{StringLimit: 1000, DepthLimit: 5,
 		ContentFields: []string{}, AutoStripThreshold: 0}
 	return projection.Apply(value, cfg, limits).Summary.(map[string]any)
 }
@@ -212,14 +222,11 @@ func TestNamedArrayLimit_namedLimitApplied(t *testing.T) {
 	}
 }
 
-func TestNamedArrayLimit_globalLimitFallback(t *testing.T) {
+func TestNamedArrayLimit_unlimitedForOtherFields(t *testing.T) {
 	m := namedArrayLimitsResult(t)
 	other := m["other_list"].([]any)
-	if len(other) != 3 {
-		t.Errorf("expected 2 items + sentinel = 3, got %d", len(other))
-	}
-	if other[2] != "...+3 more" {
-		t.Errorf("expected sentinel ...+3 more, got %v", other[2])
+	if len(other) != 5 {
+		t.Errorf("expected all 5 items (no global limit), got %d", len(other))
 	}
 }
 
@@ -233,7 +240,7 @@ func TestNamedStringLimit(t *testing.T) {
 		"title": long,
 	}
 
-	result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, ArrayLimit: 10, DepthLimit: 5})
+	result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
 	m := result.Summary.(map[string]any)
 
 	body := m["body"].(string)

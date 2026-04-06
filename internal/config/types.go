@@ -2,22 +2,16 @@ package config
 
 // Config is the top-level mini configuration.
 type Config struct {
-	// ListenMode is how the proxy exposes itself to agents: "stdio" (default)
-	ListenMode string `yaml:"listen_mode"`
-
 	// InlineThreshold is the max token estimate below which responses are
 	// returned inline (no file written). Default: 500.
 	InlineThreshold int `yaml:"inline_threshold"`
 
-	// DefaultStringLimit is the default max chars for string fields in
-	// projection when no per-tool config exists. Default: 1000.
+	// DefaultStringLimit is the default max chars for string fields across all
+	// projections. 0 means no limit (default). Override per-field with
+	// string_limits in a projection config.
 	DefaultStringLimit int `yaml:"default_string_limit"`
 
-	// DefaultArrayLimit is the default max items for arrays. Default: 3.
-	DefaultArrayLimit int `yaml:"default_array_limit"`
-
 	// DefaultDepthLimit is the default max nesting depth. 0 means no limit (default).
-	// Set this globally or use per-tool depth_limit in projection configs.
 	DefaultDepthLimit int `yaml:"default_depth_limit"`
 
 	// ContentFields are field names that get HTML/MD stripped automatically
@@ -26,7 +20,8 @@ type Config struct {
 	ContentFields []string `yaml:"content_fields,omitempty"`
 
 	// AutoStripThreshold is the min char length for auto-stripping content fields.
-	// Default: 500. Set to 0 to disable.
+	// 0 means disabled (default). Enable only if your upstreams embed raw HTML
+	// in responses — modern markdown is better left intact for LLMs.
 	AutoStripThreshold int `yaml:"auto_strip_threshold"`
 
 	// ResponseDir overrides where response files are written.
@@ -37,20 +32,16 @@ type Config struct {
 	ResponseTTL string `yaml:"response_ttl"`
 
 	// ResponseDiskBudgetMB is the max disk usage for response files. Default: 500.
+	// Oldest files are evicted when the budget is exceeded.
 	ResponseDiskBudgetMB int `yaml:"response_disk_budget_mb"`
 
-	// ResponseCleanupInterval controls how often expired files are evicted. Default: 1h.
-	ResponseCleanupInterval string `yaml:"response_cleanup_interval"`
-
 	// ResponseFormat controls how tool results are rendered to agents.
-	// "json" (default) or "yaml" (more compact, ~20% fewer tokens).
+	// "json" (default) returns the full envelope. "lines" returns a compact
+	// key:value text format — useful for agents that handle plain text better.
 	ResponseFormat string `yaml:"response_format"`
 
 	// LogLevel: debug, info, warn, error. Default: info.
 	LogLevel string `yaml:"log_level"`
-
-	// NoVersionHeader disables the X-Minimcp-Version header on outbound HTTP requests.
-	NoVersionHeader bool `yaml:"no_version_header"`
 
 	// DisableListHidden prevents agents from using list(hidden:true) to discover
 	// hidden tools. When false (default), agents and admins can audit hidden tools.
@@ -66,8 +57,8 @@ type Config struct {
 	// test environments where upstreams run on localhost.
 	DangerousAllowPrivateURLs bool `yaml:"dangerous_allow_private_urls"`
 
-	// HTTPRateLimit is the max requests per second per IP for HTTP mode. Default: 100.
-	// Set to 0 to disable rate limiting.
+	// HTTPRateLimit is the max requests per second per IP in HTTP/daemon mode.
+	// Default: 100. Set to 0 to disable. Has no effect in stdio mode.
 	HTTPRateLimit int `yaml:"rate_limit"`
 
 	// DaemonPort is the TCP port the daemon listens on. Default: 4857.
@@ -88,19 +79,16 @@ var DefaultContentFields = []string{
 
 func DefaultConfig() *Config {
 	return &Config{
-		ListenMode:              "stdio",
-		InlineThreshold:         500,
-		DefaultStringLimit:      1000,
-		DefaultArrayLimit:       3,
-		DefaultDepthLimit:       0,
-		ResponseTTL:             "168h",
-		ResponseDiskBudgetMB:    500,
-		ResponseCleanupInterval: "1h",
-		LogLevel:                "info",
-		ContentFields:           DefaultContentFields,
-		AutoStripThreshold:      500,
-		HTTPRateLimit:           100,
-		DaemonPort:              4857,
+		InlineThreshold:      500,
+		DefaultStringLimit:   0,
+		DefaultDepthLimit:    0,
+		AutoStripThreshold:   0,
+		ResponseTTL:          "168h",
+		ResponseDiskBudgetMB: 500,
+		LogLevel:             "info",
+		ContentFields:        DefaultContentFields,
+		HTTPRateLimit:        100,
+		DaemonPort:           4857,
 	}
 }
 
@@ -174,10 +162,10 @@ type AuthConfig struct {
 	Header string `yaml:"header"`
 
 	// OAuth2 fields
-	ClientID     string `yaml:"client_id"`
-	ClientSecret string `yaml:"client_secret"`
-	AuthURL      string `yaml:"auth_url"`
-	TokenURL     string `yaml:"token_url"`
+	ClientID     string   `yaml:"client_id"`
+	ClientSecret string   `yaml:"client_secret"`
+	AuthURL      string   `yaml:"auth_url"`
+	TokenURL     string   `yaml:"token_url"`
 	Scopes       []string `yaml:"scopes"`
 }
 
@@ -227,13 +215,13 @@ type ActionConfig struct {
 
 // ProjectionConfig defines how to trim tool responses.
 type ProjectionConfig struct {
-	Mode          string         `yaml:"mode,omitempty"          json:"mode,omitempty"`
-	Include       []string       `yaml:"include,omitempty"       json:"include,omitempty"`
+	Mode          string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
+	Include       []string       `yaml:"include,omitempty"        json:"include,omitempty"`
 	ExcludeAlways []string       `yaml:"exclude_always,omitempty" json:"exclude_always,omitempty"`
-	Passthrough   []string       `yaml:"passthrough,omitempty"   json:"passthrough,omitempty"`
-	ArrayLimits   map[string]int `yaml:"array_limits,omitempty"  json:"array_limits,omitempty"`
-	StringLimits  map[string]int `yaml:"string_limits,omitempty" json:"string_limits,omitempty"`
-	DepthLimit    int            `yaml:"depth_limit,omitempty"   json:"depth_limit,omitempty"`
-	StripMarkup   bool           `yaml:"strip_markup,omitempty"  json:"strip_markup,omitempty"`
-	Format        string         `yaml:"format,omitempty"        json:"format,omitempty"`
+	Passthrough   []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
+	ArrayLimits  map[string]int `yaml:"array_limits,omitempty"   json:"array_limits,omitempty"`
+	StringLimits map[string]int `yaml:"string_limits,omitempty"  json:"string_limits,omitempty"`
+	DepthLimit   int            `yaml:"depth_limit,omitempty"    json:"depth_limit,omitempty"`
+	StripMarkup  bool           `yaml:"strip_markup,omitempty"   json:"strip_markup,omitempty"`
+	Format       string         `yaml:"format,omitempty"         json:"format,omitempty"`
 }

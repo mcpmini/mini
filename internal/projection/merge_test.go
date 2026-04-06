@@ -7,14 +7,14 @@ import (
 )
 
 func TestMergeWithDefaultsNilConfigUsesDefaults(t *testing.T) {
-	defaults := &Defaults{StringLimit: 1000, ArrayLimit: 7, DepthLimit: 4,
+	defaults := &Defaults{StringLimit: 1000, DepthLimit: 4,
 		ContentFields: []string{"body", "summary"}, AutoStripThreshold: 500}
 	got := mergeWithDefaults(nil, defaults)
 	if got.defaultStringLimit != 1000 {
 		t.Fatalf("defaultStringLimit = %d, want 1000", got.defaultStringLimit)
 	}
-	if got.defaultArrayLimit != 7 {
-		t.Fatalf("defaultArrayLimit = %d, want 7", got.defaultArrayLimit)
+	if got.defaultArrayLimit != 0 {
+		t.Fatalf("defaultArrayLimit = %d, want 0 (no limit)", got.defaultArrayLimit)
 	}
 	if got.depthLimit != 4 {
 		t.Fatalf("depthLimit = %d, want 4", got.depthLimit)
@@ -29,7 +29,7 @@ func TestMergeWithDefaultsNilConfigUsesDefaults(t *testing.T) {
 
 func slimOverridesMerged(t *testing.T) *effectiveConfig {
 	t.Helper()
-	defaults := &Defaults{StringLimit: 1000, ArrayLimit: 7, DepthLimit: 4,
+	defaults := &Defaults{StringLimit: 1000, DepthLimit: 4,
 		ContentFields: []string{"body"}, AutoStripThreshold: 500}
 	cfg := &config.ProjectionConfig{
 		Mode: "slim", Include: []string{"items"}, ExcludeAlways: []string{"secret"},
@@ -85,7 +85,7 @@ func TestMergeWithDefaultsSlimMode_preservesFilters(t *testing.T) {
 }
 
 func TestMergeWithDefaultsStripMarkupWithoutSlim(t *testing.T) {
-	defaults := &Defaults{StringLimit: 1000, ArrayLimit: 3, DepthLimit: 3}
+	defaults := &Defaults{StringLimit: 1000, DepthLimit: 3}
 	cfg := &config.ProjectionConfig{StripMarkup: true}
 
 	got := mergeWithDefaults(cfg, defaults)
@@ -96,8 +96,8 @@ func TestMergeWithDefaultsStripMarkupWithoutSlim(t *testing.T) {
 	if got.defaultStringLimit != 1000 {
 		t.Fatalf("defaultStringLimit = %d, want defaults preserved", got.defaultStringLimit)
 	}
-	if got.defaultArrayLimit != 3 {
-		t.Fatalf("defaultArrayLimit = %d, want defaults preserved", got.defaultArrayLimit)
+	if got.defaultArrayLimit != 0 {
+		t.Fatalf("defaultArrayLimit = %d, want 0 (no global limit)", got.defaultArrayLimit)
 	}
 	if got.depthLimit != 3 {
 		t.Fatalf("depthLimit = %d, want defaults preserved", got.depthLimit)

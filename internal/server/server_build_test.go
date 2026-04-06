@@ -12,15 +12,14 @@ import (
 
 func TestBuildStoreConfig(t *testing.T) {
 	t.Run("uses defaults when values are missing or invalid", testBuildStoreConfigDefaults)
-	t.Run("preserves explicit values", testBuildStoreConfigExplicit)
+	t.Run("preserves explicit dir, ttl, and budget", testBuildStoreConfigExplicit)
 }
 
 func testBuildStoreConfigDefaults(t *testing.T) {
 	t.Helper()
 	cfg := &config.Config{
-		ResponseDiskBudgetMB:    7,
-		ResponseTTL:             "bad",
-		ResponseCleanupInterval: "bad",
+		ResponseDiskBudgetMB: 7,
+		ResponseTTL:          "bad",
 	}
 	got := buildStoreConfig(cfg)
 	home, _ := os.UserHomeDir()
@@ -30,13 +29,12 @@ func testBuildStoreConfigDefaults(t *testing.T) {
 func testBuildStoreConfigExplicit(t *testing.T) {
 	t.Helper()
 	cfg := &config.Config{
-		ResponseDir:             t.TempDir(),
-		ResponseTTL:             "30m",
-		ResponseCleanupInterval: "15s",
-		ResponseDiskBudgetMB:    42,
+		ResponseDir:          t.TempDir(),
+		ResponseTTL:          "30m",
+		ResponseDiskBudgetMB: 42,
 	}
 	got := buildStoreConfig(cfg)
-	assertStoreConfigBasics(t, got, cfg.ResponseDir, 30*time.Minute, 15*time.Second, 42)
+	assertStoreConfigBasics(t, got, cfg.ResponseDir, 30*time.Minute, time.Hour, 42)
 }
 
 func assertStoreConfigBasics(t *testing.T, got response.StoreConfig, wantDir string, wantTTL, wantCleanup time.Duration, wantBudget int) {

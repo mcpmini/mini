@@ -88,7 +88,7 @@ func TestHTTPConnection_versionHeaderSent(t *testing.T) {
 	}
 }
 
-func TestHTTPConnection_versionHeaderDisabled(t *testing.T) {
+func TestHTTPConnection_versionHeaderAlwaysSent(t *testing.T) {
 	var receivedVersion string
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		receivedVersion = r.Header.Get("X-Minimcp-Version")
@@ -96,11 +96,11 @@ func TestHTTPConnection_versionHeaderDisabled(t *testing.T) {
 			"jsonrpc": "2.0", "id": 1, "result": map[string]any{},
 		})
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 
-	if receivedVersion != "" {
-		t.Errorf("expected no X-Minimcp-Version header, got %q", receivedVersion)
+	if receivedVersion == "" {
+		t.Error("expected X-Minimcp-Version header to be sent")
 	}
 }
 
@@ -113,7 +113,7 @@ func TestHTTPConnection_customHeadersSent(t *testing.T) {
 		})
 	})
 	headers := map[string]string{"Authorization": "Bearer mytoken"}
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Headers: headers, NoVersionHeader: true})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Headers: headers})
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 
 	if gotAuth != "Bearer mytoken" {
@@ -135,7 +135,7 @@ func TestHTTPConnection_sessionIDPersisted(t *testing.T) {
 			"jsonrpc": "2.0", "id": callCount, "result": map[string]any{},
 		})
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	conn.Call(t.Context(), "first", nil)  //nolint:errcheck
 	conn.Call(t.Context(), "second", nil) //nolint:errcheck
 
@@ -148,7 +148,7 @@ func TestHTTPConnection_4xxError(t *testing.T) {
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not authorized", http.StatusUnauthorized)
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	expectCallErrorContains(t, conn, "401")
 }
 
@@ -156,7 +156,7 @@ func TestHTTPConnection_5xxError(t *testing.T) {
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	expectCallErrorContains(t, conn, "500")
 }
 
@@ -172,14 +172,14 @@ func TestHTTPConnection_redirectBlocked(t *testing.T) {
 	}))
 	defer redirecter.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL, NoVersionHeader: true})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	_ = err
 }
 
 func TestHTTPClientTimeout_firesForHungServer(t *testing.T) {
 	srv := newHungServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true, ClientTimeout: 100 * time.Millisecond})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 100 * time.Millisecond})
 	start := time.Now()
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil {
@@ -193,7 +193,7 @@ func TestHTTPClientTimeout_defaultAllowsLongRunning(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 		w.Write(okRPCResponse(1))
 	})
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: slow.URL, NoVersionHeader: true})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: slow.URL})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("unexpected error for slow-but-valid server: %v", err)
@@ -202,7 +202,7 @@ func TestHTTPClientTimeout_defaultAllowsLongRunning(t *testing.T) {
 
 func TestHTTPClientTimeout_contextFiresBeforeClientTimeout(t *testing.T) {
 	srv := newHungServer(t)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, NoVersionHeader: true, ClientTimeout: 10 * time.Minute})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 10 * time.Minute})
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()

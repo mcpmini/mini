@@ -121,7 +121,19 @@ func TestReadFileTruncation(t *testing.T) {
 	dir := realPath(t, t.TempDir())
 	content := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 50)
 	os.WriteFile(filepath.Join(dir, "big.txt"), []byte(content), 0644)
-	srv := fsServer(t, dir)
+
+	// Use a global string limit to verify truncation is applied to plain-string responses.
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	cfg.DefaultStringLimit = 100
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+	sc := config.ServerConfig{Name: "fs", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}}
+	if err := srv.AddUpstream(context.Background(), sc); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "fs", "tool": "read_file", "params": map[string]any{"path": filepath.Join(dir, "big.txt")},
 	}))

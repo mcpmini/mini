@@ -18,7 +18,6 @@ import (
 
 var benchDefaults = &projection.Defaults{
 	StringLimit:        1000,
-	ArrayLimit:         3,
 	DepthLimit:         3,
 	ContentFields:      []string{"body"},
 	AutoStripThreshold: 500,

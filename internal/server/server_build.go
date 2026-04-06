@@ -59,7 +59,6 @@ func cfgRateLimit(cfg *config.Config) rate.Limit {
 func newProjDefaults(cfg *config.Config) *projection.Defaults {
 	return &projection.Defaults{
 		StringLimit:        cfg.DefaultStringLimit,
-		ArrayLimit:         cfg.DefaultArrayLimit,
 		DepthLimit:         cfg.DefaultDepthLimit,
 		ContentFields:      cfg.ContentFields,
 		AutoStripThreshold: cfg.AutoStripThreshold,
@@ -100,7 +99,7 @@ func buildStoreConfig(cfg *config.Config) response.StoreConfig {
 		Dir:             responseDir(cfg),
 		TTL:             parseOrDefaultDuration(cfg.ResponseTTL, 168*time.Hour),
 		BudgetMB:        cfg.ResponseDiskBudgetMB,
-		CleanupInterval: parseOrDefaultDuration(cfg.ResponseCleanupInterval, time.Hour),
+		CleanupInterval: time.Hour,
 	}
 }
 

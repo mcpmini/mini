@@ -28,7 +28,6 @@ func dialUpstream(ctx context.Context, logger *slog.Logger, cfg *config.Config, 
 		return transport.NewHTTPConnection(transport.HTTPConnectionConfig{
 			URL:                     sc.URL,
 			Headers:                 mergedHeaders(sc),
-			NoVersionHeader:         cfg.NoVersionHeader,
 			ClientTimeout:           parseHTTPClientTimeout(sc.HTTPClientTimeout),
 			DisableRetryOnRateLimit: sc.DisableRetryOnRateLimit,
 		})
@@ -107,6 +106,11 @@ func (s *Server) registerUpstream(ctx context.Context, sc config.ServerConfig, c
 	u := newUpstreamServer(sc, conn)
 	old := s.swapUpstream(sc.Name, u)
 	s.registerTools(sc, tools, old)
+	if sc.Projections != nil {
+		s.mu.Lock()
+		s.projections[sc.Name] = sc.Projections
+		s.mu.Unlock()
+	}
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 	return nil
 }

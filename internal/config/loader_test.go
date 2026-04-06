@@ -396,11 +396,9 @@ func assertDefaultConfigFields(t *testing.T, cfg *config.Config) {
 		want any
 	}{
 		{"InlineThreshold", cfg.InlineThreshold, 500},
-		{"DefaultArrayLimit", cfg.DefaultArrayLimit, 3},
 		{"DefaultDepthLimit", cfg.DefaultDepthLimit, 0},
-		{"DefaultStringLimit", cfg.DefaultStringLimit, 1000},
+		{"DefaultStringLimit", cfg.DefaultStringLimit, 0},
 		{"LogLevel", cfg.LogLevel, "info"},
-		{"ListenMode", cfg.ListenMode, "stdio"},
 	}
 	for _, c := range checks {
 		if c.got != c.want {

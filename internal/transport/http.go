@@ -22,7 +22,6 @@ const Version = "0.1.0"
 type HTTPConnection struct {
 	url              string
 	headers          map[string]string
-	noVersionHeader  bool
 	disableRetryOnRateLimit bool
 	client           *http.Client
 	nextID           atomic.Int64
@@ -35,7 +34,6 @@ const defaultHTTPClientTimeout = 10 * time.Minute
 type HTTPConnectionConfig struct {
 	URL             string
 	Headers         map[string]string
-	NoVersionHeader bool
 	// ClientTimeout is the hard network-level deadline. Zero means 10 minutes.
 	ClientTimeout time.Duration
 	// DisableRetryOnRateLimit disables automatic 429/503 retry. When true,
@@ -51,7 +49,6 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	return &HTTPConnection{
 		url:             cfg.URL,
 		headers:         cfg.Headers,
-		noVersionHeader: cfg.NoVersionHeader,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
 		client: &http.Client{
 			Timeout: timeout,
@@ -166,9 +163,7 @@ func (c *HTTPConnection) setRequestHeaders(req *http.Request) {
 	// Spec (Streamable HTTP): client MUST include MCP-Protocol-Version on all
 	// post-initialize requests so the server can reject version mismatches.
 	req.Header.Set("MCP-Protocol-Version", ProtocolVersion)
-	if !c.noVersionHeader {
-		req.Header.Set("X-Minimcp-Version", Version)
-	}
+	req.Header.Set("X-Minimcp-Version", Version)
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
