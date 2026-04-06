@@ -1,3 +1,5 @@
+//go:build test
+
 // End-to-end tests for failure modes: connection drops, timeouts, rate limits,
 // and upstream instability. These test the proxy's resilience from the
 // agent's perspective — what does the agent actually receive when things go wrong?

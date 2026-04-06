@@ -1,3 +1,5 @@
+//go:build test
+
 package server_test
 
 // Critical end-to-end tests covering real edge cases and failure modes.

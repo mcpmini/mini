@@ -1,5 +1,3 @@
-//go:build test
-
 package ops_test
 
 import (
