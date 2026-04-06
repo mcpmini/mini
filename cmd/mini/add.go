@@ -16,25 +16,40 @@ func (s *stringSlice) String() string     { return strings.Join(*s, ", ") }
 func (s *stringSlice) Set(v string) error { *s = append(*s, v); return nil }
 
 func runAdd(configDir string, args []string, out io.Writer) error {
-	fs := flag.NewFlagSet("add", flag.ContinueOnError)
-	fs.SetOutput(out)
-	url := fs.String("url", "", "HTTP/SSE server URL")
-	fromClaude := fs.String("from-claude", "", "import from Claude Desktop / Claude Code config JSON")
-	fromCursor := fs.String("from-cursor", "", "import from Cursor mcp.json config")
-	fromCodex := fs.String("from-codex", "", "import from Codex config.toml")
-	fromGemini := fs.String("from-gemini", "", "import from Gemini CLI settings.json")
-	fromOpenClaw := fs.String("from-openclaw", "", "import from OpenClaw (MoltBot) openclaw.json config")
-	var headers, protected stringSlice
-	fs.Var(&headers, "header", "HTTP header as Key=Value (repeatable)")
-	fs.Var(&protected, "protected", "tool name to mark protected (repeatable)")
-	if err := fs.Parse(args); err != nil {
+	// First pass: import flags (--from-*) come before NAME and are mutually exclusive with it.
+	importFS := flag.NewFlagSet("add", flag.ContinueOnError)
+	importFS.SetOutput(out)
+	fromClaude := importFS.String("from-claude", "", "import from Claude Desktop / Claude Code config JSON")
+	fromCursor := importFS.String("from-cursor", "", "import from Cursor mcp.json config")
+	fromCodex := importFS.String("from-codex", "", "import from Codex config.toml")
+	fromGemini := importFS.String("from-gemini", "", "import from Gemini CLI settings.json")
+	fromOpenClaw := importFS.String("from-openclaw", "", "import from OpenClaw (MoltBot) openclaw.json config")
+	if err := importFS.Parse(args); err != nil {
 		return err
 	}
 
 	if handled, err := handleImportFlags(configDir, *fromClaude, *fromCursor, *fromCodex, *fromGemini, *fromOpenClaw); handled {
 		return err
 	}
-	return addNamedServer(configDir, fs.Args(), *url, headers, protected)
+
+	// Second pass: NAME is first positional arg; server flags (--url, --header, --protected) follow it.
+	remaining := importFS.Args()
+	if len(remaining) == 0 {
+		return fmt.Errorf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
+	}
+	name := remaining[0]
+
+	serverFS := flag.NewFlagSet("add-server", flag.ContinueOnError)
+	serverFS.SetOutput(out)
+	url := serverFS.String("url", "", "HTTP/SSE server URL")
+	var headers, protected stringSlice
+	serverFS.Var(&headers, "header", "HTTP header as Key=Value (repeatable)")
+	serverFS.Var(&protected, "protected", "tool name to mark protected (repeatable)")
+	if err := serverFS.Parse(remaining[1:]); err != nil {
+		return err
+	}
+
+	return addNamedServer(configDir, name, serverFS.Args(), *url, headers, protected)
 }
 
 func handleImportFlags(configDir, fromClaude, fromCursor, fromCodex, fromGemini, fromOpenClaw string) (handled bool, err error) {
@@ -54,19 +69,13 @@ func handleImportFlags(configDir, fromClaude, fromCursor, fromCodex, fromGemini,
 	}
 }
 
-func addNamedServer(configDir string, rest []string, url string, headers, protected stringSlice) error {
-	if len(rest) == 0 {
-		return fmt.Errorf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
-	}
-	name := rest[0]
-	rest = rest[1:]
-
+func addNamedServer(configDir, name string, rest []string, url string, headers, protected stringSlice) error {
 	if url != "" {
 		return importers.WriteServerYAML(configDir, name, importers.ServerYAML{
-			Name:      name,
-			Transport: "http",
-			URL:       url,
-			Headers:   parseHeaders(headers),
+			Name:        name,
+			Transport:   "http",
+			URL:         url,
+			Headers:     parseHeaders(headers),
 			Permissions: permissionsYAML(protected),
 		})
 	}
