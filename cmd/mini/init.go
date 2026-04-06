@@ -134,15 +134,28 @@ func printInstallInstructions() {
 	if binPath == "" {
 		binPath = "/usr/local/bin/mini"
 	}
-	fmt.Println("\nTo connect mini to your agent, add it as an MCP server:")
+	fmt.Println("\nTo connect mini to your agent:")
+	clients := detectAgentClients()
+	if len(clients) == 0 {
+		fmt.Println()
+		fmt.Println("  Add to your agent's MCP config:")
+		fmt.Println(indent(renderMinimcpInstallJSON(binPath), "    "))
+		return
+	}
+	for _, c := range clients {
+		printClientInstall(c, binPath)
+	}
+}
+
+func printClientInstall(c agentClient, binPath string) {
 	fmt.Println()
-	fmt.Println("  Claude Code (recommended):")
-	fmt.Println("    claude mcp add mini " + binPath)
-	fmt.Println()
-	fmt.Println("  Cursor / Windsurf / Gemini CLI — add to your agent's MCP config:")
+	if c.Name == "Claude Code" {
+		fmt.Println("  Claude Code:")
+		fmt.Println("    claude mcp add mini " + binPath)
+		return
+	}
+	fmt.Printf("  %s — add to %s:\n", c.Name, c.ConfigPath)
 	fmt.Println(indent(renderMinimcpInstallJSON(binPath), "    "))
-	fmt.Println()
-	fmt.Println("  Then restart your agent to pick up the new server.")
 }
 
 func indent(s, prefix string) string {
