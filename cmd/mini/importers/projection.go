@@ -1,4 +1,4 @@
-package main
+package importers
 
 import (
 	"fmt"
@@ -9,9 +9,6 @@ import (
 	"github.com/mcpmini/mini/internal/defaults"
 )
 
-// serverMatcher maps URL substrings and command/arg substrings to a bundled projection key.
-// URL parts are checked against the server URL; cmd parts are checked against the full
-// command+args string. Either match is sufficient.
 type serverMatcher struct {
 	projection string
 	urlParts   []string
@@ -26,7 +23,7 @@ var knownServers = []serverMatcher{
 	{projection: "sentry", urlParts: []string{"sentry.io"}, cmdParts: []string{"server-sentry"}},
 }
 
-func detectProjectionKey(sc serverYAML) string {
+func detectProjectionKey(sc ServerYAML) string {
 	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
 	urlLower := strings.ToLower(sc.URL)
 	for _, m := range knownServers {
@@ -46,7 +43,7 @@ func containsAny(s string, parts []string) bool {
 	return false
 }
 
-func installBundledProjection(configDir string, sc serverYAML) {
+func InstallBundledProjection(configDir string, sc ServerYAML) {
 	key := detectProjectionKey(sc)
 	if key == "" {
 		return

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -35,19 +36,23 @@ func runAdd(configDir string, args []string) {
 }
 
 func handleImportFlags(configDir, fromClaude, fromCursor, fromCodex, fromGemini, fromOpenClaw string) bool {
+	var err error
 	switch {
 	case fromClaude != "":
-		importFromClaude(configDir, fromClaude)
+		err = importers.ImportFromClaude(configDir, fromClaude)
 	case fromCursor != "":
-		importFromCursor(configDir, fromCursor)
+		err = importers.ImportFromCursor(configDir, fromCursor)
 	case fromCodex != "":
-		importFromCodex(configDir, fromCodex)
+		err = importers.ImportFromCodex(configDir, fromCodex)
 	case fromGemini != "":
-		importFromGemini(configDir, fromGemini)
+		err = importers.ImportFromGemini(configDir, fromGemini)
 	case fromOpenClaw != "":
-		importFromOpenClaw(configDir, fromOpenClaw)
+		err = importers.ImportFromOpenClaw(configDir, fromOpenClaw)
 	default:
 		return false
+	}
+	if err != nil {
+		fatalf("%v", err)
 	}
 	return true
 }
@@ -61,11 +66,13 @@ func addNamedServer(configDir string, args []string, url *string, headers, prote
 	rest := fs.Args()
 
 	sc := buildServerYAML(name, *url, rest, *headers, *protected)
-	writeServerYAML(configDir, name, sc)
+	if err := importers.WriteServerYAML(configDir, name, sc); err != nil {
+		fatalf("%v", err)
+	}
 }
 
-func buildServerYAML(name, url string, rest []string, headers, protected stringSlice) serverYAML {
-	var sc serverYAML
+func buildServerYAML(name, url string, rest []string, headers, protected stringSlice) importers.ServerYAML {
+	var sc importers.ServerYAML
 	sc.Name = name
 	if url != "" {
 		sc.Transport = "http"
@@ -79,7 +86,7 @@ func buildServerYAML(name, url string, rest []string, headers, protected stringS
 		sc.Args = rest[1:]
 	}
 	if len(protected) > 0 {
-		sc.Permissions = &permissionsYAML{Protected: []string(protected)}
+		sc.Permissions = &importers.PermissionsYAML{Protected: []string(protected)}
 	}
 	return sc
 }

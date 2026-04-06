@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mcpmini/mini/cmd/mini/importers"
 )
 
 const importFileSizeLimit = 4 * 1024 * 1024 // 4MB — sane upper bound for any agent config file
@@ -99,9 +101,11 @@ func importClaudeFormat(configDir, path string) int {
 		fmt.Fprintf(os.Stderr, "  warning: read %s: %v\n", path, err)
 		return 0
 	}
-	servers := extractClaudeMCPServers(data)
+	servers := importers.ExtractClaudeMCPServers(data)
 	for name, entry := range servers {
-		writeServerYAML(configDir, name, claudeEntryToServer(name, entry))
+		if err := importers.WriteServerYAML(configDir, name, importers.ClaudeEntryToServer(name, entry)); err != nil {
+			fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
+		}
 	}
 	return len(servers)
 }

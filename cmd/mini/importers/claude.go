@@ -1,4 +1,4 @@
-package main
+package importers
 
 import (
 	"encoding/json"
@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-type claudeMCPEntry struct {
+type ClaudeMCPEntry struct {
 	Type    string            `json:"type"`
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
@@ -15,41 +15,52 @@ type claudeMCPEntry struct {
 	Headers map[string]string `json:"headers"`
 }
 
-func importFromClaude(configDir, path string) {
-	servers := extractClaudeMCPServers(readConfigFile(path))
-	importClaudeServers(configDir, servers, "no mcpServers found in config")
+func ImportFromClaude(configDir, path string) error {
+	data, err := ReadConfigFile(path)
+	if err != nil {
+		return err
+	}
+	servers := ExtractClaudeMCPServers(data)
+	return importClaudeServers(configDir, servers, "no mcpServers found in config")
 }
 
-// importFromCursor reads a Cursor mcp.json which uses the same mcpServers
+// ImportFromCursor reads a Cursor mcp.json, which uses the same mcpServers
 // JSON format as Claude Desktop.
-func importFromCursor(configDir, path string) {
-	servers := extractClaudeMCPServers(readConfigFile(path))
-	importClaudeServers(configDir, servers, "no mcpServers found in Cursor config")
+func ImportFromCursor(configDir, path string) error {
+	data, err := ReadConfigFile(path)
+	if err != nil {
+		return err
+	}
+	servers := ExtractClaudeMCPServers(data)
+	return importClaudeServers(configDir, servers, "no mcpServers found in Cursor config")
 }
 
-func importClaudeServers(configDir string, servers map[string]claudeMCPEntry, emptyMsg string) {
+func importClaudeServers(configDir string, servers map[string]ClaudeMCPEntry, emptyMsg string) error {
 	if len(servers) == 0 {
 		fmt.Println(emptyMsg)
-		return
+		return nil
 	}
 	for name, entry := range servers {
-		writeServerYAML(configDir, name, claudeEntryToServer(name, entry))
+		if err := WriteServerYAML(configDir, name, ClaudeEntryToServer(name, entry)); err != nil {
+			return err
+		}
 	}
 	fmt.Println("tip: replace any literal tokens in headers with ${ENV_VAR} references")
+	return nil
 }
 
-// extractClaudeMCPServers handles both Claude Desktop (top-level mcpServers)
+// ExtractClaudeMCPServers handles both Claude Desktop (top-level mcpServers)
 // and Claude Code (~/.claude.json, projects[path].mcpServers) formats.
-func extractClaudeMCPServers(data []byte) map[string]claudeMCPEntry {
+func ExtractClaudeMCPServers(data []byte) map[string]ClaudeMCPEntry {
 	if servers := tryClaudeDesktopFormat(data); len(servers) > 0 {
 		return servers
 	}
 	return tryClaudeCodeFormat(data)
 }
 
-func tryClaudeDesktopFormat(data []byte) map[string]claudeMCPEntry {
+func tryClaudeDesktopFormat(data []byte) map[string]ClaudeMCPEntry {
 	var desktop struct {
-		McpServers map[string]claudeMCPEntry `json:"mcpServers"`
+		McpServers map[string]ClaudeMCPEntry `json:"mcpServers"`
 	}
 	if json.Unmarshal(data, &desktop) == nil {
 		return desktop.McpServers
@@ -57,23 +68,23 @@ func tryClaudeDesktopFormat(data []byte) map[string]claudeMCPEntry {
 	return nil
 }
 
-func tryClaudeCodeFormat(data []byte) map[string]claudeMCPEntry {
+func tryClaudeCodeFormat(data []byte) map[string]ClaudeMCPEntry {
 	var claudeCode struct {
 		Projects map[string]struct {
-			McpServers map[string]claudeMCPEntry `json:"mcpServers"`
+			McpServers map[string]ClaudeMCPEntry `json:"mcpServers"`
 		} `json:"projects"`
 	}
 	if json.Unmarshal(data, &claudeCode) != nil {
 		return nil
 	}
-	merged := map[string]claudeMCPEntry{}
+	merged := map[string]ClaudeMCPEntry{}
 	for _, proj := range claudeCode.Projects {
 		mergeClaudeProjectServers(merged, proj.McpServers)
 	}
 	return merged
 }
 
-func mergeClaudeProjectServers(dst, src map[string]claudeMCPEntry) {
+func mergeClaudeProjectServers(dst, src map[string]ClaudeMCPEntry) {
 	for name, entry := range src {
 		if _, exists := dst[name]; exists {
 			fmt.Fprintf(os.Stderr, "warning: duplicate server name %q across projects — keeping first seen\n", name)
@@ -83,8 +94,8 @@ func mergeClaudeProjectServers(dst, src map[string]claudeMCPEntry) {
 	}
 }
 
-func claudeEntryToServer(name string, entry claudeMCPEntry) serverYAML {
-	sc := serverYAML{Name: name}
+func ClaudeEntryToServer(name string, entry ClaudeMCPEntry) ServerYAML {
+	sc := ServerYAML{Name: name}
 	if entry.URL != "" || entry.Type == "http" || entry.Type == "sse" {
 		sc.Transport = "http"
 		sc.URL = entry.URL
