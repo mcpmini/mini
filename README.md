@@ -1,19 +1,23 @@
 # mini
 
-**mini** is an MCP proxy that sits between your agent and upstream MCP servers (GitHub, Linear, Sentry, Slack, Jira, …). It trims tool responses down to what agents actually need, cutting token usage by 80–99% on the noisiest calls.
+**mini** is an MCP proxy that sits between your AI agent and upstream MCP servers (GitHub, Linear, Sentry, Slack, Jira, …). It trims tool responses down to what agents actually need, cutting token usage by 80–99% on the noisiest calls.
+
+> **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents like Claude, Cursor, and Gemini connect to external tools — GitHub, Linear, Slack, etc. Each "MCP server" exposes a set of tools the agent can call. mini sits in front of all of them.
 
 ## Why
 
-MCP responses are verbose by design — full JSON blobs with every field the API returns. For a typical `list_pull_requests` call on an active repo, that's **~188,000 tokens** of PR bodies, URL fields, avatar links, node IDs, and merge metadata the agent will never read.
+MCP responses are verbose by design — full JSON blobs with every field the API returns. A `list_pull_requests` call on an active repo returns PR bodies, URL fields, avatar links, node IDs, and merge metadata the agent will never read. On a busy repo like microsoft/vscode that's **~188,000 tokens** for a single tool call.
 
-mini applies projection rules per tool: field whitelists, string truncation, array caps, and HTML/Markdown stripping. The agent gets a clean summary line plus a trimmed JSON file to inspect if it needs details.
+mini applies per-tool rules: field allowlists, string truncation, and array caps. The agent gets a concise summary plus a trimmed JSON file for follow-up reads.
 
 | Tool | Raw | mini | Saved |
 |------|-----|------|-------|
-| `list_pull_requests` | 188,174 tokens | 3,224 tokens | **98%** |
-| `list_issues` | 80,116 tokens | 246 tokens | **99.7%** |
+| `list_pull_requests` (microsoft/vscode, 30 PRs) | 188,174 tokens | 3,224 tokens | **98%** |
+| `list_issues` (30 issues with long bodies) | 80,116 tokens | 246 tokens | **99.7%** |
 | `search_code` | 2,186 tokens | 1,721 tokens | **21%** |
 | `get_file_contents` | 394 tokens | 169 tokens | **57%** |
+
+Even on quieter repos the savings are significant — 5,000–25,000 tokens trimmed to 500–3,000 is typical.
 
 <details>
 <summary>Example — <code>list_pull_requests</code> on microsoft/vscode</summary>
@@ -160,7 +164,7 @@ Body stripped, URL fields stripped, user metadata stripped. **3,224 tokens** ins
 }
 ```
 
-Body is kept (it's useful for a single PR) but truncated to 2,000 chars and Markdown stripped. Avatar URLs, merge commit SHA, `mergeable_state`, and all the GitHub API URL fields are gone.
+Body is kept (it's useful for a single PR) but truncated to 2,000 chars. Avatar URLs, merge commit SHA, `mergeable_state`, and all the GitHub API URL fields are gone.
 
 </details>
 
@@ -251,7 +255,6 @@ list_pull_requests:
   array_limits:
     default: 20
     assignees: 3
-  strip_markup: true
   depth_limit: 2
 ```
 
