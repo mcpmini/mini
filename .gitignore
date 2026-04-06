@@ -23,6 +23,11 @@ security-review-*.md
 
 # tooling
 .claude/
+.minimcp/
 .DS_Store
 *.env
 .env*
+
+# test output
+coverage.out
+unit.out
