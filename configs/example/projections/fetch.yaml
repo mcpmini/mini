@@ -9,5 +9,4 @@ fetch:
     content: 5000
     text: 5000
     markdown: 5000
-  strip_markup: true
   exclude_always: [headers, raw_html, metadata]

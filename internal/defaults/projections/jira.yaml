@@ -7,14 +7,12 @@ search_issues:
   string_limits:
     description: 500
     summary: 200
-  strip_markup: true
 
 get_issue:
   depth_limit: 4
   exclude_always: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations, transitions, watchers]
   string_limits:
     description: 3000
-  strip_markup: true
 
 list_projects:
   include: [values, total, maxResults, startAt, isLast]

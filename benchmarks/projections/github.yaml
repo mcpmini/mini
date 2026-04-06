@@ -7,7 +7,6 @@ list_pull_requests:
     requested_reviewers: 3
   string_limits:
     body: 300
-  strip_markup: true
   depth_limit: 2
 
 list_issues:
@@ -18,21 +17,18 @@ list_issues:
     assignees: 3
   string_limits:
     body: 300
-  strip_markup: true
   depth_limit: 2
 
 get_issue:
   include: [number, title, state, user, created_at, updated_at, labels, assignees, milestone, body, comments]
   string_limits:
     body: 5000
-  strip_markup: true
   depth_limit: 3
 
 get_pull_request:
   include: [number, title, state, draft, user, created_at, updated_at, labels, assignees, head, base, body, mergeable, merged, additions, deletions, changed_files]
   string_limits:
     body: 2000
-  strip_markup: true
   depth_limit: 3
 
 list_pull_request_files:

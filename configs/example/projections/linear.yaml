@@ -26,7 +26,6 @@ get_issue:
   exclude_always: [sortOrder, archivedAt]
   string_limits:
     description: 2000
-  strip_markup: true
 
 list_projects:
   array_limits:

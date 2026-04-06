@@ -6,7 +6,6 @@ list_issues:
   exclude_always: [sortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, customerTicketCount, previousIdentifiers, snoozedUntilAt, subIssueSortOrder, trashed]
   string_limits:
     description: 500
-  strip_markup: true
 
 get_issue:
   depth_limit: 4
@@ -14,7 +13,6 @@ get_issue:
   string_limits:
     description: 3000
     body: 3000
-  strip_markup: true
 
 search_issues:
   include: [nodes, pageInfo, totalCount]
@@ -23,7 +21,6 @@ search_issues:
   depth_limit: 3
   string_limits:
     description: 300
-  strip_markup: true
 
 list_projects:
   include: [nodes, pageInfo]
@@ -52,7 +49,6 @@ list_comments:
   depth_limit: 2
   string_limits:
     body: 1000
-  strip_markup: true
 
 "*":
   depth_limit: 3

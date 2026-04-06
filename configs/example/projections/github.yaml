@@ -44,13 +44,11 @@ issue_read:
   exclude_always: [node_id, reactions, active_lock_reason, performed_via_github_app, timeline_url, sub_issues_summary]
   string_limits:
     body: 2000
-  strip_markup: true
 
 pull_request_read:
   exclude_always: [node_id, _links, active_lock_reason, auto_merge, performed_via_github_app]
   string_limits:
     body: 2000
-  strip_markup: true
 
 search_code:
   array_limits:
