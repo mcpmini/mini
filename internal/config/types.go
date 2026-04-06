@@ -110,17 +110,17 @@ type ServerConfig struct {
 	Name string `yaml:"name"`
 
 	// Command and Args for stdio transport.
-	Command string   `yaml:"command"`
-	Args    []string `yaml:"args"`
+	Command string   `yaml:"command,omitempty"`
+	Args    []string `yaml:"args,omitempty"`
 
 	// Env vars to set for the subprocess.
-	Env []string `yaml:"env"`
+	Env []string `yaml:"env,omitempty"`
 
 	// Transport type: "stdio" (default), "sse", "streamable".
-	Transport string `yaml:"transport"`
+	Transport string `yaml:"transport,omitempty"`
 
 	// URL for SSE/streamable transport.
-	URL string `yaml:"url"`
+	URL string `yaml:"url,omitempty"`
 
 	// Headers for HTTP transport. Values support ${ENV_VAR} expansion.
 	Headers map[string]string `yaml:"headers,omitempty"`

@@ -1,4 +1,4 @@
-package importers
+package ops
 
 import (
 	"fmt"
@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/defaults"
 )
 
@@ -23,7 +24,7 @@ var knownServers = []serverMatcher{
 	{projection: "sentry", urlParts: []string{"sentry.io"}, cmdParts: []string{"server-sentry"}},
 }
 
-func detectProjectionKey(sc ServerYAML) string {
+func DetectProjectionKey(sc config.ServerConfig) string {
 	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
 	urlLower := strings.ToLower(sc.URL)
 	for _, m := range knownServers {
@@ -43,8 +44,8 @@ func containsAny(s string, parts []string) bool {
 	return false
 }
 
-func InstallBundledProjection(configDir string, sc ServerYAML) {
-	key := detectProjectionKey(sc)
+func InstallBundledProjection(configDir string, sc config.ServerConfig) {
+	key := DetectProjectionKey(sc)
 	if key == "" {
 		return
 	}

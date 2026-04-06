@@ -73,20 +73,26 @@ func main() {
 }
 
 var commands = map[string]func(string, []string){
-	"serve":   runServe,
-	"daemon":  runDaemonCmd,
-	"ls":      func(dir string, _ []string) { runList(dir) },
-	"list":    func(dir string, _ []string) { runList(dir) },
-	"add":     runAdd,
-	"rm":      runRemove,
-	"remove":  runRemove,
-	"status":  func(dir string, _ []string) { runStatus(dir) },
-	"cleanup": func(dir string, _ []string) { runCleanup(dir) },
+	"serve":  runServe,
+	"daemon": runDaemonCmd,
+	"ls":     func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
+	"list":   func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
+	"add":    func(dir string, args []string) { mustRun(runAdd(dir, args, os.Stdout)) },
+	"rm":     func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
+	"remove": func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
+	"status": func(dir string, _ []string) { runStatus(dir) },
+	"cleanup": func(dir string, _ []string) { mustRun(runCleanup(dir, os.Stdout)) },
 	"auth":    runAuth,
 	"test":    runTest,
 	"init":    runInit,
 	"setup":   runInit,
 	"version": func(_ string, _ []string) { fmt.Println(transport.Version) },
+}
+
+func mustRun(err error) {
+	if err != nil {
+		fatalf("%v", err)
+	}
 }
 
 func dispatch(configDir string, args []string) {

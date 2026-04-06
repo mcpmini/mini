@@ -3,11 +3,9 @@ package importers
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/ops"
 )
 
 type ServerYAML struct {
@@ -46,21 +44,31 @@ func ReadConfigFile(path string) ([]byte, error) {
 // WriteServerYAML writes servers/<name>.yaml and installs a bundled projection
 // if one is known for this server.
 func WriteServerYAML(configDir, name string, sc ServerYAML) error {
-	if !config.ValidServerName.MatchString(name) {
-		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", name)
+	return ops.WriteServer(configDir, toServerConfig(name, sc))
+}
+
+// InstallBundledProjection installs a projection for a known server if one exists.
+func InstallBundledProjection(configDir string, sc ServerYAML) {
+	ops.InstallBundledProjection(configDir, toServerConfig(sc.Name, sc))
+}
+
+func toServerConfig(name string, sc ServerYAML) config.ServerConfig {
+	cfg := config.ServerConfig{
+		Name:      name,
+		Transport: sc.Transport,
+		URL:       sc.URL,
+		Command:   sc.Command,
+		Args:      sc.Args,
+		Env:       sc.Env,
+		Headers:   sc.Headers,
 	}
-	dir := filepath.Join(configDir, "servers")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("create servers dir: %w", err)
+	if sc.Permissions != nil {
+		cfg.Permissions = &config.PermissionsConfig{
+			Protected: sc.Permissions.Protected,
+			Hidden:    sc.Permissions.Hidden,
+		}
 	}
-	path := filepath.Join(dir, name+".yaml")
-	data, _ := yaml.Marshal(sc)
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	fmt.Printf("added %s → %s\n", name, path)
-	InstallBundledProjection(configDir, sc)
-	return nil
+	return cfg
 }
 
 func envList(env map[string]string) []string {

@@ -14,21 +14,22 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func runList(configDir string) {
+func runList(configDir string, out io.Writer) error {
 	_, servers, err := config.Load(configDir)
 	if err != nil {
-		fatalf("load config: %v", err)
+		return fmt.Errorf("load config: %w", err)
 	}
 	if len(servers) == 0 {
-		fmt.Println("no servers configured")
-		return
+		fmt.Fprintln(out, "no servers configured")
+		return nil
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND / URL\tENABLED")
 	for _, sc := range servers {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", sc.Name, serverTransport(sc), serverTarget(sc), enabledStr(sc))
 	}
 	w.Flush()
+	return nil
 }
 
 func serverTransport(sc config.ServerConfig) string {

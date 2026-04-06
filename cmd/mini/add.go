@@ -3,12 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io"
 	"strings"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
-	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/ops"
 )
 
 type stringSlice []string
@@ -16,8 +15,9 @@ type stringSlice []string
 func (s *stringSlice) String() string     { return strings.Join(*s, ", ") }
 func (s *stringSlice) Set(v string) error { *s = append(*s, v); return nil }
 
-func runAdd(configDir string, args []string) {
-	fs := flag.NewFlagSet("add", flag.ExitOnError)
+func runAdd(configDir string, args []string, out io.Writer) error {
+	fs := flag.NewFlagSet("add", flag.ContinueOnError)
+	fs.SetOutput(out)
 	url := fs.String("url", "", "HTTP/SSE server URL")
 	fromClaude := fs.String("from-claude", "", "import from Claude Desktop / Claude Code config JSON")
 	fromCursor := fs.String("from-cursor", "", "import from Cursor mcp.json config")
@@ -27,82 +27,77 @@ func runAdd(configDir string, args []string) {
 	var headers, protected stringSlice
 	fs.Var(&headers, "header", "HTTP header as Key=Value (repeatable)")
 	fs.Var(&protected, "protected", "tool name to mark protected (repeatable)")
-	fs.Parse(args) //nolint:errcheck
-
-	if handleImportFlags(configDir, *fromClaude, *fromCursor, *fromCodex, *fromGemini, *fromOpenClaw) {
-		return
+	if err := fs.Parse(args); err != nil {
+		return err
 	}
-	addNamedServer(configDir, args, url, &headers, &protected, fs)
+
+	if handled, err := handleImportFlags(configDir, *fromClaude, *fromCursor, *fromCodex, *fromGemini, *fromOpenClaw); handled {
+		return err
+	}
+	return addNamedServer(configDir, fs.Args(), *url, headers, protected)
 }
 
-func handleImportFlags(configDir, fromClaude, fromCursor, fromCodex, fromGemini, fromOpenClaw string) bool {
-	var err error
+func handleImportFlags(configDir, fromClaude, fromCursor, fromCodex, fromGemini, fromOpenClaw string) (handled bool, err error) {
 	switch {
 	case fromClaude != "":
-		err = importers.ImportFromClaude(configDir, fromClaude)
+		return true, importers.ImportFromClaude(configDir, fromClaude)
 	case fromCursor != "":
-		err = importers.ImportFromCursor(configDir, fromCursor)
+		return true, importers.ImportFromCursor(configDir, fromCursor)
 	case fromCodex != "":
-		err = importers.ImportFromCodex(configDir, fromCodex)
+		return true, importers.ImportFromCodex(configDir, fromCodex)
 	case fromGemini != "":
-		err = importers.ImportFromGemini(configDir, fromGemini)
+		return true, importers.ImportFromGemini(configDir, fromGemini)
 	case fromOpenClaw != "":
-		err = importers.ImportFromOpenClaw(configDir, fromOpenClaw)
+		return true, importers.ImportFromOpenClaw(configDir, fromOpenClaw)
 	default:
-		return false
+		return false, nil
 	}
-	if err != nil {
-		fatalf("%v", err)
-	}
-	return true
 }
 
-func addNamedServer(configDir string, args []string, url *string, headers, protected *stringSlice, fs *flag.FlagSet) {
+func addNamedServer(configDir string, rest []string, url string, headers, protected stringSlice) error {
+	if len(rest) == 0 {
+		return fmt.Errorf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
+	}
+	name := rest[0]
+	rest = rest[1:]
+
+	if url != "" {
+		return importers.WriteServerYAML(configDir, name, importers.ServerYAML{
+			Name:      name,
+			Transport: "http",
+			URL:       url,
+			Headers:   parseHeaders(headers),
+			Permissions: permissionsYAML(protected),
+		})
+	}
+	if len(rest) == 0 {
+		return fmt.Errorf("provide --url or a command after NAME")
+	}
+	return importers.WriteServerYAML(configDir, name, importers.ServerYAML{
+		Name:        name,
+		Command:     rest[0],
+		Args:        rest[1:],
+		Permissions: permissionsYAML(protected),
+	})
+}
+
+func permissionsYAML(protected stringSlice) *importers.PermissionsYAML {
+	if len(protected) == 0 {
+		return nil
+	}
+	return &importers.PermissionsYAML{Protected: []string(protected)}
+}
+
+func runRemove(configDir string, args []string, out io.Writer) error {
 	if len(args) == 0 {
-		fatalf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
+		return fmt.Errorf("usage: mini rm NAME")
 	}
 	name := args[0]
-	fs.Parse(args[1:]) //nolint:errcheck
-	rest := fs.Args()
-
-	sc := buildServerYAML(name, *url, rest, *headers, *protected)
-	if err := importers.WriteServerYAML(configDir, name, sc); err != nil {
-		fatalf("%v", err)
+	if err := ops.DeleteServer(configDir, name); err != nil {
+		return err
 	}
-}
-
-func buildServerYAML(name, url string, rest []string, headers, protected stringSlice) importers.ServerYAML {
-	var sc importers.ServerYAML
-	sc.Name = name
-	if url != "" {
-		sc.Transport = "http"
-		sc.URL = url
-		sc.Headers = parseHeaders(headers)
-	} else {
-		if len(rest) == 0 {
-			fatalf("provide --url or a command after NAME")
-		}
-		sc.Command = rest[0]
-		sc.Args = rest[1:]
-	}
-	if len(protected) > 0 {
-		sc.Permissions = &importers.PermissionsYAML{Protected: []string(protected)}
-	}
-	return sc
-}
-
-func runRemove(configDir string, args []string) {
-	if len(args) == 0 {
-		fatalf("usage: mini rm NAME")
-	}
-	if !config.ValidServerName.MatchString(args[0]) {
-		fatalf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", args[0])
-	}
-	path := filepath.Join(configDir, "servers", args[0]+".yaml")
-	if err := os.Remove(path); err != nil {
-		fatalf("remove %s: %v", path, err)
-	}
-	fmt.Printf("removed %s\n", args[0])
+	fmt.Fprintf(out, "removed %s\n", name)
+	return nil
 }
 
 func parseHeaders(pairs []string) map[string]string {
