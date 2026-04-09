@@ -1,0 +1,17 @@
+{
+  "description": "Update an existing Jira issue",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "issue_key": {"type": "string", "description": "The key of the issue to update (e.g. WEBAPP-123)."},
+      "summary": {"type": "string", "description": "The new summary for the issue."},
+      "description": {"type": "string", "description": "The new description for the issue."},
+      "status": {"type": "string", "description": "Transition the issue to this status name (e.g. In Progress, Done, Closed)."},
+      "priority": {"type": "string", "enum": ["Highest", "High", "Medium", "Low", "Lowest"], "description": "The new priority for the issue."},
+      "assignee": {"type": "string", "description": "The account ID of the user to assign the issue to. Pass null to unassign."},
+      "labels": {"type": "array", "items": {"type": "string"}, "description": "Replace the issue's labels with this list."},
+      "fix_versions": {"type": "array", "items": {"type": "string"}, "description": "Replace the issue's fix versions with this list."}
+    },
+    "required": ["issue_key"]
+  }
+}

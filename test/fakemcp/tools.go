@@ -18,6 +18,7 @@ import (
 type Tool struct {
 	Name        string
 	Description string
+	InputSchema json.RawMessage
 	FixturePath string
 	Content     string
 	WriteOp     bool // synthetic response generated from request args
@@ -39,17 +40,47 @@ func (r *ToolRegistry) LoadFixtures(dir string) {
 		return
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || strings.HasSuffix(e.Name(), ".schema.json") {
 			continue
 		}
 		name := strings.TrimSuffix(e.Name(), ".json")
 		path := filepath.Join(dir, e.Name())
+		schema := loadSchema(filepath.Join(dir, name+".schema.json"))
 		if isWriteOpFile(path) {
-			r.Add(Tool{Name: name, Description: name, WriteOp: true})
+			r.Add(Tool{Name: name, Description: schemaDescription(schema, name), InputSchema: schema, WriteOp: true})
 		} else {
-			r.Add(Tool{Name: name, Description: name + " (fixture)", FixturePath: path})
+			r.Add(Tool{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, FixturePath: path})
 		}
 	}
+}
+
+// loadSchema reads a .schema.json file and returns the inputSchema field, or nil.
+func loadSchema(path string) json.RawMessage {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var s struct {
+		InputSchema json.RawMessage `json:"inputSchema"`
+	}
+	if json.Unmarshal(data, &s) == nil && len(s.InputSchema) > 0 {
+		return s.InputSchema
+	}
+	return nil
+}
+
+// schemaDescription extracts the description from a schema file, or returns the fallback.
+func schemaDescription(schema json.RawMessage, fallback string) string {
+	if schema == nil {
+		return fallback
+	}
+	var s struct {
+		Description string `json:"description"`
+	}
+	if json.Unmarshal(schema, &s) == nil && s.Description != "" {
+		return s.Description
+	}
+	return fallback
 }
 
 func isWriteOpFile(path string) bool {
@@ -82,14 +113,20 @@ func (r *ToolRegistry) List() []Tool {
 	return out
 }
 
+var emptySchema = json.RawMessage(`{"type":"object","properties":{}}`)
+
 func (r *ToolRegistry) MCPTools() []transport.MCPTool {
 	tools := r.List()
 	out := make([]transport.MCPTool, len(tools))
 	for i, t := range tools {
+		schema := t.InputSchema
+		if len(schema) == 0 {
+			schema = emptySchema
+		}
 		out[i] = transport.MCPTool{
 			Name:        t.Name,
 			Description: t.Description,
-			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+			InputSchema: schema,
 		}
 	}
 	return out

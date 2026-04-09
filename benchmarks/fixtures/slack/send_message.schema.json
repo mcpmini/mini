@@ -1,0 +1,21 @@
+{
+  "description": "Send a message to a Slack channel or user. Supports rich text formatting and threading.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "channel_id": {
+        "type": "string",
+        "description": "ID of the channel in format Cxxxxxxxxxx or its name starting with #... or @... (e.g. #general or @username)."
+      },
+      "text": {
+        "type": "string",
+        "description": "Message text in markdown format. Example: 'Hello, world!' or '# Heading\\n\\nBody text'."
+      },
+      "thread_ts": {
+        "type": "string",
+        "description": "Timestamp of a thread's parent message in format 1234567890.123456. Optional — if not provided the message is posted to the channel itself."
+      }
+    },
+    "required": ["channel_id", "text"]
+  }
+}

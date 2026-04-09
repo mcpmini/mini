@@ -1,0 +1,37 @@
+{
+  "description": "Fetch message history from a Slack channel",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "channel": {
+        "type": "string",
+        "description": "The channel ID to fetch history from. Channel IDs start with C (public channels), G (private channels/groups), or D (direct messages)."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Paginate through collections of data by setting the cursor parameter to a next_cursor attribute returned by a previous request's response_metadata."
+      },
+      "inclusive": {
+        "type": "boolean",
+        "description": "Include messages with oldest or latest timestamps in results. Ignored unless either timestamp is specified.",
+        "default": false
+      },
+      "latest": {
+        "type": "string",
+        "description": "Only messages before this Unix timestamp will be included in results. Default is the current time."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "The maximum number of items to return. Fewer than the requested number of items may be returned, even if the end of the conversation history hasn't been reached.",
+        "default": 100,
+        "minimum": 1,
+        "maximum": 999
+      },
+      "oldest": {
+        "type": "string",
+        "description": "Only messages after this Unix timestamp will be included in results."
+      }
+    },
+    "required": ["channel"]
+  }
+}

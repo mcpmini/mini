@@ -1,0 +1,11 @@
+{
+  "description": "Assign a Jira issue to a user",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "issue_key": {"type": "string", "description": "The key of the issue (e.g. WEBAPP-123)."},
+      "account_id": {"type": "string", "description": "The account ID of the user to assign. Pass null to unassign."}
+    },
+    "required": ["issue_key"]
+  }
+}

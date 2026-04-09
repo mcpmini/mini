@@ -1,0 +1,23 @@
+{
+  "description": "Creates a new Linear issue with specified details. Use this to create tickets for tasks, bugs, or feature requests. Returns the created issue's identifier and URL. Required fields are title and teamId, with optional description, priority (0-4, where 0 is no priority and 1 is urgent), and status.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "title": { "type": "string", "description": "Issue title" },
+      "teamId": { "type": "string", "description": "Team ID" },
+      "description": { "type": "string", "description": "Issue description in markdown format" },
+      "priority": {
+        "type": "number",
+        "description": "Priority level: 0=no priority, 1=urgent, 2=high, 3=normal, 4=low"
+      },
+      "status": { "type": "string", "description": "Issue status (e.g., 'Todo', 'In Progress', 'Done')" },
+      "assigneeId": { "type": "string", "description": "User ID to assign the issue to" },
+      "labelIds": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Label IDs to apply to the issue"
+      }
+    },
+    "required": ["title", "teamId"]
+  }
+}

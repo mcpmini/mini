@@ -1,0 +1,15 @@
+{
+  "description": "Adds a comment to an existing Linear issue. Supports markdown formatting in the comment body. Returns the created comment's details including its URL.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "issueId": { "type": "string", "description": "ID of the issue to comment on" },
+      "body": { "type": "string", "description": "Comment text in markdown format" },
+      "createAsUser": {
+        "type": "string",
+        "description": "Optional custom username to display for the comment"
+      }
+    },
+    "required": ["issueId", "body"]
+  }
+}

@@ -15,10 +15,14 @@ import (
 // response fields with matching names, so write operations echo back Claude's values.
 type MCPMapping struct {
 	responses map[string]json.RawMessage
+	schemas   map[string]json.RawMessage // tool → .schema.json contents
 }
 
 func NewMCPMapping() *MCPMapping {
-	return &MCPMapping{responses: make(map[string]json.RawMessage)}
+	return &MCPMapping{
+		responses: make(map[string]json.RawMessage),
+		schemas:   make(map[string]json.RawMessage),
+	}
 }
 
 func (m *MCPMapping) Handle(tool string, response any) *MCPMapping {
@@ -35,12 +39,22 @@ func (m *MCPMapping) HandleRaw(tool string, data json.RawMessage) *MCPMapping {
 func (m *MCPMapping) FromFixtureDir(dir string) *MCPMapping {
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+		if e.IsDir() {
 			continue
 		}
-		tool := strings.TrimSuffix(e.Name(), ".json")
-		if data, err := os.ReadFile(filepath.Join(dir, e.Name())); err == nil {
-			m.responses[tool] = data
+		name := e.Name()
+		path := filepath.Join(dir, name)
+		switch {
+		case strings.HasSuffix(name, ".schema.json"):
+			tool := strings.TrimSuffix(name, ".schema.json")
+			if data, err := os.ReadFile(path); err == nil {
+				m.schemas[tool] = data
+			}
+		case strings.HasSuffix(name, ".json"):
+			tool := strings.TrimSuffix(name, ".json")
+			if data, err := os.ReadFile(path); err == nil {
+				m.responses[tool] = data
+			}
 		}
 	}
 	return m
@@ -59,6 +73,11 @@ func (m *MCPMapping) Dir(t *testing.T) string {
 	for tool, data := range m.responses {
 		if err := os.WriteFile(filepath.Join(d, tool+".json"), data, 0600); err != nil {
 			t.Fatalf("MCPMapping.Dir: write %s: %v", tool, err)
+		}
+	}
+	for tool, schema := range m.schemas {
+		if err := os.WriteFile(filepath.Join(d, tool+".schema.json"), schema, 0600); err != nil {
+			t.Fatalf("MCPMapping.Dir: write schema %s: %v", tool, err)
 		}
 	}
 	return d

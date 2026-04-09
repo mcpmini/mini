@@ -1,0 +1,16 @@
+{
+  "description": "Merge a pull request in a GitHub repository",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "owner": {"type": "string", "description": "The account owner of the repository."},
+      "repo": {"type": "string", "description": "The name of the repository."},
+      "pull_number": {"type": "integer", "description": "The number that identifies the pull request."},
+      "commit_title": {"type": "string", "description": "Title for the automatic commit message."},
+      "commit_message": {"type": "string", "description": "Extra detail to append to automatic commit message."},
+      "sha": {"type": "string", "description": "SHA that pull request head must match to allow merge."},
+      "merge_method": {"type": "string", "enum": ["merge", "squash", "rebase"], "description": "The merge method to use."}
+    },
+    "required": ["owner", "repo", "pull_number"]
+  }
+}

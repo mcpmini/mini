@@ -1,0 +1,21 @@
+{
+  "description": "Add an emoji reaction to a message in a Slack channel, private channel, or direct message conversation.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "channel": {
+        "type": "string",
+        "description": "Channel ID containing the message (e.g. C1234567890)."
+      },
+      "timestamp": {
+        "type": "string",
+        "description": "Timestamp of the message to react to, in format 1234567890.123456."
+      },
+      "emoji": {
+        "type": "string",
+        "description": "The name of the emoji to add as a reaction (without colons). Examples: 'thumbsup', 'heart', 'rocket', 'white_check_mark'."
+      }
+    },
+    "required": ["channel", "timestamp", "emoji"]
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "description": "Updates an existing Linear issue's properties. Use this to modify issue details like title, description, priority, or status. Requires the issue ID and accepts any combination of updatable fields. Returns the updated issue's identifier and URL.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "id": { "type": "string", "description": "Issue ID (e.g. 'ENG-123' or internal UUID)" },
+      "title": { "type": "string", "description": "New title" },
+      "description": { "type": "string", "description": "New description in markdown format" },
+      "priority": {
+        "type": "number",
+        "description": "New priority: 0=no priority, 1=urgent, 2=high, 3=normal, 4=low"
+      },
+      "status": { "type": "string", "description": "New status name (e.g., 'In Progress', 'Done')" },
+      "assigneeId": { "type": "string", "description": "User ID to assign the issue to" }
+    },
+    "required": ["id"]
+  }
+}

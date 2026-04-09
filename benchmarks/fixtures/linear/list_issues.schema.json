@@ -1,0 +1,20 @@
+{
+  "description": "Retrieves issues assigned to a specific user or the authenticated user if no userId is provided. Returns issues sorted by last updated, including priority, status, and other metadata. Useful for finding a user's workload or tracking assigned tasks.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "userId": {
+        "type": "string",
+        "description": "Optional user ID. If not provided, returns authenticated user's issues"
+      },
+      "includeArchived": {
+        "type": "boolean",
+        "description": "Include archived issues in results"
+      },
+      "limit": {
+        "type": "number",
+        "description": "Maximum number of issues to return (default: 50)"
+      }
+    }
+  }
+}

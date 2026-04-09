@@ -1,0 +1,18 @@
+{
+  "description": "Create a new GitHub repository",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "name": {"type": "string", "description": "The name of the repository."},
+      "description": {"type": "string", "description": "A short description of the repository."},
+      "private": {"type": "boolean", "description": "Whether the repository is private.", "default": false},
+      "auto_init": {"type": "boolean", "description": "Pass true to create an initial commit with empty README.", "default": false},
+      "gitignore_template": {"type": "string", "description": "Desired language or platform .gitignore template to apply."},
+      "license_template": {"type": "string", "description": "Choose an open source license template that best suits your needs."},
+      "has_issues": {"type": "boolean", "description": "Either true to enable issues for this repository or false to disable them.", "default": true},
+      "has_projects": {"type": "boolean", "description": "Either true to enable projects for this repository or false to disable them.", "default": true},
+      "has_wiki": {"type": "boolean", "description": "Either true to enable the wiki for this repository or false to disable it.", "default": true}
+    },
+    "required": ["name"]
+  }
+}

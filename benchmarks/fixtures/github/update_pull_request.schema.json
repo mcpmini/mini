@@ -1,0 +1,17 @@
+{
+  "description": "Update a pull request in a GitHub repository",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "owner": {"type": "string", "description": "The account owner of the repository."},
+      "repo": {"type": "string", "description": "The name of the repository."},
+      "pull_number": {"type": "integer", "description": "The number that identifies the pull request."},
+      "title": {"type": "string", "description": "The title of the pull request."},
+      "body": {"type": "string", "description": "The contents of the pull request."},
+      "state": {"type": "string", "enum": ["open", "closed"], "description": "State of this Pull Request. Either open or closed."},
+      "base": {"type": "string", "description": "The name of the branch you want your changes pulled into."},
+      "maintainer_can_modify": {"type": "boolean", "description": "Indicates whether maintainers can modify the pull request."}
+    },
+    "required": ["owner", "repo", "pull_number"]
+  }
+}

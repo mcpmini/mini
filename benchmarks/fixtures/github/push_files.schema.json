@@ -1,0 +1,25 @@
+{
+  "description": "Push multiple files to a GitHub repository in a single commit",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "owner": {"type": "string", "description": "The account owner of the repository."},
+      "repo": {"type": "string", "description": "The name of the repository."},
+      "branch": {"type": "string", "description": "The branch to push to."},
+      "message": {"type": "string", "description": "The commit message."},
+      "files": {
+        "type": "array",
+        "description": "Array of files to push.",
+        "items": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string", "description": "The file path in the repository."},
+            "content": {"type": "string", "description": "The file content."}
+          },
+          "required": ["path", "content"]
+        }
+      }
+    },
+    "required": ["owner", "repo", "branch", "message", "files"]
+  }
+}

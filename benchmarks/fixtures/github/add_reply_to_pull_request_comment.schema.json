@@ -1,0 +1,14 @@
+{
+  "description": "Reply to a review comment on a pull request",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "owner": {"type": "string", "description": "The account owner of the repository."},
+      "repo": {"type": "string", "description": "The name of the repository."},
+      "pull_number": {"type": "integer", "description": "The number that identifies the pull request."},
+      "comment_id": {"type": "integer", "description": "The unique identifier of the comment."},
+      "body": {"type": "string", "description": "The text of the reply to the review comment."}
+    },
+    "required": ["owner", "repo", "pull_number", "comment_id", "body"]
+  }
+}

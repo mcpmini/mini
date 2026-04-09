@@ -1,0 +1,19 @@
+{
+  "description": "Add a comment to a Jira issue",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "issue_key": {"type": "string", "description": "The key of the issue to comment on (e.g. WEBAPP-123)."},
+      "body": {"type": "string", "description": "The text of the comment. Supports Atlassian Document Format (ADF)."},
+      "visibility": {
+        "type": "object",
+        "description": "Visibility restrictions for the comment.",
+        "properties": {
+          "type": {"type": "string", "enum": ["role", "group"], "description": "Whether visibility of this item is restricted to a role or group."},
+          "value": {"type": "string", "description": "The name of the role or group that visibility of this item is restricted to."}
+        }
+      }
+    },
+    "required": ["issue_key", "body"]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "description": "List issues using Sentry query syntax directly (no AI/LLM required).\n\nUse this tool when:\n- You know Sentry query syntax already\n- AI-powered search is unavailable\n- You want precise control over the query\n\nCommon Query Syntax:\n- is:unresolved - Show unresolved issues only\n- is:unassigned - Show unassigned issues\n- level:error - Filter by error level\n- firstSeen:-24h - First seen in last 24 hours\n- lastSeen:-1h - Last seen in last hour\n- has:user - Issues with user context\n- environment:production - Filter by environment\n- release:1.0.0 - Filter by release version\n\nCombine queries: is:unresolved is:unassigned level:error",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "organizationSlug": {
+        "type": "string",
+        "description": "The organization slug. If the user passes a parameter in the form name/otherName, it's likely in the format organizationSlug/projectSlugOrId."
+      },
+      "query": {
+        "type": "string",
+        "description": "Sentry issue search query syntax",
+        "default": "is:unresolved"
+      },
+      "projectSlugOrId": {
+        "type": "string",
+        "description": "Filter by project slug or numeric ID (optional). Accepts both project slugs (e.g., 'my-project') and numeric IDs (e.g., '123456')."
+      },
+      "sort": {
+        "type": "string",
+        "enum": ["date", "freq", "new", "user"],
+        "description": "Sort order: date (last seen), freq (frequency), new (first seen), user (user count)",
+        "default": "date"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Maximum number of issues to return (1-100)",
+        "default": 10,
+        "minimum": 1,
+        "maximum": 100
+      }
+    },
+    "required": ["organizationSlug"]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "description": "Create a new Jira issue",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "project_key": {"type": "string", "description": "The key of the project (e.g. WEBAPP, ENG)."},
+      "summary": {"type": "string", "description": "The summary of the issue."},
+      "description": {"type": "string", "description": "The description of the issue. Supports Atlassian Document Format (ADF)."},
+      "issue_type": {"type": "string", "description": "The type of issue (e.g. Bug, Story, Task, Epic).", "default": "Task"},
+      "priority": {"type": "string", "enum": ["Highest", "High", "Medium", "Low", "Lowest"], "description": "The priority of the issue."},
+      "assignee": {"type": "string", "description": "The account ID of the user to assign the issue to."},
+      "labels": {"type": "array", "items": {"type": "string"}, "description": "A list of labels to apply to the issue."},
+      "components": {"type": "array", "items": {"type": "string"}, "description": "A list of component names to associate with the issue."},
+      "fix_versions": {"type": "array", "items": {"type": "string"}, "description": "A list of fix version names."},
+      "parent": {"type": "string", "description": "The key or ID of the parent issue (for subtasks or child stories in an epic)."}
+    },
+    "required": ["project_key", "summary"]
+  }
+}

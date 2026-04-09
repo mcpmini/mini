@@ -1,0 +1,15 @@
+{
+  "description": "Delete a file in a GitHub repository",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "owner": {"type": "string", "description": "The account owner of the repository."},
+      "repo": {"type": "string", "description": "The name of the repository."},
+      "path": {"type": "string", "description": "The file path to delete."},
+      "message": {"type": "string", "description": "The commit message."},
+      "sha": {"type": "string", "description": "The blob SHA of the file to delete."},
+      "branch": {"type": "string", "description": "The branch name. Uses the repository's default branch if not specified."}
+    },
+    "required": ["owner", "repo", "path", "message", "sha"]
+  }
+}

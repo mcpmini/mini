@@ -1,0 +1,45 @@
+{
+  "description": "Search for Jira issues using JQL (Jira Query Language)",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "jql": {
+        "type": "string",
+        "description": "A JQL query string to filter issues. Examples: 'project = WEBAPP AND status = Open', 'assignee = currentUser() AND resolution = Unresolved ORDER BY priority DESC'"
+      },
+      "maxResults": {
+        "type": "integer",
+        "description": "The maximum number of items to return per page. To manage page size, Jira may return fewer items per page where a large number of fields are requested.",
+        "default": 50,
+        "minimum": 1,
+        "maximum": 100
+      },
+      "startAt": {
+        "type": "integer",
+        "description": "The index of the first item to return in a page of results (page offset).",
+        "default": 0,
+        "minimum": 0
+      },
+      "fields": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "A list of fields to return for each issue. Use it to retrieve a subset of fields. Allowed values: *all (all fields), *navigable (all navigable fields), summary (just the summary field), -description (all navigable fields except description). Examples: summary,comment, -description, *all,-comment."
+      },
+      "expand": {
+        "type": "string",
+        "description": "Use expand to include additional information about issues in the response. Note that, unlike the majority of instances where a named entity is used, expand is specified as a comma-separated string of values. Expand options include: renderedFields, names, schema, operations, editmeta, changelog, versionedRepresentations."
+      },
+      "properties": {
+        "type": "array",
+        "items": {"type": "string"},
+        "description": "A list of issue property keys for issue properties to include in the results."
+      },
+      "fieldsByKeys": {
+        "type": "boolean",
+        "description": "Reference fields by their key (rather than ID). The default is false.",
+        "default": false
+      }
+    },
+    "required": ["jql"]
+  }
+}

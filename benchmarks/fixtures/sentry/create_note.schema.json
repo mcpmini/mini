@@ -1,0 +1,25 @@
+{
+  "description": "Add a note (comment) to a Sentry issue to document investigation findings, link related issues, or communicate status updates.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "organizationSlug": {
+        "type": "string",
+        "description": "The organization slug."
+      },
+      "issueId": {
+        "type": "string",
+        "description": "The Sentry issue short ID (e.g., 'PROJECT-123')."
+      },
+      "issueUrl": {
+        "type": "string",
+        "description": "Full URL of the Sentry issue. If provided, organizationSlug and issueId can be omitted."
+      },
+      "text": {
+        "type": "string",
+        "description": "The text content of the note. Supports markdown formatting."
+      }
+    },
+    "required": ["text"]
+  }
+}

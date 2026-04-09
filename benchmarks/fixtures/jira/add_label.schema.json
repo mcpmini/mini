@@ -1,0 +1,11 @@
+{
+  "description": "Add labels to a Jira issue",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "issue_key": {"type": "string", "description": "The key of the issue (e.g. WEBAPP-123)."},
+      "labels": {"type": "array", "items": {"type": "string"}, "description": "Labels to add to the issue."}
+    },
+    "required": ["issue_key", "labels"]
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "description": "Create or update a file in a GitHub repository",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "owner": {"type": "string", "description": "The account owner of the repository."},
+      "repo": {"type": "string", "description": "The name of the repository."},
+      "path": {"type": "string", "description": "The file path in the repository."},
+      "message": {"type": "string", "description": "The commit message."},
+      "content": {"type": "string", "description": "The new file content, Base64 encoded."},
+      "sha": {"type": "string", "description": "The blob SHA of the file being replaced. Required when updating a file."},
+      "branch": {"type": "string", "description": "The branch name. Uses the repository's default branch if not specified."},
+      "committer": {
+        "type": "object",
+        "description": "The person that committed the file.",
+        "properties": {
+          "name": {"type": "string", "description": "The name of the author or committer of the commit."},
+          "email": {"type": "string", "description": "The email of the author or committer of the commit."},
+          "date": {"type": "string", "description": "Indicates when this commit was authored or committed in ISO 8601 format."}
+        },
+        "required": ["name", "email"]
+      },
+      "author": {
+        "type": "object",
+        "description": "The author of the file.",
+        "properties": {
+          "name": {"type": "string", "description": "The name of the author."},
+          "email": {"type": "string", "description": "The email of the author."},
+          "date": {"type": "string", "description": "Indicates when this commit was authored in ISO 8601 format."}
+        },
+        "required": ["name", "email"]
+      }
+    },
+    "required": ["owner", "repo", "path", "message", "content"]
+  }
+}
