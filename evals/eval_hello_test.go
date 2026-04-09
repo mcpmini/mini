@@ -10,8 +10,8 @@ const sprintPlanTask = "Check Linear for open issues, look at recent GitHub pull
 // (no tool calls). Used to quantify the fixed cost of listing many servers.
 func TestEval_TokenBaseline(t *testing.T) {
 	servers := defaultServers(t, "github", "sentry", "slack", "jira", "linear")
-	r := runTriple(t, evalParams{servers: servers}, "Say hello and nothing else. Do not use any tools.")
-	logTriple(t, "Token baseline (all servers, no tool calls)", r)
+	r := runEval(t, evalParams{servers: servers}, "Say hello and nothing else. Do not use any tools.")
+	logEval(t, "Token baseline (all servers, no tool calls)", r)
 	if r.Raw.Text == "" {
 		t.Fatal("expected non-empty response")
 	}
@@ -21,10 +21,10 @@ func TestEval_TokenBaseline(t *testing.T) {
 // Linear issues + GitHub PRs + Jira bugs → prioritized sprint plan.
 func TestEval_SprintPlanning(t *testing.T) {
 	servers := defaultServers(t, "linear", "github", "jira")
-	r := runTriple(t, evalParams{servers: servers}, sprintPlanTask)
-	logTriple(t, "Sprint planning (Linear + GitHub + Jira)", r)
+	r := runEval(t, evalParams{servers: servers}, sprintPlanTask)
+	logEval(t, "Sprint planning (Linear + GitHub + Jira)", r)
 
-	for _, tc := range tripleWithLabels(r) {
+	for _, tc := range evalWithLabels(r) {
 		assertSprintPlanningMode(t, tc.label, tc.result)
 	}
 }
@@ -34,7 +34,6 @@ func assertSprintPlanningMode(t *testing.T, label string, result ClaudeResult) {
 	assertToolCalled(t, result.CallLogDir, "linear", "list_issues")
 	assertToolCalled(t, result.CallLogDir, "github", "list_pull_requests")
 	assertToolCalled(t, result.CallLogDir, "jira", "search_issues")
-	// Response should reference content from the fixtures (Linear ENG IDs or Jira WEBAPP IDs)
 	assertResponseContains(t, label, result.Text, "ENG-", "WEBAPP-")
 	if result.Text == "" {
 		t.Errorf("[%s] expected non-empty response", label)

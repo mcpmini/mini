@@ -19,14 +19,15 @@ var (
 	miniBin     string
 	fakemcpBin  string
 	fixturesDir string
+	repoRoot    string
 )
 
 func TestMain(m *testing.M) {
 	_, thisFile, _, _ := runtime.Caller(0)
-	root := filepath.Join(filepath.Dir(thisFile), "..")
-	fixturesDir = filepath.Join(root, "benchmarks", "fixtures")
-	miniBin = mustBuildEvalBinary(root, "mini", "./cmd/mini")
-	fakemcpBin = mustBuildEvalBinary(root, "fakemcp", "./test/fakemcp", "-tags", "integration")
+	repoRoot = filepath.Join(filepath.Dir(thisFile), "..")
+	fixturesDir = filepath.Join(repoRoot, "benchmarks", "fixtures")
+	miniBin = mustBuildEvalBinary(repoRoot, "mini", "./cmd/mini")
+	fakemcpBin = mustBuildEvalBinary(repoRoot, "fakemcp", "./test/fakemcp", "-tags", "integration")
 	os.Exit(m.Run())
 }
 
@@ -56,6 +57,7 @@ func mustBuildEvalBinary(root, name, pkg string, extraFlags ...string) string {
 	return out
 }
 
+// ClaudeResult holds outcome and token usage for a single Claude run.
 type ClaudeResult struct {
 	Text             string
 	InputTokens      int
@@ -65,48 +67,60 @@ type ClaudeResult struct {
 	TotalCostUSD     float64
 	Turns            int
 	WorkDir          string
-	// CallLogDir contains per-server call logs: <CallLogDir>/<server>.log
-	// Each line is a JSON object {"tool":"name","ts":"..."}.
-	CallLogDir string
-	// RawOutputPath is the path to the full JSON output from the claude CLI,
-	// useful for post-run inspection of the tool call chain.
-	RawOutputPath string
+	CallLogDir       string
+	RawOutputPath    string
 }
 
 func (r ClaudeResult) EffectiveInputTokens() int {
 	return r.InputTokens + r.CacheReadTokens + r.CacheWriteTokens
 }
 
-type TripleResult struct {
-	Raw   ClaudeResult
-	JSON  ClaudeResult
-	Lines ClaudeResult
+// Output format configs for mini (MCP and CLI modes).
+const (
+	fmtPassthrough = iota // no projection, full JSON inline — mini as thin proxy
+	fmtProjected          // bundled default projections, JSON envelope
+	fmtLines              // bundled default projections, lines/mini format
+	numFormats     = 3
+)
+
+var fmtLabel = [numFormats]string{"passthrough", "projected", "lines"}
+
+// EvalResult holds results for all 7 runs: 1 raw baseline + 3 MCP + 3 CLI.
+type EvalResult struct {
+	Raw ClaudeResult            // Claude direct to upstreams, no mini
+	MCP [numFormats]ClaudeResult // Claude → mini MCP server, 3 format configs
+	CLI [numFormats]ClaudeResult // Claude → mini call (bash), 3 format configs
 }
 
-// Savings use EffectiveInputTokens because tool definitions land in the cache
-// and would appear as zero-cost if we only counted non-cached input tokens.
-func logTriple(t *testing.T, label string, r TripleResult) {
+func logEval(t *testing.T, label string, r EvalResult) {
 	t.Helper()
-	savJSON, savLines := 0.0, 0.0
 	rawEff := r.Raw.EffectiveInputTokens()
-	if rawEff > 0 {
-		savJSON = float64(rawEff-r.JSON.EffectiveInputTokens()) / float64(rawEff) * 100
-		savLines = float64(rawEff-r.Lines.EffectiveInputTokens()) / float64(rawEff) * 100
+	pct := func(eff int) string {
+		if rawEff == 0 {
+			return "    n/a"
+		}
+		return fmt.Sprintf("%+6.1f%%", float64(eff-rawEff)/float64(rawEff)*100)
+	}
+	row := func(mode string, c ClaudeResult) {
+		t.Logf("  %-22s %6d in + %4d out  $%.4f  (%d turns)  %s",
+			mode,
+			c.EffectiveInputTokens(), c.OutputTokens,
+			c.TotalCostUSD, c.Turns,
+			pct(c.EffectiveInputTokens()))
 	}
 	t.Logf("\n╔══ Token Report: %s ══╗", label)
-	t.Logf("  Raw           %6d effective in (%d+%d+%d) + %4d out  $%.4f  (%d turns)",
-		rawEff, r.Raw.InputTokens, r.Raw.CacheReadTokens, r.Raw.CacheWriteTokens,
-		r.Raw.OutputTokens, r.Raw.TotalCostUSD, r.Raw.Turns)
-	t.Logf("  Minimcp JSON  %6d effective in (%d+%d+%d) + %4d out  $%.4f  (%d turns)  %.1f%% saved",
-		r.JSON.EffectiveInputTokens(), r.JSON.InputTokens, r.JSON.CacheReadTokens, r.JSON.CacheWriteTokens,
-		r.JSON.OutputTokens, r.JSON.TotalCostUSD, r.JSON.Turns, savJSON)
-	t.Logf("  Minimcp Lines %6d effective in (%d+%d+%d) + %4d out  $%.4f  (%d turns)  %.1f%% saved",
-		r.Lines.EffectiveInputTokens(), r.Lines.InputTokens, r.Lines.CacheReadTokens, r.Lines.CacheWriteTokens,
-		r.Lines.OutputTokens, r.Lines.TotalCostUSD, r.Lines.Turns, savLines)
+	t.Logf("  %-22s %6s    %4s   %7s  %8s  %s", "Mode", "In", "Out", "Cost", "Turns", "vs Raw")
+	row("raw (baseline)", r.Raw)
+	for i := range numFormats {
+		row("mcp-"+fmtLabel[i], r.MCP[i])
+		row("cli-"+fmtLabel[i], r.CLI[i])
+	}
 	t.Logf("╚══════════════════════════════════════╝")
-	t.Logf("[raw]   %s", r.Raw.Text)
-	t.Logf("[json]  %s", r.JSON.Text)
-	t.Logf("[lines] %s", r.Lines.Text)
+	t.Logf("[raw]              %s", r.Raw.Text)
+	for i := range numFormats {
+		t.Logf("[mcp-%s] %s", fmtLabel[i], r.MCP[i].Text)
+		t.Logf("[cli-%s] %s", fmtLabel[i], r.CLI[i].Text)
+	}
 }
 
 type evalParams struct {
@@ -115,22 +129,155 @@ type evalParams struct {
 	workSrcDir   string
 }
 
-func runTriple(t *testing.T, p evalParams, task string) TripleResult {
-	t.Helper()
-	rawCallDir, jsonCallDir, linesCallDir := preservedDir(t, "raw"), preservedDir(t, "json"), preservedDir(t, "lines")
-	rawCfg := rawMCPConfig(t, p.servers, rawCallDir)
-	jsonCfg := miniConfig(t, p.servers, "json", jsonCallDir)
-	linesCfg := miniConfig(t, p.servers, "lines", linesCallDir)
-	rawTools := rawAllowedTools(p.servers, p.allowedTools)
-	proxyTools := miniAllowedTools(p.allowedTools)
-	return TripleResult{
-		Raw:   runClaude(t, rawCfg, rawTools, freshWorkDir(t, p.workSrcDir), rawCallDir, task),
-		JSON:  runClaude(t, jsonCfg, proxyTools, freshWorkDir(t, p.workSrcDir), jsonCallDir, task),
-		Lines: runClaude(t, linesCfg, proxyTools, freshWorkDir(t, p.workSrcDir), linesCallDir, task),
-	}
+// runSetup holds pre-created paths for a single Claude run.
+type runSetup struct {
+	kind    string // "raw", "mcp", "cli"
+	idx     int
+	cmd     func() *exec.Cmd
+	workDir string
+	callDir string
 }
 
-func miniAllowedTools(extraBuiltins string) string {
+// runEval launches all 7 Claude runs in parallel and collects results.
+// All directories and configs are created on the test goroutine before
+// launching goroutines (required because t.Fatal is not safe from goroutines).
+func runEval(t *testing.T, p evalParams, task string) EvalResult {
+	t.Helper()
+
+	rawCallDir := preservedDir(t, "raw")
+	rawCfg := rawMCPConfig(t, p.servers, rawCallDir)
+	rawWorkDir := freshWorkDir(t, p.workSrcDir)
+
+	setups := []runSetup{
+		{
+			kind:    "raw",
+			idx:     0,
+			workDir: rawWorkDir,
+			callDir: rawCallDir,
+			cmd: func() *exec.Cmd {
+				return buildClaudeCmd(rawCfg, rawAllowedTools(p.servers, p.allowedTools), rawWorkDir, task)
+			},
+		},
+	}
+
+	for i := range numFormats {
+		mcpCallDir := preservedDir(t, "mcp-"+fmtLabel[i])
+		cliCallDir := preservedDir(t, "cli-"+fmtLabel[i])
+		mcpCfg := miniMCPConfig(t, p.servers, mcpCallDir, i)
+		cliCfgDir := miniCLIConfigDir(t, p.servers, cliCallDir, i)
+		wrapDir := writeMiniWrapper(t, cliCfgDir)
+		mcpWork := freshWorkDir(t, p.workSrcDir)
+		cliWork := freshWorkDir(t, p.workSrcDir)
+
+		mcpAllowed := miniMCPAllowedTools(p.allowedTools)
+		cliAllowed := cliAllowedTools(p.allowedTools)
+
+		// Capture loop vars for closures.
+		mCfg, mWork, mCallDir := mcpCfg, mcpWork, mcpCallDir
+		cWrap, cWork, cCallDir := wrapDir, cliWork, cliCallDir
+
+		setups = append(setups,
+			runSetup{
+				kind: "mcp", idx: i,
+				workDir: mWork, callDir: mCallDir,
+				cmd: func() *exec.Cmd {
+					return buildClaudeCmd(mCfg, mcpAllowed, mWork, task)
+				},
+			},
+			runSetup{
+				kind: "cli", idx: i,
+				workDir: cWork, callDir: cCallDir,
+				cmd: func() *exec.Cmd {
+					return buildClaudeCLICmd(cWrap, cliAllowed, cWork, task)
+				},
+			},
+		)
+	}
+
+	type jobResult struct {
+		kind string
+		idx  int
+		r    ClaudeResult
+		err  error
+	}
+
+	ch := make(chan jobResult, len(setups))
+	for _, s := range setups {
+		s := s
+		go func() {
+			output, err := runClaudeCmd(s.cmd(), s.callDir)
+			result := parseClaudeResult(output)
+			result.WorkDir = s.workDir
+			result.CallLogDir = s.callDir
+			result.RawOutputPath = saveOutput(s.callDir, "claude-output.json", output)
+			ch <- jobResult{s.kind, s.idx, result, err}
+		}()
+	}
+
+	var eval EvalResult
+	for range len(setups) {
+		res := <-ch
+		label := res.kind
+		if res.kind != "raw" {
+			label += "-" + fmtLabel[res.idx]
+		}
+		if res.err != nil {
+			t.Logf("[%s] run failed: %v", label, res.err)
+		}
+		switch res.kind {
+		case "raw":
+			eval.Raw = res.r
+		case "mcp":
+			eval.MCP[res.idx] = res.r
+		case "cli":
+			eval.CLI[res.idx] = res.r
+		}
+	}
+	return eval
+}
+
+// evalWithLabels returns all 7 runs for range-based assertion iteration.
+func evalWithLabels(r EvalResult) []struct {
+	label  string
+	result ClaudeResult
+} {
+	out := []struct {
+		label  string
+		result ClaudeResult
+	}{{"raw", r.Raw}}
+	for i := range numFormats {
+		out = append(out, struct {
+			label  string
+			result ClaudeResult
+		}{"mcp-" + fmtLabel[i], r.MCP[i]})
+		out = append(out, struct {
+			label  string
+			result ClaudeResult
+		}{"cli-" + fmtLabel[i], r.CLI[i]})
+	}
+	return out
+}
+
+// rawAllowedTools builds the explicit tool allowlist for raw mode.
+// Claude's --allowedTools requires exact tool names; globs are not supported.
+func rawAllowedTools(servers map[string]string, extraBuiltins string) string {
+	var names []string
+	for serverName, dir := range servers {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") && !strings.HasSuffix(e.Name(), ".schema.json") {
+				tool := strings.TrimSuffix(e.Name(), ".json")
+				names = append(names, "mcp__"+serverName+"__"+tool)
+			}
+		}
+	}
+	if extraBuiltins != "" {
+		names = append(names, strings.Split(extraBuiltins, ",")...)
+	}
+	return strings.Join(names, ",")
+}
+
+func miniMCPAllowedTools(extraBuiltins string) string {
 	tools := "mcp__mini__list,mcp__mini__call,mcp__mini__perm_call,mcp__mini__config"
 	if extraBuiltins != "" {
 		tools += "," + extraBuiltins
@@ -138,30 +285,14 @@ func miniAllowedTools(extraBuiltins string) string {
 	return tools
 }
 
-// Claude requires explicit tool names; glob patterns like mcp__server__* are not supported.
-func rawAllowedTools(servers map[string]string, extraBuiltins string) string {
-	names := rawToolNames(servers)
+func cliAllowedTools(extraBuiltins string) string {
+	tools := "Bash"
 	if extraBuiltins != "" {
-		names = append(names, extraBuiltins)
+		tools += "," + extraBuiltins
 	}
-	return strings.Join(names, ",")
+	return tools
 }
 
-func rawToolNames(servers map[string]string) []string {
-	var names []string
-	for serverName, dir := range servers {
-		entries, _ := os.ReadDir(dir)
-		for _, e := range entries {
-			if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") {
-				tool := strings.TrimSuffix(e.Name(), ".json")
-				names = append(names, "mcp__"+serverName+"__"+tool)
-			}
-		}
-	}
-	return names
-}
-
-// preservedDir creates a temp directory that is kept on test failure for debugging.
 func preservedDir(t *testing.T, label string) string {
 	t.Helper()
 	d, err := os.MkdirTemp("", "mini-eval-"+label+"-*")
@@ -183,7 +314,7 @@ func freshWorkDir(t *testing.T, workSrcDir string) string {
 	if workSrcDir == "" {
 		return ""
 	}
-	d, err := os.MkdirTemp("", "mini-eval-*")
+	d, err := os.MkdirTemp("", "mini-eval-work-*")
 	if err != nil {
 		t.Fatal("mktemp workdir:", err)
 	}
@@ -201,78 +332,211 @@ func freshWorkDir(t *testing.T, workSrcDir string) string {
 }
 
 func buildClaudeCmd(mcpConfigFile, allowedTools, workDir, task string) *exec.Cmd {
-	// task before variadic flags: the CLI parser would otherwise consume it as part of a flag argument.
 	args := []string{"--print", "--output-format", "json", task,
 		"--strict-mcp-config", "--mcp-config", mcpConfigFile, "--no-session-persistence",
 		"--allowedTools", allowedTools}
 	if workDir != "" {
 		args = append(args, "--add-dir", workDir)
 	}
-	return exec.Command("claude", args...)
+	cmd := exec.Command("claude", args...)
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
+	return cmd
 }
 
-func runClaudeCmd(t *testing.T, cmd *exec.Cmd, outputDir string) string {
+func buildClaudeCLICmd(wrapperDir, allowedTools, workDir, task string) *exec.Cmd {
+	preamble := "You have access to MCP servers via the CLI tool `mini`. " +
+		"Run `mini -h` to learn more and `mini ls` to list available servers.\n\nTask: "
+	args := []string{"--print", "--output-format", "json", preamble + task,
+		"--no-session-persistence", "--allowedTools", allowedTools}
+	if workDir != "" {
+		args = append(args, "--add-dir", workDir)
+	}
+	cmd := exec.Command("claude", args...)
+	cmd.Env = append(os.Environ(), "PATH="+wrapperDir+":"+os.Getenv("PATH"))
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
+	return cmd
+}
+
+// writeMiniWrapper writes a shell script named "mini" that wraps the real binary
+// with the config dir already baked in. Returns the directory containing the script.
+func writeMiniWrapper(t *testing.T, configDir string) string {
 	t.Helper()
+	dir := t.TempDir()
+	script := "#!/bin/sh\nexec " + miniBin + " --config " + configDir + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "mini"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// runClaudeCmd runs a Claude command and returns its stdout.
+// Safe to call from goroutines — returns errors instead of calling t.Fatal.
+func runClaudeCmd(cmd *exec.Cmd, outputDir string) (string, error) {
 	var out, errBuf strings.Builder
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
+
 	done := make(chan error, 1)
 	go func() { done <- cmd.Run() }()
+
 	select {
 	case err := <-done:
-		logClaudeStderr(t, &errBuf)
 		if err != nil {
-			saveOutput(t, outputDir, "claude-output-partial.json", out.String())
-			t.Fatalf("claude: %v", err)
+			saveOutput(outputDir, "claude-output-partial.json", out.String())
+			stderr := strings.TrimSpace(errBuf.String())
+			if stderr != "" {
+				return "", fmt.Errorf("claude: %v\nstderr: %s", err, stderr)
+			}
+			return "", fmt.Errorf("claude: %v", err)
 		}
-	case <-time.After(240 * time.Second):
+	case <-time.After(420 * time.Second):
 		cmd.Process.Kill() //nolint:errcheck
-		logClaudeStderr(t, &errBuf)
-		saveOutput(t, outputDir, "claude-output-partial.json", out.String())
-		t.Fatal("claude eval timed out after 240s")
+		saveOutput(outputDir, "claude-output-partial.json", out.String())
+		return "", fmt.Errorf("claude eval timed out after 420s")
 	}
-	return out.String()
+	return out.String(), nil
 }
 
-func logClaudeStderr(t *testing.T, errBuf *strings.Builder) {
-	t.Helper()
-	if errBuf.Len() > 0 {
-		t.Logf("claude stderr:\n%s", errBuf.String())
-	}
-}
-
-func saveOutput(t *testing.T, dir, name, content string) {
-	t.Helper()
+// saveOutput writes content to dir/name and returns the path. Silent on error.
+func saveOutput(dir, name, content string) string {
 	if dir == "" || content == "" {
-		return
+		return ""
 	}
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		t.Logf("warning: could not save output: %v", err)
-		return
+		return ""
 	}
-	t.Logf("output saved: %s", path)
+	return path
 }
 
-func runClaude(t *testing.T, mcpConfigFile, allowedTools, workDir, callLogDir, task string) ClaudeResult {
+// miniMCPConfig builds a mini config dir and returns an MCP config JSON path.
+func miniMCPConfig(t *testing.T, servers map[string]string, callLogDir string, fmt int) string {
 	t.Helper()
-	cmd := buildClaudeCmd(mcpConfigFile, allowedTools, workDir, task)
-	evalCWD := workDir
-	if evalCWD == "" {
-		evalCWD = freshWorkDir(t, repoDir())
+	configDir := buildMiniConfigDir(t, servers, callLogDir, fmt)
+	return writeMCPConfig(t, map[string]any{
+		"mcpServers": map[string]any{
+			"mini": map[string]any{
+				"command": miniBin,
+				"args":    []string{"--config", configDir, "serve", "--standalone", "--log-level", "error"},
+			},
+		},
+	})
+}
+
+// miniCLIConfigDir builds a mini config dir for CLI mode.
+func miniCLIConfigDir(t *testing.T, servers map[string]string, callLogDir string, fmt int) string {
+	t.Helper()
+	return buildMiniConfigDir(t, servers, callLogDir, fmt)
+}
+
+// buildMiniConfigDir creates a mini config dir with the given format and servers.
+func buildMiniConfigDir(t *testing.T, servers map[string]string, callLogDir string, format int) string {
+	t.Helper()
+	configDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0600); err != nil {
+		t.Fatal(err)
 	}
-	cmd.Dir = evalCWD
-	rawOutput := runClaudeCmd(t, cmd, callLogDir)
-	outputPath := filepath.Join(callLogDir, "claude-output.json")
-	if err := os.WriteFile(outputPath, []byte(rawOutput), 0600); err != nil {
-		t.Logf("warning: could not save claude output: %v", err)
-		outputPath = ""
+	writeServersYAML(t, configDir, servers, callLogDir)
+	if format != fmtPassthrough {
+		writeBundledProjections(t, configDir, servers)
 	}
-	result := parseClaudeResult(rawOutput)
-	result.WorkDir = workDir
-	result.CallLogDir = callLogDir
-	result.RawOutputPath = outputPath
-	return result
+	return configDir
+}
+
+func miniConfigYAML(format int) string {
+	switch format {
+	case fmtPassthrough:
+		return "inline_threshold: 9999999\nresponse_format: json\n"
+	case fmtProjected:
+		return "inline_threshold: 50000\nresponse_format: json\n"
+	case fmtLines:
+		return "inline_threshold: 50000\nresponse_format: mini\n"
+	default:
+		panic(fmt.Sprintf("unknown format %d", format))
+	}
+}
+
+// writeBundledProjections copies bundled default projections for known servers
+// from internal/defaults/projections/ into the config dir.
+func writeBundledProjections(t *testing.T, configDir string, servers map[string]string) {
+	t.Helper()
+	projDir := filepath.Join(configDir, "projections")
+	if err := os.MkdirAll(projDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	srcDir := filepath.Join(repoRoot, "internal", "defaults", "projections")
+	for name := range servers {
+		src := filepath.Join(srcDir, name+".yaml")
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue // no bundled projection for this server — skip silently
+		}
+		if err := os.WriteFile(filepath.Join(projDir, name+".yaml"), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func writeServersYAML(t *testing.T, configDir string, servers map[string]string, callLogDir string) {
+	t.Helper()
+	serverDir := filepath.Join(configDir, "servers")
+	if err := os.MkdirAll(serverDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, fixtureDir := range servers {
+		yaml := buildServerYAML(name, fixtureDir, callLogDir)
+		if err := os.WriteFile(filepath.Join(serverDir, name+".yaml"), []byte(yaml), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func buildServerYAML(name, fixtureDir, callLogDir string) string {
+	y := "name: " + name + "\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + fixtureDir + "\n"
+	if callLogDir != "" {
+		y += "  - --call-log\n  - " + filepath.Join(callLogDir, name+".log") + "\n"
+	}
+	return y
+}
+
+// rawMCPConfig writes an MCP config pointing Claude directly at fakemcp.
+func rawMCPConfig(t *testing.T, servers map[string]string, callLogDir string) string {
+	t.Helper()
+	mcpServers := make(map[string]any, len(servers))
+	for name, fixtureDir := range servers {
+		mcpServers[name] = map[string]any{
+			"command": fakemcpBin,
+			"args":    fakemcpArgs(fixtureDir, callLogDir, name),
+		}
+	}
+	return writeMCPConfig(t, map[string]any{"mcpServers": mcpServers})
+}
+
+func fakemcpArgs(fixtureDir, callLogDir, serverName string) []string {
+	args := []string{"--fixtures", fixtureDir}
+	if callLogDir != "" {
+		args = append(args, "--call-log", filepath.Join(callLogDir, serverName+".log"))
+	}
+	return args
+}
+
+func writeMCPConfig(t *testing.T, cfg map[string]any) string {
+	t.Helper()
+	b, _ := json.Marshal(cfg)
+	path := filepath.Join(t.TempDir(), "mcp.json")
+	if err := os.WriteFile(path, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func repoDir() string {
+	_, thisFile, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(thisFile), "repo")
 }
 
 type claudeOutput struct {
@@ -303,83 +567,6 @@ func parseClaudeResult(output string) ClaudeResult {
 	}
 }
 
-func rawMCPConfig(t *testing.T, servers map[string]string, callLogDir string) string {
-	t.Helper()
-	mcpServers := make(map[string]any, len(servers))
-	for name, fixtureDir := range servers {
-		mcpServers[name] = map[string]any{
-			"command": fakemcpBin,
-			"args":    fakemcpArgs(fixtureDir, callLogDir, name),
-		}
-	}
-	return writeMCPConfig(t, map[string]any{"mcpServers": mcpServers})
-}
-
-func fakemcpArgs(fixtureDir, callLogDir, serverName string) []string {
-	args := []string{"--fixtures", fixtureDir}
-	if callLogDir != "" {
-		args = append(args, "--call-log", filepath.Join(callLogDir, serverName+".log"))
-	}
-	return args
-}
-
-func writeServersYAML(t *testing.T, configDir string, servers map[string]string, callLogDir string) {
-	t.Helper()
-	serverDir := filepath.Join(configDir, "servers")
-	if err := os.MkdirAll(serverDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	for name, fixtureDir := range servers {
-		yaml := buildServerYAML(name, fixtureDir, callLogDir)
-		if err := os.WriteFile(filepath.Join(serverDir, name+".yaml"), []byte(yaml), 0600); err != nil {
-			t.Fatal(err)
-		}
-	}
-}
-
-func buildServerYAML(name, fixtureDir, callLogDir string) string {
-	y := "name: " + name + "\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + fixtureDir + "\n"
-	if callLogDir != "" {
-		y += "  - --call-log\n  - " + filepath.Join(callLogDir, name+".log") + "\n"
-	}
-	return y
-}
-
-func miniConfig(t *testing.T, servers map[string]string, format, callLogDir string) string {
-	t.Helper()
-	configDir := t.TempDir()
-	cfg := fmt.Sprintf("inline_threshold: 50000\nresponse_format: %s\n", format)
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(cfg), 0600); err != nil {
-		t.Fatal(err)
-	}
-	writeServersYAML(t, configDir, servers, callLogDir)
-	return writeMCPConfig(t, map[string]any{
-		"mcpServers": map[string]any{
-			"mini": map[string]any{
-				"command": miniBin,
-				"args":    []string{"--config", configDir, "serve", "--standalone", "--log-level", "error"},
-			},
-		},
-	})
-}
-
-func writeMCPConfig(t *testing.T, cfg map[string]any) string {
-	t.Helper()
-	b, _ := json.Marshal(cfg)
-	path := filepath.Join(t.TempDir(), "mcp.json")
-	if err := os.WriteFile(path, b, 0600); err != nil {
-		t.Fatal(err)
-	}
-	return path
-}
-
-func repoDir() string {
-	_, thisFile, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(thisFile), "repo")
-}
-
-// toolCallCounts reads the JSON-line call log for a given server and returns
-// a map of tool name → call count. Returns nil if the log doesn't exist.
 func toolCallCounts(callLogDir, server string) map[string]int {
 	data, err := os.ReadFile(filepath.Join(callLogDir, server+".log"))
 	if err != nil {
@@ -397,16 +584,13 @@ func toolCallCounts(callLogDir, server string) map[string]int {
 	return counts
 }
 
-// assertServerCalled fails the test if no tool on the given server was called.
 func assertServerCalled(t *testing.T, callLogDir, server string) {
 	t.Helper()
-	counts := toolCallCounts(callLogDir, server)
-	if len(counts) == 0 {
+	if len(toolCallCounts(callLogDir, server)) == 0 {
 		t.Errorf("expected %s to be called, but call log is empty or missing (dir: %s)", server, callLogDir)
 	}
 }
 
-// assertToolCalled fails the test if the specific tool on the server was not called.
 func assertToolCalled(t *testing.T, callLogDir, server, tool string) {
 	t.Helper()
 	counts := toolCallCounts(callLogDir, server)
@@ -415,7 +599,17 @@ func assertToolCalled(t *testing.T, callLogDir, server, tool string) {
 	}
 }
 
-// assertResponseContains fails the test if the response text contains none of the given substrings.
+func assertAnyToolCalled(t *testing.T, callLogDir, server string, tools ...string) {
+	t.Helper()
+	counts := toolCallCounts(callLogDir, server)
+	for _, tool := range tools {
+		if counts[tool] > 0 {
+			return
+		}
+	}
+	t.Errorf("expected one of %v on %s to be called — actual calls: %v", tools, server, counts)
+}
+
 func assertResponseContains(t *testing.T, label, text string, want ...string) {
 	t.Helper()
 	lower := strings.ToLower(text)
@@ -432,22 +626,6 @@ func min(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// tripleWithLabels returns the three result modes (raw, json, lines) as a slice
-// with labels, for range-based iteration in eval assertions.
-func tripleWithLabels(r TripleResult) []struct {
-	label  string
-	result ClaudeResult
-} {
-	return []struct {
-		label  string
-		result ClaudeResult
-	}{
-		{"raw", r.Raw},
-		{"json", r.JSON},
-		{"lines", r.Lines},
-	}
 }
 
 func copyDir(src, dst string) error {
