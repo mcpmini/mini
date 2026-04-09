@@ -36,8 +36,7 @@ func assertBugFixPipelineMode(t *testing.T, mode string, result ClaudeResult) {
 	t.Helper()
 	t.Logf("[%s] raw output: %s", mode, result.RawOutputPath)
 	if result.Text == "" {
-		t.Logf("[%s] skipping assertions: run did not produce output (rate limit or timeout)", mode)
-		return
+		t.Fatalf("[%s] run produced no output (rate limit or timeout) — re-run when quota resets", mode)
 	}
 	assertToolCalled(t, result.CallLogDir, "jira", "search_issues")
 	assertServerCalled(t, result.CallLogDir, "sentry")

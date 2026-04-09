@@ -24,8 +24,7 @@ func TestEval_ReviewPRs(t *testing.T) {
 func assertReviewPRsMode(t *testing.T, label string, result ClaudeResult) {
 	t.Helper()
 	if result.Text == "" {
-		t.Logf("[%s] skipping assertions: run did not produce output (rate limit or timeout)", label)
-		return
+		t.Fatalf("[%s] run produced no output (rate limit or timeout) — re-run when quota resets", label)
 	}
 	assertToolCalled(t, result.CallLogDir, "github", "list_pull_requests")
 	assertToolCalled(t, result.CallLogDir, "github", "get_file_contents")

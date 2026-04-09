@@ -222,7 +222,7 @@ func runEval(t *testing.T, p evalParams, task string) EvalResult {
 			label += "-" + fmtLabel[res.idx]
 		}
 		if res.err != nil {
-			t.Logf("[%s] run failed: %v", label, res.err)
+			t.Errorf("[%s] run failed: %v", label, res.err)
 		}
 		switch res.kind {
 		case "raw":
