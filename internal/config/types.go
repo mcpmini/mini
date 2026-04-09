@@ -28,7 +28,7 @@ type Config struct {
 	// Defaults to ~/.mini/responses/
 	ResponseDir string `yaml:"response_dir"`
 
-	// ResponseTTL is how long response files live (e.g. "168h"). Default: 168h (7 days).
+	// ResponseTTL is how long response files live (e.g. "1h"). Default: 1h.
 	ResponseTTL string `yaml:"response_ttl"`
 
 	// ResponseDiskBudgetMB is the max disk usage for response files. Default: 500.
@@ -36,7 +36,7 @@ type Config struct {
 	ResponseDiskBudgetMB int `yaml:"response_disk_budget_mb"`
 
 	// ResponseFormat controls how tool results are rendered to agents.
-	// "json" (default) returns the full envelope. "lines" returns a compact
+	// "json" (default) returns the full envelope. "mini" returns a compact
 	// key:value text format — useful for agents that handle plain text better.
 	ResponseFormat string `yaml:"response_format"`
 
@@ -56,10 +56,6 @@ type Config struct {
 	// upstream URLs that resolve to private/loopback addresses. Only useful in
 	// test environments where upstreams run on localhost.
 	DangerousAllowPrivateURLs bool `yaml:"dangerous_allow_private_urls"`
-
-	// HTTPRateLimit is the max requests per second per IP in HTTP/daemon mode.
-	// Default: 100. Set to 0 to disable. Has no effect in stdio mode.
-	HTTPRateLimit int `yaml:"rate_limit"`
 
 	// DaemonPort is the TCP port the daemon listens on. Default: 4857.
 	// Agents connect to http://127.0.0.1:<DaemonPort>/mcp.
@@ -83,11 +79,10 @@ func DefaultConfig() *Config {
 		DefaultStringLimit:   0,
 		DefaultDepthLimit:    0,
 		AutoStripThreshold:   0,
-		ResponseTTL:          "168h",
+		ResponseTTL:          "1h",
 		ResponseDiskBudgetMB: 500,
 		LogLevel:             "info",
 		ContentFields:        DefaultContentFields,
-		HTTPRateLimit:        100,
 		DaemonPort:           4857,
 	}
 }
@@ -167,6 +162,13 @@ type AuthConfig struct {
 	AuthURL      string   `yaml:"auth_url"`
 	TokenURL     string   `yaml:"token_url"`
 	Scopes       []string `yaml:"scopes"`
+
+	// BrowserCmd overrides the command used to open the OAuth2 browser window.
+	// Useful for targeting a specific browser profile, e.g.:
+	//   open -na "Google Chrome" --args --profile-directory="Profile 1"
+	// The auth URL is appended as the final argument.
+	// If unset, the platform default opener is used (open/xdg-open/start).
+	BrowserCmd string `yaml:"browser_cmd,omitempty"`
 }
 
 // PermissionsConfig defines tool access tiers for a server.

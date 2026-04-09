@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -73,7 +73,7 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 	if err != nil {
 		return nil, u.classifyCallError(err)
 	}
-	result, toolErr := extractContent(raw)
+	result, toolErr := invoke.ExtractContent(raw)
 	if toolErr != nil {
 		u.recordError(toolErr.Error())
 	}
@@ -101,8 +101,13 @@ func (u *upstreamServer) classifyCallError(err error) error {
 	return connError{err}
 }
 
+const maxErrMsgBytes = 512
+
 func (u *upstreamServer) recordError(msg string) {
 	u.errs.Add(1)
+	if len(msg) > maxErrMsgBytes {
+		msg = msg[:maxErrMsgBytes] + "…"
+	}
 	u.lastErrMsg.Store(&msg)
 }
 
@@ -131,49 +136,13 @@ func (u *upstreamServer) stats() map[string]any {
 }
 
 func (u *upstreamServer) appendPerfStats(st map[string]any) {
-	if totalMs := u.totalLatencyMs.Load(); totalMs > 0 {
+	if c := u.calls.Load(); c > 0 {
+		totalMs := u.totalLatencyMs.Load()
 		st["total_latency_ms"] = totalMs
-		if c := u.calls.Load(); c > 0 {
-			st["avg_latency_ms"] = totalMs / c
-		}
+		st["avg_latency_ms"] = totalMs / c
 	}
 	if saved := u.estTokensSaved.Load(); saved > 0 {
 		st["est_tokens_saved"] = saved
 	}
 }
 
-// MCP tools/call response: {"content":[{"type":"text","text":"..."}],"isError":false}
-// Returns combined text as raw JSON if parseable, else as a JSON string.
-func extractContent(raw json.RawMessage) (json.RawMessage, error) {
-	var result transport.ToolCallResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("upstream returned non-standard response: %w", err)
-	}
-
-	if result.IsError {
-		return nil, fmt.Errorf("tool returned error: %s", joinTextContent(result.Content))
-	}
-
-	text := joinTextContent(result.Content)
-	trimmed := strings.TrimSpace(text)
-
-	if json.Valid([]byte(trimmed)) {
-		return json.RawMessage(trimmed), nil
-	}
-
-	b, err := json.Marshal(trimmed)
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-func joinTextContent(items []transport.ContentItem) string {
-	var parts []string
-	for _, item := range items {
-		if item.Type == "text" && item.Text != "" {
-			parts = append(parts, item.Text)
-		}
-	}
-	return strings.Join(parts, "\n")
-}

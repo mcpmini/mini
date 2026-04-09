@@ -3,17 +3,12 @@ package server
 import (
 	"context"
 	"os"
-	"strings"
 	"time"
 )
 
 // expandEnv replaces $VAR or ${VAR} references with environment values.
 func expandEnv(s string) string {
 	return os.Expand(s, os.Getenv)
-}
-
-func resolveHeaderValue(v string) string {
-	return strings.TrimSpace(expandEnv(v))
 }
 
 func applyToolTimeout(ctx context.Context, spec string) (context.Context, context.CancelFunc) {

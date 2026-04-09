@@ -4,22 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
-
-	"golang.org/x/time/rate"
 
 	"github.com/mcpmini/mini/internal/transport"
 )
-
-type rateLimiterEntry struct {
-	lim      *rate.Limiter
-	lastSeen time.Time
-}
 
 // sessionIDPattern accepts UUIDs and similar hex strings: 32–128 chars, hex + hyphens.
 // Minimum 32 chars prevents trivially enumerable IDs. Hex count >= 16 ensures
@@ -48,10 +39,6 @@ func (s *Server) serveHealthz(w http.ResponseWriter) {
 func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	if origin := r.Header.Get("Origin"); origin != "" && !isSameHost(r, origin) {
 		http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
-		return
-	}
-	if !s.allowRequest(r.RemoteAddr) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
 		return
 	}
 	switch r.Method {
@@ -139,39 +126,6 @@ func acceptsSSE(accept string) bool {
 		}
 	}
 	return false
-}
-
-func (s *Server) allowRequest(remoteAddr string) bool {
-	if s.rateLimit <= 0 {
-		return true
-	}
-	ip, _, err := net.SplitHostPort(remoteAddr)
-	if err != nil {
-		ip = remoteAddr
-	}
-	s.rateMu.Lock()
-	entry, ok := s.rateLimiters[ip]
-	if !ok {
-		entry = rateLimiterEntry{lim: rate.NewLimiter(s.rateLimit, int(s.rateLimit))}
-	}
-	entry.lastSeen = time.Now()
-	s.rateLimiters[ip] = entry
-	allowed := entry.lim.Allow()
-	s.rateMu.Unlock()
-	return allowed
-}
-
-const rateLimiterIdleTimeout = 10 * time.Minute
-
-func (s *Server) evictIdleRateLimiters() {
-	cutoff := time.Now().Add(-rateLimiterIdleTimeout)
-	s.rateMu.Lock()
-	for ip, entry := range s.rateLimiters {
-		if entry.lastSeen.Before(cutoff) {
-			delete(s.rateLimiters, ip)
-		}
-	}
-	s.rateMu.Unlock()
 }
 
 // isSameHost blocks DNS-rebinding attacks: a malicious page can't reach the local daemon

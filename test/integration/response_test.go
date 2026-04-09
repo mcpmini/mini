@@ -10,7 +10,7 @@ import (
 
 func TestResponse_inlineSmallResponse(t *testing.T) {
 	e := quickServer(t, map[string]string{"get_item": `{"id":1,"name":"small"}`}).execEnvelope("svc", "get_item", nil)
-	if !e.OK {
+	if e.Error != "" {
 		t.Fatalf("expected ok=true, got: %+v", e)
 	}
 	if e.File != nil {
@@ -56,14 +56,14 @@ func TestResponse_okFalseOnUpstreamError(t *testing.T) {
 		"failing_tool": `{"__mcp_error": "service unavailable"}`,
 	}).execEnvelope("svc", "failing_tool", nil)
 
-	if e.OK {
+	if e.Error == "" {
 		t.Error("upstream error should produce ok=false in envelope")
 	}
 }
 
 func TestResponse_execOkField(t *testing.T) {
 	e := quickServer(t, map[string]string{"get_item": `{"id":1}`}).execEnvelope("svc", "get_item", nil)
-	if !e.OK {
+	if e.Error != "" {
 		t.Errorf("expected ok=true on successful call, got: %+v", e)
 	}
 }

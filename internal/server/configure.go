@@ -102,6 +102,12 @@ func (s *Server) setServerProjection(p configureParams) (any, error) {
 }
 
 func (s *Server) reloadProjections() (any, error) {
+	// Hold persistMu for the entire load+replace so we don't interleave with a
+	// concurrent set_projection that has already updated the in-memory map but
+	// hasn't yet flushed to disk: without this lock, reload could wipe the
+	// in-memory update and then set_projection would persist the wiped state.
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 	projections, err := loadServerProjections(s.configDir)
 	if err != nil {
 		return nil, fmt.Errorf("reload projections: %w", err)
@@ -175,6 +181,7 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 		u.mu.Unlock()
 	}
 
+	s.sessions.closeServerConnections(serverName)
 	s.reg.RemoveServer(serverName)
 	return map[string]any{"ok": true, "server": serverName}, nil
 }

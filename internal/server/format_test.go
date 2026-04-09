@@ -44,7 +44,7 @@ func newSrvWithResponse(t *testing.T, format string, inlineThreshold int, payloa
 }
 
 func TestLinesFormatRendersOneLinePerItem(t *testing.T) {
-	srv := newSrvWithFormat(t, "lines")
+	srv := newSrvWithFormat(t, "mini")
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
 	}))
@@ -65,7 +65,7 @@ func TestLinesFormatRendersOneLinePerItem(t *testing.T) {
 }
 
 func TestLinesFormatHasHeader(t *testing.T) {
-	srv := newSrvWithFormat(t, "lines")
+	srv := newSrvWithFormat(t, "mini")
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
@@ -116,7 +116,7 @@ func TestLinesFormatPerToolOverride(t *testing.T) {
 	srv := newSrvWithConfigFormat(t, "json")
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"format": "lines"},
+		"projection": map[string]any{"format": "mini"},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
@@ -138,7 +138,12 @@ func TestLinesFormatIncludesSpilledFilePath(t *testing.T) {
 
 func spilledLinesResponse(t *testing.T, payload string) []string {
 	t.Helper()
-	srv := newSrvWithResponse(t, "lines", 1, payload)
+	srv := newSrvWithResponse(t, "mini", 10000, payload)
+	// Apply a projection that elides a field, triggering file write.
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "gh", "tool": "list_issues",
+		"projection": map[string]any{"exclude_always": []string{"items"}},
+	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
 	}))
@@ -151,16 +156,13 @@ func spilledLinesResponse(t *testing.T, payload string) []string {
 
 func assertSpilledLinesFormat(t *testing.T, lines []string) {
 	t.Helper()
-	if len(lines) != 2 {
-		t.Fatalf("expected header and placeholder line, got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
+	if len(lines) != 1 {
+		t.Fatalf("expected single header line for spilled response, got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
 	}
 	if !strings.HasPrefix(lines[0], "[gh.list_issues] file:") {
 		t.Fatalf("expected file header, got: %s", lines[0])
 	}
 	assertSpilledLinesFile(t, lines[0])
-	if lines[1] != "null" {
-		t.Fatalf("expected placeholder line for spilled response, got %q", lines[1])
-	}
 }
 
 func assertSpilledLinesFile(t *testing.T, header string) {
@@ -219,7 +221,7 @@ func TestConnErrorTriggersReconnect(t *testing.T) {
 	}))
 	text := toolResultText(t, resp)
 	env := parseEnvelope(t, text)
-	if env["ok"] != false {
+	if env["error"] == nil {
 		t.Errorf("expected ok=false on connection error: %s", text)
 	}
 }

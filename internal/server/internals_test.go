@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/time/rate"
-
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -89,7 +87,7 @@ func TestSessionStore_evictIdle_removesOldSessions(t *testing.T) {
 
 	st.getOrCreate("fresh") // touched just now
 
-	st.evictIdle(time.Hour)
+	st.evictIdle(time.Now().Add(-time.Hour))
 
 	if st.count() != 1 {
 		t.Errorf("expected 1 session after eviction, got %d", st.count())
@@ -105,7 +103,7 @@ func TestSessionStore_evictIdle_closesEvictedConns(t *testing.T) {
 	s.lastUsed = time.Now().Add(-2 * time.Hour)
 	s.mu.Unlock()
 
-	st.evictIdle(time.Hour)
+	st.evictIdle(time.Now().Add(-time.Hour))
 
 	if !fake.Closed {
 		t.Error("expected evicted session's connections to be closed")
@@ -124,7 +122,7 @@ func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
 	s.lastUsed = time.Now().Add(-2 * time.Hour)
 	s.mu.Unlock()
 
-	st.evictIdle(time.Hour)
+	st.evictIdle(time.Now().Add(-time.Hour))
 
 	if st.count() != 1 {
 		t.Fatalf("expected active stdio session to be preserved, got %d sessions", st.count())
@@ -149,26 +147,6 @@ func TestConnError_unwrap(t *testing.T) {
 	}
 	if !errors.Is(ce, inner) {
 		t.Error("expected errors.Is to find inner error via Unwrap")
-	}
-}
-
-func TestParseHTTPClientTimeout(t *testing.T) {
-	cases := []struct {
-		spec string
-		want time.Duration
-	}{
-		{"", 0},
-		{"0", 0},
-		{"30s", 30 * time.Second},
-		{"2m", 2 * time.Minute},
-		{"bad", 0},
-		{"-1s", 0},
-	}
-	for _, c := range cases {
-		got := parseHTTPClientTimeout(c.spec)
-		if got != c.want {
-			t.Errorf("parseHTTPClientTimeout(%q) = %v, want %v", c.spec, got, c.want)
-		}
 	}
 }
 
@@ -211,29 +189,3 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 	}
 }
 
-func seedRateLimiters(srv *Server, recent, stale string) {
-	srv.rateMu.Lock()
-	srv.rateLimiters[recent] = rateLimiterEntry{lim: rate.NewLimiter(1, 1), lastSeen: time.Now()}
-	srv.rateLimiters[stale] = rateLimiterEntry{lim: rate.NewLimiter(1, 1), lastSeen: time.Now().Add(-rateLimiterIdleTimeout - time.Second)}
-	srv.rateMu.Unlock()
-}
-
-func TestEvictIdleRateLimiters(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.HTTPRateLimit = 10
-	srv := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	seedRateLimiters(srv, "192.0.2.1", "192.0.2.2")
-	srv.evictIdleRateLimiters()
-
-	srv.rateMu.Lock()
-	_, hasRecent := srv.rateLimiters["192.0.2.1"]
-	_, hasStale := srv.rateLimiters["192.0.2.2"]
-	srv.rateMu.Unlock()
-	if !hasRecent {
-		t.Error("recent entry should not be evicted")
-	}
-	if hasStale {
-		t.Error("stale entry should be evicted")
-	}
-}

@@ -222,6 +222,15 @@ func (st *sessionStore) snapshotSessions() []*Session {
 	return out
 }
 
+// closeServerConnections closes and removes per-session connections to the
+// named server from all active sessions. Called when a server is removed at
+// runtime so per-session connections don't linger until session eviction.
+func (st *sessionStore) closeServerConnections(serverName string) {
+	for _, s := range st.snapshotSessions() {
+		s.RemoveConn(serverName)
+	}
+}
+
 func (st *sessionStore) aggregateMetrics() map[string]any {
 	sessions := st.snapshotSessions()
 	var totalCalls, totalErrors, totalLatencyMs, totalTokensSaved int64
@@ -243,8 +252,7 @@ func (st *sessionStore) aggregateMetrics() map[string]any {
 	return m
 }
 
-func (st *sessionStore) evictIdle(maxAge time.Duration) {
-	deadline := time.Now().Add(-maxAge)
+func (st *sessionStore) evictIdle(deadline time.Time) {
 	st.mu.Lock()
 	var toClose []*Session
 	for id, s := range st.sessions {

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/projection"
+	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
 	"github.com/mcpmini/mini/internal/transport"
@@ -140,12 +140,9 @@ func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *regis
 		session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
-	result, err := s.buildEnvelope(server, tool, raw, session, latencyMs)
+	result, err := s.buildEnvelope(server, tool, raw, session, upstream, latencyMs)
 	if err != nil {
 		return nil, err
-	}
-	if env, ok := result.(*response.Envelope); ok {
-		upstream.estTokensSaved.Add(int64(env.EstimatedTokensSaved))
 	}
 	return result, nil
 }
@@ -168,7 +165,11 @@ func (s *Server) dispatchRaw(ctx context.Context, upstream *upstreamServer, tool
 	} else {
 		raw, err = upstream.callTool(ctx, tool, params)
 		if err != nil && isConnError(err) && upstream.reconnecting.CompareAndSwap(false, true) {
-			go s.reconnectLoop(upstream)
+			s.reconnectWg.Add(1)
+			go func() {
+				defer s.reconnectWg.Done()
+				s.reconnectLoop(upstream)
+			}()
 		}
 	}
 	return raw, time.Since(start).Milliseconds(), err
@@ -192,7 +193,7 @@ func (s *Server) callPerSession(ctx context.Context, upstream *upstreamServer, t
 		session.RemoveConn(upstream.cfg.Name)
 		return nil, connError{err}
 	}
-	result, toolErr := extractContent(raw)
+	result, toolErr := invoke.ExtractContent(raw)
 	return result, toolErr
 }
 
@@ -247,32 +248,29 @@ func mergeArgs(defaults, overrides map[string]any) map[string]any {
 	return out
 }
 
-func (s *Server) buildEnvelope(server, tool string, raw json.RawMessage, session *Session, latencyMs int64) (any, error) {
+func (s *Server) buildEnvelope(server, tool string, raw json.RawMessage, session *Session, upstream *upstreamServer, latencyMs int64) (any, error) {
 	projCfg := s.resolveProjection(server, tool, session)
-	env, err := s.buildProjectedEnvelope(server, tool, raw, projCfg)
+	env, stats, err := s.buildProjectedEnvelope(server, tool, raw, projCfg)
 	if err != nil {
 		return nil, err
 	}
-	env.LatencyMs = latencyMs
-	session.recordCall(latencyMs, int64(env.EstimatedTokensSaved), false)
+	saved := int64(stats.RawTokens - stats.SummaryTokens)
+	if saved > 0 {
+		upstream.estTokensSaved.Add(saved)
+	}
+	session.recordCall(latencyMs, saved, false)
 	return s.formatEnvelope(server, tool, env, projCfg), nil
 }
 
-func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage, projCfg *config.ProjectionConfig) (*response.Envelope, error) {
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, fmt.Errorf("parse upstream response: %w", err)
-	}
-	result := projection.Apply(value, projCfg, s.projDefaults)
-	env, _, err := s.envelope.Build(response.BuildParams{
-		Server:      server,
-		Tool:        tool,
-		Raw:         raw,
-		Summary:     result.Summary,
-		Elided:      result.ElidedKeys,
-		Passthrough: result.Passthrough,
+func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage, projCfg *config.ProjectionConfig) (*response.Envelope, response.CallStats, error) {
+	return invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
+		Server:   server,
+		Tool:     tool,
+		Raw:      raw,
+		ProjCfg:  projCfg,
+		ProjDefs: s.projDefaults,
+		Builder:  s.envelope,
 	})
-	return env, err
 }
 
 func (s *Server) formatEnvelope(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
@@ -280,8 +278,8 @@ func (s *Server) formatEnvelope(server, tool string, env *response.Envelope, pro
 	if projCfg != nil && projCfg.Format != "" {
 		format = projCfg.Format
 	}
-	if format == "lines" {
-		return renderLines(server, tool, env)
+	if format == "mini" {
+		return RenderLines(server, tool, env)
 	}
 	return env
 }

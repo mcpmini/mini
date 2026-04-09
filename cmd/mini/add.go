@@ -16,54 +16,72 @@ func (s *stringSlice) String() string     { return strings.Join(*s, ", ") }
 func (s *stringSlice) Set(v string) error { *s = append(*s, v); return nil }
 
 func runAdd(configDir string, args []string, out io.Writer) error {
-	// First pass: import flags (--from-*) come before NAME and are mutually exclusive with it.
-	importFS := flag.NewFlagSet("add", flag.ContinueOnError)
-	importFS.SetOutput(out)
-	fromClaude := importFS.String("from-claude", "", "import from Claude Desktop / Claude Code config JSON")
-	fromCursor := importFS.String("from-cursor", "", "import from Cursor mcp.json config")
-	fromCodex := importFS.String("from-codex", "", "import from Codex config.toml")
-	fromGemini := importFS.String("from-gemini", "", "import from Gemini CLI settings.json")
-	fromOpenClaw := importFS.String("from-openclaw", "", "import from OpenClaw (MoltBot) openclaw.json config")
-	if err := importFS.Parse(args); err != nil {
+	remaining, fromFlags, err := parseImportFlags(args, out)
+	if err != nil {
 		return err
 	}
-
-	if handled, err := handleImportFlags(configDir, *fromClaude, *fromCursor, *fromCodex, *fromGemini, *fromOpenClaw); handled {
+	if handled, err := handleImportFlags(configDir, fromFlags); handled {
 		return err
 	}
-
-	// Second pass: NAME is first positional arg; server flags (--url, --header, --protected) follow it.
-	remaining := importFS.Args()
 	if len(remaining) == 0 {
 		return fmt.Errorf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
 	}
-	name := remaining[0]
-
-	serverFS := flag.NewFlagSet("add-server", flag.ContinueOnError)
-	serverFS.SetOutput(out)
-	url := serverFS.String("url", "", "HTTP/SSE server URL")
-	var headers, protected stringSlice
-	serverFS.Var(&headers, "header", "HTTP header as Key=Value (repeatable)")
-	serverFS.Var(&protected, "protected", "tool name to mark protected (repeatable)")
-	if err := serverFS.Parse(remaining[1:]); err != nil {
+	sf, err := parseServerFlags(remaining, out)
+	if err != nil {
 		return err
 	}
-
-	return addNamedServer(configDir, name, serverFS.Args(), *url, headers, protected)
+	return addNamedServer(configDir, sf.name, sf.cmdArgs, sf.url, sf.headers, sf.protected)
 }
 
-func handleImportFlags(configDir, fromClaude, fromCursor, fromCodex, fromGemini, fromOpenClaw string) (handled bool, err error) {
+type importFlags struct {
+	claude, cursor, codex, gemini, openclaw string
+}
+
+func parseImportFlags(args []string, out io.Writer) (remaining []string, flags importFlags, err error) {
+	fs := flag.NewFlagSet("add", flag.ContinueOnError)
+	fs.SetOutput(out)
+	fs.StringVar(&flags.claude, "from-claude", "", "import from Claude Desktop / Claude Code config JSON")
+	fs.StringVar(&flags.cursor, "from-cursor", "", "import from Cursor mcp.json config")
+	fs.StringVar(&flags.codex, "from-codex", "", "import from Codex config.toml")
+	fs.StringVar(&flags.gemini, "from-gemini", "", "import from Gemini CLI settings.json")
+	fs.StringVar(&flags.openclaw, "from-openclaw", "", "import from OpenClaw (MoltBot) openclaw.json config")
+	err = fs.Parse(args)
+	return fs.Args(), flags, err
+}
+
+type serverFlags struct {
+	name, url  string
+	headers    stringSlice
+	protected  stringSlice
+	cmdArgs    []string
+}
+
+func parseServerFlags(args []string, out io.Writer) (serverFlags, error) {
+	f := serverFlags{name: args[0]}
+	fs := flag.NewFlagSet("add-server", flag.ContinueOnError)
+	fs.SetOutput(out)
+	fs.StringVar(&f.url, "url", "", "HTTP/SSE server URL")
+	fs.Var(&f.headers, "header", "HTTP header as Key=Value (repeatable)")
+	fs.Var(&f.protected, "protected", "tool name to mark protected (repeatable)")
+	if err := fs.Parse(args[1:]); err != nil {
+		return serverFlags{}, err
+	}
+	f.cmdArgs = fs.Args()
+	return f, nil
+}
+
+func handleImportFlags(configDir string, f importFlags) (handled bool, err error) {
 	switch {
-	case fromClaude != "":
-		return true, importers.ImportFromClaude(configDir, fromClaude)
-	case fromCursor != "":
-		return true, importers.ImportFromCursor(configDir, fromCursor)
-	case fromCodex != "":
-		return true, importers.ImportFromCodex(configDir, fromCodex)
-	case fromGemini != "":
-		return true, importers.ImportFromGemini(configDir, fromGemini)
-	case fromOpenClaw != "":
-		return true, importers.ImportFromOpenClaw(configDir, fromOpenClaw)
+	case f.claude != "":
+		return true, importers.ImportFromClaude(configDir, f.claude)
+	case f.cursor != "":
+		return true, importers.ImportFromCursor(configDir, f.cursor)
+	case f.codex != "":
+		return true, importers.ImportFromCodex(configDir, f.codex)
+	case f.gemini != "":
+		return true, importers.ImportFromGemini(configDir, f.gemini)
+	case f.openclaw != "":
+		return true, importers.ImportFromOpenClaw(configDir, f.openclaw)
 	default:
 		return false, nil
 	}

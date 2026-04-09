@@ -181,7 +181,7 @@ func assertOkFalse(t *testing.T, text string) {
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("expected JSON envelope, got: %s", text)
 	}
-	if env["ok"] != false {
+	if env["error"] == nil {
 		t.Errorf("expected ok=false, got: %v", env)
 	}
 }
@@ -236,7 +236,7 @@ func assertRemoveOk(t *testing.T, srv *server.Server, serverName string) {
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
 		t.Fatalf("expected JSON result: %s", text)
 	}
-	if result["ok"] != true {
+	if result["error"] != nil {
 		t.Errorf("expected ok=true, got: %v", result)
 	}
 }

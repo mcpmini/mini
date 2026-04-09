@@ -23,6 +23,7 @@ type effectiveConfig struct {
 	stripContent       bool
 	contentFieldSet    map[string]bool // precomputed set for O(1) lookup
 	autoStripThreshold int
+	truncated          map[string]int // populated during Apply; field → bytes removed
 }
 
 const (

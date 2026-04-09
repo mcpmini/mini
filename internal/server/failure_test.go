@@ -42,7 +42,7 @@ func assertEnvelopeOkFalse(t *testing.T, text string) {
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("expected JSON envelope, got: %s", text)
 	}
-	if env["ok"] != false {
+	if env["error"] == nil {
 		t.Errorf("expected ok=false, got: %v", env)
 	}
 }
@@ -185,7 +185,7 @@ func TestUpstream_toolReturnsIsError_gracefulEnvelope(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("expected JSON envelope for tool error, got: %s", text)
 	}
-	if env["ok"] != false {
+	if env["error"] == nil {
 		t.Errorf("expected ok=false when upstream tool returns isError, got: %v", env)
 	}
 }
@@ -205,7 +205,7 @@ func TestHTTPUpstream_429_returnsError(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("expected JSON envelope for rate limit error, got: %s", text)
 	}
-	if env["ok"] != false {
+	if env["error"] == nil {
 		t.Errorf("expected ok=false for rate limit error, got: %v", env)
 	}
 }
@@ -246,13 +246,13 @@ func TestUpstream_oneFailsOthersWork(t *testing.T) {
 	badEnv := parseEnvelope(t, toolResultText(t, serve(t, srv, callTool("call", map[string]any{
 		"server": "bad", "tool": "fail", "params": map[string]any{},
 	}))))
-	if badEnv["ok"] != false {
+	if badEnv["error"] == nil {
 		t.Errorf("expected ok=false for bad upstream, got: %v", badEnv)
 	}
 	goodEnv := parseEnvelope(t, toolResultText(t, serve(t, srv, callTool("call", map[string]any{
 		"server": "good", "tool": "ping", "params": map[string]any{},
 	}))))
-	if goodEnv["ok"] != true {
+	if goodEnv["error"] != nil {
 		t.Errorf("expected ok=true for good upstream after bad upstream failed, got: %v", goodEnv)
 	}
 }
@@ -295,7 +295,7 @@ func TestUpstream_contextCancelledDuringCall(t *testing.T) {
 		t.Errorf("tool call with 50ms timeout took too long: %v", elapsed)
 	}
 	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["ok"] != false {
+	if env["error"] == nil {
 		t.Errorf("expected ok=false after timeout, got: %v", env)
 	}
 }

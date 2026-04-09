@@ -119,6 +119,23 @@ func runCLI(t *testing.T, configDir string, args ...string) (stdout, stderr stri
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
+func runCLIWithStdin(t *testing.T, stdin string, configDir string, args ...string) (stdout, stderr string, exitCode int) {
+	t.Helper()
+	cmd := exec.Command(miniBin, cliArgs(configDir, args)...)
+	cmd.Stdin = strings.NewReader(stdin)
+	var outBuf, errBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		if exit, ok := err.(*exec.ExitError); ok {
+			exitCode = exit.ExitCode()
+		} else {
+			t.Fatalf("run %v: %v", args, err)
+		}
+	}
+	return outBuf.String(), errBuf.String(), exitCode
+}
+
 func writeFakeServer(t *testing.T, configDir, serverName, fixtures string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
@@ -384,9 +401,9 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 }
 
 type envelope struct {
-	OK          bool           `json:"ok"`
 	Data        any            `json:"data"`
 	Elided      []string       `json:"elided"`
+	Truncated   map[string]int `json:"truncated"`
 	File        *string        `json:"file"`
 	Passthrough map[string]any `json:"passthrough"`
 	Error       string         `json:"error"`
@@ -396,7 +413,13 @@ type envelope struct {
 
 func (c *mcpClient) execEnvelope(server, tool string, args map[string]any) envelope {
 	c.t.Helper()
-	text := c.execTool(server, tool, args)
+	if args == nil {
+		args = map[string]any{}
+	}
+	raw := c.mustCall("tools/call", toolCallRaw("call", server, tool, args))
+	// Use parseToolCallResult (not toolCallText) so we get the content even when
+	// mini returns isError=true — error envelopes are still valid JSON in the content.
+	text, _ := parseToolCallResult(raw)
 	var e envelope
 	if err := json.Unmarshal([]byte(text), &e); err != nil {
 		c.t.Fatalf("parse envelope from call %s.%s: %v\ntext: %s", server, tool, err, text)

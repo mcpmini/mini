@@ -103,7 +103,7 @@ Or use the CLI bench tool (requires fixture data in `benchmarks/`):
 go run ./cmd/mini bench --bench-dir benchmarks
 ```
 
-Expected: `lines` mode should save ≥ 40% vs raw on the GitHub fixtures. If savings drop significantly, a regression in the projection or render pipeline occurred.
+Expected: `mini` mode should save ≥ 40% vs raw on the GitHub fixtures. If savings drop significantly, a regression in the projection or render pipeline occurred.
 
 ---
 

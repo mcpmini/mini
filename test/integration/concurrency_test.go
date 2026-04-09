@@ -14,7 +14,7 @@ func TestConcurrency_20SequentialCalls(t *testing.T) {
 
 	for i := range 20 {
 		e := client.execEnvelope("svc", "get_item", nil)
-		if !e.OK {
+		if e.Error != "" {
 			t.Errorf("call %d returned ok=false: %+v", i+1, e)
 		}
 	}
@@ -23,7 +23,7 @@ func TestConcurrency_20SequentialCalls(t *testing.T) {
 func TestConcurrency_100RapidSequential(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1}`})
 	for i := range 100 {
-		if !client.execEnvelope("svc", "get_item", nil).OK {
+		if client.execEnvelope("svc", "get_item", nil).Error != "" {
 			t.Errorf("call %d failed", i+1)
 		}
 	}
@@ -44,7 +44,7 @@ func TestConcurrency_20ParallelClients(t *testing.T) {
 	results := make(chan bool, n)
 	for _, c := range clients {
 		c := c
-		go func() { results <- c.execEnvelope("svc", "get_item", nil).OK }()
+		go func() { results <- c.execEnvelope("svc", "get_item", nil).Error == "" }()
 	}
 	for range clients {
 		if !<-results {
@@ -68,7 +68,7 @@ func TestConcurrency_parallelHTTPUpstream(t *testing.T) {
 	results := make(chan bool, n)
 	for _, c := range clients {
 		c := c
-		go func() { results <- c.execEnvelope("svc", "get_item", nil).OK }()
+		go func() { results <- c.execEnvelope("svc", "get_item", nil).Error == "" }()
 	}
 	for range clients {
 		if !<-results {
@@ -81,7 +81,14 @@ func countRejected(client *mcpClient, n int) int {
 	results := make(chan bool, n)
 	for range n {
 		go func() {
-			results <- !client.execEnvelope("svc", "get_item", nil).OK
+			// Use AllowError path to avoid t.Fatalf in goroutines (would deadlock the channel).
+			text, isErr := client.execToolAllowError("svc", "get_item", nil)
+			if !isErr {
+				var e envelope
+				json.Unmarshal([]byte(text), &e) //nolint:errcheck
+				isErr = e.Error != ""
+			}
+			results <- isErr
 		}()
 	}
 	var count int
@@ -120,7 +127,7 @@ func TestConcurrency_parallel(t *testing.T) {
 	results := make(chan bool, n)
 	for _, c := range clients {
 		c := c
-		go func() { results <- c.execEnvelope("svc", "get_item", nil).OK }()
+		go func() { results <- c.execEnvelope("svc", "get_item", nil).Error == "" }()
 	}
 	for range clients {
 		if !<-results {
@@ -133,7 +140,7 @@ func runNParallelExecs(client *mcpClient, n int) ([]bool, time.Duration) {
 	results := make(chan bool, n)
 	start := time.Now()
 	for range n {
-		go func() { results <- client.execEnvelope("svc", "get_item", nil).OK }()
+		go func() { results <- client.execEnvelope("svc", "get_item", nil).Error == "" }()
 	}
 	oks := make([]bool, n)
 	for i := range n {

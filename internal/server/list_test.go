@@ -66,7 +66,7 @@ func TestBuildEnvelope_linesFormat(t *testing.T) {
 
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "list",
-		"session_only": true, "projection": map[string]any{"format": "lines"},
+		"session_only": true, "projection": map[string]any{"format": "mini"},
 	}))
 
 	text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{

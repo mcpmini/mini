@@ -4,8 +4,6 @@ import (
 	"log/slog"
 	"sync"
 
-	"golang.org/x/time/rate"
-
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/projection"
@@ -35,13 +33,11 @@ type Server struct {
 	logger       *slog.Logger
 	clock        clock.Clock
 	// Lock ordering: when both mu and authMu must be acquired, always acquire mu first.
-	mu           sync.RWMutex
-	persistMu    sync.Mutex
-	authMu       sync.Mutex
-	authFlows    map[string]*authFlowState
-	rateMu       sync.Mutex
-	rateLimiters map[string]rateLimiterEntry
-	rateLimit    rate.Limit
+	mu          sync.RWMutex
+	persistMu   sync.Mutex
+	authMu      sync.Mutex
+	authFlows   map[string]*authFlowState
+	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
 }
 
 func (s *Server) ToolCount(serverName string) int {

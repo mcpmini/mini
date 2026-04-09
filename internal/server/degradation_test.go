@@ -40,7 +40,7 @@ func TestQueueDepth_rejectsWhenFull(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("expected JSON envelope: %s", text)
 	}
-	if env["ok"] != false {
+	if env["error"] == nil {
 		t.Errorf("expected ok=false for queue-full rejection, got: %v", env)
 	}
 	close(release)
@@ -65,7 +65,7 @@ func TestQueueDepth_zeroMeansUnlimited(t *testing.T) {
 		if err := json.Unmarshal([]byte(text), &env); err != nil {
 			t.Fatalf("call %d: expected JSON envelope: %s", i, text)
 		}
-		if env["ok"] != true {
+		if env["error"] != nil {
 			t.Errorf("call %d: expected ok=true with unlimited queue, got: %v", i, env)
 		}
 	}
@@ -76,7 +76,7 @@ func assertQueueCallOK(t *testing.T, srv *server.Server, callN int) {
 	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
 	var env map[string]any
 	json.Unmarshal([]byte(toolResultText(t, resp)), &env)
-	if env["ok"] != true {
+	if env["error"] != nil {
 		t.Errorf("call %d should succeed, got: %v", callN, env)
 	}
 }
@@ -114,7 +114,7 @@ func TestQueueDepth_timeoutReleasesSlot(t *testing.T) {
 	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc2", "tool": "op", "params": map[string]any{}}))
 	var env map[string]any
 	json.Unmarshal([]byte(toolResultText(t, resp)), &env)
-	if env["ok"] != true {
+	if env["error"] != nil {
 		t.Errorf("svc2 should work normally, got: %v", env)
 	}
 }

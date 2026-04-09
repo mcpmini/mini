@@ -108,7 +108,9 @@ func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig, a
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	s.removeServerRuntime(serverName) //nolint:errcheck
+	// Do not call removeServerRuntime first: if AddUpstream fails the server
+	// would be permanently gone. registerUpstream → swapUpstream replaces the
+	// old upstream in-place; on failure the old upstream is untouched.
 	if err := s.AddUpstream(ctx, sc); err != nil {
 		s.logger.Error("reconnect after auth failed", "server", serverName, "err", err)
 	} else {

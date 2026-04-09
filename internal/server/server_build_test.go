@@ -23,7 +23,7 @@ func testBuildStoreConfigDefaults(t *testing.T) {
 	}
 	got := buildStoreConfig(cfg)
 	home, _ := os.UserHomeDir()
-	assertStoreConfigBasics(t, got, filepath.Join(home, ".mini", "responses"), 168*time.Hour, time.Hour, 7)
+	assertStoreConfigBasics(t, got, filepath.Join(home, ".mini", "responses"), time.Hour, time.Hour, 7)
 }
 
 func testBuildStoreConfigExplicit(t *testing.T) {

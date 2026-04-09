@@ -59,7 +59,7 @@ func fsTestListDir(t *testing.T, srv *server.Server, dir string) {
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("result not JSON: %v\n%s", err, text)
 	}
-	if env["ok"] != true {
+	if env["error"] != nil {
 		t.Errorf("expected ok=true, got: %v\nfull: %s", env["ok"], text)
 	}
 }
@@ -142,7 +142,7 @@ func TestWithRealFilesystemMCP_WriteProtected(t *testing.T) {
 		"params": map[string]any{"path": testFile, "content": "hello from mini"},
 	}))
 	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["ok"] != true {
+	if env["error"] != nil {
 		t.Errorf("write_file failed: %v", env)
 	}
 	if _, err := os.ReadFile(testFile); err != nil {

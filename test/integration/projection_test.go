@@ -70,16 +70,47 @@ func TestProjection_stringLimit(t *testing.T) {
 	}
 }
 
+func TestProjection_truncatedEnvelope(t *testing.T) {
+	longStr := strings.Repeat("w", 400)
+	client := quickServerWith(t,
+		map[string]string{"get_item": `{"id":1,"title":"short","body":"` + longStr + `"}`},
+		"inline_threshold: 50000\n",
+		"get_item:\n  string_limits:\n    body: 60\n")
+
+	env := client.execEnvelope("svc", "get_item", nil)
+	if env.Error != "" {
+		t.Fatalf("expected success, got error: %s", env.Error)
+	}
+
+	bytesRemoved, ok := env.Truncated["body"]
+	if !ok || bytesRemoved <= 0 {
+		t.Errorf("expected truncated[body] > 0, got %v", env.Truncated)
+	}
+	// 400 chars → limit 60, so at least 300 bytes removed
+	if bytesRemoved < 300 {
+		t.Errorf("expected ≥300 bytes removed from body, got %d", bytesRemoved)
+	}
+	// short fields must not appear in truncated
+	if _, present := env.Truncated["title"]; present {
+		t.Errorf("short field 'title' should not appear in truncated")
+	}
+	// file written because truncation counts as projection
+	if env.File == nil {
+		t.Error("expected file path in envelope when truncation applied")
+	}
+}
+
 func TestProjection_arrayLimit(t *testing.T) {
 	client := quickServerWith(t,
-		map[string]string{"list_items": `[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5},{"id":6},{"id":7}]`},
-		"default_array_limit: 3\ninline_threshold: 50000\n", "")
+		map[string]string{"get_repo": `{"issues":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5}],"name":"repo"}`},
+		"inline_threshold: 50000\n",
+		"get_repo:\n  array_limits:\n    issues: 3\n")
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "list_items", nil).Data)
+	b, _ := json.Marshal(client.execEnvelope("svc", "get_repo", nil).Data)
 	data := string(b)
-	for _, id := range []string{`"id":7`, `"id":6`, `"id":5`, `"id":4`} {
+	for _, id := range []string{`"id":5`, `"id":4`} {
 		if strings.Contains(data, id) {
-			t.Errorf("array should be limited to 3 items, still found %s in: %s", id, data)
+			t.Errorf("array_limits.issues:3 should cap at 3 items, still found %s in: %s", id, data)
 		}
 	}
 }
@@ -214,15 +245,13 @@ func TestProjection_includeAndExcludeAlways(t *testing.T) {
 
 func TestProjection_globalDefaultsApply(t *testing.T) {
 	client := quickServerWith(t,
-		map[string]string{"list_items": `[{"id":1},{"id":2},{"id":3},{"id":4}]`},
-		"default_array_limit: 2\ninline_threshold: 50000\n", "")
+		map[string]string{"get_item": `{"id":1,"description":"` + strings.Repeat("x", 300) + `"}`},
+		"default_string_limit: 50\ninline_threshold: 50000\n", "")
 
-	b, _ := json.Marshal(client.execEnvelope("svc", "list_items", nil).Data)
+	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
-	for _, id := range []string{`"id":3`, `"id":4`} {
-		if strings.Contains(data, id) {
-			t.Errorf("global default_array_limit:2 should cap at 2, still found %s in: %s", id, data)
-		}
+	if strings.Contains(data, strings.Repeat("x", 100)) {
+		t.Errorf("global default_string_limit:50 should truncate long strings, got: %s", data[:min(200, len(data))])
 	}
 }
 
@@ -269,22 +298,22 @@ func TestProjection_persistDoesNotAffectRunningSession(t *testing.T) {
 func TestProjection_linesFormat(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		"", "list_items:\n  format: lines\n")
+		"", "list_items:\n  format: mini\n")
 
 	text := client.execTool("svc", "list_items", nil)
 	if !strings.Contains(text, "[svc.list_items]") {
-		t.Errorf("lines format should include tool header [svc.list_items], got: %s", text)
+		t.Errorf("mini format should include tool header [svc.list_items], got: %s", text)
 	}
 }
 
 func TestProjection_linesFormatGlobal(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		"inline_threshold: 50000\nresponse_format: lines\n", "")
+		"inline_threshold: 50000\nresponse_format: mini\n", "")
 
 	text := client.execTool("svc", "list_items", nil)
 	if !strings.Contains(text, "[svc.list_items]") {
-		t.Errorf("global lines format should include tool header [svc.list_items], got: %s", text)
+		t.Errorf("global response_format:mini should include tool header [svc.list_items], got: %s", text)
 	}
 }
 

@@ -10,24 +10,33 @@ import (
 )
 
 type Result struct {
-	Summary    any
-	ElidedKeys []string
+	Summary     any
+	ElidedKeys  []string
 	Passthrough map[string]any
+	Truncated   map[string]int // field path → bytes removed
 }
 
 // Apply projects a parsed JSON value using the given config.
 // Falls back to defaults when cfg is nil.
 func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 	effective := mergeWithDefaults(cfg, defaults)
+	effective.truncated = make(map[string]int)
 	summary := project(value, effective, 0)
 	elided := collectElided(value, summary, "")
 	passthrough := extractPassthrough(value, effective.passthrough)
-
 	return Result{
 		Summary:     summary,
 		ElidedKeys:  elided,
 		Passthrough: passthrough,
+		Truncated:   nilIfEmptyIntMap(effective.truncated),
 	}
+}
+
+func nilIfEmptyIntMap(m map[string]int) map[string]int {
+	if len(m) == 0 {
+		return nil
+	}
+	return m
 }
 
 func project(value any, cfg *effectiveConfig, depth int) any {
@@ -101,7 +110,9 @@ func projectString(s string, cfg *effectiveConfig, fieldName string) string {
 	}
 	limit := cfg.stringLimitFor(fieldName)
 	if limit > 0 && len(s) > limit {
-		return truncateAtBoundary(s, limit) + "<trnc"
+		cut := truncateAtBoundary(s, limit)
+		cfg.truncated[fieldName] = len(s) - len(cut)
+		return cut
 	}
 	return s
 }

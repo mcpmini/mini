@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
@@ -30,7 +32,7 @@ func TestConfigureReload_emptyDir(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
 		t.Fatalf("expected JSON from reload, got: %s", text)
 	}
-	if result["ok"] != true {
+	if result["error"] != nil {
 		t.Errorf("expected ok=true from reload, got: %v", result)
 	}
 }
@@ -50,7 +52,7 @@ func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 	var result map[string]any
 	json.Unmarshal([]byte(toolResultText(t, resp)), &result)
-	if result["ok"] != true {
+	if result["error"] != nil {
 		t.Errorf("expected ok=true from reload, got: %v", result)
 	}
 }
@@ -85,7 +87,7 @@ func TestConfigureAddServer_viaHTTP(t *testing.T) {
 	}))
 	var result map[string]any
 	json.Unmarshal([]byte(toolResultText(t, resp)), &result)
-	if result["ok"] != true || result["server"] != "dynamic" {
+	if result["error"] != nil || result["server"] != "dynamic" {
 		t.Errorf("expected ok add_server, got: %v", result)
 	}
 
@@ -122,7 +124,7 @@ func TestExecuteProtected_callsProtectedTool(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("expected JSON envelope: %s", text)
 	}
-	if env["ok"] != true {
+	if env["error"] != nil {
 		t.Errorf("expected ok=true for valid protected call, got: %v", env)
 	}
 }
@@ -172,5 +174,168 @@ func TestToolsList_returnsProxySchemas(t *testing.T) {
 	tools, ok := result["tools"].([]any)
 	if !ok || len(tools) < 4 {
 		t.Errorf("expected at least 4 proxy tools, got: %v", result)
+	}
+}
+
+func newConfigServer(t *testing.T) *server.Server {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func execGetFileInfo(t *testing.T, srv *server.Server) map[string]any {
+	t.Helper()
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "fs", "tool": "get_file_info", "params": map[string]any{},
+	}))
+	env := parseEnvelope(t, toolResultText(t, resp))
+	if env["error"] != nil {
+		t.Fatalf("get_file_info failed: %v", env)
+	}
+	summary, _ := env["data"].(map[string]any)
+	if summary == nil {
+		t.Fatalf("nil summary: %v", env)
+	}
+	return summary
+}
+
+func assertExcluded(t *testing.T, obj map[string]any, keys ...string) {
+	t.Helper()
+	for _, k := range keys {
+		if obj[k] != nil {
+			t.Errorf("field %q should be excluded, got: %v", k, obj[k])
+		}
+	}
+}
+
+func TestProjectionExcludeFields(t *testing.T) {
+	srv := newConfigServer(t)
+	payload := `{"name":"test.txt","size":5,"created":"2026-01-01","permissions":"644","isDirectory":false}`
+	payloadJSON, _ := json.Marshal(payload)
+	fake := &transport.FakeConnection{
+		Tools:     []transport.ToolDefinition{{Name: "get_file_info", Description: "info", InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)},
+	}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "fs"}, fake)
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "fs", "tool": "get_file_info",
+		"projection": map[string]any{"include": []string{"name", "size"}},
+	}))
+	summary := execGetFileInfo(t, srv)
+	if summary["name"] == nil {
+		t.Error("expected 'name' in projected summary")
+	}
+	assertExcluded(t, summary, "created", "permissions", "isDirectory")
+}
+
+func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
+	srv := newConfigServer(t)
+	longBody := strings.Repeat("z", 300)
+	payload := `{"id":1,"title":"short","body":"` + longBody + `"}`
+	payloadJSON, _ := json.Marshal(payload)
+	fake := &transport.FakeConnection{
+		Tools:     []transport.ToolDefinition{{Name: "get_doc", Description: "doc", InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)},
+	}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "get_doc",
+		"projection": map[string]any{"string_limits": map[string]any{"body": 50}},
+	}))
+
+	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "get_doc"}))
+	env := parseEnvelope(t, toolResultText(t, resp))
+	if env["error"] != nil {
+		t.Fatalf("get_doc failed: %v", env)
+	}
+
+	truncated, _ := env["truncated"].(map[string]any)
+	bytesRemoved, _ := truncated["body"].(float64)
+	if bytesRemoved <= 0 {
+		t.Errorf("expected truncated[body] > 0, got %v", truncated)
+	}
+	// body had 300 chars, limit 50 → removed ≥ 200
+	if int(bytesRemoved) < 200 {
+		t.Errorf("expected at least 200 bytes removed from body, got %v", bytesRemoved)
+	}
+	// title is short — must not appear in truncated
+	if truncated["title"] != nil {
+		t.Errorf("short field should not appear in truncated, got title=%v", truncated["title"])
+	}
+	// file written because projection applied
+	if env["file"] == nil {
+		t.Error("expected file written when truncation applied")
+	}
+}
+
+func assertHealthStats(t *testing.T, srv *server.Server, svcName string, wantCalls int) {
+	t.Helper()
+	var status map[string]any
+	json.Unmarshal([]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))), &status)
+	servers, _ := status["servers"].(map[string]any)
+	svc, _ := servers[svcName].(map[string]any)
+	if calls, _ := svc["calls"].(float64); int(calls) != wantCalls {
+		t.Errorf("expected %d calls, got %v", wantCalls, calls)
+	}
+	if svc["last_call"] == nil {
+		t.Error("expected last_call timestamp")
+	}
+	lastCall, _ := svc["last_call"].(string)
+	if _, err := time.Parse(time.RFC3339, lastCall); err != nil {
+		t.Errorf("last_call not RFC3339: %q", lastCall)
+	}
+}
+
+func TestHealthStatsAfterCalls(t *testing.T) {
+	srv := newTestServer(t)
+	t.Cleanup(srv.Close)
+	const nCalls = 3
+	fake := &transport.FakeConnection{
+		Tools:     []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)},
+	}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
+	for i := 0; i < nCalls; i++ {
+		serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "ping", "params": map[string]any{}}))
+	}
+	assertHealthStats(t, srv, "svc", nCalls)
+}
+
+func makeListItemsFake(longDesc string) *transport.FakeConnection {
+	items := `[{"id":1,"description":"` + longDesc + `"},{"id":2,"description":"` + longDesc + `"},{"id":3,"description":"` + longDesc + `"}]`
+	itemsJSON, _ := json.Marshal(items)
+	return &transport.FakeConnection{
+		Tools:     []transport.ToolDefinition{{Name: "list_items", Description: "list", InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(itemsJSON) + `}]}`)},
+	}
+}
+
+func TestSlimProjectionMode(t *testing.T) {
+	srv := newConfigServer(t)
+	longDesc := strings.Repeat("word ", 60)
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, makeListItemsFake(longDesc))
+	execListItems := func() string {
+		return toolResultText(t, serve(t, srv, callTool("call", map[string]any{
+			"server": "svc", "tool": "list_items", "params": map[string]any{},
+		})))
+	}
+	textFull := execListItems()
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "list_items",
+		"projection": map[string]any{"mode": "slim"},
+	}))
+	textSlim := execListItems()
+	if len(textSlim) >= len(textFull) {
+		t.Errorf("slim (%d bytes) should be shorter than full (%d bytes)", len(textSlim), len(textFull))
+	}
+	var slimEnv map[string]any
+	json.Unmarshal([]byte(textSlim), &slimEnv)
+	truncated, _ := slimEnv["truncated"].(map[string]any)
+	if len(truncated) == 0 {
+		t.Errorf("expected truncated map in slim envelope, got: %v", slimEnv)
 	}
 }

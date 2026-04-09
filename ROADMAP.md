@@ -84,7 +84,7 @@ mini perm-call github create_pull_request '{"owner":"acme","repo":"api","title":
 # Flags
 mini call github search_code '{"q":"TODO"}' --raw          # skip projection, full upstream response
 mini call github search_code '{"q":"TODO"}' --output json  # default: projected JSON
-mini call github search_code '{"q":"TODO"}' --output lines # lines format (compact, great for agents)
+mini call github search_code '{"q":"TODO"}' --output mini # mini format (compact, great for agents)
 ```
 
 Design decisions:

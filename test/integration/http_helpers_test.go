@@ -99,7 +99,7 @@ func envelopeOK(t *testing.T, client *mcpClient, server, tool string) bool {
 	if err := json.Unmarshal([]byte(text), &e); err != nil {
 		return false
 	}
-	return e.OK
+	return e.Error == ""
 }
 
 // authCapturingMCP wraps a fakeHTTPMCP to capture a specific request header on each call.

@@ -23,7 +23,7 @@ security-review-*.md
 
 # tooling
 .claude/
-.minimcp/
+.mini/
 .DS_Store
 *.env
 .env*

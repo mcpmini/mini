@@ -67,7 +67,7 @@ func TestConfigureSetProjection(t *testing.T) {
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
 		t.Fatalf("not JSON: %v", err)
 	}
-	if result["ok"] != true {
+	if result["error"] != nil {
 		t.Errorf("expected ok:true, got %v", result)
 	}
 }

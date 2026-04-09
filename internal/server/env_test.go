@@ -15,15 +15,6 @@ func TestExpandEnv(t *testing.T) {
 	}
 }
 
-func TestResolveHeaderValueTrimsExpandedValue(t *testing.T) {
-	t.Setenv("API_KEY", "  top-secret  ")
-	got := resolveHeaderValue("  Bearer ${API_KEY}  ")
-	want := "Bearer   top-secret"
-	if got != want {
-		t.Fatalf("resolveHeaderValue() = %q, want %q", got, want)
-	}
-}
-
 func TestApplyToolTimeoutDefault(t *testing.T) {
 	ctx, cancel := applyToolTimeout(context.Background(), "")
 	defer cancel()

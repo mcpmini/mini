@@ -65,8 +65,8 @@ func TestServer_execReturnsResponse(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	text := startServer(t, cfg).execTool("github", "list_pull_requests", nil)
-	if !strings.Contains(text, `"ok"`) {
-		t.Errorf("expected ok envelope in response, got: %q", text[:min(200, len(text))])
+	if !strings.Contains(text, `"data"`) {
+		t.Errorf("expected data envelope in response, got: %q", text[:min(200, len(text))])
 	}
 }
 
@@ -74,6 +74,7 @@ func TestServer_execWithProjection(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeProjection(t, cfg, "github", "list_pull_requests:\n  include: [number, title]\n")
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	rawFixture, err := os.ReadFile(filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
 	if err != nil {

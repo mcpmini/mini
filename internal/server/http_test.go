@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -338,29 +337,6 @@ func TestHTTPServer_GetAllowHeader(t *testing.T) {
 	}
 }
 
-func TestHTTPServer_RateLimit(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.HTTPRateLimit = 2
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
-
-	body := initRequest()
-	got429 := false
-	for range 20 {
-		resp := mcpPost(t, ts, body, "")
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode == http.StatusTooManyRequests {
-			got429 = true
-			break
-		}
-	}
-	if !got429 {
-		t.Error("expected at least one 429 with rate_limit=2")
-	}
-}
 
 func TestHTTPServer_SSEXAccelBuffering(t *testing.T) {
 	_, ts := newHTTPTestServer(t)

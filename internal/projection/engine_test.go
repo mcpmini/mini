@@ -90,21 +90,19 @@ func TestArrayLimit(t *testing.T) {
 }
 
 func TestStringTruncation(t *testing.T) {
-	long := make([]byte, 2000)
-	for i := range long {
-		long[i] = 'x'
-	}
-	value := map[string]any{"body": string(long)}
+	// 2000 bytes of 'x' — no word/sentence boundaries, so truncation is exact at 100.
+	long := strings.Repeat("x", 2000)
+	value := map[string]any{"body": long}
 
 	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
 	m := result.Summary.(map[string]any)
 
-	body := m["body"].(string)
-	if !strings.HasSuffix(body, "<trnc") {
-		t.Error("expected truncation marker <trnc")
+	want := strings.Repeat("x", 100)
+	if m["body"] != want {
+		t.Errorf("body = %q, want %q", m["body"], want)
 	}
-	if len(strings.TrimSuffix(body, "<trnc")) > 100 {
-		t.Errorf("expected body content truncated to ≤100 chars, got %d", len(body))
+	if result.Truncated["body"] != 1900 {
+		t.Errorf("truncated[body] = %d, want 1900", result.Truncated["body"])
 	}
 }
 
@@ -243,15 +241,21 @@ func TestNamedStringLimit(t *testing.T) {
 	result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
 	m := result.Summary.(map[string]any)
 
-	body := m["body"].(string)
-	content := strings.TrimSuffix(body, "<trnc")
-	if len(content) > 50 {
-		t.Errorf("body should be capped at 50 chars content, got %d", len(content))
+	// "word word ... word" with limit 50: truncateAtBoundary finds space at [49] → 49 chars kept.
+	// long = 14 "word"s with 13 spaces = 69 chars total; removed = 69 - 49 = 20.
+	wantBody := "word word word word word word word word word word"
+	if m["body"].(string) != wantBody {
+		t.Errorf("body = %q, want %q", m["body"], wantBody)
+	}
+	if result.Truncated["body"] != 20 {
+		t.Errorf("truncated[body] = %d, want 20", result.Truncated["body"])
 	}
 	// title has no named limit — should pass through untruncated
-	title := m["title"].(string)
-	if title != long {
-		t.Errorf("title should not be truncated, got len=%d", len(title))
+	if m["title"].(string) != long {
+		t.Errorf("title should not be truncated")
+	}
+	if result.Truncated["title"] != 0 {
+		t.Errorf("title should not be in truncated map, got %d", result.Truncated["title"])
 	}
 }
 
@@ -269,8 +273,10 @@ func slimModeResult(t *testing.T) map[string]any {
 
 func TestSlimMode_stringAndArrayLimits(t *testing.T) {
 	m := slimModeResult(t)
-	if len(m["body"].(string)) > 205 {
-		t.Errorf("slim mode: body should be ≤200 chars content, got %d", len(m["body"].(string)))
+	// 500 bytes of 'x' with slim limit 200 — no boundaries → exact 200 chars, removed 300.
+	wantBody := strings.Repeat("x", 200)
+	if m["body"].(string) != wantBody {
+		t.Errorf("slim body = %q, want %q", m["body"], wantBody)
 	}
 	if len(m["items"].([]any)) > 4 {
 		t.Errorf("slim mode: items should be capped at 3 + sentinel, got %d", len(m["items"].([]any)))

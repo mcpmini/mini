@@ -29,23 +29,31 @@ type sessionEvictor interface {
 var usageText = `usage: mini [--config DIR] [--version] <command>
 
 commands:
-  serve [flags]        Start the MCP proxy (default, stdio)
-  daemon               Run as a shared background daemon (HTTP)
-  daemon status        Show whether the daemon is running
-  ls / list            List configured servers
-  add NAME [flags]     Add a server
-  rm / remove NAME     Remove a server
-  status               Show server health
-  cleanup              Delete expired response files
-  auth NAME            Authorize a server via OAuth2 (PKCE flow)
-  test [--timeout T]   CI-safe health check (exits 1 on any failure)
-  init / setup [--yes] Interactive setup wizard
-  version              Print version
+  serve [flags]                  Start the MCP proxy (default, stdio)
+  daemon                         Run as a shared background daemon (HTTP)
+  daemon status                  Show whether the daemon is running
+  ls / list                      List configured servers
+  add NAME [flags]               Add a server
+  rm / remove NAME               Remove a server
+  status                         Show server health
+  cleanup                        Delete expired response files
+  auth NAME                      Authorize a server via OAuth2 (PKCE flow)
+  test [--timeout T]             CI-safe health check (exits 1 on any failure)
+  init / setup [--yes]           Interactive setup wizard
+  call SERVER TOOL [PARAMS]      Invoke an open tool directly (exit 1 on tool error)
+  perm-call SERVER TOOL [PARAMS] Invoke a protected tool directly
+  version                        Print version
 
 serve flags:
   --http ADDR         Also serve HTTP MCP on ADDR; bare port or :port binds to loopback
   --standalone        Skip daemon detection, serve directly
   --dangerous-nonloopback-http  Allow --http to bind to non-loopback (all clients must be trusted)
+
+call / perm-call flags:
+  -j    JSON output (projected envelope, default)
+  -m    mini format (compact key:value)
+  -r    raw upstream response, no projection
+  PARAMS is a JSON string or - to read from stdin
 
 add flags:
   --url URL           HTTP/SSE server URL
@@ -82,11 +90,13 @@ var commands = map[string]func(string, []string){
 	"remove": func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
 	"status": func(dir string, _ []string) { runStatus(dir) },
 	"cleanup": func(dir string, _ []string) { mustRun(runCleanup(dir, os.Stdout)) },
-	"auth":    runAuth,
-	"test":    runTest,
-	"init":    runInit,
-	"setup":   runInit,
-	"version": func(_ string, _ []string) { fmt.Println(transport.Version) },
+	"auth":      runAuth,
+	"test":      runTest,
+	"init":      runInit,
+	"setup":     runInit,
+	"call":      runCall,
+	"perm-call": runPermCall,
+	"version":   func(_ string, _ []string) { fmt.Println(transport.Version) },
 }
 
 func mustRun(err error) {
@@ -176,9 +186,6 @@ func buildAndConnectServer(ctx context.Context, cfg *config.Config, configDir st
 				os.Exit(1)
 			}
 		}
-	}
-	if err := srv.LoadActions(configDir); err != nil {
-		logger.Warn("failed to load actions", "err", err)
 	}
 	return srv
 }

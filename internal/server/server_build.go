@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"golang.org/x/time/rate"
-
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/projection"
@@ -44,16 +42,10 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		projDefaults: newProjDefaults(cfg),
 		toolSchemas:  proxyToolSchemas(),
 		sessions:     newSessionStore(),
-		authFlows:    make(map[string]*authFlowState),
-		rateLimiters: make(map[string]rateLimiterEntry),
-		rateLimit:    cfgRateLimit(cfg),
-		logger:       logger,
+		authFlows: make(map[string]*authFlowState),
+		logger:    logger,
 		clock:        clock.System(),
 	}
-}
-
-func cfgRateLimit(cfg *config.Config) rate.Limit {
-	return rate.Limit(cfg.HTTPRateLimit)
 }
 
 func newProjDefaults(cfg *config.Config) *projection.Defaults {
@@ -97,7 +89,7 @@ func mustStore(cfg *config.Config, logger *slog.Logger) *response.Store {
 func buildStoreConfig(cfg *config.Config) response.StoreConfig {
 	return response.StoreConfig{
 		Dir:             responseDir(cfg),
-		TTL:             parseOrDefaultDuration(cfg.ResponseTTL, 168*time.Hour),
+		TTL:             parseOrDefaultDuration(cfg.ResponseTTL, time.Hour),
 		BudgetMB:        cfg.ResponseDiskBudgetMB,
 		CleanupInterval: time.Hour,
 	}

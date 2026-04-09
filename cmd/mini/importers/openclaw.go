@@ -16,6 +16,24 @@ type openClawMCPEntry struct {
 // ImportFromOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
 // Format: {"mcp": {"servers": {"name": {"command": "...", "args": [...], "env": {...}}}}}
 func ImportFromOpenClaw(configDir, path string) error {
+	servers, err := parseOpenClawConfig(path)
+	if err != nil {
+		return err
+	}
+	if len(servers) == 0 {
+		fmt.Println("no mcp.servers found in OpenClaw config")
+		return nil
+	}
+	for name, entry := range servers {
+		if err := WriteServerYAML(configDir, name, openClawEntryToServer(name, entry)); err != nil {
+			return err
+		}
+	}
+	fmt.Println("tip: replace any literal tokens in env with ${ENV_VAR} references")
+	return nil
+}
+
+func parseOpenClawConfig(path string) (map[string]openClawMCPEntry, error) {
 	var cfg struct {
 		MCP struct {
 			Servers map[string]openClawMCPEntry `json:"servers"`
@@ -23,22 +41,12 @@ func ImportFromOpenClaw(configDir, path string) error {
 	}
 	data, err := ReadConfigFile(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
+		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if len(cfg.MCP.Servers) == 0 {
-		fmt.Println("no mcp.servers found in OpenClaw config")
-		return nil
-	}
-	for name, entry := range cfg.MCP.Servers {
-		if err := WriteServerYAML(configDir, name, openClawEntryToServer(name, entry)); err != nil {
-			return err
-		}
-	}
-	fmt.Println("tip: replace any literal tokens in env with ${ENV_VAR} references")
-	return nil
+	return cfg.MCP.Servers, nil
 }
 
 func openClawEntryToServer(name string, entry openClawMCPEntry) ServerYAML {

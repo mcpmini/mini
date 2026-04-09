@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/mcpmini/mini/internal/response"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -164,6 +165,9 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, se
 			return nil, err
 		}
 		return toolErrorResult(err.Error()), nil
+	}
+	if env, ok := result.(*response.Envelope); ok && env.Error != "" {
+		return toolErrorResult(mustJSON(env)), nil
 	}
 	return toolOKResult(result), nil
 }

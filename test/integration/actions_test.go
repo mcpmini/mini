@@ -24,7 +24,7 @@ func TestActions_defaultArgsMergedWithCallArgs(t *testing.T) {
 		"myfetch")
 
 	e := client.execEnvelope("svc", "myfetch", map[string]any{"id": 99})
-	if !e.OK {
+	if e.Error != "" {
 		t.Errorf("action with call-time args overriding default should succeed, got: %+v", e)
 	}
 }
@@ -71,7 +71,7 @@ func TestActions_execAction(t *testing.T) {
 	}
 
 	e := client.execEnvelope("svc", "myfetch", nil)
-	if !e.OK {
+	if e.Error != "" {
 		t.Errorf("expected ok=true from action call, got: %+v", e)
 	}
 }

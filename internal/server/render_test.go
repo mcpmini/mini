@@ -98,14 +98,10 @@ func assertUniformKeysNil(t *testing.T, items []any) {
 }
 
 func renderEnvelope(ok bool, data any) *response.Envelope {
-	e := &response.Envelope{OK: ok}
-	if ok {
-		e.Data = data
-		return e
+	if !ok {
+		return &response.Envelope{Error: "tool_error", Message: "something went wrong"}
 	}
-	e.Error = "tool_error"
-	e.Message = "something went wrong"
-	return e
+	return &response.Envelope{Data: data}
 }
 
 func TestFormatScalar(t *testing.T) {
@@ -276,7 +272,7 @@ func makeEnvelope(ok bool, data any) *response.Envelope {
 
 func TestRenderLines_header(t *testing.T) {
 	t.Run("server.tool format", func(t *testing.T) {
-		out := renderLines("myserver", "mytool", makeEnvelope(true, "hello"))
+		out := RenderLines("myserver", "mytool", makeEnvelope(true, "hello"))
 		if !strings.HasPrefix(out, "[myserver.mytool]\n") {
 			t.Errorf("expected header [myserver.mytool], got: %q", out)
 		}
@@ -285,13 +281,13 @@ func TestRenderLines_header(t *testing.T) {
 		e := makeEnvelope(true, "hello")
 		path := "/tmp/resp.json"
 		e.File = &path
-		out := renderLines("srv", "tool", e)
+		out := RenderLines("srv", "tool", e)
 		if !strings.Contains(out, "file:/tmp/resp.json") {
 			t.Errorf("expected file path in header, got: %q", out)
 		}
 	})
 	t.Run("error shows code and message", func(t *testing.T) {
-		out := renderLines("srv", "tool", makeEnvelope(false, nil))
+		out := RenderLines("srv", "tool", makeEnvelope(false, nil))
 		if !strings.Contains(out, "ERROR tool_error") || !strings.Contains(out, "something went wrong") {
 			t.Errorf("expected ERROR line with message, got: %q", out)
 		}
@@ -300,12 +296,12 @@ func TestRenderLines_header(t *testing.T) {
 
 func TestRenderLines_data(t *testing.T) {
 	t.Run("string data rendered inline", func(t *testing.T) {
-		if out := renderLines("srv", "tool", makeEnvelope(true, "hello world")); !strings.Contains(out, "hello world") {
+		if out := RenderLines("srv", "tool", makeEnvelope(true, "hello world")); !strings.Contains(out, "hello world") {
 			t.Errorf("expected string data, got: %q", out)
 		}
 	})
 	t.Run("unknown scalar rendered as string", func(t *testing.T) {
-		if out := renderLines("srv", "tool", makeEnvelope(true, float64(42))); !strings.Contains(out, "42") {
+		if out := RenderLines("srv", "tool", makeEnvelope(true, float64(42))); !strings.Contains(out, "42") {
 			t.Errorf("expected scalar value in output, got: %q", out)
 		}
 	})
@@ -314,14 +310,14 @@ func TestRenderLines_data(t *testing.T) {
 func TestRenderLines_collections(t *testing.T) {
 	t.Run("top-level array produces one line per item", func(t *testing.T) {
 		items := []any{map[string]any{"name": "alice"}, map[string]any{"name": "bob"}}
-		out := renderLines("srv", "tool", makeEnvelope(true, items))
+		out := RenderLines("srv", "tool", makeEnvelope(true, items))
 		if lines := strings.Split(strings.TrimSpace(out), "\n"); len(lines) < 4 {
 			t.Errorf("expected at least 4 lines for 2-item array, got %d: %q", len(lines), out)
 		}
 	})
 	t.Run("map with primary array renders scalars and items", func(t *testing.T) {
 		data := map[string]any{"total": float64(2), "items": []any{"a", "b"}}
-		out := renderLines("srv", "tool", makeEnvelope(true, data))
+		out := RenderLines("srv", "tool", makeEnvelope(true, data))
 		if !strings.Contains(out, "total:") || !strings.Contains(out, "a") {
 			t.Errorf("expected scalar and array items in output, got: %q", out)
 		}

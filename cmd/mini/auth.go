@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -33,14 +34,21 @@ func runAuth(configDir string, args []string) {
 	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
 		fatalf("server %q does not have oauth2 auth configured", serverName)
 	}
-	runPKCEFlow(configDir, serverName, sc.Auth)
+	runPKCEFlow(configDir, serverName, sc)
 }
 
-func runPKCEFlow(configDir, serverName string, authCfg *config.AuthConfig) {
+func runPKCEFlow(configDir, serverName string, sc *config.ServerConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", serverName)
-	token, err := auth.PKCEFlow(ctx, authCfg, openBrowser)
+	if err := resolveOAuthEndpoints(ctx, configDir, serverName, sc); err != nil {
+		fatalf("resolve oauth config: %v", err)
+	}
+	opener := openBrowser
+	if sc.Auth.BrowserCmd != "" {
+		opener = openBrowserCmd(sc.Auth.BrowserCmd)
+	}
+	token, err := auth.PKCEFlow(ctx, sc.Auth, opener)
 	if err != nil {
 		fatalf("auth flow: %v", err)
 	}
@@ -48,6 +56,58 @@ func runPKCEFlow(configDir, serverName string, authCfg *config.AuthConfig) {
 		fatalf("save token: %v", err)
 	}
 	printAuthResult(serverName, token.Expiry)
+}
+
+func resolveOAuthEndpoints(ctx context.Context, configDir, serverName string, sc *config.ServerConfig) error {
+	a := sc.Auth
+	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
+		return nil
+	}
+	regURL, err := discoverMissingEndpoints(ctx, sc.URL, a)
+	if err != nil {
+		return err
+	}
+	if a.ClientID == "" {
+		return resolveClientID(ctx, configDir, serverName, a, regURL)
+	}
+	return nil
+}
+
+func discoverMissingEndpoints(ctx context.Context, url string, a *config.AuthConfig) (string, error) {
+	if a.AuthURL != "" && a.TokenURL != "" {
+		return "", nil
+	}
+	meta, err := auth.Discover(ctx, url)
+	if err != nil {
+		return "", fmt.Errorf("discover oauth endpoints: %w", err)
+	}
+	if a.AuthURL == "" {
+		a.AuthURL = meta.AuthURL
+	}
+	if a.TokenURL == "" {
+		a.TokenURL = meta.TokenURL
+	}
+	return meta.RegistrationURL, nil
+}
+
+func resolveClientID(ctx context.Context, configDir, serverName string, a *config.AuthConfig, regURL string) error {
+	reg, err := auth.LoadRegistration(configDir, serverName)
+	if err == nil {
+		a.ClientID = reg.ClientID
+		return nil
+	}
+	if !auth.IsNotFound(err) {
+		return err
+	}
+	if regURL == "" {
+		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
+	}
+	clientID, err := auth.Register(ctx, regURL)
+	if err != nil {
+		return err
+	}
+	a.ClientID = clientID
+	return auth.SaveRegistration(configDir, serverName, &auth.Registration{ClientID: clientID})
 }
 
 func printAuthResult(name string, expiry time.Time) {
@@ -136,4 +196,14 @@ func openBrowser(url string) error {
 		return fmt.Errorf("unsupported platform")
 	}
 	return exec.Command(cmd, url).Start()
+}
+
+func openBrowserCmd(browserCmd string) func(string) error {
+	return func(url string) error {
+		return exec.Command("sh", "-c", browserCmd+" "+shellQuote(url)).Start()
+	}
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

@@ -262,6 +262,46 @@ func TestCLI_cleanup_exits0(t *testing.T) {
 	}
 }
 
+func TestCLI_auth_serverNotFound(t *testing.T) {
+	_, _, code := runCLI(t, t.TempDir(), "auth", "nonexistent")
+	if code == 0 {
+		t.Error("auth for nonexistent server should exit non-zero")
+	}
+}
+
+func TestCLI_auth_noOAuth2Config(t *testing.T) {
+	cfg := t.TempDir()
+	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
+	_, stderr, code := runCLI(t, cfg, "auth", "myserver")
+	if code == 0 {
+		t.Error("auth for server without oauth2 config should exit non-zero")
+	}
+	if !strings.Contains(stderr, "oauth2") {
+		t.Errorf("expected 'oauth2' in stderr, got: %s", stderr)
+	}
+}
+
+func TestCLI_status_liveServer(t *testing.T) {
+	cfg := t.TempDir()
+	dir := mockFixtureDir(t, map[string]string{
+		"get_item":   `{"id":1}`,
+		"list_items": `[]`,
+	})
+	writeServerYAML(t, cfg, "svc", dir, "")
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+
+	stdout, _, code := runCLI(t, cfg, "status")
+	if code != 0 {
+		t.Errorf("status with reachable server should exit 0, got %d\nstdout: %s", code, stdout)
+	}
+	if !strings.Contains(stdout, "svc") {
+		t.Errorf("expected server name in status output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "ok") {
+		t.Errorf("expected 'ok' status for live server, got: %s", stdout)
+	}
+}
+
 func writeClaudeConfig(t *testing.T, serverDef any) string {
 	t.Helper()
 	data, _ := json.Marshal(map[string]any{

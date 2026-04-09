@@ -16,7 +16,7 @@ func TestError_upstreamRPCError(t *testing.T) {
 		"")
 
 	e := client.execEnvelope("svc", "get_item", nil)
-	if e.OK {
+	if e.Error == "" {
 		t.Error("rpc_error fault should produce ok=false in envelope")
 	}
 }
@@ -28,7 +28,7 @@ func TestError_toolTimeout(t *testing.T) {
 		"300ms")
 
 	e := client.execEnvelope("svc", "get_item", nil)
-	if e.OK {
+	if e.Error == "" {
 		t.Error("timed-out tool should produce ok=false in envelope")
 	}
 }
@@ -62,7 +62,7 @@ func TestError_malformedRequest(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1}`})
 	fmt.Fprint(client.stdin, "NOT_VALID_JSON_GARBAGE\n")
 	e := client.execEnvelope("svc", "get_item", nil)
-	if !e.OK {
+	if e.Error != "" {
 		t.Error("server should continue serving after a malformed request")
 	}
 }

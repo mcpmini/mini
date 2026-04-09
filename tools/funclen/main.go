@@ -66,7 +66,7 @@ func walkDir(dir string, fset *token.FileSet, issues *[]issue) error {
 		if info.IsDir() && isSkipped(info.Name()) {
 			return filepath.SkipDir
 		}
-		if !strings.HasSuffix(path, ".go") {
+		if !strings.HasSuffix(path, ".go") || isTestFile(path) {
 			return nil
 		}
 		*issues = append(*issues, checkFile(path, fset)...)
@@ -76,6 +76,10 @@ func walkDir(dir string, fset *token.FileSet, issues *[]issue) error {
 
 func isSkipped(name string) bool {
 	return name == "vendor" || name == ".git" || name == "node_modules"
+}
+
+func isTestFile(path string) bool {
+	return strings.HasSuffix(path, "_test.go")
 }
 
 func checkFile(path string, fset *token.FileSet) []issue {

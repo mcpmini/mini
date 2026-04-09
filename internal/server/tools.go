@@ -61,7 +61,7 @@ func configureSchema() map[string]any {
 			"auth_status (check whether a valid OAuth token exists for a server). " +
 			"Use set_projection to reduce noise when tool responses are too large.",
 		"inputSchema": schema(map[string]any{
-			"action":       prop("string", "status | set_projection | reload | add_server | remove_server"),
+			"action":       prop("string", "status | set_projection | reload (re-reads projections from disk, replacing all runtime-set projections) | add_server | remove_server"),
 			"server":       prop("string", "Server name (for set_projection, add_server, remove_server)"),
 			"tool":         prop("string", "Tool name (for set_projection)"),
 			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {mode, include, exclude_always, string_limits, array_limits, strip_markup}"},

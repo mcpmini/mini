@@ -35,7 +35,7 @@ func resolveResponseDir(cfg *config.Config, configDir string) (string, time.Dura
 	}
 	ttl, err := time.ParseDuration(cfg.ResponseTTL)
 	if err != nil {
-		ttl = 7 * 24 * time.Hour
+		ttl = time.Hour
 	}
 	return dir, ttl
 }

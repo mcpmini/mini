@@ -11,7 +11,7 @@ import (
 func TestHTTP_basicToolCall(t *testing.T) {
 	_, client := httpServer(t, nil)
 	e := client.execEnvelope("svc", "get_item", nil)
-	if !e.OK {
+	if e.Error != "" {
 		t.Fatalf("expected ok=true, got: %+v", e)
 	}
 }

@@ -21,9 +21,6 @@ func verifyEnvelope(t *testing.T, text string) map[string]any {
 	if err := json.Unmarshal([]byte(text), &env); err != nil {
 		t.Fatalf("execute result is not JSON: %v\n%s", err, text)
 	}
-	if env["ok"] == nil {
-		t.Error("envelope missing 'ok' field")
-	}
 	return env
 }
 
@@ -48,8 +45,8 @@ func TestExecuteReturnsEnvelope(t *testing.T) {
 		"server": "ci", "tool": "getBuild", "params": map[string]any{"id": "1234"},
 	}))
 	env := verifyEnvelope(t, toolResultText(t, resp))
-	if env["ok"] != true {
-		t.Errorf("expected ok=true, got %v", env["ok"])
+	if env["error"] != nil {
+		t.Errorf("expected success, got error: %v", env["error"])
 	}
 }
 

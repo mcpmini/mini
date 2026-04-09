@@ -51,7 +51,7 @@ func TestReconnect_rpcErrorDoesNotTriggerReconnect(t *testing.T) {
 		"server": "svc", "tool": "ping", "params": map[string]any{},
 	}))
 	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["ok"] != false {
+	if env["error"] == nil {
 		t.Errorf("expected ok=false for RPC error, got: %v", env)
 	}
 	if srv.IsReconnecting("svc") {
@@ -141,7 +141,8 @@ func assertEnvelopeOK(t *testing.T, srv *server.Server, svcName, toolName string
 		"server": svcName, "tool": toolName, "params": map[string]any{},
 	}))
 	env := parseEnvelope(t, toolResultText(t, resp))
-	if env["ok"] != wantOK {
+	gotOK := env["error"] == nil
+	if gotOK != wantOK {
 		t.Errorf("expected ok=%v, got: %v", wantOK, env)
 	}
 }

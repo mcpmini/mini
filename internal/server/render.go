@@ -9,18 +9,20 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
-func renderLines(server, tool string, e *response.Envelope) string {
+func RenderLines(server, tool string, e *response.Envelope) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%s.%s]", server, tool)
 	if e.File != nil {
 		fmt.Fprintf(&b, " file:%s", *e.File)
 	}
 	b.WriteByte('\n')
-	if !e.OK {
+	if e.Error != "" {
 		fmt.Fprintf(&b, "ERROR %s: %s\n", e.Error, e.Message)
 		return b.String()
 	}
-	writeLineData(&b, e.Data)
+	if e.File == nil {
+		writeLineData(&b, e.Data)
+	}
 	return b.String()
 }
 

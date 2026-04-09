@@ -102,7 +102,7 @@ func TestDaemon_basicToolCall(t *testing.T) {
 	startDaemon(t, cfg)
 	client := connectProxy(t, cfg)
 	e := client.execEnvelope("svc", "get_item", nil)
-	if !e.OK {
+	if e.Error != "" {
 		t.Errorf("expected ok=true, got: %+v", e)
 	}
 }
@@ -140,7 +140,7 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 	// No daemon running — --standalone should work without trying to start one
 	client := startServer(t, cfg)
 	e := client.execEnvelope("svc", "ping", nil)
-	if !e.OK {
+	if e.Error != "" {
 		t.Errorf("standalone mode: expected ok=true, got: %+v", e)
 	}
 }
@@ -258,7 +258,7 @@ func decodeRPCToolText(t *testing.T, body io.Reader) string {
 
 func assertInlineGetItem(t *testing.T, env envelope) {
 	t.Helper()
-	if !env.OK {
+	if env.Error != "" {
 		t.Fatalf("expected ok=true envelope, got %+v", env)
 	}
 	if env.File != nil {

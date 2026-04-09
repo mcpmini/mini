@@ -56,7 +56,7 @@ func ghTestGetMe(t *testing.T, srv *server.Server) {
 		"server": "github", "tool": "get_me", "params": map[string]any{},
 	})))
 	env := parseEnvelope(t, text)
-	if env["ok"] != true {
+	if env["error"] != nil {
 		t.Errorf("expected ok=true, got: %v", env["ok"])
 	}
 }
@@ -88,7 +88,7 @@ func ghTestListIssues(t *testing.T, srv *server.Server) {
 		"server": "github", "tool": "list_issues",
 		"params": map[string]any{"owner": "anthropics", "repo": "claude-code"},
 	})))
-	if env := parseEnvelope(t, text); env["ok"] != true {
+	if env := parseEnvelope(t, text); env["error"] != nil {
 		t.Errorf("expected ok=true, got: %v", env["ok"])
 	}
 }

@@ -121,7 +121,7 @@ func findClientPath(name string) string {
 }
 
 func createConfigDirs(configDir string) error {
-	for _, sub := range []string{"servers", "projections", "actions", "responses", "tokens"} {
+	for _, sub := range []string{"servers", "projections", "responses", "tokens"} {
 		if err := os.MkdirAll(filepath.Join(configDir, sub), 0700); err != nil {
 			return err
 		}

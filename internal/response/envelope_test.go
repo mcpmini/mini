@@ -39,33 +39,11 @@ func TestInlineSmallResponse(t *testing.T) {
 	}
 }
 
-func TestFileWrittenForLargeProjectedResponse(t *testing.T) {
+func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store, 5) // tiny threshold
+	builder := response.NewBuilder(store, 0)
 
-	raw := json.RawMessage(`{"status":"ok","body":"raw content"}`)
-	// summary is large — should trigger file write
-	data := map[string]any{"status": "ok", "body": "this projected summary has lots of text that exceeds the threshold"}
-
-	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if env.File == nil {
-		t.Fatal("expected file path for large projected response")
-	}
-	if _, err := os.Stat(*env.File); os.IsNotExist(err) {
-		t.Errorf("response file does not exist: %s", *env.File)
-	}
-}
-
-func TestSmallProjectionInlinedDespiteLargeRaw(t *testing.T) {
-	store := newTestStore(t)
-	builder := response.NewBuilder(store, 50)
-
-	raw := json.RawMessage(`{"status":"ok","body":"` + strings.Repeat("x", 1000) + `"}`)
-	// projection stripped the body — small summary should inline
+	raw := json.RawMessage(`{"status":"ok","body":"secret content"}`)
 	data := map[string]any{"status": "ok"}
 
 	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Elided: []string{"body"}})
@@ -73,8 +51,50 @@ func TestSmallProjectionInlinedDespiteLargeRaw(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if env.File == nil {
+		t.Fatal("expected raw file path when fields were elided")
+	}
+	if _, err := os.Stat(*env.File); os.IsNotExist(err) {
+		t.Errorf("response file does not exist: %s", *env.File)
+	}
+	// data is always inlined regardless of file write
+	if env.Data == nil {
+		t.Error("expected data to be inlined even when file is written")
+	}
+}
+
+func TestFileWrittenWhenThresholdExceeded(t *testing.T) {
+	store := newTestStore(t)
+	builder := response.NewBuilder(store, 5) // threshold of 5 tokens
+
+	// Large response (>> 5 tokens) with no projection should still write to file.
+	raw := json.RawMessage(`{"status":"ok","body":"` + strings.Repeat("x", 200) + `"}`)
+	data := map[string]any{"status": "ok", "body": strings.Repeat("x", 200)}
+
+	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if env.File == nil {
+		t.Error("expected file written when raw token count exceeds threshold")
+	}
+}
+
+func TestNoFileWhenBelowThreshold(t *testing.T) {
+	store := newTestStore(t)
+	builder := response.NewBuilder(store, 500) // high threshold
+
+	raw := json.RawMessage(`{"id":1}`)
+	data := map[string]any{"id": 1}
+
+	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "get", Raw: raw, Summary: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	if env.File != nil {
-		t.Error("small projected response should be inlined even if raw was large")
+		t.Error("no file should be written when response is below threshold and no projection applied")
 	}
 }
 
@@ -93,6 +113,30 @@ func TestElidedKeys(t *testing.T) {
 
 	if len(env.Elided) != 2 {
 		t.Errorf("expected 2 elided keys, got %v", env.Elided)
+	}
+}
+
+func TestTruncatedKeys(t *testing.T) {
+	store := newTestStore(t)
+	builder := response.NewBuilder(store, 0)
+
+	raw := json.RawMessage(`{"summary":"short","body":"` + strings.Repeat("x", 500) + `"}`)
+	data := map[string]any{"summary": "short", "body": strings.Repeat("x", 50)}
+	truncated := map[string]int{"body": 450}
+
+	env, _, err := builder.Build(response.BuildParams{
+		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Truncated: truncated,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if env.Truncated["body"] != 450 {
+		t.Errorf("expected truncated[body]=450, got %v", env.Truncated)
+	}
+	// truncation counts as projection applied — raw file should exist
+	if env.File == nil {
+		t.Error("expected file written when truncation applied")
 	}
 }
 
@@ -121,9 +165,6 @@ func TestCallStatsReduction(t *testing.T) {
 
 func TestBuildError(t *testing.T) {
 	env := response.BuildError("auth_expired", "Token expired", true, "Run: mini auth refresh ci")
-	if env.OK {
-		t.Error("error envelope should have OK=false")
-	}
 	if env.Error != "auth_expired" {
 		t.Errorf("unexpected error code: %s", env.Error)
 	}
