@@ -27,6 +27,7 @@ func WriteServer(configDir string, sc config.ServerConfig) error {
 	}
 	fmt.Printf("added %s → %s\n", sc.Name, path)
 	InstallBundledProjection(configDir, sc)
+	installBundledPermissions(configDir, sc)
 	return nil
 }
 

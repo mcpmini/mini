@@ -115,6 +115,48 @@ func TestWriteServer(t *testing.T) {
 			t.Error("bundled projection file is empty")
 		}
 	})
+
+	t.Run("known server installs bundled permissions when none specified", func(t *testing.T) {
+		dir := tempDir(t)
+		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
+		if err := ops.WriteServer(dir, sc); err != nil {
+			t.Fatalf("WriteServer: %v", err)
+		}
+		var got config.ServerConfig
+		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
+		if got.Permissions == nil {
+			t.Fatal("expected bundled permissions to be applied")
+		}
+		if len(got.Permissions.Hidden) == 0 {
+			t.Error("expected hidden tools in bundled github permissions")
+		}
+	})
+
+	t.Run("explicit permissions take precedence over bundled", func(t *testing.T) {
+		dir := tempDir(t)
+		sc := config.ServerConfig{
+			Name:      "gh",
+			Transport: "http",
+			URL:       "https://api.github.com/mcp",
+			Permissions: &config.PermissionsConfig{
+				Protected: []string{"my_tool"},
+			},
+		}
+		if err := ops.WriteServer(dir, sc); err != nil {
+			t.Fatalf("WriteServer: %v", err)
+		}
+		var got config.ServerConfig
+		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
+		if got.Permissions == nil || len(got.Permissions.Protected) != 1 {
+			t.Fatalf("expected explicit permissions preserved, got %+v", got.Permissions)
+		}
+		if got.Permissions.Protected[0] != "my_tool" {
+			t.Errorf("Protected = %v, want [my_tool]", got.Permissions.Protected)
+		}
+		if len(got.Permissions.Hidden) != 0 {
+			t.Errorf("bundled hidden applied despite explicit permissions: %v", got.Permissions.Hidden)
+		}
+	})
 }
 
 func TestDeleteServer(t *testing.T) {

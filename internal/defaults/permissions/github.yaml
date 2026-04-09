@@ -1,0 +1,6 @@
+hidden:
+  # Repository management — rarely needed in day-to-day agent workflows
+  - fork_repository
+  - create_repository
+  # File deletion is destructive and infrequent; prefer create_or_update_file
+  - delete_file
