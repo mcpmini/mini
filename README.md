@@ -4,6 +4,30 @@
 
 > **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents like Claude, Cursor, and Gemini connect to external tools — GitHub, Linear, Slack, etc. Each "MCP server" exposes a set of tools the agent can call. mini sits in front of all of them.
 
+## How agents load MCP tools
+
+Understanding where the token cost actually comes from helps explain what mini fixes.
+
+**Claude Code**
+- All MCP tools are registered as *deferred* by default — only names and descriptions are sent to the Anthropic API; full schemas are excluded from the context window until needed
+- When the model needs a tool, it calls a built-in `ToolSearch` tool (regex or BM25); the API injects the matching schema inline without touching the prompt cache
+- Tool *responses*, however, are raw — upstream servers return the full JSON object exactly as the API gave it, with no trimming or projection
+- Two MCP `_meta` extensions allow opt-outs: `anthropic/alwaysLoad` disables deferral for a specific tool; `anthropic/searchHint` adds extra search keywords
+
+**Codex**
+- All MCP tools are loaded upfront at init and sent to the model with full schemas; no deferral at startup
+- A built-in `tool_search` tool runs client-side BM25 over the pre-loaded catalog; matched tools are returned with `defer_loading: true` (OpenAI Responses API) so the model gets lightweight references before committing
+- Tool names use `mcp__server__tool` format with double-underscore delimiters; names exceeding the limit are truncated with a SHA1 suffix for uniqueness
+- Like Claude Code, Codex receives raw upstream JSON — no projection layer exists in either client
+
+**Where mini fits**
+
+Both clients solve schema-loading efficiency differently, but neither touches response content. A `list_pull_requests` call on a busy repo returns the same 188k-token blob whether the tool schema was deferred or not. mini intercepts that response before it reaches the agent and applies projection — field allowlists, string truncation, array caps — so the agent sees a summary and a trimmed file instead.
+
+For Claude Code, mini's 4-tool schema is itself deferred like any other MCP server; the real saving is response trimming. For Codex, mini also cuts the initial tool list from N schemas to 4, reducing upfront context at startup.
+
+---
+
 ## Why
 
 MCP responses are verbose by design — full JSON blobs with every field the API returns. A `list_pull_requests` call on an active repo returns PR bodies, URL fields, avatar links, node IDs, and merge metadata the agent will never read. On a busy repo like microsoft/vscode that's **~188,000 tokens** for a single tool call.
