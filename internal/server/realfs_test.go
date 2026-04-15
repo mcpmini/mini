@@ -52,17 +52,6 @@ func fsServer(t *testing.T, dir string) *server.Server {
 	return srv
 }
 
-func extractSummaryString(env map[string]any) string {
-	switch s := env["data"].(type) {
-	case string:
-		return s
-	case map[string]any:
-		c, _ := s["contents"].(string)
-		return c
-	}
-	return ""
-}
-
 func TestListDirectoryNonEmpty(t *testing.T) {
 	dir := realPath(t, t.TempDir())
 	os.WriteFile(filepath.Join(dir, "alpha.txt"), []byte("hello"), 0644)

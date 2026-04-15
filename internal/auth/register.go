@@ -39,7 +39,7 @@ func postRegistration(ctx context.Context, url string, body []byte) (*http.Respo
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return http.DefaultClient.Do(req)
+	return noRedirectClient.Do(req)
 }
 
 func parseClientID(resp *http.Response, url string) (string, error) {

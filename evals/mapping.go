@@ -1,21 +1,21 @@
 //go:build evals
 
-package evals_test
+package evals
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 )
 
 // MCPMapping builds the fixture directory for a fake MCP server.
-// fakemcp's mergeArgs overlays Claude's actual input args onto top-level
-// response fields with matching names, so write operations echo back Claude's values.
+// fakemcp overlays Claude's actual input args onto top-level response fields
+// with matching names, so write operations echo back Claude's values.
 type MCPMapping struct {
 	responses map[string]json.RawMessage
-	schemas   map[string]json.RawMessage // tool → .schema.json contents
+	schemas   map[string]json.RawMessage
 }
 
 func NewMCPMapping() *MCPMapping {
@@ -61,24 +61,22 @@ func (m *MCPMapping) FromFixtureDir(dir string) *MCPMapping {
 }
 
 // WriteOp registers a tool that auto-generates its response from request args.
-// Use for create_*, update_*, post_* and other mutating operations.
 func (m *MCPMapping) WriteOp(tool string) *MCPMapping {
 	m.responses[tool] = json.RawMessage(`{"__write_op": true}`)
 	return m
 }
 
-func (m *MCPMapping) Dir(t *testing.T) string {
-	t.Helper()
-	d := t.TempDir()
+func (m *MCPMapping) Dir(env *Env) (string, error) {
+	d := env.TempDir()
 	for tool, data := range m.responses {
 		if err := os.WriteFile(filepath.Join(d, tool+".json"), data, 0600); err != nil {
-			t.Fatalf("MCPMapping.Dir: write %s: %v", tool, err)
+			return "", fmt.Errorf("write %s: %w", tool, err)
 		}
 	}
 	for tool, schema := range m.schemas {
 		if err := os.WriteFile(filepath.Join(d, tool+".schema.json"), schema, 0600); err != nil {
-			t.Fatalf("MCPMapping.Dir: write schema %s: %v", tool, err)
+			return "", fmt.Errorf("write schema %s: %w", tool, err)
 		}
 	}
-	return d
+	return d, nil
 }

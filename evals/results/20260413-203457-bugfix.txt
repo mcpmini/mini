@@ -1,0 +1,105 @@
+▶ bugfix  ×2 reps
+
+
+╔══ Token Report: Bug fix pipeline (Jira → Sentry → code fix → GitHub PR) ══╗
+  direct (no mini)       avg  628208 / p95  688332 / max  688332   $0.3874 avg  (21.0 turns avg)    +0.0%
+  mcp-passthrough        avg 1054630 / p95 1129225 / max 1129225   $0.5696 avg  (40.5 turns avg)   +67.9%
+  cli-passthrough        avg  805124 / p95 1091741 / max 1091741   $0.4198 avg  (33.5 turns avg)   +28.2%
+  mcp-projected          avg  354027 / p95  367852 / max  367852   $0.2711 avg  (15.5 turns avg)   -43.6%
+  cli-projected          avg 1104772 / p95 1117523 / max 1117523   $0.5796 avg  (45.0 turns avg)   +75.9%
+  mcp-lines              avg  661013 / p95  680189 / max  680189   $0.3954 avg  (24.5 turns avg)    +5.2%
+  cli-lines              avg  729097 / p95  912854 / max  912854   $0.4015 avg  (34.5 turns avg)   +16.1%
+╚══════════════════════════════════════╝
+[direct] Done. Here's a full summary of what was done:
+
+---
+
+### WEBAPP-441 — JWT `alg:none` bypass fix
+
+**Jira:** WEBAPP-441 (Highest priority, In Progress)
+**Sentry:** AUTH-001 — 2,847 fatal hits in production via `POST /auth/token`
+
+**Root cause** (`auth/middleware.go:29`): The `ParseWithClaims` key function returned the signing key unconditionally, never inspecting `token.Method`. The `golang-jwt` library skips signature verification when the header declares `alg: none`, so attackers could forge arbitrary claims with no signature at all.
+
+**Fix** (`auth/middleware.go:31-33`): Added a type assertion on `*jwt.SigningMethodHMAC` inside the key function. Any token whose algorithm is not an HMAC variant (HS256/HS384/HS512) — including `alg: none` and `alg: RS256` — is now rejected before the signature is evaluated.
+
+```go
+if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+    return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+}
+```
+
+**PR:** acme/auth-service#101 — `fix/webapp-441-jwt-alg-none` → `main`
+[mcp-passthrough] You've hit your limit · resets 1am (America/New_York)
+[cli-passthrough] Done. Here's a summary of what was done:
+
+---
+
+**Jira WEBAPP-441** — `[SECURITY] Fix JWT alg:none validation bypass in auth middleware`
+- Priority: Highest | Sentry: AUTH-001 (2,847 fatal occurrences)
+
+**Root cause** (`auth/middleware.go:29`): `jwt.ParseWithClaims` was called without algorithm constraints, so tokens presenting `alg: none` required no signature and could forge arbitrary claims.
+
+**Fix applied** — two layers of defence:
+1. `jwt.WithValidMethods([]string{"HS256", "RS256"})` — the library rejects tokens with any other algorithm before the key function runs.
+2. Explicit `token.Method.(*jwt.SigningMethodHMAC)` type assertion in the key function — returns `ErrInvalidToken` as a second check.
+
+**PR opened:** [acme/webapp#101](https://github.com/acme/webapp/pull/101) on branch `fix/WEBAPP-441-jwt-alg-none-bypass` → `main`.
+[mcp-projected] Done. Here's a full summary of what happened:
+
+---
+
+**Jira WEBAPP-441** — `[SECURITY] Fix JWT alg:none validation bypass in auth middleware`
+- Highest-priority open security bug (story points: 5, sorted to top)
+
+**Sentry issue #4500000001** — `AuthenticationError: JWT signature verification failed - invalid algorithm`
+- Severity: **fatal** | Affected users: **2,847** | Culprit: `auth/middleware.go:ValidateToken`
+
+**Bug** (`auth/middleware.go:29`)
+The `ParseWithClaims` key function returned `signingKey` unconditionally, never checking `token.Method`. An attacker could send a JWT with `"alg":"none"`, skipping signature verification entirely and forging arbitrary claims.
+
+**Fix**
+Added an algorithm type assertion before returning the key:
+```go
+if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+    return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+}
+```
+Any non-HMAC algorithm (including `none`) now causes `ParseWithClaims` to fail, propagating as `ErrInvalidToken`.
+
+**PR** — `acme/webapp#101`
+Branch: `fix/webapp-441-jwt-alg-none-bypass` → `main`
+[cli-projected] You've hit your limit · resets 1am (America/New_York)
+[mcp-lines] PR #101 is open. Here's a full summary of what was done:
+
+---
+
+## WEBAPP-441 — JWT `alg:none` bypass fixed
+
+**Jira:** WEBAPP-441 (Priority: Highest, CVE-2026-1337)
+**Sentry:** AUTH-001 — 2,847 fatal occurrences in `auth/middleware.go:ValidateToken`
+
+### Root cause
+
+`jwt.ParseWithClaims` was called with a key function that returned the signing key unconditionally, without checking the token's algorithm. A forged token with `alg: none` passes through signature verification because the library skips verification for the `none` algorithm.
+
+### Fix (`auth/middleware.go:32`)
+
+Added a whitelist check inside the key function — if the signing method is not `jwt.SigningMethodHS256`, an error is returned before the key is ever handed back:
+
+```go
+if token.Method != jwt.SigningMethodHS256 {
+    return nil, fmt.Errorf("%w: unexpected signing method %q", ErrInvalidToken, token.Header["alg"])
+}
+```
+
+Rejection happens at parse time, before any claims are trusted.
+
+### PR
+
+**acme-org/webapp#101** — `hotfix/WEBAPP-441-jwt-alg-none` → `trunk`
+[cli-lines] You've hit your limit · resets 1am (America/New_York)
+  [mcp-passthrough[1/2]] run failed: claude: exit status 1 (logs: /var/folders/xb/l_zjcymj0sx4bhvzjdkq5bm80000gn/T/mini-eval-mcp-passthrough-1-2221775544)
+  [mcp-passthrough[2/2]] run failed: claude: exit status 1 (logs: /var/folders/xb/l_zjcymj0sx4bhvzjdkq5bm80000gn/T/mini-eval-mcp-passthrough-2-2006626646)
+  [cli-projected[1/2]] run failed: claude: exit status 1 (logs: /var/folders/xb/l_zjcymj0sx4bhvzjdkq5bm80000gn/T/mini-eval-cli-projected-1-2094260506)
+  [cli-lines[1/2]] run failed: claude: exit status 1 (logs: /var/folders/xb/l_zjcymj0sx4bhvzjdkq5bm80000gn/T/mini-eval-cli-lines-1-2790825173)

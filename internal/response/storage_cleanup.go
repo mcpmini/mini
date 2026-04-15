@@ -21,22 +21,20 @@ func (s *Store) cleanupLoop(interval time.Duration) {
 
 func (s *Store) evictExpired() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	now := time.Now()
 	kept := s.files[:0]
+	var toRemove []storedFile
 	for _, f := range s.files {
 		if f.expires.After(now) {
 			kept = append(kept, f)
-			continue
-		}
-		s.usedBytes -= f.size
-		warnRemoveErr(os.Remove(f.path))
-		if f.rawPath != "" {
-			warnRemoveErr(os.Remove(f.rawPath))
+		} else {
+			s.usedBytes -= f.size
+			toRemove = append(toRemove, f)
 		}
 	}
 	s.files = kept
+	s.mu.Unlock()
+	removeFiles(toRemove)
 }
 
 func (s *Store) evictIfNeeded(incoming int64) {
@@ -44,17 +42,14 @@ func (s *Store) evictIfNeeded(incoming int64) {
 		return
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
+	var toRemove []storedFile
 	for s.usedBytes+incoming > s.budgetBytes && len(s.files) > 0 {
-		oldest := s.files[0]
+		toRemove = append(toRemove, s.files[0])
+		s.usedBytes -= s.files[0].size
 		s.files = s.files[1:]
-		s.usedBytes -= oldest.size
-		warnRemoveErr(os.Remove(oldest.path))
-		if oldest.rawPath != "" {
-			warnRemoveErr(os.Remove(oldest.rawPath))
-		}
 	}
+	s.mu.Unlock()
+	removeFiles(toRemove)
 }
 
 // evictOvershoot removes oldest files until usedBytes is within the budget.

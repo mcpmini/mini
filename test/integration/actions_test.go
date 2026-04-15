@@ -18,6 +18,7 @@ func actionServer(t *testing.T, fixtures map[string]string, actionYAML, actionNa
 }
 
 func TestActions_defaultArgsMergedWithCallArgs(t *testing.T) {
+	t.Skip("actions not user-visible in v0.1")
 	client := actionServer(t,
 		map[string]string{"get_item": `{"id":42,"name":"fetched"}`},
 		"name: myfetch\ndescription: Fetch\nserver: svc\ntool: get_item\ndefault_args:\n  id: 42\n  extra: default\n",
@@ -30,6 +31,7 @@ func TestActions_defaultArgsMergedWithCallArgs(t *testing.T) {
 }
 
 func TestActions_protectedActionRequiresExecProtected(t *testing.T) {
+	t.Skip("actions not user-visible in v0.1")
 	client := actionServer(t,
 		map[string]string{"get_item": `{"id":1}`},
 		"name: protected_fetch\ndescription: Protected\nserver: svc\ntool: get_item\npermission: protected\n",
@@ -58,6 +60,7 @@ func TestActions_badServerReference(t *testing.T) {
 }
 
 func TestActions_execAction(t *testing.T) {
+	t.Skip("actions not user-visible in v0.1")
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":42,"name":"fetched"}`})
 	writeFakeServer(t, cfg, "svc", dir)

@@ -6,7 +6,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 )
+
+// noRedirectClient is shared by discovery and registration to prevent redirect-based
+// exfiltration — matching HTTPConnection's redirect policy.
+var noRedirectClient = &http.Client{
+	Timeout: 30 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
+}
 
 type ServerMeta struct {
 	AuthURL         string `json:"authorization_endpoint"`
@@ -36,7 +46,7 @@ func fetchMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noRedirectClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

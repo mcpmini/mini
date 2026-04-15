@@ -89,7 +89,7 @@ func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session
 	if entry.Permission == config.PermProtected {
 		return nil, fmt.Errorf("tool %q is protected — use perm_call instead", entry.FullName)
 	}
-	if !entry.ReadOnly && !s.hasProjectionCoverage(p.Server, p.Tool, session) {
+	if !s.hasProjectionCoverage(p.Server, p.Tool, session) {
 		return nil, fmt.Errorf("tool %q has no projection configured — responses may be large or unfiltered; use perm_call to proceed, or add a projection entry (config action:set_projection)", entry.FullName)
 	}
 	return s.callUpstream(ctx, p, entry, session)

@@ -76,38 +76,48 @@ func installBundledPermissions(configDir string, sc config.ServerConfig) {
 	if sc.Permissions != nil {
 		return
 	}
+	perms := loadBundledPermissions(sc)
+	if perms == nil {
+		return
+	}
+	if err := patchServerPermissions(configDir, sc.Name, perms); err == nil {
+		fmt.Printf("applied default permissions → %s\n", filepath.Join(configDir, "servers", sc.Name+".yaml"))
+	}
+}
+
+func loadBundledPermissions(sc config.ServerConfig) *config.PermissionsConfig {
 	key := DetectProjectionKey(sc)
 	if key == "" {
-		return
+		return nil
 	}
 	raw := defaults.PermissionsFor(key)
 	if raw == nil {
-		return
+		return nil
 	}
 	var perms config.PermissionsConfig
 	if err := yaml.Unmarshal(raw, &perms); err != nil {
-		return
+		return nil
 	}
 	if len(perms.Hidden) == 0 && len(perms.Protected) == 0 {
-		return
+		return nil
 	}
-	// Re-read and rewrite the server YAML with permissions applied.
-	serverPath := filepath.Join(configDir, "servers", sc.Name+".yaml")
+	return &perms
+}
+
+func patchServerPermissions(configDir, name string, perms *config.PermissionsConfig) error {
+	serverPath := filepath.Join(configDir, "servers", name+".yaml")
 	data, err := os.ReadFile(serverPath)
 	if err != nil {
-		return
+		return err
 	}
 	var existing config.ServerConfig
 	if err := yaml.Unmarshal(data, &existing); err != nil {
-		return
+		return err
 	}
-	existing.Permissions = &perms
+	existing.Permissions = perms
 	updated, err := yaml.Marshal(existing)
 	if err != nil {
-		return
+		return err
 	}
-	if err := os.WriteFile(serverPath, updated, 0600); err != nil {
-		return
-	}
-	fmt.Printf("applied default permissions → %s\n", serverPath)
+	return os.WriteFile(serverPath, updated, 0600)
 }

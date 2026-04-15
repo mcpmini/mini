@@ -437,11 +437,12 @@ func newSvcWithReadOnlyTool(t *testing.T) *server.Server {
 	return srv
 }
 
-func TestReadOnlyToolAllowedViaCallWithoutProjection(t *testing.T) {
+func TestReadOnlyToolRequiresProjectionCoverage(t *testing.T) {
 	srv := newSvcWithReadOnlyTool(t)
 	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "readOnlyGet"}))
-	if text := toolResultText(t, resp); strings.Contains(text, "no projection") {
-		t.Errorf("read-only tool should bypass projection requirement, got: %s", text)
+	text := toolResultText(t, resp)
+	if !strings.Contains(text, "no projection") {
+		t.Errorf("read-only tools must also require projection coverage, got: %s", text)
 	}
 }
 
