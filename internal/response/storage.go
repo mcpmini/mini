@@ -62,6 +62,8 @@ func (s *Store) Stats() (fileCount int, usedBytes int64) {
 	return len(s.files), s.usedBytes
 }
 
+func (s *Store) Dir() string { return s.dir }
+
 func uniqueBase(base string, i int) string {
 	if i == 0 {
 		return base

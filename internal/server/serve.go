@@ -135,16 +135,25 @@ func (s *Server) dispatch(ctx context.Context, req transport.Request, session *S
 
 const initInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
 
+const proxyInitInstructions = "Responses are projected for efficiency. mini_read(path) for full data. mini_config for server management."
+
 func (s *Server) handleInitialize(_ json.RawMessage) (any, error) {
+	instructions := initInstructions
+	if s.proxyMode {
+		instructions = proxyInitInstructions
+	}
 	return transport.InitializeResult{
 		ProtocolVersion: transport.ProtocolVersion,
 		Capabilities:    map[string]any{"tools": map[string]any{}},
 		ServerInfo:      transport.ServerInfo{Name: "mini", Version: transport.Version},
-		Instructions:    initInstructions,
+		Instructions:    instructions,
 	}, nil
 }
 
 func (s *Server) handleToolsList() (any, error) {
+	if s.proxyMode {
+		return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
+	}
 	return map[string]any{"tools": s.toolSchemas}, nil
 }
 
@@ -173,6 +182,9 @@ func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, se
 }
 
 func (s *Server) routeTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
+	if s.proxyMode {
+		return s.routeProxyTool(ctx, name, args, session)
+	}
 	switch name {
 	case "list":
 		return s.handleList(ctx, args)

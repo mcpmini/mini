@@ -31,7 +31,11 @@ func (s *Server) handleConfigure(ctx context.Context, raw json.RawMessage, sessi
 	}
 	result, err := s.dispatchConfigureAction(ctx, p, session)
 	if err == nil && (p.Action == "add_server" || p.Action == "remove_server") {
-		session.notify(notifyToolsChanged)
+		if s.proxyMode {
+			s.notifyAllSessions()
+		} else {
+			session.notify(notifyToolsChanged)
+		}
 	}
 	return result, err
 }

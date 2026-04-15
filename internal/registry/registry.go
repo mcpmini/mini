@@ -155,6 +155,17 @@ func (r *Registry) Lookup(fullName string) (*ToolEntry, error) {
 	return e, nil
 }
 
+func (r *Registry) AllFull() []*ToolEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*ToolEntry, 0, len(r.tools))
+	for _, e := range r.tools {
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].FullName < out[j].FullName })
+	return out
+}
+
 func (r *Registry) All() []CompactEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

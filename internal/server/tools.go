@@ -1,6 +1,10 @@
 package server
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/mcpmini/mini/internal/registry"
+)
 
 func proxyToolSchemas() []map[string]any {
 	return []map[string]any{
@@ -68,6 +72,49 @@ func configureSchema() map[string]any {
 			"session_only": prop("boolean", "If true, projection applies only to this session (not persisted). Default: false."),
 			"config":       map[string]any{"type": "object", "description": "ServerConfig for add_server"},
 		}),
+	}
+}
+
+func buildProxyToolSchemas(entries []*registry.ToolEntry) []map[string]any {
+	out := []map[string]any{miniConfigSchema(), miniReadSchema()}
+	for _, e := range entries {
+		out = append(out, upstreamToolSchema(e))
+	}
+	return out
+}
+
+func miniConfigSchema() map[string]any {
+	return map[string]any{
+		"name":        "mini_config",
+		"_meta":       map[string]any{"anthropic/alwaysLoad": true},
+		"description": "Runtime admin for mini. Actions: status (server health + response store stats); set_projection (tune response fields for a tool); reload (re-read projection files); add_server (connect a new upstream MCP mid-session); remove_server (disconnect upstream); start_auth (begin OAuth2 PKCE flow); auth_status (check OAuth token status).",
+		"inputSchema": schema(map[string]any{
+			"action":       prop("string", "status | set_projection | reload | add_server | remove_server | start_auth | auth_status"),
+			"server":       prop("string", "Server name (for set_projection, add_server, remove_server)"),
+			"tool":         prop("string", "Tool name (for set_projection)"),
+			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {mode, include, exclude_always, string_limits, array_limits, strip_markup}"},
+			"session_only": prop("boolean", "If true, projection applies only to this session (not persisted). Default: false."),
+			"config":       map[string]any{"type": "object", "description": "ServerConfig for add_server"},
+		}),
+	}
+}
+
+func miniReadSchema() map[string]any {
+	return map[string]any{
+		"name":        "mini_read",
+		"_meta":       map[string]any{"anthropic/alwaysLoad": true},
+		"description": "Read a projected or raw response file written by mini. Pass the path from the response note. .json returns projected data; .raw.json returns the full upstream response.",
+		"inputSchema": schema(map[string]any{
+			"path": prop("string", "File path from the response note (.json for projected, .raw.json for full upstream)"),
+		}),
+	}
+}
+
+func upstreamToolSchema(e *registry.ToolEntry) map[string]any {
+	return map[string]any{
+		"name":        e.Server + "__" + e.Name,
+		"description": e.Description,
+		"inputSchema": e.InputSchema,
 	}
 }
 

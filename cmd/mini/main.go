@@ -30,6 +30,7 @@ var usageText = `usage: mini [--config DIR] [--version] <command>
 
 commands:
   serve [flags]                  Start the MCP proxy (default, stdio)
+  proxy [flags]                  Start in transparent proxy mode (exposes upstream tools directly)
   daemon                         Run as a shared background daemon (HTTP)
   daemon status                  Show whether the daemon is running
   ls / list                      List configured servers
@@ -47,6 +48,10 @@ commands:
 serve flags:
   --http ADDR         Also serve HTTP MCP on ADDR; bare port or :port binds to loopback
   --standalone        Skip daemon detection, serve directly
+  --dangerous-nonloopback-http  Allow --http to bind to non-loopback (all clients must be trusted)
+
+proxy flags:
+  --http ADDR         Also serve HTTP MCP on ADDR; bare port or :port binds to loopback
   --dangerous-nonloopback-http  Allow --http to bind to non-loopback (all clients must be trusted)
 
 call / perm-call flags:
@@ -82,6 +87,7 @@ func main() {
 
 var commands = map[string]func(string, []string){
 	"serve":  runServe,
+	"proxy":  runProxy,
 	"daemon": runDaemonCmd,
 	"ls":     func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
 	"list":   func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
@@ -152,11 +158,26 @@ func runServe(configDir string, args []string) {
 	serveStandalone(configDir, cfg, servers, logger, *httpAddr, *dangerNonLoopback)
 }
 
-func serveStandalone(configDir string, cfg *config.Config, servers []config.ServerConfig, logger *slog.Logger, httpAddr string, dangerNonLoopback bool) {
+func runProxy(configDir string, args []string) {
+	fs := flag.NewFlagSet("proxy", flag.ExitOnError)
+	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
+	httpAddr := fs.String("http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
+	dangerNonLoopback := fs.Bool("dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address (only when all network clients are trusted)")
+	fs.Parse(args) //nolint:errcheck
+
+	cfg, servers, err := config.Load(configDir)
+	if err != nil {
+		fatalf("load config: %v", err)
+	}
+	logger := buildLogger(cfg, *logLevel)
+	serveStandalone(configDir, cfg, servers, logger, *httpAddr, *dangerNonLoopback, server.WithProxyMode())
+}
+
+func serveStandalone(configDir string, cfg *config.Config, servers []config.ServerConfig, logger *slog.Logger, httpAddr string, dangerNonLoopback bool, opts ...server.ServerOption) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	injectOAuthTokens(ctx, configDir, servers)
-	srv := buildAndConnectServer(ctx, cfg, configDir, logger, servers)
+	srv := buildAndConnectServer(ctx, cfg, configDir, logger, servers, opts...)
 	defer srv.Close()
 	httpSrv := maybeStartHTTP(httpAddr, srv, logger, dangerNonLoopback)
 	maybeStartSessionEviction(ctx, httpSrv, srv)
@@ -177,8 +198,8 @@ func shutdownHTTP(httpSrv *http.Server) {
 	httpSrv.Shutdown(ctx) //nolint:errcheck
 }
 
-func buildAndConnectServer(ctx context.Context, cfg *config.Config, configDir string, logger *slog.Logger, servers []config.ServerConfig) *server.Server {
-	srv := server.NewWithConfigDir(cfg, configDir, logger)
+func buildAndConnectServer(ctx context.Context, cfg *config.Config, configDir string, logger *slog.Logger, servers []config.ServerConfig, opts ...server.ServerOption) *server.Server {
+	srv := server.NewWithConfigDir(cfg, configDir, logger, opts...)
 	for _, sc := range servers {
 		if isEnabled(sc) {
 			if err := srv.AddUpstream(ctx, sc); err != nil {

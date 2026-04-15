@@ -19,6 +19,12 @@ func WithClock(c clock.Clock) ServerOption {
 	return func(s *Server) { s.clock = c }
 }
 
+// WithProxyMode switches the server into transparent proxy mode: upstream tools
+// are exposed directly as server__tool instead of behind the 4-tool abstraction.
+func WithProxyMode() ServerOption {
+	return func(s *Server) { s.proxyMode = true }
+}
+
 type Server struct {
 	cfg          *config.Config
 	configDir    string
@@ -32,12 +38,19 @@ type Server struct {
 	sessions     *sessionStore
 	logger       *slog.Logger
 	clock        clock.Clock
+	proxyMode    bool
 	// Lock ordering: when both mu and authMu must be acquired, always acquire mu first.
 	mu          sync.RWMutex
 	persistMu   sync.Mutex
 	authMu      sync.Mutex
 	authFlows   map[string]*authFlowState
 	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
+}
+
+func (s *Server) notifyAllSessions() {
+	for _, sess := range s.sessions.snapshotSessions() {
+		sess.notify(notifyToolsChanged)
+	}
 }
 
 func (s *Server) ToolCount(serverName string) int {
