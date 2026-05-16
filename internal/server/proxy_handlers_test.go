@@ -3,10 +3,13 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -381,6 +384,88 @@ func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
 	}
 }
 
+func TestProxy_Call_MiniFormat_RendersLines(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000 // keep inline
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+	defer srv.Close()
+
+	conn := fakeConn("get_user")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	serve(t, srv, callTool("config", map[string]any{
+		"action":     "set_projection",
+		"server":     "svc",
+		"tool":       "get_user",
+		"projection": map[string]any{"format": "mini"},
+	}))
+
+	resp := serve(t, srv, callTool("svc__get_user", map[string]any{}))
+	text := toolResultText(t, resp)
+	t.Logf("mini format response: %s", text)
+
+	if !strings.Contains(text, "svc.get_user") {
+		t.Errorf("mini format should contain server.tool header: %s", text)
+	}
+	if strings.HasPrefix(text, "{") {
+		t.Errorf("mini format should not be raw JSON: %s", text)
+	}
+}
+
+func TestProxy_Call_GlobalMiniFormat_Respected(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	cfg.ResponseFormat = "mini"
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+	defer srv.Close()
+
+	conn := fakeConn("get_user")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	serve(t, srv, callTool("config", map[string]any{
+		"action":     "set_projection",
+		"server":     "svc",
+		"tool":       "get_user",
+		"projection": map[string]any{"exclude_always": []string{}},
+	}))
+
+	resp := serve(t, srv, callTool("svc__get_user", map[string]any{}))
+	text := toolResultText(t, resp)
+	t.Logf("global mini format: %s", text)
+
+	if strings.HasPrefix(text, "{") {
+		t.Errorf("global mini format should not be raw JSON: %s", text)
+	}
+}
+
+func TestProxy_StandaloneServe_InheritsProxyMode(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+
+	// serveAll uses Serve() which sets session.proxyMode from s.proxyMode
+	msgs := serveAll(t, srv, rpc("tools/list", nil))
+	var tools []any
+	for _, m := range msgs {
+		if res, ok := m["result"].(map[string]any); ok {
+			if t2, ok := res["tools"].([]any); ok {
+				tools = t2
+			}
+		}
+	}
+	// In standalone proxy mode, tools/list should return upstream-style tools
+	// (config, read, server__tool) — NOT the standard 4-tool interface
+	for _, tool := range tools {
+		name := tool.(map[string]any)["name"].(string)
+		if name == "perm_call" {
+			t.Errorf("standalone proxy mode should not expose perm_call, got tools via serveAll")
+		}
+	}
+}
+
 func TestProxy_MiniConfig_Status_Works(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
@@ -413,5 +498,113 @@ func TestProxy_NotifyAll_OnRemoveServer(t *testing.T) {
 
 	if !hasNotification(msgs, transport.NotificationToolsChanged) {
 		t.Error("expected notifications/tools/list_changed after remove_server in proxy mode")
+	}
+}
+
+func postMCP(t *testing.T, srv *server.Server, sessionID string, msg any) map[string]any {
+	t.Helper()
+	b, _ := json.Marshal(msg)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Mcp-Session-Id", sessionID)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp) //nolint:errcheck
+	return resp
+}
+
+func initMsg(proxyMode bool) map[string]any {
+	params := map[string]any{
+		"protocolVersion": transport.ProtocolVersion,
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	}
+	if proxyMode {
+		params["_mini_proxy_mode"] = true
+	}
+	return map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params}
+}
+
+func toolsListMsg() map[string]any {
+	return map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+}
+
+func extractToolNames(resp map[string]any) []string {
+	res, _ := resp["result"].(map[string]any)
+	tools, _ := res["tools"].([]any)
+	names := make([]string, len(tools))
+	for i, tool := range tools {
+		names[i] = tool.(map[string]any)["name"].(string)
+	}
+	return names
+}
+
+func hasToolName(names []string, name string) bool {
+	for _, n := range names {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	conn := fakeConn("list_issues")
+	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, conn); err != nil {
+		t.Fatal(err)
+	}
+
+	const proxyID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	const standardID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+
+	postMCP(t, srv, proxyID, initMsg(true))
+	postMCP(t, srv, standardID, initMsg(false))
+
+	proxyTools := extractToolNames(postMCP(t, srv, proxyID, toolsListMsg()))
+	standardTools := extractToolNames(postMCP(t, srv, standardID, toolsListMsg()))
+
+	if !hasToolName(proxyTools, "gh__list_issues") {
+		t.Errorf("proxy session: expected gh__list_issues, got %v", proxyTools)
+	}
+	for _, n := range proxyTools {
+		if n == "call" || n == "perm_call" {
+			t.Errorf("proxy session should not expose standard tools, got %v", proxyTools)
+			break
+		}
+	}
+
+	if !hasToolName(standardTools, "call") {
+		t.Errorf("standard session: expected call tool, got %v", standardTools)
+	}
+	for _, n := range standardTools {
+		if strings.Contains(n, "__") {
+			t.Errorf("standard session should not expose upstream tools, got %v", standardTools)
+			break
+		}
+	}
+}
+
+func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	instructions := func(proxyMode bool, sessionID string) string {
+		resp := postMCP(t, srv, sessionID, initMsg(proxyMode))
+		res, _ := resp["result"].(map[string]any)
+		s, _ := res["instructions"].(string)
+		return s
+	}
+
+	proxy := instructions(true, "cccccccc-cccc-cccc-cccc-cccccccccccc")
+	if !strings.Contains(proxy, "read") || strings.Contains(proxy, "perm_call") {
+		t.Errorf("proxy instructions wrong: %q", proxy)
+	}
+
+	std := instructions(false, "dddddddd-dddd-dddd-dddd-dddddddddddd")
+	if !strings.Contains(std, "perm_call") {
+		t.Errorf("standard instructions wrong: %q", std)
 	}
 }

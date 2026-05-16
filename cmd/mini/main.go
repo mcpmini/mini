@@ -172,7 +172,7 @@ func shouldTryProxyMode(standalone bool, httpAddr string) bool {
 }
 
 func tryServeViaProxy(configDir string, logger *slog.Logger) bool {
-	return tryProxyMode(configDir, logger) == nil
+	return connectViaDaemon(configDir, logger, false) == nil
 }
 
 func runProxy(configDir string, args []string) {
@@ -187,6 +187,9 @@ func runProxy(configDir string, args []string) {
 		fatalf("load config: %v", err)
 	}
 	logger := buildLogger(cfg, *logLevel)
+	if *httpAddr == "" && connectViaDaemon(configDir, logger, true) == nil {
+		return
+	}
 	serveStandalone(configDir, cfg, servers, logger, *httpAddr, *dangerNonLoopback, server.WithProxyMode())
 }
 
@@ -241,21 +244,31 @@ func maybeStartSessionEviction(ctx context.Context, httpSrv *http.Server, srv se
 	go srv.RunSessionEviction(ctx, standaloneHTTPSessionMaxIdle)
 }
 
-// tryProxyMode tries to connect to (or start) the daemon and proxy stdio to it.
-// Returns nil on clean proxy exit, non-nil if daemon is unavailable.
-func tryProxyMode(configDir string, logger *slog.Logger) error {
-	port := daemon.RunningPort(configDir)
-	if port == 0 {
-		var err error
-		port, err = daemon.Start(configDir, 3*time.Second)
-		if err != nil {
-			logger.Warn("daemon unavailable, running standalone", "err", err)
-			return err
-		}
+func connectViaDaemon(configDir string, logger *slog.Logger, proxyMode bool) error {
+	port, err := resolveDaemonPort(configDir, logger)
+	if err != nil {
+		return err
 	}
 	sessionID := transport.NewSessionID()
 	logger.Info("connected to mini daemon", "port", port, "session", sessionID)
-	return proxy.Run(port, sessionID, os.Stdin, os.Stdout)
+	return proxy.Run(proxy.RunParams{
+		Port:      port,
+		SessionID: sessionID,
+		In:        os.Stdin,
+		Out:       os.Stdout,
+		ProxyMode: proxyMode,
+	})
+}
+
+func resolveDaemonPort(configDir string, logger *slog.Logger) (int, error) {
+	if port := daemon.RunningPort(configDir); port != 0 {
+		return port, nil
+	}
+	port, err := daemon.Start(configDir, 3*time.Second)
+	if err != nil {
+		logger.Warn("daemon unavailable, running standalone", "err", err)
+	}
+	return port, err
 }
 
 func buildLogger(cfg *config.Config, override string) *slog.Logger {

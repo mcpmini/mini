@@ -19,6 +19,7 @@ type Session struct {
 	dialMu      sync.Mutex
 	dialMap     map[string]*dialOnce
 
+	proxyMode      atomic.Bool
 	totalCalls     atomic.Int64
 	totalErrors    atomic.Int64
 	totalLatencyMs atomic.Int64

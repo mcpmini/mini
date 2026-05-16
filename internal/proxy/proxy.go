@@ -15,28 +15,91 @@ import (
 
 const maxConcurrentForwards = 32
 
-// Run reads JSON-RPC from in, forwards each request to the daemon at port,
-// and writes responses back to out. Blocks until EOF.
-func Run(port int, sessionID string, in io.Reader, out io.Writer) error {
-	return runWithLimit(port, sessionID, in, out, maxConcurrentForwards)
+// RunParams configures a daemon proxy run.
+type RunParams struct {
+	Port      int
+	SessionID string
+	In        io.Reader
+	Out       io.Writer
+	ProxyMode bool
 }
 
-func runWithLimit(port int, sessionID string, in io.Reader, out io.Writer, limit int) error {
+// Run reads JSON-RPC from p.In, forwards each request to the daemon at p.Port,
+// and writes responses back to p.Out. Blocks until EOF.
+func Run(p RunParams) error {
+	return runWithLimit(p, maxConcurrentForwards)
+}
+
+func runWithLimit(p RunParams, limit int) error {
 	// No client-level timeout: tool deadlines are enforced by the daemon's
 	// per-call context (ToolTimeout). A fixed timeout here would break any
 	// tool configured with tool_timeout longer than the hard-coded value.
 	client := &http.Client{}
-	scanner := transport.NewScanner(in)
-	var outMu sync.Mutex
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, max(1, limit))
+	fp := newForwardPool(p, limit)
+	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
-		startForward(client, scanner.Bytes(), forwardAsyncParams{
-			port: port, sessionID: sessionID, out: out, mu: &outMu, wg: &wg, sem: sem,
-		})
+		startForward(client, maybeInjectProxy(scanner.Bytes(), p.ProxyMode), fp)
 	}
-	wg.Wait()
+	fp.wg.Wait()
 	return scanner.Err()
+}
+
+func newForwardPool(p RunParams, limit int) forwardAsyncParams {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	return forwardAsyncParams{
+		port: p.Port, sessionID: p.SessionID, out: p.Out,
+		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
+	}
+}
+
+func maybeInjectProxy(line []byte, proxyMode bool) []byte {
+	if proxyMode {
+		return injectProxyMode(line)
+	}
+	return line
+}
+
+// injectProxyMode inserts "_mini_proxy_mode": true into the params of an
+// initialize JSON-RPC message so the daemon enables proxy mode for this session.
+// Non-initialize messages and parse errors are returned unchanged.
+func injectProxyMode(line []byte) []byte {
+	var msg struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(line, &msg); err != nil || msg.Method != "initialize" {
+		return line
+	}
+	if result, err := withProxyModeParam(line); err == nil {
+		return result
+	}
+	return line
+}
+
+func withProxyModeParam(line []byte) ([]byte, error) {
+	var full map[string]json.RawMessage
+	if err := json.Unmarshal(line, &full); err != nil {
+		return nil, err
+	}
+	params, err := extractInitParams(full)
+	if err != nil {
+		return nil, err
+	}
+	params["_mini_proxy_mode"] = json.RawMessage(`true`)
+	if full["params"], err = json.Marshal(params); err != nil {
+		return nil, err
+	}
+	return json.Marshal(full)
+}
+
+func extractInitParams(full map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	params := map[string]json.RawMessage{}
+	if raw := full["params"]; len(raw) > 0 {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return nil, err
+		}
+	}
+	return params, nil
 }
 
 func startForward(client *http.Client, line []byte, p forwardAsyncParams) {

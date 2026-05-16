@@ -19,6 +19,7 @@ import (
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	sessionID := transport.NewSessionID()
 	session := s.sessions.getOrCreate(sessionID)
+	session.proxyMode.Store(s.proxyMode) // inherit server-level mode for standalone runs
 	defer s.sessions.delete(sessionID)
 	return s.serveLoop(ctx, in, out, session)
 }
@@ -135,9 +136,9 @@ func dispatchErrorResponse(id any, err error) transport.Response {
 func (s *Server) dispatch(ctx context.Context, req transport.Request, session *Session) (any, error) {
 	switch req.Method {
 	case "initialize":
-		return s.handleInitialize(req.Params)
+		return s.handleInitialize(req.Params, session)
 	case "tools/list":
-		return s.handleToolsList()
+		return s.handleToolsList(session)
 	case "tools/call":
 		return s.handleToolsCall(ctx, req.Params, session)
 	case "ping":
@@ -153,9 +154,18 @@ const initInstructions = "mini is an MCP proxy. Use `list` to discover tools acr
 
 const proxyInitInstructions = "Responses are projected for efficiency. read(path) for full data. config for server management."
 
-func (s *Server) handleInitialize(_ json.RawMessage) (any, error) {
+type initializeClientParams struct {
+	MiniProxyMode bool `json:"_mini_proxy_mode"`
+}
+
+func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any, error) {
+	var p initializeClientParams
+	json.Unmarshal(params, &p) //nolint:errcheck // best-effort; standard clients omit this field
+	if p.MiniProxyMode {
+		session.proxyMode.Store(true)
+	}
 	instructions := initInstructions
-	if s.proxyMode {
+	if session.proxyMode.Load() {
 		instructions = proxyInitInstructions
 	}
 	return transport.InitializeResult{
@@ -166,8 +176,8 @@ func (s *Server) handleInitialize(_ json.RawMessage) (any, error) {
 	}, nil
 }
 
-func (s *Server) handleToolsList() (any, error) {
-	if s.proxyMode {
+func (s *Server) handleToolsList(session *Session) (any, error) {
+	if session.proxyMode.Load() {
 		return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
 	}
 	return map[string]any{"tools": s.toolSchemas}, nil
@@ -216,7 +226,7 @@ func normalizeToolCallResult(result any) any {
 }
 
 func (s *Server) routeTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
-	if s.proxyMode {
+	if session.proxyMode.Load() {
 		return s.routeProxyTool(ctx, name, args, session)
 	}
 	return s.routeStandardTool(ctx, name, args, session)

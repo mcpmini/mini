@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
 )
@@ -75,9 +76,19 @@ func (s *Server) proxyProject(server, tool string, raw json.RawMessage, session 
 	if err != nil {
 		return nil, err
 	}
-	saved := int64(stats.RawTokens - stats.SummaryTokens)
-	upstream.recordSaved(session, latencyMs, saved)
-	return s.formatProxyEnvelope(env, stats.RawTokens), nil
+	upstream.recordSaved(session, latencyMs, int64(stats.RawTokens-stats.SummaryTokens))
+	return s.renderProxyResult(server, tool, env, projCfg, stats.RawTokens), nil
+}
+
+func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig, rawTokens int) string {
+	format := s.cfg.ResponseFormat
+	if projCfg.Format != "" {
+		format = projCfg.Format
+	}
+	if format == "mini" {
+		return RenderLines(server, tool, env)
+	}
+	return s.formatProxyEnvelope(env, rawTokens)
 }
 
 // formatProxyEnvelope formats a proxy response using the 3-tier approach:

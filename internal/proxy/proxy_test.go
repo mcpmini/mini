@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -112,6 +113,11 @@ func TestForward_largeResponseBodyHandledWithoutError(t *testing.T) {
 	}
 }
 
+func runParams(t *testing.T, srv *httptest.Server, in io.Reader, out io.Writer) RunParams {
+	t.Helper()
+	return RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: out}
+}
+
 func TestRun_routesRequestAndWritesResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"done"}`)
@@ -119,7 +125,7 @@ func TestRun_routesRequestAndWritesResponse(t *testing.T) {
 	defer srv.Close()
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
 	var out bytes.Buffer
-	if err := Run(serverPort(t, srv), "sess", in, &out); err != nil {
+	if err := Run(runParams(t, srv, in, &out)); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if !strings.Contains(out.String(), "done") {
@@ -135,7 +141,7 @@ func TestRun_emptyLinesSkipped(t *testing.T) {
 	}))
 	defer srv.Close()
 	in := strings.NewReader("\n\n" + `{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n\n")
-	Run(serverPort(t, srv), "sess", in, io.Discard) //nolint:errcheck
+	Run(runParams(t, srv, in, io.Discard)) //nolint:errcheck
 	if calls.Load() != 1 {
 		t.Errorf("expected 1 daemon call (empty lines skipped), got %d", calls.Load())
 	}
@@ -144,7 +150,7 @@ func TestRun_emptyLinesSkipped(t *testing.T) {
 func TestRun_cleanEOFReturnsNilError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 	defer srv.Close()
-	if err := Run(serverPort(t, srv), "sess", strings.NewReader(""), io.Discard); err != nil {
+	if err := Run(runParams(t, srv, strings.NewReader(""), io.Discard)); err != nil {
 		t.Errorf("expected nil error on clean EOF, got %v", err)
 	}
 }
@@ -160,11 +166,140 @@ func TestRun_multipleRequestsAllForwarded(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"a"}` + "\n" +
 			`{"jsonrpc":"2.0","id":2,"method":"b"}` + "\n",
 	)
-	if err := Run(serverPort(t, srv), "sess", in, io.Discard); err != nil {
+	if err := Run(runParams(t, srv, in, io.Discard)); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if calls.Load() != 2 {
 		t.Errorf("expected 2 daemon calls, got %d", calls.Load())
+	}
+}
+
+func TestInjectProxyMode_initialize_addsFlag(t *testing.T) {
+	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{}}}`)
+	got := injectProxyMode(line)
+	var msg struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(got, &msg); err != nil {
+		t.Fatalf("unmarshal result: %v\ngot: %s", err, got)
+	}
+	if string(msg.Params["_mini_proxy_mode"]) != "true" {
+		t.Errorf("_mini_proxy_mode = %s, want true", msg.Params["_mini_proxy_mode"])
+	}
+}
+
+func TestInjectProxyMode_initialize_preservesExistingParams(t *testing.T) {
+	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"test"}}}`)
+	got := injectProxyMode(line)
+	var msg struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(got, &msg); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if string(msg.Params["protocolVersion"]) != `"2025-03-26"` {
+		t.Errorf("protocolVersion lost: %s", msg.Params["protocolVersion"])
+	}
+	if msg.Params["clientInfo"] == nil {
+		t.Error("clientInfo lost after injection")
+	}
+}
+
+func TestInjectProxyMode_nonInitialize_unchanged(t *testing.T) {
+	cases := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"foo"}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+	}
+	for _, line := range cases {
+		got := injectProxyMode([]byte(line))
+		if string(got) != line {
+			t.Errorf("non-initialize message modified:\nwant: %s\n got: %s", line, got)
+		}
+	}
+}
+
+func TestInjectProxyMode_malformedJSON_unchanged(t *testing.T) {
+	line := []byte(`not valid json`)
+	got := injectProxyMode(line)
+	if string(got) != string(line) {
+		t.Errorf("malformed JSON should be returned unchanged, got: %s", got)
+	}
+}
+
+func TestInjectProxyMode_initialize_noParams_addsFlag(t *testing.T) {
+	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)
+	got := injectProxyMode(line)
+	var msg struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(got, &msg); err != nil {
+		t.Fatalf("unmarshal result: %v\ngot: %s", err, got)
+	}
+	if string(msg.Params["_mini_proxy_mode"]) != "true" {
+		t.Errorf("_mini_proxy_mode = %s, want true", msg.Params["_mini_proxy_mode"])
+	}
+}
+
+func TestRun_proxyMode_injectsIntoInitialize(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+	}))
+	defer srv.Close()
+
+	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
+	p := RunParams{
+		Port:      serverPort(t, srv),
+		SessionID: "sess",
+		In:        strings.NewReader(initMsg),
+		Out:       io.Discard,
+		ProxyMode: true,
+	}
+	if err := Run(p); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	var msg struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(gotBody, &msg); err != nil {
+		t.Fatalf("unmarshal forwarded body: %v\nbody: %s", err, gotBody)
+	}
+	if string(msg.Params["_mini_proxy_mode"]) != "true" {
+		t.Errorf("daemon did not receive _mini_proxy_mode=true; params: %v", msg.Params)
+	}
+}
+
+func TestRun_standardMode_doesNotInjectFlag(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+	}))
+	defer srv.Close()
+
+	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
+	p := RunParams{
+		Port:      serverPort(t, srv),
+		SessionID: "sess",
+		In:        strings.NewReader(initMsg),
+		Out:       io.Discard,
+		ProxyMode: false,
+	}
+	if err := Run(p); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+
+	var msg struct {
+		Params map[string]json.RawMessage `json:"params"`
+	}
+	if err := json.Unmarshal(gotBody, &msg); err != nil {
+		t.Fatalf("unmarshal forwarded body: %v", err)
+	}
+	if msg.Params["_mini_proxy_mode"] != nil {
+		t.Errorf("standard mode should not inject _mini_proxy_mode; params: %v", msg.Params)
 	}
 }
 
@@ -197,7 +332,9 @@ func TestRunWithLimit_capsConcurrentForwards(t *testing.T) {
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"a"}` + "\n" +
 		`{"jsonrpc":"2.0","id":2,"method":"b"}` + "\n" +
 		`{"jsonrpc":"2.0","id":3,"method":"c"}` + "\n")
-	go func() { done <- runWithLimit(serverPort(t, srv), "sess", input, io.Discard, 1) }()
+	go func() {
+		done <- runWithLimit(RunParams{Port: serverPort(t, srv), SessionID: "sess", In: input, Out: io.Discard}, 1)
+	}()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
