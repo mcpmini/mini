@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -14,19 +15,29 @@ import (
 
 const importFileSizeLimit = 4 * 1024 * 1024 // 4MB — sane upper bound for any agent config file
 
-func runInit(configDir string, args []string) {
+type initFlags struct {
+	yes  bool
+	from string
+}
+
+func parseInitFlags(args []string) initFlags {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
-	yes := fs.Bool("yes", false, "accept all prompts without interaction")
-	from := fs.String("from", "", "import from specific client name or config path")
+	f := initFlags{}
+	fs.BoolVar(&f.yes, "yes", false, "accept all prompts without interaction")
+	fs.StringVar(&f.from, "from", "", "import from specific client name or config path")
 	fs.Parse(args)
+	return f
+}
+
+func runInit(configDir string, args []string) {
+	f := parseInitFlags(args)
 	scanner := bufio.NewScanner(os.Stdin)
-	prompt := interactivePrompter(scanner, *yes)
+	prompt := interactivePrompter(scanner, f.yes)
 	if err := createConfigDirs(configDir); err != nil {
 		fatalf("create config dirs: %v", err)
 	}
 	fmt.Printf("config directory: %s\n", configDir)
-	imported := importServers(configDir, *from, prompt)
-	if imported > 0 {
+	if imported := importServers(configDir, f.from, prompt); imported > 0 {
 		fmt.Printf("imported %d server(s)\n", imported)
 	}
 	printInstallInstructions()
@@ -47,15 +58,19 @@ func importDetected(configDir string, prompt func(string) bool) int {
 	}
 	total := 0
 	for _, c := range clients {
-		q := fmt.Sprintf("import MCP servers from %s (%s)?", c.Name, c.ConfigPath)
-		if !prompt(q) {
-			continue
-		}
-		n := importClaudeFormat(configDir, c.ConfigPath)
-		fmt.Printf("  imported %d server(s) from %s\n", n, c.Name)
-		total += n
+		total += importClientIfConfirmed(configDir, c, prompt)
 	}
 	return total
+}
+
+func importClientIfConfirmed(configDir string, c agentClient, prompt func(string) bool) int {
+	q := fmt.Sprintf("import MCP servers from %s (%s)?", c.Name, c.ConfigPath)
+	if !prompt(q) {
+		return 0
+	}
+	n := importClaudeFormat(configDir, c.ConfigPath)
+	fmt.Printf("  imported %d server(s) from %s\n", n, c.Name)
+	return n
 }
 
 func importFrom(configDir, from string, prompt func(string) bool) int {
@@ -90,24 +105,53 @@ func resolveFromPath(from string) string {
 }
 
 func importClaudeFormat(configDir, path string) int {
+	data, ok := readImportFile(path)
+	if !ok {
+		return 0
+	}
+	selfPath, _ := os.Executable()
+	return importClaudeServers(configDir, data, selfPath)
+}
+
+func readImportFile(path string) ([]byte, bool) {
 	f, err := os.Open(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: read %s: %v\n", path, err)
-		return 0
+		warnImportRead(path, err)
+		return nil, false
 	}
 	defer f.Close() //nolint:errcheck
+
 	data, err := io.ReadAll(io.LimitReader(f, importFileSizeLimit))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: read %s: %v\n", path, err)
-		return 0
+		warnImportRead(path, err)
+		return nil, false
 	}
-	servers := importers.ExtractClaudeMCPServers(data)
-	for name, entry := range servers {
-		if err := importers.WriteServerYAML(configDir, name, importers.ClaudeEntryToServer(name, entry)); err != nil {
-			fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
+	return data, true
+}
+
+func warnImportRead(path string, err error) {
+	fmt.Fprintf(os.Stderr, "  warning: read %s: %v\n", path, err)
+}
+
+func importClaudeServers(configDir string, data []byte, selfPath string) int {
+	imported := 0
+	for name, entry := range importers.ExtractClaudeMCPServers(data) {
+		if shouldImportClaudeEntry(configDir, name, entry, selfPath) {
+			imported++
 		}
 	}
-	return len(servers)
+	return imported
+}
+
+func shouldImportClaudeEntry(configDir, name string, entry importers.ClaudeMCPEntry, selfPath string) bool {
+	if isSelfEntry(entry.Command, selfPath) {
+		return false
+	}
+	if err := importers.WriteServerYAML(configDir, name, importers.ClaudeEntryToServer(name, entry)); err != nil {
+		fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
+		return false
+	}
+	return true
 }
 
 func findClientPath(name string) string {
@@ -129,11 +173,16 @@ func createConfigDirs(configDir string) error {
 	return nil
 }
 
-func printInstallInstructions() {
+func resolveInstallBinPath() string {
 	binPath, _ := os.Executable()
 	if binPath == "" {
-		binPath = "/usr/local/bin/mini"
+		return "/usr/local/bin/mini"
 	}
+	return binPath
+}
+
+func printInstallInstructions() {
+	binPath := resolveInstallBinPath()
 	fmt.Println("\nTo connect mini to your agent:")
 	clients := detectAgentClients()
 	if len(clients) == 0 {
@@ -181,4 +230,50 @@ func interactivePrompter(scanner *bufio.Scanner, autoYes bool) func(string) bool
 		ans := strings.ToLower(strings.TrimSpace(scanner.Text()))
 		return ans == "y" || ans == "yes"
 	}
+}
+
+// isSelfEntry returns true if cmd resolves to the same binary as selfPath,
+// so init doesn't re-import mini itself when it's already in the agent's MCP
+// config (handles bare names, symlinks, and alternate build paths).
+func isSelfEntry(cmd, selfPath string) bool {
+	if cmd == "" || selfPath == "" {
+		return false
+	}
+	candidates := dedup([]string{
+		resolveExe(selfPath),
+		resolveExe(filepath.Base(selfPath)),
+	})
+	cmdResolved := resolveExe(cmd)
+	for _, c := range candidates {
+		if cmdResolved == c {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveExe resolves a command (absolute path, relative path, or bare name)
+// to its real path on disk, following symlinks. Returns p unchanged on error.
+func resolveExe(p string) string {
+	if !filepath.IsAbs(p) {
+		if found, err := exec.LookPath(p); err == nil {
+			p = found
+		}
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
+}
+
+func dedup(ss []string) []string {
+	seen := map[string]bool{}
+	out := ss[:0]
+	for _, s := range ss {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }

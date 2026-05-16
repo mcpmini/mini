@@ -1,111 +1,101 @@
 # How Claude Code loads MCP tools
 
-## Overview
+## The short version
 
-Claude Code connects to MCP servers at startup, fetches their tool lists over the MCP `tools/list` RPC, and converts each tool into an Anthropic API tool definition. The defining design decision is **all MCP tools are deferred by default**: their full JSON schemas are withheld from the context window until the model explicitly searches for and needs them.
-
----
-
-## What "deferred" means at the API level
-
-The Anthropic API supports a `defer_loading: true` flag on tool definitions. When a tool is sent with this flag:
-
-- The tool name and description travel in the API request as usual
-- The `input_schema` (the full JSON schema) is **not** included in the context window
-- The API holds the schema server-side and injects it inline only when the model discovers the tool through a search call
-
-This is a first-party Anthropic API feature, enabled via beta headers (`advanced-tool-use-2025-11-20` for first-party integrations, `tool-search-tool-2025-10-19` for third-party MCP servers like mini).
-
-Deferred tool definitions are also excluded from the **system prompt prefix**, which means they don't interfere with prompt caching. The cache is preserved across turns even as new tools are discovered.
+Claude Code never sends MCP tool schemas to the API upfront. Instead it sends only tool
+*names*, and the model fetches full schemas on demand via a built-in ToolSearch tool.
+This means mini's **proxy mode** is the right choice for Claude Code: upstream tools are
+exposed directly, Claude defers their schemas through its normal mechanism, and mini trims
+responses invisibly.
 
 ---
 
-## Which tools are deferred
+## Two categories of tools
 
-By default, every MCP tool is deferred. A small set of built-in tools are always loaded immediately:
+**Local tools** (Read, Edit, Grep, Bash, etc.) are built into Claude Code. Their full
+schemas are sent on every API call and the model can call them immediately.
 
-- The ToolSearch tool itself (used to discover everything else)
-- The Brief tool
-- The Agent tool (when a feature flag is enabled)
-- SendUserFile (when the REPL bridge is active)
-
-Two MCP `_meta` extensions let upstream servers influence this behavior:
-
-- `_meta['anthropic/alwaysLoad']` — opts a specific tool out of deferral so it is always included with full schema
-- `_meta['anthropic/searchHint']` — provides extra keywords to improve discoverability when the model searches
+**MCP tools** (`mcp__github__list_pull_requests`, etc.) are never sent to the API until
+the model explicitly discovers them. On the first turn, the API call contains only local
+tools — no MCP tools at all. The model knows their names (announced in the system context)
+but cannot call them yet.
 
 ---
 
-## How the model discovers deferred tools
+## Tool discovery flow
 
-Claude Code ships a built-in **ToolSearch tool** that the model calls when it needs to find something. It supports two query forms:
+**Turn 1** — model sees local tools + a ToolSearch tool. No MCP schemas present.
 
-- **select:** — exact lookup by name: `select:Read,Edit,Grep`
-- **keyword search** — fuzzy match over tool names, descriptions, and argument names/descriptions: `github list pull requests`
+```
+Client → API:  tools = [Read, Edit, Grep, Bash, ..., ToolSearch]
+               (zero MCP tools)
+```
 
-When the model calls ToolSearch, it returns `tool_reference` blocks — lightweight pointers to the deferred tools:
+**Model calls ToolSearch** (`query: "github list pull requests"`). Claude Code runs
+keyword matching locally in TypeScript — no API round-trip. It returns `tool_reference`
+blocks, not inline schemas:
 
 ```json
 {
   "type": "tool_result",
-  "tool_use_id": "toolu_...",
-  "content": [
-    { "type": "tool_reference", "tool_name": "mcp__github__list_pull_requests" }
-  ]
+  "content": [{ "type": "tool_reference", "tool_name": "mcp__github__list_pull_requests" }]
 }
 ```
 
-The Anthropic API intercepts these blocks and expands them inline into full `input_schema` definitions before the model sees the result. The model can then call the discovered tool immediately.
+**Turn 2** — Claude Code scans message history for `tool_reference` blocks, finds the
+discovered tool, and now includes it in the API call with `defer_loading: true`:
 
-The full list of deferred tool names is announced to the model at the start of each conversation so it knows what is searchable.
+```
+Client → API:  tools = [Read, Edit, ..., ToolSearch,
+                        mcp__github__list_pull_requests (defer_loading: true)]
+```
 
-The Anthropic API also provides two server-side built-in variants that work the same way without any client code:
-- `tool_search_tool_regex_20251119` — Claude constructs Python `re.search()` patterns
-- `tool_search_tool_bm25_20251119` — Claude writes natural language queries
+The Anthropic API sees the `tool_reference` in the message history, expands it with the
+full schema at that position, and the model can call the tool.
 
-Claude Code uses its own client-side implementation rather than these built-ins, which gives it more control over ranking and the select-by-name shortcut.
+**Turn 3+** — the tool stays in the tools array for the rest of the session.
 
 ---
 
-## Tool name format
+## What `defer_loading: true` means
 
-MCP tools are presented to the model with a qualified name: `mcp__<server>__<tool>`. The double-underscore delimiter distinguishes them from built-in tools. Names are sanitized to `^[a-zA-Z0-9_-]+$`.
+The client sends the full JSON schema to the API alongside `defer_loading: true`. The API
+receives it but does **not** inject it into the model's base context. The schema only
+appears in context at the exact `tool_reference` position in the message history. This
+keeps the prompt cache stable and prevents paying for schemas the model never ends up using.
+
+---
+
+## Why this matters for mini
+
+**Standard mode** (`mini serve`, 4-tool interface):
+
+The model calls `mini.list` to discover tools, then `mini.call` for every invocation —
+two round-trips per upstream call. Upstream tool names come back as text inside a tool
+result message, never entering the API's deferred tool mechanism. Schemas and responses
+both land in conversation messages.
+
+**Proxy mode** (`mini proxy`):
+
+mini exposes upstream tools directly (`github__list_pull_requests`, `sentry__list_issues`,
+etc.). Claude Code's deferred loading works exactly as designed: schemas defer through the
+`defer_loading` + `tool_reference` mechanism, one round-trip per call, responses still
+trimmed by mini's projections. The model doesn't know mini is there.
+
+For Claude Code, **proxy mode is strictly better**: correct schema deferral, half the
+round-trips, same response trimming.
 
 ---
 
 ## Tool search modes
 
-Three modes are available:
+Controlled by `ENABLE_TOOL_SEARCH` (default: always defer all MCP tools):
 
-| Mode | Behavior |
+| Value | Behavior |
 |---|---|
-| `tst` (default) | Always defer all MCP tools |
-| `tst-auto` | Defer only when tool schemas would exceed a configurable percentage of the context window (default 10%) |
-| `standard` | No deferral — all schemas sent inline |
+| unset / `true` | Always defer — all MCP tools discovered via ToolSearch |
+| `auto` / `auto:N` | Defer only when schemas would exceed N% of context window (default 10%) |
+| `false` | Disabled — all schemas sent upfront (standard mode) |
 
-The auto-threshold calculates deferred token cost using the API's token counter, falling back to a character-based heuristic if the counter is unavailable.
-
----
-
-## Context window impact
-
-A typical multi-server setup (GitHub, Slack, Sentry, Jira, Linear) with 200+ tools might have schemas totalling 30,000–60,000 tokens. With deferral:
-
-| | Without deferral | With deferral |
-|---|---|---|
-| Upfront schema cost | 30,000–60,000 tokens | ~0 (names only, not in context prefix) |
-| Per-search cost | n/a | ~100 tokens (search call) + ~200–2,000 tokens per schema expanded |
-| Prompt cache | Busted by any schema change | Preserved (deferred tools outside prefix) |
-
-For a 5-server setup, Anthropic's own numbers put the savings at over 85% on schema overhead, typically loading only the 3–5 tools the model actually needs per request.
-
-**What deferral does not fix**: tool *response* content. A `list_pull_requests` call on a busy GitHub repo returns the full API JSON blob — tens of thousands of tokens — regardless of whether the schema was deferred. Deferral solves schema overhead; it has no effect on response size.
-
----
-
-## Model compatibility
-
-Deferred loading requires model support for `tool_reference` blocks:
-
-- Supported: Claude Sonnet 4+, Opus 4+
-- Not supported: Haiku models (by default; can be overridden)
+Only supported on Claude Sonnet 4+ and Opus 4+. Haiku falls back to sending all schemas
+upfront automatically.

@@ -71,12 +71,11 @@ func (r *Registry) AddAction(ac config.ActionConfig) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	target := ac.Server + "." + ac.Tool
-	if _, ok := r.tools[target]; !ok {
+	if _, ok := r.targetPermissionLocked(target); !ok {
 		slog.Default().Warn("action target tool not found in registry; will fail at call time", "action", ac.Server+"."+ac.Name, "target", target)
 	}
 	entry := r.buildActionEntry(ac)
-	r.tools[entry.FullName] = entry
-	r.upsertServerEntry(ac.Server, entry)
+	r.insertActionEntryLocked(ac.Server, entry)
 }
 
 func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
@@ -96,13 +95,50 @@ func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 }
 
 func (r *Registry) actionPermission(ac config.ActionConfig) config.PermissionLevel {
-	if ac.Permission != "" {
+	switch config.PermissionLevel(ac.Permission) {
+	case config.PermOpen, config.PermProtected, config.PermHidden:
 		return config.PermissionLevel(ac.Permission)
+	case "":
+	default:
+		slog.Default().Warn("invalid action permission; defaulting to protected", "action", ac.Server+"."+ac.Name, "permission", ac.Permission)
+		return config.PermProtected
 	}
-	if target, ok := r.tools[ac.Server+"."+ac.Tool]; ok {
-		return target.Permission
+	if perm, ok := r.targetPermissionLocked(ac.Server + "." + ac.Tool); ok {
+		return perm
 	}
 	return config.PermOpen
+}
+
+func (r *Registry) targetPermissionLocked(fullName string) (config.PermissionLevel, bool) {
+	if target, ok := r.tools[fullName]; ok {
+		return target.Permission, true
+	}
+	if target, ok := r.hidden[fullName]; ok {
+		return target.Permission, true
+	}
+	return "", false
+}
+
+func (r *Registry) insertActionEntryLocked(server string, entry *ToolEntry) {
+	delete(r.tools, entry.FullName)
+	delete(r.hidden, entry.FullName)
+	r.removeServerEntry(server, entry.FullName)
+	if entry.Permission == config.PermHidden {
+		r.hidden[entry.FullName] = entry
+		return
+	}
+	r.tools[entry.FullName] = entry
+	r.upsertServerEntry(server, entry)
+}
+
+func (r *Registry) removeServerEntry(server, fullName string) {
+	entries := r.byServer[server]
+	for i, e := range entries {
+		if e.FullName == fullName {
+			r.byServer[server] = append(entries[:i], entries[i+1:]...)
+			return
+		}
+	}
 }
 
 func (r *Registry) upsertServerEntry(server string, entry *ToolEntry) {
@@ -227,24 +263,5 @@ func (r *Registry) ToolCount(serverName string) int {
 }
 
 func resolvePermission(toolName string, perm *config.PermissionsConfig) config.PermissionLevel {
-	if perm == nil {
-		return config.PermOpen
-	}
-	for _, h := range perm.Hidden {
-		if strings.EqualFold(h, toolName) {
-			return config.PermHidden
-		}
-	}
-	for _, p := range perm.Protected {
-		if strings.EqualFold(p, toolName) {
-			return config.PermProtected
-		}
-	}
-	switch perm.Default {
-	case string(config.PermProtected):
-		return config.PermProtected
-	case string(config.PermHidden):
-		return config.PermHidden
-	}
-	return config.PermOpen
+	return perm.LevelFor(toolName)
 }

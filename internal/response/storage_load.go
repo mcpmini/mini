@@ -27,6 +27,10 @@ func (s *Store) loadEntry(e os.DirEntry, now time.Time) {
 	if !ok {
 		return
 	}
+	s.storeEntryIfFresh(e, name, created, now)
+}
+
+func (s *Store) storeEntryIfFresh(e os.DirEntry, name string, created, now time.Time) {
 	path := filepath.Join(s.dir, name)
 	rawPath := strings.TrimSuffix(path, ".json") + ".raw.json"
 	expires := created.Add(s.ttl)

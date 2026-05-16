@@ -20,10 +20,14 @@ type serverMatcher struct {
 
 var knownServers = []serverMatcher{
 	{projection: "github", urlParts: []string{"github.com", "githubcopilot.com"}, cmdParts: []string{"server-github"}},
-	{projection: "slack", urlParts: []string{"slack.com"}, cmdParts: []string{"server-slack"}},
-	{projection: "jira", urlParts: []string{"atlassian.net", "jira.com"}, cmdParts: []string{"server-jira"}},
-	{projection: "linear", urlParts: []string{"linear.app"}, cmdParts: []string{"server-linear"}},
+	{projection: "slack", urlParts: []string{"slack.com"}, cmdParts: []string{"server-slack", "slack-mcp"}},
+	{projection: "atlassian", urlParts: []string{"atlassian.net", "jira.com"}, cmdParts: []string{"mcp-atlassian", "server-jira", "confluence-mcp"}},
+	{projection: "linear", urlParts: []string{"linear.app"}, cmdParts: []string{"server-linear", "linear-mcp"}},
 	{projection: "sentry", urlParts: []string{"sentry.io"}, cmdParts: []string{"server-sentry"}},
+	{projection: "notion", urlParts: []string{"notion.so", "notion.com"}, cmdParts: []string{"notion-mcp", "notionhq"}},
+	{projection: "brave-search", urlParts: []string{}, cmdParts: []string{"brave-search", "brave_search"}},
+	{projection: "gitlab", urlParts: []string{"gitlab.com"}, cmdParts: []string{"server-gitlab", "gitlab-mcp"}},
+	{projection: "figma", urlParts: []string{"figma.com"}, cmdParts: []string{"figma-mcp", "figma-developer-mcp"}},
 }
 
 func DetectProjectionKey(sc config.ServerConfig) string {
@@ -55,18 +59,26 @@ func InstallBundledProjection(configDir string, sc config.ServerConfig) {
 	if bundled == nil {
 		return
 	}
-	projDir := filepath.Join(configDir, "projections")
-	if err := os.MkdirAll(projDir, 0700); err != nil {
+	dest := filepath.Join(configDir, "projections", sc.Name+".yaml")
+	writeBundledProjection(dest, bundled)
+}
+
+func writeBundledProjection(dest string, data []byte) {
+	if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
 		return
 	}
-	dest := filepath.Join(projDir, sc.Name+".yaml")
-	if _, err := os.Stat(dest); err == nil {
+	if projectionExists(dest) {
 		return
 	}
-	if err := os.WriteFile(dest, bundled, 0600); err != nil {
+	if err := os.WriteFile(dest, data, 0600); err != nil {
 		return
 	}
 	fmt.Printf("installed default projection → %s\n", dest)
+}
+
+func projectionExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // installBundledPermissions applies default hidden/protected tools for known
@@ -94,6 +106,10 @@ func loadBundledPermissions(sc config.ServerConfig) *config.PermissionsConfig {
 	if raw == nil {
 		return nil
 	}
+	return parsePermissions(raw)
+}
+
+func parsePermissions(raw []byte) *config.PermissionsConfig {
 	var perms config.PermissionsConfig
 	if err := yaml.Unmarshal(raw, &perms); err != nil {
 		return nil
@@ -110,6 +126,10 @@ func patchServerPermissions(configDir, name string, perms *config.PermissionsCon
 	if err != nil {
 		return err
 	}
+	return writeServerWithPerms(serverPath, data, perms)
+}
+
+func writeServerWithPerms(path string, data []byte, perms *config.PermissionsConfig) error {
 	var existing config.ServerConfig
 	if err := yaml.Unmarshal(data, &existing); err != nil {
 		return err
@@ -119,5 +139,5 @@ func patchServerPermissions(configDir, name string, perms *config.PermissionsCon
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(serverPath, updated, 0600)
+	return os.WriteFile(path, updated, 0600)
 }

@@ -63,12 +63,13 @@ func toServerConfig(name string, sc ServerYAML) config.ServerConfig {
 		Headers:   sc.Headers,
 	}
 	if sc.Permissions != nil {
-		cfg.Permissions = &config.PermissionsConfig{
-			Protected: sc.Permissions.Protected,
-			Hidden:    sc.Permissions.Hidden,
-		}
+		cfg.Permissions = toPermissionsConfig(sc.Permissions)
 	}
 	return cfg
+}
+
+func toPermissionsConfig(p *PermissionsYAML) *config.PermissionsConfig {
+	return &config.PermissionsConfig{Protected: p.Protected, Hidden: p.Hidden}
 }
 
 func envList(env map[string]string) []string {

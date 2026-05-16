@@ -43,26 +43,39 @@ func collectServerCases(fixturesDir, projectionsDir string, serverDirs []os.DirE
 }
 
 func loadServerFixtures(fixturesDir, server string, projections map[string]*config.ProjectionConfig) ([]Case, error) {
-	toolFiles, err := os.ReadDir(filepath.Join(fixturesDir, server))
+	serverDir := filepath.Join(fixturesDir, server)
+	toolFiles, err := os.ReadDir(serverDir)
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	return loadFixtureCases(serverDir, server, toolFiles, projections)
+}
+
+func loadFixtureCases(serverDir, server string, toolFiles []os.DirEntry, projections map[string]*config.ProjectionConfig) ([]Case, error) {
 	var cases []Case
 	for _, tf := range toolFiles {
 		if tf.IsDir() || !strings.HasSuffix(tf.Name(), ".json") {
 			continue
 		}
-		tool := strings.TrimSuffix(tf.Name(), ".json")
-		raw, err := os.ReadFile(filepath.Join(fixturesDir, server, tf.Name()))
+		fixture, err := loadFixtureCase(serverDir, server, tf.Name(), projections)
 		if err != nil {
-			return nil, fmt.Errorf("read fixture %s/%s: %w", server, tf.Name(), err)
+			return nil, err
 		}
-		cases = append(cases, Case{Server: server, Tool: tool, Raw: raw, ProjConfig: resolveProjection(projections, tool)})
+		cases = append(cases, fixture)
 	}
 	return cases, nil
+}
+
+func loadFixtureCase(serverDir, server, name string, projections map[string]*config.ProjectionConfig) (Case, error) {
+	tool := strings.TrimSuffix(name, ".json")
+	raw, err := os.ReadFile(filepath.Join(serverDir, name))
+	if err != nil {
+		return Case{}, fmt.Errorf("read fixture %s/%s: %w", server, name, err)
+	}
+	return Case{Server: server, Tool: tool, Raw: raw, ProjConfig: resolveProjection(projections, tool)}, nil
 }
 
 func resolveProjection(projections map[string]*config.ProjectionConfig, tool string) *config.ProjectionConfig {

@@ -38,6 +38,7 @@ minimcp is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and u
 - `--from-codex` import from Codex `config.toml` (TOML format)
 - `--from-gemini` import from Gemini CLI `settings.json`
 - `config` tool for runtime introspection and control
+- `mini call` / `mini perm-call` — invoke upstream tools directly from the CLI without an agent
 - `mini test` — CI-safe health check (connects to each upstream, exits 1 on failure)
 - `mini init` — interactive setup wizard
 
@@ -67,37 +68,24 @@ minimcp is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and u
 Priority is impact on developer workflows — making agents faster, cheaper, safer, and more capable.
 
 
-### v0.2 — CLI Tool Execution, Observability & Broader MCP Coverage
+### v0.2 — Per-Server Proxy & Observability
 
-**`mini call` / `mini perm-call` — invoke upstream tools directly from the CLI**
+**Tool name aliasing in projection configs**
+- Allow projection configs to declare short aliases for tool names: `list_pull_requests: {alias: list_prs, ...}`
+- Agent sees `list_prs` in the tool list instead of `list_pull_requests`, saving schema tokens on every turn
+- Aliases are per-server and user-configurable; bundled defaults can ship opinionated aliases for verbose tool names
+- *Code changes*: `ProjectionConfig.Alias string`; registry wraps tool name on list/call; inverse map maintained for routing
 
-Some agents work better by running shell commands than by loading MCP schemas into context. A developer who already uses `gh` CLI, for example, can tell Claude "use `mini call` for GitHub" and skip loading 41 GitHub tool schemas into every conversation.
+### v0.2 — Per-Server Proxy & Observability
 
-```bash
-# Read-only tools
-mini call github list_pull_requests '{"owner":"acme","repo":"api"}'
-mini call linear list_issues '{"filter":{"state":{"name":{"eq":"In Progress"}}}}'
+**Per-server transparent proxy (`mini proxy <server>`)**
+- `mini proxy github` starts a single-server proxy that exposes upstream tools directly without any server prefix or mini branding — Claude Code sees `list_pull_requests`, not `github__list_pull_requests`
+- Users register each server independently: `claude mcp add github -- mini proxy github`
+- No `config` or `read` tools exposed — pure passthrough, mini invisible to the agent
+- All projection, permission, and token-optimization logic still applies via the mini daemon
+- *Code changes*: `runProxy` accepts optional positional server name; new `server.WithSingleServerProxy(name)` option; proxy tool listing strips server prefix; routing adds it back internally
 
-# Write/destructive tools — explicit subcommand signals intent
-mini perm-call github create_pull_request '{"owner":"acme","repo":"api","title":"..."}'
-
-# Flags
-mini call github search_code '{"q":"TODO"}' --raw          # skip projection, full upstream response
-mini call github search_code '{"q":"TODO"}' --output json  # default: projected JSON
-mini call github search_code '{"q":"TODO"}' --output mini # mini format (compact, great for agents)
-```
-
-Design decisions:
-- Two subcommands (`call` / `perm-call`) rather than a `--protected` flag — the subcommand name is visible in shell history, making write ops auditable at a glance
-- `perm-call` uses kebab-case (CLI convention); `perm_call` stays as the MCP tool name
-- Default output is projected JSON (same as MCP path); `--raw` bypasses projection for debugging
-- Params as a positional JSON string; `--params-file FILE` for larger inputs; stdin with `-`
-- Exit code 1 on tool error, 2 on config/connection error — scriptable
-- Machine-readable by default; `--pretty` for human inspection
-
-This makes mini useful as a lightweight CLI wrapper over any MCP server — agents can be instructed "use `mini call` instead of the MCP tools" to reduce schema token overhead to zero for tool-heavy servers.
-
-*Code changes*: `cmd/mini/call.go`; direct transport path (no server layer) for `--raw`; server path for projected output; add `call` and `perm-call` to command map in `main.go`; integration tests in `cmd/mini/cli_test.go`
+### v0.2 — Observability & Broader MCP Coverage
 
 **Default projection configs for top developer MCPs**
 - Expand bundled projections from the v0.1 set (GitHub, Slack, Jira, Linear, Sentry) to cover the 10 most commonly used MCP servers in developer workflows
@@ -286,8 +274,8 @@ Once agents run autonomously, you need to know what they did and what it cost.
 - `mini install <server>` fetches config and adds it
 - *Code changes*: `cmd/mini/search.go`; registry client against a hosted API or community repo
 
-**Import from more sources** *(Cursor, Codex, Gemini CLI done; remaining: Windsurf, Zed, Continue)*
-- Windsurf, Zed, Continue config file formats
+**Import from more sources** *(Cursor, Codex, Gemini CLI done; remaining: Windsurf, Zed, Continue, pi.dev)*
+- Windsurf, Zed, Continue, and pi.dev config file formats
 - *Code changes*: extend existing `--from-*` flags pattern in `cmd/mini/add.go`
 
 
@@ -334,6 +322,20 @@ jobs:
 
 **Linting**: add `staticcheck` or `golangci-lint` to catch issues the compiler misses (unused exports, shadowed variables, printf format mismatches).
 
+
+---
+
+## Unscheduled / Future Consideration
+
+Features that are clearly useful but haven't been slotted into a version yet.
+
+**Upstream tool schema refresh**
+- When mini connects to an upstream it lists available tools once and caches that list in-memory for the lifetime of the connection. Upstreams that run for days/weeks may add, remove, or rename tools without mini noticing.
+- Options: periodic background refresh (`tools/list` every N minutes, configurable per server), `notifications/tools/list_changed` support (MCP spec supports server-push change notifications — subscribe and refresh on receipt), or a `config action:refresh_tools server:<name>` command for manual triggers.
+- The notification-based approach is lowest overhead and most correct; the periodic refresh is simpler to implement and works with servers that don't emit notifications.
+- *Code changes*: `upstreamServer` subscribes to `notifications/tools/list_changed` if the upstream supports it; fallback periodic ticker; `registerTools` called again on refresh to update the registry; sessions get a `tools_changed` notification so agents can re-list.
+
+---
 
 ## Feature Priority Summary
 

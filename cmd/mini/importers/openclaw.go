@@ -24,6 +24,10 @@ func ImportFromOpenClaw(configDir, path string) error {
 		fmt.Println("no mcp.servers found in OpenClaw config")
 		return nil
 	}
+	return writeOpenClawServers(configDir, servers)
+}
+
+func writeOpenClawServers(configDir string, servers map[string]openClawMCPEntry) error {
 	for name, entry := range servers {
 		if err := WriteServerYAML(configDir, name, openClawEntryToServer(name, entry)); err != nil {
 			return err

@@ -78,6 +78,10 @@ func checkFile(path string, fset *token.FileSet) []issue {
 	if err != nil {
 		return nil
 	}
+	return collectFuncIssues(f, fset)
+}
+
+func collectFuncIssues(f *ast.File, fset *token.FileSet) []issue {
 	var issues []issue
 	ast.Inspect(f, func(n ast.Node) bool {
 		fd, ok := n.(*ast.FuncDecl)

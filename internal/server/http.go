@@ -50,18 +50,34 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type parsedPostRequest struct {
+	body      []byte
+	sessionID string
+	session   *Session
+}
+
 func (s *Server) servePost(w http.ResponseWriter, r *http.Request) {
-	body, ok := readLimitedBody(w, r.Body)
+	req, ok := s.parsePostRequest(w, r)
 	if !ok {
 		return
+	}
+	resp, send := s.handleLine(r.Context(), req.body, req.session)
+	writeMCPResponse(w, r, req.sessionID, resp, send)
+}
+
+func (s *Server) parsePostRequest(w http.ResponseWriter, r *http.Request) (parsedPostRequest, bool) {
+	body, ok := readLimitedBody(w, r.Body)
+	if !ok {
+		return parsedPostRequest{}, false
 	}
 	sessionID, ok := parseSessionID(w, r)
 	if !ok {
-		return
+		return parsedPostRequest{}, false
 	}
-	session := s.sessions.getOrCreate(sessionID)
-	resp, send := s.handleLine(r.Context(), body, session)
+	return parsedPostRequest{body, sessionID, s.sessions.getOrCreate(sessionID)}, true
+}
 
+func writeMCPResponse(w http.ResponseWriter, r *http.Request, sessionID string, resp transport.Response, send bool) {
 	w.Header().Set("Mcp-Session-Id", sessionID)
 	if !send {
 		w.WriteHeader(http.StatusAccepted)
@@ -69,10 +85,10 @@ func (s *Server) servePost(w http.ResponseWriter, r *http.Request) {
 	}
 	if acceptsSSE(r.Header.Get("Accept")) {
 		writeSSEResponse(w, resp)
-	} else {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp) //nolint:errcheck
+		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 }
 
 func readLimitedBody(w http.ResponseWriter, body io.Reader) ([]byte, bool) {

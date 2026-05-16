@@ -130,15 +130,58 @@ func writeBundledProjections(configDir string, r *Runner, servers map[string]str
 	}
 	srcDir := filepath.Join(r.RepoRoot, "internal", "defaults", "projections")
 	for name := range servers {
-		data, err := os.ReadFile(filepath.Join(srcDir, name+".yaml"))
-		if err != nil {
-			continue
-		}
-		if err := os.WriteFile(filepath.Join(projDir, name+".yaml"), data, 0600); err != nil {
+		if err := writeBundledProjection(srcDir, projDir, name); err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
 			return err
 		}
 	}
 	return nil
+}
+
+func writeBundledProjection(srcDir, projDir, name string) error {
+	data, err := os.ReadFile(filepath.Join(srcDir, name+".yaml"))
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(projDir, name+".yaml"), data, 0600)
+}
+
+func proxyMCPConfig(env *Env, r *Runner, servers map[string]string, callLogDir string, format int) (string, error) {
+	configDir, err := writeMiniProxyConfig(env, r, servers, callLogDir, format)
+	if err != nil {
+		return "", err
+	}
+	return writeMCPConfig(env, miniServerConfig(r.MiniBin, configDir, "proxy", "--log-level", "error"))
+}
+
+func writeMiniProxyConfig(env *Env, r *Runner, servers map[string]string, callLogDir string, format int) (string, error) {
+	configDir := env.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(proxyConfigYAML(format)), 0600); err != nil {
+		return "", err
+	}
+	if err := writeServersYAML(configDir, r.FakemcpBin, servers, callLogDir); err != nil {
+		return "", err
+	}
+	if format == fmtPassthrough {
+		return configDir, nil
+	}
+	if err := writeBundledProjections(configDir, r, servers); err != nil {
+		return "", err
+	}
+	return configDir, nil
+}
+
+func miniServerConfig(miniBin, configDir string, args ...string) map[string]any {
+	return map[string]any{
+		"mcpServers": map[string]any{
+			"mini": map[string]any{
+				"command": miniBin,
+				"args":    append([]string{"--config", configDir}, args...),
+			},
+		},
+	}
 }
 
 func writeMCPConfig(env *Env, cfg map[string]any) (string, error) {
@@ -153,6 +196,32 @@ func fakemcpArgs(fixtureDir, callLogDir, serverName string) []string {
 		args = append(args, "--call-log", filepath.Join(callLogDir, serverName+".log"))
 	}
 	return args
+}
+
+func proxyConfigYAML(format int) string {
+	switch format {
+	case fmtPassthrough:
+		return "inline_threshold: 9999999\n"
+	default:
+		return "inline_threshold: 50000\n"
+	}
+}
+
+func proxyAllowedTools(servers map[string]string, extraBuiltins string) string {
+	names := []string{"mcp__mini__config", "mcp__mini__read"}
+	for serverName, dir := range servers {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".json") && !strings.HasSuffix(e.Name(), ".schema.json") {
+				tool := strings.TrimSuffix(e.Name(), ".json")
+				names = append(names, "mcp__mini__"+serverName+"__"+tool)
+			}
+		}
+	}
+	if extraBuiltins != "" {
+		names = append(names, strings.Split(extraBuiltins, ",")...)
+	}
+	return strings.Join(names, ",")
 }
 
 func writeMiniWrapper(env *Env, miniBin, configDir string) (string, error) {

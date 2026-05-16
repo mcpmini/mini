@@ -17,23 +17,39 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 	if !config.ValidServerName.MatchString(serverName) {
 		return nil, fmt.Errorf("invalid server name: %q", serverName)
 	}
-	sc, err := s.loadServerConfig(serverName)
+	sc, err := s.loadOAuthServerConfig(serverName)
 	if err != nil {
-		return nil, fmt.Errorf("load server config: %w", err)
-	}
-	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
-		return nil, fmt.Errorf("server %q does not have oauth2 auth configured", serverName)
+		return nil, err
 	}
 	flow, err := s.startPKCEFlow(serverName, sc)
 	if err != nil {
 		return nil, err
 	}
 	go s.runAuthFlow(serverName, sc, flow.state, flow.doneCh)
+	return authStartResponse(serverName, flow.authURL), nil
+}
+
+func (s *Server) loadOAuthServerConfig(serverName string) (config.ServerConfig, error) {
+	sc, err := s.loadServerConfig(serverName)
+	if err != nil {
+		return config.ServerConfig{}, fmt.Errorf("load server config: %w", err)
+	}
+	return sc, validateOAuthServer(serverName, sc)
+}
+
+func validateOAuthServer(serverName string, sc config.ServerConfig) error {
+	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		return fmt.Errorf("server %q does not have oauth2 auth configured", serverName)
+	}
+	return nil
+}
+
+func authStartResponse(serverName, authURL string) map[string]any {
 	return map[string]any{
 		"ok":   true,
-		"url":  flow.authURL,
+		"url":  authURL,
 		"note": "Visit the URL in a browser to authorize " + serverName + ". The connection will be re-established automatically once authorized.",
-	}, nil
+	}
 }
 
 type pkceFlowResult struct {
@@ -97,15 +113,7 @@ func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig
 }
 
 func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig, accessToken string) {
-	headerName := sc.Auth.Header
-	if headerName == "" {
-		headerName = "Authorization"
-	}
-	if sc.Headers == nil {
-		sc.Headers = make(map[string]string)
-	}
-	sc.Headers[headerName] = "Bearer " + accessToken
-
+	applyBearerToken(&sc, accessToken)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// Do not call removeServerRuntime first: if AddUpstream fails the server
@@ -116,6 +124,17 @@ func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig, a
 	} else {
 		s.logger.Info("reconnected after auth", "server", serverName)
 	}
+}
+
+func applyBearerToken(sc *config.ServerConfig, accessToken string) {
+	headerName := sc.Auth.Header
+	if headerName == "" {
+		headerName = "Authorization"
+	}
+	if sc.Headers == nil {
+		sc.Headers = make(map[string]string)
+	}
+	sc.Headers[headerName] = "Bearer " + accessToken
 }
 
 func (s *Server) handleAuthStatus(serverName string) (any, error) {
@@ -129,14 +148,19 @@ func (s *Server) handleAuthStatus(serverName string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load token: %w", err)
 	}
-	result := map[string]any{
-		"server":     serverName,
-		"authorized": t.Valid(),
+	return buildAuthStatusResult(serverName, t.Valid(), t.Expiry), nil
+}
+
+func buildAuthStatusResult(serverName string, valid bool, expiry time.Time) map[string]any {
+	result := map[string]any{"server": serverName, "authorized": valid}
+	appendTokenExpiry(result, expiry)
+	return result
+}
+
+func appendTokenExpiry(result map[string]any, expiry time.Time) {
+	if !expiry.IsZero() {
+		result["expires"] = expiry.Format(time.RFC3339)
 	}
-	if !t.Expiry.IsZero() {
-		result["expires"] = t.Expiry.Format(time.RFC3339)
-	}
-	return result, nil
 }
 
 func (s *Server) loadServerConfig(serverName string) (config.ServerConfig, error) {

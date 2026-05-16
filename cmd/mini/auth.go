@@ -14,27 +14,40 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func runAuth(configDir string, args []string) {
 	fs := flag.NewFlagSet("auth", flag.ExitOnError)
 	fs.Parse(args)
+	serverName := requireAuthServer(fs)
+	sc, err := loadOAuthServer(configDir, serverName)
+	if err != nil {
+		fatalf("%v", err)
+	}
+	runPKCEFlow(configDir, serverName, sc)
+}
+
+func requireAuthServer(fs *flag.FlagSet) string {
 	if fs.NArg() == 0 {
 		fatalf("usage: mini auth <server-name>")
 	}
-	serverName := fs.Arg(0)
+	return fs.Arg(0)
+}
+
+func loadOAuthServer(configDir, serverName string) (*config.ServerConfig, error) {
 	_, servers, err := config.Load(configDir)
 	if err != nil {
-		fatalf("load config: %v", err)
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 	sc := findServer(servers, serverName)
 	if sc == nil {
-		fatalf("server not found: %s", serverName)
+		return nil, fmt.Errorf("server not found: %s", serverName)
 	}
 	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
-		fatalf("server %q does not have oauth2 auth configured", serverName)
+		return nil, fmt.Errorf("server %q does not have oauth2 auth configured", serverName)
 	}
-	runPKCEFlow(configDir, serverName, sc)
+	return sc, nil
 }
 
 func runPKCEFlow(configDir, serverName string, sc *config.ServerConfig) {
@@ -44,11 +57,7 @@ func runPKCEFlow(configDir, serverName string, sc *config.ServerConfig) {
 	if err := resolveOAuthEndpoints(ctx, configDir, serverName, sc); err != nil {
 		fatalf("resolve oauth config: %v", err)
 	}
-	opener := openBrowser
-	if sc.Auth.BrowserCmd != "" {
-		opener = openBrowserCmd(sc.Auth.BrowserCmd)
-	}
-	token, err := auth.PKCEFlow(ctx, sc.Auth, opener)
+	token, err := auth.PKCEFlow(ctx, sc.Auth, authOpener(sc.Auth.BrowserCmd))
 	if err != nil {
 		fatalf("auth flow: %v", err)
 	}
@@ -56,6 +65,13 @@ func runPKCEFlow(configDir, serverName string, sc *config.ServerConfig) {
 		fatalf("save token: %v", err)
 	}
 	printAuthResult(serverName, token.Expiry)
+}
+
+func authOpener(browserCmd string) func(string) error {
+	if browserCmd != "" {
+		return openBrowserCmd(browserCmd)
+	}
+	return openBrowser
 }
 
 func resolveOAuthEndpoints(ctx context.Context, configDir, serverName string, sc *config.ServerConfig) error {
@@ -81,32 +97,75 @@ func discoverMissingEndpoints(ctx context.Context, url string, a *config.AuthCon
 	if err != nil {
 		return "", fmt.Errorf("discover oauth endpoints: %w", err)
 	}
-	if a.AuthURL == "" {
-		a.AuthURL = meta.AuthURL
-	}
-	if a.TokenURL == "" {
-		a.TokenURL = meta.TokenURL
+	if err := applyDiscoveredEndpoints(a, meta); err != nil {
+		return "", err
 	}
 	return meta.RegistrationURL, nil
 }
 
-func resolveClientID(ctx context.Context, configDir, serverName string, a *config.AuthConfig, regURL string) error {
-	reg, err := auth.LoadRegistration(configDir, serverName)
-	if err == nil {
-		a.ClientID = reg.ClientID
+func applyDiscoveredEndpoints(a *config.AuthConfig, meta *auth.ServerMeta) error {
+	if a.AuthURL == "" {
+		if err := validateOAuthEndpoint(meta.AuthURL, "authorization_endpoint"); err != nil {
+			return err
+		}
+		a.AuthURL = meta.AuthURL
+	}
+	if a.TokenURL == "" {
+		if err := validateOAuthEndpoint(meta.TokenURL, "token_endpoint"); err != nil {
+			return err
+		}
+		a.TokenURL = meta.TokenURL
+	}
+	return validateOAuthEndpoint(meta.RegistrationURL, "registration_endpoint")
+}
+
+func validateOAuthEndpoint(endpoint, name string) error {
+	if endpoint == "" {
 		return nil
 	}
-	if !auth.IsNotFound(err) {
+	if err := transport.ValidateURL(endpoint); err != nil {
+		return fmt.Errorf("oauth discovery: %s points to a disallowed host: %w", name, err)
+	}
+	return nil
+}
+
+func resolveClientID(ctx context.Context, configDir, serverName string, a *config.AuthConfig, regURL string) error {
+	found, err := applyExistingRegistration(configDir, serverName, a)
+	if err != nil || found {
 		return err
 	}
 	if regURL == "" {
 		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
 	}
-	clientID, err := auth.Register(ctx, regURL)
+	clientID, err := registerClient(ctx, regURL)
 	if err != nil {
 		return err
 	}
+	return storeNewClientID(configDir, serverName, clientID, a)
+}
+
+func applyExistingRegistration(configDir, serverName string, a *config.AuthConfig) (bool, error) {
+	reg, err := auth.LoadRegistration(configDir, serverName)
+	if err == nil {
+		a.ClientID = reg.ClientID
+		return true, nil
+	}
+	if !auth.IsNotFound(err) {
+		return false, err
+	}
+	return false, nil
+}
+
+func storeNewClientID(configDir, serverName, clientID string, a *config.AuthConfig) error {
 	a.ClientID = clientID
+	return saveClientRegistration(configDir, serverName, clientID)
+}
+
+func registerClient(ctx context.Context, regURL string) (string, error) {
+	return auth.Register(ctx, regURL)
+}
+
+func saveClientRegistration(configDir, serverName, clientID string) error {
 	return auth.SaveRegistration(configDir, serverName, &auth.Registration{ClientID: clientID})
 }
 
@@ -152,6 +211,10 @@ func ensureValidToken(ctx context.Context, configDir string, sc *config.ServerCo
 		fmt.Fprintf(os.Stderr, "mini: token for %s is expired — run: mini auth %s\n", sc.Name, sc.Name)
 		return nil, fmt.Errorf("expired")
 	}
+	return refreshAndSaveToken(ctx, configDir, sc, t)
+}
+
+func refreshAndSaveToken(ctx context.Context, configDir string, sc *config.ServerConfig, t *oauth2.Token) (*oauth2.Token, error) {
 	refreshed, err := auth.Refresh(ctx, sc.Auth, t)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", sc.Name, sc.Name)
@@ -199,11 +262,11 @@ func openBrowser(url string) error {
 }
 
 func openBrowserCmd(browserCmd string) func(string) error {
+	parts := strings.Fields(browserCmd)
 	return func(url string) error {
-		return exec.Command("sh", "-c", browserCmd+" "+shellQuote(url)).Start()
+		if len(parts) == 0 {
+			return fmt.Errorf("empty browser_cmd")
+		}
+		return exec.Command(parts[0], append(parts[1:], url)...).Start()
 	}
-}
-
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }

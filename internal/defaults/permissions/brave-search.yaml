@@ -1,0 +1,5 @@
+hidden:
+  # Rarely useful in developer agent workflows
+  - brave_local_search
+  - brave_video_search
+  - brave_image_search

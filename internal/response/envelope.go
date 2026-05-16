@@ -29,18 +29,22 @@ func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
 	rawTokens := EstimateTokensRaw(p.Raw)
 	summaryTokens := EstimateTokens(p.Summary)
 	stats := CallStats{RawTokens: rawTokens, SummaryTokens: summaryTokens}
-	e := &Envelope{
-		Data:        p.Summary,
-		Elided:      nilIfEmpty(p.Elided),
-		Truncated:   nilIfEmptyIntMap(p.Truncated),
-		Passthrough: nilIfEmptyMap(p.Passthrough),
-	}
+	e := newEnvelope(p)
 	if rawTokens > b.threshold || anyProjectionApplied(p) {
 		if err := b.writeFiles(e, p); err != nil {
 			return nil, stats, err
 		}
 	}
 	return e, stats, nil
+}
+
+func newEnvelope(p BuildParams) *Envelope {
+	return &Envelope{
+		Data:        p.Summary,
+		Elided:      nilIfEmpty(p.Elided),
+		Truncated:   nilIfEmptyIntMap(p.Truncated),
+		Passthrough: nilIfEmptyMap(p.Passthrough),
+	}
 }
 
 // anyProjectionApplied reports whether the response was filtered in any way.

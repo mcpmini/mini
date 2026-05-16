@@ -1,0 +1,43 @@
+{
+  "number": 10068,
+  "title": "Fix responsive layout issues in dev error overlay",
+  "body": "WIP",
+  "state": "open",
+  "draft": true,
+  "merged": false,
+  "mergeable_state": "blocked",
+  "html_url": "https://github.com/example-org/sample-app/pull/10068",
+  "user": {
+    "login": "ext_contrib_d",
+    "id": 900010,
+    "profile_url": "https://github.com/ext_contrib_d",
+    "avatar_url": "https://avatars.githubusercontent.com/u/900010?v=4"
+  },
+  "labels": [
+    "type: app",
+    "created-by: Example DevEx"
+  ],
+  "head": {
+    "ref": "ext_contrib_d/fix-overlay-responsive-layout",
+    "sha": "3671b4e972e05110ce39c7b53354412b4ff88bb5",
+    "repo": {
+      "full_name": "example-org/sample-app",
+      "description": "Sample web application"
+    }
+  },
+  "base": {
+    "ref": "canary",
+    "sha": "16e5f9e685188751f1f4fb085f6e9e729f409950",
+    "repo": {
+      "full_name": "example-org/sample-app",
+      "description": "Sample web application"
+    }
+  },
+  "additions": 25,
+  "deletions": 2,
+  "changed_files": 3,
+  "commits": 1,
+  "comments": 1,
+  "created_at": "2026-04-27T01:42:53Z",
+  "updated_at": "2026-04-27T02:17:30Z"
+}

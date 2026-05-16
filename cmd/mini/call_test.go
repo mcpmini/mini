@@ -70,3 +70,34 @@ func TestResolveCallProjection(t *testing.T) {
 		}
 	})
 }
+
+func TestCallPermissionError(t *testing.T) {
+	t.Run("call blocks protected", func(t *testing.T) {
+		perm := &config.PermissionsConfig{Protected: []string{"DeleteRepo"}}
+		code, _, blocked := callPermissionError(perm, "deleterepo", false)
+		if !blocked || code != 2 {
+			t.Fatalf("expected protected block, got blocked=%v code=%d", blocked, code)
+		}
+	})
+	t.Run("perm call allows protected", func(t *testing.T) {
+		perm := &config.PermissionsConfig{Protected: []string{"delete_repo"}}
+		_, _, blocked := callPermissionError(perm, "delete_repo", true)
+		if blocked {
+			t.Fatal("perm-call should allow protected tools")
+		}
+	})
+	t.Run("perm call blocks hidden", func(t *testing.T) {
+		perm := &config.PermissionsConfig{Hidden: []string{"AdminTool"}}
+		code, _, blocked := callPermissionError(perm, "admintool", true)
+		if !blocked || code != 1 {
+			t.Fatalf("expected hidden block, got blocked=%v code=%d", blocked, code)
+		}
+	})
+	t.Run("hidden default wins", func(t *testing.T) {
+		perm := &config.PermissionsConfig{Default: string(config.PermHidden)}
+		code, _, blocked := callPermissionError(perm, "anything", true)
+		if !blocked || code != 1 {
+			t.Fatalf("expected hidden default block, got blocked=%v code=%d", blocked, code)
+		}
+	})
+}

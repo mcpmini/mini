@@ -56,20 +56,29 @@ func (s *controlServer) handleFaults(w http.ResponseWriter, r *http.Request) {
 func (s *controlServer) handleTools(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPut:
-		var t Tool
-		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		s.tools.Add(t)
-		w.WriteHeader(http.StatusNoContent)
+		s.handleToolsPut(w, r)
 	case http.MethodDelete:
-		name := r.URL.Query().Get("name")
-		s.tools.Remove(name)
+		s.tools.Remove(r.URL.Query().Get("name"))
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodGet:
 		json.NewEncoder(w).Encode(s.tools.List()) //nolint:errcheck
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *controlServer) handleToolsPut(w http.ResponseWriter, r *http.Request) {
+	tool, err := decodeTool(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.tools.Add(tool)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeTool(r *http.Request) (Tool, error) {
+	var t Tool
+	err := json.NewDecoder(r.Body).Decode(&t)
+	return t, err
 }

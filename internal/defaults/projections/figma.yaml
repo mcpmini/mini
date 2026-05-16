@@ -1,0 +1,29 @@
+get_file:
+  include: [name, lastModified, version, document, components, styles]
+  depth_limit: 3
+  array_limits:
+    children: 50
+  string_limits:
+    characters: 1000
+  exclude_always: [absoluteBoundingBox, relativeTransform, constraints, exportSettings, reactions, transitionNodeID, transitionDuration, transitionEasing, scrollBehavior, blendMode, preserveRatio, layoutAlign, layoutGrow]
+
+get_node:
+  depth_limit: 4
+  array_limits:
+    children: 30
+  string_limits:
+    characters: 1000
+  exclude_always: [absoluteBoundingBox, relativeTransform, constraints, exportSettings, reactions, blendMode, scrollBehavior]
+
+get_comments:
+  include: [comments]
+  array_limits:
+    comments: 50
+  depth_limit: 2
+  exclude_always: [client_meta, order_id, resolved_at]
+  string_limits:
+    message: 1000
+
+"*":
+  depth_limit: 3
+  auto_strip_threshold: 500

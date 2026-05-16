@@ -86,16 +86,16 @@ func main() {
 }
 
 var commands = map[string]func(string, []string){
-	"serve":  runServe,
-	"proxy":  runProxy,
-	"daemon": runDaemonCmd,
-	"ls":     func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
-	"list":   func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
-	"add":    func(dir string, args []string) { mustRun(runAdd(dir, args, os.Stdout)) },
-	"rm":     func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
-	"remove": func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
-	"status": func(dir string, _ []string) { runStatus(dir) },
-	"cleanup": func(dir string, _ []string) { mustRun(runCleanup(dir, os.Stdout)) },
+	"serve":     runServe,
+	"proxy":     runProxy,
+	"daemon":    runDaemonCmd,
+	"ls":        func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
+	"list":      func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
+	"add":       func(dir string, args []string) { mustRun(runAdd(dir, args, os.Stdout)) },
+	"rm":        func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
+	"remove":    func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
+	"status":    func(dir string, _ []string) { runStatus(dir) },
+	"cleanup":   func(dir string, _ []string) { mustRun(runCleanup(dir, os.Stdout)) },
 	"auth":      runAuth,
 	"test":      runTest,
 	"init":      runInit,
@@ -137,25 +137,42 @@ func usage() {
 	fmt.Fprintln(os.Stderr, usageText)
 }
 
-func runServe(configDir string, args []string) {
+type serveFlags struct {
+	logLevel          string
+	httpAddr          string
+	standalone        bool
+	dangerNonLoopback bool
+}
+
+func parseServeFlags(args []string) serveFlags {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
 	httpAddr := fs.String("http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
 	standalone := fs.Bool("standalone", false, "skip daemon detection, serve directly (useful for debugging)")
-	dangerNonLoopback := fs.Bool("dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address (only when all network clients are trusted)")
+	dangerNonLoopback := fs.Bool("dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address")
 	fs.Parse(args) //nolint:errcheck
+	return serveFlags{logLevel: *logLevel, httpAddr: *httpAddr, standalone: *standalone, dangerNonLoopback: *dangerNonLoopback}
+}
 
+func runServe(configDir string, args []string) {
+	f := parseServeFlags(args)
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
-	logger := buildLogger(cfg, *logLevel)
-	if !*standalone && *httpAddr == "" {
-		if err := tryProxyMode(configDir, logger); err == nil {
-			return
-		}
+	logger := buildLogger(cfg, f.logLevel)
+	if shouldTryProxyMode(f.standalone, f.httpAddr) && tryServeViaProxy(configDir, logger) {
+		return
 	}
-	serveStandalone(configDir, cfg, servers, logger, *httpAddr, *dangerNonLoopback)
+	serveStandalone(configDir, cfg, servers, logger, f.httpAddr, f.dangerNonLoopback)
+}
+
+func shouldTryProxyMode(standalone bool, httpAddr string) bool {
+	return !standalone && httpAddr == ""
+}
+
+func tryServeViaProxy(configDir string, logger *slog.Logger) bool {
+	return tryProxyMode(configDir, logger) == nil
 }
 
 func runProxy(configDir string, args []string) {
@@ -203,8 +220,7 @@ func buildAndConnectServer(ctx context.Context, cfg *config.Config, configDir st
 	for _, sc := range servers {
 		if isEnabled(sc) {
 			if err := srv.AddUpstream(ctx, sc); err != nil {
-				logger.Error("failed to connect upstream", "server", sc.Name, "err", err)
-				os.Exit(1)
+				logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
 			}
 		}
 	}

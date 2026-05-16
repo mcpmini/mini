@@ -78,14 +78,19 @@ func startCallbackServer(state string) (callbackServerResult, error) {
 	if err != nil {
 		return callbackServerResult{}, fmt.Errorf("listen for callback: %w", err)
 	}
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
+	port, err := callbackPort(listener)
+	if err != nil {
 		listener.Close()
-		return callbackServerResult{}, fmt.Errorf("listener address is not TCP: %T", listener.Addr())
+		return callbackServerResult{}, err
 	}
 	codeCh := make(chan string, 1)
+	srv := serveCallbackListener(listener, callbackHandler(state, codeCh))
+	return callbackServerResult{srv: srv, codeCh: codeCh, port: port}, nil
+}
+
+func serveCallbackListener(listener net.Listener, handler http.Handler) *http.Server {
 	srv := &http.Server{
-		Handler:           callbackHandler(state, codeCh),
+		Handler:           handler,
 		ReadHeaderTimeout: 30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 	}
@@ -94,7 +99,15 @@ func startCallbackServer(state string) (callbackServerResult, error) {
 			log.Printf("oauth callback server: %v", err)
 		}
 	}()
-	return callbackServerResult{srv: srv, codeCh: codeCh, port: tcpAddr.Port}, nil
+	return srv
+}
+
+func callbackPort(listener net.Listener) (int, error) {
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return 0, fmt.Errorf("listener address is not TCP: %T", listener.Addr())
+	}
+	return tcpAddr.Port, nil
 }
 
 func exchangeCode(ctx context.Context, cfg *oauth2.Config, verifier string, codeCh chan string, srv *http.Server, resultCh chan PKCEResult) {
@@ -123,17 +136,22 @@ func callbackHandler(state string, codeCh chan<- string) http.Handler {
 			http.Error(w, "state mismatch", http.StatusBadRequest)
 			return
 		}
-		// Write and flush response before signaling — srv.Close() follows immediately.
-		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprintln(w, "<html><body><p>Authorized. You can close this tab.</p></body></html>")
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-		// Non-blocking send: if the channel is already full (browser retry,
-		// double-click, or network retry), don't leak this goroutine.
-		select {
-		case codeCh <- q.Get("code"):
-		default:
-		}
+		writeAuthorizedResponse(w)
+		sendAuthCode(codeCh, q.Get("code"))
 	})
+}
+
+func writeAuthorizedResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintln(w, "<html><body><p>Authorized. You can close this tab.</p></body></html>")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func sendAuthCode(codeCh chan<- string, code string) {
+	select {
+	case codeCh <- code:
+	default:
+	}
 }

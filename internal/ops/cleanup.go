@@ -42,22 +42,34 @@ func resolveResponseDir(cfg *config.Config, configDir string) (string, time.Dura
 
 func purgeExpired(dir string, entries []os.DirEntry, cutoff time.Time) (removed int, freed int64) {
 	for _, e := range entries {
-		if e.IsDir() || strings.HasSuffix(e.Name(), ".raw.json") {
+		if shouldSkipCleanupEntry(e) {
 			continue
 		}
 		info, err := e.Info()
 		if err != nil || info.ModTime().After(cutoff) {
 			continue
 		}
-		path := filepath.Join(dir, e.Name())
-		rawPath := strings.TrimSuffix(path, ".json") + ".raw.json"
-		freed += info.Size()
-		os.Remove(path)
-		if ri, err := os.Stat(rawPath); err == nil {
-			freed += ri.Size()
-			os.Remove(rawPath)
-		}
+		freed += purgeEntry(filepath.Join(dir, e.Name()), info.Size())
 		removed++
 	}
 	return removed, freed
+}
+
+func purgeEntry(path string, size int64) int64 {
+	freed := size
+	os.Remove(path)
+	rawPath := rawPairPath(path)
+	if ri, err := os.Stat(rawPath); err == nil {
+		freed += ri.Size()
+		os.Remove(rawPath)
+	}
+	return freed
+}
+
+func shouldSkipCleanupEntry(e os.DirEntry) bool {
+	return e.IsDir() || strings.HasSuffix(e.Name(), ".raw.json")
+}
+
+func rawPairPath(path string) string {
+	return strings.TrimSuffix(path, ".json") + ".raw.json"
 }

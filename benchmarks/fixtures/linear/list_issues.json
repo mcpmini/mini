@@ -6,7 +6,7 @@
       "description": "When an upstream MCP becomes unresponsive, requests queue up consuming goroutines and memory. We need a configurable `max_pending_requests` setting per server that rejects new requests immediately when the limit is reached rather than queuing indefinitely.\n\n**Acceptance criteria:**\n- Config: `max_pending_requests: N` in server YAML\n- When limit reached, return structured error immediately\n- Semaphore slot released on timeout/cancellation\n- Status command shows current pending count",
       "state": {"id": "state-1", "name": "In Progress", "type": "started", "color": "#f2c94c"},
       "priority": 1, "priorityLabel": "Urgent",
-      "assignee": {"id": "user-1", "name": "Alex Beaumont", "email": "alex@acme.com", "displayName": "abeaumont"},
+      "assignee": {"id": "user-1", "name": "Pat Example", "email": "user1@example.com", "displayName": "pat_example"},
       "creator": {"id": "user-2", "name": "SRE Team", "displayName": "sre_team"},
       "team": {"id": "team-1", "name": "Platform", "key": "PLAT"},
       "labels": {"nodes": [{"id": "label-1", "name": "reliability", "color": "#0e8a16"}]},

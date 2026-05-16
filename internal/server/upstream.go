@@ -35,7 +35,7 @@ type upstreamServer struct {
 
 	reconnecting atomic.Bool
 	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
-	onReconnect  func()       // called after successful reconnect; used in tests
+	onReconnect  func()        // called after successful reconnect; used in tests
 
 	calls          atomic.Int64
 	errs           atomic.Int64
@@ -47,6 +47,13 @@ type upstreamServer struct {
 
 func (u *upstreamServer) shutdown() {
 	u.cancel()
+}
+
+func (u *upstreamServer) shutdownAndClose() {
+	u.shutdown()
+	u.mu.Lock()
+	u.conn.Close()
+	u.mu.Unlock()
 }
 
 func (u *upstreamServer) callTool(ctx context.Context, toolName string, args map[string]any) (json.RawMessage, error) {
@@ -116,23 +123,40 @@ func (u *upstreamServer) stats() map[string]any {
 		"calls":  u.calls.Load(),
 		"errors": u.errs.Load(),
 	}
+	u.appendLastCall(st)
+	u.appendLastError(st)
+	u.appendStatus(st)
+	u.appendPending(st)
+	u.appendPerfStats(st)
+	return st
+}
+
+func (u *upstreamServer) appendLastCall(st map[string]any) {
 	if t := u.lastCallAt.Load(); t != nil {
 		st["last_call"] = t.Format(time.RFC3339)
 	}
+}
+
+func (u *upstreamServer) appendLastError(st map[string]any) {
 	if msg := u.lastErrMsg.Load(); msg != nil && *msg != "" {
 		st["last_error"] = *msg
 	}
+}
+
+func (u *upstreamServer) appendStatus(st map[string]any) {
 	if u.reconnecting.Load() {
 		st["status"] = "reconnecting"
-	} else {
-		st["status"] = "connected"
+		return
 	}
-	if u.sem != nil {
-		st["pending"] = len(u.sem)
-		st["pending_limit"] = cap(u.sem)
+	st["status"] = "connected"
+}
+
+func (u *upstreamServer) appendPending(st map[string]any) {
+	if u.sem == nil {
+		return
 	}
-	u.appendPerfStats(st)
-	return st
+	st["pending"] = len(u.sem)
+	st["pending_limit"] = cap(u.sem)
 }
 
 func (u *upstreamServer) appendPerfStats(st map[string]any) {
@@ -146,3 +170,9 @@ func (u *upstreamServer) appendPerfStats(st map[string]any) {
 	}
 }
 
+func (u *upstreamServer) recordSaved(session *Session, latencyMs, saved int64) {
+	if saved > 0 {
+		u.estTokensSaved.Add(saved)
+	}
+	session.recordCall(latencyMs, saved, false)
+}

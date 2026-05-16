@@ -152,27 +152,35 @@ func (c *StdioConnection) closeDone() {
 }
 
 func (c *StdioConnection) initialize(ctx context.Context) error {
-	params, _ := json.Marshal(InitializeParams{
-		ProtocolVersion: ProtocolVersion,
-		Capabilities:    map[string]any{},
-		ClientInfo:      ClientInfo{Name: "mini", Version: Version},
-	})
-
+	params, _ := json.Marshal(newInitializeParams())
 	raw, err := c.Call(ctx, "initialize", params)
 	if err != nil {
 		return err
 	}
-
-	var result InitializeResult
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return fmt.Errorf("parse initialize: %w", err)
+	result, err := parseInitializeResult(raw)
+	if err != nil {
+		return err
 	}
-
 	c.logger.Info("upstream connected", "server", result.ServerInfo.Name, "protocol", result.ProtocolVersion)
-
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.writeJSON(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
+}
+
+func newInitializeParams() InitializeParams {
+	return InitializeParams{
+		ProtocolVersion: ProtocolVersion,
+		Capabilities:    map[string]any{},
+		ClientInfo:      ClientInfo{Name: "mini", Version: Version},
+	}
+}
+
+func parseInitializeResult(raw json.RawMessage) (InitializeResult, error) {
+	var result InitializeResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return InitializeResult{}, fmt.Errorf("parse initialize: %w", err)
+	}
+	return result, nil
 }
 
 func (c *StdioConnection) readLoop() {

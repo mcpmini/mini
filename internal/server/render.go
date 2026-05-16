@@ -78,14 +78,7 @@ func isScalarValue(v any) bool {
 // Header-then-values layout (mini-style) saves ~30-50% tokens over key:value per line.
 func writeItems(b *strings.Builder, items []any) {
 	if headers := uniformKeys(items); headers != nil {
-		b.WriteString(strings.Join(headers, " ") + "\n")
-		for _, item := range items {
-			m, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			b.WriteString(renderValueRow(m, headers) + "\n")
-		}
+		writeUniformItems(b, items, headers)
 		return
 	}
 	for _, item := range items {
@@ -94,6 +87,15 @@ func writeItems(b *strings.Builder, items []any) {
 			b.WriteString(v + "\n")
 		case map[string]any:
 			b.WriteString(renderItemLine(v) + "\n")
+		}
+	}
+}
+
+func writeUniformItems(b *strings.Builder, items []any, headers []string) {
+	b.WriteString(strings.Join(headers, " ") + "\n")
+	for _, item := range items {
+		if m, ok := item.(map[string]any); ok {
+			b.WriteString(renderValueRow(m, headers) + "\n")
 		}
 	}
 }
@@ -109,17 +111,24 @@ func uniformKeys(items []any) []string {
 	}
 	keys := sortedKeys(first)
 	for _, item := range items[1:] {
-		m, ok := item.(map[string]any)
-		if !ok || len(m) != len(keys) {
+		if !matchesUniformKeys(item, keys) {
 			return nil
-		}
-		for _, k := range keys {
-			if _, exists := m[k]; !exists {
-				return nil
-			}
 		}
 	}
 	return keys
+}
+
+func matchesUniformKeys(item any, keys []string) bool {
+	m, ok := item.(map[string]any)
+	if !ok || len(m) != len(keys) {
+		return false
+	}
+	for _, k := range keys {
+		if _, exists := m[k]; !exists {
+			return false
+		}
+	}
+	return true
 }
 
 func sortedKeys(m map[string]any) []string {
@@ -162,10 +171,13 @@ func formatScalar(v any) string {
 		return formatInt(sv)
 	case string:
 		return formatString(sv)
-	default:
-		b, _ := json.Marshal(v)
-		return string(b)
 	}
+	return marshalScalar(v)
+}
+
+func marshalScalar(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
 }
 
 func formatBool(b bool) string {
@@ -219,21 +231,20 @@ func classifyField(nums, strs, arrs []string, k string, v any) ([]string, []stri
 func classifyNumeric(nums []string, k string, v any) []string {
 	switch sv := v.(type) {
 	case float64:
-		if sv != 0 {
-			return append(nums, fmt.Sprintf("%s:%v", k, sv))
-		}
+		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%v", k, sv))
 	case int:
-		if sv != 0 {
-			return append(nums, fmt.Sprintf("%s:%d", k, sv))
-		}
+		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%d", k, sv))
 	case int64:
-		if sv != 0 {
-			return append(nums, fmt.Sprintf("%s:%d", k, sv))
-		}
+		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%d", k, sv))
 	case bool:
-		if sv {
-			return append(nums, "+"+k)
-		}
+		return appendNumeric(nums, sv, "+"+k)
+	}
+	return nums
+}
+
+func appendNumeric(nums []string, keep bool, value string) []string {
+	if keep {
+		return append(nums, value)
 	}
 	return nums
 }

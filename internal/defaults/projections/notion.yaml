@@ -1,0 +1,29 @@
+retrieve-block-children:
+  array_limits:
+    results: 50
+  depth_limit: 3
+  exclude_always: [archived, in_trash, created_time, last_edited_time, created_by, last_edited_by, parent]
+
+query-data-source:
+  array_limits:
+    results: 25
+  depth_limit: 3
+  exclude_always: [archived, in_trash, created_time, last_edited_time, created_by, last_edited_by]
+  string_limits:
+    content: 1500
+
+search:
+  array_limits:
+    results: 20
+  depth_limit: 2
+  exclude_always: [archived, in_trash, created_time, last_edited_time, created_by, last_edited_by]
+  string_limits:
+    content: 1000
+
+retrieve-a-page:
+  depth_limit: 3
+  exclude_always: [created_by, last_edited_by, cover, icon]
+
+"*":
+  depth_limit: 3
+  auto_strip_threshold: 500

@@ -59,25 +59,32 @@ func project(value any, cfg *effectiveConfig, depth int) any {
 func projectMap(m map[string]any, cfg *effectiveConfig, depth int) map[string]any {
 	out := make(map[string]any)
 	for k, v := range m {
-		if isExcluded(k, cfg.excludeAlways) {
+		if shouldSkipField(k, cfg, depth) {
 			continue
 		}
-		// include filter only applies at the top level — nested objects pass through freely
-		if depth == 0 && len(cfg.include) > 0 && !isIncluded(k, cfg.include) && !isPassthrough(k, cfg.passthrough) {
-			continue
-		}
-		switch sv := v.(type) {
-		case string:
-			out[k] = projectString(sv, cfg, k)
-		case map[string]any:
-			out[k] = project(sv, cfg, depth+1)
-		case []any:
-			out[k] = projectNamedArray(sv, cfg, k, depth+1)
-		default:
-			out[k] = v
-		}
+		out[k] = projectMapValue(v, cfg, k, depth)
 	}
 	return out
+}
+
+func shouldSkipField(key string, cfg *effectiveConfig, depth int) bool {
+	if isExcluded(key, cfg.excludeAlways) {
+		return true
+	}
+	return depth == 0 && len(cfg.include) > 0 && !isIncluded(key, cfg.include) && !isPassthrough(key, cfg.passthrough)
+}
+
+func projectMapValue(value any, cfg *effectiveConfig, fieldName string, depth int) any {
+	switch sv := value.(type) {
+	case string:
+		return projectString(sv, cfg, fieldName)
+	case map[string]any:
+		return project(sv, cfg, depth+1)
+	case []any:
+		return projectNamedArray(sv, cfg, fieldName, depth+1)
+	default:
+		return value
+	}
 }
 
 func projectArray(arr []any, cfg *effectiveConfig, depth int) []any {
@@ -85,16 +92,8 @@ func projectArray(arr []any, cfg *effectiveConfig, depth int) []any {
 }
 
 func projectNamedArray(arr []any, cfg *effectiveConfig, fieldName string, depth int) []any {
-	original := len(arr)
-	limit := cfg.arrayLimitFor(fieldName)
-	if limit > 0 && len(arr) > limit {
-		arr = arr[:limit]
-	}
-	cap := len(arr)
-	if len(arr) < original {
-		cap++
-	}
-	out := make([]any, len(arr), cap)
+	arr, original := truncateArray(arr, cfg.arrayLimitFor(fieldName))
+	out := make([]any, len(arr), projectedArrayCap(len(arr), original))
 	for i, v := range arr {
 		out[i] = project(v, cfg, depth)
 	}
@@ -102,6 +101,21 @@ func projectNamedArray(arr []any, cfg *effectiveConfig, fieldName string, depth 
 		out = append(out, fmt.Sprintf("...+%d more", original-len(arr)))
 	}
 	return out
+}
+
+func truncateArray(arr []any, limit int) ([]any, int) {
+	original := len(arr)
+	if limit > 0 && len(arr) > limit {
+		arr = arr[:limit]
+	}
+	return arr, original
+}
+
+func projectedArrayCap(currentLen, originalLen int) int {
+	if currentLen < originalLen {
+		return currentLen + 1
+	}
+	return currentLen
 }
 
 func projectString(s string, cfg *effectiveConfig, fieldName string) string {
@@ -117,8 +131,8 @@ func projectString(s string, cfg *effectiveConfig, fieldName string) string {
 	return s
 }
 
-func isIncluded(key string, include []string) bool  { return slices.Contains(include, key) }
-func isPassthrough(key string, pt []string) bool     { return slices.Contains(pt, key) }
+func isIncluded(key string, include []string) bool { return slices.Contains(include, key) }
+func isPassthrough(key string, pt []string) bool   { return slices.Contains(pt, key) }
 
 func isExcluded(key string, exclude []string) bool {
 	for _, k := range exclude {
@@ -152,18 +166,23 @@ func truncateAtBoundary(s string, limit int) string {
 	if limit >= len(s) {
 		return s
 	}
-	for i := limit; i > limit-100 && i > 0; i-- {
-		if s[i] == '.' || s[i] == '\n' {
-			return s[:i+1]
-		}
+	if sentenceCut := scanBackward(s, limit, 100, func(b byte) bool { return b == '.' || b == '\n' }); sentenceCut >= 0 {
+		return s[:sentenceCut+1]
 	}
-	for i := limit; i > limit-50 && i > 0; i-- {
-		if s[i] == ' ' {
-			return s[:i]
-		}
+	if wordCut := scanBackward(s, limit, 50, func(b byte) bool { return b == ' ' }); wordCut >= 0 {
+		return s[:wordCut]
 	}
 	for limit > 0 && !utf8.RuneStart(s[limit]) {
 		limit--
 	}
 	return s[:limit]
+}
+
+func scanBackward(s string, limit, window int, match func(byte) bool) int {
+	for i := limit; i > limit-window && i > 0; i-- {
+		if match(s[i]) {
+			return i
+		}
+	}
+	return -1
 }

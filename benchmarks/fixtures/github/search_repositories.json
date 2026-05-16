@@ -1,0 +1,70 @@
+{
+  "total_count": 73,
+  "incomplete_results": false,
+  "items": [
+    {
+      "id": 942771284,
+      "name": "mcp-server-one",
+      "full_name": "example-org/mcp-server-one",
+      "description": "Fictional MCP server for integration benchmarks",
+      "html_url": "https://github.com/example-org/mcp-server-one",
+      "language": "Go",
+      "stargazers_count": 1200,
+      "forks_count": 80,
+      "open_issues_count": 12,
+      "updated_at": "2026-04-27T02:47:43Z",
+      "created_at": "2025-03-04T16:42:04Z",
+      "topics": [
+        "mcp",
+        "mcp-server"
+      ],
+      "private": false,
+      "fork": false,
+      "archived": false,
+      "default_branch": "main"
+    },
+    {
+      "id": 957053334,
+      "name": "mcp-server-two",
+      "full_name": "example-user/mcp-server-two",
+      "description": "Fictional message-oriented MCP server",
+      "html_url": "https://github.com/example-user/mcp-server-two",
+      "language": "Go",
+      "stargazers_count": 900,
+      "forks_count": 40,
+      "open_issues_count": 5,
+      "updated_at": "2026-04-27T02:14:59Z",
+      "created_at": "2025-03-29T12:49:33Z",
+      "topics": [
+        "ai",
+        "mcp"
+      ],
+      "private": false,
+      "fork": false,
+      "archived": false,
+      "default_branch": "main"
+    },
+    {
+      "id": 812044182,
+      "name": "mcp-toolbox-demo",
+      "full_name": "example-corp/mcp-toolbox-demo",
+      "description": "Fictional database-oriented MCP server for benchmarks",
+      "html_url": "https://github.com/example-corp/mcp-toolbox-demo",
+      "language": "Go",
+      "stargazers_count": 2000,
+      "forks_count": 200,
+      "open_issues_count": 30,
+      "updated_at": "2026-04-27T03:02:54Z",
+      "created_at": "2024-06-07T20:52:54Z",
+      "topics": [
+        "ai",
+        "database",
+        "mcp"
+      ],
+      "private": false,
+      "fork": false,
+      "archived": false,
+      "default_branch": "main"
+    }
+  ]
+}

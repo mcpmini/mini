@@ -1,0 +1,89 @@
+[
+  {
+    "sha": "16e5f9e685188751f1f4fb085f6e9e729f409950",
+    "html_url": "https://github.com/example-org/sample-app/commit/16e5f9e685188751f1f4fb085f6e9e729f409950",
+    "commit": {
+      "message": "Fix dev routing and shell fallback for ungenerated dynamic routes (#10001)\n\nEnsure params suspend correctly when no static params are defined, and add regression coverage for the ungenerated-params fixture.",
+      "author": {
+        "name": "Pat Placeholder",
+        "email": "user@example.com",
+        "date": "2026-04-25T19:51:06Z"
+      },
+      "committer": {
+        "name": "Noreply Host",
+        "email": "user@example.com",
+        "date": "2026-04-25T19:51:06Z"
+      }
+    },
+    "author": {
+      "login": "contrib_a",
+      "id": 900001,
+      "profile_url": "https://github.com/contrib_a",
+      "avatar_url": "https://avatars.githubusercontent.com/u/900001?v=4"
+    },
+    "committer": {
+      "login": "noreply_gh",
+      "id": 900002,
+      "profile_url": "https://github.com/noreply_gh",
+      "avatar_url": "https://avatars.githubusercontent.com/u/900002?v=4"
+    }
+  },
+  {
+    "sha": "b909772d00a0e2b446dee3544c5fa338a2963a36",
+    "html_url": "https://github.com/example-org/sample-app/commit/b909772d00a0e2b446dee3544c5fa338a2963a36",
+    "commit": {
+      "message": "[image] Deprecate legacy URL parsing helper (#10002)",
+      "author": {
+        "name": "Sam Placeholder",
+        "email": "user@example.com",
+        "date": "2026-04-25T14:27:29Z"
+      },
+      "committer": {
+        "name": "Noreply Host",
+        "email": "user@example.com",
+        "date": "2026-04-25T14:27:29Z"
+      }
+    },
+    "author": {
+      "login": "contrib_b",
+      "id": 900003,
+      "profile_url": "https://github.com/contrib_b",
+      "avatar_url": "https://avatars.githubusercontent.com/u/900003?v=4"
+    },
+    "committer": {
+      "login": "noreply_gh",
+      "id": 900002,
+      "profile_url": "https://github.com/noreply_gh",
+      "avatar_url": "https://avatars.githubusercontent.com/u/900002?v=4"
+    }
+  },
+  {
+    "sha": "5ccc1cc26f1fec88be1458a22ad35ea015bd724c",
+    "html_url": "https://github.com/example-org/sample-app/commit/5ccc1cc26f1fec88be1458a22ad35ea015bd724c",
+    "commit": {
+      "message": "[ci] Add test summary comment when job passes on first run (#10003)",
+      "author": {
+        "name": "Sam Placeholder",
+        "email": "user@example.com",
+        "date": "2026-04-25T14:27:11Z"
+      },
+      "committer": {
+        "name": "Noreply Host",
+        "email": "user@example.com",
+        "date": "2026-04-25T14:27:11Z"
+      }
+    },
+    "author": {
+      "login": "contrib_b",
+      "id": 900003,
+      "profile_url": "https://github.com/contrib_b",
+      "avatar_url": "https://avatars.githubusercontent.com/u/900003?v=4"
+    },
+    "committer": {
+      "login": "noreply_gh",
+      "id": 900002,
+      "profile_url": "https://github.com/noreply_gh",
+      "avatar_url": "https://avatars.githubusercontent.com/u/900002?v=4"
+    }
+  }
+]

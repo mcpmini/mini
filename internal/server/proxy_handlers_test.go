@@ -76,11 +76,11 @@ func TestProxy_ToolsList_ContainsMiniTools(t *testing.T) {
 	names := toolNames(tools)
 	t.Logf("tools: %v", names)
 
-	if !containsName(tools, "mini_config") {
-		t.Error("expected mini_config in proxy tool list")
+	if !containsName(tools, "config") {
+		t.Error("expected config in proxy tool list")
 	}
-	if !containsName(tools, "mini_read") {
-		t.Error("expected mini_read in proxy tool list")
+	if !containsName(tools, "read") {
+		t.Error("expected read in proxy tool list")
 	}
 	if !containsName(tools, "github__list_issues") {
 		t.Error("expected github__list_issues in proxy tool list")
@@ -90,38 +90,16 @@ func TestProxy_ToolsList_ContainsMiniTools(t *testing.T) {
 	}
 }
 
-func TestProxy_ToolsList_AlwaysLoadMeta(t *testing.T) {
+func TestProxy_ToolsList_MiniToolsNoMeta(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
 	tools := toolsList(t, srv)
 	for _, tool := range tools {
 		name := tool["name"].(string)
-		if name != "mini_config" && name != "mini_read" {
-			continue
-		}
-		meta, ok := tool["_meta"].(map[string]any)
-		if !ok {
-			t.Errorf("%s: expected _meta object, got %T", name, tool["_meta"])
-			continue
-		}
-		if meta["anthropic/alwaysLoad"] != true {
-			t.Errorf("%s: expected anthropic/alwaysLoad: true, got %v", name, meta["anthropic/alwaysLoad"])
-		}
-	}
-}
-
-func TestProxy_ToolsList_UpstreamToolsNoAlwaysLoad(t *testing.T) {
-	srv := newProxyServer(t)
-	defer srv.Close()
-	conn := fakeConn("list_issues")
-	addProxyConn(t, srv, "gh", conn)
-
-	tools := toolsList(t, srv)
-	for _, tool := range tools {
-		if tool["name"] == "gh__list_issues" {
+		if name == "config" || name == "read" {
 			if tool["_meta"] != nil {
-				t.Error("upstream tool should not have _meta")
+				t.Errorf("%s: expected no _meta, got %v", name, tool["_meta"])
 			}
 		}
 	}
@@ -144,8 +122,8 @@ func TestProxy_Initialize_Instructions(t *testing.T) {
 		t.Fatal("no initialize result")
 	}
 	instructions := initResult["instructions"].(string)
-	if !strings.Contains(instructions, "mini_read") {
-		t.Errorf("proxy instructions should mention mini_read: %q", instructions)
+	if !strings.Contains(instructions, "read") {
+		t.Errorf("proxy instructions should mention read: %q", instructions)
 	}
 	if strings.Contains(instructions, "perm_call") {
 		t.Errorf("proxy instructions should not mention perm_call: %q", instructions)
@@ -180,7 +158,7 @@ func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`)
 	addProxyConn(t, srv, "gh", conn)
 
-	serve(t, srv, callTool("mini_config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "gh",
 		"tool":       "list_repos",
@@ -212,7 +190,7 @@ func TestProxy_Call_WithProjection_Large_FilePath(t *testing.T) {
 	addProxyConn(t, srv, "gh", conn)
 
 	// Add a projection that excludes body
-	serve(t, srv, callTool("mini_config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "gh",
 		"tool":       "list_prs",
@@ -239,7 +217,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
 
-	serve(t, srv, callTool("mini_config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_item",
@@ -267,18 +245,18 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 		t.Fatalf("could not extract file path from: %s", text1)
 	}
 
-	// Read the file via mini_read
-	resp2 := serve(t, srv, callTool("mini_read", map[string]any{"path": filePath}))
+	// Read the file via read
+	resp2 := serve(t, srv, callTool("read", map[string]any{"path": filePath}))
 	text2 := toolResultText(t, resp2)
-	t.Logf("mini_read response: %s", text2)
+	t.Logf("read response: %s", text2)
 
 	if text2 == "" {
-		t.Error("mini_read returned empty content")
+		t.Error("read returned empty content")
 	}
 	// Should be valid JSON
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(text2), &parsed); err != nil {
-		t.Errorf("mini_read content should be JSON: %s", text2)
+		t.Errorf("read content should be JSON: %s", text2)
 	}
 }
 
@@ -286,7 +264,7 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	resp := serve(t, srv, callTool("mini_read", map[string]any{"path": "/etc/passwd"}))
+	resp := serve(t, srv, callTool("read", map[string]any{"path": "/etc/passwd"}))
 	// Should be an RPC error (errInvalidParams) or tool error
 	if resp["error"] != nil {
 		return // RPC-level error is correct
@@ -301,7 +279,7 @@ func TestProxy_MiniRead_RequiresPath(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	resp := serve(t, srv, callTool("mini_read", map[string]any{}))
+	resp := serve(t, srv, callTool("read", map[string]any{}))
 	if resp["error"] != nil {
 		return // RPC-level error is correct
 	}
@@ -338,13 +316,78 @@ func TestProxy_NoDoubleUnderscore_ReturnsError(t *testing.T) {
 	}
 }
 
+// TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly verifies the 4th tier
+// of formatProxyEnvelope: projection configured but nothing elided/truncated,
+// response is large → "File: <path>" with no [Projected] prefix.
+func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 1 // force all responses to file
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+	defer srv.Close()
+
+	conn := fakeConn("get_data")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"value\":\"data\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	// Projection configured with no exclusions → no note, but response is large → File: only
+	serve(t, srv, callTool("config", map[string]any{
+		"action":     "set_projection",
+		"server":     "svc",
+		"tool":       "get_data",
+		"projection": map[string]any{"include": []string{"id", "value"}},
+	}))
+
+	resp := serve(t, srv, callTool("svc__get_data", map[string]any{}))
+	text := toolResultText(t, resp)
+	t.Logf("large projection-no-note response: %s", text)
+
+	if strings.HasPrefix(text, "[Projected") {
+		t.Errorf("expected no [Projected] note when nothing elided: %s", text)
+	}
+	if !strings.HasPrefix(text, "File:") {
+		t.Errorf("expected File: path for large response with projection: %s", text)
+	}
+}
+
+// TestProxy_Call_WithTruncation_ProjectionNote verifies that string truncation
+// appears in the [Projected] bracket note alongside the truncated field name.
+func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
+	srv := newProxyServer(t) // InlineThreshold=50
+	defer srv.Close()
+	conn := fakeConn("get_issue")
+	// body is long enough to be truncated by a 5-char limit
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"this is a very long body that will be truncated\"}"}]}`)
+	addProxyConn(t, srv, "gh", conn)
+
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection",
+		"server": "gh",
+		"tool":   "get_issue",
+		"projection": map[string]any{
+			"string_limits": map[string]any{"body": 5},
+		},
+	}))
+
+	resp := serve(t, srv, callTool("gh__get_issue", map[string]any{}))
+	text := toolResultText(t, resp)
+	t.Logf("truncation note response: %s", text)
+
+	if !strings.Contains(text, "truncated") {
+		t.Errorf("expected 'truncated' in projection note: %s", text)
+	}
+	if !strings.Contains(text, "body") {
+		t.Errorf("expected field name 'body' in projection note: %s", text)
+	}
+}
+
 func TestProxy_MiniConfig_Status_Works(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 	conn := fakeConn("list_issues")
 	addProxyConn(t, srv, "github", conn)
 
-	resp := serve(t, srv, callTool("mini_config", map[string]any{"action": "status"}))
+	resp := serve(t, srv, callTool("config", map[string]any{"action": "status"}))
 	text := toolResultText(t, resp)
 	t.Logf("status: %s", text)
 
@@ -363,7 +406,7 @@ func TestProxy_NotifyAll_OnRemoveServer(t *testing.T) {
 	conn := fakeConn("list_issues")
 	addProxyConn(t, srv, "removeme", conn)
 
-	msgs := serveAll(t, srv, callTool("mini_config", map[string]any{
+	msgs := serveAll(t, srv, callTool("config", map[string]any{
 		"action": "remove_server",
 		"server": "removeme",
 	}))

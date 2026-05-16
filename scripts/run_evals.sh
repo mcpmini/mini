@@ -4,8 +4,8 @@
 # all processes finish, so results are readable even when running in parallel.
 #
 # Usage:
-#   ./run_evals.sh                  # run all evals
-#   ./run_evals.sh TestEval_Hello   # run a single named eval
+#   ./scripts/run_evals.sh                  # run all evals
+#   ./scripts/run_evals.sh TestEval_Hello   # run a single named eval
 #
 # EVAL_TIMEOUT controls the per-eval timeout (default 300s).
 

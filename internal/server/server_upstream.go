@@ -51,11 +51,33 @@ func (s *Server) IsReconnecting(serverName string) bool {
 }
 
 func (s *Server) registerUpstream(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {
+	gen := s.snapshotRemoveGen(sc.Name)
 	tools, err := conn.ListTools(ctx)
 	if err != nil {
 		conn.Close()
 		return fmt.Errorf("list tools from %s: %w", sc.Name, err)
 	}
+	return s.installIfNotRemoved(sc, conn, tools, gen)
+}
+
+func (s *Server) snapshotRemoveGen(name string) uint64 {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	return s.removeGen[name]
+}
+
+func (s *Server) installIfNotRemoved(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition, gen uint64) error {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	if s.removeGen[sc.Name] != gen {
+		conn.Close()
+		return fmt.Errorf("server %q was removed during connection setup", sc.Name)
+	}
+	s.installUpstreamLocked(sc, conn, tools)
+	return nil
+}
+
+func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition) {
 	u := newUpstreamServer(sc, conn)
 	old := s.swapUpstream(sc.Name, u)
 	s.registerTools(sc, tools, old)
@@ -65,7 +87,6 @@ func (s *Server) registerUpstream(ctx context.Context, sc config.ServerConfig, c
 		s.mu.Unlock()
 	}
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
-	return nil
 }
 
 func newUpstreamServer(sc config.ServerConfig, conn transport.Connection) *upstreamServer {
@@ -87,10 +108,7 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 
 func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDefinition, old *upstreamServer) {
 	if old != nil {
-		old.shutdown()
-		old.mu.Lock()
-		old.conn.Close()
-		old.mu.Unlock()
+		old.shutdownAndClose()
 		s.reg.ReplaceServer(sc.Name, tools, sc.Permissions)
 		return
 	}
@@ -112,26 +130,38 @@ func (s *Server) RunSessionEviction(ctx context.Context, maxIdle time.Duration) 
 }
 
 func (s *Server) Close() {
+	cancelAuthFlows(s.takeAuthFlows())
+	closeUpstreams(s.snapshotUpstreams())
+	s.reconnectWg.Wait()
+	s.store.Close()
+}
+
+func (s *Server) takeAuthFlows() map[string]*authFlowState {
 	s.authMu.Lock()
+	defer s.authMu.Unlock()
 	flows := s.authFlows
 	s.authFlows = make(map[string]*authFlowState)
-	s.authMu.Unlock()
+	return flows
+}
+
+func cancelAuthFlows(flows map[string]*authFlowState) {
 	for _, f := range flows {
 		f.cancel()
 	}
+}
 
-	s.mu.Lock()
+func (s *Server) snapshotUpstreams() []*upstreamServer {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	upstreams := make([]*upstreamServer, 0, len(s.upstreams))
 	for _, u := range s.upstreams {
 		upstreams = append(upstreams, u)
 	}
-	s.mu.Unlock()
+	return upstreams
+}
+
+func closeUpstreams(upstreams []*upstreamServer) {
 	for _, u := range upstreams {
-		u.shutdown()
-		u.mu.Lock()
-		u.conn.Close()
-		u.mu.Unlock()
+		u.shutdownAndClose()
 	}
-	s.reconnectWg.Wait()
-	s.store.Close()
 }

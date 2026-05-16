@@ -1,0 +1,51 @@
+# Covers both Jira and Confluence tools from mcp-atlassian
+
+protected:
+  # Jira writes — issue lifecycle changes happen regularly
+  - jira_create_issue
+  - jira_update_issue
+  - jira_transition_issue
+  - jira_add_comment
+  - jira_edit_comment
+  - jira_add_worklog
+  - jira_create_sprint
+  - jira_update_sprint
+  - jira_add_issues_to_sprint
+  - jira_link_to_epic
+  - jira_create_issue_link
+  # Confluence writes — creating and editing docs, commenting happen regularly
+  - confluence_create_page
+  - confluence_update_page
+  - confluence_delete_page
+  - confluence_move_page
+  - confluence_add_comment
+  - confluence_reply_to_comment
+  - confluence_add_label
+  - confluence_upload_attachment
+
+hidden:
+  # Jira — niche toolsets (service desk, forms, SLA metrics, dev info), destructive, or bulk ops
+  - jira_delete_issue
+  - jira_batch_create_issues
+  - jira_create_version
+  - jira_batch_create_versions
+  - jira_create_remote_issue_link
+  - jira_remove_issue_link
+  - jira_download_attachments
+  - jira_get_issue_images
+  - jira_add_watcher
+  - jira_remove_watcher
+  - jira_get_service_desk_for_project
+  - jira_get_service_desk_queues
+  - jira_get_queue_issues
+  - jira_get_issue_proforma_forms
+  - jira_get_proforma_form_details
+  - jira_update_proforma_form_answers
+  - jira_get_issue_dates
+  - jira_get_issue_sla
+  - jira_get_issue_development_info
+  - jira_get_issues_development_info
+  # Confluence — analytics, bulk attachment ops, and destructive actions
+  - confluence_get_page_views
+  - confluence_delete_attachment
+  - confluence_download_content_attachments

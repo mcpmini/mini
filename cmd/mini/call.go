@@ -113,37 +113,24 @@ func loadCallCtx(configDir, serverName string) (*config.Config, *config.ServerCo
 }
 
 func checkCallPermission(sc *config.ServerConfig, toolName string, protected bool) {
-	if protected || sc.Permissions == nil {
+	if sc.Permissions == nil {
 		return
 	}
-	checkExplicitPermissions(sc.Permissions, toolName)
-	checkDefaultPermission(sc.Permissions.Default, toolName)
-}
-
-func checkExplicitPermissions(perm *config.PermissionsConfig, toolName string) {
-	for _, p := range perm.Protected {
-		if p == toolName {
-			fmt.Fprintf(os.Stderr, "mini: %s is a protected tool; use perm-call\n", toolName)
-			os.Exit(2)
-		}
-	}
-	for _, h := range perm.Hidden {
-		if h == toolName {
-			fmt.Fprintf(os.Stderr, "mini: tool not found: %s\n", toolName)
-			os.Exit(1)
-		}
+	if code, msg, blocked := callPermissionError(sc.Permissions, toolName, protected); blocked {
+		fmt.Fprintln(os.Stderr, msg)
+		os.Exit(code)
 	}
 }
 
-func checkDefaultPermission(defaultLevel string, toolName string) {
-	switch config.PermissionLevel(defaultLevel) {
-	case config.PermProtected:
-		fmt.Fprintf(os.Stderr, "mini: %s is a protected tool; use perm-call\n", toolName)
-		os.Exit(2)
-	case config.PermHidden:
-		fmt.Fprintf(os.Stderr, "mini: tool not found: %s\n", toolName)
-		os.Exit(1)
+func callPermissionError(perm *config.PermissionsConfig, toolName string, protected bool) (int, string, bool) {
+	level := perm.LevelFor(toolName)
+	if level == config.PermHidden {
+		return 1, fmt.Sprintf("mini: tool not found: %s", toolName), true
 	}
+	if protected || level != config.PermProtected {
+		return 0, "", false
+	}
+	return 2, fmt.Sprintf("mini: %s is a protected tool; use perm-call", toolName), true
 }
 
 func mustDialCall(ctx context.Context, configDir string, cc callContext) transport.Connection {
@@ -169,11 +156,22 @@ func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) 
 }
 
 func executeProjected(ctx context.Context, conn transport.Connection, cc callContext, mode callOutput) {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	store := mustCallStore(cc.cfg, logger)
+	store := openCallStore(cc.cfg)
 	defer store.Close()
 
-	result, err := invoke.Invoke(ctx, invoke.InvokeParams{
+	result, err := invoke.Invoke(ctx, buildInvokeParams(conn, cc, store))
+	exitOnCallError(err)
+	exitOnEnvelopeError(result.Envelope)
+	printCallOutput(cc.serverName, cc.toolName, result.Envelope, mode)
+}
+
+func openCallStore(cfg *config.Config) *response.Store {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	return mustCallStore(cfg, logger)
+}
+
+func buildInvokeParams(conn transport.Connection, cc callContext, store *response.Store) invoke.InvokeParams {
+	return invoke.InvokeParams{
 		Server:   cc.serverName,
 		Tool:     cc.toolName,
 		Params:   cc.params,
@@ -181,30 +179,33 @@ func executeProjected(ctx context.Context, conn transport.Connection, cc callCon
 		ProjCfg:  resolveCallProjection(cc.sc, cc.toolName),
 		ProjDefs: callProjDefaults(cc.cfg),
 		Builder:  response.NewBuilder(store, cc.cfg.InlineThreshold),
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "mini: %v\n", err)
-		os.Exit(1)
 	}
-	if result.Envelope.Error != "" {
-		fmt.Fprintf(os.Stderr, "mini: tool error: %s\n", result.Envelope.Message)
-		os.Exit(1)
+}
+
+func exitOnCallError(err error) {
+	if err == nil {
+		return
 	}
-	printCallOutput(cc.serverName, cc.toolName, result.Envelope, mode)
+	fmt.Fprintf(os.Stderr, "mini: %v\n", err)
+	os.Exit(1)
+}
+
+func exitOnEnvelopeError(env *response.Envelope) {
+	if env.Error == "" {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "mini: tool error: %s\n", env.Message)
+	os.Exit(1)
 }
 
 func parseParams(pos []string) (map[string]any, bool) {
 	if len(pos) < 3 {
 		return nil, true
 	}
-	raw := []byte(pos[2])
-	if pos[2] == "-" {
-		var err error
-		raw, err = io.ReadAll(os.Stdin)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "mini: read stdin: %v\n", err)
-			return nil, false
-		}
+	raw, err := readParamBytes(pos[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mini: read stdin: %v\n", err)
+		return nil, false
 	}
 	var params map[string]any
 	if err := json.Unmarshal(raw, &params); err != nil {
@@ -212,6 +213,13 @@ func parseParams(pos []string) (map[string]any, bool) {
 		return nil, false
 	}
 	return params, true
+}
+
+func readParamBytes(arg string) ([]byte, error) {
+	if arg != "-" {
+		return []byte(arg), nil
+	}
+	return io.ReadAll(os.Stdin)
 }
 
 func findServerConfig(servers []config.ServerConfig, name string) *config.ServerConfig {

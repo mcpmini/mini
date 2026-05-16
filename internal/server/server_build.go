@@ -36,6 +36,7 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		configDir:    configDir,
 		reg:          registry.New(),
 		upstreams:    make(map[string]*upstreamServer),
+		removeGen:    make(map[string]uint64),
 		projections:  projections,
 		envelope:     response.NewBuilder(store, cfg.InlineThreshold),
 		store:        store,

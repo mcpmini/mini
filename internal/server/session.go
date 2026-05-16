@@ -34,14 +34,7 @@ type dialOnce struct {
 }
 
 func (s *Session) dialOnceFor(serverName string, dial func() (transport.Connection, error)) (transport.Connection, error) {
-	s.dialMu.Lock()
-	d, ok := s.dialMap[serverName]
-	if !ok {
-		d = &dialOnce{}
-		s.dialMap[serverName] = d
-	}
-	s.dialMu.Unlock()
-
+	d := s.getDialOnce(serverName)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.done {
@@ -52,6 +45,17 @@ func (s *Session) dialOnceFor(serverName string, dial func() (transport.Connecti
 		d.done = true
 	}
 	return d.conn, d.err
+}
+
+func (s *Session) getDialOnce(serverName string) *dialOnce {
+	s.dialMu.Lock()
+	defer s.dialMu.Unlock()
+	if d := s.dialMap[serverName]; d != nil {
+		return d
+	}
+	d := &dialOnce{}
+	s.dialMap[serverName] = d
+	return d
 }
 
 func newSession() *Session {
@@ -111,6 +115,22 @@ func (s *Session) RemoveConn(serverName string) {
 	s.dialMu.Unlock()
 }
 
+// EvictConn removes serverName from the session map only if the stored conn
+// matches the provided conn (identity check). It does NOT close the conn —
+// callers that own the conn must close it themselves. This prevents a
+// concurrent goroutine's RemoveConn from closing a conn another goroutine
+// is still using.
+func (s *Session) EvictConn(serverName string, conn transport.Connection) {
+	s.mu.Lock()
+	if s.conns[serverName] == conn {
+		delete(s.conns, serverName)
+	}
+	s.mu.Unlock()
+	s.dialMu.Lock()
+	delete(s.dialMap, serverName)
+	s.dialMu.Unlock()
+}
+
 func (s *Session) Close() {
 	s.mu.Lock()
 	for _, conn := range s.conns {
@@ -122,6 +142,9 @@ func (s *Session) Close() {
 
 // enableNotifications creates the buffered channel that carries server-initiated
 // notifications (e.g. tools/list_changed) to the client during Serve.
+// Buffer of 16: enough for any realistic burst of reconnect/add/remove events;
+// notify() is non-blocking so excess notifications are dropped rather than
+// stalling the upstream event loop. Clients refresh via list on reconnect anyway.
 func (s *Session) enableNotifications() chan json.RawMessage {
 	ch := make(chan json.RawMessage, 16)
 	s.mu.Lock()
@@ -231,23 +254,33 @@ func (st *sessionStore) closeServerConnections(serverName string) {
 	}
 }
 
+type sessionMetrics struct {
+	calls, errors, latencyMs, tokensSaved int64
+}
+
+func sumSessionMetrics(sessions []*Session) sessionMetrics {
+	var m sessionMetrics
+	for _, s := range sessions {
+		m.calls += s.totalCalls.Load()
+		m.errors += s.totalErrors.Load()
+		m.latencyMs += s.totalLatencyMs.Load()
+		m.tokensSaved += s.estTokensSaved.Load()
+	}
+	return m
+}
+
 func (st *sessionStore) aggregateMetrics() map[string]any {
 	sessions := st.snapshotSessions()
-	var totalCalls, totalErrors, totalLatencyMs, totalTokensSaved int64
-	for _, s := range sessions {
-		totalCalls += s.totalCalls.Load()
-		totalErrors += s.totalErrors.Load()
-		totalLatencyMs += s.totalLatencyMs.Load()
-		totalTokensSaved += s.estTokensSaved.Load()
-	}
+	sm := sumSessionMetrics(sessions)
+	calls, errors, latencyMs, tokensSaved := sm.calls, sm.errors, sm.latencyMs, sm.tokensSaved
 	m := map[string]any{
 		"active":           len(sessions),
-		"calls":            totalCalls,
-		"errors":           totalErrors,
-		"est_tokens_saved": totalTokensSaved,
+		"calls":            calls,
+		"errors":           errors,
+		"est_tokens_saved": tokensSaved,
 	}
-	if totalCalls > 0 {
-		m["avg_latency_ms"] = totalLatencyMs / totalCalls
+	if calls > 0 {
+		m["avg_latency_ms"] = latencyMs / calls
 	}
 	return m
 }
@@ -266,4 +299,3 @@ func (st *sessionStore) evictIdle(deadline time.Time) {
 		s.Close()
 	}
 }
-

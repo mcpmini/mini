@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"time"
 )
@@ -20,6 +21,8 @@ func applyToolTimeout(ctx context.Context, spec string) (context.Context, contex
 	}
 	d, err := time.ParseDuration(spec)
 	if err != nil || d <= 0 {
+		// Unparseable spec means no timeout; log so operators can spot misconfiguration.
+		slog.Warn("invalid tool_timeout spec, no timeout applied", "spec", spec)
 		return ctx, func() {}
 	}
 	return context.WithTimeout(ctx, d)

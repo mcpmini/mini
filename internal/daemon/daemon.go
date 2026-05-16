@@ -20,24 +20,32 @@ func PortFile(configDir string) string {
 
 // RunningPort returns the TCP port the daemon is listening on, or 0 if not running.
 func RunningPort(configDir string) int {
-	data, err := os.ReadFile(PortFile(configDir))
+	port, err := readPortFile(PortFile(configDir))
 	if err != nil {
 		return 0
 	}
-	port, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
-		return 0
-	}
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
-	if err != nil {
-		return 0
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if !healthcheckPort(port) {
 		return 0
 	}
 	return port
+}
+
+func readPortFile(path string) (int, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(data)))
+}
+
+func healthcheckPort(port int) bool {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
 }
 
 // Start launches a daemon in the background and waits up to timeout for it to be ready.

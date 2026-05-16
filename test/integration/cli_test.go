@@ -114,7 +114,7 @@ func TestCLI_init_createsDirectories(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("init should exit 0, got %d", code)
 	}
-	for _, sub := range []string{"servers", "projections", "actions", "responses", "tokens"} {
+	for _, sub := range []string{"servers", "projections", "responses", "tokens"} {
 		if _, err := os.Stat(filepath.Join(cfg, sub)); err != nil {
 			t.Errorf("expected %s dir to exist after init: %v", sub, err)
 		}

@@ -1,34 +1,41 @@
 list_pull_requests:
-  include: [number, title, state, draft, user, created_at, updated_at, labels, assignees, head, base, milestone]
+  include: [number, title, state, draft, merged, body, user, created_at, updated_at, labels, assignees, requested_reviewers, head, base, milestone, html_url]
   array_limits:
     default: 20
     labels: 5
     assignees: 3
     requested_reviewers: 3
   string_limits:
-    body: 300
+    body: 1000
   depth_limit: 2
 
 list_issues:
-  include: [number, title, state, user, created_at, updated_at, labels, assignees, milestone, comments]
   array_limits:
     default: 20
     labels: 5
     assignees: 3
   string_limits:
-    body: 300
+    body: 1000
   depth_limit: 2
 
-get_issue:
-  include: [number, title, state, user, created_at, updated_at, labels, assignees, milestone, body, comments]
+issue_read:
+  string_limits:
+    body: 10000
+  depth_limit: 3
+
+pull_request_read:
   string_limits:
     body: 5000
   depth_limit: 3
 
-get_pull_request:
-  include: [number, title, state, draft, user, created_at, updated_at, labels, assignees, head, base, body, mergeable, merged, additions, deletions, changed_files]
+get_issue:
   string_limits:
-    body: 2000
+    body: 10000
+  depth_limit: 3
+
+get_pull_request:
+  string_limits:
+    body: 5000
   depth_limit: 3
 
 list_pull_request_files:
@@ -36,39 +43,36 @@ list_pull_request_files:
   array_limits:
     default: 100
   string_limits:
-    patch: 3000
+    patch: 5000
   depth_limit: 1
 
 search_code:
-  include: [total_count, items]
+  include: [total_count, incomplete_results, items]
   array_limits:
     items: 20
     text_matches: 3
   string_limits:
-    fragment: 500
+    fragment: 1000
   depth_limit: 3
-  exclude_always: [score, git_url, download_url, _links]
+  exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 get_file_contents:
-  include: [type, name, path, size, sha, content, encoding]
   depth_limit: 2
 
 list_commits:
-  include: [sha, commit, author, committer]
+  include: [sha, html_url, commit, author]
   array_limits:
-    default: 20
-  depth_limit: 2
-  string_limits:
-    message: 200
-
-get_commit:
-  include: [sha, commit, author, committer, stats, files]
-  array_limits:
-    files: 50
+    default: 30
   string_limits:
     message: 500
-    patch: 2000
   depth_limit: 2
+
+get_commit:
+  string_limits:
+    message: 2000
+  array_limits:
+    files: 50
+  depth_limit: 3
 
 list_repository_contents:
   include: [name, path, type, size, sha]
@@ -77,16 +81,15 @@ list_repository_contents:
   depth_limit: 1
 
 search_repositories:
-  include: [total_count, items]
+  include: [total_count, incomplete_results, items]
   array_limits:
     items: 15
-    topics: 5
+    topics: 10
   string_limits:
-    description: 200
+    description: 500
   depth_limit: 2
-  exclude_always: [node_id, subscribers_url, subscription_url, notifications_url, hooks_url, teams_url, keys_url, score]
+  exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 "*":
   depth_limit: 3
   auto_strip_threshold: 500
-  exclude_always: [node_id, url, html_url, diff_url, patch_url, issue_url, comments_url, review_comments_url, statuses_url, commits_url, pulls_url, issue_events_url, events_url, labels_url, collaborators_url, teams_url, hooks_url, issue_search_url, issues_url, keys_url, forks_url, git_url, ssh_url, clone_url, svn_url, mirror_url, archive_url, downloads_url, stargazers_url, contributors_url, subscribers_url, subscription_url, merges_url, compare_url, contents_url, blobs_url, git_tags_url, git_refs_url, trees_url, statuses_url, languages_url, milestones_url, notifications_url, assignees_url, branches_url, tags_url, _links]

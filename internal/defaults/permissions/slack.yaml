@@ -1,0 +1,21 @@
+protected:
+  # Write operations — posting, reacting, inviting happen regularly
+  - chat_postMessage
+  - chat_update
+  - chat_delete
+  - reactions_add
+  - files_upload
+  - conversations_invite
+  - conversations_join
+
+hidden:
+  # Infrequent — channel management, admin-level, or rarely useful in agent workflows
+  - conversations_create
+  - conversations_leave
+  - conversations_kick
+  - reactions_remove
+  - pins_add
+  - pins_remove
+  - bookmarks_add
+  - bookmarks_remove
+  - emoji_list

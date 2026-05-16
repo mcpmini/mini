@@ -19,24 +19,28 @@ var ValidServerName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 var ValidToolName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
 func Load(configDir string) (*Config, []ServerConfig, error) {
-	cfg, err := loadMainConfig(configDir)
+	cfg, servers, err := loadBaseConfig(configDir)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	servers, err := loadServerConfigs(configDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	servers = deduplicateServers(append(servers, cfg.Servers...))
-
 	projections, err := loadProjectionConfigs(configDir)
 	if err != nil {
 		return nil, nil, err
 	}
 	mergeProjections(servers, projections)
-
 	return cfg, servers, nil
+}
+
+func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
+	cfg, err := loadMainConfig(configDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	servers, err := loadServerConfigs(configDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, deduplicateServers(append(servers, cfg.Servers...)), nil
 }
 
 func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig, error) {
@@ -107,12 +111,14 @@ func loadMainConfig(dir string) (*Config, error) {
 }
 
 func loadServerConfigs(dir string) ([]ServerConfig, error) {
-	pattern := filepath.Join(dir, "servers", "*.yaml")
-	paths, err := filepath.Glob(pattern)
+	paths, err := filepath.Glob(filepath.Join(dir, "servers", "*.yaml"))
 	if err != nil {
 		return nil, err
 	}
+	return loadServerFiles(paths)
+}
 
+func loadServerFiles(paths []string) ([]ServerConfig, error) {
 	var servers []ServerConfig
 	for _, p := range paths {
 		s, err := loadServerConfig(p)
@@ -163,6 +169,10 @@ func loadActionConfig(p string) (*ActionConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", p, err)
 	}
+	return parseActionConfig(p, data)
+}
+
+func parseActionConfig(p string, data []byte) (*ActionConfig, error) {
 	var a ActionConfig
 	if err := yaml.Unmarshal(data, &a); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", p, err)
@@ -170,16 +180,23 @@ func loadActionConfig(p string) (*ActionConfig, error) {
 	if a.Name == "" {
 		a.Name = filepath.Base(p[:len(p)-5])
 	}
-	if !ValidServerName.MatchString(a.Name) {
-		return nil, fmt.Errorf("action %s: invalid name %q", p, a.Name)
-	}
-	if a.Server != "" && !ValidServerName.MatchString(a.Server) {
-		return nil, fmt.Errorf("action %s: invalid server name %q", p, a.Server)
-	}
-	if a.Tool != "" && !ValidToolName.MatchString(a.Tool) {
-		return nil, fmt.Errorf("action %s: invalid tool name %q", p, a.Tool)
+	if err := validateActionConfig(p, a); err != nil {
+		return nil, err
 	}
 	return &a, nil
+}
+
+func validateActionConfig(path string, a ActionConfig) error {
+	if !ValidServerName.MatchString(a.Name) {
+		return fmt.Errorf("action %s: invalid name %q", path, a.Name)
+	}
+	if a.Server != "" && !ValidServerName.MatchString(a.Server) {
+		return fmt.Errorf("action %s: invalid server name %q", path, a.Server)
+	}
+	if a.Tool != "" && !ValidToolName.MatchString(a.Tool) {
+		return fmt.Errorf("action %s: invalid tool name %q", path, a.Tool)
+	}
+	return nil
 }
 
 // deduplicateServers removes later occurrences of servers with the same name.

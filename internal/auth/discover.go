@@ -42,11 +42,7 @@ func Discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
 }
 
 func fetchMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metaURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := noRedirectClient.Do(req)
+	resp, err := doDiscoveryRequest(ctx, metaURL)
 	if err != nil {
 		return nil, err
 	}
@@ -54,9 +50,28 @@ func fetchMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("oauth discovery: unexpected status %d from %s", resp.StatusCode, metaURL)
+	if err := checkDiscoveryStatus(resp.StatusCode, metaURL); err != nil {
+		return nil, err
 	}
+	return decodeServerMeta(resp)
+}
+
+func doDiscoveryRequest(ctx context.Context, metaURL string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, metaURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	return noRedirectClient.Do(req)
+}
+
+func checkDiscoveryStatus(statusCode int, metaURL string) error {
+	if statusCode == http.StatusOK {
+		return nil
+	}
+	return fmt.Errorf("oauth discovery: unexpected status %d from %s", statusCode, metaURL)
+}
+
+func decodeServerMeta(resp *http.Response) (*ServerMeta, error) {
 	var meta ServerMeta
 	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
 		return nil, fmt.Errorf("oauth discovery: decode metadata: %w", err)

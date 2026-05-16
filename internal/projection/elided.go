@@ -8,18 +8,20 @@ func collectElided(original, projected any, prefix string) []string {
 	if !ok1 || !ok2 {
 		return nil
 	}
-
 	var elided []string
 	for k, origVal := range origMap {
-		fullKey := joinKey(prefix, k)
-		projVal, exists := projMap[k]
-		if !exists {
-			elided = append(elided, fullKey)
-			continue
-		}
-		elided = append(elided, collectElided(origVal, projVal, fullKey)...)
+		elided = append(elided, elidedForKey(prefix, k, origVal, projMap)...)
 	}
 	return elided
+}
+
+func elidedForKey(prefix, k string, origVal any, projMap map[string]any) []string {
+	fullKey := joinKey(prefix, k)
+	projVal, exists := projMap[k]
+	if !exists {
+		return []string{fullKey}
+	}
+	return collectElided(origVal, projVal, fullKey)
 }
 
 func joinKey(prefix, key string) string {

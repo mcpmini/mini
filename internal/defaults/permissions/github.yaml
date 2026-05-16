@@ -1,6 +1,26 @@
-hidden:
-  # Repository management — rarely needed in day-to-day agent workflows
-  - fork_repository
-  - create_repository
-  # File deletion is destructive and infrequent; prefer create_or_update_file
+protected:
+  # Write operations — used regularly but should be intentional
+  - add_issue_comment
+  - add_reply_to_pull_request_comment
+  - issue_write
+  - create_pull_request
+  - update_pull_request
+  - update_pull_request_branch
+  - push_files
+  - create_or_update_file
+  - create_branch
   - delete_file
+  - pull_request_review_write
+  - merge_pull_request
+
+hidden:
+  # Very infrequent — not useful in typical weekly agent workflows
+  - create_repository
+  - fork_repository
+  - sub_issue_write
+  - get_teams
+  - get_team_members
+  - list_issue_types
+  - add_comment_to_pending_review
+  - request_copilot_review
+  - run_secret_scanning

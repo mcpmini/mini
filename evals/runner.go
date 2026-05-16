@@ -26,14 +26,14 @@ func NewRunner(modes map[string]bool, reps int) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	miniBin, err := buildBin(root, "mini", "./cmd/mini")
+	miniBin, fakemcpBin, err := buildEvalBins(root)
 	if err != nil {
-		return nil, fmt.Errorf("build mini: %w", err)
+		return nil, err
 	}
-	fakemcpBin, err := buildBin(root, "fakemcp", "./test/fakemcp", "-tags", "integration")
-	if err != nil {
-		return nil, fmt.Errorf("build fakemcp: %w", err)
-	}
+	return buildRunner(root, miniBin, fakemcpBin, modes, reps), nil
+}
+
+func buildRunner(root, miniBin, fakemcpBin string, modes map[string]bool, reps int) *Runner {
 	return &Runner{
 		MiniBin:     miniBin,
 		FakemcpBin:  fakemcpBin,
@@ -41,7 +41,19 @@ func NewRunner(modes map[string]bool, reps int) (*Runner, error) {
 		RepoRoot:    root,
 		Modes:       modes,
 		Reps:        reps,
-	}, nil
+	}
+}
+
+func buildEvalBins(root string) (string, string, error) {
+	miniBin, err := buildBin(root, "mini", "./cmd/mini")
+	if err != nil {
+		return "", "", fmt.Errorf("build mini: %w", err)
+	}
+	fakemcpBin, err := buildBin(root, "fakemcp", "./test/fakemcp", "-tags", "integration")
+	if err != nil {
+		return "", "", fmt.Errorf("build fakemcp: %w", err)
+	}
+	return miniBin, fakemcpBin, nil
 }
 
 func FindRepoRoot() (string, error) { return findRepoRoot() }
@@ -113,36 +125,96 @@ func (r *Runner) RunEval(ctx context.Context, env *Env, p EvalParams, task strin
 
 func (r *Runner) buildSetups(env *Env, p EvalParams, task string) ([]runSetup, error) {
 	reps := r.reps()
-	var setups []runSetup
+	setups, err := r.buildDirectSetups(env, p, task, reps)
+	if err != nil {
+		return nil, err
+	}
+	for i := range numFormats {
+		ss, err := r.buildFormatSetups(env, p, task, i, reps)
+		if err != nil {
+			return nil, err
+		}
+		setups = append(setups, ss...)
+	}
+	return setups, nil
+}
 
-	if r.want("direct") {
-		for rep := range reps {
-			s, err := r.rawSetup(env, p, task, rep)
-			if err != nil {
-				return nil, fmt.Errorf("raw setup rep %d: %w", rep+1, err)
-			}
+func (r *Runner) buildDirectSetups(env *Env, p EvalParams, task string, reps int) ([]runSetup, error) {
+	if !r.want("direct") {
+		return nil, nil
+	}
+	var setups []runSetup
+	for rep := range reps {
+		s, err := r.rawSetup(env, p, task, rep)
+		if err != nil {
+			return nil, fmt.Errorf("raw setup rep %d: %w", rep+1, err)
+		}
+		setups = append(setups, s)
+	}
+	return setups, nil
+}
+
+func (r *Runner) buildFormatSetups(env *Env, p EvalParams, task string, i, reps int) ([]runSetup, error) {
+	var setups []runSetup
+	for rep := range reps {
+		ss, err := r.buildRepSetups(env, p, task, i, rep)
+		if err != nil {
+			return nil, err
+		}
+		setups = append(setups, ss...)
+	}
+	return setups, nil
+}
+
+type setupCandidate struct {
+	label string
+	fn    func() (runSetup, error)
+}
+
+func (r *Runner) buildRepSetups(env *Env, p EvalParams, task string, i, rep int) ([]runSetup, error) {
+	var setups []runSetup
+	for _, c := range r.repCandidates(env, p, task, i, rep) {
+		s, err := r.buildRepSetup(c.label, rep, c.fn)
+		if err != nil {
+			return nil, err
+		}
+		if s.cmd != nil {
 			setups = append(setups, s)
 		}
 	}
-	for i := range numFormats {
-		for rep := range reps {
-			if r.want(modeLabel("mcp", i)) {
-				s, err := r.mcpSetup(env, p, task, i, rep)
-				if err != nil {
-					return nil, fmt.Errorf("mcp-%s setup rep %d: %w", fmtLabel[i], rep+1, err)
-				}
-				setups = append(setups, s)
-			}
-			if r.want(modeLabel("cli", i)) {
-				s, err := r.cliSetup(env, p, task, i, rep)
-				if err != nil {
-					return nil, fmt.Errorf("cli-%s setup rep %d: %w", fmtLabel[i], rep+1, err)
-				}
-				setups = append(setups, s)
-			}
-		}
-	}
 	return setups, nil
+}
+
+func (r *Runner) repCandidates(env *Env, p EvalParams, task string, i, rep int) []setupCandidate {
+	return []setupCandidate{
+		{"mcp-" + fmtLabel[i], func() (runSetup, error) { return r.mcpSetup(env, p, task, i, rep) }},
+		{"cli-" + fmtLabel[i], func() (runSetup, error) { return r.cliSetup(env, p, task, i, rep) }},
+		{"proxy-" + fmtLabel[i], func() (runSetup, error) { return r.proxySetup(env, p, task, i, rep) }},
+	}
+}
+
+func (r *Runner) buildRepSetup(label string, rep int, build func() (runSetup, error)) (runSetup, error) {
+	if !r.want(label) {
+		return runSetup{}, nil
+	}
+	s, err := build()
+	if err != nil {
+		return runSetup{}, fmt.Errorf("%s setup rep %d: %w", label, rep+1, err)
+	}
+	return s, nil
+}
+
+func (r *Runner) proxySetup(env *Env, p EvalParams, task string, i, rep int) (runSetup, error) {
+	callDir := env.DebugDir(fmt.Sprintf("proxy-%s-%d", fmtLabel[i], rep+1))
+	cfg, err := proxyMCPConfig(env, r, p.Servers, callDir, i)
+	if err != nil {
+		return runSetup{}, err
+	}
+	workDir, err := freshWorkDir(env, p.WorkSrcDir)
+	if err != nil {
+		return runSetup{}, err
+	}
+	return newMCPRunSetup(mcpRunSetupParams{"proxy", i, rep, callDir, workDir, cfg, proxyAllowedTools(p.Servers, p.AllowedTools), task}), nil
 }
 
 func (r *Runner) rawSetup(env *Env, p EvalParams, task string, rep int) (runSetup, error) {
@@ -155,11 +227,7 @@ func (r *Runner) rawSetup(env *Env, p EvalParams, task string, rep int) (runSetu
 	if err != nil {
 		return runSetup{}, err
 	}
-	allowed := rawAllowedTools(p.Servers, p.AllowedTools)
-	c, w := cfg, workDir
-	return runSetup{kind: "direct", idx: 0, rep: rep, callDir: callDir, workDir: workDir,
-		cmd: func() *exec.Cmd { return buildClaudeCmd(c, allowed, w, task) },
-	}, nil
+	return newMCPRunSetup(mcpRunSetupParams{"direct", 0, rep, callDir, workDir, cfg, rawAllowedTools(p.Servers, p.AllowedTools), task}), nil
 }
 
 func (r *Runner) mcpSetup(env *Env, p EvalParams, task string, i, rep int) (runSetup, error) {
@@ -172,11 +240,7 @@ func (r *Runner) mcpSetup(env *Env, p EvalParams, task string, i, rep int) (runS
 	if err != nil {
 		return runSetup{}, err
 	}
-	allowed := miniMCPAllowedTools(p.AllowedTools)
-	c, w := cfg, workDir
-	return runSetup{kind: "mcp", idx: i, rep: rep, callDir: callDir, workDir: workDir,
-		cmd: func() *exec.Cmd { return buildClaudeCmd(c, allowed, w, task) },
-	}, nil
+	return newMCPRunSetup(mcpRunSetupParams{"mcp", i, rep, callDir, workDir, cfg, miniMCPAllowedTools(p.AllowedTools), task}), nil
 }
 
 func (r *Runner) cliSetup(env *Env, p EvalParams, task string, i, rep int) (runSetup, error) {
@@ -193,11 +257,26 @@ func (r *Runner) cliSetup(env *Env, p EvalParams, task string, i, rep int) (runS
 	if err != nil {
 		return runSetup{}, err
 	}
-	allowed := cliAllowedTools(p.AllowedTools)
-	wrap, w := wrapDir, workDir
-	return runSetup{kind: "cli", idx: i, rep: rep, callDir: callDir, workDir: workDir,
-		cmd: func() *exec.Cmd { return buildClaudeCLICmd(wrap, allowed, w, task) },
-	}, nil
+	return newCLIRunSetup(i, rep, callDir, workDir, wrapDir, cliAllowedTools(p.AllowedTools), task), nil
+}
+
+type mcpRunSetupParams struct {
+	kind, callDir, workDir, cfg, allowed, task string
+	idx, rep                                   int
+}
+
+func newMCPRunSetup(p mcpRunSetupParams) runSetup {
+	return runSetup{
+		kind: p.kind, idx: p.idx, rep: p.rep, callDir: p.callDir, workDir: p.workDir,
+		cmd: func() *exec.Cmd { return buildClaudeCmd(p.cfg, p.allowed, p.workDir, p.task) },
+	}
+}
+
+func newCLIRunSetup(idx, rep int, callDir, workDir, wrapDir, allowed, task string) runSetup {
+	return runSetup{
+		kind: "cli", idx: idx, rep: rep, callDir: callDir, workDir: workDir,
+		cmd: func() *exec.Cmd { return buildClaudeCLICmd(wrapDir, allowed, workDir, task) },
+	}
 }
 
 type jobResult struct {
@@ -211,52 +290,76 @@ func (r *Runner) collectResults(setups []runSetup) EvalResult {
 	ch := make(chan jobResult, len(setups))
 	for _, s := range setups {
 		s := s
-		go func() {
-			output, err := runClaudeCmd(s.cmd(), s.callDir)
-			if err == nil && isRateLimited(output) {
-				err = fmt.Errorf("claude rate limited: %s", strings.TrimSpace(output))
-			}
-			result := parseClaudeResult(output)
-			result.Ran = true
-			result.Err = err
-			result.WorkDir = s.workDir
-			result.CallLogDir = s.callDir
-			result.RawOutputPath = saveOutput(s.callDir, "claude-output.json", output)
-			ch <- jobResult{s.kind, s.idx, s.rep, result}
-		}()
+		go func() { ch <- r.runOne(s) }()
 	}
+	return r.gatherResults(ch, len(setups))
+}
 
-	reps := r.reps()
-	directRuns := make([]ClaudeResult, reps)
-	mcpRuns := [numFormats][]ClaudeResult{}
-	cliRuns := [numFormats][]ClaudeResult{}
+func (r *Runner) runOne(s runSetup) jobResult {
+	output, err := runClaudeCmd(s.cmd(), s.callDir)
+	if err == nil && isRateLimited(output) {
+		err = fmt.Errorf("claude rate limited: %s", strings.TrimSpace(output))
+	}
+	result := parseClaudeResult(output)
+	result.Ran = true
+	result.Err = err
+	result.WorkDir = s.workDir
+	result.CallLogDir = s.callDir
+	result.RawOutputPath = saveOutput(s.callDir, "claude-output.json", output)
+	return jobResult{s.kind, s.idx, s.rep, result}
+}
+
+type runBuckets struct {
+	direct          []ClaudeResult
+	mcp, cli, proxy [numFormats][]ClaudeResult
+}
+
+func newRunBuckets(reps int) runBuckets {
+	b := runBuckets{direct: make([]ClaudeResult, reps)}
 	for i := range numFormats {
-		mcpRuns[i] = make([]ClaudeResult, reps)
-		cliRuns[i] = make([]ClaudeResult, reps)
+		b.mcp[i] = make([]ClaudeResult, reps)
+		b.cli[i] = make([]ClaudeResult, reps)
+		b.proxy[i] = make([]ClaudeResult, reps)
 	}
-	for range len(setups) {
-		res := <-ch
-		switch res.kind {
-		case "direct":
-			directRuns[res.rep] = res.r
-		case "mcp":
-			mcpRuns[res.idx][res.rep] = res.r
-		case "cli":
-			cliRuns[res.idx][res.rep] = res.r
-		}
-	}
+	return b
+}
 
+func (b *runBuckets) assign(res jobResult) {
+	switch res.kind {
+	case "direct":
+		b.direct[res.rep] = res.r
+	case "mcp":
+		b.mcp[res.idx][res.rep] = res.r
+	case "cli":
+		b.cli[res.idx][res.rep] = res.r
+	case "proxy":
+		b.proxy[res.idx][res.rep] = res.r
+	}
+}
+
+func (r *Runner) gatherResults(ch <-chan jobResult, n int) EvalResult {
+	b := newRunBuckets(r.reps())
+	for range n {
+		b.assign(<-ch)
+	}
 	var eval EvalResult
-	if r.want("direct") {
-		eval.Direct = RunStats{Runs: directRuns}
+	assignEvalResults(&eval, b, r.want)
+	return eval
+}
+
+func assignEvalResults(eval *EvalResult, b runBuckets, want func(string) bool) {
+	if want("direct") {
+		eval.Direct = RunStats{Runs: b.direct}
 	}
 	for i := range numFormats {
-		if r.want(modeLabel("mcp", i)) {
-			eval.MCP[i] = RunStats{Runs: mcpRuns[i]}
-		}
-		if r.want(modeLabel("cli", i)) {
-			eval.CLI[i] = RunStats{Runs: cliRuns[i]}
-		}
+		assignIndexedRunStat(&eval.MCP[i], b.mcp[i], want(modeLabel("mcp", i)))
+		assignIndexedRunStat(&eval.CLI[i], b.cli[i], want(modeLabel("cli", i)))
+		assignIndexedRunStat(&eval.Proxy[i], b.proxy[i], want(modeLabel("proxy", i)))
 	}
-	return eval
+}
+
+func assignIndexedRunStat(dst *RunStats, runs []ClaudeResult, enabled bool) {
+	if enabled {
+		*dst = RunStats{Runs: runs}
+	}
 }

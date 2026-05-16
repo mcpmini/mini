@@ -38,14 +38,12 @@ func (h *mcpHandler) applyFault(req transport.Request, f Fault) (dispatchResult,
 	switch f.Type {
 	case FaultDelay:
 		time.Sleep(time.Duration(f.DelayMS) * time.Millisecond)
-		return dispatchResult{}, false // continue to normal handler after delay
+		return dispatchResult{}, false
 	case FaultSlowInit:
-		if req.Method == "initialize" {
-			time.Sleep(time.Duration(f.DelayMS) * time.Millisecond)
-		}
+		applySlowInit(req.Method, f.DelayMS)
 		return dispatchResult{}, false
 	case FaultHang:
-		select {} // block forever; mini will cancel and kill process
+		select {}
 	case FaultDrop:
 		return dispatchResult{exit: true}, true
 	case FaultBadJSON:
@@ -54,25 +52,32 @@ func (h *mcpHandler) applyFault(req transport.Request, f Fault) (dispatchResult,
 	return h.applyContentFault(req, f)
 }
 
+func applySlowInit(method string, delayMS int) {
+	if method == "initialize" {
+		time.Sleep(time.Duration(delayMS) * time.Millisecond)
+	}
+}
+
 func (h *mcpHandler) applyContentFault(req transport.Request, f Fault) (dispatchResult, bool) {
 	switch f.Type {
 	case FaultRPCError:
-		msg := f.Message
-		if msg == "" {
-			msg = "injected rpc error"
-		}
+		msg := faultMessage(f.Message, "injected rpc error")
 		resp := transport.Response{JSONRPC: "2.0", ID: req.ID, Error: &transport.RPCError{Code: -32603, Message: msg}}
 		return dispatchResult{response: resp}, true
 	case FaultErrorResult:
-		msg := f.Message
-		if msg == "" {
-			msg = "injected tool error"
-		}
+		msg := faultMessage(f.Message, "injected tool error")
 		return dispatchResult{response: respond(req.ID, errResult(msg))}, true
 	case FaultOversized:
 		return faultOversized(req.ID, f.SizeBytes), true
 	}
 	return dispatchResult{}, false
+}
+
+func faultMessage(message, fallback string) string {
+	if message == "" {
+		return fallback
+	}
+	return message
 }
 
 func faultOversized(id any, sizeBytes int) dispatchResult {
@@ -85,26 +90,37 @@ func faultOversized(id any, sizeBytes int) dispatchResult {
 	return dispatchResult{response: respond(id, result)}
 }
 
+var fakeInitResult = transport.InitializeResult{
+	ProtocolVersion: transport.ProtocolVersion,
+	Capabilities:    map[string]any{"tools": map[string]any{}},
+	ServerInfo:      transport.ServerInfo{Name: "fakemcp", Version: "0.1.0"},
+}
+
 func (h *mcpHandler) handle(req transport.Request) transport.Response {
 	switch req.Method {
 	case "initialize":
-		return respond(req.ID, transport.InitializeResult{
-			ProtocolVersion: transport.ProtocolVersion,
-			Capabilities:    map[string]any{"tools": map[string]any{}},
-			ServerInfo:      transport.ServerInfo{Name: "fakemcp", Version: "0.1.0"},
-		})
+		return respond(req.ID, fakeInitResult)
 	case "tools/list":
 		return respond(req.ID, transport.ToolsListResult{Tools: h.tools.MCPTools()})
 	case "tools/call":
-		var p transport.ToolCallParams
-		json.Unmarshal(req.Params, &p) //nolint:errcheck
+		p := parseToolCall(req.Params)
 		fault, _ := h.faults.Match(req.Method, p.Name)
 		return respond(req.ID, h.tools.Call(p.Name, p.Arguments, fault.SizeBytes))
 	default:
-		return transport.Response{
-			JSONRPC: "2.0", ID: req.ID,
-			Error: &transport.RPCError{Code: transport.CodeMethodNotFound, Message: "unknown method: " + req.Method},
-		}
+		return methodNotFound(req)
+	}
+}
+
+func parseToolCall(raw json.RawMessage) transport.ToolCallParams {
+	var p transport.ToolCallParams
+	json.Unmarshal(raw, &p) //nolint:errcheck
+	return p
+}
+
+func methodNotFound(req transport.Request) transport.Response {
+	return transport.Response{
+		JSONRPC: "2.0", ID: req.ID,
+		Error: &transport.RPCError{Code: transport.CodeMethodNotFound, Message: "unknown method: " + req.Method},
 	}
 }
 

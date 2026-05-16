@@ -23,6 +23,10 @@ func runAdd(configDir string, args []string, out io.Writer) error {
 	if handled, err := handleImportFlags(configDir, fromFlags); handled {
 		return err
 	}
+	return addByName(configDir, remaining, out)
+}
+
+func addByName(configDir string, remaining []string, out io.Writer) error {
 	if len(remaining) == 0 {
 		return fmt.Errorf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
 	}
@@ -50,10 +54,10 @@ func parseImportFlags(args []string, out io.Writer) (remaining []string, flags i
 }
 
 type serverFlags struct {
-	name, url  string
-	headers    stringSlice
-	protected  stringSlice
-	cmdArgs    []string
+	name, url string
+	headers   stringSlice
+	protected stringSlice
+	cmdArgs   []string
 }
 
 func parseServerFlags(args []string, out io.Writer) (serverFlags, error) {
@@ -89,23 +93,31 @@ func handleImportFlags(configDir string, f importFlags) (handled bool, err error
 
 func addNamedServer(configDir, name string, rest []string, url string, headers, protected stringSlice) error {
 	if url != "" {
-		return importers.WriteServerYAML(configDir, name, importers.ServerYAML{
-			Name:        name,
-			Transport:   "http",
-			URL:         url,
-			Headers:     parseHeaders(headers),
-			Permissions: permissionsYAML(protected),
-		})
+		return importers.WriteServerYAML(configDir, name, httpServerYAML(name, url, headers, protected))
 	}
 	if len(rest) == 0 {
 		return fmt.Errorf("provide --url or a command after NAME")
 	}
-	return importers.WriteServerYAML(configDir, name, importers.ServerYAML{
+	return importers.WriteServerYAML(configDir, name, stdioServerYAML(name, rest, protected))
+}
+
+func httpServerYAML(name, url string, headers, protected stringSlice) importers.ServerYAML {
+	return importers.ServerYAML{
+		Name:        name,
+		Transport:   "http",
+		URL:         url,
+		Headers:     parseHeaders(headers),
+		Permissions: permissionsYAML(protected),
+	}
+}
+
+func stdioServerYAML(name string, rest []string, protected stringSlice) importers.ServerYAML {
+	return importers.ServerYAML{
 		Name:        name,
 		Command:     rest[0],
 		Args:        rest[1:],
 		Permissions: permissionsYAML(protected),
-	})
+	}
 }
 
 func permissionsYAML(protected stringSlice) *importers.PermissionsYAML {

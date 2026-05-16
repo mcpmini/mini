@@ -58,22 +58,31 @@ func runClaudeCmd(cmd *exec.Cmd, outputDir string) (string, error) {
 	cmd.Stderr = &errBuf
 	done := make(chan error, 1)
 	go func() { done <- cmd.Run() }()
+	timer := time.NewTimer(420 * time.Second)
+	defer timer.Stop()
 	select {
 	case err := <-done:
 		if err != nil {
-			output := out.String()
-			saveOutput(outputDir, "claude-output-partial.json", output)
-			if stderr := strings.TrimSpace(errBuf.String()); stderr != "" {
-				return output, fmt.Errorf("claude: %v\nstderr: %s", err, stderr)
-			}
-			return output, fmt.Errorf("claude: %v", err)
+			return handleClaudeRunError(err, outputDir, out.String(), errBuf.String())
 		}
-	case <-time.After(420 * time.Second):
-		cmd.Process.Kill() //nolint:errcheck
-		saveOutput(outputDir, "claude-output-partial.json", out.String())
-		return "", fmt.Errorf("claude eval timed out after 420s")
+	case <-timer.C:
+		return handleClaudeTimeout(cmd, outputDir, out.String())
 	}
 	return out.String(), nil
+}
+
+func handleClaudeTimeout(cmd *exec.Cmd, outputDir, output string) (string, error) {
+	cmd.Process.Kill() //nolint:errcheck
+	saveOutput(outputDir, "claude-output-partial.json", output)
+	return "", fmt.Errorf("claude eval timed out after 420s")
+}
+
+func handleClaudeRunError(err error, outputDir, output, stderr string) (string, error) {
+	saveOutput(outputDir, "claude-output-partial.json", output)
+	if stderr = strings.TrimSpace(stderr); stderr != "" {
+		return output, fmt.Errorf("claude: %v\nstderr: %s", err, stderr)
+	}
+	return output, fmt.Errorf("claude: %v", err)
 }
 
 func saveOutput(dir, name, content string) string {

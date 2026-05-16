@@ -33,6 +33,11 @@ func slimArray(arr []any) map[string]any {
 func slimWrapped(v map[string]any, arr []any, _ string) map[string]any {
 	result := slimArray(arr)
 	meta, _ := result["_meta"].(map[string]any)
+	applyPaginationMeta(meta, v)
+	return result
+}
+
+func applyPaginationMeta(meta, v map[string]any) {
 	if tc := coalesce(v["totalCount"], v["total_count"]); tc != nil {
 		meta["total"] = tc
 	}
@@ -47,7 +52,6 @@ func slimWrapped(v map[string]any, arr []any, _ string) map[string]any {
 	if inc, _ := v["incomplete_results"].(bool); inc {
 		meta["incomplete"] = true
 	}
-	return result
 }
 
 func slimObject(v map[string]any) map[string]any {
@@ -100,22 +104,33 @@ func buildIndex(items []map[string]any) map[string]any {
 	cats := map[string]map[string]int{}
 	for _, m := range items {
 		for k, v := range m {
-			if s, ok := v.(string); ok && len(s) < 40 {
-				if cats[k] == nil {
-					cats[k] = map[string]int{}
-				}
-				cats[k][s]++
-			}
+			indexValue(cats, k, v)
 		}
 	}
+	idx := compactIndex(cats)
+	if len(idx) == 0 {
+		return nil
+	}
+	return idx
+}
+
+func indexValue(cats map[string]map[string]int, key string, value any) {
+	s, ok := value.(string)
+	if !ok || len(s) >= 40 {
+		return
+	}
+	if cats[key] == nil {
+		cats[key] = map[string]int{}
+	}
+	cats[key][s]++
+}
+
+func compactIndex(cats map[string]map[string]int) map[string]any {
 	idx := map[string]any{}
 	for k, counts := range cats {
 		if len(counts) <= 20 {
 			idx[k] = counts
 		}
-	}
-	if len(idx) == 0 {
-		return nil
 	}
 	return idx
 }
@@ -164,10 +179,7 @@ func flatNested(out map[string]any, prefix string, child map[string]any) {
 
 func noiseField(key string, val any) bool {
 	l := strings.ToLower(key)
-	if strings.HasSuffix(l, "_url") && l != "html_url" && l != "browser_download_url" {
-		return true
-	}
-	if s, ok := val.(string); ok && strings.Contains(s, "{/") {
+	if isNoisyURL(l) || isTemplateURL(val) {
 		return true
 	}
 	switch l {
@@ -175,10 +187,17 @@ func noiseField(key string, val any) bool {
 		"upload_url", "tarball_url", "zipball_url", "assets_url":
 		return true
 	}
-	if s, ok := val.(string); ok && len(s) == 40 && isHex(s) {
-		return true
-	}
-	return false
+	s, ok := val.(string)
+	return ok && len(s) == 40 && isHex(s)
+}
+
+func isNoisyURL(l string) bool {
+	return strings.HasSuffix(l, "_url") && l != "html_url" && l != "browser_download_url"
+}
+
+func isTemplateURL(val any) bool {
+	s, ok := val.(string)
+	return ok && strings.Contains(s, "{/")
 }
 
 func noiseValue(v any) bool {

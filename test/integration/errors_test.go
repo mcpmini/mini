@@ -4,8 +4,6 @@ package integration_test
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"testing"
 )
 
@@ -47,15 +45,24 @@ func TestError_unknownTool(t *testing.T) {
 	}
 }
 
+// TestError_upstreamNeverStarts verifies that mini starts successfully even
+// when a configured upstream binary does not exist — the server degrades
+// gracefully (logs a warning) rather than refusing to start entirely. This
+// is important so that one broken server config doesn't block all other
+// upstreams from working.
 func TestError_upstreamNeverStarts(t *testing.T) {
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "bad", "name: bad\ncommand: /nonexistent_binary_xyz_does_not_exist\n")
 
-	cmd := exec.Command(miniBin, "--config", cfg, "serve")
-	cmd.Stdin, _ = os.Open(os.DevNull)
-	if err := cmd.Run(); err == nil {
-		t.Error("mini should exit non-zero when upstream binary does not exist")
-	}
+	stdin, scanner := startMiniCmd(t, cfg)
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	go c.readLoop(scanner)
+	// Server must respond to initialize (not crash)
+	c.mustCall("initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	})
 }
 
 func TestError_malformedRequest(t *testing.T) {

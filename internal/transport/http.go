@@ -14,26 +14,27 @@ import (
 	"time"
 )
 
-const Version = "0.1.0"
+// Version is set at build time via -ldflags; defaults to "dev" for local builds.
+var Version = "dev"
 
 // HTTPConnection implements Connection for streamable HTTP / SSE MCP servers.
 // The GitHub MCP and similar servers use this transport: each call is a POST,
 // responses may be SSE-wrapped, and a session ID is tracked across calls.
 type HTTPConnection struct {
-	url              string
-	headers          map[string]string
+	url                     string
+	headers                 map[string]string
 	disableRetryOnRateLimit bool
-	client           *http.Client
-	nextID           atomic.Int64
-	sessionID        string
-	mu               sync.Mutex
+	client                  *http.Client
+	nextID                  atomic.Int64
+	sessionID               string
+	mu                      sync.Mutex
 }
 
 const defaultHTTPClientTimeout = 10 * time.Minute
 
 type HTTPConnectionConfig struct {
-	URL             string
-	Headers         map[string]string
+	URL     string
+	Headers map[string]string
 	// ClientTimeout is the hard network-level deadline. Zero means 10 minutes.
 	ClientTimeout time.Duration
 	// DisableRetryOnRateLimit disables automatic 429/503 retry. When true,
@@ -47,18 +48,21 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 		timeout = cfg.ClientTimeout
 	}
 	return &HTTPConnection{
-		url:             cfg.URL,
-		headers:         cfg.Headers,
+		url:                     cfg.URL,
+		headers:                 cfg.Headers,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
-		client: &http.Client{
-			Timeout: timeout,
-			// Don't follow redirects — they can be used to exfiltrate session tokens
-			// to a different host than the one the user configured.
-			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		},
+		client:                  noRedirectClient(timeout),
 	}, nil
+}
+
+// noRedirectClient blocks redirects to prevent session token exfiltration to a different host.
+func noRedirectClient(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 }
 
 const maxRetries = 3
@@ -82,14 +86,10 @@ func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (json.RawMess
 		if err == nil {
 			return r.body, nil
 		}
-		if !r.retryable || i == maxRetries-1 || c.disableRetryOnRateLimit {
+		if shouldStopRetrying(r, i, c.disableRetryOnRateLimit) {
 			return nil, err
 		}
-		delay := r.delay
-		if delay < 0 {
-			delay = backoff
-			backoff *= 2
-		}
+		delay := nextRetryDelay(r.delay, &backoff)
 		if !sleepCtx(ctx, delay) {
 			return nil, ctx.Err()
 		}
@@ -97,16 +97,24 @@ func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (json.RawMess
 	return nil, fmt.Errorf("exceeded max retries for %s", rpcReq.Method)
 }
 
+func shouldStopRetrying(r postResult, attempt int, retriesDisabled bool) bool {
+	return !r.retryable || attempt == maxRetries-1 || retriesDisabled
+}
+
+func nextRetryDelay(delay time.Duration, backoff *time.Duration) time.Duration {
+	if delay >= 0 {
+		return delay
+	}
+	delay = *backoff
+	*backoff *= 2
+	return delay
+}
+
 func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult, error) {
-	reqBody, err := json.Marshal(rpcReq)
+	httpReq, err := c.buildHTTPRequest(ctx, rpcReq)
 	if err != nil {
 		return postResult{}, err
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(reqBody))
-	if err != nil {
-		return postResult{}, err
-	}
-	c.setRequestHeaders(httpReq)
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return postResult{}, fmt.Errorf("http %s: %w", rpcReq.Method, err)
@@ -115,20 +123,23 @@ func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult
 	return c.processResponse(resp, rpcReq.Method)
 }
 
+func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (*http.Request, error) {
+	reqBody, err := json.Marshal(rpcReq)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	c.setRequestHeaders(httpReq)
+	return httpReq, nil
+}
+
 func (c *HTTPConnection) processResponse(resp *http.Response, method string) (postResult, error) {
-	if sid := resp.Header.Get("Mcp-Session-Id"); sid != "" && len(sid) <= 256 {
-		c.mu.Lock()
-		c.sessionID = sid
-		c.mu.Unlock()
-	}
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		delay := parseRetryAfter(resp.Header.Get("Retry-After"))
-		return postResult{retryable: true, delay: delay}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
-	}
+	c.storeSessionID(resp.Header.Get("Mcp-Session-Id"))
 	if resp.StatusCode >= 400 {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return postResult{}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
+		return c.httpErrorResult(resp, method)
 	}
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
@@ -136,6 +147,30 @@ func (c *HTTPConnection) processResponse(resp *http.Response, method string) (po
 	}
 	result, err := parseHTTPBody(respBody)
 	return postResult{body: result}, err
+}
+
+func (c *HTTPConnection) storeSessionID(sessionID string) {
+	if sessionID == "" || len(sessionID) > 256 {
+		return
+	}
+	c.mu.Lock()
+	c.sessionID = sessionID
+	c.mu.Unlock()
+}
+
+func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string) (postResult, error) {
+	errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+	if isRetryableStatus(resp.StatusCode) {
+		return postResult{
+			retryable: true,
+			delay:     parseRetryAfter(resp.Header.Get("Retry-After")),
+		}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
+	}
+	return postResult{}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
+}
+
+func isRetryableStatus(statusCode int) bool {
+	return statusCode == http.StatusTooManyRequests || statusCode == http.StatusServiceUnavailable
 }
 
 // parseRetryAfter returns the delay from a Retry-After header value (seconds).
@@ -192,12 +227,7 @@ func parseHTTPBody(body []byte) (json.RawMessage, error) {
 	if len(body) == 0 {
 		return nil, nil
 	}
-
-	jsonBytes := body
-	if bytes.HasPrefix(body, []byte("event:")) || bytes.HasPrefix(body, []byte("data:")) {
-		jsonBytes = extractSSEData(body)
-	}
-
+	jsonBytes := unwrapHTTPBody(body)
 	var rpc Response
 	if err := json.Unmarshal(jsonBytes, &rpc); err != nil {
 		return nil, fmt.Errorf("parse response: %w: %s", err, jsonBytes[:min(200, len(jsonBytes))])
@@ -206,6 +236,13 @@ func parseHTTPBody(body []byte) (json.RawMessage, error) {
 		return nil, rpc.Error
 	}
 	return rpc.Result, nil
+}
+
+func unwrapHTTPBody(body []byte) []byte {
+	if bytes.HasPrefix(body, []byte("event:")) || bytes.HasPrefix(body, []byte("data:")) {
+		return extractSSEData(body)
+	}
+	return body
 }
 
 func extractSSEData(body []byte) []byte {

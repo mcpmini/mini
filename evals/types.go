@@ -102,11 +102,13 @@ func (s RunStats) AvgTurns() float64 {
 	return float64(sum) / float64(len(s.Runs))
 }
 
-// EvalResult holds results for all 7 modes, each across one or more reps.
+// EvalResult holds results for all modes, each across one or more reps.
+// Proxy only has passthrough and projected variants (no lines format yet).
 type EvalResult struct {
 	Direct RunStats
-	MCP [numFormats]RunStats
-	CLI [numFormats]RunStats
+	MCP    [numFormats]RunStats
+	CLI    [numFormats]RunStats
+	Proxy  [numFormats]RunStats
 }
 
 // EvalParams specifies the eval-specific inputs. Mode and rep counts live on Runner.

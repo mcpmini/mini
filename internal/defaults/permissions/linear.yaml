@@ -1,0 +1,17 @@
+protected:
+  # Write operations — issue and project management happen regularly
+  - create_issue
+  - update_issue
+  - create_comment
+  - update_comment
+  - archive_issue
+  - create_project
+  - update_project
+  - add_label_to_issue
+
+hidden:
+  # Destructive or very infrequent
+  - delete_issue
+  - delete_project
+  - delete_comment
+  - unarchive_issue

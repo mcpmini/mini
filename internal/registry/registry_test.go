@@ -195,6 +195,27 @@ func TestAddAction_inheritsTargetPermission(t *testing.T) {
 	}
 }
 
+func TestAddAction_inheritsHiddenTargetPermission(t *testing.T) {
+	r := registry.New()
+	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
+	r.AddServer("srv", defs("secret_op"), perm)
+	r.AddAction(config.ActionConfig{
+		Name:   "secret_alias",
+		Server: "srv",
+		Tool:   "secret_op",
+	})
+
+	if _, err := r.Lookup("srv.secret_alias"); err == nil {
+		t.Fatal("hidden action alias should not be callable through Lookup")
+	}
+	all := r.All()
+	for _, e := range all {
+		if e.Name == "srv.secret_alias" {
+			t.Fatal("hidden action alias should not appear in All()")
+		}
+	}
+}
+
 func TestAddAction_explicitPermissionOverrides(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"dangerous_op"}}

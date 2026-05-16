@@ -14,9 +14,9 @@ import (
 
 func (s *Server) routeProxyTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
 	switch name {
-	case "mini_config":
+	case "config":
 		return s.handleConfigure(ctx, args, session)
-	case "mini_read":
+	case "read":
 		return s.handleRead(args)
 	default:
 		return s.handleProxyCall(ctx, name, args, session)
@@ -30,15 +30,24 @@ func (s *Server) handleProxyCall(ctx context.Context, name string, args json.Raw
 	}
 	entry, err := s.reg.Lookup(server + "." + tool)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", errInvalidParams, err)
+		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
-	var params map[string]any
-	if len(args) > 0 && string(args) != "null" {
-		if err := json.Unmarshal(args, &params); err != nil {
-			return nil, fmt.Errorf("%w: unmarshal args: %w", errInvalidParams, err)
-		}
+	params, err := unmarshalToolArgs(args)
+	if err != nil {
+		return nil, err
 	}
 	return s.proxyCallUpstream(ctx, server, tool, params, entry, session)
+}
+
+func unmarshalToolArgs(args json.RawMessage) (map[string]any, error) {
+	if len(args) == 0 || string(args) == "null" {
+		return nil, nil
+	}
+	var params map[string]any
+	if err := json.Unmarshal(args, &params); err != nil {
+		return nil, fmt.Errorf("%w: unmarshal args: %w", errInvalidParams, err)
+	}
+	return params, nil
 }
 
 func (s *Server) proxyCallUpstream(ctx context.Context, server, tool string, params map[string]any, entry *registry.ToolEntry, session *Session) (any, error) {
@@ -53,22 +62,21 @@ func (s *Server) proxyCallUpstream(ctx context.Context, server, tool string, par
 		session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
+	return s.proxyProject(server, tool, raw, session, upstream, latencyMs)
+}
 
+func (s *Server) proxyProject(server, tool string, raw json.RawMessage, session *Session, upstream *upstreamServer, latencyMs int64) (any, error) {
 	projCfg := s.resolveProjection(server, tool, session)
 	if projCfg == nil {
 		session.recordCall(latencyMs, 0, false)
 		return string(raw), nil
 	}
-
 	env, stats, err := s.buildProjectedEnvelope(server, tool, raw, projCfg)
 	if err != nil {
 		return nil, err
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
-	if saved > 0 {
-		upstream.estTokensSaved.Add(saved)
-	}
-	session.recordCall(latencyMs, saved, false)
+	upstream.recordSaved(session, latencyMs, saved)
 	return s.formatProxyEnvelope(env, stats.RawTokens), nil
 }
 
@@ -79,25 +87,35 @@ func (s *Server) proxyCallUpstream(ctx context.Context, server, tool string, par
 func (s *Server) formatProxyEnvelope(env *response.Envelope, rawTokens int) string {
 	hasNote := len(env.Elided) > 0 || len(env.Truncated) > 0
 	isLarge := rawTokens > s.cfg.InlineThreshold
-
-	if !hasNote && !isLarge {
-		b, _ := json.Marshal(env.Data)
-		return string(b)
-	}
-
-	if !isLarge {
-		b, _ := json.MarshalIndent(env.Data, "", "  ")
-		return "[Projected — " + projectionNote(env) + "]\n" + string(b)
-	}
-
-	if hasNote {
-		return "[Projected — " + projectionNote(env) + "]\nFile: " + *env.File
-	}
-	if env.File != nil {
+	switch {
+	case !hasNote && !isLarge:
+		return marshalProxyData(env.Data)
+	case !isLarge:
+		return formatProjectedInline(env)
+	case hasNote:
+		return formatProjectedFile(env)
+	case env.File != nil:
 		return "File: " + *env.File
+	default:
+		return marshalProxyData(env.Data)
 	}
-	b, _ := json.Marshal(env.Data)
+}
+
+func marshalProxyData(data any) string {
+	b, _ := json.Marshal(data)
 	return string(b)
+}
+
+func formatProjectedInline(env *response.Envelope) string {
+	b, _ := json.MarshalIndent(env.Data, "", "  ")
+	return "[Projected — " + projectionNote(env) + "]\n" + string(b)
+}
+
+func formatProjectedFile(env *response.Envelope) string {
+	if env.File == nil {
+		return formatProjectedInline(env)
+	}
+	return "[Projected — " + projectionNote(env) + "]\nFile: " + *env.File
 }
 
 func projectionNote(env *response.Envelope) string {
@@ -127,35 +145,54 @@ func sortedTruncatedFields(m map[string]int) []string {
 }
 
 func (s *Server) handleRead(raw json.RawMessage) (any, error) {
-	var p struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, fmt.Errorf("%w: mini_read: %w", errInvalidParams, err)
-	}
-	if p.Path == "" {
-		return nil, fmt.Errorf("%w: mini_read: path is required", errInvalidParams)
-	}
-	if err := s.validateStorePath(p.Path); err != nil {
+	path, err := parseReadPath(raw)
+	if err != nil {
 		return nil, err
 	}
-	b, err := os.ReadFile(p.Path)
+	if err := s.validateStorePath(path); err != nil {
+		return nil, err
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("mini_read: %w", err)
+		return nil, fmt.Errorf("read: %w", err)
 	}
 	return string(b), nil
 }
 
-func (s *Server) validateStorePath(path string) error {
-	storeDir := s.store.Dir()
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("%w: mini_read: invalid path: %w", errInvalidParams, err)
+func parseReadPath(raw json.RawMessage) (string, error) {
+	var p struct {
+		Path string `json:"path"`
 	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return "", fmt.Errorf("%w: read: %w", errInvalidParams, err)
+	}
+	if p.Path == "" {
+		return "", fmt.Errorf("%w: read: path is required", errInvalidParams)
+	}
+	return p.Path, nil
+}
+
+func (s *Server) validateStorePath(path string) error {
+	// EvalSymlinks resolves symlinks on both sides so a symlink inside the store
+	// dir pointing outside it cannot escape the confinement. On macOS, TempDir
+	// returns /var/... which is itself a symlink to /private/var/..., so both
+	// sides must be resolved for the prefix check to work correctly.
+	storeDir := resolveSymlinks(s.store.Dir())
+	abs := resolveSymlinks(path)
 	if !strings.HasPrefix(abs, storeDir+string(filepath.Separator)) {
-		return fmt.Errorf("%w: mini_read: path must be within mini response directory", errInvalidParams)
+		return fmt.Errorf("%w: read: path must be within mini response directory", errInvalidParams)
 	}
 	return nil
+}
+
+// resolveSymlinks resolves symlinks, falling back to filepath.Abs if the path
+// does not exist yet (file written but not yet visible, or non-existent path).
+func resolveSymlinks(path string) string {
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		return resolved
+	}
+	abs, _ := filepath.Abs(path)
+	return abs
 }
 
 func parseProxyToolName(name string) (server, tool string, err error) {

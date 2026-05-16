@@ -25,17 +25,22 @@ func runDaemon(configDir string, args []string) {
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
+	portFile := ensureDaemonNotRunning(configDir)
 	logger := buildLogger(cfg, logLevel)
-	portFile := daemon.PortFile(configDir)
-	if daemon.RunningPort(configDir) != 0 {
-		fatalf("daemon already running (port file: %s)", portFile)
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	injectOAuthTokens(ctx, configDir, servers)
 	srv := buildAndConnectServer(ctx, cfg, configDir, logger, servers)
 	defer srv.Close()
 	startDaemonHTTP(ctx, cfg, servers, srv, portFile, port)
+}
+
+func ensureDaemonNotRunning(configDir string) string {
+	portFile := daemon.PortFile(configDir)
+	if daemon.RunningPort(configDir) != 0 {
+		fatalf("daemon already running (port file: %s)", portFile)
+	}
+	return portFile
 }
 
 func parseDaemonFlags(args []string) (int, string) {
@@ -92,16 +97,15 @@ func daemonHTTPServer(srv *server.Server) *http.Server {
 
 func runDaemonStatus(configDir string) {
 	portFile := daemon.PortFile(configDir)
-	data, err := os.ReadFile(portFile)
+	portNum, err := readDaemonPort(portFile)
 	if err != nil {
-		fmt.Println("daemon: not running")
+		printDaemonStatusReadErr(err)
 		return
 	}
-	portNum, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || portNum < 1 || portNum > 65535 {
-		fmt.Printf("daemon: port file %s contains invalid port\n", portFile)
-		return
-	}
+	fetchDaemonHealth(portNum)
+}
+
+func fetchDaemonHealth(portNum int) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", portNum))
 	if err != nil {
@@ -111,4 +115,24 @@ func runDaemonStatus(configDir string) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Printf("daemon: running on port %d — %s\n", portNum, body)
+}
+
+func readDaemonPort(portFile string) (int, error) {
+	data, err := os.ReadFile(portFile)
+	if err != nil {
+		return 0, err
+	}
+	portNum, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || portNum < 1 || portNum > 65535 {
+		return 0, fmt.Errorf("port file %s contains invalid port", portFile)
+	}
+	return portNum, nil
+}
+
+func printDaemonStatusReadErr(err error) {
+	if os.IsNotExist(err) {
+		fmt.Println("daemon: not running")
+		return
+	}
+	fmt.Printf("daemon: %v\n", err)
 }

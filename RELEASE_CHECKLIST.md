@@ -19,6 +19,26 @@ staticcheck ./...
 go test -race -tags test ./... -timeout 120s
 ```
 
+### Building a versioned binary
+
+The version string is injected via ldflags at build time. `internal/transport.Version` defaults to `"dev"`.
+
+```bash
+VERSION=v0.1.0
+go build -ldflags "-X github.com/mcpmini/mini/internal/transport.Version=${VERSION}" -o mini ./cmd/mini
+./mini version  # should print v0.1.0
+```
+
+Cross-platform release builds:
+```bash
+VERSION=v0.1.0
+LDFLAGS="-X github.com/mcpmini/mini/internal/transport.Version=${VERSION}"
+GOOS=darwin  GOARCH=arm64  go build -ldflags "$LDFLAGS" -o mini-darwin-arm64  ./cmd/mini
+GOOS=darwin  GOARCH=amd64  go build -ldflags "$LDFLAGS" -o mini-darwin-amd64  ./cmd/mini
+GOOS=linux   GOARCH=arm64  go build -ldflags "$LDFLAGS" -o mini-linux-arm64   ./cmd/mini
+GOOS=linux   GOARCH=amd64  go build -ldflags "$LDFLAGS" -o mini-linux-amd64   ./cmd/mini
+```
+
 ---
 
 ## 2. Unit tests
@@ -149,11 +169,8 @@ If you have mini running locally (e.g. connected to Claude Code):
 ## 8. Security checks
 
 ```bash
-# Run the dedicated security test file
-go test -tags test ./internal/server/... -run TestSecurity -v
-
-# SSRF: confirm private URLs are rejected
-go test -tags test ./internal/transport/... -run TestSSRF -v
+# Run the security + SSRF integration tests
+go test -tags integration,test ./test/integration/... -run TestSecurity -v
 
 # Check no obvious secrets in the binary
 strings $(go build -o /tmp/mini-sec ./cmd/mini && echo /tmp/mini-sec) | grep -E "ghp_|sk-|AKIA" | head -5
@@ -173,5 +190,5 @@ Manual checks:
 - [ ] No `TODO`/`FIXME`/`HACK` comments introduced since last release
 - [ ] ROADMAP.md updated if any roadmap items were completed
 - [ ] SECURITY.md accurate (no claims about non-existent mitigations)
-- [ ] Version constant updated (`internal/transport/mcp.go: Version`)
+- [ ] Version injected via ldflags: `go build -ldflags "-X github.com/mcpmini/mini/internal/transport.Version=vX.Y.Z" ./cmd/mini` — verify `mini version` prints the tag
 - [ ] Git tag created: `git tag v0.X.Y && git push origin v0.X.Y`

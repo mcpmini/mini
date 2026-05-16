@@ -22,22 +22,28 @@ func NewStore(dir string, budgetMB int) (*Store, error) {
 
 // WritePair writes the summary and full raw response for a cache entry.
 func (s *Store) WritePair(id string, summary, raw []byte) error {
-	if s.budgetBytes > 0 {
-		_, used := s.Stats()
-		if used+int64(len(summary)+len(raw)) > s.budgetBytes {
-			return fmt.Errorf("disk budget exceeded: %.1fMB used of %.1fMB",
-				float64(used)/1e6, float64(s.budgetBytes)/1e6)
-		}
+	if err := s.checkBudget(int64(len(summary) + len(raw))); err != nil {
+		return err
 	}
-
 	summaryPath := filepath.Join(s.dir, id+".json")
 	rawPath := filepath.Join(s.dir, id+".raw.json")
-
 	if err := os.WriteFile(summaryPath, summary, 0600); err != nil {
 		return fmt.Errorf("write summary: %w", err)
 	}
 	if err := os.WriteFile(rawPath, raw, 0600); err != nil {
 		return fmt.Errorf("write raw: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) checkBudget(needed int64) error {
+	if s.budgetBytes <= 0 {
+		return nil
+	}
+	_, used := s.Stats()
+	if used+needed > s.budgetBytes {
+		return fmt.Errorf("disk budget exceeded: %.1fMB used of %.1fMB",
+			float64(used)/1e6, float64(s.budgetBytes)/1e6)
 	}
 	return nil
 }

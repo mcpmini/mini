@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-const incidentTriageTask = "We have a production incident. Check Sentry for recent errors and identify the most critical one. Search GitHub for the relevant code that's failing and look at recent commits or PRs that might have introduced it. Then post a message to the #incidents channel in Slack with: the error summary, the likely root cause based on your code investigation, and recommended next steps."
+const incidentTriageTask = "A P1 alert just fired. Get the top critical error from Sentry. Search GitHub for the file mentioned in the Sentry culprit field. Then post exactly one message to the #incidents Slack channel containing: the Sentry issue ID, the GitHub file path, the error title, and one recommended action. Do not look at commits, PRs, or anything else."
 
 // RunIncidentTriageEval exercises a cross-system incident workflow: Sentry → GitHub → Slack.
 func RunIncidentTriageEval(ctx context.Context, r *Runner, env *Env) (EvalResult, []error) {
@@ -35,11 +35,7 @@ func assertTriageResult(result EvalResult) []error {
 
 func assertTriageRun(label string, run ClaudeResult) []error {
 	var errs []error
-	add := func(err error) {
-		if err != nil {
-			errs = append(errs, fmt.Errorf("[%s] %w", label, err))
-		}
-	}
+	add := labeledAdder(label, &errs)
 	if run.Err != nil {
 		add(fmt.Errorf("run failed: %w (logs: %s)", run.Err, run.CallLogDir))
 		return errs
@@ -47,9 +43,9 @@ func assertTriageRun(label string, run ClaudeResult) []error {
 	add(AssertToolCalled(run.CallLogDir, "sentry", "list_issues"))
 	add(AssertToolCalled(run.CallLogDir, "github", "search_code"))
 	add(AssertToolCalled(run.CallLogDir, "slack", "post_message"))
-	add(AssertResponseContains(run.Text, "auth", "JWT"))
-	if run.Turns < 3 {
-		errs = append(errs, fmt.Errorf("[%s] expected at least 3 turns for a cross-system task, got %d", label, run.Turns))
-	}
+	// Fixture data is deterministic: AUTH-001 is always the top Sentry issue,
+	// auth.go is always the search_code result.
+	add(AssertResponseContains(run.Text, "AUTH-001", "4500000001"))
+	add(AssertResponseContains(run.Text, "auth.go", "middleware.go", "auth/"))
 	return errs
 }

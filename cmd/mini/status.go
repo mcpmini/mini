@@ -23,13 +23,17 @@ func runList(configDir string, out io.Writer) error {
 		fmt.Fprintln(out, "no servers configured")
 		return nil
 	}
+	printServerTable(out, servers)
+	return nil
+}
+
+func printServerTable(out io.Writer, servers []config.ServerConfig) {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND / URL\tENABLED")
 	for _, sc := range servers {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", sc.Name, serverTransport(sc), serverTarget(sc), enabledStr(sc))
 	}
 	w.Flush()
-	return nil
 }
 
 func serverTransport(sc config.ServerConfig) string {

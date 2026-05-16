@@ -23,15 +23,24 @@ func ValidateURL(rawURL string) error {
 }
 
 func validateHost(host string) error {
-	if host == "localhost" || strings.HasSuffix(host, ".localhost") ||
-		strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") {
+	if isPrivateHostname(host) {
 		return fmt.Errorf("URL host %q resolves to a private/loopback address", host)
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
 		return nil
 	}
-	// Unmap IPv4-in-IPv6 (e.g. ::ffff:127.0.0.1) before checking private ranges.
+	return validatePrivateIP(host, ip)
+}
+
+func isPrivateHostname(host string) bool {
+	return host == "localhost" || strings.HasSuffix(host, ".localhost") ||
+		strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal")
+}
+
+// validatePrivateIP checks if ip falls in any ssrfPrivateRanges CIDR block.
+// Unmaps IPv4-in-IPv6 (e.g. ::ffff:127.0.0.1) before checking.
+func validatePrivateIP(host string, ip net.IP) error {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,36 +28,42 @@ func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, ses
 	writeOut, closeNotify := startNotifyForwarder(out, notifyCh)
 	defer closeNotify()                  // runs second: closes channel, drains forwarder
 	defer session.disableNotifications() // runs first: nil field before channel closes
-
 	var wg sync.WaitGroup
 	scanner := transport.NewScanner(in)
 	for scanner.Scan() {
-		line := append([]byte(nil), scanner.Bytes()...)
-		if len(line) == 0 {
-			continue
-		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if resp, send := s.handleLine(ctx, line, session); send {
-				writeOut(resp)
-			}
-		}()
+		s.handleScannedLine(handleScannedLineParams{ctx: ctx, rawLine: scanner.Bytes(), session: session, writeOut: writeOut, wg: &wg})
 	}
 	wg.Wait()
 	return scanner.Err()
+}
+
+type handleScannedLineParams struct {
+	ctx      context.Context
+	rawLine  []byte
+	session  *Session
+	writeOut func(any)
+	wg       *sync.WaitGroup
+}
+
+func (s *Server) handleScannedLine(p handleScannedLineParams) {
+	if len(p.rawLine) == 0 {
+		return
+	}
+	line := bytes.Clone(p.rawLine)
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		if resp, send := s.handleLine(p.ctx, line, p.session); send {
+			p.writeOut(resp)
+		}
+	}()
 }
 
 // startNotifyForwarder launches a goroutine that writes notifications from ch to out.
 // Returns a writeOut function (shared by request goroutines) and a closer that must be
 // called after all request goroutines have finished — it flushes remaining notifications.
 func startNotifyForwarder(out io.Writer, ch chan json.RawMessage) (func(any), func()) {
-	var mu sync.Mutex
-	writeOut := func(v any) {
-		mu.Lock()
-		writeJSON(out, v) //nolint:errcheck
-		mu.Unlock()
-	}
+	writeOut := newSerializedWriter(out)
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -68,6 +75,15 @@ func startNotifyForwarder(out io.Writer, ch chan json.RawMessage) (func(any), fu
 	return writeOut, func() {
 		close(ch)
 		wg.Wait()
+	}
+}
+
+func newSerializedWriter(out io.Writer) func(any) {
+	var mu sync.Mutex
+	return func(v any) {
+		mu.Lock()
+		writeJSON(out, v) //nolint:errcheck
+		mu.Unlock()
 	}
 }
 
@@ -135,7 +151,7 @@ func (s *Server) dispatch(ctx context.Context, req transport.Request, session *S
 
 const initInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
 
-const proxyInitInstructions = "Responses are projected for efficiency. mini_read(path) for full data. mini_config for server management."
+const proxyInitInstructions = "Responses are projected for efficiency. read(path) for full data. config for server management."
 
 func (s *Server) handleInitialize(_ json.RawMessage) (any, error) {
 	instructions := initInstructions
@@ -158,33 +174,55 @@ func (s *Server) handleToolsList() (any, error) {
 }
 
 func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, session *Session) (any, error) {
-	var call struct {
-		Name      string          `json:"name"`
-		Arguments json.RawMessage `json:"arguments"`
-	}
-	if err := json.Unmarshal(params, &call); err != nil {
-		return nil, fmt.Errorf("%w: tools/call: %w", errInvalidParams, err)
-	}
-	if call.Name == "" {
-		return nil, fmt.Errorf("%w: tools/call requires name", errInvalidParams)
+	call, err := parseToolCall(params)
+	if err != nil {
+		return nil, err
 	}
 	result, err := s.routeTool(ctx, call.Name, call.Arguments, session)
 	if err != nil {
-		if errors.Is(err, errInvalidParams) {
-			return nil, err
-		}
-		return toolErrorResult(err.Error()), nil
+		return normalizeToolCallError(err)
 	}
+	return normalizeToolCallResult(result), nil
+}
+
+type toolCallRequest struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+func parseToolCall(params json.RawMessage) (toolCallRequest, error) {
+	var call toolCallRequest
+	if err := json.Unmarshal(params, &call); err != nil {
+		return toolCallRequest{}, fmt.Errorf("%w: tools/call: %w", errInvalidParams, err)
+	}
+	if call.Name == "" {
+		return toolCallRequest{}, fmt.Errorf("%w: tools/call requires name", errInvalidParams)
+	}
+	return call, nil
+}
+
+func normalizeToolCallError(err error) (any, error) {
+	if errors.Is(err, errInvalidParams) {
+		return nil, err
+	}
+	return toolErrorResult(err.Error()), nil
+}
+
+func normalizeToolCallResult(result any) any {
 	if env, ok := result.(*response.Envelope); ok && env.Error != "" {
-		return toolErrorResult(mustJSON(env)), nil
+		return toolErrorResult(mustJSON(env))
 	}
-	return toolOKResult(result), nil
+	return toolOKResult(result)
 }
 
 func (s *Server) routeTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
 	if s.proxyMode {
 		return s.routeProxyTool(ctx, name, args, session)
 	}
+	return s.routeStandardTool(ctx, name, args, session)
+}
+
+func (s *Server) routeStandardTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
 	switch name {
 	case "list":
 		return s.handleList(ctx, args)

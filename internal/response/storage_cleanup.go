@@ -21,20 +21,26 @@ func (s *Store) cleanupLoop(interval time.Duration) {
 
 func (s *Store) evictExpired() {
 	s.mu.Lock()
-	now := time.Now()
-	kept := s.files[:0]
-	var toRemove []storedFile
-	for _, f := range s.files {
-		if f.expires.After(now) {
-			kept = append(kept, f)
-		} else {
-			s.usedBytes -= f.size
-			toRemove = append(toRemove, f)
-		}
+	kept, toRemove := partitionByExpiry(s.files)
+	for _, f := range toRemove {
+		s.usedBytes -= f.size
 	}
 	s.files = kept
 	s.mu.Unlock()
 	removeFiles(toRemove)
+}
+
+func partitionByExpiry(files []storedFile) (kept, expired []storedFile) {
+	now := time.Now()
+	kept = files[:0]
+	for _, f := range files {
+		if f.expires.After(now) {
+			kept = append(kept, f)
+		} else {
+			expired = append(expired, f)
+		}
+	}
+	return
 }
 
 func (s *Store) evictIfNeeded(incoming int64) {

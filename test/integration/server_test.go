@@ -3,8 +3,10 @@
 package integration_test
 
 import (
+	"bufio"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -113,6 +115,128 @@ func TestServer_execUnknownServer(t *testing.T) {
 	json.Unmarshal(raw, &result)
 	if !result.IsError {
 		t.Error("expected isError=true for unknown server")
+	}
+}
+
+// startProxyServer starts mini in proxy mode and returns an mcpClient.
+func startProxyServer(t *testing.T, configDir string) *mcpClient {
+	t.Helper()
+	cmd := exec.Command(miniBin, "--config", configDir, "proxy", "--log-level", "error")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stdin.Close()
+		cmd.Process.Kill() //nolint:errcheck
+		cmd.Wait()         //nolint:errcheck
+	})
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 4<<20), 4<<20)
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	go c.readLoop(scanner)
+	c.mustCall("initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	})
+	return c
+}
+
+// TestProxy_initialize verifies that proxy mode responds to initialize and
+// returns config and read in tools/list.
+func TestProxy_initialize(t *testing.T) {
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	raw := startProxyServer(t, cfg).mustCall("tools/list", nil)
+	var result struct {
+		Tools []struct{ Name string `json:"name"` } `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	names := make(map[string]bool)
+	for _, tool := range result.Tools {
+		names[tool.Name] = true
+	}
+	for _, want := range []string{"config", "read", "github__list_pull_requests"} {
+		if !names[want] {
+			t.Errorf("proxy tools/list missing %q, got: %v", want, names)
+		}
+	}
+	for _, absent := range []string{"list", "call", "perm_call"} {
+		if names[absent] {
+			t.Errorf("proxy tools/list should not expose standard tool %q", absent)
+		}
+	}
+}
+
+// TestProxy_callUpstreamTool verifies that a proxy-mode tool call routes
+// correctly to the upstream and returns a result.
+func TestProxy_callUpstreamTool(t *testing.T) {
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	client := startProxyServer(t, cfg)
+	raw := client.mustCall("tools/call", map[string]any{
+		"name":      "github__list_pull_requests",
+		"arguments": map[string]any{},
+	})
+	text, isErr := parseToolCallResult(raw)
+	if isErr {
+		t.Fatalf("expected success, got error: %s", text)
+	}
+	if text == "" {
+		t.Error("expected non-empty response from proxy tool call")
+	}
+}
+
+// TestServe_unreachableUpstreamDoesNotExit verifies that mini serve continues
+// running when an upstream fails to connect at startup. Previously os.Exit(1)
+// was called, which prevented startup when any server was unavailable.
+func TestServe_unreachableUpstreamDoesNotExit(t *testing.T) {
+	cfg := t.TempDir()
+	// Valid upstream (will connect) + unreachable HTTP upstream
+	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeServerConfig(t, cfg, "dead",
+		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n") // nothing listening
+	client := startServer(t, cfg)
+	// Should still serve list/call for the working upstream
+	text := client.listTools("github")
+	if !strings.Contains(text, "list_pull_requests") {
+		t.Errorf("expected github tools after partial startup failure, got: %q", text)
+	}
+}
+
+// TestProxy_unreachableUpstreamDoesNotExit is the proxy-mode equivalent.
+func TestProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeServerConfig(t, cfg, "dead",
+		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n")
+	client := startProxyServer(t, cfg)
+	raw := client.mustCall("tools/list", nil)
+	var result struct {
+		Tools []struct{ Name string `json:"name"` } `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, tool := range result.Tools {
+		if tool.Name == "github__list_pull_requests" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("expected github tools in proxy mode after partial startup failure")
 	}
 }
 

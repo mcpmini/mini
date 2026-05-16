@@ -15,20 +15,22 @@ func serve(handler *mcpHandler) {
 	enc := json.NewEncoder(os.Stdout)
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 16<<20), 16<<20)
-
 	for scanner.Scan() {
-		var req transport.Request
-		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
-			continue
-		}
-		if req.ID == nil {
-			continue // notification — no response
-		}
-		result := handler.dispatch(req)
-		if err := writeResult(enc, result); err != nil {
+		if err := serveRequest(enc, handler, scanner.Bytes()); err != nil {
 			return
 		}
 	}
+}
+
+func serveRequest(enc *json.Encoder, handler *mcpHandler, line []byte) error {
+	var req transport.Request
+	if err := json.Unmarshal(line, &req); err != nil {
+		return nil
+	}
+	if req.ID == nil {
+		return nil
+	}
+	return writeResult(enc, handler.dispatch(req))
 }
 
 func writeResult(enc *json.Encoder, result dispatchResult) error {

@@ -346,3 +346,35 @@ func TestHTTPServer_SSEXAccelBuffering(t *testing.T) {
 		t.Errorf("expected X-Accel-Buffering: no, got %q", v)
 	}
 }
+
+func TestHTTPServer_BodyLimitRejected(t *testing.T) {
+	_, ts := newHTTPTestServer(t)
+	// 1MB + 1 byte — just over the limit
+	oversized := make([]byte, 1<<20+1)
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(oversized))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	// Should be 200 with a JSON-RPC error body (not 413, by design)
+	var body map[string]any
+	json.NewDecoder(resp.Body).Decode(&body) //nolint:errcheck
+	if body["error"] == nil {
+		t.Errorf("expected JSON-RPC error for oversized body, got: %v", body)
+	}
+}
+
+func TestHTTPServer_CrossOriginRejected(t *testing.T) {
+	_, ts := newHTTPTestServer(t)
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(initRequest()))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "http://evil.example.com")
+	resp, err := ts.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	mustStatus(t, resp, http.StatusForbidden)
+}

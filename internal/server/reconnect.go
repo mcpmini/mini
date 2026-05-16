@@ -11,18 +11,25 @@ func (s *Server) reconnectLoop(u *upstreamServer) {
 	defer u.reconnecting.Store(false)
 	backoff := time.Second
 	for {
-		t := s.clock.NewTimer(backoff)
-		select {
-		case <-u.ctx.Done():
-			t.Stop()
+		if !s.sleepBackoff(u, backoff) {
 			return
-		case <-t.C():
 		}
 		s.logger.Info("reconnecting upstream", "server", u.cfg.Name, "backoff", backoff)
 		if s.tryReconnect(u) {
 			return
 		}
 		backoff = nextBackoff(backoff)
+	}
+}
+
+func (s *Server) sleepBackoff(u *upstreamServer, d time.Duration) bool {
+	t := s.clock.NewTimer(d)
+	select {
+	case <-u.ctx.Done():
+		t.Stop()
+		return false
+	case <-t.C():
+		return true
 	}
 }
 
@@ -43,36 +50,43 @@ func (s *Server) tryReconnect(u *upstreamServer) bool {
 }
 
 func (s *Server) dialAndList(u *upstreamServer) (transport.Connection, []transport.ToolDefinition, error) {
-	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
-	conn, err := dialUpstream(ctx, s.logger, s.cfg, u.cfg)
-	cancel()
+	conn, err := s.dialForReconnect(u)
 	if err != nil {
-		s.logger.Warn("reconnect failed", "server", u.cfg.Name, "err", err)
 		return nil, nil, err
 	}
-	listCtx, listCancel := context.WithTimeout(u.ctx, 15*time.Second)
-	tools, err := conn.ListTools(listCtx)
-	listCancel()
+	tools, err := s.listToolsForReconnect(u, conn)
 	if err != nil {
-		conn.Close()
-		s.logger.Warn("reconnect list tools failed", "server", u.cfg.Name, "err", err)
 		return nil, nil, err
 	}
 	return conn, tools, nil
 }
 
-func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []transport.ToolDefinition) bool {
-	u.mu.Lock()
-	select {
-	case <-u.ctx.Done():
-		u.mu.Unlock()
-		conn.Close()
-		return false
-	default:
+func (s *Server) dialForReconnect(u *upstreamServer) (transport.Connection, error) {
+	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
+	conn, err := dialUpstream(ctx, s.logger, s.cfg, u.cfg)
+	cancel()
+	if err != nil {
+		s.logger.Warn("reconnect failed", "server", u.cfg.Name, "err", err)
 	}
-	old, hook := u.conn, u.onReconnect
-	u.conn = conn
-	u.mu.Unlock()
+	return conn, err
+}
+
+func (s *Server) listToolsForReconnect(u *upstreamServer, conn transport.Connection) ([]transport.ToolDefinition, error) {
+	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
+	tools, err := conn.ListTools(ctx)
+	cancel()
+	if err != nil {
+		conn.Close()
+		s.logger.Warn("reconnect list tools failed", "server", u.cfg.Name, "err", err)
+	}
+	return tools, err
+}
+
+func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []transport.ToolDefinition) bool {
+	old, hook, ok := swapReconnectConn(u, conn)
+	if !ok {
+		return false
+	}
 	if old != nil {
 		old.Close()
 	}
@@ -82,4 +96,18 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 		hook()
 	}
 	return true
+}
+
+func swapReconnectConn(u *upstreamServer, conn transport.Connection) (transport.Connection, func(), bool) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	select {
+	case <-u.ctx.Done():
+		conn.Close()
+		return nil, nil, false
+	default:
+	}
+	old, hook := u.conn, u.onReconnect
+	u.conn = conn
+	return old, hook, true
 }

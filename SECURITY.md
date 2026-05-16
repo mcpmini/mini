@@ -88,6 +88,8 @@ Response files written to `~/.mini/responses/` use:
 - `0600` file permissions
 - Timestamp-based filenames (e.g. `20060102150405123.json`). Names are not cryptographically random, but the `0700` directory permission limits access to the owning user, so unguessable names are not required.
 
+The `read` tool (proxy mode) validates requested paths using `filepath.EvalSymlinks` before checking they are within the response directory. Symlinks inside the store that point outside it are rejected — a symlink escape would allow reading arbitrary files accessible to the process user.
+
 
 ## Permission tiers
 

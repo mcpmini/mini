@@ -43,17 +43,29 @@ func parseFlags() (fakeOpts, error) {
 	flag.Parse()
 	faults := &FaultRegistry{}
 	tools := newToolRegistry(*callLog)
-	if *fixturesDir != "" {
-		tools.LoadFixtures(*fixturesDir)
-	}
-	if *initialFault != "" {
-		var f Fault
-		if err := json.Unmarshal([]byte(*initialFault), &f); err != nil {
-			return fakeOpts{}, fmt.Errorf("--initial-fault: %w", err)
-		}
-		faults.Set(f)
+	loadFixtures(tools, *fixturesDir)
+	if err := setInitialFault(faults, *initialFault); err != nil {
+		return fakeOpts{}, err
 	}
 	return fakeOpts{tools: tools, faults: faults}, nil
+}
+
+func loadFixtures(tools *ToolRegistry, fixturesDir string) {
+	if fixturesDir != "" {
+		tools.LoadFixtures(fixturesDir)
+	}
+}
+
+func setInitialFault(faults *FaultRegistry, raw string) error {
+	if raw == "" {
+		return nil
+	}
+	var f Fault
+	if err := json.Unmarshal([]byte(raw), &f); err != nil {
+		return fmt.Errorf("--initial-fault: %w", err)
+	}
+	faults.Set(f)
+	return nil
 }
 
 func main() {

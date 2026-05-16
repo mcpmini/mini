@@ -35,15 +35,22 @@ func main() {
 	issues := collect(dirs)
 	hasError := false
 	for _, iss := range issues {
-		level, threshold := "WARNING", warnAt
 		if iss.isError {
-			level, threshold, hasError = "ERROR", errorAt, true
+			hasError = true
 		}
-		fmt.Printf("%s %s:%d: %s is %d lines (>= %d)\n", level, iss.path, iss.line, iss.name, iss.lines, threshold)
+		printIssue(iss)
 	}
 	if hasError {
 		os.Exit(1)
 	}
+}
+
+func printIssue(iss issue) {
+	level, threshold := "WARNING", warnAt
+	if iss.isError {
+		level, threshold = "ERROR", errorAt
+	}
+	fmt.Printf("%s %s:%d: %s is %d lines (>= %d)\n", level, iss.path, iss.line, iss.name, iss.lines, threshold)
 }
 
 func collect(dirs []string) []issue {
@@ -87,6 +94,10 @@ func checkFile(path string, fset *token.FileSet) []issue {
 	if err != nil {
 		return nil
 	}
+	return collectFuncIssues(f, fset)
+}
+
+func collectFuncIssues(f *ast.File, fset *token.FileSet) []issue {
 	var issues []issue
 	ast.Inspect(f, func(n ast.Node) bool {
 		fd, ok := n.(*ast.FuncDecl)

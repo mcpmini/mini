@@ -22,9 +22,6 @@ func Run(port int, sessionID string, in io.Reader, out io.Writer) error {
 }
 
 func runWithLimit(port int, sessionID string, in io.Reader, out io.Writer, limit int) error {
-	if limit < 1 {
-		limit = 1
-	}
 	// No client-level timeout: tool deadlines are enforced by the daemon's
 	// per-call context (ToolTimeout). A fixed timeout here would break any
 	// tool configured with tool_timeout longer than the hard-coded value.
@@ -32,27 +29,25 @@ func runWithLimit(port int, sessionID string, in io.Reader, out io.Writer, limit
 	scanner := transport.NewScanner(in)
 	var outMu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, limit)
+	sem := make(chan struct{}, max(1, limit))
 	for scanner.Scan() {
-		line := copyLine(scanner.Bytes())
-		if line == nil {
-			continue
-		}
-		sem <- struct{}{}
-		wg.Add(1)
-		go forwardAsync(forwardAsyncParams{client: client, port: port, sessionID: sessionID, line: line, out: out, mu: &outMu, wg: &wg, sem: sem})
+		startForward(client, scanner.Bytes(), forwardAsyncParams{
+			port: port, sessionID: sessionID, out: out, mu: &outMu, wg: &wg, sem: sem,
+		})
 	}
 	wg.Wait()
 	return scanner.Err()
 }
 
-func copyLine(line []byte) []byte {
+func startForward(client *http.Client, line []byte, p forwardAsyncParams) {
 	if len(line) == 0 {
-		return nil
+		return
 	}
-	cp := make([]byte, len(line))
-	copy(cp, line)
-	return cp
+	p.line = bytes.Clone(line)
+	p.client = client
+	p.sem <- struct{}{}
+	p.wg.Add(1)
+	go forwardAsync(p)
 }
 
 type forwardAsyncParams struct {
@@ -79,20 +74,30 @@ func forwardAsync(p forwardAsyncParams) {
 }
 
 func forward(client *http.Client, port int, sessionID string, body []byte) []byte {
-	url := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)) //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
+	req, err := newDaemonRequest(port, sessionID, body)
 	if err != nil {
 		return nil
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", sessionID)
-
 	resp, err := client.Do(req)
 	if err != nil {
 		return daemonErrorResponse(body, "daemon unreachable: "+err.Error())
 	}
 	defer resp.Body.Close()
+	return readForwardResponse(resp)
+}
 
+func newDaemonRequest(port int, sessionID string, body []byte) (*http.Request, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)) //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Mcp-Session-Id", sessionID)
+	return req, nil
+}
+
+func readForwardResponse(resp *http.Response) []byte {
 	if resp.StatusCode == http.StatusAccepted {
 		return nil // notification — no response expected
 	}
@@ -100,18 +105,24 @@ func forward(client *http.Client, port int, sessionID string, body []byte) []byt
 	return bytes.TrimSpace(result)
 }
 
+type requestID struct {
+	ID      json.RawMessage `json:"id"`
+	JSONRPC string          `json:"jsonrpc"`
+}
+
 func daemonErrorResponse(body []byte, msg string) []byte {
-	var req struct {
-		ID   json.RawMessage `json:"id"`
-		JSONRPC string `json:"jsonrpc"`
-	}
+	var req requestID
 	json.Unmarshal(body, &req) //nolint:errcheck
 	if req.ID == nil || req.JSONRPC == "" {
 		return nil // notification — no id to reply to
 	}
+	return marshalErrorResponse(req.ID, msg)
+}
+
+func marshalErrorResponse(id json.RawMessage, msg string) []byte {
 	resp := map[string]any{
 		"jsonrpc": "2.0",
-		"id":      req.ID,
+		"id":      id,
 		"error":   map[string]any{"code": -32603, "message": msg},
 	}
 	b, _ := json.Marshal(resp)

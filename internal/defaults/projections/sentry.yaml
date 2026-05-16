@@ -1,17 +1,16 @@
 list_issues:
-  include: [id, title, culprit, level, status, platform, project, firstSeen, lastSeen, count, userCount, isUnhandled, assignedTo]
+  include: [id, title, culprit, level, status, platform, project, metadata, firstSeen, lastSeen, count, userCount, isUnhandled, assignedTo, permalink, numComments]
   array_limits:
     default: 25
   depth_limit: 2
-  exclude_always: [metadata, pluginActions, pluginContexts, pluginIssues, seenBy, statusDetails, subscriptionDetails, userReport, annotations, permalink, shareId, logger, type, isPublic, hasSeen, isSubscribed, isBookmarked, numComments]
   string_limits:
-    message: 300
+    message: 1000
 
 get_issue_details:
   depth_limit: 3
-  exclude_always: [metadata, pluginActions, pluginContexts, pluginIssues, seenBy, userReport, annotations]
+  exclude_always: [pluginActions, pluginContexts, pluginIssues, seenBy, userReport, annotations]
   string_limits:
-    message: 1000
+    message: 5000
 
 list_events:
   include: [id, eventID, message, platform, dateCreated, level, tags, user]
@@ -34,4 +33,4 @@ list_organizations:
 
 "*":
   depth_limit: 3
-  auto_strip_threshold: 300
+  auto_strip_threshold: 500

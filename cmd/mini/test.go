@@ -26,11 +26,17 @@ func runTest(configDir string, args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	timeout := fs.Duration("timeout", 30*time.Second, "per-upstream connect timeout")
 	fs.Parse(args)
+	ctx := context.Background()
+	srv, enabled := buildTestServer(ctx, configDir)
+	defer srv.Close()
+	printTestResults(checkUpstreams(ctx, srv, enabled, *timeout))
+}
+
+func buildTestServer(ctx context.Context, configDir string) (*server.Server, []config.ServerConfig) {
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
-	ctx := context.Background()
 	injectOAuthTokens(ctx, configDir, servers)
 	enabled := enabledServers(servers)
 	if len(enabled) == 0 {
@@ -38,10 +44,7 @@ func runTest(configDir string, args []string) {
 		os.Exit(0)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.NewWithConfigDir(cfg, configDir, logger)
-	defer srv.Close()
-	results := checkUpstreams(ctx, srv, enabled, *timeout)
-	printTestResults(results)
+	return server.NewWithConfigDir(cfg, configDir, logger), enabled
 }
 
 func enabledServers(servers []config.ServerConfig) []config.ServerConfig {
@@ -75,25 +78,41 @@ func probeUpstream(ctx context.Context, srv *server.Server, sc config.ServerConf
 	return r
 }
 
-func printTestResults(results []upstreamResult) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	passed, failed := 0, 0
+func countResults(results []upstreamResult) (passed, failed int) {
 	for _, r := range results {
-		t := r.transport
-		if t == "" {
-			t = "stdio"
-		}
 		if r.err != nil {
-			fmt.Fprintf(w, "FAIL\t%s\t%s\t%v\n", r.name, t, r.err)
 			failed++
 		} else {
-			fmt.Fprintf(w, "PASS\t%s\t%s\t%d tools\t(%s)\n", r.name, t, r.tools, r.elapsed.Round(time.Millisecond))
 			passed++
 		}
 	}
+	return
+}
+
+func printTestResults(results []upstreamResult) {
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	for _, r := range results {
+		writeTestRow(w, r)
+	}
 	w.Flush()
+	passed, failed := countResults(results)
 	fmt.Printf("\n%d passed, %d failed\n", passed, failed)
 	if failed > 0 {
 		os.Exit(1)
 	}
+}
+
+func writeTestRow(w *tabwriter.Writer, r upstreamResult) {
+	if r.err != nil {
+		fmt.Fprintf(w, "FAIL\t%s\t%s\t%v\n", r.name, displayTransport(r.transport), r.err)
+	} else {
+		fmt.Fprintf(w, "PASS\t%s\t%s\t%d tools\t(%s)\n", r.name, displayTransport(r.transport), r.tools, r.elapsed.Round(time.Millisecond))
+	}
+}
+
+func displayTransport(transport string) string {
+	if transport == "" {
+		return "stdio"
+	}
+	return transport
 }

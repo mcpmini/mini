@@ -61,8 +61,8 @@
     "assignedTo": {
       "type": "user",
       "id": "200001",
-      "name": "alice",
-      "email": "alice@acme.example.com"
+      "name": "user_alpha",
+      "email": "user-alpha@acme.example.com"
     },
     "isSubscribed": true,
     "isShared": false,
@@ -298,14 +298,14 @@
       {
         "type": "user",
         "id": "200001",
-        "name": "alice",
-        "email": "alice@acme.example.com"
+        "name": "user_alpha",
+        "email": "user-alpha@acme.example.com"
       },
       {
         "type": "user",
         "id": "200002",
-        "name": "bob",
-        "email": "bob@acme.example.com"
+        "name": "user_beta",
+        "email": "user-beta@acme.example.com"
       }
     ],
     "activity": [
@@ -313,7 +313,7 @@
         "type": "note",
         "user": {
           "id": "200002",
-          "name": "bob"
+          "name": "user_beta"
         },
         "dateCreated": "2026-03-15T00:15:00Z",
         "data": {
@@ -388,8 +388,8 @@
     "assignedTo": {
       "type": "user",
       "id": "200002",
-      "name": "bob",
-      "email": "bob@acme.example.com"
+      "name": "user_beta",
+      "email": "user-beta@acme.example.com"
     },
     "isSubscribed": true,
     "isShared": false,
@@ -617,7 +617,7 @@
       {
         "type": "user",
         "id": "200002",
-        "name": "bob"
+        "name": "user_beta"
       }
     ],
     "activity": [],
@@ -688,8 +688,8 @@
     "assignedTo": {
       "type": "user",
       "id": "200002",
-      "name": "bob",
-      "email": "bob@acme.example.com"
+      "name": "user_beta",
+      "email": "user-beta@acme.example.com"
     },
     "isSubscribed": true,
     "isShared": false,
@@ -921,7 +921,7 @@
         "type": "set_resolved",
         "user": {
           "id": "200002",
-          "name": "bob"
+          "name": "user_beta"
         },
         "dateCreated": "2026-03-15T08:15:00Z",
         "data": {
@@ -992,8 +992,8 @@
     "assignedTo": {
       "type": "user",
       "id": "200004",
-      "name": "diana",
-      "email": "diana@acme.example.com"
+      "name": "user_delta",
+      "email": "user-delta@acme.example.com"
     },
     "isSubscribed": false,
     "isShared": false,
@@ -1286,8 +1286,8 @@
     "assignedTo": {
       "type": "user",
       "id": "200003",
-      "name": "charlie",
-      "email": "charlie@acme.example.com"
+      "name": "user_gamma",
+      "email": "user-gamma@acme.example.com"
     },
     "isSubscribed": false,
     "isShared": false,

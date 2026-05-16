@@ -33,6 +33,14 @@ func Invoke(ctx context.Context, p InvokeParams) (*InvokeResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	env, err := buildEnvelopeFromParams(raw, p)
+	if err != nil {
+		return nil, err
+	}
+	return &InvokeResult{Envelope: env, LatencyMs: latencyMs}, nil
+}
+
+func buildEnvelopeFromParams(raw json.RawMessage, p InvokeParams) (*response.Envelope, error) {
 	env, _, err := BuildEnvelope(BuildEnvelopeParams{
 		Server:   p.Server,
 		Tool:     p.Tool,
@@ -41,10 +49,7 @@ func Invoke(ctx context.Context, p InvokeParams) (*InvokeResult, error) {
 		ProjDefs: p.ProjDefs,
 		Builder:  p.Builder,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return &InvokeResult{Envelope: env, LatencyMs: latencyMs}, nil
+	return env, err
 }
 
 func InvokeRaw(ctx context.Context, conn transport.Connection, tool string, params map[string]any) (json.RawMessage, int64, error) {
@@ -77,7 +82,11 @@ func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, response.CallStat
 		return nil, response.CallStats{}, fmt.Errorf("parse upstream response: %w", err)
 	}
 	result := projection.Apply(value, p.ProjCfg, p.ProjDefs)
-	env, stats, err := p.Builder.Build(response.BuildParams{
+	return p.Builder.Build(buildResponseParams(p, result))
+}
+
+func buildResponseParams(p BuildEnvelopeParams, result projection.Result) response.BuildParams {
+	return response.BuildParams{
 		Server:      p.Server,
 		Tool:        p.Tool,
 		Raw:         p.Raw,
@@ -85,8 +94,7 @@ func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, response.CallStat
 		Elided:      result.ElidedKeys,
 		Truncated:   result.Truncated,
 		Passthrough: result.Passthrough,
-	})
-	return env, stats, err
+	}
 }
 
 func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {

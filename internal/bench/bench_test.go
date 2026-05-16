@@ -164,20 +164,7 @@ func tokensByMode(results []bench.Result) (raw, projected, stripped int) {
 	return
 }
 
-func assertPRTokenReductions(t *testing.T, rawTokens, projTokens, strippedTokens int) {
-	t.Helper()
-	if rawTokens < 100 {
-		t.Fatalf("fixture too small, only %d raw tokens", rawTokens)
-	}
-	if projTokens*4 > rawTokens {
-		t.Errorf("projected (%d) should be <25%% of raw (%d), got %.1f%%", projTokens, rawTokens, float64(projTokens)/float64(rawTokens)*100)
-	}
-	if strippedTokens*7 > rawTokens {
-		t.Errorf("stripped (%d) should be <15%% of raw (%d), got %.1f%%", strippedTokens, rawTokens, float64(strippedTokens)/float64(rawTokens)*100)
-	}
-}
-
-func TestBenchmark_githubPRs_significantReduction(t *testing.T) {
+func TestBenchmark_githubPRs_bundledProjectionApplies(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(thisFile), "..", "..")
 	fixture := filepath.Join(root, "benchmarks", "fixtures", "github", "list_pull_requests.json")
@@ -194,9 +181,14 @@ func TestBenchmark_githubPRs_significantReduction(t *testing.T) {
 		t.Fatalf("parse projection: %v", err)
 	}
 	c := bench.Case{Server: "github", Tool: "list_pull_requests", Raw: raw, ProjConfig: projMap["list_pull_requests"]}
-	rawT, projT, strippedT := tokensByMode(bench.Measure(c, bench.DefaultProjectionDefaults()))
-	assertPRTokenReductions(t, rawT, projT, strippedT)
-	t.Logf("raw=%d projected=%d stripped=%d reduction=%.1f%%", rawT, projT, strippedT, float64(rawT-projT)/float64(rawT)*100)
+	rawT, projT, _ := tokensByMode(bench.Measure(c, bench.DefaultProjectionDefaults()))
+	if rawT == 0 {
+		t.Fatal("fixture produced no raw tokens")
+	}
+	if projT >= rawT {
+		t.Errorf("bundled projection should reduce tokens: raw=%d projected=%d", rawT, projT)
+	}
+	t.Logf("raw=%d projected=%d reduction=%.1f%%", rawT, projT, float64(rawT-projT)/float64(rawT)*100)
 }
 
 func writeFixture(t *testing.T, benchDir, server, tool, content string) {

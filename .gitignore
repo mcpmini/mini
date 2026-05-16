@@ -5,8 +5,12 @@
 /funclen
 /params
 /returns
+/run-eval
 test_escape
 *.test
+
+# eval results
+evals/results/
 
 # review and audit artifacts
 *-review-*.md

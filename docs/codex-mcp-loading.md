@@ -2,126 +2,142 @@
 
 ## Overview
 
-Codex takes the opposite approach to Claude Code: **all MCP tools are loaded upfront at initialization** with full schemas sent to the model before any conversation begins. A built-in `tool_search` tool then lets the model surface relevant tools from the already-loaded catalog using fuzzy (BM25) search, with matched tools returned as lightweight deferred references for subsequent use.
+Codex uses a **threshold-based strategy** controlled by a single constant:
+
+- **Under 100 tools** (or `search_tool` disabled): all schemas sent eagerly upfront, no
+  deferred loading
+- **100+ tools** with `search_tool` enabled: a small pinned set is sent eagerly; everything
+  else is deferred and discoverable only via a client-side BM25 `tool_search` tool
 
 ---
 
-## Startup: full upfront load
+## Startup: tool list fetch
 
-During initialization, Codex calls `tools/list` for every configured MCP server and fetches the complete tool list with pagination. All tools are converted into `ResponsesApiTool` objects for the OpenAI Responses API and added to the initial request with `defer_loading` unset — every schema is included in full.
+Codex calls `tools/list` for every configured MCP server at init with pagination, collecting
+all schemas into a `HashMap<String, ToolInfo>` keyed by qualified name
+(`mcp__<server>__<tool>`). Names exceeding length limits are truncated and suffixed with a
+SHA1 hash for uniqueness.
 
-The `codex_apps` server is a special case: its tool list is cached per-user to avoid re-fetching on every startup.
+---
 
-The `ResponsesApiTool` struct has a `defer_loading` field that serializes only when explicitly set to `true`. For the initial load, it remains `None` (absent), so every tool's full schema goes into context:
+## Threshold split
+
+[`mcp_tool_exposure.rs`](https://github.com/openai/codex/blob/d34bc6646/codex-rs/core/src/mcp_tool_exposure.rs)
 
 ```rust
-// Source: codex-rs/core/src/client_common.rs
-pub struct ResponsesApiTool {
-    pub(crate) name: String,
-    pub(crate) description: String,
-    pub(crate) strict: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) defer_loading: Option<bool>,
-    pub(crate) parameters: JsonSchema,
+pub(crate) const DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD: usize = 100;
+
+pub(crate) fn build_mcp_tool_exposure(...) -> McpToolExposure {
+    // collect all non-codex-apps tools (third-party MCP servers)
+    let mut deferred_tools = filter_non_codex_apps_mcp_tools_only(all_mcp_tools);
+    // also add any codex-apps connector tools
+    if let Some(connectors) = connectors {
+        deferred_tools.extend(filter_codex_apps_mcp_tools(...));
+    }
+
+    // below threshold or search disabled → everything is direct
+    if !tools_config.search_tool || deferred_tools.len() < DIRECT_MCP_TOOL_EXPOSURE_THRESHOLD {
+        return McpToolExposure { direct_tools: deferred_tools, deferred_tools: None };
+    }
+
+    // above threshold → only explicitly enabled connectors are direct
+    let direct_tools = filter_codex_apps_mcp_tools(all_mcp_tools, explicitly_enabled_connectors, config);
+    McpToolExposure { direct_tools, deferred_tools: Some(deferred_tools) }
 }
 ```
 
-→ [permalink](https://github.com/openai/codex/blob/d34bc6646/codex-rs/core/src/client_common.rs#L275-L287)
+Key detail: the `explicitly_enabled_connectors` for the direct set are Codex's own
+first-party connectors ("codex apps"), not arbitrary third-party MCP servers. In practice,
+most third-party MCP server tools end up in the deferred bucket when the threshold is hit.
 
 ---
 
-## Tool name format
+## Wiring into the API call
 
-MCP tools are presented to the model with a qualified name (`mcp_connection_manager.rs`):
+[`tool_registry_plan.rs`](https://github.com/openai/codex/blob/d34bc6646/codex-rs/tools/src/tool_registry_plan.rs)
 
-- Standard format: `mcp__<server_name>__<tool_name>` (double-underscore delimiter)
-- Exception: `codex_apps` server tools use bare names without the `mcp__` prefix
-- Names are sanitized to `^[a-zA-Z0-9_-]+$`
-- Names that exceed the length limit are truncated and suffixed with a SHA1 hash for uniqueness
-
-→ [permalink](https://github.com/openai/codex/blob/d34bc6646/codex-rs/core/src/mcp_connection_manager.rs#L155-L199)
-
----
-
-## Tool spec assembly
-
-All MCP tools are added to the initial tool list using `mcp_tool_to_openai_tool()`, which sets `defer_loading: None`:
+**Direct tools** (lines 473–492) — converted with `mcp_tool_to_responses_api_tool()`, pushed
+as full tool specs (no `defer_loading`), available to the model immediately:
 
 ```rust
-// Source: codex-rs/core/src/tools/spec.rs
-if let Some(mcp_tools) = mcp_tools {
-    for (name, tool) in entries {
-        match mcp_tool_to_openai_tool(name.clone(), tool.clone()) {
-            Ok(converted_tool) => {
-                push_tool_spec(&mut builder, ToolSpec::Function(converted_tool), ...);
-                builder.register_handler(name, mcp_handler.clone());
-            }
-        }
+match mcp_tool_to_responses_api_tool(name.clone(), tool) {
+    Ok(converted_tool) => {
+        plan.push_spec(ToolSpec::Function(converted_tool), ...);
+        plan.register_handler(name, ToolHandlerKind::Mcp);
     }
 }
 ```
 
-→ [permalink](https://github.com/openai/codex/blob/d34bc6646/codex-rs/core/src/tools/spec.rs#L3042-L3062)
+**Deferred tools** (lines 251–280) — NOT pushed as specs. Instead, a `tool_search` spec is
+added, and each deferred tool is registered as a handler (so it can be called once
+discovered):
+
+```rust
+if config.search_tool && let Some(deferred_mcp_tools) = params.deferred_mcp_tools {
+    plan.push_spec(create_tool_search_tool(&search_source_infos, ...), ...);
+    plan.register_handler(TOOL_SEARCH_TOOL_NAME, ToolHandlerKind::ToolSearch);
+
+    for tool in deferred_mcp_tools {
+        // handler registered but NO spec pushed — tool invisible to model until searched
+        plan.register_handler(
+            ToolName::namespaced(tool.tool_namespace, tool.tool_name),
+            ToolHandlerKind::Mcp,
+        );
+    }
+}
+```
 
 ---
 
 ## Tool search: client-side BM25
 
-Codex ships a built-in `tool_search` tool that implements client-side fuzzy matching over the pre-loaded catalog. When the model calls it:
+[`tool_search.rs`](https://github.com/openai/codex/blob/d34bc6646/codex-rs/core/src/tools/handlers/tool_search.rs)
+·
+[`tool_discovery.rs`](https://github.com/openai/codex/blob/d34bc6646/codex-rs/tools/src/tool_discovery.rs)
 
-1. The handler holds a `HashMap` of all pre-loaded MCP tools in memory
-2. BM25 scoring runs against tool names, descriptions, and parameter names/descriptions
-3. Results are grouped by namespace (server prefix) and returned to the model
+At startup a `SearchEngine<usize>` (BM25, English) is built over all deferred tools. Each
+tool's corpus document is:
 
-The critical detail: results from `tool_search` are serialized using `mcp_tool_to_deferred_openai_tool()` — a separate converter that sets `defer_loading: Some(true)`:
-
-```rust
-// Source: codex-rs/core/src/tools/spec.rs
-pub(crate) fn mcp_tool_to_deferred_openai_tool(
-    name: String,
-    tool: rmcp::model::Tool,
-) -> Result<ResponsesApiTool, serde_json::Error> {
-    Ok(ResponsesApiTool {
-        defer_loading: Some(true),  // deferred reference
-        parameters: input_schema,
-        output_schema: None,        // no output schema for deferred refs
-        ...
-    })
-}
+```
+qualified_name + callable_name + server_name + title + description +
+connector_name + connector_description + plugin_display_names +
+input_schema property names
 ```
 
-→ [permalink](https://github.com/openai/codex/blob/d34bc6646/codex-rs/core/src/tools/spec.rs#L2334-L2364)
+When the model calls `tool_search`:
 
-→ [tool_search handler](https://github.com/openai/codex/blob/d34bc6646/codex-rs/core/src/tools/handlers/tool_search.rs)
+1. BM25 runs in-process (no round-trip, no API call)
+2. Results are grouped by server namespace
+3. Each matched tool is returned via `mcp_tool_to_deferred_responses_api_tool()` which sets
+   `defer_loading: Some(true)` — the OpenAI Responses API then expands those schemas inline
+   for the next model turn, making the tools callable
 
-The OpenAI Responses API then expands these `defer_loading: true` references back into full schema definitions before the model uses the tool. The model gets a lightweight ref back from search, then the full schema is injected inline on use.
+Default result limit: 8. The `computer-use` server gets a special carve-out (limit 20,
+and if it appears in results the search re-runs at the higher limit).
 
 ---
 
-## Two-phase deferral
+## Tool name format
 
-Codex's approach is two-phase:
-
-1. **Phase 1 — full upfront load**: all schemas arrive in context at the start of every session
-2. **Phase 2 — search returns deferred refs**: when the model calls `tool_search`, results come back as `defer_loading: true` references rather than re-emitting the full schema again
-
-Phase 2 optimizes *subsequent turns* (the model doesn't repeat full schema text in its responses), but Phase 1 means the initial context cost is always the sum of all schemas. The catalog is always fully in context; search doesn't reduce it.
+- Third-party MCP servers: `mcp__<server_name>__<tool_name>` (double-underscore)
+- `codex_apps` server (first-party connectors): bare tool names, no `mcp__` prefix
+- Names sanitized to `^[a-zA-Z0-9_-]+$`; over-length names truncated + SHA1 suffixed
 
 ---
 
 ## Context window impact
 
-With 200 MCP tools at typical schema sizes:
+| Setup | Upfront schema cost | Per-search cost |
+|---|---|---|
+| < 100 tools | Full schemas for all tools | n/a |
+| ≥ 100 tools, search enabled | Full schemas for pinned connectors only; deferred tools: names announced, schemas withheld | ~100 tokens (query) + ~200–2000 per schema expanded on discovery |
 
-| | Cost |
-|---|---|
-| Upfront schema cost | ~40,000–80,000 tokens (all schemas, all servers) |
-| Per-`tool_search` call | ~100–300 tokens (search query + deferred refs returned) |
-| Prompt cache | Initial list is cacheable; any change to the tool set busts the cache |
+Prompt cache: the initial tool list is stable and cacheable per session, but adding or
+removing a server busts the cache.
 
-For small tool sets (< 20 tools), the upfront load is negligible. For large multi-server setups, the initial context cost is the dominant expense, and `tool_search` does not reduce it — the model already has all schemas when it runs a search.
-
-**What this optimizes**: accuracy and latency on individual tool calls. The model can inspect any schema without a round-trip because everything is already present. **What it does not fix**: the same as Claude Code — raw MCP responses arrive with no trimming or projection, so large API responses land in context in full.
+**What this does not fix**: MCP tool *responses*. Large upstream API payloads (lists of
+issues, PR diffs, etc.) arrive in context unmodified regardless of whether schemas were
+deferred.
 
 ---
 
@@ -129,9 +145,10 @@ For small tool sets (< 20 tools), the upfront load is negligible. For large mult
 
 | Aspect | Codex | Claude Code |
 |---|---|---|
-| Schema loading | All upfront at init | Deferred by default (names only in context) |
-| Upfront schema cost | High — full schemas for all tools | Near-zero — names/descriptions only |
+| Default schema loading | Eager (< 100 tools) / threshold-deferred (≥ 100) | Always deferred |
+| Upfront schema cost | Zero to full depending on count | Near-zero (names/descriptions only) |
 | Search mechanism | Client-side BM25 in Rust | Client-side keyword/select in TypeScript |
-| Search result format | `defer_loading: true` references (OpenAI Responses API) | `tool_reference` blocks (Anthropic API) |
-| Prompt cache | Cacheable but busted by tool set changes | Preserved — deferred tools outside system prompt prefix |
+| Search result format | `defer_loading: true` refs (OpenAI Responses API) | `tool_reference` blocks (Anthropic API) |
+| Deferred tools visible upfront | No — not in spec list at all | Yes — names announced, schemas withheld |
+| Prompt cache | Busted by tool set changes | Preserved — deferred tools outside system prompt prefix |
 | Response trimming | None | None |

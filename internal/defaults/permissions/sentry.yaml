@@ -1,0 +1,12 @@
+protected:
+  # Write operations — resolving, assigning, and noting issues happen regularly
+  - resolve_issue
+  - update_issue
+  - assign_issue
+  - ignore_issue
+  - create_note
+
+hidden:
+  # Project/org management — admin-level, very infrequent in agent workflows
+  - create_project
+  - delete_project

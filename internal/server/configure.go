@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -52,6 +53,13 @@ func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams,
 		return s.addServerRuntime(ctx, p)
 	case "remove_server":
 		return s.removeServerRuntime(p.ServerName)
+	default:
+		return s.dispatchConfigureAuthAction(p)
+	}
+}
+
+func (s *Server) dispatchConfigureAuthAction(p configureParams) (any, error) {
+	switch p.Action {
 	case "start_auth":
 		return s.handleStartAuth(p.ServerName)
 	case "auth_status":
@@ -84,25 +92,36 @@ func (s *Server) setSessionProjection(session *Session, p configureParams) any {
 }
 
 func (s *Server) setServerProjection(p configureParams) (any, error) {
-	s.mu.Lock()
-	if s.projections[p.ServerName] == nil {
-		s.projections[p.ServerName] = make(map[string]*config.ProjectionConfig)
-	}
-	prev := s.projections[p.ServerName][p.Tool]
-	s.projections[p.ServerName][p.Tool] = p.Projection
-	s.mu.Unlock()
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 
-	if err := s.persistProjections(p.ServerName); err != nil {
-		s.mu.Lock()
-		if prev != nil {
-			s.projections[p.ServerName][p.Tool] = prev
-		} else {
-			delete(s.projections[p.ServerName], p.Tool)
-		}
-		s.mu.Unlock()
+	prev := s.storeServerProjection(p.ServerName, p.Tool, p.Projection)
+	if err := s.persistProjectionsLocked(p.ServerName); err != nil {
+		s.restoreServerProjection(p.ServerName, p.Tool, prev)
 		return nil, fmt.Errorf("set_projection: persistence failed: %w", err)
 	}
 	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, p.Tool)}, nil
+}
+
+func (s *Server) storeServerProjection(serverName, tool string, projection *config.ProjectionConfig) *config.ProjectionConfig {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.projections[serverName] == nil {
+		s.projections[serverName] = make(map[string]*config.ProjectionConfig)
+	}
+	prev := s.projections[serverName][tool]
+	s.projections[serverName][tool] = projection
+	return prev
+}
+
+func (s *Server) restoreServerProjection(serverName, tool string, prev *config.ProjectionConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if prev != nil {
+		s.projections[serverName][tool] = prev
+		return
+	}
+	delete(s.projections[serverName], tool)
 }
 
 func (s *Server) reloadProjections() (any, error) {
@@ -116,14 +135,22 @@ func (s *Server) reloadProjections() (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reload projections: %w", err)
 	}
+	s.replaceProjections(projections)
+	return map[string]any{"ok": true, "loaded": projectionCounts(projections)}, nil
+}
+
+func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig) {
 	s.mu.Lock()
 	s.projections = projections
 	s.mu.Unlock()
+}
+
+func projectionCounts(projections map[string]map[string]*config.ProjectionConfig) map[string]int {
 	counts := make(map[string]int, len(projections))
-	for srv, tools := range projections {
-		counts[srv] = len(tools)
+	for serverName, tools := range projections {
+		counts[serverName] = len(tools)
 	}
-	return map[string]any{"ok": true, "loaded": counts}, nil
+	return counts
 }
 
 func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, error) {
@@ -145,24 +172,30 @@ func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, 
 func (s *Server) validateRuntimeTransport(sc *config.ServerConfig) error {
 	switch sc.Transport {
 	case "http", "sse", "streamable":
-		// Strip agent-supplied credentials to prevent exfiltration via SSRF.
-		sc.Auth = nil
-		sc.Headers = nil
-		if s.cfg.DangerousAllowPrivateURLs {
-			return nil
-		}
-		if err := transport.ValidateURL(sc.URL); err != nil {
-			return fmt.Errorf("add_server: %w", err)
-		}
-		return nil
+		return s.validateRuntimeHTTPTransport(sc)
 	default:
-		if !s.cfg.DangerousAllowRuntimeStdio {
-			return fmt.Errorf("add_server only supports http/sse/streamable transports at runtime; set dangerous_allow_runtime_stdio: true to enable stdio")
-		}
-		// Strip agent-supplied env to prevent injecting credentials into subprocesses.
-		sc.Env = nil
+		return s.validateRuntimeStdioTransport(sc)
+	}
+}
+
+func (s *Server) validateRuntimeHTTPTransport(sc *config.ServerConfig) error {
+	sc.Auth = nil
+	sc.Headers = nil
+	if s.cfg.DangerousAllowPrivateURLs {
 		return nil
 	}
+	if err := transport.ValidateURL(sc.URL); err != nil {
+		return fmt.Errorf("add_server: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) validateRuntimeStdioTransport(sc *config.ServerConfig) error {
+	if !s.cfg.DangerousAllowRuntimeStdio {
+		return fmt.Errorf("add_server only supports http/sse/streamable transports at runtime; set dangerous_allow_runtime_stdio: true to enable stdio")
+	}
+	sc.Env = nil
+	return nil
 }
 
 func (s *Server) removeServerRuntime(serverName string) (any, error) {
@@ -172,22 +205,24 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 	if !config.ValidServerName.MatchString(serverName) {
 		return nil, fmt.Errorf("invalid server name: %q", serverName)
 	}
-	s.mu.Lock()
-	u, ok := s.upstreams[serverName]
-	if ok {
-		delete(s.upstreams, serverName)
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	s.removeGen[serverName]++
+	if u := s.detachUpstream(serverName); u != nil {
+		u.shutdownAndClose()
 	}
-	s.mu.Unlock()
-	if ok {
-		u.shutdown()
-		u.mu.Lock()
-		u.conn.Close()
-		u.mu.Unlock()
-	}
-
 	s.sessions.closeServerConnections(serverName)
 	s.reg.RemoveServer(serverName)
 	return map[string]any{"ok": true, "server": serverName}, nil
+}
+
+func (s *Server) detachUpstream(serverName string) *upstreamServer {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := s.upstreams[serverName]
+	delete(s.upstreams, serverName)
+	delete(s.projections, serverName)
+	return u
 }
 
 func (s *Server) statusReport() map[string]any {
@@ -202,47 +237,59 @@ func (s *Server) statusReport() map[string]any {
 }
 
 func (s *Server) collectStatusData() (map[string]any, map[string][]string) {
+	upstreamsCopy, projInfo := s.snapshotStatusInputs()
+	return buildServerStatus(upstreamsCopy, s.reg), projInfo
+}
+
+func (s *Server) snapshotStatusInputs() (map[string]*upstreamServer, map[string][]string) {
 	s.mu.RLock()
+	defer s.mu.RUnlock()
 	upstreamsCopy := make(map[string]*upstreamServer, len(s.upstreams))
 	for name, u := range s.upstreams {
 		upstreamsCopy[name] = u
 	}
+	return upstreamsCopy, snapshotProjectionNames(s.projections)
+}
+
+func snapshotProjectionNames(projections map[string]map[string]*config.ProjectionConfig) map[string][]string {
 	projInfo := make(map[string][]string)
-	for srv, tools := range s.projections {
+	for srv, tools := range projections {
 		names := make([]string, 0, len(tools))
 		for t := range tools {
 			names = append(names, t)
 		}
 		projInfo[srv] = names
 	}
-	s.mu.RUnlock()
-
-	servers := make(map[string]any, len(upstreamsCopy))
-	for name, u := range upstreamsCopy {
-		info := u.stats()
-		info["tools"] = s.reg.ToolCount(name)
-		servers[name] = info
-	}
-	return servers, projInfo
+	return projInfo
 }
 
-func (s *Server) persistProjections(serverName string) error {
+func buildServerStatus(upstreams map[string]*upstreamServer, reg *registry.Registry) map[string]any {
+	servers := make(map[string]any, len(upstreams))
+	for name, u := range upstreams {
+		info := u.stats()
+		info["tools"] = reg.ToolCount(name)
+		servers[name] = info
+	}
+	return servers
+}
+
+func (s *Server) persistProjectionsLocked(serverName string) error {
 	if !config.ValidServerName.MatchString(serverName) {
 		return fmt.Errorf("invalid server name: %q", serverName)
 	}
-
-	s.mu.RLock()
-	b, err := yaml.Marshal(s.projections[serverName])
-	s.mu.RUnlock()
+	b, err := s.marshalServerProjections(serverName)
 	if err != nil {
 		return err
 	}
-
 	dir := filepath.Join(s.configDir, "projections")
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, serverName+".yaml"), b, 0600)
+}
+
+func (s *Server) marshalServerProjections(serverName string) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return yaml.Marshal(s.projections[serverName])
 }

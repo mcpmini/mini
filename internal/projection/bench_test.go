@@ -2,12 +2,6 @@
 
 package projection_test
 
-// Baseline (Apple M4 Pro, 2026-03-31 — flag regressions at 2x these numbers):
-//   BenchmarkApply/1KB-14              765 ns/op    2009 B/op    22 allocs/op
-//   BenchmarkApply/10KB-14             769 ns/op    2009 B/op    22 allocs/op  (array_limit=3 clamps output)
-//   BenchmarkApply/100KB-14        258045 ns/op   17456 B/op    34 allocs/op
-//   BenchmarkApply_stripContent-14 103256 ns/op  161694 B/op   810 allocs/op
-
 import (
 	"strings"
 	"testing"

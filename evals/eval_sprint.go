@@ -35,11 +35,7 @@ func assertSprintResult(result EvalResult) []error {
 
 func assertSprintRun(label string, run ClaudeResult) []error {
 	var errs []error
-	add := func(err error) {
-		if err != nil {
-			errs = append(errs, fmt.Errorf("[%s] %w", label, err))
-		}
-	}
+	add := labeledAdder(label, &errs)
 	if run.Err != nil {
 		add(fmt.Errorf("run failed: %w (logs: %s)", run.Err, run.CallLogDir))
 		return errs

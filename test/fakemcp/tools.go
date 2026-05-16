@@ -40,18 +40,25 @@ func (r *ToolRegistry) LoadFixtures(dir string) {
 		return
 	}
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || strings.HasSuffix(e.Name(), ".schema.json") {
+		if !isFixtureEntry(e) {
 			continue
 		}
-		name := strings.TrimSuffix(e.Name(), ".json")
-		path := filepath.Join(dir, e.Name())
-		schema := loadSchema(filepath.Join(dir, name+".schema.json"))
-		if isWriteOpFile(path) {
-			r.Add(Tool{Name: name, Description: schemaDescription(schema, name), InputSchema: schema, WriteOp: true})
-		} else {
-			r.Add(Tool{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, FixturePath: path})
-		}
+		r.Add(buildFixtureTool(dir, e.Name()))
 	}
+}
+
+func isFixtureEntry(e os.DirEntry) bool {
+	return !e.IsDir() && strings.HasSuffix(e.Name(), ".json") && !strings.HasSuffix(e.Name(), ".schema.json")
+}
+
+func buildFixtureTool(dir, filename string) Tool {
+	name := strings.TrimSuffix(filename, ".json")
+	path := filepath.Join(dir, filename)
+	schema := loadSchema(filepath.Join(dir, name+".schema.json"))
+	if isWriteOpFile(path) {
+		return Tool{Name: name, Description: schemaDescription(schema, name), InputSchema: schema, WriteOp: true}
+	}
+	return Tool{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, FixturePath: path}
 }
 
 // loadSchema reads a .schema.json file and returns the inputSchema field, or nil.
@@ -167,18 +174,29 @@ func (r *ToolRegistry) callFixture(path string, args map[string]any, sizeBytes i
 	if err != nil {
 		return errResult("read fixture: " + err.Error())
 	}
+	if mcpErr := probeFixtureError(data); mcpErr != "" {
+		return errResult(mcpErr)
+	}
+	data = mergeArgs(data, args)
+	content := padContent(string(data), sizeBytes)
+	return transport.ToolCallResult{Content: []transport.ContentItem{{Type: "text", Text: content}}}
+}
+
+func probeFixtureError(data []byte) string {
 	var probe struct {
 		MCPError string `json:"__mcp_error"`
 	}
-	if json.Unmarshal(data, &probe) == nil && probe.MCPError != "" {
-		return errResult(probe.MCPError)
+	if json.Unmarshal(data, &probe) == nil {
+		return probe.MCPError
 	}
-	data = mergeArgs(data, args)
-	content := string(data)
+	return ""
+}
+
+func padContent(content string, sizeBytes int) string {
 	if sizeBytes > 0 && len(content) < sizeBytes {
-		content = content + strings.Repeat("x", sizeBytes-len(content))
+		return content + strings.Repeat("x", sizeBytes-len(content))
 	}
-	return transport.ToolCallResult{Content: []transport.ContentItem{{Type: "text", Text: content}}}
+	return content
 }
 
 func syntheticWriteResult(toolName string, args map[string]any) transport.ToolCallResult {
@@ -201,16 +219,20 @@ func mergeArgs(fixture []byte, args map[string]any) []byte {
 	if json.Unmarshal(fixture, &obj) != nil {
 		return fixture // not a JSON object
 	}
-	for k, v := range args {
-		if _, exists := obj[k]; exists {
-			obj[k] = v
-		}
-	}
+	mergeExistingArgs(obj, args)
 	merged, err := json.Marshal(obj)
 	if err != nil {
 		return fixture
 	}
 	return merged
+}
+
+func mergeExistingArgs(dst, args map[string]any) {
+	for k, v := range args {
+		if _, exists := dst[k]; exists {
+			dst[k] = v
+		}
+	}
 }
 
 func errResult(msg string) transport.ToolCallResult {

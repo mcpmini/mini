@@ -33,13 +33,8 @@ type StoreConfig struct {
 }
 
 func NewStore(cfg StoreConfig) (*Store, error) {
-	if err := os.MkdirAll(cfg.Dir, 0700); err != nil {
-		return nil, fmt.Errorf("create response dir: %w", err)
-	}
-	// Enforce 0700 even if dir already existed with looser permissions
-	// (e.g. response_dir overridden to a world-readable location like /tmp).
-	if err := os.Chmod(cfg.Dir, 0700); err != nil {
-		return nil, fmt.Errorf("secure response dir: %w", err)
+	if err := secureDir(cfg.Dir); err != nil {
+		return nil, err
 	}
 	s := &Store{
 		dir:         cfg.Dir,
@@ -50,6 +45,18 @@ func NewStore(cfg StoreConfig) (*Store, error) {
 	s.loadExisting()
 	go s.cleanupLoop(cfg.CleanupInterval)
 	return s, nil
+}
+
+// secureDir creates dir and enforces 0700 even if it already existed with looser
+// permissions (e.g. response_dir overridden to a world-readable location like /tmp).
+func secureDir(dir string) error {
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("create response dir: %w", err)
+	}
+	if err := os.Chmod(dir, 0700); err != nil {
+		return fmt.Errorf("secure response dir: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Close() {

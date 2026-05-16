@@ -31,7 +31,7 @@ func DetectContentType(s string) ContentType {
 }
 
 var (
-	htmlTagPattern = regexp.MustCompile(`(?i)^<[a-z][a-z0-9]*[\s>/]`)
+	htmlTagPattern  = regexp.MustCompile(`(?i)^<[a-z][a-z0-9]*[\s>/]`)
 	markdownPattern = regexp.MustCompile(`(?m)^#{1,6} |^\* |\*\*|__|\[.+\]\(.+\)|` + "```" + `|^- \[[ x]\]|^\|`)
 )
 
@@ -104,17 +104,8 @@ func processStartTag(tokenizer *html.Tokenizer, sb *strings.Builder, tt html.Tok
 	rawName, hasAttr := tokenizer.TagName()
 	name := string(rawName)
 	isSelfClose := tt == html.SelfClosingTagToken
-	if skipDepth == 0 && skipTags[name] {
-		if !isSelfClose {
-			return 1
-		}
-		return 0
-	}
-	if skipDepth > 0 {
-		if !isSelfClose {
-			return skipDepth + 1
-		}
-		return skipDepth
+	if nextDepth, handled := nextSkipDepth(name, isSelfClose, skipDepth); handled {
+		return nextDepth
 	}
 	if blockTags[name] {
 		sb.WriteByte('\n')
@@ -123,6 +114,22 @@ func processStartTag(tokenizer *html.Tokenizer, sb *strings.Builder, tt html.Tok
 		writeImgAlt(tokenizer, sb)
 	}
 	return 0
+}
+
+func nextSkipDepth(name string, isSelfClose bool, skipDepth int) (int, bool) {
+	if skipDepth > 0 {
+		if isSelfClose {
+			return skipDepth, true
+		}
+		return skipDepth + 1, true
+	}
+	if !skipTags[name] {
+		return 0, false
+	}
+	if isSelfClose {
+		return 0, true
+	}
+	return 1, true
 }
 
 func writeImgAlt(tokenizer *html.Tokenizer, sb *strings.Builder) {

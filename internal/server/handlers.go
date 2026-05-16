@@ -49,15 +49,19 @@ func (s *Server) handleList(_ context.Context, raw json.RawMessage) (any, error)
 	case p.Tool != "" && p.Detail:
 		return s.listDetail(p.Tool)
 	case p.Hidden:
-		if s.cfg.DisableListHidden {
-			return nil, fmt.Errorf("listing hidden tools is disabled by server configuration (disable_list_hidden: true)")
-		}
-		return s.reg.AllWithHidden(), nil
+		return s.listHidden()
 	case p.Query != "":
 		return s.reg.Search(p.Query), nil
 	default:
 		return s.reg.All(), nil
 	}
+}
+
+func (s *Server) listHidden() (any, error) {
+	if s.cfg.DisableListHidden {
+		return nil, fmt.Errorf("listing hidden tools is disabled by server configuration (disable_list_hidden: true)")
+	}
+	return s.reg.AllWithHidden(), nil
 }
 
 func (s *Server) listDetail(fullName string) (any, error) {
@@ -75,14 +79,7 @@ func (s *Server) listDetail(fullName string) (any, error) {
 }
 
 func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
-	var p executeParams
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, fmt.Errorf("invalid params: %w", err)
-	}
-	if err := validateExecuteParams(p); err != nil {
-		return nil, err
-	}
-	entry, err := s.reg.Lookup(toolFullName(p.Server, p.Tool))
+	p, entry, err := s.resolveExecute(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -95,20 +92,27 @@ func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session
 	return s.callUpstream(ctx, p, entry, session)
 }
 
-func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
+func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.ToolEntry, error) {
 	var p executeParams
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, fmt.Errorf("invalid params: %w", err)
+		return executeParams{}, nil, fmt.Errorf("invalid params: %w", err)
 	}
 	if err := validateExecuteParams(p); err != nil {
-		return nil, err
+		return executeParams{}, nil, err
 	}
 	entry, err := s.reg.Lookup(toolFullName(p.Server, p.Tool))
 	if err != nil {
+		return executeParams{}, nil, err
+	}
+	return p, entry, nil
+}
+
+func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
+	p, entry, err := s.resolveExecute(raw)
+	if err != nil {
 		return nil, err
 	}
-	// Allow: explicitly protected tools, or open tools with no projection coverage.
-	// The latter lets agents acknowledge the raw-response risk without a full config change.
+	// Open tools with no projection coverage can also use perm_call to opt into raw responses.
 	if entry.Permission != config.PermProtected && s.hasProjectionCoverage(p.Server, p.Tool, session) {
 		return nil, fmt.Errorf("tool %q is not protected — use call instead", entry.FullName)
 	}
@@ -140,11 +144,7 @@ func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *regis
 		session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
-	result, err := s.buildEnvelope(server, tool, raw, session, upstream, latencyMs)
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
+	return s.buildEnvelope(server, tool, raw, session, upstream, latencyMs)
 }
 
 func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool string, params map[string]any) {
@@ -158,21 +158,28 @@ func (s *Server) dispatchRaw(ctx context.Context, upstream *upstreamServer, tool
 	ctx, cancel := applyToolTimeout(ctx, upstream.cfg.ToolTimeout)
 	defer cancel()
 	start := time.Now()
-	var raw json.RawMessage
-	var err error
-	if upstream.cfg.SessionMode == config.SessionModePerSession {
-		raw, err = s.callPerSession(ctx, upstream, tool, params, session)
-	} else {
-		raw, err = upstream.callTool(ctx, tool, params)
-		if err != nil && isConnError(err) && upstream.reconnecting.CompareAndSwap(false, true) {
-			s.reconnectWg.Add(1)
-			go func() {
-				defer s.reconnectWg.Done()
-				s.reconnectLoop(upstream)
-			}()
-		}
-	}
+	raw, err := s.dispatchRawCall(ctx, upstream, tool, params, session)
 	return raw, time.Since(start).Milliseconds(), err
+}
+
+func (s *Server) dispatchRawCall(ctx context.Context, upstream *upstreamServer, tool string, params map[string]any, session *Session) (json.RawMessage, error) {
+	if upstream.cfg.SessionMode == config.SessionModePerSession {
+		return s.callPerSession(ctx, upstream, tool, params, session)
+	}
+	raw, err := upstream.callTool(ctx, tool, params)
+	s.maybeReconnect(upstream, err)
+	return raw, err
+}
+
+func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
+	if err == nil || !isConnError(err) || !upstream.reconnecting.CompareAndSwap(false, true) {
+		return
+	}
+	s.reconnectWg.Add(1)
+	go func() {
+		defer s.reconnectWg.Done()
+		s.reconnectLoop(upstream)
+	}()
 }
 
 func (s *Server) callPerSession(ctx context.Context, upstream *upstreamServer, tool string, params map[string]any, session *Session) (json.RawMessage, error) {
@@ -183,18 +190,26 @@ func (s *Server) callPerSession(ctx context.Context, upstream *upstreamServer, t
 	args, _ := json.Marshal(transport.ToolCallParams{Name: tool, Arguments: params})
 	raw, err := conn.Call(ctx, "tools/call", args)
 	if err != nil {
-		var rpcErr *transport.RPCError
-		if errors.As(err, &rpcErr) {
-			return nil, err
-		}
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return nil, err
-		}
-		session.RemoveConn(upstream.cfg.Name)
-		return nil, connError{err}
+		return nil, s.handleSessionConnErr(upstream, session, conn, err)
 	}
 	result, toolErr := invoke.ExtractContent(raw)
 	return result, toolErr
+}
+
+func (s *Server) handleSessionConnErr(upstream *upstreamServer, session *Session, conn transport.Connection, err error) error {
+	var rpcErr *transport.RPCError
+	if errors.As(err, &rpcErr) {
+		return err
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return err
+	}
+	// EvictConn removes only if this conn is still the active one (identity
+	// check), then we close it ourselves. This prevents a concurrent
+	// goroutine's close from racing with our in-flight call.
+	session.EvictConn(upstream.cfg.Name, conn)
+	conn.Close()
+	return connError{err}
 }
 
 func (s *Server) getOrDialSessionConn(ctx context.Context, upstream *upstreamServer, session *Session) (transport.Connection, error) {
@@ -207,12 +222,16 @@ func (s *Server) getOrDialSessionConn(ctx context.Context, upstream *upstreamSer
 	if err != nil {
 		return nil, err
 	}
-	if !s.isUpstreamRegistered(upstream.cfg.Name) {
-		session.RemoveConn(upstream.cfg.Name)
-		conn.Close()
-		return nil, fmt.Errorf("server %q removed during dial", upstream.cfg.Name)
+	return s.checkDialedConn(upstream.cfg.Name, conn, session)
+}
+
+func (s *Server) checkDialedConn(name string, conn transport.Connection, session *Session) (transport.Connection, error) {
+	if s.isUpstreamRegistered(name) {
+		return conn, nil
 	}
-	return conn, nil
+	session.RemoveConn(name)
+	conn.Close()
+	return nil, fmt.Errorf("server %q removed during dial", name)
 }
 
 func (s *Server) dialPerSessionConn(ctx context.Context, upstream *upstreamServer, session *Session) (transport.Connection, error) {
@@ -255,10 +274,7 @@ func (s *Server) buildEnvelope(server, tool string, raw json.RawMessage, session
 		return nil, err
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
-	if saved > 0 {
-		upstream.estTokensSaved.Add(saved)
-	}
-	session.recordCall(latencyMs, saved, false)
+	upstream.recordSaved(session, latencyMs, saved)
 	return s.formatEnvelope(server, tool, env, projCfg), nil
 }
 

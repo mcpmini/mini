@@ -85,9 +85,9 @@ var writeOpMappings = map[string]map[string]any{
 	"create_repository": {
 		"id": "$id", "name": "$.name", "full_name": "agent/${name}",
 		"description": "$.description", "private": "$.private",
-		"html_url":  "https://github.com/agent/${name}",
-		"clone_url": "https://github.com/agent/${name}.git",
-		"ssh_url":   "git@github.com:agent/${name}.git",
+		"html_url":   "https://github.com/agent/${name}",
+		"clone_url":  "https://github.com/agent/${name}.git",
+		"ssh_url":    "git@github.com:agent/${name}.git",
 		"created_at": "$now", "updated_at": "$now",
 	},
 	"fork_repository": {
@@ -95,7 +95,7 @@ var writeOpMappings = map[string]map[string]any{
 		"full_name": "${organization}/${repo}",
 		"html_url":  "https://github.com/${organization}/${repo}",
 		"clone_url": "https://github.com/${organization}/${repo}.git",
-		"fork": true, "created_at": "$now",
+		"fork":      true, "created_at": "$now",
 	},
 
 	// ── Jira + Linear + Sentry (shared tool names, superset response) ──────────
@@ -121,17 +121,17 @@ var writeOpMappings = map[string]map[string]any{
 		// id comes from whichever arg is present (issue_key for Jira, issueId for Linear, issue_id for Sentry)
 		"id":      "$id",
 		"key":     "$.issue_key",
-		"updated": true,   // Jira
-		"success": true,   // Linear
+		"updated": true,       // Jira
+		"success": true,       // Linear
 		"status":  "$.status", // Sentry/Jira
 	},
 	"add_comment": {
 		"id": "$id",
 		// Jira uses "comment" arg; Linear uses "body" arg — include both
-		"body":      "$.body",
-		"comment":   "$.comment",
-		"self":      "https://acme.atlassian.net/rest/api/3/issue/PROJ-123/comment/10001",
-		"created":   "$now", "updated": "$now",
+		"body":    "$.body",
+		"comment": "$.comment",
+		"self":    "https://acme.atlassian.net/rest/api/3/issue/PROJ-123/comment/10001",
+		"created": "$now", "updated": "$now",
 		"createdAt": "$now",
 		"issue":     map[string]any{"id": "$.issueId"},
 		"author":    map[string]any{"displayName": "Agent", "emailAddress": "agent@example.com"},
@@ -207,17 +207,8 @@ func resolveValue(v any, args map[string]any) any {
 }
 
 func resolveString(s string, args map[string]any) any {
-	switch s {
-	case "$now":
-		return time.Now().UTC().Format(time.RFC3339)
-	case "$ts":
-		return fmt.Sprintf("%.6f", float64(time.Now().UnixMilli())/1000.0)
-	case "$id":
-		return 10000001
-	case "$sha":
-		return "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
-	case "$uuid":
-		return "4a8d9c2e-1b3f-4e5a-8c7d-2b4f6e8a9c1d"
+	if value, ok := fixedPlaceholderValue(s); ok {
+		return value
 	}
 	if strings.HasPrefix(s, "$.") {
 		return args[s[2:]]
@@ -226,6 +217,23 @@ func resolveString(s string, args map[string]any) any {
 		return interpolate(s, args)
 	}
 	return s
+}
+
+func fixedPlaceholderValue(s string) (any, bool) {
+	switch s {
+	case "$now":
+		return time.Now().UTC().Format(time.RFC3339), true
+	case "$ts":
+		return fmt.Sprintf("%.6f", float64(time.Now().UnixMilli())/1000.0), true
+	case "$id":
+		return 10000001, true
+	case "$sha":
+		return "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0", true
+	case "$uuid":
+		return "4a8d9c2e-1b3f-4e5a-8c7d-2b4f6e8a9c1d", true
+	default:
+		return nil, false
+	}
 }
 
 func interpolate(s string, args map[string]any) string {

@@ -50,24 +50,38 @@ func (s *Store) WritePair(slimData map[string]any, rawJSON []byte) (string, erro
 func (s *Store) openPairWithSlim(base string, slimData map[string]any, slimJSON, rawJSON []byte) (string, error) {
 	const maxAttempts = 200
 	for i := range maxAttempts {
-		b := uniqueBase(base, i)
-		slimPath := filepath.Join(s.dir, b+".json")
-		rawPath := filepath.Join(s.dir, b+".raw.json")
-		finalJSON, err := injectRawPath(slimData, slimJSON, rawPath)
-		if err != nil {
-			return "", err
+		path, done, err := s.tryWritePair(base, i, slimData, slimJSON, rawJSON)
+		if done {
+			return path, err
 		}
-		size, err := s.writePairFiles(slimPath, rawPath, finalJSON, rawJSON)
-		if os.IsExist(err) {
-			continue
-		}
-		if err != nil {
-			return "", err
-		}
-		s.recordPair(slimPath, rawPath, size)
-		return slimPath, nil
 	}
 	return "", fmt.Errorf("write pair: name collision for %s", base)
+}
+
+func (s *Store) tryWritePair(base string, attempt int, slimData map[string]any, slimJSON, rawJSON []byte) (string, bool, error) {
+	slimPath, rawPath := pairPaths(s.dir, base, attempt)
+	finalJSON, err := injectRawPath(slimData, slimJSON, rawPath)
+	if err != nil {
+		return "", true, err
+	}
+	size, err := s.writePairFiles(slimPath, rawPath, finalJSON, rawJSON)
+	if retryPairWrite(err) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", true, err
+	}
+	s.recordPair(slimPath, rawPath, size)
+	return slimPath, true, nil
+}
+
+func pairPaths(dir, base string, attempt int) (string, string) {
+	b := uniqueBase(base, attempt)
+	return filepath.Join(dir, b+".json"), filepath.Join(dir, b+".raw.json")
+}
+
+func retryPairWrite(err error) bool {
+	return os.IsExist(err)
 }
 
 func (s *Store) recordPair(slimPath, rawPath string, size int64) {
@@ -93,25 +107,39 @@ func injectRawPath(slimData map[string]any, slimJSON []byte, rawPath string) ([]
 }
 
 func (s *Store) writePairFiles(slimPath, rawPath string, slimJSON, rawJSON []byte) (int64, error) {
-	f, err := os.OpenFile(slimPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
+	if err := writeSlimFile(slimPath, slimJSON); err != nil {
 		return 0, err
 	}
-	if _, werr := f.Write(slimJSON); werr != nil {
+	if err := writeRawFile(rawPath, rawJSON, slimPath); err != nil {
+		return 0, err
+	}
+	return int64(len(slimJSON) + len(rawJSON)), nil
+}
+
+func writeSlimFile(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err = f.Write(data); err != nil {
 		f.Close() //nolint:errcheck
-		_ = os.Remove(slimPath)
-		return 0, fmt.Errorf("write slim: %w", werr)
+		_ = os.Remove(path)
+		return fmt.Errorf("write slim: %w", err)
 	}
-	if cerr := f.Close(); cerr != nil {
-		_ = os.Remove(slimPath)
-		return 0, fmt.Errorf("close slim: %w", cerr)
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("close slim: %w", err)
 	}
+	return nil
+}
+
+func writeRawFile(rawPath string, rawJSON []byte, slimPath string) error {
 	if err := os.WriteFile(rawPath, rawJSON, 0600); err != nil {
 		os.Remove(slimPath)
 		os.Remove(rawPath)
-		return 0, fmt.Errorf("write raw: %w", err)
+		return fmt.Errorf("write raw: %w", err)
 	}
-	return int64(len(slimJSON) + len(rawJSON)), nil
+	return nil
 }
 
 func prettyJSON(b []byte) []byte {

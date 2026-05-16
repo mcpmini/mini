@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -247,5 +248,65 @@ func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
 
 	if dialCount != baseline+1 {
 		t.Errorf("RPC error should not redial per-session conn: expected %d dials, got %d", baseline+1, dialCount)
+	}
+}
+
+// TestPerSession_transportErrorRedialsConn verifies that a transport-level
+// error (abrupt connection close, not an RPC error) evicts the per-session
+// conn so the next call re-dials instead of reusing a broken connection.
+func TestPerSession_transportErrorRedialsConn(t *testing.T) {
+	var dialCount, closeOnCall, callsSeen atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		id := req["id"]
+		switch req["method"] {
+		case "initialize":
+			dialCount.Add(1)
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+				"result": map[string]any{"protocolVersion": "2024-11-05",
+					"capabilities": map[string]any{"tools": map[string]any{}},
+					"serverInfo":   map[string]any{"name": "fake", "version": "0"}}})
+		case "tools/list":
+			tools := []map[string]any{{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}}}
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}}) //nolint:errcheck
+		case "tools/call":
+			n := callsSeen.Add(1)
+			if c := closeOnCall.Load(); c > 0 && n == c {
+				hj, ok := w.(http.Hijacker)
+				if !ok {
+					t.Error("hijack not supported")
+					return
+				}
+				conn, _, _ := hj.Hijack()
+				conn.Close() // abrupt transport close
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+				"result": map[string]any{"content": []map[string]any{{"type": "text", "text": "pong"}}}})
+		}
+	})
+	upstreamSrv := httptest.NewServer(handler)
+	t.Cleanup(upstreamSrv.Close)
+	ts := httptest.NewServer(newPerSessionSrv(t, upstreamSrv.URL))
+	t.Cleanup(ts.Close)
+
+	sid := "aabbccdd11223344aabbccdd11223344"
+	init, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize",
+		"params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "t", "version": "0"}}})
+	exec, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}}})
+
+	postToMiniHTTP(t, ts, sid, init)
+	postToMiniHTTP(t, ts, sid, exec) // call 1: success, dials per-session conn (dialCount → 1)
+
+	closeOnCall.Store(2)
+	postToMiniHTTP(t, ts, sid, exec) // call 2: transport error → conn evicted
+
+	closeOnCall.Store(0)
+	postToMiniHTTP(t, ts, sid, exec) // call 3: should redial (dialCount → 2)
+
+	if got := dialCount.Load(); got < 2 {
+		t.Errorf("transport error should trigger redial: expected ≥2 dials, got %d", got)
 	}
 }

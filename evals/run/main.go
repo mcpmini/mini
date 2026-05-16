@@ -46,8 +46,10 @@ var registry = []evalEntry{
 }
 
 var validModes = map[string]bool{
-	"direct": true, "mcp-passthrough": true, "mcp-projected": true, "mcp-lines": true,
+	"direct":          true,
+	"mcp-passthrough": true, "mcp-projected": true, "mcp-lines": true,
 	"cli-passthrough": true, "cli-projected": true, "cli-lines": true,
+	"proxy-passthrough": true, "proxy-projected": true, "proxy-lines": true,
 }
 
 func main() {
@@ -59,41 +61,106 @@ func main() {
 	}
 }
 
+type parsedArgs struct {
+	evalArg string
+	modes   []string
+	reps    int
+}
+
 func run(args []string) error {
+	parsed, err := parseArgs(args)
+	if err != nil {
+		return err
+	}
+	label := buildLabel(parsed.evalArg, parsed.modes, parsed.reps)
+	fmt.Printf("▶ %s\n\n", label)
+	resultsFile := setupResultsFile(parsed.evalArg, parsed.modes, label)
+	if resultsFile != nil {
+		defer resultsFile.Close()
+	}
+	runner, toRun, err := setupEvalRun(parsed)
+	if err != nil {
+		return err
+	}
+	return runEvals(context.Background(), runner, toRun, resultsFile)
+}
+
+func parseArgs(args []string) (parsedArgs, error) {
 	if len(args) == 0 {
-		return fmt.Errorf("missing eval name")
+		return parsedArgs{}, fmt.Errorf("missing eval name")
 	}
-	evalArg := args[0]
-	reps := 1
-	var modes []string
+	p := parsedArgs{evalArg: args[0], reps: 1}
 	for i := 1; i < len(args); i++ {
-		switch {
-		case args[i] == "--reps" && i+1 < len(args):
-			n, err := strconv.Atoi(args[i+1])
-			if err != nil || n < 1 {
-				return fmt.Errorf("--reps must be a positive integer, got %q", args[i+1])
-			}
-			reps = n
-			i++
-		case validModes[args[i]]:
-			modes = append(modes, args[i])
-		default:
-			return fmt.Errorf("unknown argument %q", args[i])
+		next, err := parseArg(p, args, i)
+		if err != nil {
+			return parsedArgs{}, err
 		}
+		p = next.parsed
+		i += next.skip
 	}
+	return p, nil
+}
 
-	var toRun []evalEntry
+type parseArgResult struct {
+	parsed parsedArgs
+	skip   int
+}
+
+func parseArg(parsed parsedArgs, args []string, idx int) (parseArgResult, error) {
+	arg := args[idx]
+	switch {
+	case arg == "--reps":
+		n, err := parseRepsArg(args, idx)
+		if err != nil {
+			return parseArgResult{}, err
+		}
+		parsed.reps = n
+		return parseArgResult{parsed: parsed, skip: 1}, nil
+	case validModes[arg]:
+		parsed.modes = append(parsed.modes, arg)
+		return parseArgResult{parsed: parsed}, nil
+	default:
+		return parseArgResult{}, fmt.Errorf("unknown argument %q", arg)
+	}
+}
+
+func parseRepsArg(args []string, idx int) (int, error) {
+	if idx+1 >= len(args) {
+		return 0, fmt.Errorf("--reps requires a value")
+	}
+	n, err := strconv.Atoi(args[idx+1])
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("--reps must be a positive integer, got %q", args[idx+1])
+	}
+	return n, nil
+}
+
+func setupEvalRun(parsed parsedArgs) (*evals.Runner, []evalEntry, error) {
+	toRun, err := resolveEvals(parsed.evalArg)
+	if err != nil {
+		return nil, nil, err
+	}
+	fmt.Println("Building binaries...")
+	runner, err := evals.NewRunner(parseModes(parsed.modes), parsed.reps)
+	if err != nil {
+		return nil, nil, fmt.Errorf("setup: %w", err)
+	}
+	fmt.Println()
+	return runner, toRun, nil
+}
+
+func resolveEvals(evalArg string) ([]evalEntry, error) {
 	if evalArg == "all" {
-		toRun = registry
-	} else {
-		e, ok := findEval(evalArg)
-		if !ok {
-			return fmt.Errorf("unknown eval %q — valid: %s", evalArg, evalNames())
-		}
-		toRun = []evalEntry{e}
+		return registry, nil
 	}
+	e, ok := findEval(evalArg)
+	if !ok {
+		return nil, fmt.Errorf("unknown eval %q — valid: %s", evalArg, evalNames())
+	}
+	return []evalEntry{e}, nil
+}
 
-	modeSet := parseModes(modes)
+func buildLabel(evalArg string, modes []string, reps int) string {
 	label := evalArg
 	if len(modes) > 0 {
 		label += "  [" + strings.Join(modes, ", ") + "]"
@@ -101,52 +168,59 @@ func run(args []string) error {
 	if reps > 1 {
 		label += fmt.Sprintf("  ×%d reps", reps)
 	}
-	fmt.Println("▶", label)
-	fmt.Println()
+	return label
+}
 
-	resultsFile, resultsPath, err := openResultsFile(evalArg, modes)
+func setupResultsFile(evalArg string, modes []string, label string) *os.File {
+	f, path, err := openResultsFile(evalArg, modes)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not open results file: %v\n", err)
-	} else {
-		defer resultsFile.Close()
-		evals.SetOutput(io.MultiWriter(os.Stdout, resultsFile))
-		fmt.Fprintf(resultsFile, "▶ %s\n\n", label)
-		fmt.Printf("Saving results to %s\n\n", resultsPath)
+		return nil
 	}
+	evals.SetOutput(io.MultiWriter(os.Stdout, f))
+	fmt.Fprintf(f, "▶ %s\n\n", label)
+	fmt.Printf("Saving results to %s\n\n", path)
+	return f
+}
 
-	fmt.Println("Building binaries...")
-	r, err := evals.NewRunner(modeSet, reps)
-	if err != nil {
-		return fmt.Errorf("setup: %w", err)
-	}
-	fmt.Println()
-
-	ctx := context.Background()
+func runEvals(ctx context.Context, r *evals.Runner, toRun []evalEntry, resultsFile *os.File) error {
 	failed := false
 	for _, e := range toRun {
 		env := evals.NewEnv()
-		_, errs := e.fn(ctx, r, env)
-		env.Cleanup(len(errs) == 0)
-		if len(errs) > 0 {
-			failed = true
-			fmt.Printf("✗ %s\n", e.name)
-			for _, err := range errs {
-				msg := fmt.Sprintf("  %v\n", err)
-				fmt.Fprint(os.Stderr, msg)
-				if resultsFile != nil {
-					fmt.Fprint(resultsFile, msg)
-				}
-			}
-		} else {
-			fmt.Printf("✓ %s\n", e.name)
-		}
+		errs := runEvalEntry(ctx, r, env, e)
+		failed = reportEvalResult(e.name, errs, resultsFile) || failed
 		fmt.Println()
 	}
-
 	if failed {
 		return fmt.Errorf("one or more evals failed")
 	}
 	return nil
+}
+
+func runEvalEntry(ctx context.Context, r *evals.Runner, env *evals.Env, e evalEntry) []error {
+	_, errs := e.fn(ctx, r, env)
+	env.Cleanup(len(errs) == 0)
+	return errs
+}
+
+func reportEvalResult(name string, errs []error, resultsFile *os.File) bool {
+	if len(errs) == 0 {
+		fmt.Printf("✓ %s\n", name)
+		return false
+	}
+	printEvalErrs(name, errs, resultsFile)
+	return true
+}
+
+func printEvalErrs(name string, errs []error, resultsFile *os.File) {
+	fmt.Printf("✗ %s\n", name)
+	for _, err := range errs {
+		msg := fmt.Sprintf("  %v\n", err)
+		fmt.Fprint(os.Stderr, msg)
+		if resultsFile != nil {
+			fmt.Fprint(resultsFile, msg)
+		}
+	}
 }
 
 func findEval(name string) (evalEntry, bool) {
@@ -186,14 +260,18 @@ func openResultsFile(evalArg string, modes []string) (*os.File, string, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, "", err
 	}
+	path := buildResultsPath(dir, evalArg, modes)
+	f, err := os.Create(path)
+	return f, path, err
+}
+
+func buildResultsPath(dir, evalArg string, modes []string) string {
 	ts := time.Now().Format("20060102-150405")
 	name := evalArg
 	if len(modes) > 0 {
 		name += "-" + strings.Join(modes, "+")
 	}
-	path := filepath.Join(dir, ts+"-"+name+".txt")
-	f, err := os.Create(path)
-	return f, path, err
+	return filepath.Join(dir, ts+"-"+name+".txt")
 }
 
 func usage() string {
@@ -201,5 +279,6 @@ func usage() string {
 
 Evals:  bugfix | review-prs | incident-triage | sprint | baseline
 Modes:  direct | mcp-passthrough | mcp-projected | mcp-lines
-        cli-passthrough | cli-projected | cli-lines`
+        cli-passthrough | cli-projected | cli-lines
+        proxy-passthrough | proxy-projected | proxy-lines`
 }

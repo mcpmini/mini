@@ -16,6 +16,15 @@ func WriteServer(configDir string, sc config.ServerConfig) error {
 	if !config.ValidServerName.MatchString(sc.Name) {
 		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", sc.Name)
 	}
+	if err := writeServerYAML(configDir, sc); err != nil {
+		return err
+	}
+	InstallBundledProjection(configDir, sc)
+	installBundledPermissions(configDir, sc)
+	return nil
+}
+
+func writeServerYAML(configDir string, sc config.ServerConfig) error {
 	dir := filepath.Join(configDir, "servers")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create servers dir: %w", err)
@@ -26,8 +35,6 @@ func WriteServer(configDir string, sc config.ServerConfig) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	fmt.Printf("added %s → %s\n", sc.Name, path)
-	InstallBundledProjection(configDir, sc)
-	installBundledPermissions(configDir, sc)
 	return nil
 }
 

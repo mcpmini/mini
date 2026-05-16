@@ -42,22 +42,30 @@ func (m *MCPMapping) FromFixtureDir(dir string) *MCPMapping {
 		if e.IsDir() {
 			continue
 		}
-		name := e.Name()
-		path := filepath.Join(dir, name)
-		switch {
-		case strings.HasSuffix(name, ".schema.json"):
-			tool := strings.TrimSuffix(name, ".schema.json")
-			if data, err := os.ReadFile(path); err == nil {
-				m.schemas[tool] = data
-			}
-		case strings.HasSuffix(name, ".json"):
-			tool := strings.TrimSuffix(name, ".json")
-			if data, err := os.ReadFile(path); err == nil {
-				m.responses[tool] = data
-			}
-		}
+		m.loadFixtureFile(dir, e.Name())
 	}
 	return m
+}
+
+func (m *MCPMapping) loadFixtureFile(dir, name string) {
+	tool, target := fixtureTarget(m, name)
+	if tool == "" {
+		return
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, name)); err == nil {
+		target[tool] = data
+	}
+}
+
+func fixtureTarget(m *MCPMapping, name string) (string, map[string]json.RawMessage) {
+	switch {
+	case strings.HasSuffix(name, ".schema.json"):
+		return strings.TrimSuffix(name, ".schema.json"), m.schemas
+	case strings.HasSuffix(name, ".json"):
+		return strings.TrimSuffix(name, ".json"), m.responses
+	default:
+		return "", nil
+	}
 }
 
 // WriteOp registers a tool that auto-generates its response from request args.
