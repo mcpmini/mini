@@ -474,6 +474,126 @@ func TestProxy_Call_MiniFormat_PerSessionProxyMode(t *testing.T) {
 	}
 }
 
+func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 100000
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+
+	conn := fakeConn("get_item")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	const sessionID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+	postMCP(t, srv, sessionID, initMsg(true))
+
+	postMCP(t, srv, sessionID, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "config", "arguments": map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "get_item",
+			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+		}},
+	})
+
+	for i := range 3 {
+		resp := postMCP(t, srv, sessionID, map[string]any{
+			"jsonrpc": "2.0", "id": 2 + i, "method": "tools/call",
+			"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+		})
+		res, _ := resp["result"].(map[string]any)
+		content, _ := res["content"].([]any)
+		text, _ := content[0].(map[string]any)["text"].(string)
+		if strings.Contains(text, "topsecret") {
+			t.Errorf("call %d: secret field leaked in response: %s", i+1, text)
+		}
+	}
+}
+
+func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 100000
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+
+	conn := fakeConn("get_item")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	const sessionA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001"
+	const sessionB = "bbbbbbbb-bbbb-bbbb-bbbb-000000000002"
+	postMCP(t, srv, sessionA, initMsg(true))
+	postMCP(t, srv, sessionB, initMsg(true))
+
+	// Only session A gets the projection
+	postMCP(t, srv, sessionA, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "config", "arguments": map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "get_item",
+			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+		}},
+	})
+
+	callItem := func(sid string, id int) string {
+		resp := postMCP(t, srv, sid, map[string]any{
+			"jsonrpc": "2.0", "id": id, "method": "tools/call",
+			"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+		})
+		res, _ := resp["result"].(map[string]any)
+		content, _ := res["content"].([]any)
+		text, _ := content[0].(map[string]any)["text"].(string)
+		return text
+	}
+
+	if strings.Contains(callItem(sessionA, 10), "topsecret") {
+		t.Error("session A: projection should exclude secret")
+	}
+	if !strings.Contains(callItem(sessionB, 11), "topsecret") {
+		t.Error("session B: should see full response (no projection set)")
+	}
+}
+
+func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 100000
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+
+	conn := fakeConn("get_item")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	const sessionID = "cccccccc-cccc-cccc-cccc-000000000003"
+	postMCP(t, srv, sessionID, initMsg(true))
+
+	postMCP(t, srv, sessionID, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "config", "arguments": map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "get_item",
+			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+		}},
+	})
+
+	// Reload server-level projections — should not wipe session projections
+	postMCP(t, srv, sessionID, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": map[string]any{"name": "config", "arguments": map[string]any{"action": "reload"}},
+	})
+
+	resp := postMCP(t, srv, sessionID, map[string]any{
+		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+		"params": map[string]any{"name": "svc__get_item", "arguments": map[string]any{}},
+	})
+	res, _ := resp["result"].(map[string]any)
+	content, _ := res["content"].([]any)
+	text, _ := content[0].(map[string]any)["text"].(string)
+	if strings.Contains(text, "topsecret") {
+		t.Errorf("session projection wiped by reload: %s", text)
+	}
+}
+
 func TestProxy_StandaloneServe_InheritsProxyMode(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
