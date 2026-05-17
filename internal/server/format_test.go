@@ -138,11 +138,11 @@ func TestLinesFormatIncludesSpilledFilePath(t *testing.T) {
 
 func spilledLinesResponse(t *testing.T, payload string) []string {
 	t.Helper()
-	srv := newSrvWithResponse(t, "mini", 10000, payload)
-	// Apply a projection that elides a field, triggering file write.
+	// Use threshold=1 so the raw response always exceeds it, triggering file write.
+	srv := newSrvWithResponse(t, "mini", 1, payload)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"exclude_always": []string{"items"}},
+		"projection": map[string]any{"format": "mini"},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},

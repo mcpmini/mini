@@ -266,10 +266,7 @@ func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
 	if truncated["title"] != nil {
 		t.Errorf("short field should not appear in truncated, got title=%v", truncated["title"])
 	}
-	// file written because projection applied
-	if env["file"] == nil {
-		t.Error("expected file written when truncation applied")
-	}
+	// file is only written when response exceeds inline_threshold, not just because projection applied
 }
 
 func assertHealthStats(t *testing.T, srv *server.Server, svcName string, wantCalls int) {

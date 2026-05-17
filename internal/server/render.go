@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -191,7 +192,10 @@ func formatFloat(f float64) string {
 	if f == 0 {
 		return "-"
 	}
-	return fmt.Sprintf("%v", f)
+	if f == math.Trunc(f) && math.Abs(f) < 1e15 {
+		return fmt.Sprintf("%d", int64(f))
+	}
+	return fmt.Sprintf("%g", f)
 }
 
 func formatString(s string) string {

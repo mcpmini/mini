@@ -30,7 +30,7 @@ func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
 	summaryTokens := EstimateTokens(p.Summary)
 	stats := CallStats{RawTokens: rawTokens, SummaryTokens: summaryTokens}
 	e := newEnvelope(p)
-	if rawTokens > b.threshold || anyProjectionApplied(p) {
+	if rawTokens > b.threshold {
 		if err := b.writeFiles(e, p); err != nil {
 			return nil, stats, err
 		}
@@ -45,11 +45,6 @@ func newEnvelope(p BuildParams) *Envelope {
 		Truncated:   nilIfEmptyIntMap(p.Truncated),
 		Passthrough: nilIfEmptyMap(p.Passthrough),
 	}
-}
-
-// anyProjectionApplied reports whether the response was filtered in any way.
-func anyProjectionApplied(p BuildParams) bool {
-	return len(p.Elided) > 0 || len(p.Truncated) > 0
 }
 
 func (b *Builder) writeFiles(e *Envelope, p BuildParams) error {
