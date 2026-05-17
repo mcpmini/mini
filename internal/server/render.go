@@ -75,7 +75,7 @@ func isScalarValue(v any) bool {
 	}
 }
 
-// Header-then-values layout (mini-style) saves ~30-50% tokens over key:value per line.
+// Header-then-values layout saves tokens vs key:value per line by hoisting field names to a single shared header row.
 func writeItems(b *strings.Builder, items []any) {
 	if headers := uniformKeys(items); headers != nil {
 		writeUniformItems(b, items, headers)

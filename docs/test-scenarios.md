@@ -333,5 +333,5 @@ These don't map directly to user-visible behavior but affect correctness and rel
 | I4 | `cancelAuthFlows` (50%) | Auth goroutine drain — is authWg.Wait() draining correctly after Close()? |
 | I5 | `installUpstreamLocked` (62%) | Inline projections branch — projections embedded in server YAML applied on connect? |
 | I6 | TOCTOU regression | Add test: concurrent add_server + remove_server, verify generation counter makes remove win |
-| I7 | Plain array mini format | Verify mini header-row layout handles all array shapes including non-uniform items |
+| I7 | Plain array mini format | Verify header-row layout handles all array shapes including non-uniform items |
 | I8 | Session eviction | After idle eviction, leaked state? New session truly fresh? |

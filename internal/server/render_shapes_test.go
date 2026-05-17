@@ -16,14 +16,14 @@ func TestMiniFormat_AllArrayShapes(t *testing.T) {
     cases := []struct{
         name     string
         raw      string
-        wantHdr  bool // expect mini header row
+        wantHdr  bool // expect mini format header row
         wantKeys []string
     }{
         {"uniform", `[{"number":1,"state":"open","title":"Bug"},{"number":2,"state":"closed","title":"Feat"}]`,
             true, []string{"number","state","title"}},
         {"non-uniform (diff keys)", `[{"number":1,"title":"Bug","labels":["bug"]},{"number":2,"title":"Feat"}]`,
             false, nil},
-        {"single item (no mini)", `[{"number":1,"title":"Solo","state":"open"}]`,
+        {"single item (no header)", `[{"number":1,"title":"Solo","state":"open"}]`,
             false, nil},
         {"string array", `["alpha","beta","gamma"]`, false, nil},
         {"wrapped map+array", `{"total":3,"items":[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]}`,
@@ -56,7 +56,7 @@ func TestMiniFormat_AllArrayShapes(t *testing.T) {
             if tc.wantHdr {
                 for _, k := range tc.wantKeys {
                     if !strings.Contains(text, k) {
-                        t.Errorf("expected header key %q in mini output: %s", k, text)
+                        t.Errorf("expected header key %q in mini format output: %s", k, text)
                     }
                 }
             }
