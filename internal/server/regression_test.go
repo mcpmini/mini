@@ -320,3 +320,90 @@ func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
 	}
 	t.Errorf("path traversal via '..' was not blocked: %v", resp)
 }
+
+// TestGenerationCounter_RemoveWinsRace verifies the TOCTOU fix for
+// concurrent add_server + remove_server. Before the fix, add_server could
+// complete after remove_server returned ok:true, leaving the server
+// re-registered. The generation counter in removeGen makes add_server
+// detect the concurrent remove and abort.
+func TestGenerationCounter_RemoveWinsRace(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+	ctx := context.Background()
+
+	// dialReady signals that the add goroutine has started dialling (simulated
+	// by AddConnection entering before we fire remove). removeStarted blocks
+	// add until remove has incremented the generation.
+	dialReady := make(chan struct{})
+	removeStarted := make(chan struct{})
+
+	addDone := make(chan error, 1)
+	go func() {
+		slow := &slowFakeConn{
+			FakeConnection: fakeConn("toolA"),
+			ready:          dialReady,
+			block:          removeStarted,
+		}
+		close(dialReady)
+		addDone <- srv.AddConnection(ctx, config.ServerConfig{Name: "racing"}, slow)
+	}()
+
+	<-dialReady
+	// Remove while add is in-flight (generation counter incremented here).
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "remove_server", "server": "racing",
+	}))
+	close(removeStarted) // unblock the slow add
+	<-addDone            // wait for add to finish
+
+	// After remove returned ok, "racing" must NOT be in the registry.
+	resp := serve(t, srv, callTool("list", map[string]any{}))
+	if strings.Contains(toolResultText(t, resp), "racing") {
+		t.Error("remove_server returned ok:true but server is still registered (generation counter not working)")
+	}
+}
+
+type slowFakeConn struct {
+	*transport.FakeConnection
+	ready chan struct{}
+	block chan struct{}
+}
+
+func (c *slowFakeConn) ListTools(ctx context.Context) ([]transport.ToolDefinition, error) {
+	<-c.block // wait until remove has fired
+	return c.FakeConnection.ListTools(ctx)
+}
+
+// TestInlineProjections_AppliedOnAddConnection verifies that projections
+// embedded directly in a ServerConfig (sc.Projections) are installed into
+// s.projections when the server is registered. This is the installUpstreamLocked
+// branch that handles projections embedded in server YAML under projections:.
+func TestInlineProjections_AppliedOnAddConnection(t *testing.T) {
+	srv := newTestServer(t)
+	defer srv.Close()
+
+	conn := fakeConn("get_item")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"name\":\"foo\"}"}]}`)
+
+	projCfg := &config.ProjectionConfig{ExcludeAlways: []string{"secret"}}
+	sc := config.ServerConfig{
+		Name:        "svc",
+		Projections: map[string]*config.ProjectionConfig{"get_item": projCfg},
+	}
+	if err := srv.AddConnection(context.Background(), sc, conn); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "get_item", "params": map[string]any{},
+	}))
+	text := toolResultText(t, resp)
+	t.Logf("inline projection response: %s", text)
+
+	if strings.Contains(text, "hidden") {
+		t.Errorf("inline projection should have excluded 'secret' field, got: %s", text)
+	}
+	if !strings.Contains(text, "foo") {
+		t.Errorf("expected 'name' field to be present, got: %s", text)
+	}
+}

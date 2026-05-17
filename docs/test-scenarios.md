@@ -121,7 +121,7 @@ Behavior-focused. Each scenario is "given this setup, when the user does X, the 
 
 **When:** Agent calls `perm_call(server:"github", tool:"get_authenticated_app")`
 
-**Then:** Succeeds — hidden tools are callable via perm_call when name is known
+**Then:** Error — "tool not found". Hidden tools are completely inaccessible through mini. If the tool is needed, use `protected` instead of `hidden`.
 
 **When:** Agent calls `call(server:"github", tool:"create_pull_request")`
 

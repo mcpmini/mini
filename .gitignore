@@ -35,3 +35,4 @@ security-review-*.md
 # test output
 coverage.out
 unit.out
+.envrc

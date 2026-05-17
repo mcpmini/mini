@@ -175,6 +175,55 @@ func TestLoadExisting_ignoresNonTimestampFiles(t *testing.T) {
 	}
 }
 
+func TestEvictOvershoot_concurrentWritesBudgetEnforced(t *testing.T) {
+	dir := t.TempDir()
+	// Tiny budget: 2 files of ~600KB each = 1.2MB > 1MB budget.
+	// Concurrent writes both pass evictIfNeeded, then evictOvershoot cleans up.
+	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
+	defer s.Close()
+
+	chunk := []byte(`{"data":"` + strings.Repeat("x", 600*1024) + `"}`)
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.WriteRaw(chunk) //nolint:errcheck
+		}()
+	}
+	wg.Wait()
+
+	_, usedBytes := s.Stats()
+	budgetBytes := int64(1 * 1024 * 1024)
+	if usedBytes > budgetBytes {
+		t.Errorf("budget exceeded after concurrent writes: used %d > budget %d", usedBytes, budgetBytes)
+	}
+}
+
+func TestEvictOvershoot_keepsNewestFile(t *testing.T) {
+	dir := t.TempDir()
+	// Budget smaller than a single file — the just-written file must survive.
+	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
+	defer s.Close()
+
+	// Write an initial small file that fits.
+	small := []byte(`{"data":"small"}`)
+	path1, _ := s.WriteRaw(small)
+
+	// Write a file that together with path1 exceeds budget.
+	// evictIfNeeded removes path1 first, then writes large. Verify large is kept.
+	large := []byte(`{"data":"` + strings.Repeat("x", 900*1024) + `"}`)
+	path2, err := s.WriteRaw(large)
+	if err != nil {
+		t.Fatalf("WriteRaw large: %v", err)
+	}
+
+	if _, err := os.Stat(path2); err != nil {
+		t.Error("newest (large) file should be kept even if it exceeds budget alone")
+	}
+	_ = path1
+}
+
 func TestEvictIfNeeded_removesOldestWhenOverBudget(t *testing.T) {
 	dir := t.TempDir()
 	// 1 MB budget — large enough to hold first file, but tight enough that
