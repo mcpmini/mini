@@ -425,6 +425,55 @@ func TestProxy_Call_GlobalMiniFormat_Respected(t *testing.T) {
 	}
 }
 
+func TestProxy_Call_MiniFormat_PerSessionProxyMode(t *testing.T) {
+	// Tests mini format via per-session proxy mode (daemon path: _mini_proxy_mode negotiated
+	// in initialize, not via server-level WithProxyMode). This is the path used in production
+	// when mini proxy connects to the daemon.
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 100000
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil))) // no WithProxyMode
+	defer srv.Close()
+
+	conn := fakeConn("list_items")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"foo\"},{\"id\":2,\"name\":\"bar\"}]"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	const sessionID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+	postMCP(t, srv, sessionID, initMsg(true)) // negotiate proxy mode per-session
+
+	postMCP(t, srv, sessionID, map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{
+			"name": "config",
+			"arguments": map[string]any{
+				"action": "set_projection", "server": "svc", "tool": "list_items",
+				"projection": map[string]any{"format": "mini"}, "session_only": true,
+			},
+		},
+	})
+
+	resp := postMCP(t, srv, sessionID, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": map[string]any{"name": "svc__list_items", "arguments": map[string]any{}},
+	})
+
+	result, _ := resp["result"].(map[string]any)
+	content, _ := result["content"].([]any)
+	if len(content) == 0 {
+		t.Fatal("no content in response")
+	}
+	text, _ := content[0].(map[string]any)["text"].(string)
+	t.Logf("per-session mini format output: %q", text)
+
+	if !strings.Contains(text, "svc.list_items") {
+		t.Errorf("expected [svc.list_items] header in mini format output: %s", text)
+	}
+	if strings.HasPrefix(text, "{") {
+		t.Errorf("expected mini text format, got JSON: %s", text)
+	}
+}
+
 func TestProxy_StandaloneServe_InheritsProxyMode(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
