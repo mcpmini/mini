@@ -1,181 +1,337 @@
-# Test Scenarios
+# mini — Test Scenarios
 
-Critical flows in descending importance. Each scenario is a named unit or integration test that should exist and pass.
-
----
-
-## 1. Proxy mode — tool routing
-
-**Why critical:** The primary production path for Claude Code.
-
-| Scenario | Status |
-|---|---|
-| Upstream tool exposed as `server__tool` in tools/list | ✅ `TestProxy_ToolsList_ContainsMiniTools` |
-| Tool call routes to correct upstream server | ✅ `TestProxy_Call_NoProjection_PassesRawJSON` |
-| Unknown tool returns error | ✅ `TestProxy_UnknownTool_ReturnsError` |
-| Malformed `server__tool` name returns error | ✅ `TestProxy_NoDoubleUnderscore_ReturnsError` |
-| `config` and `read` tools available in proxy mode | ✅ `TestProxy_ToolsList_ContainsMiniTools` |
-| Proxy instructions don't mention `perm_call` | ✅ `TestProxy_Initialize_Instructions` |
+Behavior-focused. Each scenario is "given this setup, when the user does X, the result should be Y." Ordered by importance to real users. Internal/technical investigations are in a separate section at the end.
 
 ---
 
-## 2. Per-session proxy mode (daemon path)
+## S1 — Agent calls upstream tool through proxy (most common flow)
 
-**Why critical:** Production path when `mini proxy` connects to daemon. Different from server-level `WithProxyMode()`.
+**Setup:** `mini proxy` connected to GitHub MCP. Agent is Claude Code.
 
-| Scenario | Status |
-|---|---|
-| `_mini_proxy_mode` in initialize switches session to proxy | ✅ `TestProxy_PerSession_ProxyAndStandardCoexist` |
-| Proxy and standard sessions coexist on same server | ✅ `TestProxy_PerSession_ProxyAndStandardCoexist` |
-| Proxy session gets proxy instructions | ✅ `TestProxy_Initialize_PerSessionInstructions` |
-| Standard session gets standard instructions | ✅ `TestProxy_Initialize_PerSessionInstructions` |
-| Standalone `Serve()` inherits server-level proxyMode | ✅ `TestProxy_StandaloneServe_InheritsProxyMode` |
-| `_mini_proxy_mode` injected into initialize by proxy client | ✅ `TestInjectProxyMode_initialize_addsFlag` |
-| Non-initialize messages not modified by proxy client | ✅ `TestInjectProxyMode_nonInitialize_unchanged` |
+**When:** Agent calls `github__list_pull_requests(owner:"microsoft", repo:"vscode")`
 
----
+**Then:**
+- Response arrives as trimmed JSON — only the configured fields (number, title, state, draft, user, head, base, created_at)
+- Body, avatar_url, node_id, html_url are absent
+- No wrapper envelope — agent sees the data directly, not `{"data": ..., "elided": [...]}`
+- mini is completely invisible to the agent
 
-## 3. Per-session projection — configuration and persistence
+**When:** Agent calls `github__create_pull_request(...)` (write operation, open by default)
 
-**Why critical:** Session projections are the primary way agents customize mini at runtime. Bug here means projections silently don't apply.
+**Then:** Succeeds — proxy mode does not apply the `perm_call` gate
 
-| Scenario | Status |
-|---|---|
-| `set_projection session_only:true` applies format:mini | ✅ `TestProxy_Call_MiniFormat_RendersLines` |
-| `set_projection session_only:true` via per-session daemon path | ✅ `TestProxy_Call_MiniFormat_PerSessionProxyMode` |
-| Session projection field exclusions applied across multiple calls | ❌ missing |
-| Session projection does not affect other sessions | ❌ missing |
-| `set_projection session_only:false` persists to disk | ✅ `TestSetProjection_*` (configure tests) |
-| `reload` does not wipe session-only projections | ❌ missing |
-| Session projection overrides server-level projection | ❌ missing |
-| `set_projection` with `nil` projection clears it | ❌ missing |
+**When:** Mini adds a new upstream server at runtime via `config add_server`
+
+**Then:** Agent immediately receives `notifications/tools/list_changed` and the new tools appear in the next `tools/list`
+
+**When:** Agent calls a tool on a server that was just removed
+
+**Then:** Error returned — "server not connected: X"
 
 ---
 
-## 4. Field projection — trimming correctness
+## S2 — Trimmed response is still too large (file store)
 
-**Why critical:** The core value of mini. Wrong trimming means agents get bad data.
+**Setup:** Proxy mode, GitHub MCP, `inline_threshold: 500` (tokens).
 
-| Scenario | Status |
-|---|---|
-| `exclude_always` removes fields from response | ✅ (projection engine tests) |
-| `include` list keeps only specified fields | ✅ (projection engine tests) |
-| `string_limits` truncates long strings | ✅ (projection engine tests) |
-| `array_limits` caps array length | ✅ (projection engine tests) |
-| Plain array (not wrapped in object) trimmed correctly | ❌ `projectArray` 0% coverage |
-| Wildcard `*` projection applies to all tools on a server | ✅ (server tests) |
-| Elided field names reported in envelope | ✅ (envelope tests) |
-| Projection on nested objects respects depth limit | ✅ (projection engine tests) |
+**When:** Agent calls `github__list_pull_requests` on a busy repo (30+ PRs)
 
----
+**Then:**
+- Response is written to `~/.mini/responses/<timestamp>.json` (slim file)
+- Companion `<timestamp>.raw.json` contains the original upstream response
+- Agent receives: `File: ~/.mini/responses/<timestamp>.json` (proxy format) or `[github.list_pull_requests] file:~/.mini/responses/<timestamp>.json` (mini format)
+- Slim file is valid JSON with `_meta` (field list, count, index) and `items` array
+- Agent can call `read(path:"~/.mini/responses/<timestamp>.json")` and receives slim content
 
-## 5. Response format — proxy mode output tiers
+**When:** Agent calls `read` with a path outside `~/.mini/responses/`
 
-**Why critical:** Four different output paths in `formatProxyEnvelope`; each one changes what agents see.
+**Then:** Rejected with "path must be within mini response directory"
 
-| Scenario | Status |
-|---|---|
-| No projection → raw JSON passthrough | ✅ `TestProxy_Call_NoProjection_PassesRawJSON` |
-| Projection + small response → `[Projected — ...]\n{json}` | ✅ `TestProxy_Call_WithProjection_Small_BracketNote` |
-| Projection + large response → `[Projected — ...]\nFile: /path` | ✅ `TestProxy_Call_WithProjection_Large_FilePath` |
-| Projection + large + nothing elided → bare `File: /path` | ✅ `TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly` |
-| Truncation appears in bracket note | ✅ `TestProxy_Call_WithTruncation_ProjectionNote` |
-| `format:mini` per-tool projection → RenderLines output | ✅ `TestProxy_Call_MiniFormat_RendersLines` |
-| `format:mini` via global `ResponseFormat` config | ✅ `TestProxy_Call_GlobalMiniFormat_Respected` |
-| `format:mini` via per-session daemon path | ✅ `TestProxy_Call_MiniFormat_PerSessionProxyMode` |
-| `mini_read` reads file path from large response | ✅ `TestProxy_MiniRead_ReadsFile` |
-| `mini_read` rejects path traversal | ✅ `TestProxy_MiniRead_RejectsPathTraversal` |
+**When:** Agent calls `read` with a path like `../../etc/passwd`
+
+**Then:** Rejected — path traversal blocked
 
 ---
 
-## 6. Standard mode — 4-tool interface
+## S3 — Mini format (compact text output)
 
-**Why critical:** Default mode for non-Claude Code clients.
+**Setup:** Projection configured with `format: mini` for `list_issues`.
 
-| Scenario | Status |
-|---|---|
-| `list` returns all tools across connected servers | ✅ (server tests) |
-| `list` with query filters results | ✅ (server tests) |
-| `call` routes to upstream and returns projected response | ✅ `TestExecuteRoutesToUpstream` |
-| `call` on protected tool returns error directing to `perm_call` | ✅ (server tests) |
-| `call` on tool with no projection coverage returns error | ✅ (server tests) |
-| `perm_call` on open tool with projection returns error | ✅ (server tests) |
-| `perm_call` on open tool without projection succeeds | ✅ (server tests) |
-| Upstream tool error returned as tool error envelope | ✅ (server tests) |
+**When:** Agent calls `github__list_issues(owner:"golang", repo:"go")`
 
----
+**Then:**
+- Response is compact text, not JSON:
+  ```
+  [github.list_issues]
+  number state title user_login
+  79443 OPEN cmd/asm: unrecognized failures gopherbot
+  79442 OPEN cmd/asm/arch: failures gopherbot
+  ```
+- Header row shows field names; each subsequent row is one item
+- No JSON braces, quotes, or commas
+- If response went to file: `[github.list_issues] file:/path` (not bare `File: /path`)
 
-## 7. File response store
+**When:** Global `response_format: mini` is set in config.yaml
 
-**Why critical:** Large responses silently failing to write means agents get truncated/missing data.
-
-| Scenario | Status |
-|---|---|
-| Response over inline_threshold written to file | ✅ (response store tests) |
-| Slim file and raw file both created | ❌ `writeSlimFile`/`writeRawFile` undertested (40-45%) |
-| Disk budget enforced via eviction | ❌ `evictOvershoot` only 25% covered |
-| TTL cleanup removes expired files | ✅ `evictExpired` covered |
-| Concurrent writes don't corrupt files | ❌ missing concurrent write test |
-| File paths stay within store directory (symlink safety) | ✅ `TestProxy_MiniRead_RejectsPathTraversal` |
+**Then:** All tool calls use mini format without needing per-tool projection
 
 ---
 
-## 8. add_server / remove_server
+## S4 — Standard mode: agent uses 4-tool interface
 
-**Why critical:** Runtime server management. Bugs here affect multi-agent setups.
+**Setup:** `mini serve` (standard mode), GitHub + Linear connected.
 
-| Scenario | Status |
-|---|---|
-| `add_server` HTTP transport adds tools to registry | ✅ (configure tests) |
-| `add_server` SSRF blocks private IPs | ✅ `TestSSRF_*` |
-| `add_server` strips auth/headers from agent-provided config | ✅ (configure tests) |
-| `remove_server` removes tools from registry | ✅ (configure tests) |
-| Concurrent `add_server`/`remove_server` race (generation counter) | ✅ `TestServerOpMu_*` |
-| `add_server` then immediate `remove_server` → server stays removed | ❌ missing (TOCTOU regression test) |
-| `tools/list_changed` notification sent after add/remove in proxy mode | ✅ `TestProxy_NotifyAll_OnRemoveServer` |
+**When:** Agent calls `list()`
 
----
+**Then:** Returns all tools from all servers: `github.list_pull_requests`, `github.list_issues`, `linear.list_issues`, etc.
 
-## 9. Reconnect and reliability
+**When:** Agent calls `list(query:"issues")`
 
-**Why critical:** Long-running agent sessions must survive upstream hiccups.
+**Then:** Returns only tools matching "issues"
 
-| Scenario | Status |
-|---|---|
-| Transport error triggers reconnect loop | ✅ (reconnect tests) |
-| RPC error does not trigger reconnect | ✅ (reconnect tests) |
-| Context cancellation does not trigger reconnect | ✅ (reconnect tests) |
-| Reconnect succeeds and tools remain accessible | ✅ (reconnect tests) |
-| `MaxPendingRequests` semaphore blocks excess concurrent calls | ✅ (upstream tests) |
+**When:** Agent calls `call(server:"github", tool:"list_issues", params:{...})`
 
----
+**Then:** Returns projected response — trimmed JSON inline (small) or `{"data":..., "file":"/path"}` (large)
 
-## 10. Security boundaries
+**When:** Agent calls `call(server:"github", tool:"list_issues")` but no projection file exists for github
 
-**Why critical:** These protect the local machine.
+**Then:** Succeeds — restriction only activates once an operator has written a projections file for that server
 
-| Scenario | Status |
-|---|---|
-| SSRF: private IP rejected in `add_server` | ✅ (configure tests) |
-| SSRF: loopback rejected | ✅ (configure tests) |
-| SSRF: `.local`/`.internal` hostnames rejected | ✅ (ssrf tests) |
-| DNS rebinding: cross-origin POST returns 403 | ✅ `TestHTTP_CrossOrigin_Rejected` |
-| Server name validated at all input boundaries | ✅ (config tests) |
-| `dangerous_allow_runtime_stdio` required for stdio add_server | ✅ (configure tests) |
-| Path traversal in `mini_read` rejected | ✅ `TestProxy_MiniRead_RejectsPathTraversal` |
-| `read` symlink escape rejected | ✅ (path tests) |
+**When:** Agent calls `call(server:"github", tool:"list_issues")` and a projections file exists but list_issues has no entry
+
+**Then:** Error — "tool has no projection configured — use perm_call to proceed, or add a projection entry"
+
+**When:** Agent calls `perm_call(server:"github", tool:"list_issues")` for the above case
+
+**Then:** Succeeds with raw (unprojected) response — opt-in to large responses
 
 ---
 
-## Known coverage gaps to address
+## S5 — Permission tiers
 
-Priority order:
+**Setup:** GitHub server with `protected: [create_pull_request, merge_pull_request]`, `hidden: [get_authenticated_app]`.
 
-1. **Per-session projection exclusions across calls** — verify field exclusions in session projection survive multiple HTTP requests (not just format:mini)
-2. **Session isolation** — two sessions with conflicting projections don't interfere
-3. **`reload` doesn't wipe session projections** — currently untested
-4. **`projectArray` (0%)** — plain array (not wrapped) trimming path dead in unit tests
-5. **File store write paths** (`writeSlimFile` 45%, `writeRawFile` 40%, `writeExclusive` 54%) — needs more write-path edge case tests
-6. **`evictOvershoot` (25%)** — disk budget enforcement barely covered
-7. **Concurrent file writes** — no test for two simultaneous large responses
-8. **TOCTOU regression** — add a test that `remove_server` wins when racing with `add_server` (generation counter)
+**When:** Agent calls `list()`
+
+**Then:** `github.get_authenticated_app` is absent from the list
+
+**When:** Agent calls `call(server:"github", tool:"get_authenticated_app")`
+
+**Then:** Error — tool not found (hidden tools invisible to list AND call)
+
+**When:** Agent calls `perm_call(server:"github", tool:"get_authenticated_app")`
+
+**Then:** Succeeds — hidden tools are callable via perm_call when name is known
+
+**When:** Agent calls `call(server:"github", tool:"create_pull_request")`
+
+**Then:** Error — "tool is protected — use perm_call instead"
+
+**When:** Agent calls `perm_call(server:"github", tool:"create_pull_request")`
+
+**Then:** Succeeds
+
+**When:** Agent calls `perm_call(server:"github", tool:"list_issues")` (open tool with projection)
+
+**Then:** Error — "tool is not protected — use call instead"
+
+**When:** Agent calls `list(hidden:true)`
+
+**Then:** Returns ALL tools including hidden ones
+
+**When:** `disable_list_hidden: true` is in config and agent calls `list(hidden:true)`
+
+**Then:** Error — listing hidden tools disabled by server configuration
+
+---
+
+## S6 — Session-only projection customisation
+
+**Setup:** Two Claude Code windows, both using `mini proxy` via the same daemon.
+
+**When:** Window A calls `config(action:"set_projection", server:"github", tool:"list_issues", projection:{exclude_always:[body]}, session_only:true)`
+
+**Then:** `{"ok": true, "scope": "session"}`
+
+**When:** Window A calls `github__list_issues`
+
+**Then:** Response has no `body` field
+
+**When:** Window B calls `github__list_issues` (no projection set)
+
+**Then:** Response includes `body` — Window A's projection did not leak to Window B
+
+**When:** Window A calls `config(action:"reload")`
+
+**Then:** Server-level projections reloaded from disk; Window A's session-only projections are unaffected
+
+**When:** Window A calls `config(action:"set_projection", session_only:false, ...)`
+
+**Then:** Projection persisted to `~/.mini/projections/github.yaml`; survives session restart
+
+---
+
+## S7 — Runtime server management
+
+**Setup:** Daemon running, agent connected.
+
+**When:** Agent calls `config(action:"add_server", config:{name:"sentry", transport:"http", url:"https://mcp.sentry.io/mcp", headers:{Authorization:"Bearer $TOKEN"}})`
+
+**Then:** Error — auth/headers stripped at runtime for security. Operator must configure auth in the server YAML file.
+
+**When:** Agent calls `config(action:"add_server", config:{name:"internal", url:"http://192.168.1.1/mcp"})`
+
+**Then:** Error — "URL host resolves to a private/loopback address"
+
+**When:** Operator calls `config(action:"add_server", config:{name:"newserver", url:"https://api.newserver.com/mcp"})`
+
+**Then:** Connection established, tools listed, `notifications/tools/list_changed` sent to all proxy-mode sessions
+
+**When:** Operator calls `config(action:"remove_server", server:"newserver")`
+
+**Then:** Tools removed, sessions closed for that server, notification sent. Returns `{"ok":true}` even if server wasn't found (idempotent).
+
+---
+
+## S8 — Import from existing agent configs
+
+**When:** User runs `mini add --from-claude`
+
+**Then:** Reads `~/.claude.json`, imports all `mcpServers` entries, writes one YAML per server to `~/.mini/servers/`. If a known server (GitHub, Slack) is detected, bundled projection installed automatically.
+
+**When:** Source config has a server named `my bad server` (invalid characters)
+
+**Then:** Skipped with warning — names must match `^[a-zA-Z0-9_-]+$`
+
+**When:** Claude Code and Claude Desktop both have a server named `github`
+
+**Then:** First-seen kept, warning printed for the duplicate
+
+**When:** User runs `mini add --from-cursor`, `--from-codex`, `--from-gemini`
+
+**Then:** Same behavior — server YAMLs written, bundled projections installed where applicable
+
+---
+
+## S9 — OAuth authentication
+
+**When:** User runs `mini auth linear` for a server with `auth.type: oauth2`
+
+**Then:** PKCE flow starts, browser opens to `https://linear.app/oauth/authorize?...` with proper state and S256 challenge
+
+**When:** User completes OAuth in browser
+
+**Then:** Token stored at `~/.mini/tokens/linear.json` with `0600` permissions
+
+**When:** Agent calls a Linear tool after auth
+
+**Then:** Request includes `Authorization: Bearer <token>` — transparent to agent
+
+**When:** Token expires and refresh token is present
+
+**Then:** Token refreshed automatically on next call — agent unaware
+
+**When:** OAuth discovery endpoint returns `token_endpoint: "http://169.254.169.254/token"`
+
+**Then:** Error — SSRF blocked, attacker-controlled endpoint rejected
+
+---
+
+## S10 — Per-session upstream connections (stateful tools)
+
+**Setup:** Playwright server configured with `session_mode: per_session`.
+
+**When:** Two agents call Playwright tools concurrently
+
+**Then:** Each agent gets its own browser instance — Agent A's page state does not affect Agent B
+
+**When:** Agent A's session is idle for longer than `max_idle` duration
+
+**Then:** Session evicted, connection closed, browser instance freed
+
+**When:** Agent A's Playwright connection drops mid-session
+
+**Then:** Only Agent A's connection is evicted; Agent B continues unaffected; Agent A gets a fresh connection on next call
+
+---
+
+## S11 — Reconnect after upstream failure
+
+**When:** Upstream stdio server crashes mid-session
+
+**Then:** mini detects transport error, starts reconnect loop with exponential backoff. In-flight calls fail with error. Once reconnected, new calls succeed. Agent can retry.
+
+**When:** Upstream returns JSON-RPC error `-32602` (invalid params)
+
+**Then:** NOT treated as transport failure — no reconnect. Error returned to agent as tool error.
+
+**When:** Tool call exceeds `tool_timeout: "30s"`
+
+**Then:** Context cancelled, error returned. Upstream still alive — no reconnect.
+
+**When:** `tool_timeout: "not-a-duration"` set in server config
+
+**Then:** Warning logged ("invalid tool_timeout spec, no timeout applied"), call proceeds without timeout rather than failing
+
+---
+
+## S12 — Security: SSRF and network isolation
+
+**When:** Agent calls `config add_server` with `url: "http://127.0.0.1/mcp"`
+
+**Then:** Rejected — "URL host resolves to a private/loopback address"
+
+**When:** Agent calls `config add_server` with `url: "http://169.254.169.254/"` (AWS metadata)
+
+**Then:** Rejected — link-local blocked
+
+**When:** Agent calls `config add_server` with `url: "http://internal.company.local/mcp"`
+
+**Then:** Rejected — `.local` hostname blocked
+
+**When:** HTTP client sends POST to `/mcp` with header `Origin: http://evil.com`
+
+**Then:** 403 — cross-origin request rejected
+
+**When:** mini serves HTTP on `127.0.0.1:4857` (default)
+
+**Then:** Only loopback connections accepted
+
+**When:** User runs `mini serve --http 0.0.0.0:4857` without `--dangerous-nonloopback-http`
+
+**Then:** Server exits with error — non-loopback binding requires explicit opt-in flag
+
+---
+
+## S13 — Disk budget and cleanup
+
+**When:** Total response files exceed `response_disk_budget_mb`
+
+**Then:** Oldest files evicted automatically to bring usage within budget. Newly written file is always kept (never evicted to make room for itself).
+
+**When:** Response files older than TTL
+
+**Then:** Cleaned up automatically by the background cleanup loop
+
+**When:** User runs `mini cleanup`
+
+**Then:** Expired files deleted immediately, usage stats printed
+
+---
+
+---
+
+## Internal / Technical Investigations
+
+These don't map directly to user-visible behavior but affect correctness and reliability.
+
+| # | Area | What to investigate |
+|---|---|---|
+| I1 | `evictOvershoot` (25% covered) | Budget enforcement loop never exercised in tests — write a test with tiny budget |
+| I2 | File store writes (`writeSlimFile` 45%, `writeRawFile` 40%) | Error injection paths uncovered — disk write failure cleanup correct? |
+| I3 | `writeExclusive` (54%) | Concurrent write collision handling — is O_EXCL retry loop correct under load? |
+| I4 | `cancelAuthFlows` (50%) | Auth goroutine drain — is authWg.Wait() draining correctly after Close()? |
+| I5 | `installUpstreamLocked` (62%) | Inline projections branch — projections embedded in server YAML applied on connect? |
+| I6 | TOCTOU regression | Add test: concurrent add_server + remove_server, verify generation counter makes remove win |
+| I7 | Plain array mini format | Verify mini header-row layout handles all array shapes including non-uniform items |
+| I8 | Session eviction | After idle eviction, leaked state? New session truly fresh? |
