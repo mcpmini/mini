@@ -143,7 +143,6 @@ func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
 	resp := serve(t, srv, callTool("svc__get_user", map[string]any{}))
 	text := toolResultText(t, resp)
 
-	// No projection configured → raw JSON passthrough, no [Projected] note
 	if strings.HasPrefix(text, "[Projected") {
 		t.Errorf("expected raw passthrough, got projection note: %s", text)
 	}
@@ -157,7 +156,6 @@ func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
 	srv := newProxyServer(t) // InlineThreshold=50
 	defer srv.Close()
 	conn := fakeConn("list_repos")
-	// Small response with one field that will be elided
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`)
 	addProxyConn(t, srv, "gh", conn)
 
@@ -172,7 +170,6 @@ func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
 	text := toolResultText(t, resp)
 	t.Logf("proxy small+projection response: %s", text)
 
-	// Small response with projection → bracket note + inline JSON (no File: line)
 	if !strings.HasPrefix(text, "[Projected") {
 		t.Errorf("expected [Projected] note for small response with projection: %s", text)
 	}
@@ -192,7 +189,6 @@ func TestProxy_Call_WithProjection_Large_FilePath(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"items\":[{\"id\":1,\"body\":\"long body text here\"}]}"}]}`)
 	addProxyConn(t, srv, "gh", conn)
 
-	// Add a projection that excludes body
 	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "gh",
@@ -227,7 +223,6 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 		"projection": map[string]any{"exclude_always": []string{"secret"}},
 	}))
 
-	// First call to get the file path
 	resp1 := serve(t, srv, callTool("svc__get_item", map[string]any{}))
 	text1 := toolResultText(t, resp1)
 	t.Logf("initial response: %s", text1)
@@ -236,7 +231,6 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 		t.Skip("response was not written to file (threshold not triggered)")
 	}
 
-	// Extract file path from "File: /path/to/file"
 	var filePath string
 	for _, line := range strings.Split(text1, "\n") {
 		if strings.HasPrefix(line, "File: ") {
@@ -248,7 +242,6 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 		t.Fatalf("could not extract file path from: %s", text1)
 	}
 
-	// Read the file via read
 	resp2 := serve(t, srv, callTool("read", map[string]any{"path": filePath}))
 	text2 := toolResultText(t, resp2)
 	t.Logf("read response: %s", text2)
@@ -256,7 +249,6 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	if text2 == "" {
 		t.Error("read returned empty content")
 	}
-	// Should be valid JSON
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(text2), &parsed); err != nil {
 		t.Errorf("read content should be JSON: %s", text2)
@@ -268,7 +260,6 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	defer srv.Close()
 
 	resp := serve(t, srv, callTool("read", map[string]any{"path": "/etc/passwd"}))
-	// Should be an RPC error (errInvalidParams) or tool error
 	if resp["error"] != nil {
 		return // RPC-level error is correct
 	}
@@ -297,7 +288,6 @@ func TestProxy_UnknownTool_ReturnsError(t *testing.T) {
 	defer srv.Close()
 
 	resp := serve(t, srv, callTool("nonexistent__tool", map[string]any{}))
-	// Should get an RPC error or tool error
 	if resp["error"] == nil {
 		result, ok := resp["result"].(map[string]any)
 		if !ok || result["isError"] != true {
@@ -319,9 +309,6 @@ func TestProxy_NoDoubleUnderscore_ReturnsError(t *testing.T) {
 	}
 }
 
-// TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly verifies the 4th tier
-// of formatProxyEnvelope: projection configured but nothing elided/truncated,
-// response is large → "File: <path>" with no [Projected] prefix.
 func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
@@ -333,7 +320,6 @@ func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"value\":\"data\"}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
 
-	// Projection configured with no exclusions → no note, but response is large → File: only
 	serve(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "svc",
@@ -353,13 +339,10 @@ func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
 	}
 }
 
-// TestProxy_Call_WithTruncation_ProjectionNote verifies that string truncation
-// appears in the [Projected] bracket note alongside the truncated field name.
 func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
 	srv := newProxyServer(t) // InlineThreshold=50
 	defer srv.Close()
 	conn := fakeConn("get_issue")
-	// body is long enough to be truncated by a 5-char limit
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"this is a very long body that will be truncated\"}"}]}`)
 	addProxyConn(t, srv, "gh", conn)
 
@@ -446,7 +429,6 @@ func TestProxy_StandaloneServe_InheritsProxyMode(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	// serveAll uses Serve() which sets session.proxyMode from s.proxyMode
 	msgs := serveAll(t, srv, rpc("tools/list", nil))
 	var tools []any
 	for _, m := range msgs {
@@ -456,8 +438,6 @@ func TestProxy_StandaloneServe_InheritsProxyMode(t *testing.T) {
 			}
 		}
 	}
-	// In standalone proxy mode, tools/list should return upstream-style tools
-	// (config, read, server__tool) — NOT the standard 4-tool interface
 	for _, tool := range tools {
 		name := tool.(map[string]any)["name"].(string)
 		if name == "perm_call" {

@@ -48,6 +48,7 @@ type Server struct {
 	removeGen   map[string]uint64 // protected by serverOpMu; incremented on each remove_server
 	authMu      sync.Mutex
 	authFlows   map[string]*authFlowState
+	authWg      sync.WaitGroup
 	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
 }
 

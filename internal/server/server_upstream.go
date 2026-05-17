@@ -131,6 +131,7 @@ func (s *Server) RunSessionEviction(ctx context.Context, maxIdle time.Duration) 
 
 func (s *Server) Close() {
 	cancelAuthFlows(s.takeAuthFlows())
+	s.authWg.Wait()
 	closeUpstreams(s.snapshotUpstreams())
 	s.reconnectWg.Wait()
 	s.store.Close()

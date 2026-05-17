@@ -1,15 +1,10 @@
 # mini
 
-**mini** is an MCP proxy that cuts token costs by 80–99%. It sits between your AI agent and your MCP servers, trimming tool responses down to what the agent actually needs.
-
-| Tool | Raw | With mini | Saved |
-|------|-----|-----------|-------|
-| `list_pull_requests` (30 PRs) | 188,174 tokens | 3,224 tokens | **98%** |
-| `list_issues` (30 issues) | 80,116 tokens | 246 tokens | **99.7%** |
-| `search_code` | 2,186 tokens | 1,721 tokens | **21%** |
-| `get_file_contents` | 394 tokens | 169 tokens | **57%** |
+**mini** is an MCP proxy that sits between your AI agent and your MCP servers, trimming tool responses down to what the agent actually needs.
 
 MCP responses are verbose by design — full JSON blobs with every field the API returns. PR bodies, avatar URLs, node IDs, merge metadata — most of it the agent will never read. mini strips the noise before any of it reaches your agent's context window. [See an example.](#how-it-works)
+
+For list-heavy tools like `list_pull_requests` or `list_issues`, response sizes drop dramatically with a projection config. Read-heavy tools like `get_file_contents` see more modest savings. Results vary by upstream server and config.
 
 > **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents connect to external tools. Each "MCP server" exposes a set of tools the agent can call. mini sits in front of all of them.
 

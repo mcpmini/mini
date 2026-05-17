@@ -25,6 +25,7 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.authWg.Add(1)
 	go s.runAuthFlow(serverName, sc, flow.state, flow.doneCh)
 	return authStartResponse(serverName, flow.authURL), nil
 }
@@ -86,6 +87,7 @@ func (s *Server) cancelExistingAuthFlow(serverName string) {
 }
 
 func (s *Server) runAuthFlow(serverName string, sc config.ServerConfig, flow *authFlowState, doneCh <-chan auth.PKCEResult) {
+	defer s.authWg.Done()
 	defer flow.cancel()
 	defer s.clearAuthFlow(serverName, flow)
 	s.awaitAuthAndReconnect(serverName, sc, doneCh)

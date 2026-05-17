@@ -32,6 +32,7 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 	srv.authMu.Unlock()
 	doneCh := make(chan auth.PKCEResult, 1)
 	doneCh <- auth.PKCEResult{Err: context.Canceled}
+	srv.authWg.Add(1)
 	srv.runAuthFlow("svc", config.ServerConfig{Name: "svc"}, staleFlow, doneCh)
 	srv.authMu.Lock()
 	got := srv.authFlows["svc"]
