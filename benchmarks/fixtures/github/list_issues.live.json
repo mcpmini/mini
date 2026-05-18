@@ -1,0 +1,79 @@
+{
+  "issues": [
+    {
+      "body": "Currently the instructions in the README.md to create the tokens securely are explained for the classic way. Please, could you updated to the new way to create token?\nThanks :)",
+      "created_at": "2026-05-16T10:52:51Z",
+      "number": 2484,
+      "state": "OPEN",
+      "title": "Update the PAT creation advisory to fine-grained tokens",
+      "updated_at": "2026-05-16T10:52:59Z",
+      "user": {
+        "login": "evilmonkey19"
+      }
+    },
+    {
+      "body": "## Problem\n\nThe Coding Agent runtime\u0026#39;s MCP permission gate auto-approves tool calls only when the underlying tool is annotated with `ReadOnlyHint: true`. Anything else (including `undefined` / missing annotation, or `ReadOnlyHint: false`) prompts the user.\n\nIn production we\u0026#39;re seeing read-intent github-mcp-server tools prompting users — for example, callers using the legacy alias `get_review` (now consolidated into `pull_request_read`).\n\nSource flow on the runtime side:\n- `runtime/src/mcp-client/known-mcp-servers.ts:585-596` — `extractMCPToolAnnotations` requires `readOnlyHint` to be a strict `boolean`; missing/non-boolean → `undefined`.\n- `runtime/src/tools/mcp-transport.ts:509` — `readOnly: toolConfig.readOnly ? true : false` collapses `undefined` → `false` → user prompted.\n- `runtime/src/apps/permission-gate.ts` — auto-approves only when `request.readOnly === true`.\n\nPer agreement with the runtime team, defaulting `undefined` to \u0026#34;read-only\u0026#34; is **not** the right fix (would over-grant). Instead, ensure the github-mcp-server side is the source of truth.\n\n## What\u0026#39;s needed\n\n1. **Audit every tool currently registered by github-mcp-server** for missing or incorrect `Annotations.ReadOnlyHint`. Most existing read-only tools already have this set (verified `pull_request_read`, `issue_triage_context`, `semantic_issues_search`, `package_search`, `dependabot`, `find_closing_pull_requests`, `summarize_actions`). Find the gaps.\n2. **Deprecated tool aliases**: when `DeprecatedToolAliases` (`pkg/github/deprecated_tool_aliases.go`) routes a call from an old name (`get_review`, `list_issues`, etc.) to a new canonical tool (`pull_request_read`, `issue_read`, etc.), make sure the alias\u0026#39;s tool descriptor inherits the canonical tool\u0026#39;s annotations. Today the aliased tool may be exposed without annotations, defeating the runtime\u0026#39;s auto-approve path.\n3. **Consider adding a CI check** that fails if any tool registered via `mcp.NewTool` lacks an explicit `ReadOnlyHint` (true or false). Forcing the choice at registration time prevents future regressions.\n\n## How to verify\n\nQuick way to spot missing annotations in this repo:\n\n```\ngrep -rln \u0026#39;mcp.NewTool\\|toolset.NewTool\u0026#39; --include=\u0026#39;*.go\u0026#39; | grep -v _test | xargs -L1 -I{} sh -c \u0026#39;grep -L ReadOnlyHint \u0026#34;{}\u0026#34;\u0026#39;\n```\n\nRepeat for the deprecated-alias dispatch path.\n\n## Related\n\n- Coding Agent runtime: `runtime/src/mcp-client/{known-mcp-servers.ts,out-of-proc-mcp-host.ts,mcp-registry.ts}` — current consumer of these annotations.\n- Coding Agent permission gate behavior: github/sweagentd `runtime/src/apps/permission-gate.ts`.\n\ncc @ritchxu",
+      "comments": 4,
+      "created_at": "2026-05-15T21:07:35Z",
+      "number": 2483,
+      "state": "OPEN",
+      "title": "Audit and fix missing ReadOnlyHint annotations on read-intent tools",
+      "updated_at": "2026-05-17T13:11:44Z",
+      "user": {
+        "login": "ritchxu"
+      }
+    },
+    {
+      "body": "### Describe the bug\n\nWhen using the GitHub MCP connector (via Grok / xAI interface) to perform write operations on a repository, commits and pushes frequently fail or apply only locally. Changes appear successful in the tool response but did not reach the remote branch.\n\n### Affected Version / Environment\n- MCP Host: Grok (xAI) with GitHub MCP connector\n- Repository: jacob-kraniak/the-book-of-secret-knowledge (fork of trimstray/the-book-of-secret-knowledge)\n- Branch: JK_Revisions\n- Operation types failing: \n  - Creating/updating files (`.pre-commit-config.yaml`, Python scripts, Markdown files)\n  - Deleting branches\n  - Multi-file refactors\n\n### Steps to Reproduce\n1. Instruct the MCP agent to create or modify files (e.g., \u0026#34;Add .pre-commit-config.yaml with specific hooks\u0026#34;).\n2. Instruct the agent to commit the changes with a descriptive message.\n3. Refresh the GitHub repository page or check `git log` on the remote.\n4. Observe that the commit either does not appear or shows as \u0026#34;incomplete\u0026#34; / missing files.\n\n### Expected Behavior\nCommits should reliably push to the target remote branch with the specified files and message.\n\n### Actual Behavior\n- Tool reports success and provides a commit SHA.\n- Remote repository shows no new commits or partial state.\n- Errors observed: \u0026#34;API/tree state errors\u0026#34;, \u0026#34;JSON parsing issues\u0026#34;, silent failures.\n- Some operations succeed (e.g., earlier extractions), while others fail consistently.\n\n### Additional Context / Observations\n- Failures are intermittent but frequent during heavy Markdown refactoring sessions.\n- Local-only changes sometimes occur (visible only in the agent\u0026#39;s working context).\n- This has occurred multiple times over the past few hours (May 15, 2026) while reorganizing a knowledge repository. Further experienced across other repos over the past few weeks.\n- Similar issues reported by other users with MCP GitHub connectors.",
+      "comments": 3,
+      "created_at": "2026-05-15T17:28:52Z",
+      "labels": [
+        "bug",
+        "waiting-for-reply",
+        "ai:bug-report-review:ready for review"
+      ],
+      "number": 2481,
+      "state": "OPEN",
+      "title": "Intermittent commit/push failures when using GitHub MCP connector for file operations and branch management, via Grok official Connector",
+      "updated_at": "2026-05-18T13:11:02Z",
+      "user": {
+        "login": "jacob-kraniak"
+      }
+    },
+    {
+      "body": "### Describe the bug\n\nWhen using the `github-pull-request_create_pull_request` tool from the VS Code GitHub Pull Requests extension (which internally calls the GitHub MCP Server), the operation succeeds and returns the created PR data, but immediately after, an error dialog appears:\n\n`Error loading MCP App: MPC -32002: Resource not found`\n\nThe PR is actually created successfully (confirmed by visiting the returned URL), but the MCP server throws a JSON-RPC error (-32002) when attempting to load or resolve a resource after the creation call completes.\n\n### Affected version\n\nEnvironment:\n- VS Code Insiders (May 2026)\n- OS: Windows\n- MCP integration: VS Code built-in MCP support\n- The MCP server version is managed by VS Code — not running via Docker\n- Docker version check failed with exit code 1 (image not available locally)\n\n### Steps to reproduce the behavior\n\n1. Open a VS Code workspace connected to a GitHub repository (e.g., `microsoft/testfx`)\n2. Push a branch to GitHub\n3. Use an AI agent tool that calls `github-pull-request_create_pull_request` (or the equivalent `mcp_io_github_git_create_pull_request`) to create a pull request\n4. The PR is created successfully and the tool returns `{\u0026#34;id\u0026#34;:\u0026#34;...\u0026#34;,\u0026#34;url\u0026#34;:\u0026#34;https://github.com/...\u0026#34;}`\n5. An error dialog appears: `Error loading MCP App: MPC -32002: Resource not found`\n\n### Expected vs actual behavior\n\n**Expected:** The PR creation completes without errors. No error dialog should appear.\n\n**Actual:** The PR is created successfully, but a `MPC -32002: Resource not found` error dialog is shown immediately after. This suggests the MCP server is trying to resolve a resource (possibly a notification or follow-up resource lookup) that doesn\u0026#39;t exist or isn\u0026#39;t registered.\n\n### Logs\n\nError loading MCP App: MPC -32002: Resource not found\n\nNo additional stack trace was surfaced in the VS Code UI. ",
+      "comments": 5,
+      "created_at": "2026-05-13T10:51:50Z",
+      "labels": [
+        "bug",
+        "waiting-for-reply",
+        "ai:bug-report-review:ready for review"
+      ],
+      "number": 2467,
+      "state": "OPEN",
+      "title": "[vscode] Error loading MCP App: MPC -32002: Resource not found",
+      "updated_at": "2026-05-18T13:11:04Z",
+      "user": {
+        "login": "Evangelink"
+      }
+    },
+    {
+      "body": "This is an exploit-free disclosure for the public GitHub MCP server docs and adjacent public guidance.\n\nSummary\nWe reviewed the public tool/schema surface together with the documented host permission boundary and validated sink shape locally without contacting external services or using real secrets. The current public docs can still be read as exposing network and secret-handling sink paths unless the intended trust boundary is stated very explicitly.\n\nTargets covered in this note\n- GitHub MCP server docs\n- GitHub MCP server blog / public announcement surface\n\nRequested follow-up\n- confirm whether the current permission and tool-routing behavior is intended,\n- clarify the intended trust boundary in the public docs,\n- point reporters to a preferred security channel if a private follow-up would be more appropriate.",
+      "created_at": "2026-05-11T05:47:26Z",
+      "number": 2449,
+      "state": "OPEN",
+      "title": "[Disclosure] Clarify GitHub MCP server docs and tool-routing boundary",
+      "updated_at": "2026-05-11T05:47:37Z",
+      "user": {
+        "login": "wenshameng"
+      }
+    }
+  ],
+  "pageInfo": {
+    "endCursor": "Y3Vyc29yOnYyOpK5MjAyNi0wNS0xMVQwMTo0NzoyNi0wNDowMM8AAAABB1rjTg==",
+    "hasNextPage": true,
+    "hasPreviousPage": false,
+    "startCursor": "Y3Vyc29yOnYyOpK5MjAyNi0wNS0xNlQwNjo1Mjo1MS0wNDowMM8AAAABCdB-5w=="
+  },
+  "totalCount": 185
+}

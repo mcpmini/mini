@@ -1,43 +1,38 @@
 {
-  "number": 10068,
-  "title": "Fix responsive layout issues in dev error overlay",
-  "body": "WIP",
-  "state": "open",
-  "draft": true,
-  "merged": false,
-  "mergeable_state": "blocked",
-  "html_url": "https://github.com/example-org/sample-app/pull/10068",
-  "user": {
-    "login": "ext_contrib_d",
-    "id": 900010,
-    "profile_url": "https://github.com/ext_contrib_d",
-    "avatar_url": "https://avatars.githubusercontent.com/u/900010?v=4"
-  },
-  "labels": [
-    "type: app",
-    "created-by: Example DevEx"
-  ],
-  "head": {
-    "ref": "ext_contrib_d/fix-overlay-responsive-layout",
-    "sha": "3671b4e972e05110ce39c7b53354412b4ff88bb5",
-    "repo": {
-      "full_name": "example-org/sample-app",
-      "description": "Sample web application"
-    }
-  },
+  "additions": 131,
   "base": {
-    "ref": "canary",
-    "sha": "16e5f9e685188751f1f4fb085f6e9e729f409950",
+    "ref": "main",
     "repo": {
-      "full_name": "example-org/sample-app",
-      "description": "Sample web application"
-    }
+      "description": "GitHub's official MCP Server",
+      "full_name": "github/github-mcp-server"
+    },
+    "sha": "8a48d0749f8afbadaa66ef828fd424195fb7846f"
   },
-  "additions": 25,
-  "deletions": 2,
-  "changed_files": 3,
+  "body": "Fixes #1952.\n\n## Problem\n\nWhen tool argument unmarshalling fails (wrong types, malformed JSON), the handler returns `(nil, err)` which the SDK converts to a JSON-RPC protocol error (`-32603`). Agents cannot see protocol errors in their context window, so they cannot self-correct.\n\n## Fix\n\nReturn `isError: true` with the validation error message instead of a Go error. Two sites in `server_tool.go`:\n\n- `NewServerTool` (line 135)\n- `NewServerToolWithContextHandler` (line 159)\n\nBefore:\n```go\nif err := json.Unmarshal(req.Params.Arguments, \u0026amp;arguments); err != nil {\n    return nil, err // protocol error: agent sees nothing\n}\n```\n\nAfter:\n```go\nif err := json.Unmarshal(req.Params.Arguments, \u0026amp;arguments); err != nil {\n    return \u0026amp;mcp.CallToolResult{\n        Content: []mcp.Content{\u0026amp;mcp.TextContent{Text: fmt.Sprintf(\u0026#34;invalid arguments: %s\u0026#34;, err)}},\n        IsError: true,\n    }, nil // tool execution error: agent sees the message and can retry\n}\n```\n\n## Tests\n\n- `TestNewServerTool_InvalidArguments_ReturnsIsError`\n- `TestNewServerToolWithContextHandler_InvalidArguments_ReturnsIsError`\n- `TestNewServerTool_ValidArguments_Succeeds`",
+  "changed_files": 2,
   "commits": 1,
-  "comments": 1,
-  "created_at": "2026-04-27T01:42:53Z",
-  "updated_at": "2026-04-27T02:17:30Z"
+  "created_at": "2026-05-17T08:48:27Z",
+  "deletions": 2,
+  "draft": false,
+  "head": {
+    "ref": "fix/is-error-validation",
+    "repo": {
+      "description": "GitHub's official MCP Server",
+      "full_name": "blackwell-systems/github-mcp-server"
+    },
+    "sha": "968422b09cdfc719c33777f4712bf36c28685692"
+  },
+  "html_url": "https://github.com/github/github-mcp-server/pull/2488",
+  "mergeable_state": "behind",
+  "merged": false,
+  "number": 2488,
+  "state": "open",
+  "title": "fix: return isError for argument validation failures",
+  "updated_at": "2026-05-17T08:48:28Z",
+  "user": {
+    "avatar_url": "https://avatars.githubusercontent.com/u/236632453?v=4",
+    "id": 236632453,
+    "login": "blackwell-systems",
+    "profile_url": "https://github.com/blackwell-systems"
+  }
 }

@@ -1,28 +1,28 @@
 {
-  "number": 10053,
-  "title": "Sample issue: notFound() response when loading sibling view is present",
-  "body": "user@example.com",
-  "state": "open",
-  "html_url": "https://github.com/example-org/sample-app/issues/10053",
-  "user": {
-    "login": "ext_reporter_a",
-    "id": 900012,
-    "profile_url": "https://github.com/ext_reporter_a",
-    "avatar_url": "https://avatars.githubusercontent.com/u/900012?v=4"
-  },
   "author_association": "NONE",
-  "comments": 1,
+  "body": "## Problem\n\nThe Coding Agent runtime\u0026#39;s MCP permission gate auto-approves tool calls only when the underlying tool is annotated with `ReadOnlyHint: true`. Anything else (including `undefined` / missing annotation, or `ReadOnlyHint: false`) prompts the user.\n\nIn production we\u0026#39;re seeing read-intent github-mcp-server tools prompting users — for example, callers using the legacy alias `get_review` (now consolidated into `pull_request_read`).\n\nSource flow on the runtime side:\n- `runtime/src/mcp-client/known-mcp-servers.ts:585-596` — `extractMCPToolAnnotations` requires `readOnlyHint` to be a strict `boolean`; missing/non-boolean → `undefined`.\n- `runtime/src/tools/mcp-transport.ts:509` — `readOnly: toolConfig.readOnly ? true : false` collapses `undefined` → `false` → user prompted.\n- `runtime/src/apps/permission-gate.ts` — auto-approves only when `request.readOnly === true`.\n\nPer agreement with the runtime team, defaulting `undefined` to \u0026#34;read-only\u0026#34; is **not** the right fix (would over-grant). Instead, ensure the github-mcp-server side is the source of truth.\n\n## What\u0026#39;s needed\n\n1. **Audit every tool currently registered by github-mcp-server** for missing or incorrect `Annotations.ReadOnlyHint`. Most existing read-only tools already have this set (verified `pull_request_read`, `issue_triage_context`, `semantic_issues_search`, `package_search`, `dependabot`, `find_closing_pull_requests`, `summarize_actions`). Find the gaps.\n2. **Deprecated tool aliases**: when `DeprecatedToolAliases` (`pkg/github/deprecated_tool_aliases.go`) routes a call from an old name (`get_review`, `list_issues`, etc.) to a new canonical tool (`pull_request_read`, `issue_read`, etc.), make sure the alias\u0026#39;s tool descriptor inherits the canonical tool\u0026#39;s annotations. Today the aliased tool may be exposed without annotations, defeating the runtime\u0026#39;s auto-approve path.\n3. **Consider adding a CI check** that fails if any tool registered via `mcp.NewTool` lacks an explicit `ReadOnlyHint` (true or false). Forcing the choice at registration time prevents future regressions.\n\n## How to verify\n\nQuick way to spot missing annotations in this repo:\n\n```\ngrep -rln \u0026#39;mcp.NewTool\\|toolset.NewTool\u0026#39; --include=\u0026#39;*.go\u0026#39; | grep -v _test | xargs -L1 -I{} sh -c \u0026#39;grep -L ReadOnlyHint \u0026#34;{}\u0026#34;\u0026#39;\n```\n\nRepeat for the deprecated-alias dispatch path.\n\n## Related\n\n- Coding Agent runtime: `runtime/src/mcp-client/{known-mcp-servers.ts,out-of-proc-mcp-host.ts,mcp-registry.ts}` — current consumer of these annotations.\n- Coding Agent permission gate behavior: github/sweagentd `runtime/src/apps/permission-gate.ts`.\n\ncc @ritchxu",
+  "comments": 4,
+  "created_at": "2026-05-15T21:07:35Z",
+  "html_url": "https://github.com/github/github-mcp-server/issues/2483",
+  "number": 2483,
   "reactions": {
-    "total_count": 0,
     "+1": 0,
     "-1": 0,
-    "laugh": 0,
     "confused": 0,
+    "eyes": 0,
     "heart": 0,
     "hooray": 0,
+    "laugh": 0,
     "rocket": 0,
-    "eyes": 0
+    "total_count": 0
   },
-  "created_at": "2026-04-25T23:07:18Z",
-  "updated_at": "2026-04-26T16:55:01Z"
+  "state": "open",
+  "title": "Audit and fix missing ReadOnlyHint annotations on read-intent tools",
+  "updated_at": "2026-05-17T13:11:44Z",
+  "user": {
+    "avatar_url": "https://avatars.githubusercontent.com/u/10766168?v=4",
+    "id": 10766168,
+    "login": "ritchxu",
+    "profile_url": "https://github.com/ritchxu"
+  }
 }

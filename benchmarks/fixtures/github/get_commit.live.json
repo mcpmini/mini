@@ -1,0 +1,245 @@
+{
+  "author": {
+    "avatar_url": "https://avatars.githubusercontent.com/u/64602043?v=4",
+    "id": 64602043,
+    "login": "iulia-b",
+    "profile_url": "https://github.com/iulia-b"
+  },
+  "commit": {
+    "author": {
+      "date": "2026-05-18T12:36:23Z",
+      "email": "64602043+iulia-b@users.noreply.github.com",
+      "name": "Iulia Bejan"
+    },
+    "committer": {
+      "date": "2026-05-18T12:36:23Z",
+      "email": "noreply@github.com",
+      "name": "GitHub"
+    },
+    "message": "Upgrade go-github from v82 to v87 (#2452)\n\nBreaking changes addressed:\n- raw.NewClient: Use WithHTTPClient/WithEnterpriseURLs options, pass ctx to\n  NewRequest, return (*Client, error)\n- internal/ghmcp/server.go: Use functional options for REST client creation,\n  replace UserAgent field mutation with UserAgentTransport wrapper, add\n  restUATransp field to githubClients struct\n- pkg/github/dependencies.go: Use functional options for REST client creation,\n  handle raw.NewClient error return\n- pkg/github/actions.go: Handle new WorkflowDispatchRunDetails return value\n  from CreateWorkflowDispatchEventByID/ByFileName\n- pkg/github/issues.go: Replace IssueListOptions with ListOptions for\n  SubIssue.ListByIssue\n- pkg/github/notifications.go: MarkThreadDone now takes string instead of\n  int64; remove ParseInt and strconv import\n- pkg/github/projects.go: Remove pointer indirection from\n  ListProjectsPaginationOptions and ListProjectsOptions fields\n- pkg/github/issues_granular.go: Pass ctx to NewRequest, remove ctx from Do\n- Test files: Add mustNewGHClient helper, replace all NewClient calls,\n  fix stubClientFnFromHTTP signature, fix lockdown_test.go BaseURL handling,\n  fix raw_test.go, remove invalid threadID test case\n\nCo-authored-by: Copilot \u003c223556219+Copilot@users.noreply.github.com\u003e"
+  },
+  "committer": {
+    "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+    "id": 19864447,
+    "login": "web-flow",
+    "profile_url": "https://github.com/web-flow"
+  },
+  "files": [
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "e2e/e2e_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "go.mod",
+      "status": "modified"
+    },
+    {
+      "additions": 2,
+      "changes": 4,
+      "deletions": 2,
+      "filename": "go.sum",
+      "status": "modified"
+    },
+    {
+      "additions": 32,
+      "changes": 51,
+      "deletions": 19,
+      "filename": "internal/ghmcp/server.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/errors/error.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/errors/error_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 3,
+      "changes": 6,
+      "deletions": 3,
+      "filename": "pkg/github/actions.go",
+      "status": "modified"
+    },
+    {
+      "additions": 13,
+      "changes": 26,
+      "deletions": 13,
+      "filename": "pkg/github/actions_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/github/code_scanning.go",
+      "status": "modified"
+    },
+    {
+      "additions": 3,
+      "changes": 6,
+      "deletions": 3,
+      "filename": "pkg/github/code_scanning_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 8,
+      "changes": 16,
+      "deletions": 8,
+      "filename": "pkg/github/context_tools_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/github/copilot.go",
+      "status": "modified"
+    },
+    {
+      "additions": 2,
+      "changes": 4,
+      "deletions": 2,
+      "filename": "pkg/github/copilot_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/github/dependabot.go",
+      "status": "modified"
+    },
+    {
+      "additions": 3,
+      "changes": 6,
+      "deletions": 3,
+      "filename": "pkg/github/dependabot_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 13,
+      "changes": 19,
+      "deletions": 6,
+      "filename": "pkg/github/dependencies.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/github/discussions.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/github/discussions_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/github/gists.go",
+      "status": "modified"
+    },
+    {
+      "additions": 5,
+      "changes": 10,
+      "deletions": 5,
+      "filename": "pkg/github/gists_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/github/git.go",
+      "status": "modified"
+    },
+    {
+      "additions": 2,
+      "changes": 4,
+      "deletions": 2,
+      "filename": "pkg/github/git_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 14,
+      "changes": 28,
+      "deletions": 14,
+      "filename": "pkg/github/granular_tools_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 17,
+      "changes": 17,
+      "filename": "pkg/github/helper_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 4,
+      "changes": 10,
+      "deletions": 6,
+      "filename": "pkg/github/issues.go",
+      "status": "modified"
+    },
+    {
+      "additions": 3,
+      "changes": 6,
+      "deletions": 3,
+      "filename": "pkg/github/issues_granular.go",
+      "status": "modified"
+    },
+    {
+      "additions": 24,
+      "changes": 48,
+      "deletions": 24,
+      "filename": "pkg/github/issues_test.go",
+      "status": "modified"
+    },
+    {
+      "additions": 1,
+      "changes": 2,
+      "deletions": 1,
+      "filename": "pkg/github/minimal_types.go",
+      "status": "modified"
+    },
+    {
+      "additions": 2,
+      "changes": 11,
+      "deletions": 9,
+      "filename": "pkg/github/notifications.go",
+      "status": "modified"
+    },
+    {
+      "additions": 7,
+      "changes": 30,
+      "deletions": 23,
+      "filename": "pkg/github/notifications_test.go",
+      "status": "modified"
+    }
+  ],
+  "html_url": "https://github.com/github/github-mcp-server/commit/1861a351f8b00ae5ff59bbd30a720545fdfc5f92",
+  "sha": "1861a351f8b00ae5ff59bbd30a720545fdfc5f92",
+  "stats": {
+    "additions": 304,
+    "deletions": 304,
+    "total": 608
+  }
+}

@@ -1,0 +1,104 @@
+[
+  {
+    "assignees": [
+      "iulia-b"
+    ],
+    "base": {
+      "ref": "main",
+      "repo": {
+        "description": "GitHub's official MCP Server",
+        "full_name": "github/github-mcp-server"
+      },
+      "sha": "1861a351f8b00ae5ff59bbd30a720545fdfc5f92"
+    },
+    "body": "\n\n## Summary\n\nThis PR is passing issue field values to the issue write \u0026amp; read tools, which now (after https://github.com/github/github-mcp-server/pull/2452) support this. \n\n## Why\n\n- Fixes https://github.com/github/plan-track-agentic-toolkit/issues/37\n- fixes https://github.com/github/plan-track-agentic-toolkit/issues/39\n\n## What changed\n\n- the go-gothub lib was updated to pass issue field value sto rest api\n- the repo upgraded to use v0.87 of go-github\n- we\u0026#39;re now using new params for IssueFieldValues\n\n## MCP impact\n\n- [ ] No tool or API changes\n- [x] Tool schema or behavior changed\n- [ ] New tool added\n\n## Prompts tested (tool changes only)\n\n\n\n- added tests to make sure that passing fields works, as well as retrieving them\n\n## Security / limits\n\n- [x] No security or limits impact\n- [ ] Auth / permissions considered\n- [ ] Data exposure, filtering, or token/size limits considered\n\n## Tool renaming\n- [ ] I am renaming tools as part of this PR (e.g. a part of a consolidation effort)\n   - [ ] I have added the new tool aliases in `deprecated_tool_aliases.go` \n- [x] I am not renaming tools as part of this PR\n\nNote: if you\u0026#39;re renaming tools, you *must* add the tool aliases. For more information on how to do so, please refer to the [official docs](https://github.com/github/github-mcp-server/blob/main/docs/tool-renaming.md).\n\n## Lint \u0026amp; tests\n\n- [x] Linted locally with `./script/lint`\n- [x] Tested locally with `./script/test`\n\n## Docs\n\n- [ ] Not needed\n- [ ] Updated (README / docs / examples)\n",
+    "created_at": "2026-05-18T13:08:25Z",
+    "draft": false,
+    "head": {
+      "ref": "iunia/reapply-issue-field-commits",
+      "repo": {
+        "description": "GitHub's official MCP Server",
+        "full_name": "iulia-b/github-mcp-server"
+      },
+      "sha": "f6f64900068dd3154b6373d1c8dd74beebffdbbe"
+    },
+    "html_url": "https://github.com/github/github-mcp-server/pull/2492",
+    "merged": false,
+    "number": 2492,
+    "state": "open",
+    "title": "Add support for issue fields values to `issues.read` and `issues.write`",
+    "updated_at": "2026-05-18T13:34:51Z",
+    "user": {
+      "avatar_url": "https://avatars.githubusercontent.com/u/64602043?v=4",
+      "id": 64602043,
+      "login": "iulia-b",
+      "profile_url": "https://github.com/iulia-b"
+    }
+  },
+  {
+    "base": {
+      "ref": "main",
+      "repo": {
+        "description": "GitHub's official MCP Server",
+        "full_name": "github/github-mcp-server"
+      },
+      "sha": "8a48d0749f8afbadaa66ef828fd424195fb7846f"
+    },
+    "body": "## What\n\nThe `pull_request_read` tool advertises in both its description and the documentation that the `get_review_comments` method uses cursor-based pagination (`perPage`, `after`), and the handler does plumb `after` through to the GraphQL query. But the tool\u0026#39;s `inputSchema` only declared `page` and `perPage` (via `WithPagination`) — `after` was never exposed.\n\nAs a result, MCP clients had no way to request the `after` cursor, leaving cursor pagination effectively broken:\n\n- `perPage: 1` returned only the first thread with no way to advance\n- `page: 2, 3, ...` was silently ignored by the GraphQL path\n- The only way to get more than one thread was to increase `perPage`, which risks the unbounded-payload problem also tracked in #2122\n\nThis PR is a small, surgical fix for the schema bug.\n\n## Changes\n\n- **`pkg/github/pullrequests.go`**: After the existing `WithPagination(schema)` call in `PullRequestRead`, add an `after` property (string, optional) to the schema with a description making clear it only applies to `get_review_comments`. All other methods continue to ignore it. No handler behavior is changed.\n- **`pkg/github/__toolsnaps__/pull_request_read.snap`**: Regenerated via `UPDATE_TOOLSNAPS=true go test ./pkg/github`.\n- **`README.md`**: Regenerated via `go run ./cmd/github-mcp-server generate-docs`.\n- **`pkg/github/pullrequests_test.go`**: Augment the schema-verification block in `Test_GetPullRequestComments` to assert `after` is present (regression guard) and add a new table-driven case `\u0026#34;after cursor is forwarded to GraphQL query\u0026#34;` that verifies the cursor flows from `requestArgs[\u0026#34;after\u0026#34;]` into the GraphQL variables.\n\n## Validation\n\n```\n$ go build ./...\n$ go test ./...\nok  github.com/github/github-mcp-server/pkg/github           2.615s\nok  github.com/github/github-mcp-server/internal/githubv4mock 13.371s\n... (all packages pass)\n$ go vet ./...\n(clean)\n$ go run ./cmd/github-mcp-server generate-docs\nSuccessfully updated README.md with automated documentation\nSuccessfully updated docs/remote-server.md with automated documentation\nSuccessfully updated docs/tool-renaming.md with automated documentation\n```\n\n`golangci-lint` is not installed locally; CI will run `script/lint`.\n\nThe new test case provides explicit coverage: the GraphQL mock matcher expects `\u0026#34;after\u0026#34;: githubv4.String(\u0026#34;cursor-page-2\u0026#34;)` and the test passes `\u0026#34;after\u0026#34;: \u0026#34;cursor-page-2\u0026#34;` in `requestArgs`, so a regression that drops `after` from the schema or handler wiring would fail this test.\n\n## Scope note\n\nThis PR only addresses the missing-`after` portion of #2122. The remaining concerns in that issue — unbounded payloads from `get`, `get_diff`, and `get_reviews` — involve more invasive API surface choices (field-selection parameters, truncation, etc.) and are better handled in a follow-up after design discussion. Happy to take that on as a separate PR if maintainers prefer a particular approach.\n\nFixes #2122 (partial)\n",
+    "created_at": "2026-05-17T16:59:07Z",
+    "draft": false,
+    "head": {
+      "ref": "fix/pull-request-read-after-param-2122",
+      "repo": {
+        "description": "GitHub's official MCP Server",
+        "full_name": "jluocsa/github-mcp-server"
+      },
+      "sha": "c462cfcfc4c6fdb0220efad7ec2ebc74a332c23a"
+    },
+    "html_url": "https://github.com/github/github-mcp-server/pull/2489",
+    "merged": false,
+    "number": 2489,
+    "state": "open",
+    "title": "fix(pull_request_read): expose \u0026#39;after\u0026#39; cursor parameter in input schema",
+    "updated_at": "2026-05-17T16:59:08Z",
+    "user": {
+      "avatar_url": "https://avatars.githubusercontent.com/u/103165870?v=4",
+      "id": 103165870,
+      "login": "jluocsa",
+      "profile_url": "https://github.com/jluocsa"
+    }
+  },
+  {
+    "base": {
+      "ref": "main",
+      "repo": {
+        "description": "GitHub's official MCP Server",
+        "full_name": "github/github-mcp-server"
+      },
+      "sha": "8a48d0749f8afbadaa66ef828fd424195fb7846f"
+    },
+    "body": "Fixes #1952.\n\n## Problem\n\nWhen tool argument unmarshalling fails (wrong types, malformed JSON), the handler returns `(nil, err)` which the SDK converts to a JSON-RPC protocol error (`-32603`). Agents cannot see protocol errors in their context window, so they cannot self-correct.\n\n## Fix\n\nReturn `isError: true` with the validation error message instead of a Go error. Two sites in `server_tool.go`:\n\n- `NewServerTool` (line 135)\n- `NewServerToolWithContextHandler` (line 159)\n\nBefore:\n```go\nif err := json.Unmarshal(req.Params.Arguments, \u0026amp;arguments); err != nil {\n    return nil, err // protocol error: agent sees nothing\n}\n```\n\nAfter:\n```go\nif err := json.Unmarshal(req.Params.Arguments, \u0026amp;arguments); err != nil {\n    return \u0026amp;mcp.CallToolResult{\n        Content: []mcp.Content{\u0026amp;mcp.TextContent{Text: fmt.Sprintf(\u0026#34;invalid arguments: %s\u0026#34;, err)}},\n        IsError: true,\n    }, nil // tool execution error: agent sees the message and can retry\n}\n```\n\n## Tests\n\n- `TestNewServerTool_InvalidArguments_ReturnsIsError`\n- `TestNewServerToolWithContextHandler_InvalidArguments_ReturnsIsError`\n- `TestNewServerTool_ValidArguments_Succeeds`",
+    "created_at": "2026-05-17T08:48:27Z",
+    "draft": false,
+    "head": {
+      "ref": "fix/is-error-validation",
+      "repo": {
+        "description": "GitHub's official MCP Server",
+        "full_name": "blackwell-systems/github-mcp-server"
+      },
+      "sha": "968422b09cdfc719c33777f4712bf36c28685692"
+    },
+    "html_url": "https://github.com/github/github-mcp-server/pull/2488",
+    "merged": false,
+    "number": 2488,
+    "state": "open",
+    "title": "fix: return isError for argument validation failures",
+    "updated_at": "2026-05-17T08:48:28Z",
+    "user": {
+      "avatar_url": "https://avatars.githubusercontent.com/u/236632453?v=4",
+      "id": 236632453,
+      "login": "blackwell-systems",
+      "profile_url": "https://github.com/blackwell-systems"
+    }
+  }
+]

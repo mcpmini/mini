@@ -22,18 +22,22 @@ list_issues:
 
 # Detail tools: no include filter, generous limits. Agent may read and update.
 issue_read:
+  exclude_always: [avatar_url]
   string_limits:
     body: 5000
 
 pull_request_read:
+  exclude_always: [avatar_url]
   string_limits:
     body: 5000
 
 get_issue:
+  exclude_always: [avatar_url]
   string_limits:
     body: 5000
 
 get_pull_request:
+  exclude_always: [avatar_url]
   string_limits:
     body: 5000
 
@@ -45,6 +49,7 @@ list_pull_request_files:
     patch: 5000
 
 get_commit:
+  exclude_always: [avatar_url]
   string_limits:
     message: 2000
     patch: 3000
