@@ -1,7 +1,0 @@
-protected:
-  # Write operations — commenting on designs happens occasionally
-  - post_comment
-
-hidden:
-  # Destructive and infrequent
-  - delete_comment

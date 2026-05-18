@@ -24,10 +24,6 @@ var knownServers = []serverMatcher{
 	{projection: "atlassian", urlParts: []string{"atlassian.net", "jira.com"}, cmdParts: []string{"mcp-atlassian", "server-jira", "confluence-mcp"}},
 	{projection: "linear", urlParts: []string{"linear.app"}, cmdParts: []string{"server-linear", "linear-mcp"}},
 	{projection: "sentry", urlParts: []string{"sentry.io"}, cmdParts: []string{"server-sentry"}},
-	{projection: "notion", urlParts: []string{"notion.so", "notion.com"}, cmdParts: []string{"notion-mcp", "notionhq"}},
-	{projection: "brave-search", urlParts: []string{}, cmdParts: []string{"brave-search", "brave_search"}},
-	{projection: "gitlab", urlParts: []string{"gitlab.com"}, cmdParts: []string{"server-gitlab", "gitlab-mcp"}},
-	{projection: "figma", urlParts: []string{"figma.com"}, cmdParts: []string{"figma-mcp", "figma-developer-mcp"}},
 }
 
 func DetectProjectionKey(sc config.ServerConfig) string {
