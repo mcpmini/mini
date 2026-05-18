@@ -1,54 +1,58 @@
-# List tools: tight include, body truncated — agents triage by title/number then
-# call a specific read tool for full detail.
+# Philosophy: doc/default-config-philosophy.md
+# - List body limits: 1000-2000 chars
+# - Detail body: 5000-10000 chars
+# - Exclude only URL templates and deprecated fields, not content fields
+# - auto_strip_threshold: 500 (in "*") handles large markup — no strip_markup needed per-tool
+# - html_url is a real URL (not a template) — keep it for agent reference
+# - depth_limit 2-3 as safety net — strings bypass depth check, only nested maps are cut
+
+# LIST OPERATIONS — include list + 1000-2000 char body for triage context
 list_pull_requests:
-  include: [number, title, state, draft, merged, body, user, created_at, updated_at, labels, assignees, requested_reviewers, head, base, milestone]
+  include: [number, title, state, draft, merged, body, user, created_at, updated_at, labels, assignees, requested_reviewers, head, base, milestone, html_url]
   array_limits:
     default: 20
     labels: 5
     assignees: 3
     requested_reviewers: 3
   string_limits:
-    body: 300
-  strip_markup: true
+    body: 1500
   depth_limit: 2
 
 list_issues:
-  include: [number, title, state, body, user, created_at, updated_at, labels, assignees, milestone]
+  include: [number, title, state, body, user, created_at, updated_at, labels, assignees, milestone, html_url]
   array_limits:
     default: 20
     labels: 5
     assignees: 3
   string_limits:
-    body: 300
-  strip_markup: true
+    body: 1500
   depth_limit: 2
 
-# Detail tools: generous limits — agent called this specifically for full context.
+# DETAIL OPERATIONS — no include filter, generous limits, agent may read and update
 issue_read:
   string_limits:
     body: 10000
-  strip_markup: true
   depth_limit: 3
 
 pull_request_read:
   string_limits:
-    body: 5000
-  strip_markup: true
+    body: 8000
   depth_limit: 3
 
 get_issue:
   string_limits:
     body: 10000
-  strip_markup: true
   depth_limit: 3
 
 get_pull_request:
   string_limits:
-    body: 5000
-  strip_markup: true
+    body: 8000
   depth_limit: 3
 
-# Code review tools
+# WRITE OPERATIONS — same rules as detail: agent needs full confirmation
+# (no explicit config needed — "*" wildcard applies)
+
+# CODE REVIEW
 list_pull_request_files:
   include: [filename, status, additions, deletions, changes, patch]
   array_limits:
@@ -66,14 +70,14 @@ get_commit:
   depth_limit: 3
 
 list_commits:
-  include: [sha, commit, author]
+  include: [sha, html_url, commit, author]
   array_limits:
     default: 30
   string_limits:
-    message: 300
+    message: 500
   depth_limit: 2
 
-# Search tools: massive noise reduction from URL fields
+# SEARCH — short snippets, exclude URL template noise
 search_code:
   include: [total_count, incomplete_results, items]
   array_limits:
@@ -90,7 +94,7 @@ search_repositories:
     items: 15
     topics: 10
   string_limits:
-    description: 300
+    description: 400
   depth_limit: 2
   exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
@@ -100,12 +104,11 @@ search_issues:
     items: 20
     labels: 5
   string_limits:
-    body: 200
-  strip_markup: true
+    body: 500
   depth_limit: 2
   exclude_always: [score]
 
-# File/repo browsing
+# FILE/REPO BROWSING
 get_file_contents:
   depth_limit: 2
 
@@ -115,7 +118,6 @@ list_repository_contents:
     default: 200
   depth_limit: 1
 
-# Global default for all other tools
 "*":
   depth_limit: 3
   auto_strip_threshold: 500

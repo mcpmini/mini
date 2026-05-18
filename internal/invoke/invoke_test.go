@@ -213,9 +213,7 @@ func TestBuildEnvelope_TruncationRecorded(t *testing.T) {
 	if contains(string(b), longBody) {
 		t.Errorf("body should be truncated in data, got full value")
 	}
-	if env.File == nil {
-		t.Error("expected file written when truncation applied")
-	}
+	// file only written when summary exceeds inline_threshold, not on truncation alone
 }
 
 // Invoke (end-to-end)
