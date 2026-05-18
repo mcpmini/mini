@@ -1,12 +1,8 @@
-# Philosophy: doc/default-config-philosophy.md
-# - List body limits: 1000-2000 chars
-# - Detail body: 5000-10000 chars
-# - Exclude only URL templates and deprecated fields, not content fields
-# - auto_strip_threshold: 500 (in "*") handles large markup — no strip_markup needed per-tool
-# - html_url is a real URL (not a template) — keep it for agent reference
-# - depth_limit 2-3 as safety net — strings bypass depth check, only nested maps are cut
+# Philosophy: docs/default-config-philosophy.md
+# No depth_limit — use exclude_always for specific noise, not structural cuts.
+# Slimify already caps nesting at 2 levels; summaryTokens threshold handles large responses.
+# html_url kept — real URL, agents reference it. Only URL templates excluded.
 
-# LIST OPERATIONS — include list + 1000-2000 char body for triage context
 list_pull_requests:
   include: [number, title, state, draft, merged, body, user, created_at, updated_at, labels, assignees, requested_reviewers, head, base, milestone, html_url]
   array_limits:
@@ -16,50 +12,37 @@ list_pull_requests:
     requested_reviewers: 3
   string_limits:
     body: 1500
-  depth_limit: 2
 
 list_issues:
-  include: [number, title, state, body, user, created_at, updated_at, labels, assignees, milestone, html_url]
+  include: [issues, totalCount, pageInfo]
   array_limits:
-    default: 20
-    labels: 5
-    assignees: 3
+    issues: 20
   string_limits:
     body: 1500
-  depth_limit: 2
 
-# DETAIL OPERATIONS — no include filter, generous limits, agent may read and update
+# Detail tools: no include filter, generous limits. Agent may read and update.
 issue_read:
   string_limits:
-    body: 10000
-  depth_limit: 3
+    body: 5000
 
 pull_request_read:
   string_limits:
-    body: 8000
-  depth_limit: 3
+    body: 5000
 
 get_issue:
   string_limits:
-    body: 10000
-  depth_limit: 3
+    body: 5000
 
 get_pull_request:
   string_limits:
-    body: 8000
-  depth_limit: 3
+    body: 5000
 
-# WRITE OPERATIONS — same rules as detail: agent needs full confirmation
-# (no explicit config needed — "*" wildcard applies)
-
-# CODE REVIEW
 list_pull_request_files:
   include: [filename, status, additions, deletions, changes, patch]
   array_limits:
     default: 100
   string_limits:
     patch: 5000
-  depth_limit: 1
 
 get_commit:
   string_limits:
@@ -67,7 +50,6 @@ get_commit:
     patch: 3000
   array_limits:
     files: 50
-  depth_limit: 3
 
 list_commits:
   include: [sha, html_url, commit, author]
@@ -75,9 +57,7 @@ list_commits:
     default: 30
   string_limits:
     message: 500
-  depth_limit: 2
 
-# SEARCH — short snippets, exclude URL template noise
 search_code:
   include: [total_count, incomplete_results, items]
   array_limits:
@@ -85,7 +65,6 @@ search_code:
     text_matches: 3
   string_limits:
     fragment: 500
-  depth_limit: 3
   exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 search_repositories:
@@ -95,7 +74,6 @@ search_repositories:
     topics: 10
   string_limits:
     description: 400
-  depth_limit: 2
   exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 search_issues:
@@ -105,19 +83,12 @@ search_issues:
     labels: 5
   string_limits:
     body: 500
-  depth_limit: 2
   exclude_always: [score]
 
-# FILE/REPO BROWSING
 get_file_contents:
-  depth_limit: 2
 
 list_repository_contents:
   include: [name, path, type, size, sha]
   array_limits:
     default: 200
-  depth_limit: 1
 
-"*":
-  depth_limit: 3
-  auto_strip_threshold: 500
