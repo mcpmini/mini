@@ -30,7 +30,7 @@ func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
 	summaryTokens := EstimateTokens(p.Summary)
 	stats := CallStats{RawTokens: rawTokens, SummaryTokens: summaryTokens}
 	e := newEnvelope(p)
-	if rawTokens > b.threshold {
+	if summaryTokens > b.threshold {
 		if err := b.writeFiles(e, p); err != nil {
 			return nil, stats, err
 		}

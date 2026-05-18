@@ -2,6 +2,7 @@ package response
 
 import (
 	"encoding/json"
+	"html"
 	"sort"
 	"strings"
 )
@@ -128,11 +129,26 @@ func indexValue(cats map[string]map[string]int, key string, value any) {
 func compactIndex(cats map[string]map[string]int) map[string]any {
 	idx := map[string]any{}
 	for k, counts := range cats {
-		if len(counts) <= 20 {
-			idx[k] = counts
+		if len(counts) > 20 {
+			continue
 		}
+		// Skip fields where every value is unique — no pattern to surface.
+		if maxCount(counts) < 2 {
+			continue
+		}
+		idx[k] = counts
 	}
 	return idx
+}
+
+func maxCount(counts map[string]int) int {
+	m := 0
+	for _, c := range counts {
+		if c > m {
+			m = c
+		}
+	}
+	return m
 }
 
 func toAnySlice(items []map[string]any) []any {
@@ -161,6 +177,9 @@ func flatField(out map[string]any, k string, v any) {
 		}
 	default:
 		if !noiseField(k, v) && !noiseValue(v) {
+			if s, ok := v.(string); ok {
+				v = html.UnescapeString(s)
+			}
 			out[k] = v
 		}
 	}
@@ -172,6 +191,9 @@ func flatNested(out map[string]any, prefix string, child map[string]any) {
 			continue
 		}
 		if fk := prefix + "_" + ck; !noiseField(fk, cv) && !noiseValue(cv) {
+			if s, ok := cv.(string); ok {
+				cv = html.UnescapeString(s)
+			}
 			out[fk] = cv
 		}
 	}
