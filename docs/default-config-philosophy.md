@@ -77,11 +77,18 @@ These are starting points, not rules. If a field is important and the limit is c
 
 **Never use a wildcard `exclude_always` to broadly suppress categories of fields** — this is too blunt and will silently drop useful data. If a field is noisy in one tool but useful in another, handle it per-tool.
 
-### `depth_limit` and `auto_strip_threshold`
+### `depth_limit`
 
-`depth_limit` stops deeply-nested objects from being included in full. It's a safety net, not a primary projection mechanism. A depth of 2–3 is appropriate for most responses.
+`depth_limit` stops deeply-nested objects from being included in full. It is a blunt instrument — use it only on named per-tool configs where you've seen the real response shape and know that deep nesting is noise. Do not set it in the `"*"` wildcard; an unlisted tool will silently lose nested data you haven't inspected.
 
-`auto_strip_threshold` strips long text fields (HTML, Markdown) above a token threshold. This handles upstream responses that include enormous rendered content without needing explicit string limits.
+### HTML/Markdown stripping
+
+Stripping is opt-in. There are two mechanisms:
+
+- `strip_markup: true` on a `ProjectionConfig` — strips HTML and Markdown from all content fields in that tool's response.
+- `auto_strip_threshold` in the global `~/.mini/config.yaml` — strips content fields globally when their value exceeds the threshold. Disabled by default (0). Enable only if your upstreams consistently embed large blocks of rendered HTML that add no value for agents.
+
+Do not set `auto_strip_threshold` inside a projection YAML — `ProjectionConfig` does not have that field. It belongs in global config only.
 
 ### Response shape matters
 
@@ -103,8 +110,8 @@ When an agent creates a PR, posts a comment, or pushes files, the response typic
 3. Use `include` lists only for list operations
 4. Set string limits generously — 1–5K depending on context
 5. Exclude URL template strings (fields with `{placeholder}` syntax) via per-tool `exclude_always`
-6. Leave `depth_limit: 2-3` as a safety net
-7. Leave `auto_strip_threshold: 500` to handle rendered markup
+6. Add `depth_limit: 2-3` only on specific tools where you've confirmed deep nesting is noise
+7. Use `strip_markup: true` on a specific tool only if the response embeds raw HTML that adds no value
 
 ### Validating configs
 

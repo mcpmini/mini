@@ -90,8 +90,14 @@ Priority is impact on developer workflows — making agents faster, cheaper, saf
 **Default projection configs for top developer MCPs**
 - Expand bundled projections from the v0.1 set (GitHub, Slack, Jira, Linear, Sentry) to cover the 10 most commonly used MCP servers in developer workflows
 - Candidates: Notion, Postgres, Puppeteer/Playwright, Brave Search, Atlassian Confluence, Datadog, PagerDuty, GitLab, Bitbucket
-- Each config ships only after being validated against real agent workflows to confirm measurable token savings
-- *Code changes*: add projection YAMLs to `internal/defaults/projections/`; update `knownServers` in `add_projection.go`; eval coverage for each new server
+- Each config ships only after being validated against real MCP tool responses (not raw REST API fixtures) — see `benchmarks/README.md`
+- *Code changes*: add projection YAMLs to `internal/defaults/projections/`; update `knownServers` in `add_projection.go`; add fixture + `fixtureValidations` entry
+
+**Jira custom field resolver**
+- Jira responses include dozens of `customfield_*` keys that are always null or useless for most agents, but the names vary across Jira instances and can't be safely excluded by name in a bundled config
+- A custom field resolver would fetch the Jira field schema on first use, identify which custom fields map to meaningful names (e.g. `Story Points`, `Sprint`, `Epic Link`), and build a per-instance projection that excludes unmapped custom fields and renames the useful ones
+- This is the right fix for the 105KB Jira search response problem — the current wildcard `depth_limit: 3` achieves 89% reduction, but meaningful per-field projection requires knowing which fields matter on the user's instance
+- *Code changes*: new `ops/jira_fields.go`; cache schema in `~/.mini/cache/<server>-jira-fields.json`; inject as post-projection transform
 
 **Local usage tracking (`local_usage`)**
 - Track per-(server, tool) call counts, error rates, and total estimated tokens saved — stored locally in `~/.mini/usage.json`, never sent anywhere
