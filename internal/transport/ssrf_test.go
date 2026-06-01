@@ -65,3 +65,18 @@ func TestSSRFSafeDialer_BlocksPrivateIPs(t *testing.T) {
 		})
 	}
 }
+
+// TestSSRFSafeDialer_BlocksPrivateHostname tests the DNS-resolution path:
+// a hostname that passes ValidateURL's static checks but resolves to a private IP.
+// "localhost" is in /etc/hosts on every POSIX system and resolves to 127.0.0.1.
+// This is the DNS-rebinding threat that SSRFSafeDialer specifically addresses.
+func TestSSRFSafeDialer_BlocksPrivateHostname(t *testing.T) {
+	d := SSRFSafeDialer()
+	_, err := d(t.Context(), "tcp", "localhost:80")
+	if err == nil {
+		t.Fatal("expected localhost to be blocked after DNS resolution")
+	}
+	if !strings.Contains(err.Error(), "blocked") && !strings.Contains(err.Error(), "private") {
+		t.Errorf("unexpected error message for localhost: %v", err)
+	}
+}
