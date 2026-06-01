@@ -91,6 +91,7 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 		old.Close()
 	}
 	s.reg.ReplaceServer(u.cfg.Name, tools, u.cfg.Permissions)
+	s.notifyAllSessions()
 	s.logger.Info("upstream reconnected", "server", u.cfg.Name)
 	if hook != nil {
 		hook()

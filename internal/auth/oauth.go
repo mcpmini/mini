@@ -59,7 +59,7 @@ func StartPKCEFlow(ctx context.Context, ac *config.AuthConfig) (authURL string, 
 	if err != nil {
 		return "", nil, err
 	}
-	cfg.RedirectURL = fmt.Sprintf("http://127.0.0.1:%d/callback", cb.port)
+	cfg.RedirectURL = fmt.Sprintf("http://127.0.0.1:%d%s", cb.port, LoopbackCallbackPath)
 	url := cfg.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier))
 
 	resultCh := make(chan PKCEResult, 1)
@@ -136,8 +136,13 @@ func callbackHandler(state string, codeCh chan<- string) http.Handler {
 			http.Error(w, "state mismatch", http.StatusBadRequest)
 			return
 		}
+		code := q.Get("code")
+		if code == "" {
+			http.Error(w, "missing code", http.StatusBadRequest)
+			return
+		}
 		writeAuthorizedResponse(w)
-		sendAuthCode(codeCh, q.Get("code"))
+		sendAuthCode(codeCh, code)
 	})
 }
 

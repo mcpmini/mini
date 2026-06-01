@@ -208,14 +208,12 @@ func TestAddRemoveSameServer_ToolsDoNotLeak(t *testing.T) {
 		t.Errorf("tempserver tools still visible after remove_server")
 	}
 
-	// Calling the removed tool must fail cleanly, not panic.
+	// Calling the removed tool must fail cleanly with -32602 (tool not found in registry).
+	// Per spec: errors finding the tool are protocol errors, not soft tool errors.
 	resp = serve(t, srv, callTool("call", map[string]any{
 		"server": "tempserver", "tool": "secret_tool", "params": map[string]any{},
 	}))
-	text := toolResultText(t, resp)
-	if !strings.Contains(text, "not connected") && !strings.Contains(text, "not found") {
-		t.Errorf("expected not-found or not-connected error after remove, got: %s", text)
-	}
+	requireRPCError(t, resp, transport.CodeInvalidParams, "not found")
 }
 
 // ---------------------------------------------------------------------------

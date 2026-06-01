@@ -415,6 +415,27 @@ func TestWriteRaw_concurrent(t *testing.T) {
 	}
 }
 
+// TestWritePair_doesNotMutateCallerMap ensures WritePair does not mutate the
+// _meta sub-map of the slimData passed by the caller. Regression for the bug
+// where injectRawPath wrote directly into the caller's map.
+func TestWritePair_doesNotMutateCallerMap(t *testing.T) {
+	s := newStore(t)
+	meta := map[string]any{"shape": "object", "fields": []string{"a", "b"}}
+	slim := map[string]any{"_meta": meta, "a": 1, "b": 2}
+
+	_, err := s.WritePair(slim, []byte(`{"a":1,"b":2}`))
+	if err != nil {
+		t.Fatalf("WritePair: %v", err)
+	}
+
+	if _, injected := meta["raw"]; injected {
+		t.Error("WritePair mutated caller's _meta map: raw key was injected")
+	}
+	if _, injected := slim["raw"]; injected {
+		t.Error("WritePair mutated caller's slim map: unexpected raw key")
+	}
+}
+
 func TestEvictIfNeeded_zeroBudget_unlimited(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 0, CleanupInterval: time.Hour}) // 0 MB = unlimited

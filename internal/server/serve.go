@@ -34,6 +34,9 @@ func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, ses
 	for scanner.Scan() {
 		s.handleScannedLine(handleScannedLineParams{ctx: ctx, rawLine: scanner.Bytes(), session: session, writeOut: writeOut, wg: &wg})
 	}
+	// Signal any goroutines waiting for initialization that no more messages are coming.
+	// This unblocks them so they can return an error and allow wg.Wait() to complete.
+	session.markAborted()
 	wg.Wait()
 	return scanner.Err()
 }
@@ -51,13 +54,59 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 		return
 	}
 	line := bytes.Clone(p.rawLine)
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
+	// Initialize is processed synchronously (blocking the scanner loop) so that
+	// session.initDone is closed before any subsequent request goroutine starts.
+	// This eliminates the race between markInitialized and goroutines that wait
+	// on it. The spec also says the initialize request MUST NOT be cancelled, so
+	// skipping in-flight registration is correct.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx#L32
+	if peekMethod(line) == "initialize" {
 		if resp, send := s.handleLine(p.ctx, line, p.session); send {
 			p.writeOut(resp)
 		}
+		return
+	}
+	rawID := peekRequestID(line)
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		ctx := p.ctx
+		if len(rawID) > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithCancel(p.ctx)
+			p.session.registerInFlight(rawID, cancel)
+			defer p.session.removeInFlight(rawID)
+			defer cancel()
+		}
+		if resp, send := s.handleLine(ctx, line, p.session); send {
+			p.writeOut(resp)
+		}
 	}()
+}
+
+func peekMethod(line []byte) string {
+	var peek struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(line, &peek); err != nil {
+		return ""
+	}
+	return peek.Method
+}
+
+// peekRequestID extracts the raw JSON "id" field from a JSON-RPC line without
+// fully parsing it. Returns nil for notifications (no id) or parse failures.
+func peekRequestID(line []byte) json.RawMessage {
+	var peek struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal(line, &peek); err != nil {
+		return nil
+	}
+	if len(peek.ID) == 0 || string(peek.ID) == "null" {
+		return nil
+	}
+	return peek.ID
 }
 
 // startNotifyForwarder launches a goroutine that writes notifications from ch to out.
@@ -110,8 +159,20 @@ func (s *Server) handleLine(ctx context.Context, line []byte, session *Session) 
 }
 
 func (s *Server) handleRequest(ctx context.Context, req transport.Request, session *Session) (transport.Response, bool) {
+	// Spec: "The initialization phase MUST be the first interaction between client and server."
+	// Non-initialize, non-ping requests wait until initialize completes (or the connection closes).
+	// Ping is explicitly allowed before initialization per lifecycle spec.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
+	if req.Method != "initialize" && req.Method != "ping" {
+		if !session.waitInitialized(ctx) {
+			return errorResponse(req.ID, transport.CodeInvalidRequest, "not initialized: send initialize first"), true
+		}
+	}
 	s.logger.Debug("agent request", "method", req.Method, "id", req.ID)
 	result, err := s.dispatch(ctx, req, session)
+	if req.Method == "initialize" && err == nil {
+		session.markInitialized()
+	}
 	if err != nil {
 		return dispatchErrorResponse(req.ID, err), true
 	}
@@ -145,9 +206,25 @@ func (s *Server) dispatch(ctx context.Context, req transport.Request, session *S
 		return map[string]any{}, nil
 	case transport.NotificationInitialized:
 		return nil, nil
+	case transport.NotificationCancelled:
+		handleCancelled(req.Params, session)
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: %s", errMethodNotFound, req.Method)
 	}
+}
+
+// handleCancelled processes a notifications/cancelled from an agent, cancelling the
+// in-flight upstream call for that request ID via the session's per-request context.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx
+func handleCancelled(params json.RawMessage, session *Session) {
+	var p struct {
+		RequestID json.RawMessage `json:"requestId"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil || len(p.RequestID) == 0 {
+		return
+	}
+	session.cancelInFlight(p.RequestID)
 }
 
 const initInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
@@ -170,7 +247,7 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 	}
 	return transport.InitializeResult{
 		ProtocolVersion: transport.ProtocolVersion,
-		Capabilities:    map[string]any{"tools": map[string]any{}},
+		Capabilities:    map[string]any{"tools": map[string]any{"listChanged": true}},
 		ServerInfo:      transport.ServerInfo{Name: "mini", Version: transport.Version},
 		Instructions:    instructions,
 	}, nil

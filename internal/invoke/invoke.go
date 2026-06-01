@@ -106,6 +106,11 @@ func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {
 		return nil, fmt.Errorf("tool returned error: %s", joinText(result.Content))
 	}
 	text := strings.TrimSpace(joinText(result.Content))
+	if text == "" && len(result.StructuredContent) > 0 {
+		// Spec 2025-06-18: servers SHOULD include text for backwards compat, but
+		// if they don't, use structuredContent directly.
+		return result.StructuredContent, nil
+	}
 	if json.Valid([]byte(text)) {
 		return json.RawMessage(text), nil
 	}

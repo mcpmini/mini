@@ -163,6 +163,7 @@ func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, 
 	if err := s.validateRuntimeTransport(p.ServerCfg); err != nil {
 		return nil, err
 	}
+	p.ServerCfg.RuntimeAdded = true
 	if err := s.AddUpstream(ctx, *p.ServerCfg); err != nil {
 		return nil, err
 	}

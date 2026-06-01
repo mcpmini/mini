@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -36,6 +37,39 @@ func TestRegister_success(t *testing.T) {
 	}
 	if clientID != "test-client-id" {
 		t.Errorf("expected test-client-id, got %q", clientID)
+	}
+}
+
+// TestRegister_redirectURIUsesLoopbackCallbackPath verifies that the redirect_uri
+// registered via RFC 7591 dynamic registration uses the same path as the PKCE
+// flow redirect listener (auth.LoopbackCallbackPath). A mismatch causes
+// "redirect_uri_mismatch" errors on strict OAuth servers.
+func TestRegister_redirectURIUsesLoopbackCallbackPath(t *testing.T) {
+	var registeredURIs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			RedirectURIs []string `json:"redirect_uris"`
+		}
+		json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+		registeredURIs = body.RedirectURIs
+		json.NewEncoder(w).Encode(map[string]string{"client_id": "cid"}) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	if _, err := auth.Register(context.Background(), srv.URL); err != nil {
+		t.Fatal(err)
+	}
+	if len(registeredURIs) == 0 {
+		t.Fatal("no redirect_uris in registration request")
+	}
+	for _, u := range registeredURIs {
+		parsed, err := url.Parse(u)
+		if err != nil {
+			t.Fatalf("parse redirect_uri %q: %v", u, err)
+		}
+		if parsed.Path != auth.LoopbackCallbackPath {
+			t.Errorf("registered redirect_uri path = %q, want %q (must match LoopbackCallbackPath)", parsed.Path, auth.LoopbackCallbackPath)
+		}
 	}
 }
 

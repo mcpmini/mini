@@ -100,23 +100,32 @@ func TestUnknownMethod(t *testing.T) {
 	}
 }
 
-func TestNotificationInitialized_noResponse(t *testing.T) {
-	// "notifications/initialized" is a fire-and-forget — should not produce
-	// a visible error, but does produce a nil result (which writes a null-result response).
+// TestInitializedNotification_noResponse verifies that notifications/initialized,
+// when sent as a proper notification (no id), produces no response.
+// Spec: "After successful initialization, the client MUST send an initialized notification."
+// Notifications are fire-and-forget — the server MUST NOT send a response.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L109
+func TestInitializedNotification_noResponse(t *testing.T) {
 	srv := newEdgeServer(t)
-	input := rpc("initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
+	initMsg := rpc("initialize", map[string]any{
+		"protocolVersion": transport.ProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
-	input = append(input, rpc("notifications/initialized", nil)...)
-	lines := rawServe(t, srv, input)
-	// Both lines should be valid JSON
-	for _, line := range lines {
-		var resp map[string]any
-		if err := json.Unmarshal(line, &resp); err != nil {
-			t.Errorf("response line not valid JSON: %s", line)
-		}
+	// Send notifications/initialized as a notification (no id) — the spec-correct form.
+	notif := notification("notifications/initialized", nil)
+	lines := rawServe(t, srv, append(initMsg, notif...))
+	// Exactly one response: for initialize. The notification must produce no response.
+	if len(lines) != 1 {
+		t.Errorf("expected exactly 1 response (initialize only), got %d: %s",
+			len(lines), bytes.Join(lines, []byte("|")))
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(lines[0], &resp); err != nil {
+		t.Errorf("initialize response not valid JSON: %s", lines[0])
+	}
+	if resp["result"] == nil {
+		t.Errorf("initialize response must have result, got: %v", resp)
 	}
 }
 
@@ -139,14 +148,12 @@ func TestExecOnHiddenTool_notFound(t *testing.T) {
 	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("secret", "visible"))
 
-	// Hidden tools are absent from registry entirely — lookup returns "not found"
+	// Hidden tools are absent from the registry — lookup returns "not found".
+	// Per spec, this is a protocol error (-32602), not a soft tool error.
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "svc", "tool": "secret", "params": map[string]any{},
 	}))
-	text := toolResultText(t, resp)
-	if !strings.Contains(text, "not found") {
-		t.Errorf("expected 'not found' for hidden tool, got: %s", text)
-	}
+	requireRPCError(t, resp, transport.CodeInvalidParams, "not found")
 }
 
 func TestExecOnHiddenTool_notInDiscover(t *testing.T) {
@@ -472,5 +479,70 @@ func TestDefaultPermissionProtected(t *testing.T) {
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, "perm_call") {
 		t.Errorf("expected perm_call mention for default-protected tool, got: %s", text)
+	}
+}
+
+// TestRequestBeforeInitialize_rejected verifies that requests (other than initialize and ping)
+// sent before the initialize handshake are rejected with -32600 Invalid Request.
+// Spec: "The initialization phase MUST be the first interaction between client and server."
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L38
+func TestRequestBeforeInitialize_rejected(t *testing.T) {
+	for _, method := range []string{"tools/list", "tools/call"} {
+		t.Run(method, func(t *testing.T) {
+			srv := newEdgeServer(t)
+			// Send request WITHOUT preceding initialize.
+			lines := rawServe(t, srv, rpc(method, nil))
+			if len(lines) == 0 {
+				t.Fatal("expected a response")
+			}
+			resp := parseRPCResponse(t, lines[0])
+			errObj, ok := resp["error"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected JSON-RPC error for %s before initialize, got: %v", method, resp)
+			}
+			if code := int(errObj["code"].(float64)); code != transport.CodeInvalidRequest {
+				t.Errorf("error code = %d, want %d (InvalidRequest)", code, transport.CodeInvalidRequest)
+			}
+		})
+	}
+}
+
+// TestPingBeforeInitialize_allowed verifies that ping is accepted before initialize.
+// The spec explicitly permits ping before initialization as a liveness check.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
+func TestPingBeforeInitialize_allowed(t *testing.T) {
+	srv := newEdgeServer(t)
+	lines := rawServe(t, srv, rpc("ping", nil))
+	if len(lines) == 0 {
+		t.Fatal("expected a response to ping")
+	}
+	resp := parseRPCResponse(t, lines[0])
+	if resp["error"] != nil {
+		t.Errorf("ping before initialize must not error, got: %v", resp["error"])
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok || len(result) != 0 {
+		t.Errorf("ping result must be {}, got: %v", resp["result"])
+	}
+}
+
+// TestBatchRequest_returnsParseError verifies that a JSON array (batch) on a single line
+// returns a -32700 Parse Error. mini does not implement batch support; the spec says
+// initialize MUST NOT be in a batch, and other batches are valid but optional to support.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/transports.mdx#L25
+func TestBatchRequest_returnsParseError(t *testing.T) {
+	srv := newEdgeServer(t)
+	batch := []byte(`[{"jsonrpc":"2.0","id":1,"method":"ping"}]` + "\n")
+	lines := rawServe(t, srv, batch)
+	if len(lines) == 0 {
+		t.Fatal("expected a response")
+	}
+	resp := parseRPCResponse(t, lines[0])
+	errObj, ok := resp["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error for batch request, got: %v", resp)
+	}
+	if code := int(errObj["code"].(float64)); code != transport.CodeParseError {
+		t.Errorf("batch should return -32700 ParseError, got code %d", code)
 	}
 }

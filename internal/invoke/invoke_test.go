@@ -102,6 +102,34 @@ func TestExtractContent_Malformed(t *testing.T) {
 	}
 }
 
+// TestExtractContent_StructuredContent verifies that structuredContent (added in
+// MCP spec 2025-06-18) is used when a server omits the text content fallback.
+// Spec: servers SHOULD include a text representation for backwards compatibility,
+// but not all do.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-06-18/server/tools.mdx#structured-content
+func TestExtractContent_StructuredContentFallback(t *testing.T) {
+	raw := json.RawMessage(`{"content":[],"structuredContent":{"temp":72,"unit":"F"}}`)
+	out, err := invoke.ExtractContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != `{"temp":72,"unit":"F"}` {
+		t.Errorf("got %s, want structuredContent passthrough", out)
+	}
+}
+
+func TestExtractContent_StructuredContentPreferText(t *testing.T) {
+	// When both text and structuredContent are present, text wins (backwards compat).
+	raw := json.RawMessage(`{"content":[{"type":"text","text":"{\"temp\":72}"}],"structuredContent":{"temp":72}}`)
+	out, err := invoke.ExtractContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != `{"temp":72}` {
+		t.Errorf("got %s, want text-content value", out)
+	}
+}
+
 // InvokeRaw
 
 func TestInvokeRaw_BasicCall(t *testing.T) {

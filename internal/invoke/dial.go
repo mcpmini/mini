@@ -20,6 +20,7 @@ func Dial(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc confi
 			Headers:                 MergedHeaders(sc),
 			ClientTimeout:           parseClientTimeout(sc.HTTPClientTimeout),
 			DisableRetryOnRateLimit: sc.DisableRetryOnRateLimit,
+			BlockPrivateIPs:         sc.RuntimeAdded && !cfg.DangerousAllowPrivateURLs,
 		})
 	default:
 		return transport.NewStdioConnection(ctx, logger, sc.Command, sc.Args, sc.Env)

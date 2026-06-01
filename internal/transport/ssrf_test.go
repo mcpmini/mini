@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,30 @@ func TestValidateURL(t *testing.T) {
 			}
 			if !tc.wantErr && err != nil {
 				t.Errorf("unexpected error for %q: %v", tc.url, err)
+			}
+		})
+	}
+}
+
+func TestSSRFSafeDialer_BlocksPrivateIPs(t *testing.T) {
+	cases := []struct {
+		name string
+		addr string
+	}{
+		{"loopback", "127.0.0.1:80"},
+		{"private 10.x", "10.0.0.1:80"},
+		{"link-local IMDS", "169.254.169.254:80"},
+		{"private 192.168.x", "192.168.1.1:80"},
+	}
+	d := SSRFSafeDialer()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := d(t.Context(), "tcp", tc.addr)
+			if err == nil {
+				t.Fatalf("expected connection to %s to be blocked", tc.addr)
+			}
+			if !strings.Contains(err.Error(), "blocked") {
+				t.Errorf("unexpected error for %s: %v", tc.addr, err)
 			}
 		})
 	}

@@ -40,6 +40,9 @@ type HTTPConnectionConfig struct {
 	// DisableRetryOnRateLimit disables automatic 429/503 retry. When true,
 	// rate-limit errors are returned immediately so the caller can decide.
 	DisableRetryOnRateLimit bool
+	// BlockPrivateIPs attaches an SSRF-safe dialer that re-validates resolved IPs
+	// at connect time, preventing DNS rebinding attacks. Set for runtime-added servers.
+	BlockPrivateIPs bool
 }
 
 func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
@@ -51,18 +54,27 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 		url:                     cfg.URL,
 		headers:                 cfg.Headers,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
-		client:                  noRedirectClient(timeout),
+		client:                  noRedirectClient(timeout, cfg.BlockPrivateIPs),
 	}, nil
 }
 
 // noRedirectClient blocks redirects to prevent session token exfiltration to a different host.
-func noRedirectClient(timeout time.Duration) *http.Client {
-	return &http.Client{
+func noRedirectClient(timeout time.Duration, blockPrivateIPs bool) *http.Client {
+	client := &http.Client{
 		Timeout: timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
+	if blockPrivateIPs {
+		dt, ok := http.DefaultTransport.(*http.Transport)
+		if ok {
+			t := dt.Clone()
+			t.DialContext = SSRFSafeDialer()
+			client.Transport = t
+		}
+	}
+	return client
 }
 
 const maxRetries = 3
@@ -287,9 +299,9 @@ func (c *HTTPConnection) sendInitialize(ctx context.Context) error {
 	return err
 }
 
-// Spec: client MUST send notifications/initialized after a successful
-// initialize response. Stdio sends this in stdio.go:initialize; HTTP must
-// send it here as a separate POST with no expected response (notification).
+// Client MUST send notifications/initialized after a successful initialize response.
+// Stdio sends this in stdio.go:initialize; HTTP must send it as a separate POST.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L88
 func (c *HTTPConnection) sendInitializedNotification(ctx context.Context) error {
 	notif, _ := json.Marshal(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(notif))

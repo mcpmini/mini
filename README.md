@@ -167,6 +167,8 @@ permissions:
 
 Three tiers: `open` (default), `protected` (requires `perm_call`), `hidden` (invisible to `list`). Bundled permission defaults install automatically for known servers.
 
+`perm_call` works as a gate via your agent's per-tool permission settings: in Claude Code, allowlist `mcp__mini__call` and leave `mcp__mini__perm_call` unapproved — Claude will prompt before calling protected tools. Codex supports the same via `approval_mode` per tool. **Cursor only supports server-level approval**, so `perm_call` is not a hard gate there — use `hidden` instead for tools that should never be agent-callable in Cursor.
+
 ---
 
 ## Auth

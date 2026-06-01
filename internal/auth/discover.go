@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -71,9 +72,11 @@ func checkDiscoveryStatus(statusCode int, metaURL string) error {
 	return fmt.Errorf("oauth discovery: unexpected status %d from %s", statusCode, metaURL)
 }
 
+const maxAuthBodyBytes = 64 << 10
+
 func decodeServerMeta(resp *http.Response) (*ServerMeta, error) {
 	var meta ServerMeta
-	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAuthBodyBytes)).Decode(&meta); err != nil {
 		return nil, fmt.Errorf("oauth discovery: decode metadata: %w", err)
 	}
 	return &meta, nil

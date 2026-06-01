@@ -13,6 +13,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func newSecureServer(t *testing.T) *server.Server {
@@ -179,6 +180,7 @@ func TestPathTraversal_exec_rejected(t *testing.T) {
 	srv := newSecureServer(t)
 	defer srv.Close()
 
+	// Per spec, invalid params → -32602, not a soft tool error.
 	for _, name := range []string{"../escape", "../../etc/passwd", "bad name!", "server\x00null"} {
 		for _, tool := range []string{"call", "perm_call"} {
 			resp := serve(t, srv, callTool(tool, map[string]any{
@@ -186,10 +188,7 @@ func TestPathTraversal_exec_rejected(t *testing.T) {
 				"tool":   "anything",
 				"params": map[string]any{},
 			}))
-			text := toolResultText(t, resp)
-			if !strings.Contains(text, "invalid server name") {
-				t.Errorf("%s: expected invalid server name rejection for %q, got: %s", tool, name, text)
-			}
+			requireRPCError(t, resp, transport.CodeInvalidParams, "invalid server name")
 		}
 	}
 }
@@ -200,6 +199,7 @@ func TestExec_invalidToolName_rejected(t *testing.T) {
 	srv := newSecureServer(t)
 	defer srv.Close()
 
+	// Per spec, invalid params → -32602, not a soft tool error.
 	for _, badTool := range []string{"bad tool!", "tool\x00null", "tool@host"} {
 		for _, method := range []string{"call", "perm_call"} {
 			resp := serve(t, srv, callTool(method, map[string]any{
@@ -207,10 +207,7 @@ func TestExec_invalidToolName_rejected(t *testing.T) {
 				"tool":   badTool,
 				"params": map[string]any{},
 			}))
-			text := toolResultText(t, resp)
-			if !strings.Contains(text, "invalid tool name") {
-				t.Errorf("%s: expected invalid tool name rejection for %q, got: %s", method, badTool, text)
-			}
+			requireRPCError(t, resp, transport.CodeInvalidParams, "invalid tool name")
 		}
 	}
 }

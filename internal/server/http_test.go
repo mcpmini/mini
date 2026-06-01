@@ -137,12 +137,14 @@ func requestMCPMethod(t *testing.T, ts *httptest.Server, method string) *http.Re
 
 func requestToolsList(t *testing.T, ts *httptest.Server, accept string) *http.Response {
 	t.Helper()
+	sessionID := initSession(t, ts)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/list",
 	})
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", accept)
+	req.Header.Set("Mcp-Session-Id", sessionID)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -205,11 +207,15 @@ func TestHTTPServer_healthz(t *testing.T) {
 
 func httpExecOne(t *testing.T, ts *httptest.Server, id int, errs chan<- string) {
 	t.Helper()
+	// Each goroutine gets its own session, which requires initialize first.
+	// Spec: "The initialization phase MUST be the first interaction between client and server."
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L38
+	sessionID := initSession(t, ts)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": id + 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
 	})
-	resp := mcpPost(t, ts, body, "")
+	resp := mcpPost(t, ts, body, sessionID)
 	if resp.StatusCode != http.StatusOK {
 		errs <- "unexpected status"
 	}
@@ -256,6 +262,7 @@ func TestHTTPServer_notFound(t *testing.T) {
 
 func ssePost(t *testing.T, ts *httptest.Server) *http.Response {
 	t.Helper()
+	sessionID := initSession(t, ts)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "list", "arguments": map[string]any{}},
@@ -263,6 +270,7 @@ func ssePost(t *testing.T, ts *httptest.Server) *http.Response {
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Mcp-Session-Id", sessionID)
 	resp, err := ts.Client().Do(req)
 	if err != nil {
 		t.Fatal(err)

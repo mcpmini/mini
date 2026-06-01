@@ -82,12 +82,12 @@ func TestReconnect_changedToolSet_noStaleEntries(t *testing.T) {
 		}
 	})
 	t.Run("toolB not found", func(t *testing.T) {
+		// Tool lookup failure is a protocol error (-32602), not a soft tool error.
+		// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L103
 		resp := serve(t, srv, callTool("call", map[string]any{
 			"server": "svc", "tool": "toolB", "params": map[string]any{},
 		}))
-		if text := toolResultText(t, resp); text == "" {
-			t.Error("expected an error message for missing toolB")
-		}
+		requireRPCError(t, resp, transport.CodeInvalidParams, "not found")
 	})
 }
 
@@ -310,3 +310,70 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 		t.Errorf("transport error should trigger redial: expected ≥2 dials, got %d", got)
 	}
 }
+
+// TestClose_concurrentConnError verifies that Server.Close() does not panic when a
+// request goroutine encounters a connection error and calls maybeReconnect at the
+// same time as Close() is completing its reconnectWg.Wait(). This is a regression
+// test for the WaitGroup reuse race: Add(1) called after Wait() unblocked.
+func TestClose_concurrentConnError(t *testing.T) {
+	// Run many iterations to expose the narrow scheduling window.
+	for i := range 50 {
+		cfg := config.DefaultConfig()
+		cfg.ResponseDir = t.TempDir()
+		cfg.InlineThreshold = 10000
+		fakeClock := clock.NewFake(time.Now())
+		srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock))
+
+		// slow is a connection that blocks until released, then returns a transport error.
+		// This simulates a call that errors exactly as Close() is running.
+		release := make(chan struct{})
+		slow := &slowErrConn{
+			tools:   []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
+			release: release,
+		}
+		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, slow)
+
+		// Start a call that will block until we close the release channel.
+		var callErr error
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			resp := serve(t, srv, callTool("call", map[string]any{
+				"server": "svc", "tool": "ping", "params": map[string]any{},
+			}))
+			if resp["error"] != nil {
+				callErr = fmt.Errorf("rpc error: %v", resp["error"])
+			}
+			_ = callErr
+		}()
+
+		// Allow the call to proceed and error, then immediately Close the server.
+		// The Close() must not panic even if the error handler fires during shutdown.
+		close(release)
+		srv.Close()
+		<-done
+
+		_ = i
+	}
+}
+
+// slowErrConn blocks on Call until its release channel is closed, then returns a
+// transport-level error (not an RPC error), which triggers maybeReconnect.
+type slowErrConn struct {
+	tools   []transport.ToolDefinition
+	release <-chan struct{}
+}
+
+func (c *slowErrConn) Call(ctx context.Context, _ string, _ json.RawMessage) (json.RawMessage, error) {
+	select {
+	case <-c.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return nil, errors.New("transport: connection reset")
+}
+func (c *slowErrConn) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
+	return c.tools, nil
+}
+func (c *slowErrConn) Health(_ context.Context) error { return nil }
+func (c *slowErrConn) Close() error                   { return nil }

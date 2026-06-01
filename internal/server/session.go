@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"sync/atomic"
@@ -18,6 +19,21 @@ type Session struct {
 	notifyCh    chan json.RawMessage // non-nil only in stdio sessions; set by Serve
 	dialMu      sync.Mutex
 	dialMap     map[string]*dialOnce
+	// inFlight tracks cancellable in-progress requests keyed by raw JSON request ID.
+	// Used to honor notifications/cancelled from agents.
+	inFlightMu sync.Mutex
+	inFlight   map[string]context.CancelFunc
+
+	// initDone / initAbort implement the initialization gate.
+	// Non-ping requests block in waitInitialized until one fires:
+	//   initDone  → initialize completed successfully, proceed
+	//   initAbort → connection closed before initialize arrived, return error
+	// Spec: "The initialization phase MUST be the first interaction between client and server."
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L38
+	initDone      chan struct{}
+	initAbort     chan struct{}
+	initOnce      sync.Once
+	initAbortOnce sync.Once
 
 	proxyMode      atomic.Bool
 	totalCalls     atomic.Int64
@@ -64,7 +80,66 @@ func newSession() *Session {
 		projections: make(map[string]*config.ProjectionConfig),
 		conns:       make(map[string]transport.Connection),
 		dialMap:     make(map[string]*dialOnce),
+		inFlight:    make(map[string]context.CancelFunc),
 		lastUsed:    time.Now(),
+		initDone:    make(chan struct{}),
+		initAbort:   make(chan struct{}),
+	}
+}
+
+// markInitialized is called after the initialize response is sent successfully.
+// It unblocks any requests that were waiting for initialization.
+func (s *Session) markInitialized() {
+	s.initOnce.Do(func() { close(s.initDone) })
+}
+
+// markAborted is called when the Serve loop ends without initialization completing.
+// It unblocks waiting goroutines so they can return an error and let Serve exit.
+func (s *Session) markAborted() {
+	s.initAbortOnce.Do(func() { close(s.initAbort) })
+}
+
+// waitInitialized blocks until initialization succeeds, the serving loop ends,
+// or the request context is cancelled. Returns true only if initialized.
+func (s *Session) waitInitialized(ctx context.Context) bool {
+	select {
+	case <-s.initDone:
+		return true
+	default:
+	}
+	select {
+	case <-s.initDone:
+		return true
+	case <-s.initAbort:
+		return false
+	case <-ctx.Done():
+		return false
+	}
+}
+
+// registerInFlight registers a cancellable context for the request with the
+// given raw-JSON ID. The ID is stored as its raw JSON string so that numeric
+// IDs (5) and string IDs ("5") are correctly distinguished.
+func (s *Session) registerInFlight(rawID json.RawMessage, cancel context.CancelFunc) {
+	s.inFlightMu.Lock()
+	s.inFlight[string(rawID)] = cancel
+	s.inFlightMu.Unlock()
+}
+
+func (s *Session) removeInFlight(rawID json.RawMessage) {
+	s.inFlightMu.Lock()
+	delete(s.inFlight, string(rawID))
+	s.inFlightMu.Unlock()
+}
+
+// cancelInFlight cancels the in-flight request matching rawID, if any.
+// Safe to call if the request has already completed.
+func (s *Session) cancelInFlight(rawID json.RawMessage) {
+	s.inFlightMu.Lock()
+	cancel := s.inFlight[string(rawID)]
+	s.inFlightMu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 

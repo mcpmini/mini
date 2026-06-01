@@ -98,8 +98,18 @@ func injectRawPath(slimData map[string]any, slimJSON []byte, rawPath string) ([]
 	if !ok {
 		return slimJSON, nil
 	}
-	meta["raw"] = rawPath
-	b, err := json.MarshalIndent(slimData, "", "  ")
+	// Copy both maps before mutating to avoid side-effecting the caller's data.
+	metaCopy := make(map[string]any, len(meta)+1)
+	for k, v := range meta {
+		metaCopy[k] = v
+	}
+	metaCopy["raw"] = rawPath
+	slimCopy := make(map[string]any, len(slimData))
+	for k, v := range slimData {
+		slimCopy[k] = v
+	}
+	slimCopy["_meta"] = metaCopy
+	b, err := json.MarshalIndent(slimCopy, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal slim: %w", err)
 	}

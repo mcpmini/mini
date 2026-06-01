@@ -220,6 +220,107 @@ func TestLoad_invalidServerName(t *testing.T) {
 	}
 }
 
+// TestPKCECallback_emptyCodeRejected verifies that the OAuth callback handler
+// returns 400 when the auth code is absent, rather than writing "Authorized"
+// and sending an empty string to the token exchange.
+func TestPKCECallback_emptyCodeRejected(t *testing.T) {
+	mock := newMockAuthServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	if err != nil {
+		t.Fatalf("StartPKCEFlow: %v", err)
+	}
+
+	// Parse the callback URL, then hit it without a code param.
+	parsed, _ := url.Parse(authURL)
+	state := parsed.Query().Get("state")
+	redirectURI := parsed.Query().Get("redirect_uri")
+
+	resp, err := http.Get(redirectURI + "?state=" + url.QueryEscape(state))
+	if err != nil {
+		t.Fatalf("GET callback: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for empty code, got %d", resp.StatusCode)
+	}
+
+	// doneCh must not have received a result (flow is still waiting for a valid code).
+	select {
+	case result := <-doneCh:
+		t.Errorf("expected no result yet, got: %v", result)
+	default:
+	}
+
+	cancel() // clean up the goroutine
+	<-doneCh // drain
+}
+
+// TestPKCECallback_stateMismatchRejected verifies that a mismatched state
+// returns 400 and does not deliver a code.
+func TestPKCECallback_stateMismatchRejected(t *testing.T) {
+	mock := newMockAuthServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	if err != nil {
+		t.Fatalf("StartPKCEFlow: %v", err)
+	}
+	parsed, _ := url.Parse(authURL)
+	redirectURI := parsed.Query().Get("redirect_uri")
+
+	resp, err := http.Get(redirectURI + "?code=real-code&state=wrong-state")
+	if err != nil {
+		t.Fatalf("GET callback: %v", err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400 for state mismatch, got %d", resp.StatusCode)
+	}
+
+	select {
+	case result := <-doneCh:
+		t.Errorf("expected no result on state mismatch, got: %v", result)
+	default:
+	}
+
+	cancel()
+	<-doneCh
+}
+
+// TestLoopbackCallbackPath_consistent verifies that the path registered during
+// dynamic client registration matches the path used in the actual PKCE flow.
+// This guards against the two sides diverging (e.g. /callback vs /cb).
+func TestLoopbackCallbackPath_consistent(t *testing.T) {
+	mock := newMockAuthServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	if err != nil {
+		t.Fatalf("StartPKCEFlow: %v", err)
+	}
+
+	parsed, _ := url.Parse(authURL)
+	redirectURI := parsed.Query().Get("redirect_uri")
+	cbURL, err := url.Parse(redirectURI)
+	if err != nil {
+		t.Fatalf("parse redirect_uri: %v", err)
+	}
+
+	if cbURL.Path != auth.LoopbackCallbackPath {
+		t.Errorf("PKCE redirect_uri path = %q, want %q (must match Register's URI)", cbURL.Path, auth.LoopbackCallbackPath)
+	}
+
+	cancel()
+	<-doneCh
+}
+
 func TestTokenValidAfterForcedExpiry(t *testing.T) {
 	mock := newMockAuthServer(t)
 	dir := t.TempDir()

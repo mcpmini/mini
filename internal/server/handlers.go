@@ -32,10 +32,10 @@ func toolFullName(server, tool string) string { return server + "." + tool }
 
 func validateExecuteParams(p executeParams) error {
 	if !config.ValidServerName.MatchString(p.Server) {
-		return fmt.Errorf("invalid server name: %q", p.Server)
+		return fmt.Errorf("%w: invalid server name: %q", errInvalidParams, p.Server)
 	}
 	if !config.ValidToolName.MatchString(p.Tool) {
-		return fmt.Errorf("invalid tool name: %q", p.Tool)
+		return fmt.Errorf("%w: invalid tool name: %q", errInvalidParams, p.Tool)
 	}
 	return nil
 }
@@ -87,7 +87,7 @@ func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session
 		return nil, fmt.Errorf("tool %q is protected — use perm_call instead", entry.FullName)
 	}
 	if !s.hasProjectionCoverage(p.Server, p.Tool, session) {
-		return nil, fmt.Errorf("tool %q has no projection configured — responses may be large or unfiltered; use perm_call to proceed, or add a projection entry (config action:set_projection)", entry.FullName)
+		return nil, fmt.Errorf("tool %q has no projection configured — add one with config(action:set_projection) or use perm_call to invoke without projection", entry.FullName)
 	}
 	return s.callUpstream(ctx, p, entry, session)
 }
@@ -102,7 +102,7 @@ func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.T
 	}
 	entry, err := s.reg.Lookup(toolFullName(p.Server, p.Tool))
 	if err != nil {
-		return executeParams{}, nil, err
+		return executeParams{}, nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
 	return p, entry, nil
 }
@@ -172,7 +172,22 @@ func (s *Server) dispatchRawCall(ctx context.Context, upstream *upstreamServer, 
 }
 
 func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
-	if err == nil || !isConnError(err) || !upstream.reconnecting.CompareAndSwap(false, true) {
+	if err == nil || !isConnError(err) {
+		return
+	}
+	// Skip launching a reconnect goroutine if the upstream is already shutting
+	// down. callConn releases u.mu.RLock before returning, so there is a narrow
+	// window where Close() can complete reconnectWg.Wait() before this goroutine
+	// calls reconnectWg.Add(1). The WaitGroup itself won't panic (w==0 when
+	// Wait already returned), but the goroutine would run briefly after Close()
+	// returns. Checking ctx.Done() prevents that and avoids a pointless reconnect
+	// goroutine that would immediately exit anyway.
+	select {
+	case <-upstream.ctx.Done():
+		return
+	default:
+	}
+	if !upstream.reconnecting.CompareAndSwap(false, true) {
 		return
 	}
 	s.reconnectWg.Add(1)
