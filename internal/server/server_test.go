@@ -231,6 +231,28 @@ func requireRPCError(t *testing.T, resp map[string]any, wantCode int, wantSubstr
 	}
 }
 
+// requireToolError asserts that resp is a successful JSON-RPC response containing a tool
+// result with isError:true and content text matching wantSubstr.
+func requireToolError(t *testing.T, resp map[string]any, wantSubstr string) {
+	t.Helper()
+	if resp["error"] != nil {
+		t.Fatalf("expected tool error result, got RPC error: %v", resp["error"])
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing result in response: %v", resp)
+	}
+	if result["isError"] != true {
+		t.Fatalf("expected isError=true, got result: %v", result)
+	}
+	if wantSubstr != "" {
+		text := toolResultText(t, resp)
+		if !strings.Contains(text, wantSubstr) {
+			t.Errorf("tool error text %q does not contain %q", text, wantSubstr)
+		}
+	}
+}
+
 func mustDiscoverResults(t *testing.T, srv *server.Server, args map[string]any) []map[string]any {
 	t.Helper()
 	text := toolResultText(t, serve(t, srv, callTool("list", args)))
@@ -307,16 +329,16 @@ func TestExecuteRejectsProtectedTools(t *testing.T) {
 }
 
 func TestExecuteUnknownServer(t *testing.T) {
-	// "errors in finding the tool … should be reported as an MCP error response"
-	// Unknown server/tool → -32602 InvalidParams, not a soft tool error.
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L103
+	// Unknown server/tool → tool result with isError:true, not an MCP protocol error.
+	// The agent called mini's "call" tool successfully; the tool itself failed to
+	// find the upstream tool. Surfacing as isError lets the agent recover gracefully.
 	srv := newTestServer(t)
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "nobody",
 		"tool":   "doThing",
 		"params": map[string]any{},
 	}))
-	requireRPCError(t, resp, transport.CodeInvalidParams, "not found")
+	requireToolError(t, resp, "not found")
 }
 
 func TestActionDispatchMergesDefaultArgs(t *testing.T) {

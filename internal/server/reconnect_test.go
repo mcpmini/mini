@@ -82,12 +82,10 @@ func TestReconnect_changedToolSet_noStaleEntries(t *testing.T) {
 		}
 	})
 	t.Run("toolB not found", func(t *testing.T) {
-		// Tool lookup failure is a protocol error (-32602), not a soft tool error.
-		// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L103
 		resp := serve(t, srv, callTool("call", map[string]any{
 			"server": "svc", "tool": "toolB", "params": map[string]any{},
 		}))
-		requireRPCError(t, resp, transport.CodeInvalidParams, "not found")
+		requireToolError(t, resp, "not found")
 	})
 }
 

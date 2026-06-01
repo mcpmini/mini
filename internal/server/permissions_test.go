@@ -33,7 +33,7 @@ func TestExecOnHiddenTool_notFound(t *testing.T) {
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "svc", "tool": "secret", "params": map[string]any{},
 	}))
-	requireRPCError(t, resp, transport.CodeInvalidParams, "not found")
+	requireToolError(t, resp, "not found")
 }
 
 func TestExecOnHiddenTool_notInDiscover(t *testing.T) {

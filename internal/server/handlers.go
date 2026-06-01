@@ -81,7 +81,7 @@ func (s *Server) listDetail(fullName string) (any, error) {
 func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
 	p, entry, err := s.resolveExecute(raw)
 	if err != nil {
-		return nil, err
+		return toolErrorIfNotFound(err)
 	}
 	if entry.Permission == config.PermProtected {
 		return nil, fmt.Errorf("tool %q is protected — use perm_call instead", entry.FullName)
@@ -102,15 +102,32 @@ func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.T
 	}
 	entry, err := s.reg.Lookup(toolFullName(p.Server, p.Tool))
 	if err != nil {
-		return executeParams{}, nil, fmt.Errorf("%w: %w", errInvalidParams, err)
+		return executeParams{}, nil, errLookup{err}
 	}
 	return p, entry, nil
+}
+
+// errLookup wraps a registry lookup failure so handlers can convert it to a
+// tool error (isError:true) instead of an MCP protocol error. From the agent's
+// perspective, calling a non-existent tool is a recoverable tool failure, not
+// a protocol fault.
+type errLookup struct{ cause error }
+
+func (e errLookup) Error() string { return e.cause.Error() }
+func (e errLookup) Unwrap() error { return e.cause }
+
+func toolErrorIfNotFound(err error) (any, error) {
+	var le errLookup
+	if errors.As(err, &le) {
+		return response.BuildError("not_found", err.Error(), false, ""), nil
+	}
+	return nil, err
 }
 
 func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
 	p, entry, err := s.resolveExecute(raw)
 	if err != nil {
-		return nil, err
+		return toolErrorIfNotFound(err)
 	}
 	// Open tools with no projection coverage can also use perm_call to opt into raw responses.
 	if entry.Permission != config.PermProtected && s.hasProjectionCoverage(p.Server, p.Tool, session) {
