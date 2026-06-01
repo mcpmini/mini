@@ -175,17 +175,13 @@ func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
 	if err == nil || !isConnError(err) {
 		return
 	}
-	// Skip launching a reconnect goroutine if the upstream is already shutting
-	// down. callConn releases u.mu.RLock before returning, so there is a narrow
-	// window where Close() can complete reconnectWg.Wait() before this goroutine
-	// calls reconnectWg.Add(1). The WaitGroup itself won't panic (w==0 when
-	// Wait already returned), but the goroutine would run briefly after Close()
-	// returns. Checking ctx.Done() prevents that and avoids a pointless reconnect
-	// goroutine that would immediately exit anyway.
-	select {
-	case <-upstream.ctx.Done():
+	// Skip if upstream is already shutting down. callConn releases u.mu.RLock
+	// before returning, so there is a narrow window where Close() can complete
+	// reconnectWg.Wait() before this goroutine calls reconnectWg.Add(1). The
+	// WaitGroup won't panic (w==0 when Wait already returned), but the goroutine
+	// would run briefly after Close() returns. Checking Err() prevents that.
+	if upstream.ctx.Err() != nil {
 		return
-	default:
 	}
 	if !upstream.reconnecting.CompareAndSwap(false, true) {
 		return

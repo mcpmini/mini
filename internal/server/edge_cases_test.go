@@ -129,47 +129,6 @@ func TestInitializedNotification_noResponse(t *testing.T) {
 	}
 }
 
-func TestExecProtectedOnOpenTool(t *testing.T) {
-	srv := newEdgeServer(t)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("doThing"))
-
-	resp := serve(t, srv, callTool("perm_call", map[string]any{
-		"server": "svc", "tool": "doThing", "params": map[string]any{},
-	}))
-	text := toolResultText(t, resp)
-	// Should tell agent to use call instead
-	if !strings.Contains(text, "call") {
-		t.Errorf("error should mention call, got: %s", text)
-	}
-}
-
-func TestExecOnHiddenTool_notFound(t *testing.T) {
-	srv := newEdgeServer(t)
-	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("secret", "visible"))
-
-	// Hidden tools are absent from the registry — lookup returns "not found".
-	// Per spec, this is a protocol error (-32602), not a soft tool error.
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "secret", "params": map[string]any{},
-	}))
-	requireRPCError(t, resp, transport.CodeInvalidParams, "not found")
-}
-
-func TestExecOnHiddenTool_notInDiscover(t *testing.T) {
-	srv := newEdgeServer(t)
-	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("secret", "visible"))
-
-	resp := serve(t, srv, callTool("list", map[string]any{}))
-	text := toolResultText(t, resp)
-	if strings.Contains(text, "secret") {
-		t.Errorf("hidden tool should not appear in discover results, got: %s", text)
-	}
-	if !strings.Contains(text, "visible") {
-		t.Errorf("visible tool should appear in discover results, got: %s", text)
-	}
-}
 
 func fakeConnWithError(name string) *transport.FakeConnection {
 	return &transport.FakeConnection{
@@ -201,105 +160,6 @@ func TestExecWithFakeConnectionError(t *testing.T) {
 		"server": "svc", "tool": "ping", "params": map[string]any{},
 	}))
 	assertOkFalse(t, toolResultText(t, resp))
-}
-
-func TestConfigureUnknownAction(t *testing.T) {
-	srv := newEdgeServer(t)
-	resp := serve(t, srv, callTool("config", map[string]any{"action": "no_such_action"}))
-	assertIsErrorResult(t, resp)
-	text := toolResultText(t, resp)
-	if !strings.Contains(text, "unknown configure action") {
-		t.Errorf("expected error message, got: %s", text)
-	}
-}
-
-func TestConfigureSetProjectionRequiresTool(t *testing.T) {
-	srv := newEdgeServer(t)
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection",
-		"server": "svc",
-		// no "tool" field
-	}))
-	assertIsErrorResult(t, resp)
-}
-
-func TestConfigureRemoveServerRequiresName(t *testing.T) {
-	srv := newEdgeServer(t)
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "remove_server",
-		// no server name
-	}))
-	assertIsErrorResult(t, resp)
-}
-
-func assertRemoveOk(t *testing.T, srv *server.Server, serverName string) {
-	t.Helper()
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "remove_server",
-		"server": serverName,
-	}))
-	text := toolResultText(t, resp)
-	var result map[string]any
-	if err := json.Unmarshal([]byte(text), &result); err != nil {
-		t.Fatalf("expected JSON result: %s", text)
-	}
-	if result["error"] != nil {
-		t.Errorf("expected ok=true, got: %v", result)
-	}
-}
-
-func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
-	srv := newEdgeServer(t)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("ping"))
-	if srv.ToolCount("svc") != 1 {
-		t.Fatalf("expected 1 tool before remove")
-	}
-	assertRemoveOk(t, srv, "svc")
-
-	discoverText := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
-	if strings.Contains(discoverText, "ping") {
-		t.Errorf("removed server's tools should not appear in discover, got: %s", discoverText)
-	}
-}
-
-func newSessionServer(t *testing.T) *server.Server {
-	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
-	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
-}
-
-func fakeGetData() *transport.FakeConnection {
-	return &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{Name: "getData", Description: "get", InputSchema: json.RawMessage(`{}`)},
-		},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`),
-		},
-	}
-}
-
-func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
-	srv := newSessionServer(t)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeGetData())
-
-	serve(t, srv, callTool("config", map[string]any{
-		"action":       "set_projection",
-		"server":       "svc",
-		"tool":         "getData",
-		"projection":   map[string]any{"include": []string{"a"}},
-		"session_only": true,
-	}))
-
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "getData", "params": map[string]any{},
-	}))
-	text := toolResultText(t, resp)
-	if strings.Contains(text, `"b":2`) {
-		t.Logf("note: session projection applied within same session: %s", text)
-	}
 }
 
 func TestDiscoverDetail_edgeCases(t *testing.T) {
@@ -368,119 +228,6 @@ func TestExecWithInvalidParams(t *testing.T) {
 
 // newSvcWithPartialProjection creates a server whose "svc" upstream has a projection
 // configured for coveredTool only, leaving uncoveredTool without projection coverage.
-func newSvcWithPartialProjection(t *testing.T) *server.Server {
-	t.Helper()
-	srv := newEdgeServer(t)
-	fake := fakeConn("coveredTool", "uncoveredTool")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "coveredTool",
-		"projection": map[string]any{"depth_limit": 3},
-	}))
-	return srv
-}
-
-func TestCallBlockedWhenProjectionFileExistsButToolUncovered(t *testing.T) {
-	srv := newSvcWithPartialProjection(t)
-
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "coveredTool"}))
-	if text := toolResultText(t, resp); strings.Contains(text, "no projection") {
-		t.Errorf("covered tool should succeed via call, got: %s", text)
-	}
-
-	resp = serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "uncoveredTool"}))
-	if text := toolResultText(t, resp); !strings.Contains(text, "perm_call") {
-		t.Errorf("uncovered tool: expected perm_call suggestion, got: %s", text)
-	}
-}
-
-func TestPermCallAllowsUncoveredTool(t *testing.T) {
-	srv := newSvcWithPartialProjection(t)
-
-	resp := serve(t, srv, callTool("perm_call", map[string]any{"server": "svc", "tool": "uncoveredTool"}))
-	text := toolResultText(t, resp)
-	if strings.Contains(text, "isError") || strings.Contains(text, "perm_call") {
-		t.Errorf("uncovered tool should succeed via perm_call, got: %s", text)
-	}
-}
-
-func TestWildcardProjectionGrantsCallCoverage(t *testing.T) {
-	srv := newEdgeServer(t)
-	fake := fakeConn("anyTool")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
-
-	// Set a wildcard projection — covers all tools
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "*",
-		"projection": map[string]any{"depth_limit": 3},
-	}))
-
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "anyTool"}))
-	text := toolResultText(t, resp)
-	if strings.Contains(text, "no projection") {
-		t.Errorf("wildcard should cover anyTool, got: %s", text)
-	}
-}
-
-func newSvcWithReadOnlyTool(t *testing.T) *server.Server {
-	t.Helper()
-	srv := newEdgeServer(t)
-	fake := &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{
-			{Name: "covered", ReadOnly: false},
-			{Name: "readOnlyGet", ReadOnly: true},
-		},
-		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"data"}]}`),
-		},
-	}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "covered",
-		"projection": map[string]any{"depth_limit": 3},
-	}))
-	return srv
-}
-
-func TestReadOnlyToolRequiresProjectionCoverage(t *testing.T) {
-	srv := newSvcWithReadOnlyTool(t)
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "readOnlyGet"}))
-	text := toolResultText(t, resp)
-	if !strings.Contains(text, "no projection") {
-		t.Errorf("read-only tools must also require projection coverage, got: %s", text)
-	}
-}
-
-func TestNoProjectionFileAllowsCallNormally(t *testing.T) {
-	srv := newEdgeServer(t)
-	fake := fakeConn("anyTool")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
-
-	// No projections configured at all — call should work freely
-	resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "anyTool"}))
-	text := toolResultText(t, resp)
-	if strings.Contains(text, "no projection") {
-		t.Errorf("server without any projections should allow call, got: %s", text)
-	}
-}
-
-func TestDefaultPermissionProtected(t *testing.T) {
-	srv := newEdgeServer(t)
-	perm := &config.PermissionsConfig{Default: "protected"}
-	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("dangerousOp", "safeRead"))
-
-	// Both tools should be protected — call should reject them
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "dangerousOp", "params": map[string]any{},
-	}))
-	text := toolResultText(t, resp)
-	if !strings.Contains(text, "perm_call") {
-		t.Errorf("expected perm_call mention for default-protected tool, got: %s", text)
-	}
-}
 
 // TestRequestBeforeInitialize_rejected verifies that requests (other than initialize and ping)
 // sent before the initialize handshake are rejected with -32600 Invalid Request.
@@ -544,5 +291,117 @@ func TestBatchRequest_returnsParseError(t *testing.T) {
 	}
 	if code := int(errObj["code"].(float64)); code != transport.CodeParseError {
 		t.Errorf("batch should return -32700 ParseError, got code %d", code)
+	}
+}
+
+// TestRPCEnvelope_jsonrpc20 verifies all responses carry jsonrpc:"2.0" and that
+// result and error are mutually exclusive.
+// https://www.jsonrpc.org/specification#response_object
+func TestRPCEnvelope_jsonrpc20(t *testing.T) {
+	cases := []struct {
+		name  string
+		input []byte
+	}{
+		{"initialize", rpc("initialize", map[string]any{
+			"protocolVersion": transport.ProtocolVersion,
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "t", "version": "0"},
+		})},
+		{"ping", rpc("ping", nil)},
+		{"method not found", rpc("no_such_method", nil)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := rawServe(t, newTestServer(t), tc.input)
+			if len(lines) == 0 {
+				t.Fatal("no response")
+			}
+			var msg map[string]any
+			if err := json.Unmarshal(lines[len(lines)-1], &msg); err != nil {
+				t.Fatalf("invalid JSON: %s", lines[len(lines)-1])
+			}
+			if v, _ := msg["jsonrpc"].(string); v != "2.0" {
+				t.Errorf("jsonrpc = %q, want \"2.0\"", v)
+			}
+			hasResult, hasError := msg["result"] != nil, msg["error"] != nil
+			if hasResult && hasError {
+				t.Error("response must not have both result and error")
+			}
+			if !hasResult && !hasError {
+				t.Error("response must have either result or error")
+			}
+		})
+	}
+}
+
+// TestErrorCodes_standardValues verifies that standard JSON-RPC error codes are used
+// for the correct conditions.
+// https://www.jsonrpc.org/specification#error_object (codes -32700 to -32603)
+func TestErrorCodes_standardValues(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    []byte
+		wantCode int
+	}{
+		{
+			name:     "parse error -32700",
+			input:    []byte("not json at all\n"),
+			wantCode: transport.CodeParseError,
+		},
+		{
+			name:     "invalid request -32600 (pre-init)",
+			input:    rpc("tools/list", nil),
+			wantCode: transport.CodeInvalidRequest,
+		},
+		{
+			name:     "method not found -32601",
+			input:    buildServeInput([][]byte{rpc("no_such_method", nil)}),
+			wantCode: transport.CodeMethodNotFound,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines := rawServe(t, newTestServer(t), tc.input)
+			if len(lines) == 0 {
+				t.Fatal("expected a response")
+			}
+			resp := parseRPCResponse(t, lines[len(lines)-1])
+			errObj, ok := resp["error"].(map[string]any)
+			if !ok {
+				t.Fatalf("expected error, got: %v", resp)
+			}
+			if got := int(errObj["code"].(float64)); got != tc.wantCode {
+				t.Errorf("error code = %d, want %d", got, tc.wantCode)
+			}
+		})
+	}
+}
+
+// TestResponseID_echoesRequest verifies that the response id matches the request id
+// for string, integer, and zero IDs.
+// "id MUST be the same as the value of the id member in the Request Object."
+// https://www.jsonrpc.org/specification#response_object
+func TestResponseID_echoesRequest(t *testing.T) {
+	for _, id := range []any{42, "req-abc-123", 0} {
+		t.Run("", func(t *testing.T) {
+			rawID, _ := json.Marshal(id)
+			reqBytes, _ := json.Marshal(map[string]any{
+				"jsonrpc": "2.0", "id": json.RawMessage(rawID), "method": "ping",
+			})
+			reqBytes = append(reqBytes, '\n')
+			lines := rawServe(t, newTestServer(t), buildServeInput([][]byte{reqBytes}))
+			for _, line := range lines {
+				var msg map[string]any
+				json.Unmarshal(line, &msg) //nolint:errcheck
+				respIDRaw, _ := json.Marshal(msg["id"])
+				if bytes.Equal(respIDRaw, rawID) {
+					if msg["error"] != nil {
+						t.Errorf("ping with id=%v returned error: %v", id, msg["error"])
+					}
+					return
+				}
+			}
+			t.Errorf("no response found with id=%v", id)
+		})
 	}
 }

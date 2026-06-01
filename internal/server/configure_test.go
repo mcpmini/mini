@@ -311,6 +311,103 @@ func makeListItemsFake(longDesc string) *transport.FakeConnection {
 	}
 }
 
+func newSessionServer(t *testing.T) *server.Server {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func fakeGetData() *transport.FakeConnection {
+	return &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{
+			{Name: "getData", Description: "get", InputSchema: json.RawMessage(`{}`)},
+		},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`),
+		},
+	}
+}
+
+func assertRemoveOk(t *testing.T, srv *server.Server, serverName string) {
+	t.Helper()
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "remove_server",
+		"server": serverName,
+	}))
+	text := toolResultText(t, resp)
+	var result map[string]any
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		t.Fatalf("expected JSON result: %s", text)
+	}
+	if result["error"] != nil {
+		t.Errorf("expected ok=true, got: %v", result)
+	}
+}
+
+func TestConfigureUnknownAction(t *testing.T) {
+	srv := newEdgeServer(t)
+	resp := serve(t, srv, callTool("config", map[string]any{"action": "no_such_action"}))
+	assertIsErrorResult(t, resp)
+	text := toolResultText(t, resp)
+	if !strings.Contains(text, "unknown configure action") {
+		t.Errorf("expected error message, got: %s", text)
+	}
+}
+
+func TestConfigureSetProjectionRequiresTool(t *testing.T) {
+	srv := newEdgeServer(t)
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection",
+		"server": "svc",
+	}))
+	assertIsErrorResult(t, resp)
+}
+
+func TestConfigureRemoveServerRequiresName(t *testing.T) {
+	srv := newEdgeServer(t)
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "remove_server",
+	}))
+	assertIsErrorResult(t, resp)
+}
+
+func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
+	srv := newEdgeServer(t)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("ping"))
+	if srv.ToolCount("svc") != 1 {
+		t.Fatalf("expected 1 tool before remove")
+	}
+	assertRemoveOk(t, srv, "svc")
+
+	discoverText := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
+	if strings.Contains(discoverText, "ping") {
+		t.Errorf("removed server's tools should not appear in discover, got: %s", discoverText)
+	}
+}
+
+func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
+	srv := newSessionServer(t)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeGetData())
+
+	serve(t, srv, callTool("config", map[string]any{
+		"action":       "set_projection",
+		"server":       "svc",
+		"tool":         "getData",
+		"projection":   map[string]any{"include": []string{"a"}},
+		"session_only": true,
+	}))
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "getData", "params": map[string]any{},
+	}))
+	text := toolResultText(t, resp)
+	if strings.Contains(text, `"b":2`) {
+		t.Logf("note: session projection applied within same session: %s", text)
+	}
+}
+
 func TestSlimProjectionMode(t *testing.T) {
 	srv := newConfigServer(t)
 	longDesc := strings.Repeat("word ", 60)

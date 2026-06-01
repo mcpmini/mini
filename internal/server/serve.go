@@ -66,22 +66,25 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 		}
 		return
 	}
-	rawID := peekRequestID(line)
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		ctx := p.ctx
-		if len(rawID) > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithCancel(p.ctx)
-			p.session.registerInFlight(rawID, cancel)
-			defer p.session.removeInFlight(rawID)
-			defer cancel()
-		}
-		if resp, send := s.handleLine(ctx, line, p.session); send {
-			p.writeOut(resp)
-		}
+		s.dispatchWithCancel(p.ctx, line, p.session, p.writeOut)
 	}()
+}
+
+func (s *Server) dispatchWithCancel(ctx context.Context, line []byte, session *Session, writeOut func(any)) {
+	rawID := peekRequestID(line)
+	if len(rawID) > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(ctx)
+		session.registerInFlight(rawID, cancel)
+		defer session.removeInFlight(rawID)
+		defer cancel()
+	}
+	if resp, send := s.handleLine(ctx, line, session); send {
+		writeOut(resp)
+	}
 }
 
 func peekMethod(line []byte) string {

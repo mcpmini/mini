@@ -6,8 +6,10 @@ package server_test
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -65,9 +67,6 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, blocking)
 
-	// Build a session that sends a tools/call then cancels it.
-	// We send: initialize → call(id=42) → cancelled(requestId=42)
-	// The call goroutine will unblock when cancel fires.
 	callReq := callToolWithID(42, "call", map[string]any{
 		"server": "s",
 		"tool":   "slow",
@@ -75,23 +74,36 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	})
 	cancelNotif := notification("notifications/cancelled", map[string]any{"requestId": 42})
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		serveAll(t, srv, callReq, cancelNotif)
-	}()
+	// Use a pipe so we can write cancelNotif only after the call has registered.
+	// Sending both in a single buffer risks the cancel goroutine running before
+	// registerInFlight has been called.
+	pr, pw := io.Pipe()
+	ctx, ctxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer ctxCancel()
+	var out bytes.Buffer
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(ctx, pr, &out) }()
 
-	// Wait for the call to start, then confirm context was cancelled.
+	// Write initialize + callReq through the pipe.
+	pw.Write(buildServeInput([][]byte{callReq})) //nolint:errcheck
+
+	// Wait for the call to register in-flight before sending the cancel.
 	if !waitTimeout(&callStarted, 3*time.Second) {
+		pw.Close()
 		t.Fatal("upstream call did not start within timeout")
 	}
+
+	// Now write the cancel notification — registration is guaranteed.
+	pw.Write(cancelNotif) //nolint:errcheck
+	pw.Close()
+
 	select {
 	case <-callCtx.Done():
 		// correct: upstream context was cancelled
 	case <-time.After(2 * time.Second):
 		t.Error("upstream call context was not cancelled after notifications/cancelled")
 	}
-	<-done
+	<-serveErr
 }
 
 // TestCancellation_UnknownMethodReturnsError verifies that a completely unknown
