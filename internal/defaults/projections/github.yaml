@@ -1,46 +1,34 @@
-# Philosophy: docs/default-config-philosophy.md
-# No depth_limit — use exclude_always for specific noise, not structural cuts.
-# Slimify already caps nesting at 2 levels; summaryTokens threshold handles large responses.
-# html_url kept — real URL, agents reference it. Only URL templates excluded.
+# Philosophy: strip image URLs and legacy identifiers only.
+# Don't whitelist fields — the GitHub Copilot MCP server already returns minimal
+# API responses. Agents see all useful fields; the inline threshold handles size.
+# html_url is always the canonical reference — never strip it.
 
 list_pull_requests:
-  include: [number, title, state, draft, merged, body, user, created_at, updated_at, labels, assignees, requested_reviewers, head, base, milestone, html_url]
-  exclude_always: [avatar_url, profile_url]
-  array_limits:
-    default: 20
-    labels: 5
-    assignees: 3
-    requested_reviewers: 3
-  string_limits:
-    body: 1500
+  exclude_always: [avatar_url]
 
 list_issues:
   include: [issues, totalCount, pageInfo]
-  array_limits:
-    issues: 20
-  string_limits:
-    body: 1500
 
-# Detail tools: no include filter, generous limits. Agent may read and update.
+# Detail tools: generous limits. Agent may need to read and reference the full body.
 issue_read:
   exclude_always: [avatar_url]
   string_limits:
-    body: 5000
+    body: 8000
 
 pull_request_read:
   exclude_always: [avatar_url]
   string_limits:
-    body: 5000
+    body: 8000
 
 get_issue:
   exclude_always: [avatar_url]
   string_limits:
-    body: 5000
+    body: 8000
 
 get_pull_request:
   exclude_always: [avatar_url]
   string_limits:
-    body: 5000
+    body: 8000
 
 list_pull_request_files:
   include: [filename, status, additions, deletions, changes, patch]
@@ -58,11 +46,11 @@ get_commit:
     files: 50
 
 list_commits:
-  include: [sha, html_url, commit, author]
+  exclude_always: [avatar_url]
   array_limits:
     default: 30
   string_limits:
-    message: 500
+    message: 300
 
 search_code:
   include: [total_count, incomplete_results, items]
@@ -97,4 +85,3 @@ list_repository_contents:
   include: [name, path, type, size, sha]
   array_limits:
     default: 200
-
