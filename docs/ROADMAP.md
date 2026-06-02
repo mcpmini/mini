@@ -280,7 +280,8 @@ Once agents run autonomously, you need to know what they did and what it cost.
 - `mini install <server>` fetches config and adds it
 - *Code changes*: `cmd/mini/search.go`; registry client against a hosted API or community repo
 
-**Import from more sources** *(Cursor, Codex, Gemini CLI done; remaining: Windsurf, Zed, Continue, pi.dev)*
+**Import from more sources** *(Cursor, Codex, Gemini CLI done; remaining: Antigravity CLI, Windsurf, Zed, Continue, pi.dev)*
+- Antigravity CLI (`~/.gemini/antigravity-cli/mcp_config.json`) — Google's replacement for Gemini CLI, shut down June 18 2026
 - Windsurf, Zed, Continue, and pi.dev config file formats
 - *Code changes*: extend existing `--from-*` flags pattern in `cmd/mini/add.go`
 
