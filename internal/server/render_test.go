@@ -191,6 +191,46 @@ func TestRenderItemLine_numerics(t *testing.T) {
 	})
 }
 
+func TestRenderItemLine_largeIntegerNoScientificNotation(t *testing.T) {
+	// float64 values >= 1e9 must render as plain integers, not "1.195500437e+09".
+	// Regression: classifyNumeric used %v which produces scientific notation.
+	cases := []struct {
+		name string
+		val  float64
+		want string
+	}{
+		{"repo id", 1195500437, "id:1195500437"},
+		{"user id 8 digits", 10168637, "id:10168637"},
+		{"large issue number", 79774, "id:79774"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := renderItemLine(map[string]any{"id": tc.val})
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("got %q, want it to contain %q", got, tc.want)
+			}
+			if strings.Contains(got, "e+") || strings.Contains(got, "E+") {
+				t.Errorf("scientific notation in output: %q", got)
+			}
+		})
+	}
+}
+
+func TestWriteMapLines_largeIntegerNoScientificNotation(t *testing.T) {
+	// writeMapLines also used %v for top-level scalars; same regression.
+	env := renderEnvelope(true, map[string]any{
+		"total_count": float64(1195500437),
+		"items":       []any{},
+	})
+	got := RenderLines("svc", "tool", env)
+	if strings.Contains(got, "e+") || strings.Contains(got, "E+") {
+		t.Errorf("scientific notation in map scalar output: %q", got)
+	}
+	if !strings.Contains(got, "total_count:1195500437") {
+		t.Errorf("expected integer rendering, got: %q", got)
+	}
+}
+
 func TestRenderItemLine_strings(t *testing.T) {
 	t.Run("empty string skipped", func(t *testing.T) {
 		assertNotContains(t, renderItemLine(map[string]any{"name": ""}), "name")

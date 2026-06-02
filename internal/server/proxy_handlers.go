@@ -77,7 +77,7 @@ func (s *Server) proxyProject(server, tool string, raw json.RawMessage, session 
 		return nil, err
 	}
 	upstream.recordSaved(session, latencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderProxyResult(server, tool, env, projCfg, stats.RawTokens), nil
+	return s.renderProxyResult(server, tool, env, projCfg, stats.SummaryTokens), nil
 }
 
 func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig, rawTokens int) string {
