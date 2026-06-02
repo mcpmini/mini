@@ -1,8 +1,8 @@
-# minimcp Evaluation Framework
+# mini Evaluation Framework
 
 ## Goal
 
-Quantify minimcp's actual token savings for real agent workflows. Produce reproducible numbers comparable across code changes, using a sandboxed Claude instance that executes the same workflow twice — once against raw MCP servers, once through minimcp — and measures token consumption.
+Quantify mini's actual token savings for real agent workflows. Produce reproducible numbers comparable across code changes, using a sandboxed Claude instance that executes the same workflow twice — once against raw MCP servers, once through mini — and measures token consumption.
 
 ## Evaluation scenarios
 
@@ -19,7 +19,7 @@ Steps:
 6. `github.create_or_update_file` — push fixes
 7. `github.add_reply_to_pull_request_comment` — resolve threads
 
-**Why this matters:** Every step returns verbose payloads. GitHub PR objects alone can be 5–20K tokens raw; minimcp strips `node_id`, URL templates, `gravatar_id`, and other noise that agents never use.
+**Why this matters:** Every step returns verbose payloads. GitHub PR objects alone can be 5–20K tokens raw; mini strips `node_id`, URL templates, `gravatar_id`, and other noise that agents never use.
 
 ### 2. Incident response: Sentry + code + PR
 
@@ -31,7 +31,7 @@ Steps:
 3. `github.get_file_contents` × N — read affected files
 4. `github.create_pull_request` — open fix PR with description
 
-**Why this matters:** Sentry issue objects include raw event payloads, SDK metadata, and full breadcrumb chains — largely irrelevant to the fix. minimcp's `exclude_always`, `strip_content`, and array limits cut these substantially.
+**Why this matters:** Sentry issue objects include raw event payloads, SDK metadata, and full breadcrumb chains — largely irrelevant to the fix. mini's `exclude_always`, `strip_content`, and array limits cut these substantially.
 
 ### 3. Log triage: Datadog → code → summary
 
@@ -43,7 +43,7 @@ Steps:
 3. `github.search_code` — find the emitting code path
 4. Agent produces a structured summary (no PR, pure analysis)
 
-**Why this matters:** Datadog log arrays are extremely large. minimcp's `array_limits` and projection configs reduce what the agent sees to the error message, timestamp, service, and trace ID — enough to reason about patterns without reading kilobytes of request context per event.
+**Why this matters:** Datadog log arrays are extremely large. mini's `array_limits` and projection configs reduce what the agent sees to the error message, timestamp, service, and trace ID — enough to reason about patterns without reading kilobytes of request context per event.
 
 ### 4. Jira ticket → fix → PR (full loop)
 
@@ -56,7 +56,7 @@ Steps:
 4. `github.create_pull_request` — PR body references Jira key
 5. `jira.add_comment` — link back to PR
 
-**Why this matters:** Jira issue objects contain rich HTML descriptions, extensive comment chains, and changelog history. minimcp's `strip_content` converts HTML to plain text; `exclude_always` drops changelogs and internal metadata.
+**Why this matters:** Jira issue objects contain rich HTML descriptions, extensive comment chains, and changelog history. mini's `strip_content` converts HTML to plain text; `exclude_always` drops changelogs and internal metadata.
 
 ## Measurement approach
 
@@ -75,7 +75,7 @@ Token counts come from the Claude API usage field on each response, summed acros
 To ensure reproducibility without live credentials:
 
 1. **Capture phase** (manual, run once with real credentials): Execute the workflow against real MCP servers, record every tool result to `benchmarks/fixtures/<server>/<tool>.json`.
-2. **Replay phase** (CI, runs on every PR): A fake MCP server replays the captured fixtures. Claude runs the workflow against both the fake raw server and minimcp proxying the same fake. Token counts are compared.
+2. **Replay phase** (CI, runs on every PR): A fake MCP server replays the captured fixtures. Claude runs the workflow against both the fake raw server and mini proxying the same fake. Token counts are compared.
 
 ```
 benchmarks/
@@ -132,7 +132,7 @@ The eval runner:
 2. Starts Claude (via API) with the system prompt defining the task
 3. Claude issues tool calls; runner responds with fixtures
 4. Runner accumulates input token counts per response
-5. Repeats with minimcp proxying the same fake server
+5. Repeats with mini proxying the same fake server
 6. Compares and records results in `benchmarks/results/`
 
 Claude is given a deterministic task prompt so tool call sequences are stable across runs. The system prompt constrains it to the fixture tools only.
@@ -157,7 +157,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
-      - run: go build -o minimcp ./cmd/minimcp
+      - run: go build -o mini ./cmd/mini
       - run: go test ./benchmarks/... -v -timeout 120s
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -190,7 +190,7 @@ These targets are educated estimates. Actual baselines will be established from 
 
 ### Phase 3: Projection configs
 - Tune `benchmarks/projections/` YAML configs for each server
-- These become the canonical configs shipped with minimcp for these servers
+- These become the canonical configs shipped with mini for these servers
 
 ### Phase 4: CI integration
 - Add `evals.yml` workflow
@@ -198,5 +198,5 @@ These targets are educated estimates. Actual baselines will be established from 
 - Wire regression threshold check
 
 ### Phase 5: Reporting
-- Add `minimcp bench` subcommand that runs evals locally and prints a comparison table
+- Add `mini bench` subcommand that runs evals locally and prints a comparison table
 - Output: scenario name, raw tokens, mini tokens, reduction %, pass/fail vs threshold

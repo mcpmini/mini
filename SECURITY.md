@@ -1,13 +1,13 @@
 # Security
 
-minimcp sits between AI agents and upstream MCP servers. This document describes the threat model, the mitigations in place, and known limitations.
+mini sits between AI agents and upstream MCP servers. This document describes the threat model, the mitigations in place, and known limitations.
 
 
 ## Threat model
 
-minimcp is primarily a trust boundary between **untrusted agent output** (tool responses that may contain attacker-controlled text) and **user-controlled resources** (API tokens, local processes, config files).
+mini is primarily a trust boundary between **untrusted agent output** (tool responses that may contain attacker-controlled text) and **user-controlled resources** (API tokens, local processes, config files).
 
-The key adversary is **prompt injection via tool responses**: malicious content returned by an upstream tool (a GitHub issue body, a web page, a database row) that instructs the agent to call minimcp tools in ways that exfiltrate credentials or execute unintended commands.
+The key adversary is **prompt injection via tool responses**: malicious content returned by an upstream tool (a GitHub issue body, a web page, a database row) that instructs the agent to call mini tools in ways that exfiltrate credentials or execute unintended commands.
 
 Secondary adversaries are **malicious upstream servers** configured by a user with bad YAML or a supply-chain-compromised config.
 
@@ -18,11 +18,11 @@ Out of scope: a fully compromised host OS, or an attacker who can write to `~/.m
 
 ### Prompt injection — `add_server`
 
-The highest-risk MCP tool minimcp exposes to agents is `add_server` (via `config`), because it can register a new upstream server at a URL controlled by the caller.
+The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`), because it can register a new upstream server at a URL controlled by the caller.
 
 **Strip on ingest** (`internal/server/configure.go: validateRuntimeTransport`):
 
-- `sc.Auth = nil` — A crafted auth config with a malicious `token_url` would receive the PKCE `code` + `code_verifier` during an OAuth exchange, enough to mint a token on behalf of the user. Auth setup must go through the CLI (`minimcp auth`) where endpoints are user-verified.
+- `sc.Auth = nil` — A crafted auth config with a malicious `token_url` would receive the PKCE `code` + `code_verifier` during an OAuth exchange, enough to mint a token on behalf of the user. Auth setup must go through the CLI (`mini auth`) where endpoints are user-verified.
 - `sc.Headers = nil` — A crafted header map like `{"Authorization": "Bearer <stolen-token>"}` plus an attacker URL would silently forward the token on every subsequent call. The user would never see this happen.
 - `sc.Env = nil` (when `dangerous_allow_runtime_stdio: true`) — Prevents injecting credentials as environment variables into spawned subprocesses.
 

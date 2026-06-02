@@ -1,8 +1,8 @@
-# minimcp Roadmap
+# mini Roadmap
 
-## What is minimcp (v0.1)
+## What is mini (v0.1)
 
-minimcp is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upstream MCP servers. Instead of agents connecting directly to every tool server, they connect to minimcp once and get a unified, controlled interface.
+mini is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upstream MCP servers. Instead of agents connecting directly to every tool server, they connect to mini once and get a unified, controlled interface.
 
 ### Capabilities in v0.1
 
@@ -174,10 +174,10 @@ Agents send whatever the tool schema asks for. But often you want to rewrite inp
 
 ### v0.5 — Multi-Agent & Session Isolation
 
-v0.1 has one shared session per MCP connection. As teams use minimcp with multiple agents simultaneously, they need isolation.
+v0.1 has one shared session per MCP connection. As teams use mini with multiple agents simultaneously, they need isolation.
 
 **HTTP listen mode**
-- minimcp listens on a port; multiple agents connect via HTTP/SSE
+- mini listens on a port; multiple agents connect via HTTP/SSE
 - Each connection gets an isolated session with its own projections and identity
 - *Code changes*: `internal/server/http_server.go`; session keyed by connection, not global; `config.yaml` `listen_mode: http`
 
@@ -240,7 +240,7 @@ Once agents run autonomously, you need to know what they did and what it cost.
 
 **Human-in-the-loop approval**
 - Protected tools can require a human `yes/no` before execution (currently the `approval` package is internal-only)
-- Web UI approval queue: agent call arrives, minimcp holds it, human approves/denies via browser
+- Web UI approval queue: agent call arrives, mini holds it, human approves/denies via browser
 - *Code changes*: expose `internal/approval` via HTTP endpoint; `perm_call` blocks on approval channel
 
 **Request signing**
@@ -266,9 +266,9 @@ Once agents run autonomously, you need to know what they did and what it cost.
 ### v0.9 — Ecosystem & Distribution
 
 **Package distribution**
-- Homebrew formula (`brew install minimcp`)
+- Homebrew formula (`brew install mini`)
 - `apt`/`yum` packages via goreleaser
-- Docker image (`ghcr.io/minimcp/minimcp`)
+- Docker image (`ghcr.io/mini/mini`)
 - *Code changes*: `.goreleaser.yml`; Dockerfile; package scripts
 
 **Plugin system**
@@ -300,7 +300,7 @@ Once agents run autonomously, you need to know what they did and what it cost.
 - Embedded locale files via `embed.FS` — no external dependency
 - At minimum: English (baseline), Japanese, and Simplified Chinese locale files
 - CI validates locale files are complete against the English baseline
-- *Code changes*: `internal/i18n` package; `T(key, args...)` helper used throughout; `cmd/minimcp/locales/` directory
+- *Code changes*: `internal/i18n` package; `T(key, args...)` helper used throughout; `cmd/mini/locales/` directory
 
 
 ## CI Story

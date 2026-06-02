@@ -6,7 +6,7 @@ This analysis is based on:
 - [mcp-atlassian repository](https://github.com/sooperset/mcp-atlassian) — the reference Python-based MCP server for Jira and Confluence
 - [mcp-atlassian documentation](https://mcp-atlassian.soomiles.com/llms-full.txt) — comprehensive tool, field, and authentication docs
 - [Jira REST API v3](https://developer.atlassian.com/cloud/jira/platform/rest/v3/) — official API documentation
-- [Existing minimcp Jira fixtures](https://github.com/minimcp/minimcp/blob/main/benchmarks/projections/jira.yaml) — production configs
+- [Existing mini Jira fixtures](https://github.com/mcpmini/mini/blob/main/benchmarks/projections/jira.yaml) — production configs
 - Atlassian API documentation and Python implementation details
 
 **Confidence levels:** All field existence claims are based on official Atlassian API docs (95%+ confidence). Response structures are inferred from the Jira REST API v3 spec and the mcp-atlassian implementation.
@@ -543,7 +543,7 @@ Based on the analysis above:
 
 ### New Tools to Add (if confidence in mcp-atlassian documentation is 90%+)
 
-These tools exist in mcp-atlassian but are not in the current minimcp config. Consider adding them:
+These tools exist in mcp-atlassian but are not in the current mini config. Consider adding them:
 - `jira_get_project` — fetch single project details
 - `confluence_get_space` — fetch space details
 
@@ -573,7 +573,7 @@ All recommendations follow the default-config-philosophy:
 |----------|-----------|-------|
 | Jira API response shapes | 95% | Official Atlassian REST API v3 docs |
 | Confluence API response shapes | 95% | Official Atlassian REST API v2 docs |
-| Field usefulness assessments | 85-90% | Production minimcp configs + philosophy guidelines |
+| Field usefulness assessments | 85-90% | Production mini configs + philosophy guidelines |
 | Recommended string limits | 80-85% | Typical agent workflows; extrapolated from GitHub analysis |
 | Tool completeness | 80% | mcp-atlassian README; some tools may be platform-specific |
 
