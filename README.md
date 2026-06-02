@@ -266,7 +266,7 @@ Response files are cleaned up automatically by TTL and disk budget.
 
 ## Permissions
 
-Gate write operations behind `perm_call` so agents have to ask before making changes:
+Configure per-tool access tiers in each server's config:
 
 ```yaml
 # ~/.mini/servers/github.yaml
@@ -277,13 +277,17 @@ permissions:
 
 Three tiers:
 
-| Tier | Visible in `list` | Callable via |
-|---|---|---|
-| `open` (default) | Yes | `call` or `perm_call` |
-| `protected` | Yes | `perm_call` only |
-| `hidden` | No | `perm_call` only |
+| Tier | What it means |
+|---|---|
+| `open` (default) | Listed and callable without restriction |
+| `protected` | Listed, but requires explicit invocation to call |
+| `hidden` | Not listed at all — invisible to the agent |
 
-In Claude Code: allowlist `mcp__mini__call` and leave `mcp__mini__perm_call` requiring approval — Claude will prompt before calling protected tools. Codex supports the same via `approval_mode`. **Cursor only supports server-level approval**, so use `hidden` for tools that must never run without human review.
+How these tiers are enforced depends on which mode mini is running in.
+
+**In proxy mode** (Claude Code), mini exposes each upstream tool directly as its own MCP tool. `hidden` tools are filtered from the tool list entirely so the agent never sees them. `protected` tools appear in the list and are callable — enforcement is handled by your agent's native approval system. In Claude Code, configure per-tool approval for write operations (e.g. `github__create_pull_request`) the same way you would for any MCP tool.
+
+**In standard mode** (Codex, Cursor, others), mini wraps everything behind 4 tools. `call` only executes `open` tools — calling a `protected` tool via `call` returns an error. `perm_call` is required for `protected` and `hidden` tools. This means you can configure your agent to auto-approve `call` (reads) while requiring human approval for `perm_call` (writes). `hidden` tools are invisible to `list` but can still be invoked via `perm_call` by an agent that knows the name.
 
 ## Auth
 
