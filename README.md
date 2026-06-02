@@ -167,16 +167,26 @@ Config directory layout:
 `~/.mini/config.yaml` controls mini's overall behavior:
 
 ```yaml
-log_level: info          # debug | info | warn | error
-response_format: json    # json (default) | mini (compact key:value)
-inline_threshold: 3500   # see "Large responses" below
+log_level: info       # debug | info | warn | error
+response_format: json # json (default) | mini (see below)
 ```
+
+**`response_format: mini`** switches inline responses to a compact key:value format instead of JSON — useful if your agent handles plain text better than structured data. It has no effect on responses that are too large to inline (those go to file regardless).
+
+There is no global string truncation by default. Truncation only applies when a projection config is present — either the bundled ones installed by `mini init`, or ones you write yourself.
 
 ### Large responses
 
-When a projected response is still large, mini writes it to `~/.mini/responses/` and returns a file path instead of inlining everything. The agent fetches it with `read` (proxy mode) or `config action:read` (standard mode) when it needs the content.
+When a projected response is still large, mini writes it to `~/.mini/responses/` and returns a file path. The agent fetches it with `read` (proxy mode) or `config action:read` (standard mode).
 
-**When does this happen?** By default, responses larger than a typical list of 5–10 items go to file. A list of 5 pull requests stays inline; a large code file or a 50-item search result goes to disk.
+**What the agent receives inline vs from file differs:**
+
+- **Inline** — the full projected JSON (same structure as the upstream response, just with excluded fields and string limits applied)
+- **File** — a compacted representation: nested objects flattened (`user.login` → `user_login`), URL fields stripped except `html_url`, a `_meta` block with a field list and an index for quick lookup, and a `raw` path pointing to the original upstream response
+
+So when an agent calls `read` on a file path, it gets a more compressed view than it would have received inline. The raw upstream response is always available alongside it at the `.raw.json` path.
+
+**When does a response go to file?** By default, responses larger than a typical list of 5–10 items. A list of 5 pull requests stays inline; a large code file or a 50-item search result goes to disk.
 
 Tune this with `inline_threshold` in `config.yaml`:
 
