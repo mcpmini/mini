@@ -16,6 +16,95 @@ mini status  # verify all servers connected
 
 `mini init` detects your existing Claude Desktop, Claude Code, Cursor, Codex, and Gemini configs and imports them automatically. Bundled projection configs for GitHub, Linear, Sentry, Slack, and Jira install alongside.
 
+## Connect to your agent
+
+### Claude Code
+
+```bash
+claude mcp add mini mini proxy
+```
+
+Mini runs in **proxy mode** for Claude Code, exposing your upstream tools directly as `github__list_pull_requests`, `sentry__list_issues`, etc. Claude Code's schema deferral works as normal — it only loads schemas for tools it actually needs, keeping context tight. Responses are trimmed transparently; mini is invisible to the agent.
+
+Claude Code has specific behaviour around how it loads and caches MCP tool schemas that affects how you should configure any MCP proxy. [Read the full explanation](docs/claude-code-mcp-loading.md) if you run into tools that aren't appearing or schemas that look stale.
+
+### Codex
+
+Codex loads all MCP tool schemas upfront at session start, which means the number of tools exposed directly affects your token budget before any work begins. Mini's standard mode exposes exactly 4 tools regardless of how many upstream servers you have — `list`, `call`, `perm_call`, `config` — keeping that fixed cost predictable.
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.mini]
+command = "mini"
+```
+
+See [how Codex loads MCP tools](docs/codex-mcp-loading.md) for more detail on schema loading behaviour and when proxy mode might be preferable.
+
+### Cursor, Windsurf, and others
+
+```json
+{
+  "mcpServers": {
+    "mini": { "command": "mini" }
+  }
+}
+```
+
+Standard mode exposes the same 4-tool surface:
+
+| Tool | What it does |
+|---|---|
+| `list` | Discover all tools across connected servers |
+| `call` | Invoke a tool — response is projected and returned |
+| `perm_call` | Same as `call` but for protected tools (write ops, destructive actions) |
+| `config` | Runtime admin: add/remove servers, adjust projections, check status |
+
+### Daemon mode — multiple agents sharing one connection
+
+If you run multiple agent sessions simultaneously (several Claude Code windows, Claude Code + Cursor, etc.), each normally spawns its own mini process and its own upstream connections. The daemon avoids that:
+
+```bash
+mini daemon          # start once, runs in the background
+mini daemon status   # confirm it's running
+```
+
+Once running, any `mini serve` or `mini proxy` invocation automatically detects the daemon and routes through it. Upstream connections are shared across all sessions; projections and permissions remain per-session. The daemon binds to `127.0.0.1` only and survives agent restarts.
+
+## Adding servers
+
+```bash
+mini add github --url https://api.githubcopilot.com/mcp --header "Authorization=Bearer $GITHUB_TOKEN"
+mini add linear --url https://mcp.linear.app/mcp
+mini add sentry --url https://mcp.sentry.io/mcp --header "Authorization=Bearer $SENTRY_TOKEN"
+mini add slack  --url https://mcp.slack.com/mcp   --header "Authorization=Bearer $SLACK_TOKEN"
+```
+
+Or import from an existing config:
+
+```bash
+mini add --from-claude   # Claude Desktop / Claude Code
+mini add --from-cursor   # Cursor mcp.json
+mini add --from-codex    # Codex config.toml
+mini add --from-gemini   # Gemini CLI settings.json
+```
+
+Bundled projection and permission configs for known servers install automatically.
+
+### Bundled server configs
+
+These servers have projection and permission defaults built in — they're installed automatically when `mini add` or `mini init` detects a matching server name.
+
+| Server | Projection config | Tools covered |
+|---|---|---|
+| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, list_issues, get_issue, get_pull_request, list_commits, get_commit, search_code, search_repositories, search_issues, get_file_contents, list_repository_contents, list_pull_request_files |
+| Slack | [slack.yaml](internal/defaults/projections/slack.yaml) | conversations_history, conversations_replies, conversations_list, search_messages, users_list |
+| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | list_issues, search_issues, get_issue, create_issue, update_issue, list_projects, list_teams, list_cycles, list_comments |
+| Sentry | [sentry.yaml](internal/defaults/projections/sentry.yaml) | list_issues, get_issue_details, list_events, list_projects, list_organizations |
+| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | Jira: search, get_issue, get_project_issues, get_all_projects, get_project, get_agile_boards, get_sprint_issues — Confluence: search, get_page, get_page_children, get_comments |
+
+For servers not in this list, mini is a transparent proxy — responses pass through unchanged until you add a projection config.
+
 ## What it does
 
 **Before** — one PR from the GitHub MCP:
@@ -141,97 +230,6 @@ graph TB
     end
 ```
 
-## Connect to your agent
-
-### Claude Code
-
-```bash
-claude mcp add mini mini proxy
-```
-
-Mini runs in **proxy mode** for Claude Code, exposing your upstream tools directly as `github__list_pull_requests`, `sentry__list_issues`, etc. Claude Code's schema deferral works as normal — it only loads schemas for tools it actually needs, keeping context tight. Responses are trimmed transparently; mini is invisible to the agent.
-
-Claude Code has specific behaviour around how it loads and caches MCP tool schemas that affects how you should configure any MCP proxy. [Read the full explanation](docs/claude-code-mcp-loading.md) if you run into tools that aren't appearing or schemas that look stale.
-
-### Codex
-
-Codex loads all MCP tool schemas upfront at session start, which means the number of tools exposed directly affects your token budget before any work begins. Mini's standard mode exposes exactly 4 tools regardless of how many upstream servers you have — `list`, `call`, `perm_call`, `config` — keeping that fixed cost predictable.
-
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.mini]
-command = "mini"
-```
-
-See [how Codex loads MCP tools](docs/codex-mcp-loading.md) for more detail on schema loading behaviour and when proxy mode might be preferable.
-
-### Cursor, Windsurf, and others
-
-```json
-{
-  "mcpServers": {
-    "mini": { "command": "mini" }
-  }
-}
-```
-
-Standard mode exposes the same 4-tool surface:
-
-| Tool | What it does |
-|---|---|
-| `list` | Discover all tools across connected servers |
-| `call` | Invoke a tool — response is projected and returned |
-| `perm_call` | Same as `call` but for protected tools (write ops, destructive actions) |
-| `config` | Runtime admin: add/remove servers, adjust projections, check status |
-
-**Cursor only supports server-level approval** — use `hidden` for tools that must never run without human review.
-
-### Daemon mode — multiple agents sharing one connection
-
-If you run multiple agent sessions simultaneously (several Claude Code windows, Claude Code + Cursor, etc.), each normally spawns its own mini process and its own upstream connections. The daemon avoids that:
-
-```bash
-mini daemon          # start once, runs in the background
-mini daemon status   # confirm it's running
-```
-
-Once running, any `mini serve` or `mini proxy` invocation automatically detects the daemon and routes through it. Upstream connections are shared across all sessions; projections and permissions remain per-session. The daemon binds to `127.0.0.1` only and survives agent restarts.
-
-## Adding servers
-
-```bash
-mini add github --url https://api.githubcopilot.com/mcp --header "Authorization=Bearer $GITHUB_TOKEN"
-mini add linear --url https://mcp.linear.app/mcp
-mini add sentry --url https://mcp.sentry.io/mcp --header "Authorization=Bearer $SENTRY_TOKEN"
-mini add slack  --url https://mcp.slack.com/mcp   --header "Authorization=Bearer $SLACK_TOKEN"
-```
-
-Or import from an existing config:
-
-```bash
-mini add --from-claude   # Claude Desktop / Claude Code
-mini add --from-cursor   # Cursor mcp.json
-mini add --from-codex    # Codex config.toml
-mini add --from-gemini   # Gemini CLI settings.json
-```
-
-Bundled projection and permission configs for known servers install automatically.
-
-### Bundled server configs
-
-These servers have projection and permission defaults built in — they're installed automatically when `mini add` or `mini init` detects a matching server name.
-
-| Server | Projection config | Tools covered |
-|---|---|---|
-| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, list_issues, get_issue, get_pull_request, list_commits, get_commit, search_code, search_repositories, search_issues, get_file_contents, list_repository_contents, list_pull_request_files |
-| Slack | [slack.yaml](internal/defaults/projections/slack.yaml) | conversations_history, conversations_replies, conversations_list, search_messages, users_list |
-| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | list_issues, search_issues, get_issue, create_issue, update_issue, list_projects, list_teams, list_cycles, list_comments |
-| Sentry | [sentry.yaml](internal/defaults/projections/sentry.yaml) | list_issues, get_issue_details, list_events, list_projects, list_organizations |
-| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | Jira: search, get_issue, get_project_issues, get_all_projects, get_project, get_agile_boards, get_sprint_issues — Confluence: search, get_page, get_page_children, get_comments |
-
-For servers not in this list, mini is a transparent proxy — responses pass through unchanged until you add a projection config.
-
 ## Projection config
 
 Projections are the rules that control what mini keeps, limits, or removes from responses. They live in `~/.mini/projections/<server>.yaml` and are installed automatically for known servers by `mini init`.
@@ -270,7 +268,7 @@ Config directory layout:
 
 ```yaml
 log_level: info       # debug | info | warn | error
-response_format: json # json (default) | mini (see below)
+response_format: json # json (default) | mini (see above)
 ```
 
 **`response_format: mini`** switches all agent responses to the compact header:values format shown above — useful if your agent handles plain text better than structured data, or if you want to squeeze more responses inline. It has no effect on responses that are too large to inline (those go to file regardless).
