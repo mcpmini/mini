@@ -92,21 +92,54 @@ mini call -r github list_pull_requests '{"owner":"golang","repo":"go","perPage":
 
 ## How it works
 
-Mini is a local process that runs on your machine and sits between your agent and your MCP servers:
+Mini is a local process that runs on your machine and sits between your agent and your MCP servers. When your agent calls a tool, mini resolves which upstream server owns it, forwards the call, applies your projection config to the response (trimming fields, capping strings, stripping noise), then returns the result. The agent never connects to upstream servers directly.
 
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant mini
+    participant Upstream as GitHub MCP
+
+    Agent->>mini: github__list_pull_requests
+    mini->>Upstream: list_pull_requests
+    Upstream-->>mini: full response (40+ fields, ~18 KB)
+    mini->>mini: apply projection
+    mini-->>Agent: trimmed response (8 fields, ~400 bytes)
 ```
-agent  ──MCP──▶  mini  ──MCP──▶  GitHub MCP
-                              ──MCP──▶  Linear MCP
-                              ──MCP──▶  Sentry MCP
+
+**Serve mode** (`mini serve`) — mini exposes 4 fixed tools: `list`, `call`, `perm_call`, `config`. The agent discovers what's available via `list` and invokes tools via `call`. Good for clients that load all tool schemas upfront since the schema surface stays constant regardless of how many upstream servers you add.
+
+**Proxy mode** (`mini proxy`) — mini re-exposes each upstream tool directly under a namespaced name (`github__list_pull_requests`, etc.). The agent sees native tool schemas. This is how Claude Code connects — its schema deferral loads only the schemas it needs, so the larger tool surface doesn't add upfront cost.
+
+**Daemon mode** — without a daemon, each agent window spawns its own mini process which in turn spawns or connects to every configured MCP server. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes, and so on — each consuming memory and holding its own auth session.
+
+The daemon solves this by holding all upstream connections in one shared process. Agent sessions connect to it automatically; they get per-session projections and permissions but share the underlying connections.
+
+```mermaid
+graph TB
+    subgraph before["Without daemon: 3 agents × 3 servers = 9 processes"]
+        direction LR
+        a1[Claude Code 1] --> g1[GitHub MCP]
+        a1 --> l1[Linear MCP]
+        a1 --> s1[Sentry MCP]
+        a2[Claude Code 2] --> g2[GitHub MCP]
+        a2 --> l2[Linear MCP]
+        a2 --> s2[Sentry MCP]
+        a3[Cursor] --> g3[GitHub MCP]
+        a3 --> l3[Linear MCP]
+        a3 --> s3[Sentry MCP]
+    end
+
+    subgraph after["With daemon: 3 agents × 3 servers = 3 processes"]
+        direction LR
+        b1[Claude Code 1] --> d[mini daemon]
+        b2[Claude Code 2] --> d
+        b3[Cursor] --> d
+        d --> bg[GitHub MCP]
+        d --> bl[Linear MCP]
+        d --> bs[Sentry MCP]
+    end
 ```
-
-When your agent calls a tool, mini: resolves which upstream server owns it, forwards the call, applies your projection config to the response (trimming fields, capping strings, stripping noise), then returns the result — either inline or as a file path if the response is large. The agent never connects to upstream servers directly.
-
-**Serve mode** (`mini serve`) — mini acts as an MCP server itself, exposing 4 fixed tools (`list`, `call`, `perm_call`, `config`). The agent discovers tools via `list` and calls them via `call`.
-
-**Proxy mode** (`mini proxy`) — mini re-exposes upstream tools directly under namespaced names (`github__list_pull_requests`, etc.). The agent sees them as ordinary tools with their native schemas. This is how Claude Code connects.
-
-**Daemon mode** — instead of each agent session spawning its own mini process, a single shared daemon holds the upstream connections. Sessions route through it automatically. Connections stay warm across agent restarts.
 
 ## Connect to your agent
 
