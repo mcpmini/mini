@@ -1,7 +1,0 @@
-log_level: info
-inline_threshold: 500
-default_string_limit: 1000
-default_array_limit: 3
-default_depth_limit: 0
-response_ttl: 15m
-response_disk_budget_mb: 200
