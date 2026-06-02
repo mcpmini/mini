@@ -179,7 +179,7 @@ There is no global string truncation by default. Truncation only applies when a 
 
 When mini has projected a response and it is still large, it writes the response to `~/.mini/responses/` and returns a file path instead. The agent fetches it with `read` (proxy mode) or `config action:read` (standard mode).
 
-**This only happens when a projection config is active.** In proxy mode, if no projection exists for a tool, mini passes the upstream response through unchanged — no file is written. `mini init` installs the bundled projections for known servers (GitHub, Slack, Linear, Sentry, Jira), which is what enables both response trimming and file-based handling for large responses.
+**This only happens when a projection config is active.** For the bundled servers (GitHub, Slack, Linear, Sentry, Jira), `mini init` installs projections automatically so trimming and file handling work out of the box. For servers you add that aren't in the bundled set, responses pass through unchanged until you write a projection config — mini is a transparent proxy for anything it has no rules for.
 
 **What the agent receives inline vs from a file:**
 
