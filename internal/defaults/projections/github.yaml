@@ -1,17 +1,20 @@
-# Philosophy: strip image URLs and legacy identifiers only.
-# Don't whitelist fields — the GitHub Copilot MCP server already returns minimal
-# API responses. Agents see all useful fields; the inline threshold handles size.
-# html_url is always the canonical reference — never strip it.
+# Philosophy: docs/default-config-philosophy.md
+# For list ops that already return minimal fields (GitHub Copilot MCP pre-filters
+# responses), exclude_always on image URLs is sufficient; no include list needed.
+# For list ops over raw REST/GraphQL responses, include lists are used to control
+# which top-level fields pass through.
+# String limits follow the doc: 1500 for list bodies, 500 for commit messages,
+# 8000 for detail views. The bar for exclusion is high — keep the field if unsure.
 
 list_pull_requests:
   exclude_always: [avatar_url]
   string_limits:
-    body: 1000
+    body: 1500
 
 list_issues:
   include: [issues, totalCount, pageInfo]
   string_limits:
-    body: 1000
+    body: 1500
 
 # Detail tools: generous limits. Agent may need to read and reference the full body.
 issue_read:
@@ -54,7 +57,7 @@ list_commits:
   array_limits:
     default: 30
   string_limits:
-    message: 300
+    message: 500
 
 search_code:
   include: [total_count, incomplete_results, items]
