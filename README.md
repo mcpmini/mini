@@ -52,6 +52,62 @@ mini status  # verify all servers connected
 
 Avatar URLs gone. Node IDs gone. URL templates gone. Body capped at 1500 chars. Multiply across 20 PRs — the savings are significant.
 
+Mini has three output modes. The same `list_pull_requests` call:
+
+**Default** — projected JSON. Noisy fields stripped, strings capped, structure preserved. What agents receive in standard mode:
+```bash
+mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
+```
+```json
+[
+  { "number": 68851, "title": "net/http: fix connection reuse after timeout",
+    "state": "open", "user": { "login": "gopherbot" }, "created_at": "2024-03-15T10:22:33Z" },
+  { "number": 68849, "title": "cmd/go: add workspace vendor support",
+    "state": "open", "user": { "login": "mvdan" }, "created_at": "2024-03-14T14:11:09Z" }
+]
+```
+
+**Mini** (`-m` / `response_format: mini`) — field names hoisted to a single header row; values follow one per line. Most token-efficient for long lists since field names aren't repeated per item. Good for agents that handle plain text well, or when you want to squeeze more results inline:
+```bash
+mini call -m github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
+```
+```
+number title state user_login created_at
+68851 net/http: fix connection reuse after timeout open gopherbot 2024-03-15T10:22:33Z
+68849 cmd/go: add workspace vendor support open mvdan 2024-03-14T14:11:09Z
+```
+
+**Raw** (`-r`) — full upstream response, no projection. Use this to inspect what a server actually returns, debug a projection config, or check which fields are available:
+```bash
+mini call -r github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
+```
+```json
+[{ "number": 68851, "node_id": "PR_kwDOAGrz984...", "title": "net/http: fix...",
+   "user": { "login": "gopherbot", "id": 8566187, "avatar_url": "https://avatars...",
+             "gravatar_id": "", "url": "https://api.github.com/users/gopherbot", ... },
+   "labels_url": "https://api.github.com/repos/golang/go/issues/68851/labels{/name}",
+   "commits_url": "https://api.github.com/repos/golang/go/pulls/68851/commits",
+   ... 40 more fields }]
+```
+
+## How it works
+
+Mini is a local process that runs on your machine and sits between your agent and your MCP servers:
+
+```
+agent  ──MCP──▶  mini  ──MCP──▶  GitHub MCP
+                              ──MCP──▶  Linear MCP
+                              ──MCP──▶  Sentry MCP
+```
+
+When your agent calls a tool, mini: resolves which upstream server owns it, forwards the call, applies your projection config to the response (trimming fields, capping strings, stripping noise), then returns the result — either inline or as a file path if the response is large. The agent never connects to upstream servers directly.
+
+**Serve mode** (`mini serve`) — mini acts as an MCP server itself, exposing 4 fixed tools (`list`, `call`, `perm_call`, `config`). The agent discovers tools via `list` and calls them via `call`.
+
+**Proxy mode** (`mini proxy`) — mini re-exposes upstream tools directly under namespaced names (`github__list_pull_requests`, etc.). The agent sees them as ordinary tools with their native schemas. This is how Claude Code connects.
+
+**Daemon mode** — instead of each agent session spawning its own mini process, a single shared daemon holds the upstream connections. Sessions route through it automatically. Connections stay warm across agent restarts.
+
 ## Connect to your agent
 
 ### Claude Code
@@ -184,7 +240,7 @@ log_level: info       # debug | info | warn | error
 response_format: json # json (default) | mini (see below)
 ```
 
-**`response_format: mini`** switches inline responses to a compact key:value format instead of JSON — useful if your agent handles plain text better than structured data. It has no effect on responses that are too large to inline (those go to file regardless).
+**`response_format: mini`** switches all agent responses to the compact header:values format shown above — useful if your agent handles plain text better than structured data, or if you want to squeeze more responses inline. It has no effect on responses that are too large to inline (those go to file regardless).
 
 There is no global string truncation by default. Truncation only applies when a projection config is present — either the bundled ones installed by `mini init`, or ones you write yourself.
 
@@ -246,23 +302,21 @@ auth:
   token: "${GITHUB_TOKEN}"
 ```
 
-## Debugging and exploration
+## Using mini from the CLI
 
-`mini call` lets you invoke any tool directly from the terminal without running a full agent session — useful for understanding what a tool returns or checking your projection config:
+You don't have to connect mini to an agent via MCP. `mini call` works as a standalone command — pipe it from scripts, use it in CI, or have your agent invoke it as a subprocess rather than connecting via MCP at all:
 
 ```bash
-# JSON output (default) — shows the projected response
 mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":3}'
-
-# Compact key:value output
-mini call -m github list_pull_requests '{"owner":"golang","repo":"go","perPage":3}'
-
-# Raw upstream response, no projection applied
-mini call -r github list_issues '{"owner":"golang","repo":"go","state":"OPEN","perPage":1}'
-
-# Protected tools
+mini call -m github list_issues '{"owner":"golang","repo":"go","state":"open","perPage":10}'
+mini call -r github get_file_contents '{"owner":"golang","repo":"go","path":"README.md"}'
 mini perm-call github create_pull_request '{"owner":"...","repo":"...","title":"..."}'
 ```
+
+This is useful when:
+- You want projection and auth handled for shell scripts or CI pipelines without an agent involved
+- You're debugging what a tool actually returns before writing a projection config
+- Your agent environment can run subprocesses but has limited MCP support
 
 ## Commands
 
