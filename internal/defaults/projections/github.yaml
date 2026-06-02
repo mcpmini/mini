@@ -10,6 +10,8 @@ list_pull_requests:
 
 list_issues:
   include: [issues, totalCount, pageInfo]
+  string_limits:
+    body: 1000
 
 # Detail tools: generous limits. Agent may need to read and reference the full body.
 issue_read:
