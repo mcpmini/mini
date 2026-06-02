@@ -5,6 +5,7 @@
 
 list_pull_requests:
   include: [number, title, state, draft, merged, body, user, created_at, updated_at, labels, assignees, requested_reviewers, head, base, milestone, html_url]
+  exclude_always: [avatar_url, profile_url]
   array_limits:
     default: 20
     labels: 5

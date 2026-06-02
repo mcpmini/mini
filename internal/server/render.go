@@ -50,7 +50,7 @@ func writeMapLines(b *strings.Builder, m map[string]any) {
 			continue
 		}
 		if isScalarValue(v) {
-			fmt.Fprintf(b, "%s:%v\n", k, v)
+			fmt.Fprintf(b, "%s:%s\n", k, formatScalar(v))
 		}
 	}
 	writeItems(b, mainArr)
@@ -235,7 +235,7 @@ func classifyField(nums, strs, arrs []string, k string, v any) ([]string, []stri
 func classifyNumeric(nums []string, k string, v any) []string {
 	switch sv := v.(type) {
 	case float64:
-		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%v", k, sv))
+		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%s", k, formatFloat(sv)))
 	case int:
 		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%d", k, sv))
 	case int64:
