@@ -177,16 +177,16 @@ There is no global string truncation by default. Truncation only applies when a 
 
 ### Large responses
 
-When a projected response is still large, mini writes it to `~/.mini/responses/` and returns a file path. The agent fetches it with `read` (proxy mode) or `config action:read` (standard mode).
+When mini has projected a response and it is still large, it writes the response to `~/.mini/responses/` and returns a file path instead. The agent fetches it with `read` (proxy mode) or `config action:read` (standard mode).
 
-**What the agent receives inline vs from file differs:**
+**This only happens when a projection config is active.** In proxy mode, if no projection exists for a tool, mini passes the upstream response through unchanged — no file is written. `mini init` installs the bundled projections for known servers (GitHub, Slack, Linear, Sentry, Jira), which is what enables both response trimming and file-based handling for large responses.
 
-- **Inline** — the full projected JSON (same structure as the upstream response, just with excluded fields and string limits applied)
-- **File** — a compacted representation: nested objects flattened (`user.login` → `user_login`), URL fields stripped except `html_url`, a `_meta` block with a field list and an index for quick lookup, and a `raw` path pointing to the original upstream response
+**What the agent receives inline vs from a file:**
 
-So when an agent calls `read` on a file path, it gets a more compressed view than it would have received inline. The raw upstream response is always available alongside it at the `.raw.json` path.
+- **Inline** — the projected JSON, same structure as the upstream response but with excluded fields and string limits applied
+- **File** — a more compact form: nested objects flattened (`user.login` → `user_login`), URL-template fields stripped, a `_meta` block added with a field list and index for quick scanning. A `.raw.json` file alongside always has the full original upstream response.
 
-**When does a response go to file?** By default, responses larger than a typical list of 5–10 items. A list of 5 pull requests stays inline; a large code file or a 50-item search result goes to disk.
+**When does a response go to file?** By default, when it's larger than a typical list of 5–10 items. A list of 5 pull requests stays inline; a large code file or a 50-item search result goes to disk.
 
 Tune this with `inline_threshold` in `config.yaml`:
 
