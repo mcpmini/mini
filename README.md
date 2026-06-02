@@ -1,8 +1,8 @@
 # mini
 
-**mini** is an MCP proxy that trims tool responses before they reach your agent.
+**mini** is an MCP proxy that sits between your AI agent and the tools it calls.
 
-MCP servers are generous — `list_pull_requests` returns full PR bodies, avatar URLs, node IDs, merge metadata. Most of it your agent never reads. mini strips the noise using configurable projection rules, so only the fields that matter arrive in context.
+MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, avatar URLs, node IDs, assignee objects, merge metadata, and dozens of URL template fields. Most of it your agent never reads. mini strips the noise so only what matters reaches context, saving tokens on every tool call.
 
 > **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents connect to external tools. mini sits in front of all of them.
 
@@ -12,68 +12,67 @@ MCP servers are generous — `list_pull_requests` returns full PR bodies, avatar
 
 ```bash
 go install github.com/mcpmini/mini/cmd/mini@latest
-mini init    # imports your existing MCP servers, installs bundled projections
-mini status  # verify connections
+mini init    # imports your existing MCP configs, installs bundled projections
+mini status  # verify all servers connected
 ```
+
+`mini init` detects your existing Claude Desktop, Claude Code, Cursor, Codex, and Gemini configs and imports them automatically. Bundled projection configs for GitHub, Linear, Sentry, Slack, and Jira install alongside.
 
 ---
 
 ## What it does
 
-**Before** — one PR entry from a busy repo:
+**Before** — one PR from the GitHub MCP:
 
 ```json
 {
   "number": 275198,
-  "title": "Remove layout control toggles from titlebar",
-  "body": "Removes layout toggle buttons...\n\n[full body continues]",
+  "title": "Remove layout control toggles",
+  "body": "Removes layout toggle buttons...\n\n[4,800 more chars]",
+  "user": { "login": "Copilot", "avatar_url": "https://avatars.githubusercontent.com/...", "id": 198982749, "node_id": "U_...", "gravatar_id": "", "url": "https://api.github.com/users/...", ... },
+  "assignees": [{ "login": "cwebster-99", "avatar_url": "...", "node_id": "...", ... }],
+  "head": { "ref": "fix/toggle", "sha": "73e46e32...", "repo": { "full_name": "microsoft/vscode", "node_id": "...", ... } },
+  "labels_url": "https://api.github.com/...",
+  "commits_url": "https://api.github.com/...",
+  ...40 more fields
+}
+```
+
+**After** — same PR, through mini:
+
+```json
+{
+  "number": 275198,
+  "title": "Remove layout control toggles",
   "state": "open",
   "draft": true,
+  "body": "Removes layout toggle buttons...[first 1500 chars]",
+  "user": { "login": "Copilot", "profile_url": "https://github.com/Copilot" },
   "html_url": "https://github.com/microsoft/vscode/pull/275198",
-  "user": { "login": "Copilot", "id": 198982749, "avatar_url": "https://avatars.githubusercontent.com/..." },
-  "assignees": [{ "login": "cwebster-99", "id": 19878031, "avatar_url": "..." }],
-  "head": { "ref": "copilot/remove-layout-toggles-navbar", "sha": "73e46e32...", "repo": { "full_name": "microsoft/vscode", ... } },
-  "base": { "ref": "respectable-dog", "sha": "a756650...", "repo": { "full_name": "microsoft/vscode", ... } },
   "created_at": "2025-11-04T17:25:38Z",
   "updated_at": "2025-11-04T18:51:15Z"
 }
 ```
 
-**After** — same PR, with mini's bundled GitHub projection applied:
-
-```json
-{
-  "number": 275198,
-  "title": "Remove layout control toggles from titlebar",
-  "state": "open",
-  "draft": true,
-  "user": "Copilot",
-  "assignees": ["cwebster-99"],
-  "head": "copilot/remove-layout-toggles-navbar",
-  "base": "respectable-dog",
-  "created_at": "2025-11-04T17:25:38Z"
-}
-```
-
-Bodies stripped. Avatar URLs gone. Nested objects flattened to the one field that matters. Multiply across 30 PRs.
+Avatar URLs gone. Node IDs gone. URL templates gone. Body capped at 1500 chars. Multiply across 20 PRs — the savings are significant.
 
 ---
 
 ## Connect to your agent
 
-### Claude Code — proxy mode
+Mini runs in one of three modes depending on how you use it.
+
+### Proxy mode — Claude Code
 
 ```bash
 claude mcp add mini mini proxy
 ```
 
-Claude Code defers MCP tool schema loading — it discovers and loads tool schemas on demand rather than upfront. Proxy mode is the right fit: mini exposes upstream tools directly (`github__list_pull_requests`, `sentry__list_issues`, etc.), Claude's schema deferral works as designed, and responses are trimmed transparently. Mini is invisible to the agent.
-
-Two utility tools are also available: `config` (runtime admin: add/remove servers, check status) and `read` (fetch a large response file by path).
+Mini exposes all your upstream tools directly: `github__list_pull_requests`, `sentry__list_issues`, etc. Claude Code sees them as ordinary tools and its schema deferral works as designed. Responses are trimmed transparently — mini is invisible to the agent.
 
 → [How Claude Code loads MCP tools](docs/claude-code-mcp-loading.md)
 
-### Codex, Cursor, Windsurf, and other MCP clients — standard mode
+### Standard mode — Cursor, Codex, Windsurf, and others
 
 ```json
 {
@@ -83,20 +82,29 @@ Two utility tools are also available: `config` (runtime admin: add/remove server
 }
 ```
 
-Standard mode exposes 4 tools to the agent:
+Mini exposes exactly 4 tools regardless of how many upstream servers you have:
 
 | Tool | What it does |
 |---|---|
 | `list` | Discover all tools across connected servers |
 | `call` | Invoke a tool — response is projected and returned |
-| `perm_call` | Same as `call` for protected tools (write ops, destructive actions) |
+| `perm_call` | Same as `call` but for protected tools (write ops, destructive actions) |
 | `config` | Runtime admin: add/remove servers, adjust projections, check status |
 
-Good for clients that load all tool schemas upfront — the fixed 4-tool surface keeps initial context cost predictable regardless of how many upstream servers you have.
+The fixed 4-tool surface keeps schema token cost predictable. Good for clients that load all tool schemas upfront.
 
 See [how Codex loads MCP tools](docs/codex-mcp-loading.md) for Codex-specific guidance.
 
-Restart your agent after adding.
+### Daemon mode — multiple agents sharing one connection
+
+If you run multiple agent sessions simultaneously (several Claude Code windows, Claude Code + Cursor, etc.), each normally spawns its own mini process and its own connections to every upstream server. The daemon avoids that:
+
+```bash
+mini daemon          # start once, runs in the background
+mini daemon status   # confirm it's running
+```
+
+Once running, any `mini serve` or `mini proxy` invocation automatically detects the daemon and routes through it. Upstream connections are shared across all sessions; projections and permissions remain per-session. The daemon binds to `127.0.0.1` only and survives agent restarts.
 
 ---
 
@@ -118,45 +126,70 @@ mini add --from-codex    # Codex config.toml
 mini add --from-gemini   # Gemini CLI settings.json
 ```
 
-Bundled projections for GitHub, Linear, Sentry, Slack, and Jira install automatically when a known server is detected.
+Bundled projection and permission configs for known servers install automatically.
 
 ---
 
 ## Projection config
 
-Projections tell mini which fields to keep, truncate, or drop. They live in `~/.mini/projections/<server>.yaml`:
+Projections are the rules that control what mini keeps, limits, or removes from responses. They live in `~/.mini/projections/<server>.yaml` and are installed automatically for known servers by `mini init`.
+
+For most users the bundled projections are enough. If you want to tune them:
 
 ```yaml
+# ~/.mini/projections/github.yaml
+
 list_pull_requests:
-  include: [number, title, state, draft, user, created_at, updated_at, assignees, head, base]
+  exclude_always: [avatar_url]   # strip provably-useless fields
   string_limits:
-    body: 300
-  array_limits:
-    default: 20
-    assignees: 3
+    body: 1500                   # cap at 1500 chars in list view
+
+get_pull_request:
+  string_limits:
+    body: 8000                   # generous limit for detail view
 ```
 
-Without a projection, mini applies conservative defaults: strings capped at 1,000 chars, arrays at 3 items, depth at 3 levels. You'll get some trimming but the large reductions come from explicit `include` lists that match what your agent actually needs.
+The bar for exclusion is high — only strip fields that are **never** useful in any realistic agent workflow (URL template strings, image URLs, deprecated empty fields). When in doubt, keep the field. See [docs/default-config-philosophy.md](docs/default-config-philosophy.md) for full guidance.
 
-Config lives in `~/.mini/` (override with `--config DIR`):
+Config directory layout:
 
 ```
 ~/.mini/
-  config.yaml              # global settings (inline_threshold, log_level, …)
+  config.yaml              # global settings (see below)
   servers/<name>.yaml      # one file per upstream server
   projections/<name>.yaml  # per-tool field rules
-  responses/               # response files, auto-cleaned by TTL and disk budget
+  responses/               # auto-managed response files
+  tokens/                  # OAuth token cache
+```
+
+### Global config
+
+`~/.mini/config.yaml` controls mini's overall behavior:
+
+```yaml
+log_level: info          # debug | info | warn | error
+response_format: json    # json (default) | mini (compact key:value)
+inline_threshold: 3500   # see "Large responses" below
 ```
 
 ### Large responses
 
-When a projected response is still large, mini writes it to `~/.mini/responses/` and returns the file path instead. Use `read` (proxy mode) or `config action:read` (standard mode) to fetch the file. Response files are cleaned up automatically.
+When a projected response is still large, mini writes it to `~/.mini/responses/` and returns a file path instead of inlining everything. The agent fetches it with `read` (proxy mode) or `config action:read` (standard mode) when it needs the content.
+
+**When does this happen?** By default, responses larger than a typical list of 5–10 items go to file. A list of 5 pull requests stays inline; a large code file or a 50-item search result goes to disk.
+
+Tune this with `inline_threshold` in `config.yaml`:
+
+- **Raise it** if agents are fetching response files too often (fewer round trips, more context used)
+- **Lower it** to keep context tighter (more round trips, smaller agent context)
+
+Response files are cleaned up automatically by TTL and disk budget.
 
 ---
 
 ## Permissions
 
-Gate write operations behind `perm_call`:
+Gate write operations behind `perm_call` so agents have to ask before making changes:
 
 ```yaml
 # ~/.mini/servers/github.yaml
@@ -165,9 +198,15 @@ permissions:
   hidden: [get_authenticated_app, list_app_installations]
 ```
 
-Three tiers: `open` (default), `protected` (requires `perm_call`), `hidden` (invisible to `list`). Bundled permission defaults install automatically for known servers.
+Three tiers:
 
-`perm_call` works as a gate via your agent's per-tool permission settings: in Claude Code, allowlist `mcp__mini__call` and leave `mcp__mini__perm_call` unapproved — Claude will prompt before calling protected tools. Codex supports the same via `approval_mode` per tool. **Cursor only supports server-level approval**, so `perm_call` is not a hard gate there — use `hidden` instead for tools that should never be agent-callable in Cursor.
+| Tier | Visible in `list` | Callable via |
+|---|---|---|
+| `open` (default) | Yes | `call` or `perm_call` |
+| `protected` | Yes | `perm_call` only |
+| `hidden` | No | `perm_call` only |
+
+In Claude Code: allowlist `mcp__mini__call` and leave `mcp__mini__perm_call` requiring approval — Claude will prompt before calling protected tools. Codex supports the same via `approval_mode`. **Cursor only supports server-level approval**, so use `hidden` for tools that must never run without human review.
 
 ---
 
@@ -179,23 +218,54 @@ For servers that require OAuth2 (Linear, Slack):
 mini auth linear   # opens browser for PKCE flow, token stored in ~/.mini/tokens/
 ```
 
-API key and Bearer token injection are also supported — set them in the server config or via `${ENV_VAR}` references.
+For servers using API keys or Bearer tokens, set them in the server config or reference an env var:
+
+```yaml
+# ~/.mini/servers/github.yaml
+auth:
+  type: bearer
+  token: "${GITHUB_TOKEN}"
+```
+
+---
+
+## Debugging and exploration
+
+`mini call` lets you invoke any tool directly from the terminal without running a full agent session — useful for understanding what a tool returns or checking your projection config:
+
+```bash
+# JSON output (default) — shows the projected response
+mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":3}'
+
+# Compact key:value output
+mini call -m github list_pull_requests '{"owner":"golang","repo":"go","perPage":3}'
+
+# Raw upstream response, no projection applied
+mini call -r github list_issues '{"owner":"golang","repo":"go","state":"OPEN","perPage":1}'
+
+# Protected tools
+mini perm-call github create_pull_request '{"owner":"...","repo":"...","title":"..."}'
+```
 
 ---
 
 ## Commands
 
 ```
-mini serve            Standard mode — 4-tool interface (default)
-mini proxy            Proxy mode — upstream tools exposed directly
-mini daemon           Run as a shared background daemon
-mini daemon status    Check daemon health
-mini ls               List configured servers
-mini add NAME         Add a server
-mini rm NAME          Remove a server
-mini status           Server health and tool counts
-mini auth NAME        OAuth2 PKCE flow for a server
-mini init             Setup wizard
-mini test             CI health check (exits 1 on any failure)
-mini cleanup          Delete expired response files
+mini serve [--http ADDR] [--standalone]   Standard mode (4-tool interface)
+mini proxy [--http ADDR]                  Proxy mode (upstream tools exposed directly)
+mini daemon [--port N]                    Run as a shared background daemon
+mini daemon status                        Check whether the daemon is running
+
+mini ls                                   List configured servers
+mini add NAME [flags]                     Add a server
+mini rm NAME                              Remove a server
+mini status                               Server health and tool counts
+mini test [--timeout T]                   CI health check (exits 1 on any failure)
+mini auth NAME                            OAuth2 PKCE flow for a server
+mini init [--yes]                         Setup wizard
+mini cleanup                              Delete expired response files
+
+mini call [-j|-m|-r] SERVER TOOL [JSON]   Invoke a tool directly
+mini perm-call [-j|-m|-r] SERVER TOOL [JSON]  Invoke a protected tool directly
 ```
