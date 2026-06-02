@@ -214,7 +214,11 @@ func noiseField(key string, val any) bool {
 }
 
 func isNoisyURL(l string) bool {
-	return strings.HasSuffix(l, "_url") && l != "html_url" && l != "browser_download_url"
+	switch l {
+	case "html_url", "browser_download_url", "profile_url":
+		return false
+	}
+	return strings.HasSuffix(l, "_url")
 }
 
 func isTemplateURL(val any) bool {

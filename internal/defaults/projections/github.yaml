@@ -5,6 +5,8 @@
 
 list_pull_requests:
   exclude_always: [avatar_url]
+  string_limits:
+    body: 1000
 
 list_issues:
   include: [issues, totalCount, pageInfo]
