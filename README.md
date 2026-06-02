@@ -30,7 +30,7 @@ mini status  # verify all servers connected
   "title": "Remove layout control toggles",
   "body": "Removes layout toggle buttons...\n\n[4,800 more chars]",
   "user": { "login": "Copilot", "avatar_url": "https://avatars.githubusercontent.com/...", "id": 198982749, "node_id": "U_...", "gravatar_id": "", "url": "https://api.github.com/users/...", ... },
-  "assignees": [{ "login": "cwebster-99", "avatar_url": "...", "node_id": "...", ... }],
+  "assignees": [{ "login": "dev-user", "avatar_url": "...", "node_id": "...", ... }],
   "head": { "ref": "fix/toggle", "sha": "73e46e32...", "repo": { "full_name": "microsoft/vscode", "node_id": "...", ... } },
   "labels_url": "https://api.github.com/...",
   "commits_url": "https://api.github.com/...",
