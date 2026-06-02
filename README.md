@@ -6,8 +6,6 @@ MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, ava
 
 > **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents connect to external tools. mini sits in front of all of them.
 
----
-
 ## Install
 
 ```bash
@@ -17,8 +15,6 @@ mini status  # verify all servers connected
 ```
 
 `mini init` detects your existing Claude Desktop, Claude Code, Cursor, Codex, and Gemini configs and imports them automatically. Bundled projection configs for GitHub, Linear, Sentry, Slack, and Jira install alongside.
-
----
 
 ## What it does
 
@@ -56,23 +52,32 @@ mini status  # verify all servers connected
 
 Avatar URLs gone. Node IDs gone. URL templates gone. Body capped at 1500 chars. Multiply across 20 PRs — the savings are significant.
 
----
-
 ## Connect to your agent
 
-Mini runs in one of three modes depending on how you use it.
-
-### Proxy mode — Claude Code
+### Claude Code
 
 ```bash
 claude mcp add mini mini proxy
 ```
 
-Mini exposes all your upstream tools directly: `github__list_pull_requests`, `sentry__list_issues`, etc. Claude Code sees them as ordinary tools and its schema deferral works as designed. Responses are trimmed transparently — mini is invisible to the agent.
+Mini runs in **proxy mode** for Claude Code, exposing your upstream tools directly as `github__list_pull_requests`, `sentry__list_issues`, etc. Claude Code's schema deferral works as normal — it only loads schemas for tools it actually needs, keeping context tight. Responses are trimmed transparently; mini is invisible to the agent.
 
-→ [How Claude Code loads MCP tools](docs/claude-code-mcp-loading.md)
+Claude Code has specific behaviour around how it loads and caches MCP tool schemas that affects how you should configure any MCP proxy. [Read the full explanation](docs/claude-code-mcp-loading.md) if you run into tools that aren't appearing or schemas that look stale.
 
-### Standard mode — Cursor, Codex, Windsurf, and others
+### Codex
+
+Codex loads all MCP tool schemas upfront at session start, which means the number of tools exposed directly affects your token budget before any work begins. Mini's standard mode exposes exactly 4 tools regardless of how many upstream servers you have — `list`, `call`, `perm_call`, `config` — keeping that fixed cost predictable.
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.mini]
+command = "mini"
+```
+
+See [how Codex loads MCP tools](docs/codex-mcp-loading.md) for more detail on schema loading behaviour and when proxy mode might be preferable.
+
+### Cursor, Windsurf, and others
 
 ```json
 {
@@ -82,7 +87,7 @@ Mini exposes all your upstream tools directly: `github__list_pull_requests`, `se
 }
 ```
 
-Mini exposes exactly 4 tools regardless of how many upstream servers you have:
+Standard mode exposes the same 4-tool surface:
 
 | Tool | What it does |
 |---|---|
@@ -91,13 +96,11 @@ Mini exposes exactly 4 tools regardless of how many upstream servers you have:
 | `perm_call` | Same as `call` but for protected tools (write ops, destructive actions) |
 | `config` | Runtime admin: add/remove servers, adjust projections, check status |
 
-The fixed 4-tool surface keeps schema token cost predictable. Good for clients that load all tool schemas upfront.
-
-See [how Codex loads MCP tools](docs/codex-mcp-loading.md) for Codex-specific guidance.
+**Cursor only supports server-level approval** — use `hidden` for tools that must never run without human review.
 
 ### Daemon mode — multiple agents sharing one connection
 
-If you run multiple agent sessions simultaneously (several Claude Code windows, Claude Code + Cursor, etc.), each normally spawns its own mini process and its own connections to every upstream server. The daemon avoids that:
+If you run multiple agent sessions simultaneously (several Claude Code windows, Claude Code + Cursor, etc.), each normally spawns its own mini process and its own upstream connections. The daemon avoids that:
 
 ```bash
 mini daemon          # start once, runs in the background
@@ -105,8 +108,6 @@ mini daemon status   # confirm it's running
 ```
 
 Once running, any `mini serve` or `mini proxy` invocation automatically detects the daemon and routes through it. Upstream connections are shared across all sessions; projections and permissions remain per-session. The daemon binds to `127.0.0.1` only and survives agent restarts.
-
----
 
 ## Adding servers
 
@@ -141,8 +142,6 @@ These servers have projection and permission defaults built in — they're insta
 | Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | Jira: search, get_issue, get_project_issues, get_all_projects, get_project, get_agile_boards, get_sprint_issues — Confluence: search, get_page, get_page_children, get_comments |
 
 For servers not in this list, mini is a transparent proxy — responses pass through unchanged until you add a projection config.
-
----
 
 ## Projection config
 
@@ -209,8 +208,6 @@ Tune this with `inline_threshold` in `config.yaml`:
 
 Response files are cleaned up automatically by TTL and disk budget.
 
----
-
 ## Permissions
 
 Gate write operations behind `perm_call` so agents have to ask before making changes:
@@ -232,8 +229,6 @@ Three tiers:
 
 In Claude Code: allowlist `mcp__mini__call` and leave `mcp__mini__perm_call` requiring approval — Claude will prompt before calling protected tools. Codex supports the same via `approval_mode`. **Cursor only supports server-level approval**, so use `hidden` for tools that must never run without human review.
 
----
-
 ## Auth
 
 For servers that require OAuth2 (Linear, Slack):
@@ -250,8 +245,6 @@ auth:
   type: bearer
   token: "${GITHUB_TOKEN}"
 ```
-
----
 
 ## Debugging and exploration
 
@@ -270,8 +263,6 @@ mini call -r github list_issues '{"owner":"golang","repo":"go","state":"OPEN","p
 # Protected tools
 mini perm-call github create_pull_request '{"owner":"...","repo":"...","title":"..."}'
 ```
-
----
 
 ## Commands
 
