@@ -2,34 +2,7 @@
 
 ## v0.1.0 — 2026-06-01
 
-> Pre-release fixes applied after the May 16 feature-complete build. All changes listed here are included in the v0.1.0 tag.
-
-### Bug fixes
-
-- **OAuth PKCE callback** — callback handler now returns HTTP 400 when the `code` parameter is absent (previously wrote "Authorized!" and silently failed token exchange)
-- **Redirect URI consistency** — extracted `LoopbackCallbackPath` constant shared by dynamic registration and PKCE flow; divergence between the two paths would have caused `redirect_uri_mismatch` errors on strict OAuth servers
-- **Response mutation** — `injectRawPath` in the response store was mutating the caller's `_meta` map in place; fixed with explicit copies to prevent hidden side effects on retry loops
-- **Shutdown quiescence** — `maybeReconnect` now checks `upstream.ctx.Err()` before calling `reconnectWg.Add(1)`, preventing a narrow window where `Close()` could return while a reconnect goroutine was still launching
-- **Tool-not-found error type** — calling `call` or `perm_call` with an unknown server or tool now returns a tool result with `isError: true` instead of an MCP protocol error (`-32602`); agents can handle this gracefully in their flow without treating it as a protocol fault
-- **MCP cancellation** — mini now accepts `notifications/cancelled` from agents and propagates cancellation to in-flight upstream calls via per-request context; parallel requests to the same server are unaffected
-
-### Security (pre-release)
-
-- `dangerous_allow_runtime_stdio` now also strips `sc.Env` from runtime `add_server` calls (prevents credential injection via environment variables into spawned subprocesses)
-- SSRF dialer blocks IPv4-in-IPv6 addresses (`::ffff:127.0.0.1`) that could bypass IP range checks
-- Session ID validation requires ≥ 16 hex characters to prevent all-hyphen IDs with no real entropy
-
-### Testing
-
-- Added concurrency stress test for `Close()` vs `maybeReconnect` shutdown race
-- Added schema compliance test suite (MCP 2025-03-26 spec)
-- Added regression tests for all security fixes above
-
----
-
-## v0.1.0 — 2026-05-16 (feature complete)
-
-Introducing mini, the minifying MCP proxy.
+Initial release of mini, the minifying MCP proxy.
 
 ### Features
 
@@ -55,3 +28,5 @@ Introducing mini, the minifying MCP proxy.
 - Concurrent `add_server`/`remove_server` serialized to prevent transient registry corruption
 - Response body caps: 64MB normal, 4KB error; request body cap: 1MB
 - `dangerous_allow_runtime_stdio: true` required to permit agent-controlled subprocess execution (default: off)
+- IPv4-in-IPv6 SSRF bypass blocked (`::ffff:127.0.0.1`)
+- Session ID validation requires ≥ 16 hex characters
