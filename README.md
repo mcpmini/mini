@@ -128,6 +128,20 @@ mini add --from-gemini   # Gemini CLI settings.json
 
 Bundled projection and permission configs for known servers install automatically.
 
+### Bundled server configs
+
+These servers have projection and permission defaults built in — they're installed automatically when `mini add` or `mini init` detects a matching server name.
+
+| Server | Projection config | Tools covered |
+|---|---|---|
+| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, list_issues, get_issue, get_pull_request, list_commits, get_commit, search_code, search_repositories, search_issues, get_file_contents, list_repository_contents, list_pull_request_files |
+| Slack | [slack.yaml](internal/defaults/projections/slack.yaml) | conversations_history, conversations_replies, conversations_list, search_messages, users_list |
+| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | list_issues, search_issues, get_issue, create_issue, update_issue, list_projects, list_teams, list_cycles, list_comments |
+| Sentry | [sentry.yaml](internal/defaults/projections/sentry.yaml) | list_issues, get_issue_details, list_events, list_projects, list_organizations |
+| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | Jira: search, get_issue, get_project_issues, get_all_projects, get_project, get_agile_boards, get_sprint_issues — Confluence: search, get_page, get_page_children, get_comments |
+
+For servers not in this list, mini is a transparent proxy — responses pass through unchanged until you add a projection config.
+
 ---
 
 ## Projection config
