@@ -159,6 +159,7 @@ func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *regis
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
 		session.recordCall(latencyMs, 0, true)
+		s.usage.Record(server, tool, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
 	return s.buildEnvelope(server, tool, raw, session, upstream, latencyMs)
@@ -303,6 +304,7 @@ func (s *Server) buildEnvelope(server, tool string, raw json.RawMessage, session
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	upstream.recordSaved(session, latencyMs, saved)
+	s.usage.Record(server, tool, saved, false)
 	return s.formatEnvelope(server, tool, env, projCfg), nil
 }
 

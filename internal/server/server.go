@@ -9,6 +9,7 @@ import (
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/usage"
 )
 
 type ServerOption func(*Server)
@@ -38,6 +39,7 @@ type Server struct {
 	projDefaults *projection.Defaults
 	toolSchemas  []map[string]any
 	sessions     *sessionStore
+	usage        *usage.Tracker
 	logger       *slog.Logger
 	clock        clock.Clock
 	proxyMode    bool
