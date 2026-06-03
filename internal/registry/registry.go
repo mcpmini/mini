@@ -26,32 +26,54 @@ func New() *Registry {
 	}
 }
 
-func (r *Registry) AddServer(serverName string, defs []transport.ToolDefinition, perm *config.PermissionsConfig) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.addServerLocked(serverName, defs, perm)
+// ServerParams carries the arguments for AddServer and ReplaceServer.
+type ServerParams struct {
+	Name    string
+	Defs    []transport.ToolDefinition
+	Perm    *config.PermissionsConfig
+	Aliases map[string]string // realToolName → aliasName; nil means no aliases
 }
 
-func (r *Registry) addServerLocked(serverName string, defs []transport.ToolDefinition, perm *config.PermissionsConfig) {
-	for _, d := range defs {
+func (r *Registry) AddServer(p ServerParams) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.addServerLocked(p)
+}
+
+func (r *Registry) addServerLocked(p ServerParams) {
+	for _, d := range p.Defs {
 		if config.ValidToolName.MatchString(d.Name) {
-			r.insertEntryLocked(serverName, buildEntry(serverName, d, perm))
+			r.insertEntryLocked(p.Name, buildEntry(entryParams{p.Name, d, p.Perm, p.Aliases[d.Name]}))
 		}
 	}
 }
 
-func buildEntry(server string, d transport.ToolDefinition, perm *config.PermissionsConfig) *ToolEntry {
-	full := server + "." + d.Name
+type entryParams struct {
+	server string
+	def    transport.ToolDefinition
+	perm   *config.PermissionsConfig
+	alias  string
+}
+
+func buildEntry(p entryParams) *ToolEntry {
+	visibleName := p.def.Name
+	upstreamTool := ""
+	if p.alias != "" && config.ValidToolName.MatchString(p.alias) {
+		visibleName = p.alias
+		upstreamTool = p.def.Name
+	}
+	full := p.server + "." + visibleName
 	return &ToolEntry{
-		Server:        server,
-		Name:          d.Name,
+		Server:        p.server,
+		Name:          visibleName,
 		FullName:      full,
 		FullNameLower: strings.ToLower(full),
-		Description:   d.Description,
-		DescLower:     strings.ToLower(d.Description),
-		InputSchema:   d.InputSchema,
-		Permission:    resolvePermission(d.Name, perm),
-		ReadOnly:      d.ReadOnly,
+		Description:   p.def.Description,
+		DescLower:     strings.ToLower(p.def.Description),
+		InputSchema:   p.def.InputSchema,
+		Permission:    resolvePermission(p.def.Name, p.perm),
+		ReadOnly:      p.def.ReadOnly,
+		UpstreamTool:  upstreamTool,
 	}
 }
 
@@ -173,11 +195,11 @@ func (r *Registry) removeServerLocked(serverName string) {
 // ReplaceServer atomically removes the server's existing tools and registers the
 // new set. Callers outside this package (reconnect, registerUpstream) must use
 // this instead of separate Remove+Add calls to avoid a window where tools are absent.
-func (r *Registry) ReplaceServer(serverName string, defs []transport.ToolDefinition, perm *config.PermissionsConfig) {
+func (r *Registry) ReplaceServer(p ServerParams) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.removeServerLocked(serverName)
-	r.addServerLocked(serverName, defs, perm)
+	r.removeServerLocked(p.Name)
+	r.addServerLocked(p)
 }
 
 func (r *Registry) Lookup(fullName string) (*ToolEntry, error) {

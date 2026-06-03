@@ -17,9 +17,13 @@ func defs(names ...string) []transport.ToolDefinition {
 	return out
 }
 
+func sp(name string, d []transport.ToolDefinition, perm *config.PermissionsConfig) registry.ServerParams {
+	return registry.ServerParams{Name: name, Defs: d, Perm: perm}
+}
+
 func TestAddAndLookup(t *testing.T) {
 	r := registry.New()
-	r.AddServer("ci", defs("getBuild", "listBuilds"), nil)
+	r.AddServer(sp("ci", defs("getBuild", "listBuilds"), nil))
 
 	e, err := r.Lookup("ci.getBuild")
 	if err != nil {
@@ -41,7 +45,7 @@ func TestLookupMissing(t *testing.T) {
 func TestHiddenToolsNotIndexed(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"adminSettings"}}
-	r.AddServer("ci", defs("getBuild", "adminSettings"), perm)
+	r.AddServer(sp("ci", defs("getBuild", "adminSettings"), perm))
 
 	all := r.All()
 	for _, e := range all {
@@ -54,7 +58,7 @@ func TestHiddenToolsNotIndexed(t *testing.T) {
 func TestProtectedPermission(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"deleteIssue"}}
-	r.AddServer("jira", defs("getIssue", "deleteIssue"), perm)
+	r.AddServer(sp("jira", defs("getIssue", "deleteIssue"), perm))
 
 	e, _ := r.Lookup("jira.deleteIssue")
 	if e.Permission != config.PermProtected {
@@ -64,7 +68,7 @@ func TestProtectedPermission(t *testing.T) {
 
 func TestRemoveServer(t *testing.T) {
 	r := registry.New()
-	r.AddServer("ci", defs("getBuild"), nil)
+	r.AddServer(sp("ci", defs("getBuild"), nil))
 	r.RemoveServer("ci")
 
 	_, err := r.Lookup("ci.getBuild")
@@ -75,7 +79,7 @@ func TestRemoveServer(t *testing.T) {
 
 func TestSearch(t *testing.T) {
 	r := registry.New()
-	r.AddServer("ci", defs("getBuild", "listPipelines"), nil)
+	r.AddServer(sp("ci", defs("getBuild", "listPipelines"), nil))
 
 	results := r.Search("build")
 	if len(results) != 1 || results[0].Name != "ci.getBuild" {
@@ -85,7 +89,7 @@ func TestSearch(t *testing.T) {
 
 func TestAll_sortedDeterministic(t *testing.T) {
 	r := registry.New()
-	r.AddServer("srv", defs("zebra", "alpha", "mango"), nil)
+	r.AddServer(sp("srv", defs("zebra", "alpha", "mango"), nil))
 
 	all := r.All()
 	if len(all) != 3 {
@@ -100,7 +104,7 @@ func TestAll_sortedDeterministic(t *testing.T) {
 
 func TestSearch_sortedDeterministic(t *testing.T) {
 	r := registry.New()
-	r.AddServer("srv", defs("z_tool", "a_tool", "m_tool"), nil)
+	r.AddServer(sp("srv", defs("z_tool", "a_tool", "m_tool"), nil))
 
 	results := r.Search("tool")
 	if len(results) != 3 {
@@ -115,8 +119,8 @@ func TestSearch_sortedDeterministic(t *testing.T) {
 
 func TestServerNames(t *testing.T) {
 	r := registry.New()
-	r.AddServer("alpha", defs("t1"), nil)
-	r.AddServer("beta", defs("t2"), nil)
+	r.AddServer(sp("alpha", defs("t1"), nil))
+	r.AddServer(sp("beta", defs("t2"), nil))
 
 	names := r.ServerNames()
 	if len(names) != 2 {
@@ -133,7 +137,7 @@ func TestServerNames(t *testing.T) {
 
 func TestToolCount(t *testing.T) {
 	r := registry.New()
-	r.AddServer("ci", defs("a", "b", "c"), nil)
+	r.AddServer(sp("ci", defs("a", "b", "c"), nil))
 
 	if got := r.ToolCount("ci"); got != 3 {
 		t.Errorf("expected 3, got %d", got)
@@ -146,7 +150,7 @@ func TestToolCount(t *testing.T) {
 func TestToolCount_hiddenNotCounted(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
-	r.AddServer("ci", defs("visible", "secret"), perm)
+	r.AddServer(sp("ci", defs("visible", "secret"), perm))
 
 	if got := r.ToolCount("ci"); got != 1 {
 		t.Errorf("expected 1 (hidden excluded), got %d", got)
@@ -155,7 +159,7 @@ func TestToolCount_hiddenNotCounted(t *testing.T) {
 
 func TestAddAction_appearsInAll(t *testing.T) {
 	r := registry.New()
-	r.AddServer("fs", defs("read_file"), nil)
+	r.AddServer(sp("fs", defs("read_file"), nil))
 	r.AddAction(config.ActionConfig{
 		Name:        "read_readme",
 		Description: "Read the README",
@@ -179,7 +183,7 @@ func TestAddAction_appearsInAll(t *testing.T) {
 func TestAddAction_inheritsTargetPermission(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"dangerous_op"}}
-	r.AddServer("srv", defs("dangerous_op"), perm)
+	r.AddServer(sp("srv", defs("dangerous_op"), perm))
 	r.AddAction(config.ActionConfig{
 		Name:   "safe_alias",
 		Server: "srv",
@@ -198,7 +202,7 @@ func TestAddAction_inheritsTargetPermission(t *testing.T) {
 func TestAddAction_inheritsHiddenTargetPermission(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
-	r.AddServer("srv", defs("secret_op"), perm)
+	r.AddServer(sp("srv", defs("secret_op"), perm))
 	r.AddAction(config.ActionConfig{
 		Name:   "secret_alias",
 		Server: "srv",
@@ -219,7 +223,7 @@ func TestAddAction_inheritsHiddenTargetPermission(t *testing.T) {
 func TestAddAction_explicitPermissionOverrides(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"dangerous_op"}}
-	r.AddServer("srv", defs("dangerous_op"), perm)
+	r.AddServer(sp("srv", defs("dangerous_op"), perm))
 	r.AddAction(config.ActionConfig{
 		Name:       "open_alias",
 		Server:     "srv",
@@ -238,7 +242,7 @@ func TestAddAction_explicitPermissionOverrides(t *testing.T) {
 
 func TestAddAction_defaultArgs(t *testing.T) {
 	r := registry.New()
-	r.AddServer("fs", defs("read_file"), nil)
+	r.AddServer(sp("fs", defs("read_file"), nil))
 	r.AddAction(config.ActionConfig{
 		Name:        "read_readme",
 		Server:      "fs",
@@ -261,8 +265,7 @@ func TestAddAction_defaultArgs(t *testing.T) {
 func TestResolvePermission_caseInsensitive(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"AdminTool"}}
-	// Upstream sends "admintool" (different case) — should still be hidden.
-	r.AddServer("srv", defs("admintool"), perm)
+	r.AddServer(sp("srv", defs("admintool"), perm))
 
 	all := r.All()
 	for _, e := range all {
@@ -274,9 +277,9 @@ func TestResolvePermission_caseInsensitive(t *testing.T) {
 
 func TestAddServer_afterRemove_noStaleEntries(t *testing.T) {
 	r := registry.New()
-	r.AddServer("myserver", defs("toolA", "toolB"), nil)
+	r.AddServer(sp("myserver", defs("toolA", "toolB"), nil))
 	r.RemoveServer("myserver")
-	r.AddServer("myserver", defs("toolA"), nil)
+	r.AddServer(sp("myserver", defs("toolA"), nil))
 
 	t.Run("toolA is found", func(t *testing.T) {
 		if _, err := r.Lookup("myserver.toolA"); err != nil {
@@ -294,7 +297,7 @@ func TestAddServer_afterRemove_noStaleEntries(t *testing.T) {
 func TestDefaultProtected_appliesToUnlistedTools(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Default: "protected"}
-	r.AddServer("srv", defs("anyTool"), perm)
+	r.AddServer(sp("srv", defs("anyTool"), perm))
 
 	e, err := r.Lookup("srv.anyTool")
 	if err != nil {
@@ -308,7 +311,7 @@ func TestDefaultProtected_appliesToUnlistedTools(t *testing.T) {
 func TestAllWithHidden_includesHiddenTools(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secretTool"}}
-	r.AddServer("srv", defs("openTool", "secretTool"), perm)
+	r.AddServer(sp("srv", defs("openTool", "secretTool"), perm))
 
 	visible := r.All()
 	all := r.AllWithHidden()
@@ -332,12 +335,111 @@ func TestAllWithHidden_includesHiddenTools(t *testing.T) {
 func TestAllWithHidden_sorted(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"aaa"}}
-	r.AddServer("srv", defs("zzz", "aaa", "mmm"), perm)
+	r.AddServer(sp("srv", defs("zzz", "aaa", "mmm"), perm))
 
 	all := r.AllWithHidden()
 	for i := 1; i < len(all); i++ {
 		if all[i].Name < all[i-1].Name {
 			t.Errorf("AllWithHidden not sorted: %s before %s", all[i-1].Name, all[i].Name)
 		}
+	}
+}
+
+func TestAlias_listShowsAliasName(t *testing.T) {
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "github",
+		Defs: defs("list_pull_requests", "get_issue"),
+		Aliases: map[string]string{
+			"list_pull_requests": "list_prs",
+		},
+	})
+
+	all := r.All()
+	names := map[string]bool{}
+	for _, e := range all {
+		names[e.Name] = true
+	}
+	if names["github.list_pull_requests"] {
+		t.Error("real tool name should not appear in list when aliased")
+	}
+	if !names["github.list_prs"] {
+		t.Error("alias should appear in list")
+	}
+	if !names["github.get_issue"] {
+		t.Error("non-aliased tool should still appear")
+	}
+}
+
+func TestAlias_lookupByAlias(t *testing.T) {
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "github",
+		Defs: defs("list_pull_requests"),
+		Aliases: map[string]string{
+			"list_pull_requests": "list_prs",
+		},
+	})
+
+	e, err := r.Lookup("github.list_prs")
+	if err != nil {
+		t.Fatalf("lookup by alias failed: %v", err)
+	}
+	if e.UpstreamTool != "list_pull_requests" {
+		t.Errorf("expected UpstreamTool=list_pull_requests, got %q", e.UpstreamTool)
+	}
+	if e.Name != "list_prs" {
+		t.Errorf("expected Name=list_prs, got %q", e.Name)
+	}
+}
+
+func TestAlias_realNameNotLookupable(t *testing.T) {
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "github",
+		Defs: defs("list_pull_requests"),
+		Aliases: map[string]string{
+			"list_pull_requests": "list_prs",
+		},
+	})
+
+	_, err := r.Lookup("github.list_pull_requests")
+	if err == nil {
+		t.Error("real tool name should not be lookupable when aliased")
+	}
+}
+
+func TestAlias_invalidAliasIgnored(t *testing.T) {
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: defs("my_tool"),
+		Aliases: map[string]string{
+			"my_tool": "bad alias!", // spaces and ! are invalid
+		},
+	})
+
+	e, err := r.Lookup("svc.my_tool")
+	if err != nil {
+		t.Fatalf("tool should be reachable under real name when alias is invalid: %v", err)
+	}
+	if e.UpstreamTool != "" {
+		t.Errorf("invalid alias should result in no UpstreamTool, got %q", e.UpstreamTool)
+	}
+}
+
+func TestAlias_searchFindsAlias(t *testing.T) {
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "github",
+		Defs: defs("list_pull_requests"),
+		Aliases: map[string]string{
+			"list_pull_requests": "list_prs",
+		},
+	})
+
+	results := r.Search("list_prs")
+	if len(results) != 1 || results[0].Name != "github.list_prs" {
+		t.Errorf("search should find alias, got: %v", results)
 	}
 }

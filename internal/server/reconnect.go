@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -90,7 +91,7 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	if old != nil {
 		old.Close()
 	}
-	s.reg.ReplaceServer(u.cfg.Name, tools, u.cfg.Permissions)
+	s.reg.ReplaceServer(registry.ServerParams{Name: u.cfg.Name, Defs: tools, Perm: u.cfg.Permissions, Aliases: s.aliasesFor(u.cfg.Name, u.cfg.Projections)})
 	s.notifyAllSessions()
 	s.logger.Info("upstream reconnected", "server", u.cfg.Name)
 	if hook != nil {

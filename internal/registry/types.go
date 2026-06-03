@@ -9,7 +9,7 @@ import (
 type ToolEntry struct {
 	Server        string
 	Name          string
-	FullName      string // "server.tool"
+	FullName      string // "server.tool" using visible name (alias if set)
 	FullNameLower string // pre-lowercased for search
 	Description   string
 	DescLower     string // pre-lowercased for search
@@ -18,6 +18,10 @@ type ToolEntry struct {
 	// ReadOnly is set when the upstream MCP advertised readOnlyHint:true in annotations.
 	// Read-only tools are callable via call even without a projection entry.
 	ReadOnly bool
+
+	// UpstreamTool is set when this entry is an alias. It holds the real tool
+	// name to forward to the upstream; Name/FullName hold the alias the agent sees.
+	UpstreamTool string
 
 	// Virtual-tool fields (set only for actions).
 	TargetServer string         // real server to call

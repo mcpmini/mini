@@ -8,6 +8,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
+	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -107,12 +108,34 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 }
 
 func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDefinition, old *upstreamServer) {
+	p := registry.ServerParams{Name: sc.Name, Defs: tools, Perm: sc.Permissions, Aliases: s.aliasesFor(sc.Name, sc.Projections)}
 	if old != nil {
 		old.shutdownAndClose()
-		s.reg.ReplaceServer(sc.Name, tools, sc.Permissions)
+		s.reg.ReplaceServer(p)
 		return
 	}
-	s.reg.AddServer(sc.Name, tools, sc.Permissions)
+	s.reg.AddServer(p)
+}
+
+// aliasesFor returns a map of realToolName → aliasName for the given server,
+// using inline projections if provided, otherwise falling back to disk projections.
+func (s *Server) aliasesFor(serverName string, inline map[string]*config.ProjectionConfig) map[string]string {
+	proj := inline
+	if proj == nil {
+		s.mu.RLock()
+		proj = s.projections[serverName]
+		s.mu.RUnlock()
+	}
+	aliases := make(map[string]string)
+	for tool, pc := range proj {
+		if pc != nil && pc.Alias != "" {
+			aliases[tool] = pc.Alias
+		}
+	}
+	if len(aliases) == 0 {
+		return nil
+	}
+	return aliases
 }
 
 // Must be called in a goroutine; blocks until ctx is canceled.

@@ -104,7 +104,7 @@ func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session
 	if entry.Permission == config.PermProtected {
 		return nil, fmt.Errorf("tool %q is protected — use perm_call instead", entry.FullName)
 	}
-	if !s.hasProjectionCoverage(p.Server, p.Tool, session) {
+	if !s.hasProjectionCoverage(p.Server, upstreamToolName(entry, p.Tool), session) {
 		return nil, fmt.Errorf("tool %q has no projection configured — add one with config(action:set_projection) or use perm_call to invoke without projection", entry.FullName)
 	}
 	return s.callUpstream(ctx, p, entry, session)
@@ -148,7 +148,7 @@ func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage
 		return toolErrorIfNotFound(err)
 	}
 	// Open tools with no projection coverage can also use perm_call to opt into raw responses.
-	if entry.Permission != config.PermProtected && s.hasProjectionCoverage(p.Server, p.Tool, session) {
+	if entry.Permission != config.PermProtected && s.hasProjectionCoverage(p.Server, upstreamToolName(entry, p.Tool), session) {
 		return nil, fmt.Errorf("tool %q is not protected — use call instead", entry.FullName)
 	}
 	return s.callUpstream(ctx, p, entry, session)
@@ -187,9 +187,20 @@ func (s *Server) handleToolErr(server, tool string, latencyMs int64, err error, 
 	return response.BuildError("tool_error", err.Error(), false, ""), nil
 }
 
+// upstreamToolName returns the real upstream tool name, resolving through any alias.
+func upstreamToolName(entry *registry.ToolEntry, visibleTool string) string {
+	if entry.UpstreamTool != "" {
+		return entry.UpstreamTool
+	}
+	return visibleTool
+}
+
 func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool string, params map[string]any) {
 	if entry.TargetTool != "" {
 		return entry.TargetServer, entry.TargetTool, mergeArgs(entry.DefaultArgs, p.Params)
+	}
+	if entry.UpstreamTool != "" {
+		return p.Server, entry.UpstreamTool, p.Params
 	}
 	return p.Server, p.Tool, p.Params
 }
