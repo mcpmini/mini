@@ -14,7 +14,6 @@ func TestResolveOpenerCmd(t *testing.T) {
 		{"per-server wins over global", "per-server-cmd", "global-cmd", "per-server-cmd"},
 		{"global used when no per-server", "", "global-cmd", "global-cmd"},
 		{"neither set returns empty", "", "", ""},
-		{"empty global returns empty", "", "", ""},
 		{"per-server with args wins", "open -a Firefox", "global-cmd", "open -a Firefox"},
 	}
 	for _, tc := range tests {

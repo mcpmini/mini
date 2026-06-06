@@ -62,6 +62,7 @@ type Config struct {
 	// Agents connect to http://127.0.0.1:<DaemonPort>/mcp.
 	DaemonPort int `yaml:"daemon_port"`
 
+	// BrowserCommand applies to `mini auth` (CLI) only; the MCP auth path returns the URL to the agent instead.
 	BrowserCommand string `yaml:"browser_command,omitempty"`
 
 	// Servers is a list of upstream MCP server configs (alternative to servers/ dir).

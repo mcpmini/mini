@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -25,7 +24,12 @@ func runAuth(configDir string, args []string) {
 	if err != nil {
 		fatalf("%v", err)
 	}
-	runPKCEFlow(configDir, serverName, authOpener(sc.Auth.BrowserCmd, cfg.BrowserCommand), sc)
+	runPKCEFlow(pkceFlowParams{
+		configDir:  configDir,
+		serverName: serverName,
+		opener:     authOpener(sc.Auth.BrowserCmd, cfg.BrowserCommand),
+		sc:         sc,
+	})
 }
 
 func requireAuthServer(fs *flag.FlagSet) string {
@@ -50,21 +54,28 @@ func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *co
 	return cfg, sc, nil
 }
 
-func runPKCEFlow(configDir, serverName string, opener func(string) error, sc *config.ServerConfig) {
+type pkceFlowParams struct {
+	configDir  string
+	serverName string
+	opener     func(string) error
+	sc         *config.ServerConfig
+}
+
+func runPKCEFlow(p pkceFlowParams) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	fmt.Printf("Authorizing %s...\n", serverName)
-	if err := resolveOAuthEndpoints(ctx, configDir, serverName, sc); err != nil {
+	fmt.Printf("Authorizing %s...\n", p.serverName)
+	if err := resolveOAuthEndpoints(ctx, p.configDir, p.serverName, p.sc); err != nil {
 		fatalf("resolve oauth config: %v", err)
 	}
-	token, err := auth.PKCEFlow(ctx, sc.Auth, opener)
+	token, err := auth.PKCEFlow(ctx, p.sc.Auth, p.opener)
 	if err != nil {
 		fatalf("auth flow: %v", err)
 	}
-	if err := auth.Save(configDir, serverName, token); err != nil {
+	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
 		fatalf("save token: %v", err)
 	}
-	printAuthResult(serverName, token.Expiry)
+	printAuthResult(p.serverName, token.Expiry)
 }
 
 func authOpener(perServerCmd, globalCmd string) func(string) error {
@@ -272,11 +283,10 @@ func platformBrowserOpener(url string) error {
 }
 
 func openBrowserCmd(browserCmd string) func(string) error {
-	parts := strings.Fields(browserCmd)
 	return func(url string) error {
-		if len(parts) == 0 {
+		if browserCmd == "" {
 			return fmt.Errorf("empty browser_cmd")
 		}
-		return exec.Command(parts[0], append(parts[1:], url)...).Start()
+		return shellOpen(browserCmd, url)
 	}
 }
