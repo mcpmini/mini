@@ -10,8 +10,6 @@ Adversarial review of $ARGUMENTS (or the current branch diff if blank).
 
 Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REJECT.
 
----
-
 ## Step 0 — Gather the diff and run checks
 
 Use the GitHub MCP tools if available, otherwise fall back to the `gh` CLI. Get the PR description, diff, and full file list. Then **read every changed file in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
@@ -21,8 +19,6 @@ Fire off the full check suite in the background — it covers build, staticcheck
 ./check.sh 2>&1 | tee /tmp/review-pr-check-$(date +%s).log
 ```
 Run this with `run_in_background: true` and note the log path. You will be notified when it finishes. Pick up the results before writing the report — any failure introduced by the PR is a finding.
-
----
 
 ## Pass 1 — Triage
 
@@ -35,8 +31,6 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
 5. **Candidate list**: for each of Passes 2a–2c, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
 
 Produce a brief triage note to drive Passes 2–4. Do not write it into the final report.
-
----
 
 ## Pass 2a — Concurrency
 
@@ -94,8 +88,6 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 
 **Proof standard**: name the two goroutines, the shared variable, and the specific lock-release points that create the window. Not "could race" — "races when X and Y run concurrently because Z is not held during steps A–B."
 
----
-
 ## Pass 2b — Security
 
 **Command injection**
@@ -121,8 +113,6 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 - `math/rand` used where `crypto/rand` is required. Predictable state, nonce, or PKCE verifier values.
 
 **Proof standard**: trace the data from its source to the dangerous sink, naming every function in the chain. Don't flag patterns that are unreachable or defended upstream.
-
----
 
 ## Pass 2c — Correctness
 
@@ -162,8 +152,6 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 
 **Proof standard**: for logic bugs, state the input that triggers the wrong behavior and the actual vs. expected outcome. For resource leaks, identify the specific exit path that skips the close.
 
----
-
 ## Pass 3 — Tests
 
 Read the tests for every changed function. For each:
@@ -194,8 +182,6 @@ go test -race -tags test -run TestReview ./path/to/package/... -v
 - A goroutine launch or shared-state mutation was added and the race-detector tests don't exercise it.
 - Tests were removed or weakened for a high-risk function without justification.
 
----
-
 ## Pass 4 — Conventions (diff-level only)
 
 This pass works only from the diff — no deep exploration. Flag quickly, one line each.
@@ -216,8 +202,6 @@ This pass works only from the diff — no deep exploration. Flag quickly, one li
 **Duplication:** does the new code replicate logic that already exists? Grep for the pattern before flagging.
 
 These are LOW severity unless they conceal a real bug. One line each. Move on.
-
----
 
 ## Report
 
