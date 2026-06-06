@@ -221,7 +221,7 @@ These are LOW severity unless they conceal a real bug. One line each. Move on.
 
 ## Report
 
-Append a new section to `principal-review-YYYY-MM-DD.md` at the repo root (create the file if it doesn't exist today).
+Output the report directly in the conversation.
 
 ```markdown
 # PR Review — [title or branch]
