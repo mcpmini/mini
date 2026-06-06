@@ -25,7 +25,8 @@ implementation-review-*.md
 security-review-*.md
 
 # tooling
-.claude/
+.claude/*
+!.claude/skills/
 .mini/
 .DS_Store
 *.env
