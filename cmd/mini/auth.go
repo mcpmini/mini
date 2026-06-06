@@ -25,7 +25,7 @@ func runAuth(configDir string, args []string) {
 	if err != nil {
 		fatalf("%v", err)
 	}
-	runPKCEFlow(configDir, serverName, cfg.BrowserCommand, sc)
+	runPKCEFlow(configDir, serverName, authOpener(sc.Auth.BrowserCmd, cfg.BrowserCommand), sc)
 }
 
 func requireAuthServer(fs *flag.FlagSet) string {
@@ -50,14 +50,14 @@ func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *co
 	return cfg, sc, nil
 }
 
-func runPKCEFlow(configDir, serverName, globalBrowserCmd string, sc *config.ServerConfig) {
+func runPKCEFlow(configDir, serverName string, opener func(string) error, sc *config.ServerConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", serverName)
 	if err := resolveOAuthEndpoints(ctx, configDir, serverName, sc); err != nil {
 		fatalf("resolve oauth config: %v", err)
 	}
-	token, err := auth.PKCEFlow(ctx, sc.Auth, authOpener(sc.Auth.BrowserCmd, globalBrowserCmd))
+	token, err := auth.PKCEFlow(ctx, sc.Auth, opener)
 	if err != nil {
 		fatalf("auth flow: %v", err)
 	}
