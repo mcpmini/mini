@@ -234,6 +234,7 @@ func (s *Server) statusReport() map[string]any {
 		"store":       map[string]any{"files": fileCount, "used_mb": float64(usedBytes) / (1024 * 1024)},
 		"projections": projInfo,
 		"sessions":    s.sessions.aggregateMetrics(),
+		"local_usage": s.usage.TopTools(10),
 	}
 }
 

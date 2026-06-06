@@ -11,10 +11,15 @@ import (
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/usage"
 )
 
 func New(cfg *config.Config, logger *slog.Logger, opts ...ServerOption) *Server {
 	return NewWithConfigDir(cfg, config.DefaultConfigDir(), logger, opts...)
+}
+
+func WithUsagePath(path string) ServerOption {
+	return func(s *Server) { s.usage = usage.New(path) }
 }
 
 func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger, opts ...ServerOption) *Server {
@@ -26,6 +31,9 @@ func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger,
 	s := newServer(cfg, configDir, store, projections, logger)
 	for _, o := range opts {
 		o(s)
+	}
+	if err := s.usage.Load(); err != nil {
+		logger.Warn("failed to load local usage data", "err", err)
 	}
 	return s
 }
@@ -43,8 +51,9 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		projDefaults: newProjDefaults(cfg),
 		toolSchemas:  proxyToolSchemas(),
 		sessions:     newSessionStore(),
-		authFlows: make(map[string]*authFlowState),
-		logger:    logger,
+		usage:        usage.New(filepath.Join(configDir, "usage.json")),
+		authFlows:    make(map[string]*authFlowState),
+		logger:       logger,
 		clock:        clock.System(),
 	}
 }

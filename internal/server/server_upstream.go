@@ -135,6 +135,9 @@ func (s *Server) Close() {
 	closeUpstreams(s.snapshotUpstreams())
 	s.reconnectWg.Wait()
 	s.store.Close()
+	if err := s.usage.Flush(); err != nil {
+		s.logger.Warn("failed to flush local usage data", "err", err)
+	}
 }
 
 func (s *Server) takeAuthFlows() map[string]*authFlowState {

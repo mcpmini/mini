@@ -25,7 +25,8 @@ func newTestServer(t *testing.T) *server.Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	return server.New(cfg, logger)
+	usagePath := filepath.Join(t.TempDir(), "usage.json")
+	return server.New(cfg, logger, server.WithUsagePath(usagePath))
 }
 
 // newMCPTestServer starts a minimal HTTP MCP server advertising the given tools.
