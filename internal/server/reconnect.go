@@ -91,7 +91,10 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	if old != nil {
 		old.Close()
 	}
+	s.serverOpMu.Lock()
+	u.lastDefs = tools
 	s.reg.ReplaceServer(registry.ServerParams{Name: u.cfg.Name, Defs: tools, Perm: u.cfg.Permissions, Aliases: s.aliasesFor(u.cfg.Name, u.cfg.Projections)})
+	s.serverOpMu.Unlock()
 	s.notifyAllSessions()
 	s.logger.Info("upstream reconnected", "server", u.cfg.Name)
 	if hook != nil {

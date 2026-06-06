@@ -80,10 +80,14 @@ func (s *Server) setProjection(session *Session, p configureParams) (any, error)
 	if err := validateProjectionTarget(p); err != nil {
 		return nil, err
 	}
-	if p.SessionOnly {
-		return s.setSessionProjection(session, p), nil
+	visibleTool := p.Tool
+	if entry, err := s.reg.Lookup(toolFullName(p.ServerName, p.Tool)); err == nil && entry.UpstreamTool != "" {
+		p.Tool = entry.UpstreamTool
 	}
-	return s.setServerProjection(p)
+	if p.SessionOnly {
+		return s.setSessionProjection(session, p, visibleTool), nil
+	}
+	return s.setServerProjection(p, visibleTool)
 }
 
 func validateProjectionTarget(p configureParams) error {
@@ -99,13 +103,13 @@ func validateProjectionTarget(p configureParams) error {
 	return nil
 }
 
-func (s *Server) setSessionProjection(session *Session, p configureParams) any {
+func (s *Server) setSessionProjection(session *Session, p configureParams, visibleTool string) any {
 	fullName := toolFullName(p.ServerName, p.Tool)
 	session.SetProjection(fullName, p.Projection)
-	return map[string]any{"ok": true, "scope": "session", "tool": fullName}
+	return map[string]any{"ok": true, "scope": "session", "tool": toolFullName(p.ServerName, visibleTool)}
 }
 
-func (s *Server) setServerProjection(p configureParams) (any, error) {
+func (s *Server) setServerProjection(p configureParams, visibleTool string) (any, error) {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 
@@ -114,7 +118,7 @@ func (s *Server) setServerProjection(p configureParams) (any, error) {
 		s.restoreServerProjection(p.ServerName, p.Tool, prev)
 		return nil, fmt.Errorf("set_projection: persistence failed: %w", err)
 	}
-	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, p.Tool)}, nil
+	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, visibleTool)}, nil
 }
 
 func (s *Server) storeServerProjection(serverName, tool string, projection *config.ProjectionConfig) *config.ProjectionConfig {
@@ -150,6 +154,7 @@ func (s *Server) reloadProjections() (any, error) {
 		return nil, fmt.Errorf("reload projections: %w", err)
 	}
 	s.replaceProjections(projections)
+	s.reapplyAliases()
 	return map[string]any{"ok": true, "loaded": projectionCounts(projections)}, nil
 }
 
@@ -157,6 +162,30 @@ func (s *Server) replaceProjections(projections map[string]map[string]*config.Pr
 	s.mu.Lock()
 	s.projections = projections
 	s.mu.Unlock()
+}
+
+func (s *Server) reapplyAliases() {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+
+	s.mu.RLock()
+	upstreams := make([]*upstreamServer, 0, len(s.upstreams))
+	for _, u := range s.upstreams {
+		upstreams = append(upstreams, u)
+	}
+	s.mu.RUnlock()
+
+	for _, u := range upstreams {
+		if u.lastDefs == nil {
+			continue
+		}
+		s.reg.ReplaceServer(registry.ServerParams{
+			Name:    u.cfg.Name,
+			Defs:    u.lastDefs,
+			Perm:    u.cfg.Permissions,
+			Aliases: s.aliasesFor(u.cfg.Name, u.cfg.Projections),
+		})
+	}
 }
 
 func projectionCounts(projections map[string]map[string]*config.ProjectionConfig) map[string]int {

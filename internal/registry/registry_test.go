@@ -443,3 +443,79 @@ func TestAlias_searchFindsAlias(t *testing.T) {
 		t.Errorf("search should find alias, got: %v", results)
 	}
 }
+
+func TestAlias_collisionWithRealToolName(t *testing.T) {
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: defs("toolA", "toolB"),
+		Aliases: map[string]string{
+			"toolA": "toolB",
+		},
+	})
+
+	t.Run("both tools reachable under real names", func(t *testing.T) {
+		if _, err := r.Lookup("svc.toolA"); err != nil {
+			t.Errorf("toolA should be reachable under real name on collision: %v", err)
+		}
+		if _, err := r.Lookup("svc.toolB"); err != nil {
+			t.Errorf("toolB should be reachable under real name: %v", err)
+		}
+	})
+
+	t.Run("tool count is correct", func(t *testing.T) {
+		if got := r.ToolCount("svc"); got != 2 {
+			t.Errorf("expected 2 tools (collision drops alias), got %d", got)
+		}
+	})
+}
+
+func TestAlias_actionTargetingAliasByAliasName(t *testing.T) {
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: defs("real_tool"),
+		Aliases: map[string]string{
+			"real_tool": "aliased_tool",
+		},
+	})
+	r.AddAction(config.ActionConfig{
+		Name:   "my_action",
+		Server: "svc",
+		Tool:   "aliased_tool",
+	})
+
+	e, err := r.Lookup("svc.my_action")
+	if err != nil {
+		t.Fatalf("action lookup failed: %v", err)
+	}
+	if e.TargetTool != "real_tool" {
+		t.Errorf("action should resolve alias to real_tool, got %q", e.TargetTool)
+	}
+}
+
+func TestAlias_actionTargetingAliasByRealName_inheritsPermission(t *testing.T) {
+	r := registry.New()
+	perm := &config.PermissionsConfig{Protected: []string{"real_tool"}}
+	r.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: defs("real_tool"),
+		Perm: perm,
+		Aliases: map[string]string{
+			"real_tool": "aliased_tool",
+		},
+	})
+	r.AddAction(config.ActionConfig{
+		Name:   "my_action",
+		Server: "svc",
+		Tool:   "real_tool",
+	})
+
+	e, err := r.Lookup("svc.my_action")
+	if err != nil {
+		t.Fatalf("action lookup failed: %v", err)
+	}
+	if e.Permission != config.PermProtected {
+		t.Errorf("action should inherit protected permission from aliased real_tool, got %s", e.Permission)
+	}
+}

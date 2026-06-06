@@ -41,11 +41,34 @@ func (r *Registry) AddServer(p ServerParams) {
 }
 
 func (r *Registry) addServerLocked(p ServerParams) {
+	realNames := realToolNames(p.Defs)
+	seen := make(map[string]bool, len(p.Defs))
 	for _, d := range p.Defs {
-		if config.ValidToolName.MatchString(d.Name) {
-			r.insertEntryLocked(p.Name, buildEntry(entryParams{p.Name, d, p.Perm, p.Aliases[d.Name]}))
+		if !config.ValidToolName.MatchString(d.Name) {
+			continue
 		}
+		alias := p.Aliases[d.Name]
+		if alias != "" && realNames[alias] {
+			slog.Default().Warn("alias collides with existing tool name; using real name",
+				"server", p.Name, "real", d.Name, "alias", alias)
+			alias = ""
+		}
+		e := buildEntry(entryParams{p.Name, d, p.Perm, alias})
+		if seen[e.FullName] {
+			slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", d.Name)
+			continue
+		}
+		seen[e.FullName] = true
+		r.insertEntryLocked(p.Name, e)
 	}
+}
+
+func realToolNames(defs []transport.ToolDefinition) map[string]bool {
+	names := make(map[string]bool, len(defs))
+	for _, d := range defs {
+		names[d.Name] = true
+	}
+	return names
 }
 
 type entryParams struct {
@@ -102,6 +125,10 @@ func (r *Registry) AddAction(ac config.ActionConfig) {
 
 func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 	full := ac.Server + "." + ac.Name
+	targetTool := ac.Tool
+	if target, ok := r.tools[ac.Server+"."+ac.Tool]; ok && target.UpstreamTool != "" {
+		targetTool = target.UpstreamTool
+	}
 	return &ToolEntry{
 		Server:        ac.Server,
 		Name:          ac.Name,
@@ -111,7 +138,7 @@ func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 		DescLower:     strings.ToLower(ac.Description),
 		Permission:    r.actionPermission(ac),
 		TargetServer:  ac.Server,
-		TargetTool:    ac.Tool,
+		TargetTool:    targetTool,
 		DefaultArgs:   ac.DefaultArgs,
 	}
 }
@@ -137,6 +164,15 @@ func (r *Registry) targetPermissionLocked(fullName string) (config.PermissionLev
 	}
 	if target, ok := r.hidden[fullName]; ok {
 		return target.Permission, true
+	}
+	server, real, found := strings.Cut(fullName, ".")
+	if !found {
+		return "", false
+	}
+	for _, e := range r.tools {
+		if e.Server == server && e.UpstreamTool == real {
+			return e.Permission, true
+		}
 	}
 	return "", false
 }

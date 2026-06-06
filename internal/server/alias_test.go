@@ -3,10 +3,15 @@
 package server_test
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -171,5 +176,121 @@ func TestAlias_noProjectionAlias(t *testing.T) {
 	}
 	if !names["gh.get_issue"] {
 		t.Errorf("non-aliased tool should appear under real name, got: %v", results)
+	}
+}
+
+func newAliasConfigServer(t *testing.T) *server.Server {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestAlias_sessionSetProjectionStoresUnderRealName(t *testing.T) {
+	srv := newAliasConfigServer(t)
+
+	fake := fakeConn("list_prs_real")
+	proj := map[string]*config.ProjectionConfig{"list_prs_real": {Alias: "list_prs"}}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, fake)
+
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "gh", "tool": "list_prs",
+		"projection":   map[string]any{"exclude_always": []string{"secret"}},
+		"session_only": true,
+	}))
+	text := toolResultText(t, resp)
+	if strings.Contains(text, "error") {
+		t.Fatalf("set_projection failed: %s", text)
+	}
+	if !strings.Contains(text, `"ok":true`) {
+		t.Errorf("expected ok=true from set_projection, got: %s", text)
+	}
+}
+
+func TestAlias_serverSetProjectionTakesEffect(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+
+	payload := `{"id":1,"secret":"hidden","name":"foo"}`
+	payloadJSON, _ := json.Marshal(payload)
+	fake := &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{{Name: "get_pr_real", InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`),
+		},
+	}
+	proj := map[string]*config.ProjectionConfig{"get_pr_real": {Alias: "get_pr"}}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, fake)
+
+	configResp := serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "gh", "tool": "get_pr",
+		"projection": map[string]any{"exclude_always": []string{"secret"}},
+	}))
+	configText := toolResultText(t, configResp)
+	if strings.Contains(configText, "error") {
+		t.Fatalf("set_projection failed: %s", configText)
+	}
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "gh", "tool": "get_pr", "params": map[string]any{},
+	}))
+	text := toolResultText(t, resp)
+	if strings.Contains(text, "hidden") {
+		t.Errorf("server projection for alias should exclude secret field; got: %s", text)
+	}
+}
+
+func TestAlias_setProjectionResponseEchoesAlias(t *testing.T) {
+	srv := newAliasConfigServer(t)
+
+	fake := fakeConn("real_tool")
+	proj := map[string]*config.ProjectionConfig{"real_tool": {Alias: "aliased_tool"}}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", Projections: proj}, fake)
+
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "aliased_tool",
+		"projection":   map[string]any{"exclude_always": []string{"x"}},
+		"session_only": true,
+	}))
+	text := toolResultText(t, resp)
+	if !strings.Contains(text, "aliased_tool") {
+		t.Errorf("set_projection response should echo alias name, got: %s", text)
+	}
+	if strings.Contains(text, "real_tool") {
+		t.Errorf("set_projection response should not expose real tool name, got: %s", text)
+	}
+}
+
+func TestAlias_reloadUpdatesAliases(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+
+	fake := fakeConn("list_pull_requests")
+	proj := map[string]*config.ProjectionConfig{"list_pull_requests": {Alias: "list_prs"}}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, fake)
+
+	serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
+
+	results := mustDiscoverResults(t, srv, map[string]any{})
+	names := map[string]bool{}
+	for _, e := range results {
+		names[e["name"].(string)] = true
+	}
+	if !names["gh.list_prs"] {
+		t.Errorf("alias should still appear after reload, got: %v", results)
+	}
+	if names["gh.list_pull_requests"] {
+		t.Errorf("real name should not appear when aliased, got: %v", results)
 	}
 }

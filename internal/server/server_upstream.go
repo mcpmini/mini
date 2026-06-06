@@ -80,6 +80,7 @@ func (s *Server) installIfNotRemoved(sc config.ServerConfig, conn transport.Conn
 
 func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition) {
 	u := newUpstreamServer(sc, conn)
+	u.lastDefs = tools
 	old := s.swapUpstream(sc.Name, u)
 	s.registerTools(sc, tools, old)
 	if sc.Projections != nil {
