@@ -5,8 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"runtime"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -81,7 +79,7 @@ func runPKCEFlow(p pkceFlowParams) {
 func authOpener(perServerCmd, globalCmd string) func(string) error {
 	cmd := resolveOpenerCmd(perServerCmd, globalCmd)
 	if cmd != "" {
-		return openBrowserCmd(cmd)
+		return func(url string) error { return auth.OpenBrowser(cmd, url) }
 	}
 	return openBrowser
 }
@@ -265,28 +263,4 @@ func findServer(servers []config.ServerConfig, name string) *config.ServerConfig
 	return nil
 }
 
-var openBrowser = platformBrowserOpener
-
-func platformBrowserOpener(url string) error {
-	var cmd string
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = "open"
-	case "linux":
-		cmd = "xdg-open"
-	case "windows":
-		cmd = "start"
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
-	return exec.Command(cmd, url).Start()
-}
-
-func openBrowserCmd(browserCmd string) func(string) error {
-	return func(url string) error {
-		if browserCmd == "" {
-			return fmt.Errorf("empty browser_cmd")
-		}
-		return shellOpen(browserCmd, url)
-	}
-}
+var openBrowser = func(url string) error { return auth.OpenBrowser("", url) }
