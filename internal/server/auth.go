@@ -27,7 +27,7 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 	}
 	s.authWg.Add(1)
 	go s.runAuthFlow(serverName, sc, flow.state, flow.doneCh)
-	if !s.cfg.DisableAutoOpenBrowser {
+	if !s.cfg.DisableAuthBrowserOpen {
 		browserCmd := sc.Auth.BrowserCmd
 		if browserCmd == "" {
 			browserCmd = s.cfg.BrowserCommand

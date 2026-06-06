@@ -23,7 +23,7 @@ func newServerWithDir(t *testing.T, configDir string) *server.Server {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.InlineThreshold = 10000
-	cfg.DisableAutoOpenBrowser = true
+	cfg.DisableAuthBrowserOpen = true
 	return server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 

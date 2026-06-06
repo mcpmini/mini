@@ -66,9 +66,9 @@ type Config struct {
 	// `mini auth` (CLI) and agent-initiated auth (config:start_auth).
 	BrowserCommand string `yaml:"browser_command,omitempty"`
 
-	// DisableAutoOpenBrowser prevents mini from opening the browser automatically
+	// DisableAuthBrowserOpen prevents mini from opening the browser automatically
 	// during config:start_auth. The auth URL is still returned to the agent.
-	DisableAutoOpenBrowser bool `yaml:"disable_auto_open_browser,omitempty"`
+	DisableAuthBrowserOpen bool `yaml:"disable_auth_browser_open,omitempty"`
 
 	// Servers is a list of upstream MCP server configs (alternative to servers/ dir).
 	Servers []ServerConfig `yaml:"servers,omitempty"`
