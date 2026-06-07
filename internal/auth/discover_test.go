@@ -189,3 +189,18 @@ func TestDiscover_invalidURL_returnsError(t *testing.T) {
 		t.Error("expected error for invalid URL")
 	}
 }
+
+func TestDiscover_cancelledContext_returnsError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	_, err := auth.Discover(ctx, srv.URL)
+	if err == nil {
+		t.Error("expected error for cancelled context, got nil")
+	}
+}

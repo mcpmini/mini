@@ -52,13 +52,16 @@ func discoverASURL(ctx context.Context, serverURL string) (string, error) {
 
 func asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (string, error) {
 	resp, err := doDiscoveryRequest(ctx, serverURL)
-	if err != nil || resp.StatusCode != http.StatusUnauthorized {
-		if resp != nil {
-			resp.Body.Close()
+	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
 		}
 		return "", nil
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		return "", nil
+	}
 	rmURL := parseResourceMetadataURL(resp.Header.Get("WWW-Authenticate"))
 	if rmURL == "" {
 		return "", nil
@@ -95,7 +98,11 @@ func asURLFromPRMProbe(ctx context.Context, serverURL string) (string, error) {
 		candidates = append(candidates, base+"/.well-known/oauth-protected-resource")
 	}
 	for _, c := range candidates {
-		if asURL, _ := fetchASURLFromPRM(ctx, c); asURL != "" {
+		asURL, err := fetchASURLFromPRM(ctx, c)
+		if err != nil {
+			return "", err
+		}
+		if asURL != "" {
 			return asURL, nil
 		}
 	}
@@ -109,6 +116,9 @@ type protectedResourceMeta struct {
 func fetchASURLFromPRM(ctx context.Context, prmURL string) (string, error) {
 	resp, err := doDiscoveryRequest(ctx, prmURL)
 	if err != nil {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
 		return "", nil
 	}
 	defer resp.Body.Close()
@@ -172,6 +182,9 @@ type rawASMeta struct {
 func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
 	resp, err := doDiscoveryRequest(ctx, metaURL)
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, nil
 	}
 	defer resp.Body.Close()

@@ -20,11 +20,8 @@ type registrationRequest struct {
 // LoopbackCallbackPath is the redirect URI path used for all OAuth callback listeners.
 const LoopbackCallbackPath = "/callback"
 
-// LoopbackCallbackPort is the fixed port for all OAuth callback listeners.
-// 6464 = MINI on a phone keypad; not assigned to any common developer tool.
-// A fixed port is required because some servers (e.g. Atlassian) do exact redirect URI
-// matching instead of the RFC 8252 §7.3 loopback port flexibility — DCR must register
-// the same URI that the auth request will send.
+// LoopbackCallbackPort is fixed (not random) because servers like Atlassian exact-match
+// redirect URIs — DCR must register the same URI the PKCE flow sends. 6464 = MINI.
 const LoopbackCallbackPort = 6464
 
 const loopbackCallbackURI = "http://127.0.0.1:6464" + LoopbackCallbackPath

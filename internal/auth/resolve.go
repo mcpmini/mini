@@ -69,7 +69,7 @@ func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
 		}
 		a.TokenURL = meta.TokenURL
 	}
-	return validateEndpointURL(meta.RegistrationURL, "registration_endpoint")
+	return nil
 }
 
 func validateEndpointURL(endpoint, name string) error {
@@ -97,6 +97,9 @@ func resolveClientID(ctx context.Context, configDir, serverName string, a *confi
 	}
 	if regURL == "" {
 		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
+	}
+	if err := validateEndpointURL(regURL, "registration_endpoint"); err != nil {
+		return err
 	}
 	clientID, err := Register(ctx, regURL)
 	if err != nil {
