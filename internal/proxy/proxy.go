@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/mcpmini/mini/internal/transport"
@@ -50,6 +51,7 @@ func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	return forwardAsyncParams{
 		port: p.Port, sessionID: p.SessionID, out: p.Out,
 		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
+		proxyMode: p.ProxyMode,
 	}
 }
 
@@ -122,6 +124,7 @@ type forwardAsyncParams struct {
 	mu        *sync.Mutex
 	wg        *sync.WaitGroup
 	sem       chan struct{}
+	proxyMode bool
 }
 
 func forwardAsync(p forwardAsyncParams) {
@@ -131,9 +134,59 @@ func forwardAsync(p forwardAsyncParams) {
 	if resp == nil {
 		return
 	}
+	// If the daemon restarted or evicted the session since the proxy started,
+	// re-send the initialize handshake and retry the request once.
+	if isNotInitialized(resp) && !peekIsInitialize(p.line) {
+		reinitDaemon(p.client, p.port, p.sessionID, p.proxyMode)
+		resp = forward(p.client, p.port, p.sessionID, p.line)
+		if resp == nil {
+			return
+		}
+	}
 	p.mu.Lock()
 	fmt.Fprintf(p.out, "%s\n", resp) //nolint:errcheck
 	p.mu.Unlock()
+}
+
+// reinitDaemon sends a fresh initialize + notifications/initialized to the daemon,
+// discarding responses. Used to recover from daemon restart or session eviction.
+func reinitDaemon(client *http.Client, port int, sessionID string, proxyMode bool) {
+	params, _ := json.Marshal(map[string]any{
+		"protocolVersion": transport.ProtocolVersion,
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "mini", "version": transport.Version},
+	})
+	initMsg, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      -1,
+		"method":  "initialize",
+		"params":  json.RawMessage(params),
+	})
+	forward(client, port, sessionID, maybeInjectProxy(initMsg, proxyMode))
+	notif, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"method":  transport.NotificationInitialized,
+	})
+	forward(client, port, sessionID, notif)
+}
+
+func isNotInitialized(resp []byte) bool {
+	if len(resp) == 0 {
+		return false
+	}
+	var rpc struct {
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	return json.Unmarshal(resp, &rpc) == nil &&
+		rpc.Error != nil &&
+		strings.HasPrefix(rpc.Error.Message, "not initialized")
+}
+
+func peekIsInitialize(line []byte) bool {
+	var m struct{ Method string `json:"method"` }
+	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
 }
 
 func forward(client *http.Client, port int, sessionID string, body []byte) []byte {

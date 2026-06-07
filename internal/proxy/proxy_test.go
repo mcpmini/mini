@@ -303,6 +303,109 @@ func TestRun_standardMode_doesNotInjectFlag(t *testing.T) {
 	}
 }
 
+func TestIsNotInitialized_trueForNotInitializedError(t *testing.T) {
+	resp := []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`)
+	if !isNotInitialized(resp) {
+		t.Error("expected true for not-initialized error")
+	}
+}
+
+func TestIsNotInitialized_falseForOtherErrors(t *testing.T) {
+	cases := [][]byte{
+		[]byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"internal error"}}`),
+		[]byte(`{"jsonrpc":"2.0","id":1,"result":"ok"}`),
+		[]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`),
+		nil,
+		{},
+	}
+	for _, c := range cases {
+		if isNotInitialized(c) {
+			t.Errorf("expected false for %q", c)
+		}
+	}
+}
+
+func TestPeekIsInitialize_detectsInitialize(t *testing.T) {
+	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+	if !peekIsInitialize(line) {
+		t.Error("expected true for initialize method")
+	}
+}
+
+func TestPeekIsInitialize_falseForOtherMethods(t *testing.T) {
+	cases := [][]byte{
+		[]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`),
+		[]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`),
+		[]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`),
+		[]byte(`not json`),
+	}
+	for _, c := range cases {
+		if peekIsInitialize(c) {
+			t.Errorf("expected false for %q", c)
+		}
+	}
+}
+
+func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
+	var toolCalls, initCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var msg struct{ Method string `json:"method"` }
+		json.Unmarshal(body, &msg) //nolint:errcheck
+		switch msg.Method {
+		case "initialize":
+			initCalls.Add(1)
+			fmt.Fprint(w, `{"jsonrpc":"2.0","id":-1,"result":{"protocolVersion":"2025-03-26"}}`)
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			if n := toolCalls.Add(1); n == 1 {
+				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`)
+			} else {
+				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"recovered"}`)
+			}
+		}
+	}))
+	defer srv.Close()
+
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}` + "\n")
+	var out bytes.Buffer
+	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: &out}
+	if err := Run(p); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if got := initCalls.Load(); got != 1 {
+		t.Errorf("initialize calls during reinit = %d, want 1", got)
+	}
+	if got := toolCalls.Load(); got != 2 {
+		t.Errorf("tool calls (original + retry) = %d, want 2", got)
+	}
+	if !strings.Contains(out.String(), "recovered") {
+		t.Errorf("expected recovered response in output, got: %q", out.String())
+	}
+}
+
+func TestRun_noReinitWhenInitializeSucceeds(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
+	}))
+	defer srv.Close()
+
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
+	var out bytes.Buffer
+	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: &out}
+	if err := Run(p); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	// initialize returning "not initialized" would be bizarre, but even if it did,
+	// peekIsInitialize should prevent a reinit loop.
+	if got := calls.Load(); got != 1 {
+		t.Errorf("expected exactly 1 call for initialize, got %d", got)
+	}
+}
+
 func newConcurrencyServer(t *testing.T, release chan struct{}) (*httptest.Server, *atomic.Int32, <-chan struct{}) {
 	t.Helper()
 	var current, maxSeen atomic.Int32

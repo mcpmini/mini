@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/mcpmini/mini/internal/response"
 	"github.com/mcpmini/mini/internal/transport"
@@ -167,7 +168,13 @@ func (s *Server) handleRequest(ctx context.Context, req transport.Request, sessi
 	// Ping is explicitly allowed before initialization per lifecycle spec.
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
 	if req.Method != "initialize" && req.Method != "ping" {
-		if !session.waitInitialized(ctx) {
+		// Cap the wait so stale sessions (e.g. post daemon-restart or eviction) fail fast
+		// instead of blocking forever. Normal initialization is microseconds;
+		// 1s is orders of magnitude more than enough.
+		waitCtx, cancel := context.WithTimeout(ctx, time.Second)
+		initialized := session.waitInitialized(waitCtx)
+		cancel()
+		if !initialized {
 			return errorResponse(req.ID, transport.CodeInvalidRequest, "not initialized: send initialize first"), true
 		}
 	}
