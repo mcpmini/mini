@@ -210,7 +210,7 @@ func buildRuntimeEnv(inputs map[string]any, state map[string]any, envMap map[str
 }
 
 func parseToolResult(raw json.RawMessage) any {
-	var out map[string]any
+	var out any
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return string(raw)
 	}
