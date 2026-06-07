@@ -88,7 +88,7 @@ func compileStep(step config.StepConfig, env map[string]any) (*compiledStep, err
 	}
 	var errs []error
 	if step.If != "" {
-		prog, err := compileExpr(step.If, env)
+		prog, err := compileExpr(stripBraces(step.If), env)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("if: %w", err))
 		} else {
@@ -96,7 +96,7 @@ func compileStep(step config.StepConfig, env map[string]any) (*compiledStep, err
 		}
 	}
 	for name, exprStr := range step.Set {
-		prog, err := compileExpr(exprStr, env)
+		prog, err := compileExpr(stripBraces(exprStr), env)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("set.%s: %w", name, err))
 		} else {
@@ -171,4 +171,15 @@ func compileExpr(exprStr string, env map[string]any) (*vm.Program, error) {
 		expr.AllowUndefinedVariables(),
 		expr.AsAny(),
 	)
+}
+
+// stripBraces removes {{ }} delimiters from if/set expressions. The pipe spec
+// uses {{ expr }} everywhere for consistency, but the underlying compiler
+// expects bare expressions without the template delimiters.
+func stripBraces(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "{{") && strings.HasSuffix(s, "}}") {
+		return strings.TrimSpace(s[2 : len(s)-2])
+	}
+	return s
 }

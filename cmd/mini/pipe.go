@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 
@@ -54,15 +55,16 @@ type pipeRunFlags struct {
 }
 
 func parsePipeRunFlags(args []string) (pipeRunFlags, string) {
-	fs := flag.NewFlagSet("pipe run", flag.ExitOnError)
-	f := pipeRunFlags{}
-	fs.StringVar(&f.argsJSON, "args", "{}", "pipe inputs as JSON object")
-	fs.Parse(args) //nolint:errcheck
-	if fs.NArg() == 0 {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
 		fmt.Fprintln(os.Stderr, "usage: mini pipe run <name> [--args '{...}']")
 		os.Exit(2)
 	}
-	return f, fs.Arg(0)
+	name := args[0]
+	fs := flag.NewFlagSet("pipe run", flag.ExitOnError)
+	f := pipeRunFlags{}
+	fs.StringVar(&f.argsJSON, "args", "{}", "pipe inputs as JSON object")
+	fs.Parse(args[1:]) //nolint:errcheck
+	return f, name
 }
 
 func runPipeRun(configDir string, args []string) {
