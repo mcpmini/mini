@@ -66,10 +66,7 @@ func maybeInjectProxy(line []byte, proxyMode bool) []byte {
 // initialize JSON-RPC message so the daemon enables proxy mode for this session.
 // Non-initialize messages and parse errors are returned unchanged.
 func injectProxyMode(line []byte) []byte {
-	var msg struct {
-		Method string `json:"method"`
-	}
-	if err := json.Unmarshal(line, &msg); err != nil || msg.Method != "initialize" {
+	if !peekIsInitialize(line) {
 		return line
 	}
 	if result, err := withProxyModeParam(line); err == nil {
@@ -150,22 +147,14 @@ func forwardAsync(p forwardAsyncParams) {
 // reinitDaemon recovers from daemon restart or session eviction. Responses are
 // discarded — only the caller's retry of the original request is forwarded.
 func reinitDaemon(client *http.Client, port int, sessionID string, proxyMode bool) {
-	params, _ := json.Marshal(map[string]any{
-		"protocolVersion": transport.ProtocolVersion,
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "mini", "version": transport.Version},
+	params, _ := json.Marshal(transport.InitializeParams{
+		ProtocolVersion: transport.ProtocolVersion,
+		Capabilities:    map[string]any{},
+		ClientInfo:      transport.ClientInfo{Name: "mini", Version: transport.Version},
 	})
-	initMsg, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
-		"id":      -1,
-		"method":  "initialize",
-		"params":  json.RawMessage(params),
-	})
+	initMsg, _ := json.Marshal(transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)})
 	forward(client, port, sessionID, maybeInjectProxy(initMsg, proxyMode))
-	notif, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0",
-		"method":  transport.NotificationInitialized,
-	})
+	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
 	forward(client, port, sessionID, notif)
 }
 
