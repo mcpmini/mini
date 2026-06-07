@@ -25,7 +25,7 @@ func runAuth(configDir string, args []string) {
 	runPKCEFlow(pkceFlowParams{
 		configDir:  configDir,
 		serverName: serverName,
-		opener:     authOpener(sc.Auth.BrowserCmd, cfg.BrowserCommand),
+		opener:     authOpener(sc.Auth.BrowserCmd, cfg.BrowserCommand, cfg.DisableAuthBrowserOpen),
 		sc:         sc,
 	})
 }
@@ -76,7 +76,10 @@ func runPKCEFlow(p pkceFlowParams) {
 	printAuthResult(p.serverName, token.Expiry)
 }
 
-func authOpener(perServerCmd, globalCmd string) func(string) error {
+func authOpener(perServerCmd, globalCmd string, disabled bool) func(string) error {
+	if disabled {
+		return func(string) error { return nil }
+	}
 	cmd := resolveOpenerCmd(perServerCmd, globalCmd)
 	if cmd != "" {
 		return func(url string) error { return auth.OpenBrowser(cmd, url) }
