@@ -15,7 +15,6 @@ func ValidateOAuthServer(serverName string, sc config.ServerConfig) error {
 	return nil
 }
 
-// ApplyBearerToken sets the Authorization (or custom auth header) on sc.Headers.
 func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 	headerName := sc.Auth.Header
 	if headerName == "" {
@@ -27,9 +26,6 @@ func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 	sc.Headers[headerName] = "Bearer " + accessToken
 }
 
-// ResolveConfig fills in missing OAuth endpoints (via RFC 8414 discovery) and
-// client_id (via saved registration or dynamic RFC 7591 registration).
-// Mutates ac in place; no-op if AuthURL, TokenURL, and ClientID are already set.
 func ResolveConfig(ctx context.Context, configDir, serverName string, ac *config.AuthConfig, serverURL string) error {
 	if ac.AuthURL != "" && ac.TokenURL != "" && ac.ClientID != "" {
 		return nil
