@@ -63,7 +63,9 @@ func startDaemonHTTP(ctx context.Context, cfg *config.Config, servers []config.S
 	go httpSrv.Serve(ln) //nolint:errcheck
 	go srv.RunSessionEviction(ctx, 30*time.Minute)
 	<-ctx.Done()
-	httpSrv.Shutdown(context.Background()) //nolint:errcheck
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
 }
 
 func bindPort(port int) (net.Listener, int) {
