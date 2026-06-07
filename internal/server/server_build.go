@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -40,21 +39,12 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		projections:  projections,
 		envelope:     response.NewBuilder(store, cfg.InlineThreshold),
 		store:        store,
-		projDefaults: newProjDefaults(cfg),
+		projDefaults: projection.DefaultsFrom(cfg),
 		toolSchemas:  proxyToolSchemas(),
 		sessions:     newSessionStore(),
 		authFlows: make(map[string]*authFlowState),
 		logger:    logger,
 		clock:        clock.System(),
-	}
-}
-
-func newProjDefaults(cfg *config.Config) *projection.Defaults {
-	return &projection.Defaults{
-		StringLimit:        cfg.DefaultStringLimit,
-		DepthLimit:         cfg.DefaultDepthLimit,
-		ContentFields:      cfg.ContentFields,
-		AutoStripThreshold: cfg.AutoStripThreshold,
 	}
 }
 
@@ -73,7 +63,7 @@ func loadServerProjections(configDir string) (map[string]map[string]*config.Proj
 }
 
 func mustStore(cfg *config.Config, logger *slog.Logger) *response.Store {
-	storeCfg := buildStoreConfig(cfg)
+	storeCfg := response.StoreConfigFrom(cfg)
 	store, err := response.NewStore(storeCfg)
 	if err == nil {
 		return store
@@ -85,29 +75,4 @@ func mustStore(cfg *config.Config, logger *slog.Logger) *response.Store {
 		panic("failed to create fallback response store: " + err.Error())
 	}
 	return store
-}
-
-func buildStoreConfig(cfg *config.Config) response.StoreConfig {
-	return response.StoreConfig{
-		Dir:             responseDir(cfg),
-		TTL:             parseOrDefaultDuration(cfg.ResponseTTL, time.Hour),
-		BudgetMB:        cfg.ResponseDiskBudgetMB,
-		CleanupInterval: time.Hour,
-	}
-}
-
-func responseDir(cfg *config.Config) string {
-	if cfg.ResponseDir != "" {
-		return cfg.ResponseDir
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".mini", "responses")
-}
-
-func parseOrDefaultDuration(spec string, fallback time.Duration) time.Duration {
-	d, err := time.ParseDuration(spec)
-	if err != nil {
-		return fallback
-	}
-	return d
 }

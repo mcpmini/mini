@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
@@ -104,7 +103,7 @@ func loadCallCtx(configDir, serverName string) (*config.Config, *config.ServerCo
 		fmt.Fprintf(os.Stderr, "mini: load config: %v\n", err)
 		os.Exit(2)
 	}
-	sc := findServerConfig(servers, serverName)
+	sc := config.FindServer(servers, serverName)
 	if sc == nil {
 		fmt.Fprintf(os.Stderr, "mini: server %q not found\n", serverName)
 		os.Exit(2)
@@ -177,7 +176,7 @@ func buildInvokeParams(conn transport.Connection, cc callContext, store *respons
 		Params:   cc.params,
 		Conn:     conn,
 		ProjCfg:  resolveCallProjection(cc.sc, cc.toolName),
-		ProjDefs: callProjDefaults(cc.cfg),
+		ProjDefs: projection.DefaultsFrom(cc.cfg),
 		Builder:  response.NewBuilder(store, cc.cfg.InlineThreshold),
 	}
 }
@@ -222,15 +221,6 @@ func readParamBytes(arg string) ([]byte, error) {
 	return io.ReadAll(os.Stdin)
 }
 
-func findServerConfig(servers []config.ServerConfig, name string) *config.ServerConfig {
-	for i := range servers {
-		if servers[i].Name == name {
-			return &servers[i]
-		}
-	}
-	return nil
-}
-
 func resolveCallOutput(f callFlags, cfgFormat string) callOutput {
 	switch {
 	case f.raw:
@@ -256,17 +246,8 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 	return sc.Projections["*"]
 }
 
-func callProjDefaults(cfg *config.Config) *projection.Defaults {
-	return &projection.Defaults{
-		StringLimit:        cfg.DefaultStringLimit,
-		DepthLimit:         cfg.DefaultDepthLimit,
-		ContentFields:      cfg.ContentFields,
-		AutoStripThreshold: cfg.AutoStripThreshold,
-	}
-}
-
 func mustCallStore(cfg *config.Config, logger *slog.Logger) *response.Store {
-	sc := buildCallStoreConfig(cfg)
+	sc := response.StoreConfigFrom(cfg)
 	store, err := response.NewStore(sc)
 	if err != nil {
 		logger.Warn("could not open response store, using temp dir", "err", err)
@@ -274,21 +255,6 @@ func mustCallStore(cfg *config.Config, logger *slog.Logger) *response.Store {
 		store, _ = response.NewStore(sc)
 	}
 	return store
-}
-
-func buildCallStoreConfig(cfg *config.Config) response.StoreConfig {
-	dir := cfg.ResponseDir
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".mini", "responses")
-	}
-	ttl := time.Hour
-	if cfg.ResponseTTL != "" {
-		if d, err := time.ParseDuration(cfg.ResponseTTL); err == nil {
-			ttl = d
-		}
-	}
-	return response.StoreConfig{Dir: dir, TTL: ttl, BudgetMB: cfg.ResponseDiskBudgetMB, CleanupInterval: time.Hour}
 }
 
 func printCallOutput(serverName, toolName string, env *response.Envelope, mode callOutput) {

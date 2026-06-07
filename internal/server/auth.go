@@ -42,14 +42,7 @@ func (s *Server) loadOAuthServerConfig(serverName string) (config.ServerConfig, 
 	if err != nil {
 		return config.ServerConfig{}, fmt.Errorf("load server config: %w", err)
 	}
-	return sc, validateOAuthServer(serverName, sc)
-}
-
-func validateOAuthServer(serverName string, sc config.ServerConfig) error {
-	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
-		return fmt.Errorf("server %q does not have oauth2 auth configured", serverName)
-	}
-	return nil
+	return sc, auth.ValidateOAuthServer(serverName, sc)
 }
 
 func authStartResponse(serverName, authURL string) map[string]any {
@@ -122,7 +115,7 @@ func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig
 }
 
 func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig, accessToken string) {
-	applyBearerToken(&sc, accessToken)
+	auth.ApplyBearerToken(&sc, accessToken)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// Do not call removeServerRuntime first: if AddUpstream fails the server
@@ -134,17 +127,6 @@ func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig, a
 		s.notifyAllSessions()
 		s.logger.Info("reconnected after auth", "server", serverName)
 	}
-}
-
-func applyBearerToken(sc *config.ServerConfig, accessToken string) {
-	headerName := sc.Auth.Header
-	if headerName == "" {
-		headerName = "Authorization"
-	}
-	if sc.Headers == nil {
-		sc.Headers = make(map[string]string)
-	}
-	sc.Headers[headerName] = "Bearer " + accessToken
 }
 
 func (s *Server) handleAuthStatus(serverName string) (any, error) {
@@ -178,10 +160,9 @@ func (s *Server) loadServerConfig(serverName string) (config.ServerConfig, error
 	if err != nil {
 		return config.ServerConfig{}, err
 	}
-	for _, sc := range servers {
-		if sc.Name == serverName {
-			return sc, nil
-		}
+	sc := config.FindServer(servers, serverName)
+	if sc == nil {
+		return config.ServerConfig{}, fmt.Errorf("server %q not found in config", serverName)
 	}
-	return config.ServerConfig{}, fmt.Errorf("server %q not found in config", serverName)
+	return *sc, nil
 }

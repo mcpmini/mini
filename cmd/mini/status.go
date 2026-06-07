@@ -51,7 +51,7 @@ func serverTarget(sc config.ServerConfig) string {
 }
 
 func enabledStr(sc config.ServerConfig) string {
-	if isEnabled(sc) {
+	if sc.IsEnabled() {
 		return "yes"
 	}
 	return "no"
@@ -94,7 +94,7 @@ func printStatusTable(ctx context.Context, srv *server.Server, servers []config.
 }
 
 func printStatusRow(ctx context.Context, w *tabwriter.Writer, srv *server.Server, sc config.ServerConfig) bool {
-	if !isEnabled(sc) {
+	if !sc.IsEnabled() {
 		fmt.Fprintf(w, "%s\t-\tdisabled\t-\n", sc.Name)
 		return false
 	}

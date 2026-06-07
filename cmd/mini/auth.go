@@ -11,7 +11,6 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/transport"
 )
 
 func runAuth(configDir string, args []string) {
@@ -42,12 +41,12 @@ func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *co
 	if err != nil {
 		return nil, nil, fmt.Errorf("load config: %w", err)
 	}
-	sc := findServer(servers, serverName)
+	sc := config.FindServer(servers, serverName)
 	if sc == nil {
 		return nil, nil, fmt.Errorf("server not found: %s", serverName)
 	}
-	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
-		return nil, nil, fmt.Errorf("server %q does not have oauth2 auth configured", serverName)
+	if err := auth.ValidateOAuthServer(serverName, *sc); err != nil {
+		return nil, nil, err
 	}
 	return cfg, sc, nil
 }
@@ -63,7 +62,7 @@ func runPKCEFlow(p pkceFlowParams) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", p.serverName)
-	if err := resolveOAuthEndpoints(ctx, p.configDir, p.serverName, p.sc); err != nil {
+	if err := auth.ResolveConfig(ctx, p.configDir, p.serverName, p.sc.Auth, p.sc.URL); err != nil {
 		fatalf("resolve oauth config: %v", err)
 	}
 	token, err := auth.PKCEFlow(ctx, p.sc.Auth, p.opener)
@@ -92,101 +91,6 @@ func resolveOpenerCmd(perServerCmd, globalCmd string) string {
 		return perServerCmd
 	}
 	return globalCmd
-}
-
-func resolveOAuthEndpoints(ctx context.Context, configDir, serverName string, sc *config.ServerConfig) error {
-	a := sc.Auth
-	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
-		return nil
-	}
-	regURL, err := discoverMissingEndpoints(ctx, sc.URL, a)
-	if err != nil {
-		return err
-	}
-	if a.ClientID == "" {
-		return resolveClientID(ctx, configDir, serverName, a, regURL)
-	}
-	return nil
-}
-
-func discoverMissingEndpoints(ctx context.Context, url string, a *config.AuthConfig) (string, error) {
-	if a.AuthURL != "" && a.TokenURL != "" {
-		return "", nil
-	}
-	meta, err := auth.Discover(ctx, url)
-	if err != nil {
-		return "", fmt.Errorf("discover oauth endpoints: %w", err)
-	}
-	if err := applyDiscoveredEndpoints(a, meta); err != nil {
-		return "", err
-	}
-	return meta.RegistrationURL, nil
-}
-
-func applyDiscoveredEndpoints(a *config.AuthConfig, meta *auth.ServerMeta) error {
-	if a.AuthURL == "" {
-		if err := validateOAuthEndpoint(meta.AuthURL, "authorization_endpoint"); err != nil {
-			return err
-		}
-		a.AuthURL = meta.AuthURL
-	}
-	if a.TokenURL == "" {
-		if err := validateOAuthEndpoint(meta.TokenURL, "token_endpoint"); err != nil {
-			return err
-		}
-		a.TokenURL = meta.TokenURL
-	}
-	return validateOAuthEndpoint(meta.RegistrationURL, "registration_endpoint")
-}
-
-func validateOAuthEndpoint(endpoint, name string) error {
-	if endpoint == "" {
-		return nil
-	}
-	if err := transport.ValidateURL(endpoint); err != nil {
-		return fmt.Errorf("oauth discovery: %s points to a disallowed host: %w", name, err)
-	}
-	return nil
-}
-
-func resolveClientID(ctx context.Context, configDir, serverName string, a *config.AuthConfig, regURL string) error {
-	found, err := applyExistingRegistration(configDir, serverName, a)
-	if err != nil || found {
-		return err
-	}
-	if regURL == "" {
-		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
-	}
-	clientID, err := registerClient(ctx, regURL)
-	if err != nil {
-		return err
-	}
-	return storeNewClientID(configDir, serverName, clientID, a)
-}
-
-func applyExistingRegistration(configDir, serverName string, a *config.AuthConfig) (bool, error) {
-	reg, err := auth.LoadRegistration(configDir, serverName)
-	if err == nil {
-		a.ClientID = reg.ClientID
-		return true, nil
-	}
-	if !auth.IsNotFound(err) {
-		return false, err
-	}
-	return false, nil
-}
-
-func storeNewClientID(configDir, serverName, clientID string, a *config.AuthConfig) error {
-	a.ClientID = clientID
-	return saveClientRegistration(configDir, serverName, clientID)
-}
-
-func registerClient(ctx context.Context, regURL string) (string, error) {
-	return auth.Register(ctx, regURL)
-}
-
-func saveClientRegistration(configDir, serverName, clientID string) error {
-	return auth.SaveRegistration(configDir, serverName, &auth.Registration{ClientID: clientID})
 }
 
 func printAuthResult(name string, expiry time.Time) {
@@ -220,7 +124,7 @@ func injectToken(ctx context.Context, configDir string, sc *config.ServerConfig)
 	if err != nil {
 		return
 	}
-	setAuthHeader(sc, t.AccessToken)
+	auth.ApplyBearerToken(sc, t.AccessToken)
 }
 
 func ensureValidToken(ctx context.Context, configDir string, sc *config.ServerConfig, t *oauth2.Token) (*oauth2.Token, error) {
@@ -244,26 +148,6 @@ func refreshAndSaveToken(ctx context.Context, configDir string, sc *config.Serve
 		fmt.Fprintf(os.Stderr, "mini: save refreshed token for %s: %v\n", sc.Name, saveErr)
 	}
 	return refreshed, nil
-}
-
-func setAuthHeader(sc *config.ServerConfig, accessToken string) {
-	h := sc.Auth.Header
-	if h == "" {
-		h = "Authorization"
-	}
-	if sc.Headers == nil {
-		sc.Headers = make(map[string]string)
-	}
-	sc.Headers[h] = "Bearer " + accessToken
-}
-
-func findServer(servers []config.ServerConfig, name string) *config.ServerConfig {
-	for i := range servers {
-		if servers[i].Name == name {
-			return &servers[i]
-		}
-	}
-	return nil
 }
 
 var openBrowser = func(url string) error { return auth.OpenBrowser("", url) }

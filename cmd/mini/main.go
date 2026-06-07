@@ -221,7 +221,7 @@ func shutdownHTTP(httpSrv *http.Server) {
 func buildAndConnectServer(ctx context.Context, cfg *config.Config, configDir string, logger *slog.Logger, servers []config.ServerConfig, opts ...server.ServerOption) *server.Server {
 	srv := server.NewWithConfigDir(cfg, configDir, logger, opts...)
 	for _, sc := range servers {
-		if isEnabled(sc) {
+		if sc.IsEnabled() {
 			if err := srv.AddUpstream(ctx, sc); err != nil {
 				logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
 			}
@@ -288,10 +288,6 @@ func resolveLogLevel(cfg *config.Config, override string) slog.Level {
 		}
 	}
 	return level
-}
-
-func isEnabled(sc config.ServerConfig) bool {
-	return sc.Enabled == nil || *sc.Enabled
 }
 
 func fatalf(format string, args ...any) {

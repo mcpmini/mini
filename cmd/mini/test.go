@@ -50,7 +50,7 @@ func buildTestServer(ctx context.Context, configDir string) (*server.Server, []c
 func enabledServers(servers []config.ServerConfig) []config.ServerConfig {
 	out := make([]config.ServerConfig, 0, len(servers))
 	for _, sc := range servers {
-		if isEnabled(sc) {
+		if sc.IsEnabled() {
 			out = append(out, sc)
 		}
 	}

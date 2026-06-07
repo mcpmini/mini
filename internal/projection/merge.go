@@ -10,6 +10,15 @@ type Defaults struct {
 	AutoStripThreshold int      // 0 = disabled
 }
 
+func DefaultsFrom(cfg *config.Config) *Defaults {
+	return &Defaults{
+		StringLimit:        cfg.DefaultStringLimit,
+		DepthLimit:         cfg.DefaultDepthLimit,
+		ContentFields:      cfg.ContentFields,
+		AutoStripThreshold: cfg.AutoStripThreshold,
+	}
+}
+
 // effectiveConfig is the merged, runtime-ready config derived from ProjectionConfig + Defaults.
 type effectiveConfig struct {
 	include            []string
