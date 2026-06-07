@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -10,7 +11,8 @@ import (
 )
 
 type authFlowState struct {
-	cancel context.CancelFunc
+	cancel   context.CancelFunc
+	listener net.Listener
 }
 
 func (s *Server) handleStartAuth(serverName string) (any, error) {
@@ -65,22 +67,42 @@ type pkceFlowResult struct {
 }
 
 func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) {
-	s.cancelExistingAuthFlow(serverName)
+	s.cancelExistingAuthFlow(serverName) // synchronously releases old port if any
 	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	listener, err := listenOnCallbackPort(authCtx)
+	if err != nil {
+		cancel()
+		return pkceFlowResult{}, err
+	}
 	if err := auth.ResolveEndpoints(authCtx, s.configDir, serverName, &sc); err != nil {
+		listener.Close() //nolint:errcheck
 		cancel()
 		return pkceFlowResult{}, fmt.Errorf("resolve oauth endpoints: %w", err)
 	}
-	authURL, doneCh, err := auth.StartPKCEFlow(authCtx, sc.Auth)
+	authURL, doneCh, err := auth.StartPKCEFlowOnListener(authCtx, sc.Auth, listener)
 	if err != nil {
+		listener.Close() //nolint:errcheck
 		cancel()
 		return pkceFlowResult{}, fmt.Errorf("start auth flow: %w", err)
 	}
-	state := &authFlowState{cancel: cancel}
+	state := &authFlowState{cancel: cancel, listener: listener}
+	s.storeAuthFlow(serverName, state)
+	return pkceFlowResult{authURL: authURL, state: state, doneCh: doneCh}, nil
+}
+
+func listenOnCallbackPort(ctx context.Context) (net.Listener, error) {
+	addr := fmt.Sprintf("127.0.0.1:%d", auth.LoopbackCallbackPort)
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("listen for oauth callback: %w", err)
+	}
+	return ln, nil
+}
+
+func (s *Server) storeAuthFlow(serverName string, state *authFlowState) {
 	s.authMu.Lock()
 	s.authFlows[serverName] = state
 	s.authMu.Unlock()
-	return pkceFlowResult{authURL: authURL, state: state, doneCh: doneCh}, nil
 }
 
 func (s *Server) cancelExistingAuthFlow(serverName string) {
@@ -90,9 +112,11 @@ func (s *Server) cancelExistingAuthFlow(serverName string) {
 		delete(s.authFlows, serverName)
 	}
 	s.authMu.Unlock()
-	if old != nil {
-		old.cancel()
+	if old == nil {
+		return
 	}
+	old.listener.Close() //nolint:errcheck
+	old.cancel()
 }
 
 func (s *Server) runAuthFlow(serverName string, sc config.ServerConfig, flow *authFlowState, doneCh <-chan auth.PKCEResult) {

@@ -54,20 +54,32 @@ const ClientMetadataURL = "https://minimcp.github.io/minimcp/oauth/client-metada
 // StartPKCEFlow starts an OAuth2 PKCE flow without blocking.
 // Returns the authorization URL and a channel that receives the result when
 // the user completes the flow (or ctx is canceled).
+// Use StartPKCEFlowOnListener when you need to control listener lifetime.
 func StartPKCEFlow(ctx context.Context, ac *config.AuthConfig) (authURL string, done <-chan PKCEResult, err error) {
+	addr := fmt.Sprintf("127.0.0.1:%d", LoopbackCallbackPort)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", nil, fmt.Errorf("listen for oauth callback on %s: %w", addr, err)
+	}
+	return StartPKCEFlowOnListener(ctx, ac, listener)
+}
+
+// StartPKCEFlowOnListener starts an OAuth2 PKCE flow on a caller-owned listener.
+// Closing listener terminates the callback server synchronously, releasing the port
+// before any goroutine scheduling. Use this when replacing an existing flow: close
+// the old listener first, then bind a new one and call StartPKCEFlowOnListener.
+func StartPKCEFlowOnListener(ctx context.Context, ac *config.AuthConfig, listener net.Listener) (authURL string, done <-chan PKCEResult, err error) {
 	cfg := configFrom(ac)
 	verifier := oauth2.GenerateVerifier()
 	state := oauth2.GenerateVerifier()
 
-	cb, err := startCallbackServer(state)
-	if err != nil {
-		return "", nil, err
-	}
+	codeCh := make(chan string, 1)
+	srv := serveCallbackListener(listener, callbackHandler(state, codeCh))
 	cfg.RedirectURL = loopbackCallbackURI
 	url := buildAuthURL(cfg, state, verifier, ac.ResourceURL)
 
 	resultCh := make(chan PKCEResult, 1)
-	go exchangeCode(ctx, cfg, verifier, ac.ResourceURL, cb.codeCh, cb.srv, resultCh)
+	go exchangeCode(ctx, cfg, verifier, ac.ResourceURL, codeCh, srv, resultCh)
 	return url, resultCh, nil
 }
 
@@ -79,41 +91,6 @@ func buildAuthURL(cfg *oauth2.Config, state, verifier, resourceURL string) strin
 	return cfg.AuthCodeURL(state, opts...)
 }
 
-type callbackServerResult struct {
-	srv    *http.Server
-	codeCh chan string
-}
-
-func startCallbackServer(state string) (callbackServerResult, error) {
-	addr := fmt.Sprintf("127.0.0.1:%d", LoopbackCallbackPort)
-	listener, err := listenWithRetry(addr)
-	if err != nil {
-		return callbackServerResult{}, err
-	}
-	codeCh := make(chan string, 1)
-	srv := serveCallbackListener(listener, callbackHandler(state, codeCh))
-	return callbackServerResult{srv: srv, codeCh: codeCh}, nil
-}
-
-// listenWithRetry retries binding briefly to handle the race where a previous
-// auth flow's goroutine hasn't yet released the port after context cancellation.
-func listenWithRetry(addr string) (net.Listener, error) {
-	var (
-		l   net.Listener
-		err error
-	)
-	for i := 0; i < 6; i++ {
-		if i > 0 {
-			time.Sleep(20 * time.Millisecond)
-		}
-		l, err = net.Listen("tcp", addr)
-		if err == nil {
-			return l, nil
-		}
-	}
-	return nil, fmt.Errorf("listen for callback on %s: %w", addr, err)
-}
-
 func serveCallbackListener(listener net.Listener, handler http.Handler) *http.Server {
 	srv := &http.Server{
 		Handler:           handler,
@@ -121,7 +98,10 @@ func serveCallbackListener(listener net.Listener, handler http.Handler) *http.Se
 		WriteTimeout:      30 * time.Second,
 	}
 	go func() {
-		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		err := srv.Serve(listener)
+		// ErrServerClosed: srv.Close() was called. net.ErrClosed: listener was closed
+		// externally by the caller (expected when replacing an in-progress auth flow).
+		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			log.Printf("oauth callback server: %v", err)
 		}
 	}()
