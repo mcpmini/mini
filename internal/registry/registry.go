@@ -53,7 +53,7 @@ func (r *Registry) addServerLocked(p ServerParams) {
 				"server", p.Name, "real", d.Name, "alias", alias)
 			alias = ""
 		}
-		e := buildEntry(entryParams{p.Name, d, p.Perm, alias})
+		e := buildEntry(entryParams{server: p.Name, def: d, perm: p.Perm, alias: alias})
 		if seen[e.FullName] {
 			slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", d.Name)
 			continue

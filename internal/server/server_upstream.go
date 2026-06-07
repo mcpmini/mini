@@ -118,8 +118,6 @@ func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDef
 	s.reg.AddServer(p)
 }
 
-// aliasesFor returns a map of realToolName → aliasName for the given server,
-// using inline projections if provided, otherwise falling back to disk projections.
 func (s *Server) aliasesFor(serverName string, inline map[string]*config.ProjectionConfig) map[string]string {
 	proj := inline
 	if proj == nil {
