@@ -91,6 +91,10 @@ func resolveClientID(ctx context.Context, configDir, serverName string, a *confi
 	if err != nil || found {
 		return err
 	}
+	return dynamicRegister(ctx, configDir, serverName, a, meta)
+}
+
+func dynamicRegister(ctx context.Context, configDir, serverName string, a *config.AuthConfig, meta *ServerMeta) error {
 	regURL := ""
 	if meta != nil {
 		regURL = meta.RegistrationURL

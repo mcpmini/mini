@@ -92,7 +92,10 @@ func asURLFromPRMProbe(ctx context.Context, serverURL string) (string, error) {
 		return "", fmt.Errorf("server URL has no scheme/host: %q", serverURL)
 	}
 	base := u.Scheme + "://" + u.Host
-	path := strings.TrimRight(u.Path, "/")
+	return probePRMCandidates(ctx, base, strings.TrimRight(u.Path, "/"))
+}
+
+func probePRMCandidates(ctx context.Context, base, path string) (string, error) {
 	candidates := []string{base + "/.well-known/oauth-protected-resource" + path}
 	if path != "" {
 		candidates = append(candidates, base+"/.well-known/oauth-protected-resource")
@@ -194,8 +197,12 @@ func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("oauth discovery: status %d from %s", resp.StatusCode, metaURL)
 	}
+	return decodeASMeta(resp.Body, metaURL)
+}
+
+func decodeASMeta(body io.Reader, metaURL string) (*ServerMeta, error) {
 	var raw rawASMeta
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAuthBodyBytes)).Decode(&raw); err != nil {
+	if err := json.NewDecoder(io.LimitReader(body, maxAuthBodyBytes)).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("oauth discovery: decode metadata from %s: %w", metaURL, err)
 	}
 	return &ServerMeta{
