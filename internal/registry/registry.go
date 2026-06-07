@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -27,9 +28,28 @@ func New() *Registry {
 }
 
 func (r *Registry) AddServer(serverName string, defs []transport.ToolDefinition, perm *config.PermissionsConfig) {
+	if config.IsReservedServerName(serverName) {
+		slog.Default().Warn("ignoring server with reserved name", "server", serverName)
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.addServerLocked(serverName, defs, perm)
+}
+
+// PermLookup returns the permission level for server.tool.
+// Returns ("", false) when the tool is not in the registry.
+func (r *Registry) PermLookup(server, tool string) (config.PermissionLevel, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	full := server + "." + tool
+	if e, ok := r.tools[full]; ok {
+		return e.Permission, true
+	}
+	if e, ok := r.hidden[full]; ok {
+		return e.Permission, true
+	}
+	return "", false
 }
 
 func (r *Registry) addServerLocked(serverName string, defs []transport.ToolDefinition, perm *config.PermissionsConfig) {
@@ -264,4 +284,82 @@ func (r *Registry) ToolCount(serverName string) int {
 
 func resolvePermission(toolName string, perm *config.PermissionsConfig) config.PermissionLevel {
 	return perm.LevelFor(toolName)
+}
+
+// PermLookupFunc resolves the permission level for a given server+tool.
+// Returns ("", false) when the server is not connected.
+type PermLookupFunc func(server, tool string) (config.PermissionLevel, bool)
+
+// AddPipes registers pipe virtual tools under the reserved "user" server.
+func (r *Registry) AddPipes(pipes []config.PipeConfig, lookup PermLookupFunc) {
+	entries := make([]*ToolEntry, 0, len(pipes))
+	for _, pipe := range pipes {
+		p := pipe
+		entries = append(entries, r.buildPipeEntry(&p, lookup))
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, entry := range entries {
+		r.insertEntryLocked(config.UserServerName, entry)
+	}
+}
+
+func (r *Registry) buildPipeEntry(pipe *config.PipeConfig, lookup PermLookupFunc) *ToolEntry {
+	full := config.UserServerName + "." + pipe.Name
+	schema := buildPipeInputSchema(pipe.Inputs)
+	return &ToolEntry{
+		Server:        config.UserServerName,
+		Name:          pipe.Name,
+		FullName:      full,
+		FullNameLower: strings.ToLower(full),
+		Description:   pipe.Description,
+		DescLower:     strings.ToLower(pipe.Description),
+		InputSchema:   schema,
+		Permission:    computePipePermission(pipe, lookup),
+		Pipe:          pipe,
+	}
+}
+
+func buildPipeInputSchema(inputs map[string]config.InputSchema) json.RawMessage {
+	if len(inputs) == 0 {
+		return json.RawMessage(`{"type":"object"}`)
+	}
+	properties := make(map[string]any, len(inputs))
+	var required []string
+	for name, schema := range inputs {
+		prop := map[string]any{"type": schema.Type}
+		if schema.Description != "" {
+			prop["description"] = schema.Description
+		}
+		properties[name] = prop
+		if schema.Required {
+			required = append(required, name)
+		}
+	}
+	obj := map[string]any{"type": "object", "properties": properties}
+	if len(required) > 0 {
+		obj["required"] = required
+	}
+	b, _ := json.Marshal(obj)
+	return json.RawMessage(b)
+}
+
+func computePipePermission(pipe *config.PipeConfig, lookup PermLookupFunc) config.PermissionLevel {
+	if override := config.PermissionLevel(pipe.Permission); override == config.PermOpen || override == config.PermProtected || override == config.PermHidden {
+		return override
+	}
+	perm := config.PermOpen
+	for _, step := range pipe.Steps {
+		if step.Server == "" {
+			continue
+		}
+		stepPerm, ok := lookup(step.Server, step.Tool)
+		if !ok {
+			return config.PermProtected
+		}
+		if stepPerm == config.PermProtected {
+			perm = config.PermProtected
+		}
+	}
+	return perm
 }

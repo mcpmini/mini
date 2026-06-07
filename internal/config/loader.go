@@ -153,6 +153,9 @@ func loadServerConfig(path string) (*ServerConfig, error) {
 	if !ValidServerName.MatchString(s.Name) {
 		return nil, fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", s.Name, path)
 	}
+	if IsReservedServerName(s.Name) {
+		return nil, fmt.Errorf("server name %q in %s is reserved and cannot be used", s.Name, path)
+	}
 	return &s, nil
 }
 

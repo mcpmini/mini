@@ -23,6 +23,9 @@ type ToolEntry struct {
 	TargetServer string         // real server to call
 	TargetTool   string         // real tool name to call
 	DefaultArgs  map[string]any // pre-baked args; call-time args win on conflict
+
+	// Pipe is set for pipe virtual tools registered on the "user" server.
+	Pipe *config.PipeConfig
 }
 
 // CompactEntry is what discover returns per tool — no full schema.
