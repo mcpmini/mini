@@ -62,6 +62,14 @@ type Config struct {
 	// Agents connect to http://127.0.0.1:<DaemonPort>/mcp.
 	DaemonPort int `yaml:"daemon_port"`
 
+	// BrowserCommand sets the browser to open for OAuth flows. Applies to both
+	// `mini auth` (CLI) and agent-initiated auth (config:start_auth).
+	BrowserCommand string `yaml:"browser_command,omitempty"`
+
+	// DisableAuthBrowserOpen prevents mini from opening the browser automatically
+	// during config:start_auth. The auth URL is still returned to the agent.
+	DisableAuthBrowserOpen bool `yaml:"disable_auth_browser_open,omitempty"`
+
 	// Servers is a list of upstream MCP server configs (alternative to servers/ dir).
 	Servers []ServerConfig `yaml:"servers,omitempty"`
 }

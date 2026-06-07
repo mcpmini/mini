@@ -89,6 +89,7 @@ func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.InlineThreshold = 10000
+	cfg.DisableAuthBrowserOpen = true
 	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 

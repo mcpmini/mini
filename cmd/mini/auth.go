@@ -5,9 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
-	"runtime"
-	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -21,11 +18,16 @@ func runAuth(configDir string, args []string) {
 	fs := flag.NewFlagSet("auth", flag.ExitOnError)
 	fs.Parse(args)
 	serverName := requireAuthServer(fs)
-	sc, err := loadOAuthServer(configDir, serverName)
+	cfg, sc, err := loadOAuthServerAndConfig(configDir, serverName)
 	if err != nil {
 		fatalf("%v", err)
 	}
-	runPKCEFlow(configDir, serverName, sc)
+	runPKCEFlow(pkceFlowParams{
+		configDir:  configDir,
+		serverName: serverName,
+		opener:     authOpener(sc.Auth.BrowserCmd, cfg.BrowserCommand, cfg.DisableAuthBrowserOpen),
+		sc:         sc,
+	})
 }
 
 func requireAuthServer(fs *flag.FlagSet) string {
@@ -35,43 +37,61 @@ func requireAuthServer(fs *flag.FlagSet) string {
 	return fs.Arg(0)
 }
 
-func loadOAuthServer(configDir, serverName string) (*config.ServerConfig, error) {
-	_, servers, err := config.Load(configDir)
+func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *config.ServerConfig, error) {
+	cfg, servers, err := config.Load(configDir)
 	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
+		return nil, nil, fmt.Errorf("load config: %w", err)
 	}
 	sc := findServer(servers, serverName)
 	if sc == nil {
-		return nil, fmt.Errorf("server not found: %s", serverName)
+		return nil, nil, fmt.Errorf("server not found: %s", serverName)
 	}
 	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
-		return nil, fmt.Errorf("server %q does not have oauth2 auth configured", serverName)
+		return nil, nil, fmt.Errorf("server %q does not have oauth2 auth configured", serverName)
 	}
-	return sc, nil
+	return cfg, sc, nil
 }
 
-func runPKCEFlow(configDir, serverName string, sc *config.ServerConfig) {
+type pkceFlowParams struct {
+	configDir  string
+	serverName string
+	opener     func(string) error
+	sc         *config.ServerConfig
+}
+
+func runPKCEFlow(p pkceFlowParams) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	fmt.Printf("Authorizing %s...\n", serverName)
-	if err := resolveOAuthEndpoints(ctx, configDir, serverName, sc); err != nil {
+	fmt.Printf("Authorizing %s...\n", p.serverName)
+	if err := resolveOAuthEndpoints(ctx, p.configDir, p.serverName, p.sc); err != nil {
 		fatalf("resolve oauth config: %v", err)
 	}
-	token, err := auth.PKCEFlow(ctx, sc.Auth, authOpener(sc.Auth.BrowserCmd))
+	token, err := auth.PKCEFlow(ctx, p.sc.Auth, p.opener)
 	if err != nil {
 		fatalf("auth flow: %v", err)
 	}
-	if err := auth.Save(configDir, serverName, token); err != nil {
+	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
 		fatalf("save token: %v", err)
 	}
-	printAuthResult(serverName, token.Expiry)
+	printAuthResult(p.serverName, token.Expiry)
 }
 
-func authOpener(browserCmd string) func(string) error {
-	if browserCmd != "" {
-		return openBrowserCmd(browserCmd)
+func authOpener(perServerCmd, globalCmd string, disabled bool) func(string) error {
+	if disabled {
+		return func(string) error { return nil }
+	}
+	cmd := resolveOpenerCmd(perServerCmd, globalCmd)
+	if cmd != "" {
+		return func(url string) error { return auth.OpenBrowser(cmd, url) }
 	}
 	return openBrowser
+}
+
+func resolveOpenerCmd(perServerCmd, globalCmd string) string {
+	if perServerCmd != "" {
+		return perServerCmd
+	}
+	return globalCmd
 }
 
 func resolveOAuthEndpoints(ctx context.Context, configDir, serverName string, sc *config.ServerConfig) error {
@@ -246,27 +266,4 @@ func findServer(servers []config.ServerConfig, name string) *config.ServerConfig
 	return nil
 }
 
-func openBrowser(url string) error {
-	var cmd string
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = "open"
-	case "linux":
-		cmd = "xdg-open"
-	case "windows":
-		cmd = "start"
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
-	return exec.Command(cmd, url).Start()
-}
-
-func openBrowserCmd(browserCmd string) func(string) error {
-	parts := strings.Fields(browserCmd)
-	return func(url string) error {
-		if len(parts) == 0 {
-			return fmt.Errorf("empty browser_cmd")
-		}
-		return exec.Command(parts[0], append(parts[1:], url)...).Start()
-	}
-}
+var openBrowser = func(url string) error { return auth.OpenBrowser("", url) }
