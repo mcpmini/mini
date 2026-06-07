@@ -134,8 +134,7 @@ func forwardAsync(p forwardAsyncParams) {
 	if resp == nil {
 		return
 	}
-	// If the daemon restarted or evicted the session since the proxy started,
-	// re-send the initialize handshake and retry the request once.
+	// Daemon restart or session eviction invalidates the session; reinitialize and retry.
 	if isNotInitialized(resp) && !peekIsInitialize(p.line) {
 		reinitDaemon(p.client, p.port, p.sessionID, p.proxyMode)
 		resp = forward(p.client, p.port, p.sessionID, p.line)
@@ -148,8 +147,8 @@ func forwardAsync(p forwardAsyncParams) {
 	p.mu.Unlock()
 }
 
-// reinitDaemon sends a fresh initialize + notifications/initialized to the daemon,
-// discarding responses. Used to recover from daemon restart or session eviction.
+// reinitDaemon recovers from daemon restart or session eviction. Responses are
+// discarded — only the caller's retry of the original request is forwarded.
 func reinitDaemon(client *http.Client, port int, sessionID string, proxyMode bool) {
 	params, _ := json.Marshal(map[string]any{
 		"protocolVersion": transport.ProtocolVersion,
