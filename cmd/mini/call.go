@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
@@ -248,7 +247,7 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 }
 
 func mustCallStore(cfg *config.Config, logger *slog.Logger) *response.Store {
-	sc := buildCallStoreConfig(cfg)
+	sc := response.StoreConfigFrom(cfg)
 	store, err := response.NewStore(sc)
 	if err != nil {
 		logger.Warn("could not open response store, using temp dir", "err", err)
@@ -256,21 +255,6 @@ func mustCallStore(cfg *config.Config, logger *slog.Logger) *response.Store {
 		store, _ = response.NewStore(sc)
 	}
 	return store
-}
-
-func buildCallStoreConfig(cfg *config.Config) response.StoreConfig {
-	dir := cfg.ResponseDir
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".mini", "responses")
-	}
-	ttl := time.Hour
-	if cfg.ResponseTTL != "" {
-		if d, err := time.ParseDuration(cfg.ResponseTTL); err == nil {
-			ttl = d
-		}
-	}
-	return response.StoreConfig{Dir: dir, TTL: ttl, BudgetMB: cfg.ResponseDiskBudgetMB, CleanupInterval: time.Hour}
 }
 
 func printCallOutput(serverName, toolName string, env *response.Envelope, mode callOutput) {
