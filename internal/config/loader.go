@@ -19,6 +19,7 @@ var ValidServerName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 // prevent future path traversal risk if tool names are ever used in file paths.
 var ValidToolName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
+// Only ${VAR} form (not bare $VAR) avoids false positives in shell args and YAML comments.
 var envVarRef = regexp.MustCompile(`\$\{([^}]+)\}`)
 
 func Load(configDir string) (*Config, []ServerConfig, error) {
@@ -239,11 +240,8 @@ func interpolateEnv(data []byte) ([]byte, error) {
 		}
 		return val
 	})
-	if len(missing) == 1 {
-		return nil, fmt.Errorf("config references undefined environment variable %q", missing[0])
-	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("config references undefined environment variables: %s", strings.Join(missing, ", "))
+		return nil, fmt.Errorf("config references undefined environment variable(s): %s", strings.Join(missing, ", "))
 	}
 	return []byte(result), nil
 }
