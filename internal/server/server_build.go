@@ -40,21 +40,12 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		projections:  projections,
 		envelope:     response.NewBuilder(store, cfg.InlineThreshold),
 		store:        store,
-		projDefaults: newProjDefaults(cfg),
+		projDefaults: projection.DefaultsFrom(cfg),
 		toolSchemas:  proxyToolSchemas(),
 		sessions:     newSessionStore(),
 		authFlows: make(map[string]*authFlowState),
 		logger:    logger,
 		clock:        clock.System(),
-	}
-}
-
-func newProjDefaults(cfg *config.Config) *projection.Defaults {
-	return &projection.Defaults{
-		StringLimit:        cfg.DefaultStringLimit,
-		DepthLimit:         cfg.DefaultDepthLimit,
-		ContentFields:      cfg.ContentFields,
-		AutoStripThreshold: cfg.AutoStripThreshold,
 	}
 }
 

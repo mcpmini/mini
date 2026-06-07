@@ -104,7 +104,7 @@ func loadCallCtx(configDir, serverName string) (*config.Config, *config.ServerCo
 		fmt.Fprintf(os.Stderr, "mini: load config: %v\n", err)
 		os.Exit(2)
 	}
-	sc := findServerConfig(servers, serverName)
+	sc := config.FindServer(servers, serverName)
 	if sc == nil {
 		fmt.Fprintf(os.Stderr, "mini: server %q not found\n", serverName)
 		os.Exit(2)
@@ -177,7 +177,7 @@ func buildInvokeParams(conn transport.Connection, cc callContext, store *respons
 		Params:   cc.params,
 		Conn:     conn,
 		ProjCfg:  resolveCallProjection(cc.sc, cc.toolName),
-		ProjDefs: callProjDefaults(cc.cfg),
+		ProjDefs: projection.DefaultsFrom(cc.cfg),
 		Builder:  response.NewBuilder(store, cc.cfg.InlineThreshold),
 	}
 }
@@ -222,15 +222,6 @@ func readParamBytes(arg string) ([]byte, error) {
 	return io.ReadAll(os.Stdin)
 }
 
-func findServerConfig(servers []config.ServerConfig, name string) *config.ServerConfig {
-	for i := range servers {
-		if servers[i].Name == name {
-			return &servers[i]
-		}
-	}
-	return nil
-}
-
 func resolveCallOutput(f callFlags, cfgFormat string) callOutput {
 	switch {
 	case f.raw:
@@ -254,15 +245,6 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 		return p
 	}
 	return sc.Projections["*"]
-}
-
-func callProjDefaults(cfg *config.Config) *projection.Defaults {
-	return &projection.Defaults{
-		StringLimit:        cfg.DefaultStringLimit,
-		DepthLimit:         cfg.DefaultDepthLimit,
-		ContentFields:      cfg.ContentFields,
-		AutoStripThreshold: cfg.AutoStripThreshold,
-	}
 }
 
 func mustCallStore(cfg *config.Config, logger *slog.Logger) *response.Store {
