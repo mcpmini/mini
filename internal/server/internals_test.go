@@ -50,20 +50,20 @@ func TestSession_GetOrSetConn_returnsExistingOnRace(t *testing.T) {
 	}
 }
 
-func TestSession_idleSince_trueWhenOld(t *testing.T) {
+func TestSession_idleDuration_trueWhenOld(t *testing.T) {
 	s := newSession()
 	future := time.Now().Add(time.Hour)
-	if !s.idleSince(future) {
-		t.Error("expected idleSince to return true for future deadline")
+	if _, ok := s.idleDuration(future); !ok {
+		t.Error("expected idleDuration to return true for future deadline")
 	}
 }
 
-func TestSession_idleSince_falseAfterTouch(t *testing.T) {
+func TestSession_idleDuration_falseAfterTouch(t *testing.T) {
 	s := newSession()
 	s.touch()
 	past := time.Now().Add(-time.Hour)
-	if s.idleSince(past) {
-		t.Error("expected idleSince to return false after recent touch")
+	if _, ok := s.idleDuration(past); ok {
+		t.Error("expected idleDuration to return false after recent touch")
 	}
 }
 

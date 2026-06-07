@@ -72,13 +72,24 @@ func spawnDaemon(exe, configDir string) error {
 	return nil
 }
 
+const maxDaemonLogBytes = 10 << 20 // 10MB
+
 func openDaemonLog(configDir string) (*os.File, func()) {
 	logPath := filepath.Join(configDir, "daemon.log")
+	rotateDaemonLog(logPath)
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
 		return os.Stderr, func() {}
 	}
 	return f, func() { f.Close() }
+}
+
+func rotateDaemonLog(logPath string) {
+	info, err := os.Stat(logPath)
+	if err != nil || info.Size() < maxDaemonLogBytes {
+		return
+	}
+	os.Rename(logPath, logPath+".1") //nolint:errcheck
 }
 
 func waitForDaemon(configDir string, timeout time.Duration) (int, error) {
