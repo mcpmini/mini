@@ -37,6 +37,7 @@ type ToolEntry struct {
 	TargetServer string
 	TargetTool   string
 	DefaultArgs  map[string]any
+	Pipe         *config.PipeConfig
 }
 
 // CompactEntry is what discover returns per tool — no full schema.

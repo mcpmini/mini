@@ -7,6 +7,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/pipes"
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
@@ -31,20 +32,21 @@ func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger,
 
 func newServer(cfg *config.Config, configDir string, store *response.Store, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server { //nolint:funclen
 	return &Server{
-		cfg:          cfg,
-		configDir:    configDir,
-		reg:          registry.New(),
-		upstreams:    make(map[string]*upstreamServer),
-		removeGen:    make(map[string]uint64),
-		projections:  projections,
-		envelope:     response.NewBuilder(store, cfg.InlineThreshold),
-		store:        store,
-		projDefaults: projection.DefaultsFrom(cfg),
-		toolSchemas:  compactToolSchemas(),
-		sessions:     newSessionStore(),
-		authFlows:    make(map[string]*authFlowState),
-		logger:       logger,
-		clock:        clock.System(),
+		cfg:           cfg,
+		configDir:     configDir,
+		reg:           registry.New(),
+		upstreams:     make(map[string]*upstreamServer),
+		removeGen:     make(map[string]uint64),
+		projections:   projections,
+		envelope:      response.NewBuilder(store, cfg.InlineThreshold),
+		store:         store,
+		projDefaults:  projection.DefaultsFrom(cfg),
+		toolSchemas:   compactToolSchemas(),
+		compiledPipes: make(map[string]*pipes.CompiledPipe),
+		sessions:      newSessionStore(),
+		authFlows:     make(map[string]*authFlowState),
+		logger:        logger,
+		clock:         clock.System(),
 	}
 }
 
