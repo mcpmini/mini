@@ -99,20 +99,28 @@ type postResult struct {
 func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
 	backoff := time.Second
 	for i := range maxRetries {
-		r, err := c.doPost(ctx, rpcReq)
-		if err == nil {
-			return r.body, nil
-		}
-		if shouldStopRetrying(r, i, c.disableRetryOnRateLimit) {
-			return nil, err
-		}
-		delay := nextRetryDelay(r.delay, &backoff)
-		slog.Warn("upstream http request retrying", "method", rpcReq.Method, "attempt", i+1, "delay", delay)
-		if !sleepCtx(ctx, delay) {
-			return nil, ctx.Err()
+		body, done, err := c.attempt(ctx, rpcReq, i, &backoff)
+		if done {
+			return body, err
 		}
 	}
 	return nil, fmt.Errorf("exceeded max retries for %s", rpcReq.Method)
+}
+
+func (c *HTTPConnection) attempt(ctx context.Context, rpcReq Request, i int, backoff *time.Duration) (json.RawMessage, bool, error) {
+	r, err := c.doPost(ctx, rpcReq)
+	if err == nil {
+		return r.body, true, nil
+	}
+	if shouldStopRetrying(r, i, c.disableRetryOnRateLimit) {
+		return nil, true, err
+	}
+	delay := nextRetryDelay(r.delay, backoff)
+	slog.Warn("upstream http request retrying", "method", rpcReq.Method, "attempt", i+1, "delay", delay)
+	if !sleepCtx(ctx, delay) {
+		return nil, true, ctx.Err()
+	}
+	return nil, false, nil
 }
 
 func shouldStopRetrying(r postResult, attempt int, retriesDisabled bool) bool {
