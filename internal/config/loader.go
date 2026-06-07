@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -17,6 +18,8 @@ var ValidServerName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 // Dots allow namespaced tools (e.g. "issues.list"). Slashes are excluded to
 // prevent future path traversal risk if tool names are ever used in file paths.
 var ValidToolName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
+
+var envVarRef = regexp.MustCompile(`\$\{([^}]+)\}`)
 
 func Load(configDir string) (*Config, []ServerConfig, error) {
 	cfg, servers, err := loadBaseConfig(configDir)
@@ -103,7 +106,10 @@ func loadMainConfig(dir string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
-
+	data, err = interpolateEnv(data)
+	if err != nil {
+		return nil, fmt.Errorf("config.yaml: %w", err)
+	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
@@ -134,6 +140,10 @@ func loadServerConfig(path string) (*ServerConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	data, err = interpolateEnv(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	var s ServerConfig
 	if err := yaml.Unmarshal(data, &s); err != nil {
@@ -168,6 +178,10 @@ func loadActionConfig(p string) (*ActionConfig, error) {
 	data, err := os.ReadFile(p)
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", p, err)
+	}
+	data, err = interpolateEnv(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", p, err)
 	}
 	return parseActionConfig(p, data)
 }
@@ -211,6 +225,27 @@ func deduplicateServers(servers []ServerConfig) []ServerConfig {
 		}
 	}
 	return out
+}
+
+func interpolateEnv(data []byte) ([]byte, error) {
+	var missing []string
+	seen := map[string]bool{}
+	result := envVarRef.ReplaceAllStringFunc(string(data), func(match string) string {
+		key := match[2 : len(match)-1]
+		val, ok := os.LookupEnv(key)
+		if !ok && !seen[key] {
+			seen[key] = true
+			missing = append(missing, key)
+		}
+		return val
+	})
+	if len(missing) == 1 {
+		return nil, fmt.Errorf("config references undefined environment variable %q", missing[0])
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("config references undefined environment variables: %s", strings.Join(missing, ", "))
+	}
+	return []byte(result), nil
 }
 
 func DefaultConfigDir() string {
