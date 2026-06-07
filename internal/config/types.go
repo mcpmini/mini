@@ -160,6 +160,10 @@ type ServerConfig struct {
 	RuntimeAdded bool `yaml:"-" json:"-"`
 }
 
+func (sc ServerConfig) IsEnabled() bool {
+	return sc.Enabled == nil || *sc.Enabled
+}
+
 // AuthConfig describes how to authenticate with an upstream server.
 type AuthConfig struct {
 	// Type: "apikey", "bearer", "oauth2"

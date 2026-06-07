@@ -246,6 +246,15 @@ func interpolateEnv(data []byte) ([]byte, error) {
 	return []byte(result), nil
 }
 
+func FindServer(servers []ServerConfig, name string) *ServerConfig {
+	for i := range servers {
+		if servers[i].Name == name {
+			return &servers[i]
+		}
+	}
+	return nil
+}
+
 func DefaultConfigDir() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".mini")
