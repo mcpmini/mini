@@ -372,6 +372,7 @@ func (st *sessionStore) evictIdle(deadline time.Time) {
 	}
 	st.mu.Unlock()
 	for _, s := range toClose {
+		s.markAborted() // unblock any goroutine waiting in waitInitialized
 		s.Close()
 	}
 }

@@ -129,6 +129,30 @@ func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
 	}
 }
 
+func TestSessionStore_evictIdle_unblocksPendingWaiters(t *testing.T) {
+	st := newSessionStore()
+	s := st.getOrCreate("stale")
+	s.mu.Lock()
+	s.lastUsed = time.Now().Add(-2 * time.Hour)
+	s.mu.Unlock()
+
+	unblocked := make(chan bool, 1)
+	go func() {
+		unblocked <- s.waitInitialized(context.Background())
+	}()
+
+	st.evictIdle(time.Now().Add(-time.Hour))
+
+	select {
+	case got := <-unblocked:
+		if got {
+			t.Error("waitInitialized should return false for evicted session")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("waitInitialized blocked after session eviction")
+	}
+}
+
 func TestNewSessionID_unique(t *testing.T) {
 	a, b := transport.NewSessionID(), transport.NewSessionID()
 	if a == "" || b == "" {

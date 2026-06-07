@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
@@ -345,13 +346,45 @@ func TestHTTPServer_GetAllowHeader(t *testing.T) {
 	}
 }
 
-
 func TestHTTPServer_SSEXAccelBuffering(t *testing.T) {
 	_, ts := newHTTPTestServer(t)
 	resp := requestToolsList(t, ts, "text/event-stream")
 	defer resp.Body.Close()
 	if v := resp.Header.Get("X-Accel-Buffering"); v != "no" {
 		t.Errorf("expected X-Accel-Buffering: no, got %q", v)
+	}
+}
+
+// TestHTTPServer_staleSessionFails proves that a session ID from a dead daemon instance
+// gets a prompt error rather than blocking indefinitely on the new daemon.
+func TestHTTPServer_staleSessionFails(t *testing.T) {
+	_, ts1 := newHTTPTestServer(t)
+	sessionID := initSession(t, ts1)
+	ts1.Close() // simulate daemon restart
+
+	_, ts2 := newHTTPTestServer(t)
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "list", "arguments": map[string]any{}},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		resp := mcpPost(t, ts2, body, sessionID)
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		var rpc map[string]any
+		json.Unmarshal(b, &rpc) //nolint:errcheck
+		if rpc["error"] == nil {
+			t.Errorf("expected JSON-RPC error for stale session, got: %s", b)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("stale session blocked indefinitely — daemon restart hang not fixed")
 	}
 }
 
