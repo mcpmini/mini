@@ -1,0 +1,9 @@
+{
+  "client_id": "https://minimcp.github.io/minimcp/oauth/client-metadata.json",
+  "client_name": "mini",
+  "client_uri": "https://github.com/minimcp/minimcp",
+  "redirect_uris": ["http://127.0.0.1:6464/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}

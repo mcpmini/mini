@@ -67,6 +67,10 @@ type pkceFlowResult struct {
 func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) {
 	s.cancelExistingAuthFlow(serverName)
 	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	if err := auth.ResolveEndpoints(authCtx, s.configDir, serverName, &sc); err != nil {
+		cancel()
+		return pkceFlowResult{}, fmt.Errorf("resolve oauth endpoints: %w", err)
+	}
 	authURL, doneCh, err := auth.StartPKCEFlow(authCtx, sc.Auth)
 	if err != nil {
 		cancel()

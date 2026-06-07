@@ -26,46 +26,48 @@ func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 	sc.Headers[headerName] = "Bearer " + accessToken
 }
 
-func ResolveConfig(ctx context.Context, configDir, serverName string, ac *config.AuthConfig, serverURL string) error {
-	if ac.AuthURL != "" && ac.TokenURL != "" && ac.ClientID != "" {
+// ResolveEndpoints fills in missing OAuth endpoints on sc.Auth via RFC 9728
+// discovery and dynamic client registration, and sets sc.Auth.ResourceURL from
+// sc.URL. It is a no-op if AuthURL, TokenURL, and ClientID are all already set.
+func ResolveEndpoints(ctx context.Context, configDir, serverName string, sc *config.ServerConfig) error {
+	a := sc.Auth
+	a.ResourceURL = sc.URL
+	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
 		return nil
 	}
-	regURL, err := discoverEndpoints(ctx, serverURL, ac)
+	meta, err := discoverAndApply(ctx, sc.URL, a)
 	if err != nil {
 		return err
 	}
-	if ac.ClientID == "" {
-		return resolveClientID(ctx, configDir, serverName, ac, regURL)
+	if a.ClientID == "" {
+		return resolveClientID(ctx, configDir, serverName, a, meta)
 	}
 	return nil
 }
 
-func discoverEndpoints(ctx context.Context, serverURL string, ac *config.AuthConfig) (string, error) {
-	if ac.AuthURL != "" && ac.TokenURL != "" {
-		return "", nil
+func discoverAndApply(ctx context.Context, serverURL string, a *config.AuthConfig) (*ServerMeta, error) {
+	if a.AuthURL != "" && a.TokenURL != "" {
+		return nil, nil
 	}
 	meta, err := Discover(ctx, serverURL)
 	if err != nil {
-		return "", fmt.Errorf("discover oauth endpoints: %w", err)
+		return nil, fmt.Errorf("discover oauth endpoints: %w", err)
 	}
-	if err := fillEndpoints(ac, meta); err != nil {
-		return "", err
-	}
-	return meta.RegistrationURL, nil
+	return meta, applyDiscoveredEndpoints(a, meta)
 }
 
-func fillEndpoints(ac *config.AuthConfig, meta *ServerMeta) error {
-	if ac.AuthURL == "" {
+func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
+	if a.AuthURL == "" {
 		if err := validateEndpointURL(meta.AuthURL, "authorization_endpoint"); err != nil {
 			return err
 		}
-		ac.AuthURL = meta.AuthURL
+		a.AuthURL = meta.AuthURL
 	}
-	if ac.TokenURL == "" {
+	if a.TokenURL == "" {
 		if err := validateEndpointURL(meta.TokenURL, "token_endpoint"); err != nil {
 			return err
 		}
-		ac.TokenURL = meta.TokenURL
+		a.TokenURL = meta.TokenURL
 	}
 	return validateEndpointURL(meta.RegistrationURL, "registration_endpoint")
 }
@@ -80,14 +82,18 @@ func validateEndpointURL(endpoint, name string) error {
 	return nil
 }
 
-func resolveClientID(ctx context.Context, configDir, serverName string, ac *config.AuthConfig, regURL string) error {
-	reg, err := LoadRegistration(configDir, serverName)
-	if err == nil {
-		ac.ClientID = reg.ClientID
+func resolveClientID(ctx context.Context, configDir, serverName string, a *config.AuthConfig, meta *ServerMeta) error {
+	if meta != nil && meta.CIMDSupported {
+		a.ClientID = ClientMetadataURL
 		return nil
 	}
-	if !IsNotFound(err) {
+	found, err := applyExistingClientReg(configDir, serverName, a)
+	if err != nil || found {
 		return err
+	}
+	regURL := ""
+	if meta != nil {
+		regURL = meta.RegistrationURL
 	}
 	if regURL == "" {
 		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
@@ -96,6 +102,18 @@ func resolveClientID(ctx context.Context, configDir, serverName string, ac *conf
 	if err != nil {
 		return err
 	}
-	ac.ClientID = clientID
+	a.ClientID = clientID
 	return SaveRegistration(configDir, serverName, &Registration{ClientID: clientID})
+}
+
+func applyExistingClientReg(configDir, serverName string, a *config.AuthConfig) (bool, error) {
+	reg, err := LoadRegistration(configDir, serverName)
+	if err == nil {
+		a.ClientID = reg.ClientID
+		return true, nil
+	}
+	if !IsNotFound(err) {
+		return false, err
+	}
+	return false, nil
 }
