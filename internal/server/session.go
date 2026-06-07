@@ -250,6 +250,7 @@ func (s *Session) notify(msg json.RawMessage) {
 	select {
 	case s.notifyCh <- msg:
 	default:
+		slog.Debug("notification queue full, dropping event")
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -106,6 +107,7 @@ func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (json.RawMess
 			return nil, err
 		}
 		delay := nextRetryDelay(r.delay, &backoff)
+		slog.Warn("upstream http request retrying", "method", rpcReq.Method, "attempt", i+1, "delay", delay)
 		if !sleepCtx(ctx, delay) {
 			return nil, ctx.Err()
 		}

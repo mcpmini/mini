@@ -15,6 +15,17 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+func (s *Server) logToolError(server, tool string, latencyMs int64, err error) {
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	if isConnError(err) || errors.Is(err, context.DeadlineExceeded) {
+		s.logger.Warn("tool call failed", "server", server, "tool", tool, "latency_ms", latencyMs, "err", err)
+		return
+	}
+	s.logger.Debug("tool error", "server", server, "tool", tool, "latency_ms", latencyMs, "err", err)
+}
+
 type listParams struct {
 	Query  string `json:"query"`
 	Tool   string `json:"tool"`
@@ -159,8 +170,10 @@ func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *regis
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
 		session.recordCall(latencyMs, 0, true)
+		s.logToolError(server, tool, latencyMs, toolErr)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
+	s.logger.Debug("tool call", "server", server, "tool", tool, "latency_ms", latencyMs)
 	return s.buildEnvelope(server, tool, raw, session, upstream, latencyMs)
 }
 
@@ -232,6 +245,7 @@ func (s *Server) handleSessionConnErr(upstream *upstreamServer, session *Session
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return err
 	}
+	s.logger.Warn("per-session connection error", "server", upstream.cfg.Name, "err", err)
 	// EvictConn removes only if this conn is still the active one (identity
 	// check), then we close it ourselves. This prevents a concurrent
 	// goroutine's close from racing with our in-flight call.
@@ -297,12 +311,17 @@ func mergeArgs(defaults, overrides map[string]any) map[string]any {
 
 func (s *Server) buildEnvelope(server, tool string, raw json.RawMessage, session *Session, upstream *upstreamServer, latencyMs int64) (any, error) {
 	projCfg := s.resolveProjection(server, tool, session)
+	projStart := time.Now()
 	env, stats, err := s.buildProjectedEnvelope(server, tool, raw, projCfg)
 	if err != nil {
 		return nil, err
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	upstream.recordSaved(session, latencyMs, saved)
+	s.logger.Debug("projection applied",
+		"server", server, "tool", tool,
+		"raw_tokens", stats.RawTokens, "summary_tokens", stats.SummaryTokens,
+		"tokens_saved", saved, "proj_ms", time.Since(projStart).Milliseconds())
 	return s.formatEnvelope(server, tool, env, projCfg), nil
 }
 

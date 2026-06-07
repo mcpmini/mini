@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -62,6 +63,7 @@ func (u *upstreamServer) callTool(ctx context.Context, toolName string, args map
 		case u.sem <- struct{}{}:
 			defer func() { <-u.sem }()
 		default:
+			slog.Warn("upstream request queue full", "server", u.cfg.Name, "limit", cap(u.sem))
 			return nil, fmt.Errorf("upstream %s: request queue full (limit %d)", u.cfg.Name, cap(u.sem))
 		}
 	}

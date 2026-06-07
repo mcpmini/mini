@@ -167,6 +167,7 @@ func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, 
 	if err := s.AddUpstream(ctx, *p.ServerCfg); err != nil {
 		return nil, err
 	}
+	s.logger.Info("server added at runtime", "server", p.ServerCfg.Name)
 	return map[string]any{"ok": true, "server": p.ServerCfg.Name}, nil
 }
 
@@ -214,6 +215,7 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 	}
 	s.sessions.closeServerConnections(serverName)
 	s.reg.RemoveServer(serverName)
+	s.logger.Info("server removed at runtime", "server", serverName)
 	return map[string]any{"ok": true, "server": serverName}, nil
 }
 
