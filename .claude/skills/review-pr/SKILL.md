@@ -85,6 +85,12 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 - `time.Sleep` in production code — usually polling instead of proper signaling
 - `atomic.Value` or `atomic.Pointer` storing a struct with pointer fields — the whole value must be swapped atomically; partial field updates still race
 - `Close()` method without `sync.Once` — double-close panics channels, corrupts state
+- `http.Server.Shutdown(context.Background())` — if any handler can block indefinitely (disabled tool timeout, hanging subprocess), the process never exits; always pass a bounded context
+- RLock held across a network call — blocks reconnect from taking the write lock; snapshot the pointer under the lock, release, then call
+
+**Blocking without guaranteed escape** — for every `select` that blocks on channels: trace every code path that closes or sends to each case channel. Are all equivalent calling paths (different transports, error returns, shutdown sequences, session eviction) guaranteed to eventually fire one of the cases? A `select` on `done | abort | ctx.Done()` where `abort` is only closed in the stdio path but not the HTTP path blocks forever on HTTP after session eviction or daemon restart. The race detector will not catch this. Also check: is there a deadline on the blocking context as a backstop even if the primary escape is missing?
+
+**Asymmetric cleanup across equivalent paths** — when a lifecycle action (closing a channel, calling a cancel func, calling `markAborted`, setting a flag) runs in one handling path, grep for the equivalent action in every other path that shares the same lifecycle. If `serveLoop` (stdio) calls `markAborted()` on exit but the HTTP handler never does, every HTTP session is stuck after eviction or restart.
 
 **Proof standard**: name the two goroutines, the shared variable, and the specific lock-release points that create the window. Not "could race" — "races when X and Y run concurrently because Z is not held during steps A–B."
 
@@ -176,6 +182,8 @@ Read the tests for every changed function. For each:
 ```bash
 go test -race -tags test -run TestReview ./path/to/package/... -v
 ```
+
+**Transport/path symmetry** — if the fix addresses a bug in one code path (e.g. HTTP handler), confirm there is a test that exercises that specific path, not a test that only covers the other path (stdio). A stdio test passing does not prove the HTTP path is fixed.
 
 **Consider REJECT on test coverage alone** if:
 - An auth, permission, or token-handling path was modified with no test coverage.
