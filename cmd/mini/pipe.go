@@ -21,7 +21,7 @@ import (
 
 func runPipe(configDir string, args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: mini pipe <list|run> [flags]")
+		fmt.Fprintln(os.Stderr, "usage: mini pipe <list|run|check> [flags]")
 		os.Exit(2)
 	}
 	sub, rest := args[0], args[1:]
@@ -30,6 +30,8 @@ func runPipe(configDir string, args []string) {
 		runPipeList(configDir)
 	case "run":
 		runPipeRun(configDir, rest)
+	case "check":
+		runPipeCheck(configDir, rest)
 	default:
 		fmt.Fprintf(os.Stderr, "mini pipe: unknown subcommand %q\n", sub)
 		os.Exit(2)
@@ -37,20 +39,25 @@ func runPipe(configDir string, args []string) {
 }
 
 func runPipeList(configDir string) {
-	pipeCfgs, err := config.LoadPipes(configDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "mini: load pipes: %v\n", err)
+	pipeCfgs, loadErr := config.LoadPipes(configDir)
+	if loadErr != nil {
+		fmt.Fprintf(os.Stderr, "mini: pipe load errors:\n%v\n\n", loadErr)
 	}
-	if len(pipeCfgs) == 0 {
+	if len(pipeCfgs) == 0 && loadErr == nil {
 		fmt.Println("no pipes loaded (drop YAML files in ~/.mini/pipes/)")
 		return
 	}
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tSTEPS\tDESCRIPTION")
-	for _, p := range pipeCfgs {
-		fmt.Fprintf(w, "%s\t%d\t%s\n", p.Name, len(p.Steps), p.Description)
+	if len(pipeCfgs) > 0 {
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "NAME\tSTEPS\tDESCRIPTION")
+		for _, p := range pipeCfgs {
+			fmt.Fprintf(w, "%s\t%d\t%s\n", p.Name, len(p.Steps), p.Description)
+		}
+		w.Flush()
 	}
-	w.Flush()
+	if loadErr != nil {
+		os.Exit(1)
+	}
 }
 
 type pipeRunFlags struct {
@@ -80,7 +87,11 @@ func runPipeRun(configDir string, args []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	result := pipeExec(ctx, configDir, pipeName, inputs)
-	b, _ := json.MarshalIndent(result, "", "  ")
+	b, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mini: marshal result: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Println(string(b))
 	if !result.OK {
 		os.Exit(1)
@@ -103,11 +114,18 @@ func daemonPipeExec(ctx context.Context, port int, pipeName string, inputs map[s
 	if err != nil {
 		return nil, err
 	}
-	params, _ := json.Marshal(transport.ToolCallParams{Name: "call", Arguments: map[string]any{
+	return callPipeViaMCP(ctx, conn, pipeName, inputs)
+}
+
+func callPipeViaMCP(ctx context.Context, conn transport.Connection, pipeName string, inputs map[string]any) (*pipes.Result, error) {
+	params, err := json.Marshal(transport.ToolCallParams{Name: "call", Arguments: map[string]any{
 		"server": config.UserServerName,
 		"tool":   pipeName,
 		"params": inputs,
 	}})
+	if err != nil {
+		return nil, err
+	}
 	raw, err := conn.Call(ctx, "tools/call", json.RawMessage(params))
 	if err != nil {
 		return nil, err
@@ -163,4 +181,48 @@ func buildPipeRunCaller(ctx context.Context, configDir string, cfg *config.Confi
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	srv := buildAndConnectServer(ctx, cfg, configDir, logger, servers)
 	return srv.MakeRawCaller(ctx)
+}
+
+func runPipeCheck(configDir string, args []string) {
+	name := ""
+	if len(args) > 0 {
+		name = args[0]
+	}
+	pipeCfgs, err := config.LoadPipes(configDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mini: pipe load errors:\n%v\n", err)
+		os.Exit(1)
+	}
+	if len(pipeCfgs) == 0 {
+		fmt.Println("no pipes found")
+		return
+	}
+	checkPipes(selectPipesToCheck(pipeCfgs, name))
+}
+
+func selectPipesToCheck(pipeCfgs []config.PipeConfig, name string) []config.PipeConfig {
+	if name == "" {
+		return pipeCfgs
+	}
+	p := findPipeByName(pipeCfgs, name)
+	if p == nil {
+		fmt.Fprintf(os.Stderr, "mini: pipe %q not found\n", name)
+		os.Exit(1)
+	}
+	return []config.PipeConfig{*p}
+}
+
+func checkPipes(toCheck []config.PipeConfig) {
+	exitCode := 0
+	for _, p := range toCheck {
+		if _, err := pipes.Compile(p); err != nil {
+			fmt.Fprintf(os.Stderr, "  ERROR %s: %v\n", p.Name, err)
+			exitCode = 1
+		} else {
+			fmt.Printf("  OK    %s\n", p.Name)
+		}
+	}
+	if exitCode != 0 {
+		os.Exit(exitCode)
+	}
 }

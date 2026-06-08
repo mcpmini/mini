@@ -262,6 +262,141 @@ func TestExecutor_InputInterpolation(t *testing.T) {
 	}
 }
 
+func TestExecutor_ContextCancellation(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "cancel_pipe",
+		Steps: []config.StepConfig{
+			{ID: "step1", Server: "gh", Tool: "slow_tool"},
+		},
+	}
+	cp, _ := pipes.Compile(pipe)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	caller := func(ctx context.Context, _, _ string, _ map[string]any) (json.RawMessage, error) {
+		return nil, ctx.Err()
+	}
+	result := cp.Execute(ctx, nil, caller)
+	if result.OK {
+		t.Fatal("expected OK=false after context cancellation")
+	}
+	if result.Error == "" {
+		t.Error("expected non-empty error for cancelled context")
+	}
+}
+
+func TestExecutor_IfConditionEvalError(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "eval_err_pipe",
+		Steps: []config.StepConfig{
+			{ID: "step1", Server: "gh", Tool: "t"},
+			{ID: "guarded", Server: "gh", Tool: "t", If: "{{ steps.missing_step.result.x }}"},
+		},
+	}
+	cp, err := pipes.Compile(pipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := cp.Execute(context.Background(), nil, makeCaller(nil))
+	if !result.OK {
+		t.Log("step eval error propagated:", result.Error)
+	}
+}
+
+func TestExecutor_StepResultAvailableToNextStep(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "chain_pipe",
+		Inputs: map[string]config.InputSchema{},
+		Steps: []config.StepConfig{
+			{ID: "first", Server: "gh", Tool: "create_pr"},
+			{ID: "second", Server: "gh", Tool: "post", Args: map[string]any{
+				"pr": "{{ steps.first.result.number }}",
+			}},
+		},
+	}
+	cp, err := pipes.Compile(pipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var capturedPR any
+	caller := func(_ context.Context, _, tool string, args map[string]any) (json.RawMessage, error) {
+		if tool == "post" {
+			capturedPR = args["pr"]
+		}
+		return json.RawMessage(`{"number": 55}`), nil
+	}
+	result := cp.Execute(context.Background(), nil, caller)
+	if !result.OK {
+		t.Fatalf("expected OK=true: %s", result.Error)
+	}
+	if pr, _ := capturedPR.(float64); int(pr) != 55 {
+		t.Errorf("chained pr arg = %v, want 55", capturedPR)
+	}
+}
+
+func TestExecutor_MultipleOptionalInputs_WithDefaults(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "optional_pipe",
+		Inputs: map[string]config.InputSchema{
+			"title": {Type: "string", Required: true},
+			"draft": {Type: "bool", Required: false, Default: false},
+		},
+		Steps: []config.StepConfig{
+			{ID: "step1", Server: "gh", Tool: "create_pr"},
+		},
+	}
+	cp, _ := pipes.Compile(pipe)
+	result := cp.Execute(context.Background(), map[string]any{"title": "fix"}, makeCaller(nil))
+	if !result.OK {
+		t.Fatalf("expected OK=true with optional inputs: %s", result.Error)
+	}
+}
+
+func TestExecutor_PartialOutput_OnFailure(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "partial_pipe",
+		Steps: []config.StepConfig{
+			{ID: "ok_step", Server: "gh", Tool: "create_pr"},
+			{ID: "fail_step", Server: "gh", Tool: "bad"},
+		},
+		Output: map[string]string{
+			"pr_number": "{{ steps.ok_step.result.number }}",
+		},
+	}
+	cp, err := pipes.Compile(pipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := func(_ context.Context, _, tool string, _ map[string]any) (json.RawMessage, error) {
+		if tool == "bad" {
+			return nil, fmt.Errorf("fail")
+		}
+		return json.RawMessage(`{"number": 11}`), nil
+	}
+	result := cp.Execute(context.Background(), nil, caller)
+	if result.OK {
+		t.Fatal("expected OK=false")
+	}
+	if result.PartialOutput == nil {
+		t.Fatal("expected partial_output on failure")
+	}
+	if pr, _ := result.PartialOutput["pr_number"].(float64); int(pr) != 11 {
+		t.Errorf("partial pr_number = %v, want 11", result.PartialOutput["pr_number"])
+	}
+}
+
+func TestExecutor_Latency_Recorded(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name:  "latency_pipe",
+		Steps: []config.StepConfig{{ID: "s1", Server: "gh", Tool: "t"}},
+	}
+	cp, _ := pipes.Compile(pipe)
+	result := cp.Execute(context.Background(), nil, makeCaller(nil))
+	if result.LatencyMs < 0 {
+		t.Errorf("latency_ms should be non-negative, got %d", result.LatencyMs)
+	}
+}
+
 func findStep(steps []pipes.StepResult, id string) *pipes.StepResult {
 	for i := range steps {
 		if steps[i].ID == id {

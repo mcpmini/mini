@@ -111,6 +111,9 @@ func validateStep(pipeName string, step StepConfig, seen map[string]bool) error 
 	if len(step.Set) > 0 && (step.Server != "" || step.Tool != "") {
 		errs = append(errs, fmt.Errorf("pipe %q step %q: set and server/tool are mutually exclusive", pipeName, step.ID))
 	}
+	if len(step.Set) == 0 && step.Tool == "" {
+		errs = append(errs, fmt.Errorf("pipe %q step %q: tool is required for non-set steps", pipeName, step.ID))
+	}
 	if step.Server != "" && !ValidServerName.MatchString(step.Server) {
 		errs = append(errs, fmt.Errorf("pipe %q step %q: invalid server name %q", pipeName, step.ID, step.Server))
 	}

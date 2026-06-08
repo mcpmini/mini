@@ -99,3 +99,107 @@ func TestAddServer_RejectsReservedName(t *testing.T) {
 		t.Error("tool under reserved server name should not be discoverable")
 	}
 }
+
+func TestAddPipes_ExplicitProtectedPermission(t *testing.T) {
+	r := registry.New()
+	r.AddPipes([]config.PipeConfig{
+		{
+			Name:       "protected_pipe",
+			Permission: "protected",
+			Steps:      []config.StepConfig{{ID: "s", Server: "gh", Tool: "t"}},
+		},
+	}, noopLookup)
+
+	e, err := r.Lookup("user.protected_pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Permission != config.PermProtected {
+		t.Errorf("expected protected, got %s", e.Permission)
+	}
+}
+
+func TestAddPipes_Idempotent_Replace(t *testing.T) {
+	r := registry.New()
+	r.AddPipes([]config.PipeConfig{
+		{Name: "my_pipe", Description: "v1", Steps: []config.StepConfig{{ID: "s", Server: "gh", Tool: "t"}}},
+	}, noopLookup)
+	r.AddPipes([]config.PipeConfig{
+		{Name: "my_pipe", Description: "v2", Steps: []config.StepConfig{{ID: "s", Server: "gh", Tool: "t"}}},
+	}, noopLookup)
+
+	e, err := r.Lookup("user.my_pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Description != "v2" {
+		t.Errorf("expected description v2, got %q", e.Description)
+	}
+}
+
+func TestAddPipes_HiddenPermission(t *testing.T) {
+	r := registry.New()
+	r.AddPipes([]config.PipeConfig{
+		{
+			Name:       "hidden_pipe",
+			Permission: "hidden",
+			Steps:      []config.StepConfig{{ID: "s", Server: "gh", Tool: "t"}},
+		},
+	}, noopLookup)
+
+	if _, err := r.Lookup("user.hidden_pipe"); err == nil {
+		t.Error("expected hidden pipe to not be lookupable")
+	}
+	all := r.All()
+	for _, ce := range all {
+		if ce.Name == "user.hidden_pipe" {
+			t.Error("hidden pipe should not appear in All()")
+		}
+	}
+}
+
+func TestAddPipes_InputSchemaBuilt(t *testing.T) {
+	r := registry.New()
+	r.AddPipes([]config.PipeConfig{
+		{
+			Name: "input_pipe",
+			Inputs: map[string]config.InputSchema{
+				"title": {Type: "string", Required: true},
+			},
+			Steps: []config.StepConfig{{ID: "s", Server: "gh", Tool: "t"}},
+		},
+	}, noopLookup)
+
+	e, err := r.Lookup("user.input_pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(e.InputSchema) == 0 {
+		t.Error("expected non-empty InputSchema for pipe with inputs")
+	}
+}
+
+func TestAddPipes_AppearsInAll(t *testing.T) {
+	r := registry.New()
+	r.AddPipes([]config.PipeConfig{
+		{Name: "my_pipe", Description: "a pipe", Steps: []config.StepConfig{{ID: "s", Server: "gh", Tool: "t"}}},
+	}, noopLookup)
+
+	e, err := r.Lookup("user.my_pipe")
+	if err != nil {
+		t.Fatalf("pipe not found via Lookup: %v", err)
+	}
+	if e.Pipe == nil {
+		t.Error("pipe entry should have non-nil Pipe field")
+	}
+
+	found := false
+	for _, ce := range r.All() {
+		if ce.Name == "user.my_pipe" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("pipe did not appear in All()")
+	}
+}
