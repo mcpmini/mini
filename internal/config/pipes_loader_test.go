@@ -5,6 +5,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -155,7 +156,7 @@ steps:
 				if err == nil {
 					t.Fatalf("expected error containing %q, got nil", tc.wantErr)
 				}
-				if !containsString(err.Error(), tc.wantErr) {
+				if !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error %q does not contain %q", err.Error(), tc.wantErr)
 				}
 				return
@@ -170,6 +171,149 @@ steps:
 				t.Fatalf("pipe name = %q, want %q", pipes[0].Name, tc.wantName)
 			}
 		})
+	}
+}
+
+func TestLoadPipes_NoPipesDir_ReturnsEmpty(t *testing.T) {
+	dir := t.TempDir()
+	pipeCfgs, err := config.LoadPipes(dir)
+	if err != nil {
+		t.Fatalf("unexpected error when pipes dir does not exist: %v", err)
+	}
+	if len(pipeCfgs) != 0 {
+		t.Errorf("expected 0 pipes, got %d", len(pipeCfgs))
+	}
+}
+
+func TestLoadPipes_MultipleFiles_AllLoaded(t *testing.T) {
+	dir := t.TempDir()
+	pipesDir := filepath.Join(dir, "pipes")
+	if err := os.MkdirAll(pipesDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"pipe_a.yaml": `
+name: pipe_a
+steps:
+  - id: s1
+    server: gh
+    tool: create_pr
+`,
+		"pipe_b.yaml": `
+name: pipe_b
+steps:
+  - id: s1
+    server: slack
+    tool: post
+`,
+	}
+	for fname, content := range files {
+		if err := os.WriteFile(filepath.Join(pipesDir, fname), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pipeCfgs, err := config.LoadPipes(dir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(pipeCfgs) != 2 {
+		t.Errorf("expected 2 pipes, got %d", len(pipeCfgs))
+	}
+}
+
+func TestLoadPipes_OneInvalid_OtherLoaded(t *testing.T) {
+	dir := t.TempDir()
+	pipesDir := filepath.Join(dir, "pipes")
+	if err := os.MkdirAll(pipesDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"good_pipe.yaml": `
+name: good_pipe
+steps:
+  - id: s1
+    server: gh
+    tool: create_pr
+`,
+		"bad_pipe.yaml": `
+name: wrong_name
+steps:
+  - id: s1
+    server: gh
+    tool: some_tool
+`,
+	}
+	for fname, content := range files {
+		if err := os.WriteFile(filepath.Join(pipesDir, fname), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pipeCfgs, err := config.LoadPipes(dir)
+	if err == nil {
+		t.Fatal("expected error for invalid pipe, got nil")
+	}
+	if len(pipeCfgs) != 1 {
+		t.Errorf("expected 1 valid pipe, got %d", len(pipeCfgs))
+	}
+}
+
+func TestLoadPipes_InvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	pipesDir := filepath.Join(dir, "pipes")
+	if err := os.MkdirAll(pipesDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pipesDir, "broken.yaml"), []byte("{{not valid yaml: ["), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.LoadPipes(dir)
+	if err == nil {
+		t.Fatal("expected error for invalid YAML, got nil")
+	}
+}
+
+func TestLoadPipes_MissingTool_Rejected(t *testing.T) {
+	dir := t.TempDir()
+	pipesDir := filepath.Join(dir, "pipes")
+	if err := os.MkdirAll(pipesDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	content := `
+name: notool
+steps:
+  - id: step1
+    server: gh
+`
+	if err := os.WriteFile(filepath.Join(pipesDir, "notool.yaml"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := config.LoadPipes(dir)
+	if err == nil {
+		t.Fatal("expected error for step missing tool, got nil")
+	}
+	if !strings.Contains(err.Error(), "tool is required") {
+		t.Errorf("error %q does not contain 'tool is required'", err.Error())
+	}
+}
+
+func TestEnsurePipesDir_CreatesMissingDir(t *testing.T) {
+	dir := t.TempDir()
+	pipesDir := filepath.Join(dir, "pipes")
+	if err := config.EnsurePipesDir(dir); err != nil {
+		t.Fatalf("EnsurePipesDir failed: %v", err)
+	}
+	if _, err := os.Stat(pipesDir); os.IsNotExist(err) {
+		t.Error("pipes dir was not created")
+	}
+}
+
+func TestEnsurePipesDir_IdempotentOnExisting(t *testing.T) {
+	dir := t.TempDir()
+	if err := config.EnsurePipesDir(dir); err != nil {
+		t.Fatalf("first call failed: %v", err)
+	}
+	if err := config.EnsurePipesDir(dir); err != nil {
+		t.Fatalf("second call failed: %v", err)
 	}
 }
 
@@ -198,19 +342,7 @@ command: some-server
 	if err == nil {
 		t.Fatal("expected error for reserved server name 'user', got nil")
 	}
-	if !containsString(err.Error(), "reserved") {
+	if !strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("error %q does not contain 'reserved'", err.Error())
 	}
-}
-
-func containsString(s, sub string) bool {
-	return len(s) >= len(sub) && (s == sub || len(sub) == 0 ||
-		func() bool {
-			for i := 0; i <= len(s)-len(sub); i++ {
-				if s[i:i+len(sub)] == sub {
-					return true
-				}
-			}
-			return false
-		}())
 }

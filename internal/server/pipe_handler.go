@@ -10,21 +10,14 @@ import (
 	"github.com/mcpmini/mini/internal/registry"
 )
 
+
 func (s *Server) executePipe(ctx context.Context, entry *registry.ToolEntry, inputs map[string]any, session *Session) (any, error) {
 	cp := s.getPipe(entry.Name)
 	if cp == nil {
 		return nil, fmt.Errorf("pipe not found: %s", entry.Name)
 	}
 	caller := s.makePipeCaller(ctx, session)
-	result := cp.Execute(ctx, inputs, caller)
-	return pipeResultToContent(result), nil
-}
-
-func pipeResultToContent(result *pipes.Result) map[string]any {
-	b, _ := json.Marshal(result)
-	var out map[string]any
-	json.Unmarshal(b, &out) //nolint:errcheck
-	return out
+	return cp.Execute(ctx, inputs, caller), nil
 }
 
 func (s *Server) makePipeCaller(ctx context.Context, session *Session) pipes.CallerFunc {

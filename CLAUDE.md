@@ -176,8 +176,11 @@ text := toolResultText(t, resp)
 
 ### CLI subcommands
 
-`mini [--config DIR] <command>`: `serve` (default), `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
+`mini [--config DIR] <command>`: `serve` (default), `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`, `pipe`
 
 - `serve [--http ADDR] [--standalone]` — stdio proxy; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
 - `daemon [--port N]` — run as shared HTTP daemon (background)
 - `daemon status` — show whether the daemon is running
+- `pipe list` — list all loaded pipes with step counts
+- `pipe run <name> [--args '{"k":"v"}']` — execute a pipe directly (routes through daemon if running)
+- `pipe check [name]` — validate pipe YAML and expressions; exits non-zero on any error
