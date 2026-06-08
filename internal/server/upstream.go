@@ -88,10 +88,15 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 }
 
 func (u *upstreamServer) callConn(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
+	// Read conn under the lock, then release before the network call so a
+	// concurrent reconnect can take the write lock without waiting for all
+	// in-flight calls to finish. HTTPConnection.Close is a no-op so a
+	// swap-during-call is safe; StdioConnection kills the subprocess, which
+	// unblocks the call with an error.
 	u.mu.RLock()
-	raw, err := u.conn.Call(ctx, "tools/call", params)
+	conn := u.conn
 	u.mu.RUnlock()
-	return raw, err
+	return conn.Call(ctx, "tools/call", params)
 }
 
 func (u *upstreamServer) classifyCallError(err error) error {

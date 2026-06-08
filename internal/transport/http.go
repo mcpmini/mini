@@ -30,12 +30,16 @@ type HTTPConnection struct {
 	mu                      sync.Mutex
 }
 
-const defaultHTTPClientTimeout = 10 * time.Minute
+// defaultHTTPClientTimeout is the hard network-level backstop. Set to 2× the default
+// ToolTimeout (30s) so the per-call deadline fires first in normal operation and this
+// only activates when context cancellation fails at the OS/network level. Users with
+// slow tools (tool_timeout > 60s) should set http_client_timeout in their server YAML.
+const defaultHTTPClientTimeout = 60 * time.Second
 
 type HTTPConnectionConfig struct {
 	URL     string
 	Headers map[string]string
-	// ClientTimeout is the hard network-level deadline. Zero means 10 minutes.
+	// ClientTimeout is the hard network-level deadline. Zero means 60 seconds.
 	ClientTimeout time.Duration
 	// DisableRetryOnRateLimit disables automatic 429/503 retry. When true,
 	// rate-limit errors are returned immediately so the caller can decide.

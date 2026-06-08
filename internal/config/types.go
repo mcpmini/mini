@@ -131,7 +131,7 @@ type ServerConfig struct {
 	ToolTimeout string `yaml:"tool_timeout,omitempty"`
 
 	// HTTPClientTimeout is the hard deadline on the HTTP transport connection, applied
-	// independently of ToolTimeout as a network-level backstop. Default "10m".
+	// independently of ToolTimeout as a network-level backstop. Default "60s".
 	// Set to "0" to disable (not recommended for production).
 	HTTPClientTimeout string `yaml:"http_client_timeout,omitempty"`
 
