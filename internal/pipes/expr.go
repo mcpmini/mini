@@ -23,7 +23,7 @@ type CompiledPipe struct {
 }
 
 type compiledStep struct {
-	ifProg  *vm.Program
+	ifProg   *vm.Program
 	setProgs map[string]*vm.Program
 	argProgs map[string][]*exprSegment // key → parsed segments
 }
@@ -41,8 +41,14 @@ func Compile(pipe config.PipeConfig) (*CompiledPipe, error) {
 		stepExprs:   make(map[string]*compiledStep),
 		outputExprs: make(map[string][]*exprSegment),
 	}
-	knownStepIDs := make(map[string]bool)
+	errs := cp.compileSteps(pipe)
+	errs = append(errs, cp.compileOutput(pipe)...)
+	return cp, errors.Join(errs...)
+}
+
+func (cp *CompiledPipe) compileSteps(pipe config.PipeConfig) []error {
 	var errs []error
+	knownStepIDs := make(map[string]bool)
 	for _, step := range pipe.Steps {
 		env := buildCompileEnv(pipe.Inputs, knownStepIDs)
 		cs, err := compileStep(step, env)
@@ -53,7 +59,12 @@ func Compile(pipe config.PipeConfig) (*CompiledPipe, error) {
 		}
 		knownStepIDs[step.ID] = true
 	}
-	env := buildCompileEnv(pipe.Inputs, knownStepIDs)
+	return errs
+}
+
+func (cp *CompiledPipe) compileOutput(pipe config.PipeConfig) []error {
+	var errs []error
+	env := buildCompileEnv(pipe.Inputs, knownStepIDsFrom(pipe))
 	for field, exprStr := range pipe.Output {
 		segs, err := compileStringExpr(exprStr, env)
 		if err != nil {
@@ -62,7 +73,15 @@ func Compile(pipe config.PipeConfig) (*CompiledPipe, error) {
 			cp.outputExprs[field] = segs
 		}
 	}
-	return cp, errors.Join(errs...)
+	return errs
+}
+
+func knownStepIDsFrom(pipe config.PipeConfig) map[string]bool {
+	ids := make(map[string]bool, len(pipe.Steps))
+	for _, s := range pipe.Steps {
+		ids[s.ID] = true
+	}
+	return ids
 }
 
 func buildCompileEnv(inputs map[string]config.InputSchema, knownStepIDs map[string]bool) map[string]any {
@@ -87,14 +106,26 @@ func compileStep(step config.StepConfig, env map[string]any) (*compiledStep, err
 		argProgs: make(map[string][]*exprSegment),
 	}
 	var errs []error
-	if step.If != "" {
-		prog, err := compileExpr(stripBraces(step.If), env)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("if: %w", err))
-		} else {
-			cs.ifProg = prog
-		}
+	errs = append(errs, compileIfExpr(step, env, cs)...)
+	errs = append(errs, compileSetExprs(step, env, cs)...)
+	errs = append(errs, compileArgExprs(step, env, cs)...)
+	return cs, errors.Join(errs...)
+}
+
+func compileIfExpr(step config.StepConfig, env map[string]any, cs *compiledStep) []error {
+	if step.If == "" {
+		return nil
 	}
+	prog, err := compileExpr(stripBraces(step.If), env)
+	if err != nil {
+		return []error{fmt.Errorf("if: %w", err)}
+	}
+	cs.ifProg = prog
+	return nil
+}
+
+func compileSetExprs(step config.StepConfig, env map[string]any, cs *compiledStep) []error {
+	var errs []error
 	for name, exprStr := range step.Set {
 		prog, err := compileExpr(stripBraces(exprStr), env)
 		if err != nil {
@@ -103,6 +134,11 @@ func compileStep(step config.StepConfig, env map[string]any) (*compiledStep, err
 			cs.setProgs[name] = prog
 		}
 	}
+	return errs
+}
+
+func compileArgExprs(step config.StepConfig, env map[string]any, cs *compiledStep) []error {
+	var errs []error
 	for key, val := range step.Args {
 		strVal, ok := val.(string)
 		if !ok {
@@ -115,7 +151,7 @@ func compileStep(step config.StepConfig, env map[string]any) (*compiledStep, err
 			cs.argProgs[key] = segs
 		}
 	}
-	return cs, errors.Join(errs...)
+	return errs
 }
 
 func hasExprSegment(segs []*exprSegment) bool {
@@ -127,17 +163,27 @@ func hasExprSegment(segs []*exprSegment) bool {
 	return false
 }
 
-// compileStringExpr parses a string that may contain {{ expr }} placeholders
-// and returns a slice of segments (literal text or compiled program).
 func compileStringExpr(s string, env map[string]any) ([]*exprSegment, error) {
 	matches := exprPattern.FindAllStringSubmatchIndex(s, -1)
 	if len(matches) == 0 {
 		return []*exprSegment{{literal: s}}, nil
 	}
+	segs, errs := parseExprSegments(s, matches, env)
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
+	out := make([]*exprSegment, len(segs))
+	for i := range segs {
+		out[i] = &segs[i]
+	}
+	return out, nil
+}
+
+func parseExprSegments(s string, matches [][]int, env map[string]any) ([]exprSegment, []error) {
 	var (
 		segs []exprSegment
-		pos  int
 		errs []error
+		pos  int
 	)
 	for _, m := range matches {
 		if m[0] > pos {
@@ -155,14 +201,7 @@ func compileStringExpr(s string, env map[string]any) ([]*exprSegment, error) {
 	if pos < len(s) {
 		segs = append(segs, exprSegment{literal: s[pos:]})
 	}
-	if err := errors.Join(errs...); err != nil {
-		return nil, err
-	}
-	out := make([]*exprSegment, len(segs))
-	for i := range segs {
-		out[i] = &segs[i]
-	}
-	return out, nil
+	return segs, errs
 }
 
 func compileExpr(exprStr string, env map[string]any) (*vm.Program, error) {
