@@ -76,20 +76,20 @@ const maxDaemonLogBytes = 10 << 20 // 10MB
 
 func openDaemonLog(configDir string) (*os.File, func()) {
 	logPath := filepath.Join(configDir, "daemon.log")
-	rotateDaemonLog(logPath)
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	flag := logFileFlag(logPath)
+	f, err := os.OpenFile(logPath, os.O_CREATE|flag|os.O_WRONLY, 0600)
 	if err != nil {
 		return os.Stderr, func() {}
 	}
 	return f, func() { f.Close() }
 }
 
-func rotateDaemonLog(logPath string) {
+func logFileFlag(logPath string) int {
 	info, err := os.Stat(logPath)
-	if err != nil || info.Size() < maxDaemonLogBytes {
-		return
+	if err == nil && info.Size() >= maxDaemonLogBytes {
+		return os.O_TRUNC
 	}
-	os.Rename(logPath, logPath+".1") //nolint:errcheck — rotation is best-effort; if rename fails, logging continues to existing file
+	return os.O_APPEND
 }
 
 func waitForDaemon(configDir string, timeout time.Duration) (int, error) {
