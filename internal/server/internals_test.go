@@ -15,9 +15,9 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func TestSession_GetConn_nilWhenEmpty(t *testing.T) {
+func TestSession_Conn_nilWhenEmpty(t *testing.T) {
 	s := newSession()
-	if conn := s.GetConn("anyserver"); conn != nil {
+	if conn := s.Conn("anyserver"); conn != nil {
 		t.Errorf("expected nil for empty session, got %v", conn)
 	}
 }
@@ -29,8 +29,8 @@ func TestSession_GetOrSetConn_storesFirst(t *testing.T) {
 	if got != fake {
 		t.Error("expected stored connection to be returned")
 	}
-	if s.GetConn("srv") != fake {
-		t.Error("expected GetConn to return stored connection")
+	if s.Conn("srv") != fake {
+		t.Error("expected Conn to return stored connection")
 	}
 }
 
