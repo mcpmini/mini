@@ -178,7 +178,7 @@ func writeDefaultConfig(configDir string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	return os.WriteFile(path, []byte("log_level: debug\n"), 0600)
+	return os.WriteFile(path, []byte("log_level: info\n"), 0600)
 }
 
 func resolveInstallBinPath() string {
