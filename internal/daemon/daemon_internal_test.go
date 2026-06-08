@@ -3,54 +3,56 @@
 package daemon
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestOpenDaemonLog_truncatesLargeFile(t *testing.T) {
+func TestCappedLog_rotatesWhenFull(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "daemon.log")
-	content := bytes.Repeat([]byte("x"), maxDaemonLogBytes+1)
-	if err := os.WriteFile(logPath, content, 0600); err != nil {
-		t.Fatal(err)
+
+	w := OpenCappedLog(logPath)
+	defer w.Close()
+
+	// Fill just past the cap, then write one more line to trigger rotation.
+	big := strings.Repeat("x", int(maxDaemonLogBytes))
+	w.Write([]byte(big))
+	w.Write([]byte("after-rotation\n"))
+
+	if _, err := os.Stat(logPath + ".old"); err != nil {
+		t.Fatalf("expected daemon.log.old after rotation: %v", err)
 	}
-
-	f, close := openDaemonLog(dir)
-	close()
-
-	info, err := f.Stat()
+	data, err := os.ReadFile(logPath)
 	if err != nil {
-		info, err = os.Stat(logPath)
-		if err != nil {
-			t.Fatalf("daemon.log not found: %v", err)
-		}
+		t.Fatalf("read daemon.log: %v", err)
 	}
-	if info.Size() != 0 {
-		t.Errorf("expected daemon.log truncated to 0, got %d", info.Size())
-	}
-	if _, err := os.Stat(logPath + ".1"); !os.IsNotExist(err) {
-		t.Error("expected no daemon.log.1 with truncate approach")
+	if string(data) != "after-rotation\n" {
+		t.Errorf("expected only post-rotation content, got %q", data)
 	}
 }
 
-func TestOpenDaemonLog_appendsBelowThreshold(t *testing.T) {
+func TestCappedLog_appendsBelowCap(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, "daemon.log")
-	if err := os.WriteFile(logPath, []byte("existing"), 0600); err != nil {
-		t.Fatal(err)
-	}
 
-	f, close := openDaemonLog(dir)
-	close()
+	w := OpenCappedLog(logPath)
+	w.Write([]byte("line1\n"))
+	w.Close()
+
+	w = OpenCappedLog(logPath)
+	w.Write([]byte("line2\n"))
+	w.Close()
 
 	data, err := os.ReadFile(logPath)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("read daemon.log: %v", err)
 	}
-	if !bytes.HasPrefix(data, []byte("existing")) {
-		t.Error("expected existing content preserved for small log file")
+	if string(data) != "line1\nline2\n" {
+		t.Errorf("expected appended content, got %q", data)
 	}
-	_ = f
+	if _, err := os.Stat(logPath + ".old"); !os.IsNotExist(err) {
+		t.Error("expected no .old file for small log")
+	}
 }

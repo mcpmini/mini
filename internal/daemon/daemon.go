@@ -61,35 +61,11 @@ func Start(configDir string, timeout time.Duration) (int, error) {
 }
 
 func spawnDaemon(exe, configDir string) error {
-	logFile, closeLog := openDaemonLog(configDir)
-	defer closeLog() // safe: cmd.Start() dups the fd into the child process
 	cmd := exec.Command(exe, "--config", configDir, "daemon")
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
 	return nil
-}
-
-const maxDaemonLogBytes = 10 << 20 // 10MB
-
-func openDaemonLog(configDir string) (*os.File, func()) {
-	logPath := filepath.Join(configDir, "daemon.log")
-	flag := logFileFlag(logPath)
-	f, err := os.OpenFile(logPath, os.O_CREATE|flag|os.O_WRONLY, 0600)
-	if err != nil {
-		return os.Stderr, func() {}
-	}
-	return f, func() { f.Close() }
-}
-
-func logFileFlag(logPath string) int {
-	info, err := os.Stat(logPath)
-	if err == nil && info.Size() >= maxDaemonLogBytes {
-		return os.O_TRUNC
-	}
-	return os.O_APPEND
 }
 
 func waitForDaemon(configDir string, timeout time.Duration) (int, error) {
