@@ -175,7 +175,7 @@ func createConfigDirs(configDir string) error {
 
 func writeDefaultConfig(configDir string) error {
 	path := filepath.Join(configDir, "config.yaml")
-	if _, err := os.Stat(path); err == nil {
+	if _, err := os.Stat(path); err == nil || !os.IsNotExist(err) {
 		return nil
 	}
 	return os.WriteFile(path, []byte("log_level: info\n"), 0600)

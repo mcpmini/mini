@@ -273,7 +273,9 @@ func resolveDaemonPort(configDir string, logger *slog.Logger) (int, error) {
 
 func buildLogger(cfg *config.Config, override string) *slog.Logger {
 	level := resolveLogLevel(cfg, override)
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
+	return logger
 }
 
 func resolveLogLevel(cfg *config.Config, override string) slog.Level {

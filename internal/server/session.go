@@ -304,8 +304,8 @@ func (st *sessionStore) getOrCreate(id string) *Session {
 		s = newSession()
 		st.sessions[id] = s
 	}
-	st.mu.Unlock()
 	s.touch()
+	st.mu.Unlock()
 	if !ok {
 		slog.Debug("session created", "session_id", sessionIDPrefix(id))
 	}

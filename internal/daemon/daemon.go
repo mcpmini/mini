@@ -89,7 +89,7 @@ func rotateDaemonLog(logPath string) {
 	if err != nil || info.Size() < maxDaemonLogBytes {
 		return
 	}
-	os.Rename(logPath, logPath+".1") //nolint:errcheck
+	os.Rename(logPath, logPath+".1") //nolint:errcheck — rotation is best-effort; if rename fails, logging continues to existing file
 }
 
 func waitForDaemon(configDir string, timeout time.Duration) (int, error) {
