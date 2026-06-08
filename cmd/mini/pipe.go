@@ -147,12 +147,7 @@ func directPipeExec(ctx context.Context, configDir, pipeName string, inputs map[
 		os.Exit(1)
 	}
 	caller := buildPipeRunCaller(ctx, configDir, cfg, servers)
-	result, err := cp.Execute(ctx, inputs, caller)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "mini: pipe error: %v\n", err)
-		os.Exit(1)
-	}
-	return result
+	return cp.Execute(ctx, inputs, caller)
 }
 
 func findPipeByName(pipes []config.PipeConfig, name string) *config.PipeConfig {

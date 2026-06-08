@@ -16,10 +16,7 @@ func (s *Server) executePipe(ctx context.Context, entry *registry.ToolEntry, inp
 		return nil, fmt.Errorf("pipe not found: %s", entry.Name)
 	}
 	caller := s.makePipeCaller(ctx, session)
-	result, err := cp.Execute(ctx, inputs, caller)
-	if err != nil {
-		return nil, err
-	}
+	result := cp.Execute(ctx, inputs, caller)
 	return pipeResultToContent(result), nil
 }
 

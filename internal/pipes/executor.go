@@ -40,7 +40,7 @@ type Result struct {
 }
 
 // Execute runs all steps of the compiled pipe and returns the result.
-func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, caller CallerFunc) (*Result, error) {
+func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, caller CallerFunc) *Result {
 	start := time.Now()
 	result := &Result{
 		Server: config.UserServerName,
@@ -49,7 +49,7 @@ func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, call
 	if err := validateInputs(cp.Config, inputs); err != nil {
 		result.Error = err.Error()
 		result.LatencyMs = time.Since(start).Milliseconds()
-		return result, nil //nolint:nilerr
+		return result
 	}
 	state := make(map[string]any)
 	envMap := buildEnvMap()
@@ -58,11 +58,11 @@ func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, call
 	if !ok {
 		result.FailedStep = failedStep
 		result.PartialOutput = cp.evalOutput(inputs, state, envMap)
-		return result, nil
+		return result
 	}
 	result.OK = true
 	result.Output = cp.evalOutput(inputs, state, envMap)
-	return result, nil
+	return result
 }
 
 func validateInputs(pipe config.PipeConfig, inputs map[string]any) error {
