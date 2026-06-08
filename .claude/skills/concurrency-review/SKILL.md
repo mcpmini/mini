@@ -37,7 +37,7 @@ Slices sharing a backing array under concurrent append are the same class.
 ### Send to / close of closed channel
 - Sending to a closed channel panics with no recovery.
 - Closing an already-closed channel panics.
-- `select { case ch <- v: default: }` does **not** guard against send-on-closed — `default` fires when the channel is **full**, not closed. Only a nil channel is unconditionally safe to send to.
+- `select { case ch <- v: default: }` does **not** guard against send-on-closed — `default` fires when the channel is **full**, not closed. In a `select`, a nil channel disables the case without panicking — it never fires. Sending to a nil channel outside a select blocks forever.
 - Every channel with multiple potential closers must use `sync.Once`.
 
 ### Goroutine panic without recover
@@ -116,14 +116,23 @@ Check inside a lock, act outside it — not atomic. Also: paired separately-lock
 `atomic.Load()` then `atomic.Store()` separately is not atomic — there is a race window between them. Any check-then-act on atomic values (`if x.Load() > 0 { x.Add(-1) }`) requires `CompareAndSwap` or a mutex. Single-word reads and writes are safe; compound operations are not.
 
 ### Timer reset race
-`time.NewTimer`: calling `Stop()` then `Reset()` is racy if the timer already fired. The safe pattern:
+`time.NewTimer`: the safe pattern depends on Go version.
+
+**Go 1.23+ (current):** `Stop()` drains the channel before returning, so no manual drain is needed or safe — adding one deadlocks if the timer fires concurrently with `Stop()`:
+```go
+t.Stop()
+t.Reset(d)
+```
+
+**Pre-1.23:** `Stop()` does not drain; you must drain manually before `Reset()`:
 ```go
 if !t.Stop() {
-    <-t.C  // drain the already-fired value
+    <-t.C
 }
 t.Reset(d)
 ```
-Without the drain, the next `select` picks up the stale value immediately, as if Reset was never called.
+
+Check `go.mod` to confirm the version before recommending either pattern. Adding a manual drain to Go 1.23+ code causes a goroutine hang that the race detector will not catch.
 
 ### sync.Pool: objects not zeroed before reuse
 Objects returned to a `sync.Pool` must be zeroed before `Put`. The pool may give the object to another goroutine immediately. Unzeroed fields silently carry data from the previous owner.
