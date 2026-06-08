@@ -93,7 +93,6 @@ func resolveOpenerCmd(perServerCmd, globalCmd string) string {
 	return globalCmd
 }
 
-
 func printAuthResult(name string, expiry time.Time) {
 	if expiry.IsZero() {
 		fmt.Printf("authorized %s (no expiry)\n", name)

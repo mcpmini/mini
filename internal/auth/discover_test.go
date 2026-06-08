@@ -190,6 +190,41 @@ func TestDiscover_invalidURL_returnsError(t *testing.T) {
 	}
 }
 
+func TestDiscover_malformedWWWAuthenticate_fallsBackGracefully(t *testing.T) {
+	cases := []struct {
+		name   string
+		header string
+	}{
+		{"no resource_metadata param", `Bearer realm="example.com"`},
+		{"missing closing quote", `Bearer resource_metadata="http://example.com/prm`},
+		{"empty value", `Bearer resource_metadata=""`},
+		{"no value after prefix", `Bearer resource_metadata=`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Root path returns 401 with malformed header; well-known paths return 404
+			// so discovery falls through to fallbackMeta rather than erroring on 401.
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/" {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("WWW-Authenticate", tc.header)
+				w.WriteHeader(http.StatusUnauthorized)
+			}))
+			defer srv.Close()
+
+			meta, err := auth.Discover(context.Background(), srv.URL)
+			if err != nil {
+				t.Fatalf("expected graceful fallback, got error: %v", err)
+			}
+			if meta == nil {
+				t.Fatal("expected non-nil meta from fallback")
+			}
+		})
+	}
+}
+
 func TestDiscover_cancelledContext_returnsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
