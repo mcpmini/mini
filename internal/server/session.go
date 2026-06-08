@@ -150,13 +150,13 @@ func (s *Session) SetProjection(toolFullName string, p *config.ProjectionConfig)
 	s.lastUsed = time.Now()
 }
 
-func (s *Session) GetProjection(toolFullName string) *config.ProjectionConfig {
+func (s *Session) Projection(toolFullName string) *config.ProjectionConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.projections[toolFullName]
 }
 
-func (s *Session) GetConn(serverName string) transport.Connection {
+func (s *Session) Conn(serverName string) transport.Connection {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.conns[serverName]

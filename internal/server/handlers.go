@@ -140,7 +140,7 @@ func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage
 // wildcard "*" for its server. Returns true when no projections file exists for the
 // server at all — the restriction only kicks in once a projections file is present.
 func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bool {
-	if session.GetProjection(toolFullName(server, tool)) != nil {
+	if session.Projection(toolFullName(server, tool)) != nil {
 		return true
 	}
 	s.mu.RLock()
@@ -241,7 +241,7 @@ func (s *Server) handleSessionConnErr(upstream *upstreamServer, session *Session
 }
 
 func (s *Server) getOrDialSessionConn(ctx context.Context, upstream *upstreamServer, session *Session) (transport.Connection, error) {
-	if conn := session.GetConn(upstream.cfg.Name); conn != nil {
+	if conn := session.Conn(upstream.cfg.Name); conn != nil {
 		return conn, nil
 	}
 	conn, err := session.dialOnceFor(upstream.cfg.Name, func() (transport.Connection, error) {
@@ -263,7 +263,7 @@ func (s *Server) checkDialedConn(name string, conn transport.Connection, session
 }
 
 func (s *Server) dialPerSessionConn(ctx context.Context, upstream *upstreamServer, session *Session) (transport.Connection, error) {
-	if conn := session.GetConn(upstream.cfg.Name); conn != nil {
+	if conn := session.Conn(upstream.cfg.Name); conn != nil {
 		return conn, nil
 	}
 	conn, err := dialUpstream(ctx, s.logger, s.cfg, upstream.cfg)
@@ -329,7 +329,7 @@ func (s *Server) formatEnvelope(server, tool string, env *response.Envelope, pro
 }
 
 func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {
-	if p := session.GetProjection(toolFullName(server, tool)); p != nil {
+	if p := session.Projection(toolFullName(server, tool)); p != nil {
 		return p
 	}
 	s.mu.RLock()

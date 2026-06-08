@@ -110,7 +110,7 @@ func callbackPort(listener net.Listener) (int, error) {
 	return tcpAddr.Port, nil
 }
 
-func exchangeCode(ctx context.Context, cfg *oauth2.Config, verifier string, codeCh chan string, srv *http.Server, resultCh chan PKCEResult) {
+func exchangeCode(ctx context.Context, cfg *oauth2.Config, verifier string, codeCh <-chan string, srv *http.Server, resultCh chan<- PKCEResult) {
 	defer srv.Close()
 	var code string
 	select {
