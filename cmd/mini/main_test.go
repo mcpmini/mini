@@ -170,3 +170,41 @@ func TestRunDaemonStatusStalePortFile(t *testing.T) {
 		t.Fatalf("expected stale port warning, got %q", out)
 	}
 }
+
+func hangingHTTPServer(t *testing.T) (*http.Server, string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	hung := make(chan struct{})
+	t.Cleanup(func() { close(hung) })
+	srv := &http.Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-hung
+		}),
+	}
+	go srv.Serve(ln) //nolint:errcheck
+	return srv, "http://" + ln.Addr().String() + "/"
+}
+
+func TestDaemonShutdown_boundedContextUnblocksWithHungHandler(t *testing.T) {
+	srv, url := hangingHTTPServer(t)
+
+	go http.Get(url) //nolint:errcheck,noctx
+	time.Sleep(20 * time.Millisecond)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		srv.Shutdown(shutdownCtx) //nolint:errcheck
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Shutdown with bounded context blocked past deadline — hung handler prevented exit")
+	}
+}
