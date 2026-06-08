@@ -46,10 +46,7 @@ func TestExecutor_AllStepsSucceed(t *testing.T) {
 		"gh.create_pr": okResp(map[string]any{"number": 42}),
 		"slack.post":   okResp(map[string]any{"ok": true}),
 	})
-	result, err := cp.Execute(context.Background(), nil, caller)
-	if err != nil {
-		t.Fatal(err)
-	}
+	result := cp.Execute(context.Background(), nil, caller)
 	if !result.OK {
 		t.Fatalf("expected OK=true, got error: %s", result.Error)
 	}
@@ -84,7 +81,7 @@ func TestExecutor_MiddleStepFails_Aborts(t *testing.T) {
 		}
 		return json.RawMessage(`{}`), nil
 	}
-	result, _ := cp.Execute(context.Background(), nil, caller)
+	result := cp.Execute(context.Background(), nil, caller)
 	if result.OK {
 		t.Fatal("expected OK=false")
 	}
@@ -117,7 +114,7 @@ func TestExecutor_ContinueOnError(t *testing.T) {
 		}
 		return json.RawMessage(`{}`), nil
 	}
-	result, _ := cp.Execute(context.Background(), nil, caller)
+	result := cp.Execute(context.Background(), nil, caller)
 	if !result.OK {
 		t.Fatalf("expected OK=true with continue_on_error, got error: %s", result.Error)
 	}
@@ -149,7 +146,7 @@ func TestExecutor_SkippedStep(t *testing.T) {
 		}
 		return json.RawMessage(`{}`), nil
 	}
-	result, _ := cp.Execute(context.Background(), nil, caller)
+	result := cp.Execute(context.Background(), nil, caller)
 	if !result.OK {
 		t.Fatalf("expected OK=true, error: %s", result.Error)
 	}
@@ -175,7 +172,7 @@ func TestExecutor_SetStep(t *testing.T) {
 		t.Fatal(err)
 	}
 	caller := makeCaller(nil)
-	result, _ := cp.Execute(context.Background(), nil, caller)
+	result := cp.Execute(context.Background(), nil, caller)
 	if !result.OK {
 		t.Fatalf("expected OK=true, error: %s", result.Error)
 	}
@@ -202,7 +199,7 @@ func TestExecutor_OutputBlock(t *testing.T) {
 	caller := makeCaller(fakeCallerResponses{
 		"gh.create_pr": okResp(map[string]any{"number": 99}),
 	})
-	result, _ := cp.Execute(context.Background(), nil, caller)
+	result := cp.Execute(context.Background(), nil, caller)
 	if !result.OK {
 		t.Fatalf("expected OK=true, error: %s", result.Error)
 	}
@@ -226,7 +223,7 @@ func TestExecutor_MissingRequiredInput(t *testing.T) {
 		},
 	}
 	cp, _ := pipes.Compile(pipe)
-	result, _ := cp.Execute(context.Background(), map[string]any{}, makeCaller(nil))
+	result := cp.Execute(context.Background(), map[string]any{}, makeCaller(nil))
 	if result.OK {
 		t.Fatal("expected OK=false for missing required input")
 	}
@@ -256,7 +253,7 @@ func TestExecutor_InputInterpolation(t *testing.T) {
 		capturedTitle, _ = args["title"].(string)
 		return json.RawMessage(`{}`), nil
 	}
-	result, _ := cp.Execute(context.Background(), map[string]any{"title": "fix auth"}, caller)
+	result := cp.Execute(context.Background(), map[string]any{"title": "fix auth"}, caller)
 	if !result.OK {
 		t.Fatalf("expected OK=true, error: %s", result.Error)
 	}
