@@ -49,7 +49,7 @@ func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, call
 	if err := validateInputs(cp.Config, inputs); err != nil {
 		result.Error = err.Error()
 		result.LatencyMs = time.Since(start).Milliseconds()
-		return result, nil
+		return result, nil //nolint:nilerr
 	}
 	state := make(map[string]any)
 	envMap := buildEnvMap()
@@ -179,7 +179,7 @@ func evalSegments(segs []*exprSegment, env map[string]any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		sb.WriteString(fmt.Sprintf("%v", val))
+		fmt.Fprintf(&sb, "%v", val)
 	}
 	return sb.String(), nil
 }
