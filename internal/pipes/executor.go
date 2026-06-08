@@ -76,6 +76,11 @@ func validateInputs(pipe config.PipeConfig, inputs map[string]any) error {
 	return nil
 }
 
+// buildEnvMap exposes the full process environment to pipe expressions as
+// {{ env.KEY }}. Pipes run server-side, so only the mini process environment
+// is exposed — not the agent's environment. This is intentional: it lets
+// pipes consume secrets (e.g. API tokens) that mini already holds via
+// environment variables without requiring them to be passed as pipe inputs.
 func buildEnvMap() map[string]string {
 	envMap := make(map[string]string)
 	for _, kv := range os.Environ() {
