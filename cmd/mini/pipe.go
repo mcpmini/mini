@@ -190,8 +190,7 @@ func runPipeCheck(configDir string, args []string) {
 	}
 	pipeCfgs, err := config.LoadPipes(configDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mini: pipe load errors:\n%v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "mini: some pipes failed to load:\n%v\n", err)
 	}
 	if len(pipeCfgs) == 0 {
 		fmt.Println("no pipes found")
