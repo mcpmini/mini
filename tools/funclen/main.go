@@ -1,5 +1,8 @@
-// funclen checks that no function or method exceeds the project line limits.
-// Warning >= 20 lines, error >= 30 lines. Exit code 1 when any errors are found.
+// funclen checks that no function or method exceeds the project code-line limits.
+// Warning >= 15 lines, error >= 25 lines. Comment-only lines inside the function
+// body don't count, so a well-documented invariant doesn't inflate the length.
+// Functions annotated with //nolint on their declaration line are skipped.
+// Exit code 1 when any errors are found.
 //
 // Usage: funclen [dir ...]   (default: current directory, recursive)
 package main
@@ -50,7 +53,7 @@ func printIssue(iss issue) {
 	if iss.isError {
 		level, threshold = "ERROR", errorAt
 	}
-	fmt.Printf("%s %s:%d: %s is %d lines (>= %d)\n", level, iss.path, iss.line, iss.name, iss.lines, threshold)
+	fmt.Printf("%s %s:%d: %s is %d code lines (>= %d)\n", level, iss.path, iss.line, iss.name, iss.lines, threshold)
 }
 
 func collect(dirs []string) []issue {
@@ -90,21 +93,25 @@ func isTestFile(path string) bool {
 }
 
 func checkFile(path string, fset *token.FileSet) []issue {
-	f, err := parser.ParseFile(fset, path, nil, 0)
+	src, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	return collectFuncIssues(f, fset)
+	f, err := parser.ParseFile(fset, path, src, 0)
+	if err != nil {
+		return nil
+	}
+	return collectFuncIssues(f, fset, strings.Split(string(src), "\n"))
 }
 
-func collectFuncIssues(f *ast.File, fset *token.FileSet) []issue {
+func collectFuncIssues(f *ast.File, fset *token.FileSet, srcLines []string) []issue {
 	var issues []issue
 	ast.Inspect(f, func(n ast.Node) bool {
 		fd, ok := n.(*ast.FuncDecl)
 		if !ok || fd.Body == nil {
 			return true
 		}
-		if iss, found := checkFunc(fd, fset); found {
+		if iss, found := checkFunc(fd, fset, srcLines); found {
 			issues = append(issues, iss)
 		}
 		return true
@@ -112,11 +119,27 @@ func collectFuncIssues(f *ast.File, fset *token.FileSet) []issue {
 	return issues
 }
 
-func checkFunc(fd *ast.FuncDecl, fset *token.FileSet) (issue, bool) {
-	lines := fset.Position(fd.End()).Line - fset.Position(fd.Pos()).Line + 1
+func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue, bool) {
+	start := fset.Position(fd.Pos()).Line
+	if isNolinted(srcLines, start) {
+		return issue{}, false
+	}
+	end := fset.Position(fd.End()).Line
+	lines := (end - start + 1) - commentOnlyLines(srcLines, start, end)
 	if lines < warnAt {
 		return issue{}, false
 	}
+	return newIssue(fd, fset, lines), true
+}
+
+func isNolinted(srcLines []string, line int) bool {
+	if line < 1 || line > len(srcLines) {
+		return false
+	}
+	return strings.Contains(srcLines[line-1], "//nolint")
+}
+
+func newIssue(fd *ast.FuncDecl, fset *token.FileSet, lines int) issue {
 	pos := fset.Position(fd.Pos())
 	return issue{
 		path:    pos.Filename,
@@ -124,7 +147,38 @@ func checkFunc(fd *ast.FuncDecl, fset *token.FileSet) (issue, bool) {
 		name:    funcName(fd),
 		lines:   lines,
 		isError: lines >= errorAt,
-	}, true
+	}
+}
+
+// commentOnlyLines counts lines in [start, end] (1-indexed, inclusive) that
+// consist solely of a // or /* */ comment, ignoring surrounding whitespace.
+// A line that mixes code with a trailing comment still counts as code.
+func commentOnlyLines(srcLines []string, start, end int) int {
+	count := 0
+	inBlock := false
+	for i := start; i <= end && i <= len(srcLines); i++ {
+		var isComment bool
+		isComment, inBlock = classifyCommentLine(strings.TrimSpace(srcLines[i-1]), inBlock)
+		if isComment {
+			count++
+		}
+	}
+	return count
+}
+
+// classifyCommentLine reports whether line is comment-only, and whether a
+// /* */ block comment remains open for the next line.
+func classifyCommentLine(line string, inBlock bool) (isComment, stillInBlock bool) {
+	switch {
+	case inBlock:
+		return true, !strings.Contains(line, "*/")
+	case strings.HasPrefix(line, "//"):
+		return true, false
+	case strings.HasPrefix(line, "/*"):
+		return true, !strings.Contains(line, "*/")
+	default:
+		return false, false
+	}
 }
 
 func funcName(fd *ast.FuncDecl) string {

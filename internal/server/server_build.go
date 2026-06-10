@@ -29,7 +29,7 @@ func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger,
 	return s
 }
 
-func newServer(cfg *config.Config, configDir string, store *response.Store, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server {
+func newServer(cfg *config.Config, configDir string, store *response.Store, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server { //nolint:funclen
 	return &Server{
 		cfg:          cfg,
 		configDir:    configDir,
@@ -42,8 +42,8 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		projDefaults: projection.DefaultsFrom(cfg),
 		toolSchemas:  proxyToolSchemas(),
 		sessions:     newSessionStore(),
-		authFlows: make(map[string]*authFlowState),
-		logger:    logger,
+		authFlows:    make(map[string]*authFlowState),
+		logger:       logger,
 		clock:        clock.System(),
 	}
 }
