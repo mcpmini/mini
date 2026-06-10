@@ -345,9 +345,24 @@ func buildPipeInputSchema(inputs map[string]config.InputSchema) json.RawMessage 
 }
 
 func computePipePermission(pipe *config.PipeConfig, lookup PermLookupFunc) config.PermissionLevel {
-	if override := config.PermissionLevel(pipe.Permission); override == config.PermOpen || override == config.PermProtected || override == config.PermHidden {
+	inherited := inheritedPipePermission(pipe, lookup)
+	switch override := config.PermissionLevel(pipe.Permission); override {
+	case config.PermProtected, config.PermHidden:
 		return override
+	case config.PermOpen:
+		// An explicit "open" cannot downgrade a pipe whose steps require
+		// protection — that would silently disable perm_call gating for
+		// the protected step.
+		if inherited == config.PermProtected {
+			return config.PermProtected
+		}
+		return config.PermOpen
+	default:
+		return inherited
 	}
+}
+
+func inheritedPipePermission(pipe *config.PipeConfig, lookup PermLookupFunc) config.PermissionLevel {
 	perm := config.PermOpen
 	for _, step := range pipe.Steps {
 		if step.Server == "" {
