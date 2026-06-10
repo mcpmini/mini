@@ -99,7 +99,7 @@ type postResult struct {
 func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
 	backoff := time.Second
 	for i := range maxRetries {
-		body, done, err := c.attempt(ctx, rpcReq, i, &backoff)
+		body, done, err := c.postWithRetryDelay(ctx, rpcReq, i, &backoff)
 		if done {
 			return body, err
 		}
@@ -107,7 +107,7 @@ func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (json.RawMess
 	return nil, fmt.Errorf("exceeded max retries for %s", rpcReq.Method)
 }
 
-func (c *HTTPConnection) attempt(ctx context.Context, rpcReq Request, i int, backoff *time.Duration) (json.RawMessage, bool, error) {
+func (c *HTTPConnection) postWithRetryDelay(ctx context.Context, rpcReq Request, i int, backoff *time.Duration) (json.RawMessage, bool, error) {
 	r, err := c.doPost(ctx, rpcReq)
 	if err == nil {
 		return r.body, true, nil
