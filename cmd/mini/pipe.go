@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -14,10 +13,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/daemon"
-	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/pipes"
-	"github.com/mcpmini/mini/internal/transport"
 )
 
 func runPipe(configDir string, args []string) {
@@ -87,7 +83,7 @@ func runPipeRun(configDir string, args []string) {
 	}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	result := pipeExec(ctx, configDir, pipeName, inputs)
+	result := directPipeExec(ctx, configDir, pipeName, inputs)
 	b, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: marshal result: %v\n", err)
@@ -97,63 +93,6 @@ func runPipeRun(configDir string, args []string) {
 	if !result.OK {
 		os.Exit(1)
 	}
-}
-
-// errPipeRanOnDaemon marks an error that occurred after the daemon already
-// executed the pipe — callers must not fall back to direct execution, since
-// that would re-run any side-effecting steps.
-type errPipeRanOnDaemon struct{ err error }
-
-func (e *errPipeRanOnDaemon) Error() string { return e.err.Error() }
-func (e *errPipeRanOnDaemon) Unwrap() error { return e.err }
-
-func pipeExec(ctx context.Context, configDir, pipeName string, inputs map[string]any) *pipes.Result {
-	if port := daemon.RunningPort(configDir); port != 0 {
-		result, err := daemonPipeExec(ctx, port, pipeName, inputs)
-		if err == nil {
-			return result
-		}
-		var ranOnDaemon *errPipeRanOnDaemon
-		if errors.As(err, &ranOnDaemon) {
-			fmt.Fprintf(os.Stderr, "mini: pipe ran on daemon but its result could not be read: %v\n", err)
-			os.Exit(1)
-		}
-	}
-	return directPipeExec(ctx, configDir, pipeName, inputs)
-}
-
-func daemonPipeExec(ctx context.Context, port int, pipeName string, inputs map[string]any) (*pipes.Result, error) {
-	conn, err := transport.NewHTTPConnection(transport.HTTPConnectionConfig{
-		URL: fmt.Sprintf("http://127.0.0.1:%d/mcp", port),
-	})
-	if err != nil {
-		return nil, err
-	}
-	return callPipeViaMCP(ctx, conn, pipeName, inputs)
-}
-
-func callPipeViaMCP(ctx context.Context, conn transport.Connection, pipeName string, inputs map[string]any) (*pipes.Result, error) {
-	params, err := json.Marshal(transport.ToolCallParams{Name: "call", Arguments: map[string]any{
-		"server": config.UserServerName,
-		"tool":   pipeName,
-		"params": inputs,
-	}})
-	if err != nil {
-		return nil, err
-	}
-	raw, err := conn.Call(ctx, "tools/call", json.RawMessage(params))
-	if err != nil {
-		return nil, err
-	}
-	extracted, err := invoke.ExtractContent(raw)
-	if err != nil {
-		return nil, &errPipeRanOnDaemon{err}
-	}
-	var result pipes.Result
-	if err := json.Unmarshal(extracted, &result); err != nil {
-		return nil, &errPipeRanOnDaemon{err}
-	}
-	return &result, nil
 }
 
 func loadCompiledPipe(configDir, pipeName string) *pipes.CompiledPipe {
