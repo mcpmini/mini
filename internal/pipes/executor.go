@@ -28,41 +28,59 @@ type StepResult struct {
 
 // Result is the structured output of a pipe execution.
 type Result struct {
-	Server        string         `json:"server"`
-	Tool          string         `json:"tool"`
-	OK            bool           `json:"ok"`
-	Output        map[string]any `json:"output,omitempty"`
-	Steps         []StepResult   `json:"steps"`
-	Error         string         `json:"error,omitempty"`
-	FailedStep    string         `json:"failed_step,omitempty"`
-	PartialOutput map[string]any `json:"partial_output,omitempty"`
-	LatencyMs     int64          `json:"latency_ms"`
+	Server        string            `json:"server"`
+	Tool          string            `json:"tool"`
+	OK            bool              `json:"ok"`
+	Output        map[string]any    `json:"output,omitempty"`
+	Steps         []StepResult      `json:"steps"`
+	Error         string            `json:"error,omitempty"`
+	FailedStep    string            `json:"failed_step,omitempty"`
+	PartialOutput map[string]any    `json:"partial_output,omitempty"`
+	OutputErrors  map[string]string `json:"output_errors,omitempty"`
+	LatencyMs     int64             `json:"latency_ms"`
 }
 
 // Execute runs all steps of the compiled pipe and returns the result.
 func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, caller CallerFunc) *Result {
 	start := time.Now()
-	result := &Result{
-		Server: config.UserServerName,
-		Tool:   cp.Config.Name,
-	}
+	result := &Result{Server: config.UserServerName, Tool: cp.Config.Name}
+	defer func() { result.LatencyMs = time.Since(start).Milliseconds() }()
+
+	inputs = applyInputDefaults(cp.Config, inputs)
 	if err := validateInputs(cp.Config, inputs); err != nil {
 		result.Error = err.Error()
-		result.LatencyMs = time.Since(start).Milliseconds()
 		return result
 	}
 	state := make(map[string]any)
 	envMap := buildEnvMap()
 	ok, failedStep := cp.runSteps(ctx, inputs, state, envMap, caller, result)
-	result.LatencyMs = time.Since(start).Milliseconds()
 	if !ok {
 		result.FailedStep = failedStep
-		result.PartialOutput = cp.evalOutput(inputs, state, envMap)
+		result.PartialOutput, result.OutputErrors = cp.evalOutput(inputs, state, envMap)
 		return result
 	}
 	result.OK = true
-	result.Output = cp.evalOutput(inputs, state, envMap)
+	result.Output, result.OutputErrors = cp.evalOutput(inputs, state, envMap)
 	return result
+}
+
+// applyInputDefaults fills in declared defaults for optional inputs the
+// caller omitted, so {{ inputs.x }} resolves to the configured default
+// rather than nil.
+func applyInputDefaults(pipe config.PipeConfig, inputs map[string]any) map[string]any {
+	for name, schema := range pipe.Inputs {
+		if schema.Default == nil {
+			continue
+		}
+		if _, ok := inputs[name]; ok {
+			continue
+		}
+		if inputs == nil {
+			inputs = make(map[string]any, len(pipe.Inputs))
+		}
+		inputs[name] = schema.Default
+	}
+	return inputs
 }
 
 func validateInputs(pipe config.PipeConfig, inputs map[string]any) error {
@@ -189,21 +207,25 @@ func evalSegments(segs []*exprSegment, env map[string]any) (any, error) {
 	return sb.String(), nil
 }
 
-func (cp *CompiledPipe) evalOutput(inputs map[string]any, state map[string]any, envMap map[string]string) map[string]any {
+func (cp *CompiledPipe) evalOutput(inputs map[string]any, state map[string]any, envMap map[string]string) (map[string]any, map[string]string) {
 	if len(cp.outputExprs) == 0 {
-		return nil
+		return nil, nil
 	}
 	env := buildRuntimeEnv(inputs, state, envMap)
 	out := make(map[string]any, len(cp.outputExprs))
+	var errs map[string]string
 	for field, segs := range cp.outputExprs {
 		val, err := evalSegments(segs, env)
 		if err != nil {
-			out[field] = nil
-		} else {
-			out[field] = val
+			if errs == nil {
+				errs = make(map[string]string)
+			}
+			errs[field] = err.Error()
+			continue
 		}
+		out[field] = val
 	}
-	return out
+	return out, errs
 }
 
 func buildRuntimeEnv(inputs map[string]any, state map[string]any, envMap map[string]string) map[string]any {
