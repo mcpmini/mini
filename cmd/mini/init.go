@@ -170,15 +170,7 @@ func createConfigDirs(configDir string) error {
 			return err
 		}
 	}
-	return writeDefaultConfig(configDir)
-}
-
-func writeDefaultConfig(configDir string) error {
-	path := filepath.Join(configDir, "config.yaml")
-	if _, err := os.Stat(path); err == nil || !os.IsNotExist(err) {
-		return nil
-	}
-	return os.WriteFile(path, []byte("log_level: info\n"), 0600)
+	return nil
 }
 
 func resolveInstallBinPath() string {
