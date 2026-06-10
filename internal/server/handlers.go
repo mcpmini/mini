@@ -51,6 +51,13 @@ func validateExecuteParams(p executeParams) error {
 	return nil
 }
 
+func validateServerName(name string) error {
+	if !config.ValidServerName.MatchString(name) {
+		return fmt.Errorf("invalid server name: %q", name)
+	}
+	return nil
+}
+
 func (s *Server) handleList(_ context.Context, raw json.RawMessage) (any, error) {
 	var p listParams
 	if err := unmarshalOptional(raw, &p); err != nil {
@@ -219,6 +226,10 @@ func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
 	if !upstream.reconnecting.CompareAndSwap(false, true) {
 		return
 	}
+	s.spawnReconnect(upstream)
+}
+
+func (s *Server) spawnReconnect(upstream *upstreamServer) {
 	s.reconnectWg.Add(1)
 	go func() {
 		defer s.reconnectWg.Done()
