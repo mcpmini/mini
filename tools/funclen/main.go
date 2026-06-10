@@ -1,7 +1,9 @@
 // funclen checks that no function or method exceeds the project code-line limits.
-// Warning >= 20 lines, error >= 30 lines. Comment-only lines inside the function
+// Warning >= 15 lines, error >= 25 lines. Comment-only lines inside the function
 // body don't count, so a well-documented invariant doesn't inflate the length.
-// Exit code 1 when any errors are found.
+// Constructors whose body is a single "return &T{...}" are exempt: their length
+// tracks the struct's field count, not any logic. Exit code 1 when any errors
+// are found.
 //
 // Usage: funclen [dir ...]   (default: current directory, recursive)
 package main
@@ -119,6 +121,9 @@ func collectFuncIssues(f *ast.File, fset *token.FileSet, srcLines []string) []is
 }
 
 func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue, bool) {
+	if isPureConstructor(fd) {
+		return issue{}, false
+	}
 	start := fset.Position(fd.Pos()).Line
 	end := fset.Position(fd.End()).Line
 	lines := (end - start + 1) - commentOnlyLines(srcLines, start, end)
@@ -126,6 +131,30 @@ func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue,
 		return issue{}, false
 	}
 	return newIssue(fd, fset, lines), true
+}
+
+// isPureConstructor reports whether fd's body is exactly one statement that
+// returns a struct literal (optionally "&T{...}"). Such functions' length is
+// proportional to the number of struct fields, not to any logic, so they are
+// exempt from the limit. Adding any statement before the return — even one
+// line of real logic — disqualifies the function from this exemption.
+func isPureConstructor(fd *ast.FuncDecl) bool {
+	if len(fd.Body.List) != 1 {
+		return false
+	}
+	ret, ok := fd.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return false
+	}
+	return isCompositeLitExpr(ret.Results[0])
+}
+
+func isCompositeLitExpr(e ast.Expr) bool {
+	if u, ok := e.(*ast.UnaryExpr); ok && u.Op == token.AND {
+		e = u.X
+	}
+	_, ok := e.(*ast.CompositeLit)
+	return ok
 }
 
 func newIssue(fd *ast.FuncDecl, fset *token.FileSet, lines int) issue {

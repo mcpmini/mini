@@ -42,8 +42,8 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		projDefaults: projection.DefaultsFrom(cfg),
 		toolSchemas:  proxyToolSchemas(),
 		sessions:     newSessionStore(),
-		authFlows: make(map[string]*authFlowState),
-		logger:    logger,
+		authFlows:    make(map[string]*authFlowState),
+		logger:       logger,
 		clock:        clock.System(),
 	}
 }
