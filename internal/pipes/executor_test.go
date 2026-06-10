@@ -340,15 +340,49 @@ func TestExecutor_MultipleOptionalInputs_WithDefaults(t *testing.T) {
 		Inputs: map[string]config.InputSchema{
 			"title": {Type: "string", Required: true},
 			"draft": {Type: "bool", Required: false, Default: false},
+			"label": {Type: "string", Required: false, Default: "auto"},
 		},
 		Steps: []config.StepConfig{
 			{ID: "step1", Server: "gh", Tool: "create_pr"},
+		},
+		Output: map[string]string{
+			"draft": "{{ inputs.draft }}",
+			"label": "{{ inputs.label }}",
 		},
 	}
 	cp, _ := pipes.Compile(pipe)
 	result := cp.Execute(context.Background(), map[string]any{"title": "fix"}, makeCaller(nil))
 	if !result.OK {
 		t.Fatalf("expected OK=true with optional inputs: %s", result.Error)
+	}
+	if result.Output["draft"] != false {
+		t.Errorf("output.draft = %v, want false (default applied)", result.Output["draft"])
+	}
+	if result.Output["label"] != "auto" {
+		t.Errorf("output.label = %v, want \"auto\" (default applied)", result.Output["label"])
+	}
+}
+
+func TestExecutor_ProvidedInputOverridesDefault(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "override_pipe",
+		Inputs: map[string]config.InputSchema{
+			"label": {Type: "string", Required: false, Default: "auto"},
+		},
+		Steps: []config.StepConfig{
+			{ID: "step1", Server: "gh", Tool: "create_pr"},
+		},
+		Output: map[string]string{
+			"label": "{{ inputs.label }}",
+		},
+	}
+	cp, _ := pipes.Compile(pipe)
+	result := cp.Execute(context.Background(), map[string]any{"label": "manual"}, makeCaller(nil))
+	if !result.OK {
+		t.Fatalf("expected OK=true: %s", result.Error)
+	}
+	if result.Output["label"] != "manual" {
+		t.Errorf("output.label = %v, want \"manual\" (caller value should win)", result.Output["label"])
 	}
 }
 
@@ -382,6 +416,39 @@ func TestExecutor_PartialOutput_OnFailure(t *testing.T) {
 	}
 	if pr, _ := result.PartialOutput["pr_number"].(float64); int(pr) != 11 {
 		t.Errorf("partial pr_number = %v, want 11", result.PartialOutput["pr_number"])
+	}
+}
+
+func TestExecutor_OutputExprError_RecordedInOutputErrors(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "bad_output_pipe",
+		Steps: []config.StepConfig{
+			{ID: "s1", Server: "gh", Tool: "create_pr"},
+		},
+		Output: map[string]string{
+			"good": "{{ steps.s1.result.number }}",
+			"bad":  "{{ steps.s1.result[0] }}",
+		},
+	}
+	cp, err := pipes.Compile(pipe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := func(_ context.Context, _, _ string, _ map[string]any) (json.RawMessage, error) {
+		return json.RawMessage(`{"number": 11}`), nil
+	}
+	result := cp.Execute(context.Background(), nil, caller)
+	if !result.OK {
+		t.Fatalf("expected OK=true: %s", result.Error)
+	}
+	if pr, _ := result.Output["good"].(float64); int(pr) != 11 {
+		t.Errorf("output.good = %v, want 11", result.Output["good"])
+	}
+	if _, ok := result.Output["bad"]; ok {
+		t.Errorf("output.bad should be absent on eval error, got %v", result.Output["bad"])
+	}
+	if result.OutputErrors["bad"] == "" {
+		t.Error("expected OutputErrors[\"bad\"] to be populated")
 	}
 }
 
