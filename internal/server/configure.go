@@ -154,20 +154,25 @@ func projectionCounts(projections map[string]map[string]*config.ProjectionConfig
 }
 
 func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, error) {
-	if p.ServerCfg == nil {
-		return nil, fmt.Errorf("config is required for add_server")
-	}
-	if !config.ValidServerName.MatchString(p.ServerCfg.Name) {
-		return nil, fmt.Errorf("invalid server name: %q", p.ServerCfg.Name)
-	}
-	if err := s.validateRuntimeTransport(p.ServerCfg); err != nil {
+	if err := s.validateAddServerParams(p); err != nil {
 		return nil, err
 	}
 	p.ServerCfg.RuntimeAdded = true
 	if err := s.AddUpstream(ctx, *p.ServerCfg); err != nil {
 		return nil, err
 	}
+	s.logger.Info("server added at runtime", "server", p.ServerCfg.Name)
 	return map[string]any{"ok": true, "server": p.ServerCfg.Name}, nil
+}
+
+func (s *Server) validateAddServerParams(p configureParams) error {
+	if p.ServerCfg == nil {
+		return fmt.Errorf("config is required for add_server")
+	}
+	if !config.ValidServerName.MatchString(p.ServerCfg.Name) {
+		return fmt.Errorf("invalid server name: %q", p.ServerCfg.Name)
+	}
+	return s.validateRuntimeTransport(p.ServerCfg)
 }
 
 func (s *Server) validateRuntimeTransport(sc *config.ServerConfig) error {
@@ -206,6 +211,12 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 	if !config.ValidServerName.MatchString(serverName) {
 		return nil, fmt.Errorf("invalid server name: %q", serverName)
 	}
+	s.doRemoveServer(serverName)
+	s.logger.Info("server removed at runtime", "server", serverName)
+	return map[string]any{"ok": true, "server": serverName}, nil
+}
+
+func (s *Server) doRemoveServer(serverName string) {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	s.removeGen[serverName]++
@@ -214,7 +225,6 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 	}
 	s.sessions.closeServerConnections(serverName)
 	s.reg.RemoveServer(serverName)
-	return map[string]any{"ok": true, "server": serverName}, nil
 }
 
 func (s *Server) detachUpstream(serverName string) *upstreamServer {

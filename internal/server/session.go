@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -87,10 +88,11 @@ func newSession() *Session {
 	}
 }
 
-// markInitialized is called after the initialize response is sent successfully.
-// It unblocks any requests that were waiting for initialization.
 func (s *Session) markInitialized() {
-	s.initOnce.Do(func() { close(s.initDone) })
+	s.initOnce.Do(func() {
+		close(s.initDone)
+		slog.Debug("session initialized")
+	})
 }
 
 // markAborted is called when the Serve loop ends without initialization completing.
@@ -214,6 +216,7 @@ func (s *Session) Close() {
 	}
 	s.conns = make(map[string]transport.Connection)
 	s.mu.Unlock()
+	slog.Debug("session closed")
 }
 
 // enableNotifications creates the buffered channel that carries server-initiated
@@ -247,6 +250,7 @@ func (s *Session) notify(msg json.RawMessage) {
 	select {
 	case s.notifyCh <- msg:
 	default:
+		slog.Debug("notification queue full, dropping event")
 	}
 }
 
@@ -265,13 +269,16 @@ func (s *Session) recordCall(latencyMs, tokensSaved int64, isErr bool) {
 	}
 }
 
-func (s *Session) idleSince(deadline time.Time) bool {
+func (s *Session) idleDuration(deadline time.Time) (time.Duration, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.notifyCh != nil {
-		return false
+		return 0, false
 	}
-	return s.lastUsed.Before(deadline)
+	if !s.lastUsed.Before(deadline) {
+		return 0, false
+	}
+	return time.Since(s.lastUsed), true
 }
 
 type sessionStore struct {
@@ -283,15 +290,25 @@ func newSessionStore() *sessionStore {
 	return &sessionStore{sessions: make(map[string]*Session)}
 }
 
+func sessionIDPrefix(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
+}
+
 func (st *sessionStore) getOrCreate(id string) *Session {
 	st.mu.Lock()
-	defer st.mu.Unlock()
 	s, ok := st.sessions[id]
 	if !ok {
 		s = newSession()
 		st.sessions[id] = s
 	}
 	s.touch()
+	st.mu.Unlock()
+	if !ok {
+		slog.Debug("session created", "session_id", sessionIDPrefix(id))
+	}
 	return s
 }
 
@@ -361,18 +378,29 @@ func (st *sessionStore) aggregateMetrics() map[string]any {
 	return m
 }
 
-func (st *sessionStore) evictIdle(deadline time.Time) {
+type evictedSession struct {
+	session      *Session
+	id           string
+	idleDuration time.Duration
+}
+
+func (st *sessionStore) collectIdleSessions(deadline time.Time) []evictedSession {
 	st.mu.Lock()
-	var toClose []*Session
+	defer st.mu.Unlock()
+	var evicted []evictedSession
 	for id, s := range st.sessions {
-		if s.idleSince(deadline) {
-			toClose = append(toClose, s)
+		if idleDur, ok := s.idleDuration(deadline); ok {
+			evicted = append(evicted, evictedSession{s, id, idleDur})
 			delete(st.sessions, id)
 		}
 	}
-	st.mu.Unlock()
-	for _, s := range toClose {
-		s.markAborted() // unblock any goroutine waiting in waitInitialized
-		s.Close()
+	return evicted
+}
+
+func (st *sessionStore) evictIdle(deadline time.Time) {
+	for _, e := range st.collectIdleSessions(deadline) {
+		slog.Info("session evicted", "session_id", sessionIDPrefix(e.id), "idle_duration", e.idleDuration.Round(time.Second))
+		e.session.markAborted() // unblock any goroutine waiting in waitInitialized
+		e.session.Close()
 	}
 }

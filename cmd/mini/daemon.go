@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -26,7 +27,9 @@ func runDaemon(configDir string, args []string) {
 		fatalf("load config: %v", err)
 	}
 	portFile := ensureDaemonNotRunning(configDir)
-	logger := buildLogger(cfg, logLevel)
+	logW := daemon.OpenCappedLog(filepath.Join(configDir, "daemon.log"))
+	defer logW.Close()
+	logger := buildLogger(cfg, logLevel, logW)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	injectOAuthTokens(ctx, configDir, servers)

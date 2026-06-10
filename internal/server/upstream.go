@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -57,19 +58,30 @@ func (u *upstreamServer) shutdownAndClose() {
 }
 
 func (u *upstreamServer) callTool(ctx context.Context, toolName string, args map[string]any) (json.RawMessage, error) {
+	if err := u.acquireSem(); err != nil {
+		return nil, err
+	}
 	if u.sem != nil {
-		select {
-		case u.sem <- struct{}{}:
-			defer func() { <-u.sem }()
-		default:
-			return nil, fmt.Errorf("upstream %s: request queue full (limit %d)", u.cfg.Name, cap(u.sem))
-		}
+		defer func() { <-u.sem }()
 	}
 	params, err := json.Marshal(transport.ToolCallParams{Name: toolName, Arguments: args})
 	if err != nil {
 		return nil, fmt.Errorf("marshal params: %w", err)
 	}
 	return u.dispatchCall(ctx, params)
+}
+
+func (u *upstreamServer) acquireSem() error {
+	if u.sem == nil {
+		return nil
+	}
+	select {
+	case u.sem <- struct{}{}:
+		return nil
+	default:
+		slog.Warn("upstream request queue full", "server", u.cfg.Name, "limit", cap(u.sem))
+		return fmt.Errorf("upstream %s: request queue full (limit %d)", u.cfg.Name, cap(u.sem))
+	}
 }
 
 func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {

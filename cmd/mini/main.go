@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -160,7 +161,7 @@ func runServe(configDir string, args []string) {
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
-	logger := buildLogger(cfg, f.logLevel)
+	logger := buildLogger(cfg, f.logLevel, os.Stderr)
 	if shouldTryProxyMode(f.standalone, f.httpAddr) && tryServeViaProxy(configDir, logger) {
 		return
 	}
@@ -186,7 +187,7 @@ func runProxy(configDir string, args []string) {
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
-	logger := buildLogger(cfg, *logLevel)
+	logger := buildLogger(cfg, *logLevel, os.Stderr)
 	if *httpAddr == "" && connectViaDaemon(configDir, logger, true) == nil {
 		return
 	}
@@ -271,9 +272,11 @@ func resolveDaemonPort(configDir string, logger *slog.Logger) (int, error) {
 	return port, err
 }
 
-func buildLogger(cfg *config.Config, override string) *slog.Logger {
+func buildLogger(cfg *config.Config, override string, w io.Writer) *slog.Logger {
 	level := resolveLogLevel(cfg, override)
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	logger := slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
+	return logger
 }
 
 func resolveLogLevel(cfg *config.Config, override string) slog.Level {
