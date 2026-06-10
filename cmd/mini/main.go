@@ -15,6 +15,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/pipes"
 	"github.com/mcpmini/mini/internal/proxy"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
@@ -43,6 +44,8 @@ commands:
   init / setup [--yes]           Interactive setup wizard
   call SERVER TOOL [PARAMS]      Invoke an open tool directly (exit 1 on tool error)
   perm-call SERVER TOOL [PARAMS] Invoke a protected tool directly
+  pipe list                      List loaded pipes
+  pipe run <name> [--args '...'] Execute a pipe
   version                        Print version
 
 serve flags:
@@ -102,6 +105,7 @@ var commands = map[string]func(string, []string){
 	"setup":     runInit,
 	"call":      runCall,
 	"perm-call": runPermCall,
+	"pipe":      runPipe,
 	"version":   func(_ string, _ []string) { fmt.Println(transport.Version) },
 }
 
@@ -227,7 +231,32 @@ func buildAndConnectServer(ctx context.Context, cfg *config.Config, configDir st
 			}
 		}
 	}
+	loadAndRegisterPipes(configDir, logger, srv)
 	return srv
+}
+
+func loadAndRegisterPipes(configDir string, logger *slog.Logger, srv *server.Server) {
+	pipeCfgs, err := config.LoadPipes(configDir)
+	if err != nil {
+		logger.Warn("pipe load errors", "err", err)
+	}
+	compiled := compilePipes(pipeCfgs, logger)
+	if len(compiled) > 0 {
+		srv.AddPipes(compiled)
+	}
+}
+
+func compilePipes(cfgs []config.PipeConfig, logger *slog.Logger) []*pipes.CompiledPipe {
+	var compiled []*pipes.CompiledPipe
+	for _, p := range cfgs {
+		cp, err := pipes.Compile(p)
+		if err != nil {
+			logger.Warn("pipe compile error", "pipe", p.Name, "err", err)
+			continue
+		}
+		compiled = append(compiled, cp)
+	}
+	return compiled
 }
 
 func maybeStartHTTP(addr string, handler http.Handler, logger *slog.Logger, dangerNonLoopback bool) *http.Server {

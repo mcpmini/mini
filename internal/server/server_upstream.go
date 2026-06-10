@@ -12,6 +12,9 @@ import (
 )
 
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
+	if config.IsReservedServerName(sc.Name) {
+		return fmt.Errorf("server name %q is reserved", sc.Name)
+	}
 	conn, err := dialUpstream(ctx, s.logger, s.cfg, sc)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", sc.Name, err)

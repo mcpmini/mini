@@ -160,6 +160,9 @@ func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, 
 	if !config.ValidServerName.MatchString(p.ServerCfg.Name) {
 		return nil, fmt.Errorf("invalid server name: %q", p.ServerCfg.Name)
 	}
+	if config.IsReservedServerName(p.ServerCfg.Name) {
+		return nil, fmt.Errorf("server name %q is reserved", p.ServerCfg.Name)
+	}
 	if err := s.validateRuntimeTransport(p.ServerCfg); err != nil {
 		return nil, err
 	}

@@ -86,6 +86,9 @@ func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session
 	if entry.Permission == config.PermProtected {
 		return nil, fmt.Errorf("tool %q is protected — use perm_call instead", entry.FullName)
 	}
+	if entry.Pipe != nil {
+		return s.executePipe(ctx, entry, p.Params, session)
+	}
 	if !s.hasProjectionCoverage(p.Server, p.Tool, session) {
 		return nil, fmt.Errorf("tool %q has no projection configured — add one with config(action:set_projection) or use perm_call to invoke without projection", entry.FullName)
 	}
@@ -128,6 +131,9 @@ func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage
 	p, entry, err := s.resolveExecute(raw)
 	if err != nil {
 		return toolErrorIfNotFound(err)
+	}
+	if entry.Pipe != nil {
+		return s.executePipe(ctx, entry, p.Params, session)
 	}
 	// Open tools with no projection coverage can also use perm_call to opt into raw responses.
 	if entry.Permission != config.PermProtected && s.hasProjectionCoverage(p.Server, p.Tool, session) {

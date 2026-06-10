@@ -396,4 +396,8 @@ mini cleanup                              Delete expired response files
 
 mini call [-j|-m|-r] SERVER TOOL [JSON]   Invoke a tool directly
 mini perm-call [-j|-m|-r] SERVER TOOL [JSON]  Invoke a protected tool directly
+
+mini pipe list                            List all loaded pipes
+mini pipe run NAME [--args '{"k":"v"}']   Run a pipe directly (routes through daemon if running)
+mini pipe check [NAME]                    Validate pipe YAML and expressions
 ```
