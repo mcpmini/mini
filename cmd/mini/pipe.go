@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -98,10 +99,24 @@ func runPipeRun(configDir string, args []string) {
 	}
 }
 
+// errPipeRanOnDaemon marks an error that occurred after the daemon already
+// executed the pipe — callers must not fall back to direct execution, since
+// that would re-run any side-effecting steps.
+type errPipeRanOnDaemon struct{ err error }
+
+func (e *errPipeRanOnDaemon) Error() string { return e.err.Error() }
+func (e *errPipeRanOnDaemon) Unwrap() error { return e.err }
+
 func pipeExec(ctx context.Context, configDir, pipeName string, inputs map[string]any) *pipes.Result {
 	if port := daemon.RunningPort(configDir); port != 0 {
-		if result, err := daemonPipeExec(ctx, port, pipeName, inputs); err == nil {
+		result, err := daemonPipeExec(ctx, port, pipeName, inputs)
+		if err == nil {
 			return result
+		}
+		var ranOnDaemon *errPipeRanOnDaemon
+		if errors.As(err, &ranOnDaemon) {
+			fmt.Fprintf(os.Stderr, "mini: pipe ran on daemon but its result could not be read: %v\n", err)
+			os.Exit(1)
 		}
 	}
 	return directPipeExec(ctx, configDir, pipeName, inputs)
@@ -132,10 +147,13 @@ func callPipeViaMCP(ctx context.Context, conn transport.Connection, pipeName str
 	}
 	extracted, err := invoke.ExtractContent(raw)
 	if err != nil {
-		return nil, err
+		return nil, &errPipeRanOnDaemon{err}
 	}
 	var result pipes.Result
-	return &result, json.Unmarshal(extracted, &result)
+	if err := json.Unmarshal(extracted, &result); err != nil {
+		return nil, &errPipeRanOnDaemon{err}
+	}
+	return &result, nil
 }
 
 func loadCompiledPipe(configDir, pipeName string) *pipes.CompiledPipe {
