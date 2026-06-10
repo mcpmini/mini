@@ -17,8 +17,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// lastCalledTool extracts the tool name from FakeConnection's LastParams,
-// which holds the marshaled tools/call payload: {"name":"<tool>","arguments":{...}}.
 func lastCalledTool(t *testing.T, fake *transport.FakeConnection) string {
 	t.Helper()
 	var p struct {

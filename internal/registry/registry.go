@@ -26,7 +26,6 @@ func New() *Registry {
 	}
 }
 
-// ServerParams carries the arguments for AddServer and ReplaceServer.
 type ServerParams struct {
 	Name    string
 	Defs    []transport.ToolDefinition
