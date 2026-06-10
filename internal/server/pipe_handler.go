@@ -10,7 +10,6 @@ import (
 	"github.com/mcpmini/mini/internal/registry"
 )
 
-
 func (s *Server) executePipe(ctx context.Context, entry *registry.ToolEntry, inputs map[string]any, session *Session) (any, error) {
 	cp := s.getPipe(entry.Name)
 	if cp == nil {
