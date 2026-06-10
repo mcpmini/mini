@@ -119,6 +119,29 @@ func TestAddPipes_ExplicitProtectedPermission(t *testing.T) {
 	}
 }
 
+func TestAddPipes_ExplicitOpenCannotDowngradeProtectedStep(t *testing.T) {
+	r := registry.New()
+	perm := &config.PermissionsConfig{Protected: []string{"delete_branch"}}
+	r.AddServer("gh", []transport.ToolDefinition{
+		{Name: "delete_branch"},
+	}, perm)
+	r.AddPipes([]config.PipeConfig{
+		{
+			Name:       "open_pipe",
+			Permission: "open",
+			Steps:      []config.StepConfig{{ID: "s", Server: "gh", Tool: "delete_branch"}},
+		},
+	}, r.PermLookup)
+
+	e, err := r.Lookup("user.open_pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Permission != config.PermProtected {
+		t.Errorf("explicit open with protected step: permission = %q, want protected", e.Permission)
+	}
+}
+
 func TestAddPipes_Idempotent_Replace(t *testing.T) {
 	r := registry.New()
 	r.AddPipes([]config.PipeConfig{
