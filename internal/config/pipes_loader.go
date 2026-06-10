@@ -3,9 +3,9 @@ package config
 import (
 	"errors"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
-	"gopkg.in/yaml.v3"
 )
 
 // LoadPipes reads all *.yaml files from dir/pipes/ and returns the parsed PipeConfigs.
@@ -128,4 +128,3 @@ func EnsurePipesDir(configDir string) error {
 	}
 	return nil
 }
-
