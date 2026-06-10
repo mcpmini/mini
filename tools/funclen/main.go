@@ -2,8 +2,9 @@
 // Warning >= 15 lines, error >= 25 lines. Comment-only lines inside the function
 // body don't count, so a well-documented invariant doesn't inflate the length.
 // Constructors whose body is a single "return &T{...}" are exempt: their length
-// tracks the struct's field count, not any logic. Exit code 1 when any errors
-// are found.
+// tracks the struct's field count, not any logic. Functions annotated with
+// //nolint on their declaration line are skipped entirely. Exit code 1 when any
+// errors are found.
 //
 // Usage: funclen [dir ...]   (default: current directory, recursive)
 package main
@@ -125,12 +126,22 @@ func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue,
 		return issue{}, false
 	}
 	start := fset.Position(fd.Pos()).Line
+	if isNolinted(srcLines, start) {
+		return issue{}, false
+	}
 	end := fset.Position(fd.End()).Line
 	lines := (end - start + 1) - commentOnlyLines(srcLines, start, end)
 	if lines < warnAt {
 		return issue{}, false
 	}
 	return newIssue(fd, fset, lines), true
+}
+
+func isNolinted(srcLines []string, line int) bool {
+	if line < 1 || line > len(srcLines) {
+		return false
+	}
+	return strings.Contains(srcLines[line-1], "//nolint")
 }
 
 // isPureConstructor reports whether fd's body is exactly one statement that
