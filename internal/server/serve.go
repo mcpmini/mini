@@ -163,32 +163,41 @@ func (s *Server) handleLine(ctx context.Context, line []byte, session *Session) 
 }
 
 func (s *Server) handleRequest(ctx context.Context, req transport.Request, session *Session) (transport.Response, bool) {
-	// Spec: "The initialization phase MUST be the first interaction between client and server."
-	// Non-initialize, non-ping requests wait until initialize completes (or the connection closes).
-	// Ping is explicitly allowed before initialization per lifecycle spec.
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
-	if req.Method != "initialize" && req.Method != "ping" {
-		// Cap the wait so stale sessions (e.g. post daemon-restart or eviction) fail fast
-		// instead of blocking forever. Normal initialization is microseconds;
-		// 1s is orders of magnitude more than enough.
-		waitCtx, cancel := context.WithTimeout(ctx, time.Second)
-		initialized := session.waitInitialized(waitCtx)
-		cancel()
-		if !initialized {
-			return errorResponse(req.ID, transport.CodeInvalidRequest, "not initialized: send initialize first"), true
-		}
+	if !s.awaitInitialization(ctx, req, session) {
+		return errorResponse(req.ID, transport.CodeInvalidRequest, "not initialized: send initialize first"), true
 	}
 	s.logger.Debug("agent request", "method", req.Method, "id", req.ID)
 	result, err := s.dispatch(ctx, req, session)
 	if req.Method == "initialize" && err == nil {
 		session.markInitialized()
 	}
-	if err != nil {
-		return dispatchErrorResponse(req.ID, err), true
+	return buildDispatchResponse(req.ID, result, err)
+}
+
+// awaitInitialization blocks non-initialize, non-ping requests until initialize
+// completes or the connection closes. Spec: "The initialization phase MUST be
+// the first interaction between client and server"; ping is explicitly allowed
+// before initialization.
+// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
+func (s *Server) awaitInitialization(ctx context.Context, req transport.Request, session *Session) bool {
+	if req.Method == "initialize" || req.Method == "ping" {
+		return true
 	}
-	resp, err := okResponse(req.ID, result)
+	// Cap the wait so stale sessions (e.g. post daemon-restart or eviction) fail fast
+	// instead of blocking forever. Normal initialization is microseconds;
+	// 1s is orders of magnitude more than enough.
+	waitCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	return session.waitInitialized(waitCtx)
+}
+
+func buildDispatchResponse(id any, result any, err error) (transport.Response, bool) {
 	if err != nil {
-		return errorResponse(req.ID, transport.CodeInternalError, "marshal result: "+err.Error()), true
+		return dispatchErrorResponse(id, err), true
+	}
+	resp, err := okResponse(id, result)
+	if err != nil {
+		return errorResponse(id, transport.CodeInternalError, "marshal result: "+err.Error()), true
 	}
 	return resp, true
 }

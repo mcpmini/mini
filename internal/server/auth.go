@@ -14,8 +14,8 @@ type authFlowState struct {
 }
 
 func (s *Server) handleStartAuth(serverName string) (any, error) {
-	if !config.ValidServerName.MatchString(serverName) {
-		return nil, fmt.Errorf("invalid server name: %q", serverName)
+	if err := validateServerName(serverName); err != nil {
+		return nil, err
 	}
 	sc, err := s.loadOAuthServerConfig(serverName)
 	if err != nil {
@@ -27,14 +27,19 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 	}
 	s.authWg.Add(1)
 	go s.runAuthFlow(serverName, sc, flow.state, flow.doneCh)
-	if !s.cfg.DisableAuthBrowserOpen {
-		browserCmd := sc.Auth.BrowserCmd
-		if browserCmd == "" {
-			browserCmd = s.cfg.BrowserCommand
-		}
-		_ = auth.OpenBrowser(browserCmd, flow.authURL)
-	}
+	s.maybeOpenAuthBrowser(sc, flow.authURL)
 	return authStartResponse(serverName, flow.authURL), nil
+}
+
+func (s *Server) maybeOpenAuthBrowser(sc config.ServerConfig, authURL string) {
+	if s.cfg.DisableAuthBrowserOpen {
+		return
+	}
+	browserCmd := sc.Auth.BrowserCmd
+	if browserCmd == "" {
+		browserCmd = s.cfg.BrowserCommand
+	}
+	_ = auth.OpenBrowser(browserCmd, authURL)
 }
 
 func (s *Server) loadOAuthServerConfig(serverName string) (config.ServerConfig, error) {
@@ -130,8 +135,8 @@ func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig, a
 }
 
 func (s *Server) handleAuthStatus(serverName string) (any, error) {
-	if !config.ValidServerName.MatchString(serverName) {
-		return nil, fmt.Errorf("invalid server name: %q", serverName)
+	if err := validateServerName(serverName); err != nil {
+		return nil, err
 	}
 	t, err := auth.Load(s.configDir, serverName)
 	if auth.IsNotFound(err) {

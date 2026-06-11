@@ -54,7 +54,7 @@ type Server struct {
 
 func (s *Server) notifyAllSessions() {
 	for _, sess := range s.sessions.snapshotSessions() {
-		sess.notify(notifyToolsChanged)
+		sess.notify(toolsChangedNotif)
 	}
 }
 

@@ -14,7 +14,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-var notifyToolsChanged = json.RawMessage(`{"jsonrpc":"2.0","method":"` + transport.NotificationToolsChanged + `"}`)
+var toolsChangedNotif = json.RawMessage(`{"jsonrpc":"2.0","method":"` + transport.NotificationToolsChanged + `"}`)
 
 type configureParams struct {
 	Action      string                   `json:"action"`
@@ -31,14 +31,21 @@ func (s *Server) handleConfigure(ctx context.Context, raw json.RawMessage, sessi
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
 	result, err := s.dispatchConfigureAction(ctx, p, session)
-	if err == nil && (p.Action == "add_server" || p.Action == "remove_server") {
-		if session.proxyMode.Load() {
-			s.notifyAllSessions()
-		} else {
-			session.notify(notifyToolsChanged)
-		}
+	if err == nil {
+		s.notifyToolsChanged(session, p.Action)
 	}
 	return result, err
+}
+
+func (s *Server) notifyToolsChanged(session *Session, action string) {
+	if action != "add_server" && action != "remove_server" {
+		return
+	}
+	if session.proxyMode.Load() {
+		s.notifyAllSessions()
+		return
+	}
+	session.notify(toolsChangedNotif)
 }
 
 func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams, session *Session) (any, error) {
@@ -70,19 +77,26 @@ func (s *Server) dispatchConfigureAuthAction(p configureParams) (any, error) {
 }
 
 func (s *Server) setProjection(session *Session, p configureParams) (any, error) {
-	if p.Tool == "" {
-		return nil, fmt.Errorf("tool is required for set_projection")
-	}
-	if !config.ValidServerName.MatchString(p.ServerName) {
-		return nil, fmt.Errorf("invalid server name: %q", p.ServerName)
-	}
-	if !config.ValidToolName.MatchString(p.Tool) {
-		return nil, fmt.Errorf("invalid tool name: %q", p.Tool)
+	if err := validateProjectionTarget(p); err != nil {
+		return nil, err
 	}
 	if p.SessionOnly {
 		return s.setSessionProjection(session, p), nil
 	}
 	return s.setServerProjection(p)
+}
+
+func validateProjectionTarget(p configureParams) error {
+	if p.Tool == "" {
+		return fmt.Errorf("tool is required for set_projection")
+	}
+	if err := validateServerName(p.ServerName); err != nil {
+		return err
+	}
+	if !config.ValidToolName.MatchString(p.Tool) {
+		return fmt.Errorf("invalid tool name: %q", p.Tool)
+	}
+	return nil
 }
 
 func (s *Server) setSessionProjection(session *Session, p configureParams) any {
@@ -169,8 +183,8 @@ func (s *Server) validateAddServerParams(p configureParams) error {
 	if p.ServerCfg == nil {
 		return fmt.Errorf("config is required for add_server")
 	}
-	if !config.ValidServerName.MatchString(p.ServerCfg.Name) {
-		return fmt.Errorf("invalid server name: %q", p.ServerCfg.Name)
+	if err := validateServerName(p.ServerCfg.Name); err != nil {
+		return err
 	}
 	return s.validateRuntimeTransport(p.ServerCfg)
 }
@@ -208,15 +222,15 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 	if serverName == "" {
 		return nil, fmt.Errorf("server is required for remove_server")
 	}
-	if !config.ValidServerName.MatchString(serverName) {
-		return nil, fmt.Errorf("invalid server name: %q", serverName)
+	if err := validateServerName(serverName); err != nil {
+		return nil, err
 	}
-	s.doRemoveServer(serverName)
+	s.detachAndCloseServer(serverName)
 	s.logger.Info("server removed at runtime", "server", serverName)
 	return map[string]any{"ok": true, "server": serverName}, nil
 }
 
-func (s *Server) doRemoveServer(serverName string) {
+func (s *Server) detachAndCloseServer(serverName string) {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	s.removeGen[serverName]++
@@ -285,8 +299,8 @@ func buildServerStatus(upstreams map[string]*upstreamServer, reg *registry.Regis
 }
 
 func (s *Server) persistProjectionsLocked(serverName string) error {
-	if !config.ValidServerName.MatchString(serverName) {
-		return fmt.Errorf("invalid server name: %q", serverName)
+	if err := validateServerName(serverName); err != nil {
+		return err
 	}
 	b, err := s.marshalServerProjections(serverName)
 	if err != nil {
