@@ -15,7 +15,7 @@ func RunSprintPlanningEval(ctx context.Context, r *Runner, env *Env) (EvalResult
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
-	result, err := r.RunEval(ctx, env, EvalParams{Servers: servers}, sprintPlanTask)
+	result, err := r.RunEval(ctx, evalCtx{Env: env, Params: EvalParams{Servers: servers}, Task: sprintPlanTask})
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
@@ -56,8 +56,8 @@ func RunBaselineEval(ctx context.Context, r *Runner, env *Env) (EvalResult, []er
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
-	result, err := r.RunEval(ctx, env, EvalParams{Servers: servers},
-		"Say hello and nothing else. Do not use any tools.")
+	result, err := r.RunEval(ctx, evalCtx{Env: env, Params: EvalParams{Servers: servers},
+		Task: "Say hello and nothing else. Do not use any tools."})
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}

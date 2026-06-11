@@ -26,17 +26,22 @@ func NewRunner(modes map[string]bool, reps int) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	miniBin, fakemcpBin, err := buildEvalBins(root)
+	bins, err := buildEvalBins(root)
 	if err != nil {
 		return nil, err
 	}
-	return buildRunner(root, miniBin, fakemcpBin, modes, reps), nil
+	return buildRunner(root, bins, modes, reps), nil
 }
 
-func buildRunner(root, miniBin, fakemcpBin string, modes map[string]bool, reps int) *Runner {
+type evalBins struct {
+	MiniBin    string
+	FakemcpBin string
+}
+
+func buildRunner(root string, bins evalBins, modes map[string]bool, reps int) *Runner {
 	return &Runner{
-		MiniBin:     miniBin,
-		FakemcpBin:  fakemcpBin,
+		MiniBin:     bins.MiniBin,
+		FakemcpBin:  bins.FakemcpBin,
 		FixturesDir: filepath.Join(root, "benchmarks", "fixtures"),
 		RepoRoot:    root,
 		Modes:       modes,
@@ -44,16 +49,16 @@ func buildRunner(root, miniBin, fakemcpBin string, modes map[string]bool, reps i
 	}
 }
 
-func buildEvalBins(root string) (string, string, error) {
+func buildEvalBins(root string) (evalBins, error) {
 	miniBin, err := buildBin(root, "mini", "./cmd/mini")
 	if err != nil {
-		return "", "", fmt.Errorf("build mini: %w", err)
+		return evalBins{}, fmt.Errorf("build mini: %w", err)
 	}
 	fakemcpBin, err := buildBin(root, "fakemcp", "./test/fakemcp", "-tags", "integration")
 	if err != nil {
-		return "", "", fmt.Errorf("build fakemcp: %w", err)
+		return evalBins{}, fmt.Errorf("build fakemcp: %w", err)
 	}
-	return miniBin, fakemcpBin, nil
+	return evalBins{MiniBin: miniBin, FakemcpBin: fakemcpBin}, nil
 }
 
 func FindRepoRoot() (string, error) { return findRepoRoot() }
@@ -113,24 +118,31 @@ type runSetup struct {
 	cmd                    func() *exec.Cmd
 }
 
+// evalCtx bundles the inputs that pass unchanged through the setup-building chain.
+type evalCtx struct {
+	Env    *Env
+	Params EvalParams
+	Task   string
+}
+
 // RunEval launches all selected (mode × rep) combos in parallel and collects results.
 // Dirs are created before goroutines launch so setup errors are caught synchronously.
-func (r *Runner) RunEval(ctx context.Context, env *Env, p EvalParams, task string) (EvalResult, error) {
-	setups, err := r.buildSetups(env, p, task)
+func (r *Runner) RunEval(ctx context.Context, ec evalCtx) (EvalResult, error) {
+	setups, err := r.buildSetups(ec)
 	if err != nil {
 		return EvalResult{}, err
 	}
 	return r.collectResults(setups), nil
 }
 
-func (r *Runner) buildSetups(env *Env, p EvalParams, task string) ([]runSetup, error) {
+func (r *Runner) buildSetups(ec evalCtx) ([]runSetup, error) {
 	reps := r.reps()
-	setups, err := r.buildDirectSetups(env, p, task, reps)
+	setups, err := r.buildDirectSetups(ec, reps)
 	if err != nil {
 		return nil, err
 	}
 	for i := range numFormats {
-		ss, err := r.buildFormatSetups(env, p, task, i, reps)
+		ss, err := r.buildFormatSetups(ec, i, reps)
 		if err != nil {
 			return nil, err
 		}
@@ -139,13 +151,13 @@ func (r *Runner) buildSetups(env *Env, p EvalParams, task string) ([]runSetup, e
 	return setups, nil
 }
 
-func (r *Runner) buildDirectSetups(env *Env, p EvalParams, task string, reps int) ([]runSetup, error) {
+func (r *Runner) buildDirectSetups(ec evalCtx, reps int) ([]runSetup, error) {
 	if !r.want("direct") {
 		return nil, nil
 	}
 	var setups []runSetup
 	for rep := range reps {
-		s, err := r.rawSetup(env, p, task, rep)
+		s, err := r.rawSetup(ec, rep)
 		if err != nil {
 			return nil, fmt.Errorf("raw setup rep %d: %w", rep+1, err)
 		}
@@ -154,10 +166,10 @@ func (r *Runner) buildDirectSetups(env *Env, p EvalParams, task string, reps int
 	return setups, nil
 }
 
-func (r *Runner) buildFormatSetups(env *Env, p EvalParams, task string, i, reps int) ([]runSetup, error) {
+func (r *Runner) buildFormatSetups(ec evalCtx, i, reps int) ([]runSetup, error) {
 	var setups []runSetup
 	for rep := range reps {
-		ss, err := r.buildRepSetups(env, p, task, i, rep)
+		ss, err := r.buildRepSetups(ec, i, rep)
 		if err != nil {
 			return nil, err
 		}
@@ -171,9 +183,9 @@ type setupCandidate struct {
 	fn    func() (runSetup, error)
 }
 
-func (r *Runner) buildRepSetups(env *Env, p EvalParams, task string, i, rep int) ([]runSetup, error) {
+func (r *Runner) buildRepSetups(ec evalCtx, i, rep int) ([]runSetup, error) {
 	var setups []runSetup
-	for _, c := range r.repCandidates(env, p, task, i, rep) {
+	for _, c := range r.repCandidates(ec, i, rep) {
 		s, err := r.buildRepSetup(c.label, rep, c.fn)
 		if err != nil {
 			return nil, err
@@ -185,11 +197,11 @@ func (r *Runner) buildRepSetups(env *Env, p EvalParams, task string, i, rep int)
 	return setups, nil
 }
 
-func (r *Runner) repCandidates(env *Env, p EvalParams, task string, i, rep int) []setupCandidate {
+func (r *Runner) repCandidates(ec evalCtx, i, rep int) []setupCandidate {
 	return []setupCandidate{
-		{"mcp-" + fmtLabel[i], func() (runSetup, error) { return r.mcpSetup(env, p, task, i, rep) }},
-		{"cli-" + fmtLabel[i], func() (runSetup, error) { return r.cliSetup(env, p, task, i, rep) }},
-		{"proxy-" + fmtLabel[i], func() (runSetup, error) { return r.proxySetup(env, p, task, i, rep) }},
+		{"mcp-" + fmtLabel[i], func() (runSetup, error) { return r.mcpSetup(ec, i, rep) }},
+		{"cli-" + fmtLabel[i], func() (runSetup, error) { return r.cliSetup(ec, i, rep) }},
+		{"proxy-" + fmtLabel[i], func() (runSetup, error) { return r.proxySetup(ec, i, rep) }},
 	}
 }
 
@@ -204,9 +216,10 @@ func (r *Runner) buildRepSetup(label string, rep int, build func() (runSetup, er
 	return s, nil
 }
 
-func (r *Runner) proxySetup(env *Env, p EvalParams, task string, i, rep int) (runSetup, error) {
+func (r *Runner) proxySetup(ec evalCtx, i, rep int) (runSetup, error) {
+	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("proxy-%s-%d", fmtLabel[i], rep+1))
-	cfg, err := proxyMCPConfig(env, r, p.Servers, callDir, i)
+	cfg, err := r.proxyMCPConfig(env, p.Servers, callDir, i)
 	if err != nil {
 		return runSetup{}, err
 	}
@@ -214,10 +227,11 @@ func (r *Runner) proxySetup(env *Env, p EvalParams, task string, i, rep int) (ru
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newMCPRunSetup(mcpRunSetupParams{"proxy", i, rep, callDir, workDir, cfg, proxyAllowedTools(p.Servers, p.AllowedTools), task}), nil
+	return newMCPRunSetup(mcpRunSetupParams{"proxy", i, rep, callDir, workDir, cfg, proxyAllowedTools(p.Servers, p.AllowedTools), ec.Task}), nil
 }
 
-func (r *Runner) rawSetup(env *Env, p EvalParams, task string, rep int) (runSetup, error) {
+func (r *Runner) rawSetup(ec evalCtx, rep int) (runSetup, error) {
+	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("raw-%d", rep+1))
 	cfg, err := rawMCPConfig(env, r, p.Servers, callDir)
 	if err != nil {
@@ -227,12 +241,13 @@ func (r *Runner) rawSetup(env *Env, p EvalParams, task string, rep int) (runSetu
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newMCPRunSetup(mcpRunSetupParams{"direct", 0, rep, callDir, workDir, cfg, rawAllowedTools(p.Servers, p.AllowedTools), task}), nil
+	return newMCPRunSetup(mcpRunSetupParams{"direct", 0, rep, callDir, workDir, cfg, rawAllowedTools(p.Servers, p.AllowedTools), ec.Task}), nil
 }
 
-func (r *Runner) mcpSetup(env *Env, p EvalParams, task string, i, rep int) (runSetup, error) {
+func (r *Runner) mcpSetup(ec evalCtx, i, rep int) (runSetup, error) {
+	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("mcp-%s-%d", fmtLabel[i], rep+1))
-	cfg, err := miniMCPConfig(env, r, p.Servers, callDir, i)
+	cfg, err := r.miniMCPConfig(env, p.Servers, callDir, i)
 	if err != nil {
 		return runSetup{}, err
 	}
@@ -240,12 +255,13 @@ func (r *Runner) mcpSetup(env *Env, p EvalParams, task string, i, rep int) (runS
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newMCPRunSetup(mcpRunSetupParams{"mcp", i, rep, callDir, workDir, cfg, miniMCPAllowedTools(p.AllowedTools), task}), nil
+	return newMCPRunSetup(mcpRunSetupParams{"mcp", i, rep, callDir, workDir, cfg, miniMCPAllowedTools(p.AllowedTools), ec.Task}), nil
 }
 
-func (r *Runner) cliSetup(env *Env, p EvalParams, task string, i, rep int) (runSetup, error) {
+func (r *Runner) cliSetup(ec evalCtx, i, rep int) (runSetup, error) {
+	env, p := ec.Env, ec.Params
 	callDir := env.DebugDir(fmt.Sprintf("cli-%s-%d", fmtLabel[i], rep+1))
-	cfgDir, err := miniCLIConfigDir(env, r, p.Servers, callDir, i)
+	cfgDir, err := r.miniCLIConfigDir(env, p.Servers, callDir, i)
 	if err != nil {
 		return runSetup{}, err
 	}
@@ -257,12 +273,13 @@ func (r *Runner) cliSetup(env *Env, p EvalParams, task string, i, rep int) (runS
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newCLIRunSetup(CLIRunSetupParams{Idx: i, Rep: rep, CallDir: callDir, WorkDir: workDir, WrapDir: wrapDir, Allowed: cliAllowedTools(p.AllowedTools), Task: task}), nil
+	return newCLIRunSetup(CLIRunSetupParams{Idx: i, Rep: rep, CallDir: callDir, WorkDir: workDir, WrapDir: wrapDir, Allowed: cliAllowedTools(p.AllowedTools), Task: ec.Task}), nil
 }
 
 type mcpRunSetupParams struct {
-	kind, callDir, workDir, cfg, allowed, task string
-	idx, rep                                   int
+	kind                                 string
+	idx, rep                             int
+	callDir, workDir, cfg, allowed, task string
 }
 
 func newMCPRunSetup(p mcpRunSetupParams) runSetup {

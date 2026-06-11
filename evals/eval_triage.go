@@ -15,7 +15,7 @@ func RunIncidentTriageEval(ctx context.Context, r *Runner, env *Env) (EvalResult
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
-	result, err := r.RunEval(ctx, env, EvalParams{Servers: servers}, incidentTriageTask)
+	result, err := r.RunEval(ctx, evalCtx{Env: env, Params: EvalParams{Servers: servers}, Task: incidentTriageTask})
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}

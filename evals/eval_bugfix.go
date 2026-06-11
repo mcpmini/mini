@@ -19,11 +19,11 @@ func RunBugfixEval(ctx context.Context, r *Runner, env *Env) (EvalResult, []erro
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
-	result, err := r.RunEval(ctx, env, EvalParams{
+	result, err := r.RunEval(ctx, evalCtx{Env: env, Params: EvalParams{
 		Servers:      servers,
 		AllowedTools: "Read,Edit,Write",
 		WorkSrcDir:   bugfixTestdataDir(),
-	}, bugFixPipelineTask)
+	}, Task: bugFixPipelineTask})
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
