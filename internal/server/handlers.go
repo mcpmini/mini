@@ -178,7 +178,7 @@ func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *regis
 	if toolErr != nil {
 		return s.handleToolErr(server, tool, latencyMs, toolErr, session)
 	}
-	return s.buildEnvelope(server, tool, raw, session, upstream, latencyMs)
+	return s.buildEnvelope(envelopeParams{Server: server, Tool: tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs})
 }
 
 func (s *Server) handleToolErr(server, tool string, latencyMs int64, err error, session *Session) (any, error) {
@@ -320,17 +320,26 @@ func mergeArgs(defaults, overrides map[string]any) map[string]any {
 	return out
 }
 
-func (s *Server) buildEnvelope(server, tool string, raw json.RawMessage, session *Session, upstream *upstreamServer, latencyMs int64) (any, error) {
-	projCfg := s.resolveProjection(server, tool, session)
+type envelopeParams struct {
+	Server    string
+	Tool      string
+	Raw       json.RawMessage
+	Session   *Session
+	Upstream  *upstreamServer
+	LatencyMs int64
+}
+
+func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
+	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
 	projStart := time.Now()
-	env, stats, err := s.buildProjectedEnvelope(server, tool, raw, projCfg)
+	env, stats, err := s.buildProjectedEnvelope(p.Server, p.Tool, p.Raw, projCfg)
 	if err != nil {
 		return nil, err
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
-	upstream.recordSaved(session, latencyMs, saved)
-	s.logger.Debug("projection applied", "server", server, "tool", tool, "upstream_ms", latencyMs, "proj_ms", time.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
-	return s.formatEnvelope(server, tool, env, projCfg), nil
+	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
+	s.logger.Debug("projection applied", "server", p.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", time.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
+	return s.formatEnvelope(p.Server, p.Tool, env, projCfg), nil
 }
 
 func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage, projCfg *config.ProjectionConfig) (*response.Envelope, response.CallStats, error) {

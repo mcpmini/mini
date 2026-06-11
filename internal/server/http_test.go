@@ -75,16 +75,24 @@ func drainMCPPost(t *testing.T, ts *httptest.Server, body []byte, sessionID stri
 	resp.Body.Close()
 }
 
-func setSessionProjection(t *testing.T, ts *httptest.Server, sessionID, srvName, tool string, proj map[string]any) {
+type sessionProjectionParams struct {
+	TS        *httptest.Server
+	SessionID string
+	SrvName   string
+	Tool      string
+	Proj      map[string]any
+}
+
+func setSessionProjection(t *testing.T, p sessionProjectionParams) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
-			"action": "set_projection", "server": srvName, "tool": tool,
-			"projection": proj, "session_only": true,
+			"action": "set_projection", "server": p.SrvName, "tool": p.Tool,
+			"projection": p.Proj, "session_only": true,
 		}},
 	})
-	drainMCPPost(t, ts, body, sessionID)
+	drainMCPPost(t, p.TS, body, p.SessionID)
 }
 
 func httpExecToolText(t *testing.T, ts *httptest.Server, sessionID, srvName, tool string) string {
@@ -166,7 +174,7 @@ func TestHTTPServer_sessionPersistsProjection(t *testing.T) {
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake) //nolint:errcheck
 	sessionID := initSession(t, ts)
-	setSessionProjection(t, ts, sessionID, "svc", "get_item", map[string]any{"include": []string{"id"}})
+	setSessionProjection(t, sessionProjectionParams{TS: ts, SessionID: sessionID, SrvName: "svc", Tool: "get_item", Proj: map[string]any{"include": []string{"id"}}})
 	text := httpExecToolText(t, ts, sessionID, "svc", "get_item")
 	var env map[string]any
 	json.Unmarshal([]byte(text), &env) //nolint:errcheck
