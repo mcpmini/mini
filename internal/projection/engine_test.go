@@ -101,9 +101,18 @@ func TestStringTruncation(t *testing.T) {
 	if m["body"] != want {
 		t.Errorf("body = %q, want %q", m["body"], want)
 	}
-	if result.Truncated["body"] != 1900 {
-		t.Errorf("truncated[body] = %d, want 1900", result.Truncated["body"])
+	o := singleOmission(t, result.Omitted)
+	if o.Path != ".body" || o.Bytes != 1900 {
+		t.Errorf("omitted = %+v, want {.body 1900}", o)
 	}
+}
+
+func singleOmission(t *testing.T, omitted []projection.Omission) projection.Omission {
+	t.Helper()
+	if len(omitted) != 1 {
+		t.Fatalf("expected 1 omission, got %#v", omitted)
+	}
+	return omitted[0]
 }
 
 // TestDepthLimit verifies that depth is counted from 0 (top-level = depth 0).
@@ -247,15 +256,13 @@ func TestNamedStringLimit(t *testing.T) {
 	if m["body"].(string) != wantBody {
 		t.Errorf("body = %q, want %q", m["body"], wantBody)
 	}
-	if result.Truncated["body"] != 20 {
-		t.Errorf("truncated[body] = %d, want 20", result.Truncated["body"])
+	o := singleOmission(t, result.Omitted)
+	if o.Path != ".body" || o.Bytes != 20 {
+		t.Errorf("omitted = %+v, want {.body 20}", o)
 	}
 	// title has no named limit — should pass through untruncated
 	if m["title"].(string) != long {
 		t.Errorf("title should not be truncated")
-	}
-	if result.Truncated["title"] != 0 {
-		t.Errorf("title should not be in truncated map, got %d", result.Truncated["title"])
 	}
 }
 
@@ -372,5 +379,70 @@ func TestSlimKeepsFalseAndZeroValues(t *testing.T) {
 		if _, ok := m[key]; !ok {
 			t.Errorf("key %q should be present in projected output, not dropped", key)
 		}
+	}
+}
+
+func TestOmitLimits_replacesFieldWithPlaceholder(t *testing.T) {
+	cfg := &config.ProjectionConfig{OmitLimits: map[string]int{"patch": 10}}
+	value := map[string]any{"patch": strings.Repeat("x", 50)}
+
+	result := projection.Apply(value, cfg, defaultLimits)
+	m := result.Summary.(map[string]any)
+
+	patch := m["patch"].(string)
+	if !strings.Contains(patch, "<omitted: 50 chars") {
+		t.Errorf("patch = %q, want placeholder mentioning 50 chars", patch)
+	}
+	if !strings.Contains(patch, ".patch") {
+		t.Errorf("patch placeholder should include path .patch, got %q", patch)
+	}
+	o := singleOmission(t, result.Omitted)
+	if o.Path != ".patch" || o.Bytes != 50 {
+		t.Errorf("omitted = %+v, want {.patch 50}", o)
+	}
+}
+
+func TestOmitLimits_underThresholdUntouched(t *testing.T) {
+	cfg := &config.ProjectionConfig{OmitLimits: map[string]int{"patch": 100}}
+	value := map[string]any{"patch": strings.Repeat("x", 50)}
+
+	result := projection.Apply(value, cfg, defaultLimits)
+	m := result.Summary.(map[string]any)
+
+	if m["patch"] != strings.Repeat("x", 50) {
+		t.Errorf("patch should be unchanged below omit_limits threshold, got %q", m["patch"])
+	}
+	if len(result.Omitted) != 0 {
+		t.Errorf("expected no omissions, got %#v", result.Omitted)
+	}
+}
+
+func TestOmitLimits_perArrayItemPathsDoNotOverwrite(t *testing.T) {
+	cfg := &config.ProjectionConfig{OmitLimits: map[string]int{"patch": 10}}
+	value := map[string]any{
+		"files": []any{
+			map[string]any{"filename": "a.go", "patch": strings.Repeat("a", 20)},
+			map[string]any{"filename": "b.go", "patch": strings.Repeat("b", 30)},
+		},
+	}
+
+	result := projection.Apply(value, cfg, defaultLimits)
+	if len(result.Omitted) != 2 {
+		t.Fatalf("expected 2 omissions (one per array item), got %#v", result.Omitted)
+	}
+	paths := []string{result.Omitted[0].Path, result.Omitted[1].Path}
+	if paths[0] != ".files[0].patch" || paths[1] != ".files[1].patch" {
+		t.Errorf("paths = %v, want [.files[0].patch .files[1].patch]", paths)
+	}
+	if result.Omitted[0].Bytes != 20 || result.Omitted[1].Bytes != 30 {
+		t.Errorf("bytes = %v, want [20 30]", result.Omitted)
+	}
+}
+
+func TestHint_passedThroughFromConfig(t *testing.T) {
+	cfg := &config.ProjectionConfig{Hint: "see get_files for full patches"}
+	result := projection.Apply(map[string]any{"a": 1}, cfg, defaultLimits)
+	if result.Hint != "see get_files for full patches" {
+		t.Errorf("Hint = %q, want config hint", result.Hint)
 	}
 }

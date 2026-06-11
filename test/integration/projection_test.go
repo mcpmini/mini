@@ -82,17 +82,21 @@ func TestProjection_truncatedEnvelope(t *testing.T) {
 		t.Fatalf("expected success, got error: %s", env.Error)
 	}
 
-	bytesRemoved, ok := env.Truncated["body"]
-	if !ok || bytesRemoved <= 0 {
-		t.Errorf("expected truncated[body] > 0, got %v", env.Truncated)
+	var bodyOmission *omission
+	for i, o := range env.Omitted {
+		if o.Path == ".body" {
+			bodyOmission = &env.Omitted[i]
+		}
+		if o.Path == ".title" {
+			t.Errorf("short field 'title' should not appear in omitted, got %+v", o)
+		}
+	}
+	if bodyOmission == nil {
+		t.Fatalf("expected omission for .body, got %v", env.Omitted)
 	}
 	// 400 chars → limit 60, so at least 300 bytes removed
-	if bytesRemoved < 300 {
-		t.Errorf("expected ≥300 bytes removed from body, got %d", bytesRemoved)
-	}
-	// short fields must not appear in truncated
-	if _, present := env.Truncated["title"]; present {
-		t.Errorf("short field 'title' should not appear in truncated")
+	if bodyOmission.Bytes < 300 {
+		t.Errorf("expected ≥300 bytes removed from body, got %d", bodyOmission.Bytes)
 	}
 	// file written because truncation counts as projection
 	if env.File == nil {

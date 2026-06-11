@@ -1,19 +1,32 @@
 package response
 
+import "github.com/mcpmini/mini/internal/projection"
+
+// Omission records a field that was truncated or replaced with a
+// placeholder during projection, with bytes removed and a path pointer
+// into Data for locating the full value in the raw file.
+type Omission = projection.Omission
+
 // Envelope is what agents receive for every execute call.
 // On success: Data is set. On error: Error and Message are set.
 type Envelope struct {
-	// Data is the projected response (success only).
+	// Data is the projected response (success only). Always set, even when
+	// a raw file is also written.
 	Data any `json:"data,omitempty"`
 
 	// Elided lists field names stripped by the projection engine.
 	Elided []string `json:"elided,omitempty"`
 
-	// Truncated maps field names to bytes removed by string limits.
-	Truncated map[string]int `json:"truncated,omitempty"`
+	// Omitted lists fields that were truncated or replaced with a
+	// placeholder, with the bytes removed and a path into Data.
+	Omitted []Omission `json:"omitted,omitempty"`
 
-	// File is the path to the full raw upstream response, set when any
-	// projection (elision or truncation) was applied.
+	// Hint is a steering note from the projection config (e.g. pointing
+	// agents at a related tool for full data).
+	Hint string `json:"hint,omitempty"`
+
+	// File is the path to the full raw upstream response, set when Omitted
+	// or Elided is non-empty.
 	File *string `json:"file,omitempty"`
 
 	// Passthrough contains fields explicitly preserved from projection rules.

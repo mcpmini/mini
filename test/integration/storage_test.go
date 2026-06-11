@@ -20,19 +20,6 @@ func largeResponseClient(t *testing.T, threshold string) (*mcpClient, string) {
 	return startServer(t, cfg), respDir
 }
 
-func TestStorage_rawFileExistsAlongsideSlim(t *testing.T) {
-	client, respDir := largeResponseClient(t, "1")
-	e := client.execEnvelope("github", "list_pull_requests", nil)
-	if e.File == nil {
-		t.Fatal("expected file response for large payload")
-	}
-	rawPath := strings.TrimSuffix(*e.File, ".json") + ".raw.json"
-	if _, err := os.Stat(rawPath); err != nil {
-		t.Errorf("raw file %q should exist alongside slim file: %v", rawPath, err)
-	}
-	_ = respDir
-}
-
 func TestStorage_inlineThresholdZeroForcesFile(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
@@ -51,7 +38,7 @@ func TestStorage_inlineThresholdZeroForcesFile(t *testing.T) {
 	}
 }
 
-func TestStorage_slimFileIsPrettyPrinted(t *testing.T) {
+func TestStorage_responseFileIsPrettyPrinted(t *testing.T) {
 	client, _ := largeResponseClient(t, "1")
 	e := client.execEnvelope("github", "list_pull_requests", nil)
 	if e.File == nil {
@@ -59,13 +46,13 @@ func TestStorage_slimFileIsPrettyPrinted(t *testing.T) {
 	}
 	data, err := os.ReadFile(*e.File)
 	if err != nil {
-		t.Fatalf("read slim file: %v", err)
+		t.Fatalf("read response file: %v", err)
 	}
 	if !strings.Contains(string(data), "\n") || !strings.Contains(string(data), "  ") {
-		t.Errorf("slim file should be pretty-printed JSON, got first 100 chars: %s", data[:min(100, len(data))])
+		t.Errorf("response file should be pretty-printed JSON, got first 100 chars: %s", data[:min(100, len(data))])
 	}
 	if !json.Valid(data) {
-		t.Error("slim file should be valid JSON")
+		t.Error("response file should be valid JSON")
 	}
 }
 
@@ -121,13 +108,12 @@ func TestStorage_cleanupDeletesExpired(t *testing.T) {
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}
-	slimPath := *e.File
-	backdateFile(t, slimPath, 8*24*time.Hour)
-	backdateFile(t, strings.TrimSuffix(slimPath, ".json")+".raw.json", 8*24*time.Hour)
+	respPath := *e.File
+	backdateFile(t, respPath, 8*24*time.Hour)
 
 	runCLI(t, cfg, "cleanup")
-	if _, err := os.Stat(slimPath); !os.IsNotExist(err) {
-		t.Error("expired slim file should be deleted by cleanup")
+	if _, err := os.Stat(respPath); !os.IsNotExist(err) {
+		t.Error("expired response file should be deleted by cleanup")
 	}
 }
 
@@ -142,10 +128,10 @@ func TestStorage_cleanupRetainsNonExpired(t *testing.T) {
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}
-	slimPath := *e.File
+	respPath := *e.File
 	// File is fresh (current modtime) — should survive cleanup
 	runCLI(t, cfg, "cleanup")
-	if _, err := os.Stat(slimPath); err != nil {
+	if _, err := os.Stat(respPath); err != nil {
 		t.Errorf("non-expired file should not be deleted by cleanup: %v", err)
 	}
 }

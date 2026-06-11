@@ -400,10 +400,16 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 	return result.Content[0].Text
 }
 
+type omission struct {
+	Path  string `json:"path"`
+	Bytes int    `json:"bytes"`
+}
+
 type envelope struct {
 	Data        any            `json:"data"`
 	Elided      []string       `json:"elided"`
-	Truncated   map[string]int `json:"truncated"`
+	Omitted     []omission     `json:"omitted"`
+	Hint        string         `json:"hint"`
 	File        *string        `json:"file"`
 	Passthrough map[string]any `json:"passthrough"`
 	Error       string         `json:"error"`

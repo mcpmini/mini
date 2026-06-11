@@ -125,3 +125,22 @@ func TestMergeWithDefaultsStripMarkupWithoutSlim(t *testing.T) {
 		t.Fatalf("depthLimit = %d, want defaults preserved", got.depthLimit)
 	}
 }
+
+func TestEffectiveConfig_omitLimitFor(t *testing.T) {
+	cfg := &config.ProjectionConfig{OmitLimits: map[string]int{"patch": 1800}}
+	got := mergeWithDefaults(cfg, &Defaults{StringLimit: 1000, DepthLimit: 3})
+	if got.omitLimitFor("patch") != 1800 {
+		t.Errorf("omitLimitFor(patch) = %d, want 1800", got.omitLimitFor("patch"))
+	}
+	if got.omitLimitFor("other") != 0 {
+		t.Errorf("omitLimitFor(other) = %d, want 0 (no omission)", got.omitLimitFor("other"))
+	}
+}
+
+func TestEffectiveConfig_hint(t *testing.T) {
+	cfg := &config.ProjectionConfig{Hint: "see get_files for full patches"}
+	got := mergeWithDefaults(cfg, &Defaults{StringLimit: 1000, DepthLimit: 3})
+	if got.hint != "see get_files for full patches" {
+		t.Errorf("hint = %q, want config hint", got.hint)
+	}
+}

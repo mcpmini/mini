@@ -85,10 +85,11 @@ func (s *Server) proxyProject(p envelopeParams) (any, error) {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderProxyResult(p.Server, p.Tool, env, projCfg, stats.SummaryTokens), nil
+	isLarge := stats.SummaryTokens > s.cfg.InlineThreshold
+	return s.renderProxyResult(p.Server, p.Tool, env, projCfg, isLarge), nil
 }
 
-func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig, rawTokens int) string {
+func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig, isLarge bool) string {
 	format := s.cfg.ResponseFormat
 	if projCfg.Format != "" {
 		format = projCfg.Format
@@ -96,28 +97,29 @@ func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, 
 	if format == "mini" {
 		return RenderLines(server, tool, env)
 	}
-	return s.formatProxyEnvelope(env, rawTokens)
+	return formatProxyEnvelope(env, isLarge)
 }
 
-// formatProxyEnvelope formats a proxy response using the 3-tier approach:
-// - No projection, small: raw JSON, mini invisible
-// - Projection applied, small: bracket note + inline projected JSON
-// - Large (above inline threshold): note (if projection) + file path
-func (s *Server) formatProxyEnvelope(env *response.Envelope, rawTokens int) string {
-	hasNote := len(env.Elided) > 0 || len(env.Truncated) > 0
-	isLarge := rawTokens > s.cfg.InlineThreshold
+// formatProxyEnvelope formats a proxy response. Small responses with no
+// projection note are inlined as-is. Any projection note (elided/omitted
+// fields or a hint) is rendered with the projected data inline plus a
+// pointer to the raw file. Large responses with no note fall back to a
+// file pointer only, since Data may still be too large to inline.
+func formatProxyEnvelope(env *response.Envelope, isLarge bool) string {
 	switch {
-	case !hasNote && !isLarge:
+	case !hasProjectionNote(env) && !isLarge:
 		return marshalProxyData(env.Data)
-	case !isLarge:
+	case hasProjectionNote(env):
 		return formatProjectedInline(env)
-	case hasNote:
-		return formatProjectedFile(env)
 	case env.File != nil:
 		return "File: " + *env.File
 	default:
 		return marshalProxyData(env.Data)
 	}
+}
+
+func hasProjectionNote(env *response.Envelope) bool {
+	return len(env.Elided) > 0 || len(env.Omitted) > 0 || env.Hint != ""
 }
 
 func marshalProxyData(data any) string {
@@ -127,14 +129,18 @@ func marshalProxyData(data any) string {
 
 func formatProjectedInline(env *response.Envelope) string {
 	b, _ := json.MarshalIndent(env.Data, "", "  ")
-	return "[Projected — " + projectionNote(env) + "]\n" + string(b)
+	header := "[Projected — " + projectionNote(env) + "]"
+	if env.File != nil {
+		header += "\nFile: " + *env.File
+	}
+	return header + "\n" + string(b)
 }
 
-func formatProjectedFile(env *response.Envelope) string {
-	if env.File == nil {
-		return formatProjectedInline(env)
+func omissionNote(o response.Omission) string {
+	if o.Path == "" {
+		return fmt.Sprintf("response truncated (%d chars)", o.Bytes)
 	}
-	return "[Projected — " + projectionNote(env) + "]\nFile: " + *env.File
+	return fmt.Sprintf("%s truncated (%d chars)", o.Path, o.Bytes)
 }
 
 func projectionNote(env *response.Envelope) string {
@@ -142,25 +148,13 @@ func projectionNote(env *response.Envelope) string {
 	if len(env.Elided) > 0 {
 		parts = append(parts, strings.Join(env.Elided, ", ")+" elided")
 	}
-	fields := sortedTruncatedFields(env.Truncated)
-	for _, field := range fields {
-		parts = append(parts, fmt.Sprintf("%s truncated (%d chars)", field, env.Truncated[field]))
+	for _, o := range env.Omitted {
+		parts = append(parts, omissionNote(o))
+	}
+	if env.Hint != "" {
+		parts = append(parts, env.Hint)
 	}
 	return strings.Join(parts, "; ")
-}
-
-func sortedTruncatedFields(m map[string]int) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	// stable order for deterministic output
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j] < out[j-1]; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
-		}
-	}
-	return out
 }
 
 func (s *Server) handleRead(raw json.RawMessage) (any, error) {
