@@ -79,7 +79,7 @@ func StartPKCEFlowOnListener(ctx context.Context, ac *config.AuthConfig, listene
 	url := buildAuthURL(cfg, state, verifier, ac.ResourceURL)
 
 	resultCh := make(chan PKCEResult, 1)
-	go exchangeCode(ctx, cfg, verifier, ac.ResourceURL, codeCh, srv, resultCh)
+	go exchangeCode(ctx, ExchangeCodeParams{Cfg: cfg, Verifier: verifier, ResourceURL: ac.ResourceURL, CodeCh: codeCh, Srv: srv, ResultCh: resultCh})
 	return url, resultCh, nil
 }
 
@@ -108,29 +108,38 @@ func serveCallbackListener(listener net.Listener, handler http.Handler) *http.Se
 	return srv
 }
 
-func exchangeCode(ctx context.Context, cfg *oauth2.Config, verifier, resourceURL string, codeCh <-chan string, srv *http.Server, resultCh chan<- PKCEResult) {
-	defer srv.Close()
+type ExchangeCodeParams struct {
+	Cfg         *oauth2.Config
+	Verifier    string
+	ResourceURL string
+	CodeCh      <-chan string
+	Srv         *http.Server
+	ResultCh    chan<- PKCEResult
+}
+
+func exchangeCode(ctx context.Context, p ExchangeCodeParams) {
+	defer p.Srv.Close()
 	var code string
 	select {
-	case code = <-codeCh:
+	case code = <-p.CodeCh:
 	case <-ctx.Done():
 		select {
-		case code = <-codeCh:
+		case code = <-p.CodeCh:
 			// code arrived just before cancel; ctx is already done so use a fresh context
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 		default:
-			resultCh <- PKCEResult{Err: ctx.Err()}
+			p.ResultCh <- PKCEResult{Err: ctx.Err()}
 			return
 		}
 	}
-	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(verifier)}
-	if resourceURL != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("resource", resourceURL))
+	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(p.Verifier)}
+	if p.ResourceURL != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("resource", p.ResourceURL))
 	}
-	token, err := cfg.Exchange(ctx, code, opts...)
-	resultCh <- PKCEResult{Token: token, Err: err}
+	token, err := p.Cfg.Exchange(ctx, code, opts...)
+	p.ResultCh <- PKCEResult{Token: token, Err: err}
 }
 
 // Refresh exchanges a refresh token for a new access token.

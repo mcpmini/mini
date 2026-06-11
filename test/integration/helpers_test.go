@@ -498,24 +498,33 @@ func faultServer(t *testing.T, fixtures map[string]string, fault map[string]any,
 	dir := mockFixtureDir(t, fixtures)
 	cfg := t.TempDir()
 	faultJSON, _ := json.Marshal(fault)
-	writeFaultServer(t, cfg, "svc", dir, string(faultJSON), toolTimeout, "")
+	writeFaultServer(t, faultServerParams{ConfigDir: cfg, ServerName: "svc", Fixtures: dir, FaultJSON: string(faultJSON), ToolTimeout: toolTimeout})
 	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	return startServer(t, cfg)
 }
 
-func writeFaultServer(t *testing.T, configDir, serverName, fixtures, faultJSON, toolTimeout, extra string) {
+type faultServerParams struct {
+	ConfigDir   string
+	ServerName  string
+	Fixtures    string
+	FaultJSON   string
+	ToolTimeout string
+	Extra       string
+}
+
+func writeFaultServer(t *testing.T, p faultServerParams) {
 	t.Helper()
-	dir := filepath.Join(configDir, "servers")
+	dir := filepath.Join(p.ConfigDir, "servers")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
 	yaml := fmt.Sprintf("name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n  - --initial-fault\n  - '%s'\n",
-		serverName, fakemcpBin, fixtures, faultJSON)
-	if toolTimeout != "" {
-		yaml += "tool_timeout: " + toolTimeout + "\n"
+		p.ServerName, fakemcpBin, p.Fixtures, p.FaultJSON)
+	if p.ToolTimeout != "" {
+		yaml += "tool_timeout: " + p.ToolTimeout + "\n"
 	}
-	yaml += extra
-	if err := os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(yaml), 0600); err != nil {
+	yaml += p.Extra
+	if err := os.WriteFile(filepath.Join(dir, p.ServerName+".yaml"), []byte(yaml), 0600); err != nil {
 		t.Fatal(err)
 	}
 }

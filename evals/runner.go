@@ -257,7 +257,7 @@ func (r *Runner) cliSetup(env *Env, p EvalParams, task string, i, rep int) (runS
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newCLIRunSetup(i, rep, callDir, workDir, wrapDir, cliAllowedTools(p.AllowedTools), task), nil
+	return newCLIRunSetup(CLIRunSetupParams{Idx: i, Rep: rep, CallDir: callDir, WorkDir: workDir, WrapDir: wrapDir, Allowed: cliAllowedTools(p.AllowedTools), Task: task}), nil
 }
 
 type mcpRunSetupParams struct {
@@ -272,10 +272,15 @@ func newMCPRunSetup(p mcpRunSetupParams) runSetup {
 	}
 }
 
-func newCLIRunSetup(idx, rep int, callDir, workDir, wrapDir, allowed, task string) runSetup {
+type CLIRunSetupParams struct {
+	Idx, Rep                                 int
+	CallDir, WorkDir, WrapDir, Allowed, Task string
+}
+
+func newCLIRunSetup(p CLIRunSetupParams) runSetup {
 	return runSetup{
-		kind: "cli", idx: idx, rep: rep, callDir: callDir, workDir: workDir,
-		cmd: func() *exec.Cmd { return buildClaudeCLICmd(wrapDir, allowed, workDir, task) },
+		kind: "cli", idx: p.Idx, rep: p.Rep, callDir: p.CallDir, workDir: p.WorkDir,
+		cmd: func() *exec.Cmd { return buildClaudeCLICmd(p.WrapDir, p.Allowed, p.WorkDir, p.Task) },
 	}
 }
 
