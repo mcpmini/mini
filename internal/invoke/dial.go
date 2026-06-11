@@ -23,7 +23,7 @@ func Dial(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc confi
 			BlockPrivateIPs:         sc.RuntimeAdded && !cfg.DangerousAllowPrivateURLs,
 		})
 	default:
-		return transport.NewStdioConnection(ctx, logger, sc.Command, sc.Args, sc.Env)
+		return transport.NewStdioConnection(ctx, transport.StdioCommand{Command: sc.Command, Args: sc.Args, Env: sc.Env, Logger: logger})
 	}
 }
 

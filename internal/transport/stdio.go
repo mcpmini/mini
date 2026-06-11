@@ -25,8 +25,15 @@ type StdioConnection struct {
 	mu           sync.Mutex // guards stdin writes
 }
 
-func NewStdioConnection(ctx context.Context, logger *slog.Logger, command string, args, env []string) (*StdioConnection, error) {
-	c, err := startSubprocess(ctx, logger, command, args, env)
+type StdioCommand struct {
+	Command string
+	Args    []string
+	Env     []string
+	Logger  *slog.Logger
+}
+
+func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
+	c, err := startSubprocess(ctx, p)
 	if err != nil {
 		return nil, err
 	}
@@ -37,20 +44,20 @@ func NewStdioConnection(ctx context.Context, logger *slog.Logger, command string
 	return c, nil
 }
 
-func startSubprocess(ctx context.Context, logger *slog.Logger, command string, args, env []string) (*StdioConnection, error) {
-	cmd := exec.CommandContext(ctx, command, args...)
-	if len(env) > 0 {
-		cmd.Env = env
+func startSubprocess(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
+	cmd := exec.CommandContext(ctx, p.Command, p.Args...)
+	if len(p.Env) > 0 {
+		cmd.Env = p.Env
 	}
 	stdin, stdout, err := cmdPipes(cmd)
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stderr = &prefixWriter{logger: logger, prefix: "[" + command + "] "}
+	cmd.Stderr = &prefixWriter{logger: p.Logger, prefix: "[" + p.Command + "] "}
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start %s: %w", command, err)
+		return nil, fmt.Errorf("start %s: %w", p.Command, err)
 	}
-	c := newConn(cmd, stdin, stdout, logger)
+	c := newConn(cmd, stdin, stdout, p.Logger)
 	go c.readLoop()
 	return c, nil
 }
