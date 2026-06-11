@@ -10,6 +10,13 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
+// RenderLines renders an envelope as one line per array item with sanitizeLine's
+// 80-char-per-field truncation. This is lossy and untracked (no Omission
+// recorded), so "format: mini" should only be set on tools whose individual
+// field values are inherently short and scannable (e.g. svc.list,
+// fs.list_directory) — not on tools returning long prose, diffs, or bodies,
+// where the unified Omission/omit_limits mechanism in projection.Apply should
+// be used instead.
 func RenderLines(server, tool string, e *response.Envelope) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%s.%s]", server, tool)

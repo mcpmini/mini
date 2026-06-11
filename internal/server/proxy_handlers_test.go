@@ -149,7 +149,7 @@ func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
 	}
 }
 
-func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
+func TestProxy_Call_WithProjection_BracketNoteAndFile(t *testing.T) {
 	srv := newProxyServer(t) // InlineThreshold=50
 	defer srv.Close()
 	conn := fakeConn("list_repos")
@@ -165,47 +165,20 @@ func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
 
 	resp := serve(t, srv, callTool("gh__list_repos", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("proxy small+projection response: %s", text)
+	t.Logf("proxy projection response: %s", text)
 
 	if !strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected [Projected] note for small response with projection: %s", text)
+		t.Errorf("expected [Projected] note when a field is elided: %s", text)
 	}
-	if strings.Contains(text, "File:") {
-		t.Errorf("small response should be inline, not file path: %s", text)
-	}
-}
-
-func TestProxy_Call_WithProjection_Large_FilePath(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 1 // force all responses to be "large"
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
-	defer srv.Close()
-
-	conn := fakeConn("list_prs")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"items\":[{\"id\":1,\"body\":\"long body text here\"}]}"}]}`)
-	addProxyConn(t, srv, "gh", conn)
-
-	serve(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "gh",
-		"tool":       "list_prs",
-		"projection": map[string]any{"exclude_always": []string{"body"}},
-	}))
-
-	resp := serve(t, srv, callTool("gh__list_prs", map[string]any{}))
-	text := toolResultText(t, resp)
-	t.Logf("proxy large response: %s", text)
-
 	if !strings.Contains(text, "File:") {
-		t.Errorf("expected File: path in large projected response: %s", text)
+		t.Errorf("expected File: path written alongside inline data when there's a projection note: %s", text)
 	}
 }
 
-func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
+func TestProxy_Call_WithProjection_NoNote_NoFile(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 1 // force all responses to file
+	cfg.InlineThreshold = 1 // size alone must not trigger a file write
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
 	defer srv.Close()
 
@@ -222,13 +195,13 @@ func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
 
 	resp := serve(t, srv, callTool("svc__get_data", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("large projection-no-note response: %s", text)
+	t.Logf("projection-no-note response: %s", text)
 
 	if strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected no [Projected] note when nothing elided: %s", text)
+		t.Errorf("expected no [Projected] note when nothing elided or omitted: %s", text)
 	}
-	if !strings.HasPrefix(text, "File:") {
-		t.Errorf("expected File: path for large response with projection: %s", text)
+	if strings.Contains(text, "File:") {
+		t.Errorf("expected no file written when nothing elided or omitted: %s", text)
 	}
 }
 

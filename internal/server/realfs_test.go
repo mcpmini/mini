@@ -118,9 +118,9 @@ func TestReadFileTruncation(t *testing.T) {
 	if env["error"] != nil {
 		t.Fatalf("read_file failed: %v", env)
 	}
-	truncated, _ := env["truncated"].(map[string]any)
-	if len(truncated) == 0 {
-		t.Errorf("expected truncated map in envelope after string limit applied, got: %v", env)
+	omitted, _ := env["omitted"].([]any)
+	if len(omitted) == 0 {
+		t.Errorf("expected omitted entries in envelope after string limit applied, got: %v", env)
 	}
 }
 

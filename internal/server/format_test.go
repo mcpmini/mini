@@ -138,11 +138,11 @@ func TestLinesFormatIncludesSpilledFilePath(t *testing.T) {
 
 func spilledLinesResponse(t *testing.T, payload string) []string {
 	t.Helper()
-	// Use threshold=1 so the raw response always exceeds it, triggering file write.
-	srv := newSrvWithResponse(t, "mini", 1, payload)
+	srv := newSrvWithResponse(t, "mini", 10000, payload)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"format": "mini"},
+		// string_limits triggers an Omitted entry, which spills the response to a file.
+		"projection": map[string]any{"format": "mini", "string_limits": map[string]any{"title": 50}},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},

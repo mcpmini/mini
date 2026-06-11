@@ -253,20 +253,19 @@ func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
 		t.Fatalf("get_doc failed: %v", env)
 	}
 
-	truncated, _ := env["truncated"].(map[string]any)
-	bytesRemoved, _ := truncated["body"].(float64)
-	if bytesRemoved <= 0 {
-		t.Errorf("expected truncated[body] > 0, got %v", truncated)
+	omitted, _ := env["omitted"].([]any)
+	if len(omitted) != 1 {
+		t.Fatalf("expected 1 omission, got %v", omitted)
+	}
+	o, _ := omitted[0].(map[string]any)
+	if o["path"] != ".body" {
+		t.Errorf("expected omission path .body, got %v", o["path"])
 	}
 	// body had 300 chars, limit 50 → removed ≥ 200
+	bytesRemoved, _ := o["bytes"].(float64)
 	if int(bytesRemoved) < 200 {
 		t.Errorf("expected at least 200 bytes removed from body, got %v", bytesRemoved)
 	}
-	// title is short — must not appear in truncated
-	if truncated["title"] != nil {
-		t.Errorf("short field should not appear in truncated, got title=%v", truncated["title"])
-	}
-	// file is only written when response exceeds inline_threshold, not just because projection applied
 }
 
 func assertHealthStats(t *testing.T, srv *server.Server, svcName string, wantCalls int) {
@@ -428,8 +427,8 @@ func TestSlimProjectionMode(t *testing.T) {
 	}
 	var slimEnv map[string]any
 	json.Unmarshal([]byte(textSlim), &slimEnv)
-	truncated, _ := slimEnv["truncated"].(map[string]any)
-	if len(truncated) == 0 {
-		t.Errorf("expected truncated map in slim envelope, got: %v", slimEnv)
+	omitted, _ := slimEnv["omitted"].([]any)
+	if len(omitted) == 0 {
+		t.Errorf("expected omitted entries in slim envelope, got: %v", slimEnv)
 	}
 }

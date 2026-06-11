@@ -26,6 +26,12 @@ pull_request_read:
   exclude_always: [avatar_url]
   string_limits:
     body: 8000
+    diff: 4000
+  # get_files returns per-file patches that can each run tens of KB; omit_limits
+  # replaces oversized patches with a placeholder pointing at the raw response file.
+  omit_limits:
+    patch: 1800
+  hint: "for full diffs, use method get_files and read() the response file, or fetch get_diff for the whole PR"
 
 get_issue:
   exclude_always: [avatar_url]

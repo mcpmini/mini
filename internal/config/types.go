@@ -247,7 +247,13 @@ type ProjectionConfig struct {
 	Passthrough   []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
 	ArrayLimits  map[string]int `yaml:"array_limits,omitempty"   json:"array_limits,omitempty"`
 	StringLimits map[string]int `yaml:"string_limits,omitempty"  json:"string_limits,omitempty"`
+	OmitLimits   map[string]int `yaml:"omit_limits,omitempty"    json:"omit_limits,omitempty"`
 	DepthLimit   int            `yaml:"depth_limit,omitempty"    json:"depth_limit,omitempty"`
 	StripMarkup  bool           `yaml:"strip_markup,omitempty"   json:"strip_markup,omitempty"`
 	Format       string         `yaml:"format,omitempty"         json:"format,omitempty"`
+
+	// Hint is a short steering note appended to the projection note, surfaced
+	// to agents when this projection is applied (e.g. pointing them at a
+	// related tool for full data).
+	Hint string `yaml:"hint,omitempty" json:"hint,omitempty"`
 }

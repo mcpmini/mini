@@ -24,7 +24,7 @@ func newTestStore(t *testing.T) *response.Store {
 
 func TestInlineSmallResponse(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store, 500)
+	builder := response.NewBuilder(store)
 
 	raw := json.RawMessage(`{"status":"ok","id":"abc"}`)
 	data := map[string]any{"status": "ok", "id": "abc"}
@@ -41,7 +41,7 @@ func TestInlineSmallResponse(t *testing.T) {
 
 func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store, 0)
+	builder := response.NewBuilder(store)
 
 	raw := json.RawMessage(`{"status":"ok","body":"secret content"}`)
 	data := map[string]any{"status": "ok"}
@@ -63,11 +63,12 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	}
 }
 
-func TestFileWrittenWhenThresholdExceeded(t *testing.T) {
+func TestNoFileWhenNoElisionOrOmission(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store, 5) // threshold of 5 tokens
+	builder := response.NewBuilder(store)
 
-	// Large response (>> 5 tokens) with no projection should still write to file.
+	// Large response with no elided/omitted fields should not write a file —
+	// Data is inlined regardless of size.
 	raw := json.RawMessage(`{"status":"ok","body":"` + strings.Repeat("x", 200) + `"}`)
 	data := map[string]any{"status": "ok", "body": strings.Repeat("x", 200)}
 
@@ -76,31 +77,17 @@ func TestFileWrittenWhenThresholdExceeded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if env.File == nil {
-		t.Error("expected file written when raw token count exceeds threshold")
-	}
-}
-
-func TestNoFileWhenBelowThreshold(t *testing.T) {
-	store := newTestStore(t)
-	builder := response.NewBuilder(store, 500) // high threshold
-
-	raw := json.RawMessage(`{"id":1}`)
-	data := map[string]any{"id": 1}
-
-	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "get", Raw: raw, Summary: data})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	if env.File != nil {
-		t.Error("no file should be written when response is below threshold and no projection applied")
+		t.Error("no file should be written when nothing was elided or omitted")
+	}
+	if env.Data == nil {
+		t.Error("expected data to be inlined")
 	}
 }
 
 func TestElidedKeys(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store, 5)
+	builder := response.NewBuilder(store)
 
 	raw := json.RawMessage(`{"a":1,"b":2,"c":3}`)
 	data := map[string]any{"a": 1}
@@ -116,33 +103,52 @@ func TestElidedKeys(t *testing.T) {
 	}
 }
 
-func TestTruncatedKeys(t *testing.T) {
+func TestOmittedFields(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store, 0)
+	builder := response.NewBuilder(store)
 
 	raw := json.RawMessage(`{"summary":"short","body":"` + strings.Repeat("x", 500) + `"}`)
 	data := map[string]any{"summary": "short", "body": strings.Repeat("x", 50)}
-	truncated := map[string]int{"body": 450}
+	omitted := []response.Omission{{Path: ".body", Bytes: 450}}
 
 	env, _, err := builder.Build(response.BuildParams{
-		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Truncated: truncated,
+		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Omitted: omitted,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if env.Truncated["body"] != 450 {
-		t.Errorf("expected truncated[body]=450, got %v", env.Truncated)
+	if len(env.Omitted) != 1 || env.Omitted[0].Path != ".body" || env.Omitted[0].Bytes != 450 {
+		t.Errorf("expected omitted=[{.body 450}], got %v", env.Omitted)
 	}
-	// truncation counts as projection applied — raw file should exist
+	// omission counts as projection applied — raw file should exist
 	if env.File == nil {
-		t.Error("expected file written when truncation applied")
+		t.Error("expected file written when a field was omitted")
+	}
+}
+
+func TestHintPassedThrough(t *testing.T) {
+	store := newTestStore(t)
+	builder := response.NewBuilder(store)
+
+	raw := json.RawMessage(`{"a":1,"b":2}`)
+	data := map[string]any{"a": 1}
+
+	env, _, err := builder.Build(response.BuildParams{
+		Server: "s", Tool: "t", Raw: raw, Summary: data, Elided: []string{"b"}, Hint: "see other_tool for full data",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if env.Hint != "see other_tool for full data" {
+		t.Errorf("Hint = %q, want config hint", env.Hint)
 	}
 }
 
 func TestCallStatsReduction(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store, 5)
+	builder := response.NewBuilder(store)
 
 	raw := json.RawMessage(`{"status":"ok","body":"this is a large response with lots of text content that exceeds the threshold"}`)
 	data := map[string]any{"status": "ok"}

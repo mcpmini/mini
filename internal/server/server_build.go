@@ -37,7 +37,7 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		upstreams:    make(map[string]*upstreamServer),
 		removeGen:    make(map[string]uint64),
 		projections:  projections,
-		envelope:     response.NewBuilder(store, cfg.InlineThreshold),
+		envelope:     response.NewBuilder(store),
 		store:        store,
 		projDefaults: projection.DefaultsFrom(cfg),
 		toolSchemas:  proxyToolSchemas(),
