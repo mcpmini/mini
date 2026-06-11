@@ -108,14 +108,6 @@ func serveCallbackListener(listener net.Listener, handler http.Handler) *http.Se
 	return srv
 }
 
-func callbackPort(listener net.Listener) (int, error) {
-	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
-	if !ok {
-		return 0, fmt.Errorf("listener address is not TCP: %T", listener.Addr())
-	}
-	return tcpAddr.Port, nil
-}
-
 func exchangeCode(ctx context.Context, cfg *oauth2.Config, verifier, resourceURL string, codeCh <-chan string, srv *http.Server, resultCh chan<- PKCEResult) {
 	defer srv.Close()
 	var code string
