@@ -98,23 +98,29 @@ func mergeProjections(servers []ServerConfig, projections map[string]map[string]
 
 func loadMainConfig(dir string) (*Config, error) {
 	cfg := DefaultConfig()
-	path := filepath.Join(dir, "config.yaml")
-
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	data, err := readMainConfigFile(dir)
+	if err != nil {
+		return nil, err
+	}
+	if data == nil {
 		return cfg, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("read config: %w", err)
-	}
-	data, err = interpolateEnv(data)
-	if err != nil {
-		return nil, fmt.Errorf("config.yaml: %w", err)
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	return cfg, nil
+}
+
+func readMainConfigFile(dir string) ([]byte, error) {
+	path := filepath.Join(dir, "config.yaml")
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	return interpolateEnv(data)
 }
 
 func loadServerConfigs(dir string) ([]ServerConfig, error) {
@@ -138,13 +144,9 @@ func loadServerFiles(paths []string) ([]ServerConfig, error) {
 }
 
 func loadServerConfig(path string) (*ServerConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := readAndInterpolate(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	data, err = interpolateEnv(data)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, err
 	}
 	var s ServerConfig
 	if err := yaml.Unmarshal(data, &s); err != nil {
@@ -154,6 +156,18 @@ func loadServerConfig(path string) (*ServerConfig, error) {
 		return nil, fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", s.Name, path)
 	}
 	return &s, nil
+}
+
+func readAndInterpolate(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	data, err = interpolateEnv(data)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return data, nil
 }
 
 // LoadActions reads ~/.mini/actions/*.yaml files.
@@ -176,13 +190,9 @@ func LoadActions(dir string) ([]ActionConfig, error) {
 }
 
 func loadActionConfig(p string) (*ActionConfig, error) {
-	data, err := os.ReadFile(p)
+	data, err := readAndInterpolate(p)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", p, err)
-	}
-	data, err = interpolateEnv(data)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", p, err)
+		return nil, err
 	}
 	return parseActionConfig(p, data)
 }

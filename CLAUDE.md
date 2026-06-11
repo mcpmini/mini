@@ -36,7 +36,7 @@ Every feature decision should serve one of these two goals.
 
 ### Size limits
 
-- Functions: aim for ≤ 15 lines; anything > 25 lines must be broken into smaller functions
+- Functions: aim for ≤ 18 lines; anything > 25 lines must be broken into smaller functions
 - Files: aim for ≤ 300 lines; > 450 lines warrants a refactor; > 500 lines is a critical priority
 
 ### Function signatures

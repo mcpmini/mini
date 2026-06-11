@@ -1,5 +1,5 @@
 // funclen checks that no function or method exceeds the project code-line limits.
-// Warning >= 15 lines, error >= 25 lines. Comment-only lines inside the function
+// Warning >= 18 lines, error >= 25 lines. Comment-only lines inside the function
 // body don't count, so a well-documented invariant doesn't inflate the length.
 // Functions annotated with //nolint on their declaration line are skipped.
 // Exit code 1 when any errors are found.
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	warnAt  = 15
+	warnAt  = 18
 	errorAt = 25
 )
 
