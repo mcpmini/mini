@@ -104,7 +104,7 @@ func TestConcurrency_MaxPendingRequests(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	faultJSON := `{"tool":"get_item","method":"tools/call","type":"delay","delay_ms":2000}`
-	writeFaultServer(t, cfg, "svc", dir, faultJSON, "", "max_pending_requests: 2\n")
+	writeFaultServer(t, faultServerParams{ConfigDir: cfg, ServerName: "svc", Fixtures: dir, FaultJSON: faultJSON, Extra: "max_pending_requests: 2\n"})
 	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	client := startServer(t, cfg)
 	if countRejected(client, 10) == 0 {
@@ -196,4 +196,3 @@ func TestConcurrency_twoClientsSessionIsolation(t *testing.T) {
 	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, false)
 	assertSessionIsolation(t, cfg, c2)
 }
-

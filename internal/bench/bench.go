@@ -34,25 +34,34 @@ func Measure(c Case, defaults *projection.Defaults) []Result {
 		return []Result{raw}
 	}
 
-	proj := applyAndMarshal(c.Server, c.Tool, "projected", parsed, c.ProjConfig, defaults, false)
-	stripped := applyAndMarshal(c.Server, c.Tool, "stripped", parsed, c.ProjConfig, defaults, true)
+	proj := applyAndMarshal(ApplyParams{Server: c.Server, Tool: c.Tool, Mode: "projected", Value: parsed, Cfg: c.ProjConfig, Defaults: defaults, Strip: false})
+	stripped := applyAndMarshal(ApplyParams{Server: c.Server, Tool: c.Tool, Mode: "stripped", Value: parsed, Cfg: c.ProjConfig, Defaults: defaults, Strip: true})
 
 	return []Result{raw, proj, stripped}
 }
 
-func applyAndMarshal(server, tool, mode string, value any, cfg *config.ProjectionConfig, defaults *projection.Defaults, strip bool) Result {
-	effective := cfg
-	if strip && cfg != nil {
-		copy := *cfg
+// ApplyParams holds the inputs needed to project a value and marshal the result.
+type ApplyParams struct {
+	Server, Tool, Mode string
+	Value              any
+	Cfg                *config.ProjectionConfig
+	Defaults           *projection.Defaults
+	Strip              bool
+}
+
+func applyAndMarshal(p ApplyParams) Result {
+	effective := p.Cfg
+	if p.Strip && p.Cfg != nil {
+		copy := *p.Cfg
 		copy.StripMarkup = true
 		effective = &copy
-	} else if strip {
+	} else if p.Strip {
 		effective = &config.ProjectionConfig{StripMarkup: true}
 	}
 
-	r := projection.Apply(value, effective, defaults)
+	r := projection.Apply(p.Value, effective, p.Defaults)
 	b, _ := json.Marshal(r.Summary)
-	return Result{Server: server, Tool: tool, Mode: mode, Tokens: response.EstimateTokensRaw(b), Bytes: len(b)}
+	return Result{Server: p.Server, Tool: p.Tool, Mode: p.Mode, Tokens: response.EstimateTokensRaw(b), Bytes: len(b)}
 }
 
 func result(server, tool, mode string, raw []byte) Result {
