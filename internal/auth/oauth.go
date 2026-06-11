@@ -122,8 +122,16 @@ func exchangeCode(ctx context.Context, cfg *oauth2.Config, verifier, resourceURL
 	select {
 	case code = <-codeCh:
 	case <-ctx.Done():
-		resultCh <- PKCEResult{Err: ctx.Err()}
-		return
+		select {
+		case code = <-codeCh:
+			// code arrived just before cancel; ctx is already done so use a fresh context
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+		default:
+			resultCh <- PKCEResult{Err: ctx.Err()}
+			return
+		}
 	}
 	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(verifier)}
 	if resourceURL != "" {

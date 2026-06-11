@@ -46,7 +46,7 @@ func ResolveEndpoints(ctx context.Context, configDir, serverName string, sc *con
 }
 
 func discoverAndApply(ctx context.Context, serverURL string, a *config.AuthConfig) (*ServerMeta, error) {
-	if a.AuthURL != "" && a.TokenURL != "" {
+	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
 		return nil, nil
 	}
 	meta, err := Discover(ctx, serverURL)
