@@ -40,7 +40,7 @@ func ResolveEndpoints(ctx context.Context, configDir, serverName string, sc *con
 		return err
 	}
 	if a.ClientID == "" {
-		return resolveClientID(ctx, configDir, serverName, a, meta)
+		return resolveClientID(ctx, clientRegParams{ConfigDir: configDir, ServerName: serverName, AuthConfig: a, Meta: meta})
 	}
 	return nil
 }
@@ -82,19 +82,27 @@ func validateEndpointURL(endpoint, name string) error {
 	return nil
 }
 
-func resolveClientID(ctx context.Context, configDir, serverName string, a *config.AuthConfig, meta *ServerMeta) error {
-	if meta != nil && meta.CIMDSupported {
-		a.ClientID = ClientMetadataURL
+type clientRegParams struct {
+	ConfigDir  string
+	ServerName string
+	AuthConfig *config.AuthConfig
+	Meta       *ServerMeta
+}
+
+func resolveClientID(ctx context.Context, p clientRegParams) error {
+	if p.Meta != nil && p.Meta.CIMDSupported {
+		p.AuthConfig.ClientID = ClientMetadataURL
 		return nil
 	}
-	found, err := applyExistingClientReg(configDir, serverName, a)
+	found, err := applyExistingClientReg(p.ConfigDir, p.ServerName, p.AuthConfig)
 	if err != nil || found {
 		return err
 	}
-	return dynamicRegister(ctx, configDir, serverName, a, meta)
+	return dynamicRegister(ctx, p)
 }
 
-func dynamicRegister(ctx context.Context, configDir, serverName string, a *config.AuthConfig, meta *ServerMeta) error {
+func dynamicRegister(ctx context.Context, p clientRegParams) error {
+	a, configDir, serverName, meta := p.AuthConfig, p.ConfigDir, p.ServerName, p.Meta
 	regURL := ""
 	if meta != nil {
 		regURL = meta.RegistrationURL
