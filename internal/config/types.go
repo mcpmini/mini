@@ -182,6 +182,11 @@ type AuthConfig struct {
 	TokenURL     string   `yaml:"token_url"`
 	Scopes       []string `yaml:"scopes"`
 
+	// ResourceURL is the canonical URI of the MCP server sent as the RFC 8707
+	// resource parameter in auth and token requests. Populated automatically
+	// from the server URL during discovery; not set by users in YAML.
+	ResourceURL string `yaml:"-"`
+
 	// BrowserCmd overrides the command used to open the OAuth2 browser window.
 	// Useful for targeting a specific browser profile, e.g.:
 	//   open -na "Google Chrome" --args --profile-directory="Profile 1"

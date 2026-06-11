@@ -17,24 +17,20 @@ type registrationRequest struct {
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
 }
 
-// LoopbackCallbackPath is the redirect URI path used for all OAuth callback
-// listeners. Registration omits the port (per RFC 8252 §7.3, the AS MUST allow
-// any port for loopback redirect URIs at request time). Non-RFC-8252-compliant
-// servers that do exact URI matching will reject the port mismatch; users of
-// those servers must pre-configure a client_id in their server YAML.
+// LoopbackCallbackPath is the redirect URI path used for all OAuth callback listeners.
 const LoopbackCallbackPath = "/callback"
 
-// loopbackRedirectBase is registered without a port. RFC 8252 §7.3 says:
-// "The authorization server MUST allow any port to be specified at the time of
-// the request for loopback IP redirect URIs." The actual PKCE flow appends an
-// ephemeral port, which compliant servers accept.
-const loopbackRedirectBase = "http://127.0.0.1"
+// LoopbackCallbackPort is fixed (not random) because servers like Atlassian exact-match
+// redirect URIs — DCR must register the same URI the PKCE flow sends. 6464 = MINI.
+const LoopbackCallbackPort = 6464
+
+const loopbackCallbackURI = "http://127.0.0.1:6464" + LoopbackCallbackPath
 
 // Register performs RFC 7591 dynamic client registration and returns the client_id.
 func Register(ctx context.Context, registrationURL string) (string, error) {
 	body, _ := json.Marshal(registrationRequest{
 		ClientName:              "mini",
-		RedirectURIs:            []string{loopbackRedirectBase + LoopbackCallbackPath},
+		RedirectURIs:            []string{loopbackCallbackURI},
 		GrantTypes:              []string{"authorization_code", "refresh_token"},
 		ResponseTypes:           []string{"code"},
 		TokenEndpointAuthMethod: "none",

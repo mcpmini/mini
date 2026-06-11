@@ -62,7 +62,7 @@ func runPKCEFlow(p pkceFlowParams) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", p.serverName)
-	if err := auth.ResolveConfig(ctx, p.configDir, p.serverName, p.sc.Auth, p.sc.URL); err != nil {
+	if err := auth.ResolveEndpoints(ctx, p.configDir, p.serverName, p.sc); err != nil {
 		fatalf("resolve oauth config: %v", err)
 	}
 	token, err := auth.PKCEFlow(ctx, p.sc.Auth, p.opener)
