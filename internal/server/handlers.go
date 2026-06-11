@@ -174,18 +174,26 @@ func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *regis
 	if err != nil {
 		return nil, err
 	}
-	raw, latencyMs, toolErr := s.dispatchRaw(ctx, upstream, tool, params, session)
+	raw, latencyMs, toolErr := s.dispatchRaw(ctx, dispatchParams{Upstream: upstream, Tool: tool, Params: params, Session: session})
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
-		return s.handleToolErr(server, tool, latencyMs, toolErr, session)
+		return s.handleToolErr(toolErrParams{Server: server, Tool: tool, LatencyMs: latencyMs, Err: toolErr, Session: session})
 	}
 	return s.buildEnvelope(envelopeParams{Entry: entry, Tool: tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs})
 }
 
-func (s *Server) handleToolErr(server, tool string, latencyMs int64, err error, session *Session) (any, error) {
-	session.recordCall(latencyMs, 0, true)
-	s.logToolError(server, tool, latencyMs, err)
-	return response.BuildError("tool_error", err.Error(), false, ""), nil
+type toolErrParams struct {
+	Server    string
+	Tool      string
+	LatencyMs int64
+	Err       error
+	Session   *Session
+}
+
+func (s *Server) handleToolErr(p toolErrParams) (any, error) {
+	p.Session.recordCall(p.LatencyMs, 0, true)
+	s.logToolError(p.Server, p.Tool, p.LatencyMs, p.Err)
+	return response.BuildError("tool_error", p.Err.Error(), false, ""), nil
 }
 
 func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool string, params map[string]any) {
@@ -195,20 +203,27 @@ func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool str
 	return p.Server, p.Tool, p.Params
 }
 
-func (s *Server) dispatchRaw(ctx context.Context, upstream *upstreamServer, tool string, params map[string]any, session *Session) (json.RawMessage, int64, error) {
-	ctx, cancel := applyToolTimeout(ctx, upstream.cfg.ToolTimeout)
+type dispatchParams struct {
+	Upstream *upstreamServer
+	Tool     string
+	Params   map[string]any
+	Session  *Session
+}
+
+func (s *Server) dispatchRaw(ctx context.Context, p dispatchParams) (json.RawMessage, int64, error) {
+	ctx, cancel := applyToolTimeout(ctx, p.Upstream.cfg.ToolTimeout)
 	defer cancel()
 	start := time.Now()
-	raw, err := s.dispatchRawCall(ctx, upstream, tool, params, session)
+	raw, err := s.dispatchRawCall(ctx, p)
 	return raw, time.Since(start).Milliseconds(), err
 }
 
-func (s *Server) dispatchRawCall(ctx context.Context, upstream *upstreamServer, tool string, params map[string]any, session *Session) (json.RawMessage, error) {
-	if upstream.cfg.SessionMode == config.SessionModePerSession {
-		return s.callPerSession(ctx, upstream, tool, params, session)
+func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.RawMessage, error) {
+	if p.Upstream.cfg.SessionMode == config.SessionModePerSession {
+		return s.callPerSession(ctx, p)
 	}
-	raw, err := upstream.callTool(ctx, tool, params)
-	s.maybeReconnect(upstream, err)
+	raw, err := p.Upstream.callTool(ctx, p.Tool, p.Params)
+	s.maybeReconnect(p.Upstream, err)
 	return raw, err
 }
 
@@ -238,15 +253,15 @@ func (s *Server) spawnReconnect(upstream *upstreamServer) {
 	}()
 }
 
-func (s *Server) callPerSession(ctx context.Context, upstream *upstreamServer, tool string, params map[string]any, session *Session) (json.RawMessage, error) {
-	conn, err := s.getOrDialSessionConn(ctx, upstream, session)
+func (s *Server) callPerSession(ctx context.Context, p dispatchParams) (json.RawMessage, error) {
+	conn, err := s.getOrDialSessionConn(ctx, p.Upstream, p.Session)
 	if err != nil {
 		return nil, fmt.Errorf("per_session dial: %w", err)
 	}
-	args, _ := json.Marshal(transport.ToolCallParams{Name: tool, Arguments: params})
+	args, _ := json.Marshal(transport.ToolCallParams{Name: p.Tool, Arguments: p.Params})
 	raw, err := conn.Call(ctx, "tools/call", args)
 	if err != nil {
-		return nil, s.handleSessionConnErr(upstream, session, conn, err)
+		return nil, s.handleSessionConnErr(p.Upstream, p.Session, conn, err)
 	}
 	result, toolErr := invoke.ExtractContent(raw)
 	return result, toolErr
