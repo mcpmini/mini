@@ -34,7 +34,7 @@ func addByName(configDir string, remaining []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return addNamedServer(configDir, sf.name, sf.cmdArgs, sf.url, sf.headers, sf.protected)
+	return addNamedServer(configDir, sf)
 }
 
 type importFlags struct {
@@ -91,14 +91,14 @@ func handleImportFlags(configDir string, f importFlags) (handled bool, err error
 	}
 }
 
-func addNamedServer(configDir, name string, rest []string, url string, headers, protected stringSlice) error {
-	if url != "" {
-		return importers.WriteServerYAML(configDir, name, httpServerYAML(name, url, headers, protected))
+func addNamedServer(configDir string, sf serverFlags) error {
+	if sf.url != "" {
+		return importers.WriteServerYAML(configDir, sf.name, httpServerYAML(sf.name, sf.url, sf.headers, sf.protected))
 	}
-	if len(rest) == 0 {
+	if len(sf.cmdArgs) == 0 {
 		return fmt.Errorf("provide --url or a command after NAME")
 	}
-	return importers.WriteServerYAML(configDir, name, stdioServerYAML(name, rest, protected))
+	return importers.WriteServerYAML(configDir, sf.name, stdioServerYAML(sf.name, sf.cmdArgs, sf.protected))
 }
 
 func httpServerYAML(name, url string, headers, protected stringSlice) importers.ServerYAML {

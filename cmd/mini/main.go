@@ -165,7 +165,7 @@ func runServe(configDir string, args []string) {
 	if shouldTryProxyMode(f.standalone, f.httpAddr) && tryServeViaProxy(configDir, logger) {
 		return
 	}
-	serveStandalone(configDir, cfg, servers, logger, f.httpAddr, f.dangerNonLoopback)
+	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback})
 }
 
 func shouldTryProxyMode(standalone bool, httpAddr string) bool {
@@ -191,17 +191,27 @@ func runProxy(configDir string, args []string) {
 	if *httpAddr == "" && connectViaDaemon(configDir, logger, true) == nil {
 		return
 	}
-	serveStandalone(configDir, cfg, servers, logger, *httpAddr, *dangerNonLoopback, server.WithProxyMode())
+	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: *httpAddr, DangerNonLoopback: *dangerNonLoopback}, server.WithProxyMode())
 }
 
-func serveStandalone(configDir string, cfg *config.Config, servers []config.ServerConfig, logger *slog.Logger, httpAddr string, dangerNonLoopback bool, opts ...server.ServerOption) {
+type ServeParams struct {
+	ConfigDir         string
+	Cfg               *config.Config
+	Servers           []config.ServerConfig
+	Logger            *slog.Logger
+	HTTPAddr          string
+	DangerNonLoopback bool
+}
+
+func serveStandalone(p ServeParams, opts ...server.ServerOption) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	injectOAuthTokens(ctx, configDir, servers)
-	srv := buildAndConnectServer(ctx, cfg, configDir, logger, servers, opts...)
+	injectOAuthTokens(ctx, p.ConfigDir, p.Servers)
+	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
 	defer srv.Close()
-	httpSrv := maybeStartHTTP(httpAddr, srv, logger, dangerNonLoopback)
+	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
 	maybeStartSessionEviction(ctx, httpSrv, srv)
+	logger := p.Logger
 	logger.Info("mini ready")
 	if err := srv.Serve(ctx, os.Stdin, os.Stdout); err != nil {
 		logger.Error("serve error", "err", err)
@@ -219,12 +229,19 @@ func shutdownHTTP(httpSrv *http.Server) {
 	httpSrv.Shutdown(ctx) //nolint:errcheck
 }
 
-func buildAndConnectServer(ctx context.Context, cfg *config.Config, configDir string, logger *slog.Logger, servers []config.ServerConfig, opts ...server.ServerOption) *server.Server {
-	srv := server.NewWithConfigDir(cfg, configDir, logger, opts...)
-	for _, sc := range servers {
+type BuildServerParams struct {
+	Cfg       *config.Config
+	ConfigDir string
+	Logger    *slog.Logger
+	Servers   []config.ServerConfig
+}
+
+func buildAndConnectServer(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
+	srv := server.NewWithConfigDir(p.Cfg, p.ConfigDir, p.Logger, opts...)
+	for _, sc := range p.Servers {
 		if sc.IsEnabled() {
 			if err := srv.AddUpstream(ctx, sc); err != nil {
-				logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
+				p.Logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
 			}
 		}
 	}

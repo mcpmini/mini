@@ -33,9 +33,9 @@ func runDaemon(configDir string, args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	injectOAuthTokens(ctx, configDir, servers)
-	srv := buildAndConnectServer(ctx, cfg, configDir, logger, servers)
+	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: cfg, ConfigDir: configDir, Logger: logger, Servers: servers})
 	defer srv.Close()
-	startDaemonHTTP(ctx, cfg, servers, srv, portFile, port)
+	startDaemonHTTP(ctx, DaemonHTTPParams{Cfg: cfg, Servers: servers, Srv: srv, PortFile: portFile, FlagPort: port})
 }
 
 func ensureDaemonNotRunning(configDir string) string {
@@ -54,17 +54,25 @@ func parseDaemonFlags(args []string) (int, string) {
 	return *port, *logLevel
 }
 
-func startDaemonHTTP(ctx context.Context, cfg *config.Config, servers []config.ServerConfig, srv *server.Server, portFile string, flagPort int) {
-	listenPort := cfg.DaemonPort
-	if flagPort >= 0 {
-		listenPort = flagPort
+type DaemonHTTPParams struct {
+	Cfg      *config.Config
+	Servers  []config.ServerConfig
+	Srv      *server.Server
+	PortFile string
+	FlagPort int
+}
+
+func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
+	listenPort := p.Cfg.DaemonPort
+	if p.FlagPort >= 0 {
+		listenPort = p.FlagPort
 	}
 	ln, actualPort := bindPort(listenPort)
-	writePortFile(portFile, actualPort)
-	defer os.Remove(portFile)
-	httpSrv := daemonHTTPServer(srv)
+	writePortFile(p.PortFile, actualPort)
+	defer os.Remove(p.PortFile)
+	httpSrv := daemonHTTPServer(p.Srv)
 	go httpSrv.Serve(ln) //nolint:errcheck
-	go srv.RunSessionEviction(ctx, 30*time.Minute)
+	go p.Srv.RunSessionEviction(ctx, 30*time.Minute)
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
