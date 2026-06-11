@@ -62,7 +62,7 @@ func (s *Server) servePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp, send := s.handleLine(r.Context(), req.body, req.session)
-	writeMCPResponse(w, r, req.sessionID, resp, send)
+	writeMCPResponse(w, r, mcpResponseParams{SessionID: req.sessionID, Resp: resp, Send: send})
 }
 
 func (s *Server) parsePostRequest(w http.ResponseWriter, r *http.Request) (parsedPostRequest, bool) {
@@ -77,18 +77,24 @@ func (s *Server) parsePostRequest(w http.ResponseWriter, r *http.Request) (parse
 	return parsedPostRequest{body, sessionID, s.sessions.getOrCreate(sessionID)}, true
 }
 
-func writeMCPResponse(w http.ResponseWriter, r *http.Request, sessionID string, resp transport.Response, send bool) {
-	w.Header().Set("Mcp-Session-Id", sessionID)
-	if !send {
+type mcpResponseParams struct {
+	SessionID string
+	Resp      transport.Response
+	Send      bool
+}
+
+func writeMCPResponse(w http.ResponseWriter, r *http.Request, p mcpResponseParams) {
+	w.Header().Set("Mcp-Session-Id", p.SessionID)
+	if !p.Send {
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
 	if acceptsSSE(r.Header.Get("Accept")) {
-		writeSSEResponse(w, resp)
+		writeSSEResponse(w, p.Resp)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	json.NewEncoder(w).Encode(p.Resp) //nolint:errcheck
 }
 
 func readLimitedBody(w http.ResponseWriter, body io.Reader) ([]byte, bool) {
