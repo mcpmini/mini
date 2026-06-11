@@ -65,7 +65,7 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 	if err != nil {
 		return nil, err
 	}
-	raw, latencyMs, toolErr := s.dispatchRaw(ctx, upstream, tool, params, p.Session)
+	raw, latencyMs, toolErr := s.dispatchRaw(ctx, dispatchParams{Upstream: upstream, Tool: tool, Params: params, Session: p.Session})
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
 		p.Session.recordCall(latencyMs, 0, true)
@@ -85,18 +85,26 @@ func (s *Server) proxyProject(p envelopeParams) (any, error) {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderProxyResult(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg, stats.SummaryTokens), nil
+	return s.renderProxyResult(renderProxyResultParams{Server: p.Entry.Server, Tool: p.Entry.ToolName.Name(), Env: env, ProjCfg: projCfg, RawTokens: stats.SummaryTokens}), nil
 }
 
-func (s *Server) renderProxyResult(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig, rawTokens int) string {
+type renderProxyResultParams struct {
+	Server    string
+	Tool      string
+	Env       *response.Envelope
+	ProjCfg   *config.ProjectionConfig
+	RawTokens int
+}
+
+func (s *Server) renderProxyResult(p renderProxyResultParams) string {
 	format := s.cfg.ResponseFormat
-	if projCfg.Format != "" {
-		format = projCfg.Format
+	if p.ProjCfg.Format != "" {
+		format = p.ProjCfg.Format
 	}
 	if format == "mini" {
-		return RenderLines(server, displayTool, env)
+		return RenderLines(p.Server, p.Tool, p.Env)
 	}
-	return s.formatProxyEnvelope(env, rawTokens)
+	return s.formatProxyEnvelope(p.Env, p.RawTokens)
 }
 
 // formatProxyEnvelope formats a proxy response using the 3-tier approach:
