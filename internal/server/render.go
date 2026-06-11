@@ -212,24 +212,29 @@ func formatInt(n int64) string {
 	return fmt.Sprintf("%d", n)
 }
 
-func renderItemLine(m map[string]any) string {
-	var nums, strs, arrs []string
-	for k, v := range m {
-		nums, strs, arrs = classifyField(nums, strs, arrs, k, v)
-	}
-	return strings.Join(append(append(nums, strs...), arrs...), " ")
+type fieldGroups struct {
+	nums []string
+	strs []string
+	arrs []string
 }
 
-func classifyField(nums, strs, arrs []string, k string, v any) ([]string, []string, []string) {
+func renderItemLine(m map[string]any) string {
+	var g fieldGroups
+	for k, v := range m {
+		g.classifyField(k, v)
+	}
+	return strings.Join(append(append(g.nums, g.strs...), g.arrs...), " ")
+}
+
+func (g *fieldGroups) classifyField(k string, v any) {
 	switch sv := v.(type) {
 	case string:
-		strs = classifyString(strs, k, sv)
+		g.strs = classifyString(g.strs, k, sv)
 	case []any:
-		arrs = classifyArray(arrs, k, sv)
+		g.arrs = classifyArray(g.arrs, k, sv)
 	default:
-		nums = classifyNumeric(nums, k, v)
+		g.nums = classifyNumeric(g.nums, k, v)
 	}
-	return nums, strs, arrs
 }
 
 func classifyNumeric(nums []string, k string, v any) []string {
