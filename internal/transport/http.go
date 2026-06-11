@@ -72,14 +72,18 @@ func noRedirectClient(timeout time.Duration, blockPrivateIPs bool) *http.Client 
 		},
 	}
 	if blockPrivateIPs {
-		dt, ok := http.DefaultTransport.(*http.Transport)
-		if ok {
-			t := dt.Clone()
-			t.DialContext = SSRFSafeDialer()
-			client.Transport = t
-		}
+		applySsrfTransport(client)
 	}
 	return client
+}
+
+func applySsrfTransport(client *http.Client) {
+	dt, ok := http.DefaultTransport.(*http.Transport)
+	if ok {
+		t := dt.Clone()
+		t.DialContext = SSRFSafeDialer()
+		client.Transport = t
+	}
 }
 
 const maxRetries = 3

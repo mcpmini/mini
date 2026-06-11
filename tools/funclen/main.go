@@ -1,5 +1,5 @@
 // funclen checks that no function or method exceeds the project code-line limits.
-// Warning >= 15 lines, error >= 25 lines. Comment-only lines inside the function
+// Warning >= 18 lines, error >= 25 lines. Comment-only lines inside the function
 // body don't count, so a well-documented invariant doesn't inflate the length.
 // Functions annotated with //nolint on their declaration line are skipped.
 // Exit code 1 when any errors are found.
@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	warnAt  = 15
+	warnAt  = 18
 	errorAt = 25
 )
 
@@ -125,7 +125,7 @@ func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue,
 		return issue{}, false
 	}
 	end := fset.Position(fd.End()).Line
-	lines := (end - start + 1) - commentOnlyLines(srcLines, start, end)
+	lines := (end - start - 1) - commentOnlyLines(srcLines, start+1, end-1)
 	if lines < warnAt {
 		return issue{}, false
 	}

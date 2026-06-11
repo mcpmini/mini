@@ -99,21 +99,21 @@ func injectRawPath(slimData map[string]any, slimJSON []byte, rawPath string) ([]
 		return slimJSON, nil
 	}
 	// Copy both maps before mutating to avoid side-effecting the caller's data.
-	metaCopy := make(map[string]any, len(meta)+1)
-	for k, v := range meta {
-		metaCopy[k] = v
-	}
-	metaCopy["raw"] = rawPath
-	slimCopy := make(map[string]any, len(slimData))
-	for k, v := range slimData {
-		slimCopy[k] = v
-	}
-	slimCopy["_meta"] = metaCopy
+	slimCopy := copyMapWith(slimData, "_meta", copyMapWith(meta, "raw", rawPath))
 	b, err := json.MarshalIndent(slimCopy, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal slim: %w", err)
 	}
 	return b, nil
+}
+
+func copyMapWith(m map[string]any, key string, val any) map[string]any {
+	out := make(map[string]any, len(m)+1)
+	for k, v := range m {
+		out[k] = v
+	}
+	out[key] = val
+	return out
 }
 
 func (s *Store) writePairFiles(slimPath, rawPath string, slimJSON, rawJSON []byte) (int64, error) {
