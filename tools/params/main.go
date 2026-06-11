@@ -1,5 +1,7 @@
-// params checks that no function or method has >= 4 parameters.
+// params checks that no function or method has >= 6 parameters.
 // Functions with that many parameters should use a params struct instead.
+// Functions annotated with //nolint or //nolint:params on their declaration
+// line are skipped.
 // Exit code 1 when any violations are found.
 //
 // Usage: params [dir ...]   (default: current directory, recursive)
@@ -15,9 +17,7 @@ import (
 	"strings"
 )
 
-// maxParams is temporarily raised to 8 to allow pre-existing violations to not block the build.
-// P2 debt: convert all functions with 4+ parameters to use params structs and ratchet this back to 4.
-const maxParams = 8
+const maxParams = 6
 
 type issue struct {
 	path  string
@@ -74,21 +74,25 @@ func isSkipped(name string) bool {
 }
 
 func checkFile(path string, fset *token.FileSet) []issue {
-	f, err := parser.ParseFile(fset, path, nil, 0)
+	src, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	return collectFuncIssues(f, fset)
+	f, err := parser.ParseFile(fset, path, src, 0)
+	if err != nil {
+		return nil
+	}
+	return collectFuncIssues(f, fset, strings.Split(string(src), "\n"))
 }
 
-func collectFuncIssues(f *ast.File, fset *token.FileSet) []issue {
+func collectFuncIssues(f *ast.File, fset *token.FileSet, srcLines []string) []issue {
 	var issues []issue
 	ast.Inspect(f, func(n ast.Node) bool {
 		fd, ok := n.(*ast.FuncDecl)
 		if !ok || fd.Body == nil {
 			return true
 		}
-		if iss, found := checkFunc(fd, fset); found {
+		if iss, found := checkFunc(fd, fset, srcLines); found {
 			issues = append(issues, iss)
 		}
 		return true
@@ -96,18 +100,28 @@ func collectFuncIssues(f *ast.File, fset *token.FileSet) []issue {
 	return issues
 }
 
-func checkFunc(fd *ast.FuncDecl, fset *token.FileSet) (issue, bool) {
+func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue, bool) {
+	pos := fset.Position(fd.Pos())
+	if isNolinted(srcLines, pos.Line) {
+		return issue{}, false
+	}
 	n := countFields(fd.Type.Params)
 	if n < maxParams {
 		return issue{}, false
 	}
-	pos := fset.Position(fd.Pos())
 	return issue{
 		path:  pos.Filename,
 		line:  pos.Line,
 		name:  funcName(fd),
 		count: n,
 	}, true
+}
+
+func isNolinted(srcLines []string, line int) bool {
+	if line < 1 || line > len(srcLines) {
+		return false
+	}
+	return strings.Contains(srcLines[line-1], "//nolint")
 }
 
 func countFields(fl *ast.FieldList) int {
