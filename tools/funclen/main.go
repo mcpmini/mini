@@ -125,7 +125,7 @@ func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue,
 		return issue{}, false
 	}
 	end := fset.Position(fd.End()).Line
-	lines := (end - start + 1) - commentOnlyLines(srcLines, start, end)
+	lines := (end - start - 1) - commentOnlyLines(srcLines, start+1, end-1)
 	if lines < warnAt {
 		return issue{}, false
 	}
