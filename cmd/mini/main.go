@@ -333,18 +333,26 @@ func resolveHTTPAddr(addr string) (resolved string, nonLoopback bool) {
 	return addr, ip == nil || !ip.IsLoopback()
 }
 
-func checkLoopbackPolicy(addr, resolved string, nonLoopback, dangerNonLoopback bool, logger *slog.Logger) {
-	if nonLoopback && !dangerNonLoopback {
-		fatalf("--http %q binds to a non-loopback address; pass --dangerous-nonloopback-http to allow this (ensures all network clients are trusted)", addr)
+type loopbackPolicyParams struct {
+	Addr              string
+	Resolved          string
+	NonLoopback       bool
+	DangerNonLoopback bool
+	Logger            *slog.Logger
+}
+
+func checkLoopbackPolicy(p loopbackPolicyParams) {
+	if p.NonLoopback && !p.DangerNonLoopback {
+		fatalf("--http %q binds to a non-loopback address; pass --dangerous-nonloopback-http to allow this (ensures all network clients are trusted)", p.Addr)
 	}
-	if nonLoopback {
-		logger.Warn("HTTP server binding to non-loopback address; ensure all network clients are trusted", "addr", resolved)
+	if p.NonLoopback {
+		p.Logger.Warn("HTTP server binding to non-loopback address; ensure all network clients are trusted", "addr", p.Resolved)
 	}
 }
 
 func startHTTPServer(addr string, handler http.Handler, logger *slog.Logger, dangerNonLoopback bool) *http.Server {
 	resolved, nonLoopback := resolveHTTPAddr(addr)
-	checkLoopbackPolicy(addr, resolved, nonLoopback, dangerNonLoopback, logger)
+	checkLoopbackPolicy(loopbackPolicyParams{Addr: addr, Resolved: resolved, NonLoopback: nonLoopback, DangerNonLoopback: dangerNonLoopback, Logger: logger})
 	ln, err := net.Listen("tcp", resolved)
 	if err != nil {
 		fatalf("listen: %v", err)
