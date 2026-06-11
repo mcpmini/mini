@@ -177,7 +177,7 @@ func buildInvokeParams(conn transport.Connection, cc callContext, store *respons
 		Conn:     conn,
 		ProjCfg:  resolveCallProjection(cc.sc, cc.toolName),
 		ProjDefs: projection.DefaultsFrom(cc.cfg),
-		Builder:  response.NewBuilder(store),
+		Builder:  response.NewBuilder(store, cc.cfg.InlineThreshold),
 	}
 }
 

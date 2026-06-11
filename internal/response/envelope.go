@@ -6,11 +6,15 @@ import (
 )
 
 type Builder struct {
-	store *Store
+	store     *Store
+	threshold int
 }
 
-func NewBuilder(store *Store) *Builder {
-	return &Builder{store: store}
+// NewBuilder creates a Builder that writes a raw response file when the
+// projected summary exceeds threshold tokens, or when fields were elided
+// or omitted (regardless of size).
+func NewBuilder(store *Store, threshold int) *Builder {
+	return &Builder{store: store, threshold: threshold}
 }
 
 // BuildParams holds inputs for Builder.Build.
@@ -30,7 +34,7 @@ func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
 	summaryTokens := EstimateTokens(p.Summary)
 	stats := CallStats{RawTokens: rawTokens, SummaryTokens: summaryTokens}
 	e := newEnvelope(p)
-	if len(p.Elided) > 0 || len(p.Omitted) > 0 {
+	if summaryTokens > b.threshold || len(p.Elided) > 0 || len(p.Omitted) > 0 {
 		if err := b.writeRawFile(e, p); err != nil {
 			return nil, stats, err
 		}

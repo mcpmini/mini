@@ -24,7 +24,7 @@ func newTestStore(t *testing.T) *response.Store {
 
 func TestInlineSmallResponse(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store)
+	builder := response.NewBuilder(store, 10000)
 
 	raw := json.RawMessage(`{"status":"ok","id":"abc"}`)
 	data := map[string]any{"status": "ok", "id": "abc"}
@@ -41,7 +41,7 @@ func TestInlineSmallResponse(t *testing.T) {
 
 func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store)
+	builder := response.NewBuilder(store, 10000)
 
 	raw := json.RawMessage(`{"status":"ok","body":"secret content"}`)
 	data := map[string]any{"status": "ok"}
@@ -65,7 +65,7 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 
 func TestNoFileWhenNoElisionOrOmission(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store)
+	builder := response.NewBuilder(store, 10000)
 
 	// Large response with no elided/omitted fields should not write a file —
 	// Data is inlined regardless of size.
@@ -87,7 +87,7 @@ func TestNoFileWhenNoElisionOrOmission(t *testing.T) {
 
 func TestElidedKeys(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store)
+	builder := response.NewBuilder(store, 10000)
 
 	raw := json.RawMessage(`{"a":1,"b":2,"c":3}`)
 	data := map[string]any{"a": 1}
@@ -105,7 +105,7 @@ func TestElidedKeys(t *testing.T) {
 
 func TestOmittedFields(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store)
+	builder := response.NewBuilder(store, 10000)
 
 	raw := json.RawMessage(`{"summary":"short","body":"` + strings.Repeat("x", 500) + `"}`)
 	data := map[string]any{"summary": "short", "body": strings.Repeat("x", 50)}
@@ -129,7 +129,7 @@ func TestOmittedFields(t *testing.T) {
 
 func TestHintPassedThrough(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store)
+	builder := response.NewBuilder(store, 10000)
 
 	raw := json.RawMessage(`{"a":1,"b":2}`)
 	data := map[string]any{"a": 1}
@@ -148,7 +148,7 @@ func TestHintPassedThrough(t *testing.T) {
 
 func TestCallStatsReduction(t *testing.T) {
 	store := newTestStore(t)
-	builder := response.NewBuilder(store)
+	builder := response.NewBuilder(store, 10000)
 
 	raw := json.RawMessage(`{"status":"ok","body":"this is a large response with lots of text content that exceeds the threshold"}`)
 	data := map[string]any{"status": "ok"}

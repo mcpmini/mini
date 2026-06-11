@@ -175,10 +175,10 @@ func TestProxy_Call_WithProjection_BracketNoteAndFile(t *testing.T) {
 	}
 }
 
-func TestProxy_Call_WithProjection_NoNote_NoFile(t *testing.T) {
+func TestProxy_Call_WithProjection_NoNote_Small_Inline(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 1 // size alone must not trigger a file write
+	cfg.InlineThreshold = 10000 // response stays well under threshold
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
 	defer srv.Close()
 
@@ -201,7 +201,37 @@ func TestProxy_Call_WithProjection_NoNote_NoFile(t *testing.T) {
 		t.Errorf("expected no [Projected] note when nothing elided or omitted: %s", text)
 	}
 	if strings.Contains(text, "File:") {
-		t.Errorf("expected no file written when nothing elided or omitted: %s", text)
+		t.Errorf("expected no file written for a small response with no projection note: %s", text)
+	}
+}
+
+func TestProxy_Call_WithProjection_NoNote_Large_FileOnly(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 1 // any response exceeds this, forcing a file write
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+	defer srv.Close()
+
+	conn := fakeConn("get_data")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"value\":\"data\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	serve(t, srv, callTool("config", map[string]any{
+		"action":     "set_projection",
+		"server":     "svc",
+		"tool":       "get_data",
+		"projection": map[string]any{"include": []string{"id", "value"}},
+	}))
+
+	resp := serve(t, srv, callTool("svc__get_data", map[string]any{}))
+	text := toolResultText(t, resp)
+	t.Logf("projection-no-note large response: %s", text)
+
+	if strings.HasPrefix(text, "[Projected") {
+		t.Errorf("expected no [Projected] note when nothing elided or omitted: %s", text)
+	}
+	if !strings.HasPrefix(text, "File:") {
+		t.Errorf("expected a bare File: pointer for a large response with no note: %s", text)
 	}
 }
 

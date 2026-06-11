@@ -85,10 +85,11 @@ func (s *Server) proxyProject(p envelopeParams) (any, error) {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderProxyResult(p.Server, p.Tool, env, projCfg), nil
+	isLarge := stats.SummaryTokens > s.cfg.InlineThreshold
+	return s.renderProxyResult(p.Server, p.Tool, env, projCfg, isLarge), nil
 }
 
-func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig) string {
+func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig, isLarge bool) string {
 	format := s.cfg.ResponseFormat
 	if projCfg.Format != "" {
 		format = projCfg.Format
@@ -96,17 +97,25 @@ func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, 
 	if format == "mini" {
 		return RenderLines(server, tool, env)
 	}
-	return formatProxyEnvelope(env)
+	return formatProxyEnvelope(env, isLarge)
 }
 
-// formatProxyEnvelope formats a proxy response. Data is always inlined; a
-// bracketed note is prepended when fields were elided or omitted, with a
-// pointer to the raw file for full data.
-func formatProxyEnvelope(env *response.Envelope) string {
-	if !hasProjectionNote(env) {
+// formatProxyEnvelope formats a proxy response. Small responses with no
+// projection note are inlined as-is. Any projection note (elided/omitted
+// fields or a hint) is rendered with the projected data inline plus a
+// pointer to the raw file. Large responses with no note fall back to a
+// file pointer only, since Data may still be too large to inline.
+func formatProxyEnvelope(env *response.Envelope, isLarge bool) string {
+	switch {
+	case !hasProjectionNote(env) && !isLarge:
+		return marshalProxyData(env.Data)
+	case hasProjectionNote(env):
+		return formatProjectedInline(env)
+	case env.File != nil:
+		return "File: " + *env.File
+	default:
 		return marshalProxyData(env.Data)
 	}
-	return formatProjectedInline(env)
 }
 
 func hasProjectionNote(env *response.Envelope) bool {

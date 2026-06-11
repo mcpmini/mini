@@ -45,7 +45,7 @@ func noopBuilder(t *testing.T) *response.Builder {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	return response.NewBuilder(store)
+	return response.NewBuilder(store, 10000)
 }
 
 func noopDefaults() *projection.Defaults {
