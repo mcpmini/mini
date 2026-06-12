@@ -1,9 +1,11 @@
 package server
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -37,6 +39,13 @@ func (s *Server) serveHealthz(w http.ResponseWriter) {
 }
 
 func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizeDaemon(w, r) {
+		return
+	}
+	if !hostIsLoopback(r.Host) {
+		http.Error(w, "forbidden: non-loopback Host", http.StatusForbidden)
+		return
+	}
 	if origin := r.Header.Get("Origin"); origin != "" && !isSameHost(r, origin) {
 		http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
 		return
@@ -48,6 +57,33 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Allow", "POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// authorizeDaemon enforces the bearer token when one is configured (daemon mode).
+// The stdio and serve --http paths leave daemonAuthToken empty and skip this check.
+func (s *Server) authorizeDaemon(w http.ResponseWriter, r *http.Request) bool {
+	if s.daemonAuthToken == "" {
+		return true
+	}
+	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if ok && subtle.ConstantTimeCompare([]byte(got), []byte(s.daemonAuthToken)) == 1 {
+		return true
+	}
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return false
+}
+
+// hostIsLoopback rejects DNS-rebinding: a rebound request carries the attacker's
+// domain in Host, so only a loopback host-part is allowed. Port is stripped first.
+func hostIsLoopback(host string) bool {
+	if host == "" {
+		return false
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	return host == "127.0.0.1" || host == "::1" || host == "localhost"
 }
 
 type parsedPostRequest struct {

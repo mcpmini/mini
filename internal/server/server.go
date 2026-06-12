@@ -27,6 +27,13 @@ func WithProxyMode() ServerOption {
 	return func(s *Server) { s.proxyMode = true }
 }
 
+// WithDaemonAuthToken requires Authorization: Bearer <token> on the /mcp endpoint.
+// Only the daemon sets this; the stdio and serve --http paths leave it empty so
+// their existing clients (which send no token) keep working.
+func WithDaemonAuthToken(token string) ServerOption {
+	return func(s *Server) { s.daemonAuthToken = token }
+}
+
 type Server struct {
 	cfg          *config.Config
 	configDir    string
@@ -39,8 +46,9 @@ type Server struct {
 	toolSchemas  []map[string]any
 	sessions     *sessionStore
 	logger       *slog.Logger
-	clock        clock.Clock
-	proxyMode    bool
+	clock           clock.Clock
+	proxyMode       bool
+	daemonAuthToken string
 	// Lock ordering: when both mu and authMu must be acquired, always acquire mu first.
 	mu          sync.RWMutex
 	persistMu   sync.Mutex

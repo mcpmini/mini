@@ -22,6 +22,7 @@ func postMCP(t *testing.T, srv *server.Server, sessionID string, msg any) map[st
 	t.Helper()
 	b, _ := json.Marshal(msg)
 	req := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(b))
+	req.Host = "127.0.0.1"
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Mcp-Session-Id", sessionID)
 	w := httptest.NewRecorder()

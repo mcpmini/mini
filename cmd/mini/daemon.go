@@ -33,9 +33,19 @@ func runDaemon(configDir string, args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	injectOAuthTokens(ctx, configDir, servers)
-	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: cfg, ConfigDir: configDir, Logger: logger, Servers: servers})
+	token := mintDaemonToken(configDir)
+	defer os.Remove(daemon.TokenFile(configDir))
+	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: cfg, ConfigDir: configDir, Logger: logger, Servers: servers}, server.WithDaemonAuthToken(token))
 	defer srv.Close()
 	startDaemonHTTP(ctx, DaemonHTTPParams{Cfg: cfg, Servers: servers, Srv: srv, PortFile: portFile, FlagPort: port})
+}
+
+func mintDaemonToken(configDir string) string {
+	token, err := daemon.WriteToken(configDir)
+	if err != nil {
+		fatalf("write daemon token: %v", err)
+	}
+	return token
 }
 
 func ensureDaemonNotRunning(configDir string) string {

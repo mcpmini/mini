@@ -268,10 +268,15 @@ func connectViaDaemon(configDir string, logger *slog.Logger, proxyMode bool) err
 		return err
 	}
 	sessionID := transport.NewSessionID()
+	token, err := daemon.ReadToken(configDir)
+	if err != nil {
+		return fmt.Errorf("read daemon token: %w", err)
+	}
 	logger.Info("connected to mini daemon", "port", port, "session", sessionID)
 	return proxy.Run(proxy.RunParams{
 		Port:      port,
 		SessionID: sessionID,
+		Token:     token,
 		In:        os.Stdin,
 		Out:       os.Stdout,
 		ProxyMode: proxyMode,

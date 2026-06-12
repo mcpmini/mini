@@ -165,7 +165,16 @@ func TestDaemon_healthzEndpoint(t *testing.T) {
 	}
 }
 
-func initHTTPSession(t *testing.T, baseURL string) string {
+func readDaemonToken(t *testing.T, configDir string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(configDir, "daemon.token"))
+	if err != nil {
+		t.Fatalf("read daemon token: %v", err)
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func initHTTPSession(t *testing.T, baseURL, token string) string {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "initialize",
@@ -175,7 +184,10 @@ func initHTTPSession(t *testing.T, baseURL string) string {
 			"clientInfo":      map[string]any{"name": "http-test", "version": "0"},
 		},
 	})
-	resp, err := http.Post(baseURL+"/mcp", "application/json", strings.NewReader(string(body)))
+	req, _ := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,31 +201,53 @@ func initHTTPSession(t *testing.T, baseURL string) string {
 }
 
 func TestDaemon_HTTPClientDirect(t *testing.T) {
-	baseURL := daemonBaseURL(t)
-	sessionID := initHTTPSession(t, baseURL)
-	resp := postHTTPToolCall(t, baseURL, sessionID, "svc", "get_item")
+	baseURL, configDir := daemonBaseURL(t)
+	token := readDaemonToken(t, configDir)
+	sessionID := initHTTPSession(t, baseURL, token)
+	resp := postHTTPToolCall(t, httpToolCall{baseURL: baseURL, sessionID: sessionID, token: token, server: "svc", tool: "get_item"})
 	env := decodeDaemonEnvelope(t, resp)
 	assertInlineGetItem(t, env)
 }
 
-func daemonBaseURL(t *testing.T) string {
+func TestDaemon_HTTPRejectsMissingToken(t *testing.T) {
+	baseURL, _ := daemonBaseURL(t)
+	resp, err := http.Post(baseURL+"/mcp", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 without token, got %d", resp.StatusCode)
+	}
+}
+
+func daemonBaseURL(t *testing.T) (string, string) {
 	t.Helper()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
 	writeConfig(t, cfg, "inline_threshold: 50000\n")
-	return fmt.Sprintf("http://127.0.0.1:%d", startDaemon(t, cfg))
+	return fmt.Sprintf("http://127.0.0.1:%d", startDaemon(t, cfg)), cfg
 }
 
-func postHTTPToolCall(t *testing.T, baseURL, sessionID, server, tool string) *http.Response {
+type httpToolCall struct {
+	baseURL   string
+	sessionID string
+	token     string
+	server    string
+	tool      string
+}
+
+func postHTTPToolCall(t *testing.T, c httpToolCall) *http.Response {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": server, "tool": tool}},
+		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": c.server, "tool": c.tool}},
 	})
-	req, _ := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(string(body)))
+	req, _ := http.NewRequest(http.MethodPost, c.baseURL+"/mcp", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", sessionID)
+	req.Header.Set("Mcp-Session-Id", c.sessionID)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

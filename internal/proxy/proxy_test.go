@@ -34,6 +34,54 @@ func closedPort(t *testing.T) int {
 	return port
 }
 
+func testConn(port int, sessionID string) daemonConn {
+	return daemonConn{client: &http.Client{}, port: port, sessionID: sessionID}
+}
+
+func TestForward_sendsBearerToken(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
+	}))
+	defer srv.Close()
+	conn := daemonConn{client: &http.Client{}, port: serverPort(t, srv), sessionID: "sess", token: "secret-token"}
+	forward(conn, []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	if gotAuth != "Bearer secret-token" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer secret-token")
+	}
+}
+
+func TestForward_noTokenOmitsAuthorizationHeader(t *testing.T) {
+	var hadAuth bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, hadAuth = r.Header["Authorization"]
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
+	}))
+	defer srv.Close()
+	forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	if hadAuth {
+		t.Error("expected no Authorization header when token is empty")
+	}
+}
+
+func TestRun_propagatesTokenThroughRunParams(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
+	}))
+	defer srv.Close()
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
+	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", Token: "tok-42", In: in, Out: io.Discard}
+	if err := Run(p); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if gotAuth != "Bearer tok-42" {
+		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer tok-42")
+	}
+}
+
 func TestDaemonErrorResponse_withIdReturnsEnvelope(t *testing.T) {
 	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`)
 	resp := daemonErrorResponse(body, "boom")
@@ -64,14 +112,14 @@ func TestForward_successReturnsDaemonResponse(t *testing.T) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	}))
 	defer srv.Close()
-	resp := forward(&http.Client{}, serverPort(t, srv), "sess", []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
 	if !strings.Contains(string(resp), `"result":"ok"`) {
 		t.Errorf("unexpected response: %s", resp)
 	}
 }
 
 func TestForward_daemonUnreachableReturnsErrorEnvelope(t *testing.T) {
-	resp := forward(&http.Client{}, closedPort(t), "sess", []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	resp := forward(testConn(closedPort(t), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
 	if resp == nil || !strings.Contains(string(resp), `"error"`) {
 		t.Errorf("expected error envelope, got %s", resp)
 	}
@@ -123,7 +171,7 @@ func TestForward_202NotificationReturnsNil(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer srv.Close()
-	resp := forward(&http.Client{}, serverPort(t, srv), "sess", []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
 	if resp != nil {
 		t.Errorf("expected nil for 202 Accepted, got %s", resp)
 	}
@@ -136,7 +184,7 @@ func TestForward_sessionIdPropagatedInHeader(t *testing.T) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	}))
 	defer srv.Close()
-	forward(&http.Client{}, serverPort(t, srv), "my-session-42", []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	forward(testConn(serverPort(t, srv), "my-session-42"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if gotSession != "my-session-42" {
 		t.Errorf("session header = %q, want %q", gotSession, "my-session-42")
 	}
@@ -148,7 +196,7 @@ func TestForward_largeResponseBodyHandledWithoutError(t *testing.T) {
 		fmt.Fprint(w, big)
 	}))
 	defer srv.Close()
-	resp := forward(&http.Client{}, serverPort(t, srv), "sess", []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if len(resp) == 0 {
 		t.Error("expected non-empty response for large body")
 	}

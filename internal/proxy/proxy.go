@@ -20,9 +20,18 @@ const maxConcurrentForwards = 32
 type RunParams struct {
 	Port      int
 	SessionID string
+	Token     string
 	In        io.Reader
 	Out       io.Writer
 	ProxyMode bool
+}
+
+// daemonConn identifies the target daemon and the credentials for one forward.
+type daemonConn struct {
+	client    *http.Client
+	port      int
+	sessionID string
+	token     string
 }
 
 // Run reads JSON-RPC from p.In, forwards each request to the daemon at p.Port,
@@ -49,7 +58,7 @@ func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	return forwardAsyncParams{
-		port: p.Port, sessionID: p.SessionID, out: p.Out,
+		port: p.Port, sessionID: p.SessionID, token: p.Token, out: p.Out,
 		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
 		proxyMode: p.ProxyMode,
 	}
@@ -116,6 +125,7 @@ type forwardAsyncParams struct {
 	client    *http.Client
 	port      int
 	sessionID string
+	token     string
 	line      []byte
 	out       io.Writer
 	mu        *sync.Mutex
@@ -124,17 +134,22 @@ type forwardAsyncParams struct {
 	proxyMode bool
 }
 
+func (p forwardAsyncParams) conn() daemonConn {
+	return daemonConn{client: p.client, port: p.port, sessionID: p.sessionID, token: p.token}
+}
+
 func forwardAsync(p forwardAsyncParams) {
 	defer p.wg.Done()
 	defer func() { <-p.sem }()
-	resp := forward(p.client, p.port, p.sessionID, p.line)
+	conn := p.conn()
+	resp := forward(conn, p.line)
 	if resp == nil {
 		return
 	}
 	// Daemon restart or session eviction invalidates the session; reinitialize and retry.
 	if isNotInitialized(resp) && !peekIsInitialize(p.line) {
-		reinitDaemon(p.client, p.port, p.sessionID, p.proxyMode)
-		resp = forward(p.client, p.port, p.sessionID, p.line)
+		reinitDaemon(conn, p.proxyMode)
+		resp = forward(conn, p.line)
 		if resp == nil {
 			return
 		}
@@ -146,16 +161,16 @@ func forwardAsync(p forwardAsyncParams) {
 
 // reinitDaemon recovers from daemon restart or session eviction. Responses are
 // discarded — only the caller's retry of the original request is forwarded.
-func reinitDaemon(client *http.Client, port int, sessionID string, proxyMode bool) {
+func reinitDaemon(conn daemonConn, proxyMode bool) {
 	params, _ := json.Marshal(transport.InitializeParams{
 		ProtocolVersion: transport.ProtocolVersion,
 		Capabilities:    map[string]any{},
 		ClientInfo:      transport.ClientInfo{Name: "mini", Version: transport.Version},
 	})
 	initMsg, _ := json.Marshal(transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)})
-	forward(client, port, sessionID, maybeInjectProxy(initMsg, proxyMode))
+	forward(conn, maybeInjectProxy(initMsg, proxyMode))
 	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
-	forward(client, port, sessionID, notif)
+	forward(conn, notif)
 }
 
 func isNotInitialized(resp []byte) bool {
@@ -177,12 +192,12 @@ func peekIsInitialize(line []byte) bool {
 	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
 }
 
-func forward(client *http.Client, port int, sessionID string, body []byte) []byte {
-	req, err := newDaemonRequest(port, sessionID, body)
+func forward(conn daemonConn, body []byte) []byte {
+	req, err := newDaemonRequest(conn, body)
 	if err != nil {
 		return nil
 	}
-	resp, err := client.Do(req)
+	resp, err := conn.client.Do(req)
 	if err != nil {
 		return daemonErrorResponse(body, "daemon unreachable: "+err.Error())
 	}
@@ -190,14 +205,17 @@ func forward(client *http.Client, port int, sessionID string, body []byte) []byt
 	return readForwardResponse(resp, body)
 }
 
-func newDaemonRequest(port int, sessionID string, body []byte) (*http.Request, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/mcp", port)
+func newDaemonRequest(conn daemonConn, body []byte) (*http.Request, error) {
+	url := fmt.Sprintf("http://127.0.0.1:%d/mcp", conn.port)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)) //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", sessionID)
+	req.Header.Set("Mcp-Session-Id", conn.sessionID)
+	if conn.token != "" {
+		req.Header.Set("Authorization", "Bearer "+conn.token)
+	}
 	return req, nil
 }
 
