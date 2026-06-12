@@ -45,12 +45,26 @@ func validatePrivateIP(host string, ip net.IP) error {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
+	if err := validateNAT64Embedded(host, ip); err != nil {
+		return err
+	}
 	for _, cidr := range ssrfPrivateRanges {
 		if cidr.Contains(ip) {
 			return fmt.Errorf("URL host %q resolves to a private/loopback address", host)
 		}
 	}
 	return nil
+}
+
+// validateNAT64Embedded re-validates the IPv4 embedded in a NAT64 address.
+// To4() does not unmap the 64:ff9b::/96 prefix, so its low 32 bits (ip[12:16])
+// would otherwise slip past the IPv4 ranges and route to e.g. 127.0.0.1.
+func validateNAT64Embedded(host string, ip net.IP) error {
+	ip16 := ip.To16()
+	if ip16 == nil || !nat64Prefix.Contains(ip16) {
+		return nil
+	}
+	return validatePrivateIP(host, net.IP(ip16[12:16]))
 }
 
 // SSRFSafeDialer returns a DialContext that resolves hostnames before connecting
@@ -105,7 +119,8 @@ var ssrfPrivateRanges = func() []*net.IPNet {
 	cidrs := []string{
 		"0.0.0.0/8", "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
 		"169.254.0.0/16", "100.64.0.0/10",
-		"::1/128", "fc00::/7", "fe80::/10",
+		"224.0.0.0/4", "198.18.0.0/15", "240.0.0.0/4",
+		"::1/128", "::/128", "fc00::/7", "fe80::/10", "ff00::/8",
 	}
 	nets := make([]*net.IPNet, 0, len(cidrs))
 	for _, c := range cidrs {
@@ -113,4 +128,9 @@ var ssrfPrivateRanges = func() []*net.IPNet {
 		nets = append(nets, n)
 	}
 	return nets
+}()
+
+var nat64Prefix = func() *net.IPNet {
+	_, n, _ := net.ParseCIDR("64:ff9b::/96")
+	return n
 }()
