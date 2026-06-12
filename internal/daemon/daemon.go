@@ -34,13 +34,24 @@ func GenerateToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-// WriteToken mints a new token, writes it 0600 to TokenFile(configDir), and returns it.
+// WriteToken mints a new token and writes it to TokenFile(configDir), and returns it.
+// It removes any stale file first and creates the new one with O_EXCL so the 0600 mode
+// is guaranteed even if a crashed daemon left a file with looser permissions behind.
 func WriteToken(configDir string) (string, error) {
 	token, err := GenerateToken()
 	if err != nil {
 		return "", err
 	}
-	if err := os.WriteFile(TokenFile(configDir), []byte(token), 0600); err != nil {
+	path := TokenFile(configDir)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
+	if _, err := f.WriteString(token); err != nil {
 		return "", err
 	}
 	return token, nil
