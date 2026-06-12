@@ -42,7 +42,7 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	if !s.authorizeDaemon(w, r) {
 		return
 	}
-	if !hostIsLoopback(r.Host) {
+	if !s.allowNonLoopbackHost && !hostIsLoopback(r.Host) {
 		http.Error(w, "forbidden: non-loopback Host", http.StatusForbidden)
 		return
 	}

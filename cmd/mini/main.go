@@ -207,6 +207,7 @@ func serveStandalone(p ServeParams, opts ...server.ServerOption) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	injectOAuthTokens(ctx, p.ConfigDir, p.Servers)
+	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
 	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
 	defer srv.Close()
 	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
@@ -246,6 +247,19 @@ func buildAndConnectServer(ctx context.Context, p BuildServerParams, opts ...ser
 		}
 	}
 	return srv
+}
+
+// appendNonLoopbackHostOpt disables the loopback-Host check when --http binds to a
+// non-loopback address, so legitimate remote clients aren't rejected. The danger-flag
+// policy is still enforced separately in checkLoopbackPolicy before the listener starts.
+func appendNonLoopbackHostOpt(opts []server.ServerOption, httpAddr string) []server.ServerOption {
+	if httpAddr == "" {
+		return opts
+	}
+	if _, nonLoopback := resolveHTTPAddr(httpAddr); nonLoopback {
+		return append(opts, server.WithAllowNonLoopbackHost())
+	}
+	return opts
 }
 
 func maybeStartHTTP(addr string, handler http.Handler, logger *slog.Logger, dangerNonLoopback bool) *http.Server {

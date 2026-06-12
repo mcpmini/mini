@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"net/http"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/server"
 )
 
 func postWithHost(t *testing.T, url, host string) *http.Response {
@@ -44,5 +46,16 @@ func TestHTTPServer_HostLoopbackCheck(t *testing.T) {
 				t.Errorf("Host %q: got %d, want %d", tc.host, resp.StatusCode, tc.want)
 			}
 		})
+	}
+}
+
+// WithAllowNonLoopbackHost (set by serve --http --dangerous-nonloopback-http) must let
+// remote clients through; otherwise that documented feature 403s every request.
+func TestHTTPServer_NonLoopbackHostAllowedWhenConfigured(t *testing.T) {
+	_, ts := newHTTPTestServer(t, server.WithAllowNonLoopbackHost())
+	resp := postWithHost(t, ts.URL, "203.0.113.5:4857")
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		t.Fatalf("non-loopback Host should be allowed when configured, got 403")
 	}
 }

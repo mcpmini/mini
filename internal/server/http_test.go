@@ -116,9 +116,9 @@ func httpExecToolText(t *testing.T, ts *httptest.Server, sessionID, srvName, too
 	return rpc.Result.Content[0].Text
 }
 
-func newHTTPTestServer(t *testing.T) (*server.Server, *httptest.Server) {
+func newHTTPTestServer(t *testing.T, opts ...server.ServerOption) (*server.Server, *httptest.Server) {
 	t.Helper()
-	srv := newTestServer(t)
+	srv := newTestServer(t, opts...)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	return srv, ts

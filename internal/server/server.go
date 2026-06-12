@@ -34,6 +34,13 @@ func WithDaemonAuthToken(token string) ServerOption {
 	return func(s *Server) { s.daemonAuthToken = token }
 }
 
+// WithAllowNonLoopbackHost disables the loopback-Host (DNS-rebinding) check on /mcp.
+// Set only when the operator explicitly binds the HTTP server to a non-loopback address
+// (--dangerous-nonloopback-http), where remote clients legitimately send a non-loopback Host.
+func WithAllowNonLoopbackHost() ServerOption {
+	return func(s *Server) { s.allowNonLoopbackHost = true }
+}
+
 type Server struct {
 	cfg          *config.Config
 	configDir    string
@@ -47,8 +54,9 @@ type Server struct {
 	sessions     *sessionStore
 	logger       *slog.Logger
 	clock           clock.Clock
-	proxyMode       bool
-	daemonAuthToken string
+	proxyMode            bool
+	daemonAuthToken      string
+	allowNonLoopbackHost bool
 	// Lock ordering: when both mu and authMu must be acquired, always acquire mu first.
 	mu          sync.RWMutex
 	persistMu   sync.Mutex
