@@ -290,8 +290,9 @@ func connectViaDaemon(configDir string, logger *slog.Logger, proxyMode bool) err
 }
 
 // daemonReresolver re-resolves a live daemon for an open proxy, respawning it via
-// resolveDaemonPort if it died. The OS bind in daemon.Start arbitrates among racing
-// proxies so exactly one respawns; the rest connect to the winner.
+// resolveDaemonPort if it died. With the default fixed daemon_port, the OS bind in
+// daemon.Start arbitrates among racing proxies so exactly one respawns and the rest connect
+// to the winner; with daemon_port: 0 (OS-assigned) racers may briefly start more than one.
 func daemonReresolver(configDir string, logger *slog.Logger) func() (int, string, error) {
 	return func() (int, string, error) {
 		port, err := resolveDaemonPort(configDir, logger)
