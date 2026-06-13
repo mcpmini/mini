@@ -15,12 +15,12 @@ Initial release of mini, the minifying MCP proxy.
 ### Features
 
 - **Core proxy** — routes tool calls across multiple upstream MCP servers (stdio and HTTP/SSE/streamable); `server.tool` namespacing
-- **Passthrough mode** — `mini connect` exposes upstream tools directly as `server__tool` names; projections still apply transparently
+- **Proxy mode** — `mini proxy` exposes upstream tools directly as `server__tool` names; projections still apply transparently
 - **Context optimization** — field inclusion/exclusion, array limits, string limits, depth limits, auto HTML/MD stripping, response file store (large responses written to `~/.mini/responses/` with TTL and disk budget)
 - **Access control** — three permission tiers per tool: `open`, `protected` (`perm_call`), `hidden`
 - **Auth** — API key and Bearer token injection (static or `${ENV_VAR}`); OAuth2 PKCE flow with token persistence
 - **Reliability** — retry with exponential backoff on HTTP 429/503; configurable timeouts; automatic stdio reconnect with backoff
-- **Daemon mode** — `mini daemon` shared background HTTP daemon; `mini connect` auto-bridges through it transparently
+- **Daemon mode** — `mini daemon` shared background HTTP daemon; `mini serve` auto-proxies through it transparently
 - **CLI** — `add`, `rm`, `ls`, `status`, `auth`, `test`, `init`, `call`, `perm-call`, `cleanup`, `daemon status`
 - **Importers** — `--from-claude`, `--from-cursor`, `--from-codex`, `--from-gemini` to pull existing MCP configs
 - **Bundled projections** — GitHub, Slack, Linear, Sentry auto-installed when a known server is detected
