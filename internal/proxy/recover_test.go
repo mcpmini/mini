@@ -206,3 +206,35 @@ func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 		t.Errorf("expected error response on exhaustion, got %q", out.String())
 	}
 }
+
+// TestDeliver_boundedWhenRespawnedDaemonStaysDead covers the case where Reresolve SUCCEEDS
+// every time but always hands back a dead port (a respawned daemon that never comes up).
+// Recovery must still terminate within the bounded attempts and return a clean error,
+// rather than spinning forever — complements the Reresolve-erroring case above.
+func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
+	dead := closedPort(t)
+	var resolveCalls atomic.Int32
+	reresolve := func() (int, string, error) {
+		resolveCalls.Add(1)
+		return dead, "tok", nil
+	}
+	in := strings.NewReader(toolCallLine())
+	var out bytes.Buffer
+	p := RunParams{Port: dead, SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
+	done := make(chan error, 1)
+	go func() { done <- Run(p) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-timeoutAfter():
+		t.Fatal("Run did not return — recovery is not bounded when respawn stays dead")
+	}
+	if !strings.Contains(out.String(), `"error"`) {
+		t.Errorf("expected error response on exhaustion, got %q", out.String())
+	}
+	if resolveCalls.Load() == 0 {
+		t.Error("expected at least one Reresolve attempt before giving up")
+	}
+}
