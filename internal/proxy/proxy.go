@@ -22,7 +22,7 @@ type RunParams struct {
 	SessionID string
 	In        io.Reader
 	Out       io.Writer
-	ProxyMode bool
+	Compact   bool
 }
 
 // Run reads JSON-RPC from p.In, forwards each request to the daemon at p.Port,
@@ -39,7 +39,7 @@ func runWithLimit(p RunParams, limit int) error {
 	fp := newForwardPool(p, limit)
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
-		startForward(client, maybeInjectProxy(scanner.Bytes(), p.ProxyMode), fp)
+		startForward(client, maybeInjectToolMode(scanner.Bytes(), p.Compact), fp)
 	}
 	fp.wg.Wait()
 	return scanner.Err()
@@ -51,31 +51,33 @@ func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	return forwardAsyncParams{
 		port: p.Port, sessionID: p.SessionID, out: p.Out,
 		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
-		proxyMode: p.ProxyMode,
+		compact: p.Compact,
 	}
 }
 
-func maybeInjectProxy(line []byte, proxyMode bool) []byte {
-	if proxyMode {
-		return injectProxyMode(line)
+// maybeInjectToolMode signals compact mode to the daemon. Passthrough is the
+// daemon's zero-value default, so it injects nothing.
+func maybeInjectToolMode(line []byte, compact bool) []byte {
+	if compact {
+		return injectCompactMode(line)
 	}
 	return line
 }
 
-// injectProxyMode inserts "_mini_proxy_mode": true into the params of an
-// initialize JSON-RPC message so the daemon enables proxy mode for this session.
-// Non-initialize messages and parse errors are returned unchanged.
-func injectProxyMode(line []byte) []byte {
+// injectCompactMode inserts "_mini_tool_mode": "compact" into the params of an
+// initialize JSON-RPC message so the daemon uses the compact interface for this
+// session. Non-initialize messages and parse errors are returned unchanged.
+func injectCompactMode(line []byte) []byte {
 	if !peekIsInitialize(line) {
 		return line
 	}
-	if result, err := withProxyModeParam(line); err == nil {
+	if result, err := withCompactModeParam(line); err == nil {
 		return result
 	}
 	return line
 }
 
-func withProxyModeParam(line []byte) ([]byte, error) {
+func withCompactModeParam(line []byte) ([]byte, error) {
 	var full map[string]json.RawMessage
 	if err := json.Unmarshal(line, &full); err != nil {
 		return nil, err
@@ -84,7 +86,7 @@ func withProxyModeParam(line []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	params["_mini_proxy_mode"] = json.RawMessage(`true`)
+	params[transport.ToolModeParam] = json.RawMessage(`"` + transport.ToolModeCompactValue + `"`)
 	if full["params"], err = json.Marshal(params); err != nil {
 		return nil, err
 	}
@@ -121,7 +123,7 @@ type forwardAsyncParams struct {
 	mu        *sync.Mutex
 	wg        *sync.WaitGroup
 	sem       chan struct{}
-	proxyMode bool
+	compact   bool
 }
 
 func forwardAsync(p forwardAsyncParams) {
@@ -133,7 +135,7 @@ func forwardAsync(p forwardAsyncParams) {
 	}
 	// Daemon restart or session eviction invalidates the session; reinitialize and retry.
 	if isNotInitialized(resp) && !peekIsInitialize(p.line) {
-		reinitDaemon(p.client, p.port, p.sessionID, p.proxyMode)
+		reinitDaemon(p.client, p.port, p.sessionID, p.compact)
 		resp = forward(p.client, p.port, p.sessionID, p.line)
 		if resp == nil {
 			return
@@ -146,14 +148,14 @@ func forwardAsync(p forwardAsyncParams) {
 
 // reinitDaemon recovers from daemon restart or session eviction. Responses are
 // discarded — only the caller's retry of the original request is forwarded.
-func reinitDaemon(client *http.Client, port int, sessionID string, proxyMode bool) {
+func reinitDaemon(client *http.Client, port int, sessionID string, compact bool) {
 	params, _ := json.Marshal(transport.InitializeParams{
 		ProtocolVersion: transport.ProtocolVersion,
 		Capabilities:    map[string]any{},
 		ClientInfo:      transport.ClientInfo{Name: "mini", Version: transport.Version},
 	})
 	initMsg, _ := json.Marshal(transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)})
-	forward(client, port, sessionID, maybeInjectProxy(initMsg, proxyMode))
+	forward(client, port, sessionID, maybeInjectToolMode(initMsg, compact))
 	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
 	forward(client, port, sessionID, notif)
 }
@@ -173,7 +175,9 @@ func isNotInitialized(resp []byte) bool {
 }
 
 func peekIsInitialize(line []byte) bool {
-	var m struct{ Method string `json:"method"` }
+	var m struct {
+		Method string `json:"method"`
+	}
 	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
 }
 

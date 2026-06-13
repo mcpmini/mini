@@ -35,18 +35,18 @@ func TestMiniFormat_AllArrayShapes(t *testing.T) {
             cfg := config.DefaultConfig()
             cfg.ResponseDir = t.TempDir()
             cfg.InlineThreshold = 100000
-            srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+            srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
             defer srv.Close()
 
             conn := fakeConn("list")
             conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(mustJSON(tc.raw)) + `}]}`)
             addProxyConn(t, srv, "svc", conn)
-            serve(t, srv, callTool("config", map[string]any{
+            servePassthrough(t, srv, callTool("config", map[string]any{
                 "action":"set_projection","server":"svc","tool":"list",
                 "projection":map[string]any{"format":"mini"},
             }))
 
-            resp := serve(t, srv, callTool("svc__list", map[string]any{}))
+            resp := servePassthrough(t, srv, callTool("svc__list", map[string]any{}))
             text := toolResultText(t, resp)
             t.Logf("output: %q", text)
 

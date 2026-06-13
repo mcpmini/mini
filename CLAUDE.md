@@ -172,12 +172,16 @@ resp := serve(t, srv, callTool("call", map[string]any{"server": "myserver", "too
 text := toolResultText(t, resp)
 ```
 
-`serve()` in `server_test.go` automatically prepends the `initialize` handshake. For transport-level tests, `makePipeConn()` in `stdio_test.go` creates a pipe-backed `StdioConnection` without spawning a subprocess.
+`serve()` in `server_test.go` prepends the `initialize` handshake and signals **compact** mode; `servePassthrough()` (and `serveAllPassthrough()`) drive the default **passthrough** mode. For transport-level tests, `makePipeConn()` in `stdio_test.go` creates a pipe-backed `StdioConnection` without spawning a subprocess.
+
+### Tool modes
+
+A session is either **passthrough** (the default, zero value of `server.ToolMode`) or **compact**. Passthrough exposes upstream tools directly as `server__tool` and minifies responses; mini sits transparently in the middle and does not enforce `perm_call`. Compact wraps every upstream behind four meta-tools (`list`/`call`/`perm_call`/`config`). The bridge signals compact via the `initialize` param `_mini_tool_mode: "compact"` (`transport.ToolModeParam`); passthrough injects nothing, so every daemon session is passthrough for free.
 
 ### CLI subcommands
 
-`mini [--config DIR] <command>`: `serve` (default), `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
+`mini [--config DIR] <command>`: `connect`, `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`. Bare `mini` (no subcommand) prints help and exits 0 — it does not start a server.
 
-- `serve [--http ADDR] [--standalone]` — stdio proxy; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
+- `connect [--http ADDR] [--standalone] [--tool-mode compact]` — stdio MCP; passthrough by default, `--tool-mode compact` for the four-tool interface; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
 - `daemon [--port N]` — run as shared HTTP daemon (background)
 - `daemon status` — show whether the daemon is running

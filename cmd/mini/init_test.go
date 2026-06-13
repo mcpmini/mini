@@ -49,7 +49,7 @@ func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
 			"/some/path": {
 				"mcpServers": {
 					"github": {"type": "http", "url": "https://api.githubcopilot.com/mcp"},
-					"mini":   {"command": "` + self + `", "args": ["proxy"]}
+					"mini":   {"command": "` + self + `", "args": ["connect"]}
 				}
 			}
 		}

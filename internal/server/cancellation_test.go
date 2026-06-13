@@ -85,7 +85,7 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	go func() { serveErr <- srv.Serve(ctx, pr, &out) }()
 
 	// Write initialize + callReq through the pipe.
-	pw.Write(buildServeInput([][]byte{callReq})) //nolint:errcheck
+	pw.Write(buildServeInput(true, [][]byte{callReq})) //nolint:errcheck
 
 	// Wait for the call to register in-flight before sending the cancel.
 	if !waitTimeout(&callStarted, 3*time.Second) {

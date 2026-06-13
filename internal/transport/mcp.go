@@ -79,8 +79,8 @@ type ToolCallParams struct {
 }
 
 type ToolCallResult struct {
-	Content          []ContentItem   `json:"content"`
-	IsError          bool            `json:"isError,omitempty"`
+	Content []ContentItem `json:"content"`
+	IsError bool          `json:"isError,omitempty"`
 	// StructuredContent was added in spec 2025-06-18. Servers SHOULD also include
 	// a text representation in Content for backwards compatibility, but we handle
 	// the case where they don't.
@@ -117,3 +117,11 @@ const NotificationToolsChanged = "notifications/tools/list_changed"
 // NotificationCancelled is sent by either party to cancel an in-progress request.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx
 const NotificationCancelled = "notifications/cancelled"
+
+// ToolModeParam is the initialize-params key the bridge injects to select a
+// non-default tool mode. Passthrough is the daemon's zero-value default and
+// injects nothing; only compact is ever signaled.
+const ToolModeParam = "_mini_tool_mode"
+
+// ToolModeCompactValue selects the four-meta-tool (compact) interface.
+const ToolModeCompactValue = "compact"
