@@ -265,10 +265,12 @@ func TestDaemon_recoversAfterSIGKILL(t *testing.T) {
 	}
 }
 
-// TestDaemon_manyClientsRecover is the scale/locking test. N proxies share one fixed-port
-// daemon; after it is killed, every proxy's next call must recover, the token must be reused,
-// and exactly ONE daemon may end up bound to the port — proving the flock spawn lock collapses
-// the respawn herd into a single winner rather than leaving orphaned processes behind.
+// TestDaemon_manyClientsRecover is the scale test. N proxies share one fixed-port daemon;
+// after it is SIGKILL'd, every proxy's next call must recover, the token must be reused, and
+// exactly ONE daemon ends up bound to the port. This proves end-to-end single-winner recovery
+// at scale. It does NOT isolate the flock spawn lock: the OS socket bind alone leaves one
+// listener (losers fail EADDRINUSE and exit), so the test passes with or without the lock. The
+// lock only collapses wasted spawn attempts, which the OS bind makes invisible here.
 func TestDaemon_manyClientsRecover(t *testing.T) {
 	const n = 20
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
