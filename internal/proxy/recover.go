@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"math/rand/v2"
 	"time"
 
 	"github.com/mcpmini/mini/internal/transport"
@@ -55,9 +56,12 @@ func (p forwardAsyncParams) handleRecoverable(kind outcomeKind, state linkState,
 	return state, true
 }
 
+// jitteredBackoff returns an exponential backoff with equal jitter — a random point in
+// [base/2, base] — so that when many proxies detect the same daemon death at once their
+// retries decorrelate instead of all firing on the same tick and re-forming the herd.
 func jitteredBackoff(attempt int) time.Duration {
 	base := recoveryBackoff << attempt
-	return base + time.Duration(int64(attempt)*int64(recoveryBackoff)/2)
+	return base/2 + time.Duration(rand.Int64N(int64(base/2)+1))
 }
 
 // reinitDaemon recovers a session on a respawned or session-less daemon. Responses are
