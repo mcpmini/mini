@@ -6,9 +6,11 @@ between them.
 
 ## The spec lifecycle
 
-Source of truth: `~/proj/modelcontextprotocol`, `docs/specification/<version>/basic/lifecycle.mdx`
-and `schema/<version>/schema.ts`. Behavior below is stable across 2024-11-05, 2025-03-26,
-2025-06-18, 2025-11-25, and draft unless noted.
+Source of truth: the MCP specification — prose at
+[modelcontextprotocol.io/specification](https://modelcontextprotocol.io/specification) and the
+machine schema in the [modelcontextprotocol/modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol)
+repo (`schema/<version>/schema.ts`). Behavior below is stable across protocol versions
+2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25, and draft unless noted.
 
 The lifecycle has three phases. Initialization is the one that matters here.
 

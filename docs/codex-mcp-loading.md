@@ -1,5 +1,9 @@
 # How Codex loads MCP tools
 
+> For the protocol-level lifecycle and how mini sits between the agent and upstreams, see
+> [mcp-lifecycle.md](mcp-lifecycle.md). This doc covers Codex's tool-exposure strategy and
+> connection behavior.
+
 ## Overview
 
 Codex uses a **threshold-based strategy** controlled by a single constant:
@@ -8,6 +12,39 @@ Codex uses a **threshold-based strategy** controlled by a single constant:
   deferred loading
 - **100+ tools** with `search_tool` enabled: a small pinned set is sent eagerly; everything
   else is deferred and discoverable only via a client-side BM25 `tool_search` tool
+
+---
+
+## Connection lifecycle, parallelism & timeouts
+
+Before any tool schema exists, Codex connects to each configured server. This happens in
+[`McpConnectionManager::new`](https://github.com/openai/codex/blob/87b808bb570f01f4b6fc8485c5459052fac0e320/codex-rs/codex-mcp/src/connection_manager.rs#L213).
+
+**All servers connect in parallel, unthrottled.** One tokio task is spawned per enabled server
+into a `JoinSet`
+([line 302](https://github.com/openai/codex/blob/87b808bb570f01f4b6fc8485c5459052fac0e320/codex-rs/codex-mcp/src/connection_manager.rs#L302));
+no concurrency cap. Each task emits `Starting` before it begins and `Ready` / `Failed` /
+`Cancelled` when it finishes — that drives the TUI status lines — and a detached task joins all
+outcomes into one `McpStartupComplete` summary.
+
+**Per server, the sequence is spawn → initialize → `tools/list`.** For stdio that's exactly one
+child process (rmcp's `TokioChildProcess`), then an `initialize` handshake (protocol
+`2025-06-18`) followed by the startup `tools/list`, all wrapped in a `Shared` future so
+concurrent awaiters reuse one init.
+
+**Timeouts:** per-server startup budget is
+[`DEFAULT_STARTUP_TIMEOUT = 30s`](https://github.com/openai/codex/blob/87b808bb570f01f4b6fc8485c5459052fac0e320/codex-rs/codex-mcp/src/rmcp_client.rs#L76),
+overridable via `startup_timeout_sec`, wrapping the whole startup path. Runtime tool calls get a
+separate `DEFAULT_TOOL_TIMEOUT = 120s`.
+
+**Failure isolation:** a server that times out or errors is marked `Failed` and startup
+continues — the join only produces a summary, never aborts. The one hard-bail case is *required*
+servers: [`session.rs`](https://github.com/openai/codex/blob/87b808bb570f01f4b6fc8485c5459052fac0e320/codex-rs/core/src/session/session.rs#L1189)
+`anyhow::bail!`s session init if a required server failed; non-required servers can never sink
+the boot.
+
+**No health checks.** Codex does not ping live connections; a dead server is detected reactively
+when its transport stream closes or the child exits.
 
 ---
 
