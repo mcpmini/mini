@@ -14,30 +14,6 @@ responses invisibly.
 
 ---
 
-## Connection lifecycle (high level)
-
-Before tool discovery, Claude Code connects to each configured MCP server at startup. The
-observable behavior:
-
-- **Servers connect in parallel**, with a bounded number of simultaneous connections (local
-  stdio servers are connected at a lower concurrency than remote HTTP/SSE servers, since each
-  stdio server spawns a child process).
-- **Each connection is time-boxed** by a per-server connect timeout on the order of tens of
-  seconds, and a server that fails or times out is **isolated** — the others still load and the
-  session is never blocked by one bad server. There is no "required server aborts startup"
-  behavior.
-- **No health checks.** Claude Code does not ping live connections; a dropped server is detected
-  reactively (its transport closing or a later call failing). Remote transports are retried with
-  backoff; local stdio servers are not auto-reconnected.
-- **Failures surface to the user, not the model.** Dead-server state appears in the MCP status
-  UI; the model just sees the affected tools disappear from the next turn, or gets an error when
-  it calls a tool on a server that has gone away.
-
-This is the behavioral contract mini must be compatible with — see
-[mcp-lifecycle.md](mcp-lifecycle.md) for how mini sits in front of these connections.
-
----
-
 ## Two categories of tools
 
 **Local tools** (Read, Edit, Grep, Bash, etc.) are built into Claude Code. Their full
@@ -127,3 +103,27 @@ Controlled by `ENABLE_TOOL_SEARCH` (default: always defer all MCP tools):
 
 Only supported on Claude Sonnet 4+ and Opus 4+. Haiku falls back to sending all schemas
 upfront automatically.
+
+---
+
+## Connection lifecycle (high level)
+
+Before tool discovery, Claude Code connects to each configured MCP server at startup. The
+observable behavior:
+
+- **Servers connect in parallel**, with a bounded number of simultaneous connections (local
+  stdio servers are connected at a lower concurrency than remote HTTP/SSE servers, since each
+  stdio server spawns a child process).
+- **Each connection is time-boxed** by a per-server connect timeout on the order of tens of
+  seconds, and a server that fails or times out is **isolated** — the others still load and the
+  session is never blocked by one bad server. There is no "required server aborts startup"
+  behavior.
+- **No health checks.** Claude Code does not ping live connections; a dropped server is detected
+  reactively (its transport closing or a later call failing). Remote transports are retried with
+  backoff; local stdio servers are not auto-reconnected.
+- **Failures surface to the user, not the model.** Dead-server state appears in the MCP status
+  UI; the model just sees the affected tools disappear from the next turn, or gets an error when
+  it calls a tool on a server that has gone away.
+
+This is the behavioral contract mini must be compatible with — see
+[mcp-lifecycle.md](mcp-lifecycle.md) for how mini sits in front of these connections.

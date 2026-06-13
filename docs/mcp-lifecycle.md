@@ -1,41 +1,46 @@
 # MCP connection lifecycle, and where mini sits in it
 
 How an MCP client connects to a server, what the spec mandates, how agents behave at a high
-level, and how mini — which is both a server (to the agent) and a client (to upstreams) — fits
-between them.
+level, and how mini — both a server (to the agent) and a client (to upstreams) — fits between
+them.
 
 ## The spec lifecycle
 
-Source of truth: the MCP specification — prose at
-[modelcontextprotocol.io/specification](https://modelcontextprotocol.io/specification) and the
-machine schema in the [modelcontextprotocol/modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol)
-repo (`schema/<version>/schema.ts`). Behavior below is stable across protocol versions
-2024-11-05, 2025-03-26, 2025-06-18, 2025-11-25, and draft unless noted.
+Source of truth: the MCP specification — prose in
+[`lifecycle.mdx`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/docs/specification/2025-11-25/basic/lifecycle.mdx)
+and the machine schema
+[`schema.ts`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/schema/2025-11-25/schema.ts).
+Behavior below is stable across protocol versions 2024-11-05, 2025-03-26, 2025-06-18,
+2025-11-25, and draft unless noted; permalinks point at 2025-11-25.
 
 The lifecycle has three phases. Initialization is the one that matters here.
 
-1. **Initialization** — *"MUST be the first interaction between client and server."* The client
-   **MUST** initiate by sending an `initialize` **request** (a JSON-RPC request, method
-   `initialize` — not a tool call). The server replies with its capabilities, and the client
-   confirms with a `notifications/initialized` notification.
+1. **Initialization** —
+   [*"MUST be the first interaction between client and server"*](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/docs/specification/2025-11-25/basic/lifecycle.mdx#L40).
+   The client **MUST** initiate by sending an `initialize` **request** (a JSON-RPC request,
+   method `initialize` — not a tool call). The server replies with its capabilities, and the
+   client confirms with a `notifications/initialized` notification.
 2. **Operation** — `tools/list`, `tools/call`, `resources/*`, etc.
 3. **Shutdown** — transport close.
 
 The opening exchange, in order:
 
-```
-1. client → server   initialize (request)          ← the very first interaction
-2. server → client   InitializeResult
-3. client → server   notifications/initialized      ← notification, no response
-4. client → server   tools/list                     ← discovery; operation phase begins
-   ...
-N. client → server   tools/call                     ← only when the model runs a tool
+```mermaid
+sequenceDiagram
+    participant C as Client (agent)
+    participant S as Server
+    C->>S: initialize (request) — the very first interaction
+    S->>C: InitializeResult
+    C->>S: notifications/initialized (no response)
+    C->>S: tools/list (operation phase begins)
+    Note over C,S: later, only if the model runs a tool
+    C->>S: tools/call
 ```
 
 `tools/call` is unrelated to `initialize`. The first message on the wire is always the
 `initialize` request; tool *calls* come much later, if at all.
 
-### What InitializeResult can carry
+### What [`InitializeResult`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/schema/2025-11-25/schema.ts#L281) can carry
 
 ```ts
 interface InitializeResult extends Result {
@@ -47,14 +52,17 @@ interface InitializeResult extends Result {
 }
 ```
 
-- `instructions` is the only channel the spec routes *to the model* — *"thought of like a
-  'hint' to the model… MAY be added to the system prompt."* Sent once, at handshake.
-- There is **no dedicated warnings/issues field**. A JSON-RPC `error` on `initialize` is for
-  hard failure only (protocol-version mismatch, failed capability negotiation, timeout) and
-  **fails the whole connection** — not a soft "one thing is degraded" signal.
-- `_meta` is free-form but clients ignore unknown keys; not model-facing.
+- [`instructions`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/schema/2025-11-25/schema.ts#L294)
+  is the only channel the spec routes *to the model* — *"thought of like a 'hint' to the
+  model… MAY be added to the system prompt."* Sent once, at handshake.
+- There is **no dedicated warnings/issues field**. A JSON-RPC
+  [`error` on `initialize`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/docs/specification/2025-11-25/basic/lifecycle.mdx#L263)
+  is for hard failure only (protocol-version mismatch, failed capability negotiation, timeout)
+  and **fails the whole connection** — not a soft "one thing is degraded" signal.
+- [`_meta`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/schema/2025-11-25/schema.ts#L93)
+  is free-form but clients ignore unknown keys; not model-facing.
 
-### What the InitializeRequest carries (and does not)
+### What [`InitializeRequestParams`](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/schema/2025-11-25/schema.ts#L257) carries (and does not)
 
 ```ts
 interface InitializeRequestParams { protocolVersion; capabilities; clientInfo; }
@@ -63,13 +71,14 @@ interface InitializeRequestParams { protocolVersion; capabilities; clientInfo; }
 No timeout/deadline field, in any version. **The client's connect timeout is private and
 invisible to the server.** A server cannot read it and must not depend on its value.
 
-### Timeouts and ping (spec guidance)
+### [Timeouts](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/docs/specification/2025-11-25/basic/lifecycle.mdx#L246) and [ping](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/docs/specification/2025-11-25/basic/utilities/ping.mdx) (spec guidance)
 
 - §Timeouts: implementations **SHOULD** establish timeouts on all sent requests and **SHOULD**
   always enforce a maximum, to prevent hung connections and resource exhaustion.
 - §Ping: an **optional** `ping` request/response (either party may send it). The spec says
-  implementations **SHOULD** periodically ping to detect connection health, frequency
-  configurable. It is all SHOULD/MAY — nothing is MUST.
+  implementations
+  [**SHOULD** periodically ping](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/699e664dfe1158045996f28e7dbd80db53bebbeb/docs/specification/2025-11-25/basic/utilities/ping.mdx#L57)
+  to detect connection health, frequency configurable. It is all SHOULD/MAY — nothing is MUST.
 
 ## How agents connect (high level)
 
@@ -88,8 +97,7 @@ same broad shape at startup, and it informs how mini should behave:
   UI; the agent/model just sees the affected tools quietly disappear, or gets an error when it
   calls a tool on a server that has gone away.
 
-Codex is open source; its specifics (the per-server startup timeout, parallel task fan-out,
-and how a required vs. optional server is treated) are documented with permalinks in
+Codex is open source; its specifics are documented with permalinks in
 [codex-mcp-loading.md](codex-mcp-loading.md). For other agents, treat the four behaviors above
 as the contract mini should be compatible with.
 
@@ -100,79 +108,59 @@ The two takeaways that drive mini's design:
 
 ## Where mini fits: two layers, two `initialize`s
 
-mini is a proxy, so it sits in the middle of **two** independent lifecycles:
+mini is a proxy, so it sits in the middle of **two** independent lifecycles. Each is a full,
+separate handshake — easy to conflate, but different messages on different connections.
+
+```mermaid
+sequenceDiagram
+    participant A as Agent
+    participant M as mini
+    participant U as Upstream (github, sentry, …)
+    Note over A,M: Layer 1 — agent ↔ mini
+    A->>M: initialize / tools/list / tools/call
+    Note over M,U: Layer 2 — mini ↔ each upstream
+    M->>U: initialize / tools/list / tools/call
+```
 
 - **Layer 1 — agent ↔ mini.** The agent is the client; mini is the server. The agent's first
   interaction is a Layer-1 `initialize` request to mini.
 - **Layer 2 — mini ↔ upstreams.** mini is the client; github/sentry/etc. are the servers. mini
-  sends its own Layer-2 `initialize` + `tools/list` to each upstream.
-
-Each layer is a full, separate handshake. They are easy to conflate but are different messages
-on different connections.
+  sends its own Layer-2 `initialize` + `tools/list` to each upstream and re-exposes the
+  resulting tools through Layer 1.
 
 ### Connection modes
 
 - **Standalone** (`mini serve --standalone`, or `--http`): the agent spawns mini directly; mini
   serves Layer 1 over stdio (and optionally HTTP).
 - **Daemon** (default): the agent spawns a thin `mini` **proxy**, which connects to a shared,
-  long-lived **daemon** over HTTP. The proxy bridges agent stdio ↔ daemon HTTP. The Layer-1
-  `initialize` is *forwarded* by the proxy to the daemon, not answered locally.
+  long-lived **daemon** over HTTP. The proxy bridges agent stdio ↔ daemon HTTP and *forwards*
+  the Layer-1 `initialize` to the daemon. Because the daemon is long-lived, the agent typically
+  connects to an already-warm daemon whose upstreams are loaded, so its handshake is answered
+  immediately.
 
-### Layer-2 upstream connect is eager, at boot
+### Connecting upstreams
 
-In both modes mini connects every upstream **up front**, before serving any Layer-1 request —
-not lazily on first tool call. `buildAndConnectServer` dials each upstream and runs its Layer-2
-`initialize` + `tools/list`, and only after that does mini start serving.
+At startup mini connects each configured upstream
+([`buildAndConnectServer`](https://github.com/mcpmini/mini/blob/ded9bcec0b6eec00e25282e09f8e4c8235907391/cmd/mini/main.go#L239)) —
+a Layer-2 handshake per upstream — and exposes their tools through Layer 1. In daemon mode those
+connections live in the
+[daemon](https://github.com/mcpmini/mini/blob/ded9bcec0b6eec00e25282e09f8e4c8235907391/cmd/mini/daemon.go#L36),
+so a single set of upstream connections is shared across every agent that attaches.
 
-### Cold-start timeline (daemon mode)
+### Design direction
 
-```
-agent launches
- └─ spawns `mini` proxy
-     └─ daemon.Start(..., 3s): no daemon → spawn daemon, poll /healthz for ≤3s
-          DAEMON BOOT (runDaemon):
-            buildAndConnectServer:
-              ├─ dial github   → Layer-2 initialize → tools/list   ┐ eager, at boot,
-              ├─ dial sentry   → Layer-2 initialize → tools/list   │ no client involved,
-              └─ dial atlassian→ Layer-2 initialize → tools/list   ┘ currently SERIAL
-            ── only now ── start HTTP server → /healthz live
-     └─ proxy reaches healthy daemon within 3s → connects
- └─ agent sends Layer-1 initialize → proxy → daemon → reply (from boot-loaded state)
-    then tools/list → tools collected at boot
-```
+mini should give the agent the same per-upstream isolation agents already expect, and — because
+it sits in the middle — surface upstream health to the *model*, which the agents do not:
 
-- **Warm daemon** (steady state): `/healthz` is already up; the agent's Layer-1 `initialize`
-  round-trips in milliseconds. No issue.
-- **Cold start** (first connect, daemon death, config reload): the daemon serves `/healthz`
-  only *after* every Layer-2 handshake completes, and the proxy waits just **3 seconds**. The
-  binding budget on cold start is this 3s, not the agent's connect timeout.
+- **Serve the agent's Layer-1 handshake independently of upstream connection.** Answer
+  `initialize` with zero upstreams required, connect Layer 2 in the background (in parallel,
+  each time-boxed), and announce tools as they arrive via `notifications/tools/list_changed`
+  (capability already advertised).
+- **A per-upstream connect timeout** bounds when a server is marked degraded, so one slow
+  upstream never blocks the others.
+- **Surface degraded upstreams to the model** via the Layer-1 handshake `instructions` (the one
+  model-facing channel that works in proxy mode) and `config{action:"status"}`, with re-auth
+  hints (`mini auth <server>`).
 
-### The failure mode
-
-Today the Layer-2 connect is **serial and unbounded for stdio** (no handshake timeout) and runs
-*before* mini serves Layer 1. So one slow or hung upstream blocks mini from answering the
-agent's first interaction:
-
-- Hung stdio upstream → `buildAndConnectServer` never returns → daemon never serves `/healthz`
-  → proxy gives up at 3s → falls back to standalone, which re-runs the same eager connect and
-  hangs again → the agent's Layer-1 `initialize` is never answered → the agent hits its own
-  connect timeout and concludes **mini itself is dead**, losing every tool from every upstream.
-
-A single bad upstream takes down the whole proxy — the opposite of the per-upstream isolation
-agents already expect. This also violates the spec's §Timeouts SHOULD. Tracking and fix:
+Connection-robustness and degraded-upstream reporting are tracked in
 [issue #33](https://github.com/mcpmini/mini/issues/33).
-
-### How mini should fit (target shape)
-
-mini should give the agent the isolation it assumes, and — because it sits in the middle —
-surface upstream health to the *model*, which the agents do not:
-
-- **Decouple serve from connect.** Start the HTTP server / `/healthz` (daemon) or `Serve`
-  (standalone) *before* connecting upstreams, so Layer 1 is answered immediately with zero
-  upstreams required. Connect Layer 2 in the background, in parallel, each time-boxed; announce
-  tools as they arrive via `notifications/tools/list_changed` (capability already advertised).
-- **Per-upstream connect timeout** then bounds only "when do we mark a server degraded," not a
-  race against any client deadline.
-- **Surface degraded upstreams to the model**: fold them into the Layer-1 handshake
-  `instructions` (the one model-facing channel that works in proxy mode) and into
-  `config{action:"status"}`, with re-auth hints (`mini auth <server>`).
