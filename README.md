@@ -29,18 +29,20 @@ MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, ava
 ```json
 {
   "number": 275198,
+  "id": 2456789012,
   "title": "Remove layout control toggles",
   "state": "open",
   "draft": true,
   "body": "Removes layout toggle buttons...[first 1500 chars]",
   "user": { "login": "Copilot", "profile_url": "https://github.com/Copilot" },
+  "head": { "ref": "fix/toggle", "sha": "73e46e32..." },
   "html_url": "https://github.com/microsoft/vscode/pull/275198",
   "created_at": "2025-11-04T17:25:38Z",
   "updated_at": "2025-11-04T18:51:15Z"
 }
 ```
 
-Avatar URLs gone. Node IDs gone. URL templates gone. Body capped at 1500 chars. Multiply across 20 PRs — the savings are significant.
+Avatar URLs gone. Node IDs and `gravatar_id` gone. URL-template fields gone. Body capped at 1500 chars. The fields an agent actually reasons about — number, id, title, state, the head branch and sha — stay. The bar for cutting a field is high: mini only strips what's provably noise, never structured data that might matter. Multiply across 20 PRs and the savings are significant.
 
 Mini has three output modes. The same `list_pull_requests` call:
 
@@ -88,13 +90,25 @@ go install github.com/mcpmini/mini/cmd/mini@latest
 
 ## Connect to your agent
 
-One command, every client:
+Every client connects mini the same way — by running `mini connect`. The fastest path is to let mini wire up the clients you already have installed:
 
 ```bash
-mini connect
+mini init   # detects Claude Code / Cursor / Windsurf / Claude Desktop / Gemini and configures each
 ```
 
-Or add it to your client's MCP config:
+To register it with a specific client by hand:
+
+```bash
+# Claude Code
+claude mcp add mini -- mini connect
+
+# Codex — add to ~/.codex/config.toml
+[mcp_servers.mini]
+command = "mini"
+args = ["connect"]
+```
+
+Any other client: point its MCP config at `mini connect`:
 
 ```json
 {
@@ -104,22 +118,9 @@ Or add it to your client's MCP config:
 }
 ```
 
-`mini init` detects your existing Claude Code / Cursor / Windsurf / Claude Desktop / Gemini configs and adds this automatically.
+`mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `sentry__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it. What you gain is that the agent sees each tool's **native schema**, so it can call confidently without a discovery round-trip, and the response comes back trimmed.
 
-`mini connect` exposes your upstream tools directly as `github__list_pull_requests`, `sentry__list_issues`, etc., and trims their responses transparently. The agent sees native tool schemas and never knows mini is there. This is the right default for every client that defers tool schemas (such as Claude Code) — [here's how that schema deferral works](docs/claude-code-mcp-loading.md). If your client loads all schemas upfront and you have a large catalog of servers, see [compact tool mode](#compact-tool-mode) below.
-
-### Daemon mode
-
-If you run multiple agent sessions at once, each normally spawns its own mini process with its own upstream connections. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes, each consuming memory and holding its own auth session.
-
-The daemon shares one set of upstream connections across all sessions:
-
-```bash
-mini daemon          # start once in the background
-mini daemon status   # confirm it's running
-```
-
-Any `mini connect` invocation detects the daemon automatically and routes through it. Each session still gets its own projections and permissions.
+This is the right default for clients that defer (lazy-load) tool schemas, like Claude Code — they only pull a tool's schema when the model actually reaches for it, so exposing the full upstream surface costs nothing upfront. [How Claude Code defers MCP schemas →](docs/claude-code-mcp-loading.md). If your client instead loads every schema at session start and you have a large catalog of servers, see [compact tool mode](#compact-tool-mode).
 
 ## Adding servers
 
@@ -190,9 +191,18 @@ sequenceDiagram
     mini-->>Agent: trimmed response (8 fields, ~400 bytes)
 ```
 
-By default mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) so the agent sees native schemas and calls them directly. mini stays transparent in the middle — resolving, forwarding, and trimming — while the agent acts as if it were talking to the upstream servers themselves.
+mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) and serves it from its own MCP server, so in your client the tools appear under `mini` and every call goes through it. mini is the one resolving, forwarding, and trimming — the agent talks to mini, mini talks to the upstreams. The win isn't that mini disappears; it's that the agent gets each tool's native schema (no discovery round-trip) and a trimmed response.
 
-**Daemon mode**: without a daemon, each agent window spawns its own mini process which spawns or connects to every configured MCP server. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes — each consuming memory and holding its own auth session. The daemon shares one set of connections across all sessions.
+## Daemon mode
+
+If you run multiple agent sessions at once, each normally spawns its own mini process with its own upstream connections. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes — each consuming memory and holding its own auth session. The daemon shares one set of connections across all sessions:
+
+```bash
+mini daemon          # start once in the background
+mini daemon status   # confirm it's running
+```
+
+Any `mini connect` invocation detects the daemon automatically and routes through it. Each session still gets its own projections and permissions.
 
 ```mermaid
 graph TB
@@ -308,7 +318,11 @@ How these tiers are enforced depends on the tool mode mini is running in.
 
 **In passthrough mode** (the default), mini exposes each upstream tool directly as its own MCP tool. `hidden` tools are filtered from the tool list entirely so the agent never sees them. `protected` tools appear in the list and are callable — enforcement is handled by your agent's native approval system. In Claude Code, configure per-tool approval for write operations (e.g. `github__create_pull_request`) the same way you would for any MCP tool.
 
-**In compact mode** (`mini connect --tool-mode compact`), mini wraps everything behind 4 tools. `call` only executes `open` tools — calling a `protected` tool via `call` returns an error. `perm_call` is required for `protected` and `hidden` tools. This means you can configure your agent to auto-approve `call` (reads) while requiring human approval for `perm_call` (writes). `hidden` tools are invisible to `list` but can still be invoked via `perm_call` by an agent that knows the name.
+**In compact mode** (`mini connect --tool-mode compact`), mini wraps everything behind 4 tools. `call` only executes `open` tools — calling a `protected` tool via `call` returns an error. `perm_call` is required for `protected` and `hidden` tools. `hidden` tools are invisible to `list` but can still be invoked via `perm_call` by an agent that knows the name.
+
+The point of splitting `call` and `perm_call` is to give you a single, stable approval seam: in Claude Code or Codex you can auto-approve `mini call` (reads) once and leave `mini perm_call` (writes) requiring human confirmation — instead of maintaining an allow/deny list across dozens of individual write tools.
+
+> **This is a convenience, not a security boundary.** mini enforces one thing — `call` refuses to run a `protected` tool — but it has no approval gate of its own. The actual protection is whatever *your client* does with `perm_call`, and it only holds if you require approval for it and **never auto-approve it**. An agent allowed to call `perm_call` freely can run every protected and hidden tool. Treat the tiers as a thin veneer for keeping a human in the loop on risky writes — not as a sandbox.
 
 ## Auth
 
@@ -345,7 +359,9 @@ This is useful when:
 
 ## Compact tool mode
 
-`mini connect` exposes upstream tools directly, which is ideal for clients that defer tool schemas. Some clients instead load every tool schema upfront, so a large catalog of servers means a large fixed cost at session start. For that case, compact mode collapses everything behind 4 fixed tools regardless of how many upstream servers you have:
+First, the background. Some clients **defer** (lazy-load) MCP tool schemas: they tell the model only the tool *names* upfront and fetch a tool's full schema on demand the first time the model reaches for it. Claude Code works this way ([details](docs/claude-code-mcp-loading.md)). For those clients, mini's default passthrough mode is strictly better — exposing the entire upstream tool surface costs nothing at session start, and the model calls each tool against its native schema.
+
+Other clients load **every** tool schema eagerly at session start. There, a large catalog of servers is a large fixed token cost on turn one, every session. Compact mode is for that case: it collapses everything behind 4 fixed tools, so the upfront cost stays constant no matter how many upstream servers you add.
 
 ```bash
 mini connect --tool-mode compact
@@ -355,10 +371,12 @@ mini connect --tool-mode compact
 |---|---|
 | `list` | Discover all tools across connected servers |
 | `call` | Invoke a tool, response projected and returned |
-| `perm_call` | Same as `call` but for protected tools (write ops) |
+| `perm_call` | Like `call`, but for `protected` tools — see [Permissions](#permissions) |
 | `config` | Add/remove servers, adjust projections, check status |
 
-The agent discovers what's available via `list` and invokes tools via `call`. The schema surface stays constant no matter how many servers you add. The trade-off is an extra round-trip (`list` before `call`) and that the agent can't see a tool's argument schema without a `list` first — which is why passthrough is the default.
+The agent discovers what's available via `list` and invokes tools via `call`. The trade-off: an extra round-trip (`list` before `call`), and the model can't see a tool's argument schema without a `list` first, so it calls less confidently. That's why passthrough is the default.
+
+**If you're on Claude Code (or any client that defers schemas), don't use compact mode** — you'd be giving up native schemas and adding a round-trip to solve a cost you don't have. Reach for it only when your client loads all schemas upfront *and* you have enough servers that the upfront cost actually hurts.
 
 ## Commands
 
