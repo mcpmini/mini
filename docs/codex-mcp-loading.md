@@ -184,7 +184,7 @@ deferred.
 |---|---|---|
 | Default schema loading | Eager (< 100 tools) / threshold-deferred (≥ 100) | Always deferred |
 | Upfront schema cost | Zero to full depending on count | Near-zero (names/descriptions only) |
-| Search mechanism | Client-side BM25 in Rust | Client-side keyword/select in TypeScript |
+| Search mechanism | Client-side BM25 in Rust | Client-side keyword/select matching |
 | Search result format | `defer_loading: true` refs (OpenAI Responses API) | `tool_reference` blocks (Anthropic API) |
 | Deferred tools visible upfront | No — not in spec list at all | Yes — names announced, schemas withheld |
 | Prompt cache | Busted by tool set changes | Preserved — deferred tools outside system prompt prefix |
