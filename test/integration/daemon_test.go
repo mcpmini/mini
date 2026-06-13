@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -88,6 +89,95 @@ func connectProxy(t *testing.T, configDir string) *mcpClient {
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
 	return c
+}
+
+// startKillableDaemon starts a daemon reading its port from config (daemon_port: 0 →
+// OS-assigned) so a proxy respawn — which also reads config — behaves identically.
+// Returns the cmd so the test can kill it mid-session.
+func startKillableDaemon(t *testing.T, configDir string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(miniBin, "--config", configDir, "daemon")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Kill() //nolint:errcheck
+		cmd.Wait()         //nolint:errcheck
+		os.Remove(filepath.Join(configDir, "daemon.port"))
+	})
+	waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
+	return cmd
+}
+
+func killDaemon(t *testing.T, cmd *exec.Cmd, portFile string) {
+	t.Helper()
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatalf("kill daemon: %v", err)
+	}
+	cmd.Wait() //nolint:errcheck
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get("http://127.0.0.1:" + portFromFile(t, portFile) + "/healthz")
+		if err != nil {
+			return
+		}
+		resp.Body.Close()
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("daemon still healthy after kill")
+}
+
+// killDaemonOnPort reaps a daemon the proxy respawned (and thus owns no cmd handle for)
+// so it does not outlive the test.
+func killDaemonOnPort(port string) {
+	if port == "0" || port == "" {
+		return
+	}
+	out, err := exec.Command("lsof", "-ti", "tcp:"+port).Output()
+	if err != nil {
+		return
+	}
+	for _, pidStr := range strings.Fields(string(out)) {
+		if pid, err := strconv.Atoi(pidStr); err == nil {
+			syscall.Kill(pid, syscall.SIGKILL) //nolint:errcheck
+		}
+	}
+}
+
+func portFromFile(t *testing.T, portFile string) string {
+	t.Helper()
+	data, err := os.ReadFile(portFile)
+	if err != nil {
+		return "0"
+	}
+	return strings.TrimSpace(string(data))
+}
+
+func TestDaemon_recoversAfterDaemonKilledMidSession(t *testing.T) {
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", dir)
+	writeConfig(t, cfg, "inline_threshold: 50000\ndaemon_port: 0\n")
+
+	cmd := startKillableDaemon(t, cfg)
+	t.Cleanup(func() { killDaemonOnPort(portFromFile(t, filepath.Join(cfg, "daemon.port"))) })
+	tokenBefore := readDaemonToken(t, cfg)
+	client := connectProxy(t, cfg)
+	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+		t.Fatalf("pre-kill call failed: %+v", e)
+	}
+
+	killDaemon(t, cmd, filepath.Join(cfg, "daemon.port"))
+
+	e := client.execEnvelope("svc", "get_item", nil)
+	if e.Error != "" {
+		t.Fatalf("post-kill call did not recover: %+v", e)
+	}
+	if got := readDaemonToken(t, cfg); got != tokenBefore {
+		t.Errorf("daemon token rotated across respawn: before=%q after=%q", tokenBefore, got)
+	}
 }
 
 func TestDaemon_basicToolCall(t *testing.T) {
