@@ -8,6 +8,7 @@ package daemon
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,14 +42,29 @@ func ReadToken(configDir string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// EnsureToken reuses the stored daemon token if present and non-empty, otherwise mints
-// and persists a new one. Reuse lets already-connected proxies keep working across a
+// EnsureToken reuses the stored daemon token if it is present, non-empty, AND owner-only
+// (0600); otherwise it mints and persists a new one. A looser-permission file may already
+// have been read by another local user, so it is treated as compromised and re-minted rather
+// than trusted. Reusing a secure token lets already-connected proxies keep working across a
 // daemon respawn instead of being rejected with 401.
 func EnsureToken(configDir string) (string, error) {
-	if tok, err := ReadToken(configDir); err == nil && tok != "" {
+	if tok, err := readPrivateToken(configDir); err == nil && tok != "" {
 		return tok, nil
 	}
 	return WriteToken(configDir)
+}
+
+// readPrivateToken returns the stored token only when the file is owner-only; any group or
+// other permission bit makes it return an error so EnsureToken re-mints a fresh token.
+func readPrivateToken(configDir string) (string, error) {
+	info, err := os.Stat(TokenFile(configDir))
+	if err != nil {
+		return "", err
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("token file has insecure permissions %#o", info.Mode().Perm())
+	}
+	return ReadToken(configDir)
 }
 
 func atomicWriteFile(path, data string) (err error) {
