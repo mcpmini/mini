@@ -41,25 +41,32 @@ func (r *Registry) AddServer(p ServerParams) {
 
 func (r *Registry) addServerLocked(p ServerParams) {
 	realNames := realToolNames(p.Defs)
+	visible, reverted := resolveVisibleNames(p.Defs, p.Aliases, realNames)
 	seen := make(map[string]bool, len(p.Defs))
 	for _, d := range p.Defs {
 		if !config.ValidToolName.MatchString(d.Name) {
 			continue
 		}
-		alias := p.Aliases[d.Name]
-		if alias != "" && realNames[alias] {
-			slog.Default().Warn("alias collides with existing tool name; using real name",
-				"server", p.Name, "real", d.Name, "alias", alias)
-			alias = ""
-		}
-		e := buildEntry(entryParams{server: p.Name, def: d, perm: p.Perm, alias: alias})
-		if seen[e.FullName] {
-			slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", d.Name)
-			continue
-		}
-		seen[e.FullName] = true
-		r.insertEntryLocked(p.Name, e)
+		r.registerToolLocked(p, d, visible[d.Name], reverted[d.Name], seen)
 	}
+}
+
+func (r *Registry) registerToolLocked(p ServerParams, d transport.ToolDefinition, visibleName string, reverted bool, seen map[string]bool) {
+	if reverted {
+		slog.Default().Warn("alias collides with existing tool name; using real name",
+			"server", p.Name, "real", d.Name, "alias", p.Aliases[d.Name])
+	}
+	alias := ""
+	if visibleName != d.Name {
+		alias = visibleName
+	}
+	e := buildEntry(entryParams{server: p.Name, def: d, perm: p.Perm, alias: alias})
+	if seen[e.FullName] {
+		slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", d.Name)
+		return
+	}
+	seen[e.FullName] = true
+	r.insertEntryLocked(p.Name, e)
 }
 
 func realToolNames(defs []transport.ToolDefinition) map[string]bool {
@@ -70,6 +77,39 @@ func realToolNames(defs []transport.ToolDefinition) map[string]bool {
 	return names
 }
 
+// resolveVisibleNames maps each real tool name to its visible name, reverting
+// to the real name for tools whose alias collides with another tool's real
+// name or with another tool's alias (symmetric: no "first one wins"). reverted
+// reports the real names that were reverted due to such a collision.
+func resolveVisibleNames(defs []transport.ToolDefinition, aliases map[string]string, realNames map[string]bool) (visible map[string]string, reverted map[string]bool) {
+	claim := map[string][]string{}
+	visible = make(map[string]string, len(defs))
+	reverted = make(map[string]bool)
+	for _, d := range defs {
+		vis := d.Name
+		if a := aliases[d.Name]; a != "" && config.ValidToolName.MatchString(a) {
+			if realNames[a] {
+				reverted[d.Name] = true
+			} else {
+				vis = a
+			}
+		}
+		visible[d.Name] = vis
+		claim[vis] = append(claim[vis], d.Name)
+	}
+	revertAliasCollisions(visible, claim, reverted)
+	return visible, reverted
+}
+
+func revertAliasCollisions(visible map[string]string, claim map[string][]string, reverted map[string]bool) {
+	for real, vis := range visible {
+		if vis != real && len(claim[vis]) > 1 {
+			visible[real] = real
+			reverted[real] = true
+		}
+	}
+}
+
 type entryParams struct {
 	server string
 	def    transport.ToolDefinition
@@ -78,11 +118,9 @@ type entryParams struct {
 }
 
 func buildEntry(p entryParams) *ToolEntry {
-	visibleName := p.def.Name
-	upstreamTool := ""
-	if p.alias != "" && config.ValidToolName.MatchString(p.alias) {
-		visibleName = p.alias
-		upstreamTool = p.def.Name
+	visibleName, upstreamTool := p.def.Name, ""
+	if p.alias != "" {
+		visibleName, upstreamTool = p.alias, p.def.Name
 	}
 	full := p.server + "." + visibleName
 	return &ToolEntry{

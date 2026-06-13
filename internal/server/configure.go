@@ -168,14 +168,7 @@ func (s *Server) reapplyAliases() {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 
-	s.mu.RLock()
-	upstreams := make([]*upstreamServer, 0, len(s.upstreams))
-	for _, u := range s.upstreams {
-		upstreams = append(upstreams, u)
-	}
-	s.mu.RUnlock()
-
-	for _, u := range upstreams {
+	for _, u := range s.snapshotUpstreams() {
 		if u.lastDefs == nil {
 			continue
 		}

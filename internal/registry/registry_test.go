@@ -1,7 +1,10 @@
 package registry_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -518,4 +521,102 @@ func TestAlias_actionTargetingAliasByRealName_inheritsPermission(t *testing.T) {
 	if e.Permission != config.PermProtected {
 		t.Errorf("action should inherit protected permission from aliased real_tool, got %s", e.Permission)
 	}
+}
+
+func captureWarnLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+func TestAlias_collisionWithAnotherAlias(t *testing.T) {
+	log := captureWarnLog(t)
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: defs("toolA", "toolB"),
+		Aliases: map[string]string{
+			"toolA": "shared",
+			"toolB": "shared",
+		},
+	})
+
+	t.Run("both tools reachable under real names", func(t *testing.T) {
+		if _, err := r.Lookup("svc.toolA"); err != nil {
+			t.Errorf("toolA should be reachable under real name on alias collision: %v", err)
+		}
+		if _, err := r.Lookup("svc.toolB"); err != nil {
+			t.Errorf("toolB should be reachable under real name on alias collision: %v", err)
+		}
+	})
+
+	t.Run("alias name is not claimed by either tool", func(t *testing.T) {
+		if _, err := r.Lookup("svc.shared"); err == nil {
+			t.Error("colliding alias should not be reachable")
+		}
+	})
+
+	t.Run("tool count is unchanged", func(t *testing.T) {
+		if got := r.ToolCount("svc"); got != 2 {
+			t.Errorf("expected 2 tools, got %d", got)
+		}
+	})
+
+	t.Run("warning logged for revert", func(t *testing.T) {
+		if !strings.Contains(log.String(), "alias collides with existing tool name; using real name") {
+			t.Errorf("expected revert warning, got log: %s", log.String())
+		}
+	})
+}
+
+func TestAlias_reconnectYieldsToNewRealTool(t *testing.T) {
+	log := captureWarnLog(t)
+	r := registry.New()
+	r.AddServer(registry.ServerParams{
+		Name: "gh",
+		Defs: defs("list_pull_requests"),
+		Aliases: map[string]string{
+			"list_pull_requests": "list_prs",
+		},
+	})
+
+	if _, err := r.Lookup("gh.list_prs"); err != nil {
+		t.Fatalf("alias should be reachable before reconnect: %v", err)
+	}
+
+	r.ReplaceServer(registry.ServerParams{
+		Name: "gh",
+		Defs: defs("list_pull_requests", "list_prs"),
+		Aliases: map[string]string{
+			"list_pull_requests": "list_prs",
+		},
+	})
+
+	t.Run("both tools reachable under real names", func(t *testing.T) {
+		if _, err := r.Lookup("gh.list_pull_requests"); err != nil {
+			t.Errorf("list_pull_requests should be reachable: %v", err)
+		}
+		e, err := r.Lookup("gh.list_prs")
+		if err != nil {
+			t.Fatalf("list_prs should be reachable as a real tool: %v", err)
+		}
+		if e.UpstreamTool != "" {
+			t.Errorf("list_prs should route to itself, not an alias, got UpstreamTool=%q", e.UpstreamTool)
+		}
+	})
+
+	t.Run("tool count reflects both real tools", func(t *testing.T) {
+		if got := r.ToolCount("gh"); got != 2 {
+			t.Errorf("expected 2 tools, got %d", got)
+		}
+	})
+
+	t.Run("warning logged for revert", func(t *testing.T) {
+		if !strings.Contains(log.String(), "alias collides with existing tool name; using real name") {
+			t.Errorf("expected revert warning, got log: %s", log.String())
+		}
+	})
 }
