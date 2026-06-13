@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -177,6 +179,178 @@ func TestDaemon_recoversAfterDaemonKilledMidSession(t *testing.T) {
 	}
 	if got := readDaemonToken(t, cfg); got != tokenBefore {
 		t.Errorf("daemon token rotated across respawn: before=%q after=%q", tokenBefore, got)
+	}
+}
+
+// freeTCPPort asks the OS for an unused loopback port, then releases it. SO_REUSEADDR makes
+// rebinding the same port immediately afterward reliable, so the small race window is benign.
+func freeTCPPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve free port: %v", err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close() //nolint:errcheck
+	return port
+}
+
+// startFixedPortDaemon starts a killable daemon bound to a fixed daemon_port so that a proxy
+// respawn rebinds the same port — making real port-contention (the thundering herd) observable.
+func startFixedPortDaemon(t *testing.T, configDir string) *exec.Cmd {
+	t.Helper()
+	cmd := exec.Command(miniBin, "--config", configDir, "daemon")
+	cmd.Stdout = io.Discard
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cmd.Process.Kill() //nolint:errcheck
+		cmd.Wait()         //nolint:errcheck
+	})
+	waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
+	return cmd
+}
+
+func sigkillDaemon(t *testing.T, cmd *exec.Cmd, portFile string) {
+	t.Helper()
+	if err := cmd.Process.Signal(syscall.SIGKILL); err != nil {
+		t.Fatalf("SIGKILL daemon: %v", err)
+	}
+	cmd.Wait() //nolint:errcheck
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get("http://127.0.0.1:" + portFromFile(t, portFile) + "/healthz")
+		if err != nil {
+			return
+		}
+		resp.Body.Close()
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("daemon still healthy after SIGKILL")
+}
+
+// TestDaemon_recoversAfterSIGKILL kills the daemon with SIGKILL so its deferred port-file
+// removal never runs and daemon.port is left STALE. The proxy's next call must still recover
+// (proving RunningPort's /healthz probe rejects the stale file rather than trusting it) and
+// reuse the persisted token.
+func TestDaemon_recoversAfterSIGKILL(t *testing.T) {
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", dir)
+	port := freeTCPPort(t)
+	writeConfig(t, cfg, fmt.Sprintf("inline_threshold: 50000\ndaemon_port: %d\n", port))
+
+	cmd := startFixedPortDaemon(t, cfg)
+	portFile := filepath.Join(cfg, "daemon.port")
+	t.Cleanup(func() { killDaemonListeners(port) })
+	tokenBefore := readDaemonToken(t, cfg)
+	client := connectProxy(t, cfg)
+	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+		t.Fatalf("pre-kill call failed: %+v", e)
+	}
+
+	sigkillDaemon(t, cmd, portFile)
+	if _, err := os.Stat(portFile); err != nil {
+		t.Fatalf("expected stale port file to remain after SIGKILL, got: %v", err)
+	}
+
+	e := client.execEnvelope("svc", "get_item", nil)
+	if e.Error != "" {
+		t.Fatalf("post-SIGKILL call did not recover despite stale port file: %+v", e)
+	}
+	if got := readDaemonToken(t, cfg); got != tokenBefore {
+		t.Errorf("daemon token rotated across SIGKILL respawn: before=%q after=%q", tokenBefore, got)
+	}
+}
+
+// TestDaemon_manyClientsRecover is the scale/locking test. N proxies share one fixed-port
+// daemon; after it is killed, every proxy's next call must recover, the token must be reused,
+// and exactly ONE daemon may end up bound to the port — proving the flock spawn lock collapses
+// the respawn herd into a single winner rather than leaving orphaned processes behind.
+func TestDaemon_manyClientsRecover(t *testing.T) {
+	const n = 20
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", dir)
+	port := freeTCPPort(t)
+	writeConfig(t, cfg, fmt.Sprintf("inline_threshold: 50000\ndaemon_port: %d\n", port))
+
+	cmd := startFixedPortDaemon(t, cfg)
+	portFile := filepath.Join(cfg, "daemon.port")
+	t.Cleanup(func() { killDaemonListeners(port) })
+	tokenBefore := readDaemonToken(t, cfg)
+
+	clients := make([]*mcpClient, n)
+	for i := range clients {
+		clients[i] = connectProxy(t, cfg)
+		if e := clients[i].execEnvelope("svc", "get_item", nil); e.Error != "" {
+			t.Fatalf("client %d pre-kill call failed: %+v", i, e)
+		}
+	}
+
+	sigkillDaemon(t, cmd, portFile)
+	recoverAllClients(t, clients)
+
+	if got := readDaemonToken(t, cfg); got != tokenBefore {
+		t.Errorf("daemon token rotated across respawn: before=%q after=%q", tokenBefore, got)
+	}
+	if got := daemonListenerCount(t, port); got != 1 {
+		t.Errorf("expected exactly one daemon listening on port %d after recovery, got %d", port, got)
+	}
+}
+
+func recoverAllClients(t *testing.T, clients []*mcpClient) {
+	t.Helper()
+	var wg sync.WaitGroup
+	errs := make([]string, len(clients))
+	for i, c := range clients {
+		wg.Add(1)
+		go func(i int, c *mcpClient) {
+			defer wg.Done()
+			if e := c.execEnvelope("svc", "get_item", nil); e.Error != "" {
+				errs[i] = e.Error
+			}
+		}(i, c)
+	}
+	wg.Wait()
+	for i, msg := range errs {
+		if msg != "" {
+			t.Errorf("client %d did not recover after kill: %s", i, msg)
+		}
+	}
+}
+
+func listenerPIDs(port int) []int {
+	out, err := exec.Command("lsof", "-ti", "tcp:"+strconv.Itoa(port), "-sTCP:LISTEN").Output()
+	if err != nil {
+		return nil
+	}
+	self := os.Getpid()
+	var pids []int
+	for _, s := range strings.Fields(string(out)) {
+		if pid, err := strconv.Atoi(s); err == nil && pid != self {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+// daemonListenerCount returns how many distinct processes hold a *listening* socket on port.
+// More than one means a respawn herd leaked extra daemons that lost the port bind. It is
+// scoped to LISTEN sockets so the test's own healthz client connections are never counted.
+func daemonListenerCount(t *testing.T, port int) int {
+	t.Helper()
+	return len(listenerPIDs(port))
+}
+
+// killDaemonListeners reaps daemons a proxy respawned (and that the test owns no cmd handle
+// for). It targets only LISTEN sockets — never the test process's own client connections to
+// the port — so it cannot SIGKILL the test binary itself.
+func killDaemonListeners(port int) {
+	for _, pid := range listenerPIDs(port) {
+		syscall.Kill(pid, syscall.SIGKILL) //nolint:errcheck
 	}
 }
 
