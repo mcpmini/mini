@@ -1,8 +1,8 @@
 // Localhost alone is not an auth boundary — any local process or browser-driven
 // request can reach the daemon (DNS rebinding, SSRF, malicious browser extensions).
 // To reduce this attack surface, clients must present a bearer token stored on disk.
-// The daemon mints a fresh token on every start; clients read it from the token file
-// and automatically pick up a rotated token when the daemon restarts.
+// The daemon reuses a persisted token across restarts (see EnsureToken) so a respawned
+// daemon keeps the same token and already-connected proxies aren't rejected with 401.
 package daemon
 
 import (
@@ -39,6 +39,16 @@ func ReadToken(configDir string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+// EnsureToken reuses the stored daemon token if present and non-empty, otherwise mints
+// and persists a new one. Reuse lets already-connected proxies keep working across a
+// daemon respawn instead of being rejected with 401.
+func EnsureToken(configDir string) (string, error) {
+	if tok, err := ReadToken(configDir); err == nil && tok != "" {
+		return tok, nil
+	}
+	return WriteToken(configDir)
 }
 
 func atomicWriteFile(path, data string) (err error) {
