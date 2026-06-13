@@ -160,7 +160,6 @@ func TestCLI_test_unreachableServer(t *testing.T) {
 	}
 }
 
-
 func TestCLI_init_createsStructure(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
@@ -207,15 +206,50 @@ func TestCLI_init_importFromClaude(t *testing.T) {
 	}
 }
 
-func TestCLI_serve_badConfig(t *testing.T) {
+func TestCLI_connect_badConfig(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
 	os.WriteFile(filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"), 0644)
 
-	_, _, code := run(t, bin, cfg, "status")
+	_, _, code := run(t, bin, cfg, "connect")
 	if code == 0 {
-		t.Error("status with invalid config.yaml should exit non-zero")
+		t.Error("connect with invalid config.yaml should exit non-zero")
+	}
+}
+
+func TestCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	stdout, _, code := run(t, bin, cfg)
+	if code != 0 {
+		t.Errorf("bare mini should exit 0, got %d", code)
+	}
+	if !strings.Contains(stdout, "connect") {
+		t.Errorf("bare mini should print help mentioning connect, got: %q", stdout)
+	}
+}
+
+func TestCLI_removedCommands_exit2(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	for _, cmd := range []string{"serve", "proxy"} {
+		_, _, code := run(t, bin, cfg, cmd)
+		if code != 2 {
+			t.Errorf("removed command %q should exit 2 (unknown command), got %d", cmd, code)
+		}
+	}
+}
+
+func TestCLI_connect_invalidToolMode(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	_, stderr, code := run(t, bin, cfg, "connect", "--tool-mode", "bogus")
+	if code == 0 {
+		t.Error("connect with invalid --tool-mode should exit non-zero")
+	}
+	if !strings.Contains(stderr, "tool-mode") {
+		t.Errorf("expected --tool-mode validation error in stderr, got: %q", stderr)
 	}
 }
 

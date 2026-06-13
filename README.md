@@ -6,131 +6,6 @@ MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, ava
 
 > **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents connect to external tools. mini sits in front of all of them.
 
-## Install
-
-```bash
-go install github.com/mcpmini/mini/cmd/mini@latest
-```
-
-## Connect to your agent
-
-### Claude Code
-
-```bash
-claude mcp add mini mini proxy
-```
-
-Mini runs in proxy mode for Claude Code, exposing your upstream tools directly as `github__list_pull_requests`, `sentry__list_issues`, etc. Claude Code only loads tool schemas it actually needs, so the full upstream surface doesn't bloat context. Responses are trimmed transparently.
-
-[Why proxy mode and how Claude Code loads MCP schemas](docs/claude-code-mcp-loading.md)
-
-### Codex
-
-```bash
-codex mcp add --name mini --command mini
-```
-
-Or add to `~/.codex/config.toml` manually:
-
-```toml
-[mcp_servers.mini]
-command = "mini"
-```
-
-Codex loads all MCP tool schemas upfront, so the number of tools directly affects your token budget at session start. Mini's standard mode exposes exactly 4 tools regardless of how many upstream servers you have, keeping that cost fixed.
-
-[How Codex loads MCP tools](docs/codex-mcp-loading.md)
-
-### Cursor, Windsurf, Claude Desktop, Gemini
-
-```bash
-mini init   # detects your existing configs and adds mini automatically
-```
-
-Or add manually to your client's MCP config:
-
-```json
-{
-  "mcpServers": {
-    "mini": { "command": "mini" }
-  }
-}
-```
-
-Standard mode exposes 4 tools:
-
-| Tool | What it does |
-|---|---|
-| `list` | Discover all tools across connected servers |
-| `call` | Invoke a tool, response projected and returned |
-| `perm_call` | Same as `call` but for protected tools (write ops) |
-| `config` | Add/remove servers, adjust projections, check status |
-
-### Daemon mode
-
-If you run multiple agent sessions at once, each normally spawns its own mini process with its own upstream connections. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes, each consuming memory and holding its own auth session.
-
-The daemon shares one set of upstream connections across all sessions:
-
-```bash
-mini daemon          # start once in the background
-mini daemon status   # confirm it's running
-```
-
-Any `mini serve` or `mini proxy` invocation detects the daemon automatically and routes through it. Each session still gets its own projections and permissions.
-
-## Adding servers
-
-### Example: GitHub MCP
-
-```bash
-# Add the server
-mini add github \
-  --url https://api.githubcopilot.com/mcp \
-  --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN"
-
-# Check it connected
-mini status
-
-# Try a call
-mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":5}'
-```
-
-Mini detects that GitHub is a known server and installs the bundled projection and permission configs automatically.
-
-### Other servers
-
-```bash
-mini add linear --url https://mcp.linear.app/mcp
-mini add sentry --url https://mcp.sentry.io/mcp --header "Authorization=Bearer $SENTRY_TOKEN"
-mini add slack  --url https://mcp.slack.com/mcp  --header "Authorization=Bearer $SLACK_TOKEN"
-```
-
-Import all servers from an existing agent config at once:
-
-```bash
-mini add --from-claude   # Claude Desktop / Claude Code
-mini add --from-cursor   # Cursor mcp.json
-mini add --from-codex    # Codex config.toml
-mini add --from-gemini   # Gemini CLI settings.json
-```
-
-Bundled projection and permission configs for known servers install automatically.
-
-### Bundled server configs
-
-These servers have projection and permission defaults built in — they're installed automatically when `mini add` or `mini init` detects a matching server name.
-
-| Server | Projection config | Tools covered |
-|---|---|---|
-| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, list_issues, get_issue, get_pull_request, list_commits, get_commit, search_code, search_repositories, search_issues, get_file_contents, list_repository_contents, list_pull_request_files |
-| Slack | [slack.yaml](internal/defaults/projections/slack.yaml) | conversations_history, conversations_replies, conversations_list, search_messages, users_list |
-| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | list_issues, search_issues, get_issue, create_issue, update_issue, list_projects, list_teams, list_cycles, list_comments |
-| Sentry | [sentry.yaml](internal/defaults/projections/sentry.yaml) | list_issues, get_issue_details, list_events, list_projects, list_organizations |
-| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | Jira: search, get_issue, get_project_issues, get_all_projects, get_project, get_agile_boards, get_sprint_issues — Confluence: search, get_page, get_page_children, get_comments |
-
-For servers not in this list, mini is a transparent proxy — responses pass through unchanged until you add a projection config.
-
 ## What it does
 
 **Before** — one PR from the GitHub MCP:
@@ -205,6 +80,99 @@ mini call -r github list_pull_requests '{"owner":"golang","repo":"go","perPage":
    ... 40 more fields }]
 ```
 
+## Install
+
+```bash
+go install github.com/mcpmini/mini/cmd/mini@latest
+```
+
+## Connect to your agent
+
+One command, every client:
+
+```bash
+mini connect
+```
+
+Or add it to your client's MCP config:
+
+```json
+{
+  "mcpServers": {
+    "mini": { "command": "mini", "args": ["connect"] }
+  }
+}
+```
+
+`mini init` detects your existing Claude Code / Cursor / Windsurf / Claude Desktop / Gemini configs and adds this automatically.
+
+`mini connect` exposes your upstream tools directly as `github__list_pull_requests`, `sentry__list_issues`, etc., and trims their responses transparently. The agent sees native tool schemas and never knows mini is there. This is the right default for every client that defers tool schemas (such as Claude Code) — [here's how that schema deferral works](docs/claude-code-mcp-loading.md). If your client loads all schemas upfront and you have a large catalog of servers, see [compact tool mode](#compact-tool-mode) below.
+
+### Daemon mode
+
+If you run multiple agent sessions at once, each normally spawns its own mini process with its own upstream connections. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes, each consuming memory and holding its own auth session.
+
+The daemon shares one set of upstream connections across all sessions:
+
+```bash
+mini daemon          # start once in the background
+mini daemon status   # confirm it's running
+```
+
+Any `mini connect` invocation detects the daemon automatically and routes through it. Each session still gets its own projections and permissions.
+
+## Adding servers
+
+### Example: GitHub MCP
+
+```bash
+# Add the server
+mini add github \
+  --url https://api.githubcopilot.com/mcp \
+  --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN"
+
+# Check it connected
+mini status
+
+# Try a call
+mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":5}'
+```
+
+Mini detects that GitHub is a known server and installs the bundled projection and permission configs automatically.
+
+### Other servers
+
+```bash
+mini add linear --url https://mcp.linear.app/mcp
+mini add sentry --url https://mcp.sentry.io/mcp --header "Authorization=Bearer $SENTRY_TOKEN"
+mini add slack  --url https://mcp.slack.com/mcp  --header "Authorization=Bearer $SLACK_TOKEN"
+```
+
+Import all servers from an existing agent config at once:
+
+```bash
+mini add --from-claude   # Claude Desktop / Claude Code
+mini add --from-cursor   # Cursor mcp.json
+mini add --from-codex    # Codex config.toml
+mini add --from-gemini   # Gemini CLI settings.json
+```
+
+Bundled projection and permission configs for known servers install automatically.
+
+### Bundled server configs
+
+These servers have projection and permission defaults built in — they're installed automatically when `mini add` or `mini init` detects a matching server name.
+
+| Server | Projection config | Tools covered |
+|---|---|---|
+| GitHub | [github.yaml](internal/defaults/projections/github.yaml) | list_pull_requests, list_issues, get_issue, get_pull_request, list_commits, get_commit, search_code, search_repositories, search_issues, get_file_contents, list_repository_contents, list_pull_request_files |
+| Slack | [slack.yaml](internal/defaults/projections/slack.yaml) | conversations_history, conversations_replies, conversations_list, search_messages, users_list |
+| Linear | [linear.yaml](internal/defaults/projections/linear.yaml) | list_issues, search_issues, get_issue, create_issue, update_issue, list_projects, list_teams, list_cycles, list_comments |
+| Sentry | [sentry.yaml](internal/defaults/projections/sentry.yaml) | list_issues, get_issue_details, list_events, list_projects, list_organizations |
+| Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | Jira: search, get_issue, get_project_issues, get_all_projects, get_project, get_agile_boards, get_sprint_issues — Confluence: search, get_page, get_page_children, get_comments |
+
+For servers not in this list, mini is a transparent proxy — responses pass through unchanged until you add a projection config.
+
 ## How it works
 
 Mini is a local process that runs on your machine and sits between your agent and your MCP servers. When your agent calls a tool, mini resolves which upstream server owns it, forwards the call, applies your projection config to the response (trimming fields, capping strings, stripping noise), then returns the result. The agent never connects to upstream servers directly.
@@ -222,9 +190,7 @@ sequenceDiagram
     mini-->>Agent: trimmed response (8 fields, ~400 bytes)
 ```
 
-**Serve mode** (`mini serve`): mini exposes 4 fixed tools — `list`, `call`, `perm_call`, `config`. The agent discovers what's available via `list` and invokes tools via `call`. The schema surface stays constant regardless of how many upstream servers you add, which matters for clients that load all schemas upfront.
-
-**Proxy mode** (`mini proxy`): mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) so the agent sees native schemas. This is how Claude Code connects — schema deferral means the larger tool surface doesn't add upfront cost.
+By default mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) so the agent sees native schemas and calls them directly. mini stays transparent in the middle — resolving, forwarding, and trimming — while the agent acts as if it were talking to the upstream servers themselves.
 
 **Daemon mode**: without a daemon, each agent window spawns its own mini process which spawns or connects to every configured MCP server. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes — each consuming memory and holding its own auth session. The daemon shares one set of connections across all sessions.
 
@@ -301,7 +267,7 @@ There is no global string truncation by default. Truncation only applies when a 
 
 ### Large responses
 
-When mini has projected a response and it is still large, it writes the response to `~/.mini/responses/` and returns a file path instead. The agent fetches it with `read` (proxy mode) or `config action:read` (standard mode).
+When mini has projected a response and it is still large, it writes the response to `~/.mini/responses/` and returns a file path instead. The agent fetches it with `read` (passthrough mode) or `config action:read` (compact mode).
 
 **This only happens when a projection config is active.** For the bundled servers (GitHub, Slack, Linear, Sentry, Jira), `mini init` installs projections automatically so trimming and file handling work out of the box. For servers you add that aren't in the bundled set, responses pass through unchanged until you write a projection config — mini is a transparent proxy for anything it has no rules for.
 
@@ -338,11 +304,11 @@ Three tiers:
 | `protected` | Listed, but requires explicit invocation to call |
 | `hidden` | Not listed at all — invisible to the agent |
 
-How these tiers are enforced depends on which mode mini is running in.
+How these tiers are enforced depends on the tool mode mini is running in.
 
-**In proxy mode** (Claude Code), mini exposes each upstream tool directly as its own MCP tool. `hidden` tools are filtered from the tool list entirely so the agent never sees them. `protected` tools appear in the list and are callable — enforcement is handled by your agent's native approval system. In Claude Code, configure per-tool approval for write operations (e.g. `github__create_pull_request`) the same way you would for any MCP tool.
+**In passthrough mode** (the default), mini exposes each upstream tool directly as its own MCP tool. `hidden` tools are filtered from the tool list entirely so the agent never sees them. `protected` tools appear in the list and are callable — enforcement is handled by your agent's native approval system. In Claude Code, configure per-tool approval for write operations (e.g. `github__create_pull_request`) the same way you would for any MCP tool.
 
-**In standard mode** (Codex, Cursor, others), mini wraps everything behind 4 tools. `call` only executes `open` tools — calling a `protected` tool via `call` returns an error. `perm_call` is required for `protected` and `hidden` tools. This means you can configure your agent to auto-approve `call` (reads) while requiring human approval for `perm_call` (writes). `hidden` tools are invisible to `list` but can still be invoked via `perm_call` by an agent that knows the name.
+**In compact mode** (`mini connect --tool-mode compact`), mini wraps everything behind 4 tools. `call` only executes `open` tools — calling a `protected` tool via `call` returns an error. `perm_call` is required for `protected` and `hidden` tools. This means you can configure your agent to auto-approve `call` (reads) while requiring human approval for `perm_call` (writes). `hidden` tools are invisible to `list` but can still be invoked via `perm_call` by an agent that knows the name.
 
 ## Auth
 
@@ -377,11 +343,27 @@ This is useful when:
 - You're debugging what a tool actually returns before writing a projection config
 - Your agent environment can run subprocesses but has limited MCP support
 
+## Compact tool mode
+
+`mini connect` exposes upstream tools directly, which is ideal for clients that defer tool schemas. Some clients instead load every tool schema upfront, so a large catalog of servers means a large fixed cost at session start. For that case, compact mode collapses everything behind 4 fixed tools regardless of how many upstream servers you have:
+
+```bash
+mini connect --tool-mode compact
+```
+
+| Tool | What it does |
+|---|---|
+| `list` | Discover all tools across connected servers |
+| `call` | Invoke a tool, response projected and returned |
+| `perm_call` | Same as `call` but for protected tools (write ops) |
+| `config` | Add/remove servers, adjust projections, check status |
+
+The agent discovers what's available via `list` and invokes tools via `call`. The schema surface stays constant no matter how many servers you add. The trade-off is an extra round-trip (`list` before `call`) and that the agent can't see a tool's argument schema without a `list` first — which is why passthrough is the default.
+
 ## Commands
 
 ```
-mini serve [--http ADDR] [--standalone]   Standard mode (4-tool interface)
-mini proxy [--http ADDR]                  Proxy mode (upstream tools exposed directly)
+mini connect [--http ADDR] [--standalone] [--tool-mode compact]   Connect an agent (stdio MCP)
 mini daemon [--port N]                    Run as a shared background daemon
 mini daemon status                        Check whether the daemon is running
 

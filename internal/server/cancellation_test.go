@@ -63,7 +63,7 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ctx, pr, &out) }()
 
-	pw.Write(buildServeInput([][]byte{slowCallReq(42)})) //nolint:errcheck
+	pw.Write(buildServeInput(true, [][]byte{slowCallReq(42)})) //nolint:errcheck
 
 	if !waitTimeout(&callStarted, 3*time.Second) {
 		pw.Close()

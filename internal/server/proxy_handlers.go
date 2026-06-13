@@ -13,7 +13,7 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
-func (s *Server) routeProxyTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
+func (s *Server) routePassthroughTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
 	switch name {
 	case "config":
 		return s.handleConfigure(ctx, args, session)

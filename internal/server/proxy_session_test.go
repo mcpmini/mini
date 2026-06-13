@@ -32,14 +32,14 @@ func postMCP(t *testing.T, srv *server.Server, sessionID string, msg any) map[st
 	return resp
 }
 
-func initMsg(proxyMode bool) map[string]any {
+func initMsg(compact bool) map[string]any {
 	params := map[string]any{
 		"protocolVersion": transport.ProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	}
-	if proxyMode {
-		params["_mini_proxy_mode"] = true
+	if compact {
+		params[transport.ToolModeParam] = transport.ToolModeCompactValue
 	}
 	return map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params}
 }
@@ -79,7 +79,7 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 	addProxyConn(t, srv, "svc", conn)
 
 	const sessionID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
-	postMCP(t, srv, sessionID, initMsg(true))
+	postMCP(t, srv, sessionID, initMsg(false))
 
 	postMCP(t, srv, sessionID, map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -116,8 +116,8 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 
 	const sessionA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001"
 	const sessionB = "bbbbbbbb-bbbb-bbbb-bbbb-000000000002"
-	postMCP(t, srv, sessionA, initMsg(true))
-	postMCP(t, srv, sessionB, initMsg(true))
+	postMCP(t, srv, sessionA, initMsg(false))
+	postMCP(t, srv, sessionB, initMsg(false))
 
 	postMCP(t, srv, sessionA, map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -158,7 +158,7 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	addProxyConn(t, srv, "svc", conn)
 
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000003"
-	postMCP(t, srv, sessionID, initMsg(true))
+	postMCP(t, srv, sessionID, initMsg(false))
 
 	postMCP(t, srv, sessionID, map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -196,8 +196,8 @@ func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
 	const proxyID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	const standardID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
-	postMCP(t, srv, proxyID, initMsg(true))
-	postMCP(t, srv, standardID, initMsg(false))
+	postMCP(t, srv, proxyID, initMsg(false))
+	postMCP(t, srv, standardID, initMsg(true))
 
 	proxyTools := extractToolNames(postMCP(t, srv, proxyID, toolsListMsg()))
 	standardTools := extractToolNames(postMCP(t, srv, standardID, toolsListMsg()))
@@ -227,20 +227,20 @@ func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	instructions := func(proxyMode bool, sessionID string) string {
-		resp := postMCP(t, srv, sessionID, initMsg(proxyMode))
+	instructions := func(compact bool, sessionID string) string {
+		resp := postMCP(t, srv, sessionID, initMsg(compact))
 		res, _ := resp["result"].(map[string]any)
 		s, _ := res["instructions"].(string)
 		return s
 	}
 
-	proxy := instructions(true, "cccccccc-cccc-cccc-cccc-cccccccccccc")
-	if !strings.Contains(proxy, "read") || strings.Contains(proxy, "perm_call") {
-		t.Errorf("proxy instructions wrong: %q", proxy)
+	passthrough := instructions(false, "cccccccc-cccc-cccc-cccc-cccccccccccc")
+	if !strings.Contains(passthrough, "read") || strings.Contains(passthrough, "perm_call") {
+		t.Errorf("passthrough instructions wrong: %q", passthrough)
 	}
 
-	std := instructions(false, "dddddddd-dddd-dddd-dddd-dddddddddddd")
-	if !strings.Contains(std, "perm_call") {
-		t.Errorf("standard instructions wrong: %q", std)
+	compact := instructions(true, "dddddddd-dddd-dddd-dddd-dddddddddddd")
+	if !strings.Contains(compact, "perm_call") {
+		t.Errorf("compact instructions wrong: %q", compact)
 	}
 }

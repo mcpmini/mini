@@ -189,3 +189,13 @@ the boot.
 
 **No health checks.** Codex does not ping live connections; a dead server is detected reactively
 when its transport stream closes or the child exits.
+
+---
+
+## Which mini mode
+
+`mini connect` (passthrough) is the default and works everywhere. Codex defers schemas once
+it crosses 100 tools, so passthrough costs nothing upfront at scale. Below that threshold
+(or with `search_tool` disabled) Codex sends every schema eagerly — if you have a large
+catalog of servers and want a constant upfront cost regardless of count, use
+`mini connect --tool-mode compact` to collapse them behind the four meta-tools.

@@ -302,7 +302,7 @@ type mcpClient struct {
 
 func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
 	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "serve", "--standalone", "--log-level", "error")
+	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--standalone", "--tool-mode", "compact", "--log-level", "error")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)

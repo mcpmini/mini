@@ -17,21 +17,21 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.InlineThreshold = 1 // force file writes
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
 
-	serve(t, srv, callTool("config", map[string]any{
+	servePassthrough(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_item",
 		"projection": map[string]any{"exclude_always": []string{"secret"}},
 	}))
 
-	resp1 := serve(t, srv, callTool("svc__get_item", map[string]any{}))
+	resp1 := servePassthrough(t, srv, callTool("svc__get_item", map[string]any{}))
 	text1 := toolResultText(t, resp1)
 	t.Logf("initial response: %s", text1)
 
@@ -50,7 +50,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 		t.Fatalf("could not extract file path from: %s", text1)
 	}
 
-	resp2 := serve(t, srv, callTool("read", map[string]any{"path": filePath}))
+	resp2 := servePassthrough(t, srv, callTool("read", map[string]any{"path": filePath}))
 	text2 := toolResultText(t, resp2)
 	t.Logf("read response: %s", text2)
 
@@ -67,7 +67,7 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	resp := serve(t, srv, callTool("read", map[string]any{"path": "/etc/passwd"}))
+	resp := servePassthrough(t, srv, callTool("read", map[string]any{"path": "/etc/passwd"}))
 	if resp["error"] != nil {
 		return // RPC-level error is correct
 	}
@@ -81,7 +81,7 @@ func TestProxy_MiniRead_RequiresPath(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	resp := serve(t, srv, callTool("read", map[string]any{}))
+	resp := servePassthrough(t, srv, callTool("read", map[string]any{}))
 	if resp["error"] != nil {
 		return // RPC-level error is correct
 	}
@@ -95,7 +95,7 @@ func TestProxy_UnknownTool_ReturnsError(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	resp := serve(t, srv, callTool("nonexistent__tool", map[string]any{}))
+	resp := servePassthrough(t, srv, callTool("nonexistent__tool", map[string]any{}))
 	if resp["error"] == nil {
 		result, ok := resp["result"].(map[string]any)
 		if !ok || result["isError"] != true {
@@ -108,7 +108,7 @@ func TestProxy_NoDoubleUnderscore_ReturnsError(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	resp := serve(t, srv, callTool("notaproxytool", map[string]any{}))
+	resp := servePassthrough(t, srv, callTool("notaproxytool", map[string]any{}))
 	if resp["error"] == nil {
 		result, ok := resp["result"].(map[string]any)
 		if !ok || result["isError"] != true {
