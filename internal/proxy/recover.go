@@ -21,7 +21,8 @@ func (p forwardAsyncParams) deliver() []byte {
 	isInit := peekIsInitialize(p.line)
 	for attempt := 0; attempt < maxRecoveryAttempts; attempt++ {
 		out := classifyForward(p.connAt(state), p.line)
-		if out.kind == outcomeOK || out.kind == outcomeOther {
+		// On the last attempt return the failure as-is rather than recovering only to give up.
+		if out.kind == outcomeOK || out.kind == outcomeOther || attempt == maxRecoveryAttempts-1 {
 			return out.resp
 		}
 		next, ok := p.handleRecoverable(out.kind, state, isInit)
