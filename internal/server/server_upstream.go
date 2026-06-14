@@ -8,6 +8,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
+	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -79,6 +80,7 @@ func (s *Server) installIfNotRemoved(sc config.ServerConfig, conn transport.Conn
 
 func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition) {
 	u := newUpstreamServer(sc, conn)
+	u.lastDefs = tools
 	old := s.swapUpstream(sc.Name, u)
 	s.registerTools(sc, tools, old)
 	if sc.Projections != nil {
@@ -107,12 +109,23 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 }
 
 func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDefinition, old *upstreamServer) {
+	p := registry.ServerParams{Name: sc.Name, Defs: tools, Perm: sc.Permissions, AliasByToolName: config.AliasesFromProjections(sc.Projections)}
 	if old != nil {
 		old.shutdownAndClose()
-		s.reg.ReplaceServer(sc.Name, tools, sc.Permissions)
+		s.reg.ReplaceServer(p)
 		return
 	}
-	s.reg.AddServer(sc.Name, tools, sc.Permissions)
+	s.reg.AddServer(p)
+}
+
+// currentAliasesFor returns the alias map from the live, reload-updated
+// projections — unlike the install-time sc.Projections snapshot, this
+// reflects any config reload since the server was added.
+func (s *Server) currentAliasesFor(serverName string) map[string]string {
+	s.mu.RLock()
+	proj := s.projections[serverName]
+	s.mu.RUnlock()
+	return config.AliasesFromProjections(proj)
 }
 
 // Must be called in a goroutine; blocks until ctx is canceled.

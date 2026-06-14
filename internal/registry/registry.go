@@ -26,32 +26,64 @@ func New() *Registry {
 	}
 }
 
-func (r *Registry) AddServer(serverName string, defs []transport.ToolDefinition, perm *config.PermissionsConfig) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.addServerLocked(serverName, defs, perm)
+type ServerParams struct {
+	Name            string
+	Defs            []transport.ToolDefinition
+	Perm            *config.PermissionsConfig
+	AliasByToolName map[string]string
 }
 
-func (r *Registry) addServerLocked(serverName string, defs []transport.ToolDefinition, perm *config.PermissionsConfig) {
-	for _, d := range defs {
-		if config.ValidToolName.MatchString(d.Name) {
-			r.insertEntryLocked(serverName, buildEntry(serverName, d, perm))
+func (r *Registry) AddServer(p ServerParams) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.addServerLocked(p)
+}
+
+func (r *Registry) addServerLocked(p ServerParams) {
+	names := make([]string, 0, len(p.Defs))
+	for _, def := range p.Defs {
+		names = append(names, def.Name)
+	}
+	resolution := ResolveAliases(names, p.AliasByToolName)
+	seen := make(map[string]bool, len(p.Defs))
+	for _, def := range p.Defs {
+		if !config.ValidToolName.MatchString(def.Name) {
+			continue
 		}
+		if resolution.WasDropped(def.Name) {
+			slog.Default().Warn("alias collides; using real name",
+				"server", p.Name, "tool", def.Name, "alias", p.AliasByToolName[def.Name])
+		}
+		entry := buildEntry(entryParams{server: p.Name, def: def, perm: p.Perm, alias: resolution.AliasFor(def.Name)})
+		if seen[entry.FullName] {
+			slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", def.Name)
+			continue
+		}
+		seen[entry.FullName] = true
+		r.insertEntryLocked(p.Name, entry)
 	}
 }
 
-func buildEntry(server string, d transport.ToolDefinition, perm *config.PermissionsConfig) *ToolEntry {
-	full := server + "." + d.Name
+type entryParams struct {
+	server string
+	def    transport.ToolDefinition
+	perm   *config.PermissionsConfig
+	alias  string
+}
+
+func buildEntry(p entryParams) *ToolEntry {
+	name := ToolName{UpstreamName: p.def.Name, Alias: p.alias}
+	full := p.server + "." + name.Name()
 	return &ToolEntry{
-		Server:        server,
-		Name:          d.Name,
+		Server:        p.server,
+		ToolName:      name,
 		FullName:      full,
 		FullNameLower: strings.ToLower(full),
-		Description:   d.Description,
-		DescLower:     strings.ToLower(d.Description),
-		InputSchema:   d.InputSchema,
-		Permission:    resolvePermission(d.Name, perm),
-		ReadOnly:      d.ReadOnly,
+		Description:   p.def.Description,
+		DescLower:     strings.ToLower(p.def.Description),
+		InputSchema:   p.def.InputSchema,
+		Permission:    resolvePermission(p.def.Name, p.perm),
+		ReadOnly:      p.def.ReadOnly,
 	}
 }
 
@@ -80,16 +112,20 @@ func (r *Registry) AddAction(ac config.ActionConfig) {
 
 func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 	full := ac.Server + "." + ac.Name
+	targetTool := ac.Tool
+	if target, ok := r.entryByFullNameLocked(ac.Server + "." + ac.Tool); ok && target.ToolName.Alias != "" {
+		targetTool = target.ToolName.UpstreamName
+	}
 	return &ToolEntry{
 		Server:        ac.Server,
-		Name:          ac.Name,
+		ToolName:      ToolName{UpstreamName: ac.Name},
 		FullName:      full,
 		FullNameLower: strings.ToLower(full),
 		Description:   ac.Description,
 		DescLower:     strings.ToLower(ac.Description),
 		Permission:    r.actionPermission(ac),
 		TargetServer:  ac.Server,
-		TargetTool:    ac.Tool,
+		TargetTool:    targetTool,
 		DefaultArgs:   ac.DefaultArgs,
 	}
 }
@@ -109,12 +145,39 @@ func (r *Registry) actionPermission(ac config.ActionConfig) config.PermissionLev
 	return config.PermOpen
 }
 
+// entryByFullNameLocked looks up an entry by its visible full name, searching
+// both the open/protected and hidden maps.
+func (r *Registry) entryByFullNameLocked(fullName string) (*ToolEntry, bool) {
+	if e, ok := r.tools[fullName]; ok {
+		return e, true
+	}
+	e, ok := r.hidden[fullName]
+	return e, ok
+}
+
 func (r *Registry) targetPermissionLocked(fullName string) (config.PermissionLevel, bool) {
-	if target, ok := r.tools[fullName]; ok {
+	if target, ok := r.entryByFullNameLocked(fullName); ok {
 		return target.Permission, true
 	}
-	if target, ok := r.hidden[fullName]; ok {
-		return target.Permission, true
+	server, upstreamTool, found := strings.Cut(fullName, ".")
+	if !found {
+		return "", false
+	}
+	return r.permissionByUpstreamToolLocked(server, upstreamTool)
+}
+
+func (r *Registry) permissionByUpstreamToolLocked(server, upstreamTool string) (config.PermissionLevel, bool) {
+	for _, e := range r.tools {
+		if e.Server == server && e.ToolName.Alias != "" && e.ToolName.UpstreamName == upstreamTool {
+			return e.Permission, true
+		}
+	}
+	// Aliased tools are keyed by their alias, not their real name, so hidden
+	// aliased tools won't appear in r.tools — must scan r.hidden too.
+	for _, e := range r.hidden {
+		if e.Server == server && e.ToolName.Alias != "" && e.ToolName.UpstreamName == upstreamTool {
+			return e.Permission, true
+		}
 	}
 	return "", false
 }
@@ -173,11 +236,11 @@ func (r *Registry) removeServerLocked(serverName string) {
 // ReplaceServer atomically removes the server's existing tools and registers the
 // new set. Callers outside this package (reconnect, registerUpstream) must use
 // this instead of separate Remove+Add calls to avoid a window where tools are absent.
-func (r *Registry) ReplaceServer(serverName string, defs []transport.ToolDefinition, perm *config.PermissionsConfig) {
+func (r *Registry) ReplaceServer(p ServerParams) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.removeServerLocked(serverName)
-	r.addServerLocked(serverName, defs, perm)
+	r.removeServerLocked(p.Name)
+	r.addServerLocked(p)
 }
 
 func (r *Registry) Lookup(fullName string) (*ToolEntry, error) {

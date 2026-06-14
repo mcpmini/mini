@@ -28,11 +28,12 @@ func isConnError(err error) bool {
 }
 
 type upstreamServer struct {
-	cfg    config.ServerConfig
-	mu     sync.RWMutex // protects conn during reconnect
-	conn   transport.Connection
-	ctx    context.Context
-	cancel context.CancelFunc
+	cfg      config.ServerConfig
+	mu       sync.RWMutex // protects conn during reconnect
+	conn     transport.Connection
+	lastDefs []transport.ToolDefinition
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	reconnecting atomic.Bool
 	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)

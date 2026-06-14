@@ -122,6 +122,7 @@ func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.T
 	if err != nil {
 		return executeParams{}, nil, errLookup{err}
 	}
+	p.Tool = entry.ToolName.UpstreamName
 	return p, entry, nil
 }
 
@@ -178,7 +179,7 @@ func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *regis
 	if toolErr != nil {
 		return s.handleToolErr(server, tool, latencyMs, toolErr, session)
 	}
-	return s.buildEnvelope(envelopeParams{Server: server, Tool: tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs})
+	return s.buildEnvelope(envelopeParams{Entry: entry, Tool: tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs})
 }
 
 func (s *Server) handleToolErr(server, tool string, latencyMs int64, err error, session *Session) (any, error) {
@@ -321,7 +322,7 @@ func mergeArgs(defaults, overrides map[string]any) map[string]any {
 }
 
 type envelopeParams struct {
-	Server    string
+	Entry     *registry.ToolEntry
 	Tool      string
 	Raw       json.RawMessage
 	Session   *Session
@@ -330,16 +331,16 @@ type envelopeParams struct {
 }
 
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
-	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
+	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
 	projStart := time.Now()
-	env, stats, err := s.buildProjectedEnvelope(p.Server, p.Tool, p.Raw, projCfg)
+	env, stats, err := s.buildProjectedEnvelope(p.Entry.Server, p.Tool, p.Raw, projCfg)
 	if err != nil {
 		return nil, err
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
-	s.logger.Debug("projection applied", "server", p.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", time.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
-	return s.formatEnvelope(p.Server, p.Tool, env, projCfg), nil
+	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", time.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
+	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg), nil
 }
 
 func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage, projCfg *config.ProjectionConfig) (*response.Envelope, response.CallStats, error) {
@@ -353,13 +354,13 @@ func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage
 	})
 }
 
-func (s *Server) formatEnvelope(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
+func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
 	format := s.cfg.ResponseFormat
 	if projCfg != nil && projCfg.Format != "" {
 		format = projCfg.Format
 	}
 	if format == "mini" {
-		return RenderLines(server, tool, env)
+		return RenderLines(server, displayTool, env)
 	}
 	return env
 }

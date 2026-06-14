@@ -114,7 +114,7 @@ func miniReadSchema() map[string]any {
 
 func upstreamToolSchema(e *registry.ToolEntry) map[string]any {
 	return map[string]any{
-		"name":        e.Server + "__" + e.Name,
+		"name":        e.Server + "__" + e.ToolName.Name(),
 		"description": e.Description,
 		"inputSchema": e.InputSchema,
 	}

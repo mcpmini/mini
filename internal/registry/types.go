@@ -6,10 +6,26 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
+// ToolName pairs the upstream dispatch name with the agent-visible name.
+// For non-aliased tools UpstreamName == Name(). For aliased tools, Alias
+// holds the visible name and UpstreamName holds the real dispatch name.
+type ToolName struct {
+	UpstreamName string
+	Alias        string
+}
+
+// Name returns the agent-visible name: the alias if set, otherwise the upstream name.
+func (n ToolName) Name() string {
+	if n.Alias != "" {
+		return n.Alias
+	}
+	return n.UpstreamName
+}
+
 type ToolEntry struct {
 	Server        string
-	Name          string
-	FullName      string // "server.tool"
+	ToolName      ToolName
+	FullName      string // "server.tool" using visible name (alias if set)
 	FullNameLower string // pre-lowercased for search
 	Description   string
 	DescLower     string // pre-lowercased for search
@@ -20,9 +36,9 @@ type ToolEntry struct {
 	ReadOnly bool
 
 	// Virtual-tool fields (set only for actions).
-	TargetServer string         // real server to call
-	TargetTool   string         // real tool name to call
-	DefaultArgs  map[string]any // pre-baked args; call-time args win on conflict
+	TargetServer string
+	TargetTool   string
+	DefaultArgs  map[string]any
 }
 
 // CompactEntry is what discover returns per tool — no full schema.

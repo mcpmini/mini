@@ -26,7 +26,7 @@ func TestSetServerProjectionWaitsForPersistLockBeforeMemoryUpdate(t *testing.T) 
 			ServerName: "svc",
 			Tool:       "myTool",
 			Projection: &config.ProjectionConfig{ExcludeAlways: []string{"secret"}},
-		})
+		}, "myTool")
 		done <- err
 	}()
 

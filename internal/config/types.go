@@ -241,6 +241,8 @@ type ActionConfig struct {
 
 // ProjectionConfig defines how to trim tool responses.
 type ProjectionConfig struct {
+	// Alias replaces the upstream tool name for agents; mini translates back when calling upstream.
+	Alias         string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
 	Mode          string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
 	Include       []string       `yaml:"include,omitempty"        json:"include,omitempty"`
 	ExcludeAlways []string       `yaml:"exclude_always,omitempty" json:"exclude_always,omitempty"`

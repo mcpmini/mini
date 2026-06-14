@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -90,13 +91,25 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	if old != nil {
 		old.Close()
 	}
-	s.reg.ReplaceServer(u.cfg.Name, tools, u.cfg.Permissions)
+	s.replaceRegistryToolsLocked(u, tools)
 	s.notifyAllSessions()
 	s.logger.Info("upstream reconnected", "server", u.cfg.Name)
 	if hook != nil {
 		hook()
 	}
 	return true
+}
+
+func (s *Server) replaceRegistryToolsLocked(u *upstreamServer, tools []transport.ToolDefinition) {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	u.lastDefs = tools
+	s.reg.ReplaceServer(registry.ServerParams{
+		Name:    u.cfg.Name,
+		Defs:    tools,
+		Perm:    u.cfg.Permissions,
+		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
+	})
 }
 
 func swapReconnectConn(u *upstreamServer, conn transport.Connection) (transport.Connection, func(), bool) {
