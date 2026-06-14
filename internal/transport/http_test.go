@@ -193,11 +193,13 @@ func TestHTTPConnection_connectionDroppedMidResponse(t *testing.T) {
 		}
 		hj, ok := w.(http.Hijacker)
 		if !ok {
-			t.Fatal("ResponseWriter does not support hijacking")
+			t.Error("ResponseWriter does not support hijacking")
+			return
 		}
 		conn, _, err := hj.Hijack()
 		if err != nil {
-			t.Fatalf("hijack: %v", err)
+			t.Errorf("hijack: %v", err)
+			return
 		}
 		conn.Close()
 	}))
