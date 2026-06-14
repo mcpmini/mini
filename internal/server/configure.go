@@ -172,11 +172,13 @@ func (s *Server) reapplyAliases() {
 		if u.lastDefs == nil {
 			continue
 		}
+		// nil inline: read s.projections, which replaceProjections just refreshed from disk.
+		// u.cfg.Projections is the install-time snapshot and would mask the reload.
 		s.reg.ReplaceServer(registry.ServerParams{
 			Name:    u.cfg.Name,
 			Defs:    u.lastDefs,
 			Perm:    u.cfg.Permissions,
-			Aliases: s.aliasesFor(u.cfg.Name, u.cfg.Projections),
+			Aliases: s.aliasesFor(u.cfg.Name, nil),
 		})
 	}
 }

@@ -163,6 +163,28 @@ func TestAlias_actionTargetingAliasByAliasName(t *testing.T) {
 	}
 }
 
+func TestAlias_actionTargetingHiddenAliasedToolByRealName_inheritsHidden(t *testing.T) {
+	r := registry.New()
+	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
+	r.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: defs("secret_op"),
+		Perm: perm,
+		Aliases: map[string]string{
+			"secret_op": "secret_alias",
+		},
+	})
+	r.AddAction(config.ActionConfig{
+		Name:   "my_action",
+		Server: "svc",
+		Tool:   "secret_op",
+	})
+
+	if e, err := r.Lookup("svc.my_action"); err == nil {
+		t.Errorf("action targeting a hidden aliased tool by real name should inherit hidden, got %v", e)
+	}
+}
+
 func TestAlias_reconnectYieldsToNewRealTool(t *testing.T) {
 	r := registry.New()
 	r.AddServer(registry.ServerParams{

@@ -257,29 +257,49 @@ func TestAlias_setProjectionResponseEchoesAlias(t *testing.T) {
 }
 
 func TestAlias_reloadUpdatesAliases(t *testing.T) {
-	dir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(srv.Close)
-
-	// Server stub lets loadServerProjections merge projection files for "gh".
-	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\n")
-
-	// Connect with no inline projections so aliasesFor reads from s.projections.
-	fake := fakeConn("list_pull_requests")
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, fake)
-
-	// Write disk projection with alias and reload — reapplyAliases must pick it up.
-	writeFile(t, filepath.Join(dir, "projections", "gh.yaml"), "list_pull_requests:\n  alias: list_prs\n")
-	serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
-
-	names := listNames(t, srv)
-	if !names["gh.list_prs"] {
-		t.Errorf("alias should appear after reload, got: %v", names)
+	tests := []struct {
+		name              string
+		initialProjection map[string]*config.ProjectionConfig
+		wantGoneAfter     string
+	}{
+		{
+			name:              "server had no inline projections at startup",
+			initialProjection: nil,
+			wantGoneAfter:     "gh.list_pull_requests",
+		},
+		{
+			name:              "server had an inline projection alias at startup",
+			initialProjection: map[string]*config.ProjectionConfig{"list_pull_requests": {Alias: "old_alias"}},
+			wantGoneAfter:     "gh.old_alias",
+		},
 	}
-	if names["gh.list_pull_requests"] {
-		t.Errorf("real name should not appear when aliased, got: %v", names)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg := config.DefaultConfig()
+			cfg.ResponseDir = t.TempDir()
+			cfg.InlineThreshold = 10000
+			srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			t.Cleanup(srv.Close)
+
+			// Server stub lets loadServerProjections merge projection files for "gh".
+			writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\n")
+
+			fake := fakeConn("list_pull_requests")
+			srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: tt.initialProjection}, fake)
+
+			// Write disk projection with a new alias and reload — reapplyAliases must pick it up.
+			writeFile(t, filepath.Join(dir, "projections", "gh.yaml"), "list_pull_requests:\n  alias: list_prs\n")
+			serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
+
+			names := listNames(t, srv)
+			if !names["gh.list_prs"] {
+				t.Errorf("alias should appear after reload, got: %v", names)
+			}
+			if names[tt.wantGoneAfter] {
+				t.Errorf("%s should not appear after reload, got: %v", tt.wantGoneAfter, names)
+			}
+		})
 	}
 }

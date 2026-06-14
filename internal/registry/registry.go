@@ -206,7 +206,19 @@ func (r *Registry) targetPermissionLocked(fullName string) (config.PermissionLev
 	if !found {
 		return "", false
 	}
+	return r.permissionByUpstreamToolLocked(server, real)
+}
+
+// permissionByUpstreamToolLocked finds the permission of a tool by its
+// upstream (real) name, searching both visible and hidden entries — an
+// aliased tool is keyed by its alias, not its real name, in both maps.
+func (r *Registry) permissionByUpstreamToolLocked(server, real string) (config.PermissionLevel, bool) {
 	for _, e := range r.tools {
+		if e.Server == server && e.UpstreamTool == real {
+			return e.Permission, true
+		}
+	}
+	for _, e := range r.hidden {
 		if e.Server == server && e.UpstreamTool == real {
 			return e.Permission, true
 		}
