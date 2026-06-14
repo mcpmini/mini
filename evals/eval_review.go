@@ -15,10 +15,10 @@ func RunReviewPRsEval(ctx context.Context, r *Runner, env *Env) (EvalResult, []e
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
-	result, err := r.RunEval(ctx, env, EvalParams{
+	result, err := r.RunEval(ctx, evalCtx{Env: env, Params: EvalParams{
 		Servers:      servers,
 		AllowedTools: "Read",
-	}, reviewPRsTask)
+	}, Task: reviewPRsTask})
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
