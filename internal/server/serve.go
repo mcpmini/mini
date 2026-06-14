@@ -74,8 +74,6 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 	}()
 }
 
-// handleLineCancellable is shared by the stdio loop and the HTTP daemon path
-// so that notifications/cancelled cancels in-flight calls identically on both.
 func (s *Server) handleLineCancellable(ctx context.Context, line []byte, session *Session) (transport.Response, bool) {
 	rawID := peekRequestID(line)
 	if len(rawID) == 0 {
