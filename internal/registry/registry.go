@@ -27,10 +27,10 @@ func New() *Registry {
 }
 
 type ServerParams struct {
-	Name    string
-	Defs    []transport.ToolDefinition
-	Perm    *config.PermissionsConfig
-	Aliases map[string]string // realToolName → aliasName; nil means no aliases
+	Name            string
+	Defs            []transport.ToolDefinition
+	Perm            *config.PermissionsConfig
+	AliasByToolName map[string]string
 }
 
 func (r *Registry) AddServer(p ServerParams) {
@@ -40,73 +40,23 @@ func (r *Registry) AddServer(p ServerParams) {
 }
 
 func (r *Registry) addServerLocked(p ServerParams) {
-	realNames := realToolNames(p.Defs)
-	visible, reverted := resolveVisibleNames(p.Defs, p.Aliases, realNames)
+	resolution := resolveAliases(p.Defs, p.AliasByToolName)
 	seen := make(map[string]bool, len(p.Defs))
-	for _, d := range p.Defs {
-		if !config.ValidToolName.MatchString(d.Name) {
+	for _, def := range p.Defs {
+		if !config.ValidToolName.MatchString(def.Name) {
 			continue
 		}
-		r.registerToolLocked(p, d, visible[d.Name], reverted[d.Name], seen)
-	}
-}
-
-func (r *Registry) registerToolLocked(p ServerParams, d transport.ToolDefinition, visibleName string, reverted bool, seen map[string]bool) {
-	if reverted {
-		slog.Default().Warn("alias collides with existing tool name; using real name",
-			"server", p.Name, "real", d.Name, "alias", p.Aliases[d.Name])
-	}
-	alias := ""
-	if visibleName != d.Name {
-		alias = visibleName
-	}
-	e := buildEntry(entryParams{server: p.Name, def: d, perm: p.Perm, alias: alias})
-	if seen[e.FullName] {
-		slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", d.Name)
-		return
-	}
-	seen[e.FullName] = true
-	r.insertEntryLocked(p.Name, e)
-}
-
-func realToolNames(defs []transport.ToolDefinition) map[string]bool {
-	names := make(map[string]bool, len(defs))
-	for _, d := range defs {
-		names[d.Name] = true
-	}
-	return names
-}
-
-// resolveVisibleNames maps each real tool name to its visible name, reverting
-// to the real name for tools whose alias collides with another tool's real
-// name or with another tool's alias (symmetric: no "first one wins"). reverted
-// reports the real names that were reverted due to such a collision.
-func resolveVisibleNames(defs []transport.ToolDefinition, aliases map[string]string, realNames map[string]bool) (visible map[string]string, reverted map[string]bool) {
-	claim := map[string][]string{}
-	visible = make(map[string]string, len(defs))
-	reverted = make(map[string]bool)
-	for _, d := range defs {
-		vis := d.Name
-		if a := aliases[d.Name]; a != "" && config.ValidToolName.MatchString(a) {
-			if realNames[a] {
-				reverted[d.Name] = true
-			} else {
-				vis = a
-			}
+		if resolution.dropped[def.Name] {
+			slog.Default().Warn("alias collides; using real name",
+				"server", p.Name, "tool", def.Name, "alias", p.AliasByToolName[def.Name])
 		}
-		visible[d.Name] = vis
-		claim[vis] = append(claim[vis], d.Name)
-	}
-	revertAliasCollisions(visible, claim, reverted)
-	return visible, reverted
-}
-
-func revertAliasCollisions(visible map[string]string, claim map[string][]string, reverted map[string]bool) {
-	for realName, vis := range visible {
-		if vis != realName && len(claim[vis]) > 1 {
-			visible[realName] = realName
-			reverted[realName] = true
+		entry := buildEntry(entryParams{server: p.Name, def: def, perm: p.Perm, alias: resolution.aliasFor(def.Name)})
+		if seen[entry.FullName] {
+			slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", def.Name)
+			continue
 		}
+		seen[entry.FullName] = true
+		r.insertEntryLocked(p.Name, entry)
 	}
 }
 
@@ -118,14 +68,11 @@ type entryParams struct {
 }
 
 func buildEntry(p entryParams) *ToolEntry {
-	visibleName, upstreamTool := p.def.Name, ""
-	if p.alias != "" {
-		visibleName, upstreamTool = p.alias, p.def.Name
-	}
-	full := p.server + "." + visibleName
+	name := ToolName{UpstreamName: p.def.Name, Alias: p.alias}
+	full := p.server + "." + name.Name()
 	return &ToolEntry{
 		Server:        p.server,
-		Name:          visibleName,
+		ToolName:      name,
 		FullName:      full,
 		FullNameLower: strings.ToLower(full),
 		Description:   p.def.Description,
@@ -133,7 +80,6 @@ func buildEntry(p entryParams) *ToolEntry {
 		InputSchema:   p.def.InputSchema,
 		Permission:    resolvePermission(p.def.Name, p.perm),
 		ReadOnly:      p.def.ReadOnly,
-		UpstreamTool:  upstreamTool,
 	}
 }
 
@@ -163,12 +109,12 @@ func (r *Registry) AddAction(ac config.ActionConfig) {
 func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 	full := ac.Server + "." + ac.Name
 	targetTool := ac.Tool
-	if target, ok := r.entryByFullNameLocked(ac.Server + "." + ac.Tool); ok && target.UpstreamTool != "" {
-		targetTool = target.UpstreamTool
+	if target, ok := r.entryByFullNameLocked(ac.Server + "." + ac.Tool); ok && target.ToolName.Alias != "" {
+		targetTool = target.ToolName.UpstreamName
 	}
 	return &ToolEntry{
 		Server:        ac.Server,
-		Name:          ac.Name,
+		ToolName:      ToolName{UpstreamName: ac.Name},
 		FullName:      full,
 		FullNameLower: strings.ToLower(full),
 		Description:   ac.Description,
@@ -216,17 +162,16 @@ func (r *Registry) targetPermissionLocked(fullName string) (config.PermissionLev
 	return r.permissionByUpstreamToolLocked(server, upstreamTool)
 }
 
-// permissionByUpstreamToolLocked finds the permission of a tool by its
-// upstream (real) name, searching both visible and hidden entries — an
-// aliased tool is keyed by its alias, not its real name, in both maps.
 func (r *Registry) permissionByUpstreamToolLocked(server, upstreamTool string) (config.PermissionLevel, bool) {
 	for _, e := range r.tools {
-		if e.Server == server && e.UpstreamTool == upstreamTool {
+		if e.Server == server && e.ToolName.Alias != "" && e.ToolName.UpstreamName == upstreamTool {
 			return e.Permission, true
 		}
 	}
+	// Aliased tools are keyed by their alias, not their real name, so hidden
+	// aliased tools won't appear in r.tools — must scan r.hidden too.
 	for _, e := range r.hidden {
-		if e.Server == server && e.UpstreamTool == upstreamTool {
+		if e.Server == server && e.ToolName.Alias != "" && e.ToolName.UpstreamName == upstreamTool {
 			return e.Permission, true
 		}
 	}

@@ -22,10 +22,10 @@ func serverParams(name string, d []transport.ToolDefinition, perm *config.Permis
 }
 
 func TestAddAndLookup(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("ci", defs("getBuild", "listBuilds"), nil))
+	reg := registry.New()
+	reg.AddServer(serverParams("ci", defs("getBuild", "listBuilds"), nil))
 
-	e, err := r.Lookup("ci.getBuild")
+	e, err := reg.Lookup("ci.getBuild")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,19 +35,19 @@ func TestAddAndLookup(t *testing.T) {
 }
 
 func TestLookupMissing(t *testing.T) {
-	r := registry.New()
-	_, err := r.Lookup("ci.nope")
+	reg := registry.New()
+	_, err := reg.Lookup("ci.nope")
 	if err == nil {
 		t.Fatal("expected error for unknown tool")
 	}
 }
 
 func TestHiddenToolsNotIndexed(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"adminSettings"}}
-	r.AddServer(serverParams("ci", defs("getBuild", "adminSettings"), perm))
+	reg.AddServer(serverParams("ci", defs("getBuild", "adminSettings"), perm))
 
-	all := r.All()
+	all := reg.All()
 	for _, e := range all {
 		if e.Name == "ci.adminSettings" {
 			t.Fatal("hidden tool should not appear in All()")
@@ -56,42 +56,42 @@ func TestHiddenToolsNotIndexed(t *testing.T) {
 }
 
 func TestProtectedPermission(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"deleteIssue"}}
-	r.AddServer(serverParams("jira", defs("getIssue", "deleteIssue"), perm))
+	reg.AddServer(serverParams("jira", defs("getIssue", "deleteIssue"), perm))
 
-	e, _ := r.Lookup("jira.deleteIssue")
+	e, _ := reg.Lookup("jira.deleteIssue")
 	if e.Permission != config.PermProtected {
 		t.Fatalf("expected protected, got %s", e.Permission)
 	}
 }
 
 func TestRemoveServer(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("ci", defs("getBuild"), nil))
-	r.RemoveServer("ci")
+	reg := registry.New()
+	reg.AddServer(serverParams("ci", defs("getBuild"), nil))
+	reg.RemoveServer("ci")
 
-	_, err := r.Lookup("ci.getBuild")
+	_, err := reg.Lookup("ci.getBuild")
 	if err == nil {
 		t.Fatal("expected error after server removal")
 	}
 }
 
 func TestSearch(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("ci", defs("getBuild", "listPipelines"), nil))
+	reg := registry.New()
+	reg.AddServer(serverParams("ci", defs("getBuild", "listPipelines"), nil))
 
-	results := r.Search("build")
+	results := reg.Search("build")
 	if len(results) != 1 || results[0].Name != "ci.getBuild" {
 		t.Fatalf("unexpected search results: %v", results)
 	}
 }
 
 func TestAll_sortedDeterministic(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("srv", defs("zebra", "alpha", "mango"), nil))
+	reg := registry.New()
+	reg.AddServer(serverParams("srv", defs("zebra", "alpha", "mango"), nil))
 
-	all := r.All()
+	all := reg.All()
 	if len(all) != 3 {
 		t.Fatalf("expected 3, got %d", len(all))
 	}
@@ -103,10 +103,10 @@ func TestAll_sortedDeterministic(t *testing.T) {
 }
 
 func TestSearch_sortedDeterministic(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("srv", defs("z_tool", "a_tool", "m_tool"), nil))
+	reg := registry.New()
+	reg.AddServer(serverParams("srv", defs("z_tool", "a_tool", "m_tool"), nil))
 
-	results := r.Search("tool")
+	results := reg.Search("tool")
 	if len(results) != 3 {
 		t.Fatalf("expected 3, got %d", len(results))
 	}
@@ -118,11 +118,11 @@ func TestSearch_sortedDeterministic(t *testing.T) {
 }
 
 func TestServerNames(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("alpha", defs("t1"), nil))
-	r.AddServer(serverParams("beta", defs("t2"), nil))
+	reg := registry.New()
+	reg.AddServer(serverParams("alpha", defs("t1"), nil))
+	reg.AddServer(serverParams("beta", defs("t2"), nil))
 
-	names := r.ServerNames()
+	names := reg.ServerNames()
 	if len(names) != 2 {
 		t.Fatalf("expected 2 server names, got %d: %v", len(names), names)
 	}
@@ -136,31 +136,31 @@ func TestServerNames(t *testing.T) {
 }
 
 func TestToolCount(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("ci", defs("a", "b", "c"), nil))
+	reg := registry.New()
+	reg.AddServer(serverParams("ci", defs("a", "b", "c"), nil))
 
-	if got := r.ToolCount("ci"); got != 3 {
+	if got := reg.ToolCount("ci"); got != 3 {
 		t.Errorf("expected 3, got %d", got)
 	}
-	if got := r.ToolCount("missing"); got != 0 {
+	if got := reg.ToolCount("missing"); got != 0 {
 		t.Errorf("expected 0 for unknown server, got %d", got)
 	}
 }
 
 func TestToolCount_hiddenNotCounted(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
-	r.AddServer(serverParams("ci", defs("visible", "secret"), perm))
+	reg.AddServer(serverParams("ci", defs("visible", "secret"), perm))
 
-	if got := r.ToolCount("ci"); got != 1 {
+	if got := reg.ToolCount("ci"); got != 1 {
 		t.Errorf("expected 1 (hidden excluded), got %d", got)
 	}
 }
 
 func TestAddAction_appearsInAll(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("fs", defs("read_file"), nil))
-	r.AddAction(config.ActionConfig{
+	reg := registry.New()
+	reg.AddServer(serverParams("fs", defs("read_file"), nil))
+	reg.AddAction(config.ActionConfig{
 		Name:        "read_readme",
 		Description: "Read the README",
 		Server:      "fs",
@@ -168,7 +168,7 @@ func TestAddAction_appearsInAll(t *testing.T) {
 		DefaultArgs: map[string]any{"path": "README.md"},
 	})
 
-	all := r.All()
+	all := reg.All()
 	found := false
 	for _, e := range all {
 		if e.Name == "fs.read_readme" {
@@ -181,16 +181,16 @@ func TestAddAction_appearsInAll(t *testing.T) {
 }
 
 func TestAddAction_inheritsTargetPermission(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"dangerous_op"}}
-	r.AddServer(serverParams("srv", defs("dangerous_op"), perm))
-	r.AddAction(config.ActionConfig{
+	reg.AddServer(serverParams("srv", defs("dangerous_op"), perm))
+	reg.AddAction(config.ActionConfig{
 		Name:   "safe_alias",
 		Server: "srv",
 		Tool:   "dangerous_op",
 	})
 
-	e, err := r.Lookup("srv.safe_alias")
+	e, err := reg.Lookup("srv.safe_alias")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,19 +200,19 @@ func TestAddAction_inheritsTargetPermission(t *testing.T) {
 }
 
 func TestAddAction_inheritsHiddenTargetPermission(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
-	r.AddServer(serverParams("srv", defs("secret_op"), perm))
-	r.AddAction(config.ActionConfig{
+	reg.AddServer(serverParams("srv", defs("secret_op"), perm))
+	reg.AddAction(config.ActionConfig{
 		Name:   "secret_alias",
 		Server: "srv",
 		Tool:   "secret_op",
 	})
 
-	if _, err := r.Lookup("srv.secret_alias"); err == nil {
+	if _, err := reg.Lookup("srv.secret_alias"); err == nil {
 		t.Fatal("hidden action alias should not be callable through Lookup")
 	}
-	all := r.All()
+	all := reg.All()
 	for _, e := range all {
 		if e.Name == "srv.secret_alias" {
 			t.Fatal("hidden action alias should not appear in All()")
@@ -221,17 +221,17 @@ func TestAddAction_inheritsHiddenTargetPermission(t *testing.T) {
 }
 
 func TestAddAction_explicitPermissionOverrides(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"dangerous_op"}}
-	r.AddServer(serverParams("srv", defs("dangerous_op"), perm))
-	r.AddAction(config.ActionConfig{
+	reg.AddServer(serverParams("srv", defs("dangerous_op"), perm))
+	reg.AddAction(config.ActionConfig{
 		Name:       "open_alias",
 		Server:     "srv",
 		Tool:       "dangerous_op",
 		Permission: "open",
 	})
 
-	e, err := r.Lookup("srv.open_alias")
+	e, err := reg.Lookup("srv.open_alias")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,16 +241,16 @@ func TestAddAction_explicitPermissionOverrides(t *testing.T) {
 }
 
 func TestAddAction_defaultArgs(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("fs", defs("read_file"), nil))
-	r.AddAction(config.ActionConfig{
+	reg := registry.New()
+	reg.AddServer(serverParams("fs", defs("read_file"), nil))
+	reg.AddAction(config.ActionConfig{
 		Name:        "read_readme",
 		Server:      "fs",
 		Tool:        "read_file",
 		DefaultArgs: map[string]any{"path": "README.md"},
 	})
 
-	e, err := r.Lookup("fs.read_readme")
+	e, err := reg.Lookup("fs.read_readme")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -263,11 +263,11 @@ func TestAddAction_defaultArgs(t *testing.T) {
 }
 
 func TestResolvePermission_caseInsensitive(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"AdminTool"}}
-	r.AddServer(serverParams("srv", defs("admintool"), perm))
+	reg.AddServer(serverParams("srv", defs("admintool"), perm))
 
-	all := r.All()
+	all := reg.All()
 	for _, e := range all {
 		if e.Name == "srv.admintool" {
 			t.Error("case-insensitive hidden match failed: tool should be hidden")
@@ -276,30 +276,30 @@ func TestResolvePermission_caseInsensitive(t *testing.T) {
 }
 
 func TestAddServer_afterRemove_noStaleEntries(t *testing.T) {
-	r := registry.New()
-	r.AddServer(serverParams("myserver", defs("toolA", "toolB"), nil))
-	r.RemoveServer("myserver")
-	r.AddServer(serverParams("myserver", defs("toolA"), nil))
+	reg := registry.New()
+	reg.AddServer(serverParams("myserver", defs("toolA", "toolB"), nil))
+	reg.RemoveServer("myserver")
+	reg.AddServer(serverParams("myserver", defs("toolA"), nil))
 
 	t.Run("toolA is found", func(t *testing.T) {
-		if _, err := r.Lookup("myserver.toolA"); err != nil {
+		if _, err := reg.Lookup("myserver.toolA"); err != nil {
 			t.Errorf("toolA should be found after re-add: %v", err)
 		}
 	})
 
 	t.Run("toolB is not found", func(t *testing.T) {
-		if _, err := r.Lookup("myserver.toolB"); err == nil {
+		if _, err := reg.Lookup("myserver.toolB"); err == nil {
 			t.Error("toolB should not exist after re-add with fewer tools")
 		}
 	})
 }
 
 func TestDefaultProtected_appliesToUnlistedTools(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Default: "protected"}
-	r.AddServer(serverParams("srv", defs("anyTool"), perm))
+	reg.AddServer(serverParams("srv", defs("anyTool"), perm))
 
-	e, err := r.Lookup("srv.anyTool")
+	e, err := reg.Lookup("srv.anyTool")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,12 +309,12 @@ func TestDefaultProtected_appliesToUnlistedTools(t *testing.T) {
 }
 
 func TestAllWithHidden_includesHiddenTools(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secretTool"}}
-	r.AddServer(serverParams("srv", defs("openTool", "secretTool"), perm))
+	reg.AddServer(serverParams("srv", defs("openTool", "secretTool"), perm))
 
-	visible := r.All()
-	all := r.AllWithHidden()
+	visible := reg.All()
+	all := reg.AllWithHidden()
 
 	if len(visible) != 1 {
 		t.Errorf("expected 1 visible tool, got %d", len(visible))
@@ -333,11 +333,11 @@ func TestAllWithHidden_includesHiddenTools(t *testing.T) {
 }
 
 func TestAllWithHidden_sorted(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"aaa"}}
-	r.AddServer(serverParams("srv", defs("zzz", "aaa", "mmm"), perm))
+	reg.AddServer(serverParams("srv", defs("zzz", "aaa", "mmm"), perm))
 
-	all := r.AllWithHidden()
+	all := reg.AllWithHidden()
 	for i := 1; i < len(all); i++ {
 		if all[i].Name < all[i-1].Name {
 			t.Errorf("AllWithHidden not sorted: %s before %s", all[i-1].Name, all[i].Name)

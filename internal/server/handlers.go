@@ -122,9 +122,7 @@ func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.T
 	if err != nil {
 		return executeParams{}, nil, errLookup{err}
 	}
-	if entry.UpstreamTool != "" {
-		p.Tool = entry.UpstreamTool
-	}
+	p.Tool = entry.ToolName.UpstreamName
 	return p, entry, nil
 }
 
@@ -342,7 +340,7 @@ func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
 	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", time.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
-	return s.formatEnvelope(p.Entry.Server, p.Entry.Name, env, projCfg), nil
+	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg), nil
 }
 
 func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage, projCfg *config.ProjectionConfig) (*response.Envelope, response.CallStats, error) {

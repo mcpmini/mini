@@ -8,17 +8,17 @@ import (
 )
 
 func TestAlias_basicResolution(t *testing.T) {
-	r := registry.New()
-	r.AddServer(registry.ServerParams{
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
 		Name: "github",
 		Defs: defs("list_pull_requests", "get_issue"),
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"list_pull_requests": "list_prs",
 		},
 	})
 
 	t.Run("alias appears in list, real name does not", func(t *testing.T) {
-		all := r.All()
+		all := reg.All()
 		names := map[string]bool{}
 		for _, e := range all {
 			names[e.Name] = true
@@ -35,26 +35,26 @@ func TestAlias_basicResolution(t *testing.T) {
 	})
 
 	t.Run("lookup by alias resolves to real tool", func(t *testing.T) {
-		e, err := r.Lookup("github.list_prs")
+		e, err := reg.Lookup("github.list_prs")
 		if err != nil {
 			t.Fatalf("lookup by alias failed: %v", err)
 		}
-		if e.UpstreamTool != "list_pull_requests" {
-			t.Errorf("expected UpstreamTool=list_pull_requests, got %q", e.UpstreamTool)
+		if e.ToolName.UpstreamName != "list_pull_requests" {
+			t.Errorf("expected ToolName.UpstreamName=list_pull_requests, got %q", e.ToolName.UpstreamName)
 		}
-		if e.Name != "list_prs" {
-			t.Errorf("expected Name=list_prs, got %q", e.Name)
+		if e.ToolName.Name() != "list_prs" {
+			t.Errorf("expected ToolName.Name()=list_prs, got %q", e.ToolName.Name())
 		}
 	})
 
 	t.Run("real name not lookupable", func(t *testing.T) {
-		if _, err := r.Lookup("github.list_pull_requests"); err == nil {
+		if _, err := reg.Lookup("github.list_pull_requests"); err == nil {
 			t.Error("real tool name should not be lookupable when aliased")
 		}
 	})
 
 	t.Run("search finds alias", func(t *testing.T) {
-		results := r.Search("list_prs")
+		results := reg.Search("list_prs")
 		if len(results) != 1 || results[0].Name != "github.list_prs" {
 			t.Errorf("search should find alias, got: %v", results)
 		}
@@ -62,99 +62,99 @@ func TestAlias_basicResolution(t *testing.T) {
 }
 
 func TestAlias_invalidAliasIgnored(t *testing.T) {
-	r := registry.New()
-	r.AddServer(registry.ServerParams{
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
 		Name: "svc",
 		Defs: defs("my_tool"),
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"my_tool": "bad alias!", // spaces and ! are invalid
 		},
 	})
 
-	e, err := r.Lookup("svc.my_tool")
+	e, err := reg.Lookup("svc.my_tool")
 	if err != nil {
 		t.Fatalf("tool should be reachable under real name when alias is invalid: %v", err)
 	}
-	if e.UpstreamTool != "" {
-		t.Errorf("invalid alias should result in no UpstreamTool, got %q", e.UpstreamTool)
+	if e.ToolName.Alias != "" {
+		t.Errorf("invalid alias should result in no alias, got %q", e.ToolName.Alias)
 	}
 }
 
 func TestAlias_collisionWithRealToolName(t *testing.T) {
-	r := registry.New()
-	r.AddServer(registry.ServerParams{
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
 		Name: "svc",
 		Defs: defs("toolA", "toolB"),
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"toolA": "toolB",
 		},
 	})
 
 	t.Run("both tools reachable under real names", func(t *testing.T) {
-		if _, err := r.Lookup("svc.toolA"); err != nil {
+		if _, err := reg.Lookup("svc.toolA"); err != nil {
 			t.Errorf("toolA should be reachable under real name on collision: %v", err)
 		}
-		if _, err := r.Lookup("svc.toolB"); err != nil {
+		if _, err := reg.Lookup("svc.toolB"); err != nil {
 			t.Errorf("toolB should be reachable under real name: %v", err)
 		}
 	})
 
 	t.Run("tool count is correct", func(t *testing.T) {
-		if got := r.ToolCount("svc"); got != 2 {
+		if got := reg.ToolCount("svc"); got != 2 {
 			t.Errorf("expected 2 tools (collision drops alias), got %d", got)
 		}
 	})
 }
 
 func TestAlias_collisionWithAnotherAlias(t *testing.T) {
-	r := registry.New()
-	r.AddServer(registry.ServerParams{
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
 		Name: "svc",
 		Defs: defs("toolA", "toolB"),
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"toolA": "shared",
 			"toolB": "shared",
 		},
 	})
 
 	t.Run("both tools reachable under real names", func(t *testing.T) {
-		if _, err := r.Lookup("svc.toolA"); err != nil {
+		if _, err := reg.Lookup("svc.toolA"); err != nil {
 			t.Errorf("toolA should be reachable under real name on alias collision: %v", err)
 		}
-		if _, err := r.Lookup("svc.toolB"); err != nil {
+		if _, err := reg.Lookup("svc.toolB"); err != nil {
 			t.Errorf("toolB should be reachable under real name on alias collision: %v", err)
 		}
 	})
 
 	t.Run("alias name is not claimed by either tool", func(t *testing.T) {
-		if _, err := r.Lookup("svc.shared"); err == nil {
+		if _, err := reg.Lookup("svc.shared"); err == nil {
 			t.Error("colliding alias should not be reachable")
 		}
 	})
 
 	t.Run("tool count is unchanged", func(t *testing.T) {
-		if got := r.ToolCount("svc"); got != 2 {
+		if got := reg.ToolCount("svc"); got != 2 {
 			t.Errorf("expected 2 tools, got %d", got)
 		}
 	})
 }
 
 func TestAlias_actionTargetingAliasByAliasName(t *testing.T) {
-	r := registry.New()
-	r.AddServer(registry.ServerParams{
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
 		Name: "svc",
 		Defs: defs("real_tool"),
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"real_tool": "aliased_tool",
 		},
 	})
-	r.AddAction(config.ActionConfig{
+	reg.AddAction(config.ActionConfig{
 		Name:   "my_action",
 		Server: "svc",
 		Tool:   "aliased_tool",
 	})
 
-	e, err := r.Lookup("svc.my_action")
+	e, err := reg.Lookup("svc.my_action")
 	if err != nil {
 		t.Fatalf("action lookup failed: %v", err)
 	}
@@ -164,26 +164,26 @@ func TestAlias_actionTargetingAliasByAliasName(t *testing.T) {
 }
 
 func TestAlias_actionTargetingAliasByRealName_inheritsPermission(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"real_tool"}}
-	r.AddServer(registry.ServerParams{
+	reg.AddServer(registry.ServerParams{
 		Name: "svc",
 		Defs: defs("real_tool"),
 		Perm: perm,
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"real_tool": "aliased_tool",
 		},
 	})
 	// The entry lives at "svc.aliased_tool"; targeting it by its real name
-	// forces resolution through the UpstreamTool fallback in
+	// forces resolution through ToolName.UpstreamName in
 	// permissionByUpstreamToolLocked rather than a direct map lookup.
-	r.AddAction(config.ActionConfig{
+	reg.AddAction(config.ActionConfig{
 		Name:   "my_action",
 		Server: "svc",
 		Tool:   "real_tool",
 	})
 
-	e, err := r.Lookup("svc.my_action")
+	e, err := reg.Lookup("svc.my_action")
 	if err != nil {
 		t.Fatalf("action lookup failed: %v", err)
 	}
@@ -193,27 +193,27 @@ func TestAlias_actionTargetingAliasByRealName_inheritsPermission(t *testing.T) {
 }
 
 func TestAlias_actionTargetingHiddenAliasedToolByAliasName_resolvesUpstreamTool(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
-	r.AddServer(registry.ServerParams{
+	reg.AddServer(registry.ServerParams{
 		Name: "svc",
 		Defs: defs("secret_op"),
 		Perm: perm,
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"secret_op": "secret_alias",
 		},
 	})
 	// The target lives in r.hidden under "svc.secret_alias"; an explicit
 	// permission override keeps the action itself visible so we can inspect
 	// its resolved TargetTool via Lookup.
-	r.AddAction(config.ActionConfig{
+	reg.AddAction(config.ActionConfig{
 		Name:       "my_action",
 		Server:     "svc",
 		Tool:       "secret_alias",
 		Permission: string(config.PermOpen),
 	})
 
-	e, err := r.Lookup("svc.my_action")
+	e, err := reg.Lookup("svc.my_action")
 	if err != nil {
 		t.Fatalf("action lookup failed: %v", err)
 	}
@@ -223,64 +223,64 @@ func TestAlias_actionTargetingHiddenAliasedToolByAliasName_resolvesUpstreamTool(
 }
 
 func TestAlias_actionTargetingHiddenAliasedToolByRealName_inheritsHidden(t *testing.T) {
-	r := registry.New()
+	reg := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
-	r.AddServer(registry.ServerParams{
+	reg.AddServer(registry.ServerParams{
 		Name: "svc",
 		Defs: defs("secret_op"),
 		Perm: perm,
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"secret_op": "secret_alias",
 		},
 	})
-	r.AddAction(config.ActionConfig{
+	reg.AddAction(config.ActionConfig{
 		Name:   "my_action",
 		Server: "svc",
 		Tool:   "secret_op",
 	})
 
-	if e, err := r.Lookup("svc.my_action"); err == nil {
+	if e, err := reg.Lookup("svc.my_action"); err == nil {
 		t.Errorf("action targeting a hidden aliased tool by real name should inherit hidden, got %v", e)
 	}
 }
 
 func TestAlias_reconnectYieldsToNewRealTool(t *testing.T) {
-	r := registry.New()
-	r.AddServer(registry.ServerParams{
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
 		Name: "gh",
 		Defs: defs("list_pull_requests"),
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"list_pull_requests": "list_prs",
 		},
 	})
 
-	if _, err := r.Lookup("gh.list_prs"); err != nil {
+	if _, err := reg.Lookup("gh.list_prs"); err != nil {
 		t.Fatalf("alias should be reachable before reconnect: %v", err)
 	}
 
-	r.ReplaceServer(registry.ServerParams{
+	reg.ReplaceServer(registry.ServerParams{
 		Name: "gh",
 		Defs: defs("list_pull_requests", "list_prs"),
-		Aliases: map[string]string{
+		AliasByToolName: map[string]string{
 			"list_pull_requests": "list_prs",
 		},
 	})
 
 	t.Run("both tools reachable under real names", func(t *testing.T) {
-		if _, err := r.Lookup("gh.list_pull_requests"); err != nil {
+		if _, err := reg.Lookup("gh.list_pull_requests"); err != nil {
 			t.Errorf("list_pull_requests should be reachable: %v", err)
 		}
-		e, err := r.Lookup("gh.list_prs")
+		e, err := reg.Lookup("gh.list_prs")
 		if err != nil {
 			t.Fatalf("list_prs should be reachable as a real tool: %v", err)
 		}
-		if e.UpstreamTool != "" {
-			t.Errorf("list_prs should route to itself, not an alias, got UpstreamTool=%q", e.UpstreamTool)
+		if e.ToolName.Alias != "" {
+			t.Errorf("list_prs should route to itself, not an alias, got Alias=%q", e.ToolName.Alias)
 		}
 	})
 
 	t.Run("tool count reflects both real tools", func(t *testing.T) {
-		if got := r.ToolCount("gh"); got != 2 {
+		if got := reg.ToolCount("gh"); got != 2 {
 			t.Errorf("expected 2 tools, got %d", got)
 		}
 	})

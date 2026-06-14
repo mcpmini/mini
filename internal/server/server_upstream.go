@@ -109,7 +109,7 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 }
 
 func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDefinition, old *upstreamServer) {
-	p := registry.ServerParams{Name: sc.Name, Defs: tools, Perm: sc.Permissions, Aliases: config.AliasesFromProjections(sc.Projections)}
+	p := registry.ServerParams{Name: sc.Name, Defs: tools, Perm: sc.Permissions, AliasByToolName: config.AliasesFromProjections(sc.Projections)}
 	if old != nil {
 		old.shutdownAndClose()
 		s.reg.ReplaceServer(p)

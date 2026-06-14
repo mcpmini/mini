@@ -81,8 +81,8 @@ func (s *Server) setProjection(session *Session, p configureParams) (any, error)
 		return nil, err
 	}
 	visibleTool := p.Tool
-	if entry, err := s.reg.Lookup(toolFullName(p.ServerName, p.Tool)); err == nil && entry.UpstreamTool != "" {
-		p.Tool = entry.UpstreamTool
+	if entry, err := s.reg.Lookup(toolFullName(p.ServerName, p.Tool)); err == nil {
+		p.Tool = entry.ToolName.UpstreamName
 	}
 	if p.SessionOnly {
 		return s.setSessionProjection(session, p, visibleTool), nil
@@ -193,7 +193,7 @@ func (s *Server) reapplyAliases() {
 			Name:    u.cfg.Name,
 			Defs:    u.lastDefs,
 			Perm:    u.cfg.Permissions,
-			Aliases: s.currentAliasesFor(u.cfg.Name),
+			AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 		})
 	}
 }

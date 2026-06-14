@@ -1,8 +1,6 @@
 package config
 
-// AliasesFromProjections extracts the realToolName→alias map from a set of
-// per-tool projection configs, for tools that define a non-empty Alias.
-// Returns nil if no tool defines an alias.
+// Returns nil rather than an empty map when no alias is defined.
 func AliasesFromProjections(proj map[string]*ProjectionConfig) map[string]string {
 	aliases := make(map[string]string)
 	for tool, pc := range proj {

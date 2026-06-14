@@ -108,7 +108,7 @@ func (s *Server) replaceRegistryToolsLocked(u *upstreamServer, tools []transport
 		Name:    u.cfg.Name,
 		Defs:    tools,
 		Perm:    u.cfg.Permissions,
-		Aliases: s.currentAliasesFor(u.cfg.Name),
+		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 	})
 }
 
