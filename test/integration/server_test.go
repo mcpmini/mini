@@ -126,8 +126,8 @@ func TestServer_execUnknownServer(t *testing.T) {
 	}
 }
 
-// startProxyServer starts mini connect in the default passthrough mode and returns an mcpClient.
-func startProxyServer(t *testing.T, configDir string) *mcpClient {
+// startPassthroughServer starts mini connect in the default passthrough mode and returns an mcpClient.
+func startPassthroughServer(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
 	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--log-level", "error")
 	stdin, err := cmd.StdinPipe()
@@ -158,12 +158,12 @@ func startProxyServer(t *testing.T, configDir string) *mcpClient {
 	return c
 }
 
-// TestProxy_initialize verifies that proxy mode responds to initialize and
+// TestPassthrough_initialize verifies that passthrough mode responds to initialize and
 // returns config and read in tools/list.
-func TestProxy_initialize(t *testing.T) {
+func TestPassthrough_initialize(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
-	raw := startProxyServer(t, cfg).mustCall("tools/list", nil)
+	raw := startPassthroughServer(t, cfg).mustCall("tools/list", nil)
 	var result struct {
 		Tools []struct {
 			Name string `json:"name"`
@@ -178,22 +178,22 @@ func TestProxy_initialize(t *testing.T) {
 	}
 	for _, want := range []string{"config", "read", "github__list_pull_requests"} {
 		if !names[want] {
-			t.Errorf("proxy tools/list missing %q, got: %v", want, names)
+			t.Errorf("passthrough tools/list missing %q, got: %v", want, names)
 		}
 	}
 	for _, absent := range []string{"list", "call", "perm_call"} {
 		if names[absent] {
-			t.Errorf("proxy tools/list should not expose standard tool %q", absent)
+			t.Errorf("passthrough tools/list should not expose standard tool %q", absent)
 		}
 	}
 }
 
-// TestProxy_callUpstreamTool verifies that a proxy-mode tool call routes
+// TestPassthrough_callUpstreamTool verifies that a passthrough-mode tool call routes
 // correctly to the upstream and returns a result.
-func TestProxy_callUpstreamTool(t *testing.T) {
+func TestPassthrough_callUpstreamTool(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
-	client := startProxyServer(t, cfg)
+	client := startPassthroughServer(t, cfg)
 	raw := client.mustCall("tools/call", map[string]any{
 		"name":      "github__list_pull_requests",
 		"arguments": map[string]any{},
@@ -203,7 +203,7 @@ func TestProxy_callUpstreamTool(t *testing.T) {
 		t.Fatalf("expected success, got error: %s", text)
 	}
 	if text == "" {
-		t.Error("expected non-empty response from proxy tool call")
+		t.Error("expected non-empty response from passthrough tool call")
 	}
 }
 
@@ -224,13 +224,13 @@ func TestServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 	}
 }
 
-// TestProxy_unreachableUpstreamDoesNotExit is the proxy-mode equivalent.
-func TestProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
+// TestPassthrough_unreachableUpstreamDoesNotExit is the passthrough-mode equivalent.
+func TestPassthrough_unreachableUpstreamDoesNotExit(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeServerConfig(t, cfg, "dead",
 		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n")
-	client := startProxyServer(t, cfg)
+	client := startPassthroughServer(t, cfg)
 	raw := client.mustCall("tools/list", nil)
 	var result struct {
 		Tools []struct {
@@ -248,7 +248,7 @@ func TestProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Error("expected github tools in proxy mode after partial startup failure")
+		t.Error("expected github tools in passthrough mode after partial startup failure")
 	}
 }
 

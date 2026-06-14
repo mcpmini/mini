@@ -92,8 +92,6 @@ Any other client: point its MCP config at `mini connect`:
 
 `mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `sentry__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
 
-This is the right default for clients that defer (lazy-load) tool schemas, like Claude Code — they only pull a tool's schema when the model actually reaches for it, so exposing the full upstream surface costs nothing upfront. [How Claude Code defers MCP schemas →](docs/claude-code-mcp-loading.md). If your client instead loads every schema at session start and you have a large catalog of servers, see [compact tool mode](#compact-tool-mode).
-
 ## Adding servers
 
 ### Example: GitHub MCP
@@ -254,15 +252,13 @@ The tiers describe how much you trust the agent to run a tool unattended — not
 |---|---|
 | `open` (default) | The agent is trusted to run it without asking |
 | `protected` | You want a human to approve it each time — deletes, sends, anything with side effects you'd want eyes on |
-| `hidden` | Not listed at all — the agent doesn't see it |
+| `hidden` | Never listed or callable through mini — invisible to the agent in every mode |
 
-How these tiers play out depends on the tool mode mini is running in.
+**In passthrough mode** (the default), `protected` tools appear in the tool list and are callable — approval is handled by your client's native per-tool setting. In Claude Code, configure per-tool approval for `github__create_pull_request` the same way you would for any MCP tool.
 
-**In passthrough mode** (the default), mini exposes each upstream tool directly as its own MCP tool. `hidden` tools are filtered from the list entirely. `protected` tools appear and are callable — the approval itself is handled by your client's native system. In Claude Code, configure per-tool approval for the tools you marked protected (e.g. `github__create_pull_request`) the same way you would for any MCP tool.
+**In compact mode and via `mini call`/`mini perm-call`**, the `call`/`perm_call` split is the approval seam: `call` only runs `open` tools; `protected` tools require `perm_call`. Configure your client to always ask before running `perm_call` and never auto-approve it.
 
-**In compact mode** (`mini connect --tool-mode compact`), mini wraps everything behind 4 tools. `call` runs only `open` tools — calling a `protected` tool through `call` returns an error. `perm_call` is the path for `protected` (and `hidden`) tools. The point of the split is to give you one stable approval seam: configure your client to run `mini call` unattended and to **always ask before `mini perm_call`** — instead of maintaining an allow/deny list across dozens of individual tools.
-
-> **This is a convenience, not a security boundary.** mini enforces only one thing — `call` refuses to run a `protected` tool. It has no approval gate of its own; the actual gate is whatever *your client* does with `perm_call`. It only protects you if you configure your client to **always ask on `perm_call` and never auto-approve it**. An agent allowed to call `perm_call` freely can run every protected and hidden tool. Treat the tiers as a thin veneer for keeping a human in the loop — not as a sandbox.
+> **This is a convenience, not a security boundary.** mini enforces only one thing — `call` refuses to run a `protected` tool. The actual gate is your client's approval behavior for `perm_call`. If your agent can call `perm_call` unattended (e.g. `--dangerously-skip-permissions` in Claude Code), the distinction is meaningless. Treat the tiers as a thin veneer for keeping a human in the loop — not as a sandbox.
 
 ## Auth
 
@@ -299,24 +295,16 @@ This is useful when:
 
 ## Compact tool mode
 
-**Passthrough is the default and right choice for most users.** mini's primary value is minifying upstream responses — stripping noise, capping long strings, and returning only what your agent actually needs. That happens in every mode regardless.
-
-Some clients **defer** (lazy-load) MCP tool schemas: they tell the model only the tool *names* upfront and fetch a tool's full schema on demand the first time the model reaches for it. Claude Code works this way ([details](docs/claude-code-mcp-loading.md)). For those clients, passthrough is strictly better — the full upstream tool surface is exposed at zero upfront cost, and the model calls each tool with its native schema.
-
-**Compact mode** (`mini connect --tool-mode compact`) is a niche option for clients that load every tool schema eagerly at session start. It collapses everything behind 4 fixed tools, keeping the upfront schema cost constant regardless of how many upstream servers you add. The trade-off: the agent must call `list` to discover tools before it can invoke them — an extra round-trip — and it can't see argument schemas without that `list` first.
-
-```bash
-mini connect --tool-mode compact
-```
+Compact mode (`mini connect --tool-mode compact`) exposes exactly 4 tools regardless of how many upstream servers you have. It works similarly to `mini call`/`mini perm-call` from the CLI — the agent invokes tools through mini rather than directly:
 
 | Tool | What it does |
 |---|---|
-| `list` | Discover all tools across connected servers |
-| `call` | Invoke a tool, response projected and returned |
-| `perm_call` | The path for `protected` tools — the seam your client should always ask before running ([Permissions](#permissions)) |
+| `list` | Discover tools across connected servers |
+| `call` | Invoke an `open` tool; returns error for `protected` tools |
+| `perm_call` | Invoke a `protected` tool — configure your client to always ask before running this ([Permissions](#permissions)) |
 | `config` | Add/remove servers, adjust projections, check status |
 
-**If you're on Claude Code (or any client that defers schemas), don't use compact mode** — you'd be giving up native schemas and adding a round-trip to solve a cost you don't have.
+Use compact mode when your client loads every MCP tool schema eagerly at session start and a large catalog of servers is costing you context on every turn. Clients that defer schemas (like Claude Code) get no benefit from compact mode and lose native tool schemas — stick with the default. [How Claude Code loads MCP schemas →](docs/claude-code-mcp-loading.md)
 
 ## Commands
 

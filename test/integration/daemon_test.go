@@ -55,8 +55,8 @@ func startDaemon(t *testing.T, configDir string) int {
 	return waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
 }
 
-// startProxyCmd starts a compact-mode mini connect instance that bridges to the daemon.
-func startProxyCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
+// startCompactCmd starts a compact-mode mini connect instance that bridges to the daemon.
+func startCompactCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
 	t.Helper()
 	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--tool-mode", "compact", "--log-level", "error")
 	stdin, err := cmd.StdinPipe()
@@ -82,7 +82,7 @@ func startProxyCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scann
 
 func connectProxy(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
-	stdin, scanner := startProxyCmd(t, configDir)
+	stdin, scanner := startCompactCmd(t, configDir)
 	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
 	go c.readLoop(scanner)
 	c.mustCall("initialize", map[string]any{

@@ -40,7 +40,7 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		envelope:     response.NewBuilder(store, cfg.InlineThreshold),
 		store:        store,
 		projDefaults: projection.DefaultsFrom(cfg),
-		toolSchemas:  proxyToolSchemas(),
+		toolSchemas:  compactToolSchemas(),
 		sessions:     newSessionStore(),
 		authFlows:    make(map[string]*authFlowState),
 		logger:       logger,
