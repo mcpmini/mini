@@ -74,9 +74,8 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 	}()
 }
 
-// handleLineCancellable registers the request's cancel func so an inbound
-// notifications/cancelled aborts the in-flight upstream call. Shared by the
-// stdio loop and the HTTP daemon path so cancellation behaves identically.
+// handleLineCancellable is shared by the stdio loop and the HTTP daemon path
+// so that notifications/cancelled cancels in-flight calls identically on both.
 func (s *Server) handleLineCancellable(ctx context.Context, line []byte, session *Session) (transport.Response, bool) {
 	rawID := peekRequestID(line)
 	if len(rawID) == 0 {

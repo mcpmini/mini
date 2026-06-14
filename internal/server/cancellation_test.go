@@ -77,11 +77,9 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	<-serveErr
 }
 
-// TestCancellation_CancelsInFlightCall_OverHTTP proves notifications/cancelled
-// aborts the in-flight upstream call over the HTTP daemon path, identical to
-// the stdio path above. All POSTs for one session share a *Session, so
-// registration in servePost lets a later cancel notification reach the
-// running request's context.
+// TestCancellation_CancelsInFlightCall_OverHTTP proves cancellation also works
+// over HTTP: all POSTs for one session share a *Session, so a later cancel
+// notification reaches the running request's context.
 func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 	srv, ts := newHTTPTestServer(t)
 
@@ -160,7 +158,6 @@ func newSlowBlockingConn(callStarted *sync.WaitGroup, callCtx *context.Context) 
 	}
 }
 
-// slowCallReq builds a tools/call request for the "slow" tool on server "s".
 func slowCallReq(id int) []byte {
 	return callToolWithID(id, "call", map[string]any{
 		"server": "s",
@@ -169,7 +166,6 @@ func slowCallReq(id int) []byte {
 	})
 }
 
-// assertContextCanceled fails the test if ctx is not done within 2 seconds.
 func assertContextCanceled(t *testing.T, ctx context.Context, msg string) {
 	t.Helper()
 	select {
