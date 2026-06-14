@@ -71,21 +71,21 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 		p.Session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
-	return s.proxyProject(envelopeParams{Server: server, Tool: tool, DisplayTool: p.Entry.Name, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs})
+	return s.proxyProject(envelopeParams{Entry: p.Entry, Tool: tool, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs})
 }
 
 func (s *Server) proxyProject(p envelopeParams) (any, error) {
-	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
+	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
 	if projCfg == nil {
 		p.Session.recordCall(p.LatencyMs, 0, false)
 		return string(p.Raw), nil
 	}
-	env, stats, err := s.buildProjectedEnvelope(p.Server, p.Tool, p.Raw, projCfg)
+	env, stats, err := s.buildProjectedEnvelope(p.Entry.Server, p.Tool, p.Raw, projCfg)
 	if err != nil {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderProxyResult(p.Server, p.DisplayTool, env, projCfg, stats.SummaryTokens), nil
+	return s.renderProxyResult(p.Entry.Server, p.Entry.Name, env, projCfg, stats.SummaryTokens), nil
 }
 
 func (s *Server) renderProxyResult(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig, rawTokens int) string {
