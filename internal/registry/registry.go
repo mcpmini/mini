@@ -102,10 +102,10 @@ func resolveVisibleNames(defs []transport.ToolDefinition, aliases map[string]str
 }
 
 func revertAliasCollisions(visible map[string]string, claim map[string][]string, reverted map[string]bool) {
-	for real, vis := range visible {
-		if vis != real && len(claim[vis]) > 1 {
-			visible[real] = real
-			reverted[real] = true
+	for realName, vis := range visible {
+		if vis != realName && len(claim[vis]) > 1 {
+			visible[realName] = realName
+			reverted[realName] = true
 		}
 	}
 }
@@ -163,7 +163,7 @@ func (r *Registry) AddAction(ac config.ActionConfig) {
 func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 	full := ac.Server + "." + ac.Name
 	targetTool := ac.Tool
-	if target, ok := r.tools[ac.Server+"."+ac.Tool]; ok && target.UpstreamTool != "" {
+	if target, ok := r.entryByFullNameLocked(ac.Server + "." + ac.Tool); ok && target.UpstreamTool != "" {
 		targetTool = target.UpstreamTool
 	}
 	return &ToolEntry{
@@ -195,31 +195,38 @@ func (r *Registry) actionPermission(ac config.ActionConfig) config.PermissionLev
 	return config.PermOpen
 }
 
+// entryByFullNameLocked looks up an entry by its visible full name, searching
+// both the open/protected and hidden maps.
+func (r *Registry) entryByFullNameLocked(fullName string) (*ToolEntry, bool) {
+	if e, ok := r.tools[fullName]; ok {
+		return e, true
+	}
+	e, ok := r.hidden[fullName]
+	return e, ok
+}
+
 func (r *Registry) targetPermissionLocked(fullName string) (config.PermissionLevel, bool) {
-	if target, ok := r.tools[fullName]; ok {
+	if target, ok := r.entryByFullNameLocked(fullName); ok {
 		return target.Permission, true
 	}
-	if target, ok := r.hidden[fullName]; ok {
-		return target.Permission, true
-	}
-	server, real, found := strings.Cut(fullName, ".")
+	server, upstreamTool, found := strings.Cut(fullName, ".")
 	if !found {
 		return "", false
 	}
-	return r.permissionByUpstreamToolLocked(server, real)
+	return r.permissionByUpstreamToolLocked(server, upstreamTool)
 }
 
 // permissionByUpstreamToolLocked finds the permission of a tool by its
 // upstream (real) name, searching both visible and hidden entries — an
 // aliased tool is keyed by its alias, not its real name, in both maps.
-func (r *Registry) permissionByUpstreamToolLocked(server, real string) (config.PermissionLevel, bool) {
+func (r *Registry) permissionByUpstreamToolLocked(server, upstreamTool string) (config.PermissionLevel, bool) {
 	for _, e := range r.tools {
-		if e.Server == server && e.UpstreamTool == real {
+		if e.Server == server && e.UpstreamTool == upstreamTool {
 			return e.Permission, true
 		}
 	}
 	for _, e := range r.hidden {
-		if e.Server == server && e.UpstreamTool == real {
+		if e.Server == server && e.UpstreamTool == upstreamTool {
 			return e.Permission, true
 		}
 	}

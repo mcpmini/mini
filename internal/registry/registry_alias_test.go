@@ -192,6 +192,36 @@ func TestAlias_actionTargetingAliasByRealName_inheritsPermission(t *testing.T) {
 	}
 }
 
+func TestAlias_actionTargetingHiddenAliasedToolByAliasName_resolvesUpstreamTool(t *testing.T) {
+	r := registry.New()
+	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
+	r.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: defs("secret_op"),
+		Perm: perm,
+		Aliases: map[string]string{
+			"secret_op": "secret_alias",
+		},
+	})
+	// The target lives in r.hidden under "svc.secret_alias"; an explicit
+	// permission override keeps the action itself visible so we can inspect
+	// its resolved TargetTool via Lookup.
+	r.AddAction(config.ActionConfig{
+		Name:       "my_action",
+		Server:     "svc",
+		Tool:       "secret_alias",
+		Permission: string(config.PermOpen),
+	})
+
+	e, err := r.Lookup("svc.my_action")
+	if err != nil {
+		t.Fatalf("action lookup failed: %v", err)
+	}
+	if e.TargetTool != "secret_op" {
+		t.Errorf("action targeting hidden aliased tool by alias name should resolve to upstream name, got %q", e.TargetTool)
+	}
+}
+
 func TestAlias_actionTargetingHiddenAliasedToolByRealName_inheritsHidden(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}

@@ -303,3 +303,60 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 		})
 	}
 }
+
+func TestAlias_miniFormatHeaderShowsAlias(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	cfg.ResponseFormat = "mini"
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+
+	fake := fakeConnWithResp("list_pull_requests")
+	proj := map[string]*config.ProjectionConfig{"list_pull_requests": {Alias: "list_prs"}}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, fake)
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "gh", "tool": "list_prs", "params": map[string]any{},
+	}))
+	text := toolResultText(t, resp)
+	if !strings.Contains(text, "[gh.list_prs]") {
+		t.Errorf("mini format header should show alias, got: %s", text)
+	}
+	if strings.Contains(text, "list_pull_requests") {
+		t.Errorf("mini format header should not expose real tool name, got: %s", text)
+	}
+}
+
+func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+
+	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\n")
+
+	fake := fakeConn("get_pr")
+	proj := map[string]*config.ProjectionConfig{"get_pr": {Alias: "pr"}}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, fake)
+
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "gh", "tool": "pr",
+		"projection": map[string]any{"exclude_always": []string{"body"}},
+	}))
+	if text := toolResultText(t, resp); strings.Contains(text, "error") {
+		t.Fatalf("set_projection failed: %s", text)
+	}
+
+	serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
+
+	names := listNames(t, srv)
+	if !names["gh.pr"] {
+		t.Errorf("alias should survive set_projection+reload, got: %v", names)
+	}
+	if names["gh.get_pr"] {
+		t.Errorf("real name should not reappear after set_projection+reload, got: %v", names)
+	}
+}
