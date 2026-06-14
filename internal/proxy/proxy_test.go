@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func serverPort(t *testing.T, srv *httptest.Server) int {
@@ -255,7 +257,7 @@ func TestRun_compact_injectsIntoInitialize(t *testing.T) {
 		SessionID: "sess",
 		In:        strings.NewReader(initMsg),
 		Out:       io.Discard,
-		Compact:   true,
+		ToolMode:  transport.ToolModeCompact,
 	}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -286,7 +288,7 @@ func TestRun_passthrough_doesNotInjectFlag(t *testing.T) {
 		SessionID: "sess",
 		In:        strings.NewReader(initMsg),
 		Out:       io.Discard,
-		Compact:   false,
+		ToolMode:  transport.ToolModePassthrough,
 	}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)

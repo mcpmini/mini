@@ -41,7 +41,7 @@ func (s *Server) notifyToolsChanged(session *Session, action string) {
 	if action != "add_server" && action != "remove_server" {
 		return
 	}
-	if session.toolMode() == ToolModePassthrough {
+	if session.toolMode() == transport.ToolModePassthrough {
 		s.notifyAllSessions()
 		return
 	}

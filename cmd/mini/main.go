@@ -48,7 +48,7 @@ commands:
 connect flags:
   --http ADDR         Also serve HTTP MCP on ADDR; bare port or :port binds to loopback
   --standalone        Skip daemon detection, serve directly
-  --tool-mode compact Use the four-meta-tool interface (default is passthrough)
+  --tool-mode <passthrough|compact>  passthrough (default): expose upstream tools directly; compact: four-meta-tool interface
   --dangerous-nonloopback-http  Allow --http to bind to non-loopback (all clients must be trusted)
 
 call / perm-call flags:
@@ -139,7 +139,7 @@ type connectFlags struct {
 	httpAddr          string
 	standalone        bool
 	dangerNonLoopback bool
-	compact           bool
+	toolMode          transport.ToolMode
 }
 
 func parseConnectFlags(args []string) connectFlags {
@@ -150,14 +150,17 @@ func parseConnectFlags(args []string) connectFlags {
 	dangerNonLoopback := fs.Bool("dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address")
 	toolMode := fs.String("tool-mode", "", "tool interface: compact for the four-meta-tool interface (default is passthrough)")
 	fs.Parse(args) //nolint:errcheck
-	return connectFlags{logLevel: *logLevel, httpAddr: *httpAddr, standalone: *standalone, dangerNonLoopback: *dangerNonLoopback, compact: parseToolMode(*toolMode)}
+	return connectFlags{logLevel: *logLevel, httpAddr: *httpAddr, standalone: *standalone, dangerNonLoopback: *dangerNonLoopback, toolMode: parseToolMode(*toolMode)}
 }
 
-func parseToolMode(m string) bool {
+func parseToolMode(m string) transport.ToolMode {
 	if m != "" && m != transport.ToolModeCompactValue {
 		fatalf("invalid --tool-mode %q; valid values: compact (or omit for the default passthrough mode)", m)
 	}
-	return m == transport.ToolModeCompactValue
+	if m == transport.ToolModeCompactValue {
+		return transport.ToolModeCompact
+	}
+	return transport.ToolModePassthrough
 }
 
 func runConnect(configDir string, args []string) {
@@ -167,15 +170,15 @@ func runConnect(configDir string, args []string) {
 		fatalf("load config: %v", err)
 	}
 	logger := buildLogger(cfg, f.logLevel, os.Stderr)
-	if shouldTryProxyMode(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.compact) == nil {
+	if shouldTryProxyMode(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
 		return
 	}
-	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, connectOptions(f.compact)...)
+	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, connectOptions(f.toolMode)...)
 }
 
-func connectOptions(compact bool) []server.ServerOption {
-	if compact {
-		return []server.ServerOption{server.WithToolMode(server.ToolModeCompact)}
+func connectOptions(mode transport.ToolMode) []server.ServerOption {
+	if mode == transport.ToolModeCompact {
+		return []server.ServerOption{server.WithToolMode(transport.ToolModeCompact)}
 	}
 	return nil
 }
@@ -252,7 +255,7 @@ func maybeStartSessionEviction(ctx context.Context, httpSrv *http.Server, srv se
 	go srv.RunSessionEviction(ctx, standaloneHTTPSessionMaxIdle)
 }
 
-func connectViaDaemon(configDir string, logger *slog.Logger, compact bool) error {
+func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.ToolMode) error {
 	port, err := resolveDaemonPort(configDir, logger)
 	if err != nil {
 		return err
@@ -264,7 +267,7 @@ func connectViaDaemon(configDir string, logger *slog.Logger, compact bool) error
 		SessionID: sessionID,
 		In:        os.Stdin,
 		Out:       os.Stdout,
-		Compact:   compact,
+		ToolMode:  mode,
 	})
 }
 

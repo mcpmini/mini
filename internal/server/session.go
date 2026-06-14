@@ -88,11 +88,11 @@ func newSession() *Session {
 	}
 }
 
-func (s *Session) toolMode() ToolMode {
-	return ToolMode(s.mode.Load())
+func (s *Session) toolMode() transport.ToolMode {
+	return transport.ToolMode(s.mode.Load())
 }
 
-func (s *Session) setToolMode(m ToolMode) {
+func (s *Session) setToolMode(m transport.ToolMode) {
 	s.mode.Store(int32(m))
 }
 

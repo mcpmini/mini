@@ -22,7 +22,7 @@ type RunParams struct {
 	SessionID string
 	In        io.Reader
 	Out       io.Writer
-	Compact   bool
+	ToolMode  transport.ToolMode
 }
 
 // Run reads JSON-RPC from p.In, forwards each request to the daemon at p.Port,
@@ -39,7 +39,7 @@ func runWithLimit(p RunParams, limit int) error {
 	fp := newForwardPool(p, limit)
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
-		startForward(client, maybeInjectToolMode(scanner.Bytes(), p.Compact), fp)
+		startForward(client, maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
 	}
 	fp.wg.Wait()
 	return scanner.Err()
@@ -51,12 +51,12 @@ func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	return forwardAsyncParams{
 		port: p.Port, sessionID: p.SessionID, out: p.Out,
 		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
-		compact: p.Compact,
+		toolMode: p.ToolMode,
 	}
 }
 
-func maybeInjectToolMode(line []byte, compact bool) []byte {
-	if compact {
+func maybeInjectToolMode(line []byte, mode transport.ToolMode) []byte {
+	if mode == transport.ToolModeCompact {
 		return injectCompactMode(line)
 	}
 	return line
@@ -120,7 +120,7 @@ type forwardAsyncParams struct {
 	mu        *sync.Mutex
 	wg        *sync.WaitGroup
 	sem       chan struct{}
-	compact   bool
+	toolMode  transport.ToolMode
 }
 
 func forwardAsync(p forwardAsyncParams) {
@@ -132,7 +132,7 @@ func forwardAsync(p forwardAsyncParams) {
 	}
 	// Daemon restart or session eviction invalidates the session; reinitialize and retry.
 	if isNotInitialized(resp) && !peekIsInitialize(p.line) {
-		reinitDaemon(p.client, p.port, p.sessionID, p.compact)
+		reinitDaemon(p.client, p.port, p.sessionID, p.toolMode)
 		resp = forward(p.client, p.port, p.sessionID, p.line)
 		if resp == nil {
 			return
@@ -145,14 +145,14 @@ func forwardAsync(p forwardAsyncParams) {
 
 // reinitDaemon recovers from daemon restart or session eviction. Responses are
 // discarded — only the caller's retry of the original request is forwarded.
-func reinitDaemon(client *http.Client, port int, sessionID string, compact bool) {
+func reinitDaemon(client *http.Client, port int, sessionID string, mode transport.ToolMode) {
 	params, _ := json.Marshal(transport.InitializeParams{
 		ProtocolVersion: transport.ProtocolVersion,
 		Capabilities:    map[string]any{},
 		ClientInfo:      transport.ClientInfo{Name: "mini", Version: transport.Version},
 	})
 	initMsg, _ := json.Marshal(transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)})
-	forward(client, port, sessionID, maybeInjectToolMode(initMsg, compact))
+	forward(client, port, sessionID, maybeInjectToolMode(initMsg, mode))
 	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
 	forward(client, port, sessionID, notif)
 }
