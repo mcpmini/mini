@@ -55,8 +55,6 @@ func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	}
 }
 
-// maybeInjectToolMode signals compact mode to the daemon. Passthrough is the
-// daemon's zero-value default, so it injects nothing.
 func maybeInjectToolMode(line []byte, compact bool) []byte {
 	if compact {
 		return injectCompactMode(line)
@@ -64,9 +62,8 @@ func maybeInjectToolMode(line []byte, compact bool) []byte {
 	return line
 }
 
-// injectCompactMode inserts "_mini_tool_mode": "compact" into the params of an
-// initialize JSON-RPC message so the daemon uses the compact interface for this
-// session. Non-initialize messages and parse errors are returned unchanged.
+// injectCompactMode only modifies initialize messages; non-initialize messages
+// and parse errors are returned unchanged.
 func injectCompactMode(line []byte) []byte {
 	if !peekIsInitialize(line) {
 		return line
@@ -175,9 +172,7 @@ func isNotInitialized(resp []byte) bool {
 }
 
 func peekIsInitialize(line []byte) bool {
-	var m struct {
-		Method string `json:"method"`
-	}
+	var m struct{ Method string `json:"method"` }
 	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
 }
 
