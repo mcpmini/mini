@@ -109,7 +109,7 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 }
 
 func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDefinition, old *upstreamServer) {
-	p := registry.ServerParams{Name: sc.Name, Defs: tools, Perm: sc.Permissions, Aliases: s.aliasesFor(sc.Name, sc.Projections)}
+	p := registry.ServerParams{Name: sc.Name, Defs: tools, Perm: sc.Permissions, Aliases: config.AliasesFromProjections(sc.Projections)}
 	if old != nil {
 		old.shutdownAndClose()
 		s.reg.ReplaceServer(p)
@@ -118,23 +118,14 @@ func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDef
 	s.reg.AddServer(p)
 }
 
-func (s *Server) aliasesFor(serverName string, inline map[string]*config.ProjectionConfig) map[string]string {
-	proj := inline
-	if proj == nil {
-		s.mu.RLock()
-		proj = s.projections[serverName]
-		s.mu.RUnlock()
-	}
-	aliases := make(map[string]string)
-	for tool, pc := range proj {
-		if pc != nil && pc.Alias != "" {
-			aliases[tool] = pc.Alias
-		}
-	}
-	if len(aliases) == 0 {
-		return nil
-	}
-	return aliases
+// currentAliasesFor returns the alias map from the live, reload-updated
+// projections — unlike the install-time sc.Projections snapshot, this
+// reflects any config reload since the server was added.
+func (s *Server) currentAliasesFor(serverName string) map[string]string {
+	s.mu.RLock()
+	proj := s.projections[serverName]
+	s.mu.RUnlock()
+	return config.AliasesFromProjections(proj)
 }
 
 // Must be called in a goroutine; blocks until ctx is canceled.

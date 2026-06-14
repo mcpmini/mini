@@ -128,8 +128,25 @@ func (s *Server) storeServerProjection(serverName, tool string, projection *conf
 		s.projections[serverName] = make(map[string]*config.ProjectionConfig)
 	}
 	prev := s.projections[serverName][tool]
-	s.projections[serverName][tool] = projection
+	s.projections[serverName][tool] = preserveAlias(projection, prev)
 	return prev
+}
+
+// preserveAlias carries the tool's existing Alias forward onto the new
+// projection. The alias is admin-configured, not part of set_projection's
+// agent-facing surface — without this, set_projection silently drops the
+// alias from the persisted config, and it disappears on the next reload.
+func preserveAlias(projection, prev *config.ProjectionConfig) *config.ProjectionConfig {
+	if prev == nil || prev.Alias == "" {
+		return projection
+	}
+	if projection == nil {
+		return &config.ProjectionConfig{Alias: prev.Alias}
+	}
+	if projection.Alias == "" {
+		projection.Alias = prev.Alias
+	}
+	return projection
 }
 
 func (s *Server) restoreServerProjection(serverName, tool string, prev *config.ProjectionConfig) {
@@ -172,13 +189,11 @@ func (s *Server) reapplyAliases() {
 		if u.lastDefs == nil {
 			continue
 		}
-		// nil inline: read s.projections, which replaceProjections just refreshed from disk.
-		// u.cfg.Projections is the install-time snapshot and would mask the reload.
 		s.reg.ReplaceServer(registry.ServerParams{
 			Name:    u.cfg.Name,
 			Defs:    u.lastDefs,
 			Perm:    u.cfg.Permissions,
-			Aliases: s.aliasesFor(u.cfg.Name, nil),
+			Aliases: s.currentAliasesFor(u.cfg.Name),
 		})
 	}
 }

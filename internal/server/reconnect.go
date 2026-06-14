@@ -104,13 +104,11 @@ func (s *Server) replaceRegistryToolsLocked(u *upstreamServer, tools []transport
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	u.lastDefs = tools
-	// nil inline: read s.projections so a reconnect after reload keeps the
-	// reloaded aliases rather than reverting to the install-time snapshot.
 	s.reg.ReplaceServer(registry.ServerParams{
 		Name:    u.cfg.Name,
 		Defs:    tools,
 		Perm:    u.cfg.Permissions,
-		Aliases: s.aliasesFor(u.cfg.Name, nil),
+		Aliases: s.currentAliasesFor(u.cfg.Name),
 	})
 }
 
