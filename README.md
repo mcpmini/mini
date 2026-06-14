@@ -8,79 +8,48 @@ MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, ava
 
 ## What it does
 
-**Before** — one PR from the GitHub MCP:
+**Before** — one PR from the GitHub MCP, raw (`mini call -r`). The `body` alone is ~6,800 characters of benchmark tables, and every PR repeats the same `head`/`base`/`user` sub-objects:
 
 ```json
 {
-  "number": 275198,
-  "title": "Remove layout control toggles",
-  "body": "Removes layout toggle buttons...\n\n[4,800 more chars]",
-  "user": { "login": "Copilot", "avatar_url": "https://avatars.githubusercontent.com/...", "id": 198982749, "node_id": "U_...", "gravatar_id": "", "url": "https://api.github.com/users/...", ... },
-  "assignees": [{ "login": "dev-user", "avatar_url": "...", "node_id": "...", ... }],
-  "head": { "ref": "fix/toggle", "sha": "73e46e32...", "repo": { "full_name": "microsoft/vscode", "node_id": "...", ... } },
-  "labels_url": "https://api.github.com/...",
-  "commits_url": "https://api.github.com/...",
-  ...40 more fields
-}
-```
-
-**After** — same PR, through mini:
-
-```json
-{
-  "number": 275198,
-  "id": 2456789012,
-  "title": "Remove layout control toggles",
+  "number": 79998,
+  "title": "internal/bytealg: optimize memequal",
+  "body": "Implement vectorization optimization for small size memory comparing.\n\ngoos: linux\ngoarch: riscv64\n[~6,800 chars of benchmark tables]",
   "state": "open",
-  "draft": true,
-  "body": "Removes layout toggle buttons...[first 1500 chars]",
-  "user": { "login": "Copilot", "profile_url": "https://github.com/Copilot" },
-  "head": { "ref": "fix/toggle", "sha": "73e46e32..." },
-  "html_url": "https://github.com/microsoft/vscode/pull/275198",
-  "created_at": "2025-11-04T17:25:38Z",
-  "updated_at": "2025-11-04T18:51:15Z"
+  "draft": false,
+  "merged": false,
+  "html_url": "https://github.com/golang/go/pull/79998",
+  "user": { "login": "lxq015", "id": 79146446, "profile_url": "https://github.com/lxq015", "avatar_url": "https://avatars.githubusercontent.com/u/79146446?v=4" },
+  "head": { "ref": "optimize_memequal", "sha": "bf5f9a21...", "repo": { "full_name": "lxq015/go", "description": "The Go programming language" } },
+  "base": { "ref": "master", "sha": "dfc01c32...", "repo": { "full_name": "golang/go", "description": "The Go programming language" } },
+  "created_at": "2026-06-13T07:39:36Z",
+  "updated_at": "2026-06-13T08:10:43Z"
 }
 ```
 
-Avatar URLs gone. Node IDs and `gravatar_id` gone. URL-template fields gone. Body capped at 1500 chars. The fields an agent actually reasons about — number, id, title, state, the head branch and sha — stay. The bar for cutting a field is high: mini only strips what's provably noise, never structured data that might matter. Multiply across 20 PRs and the savings are significant.
+**After** — the same list through a projection that keeps just the fields you scan in a list view. Default JSON (`mini call -j`):
 
-Mini has three output modes. The same `list_pull_requests` call:
-
-**Default** (`-j`): projected JSON. Noisy fields stripped, strings capped, structure preserved:
-```bash
-mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
-```
 ```json
-[
-  { "number": 68851, "title": "net/http: fix connection reuse after timeout",
-    "state": "open", "user": { "login": "gopherbot" }, "created_at": "2024-03-15T10:22:33Z" },
-  { "number": 68849, "title": "cmd/go: add workspace vendor support",
-    "state": "open", "user": { "login": "mvdan" }, "created_at": "2024-03-14T14:11:09Z" }
-]
+{
+  "data": [
+    { "number": 79998, "state": "open", "draft": false, "title": "internal/bytealg: optimize memequal",
+      "html_url": "https://github.com/golang/go/pull/79998" },
+    { "number": 79997, "state": "open", "draft": false, "title": "internal/bytealg: optimize indexbyte_riscv64.s",
+      "html_url": "https://github.com/golang/go/pull/79997" }
+  ]
+}
 ```
 
-**Mini** (`-m` / `response_format: mini`): field names on a single header row, values follow one per line. Most token-efficient for long lists since field names aren't repeated per item:
-```bash
-mini call -m github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
+Or the **mini format** (`-m`) — field names once on a header row, values one line per item, no per-item key repetition. Most token-efficient for long lists:
+
 ```
-```
-number title state user_login created_at
-68851 net/http: fix connection reuse after timeout open gopherbot 2024-03-15T10:22:33Z
-68849 cmd/go: add workspace vendor support open mvdan 2024-03-14T14:11:09Z
+[github.list_pull_requests]
+draft html_url number state title
+- https://github.com/golang/go/pull/79998 79998 open internal/bytealg: optimize memequal
+- https://github.com/golang/go/pull/79997 79997 open internal/bytealg: optimize indexbyte_riscv64.s
 ```
 
-**Raw** (`-r`): full upstream response, no projection. Useful for inspecting what a server returns or debugging a projection config:
-```bash
-mini call -r github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
-```
-```json
-[{ "number": 68851, "node_id": "PR_kwDOAGrz984...", "title": "net/http: fix...",
-   "user": { "login": "gopherbot", "id": 8566187, "avatar_url": "https://avatars...",
-             "gravatar_id": "", "url": "https://api.github.com/users/gopherbot", ... },
-   "labels_url": "https://api.github.com/repos/golang/go/issues/68851/labels{/name}",
-   "commits_url": "https://api.github.com/repos/golang/go/pulls/68851/commits",
-   ... 40 more fields }]
-```
+Measured on a 10-PR page of `golang/go`: **22.2 KB raw → 2.2 KB (`-j`) → 1.2 KB (`-m`)** — roughly 10–18×. The giant `body` is the single biggest lever (capped per the projection), and dropping the repeated sub-objects does the rest. You control exactly which fields survive — see [Projection config](#projection-config). `mini call -r` always returns the untouched upstream response when you need it.
 
 ## Install
 
@@ -306,23 +275,21 @@ permissions:
   hidden: [get_authenticated_app, list_app_installations]
 ```
 
-Three tiers:
+The tiers describe how much you trust the agent to run a tool unattended — not read-vs-write:
 
 | Tier | What it means |
 |---|---|
-| `open` (default) | Listed and callable without restriction |
-| `protected` | Listed, but requires explicit invocation to call |
-| `hidden` | Not listed at all — invisible to the agent |
+| `open` (default) | The agent is trusted to run it without asking |
+| `protected` | You want a human to approve it each time — deletes, sends, anything with side effects you'd want eyes on |
+| `hidden` | Not listed at all — the agent doesn't see it |
 
-How these tiers are enforced depends on the tool mode mini is running in.
+How these tiers play out depends on the tool mode mini is running in.
 
-**In passthrough mode** (the default), mini exposes each upstream tool directly as its own MCP tool. `hidden` tools are filtered from the tool list entirely so the agent never sees them. `protected` tools appear in the list and are callable — enforcement is handled by your agent's native approval system. In Claude Code, configure per-tool approval for write operations (e.g. `github__create_pull_request`) the same way you would for any MCP tool.
+**In passthrough mode** (the default), mini exposes each upstream tool directly as its own MCP tool. `hidden` tools are filtered from the list entirely. `protected` tools appear and are callable — the approval itself is handled by your client's native system. In Claude Code, configure per-tool approval for the tools you marked protected (e.g. `github__create_pull_request`) the same way you would for any MCP tool.
 
-**In compact mode** (`mini connect --tool-mode compact`), mini wraps everything behind 4 tools. `call` only executes `open` tools — calling a `protected` tool via `call` returns an error. `perm_call` is required for `protected` and `hidden` tools. `hidden` tools are invisible to `list` but can still be invoked via `perm_call` by an agent that knows the name.
+**In compact mode** (`mini connect --tool-mode compact`), mini wraps everything behind 4 tools. `call` runs only `open` tools — calling a `protected` tool through `call` returns an error. `perm_call` is the path for `protected` (and `hidden`) tools. The point of the split is to give you one stable approval seam: configure your client to run `mini call` unattended and to **always ask before `mini perm_call`** — instead of maintaining an allow/deny list across dozens of individual tools.
 
-The point of splitting `call` and `perm_call` is to give you a single, stable approval seam: in Claude Code or Codex you can auto-approve `mini call` (reads) once and leave `mini perm_call` (writes) requiring human confirmation — instead of maintaining an allow/deny list across dozens of individual write tools.
-
-> **This is a convenience, not a security boundary.** mini enforces one thing — `call` refuses to run a `protected` tool — but it has no approval gate of its own. The actual protection is whatever *your client* does with `perm_call`, and it only holds if you require approval for it and **never auto-approve it**. An agent allowed to call `perm_call` freely can run every protected and hidden tool. Treat the tiers as a thin veneer for keeping a human in the loop on risky writes — not as a sandbox.
+> **This is a convenience, not a security boundary.** mini enforces only one thing — `call` refuses to run a `protected` tool. It has no approval gate of its own; the actual gate is whatever *your client* does with `perm_call`. It only protects you if you configure your client to **always ask on `perm_call` and never auto-approve it**. An agent allowed to call `perm_call` freely can run every protected and hidden tool. Treat the tiers as a thin veneer for keeping a human in the loop — not as a sandbox.
 
 ## Auth
 
@@ -371,7 +338,7 @@ mini connect --tool-mode compact
 |---|---|
 | `list` | Discover all tools across connected servers |
 | `call` | Invoke a tool, response projected and returned |
-| `perm_call` | Like `call`, but for `protected` tools — see [Permissions](#permissions) |
+| `perm_call` | The path for `protected` tools — the seam your client should always ask before running ([Permissions](#permissions)) |
 | `config` | Add/remove servers, adjust projections, check status |
 
 The agent discovers what's available via `list` and invokes tools via `call`. The trade-off: an extra round-trip (`list` before `call`), and the model can't see a tool's argument schema without a `list` first, so it calls less confidently. That's why passthrough is the default.
