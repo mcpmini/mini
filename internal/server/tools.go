@@ -6,7 +6,7 @@ import (
 	"github.com/mcpmini/mini/internal/registry"
 )
 
-func proxyToolSchemas() []map[string]any {
+func compactToolSchemas() []map[string]any {
 	return []map[string]any{
 		listSchema(),
 		callSchema(),

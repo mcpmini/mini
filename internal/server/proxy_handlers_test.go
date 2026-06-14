@@ -78,16 +78,16 @@ func TestProxy_ToolsList_ContainsMiniTools(t *testing.T) {
 	t.Logf("tools: %v", names)
 
 	if !containsName(tools, "config") {
-		t.Error("expected config in proxy tool list")
+		t.Error("expected config in passthrough tool list")
 	}
 	if !containsName(tools, "read") {
-		t.Error("expected read in proxy tool list")
+		t.Error("expected read in passthrough tool list")
 	}
 	if !containsName(tools, "github__list_issues") {
-		t.Error("expected github__list_issues in proxy tool list")
+		t.Error("expected github__list_issues in passthrough tool list")
 	}
 	if !containsName(tools, "github__create_issue") {
-		t.Error("expected github__create_issue in proxy tool list")
+		t.Error("expected github__create_issue in passthrough tool list")
 	}
 }
 
@@ -419,7 +419,7 @@ func TestProxy_NotifyAll_OnRemoveServer(t *testing.T) {
 	}))
 
 	if !hasNotification(msgs, transport.NotificationToolsChanged) {
-		t.Error("expected notifications/tools/list_changed after remove_server in proxy mode")
+		t.Error("expected notifications/tools/list_changed after remove_server in passthrough mode")
 	}
 }
 
