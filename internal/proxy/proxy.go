@@ -205,12 +205,12 @@ func readForwardResponse(resp *http.Response, reqBody []byte) []byte {
 	if resp.StatusCode == http.StatusAccepted {
 		return nil // notification — no response expected
 	}
-	result, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	result = bytes.TrimSpace(result)
 	if resp.StatusCode >= 400 {
-		return daemonErrorResponse(reqBody, fmt.Sprintf("daemon returned HTTP %d: %s", resp.StatusCode, result))
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return daemonErrorResponse(reqBody, fmt.Sprintf("daemon returned HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(errBody)))
 	}
-	return result
+	result, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	return bytes.TrimSpace(result)
 }
 
 type requestID struct {
