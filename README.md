@@ -8,22 +8,27 @@ MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, ava
 
 ## What it does
 
-**Before** — one PR from the GitHub MCP, raw (`mini call -r`). The `body` alone is ~6,800 characters of benchmark tables, and every PR repeats the same `head`/`base`/`user` sub-objects:
+**Before** — `list_pull_requests` on `golang/go`, raw (`mini call -r`). The `body` alone is ~6,800 characters of benchmark tables, and every PR repeats the same `head`/`base`/`user` sub-objects:
 
 ```json
 {
-  "number": 79998,
-  "title": "internal/bytealg: optimize memequal",
-  "body": "Implement vectorization optimization for small size memory comparing.\n\ngoos: linux\ngoarch: riscv64\n[~6,800 chars of benchmark tables]",
-  "state": "open",
-  "draft": false,
-  "merged": false,
-  "html_url": "https://github.com/golang/go/pull/79998",
-  "user": { "login": "lxq015", "id": 79146446, "profile_url": "https://github.com/lxq015", "avatar_url": "https://avatars.githubusercontent.com/u/79146446?v=4" },
-  "head": { "ref": "optimize_memequal", "sha": "bf5f9a21...", "repo": { "full_name": "lxq015/go", "description": "The Go programming language" } },
-  "base": { "ref": "master", "sha": "dfc01c32...", "repo": { "full_name": "golang/go", "description": "The Go programming language" } },
-  "created_at": "2026-06-13T07:39:36Z",
-  "updated_at": "2026-06-13T08:10:43Z"
+  "data": [
+    {
+      "number": 79998,
+      "title": "internal/bytealg: optimize memequal",
+      "body": "Implement vectorization optimization for small size memory comparing.\n\ngoos: linux\ngoarch: riscv64\n[~6,800 chars of benchmark tables]",
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "html_url": "https://github.com/golang/go/pull/79998",
+      "user": { "login": "lxq015", "id": 79146446, "profile_url": "https://github.com/lxq015", "avatar_url": "https://avatars.githubusercontent.com/u/79146446?v=4" },
+      "head": { "ref": "optimize_memequal", "sha": "bf5f9a21...", "repo": { "full_name": "lxq015/go", "description": "The Go programming language" } },
+      "base": { "ref": "master", "sha": "dfc01c32...", "repo": { "full_name": "golang/go", "description": "The Go programming language" } },
+      "created_at": "2026-06-13T07:39:36Z",
+      "updated_at": "2026-06-13T08:10:43Z"
+    },
+    { "...": "9 more PRs, same shape" }
+  ]
 }
 ```
 
@@ -49,7 +54,7 @@ draft html_url number state title
 - https://github.com/golang/go/pull/79997 79997 open internal/bytealg: optimize indexbyte_riscv64.s
 ```
 
-Measured on a 10-PR page of `golang/go`: **22.2 KB raw → 2.2 KB (`-j`) → 1.2 KB (`-m`)** — roughly 10–18×. The giant `body` is the single biggest lever (capped per the projection), and dropping the repeated sub-objects does the rest. You control exactly which fields survive — see [Projection config](#projection-config). `mini call -r` always returns the untouched upstream response when you need it.
+You control exactly which fields survive — see [Projection config](#projection-config). `mini call -r` always returns the untouched upstream response when you need it.
 
 ## Install
 
@@ -62,7 +67,7 @@ go install github.com/mcpmini/mini/cmd/mini@latest
 Every client connects mini the same way — by running `mini connect`. The fastest path is to let mini wire up the clients you already have installed:
 
 ```bash
-mini init   # detects Claude Code / Cursor / Windsurf / Claude Desktop / Gemini and configures each
+mini init   # imports servers from Claude Code, Codex, Cursor, and more
 ```
 
 To register it with a specific client by hand:
@@ -71,10 +76,8 @@ To register it with a specific client by hand:
 # Claude Code
 claude mcp add mini -- mini connect
 
-# Codex — add to ~/.codex/config.toml
-[mcp_servers.mini]
-command = "mini"
-args = ["connect"]
+# Codex
+codex mcp add mini -- mini connect
 ```
 
 Any other client: point its MCP config at `mini connect`:
@@ -87,7 +90,7 @@ Any other client: point its MCP config at `mini connect`:
 }
 ```
 
-`mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `sentry__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it. What you gain is that the agent sees each tool's **native schema**, so it can call confidently without a discovery round-trip, and the response comes back trimmed.
+`mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `sentry__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
 
 This is the right default for clients that defer (lazy-load) tool schemas, like Claude Code — they only pull a tool's schema when the model actually reaches for it, so exposing the full upstream surface costs nothing upfront. [How Claude Code defers MCP schemas →](docs/claude-code-mcp-loading.md). If your client instead loads every schema at session start and you have a large catalog of servers, see [compact tool mode](#compact-tool-mode).
 
@@ -96,10 +99,13 @@ This is the right default for clients that defer (lazy-load) tool schemas, like 
 ### Example: GitHub MCP
 
 ```bash
+# Get a token — if you have the gh CLI installed:
+GITHUB_TOKEN=$(gh auth token)
+
 # Add the server
 mini add github \
   --url https://api.githubcopilot.com/mcp \
-  --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN"
+  --header "Authorization=Bearer $GITHUB_TOKEN"
 
 # Check it connected
 mini status
@@ -160,44 +166,11 @@ sequenceDiagram
     mini-->>Agent: trimmed response (8 fields, ~400 bytes)
 ```
 
-mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) and serves it from its own MCP server, so in your client the tools appear under `mini` and every call goes through it. mini is the one resolving, forwarding, and trimming — the agent talks to mini, mini talks to the upstreams. The win isn't that mini disappears; it's that the agent gets each tool's native schema (no discovery round-trip) and a trimmed response.
+mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) and serves it from its own MCP server, so in your client the tools appear under `mini` and every call goes through it. mini is the one resolving, forwarding, and trimming — the agent talks to mini, mini talks to the upstreams.
 
 ## Daemon mode
 
-If you run multiple agent sessions at once, each normally spawns its own mini process with its own upstream connections. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes — each consuming memory and holding its own auth session. The daemon shares one set of connections across all sessions:
-
-```bash
-mini daemon          # start once in the background
-mini daemon status   # confirm it's running
-```
-
-Any `mini connect` invocation detects the daemon automatically and routes through it. Each session still gets its own projections and permissions.
-
-```mermaid
-graph TB
-    subgraph before["Without daemon: 3 agents × 3 servers = 9 processes"]
-        direction LR
-        a1[Claude Code 1] --> g1[GitHub MCP]
-        a1 --> l1[Linear MCP]
-        a1 --> s1[Sentry MCP]
-        a2[Claude Code 2] --> g2[GitHub MCP]
-        a2 --> l2[Linear MCP]
-        a2 --> s2[Sentry MCP]
-        a3[Cursor] --> g3[GitHub MCP]
-        a3 --> l3[Linear MCP]
-        a3 --> s3[Sentry MCP]
-    end
-
-    subgraph after["With daemon: 3 agents × 3 servers = 3 processes"]
-        direction LR
-        b1[Claude Code 1] --> d[mini daemon]
-        b2[Claude Code 2] --> d
-        b3[Cursor] --> d
-        d --> bg[GitHub MCP]
-        d --> bl[Linear MCP]
-        d --> bs[Sentry MCP]
-    end
-```
+`mini connect` auto-detects a running daemon and routes through it, sharing one set of upstream connections across all agent sessions. You don't need to manage the daemon manually — `mini init` starts it for you. If you want to run it yourself: `mini daemon` (start) / `mini daemon status` (check).
 
 ## Projection config
 

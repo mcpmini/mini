@@ -174,9 +174,7 @@ text := toolResultText(t, resp)
 
 `serve()` in `server_test.go` prepends the `initialize` handshake and signals **compact** mode; `servePassthrough()` (and `serveAllPassthrough()`) drive the default **passthrough** mode. For transport-level tests, `makePipeConn()` in `stdio_test.go` creates a pipe-backed `StdioConnection` without spawning a subprocess.
 
-### Tool modes
-
-A session is either **passthrough** (the default, zero value of `server.ToolMode`) or **compact**. Passthrough exposes upstream tools directly as `server__tool` and minifies responses; mini sits transparently in the middle and does not enforce `perm_call`. Compact wraps every upstream behind four meta-tools (`list`/`call`/`perm_call`/`config`). The bridge signals compact via the `initialize` param `_mini_tool_mode: "compact"` (`transport.ToolModeParam`); passthrough injects nothing, so every daemon session is passthrough for free.
+Sessions are either passthrough (`transport.ToolModePassthrough`, the zero value default) or compact (`transport.ToolModeCompact`); the bridge signals compact via `_mini_tool_mode: "compact"` in the `initialize` params and injects nothing for passthrough.
 
 ### CLI subcommands
 
