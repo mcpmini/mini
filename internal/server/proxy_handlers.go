@@ -71,7 +71,7 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 		p.Session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
-	return s.proxyProject(envelopeParams{Server: server, Tool: tool, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs})
+	return s.proxyProject(envelopeParams{Server: server, Tool: tool, DisplayTool: p.Entry.Name, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs})
 }
 
 func (s *Server) proxyProject(p envelopeParams) (any, error) {
@@ -85,16 +85,16 @@ func (s *Server) proxyProject(p envelopeParams) (any, error) {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderProxyResult(p.Server, p.Tool, env, projCfg, stats.SummaryTokens), nil
+	return s.renderProxyResult(p.Server, p.DisplayTool, env, projCfg, stats.SummaryTokens), nil
 }
 
-func (s *Server) renderProxyResult(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig, rawTokens int) string {
+func (s *Server) renderProxyResult(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig, rawTokens int) string {
 	format := s.cfg.ResponseFormat
 	if projCfg.Format != "" {
 		format = projCfg.Format
 	}
 	if format == "mini" {
-		return RenderLines(server, tool, env)
+		return RenderLines(server, displayTool, env)
 	}
 	return s.formatProxyEnvelope(env, rawTokens)
 }

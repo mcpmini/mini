@@ -181,7 +181,7 @@ func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *regis
 	if toolErr != nil {
 		return s.handleToolErr(server, tool, latencyMs, toolErr, session)
 	}
-	return s.buildEnvelope(envelopeParams{Server: server, Tool: tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs})
+	return s.buildEnvelope(envelopeParams{Server: server, Tool: tool, DisplayTool: entry.Name, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs})
 }
 
 func (s *Server) handleToolErr(server, tool string, latencyMs int64, err error, session *Session) (any, error) {
@@ -324,12 +324,13 @@ func mergeArgs(defaults, overrides map[string]any) map[string]any {
 }
 
 type envelopeParams struct {
-	Server    string
-	Tool      string
-	Raw       json.RawMessage
-	Session   *Session
-	Upstream  *upstreamServer
-	LatencyMs int64
+	Server      string
+	Tool        string
+	DisplayTool string // agent-visible name (alias or action), for "mini" format rendering
+	Raw         json.RawMessage
+	Session     *Session
+	Upstream    *upstreamServer
+	LatencyMs   int64
 }
 
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
@@ -342,7 +343,7 @@ func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
 	s.logger.Debug("projection applied", "server", p.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", time.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
-	return s.formatEnvelope(p.Server, p.Tool, env, projCfg), nil
+	return s.formatEnvelope(p.Server, p.DisplayTool, env, projCfg), nil
 }
 
 func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage, projCfg *config.ProjectionConfig) (*response.Envelope, response.CallStats, error) {
@@ -356,13 +357,13 @@ func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage
 	})
 }
 
-func (s *Server) formatEnvelope(server, tool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
+func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
 	format := s.cfg.ResponseFormat
 	if projCfg != nil && projCfg.Format != "" {
 		format = projCfg.Format
 	}
 	if format == "mini" {
-		return RenderLines(server, tool, env)
+		return RenderLines(server, displayTool, env)
 	}
 	return env
 }
