@@ -183,7 +183,7 @@ separate `DEFAULT_TOOL_TIMEOUT = 120s`.
 
 **Failure isolation:** a server that times out or errors is marked `Failed` and startup
 continues — the join only produces a summary, never aborts. The one hard-bail case is *required*
-servers: [`session.rs`](https://github.com/openai/codex/blob/87b808bb570f01f4b6fc8485c5459052fac0e320/codex-rs/core/src/session/session.rs#L1189)
+servers: [`session.rs`](https://github.com/openai/codex/blob/87b808bb570f01f4b6fc8485c5459052fac0e320/codex-rs/core/src/session/session.rs#L1208)
 `anyhow::bail!`s session init if a required server failed; non-required servers can never sink
 the boot.
 
