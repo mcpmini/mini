@@ -112,14 +112,14 @@ func TestForward_successReturnsDaemonResponse(t *testing.T) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	}))
 	defer srv.Close()
-	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	resp, _ := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
 	if !strings.Contains(string(resp), `"result":"ok"`) {
 		t.Errorf("unexpected response: %s", resp)
 	}
 }
 
 func TestForward_daemonUnreachableReturnsErrorEnvelope(t *testing.T) {
-	resp := forward(testConn(closedPort(t), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	resp, _ := forward(testConn(closedPort(t), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
 	if resp == nil || !strings.Contains(string(resp), `"error"`) {
 		t.Errorf("expected error envelope, got %s", resp)
 	}
@@ -143,7 +143,7 @@ func TestForward_httpErrorStatusReturnsJSONRPCError(t *testing.T) {
 				fmt.Fprint(w, tc.body)
 			}))
 			defer srv.Close()
-			resp := forward(&http.Client{}, serverPort(t, srv), "sess", []byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call"}`))
+			resp, _ := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call"}`))
 			var rpc struct {
 				ID    json.RawMessage `json:"id"`
 				Error *struct {
@@ -171,7 +171,7 @@ func TestForward_202NotificationReturnsNil(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer srv.Close()
-	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	resp, _ := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
 	if resp != nil {
 		t.Errorf("expected nil for 202 Accepted, got %s", resp)
 	}
@@ -196,7 +196,7 @@ func TestForward_largeResponseBodyHandledWithoutError(t *testing.T) {
 		fmt.Fprint(w, big)
 	}))
 	defer srv.Close()
-	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	resp, _ := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if len(resp) == 0 {
 		t.Error("expected non-empty response for large body")
 	}

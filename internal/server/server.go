@@ -42,25 +42,25 @@ func WithAllowNonLoopbackHost() ServerOption {
 }
 
 type Server struct {
-	cfg          *config.Config
-	configDir    string
-	reg          *registry.Registry
-	upstreams    map[string]*upstreamServer
-	projections  map[string]map[string]*config.ProjectionConfig
-	envelope     *response.Builder
-	store        *response.Store
-	projDefaults *projection.Defaults
-	toolSchemas  []map[string]any
-	sessions     *sessionStore
-	logger       *slog.Logger
-	clock           clock.Clock
+	cfg                  *config.Config
+	configDir            string
+	reg                  *registry.Registry
+	upstreams            map[string]*upstreamServer
+	projections          map[string]map[string]*config.ProjectionConfig
+	envelope             *response.Builder
+	store                *response.Store
+	projDefaults         *projection.Defaults
+	toolSchemas          []map[string]any
+	sessions             *sessionStore
+	logger               *slog.Logger
+	clock                clock.Clock
 	proxyMode            bool
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
 	// Lock ordering: when both mu and authMu must be acquired, always acquire mu first.
 	mu          sync.RWMutex
 	persistMu   sync.Mutex
-	serverOpMu  sync.Mutex // serializes concurrent add_server / remove_server for the same name
+	serverOpMu  sync.Mutex        // serializes concurrent add_server / remove_server for the same name
 	removeGen   map[string]uint64 // protected by serverOpMu; incremented on each remove_server
 	authMu      sync.Mutex
 	authFlows   map[string]*authFlowState

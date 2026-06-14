@@ -21,9 +21,12 @@ type RunParams struct {
 	Port      int
 	SessionID string
 	Token     string
-	In        io.Reader
-	Out       io.Writer
-	ProxyMode bool
+	// ReloadToken re-reads the token after a daemon restart rotates it; the proxy
+	// calls it on a 401, then retries. Nil disables refresh.
+	ReloadToken func() (string, error)
+	In          io.Reader
+	Out         io.Writer
+	ProxyMode   bool
 }
 
 // daemonConn identifies the target daemon and the credentials for one forward.
@@ -58,8 +61,9 @@ func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	return forwardAsyncParams{
-		port: p.Port, sessionID: p.SessionID, token: p.Token, out: p.Out,
-		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
+		port: p.Port, sessionID: p.SessionID, out: p.Out,
+		tokens: &tokenSource{value: p.Token, reload: p.ReloadToken},
+		mu:     &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
 		proxyMode: p.ProxyMode,
 	}
 }
@@ -125,7 +129,7 @@ type forwardAsyncParams struct {
 	client    *http.Client
 	port      int
 	sessionID string
-	token     string
+	tokens    *tokenSource
 	line      []byte
 	out       io.Writer
 	mu        *sync.Mutex
@@ -135,28 +139,39 @@ type forwardAsyncParams struct {
 }
 
 func (p forwardAsyncParams) conn() daemonConn {
-	return daemonConn{client: p.client, port: p.port, sessionID: p.sessionID, token: p.token}
+	return daemonConn{client: p.client, port: p.port, sessionID: p.sessionID, token: p.tokens.current()}
 }
 
 func forwardAsync(p forwardAsyncParams) {
 	defer p.wg.Done()
 	defer func() { <-p.sem }()
-	conn := p.conn()
-	resp := forward(conn, p.line)
+	resp := forwardWithAuthRetry(p)
 	if resp == nil {
 		return
 	}
 	// Daemon restart or session eviction invalidates the session; reinitialize and retry.
 	if isNotInitialized(resp) && !peekIsInitialize(p.line) {
-		reinitDaemon(conn, p.proxyMode)
-		resp = forward(conn, p.line)
-		if resp == nil {
+		reinitDaemon(p.conn(), p.proxyMode)
+		if resp, _ = forward(p.conn(), p.line); resp == nil {
 			return
 		}
 	}
 	p.mu.Lock()
 	fmt.Fprintf(p.out, "%s\n", resp) //nolint:errcheck
 	p.mu.Unlock()
+}
+
+func forwardWithAuthRetry(p forwardAsyncParams) []byte {
+	resp, status := forward(p.conn(), p.line)
+	if status != http.StatusUnauthorized {
+		return resp
+	}
+	p.tokens.refresh() // 401: daemon restarted and rotated the token — pick up the new one
+	resp, status = forward(p.conn(), p.line)
+	if status == http.StatusUnauthorized {
+		return daemonErrorResponse(p.line, "daemon rejected credentials") // don't leak the raw 401 body
+	}
+	return resp
 }
 
 // reinitDaemon recovers from daemon restart or session eviction. Responses are
@@ -188,21 +203,23 @@ func isNotInitialized(resp []byte) bool {
 }
 
 func peekIsInitialize(line []byte) bool {
-	var m struct{ Method string `json:"method"` }
+	var m struct {
+		Method string `json:"method"`
+	}
 	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
 }
 
-func forward(conn daemonConn, body []byte) []byte {
+func forward(conn daemonConn, body []byte) ([]byte, int) {
 	req, err := newDaemonRequest(conn, body)
 	if err != nil {
-		return nil
+		return nil, 0
 	}
 	resp, err := conn.client.Do(req)
 	if err != nil {
-		return daemonErrorResponse(body, "daemon unreachable: "+err.Error())
+		return daemonErrorResponse(body, "daemon unreachable: "+err.Error()), 0 // 0: unreachable, not an HTTP status
 	}
 	defer resp.Body.Close()
-	return readForwardResponse(resp, body)
+	return readForwardResponse(resp, body), resp.StatusCode
 }
 
 func newDaemonRequest(conn daemonConn, body []byte) (*http.Request, error) {

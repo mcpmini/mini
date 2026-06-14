@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -22,22 +23,55 @@ import (
 
 func runDaemon(configDir string, args []string) {
 	port, logLevel := parseDaemonFlags(args)
-	cfg, servers, err := config.Load(configDir)
-	if err != nil {
-		fatalf("load config: %v", err)
-	}
+	cfg, servers := loadDaemonConfig(configDir)
 	portFile := ensureDaemonNotRunning(configDir)
 	logW := daemon.OpenCappedLog(filepath.Join(configDir, "daemon.log"))
 	defer logW.Close()
 	logger := buildLogger(cfg, logLevel, logW)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	injectOAuthTokens(ctx, configDir, servers)
-	token := mintDaemonToken(configDir)
-	defer os.Remove(daemon.TokenFile(configDir))
-	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: cfg, ConfigDir: configDir, Logger: logger, Servers: servers}, server.WithDaemonAuthToken(token))
+	// Bind before minting: a daemon that loses the port race dies here without
+	// touching the shared token file, so it can't leave a stale token behind.
+	ln, actualPort := bindPort(resolveDaemonListenPort(cfg, port))
+	serveDaemon(ctx, DaemonServeParams{
+		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger,
+		Listener: ln, Port: actualPort, PortFile: portFile,
+	})
+}
+
+func loadDaemonConfig(configDir string) (*config.Config, []config.ServerConfig) {
+	cfg, servers, err := config.Load(configDir)
+	if err != nil {
+		fatalf("load config: %v", err)
+	}
+	return cfg, servers
+}
+
+type DaemonServeParams struct {
+	ConfigDir string
+	Cfg       *config.Config
+	Servers   []config.ServerConfig
+	Logger    *slog.Logger
+	Listener  net.Listener
+	Port      int
+	PortFile  string
+}
+
+func serveDaemon(ctx context.Context, p DaemonServeParams) {
+	injectOAuthTokens(ctx, p.ConfigDir, p.Servers)
+	token := mintDaemonToken(p.ConfigDir)
+	// Best-effort cleanup on exit; a stale token is inert and the next daemon overwrites it.
+	defer func() { _ = os.Remove(daemon.TokenFile(p.ConfigDir)) }()
+	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, server.WithDaemonAuthToken(token))
 	defer srv.Close()
-	startDaemonHTTP(ctx, DaemonHTTPParams{Cfg: cfg, Servers: servers, Srv: srv, PortFile: portFile, FlagPort: port})
+	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, PortFile: p.PortFile, Listener: p.Listener, Port: p.Port})
+}
+
+func resolveDaemonListenPort(cfg *config.Config, flagPort int) int {
+	if flagPort >= 0 {
+		return flagPort
+	}
+	return cfg.DaemonPort
 }
 
 func mintDaemonToken(configDir string) string {
@@ -65,23 +99,17 @@ func parseDaemonFlags(args []string) (int, string) {
 }
 
 type DaemonHTTPParams struct {
-	Cfg      *config.Config
-	Servers  []config.ServerConfig
 	Srv      *server.Server
 	PortFile string
-	FlagPort int
+	Listener net.Listener
+	Port     int
 }
 
 func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
-	listenPort := p.Cfg.DaemonPort
-	if p.FlagPort >= 0 {
-		listenPort = p.FlagPort
-	}
-	ln, actualPort := bindPort(listenPort)
-	writePortFile(p.PortFile, actualPort)
+	writePortFile(p.PortFile, p.Port)
 	defer os.Remove(p.PortFile)
 	httpSrv := daemonHTTPServer(p.Srv)
-	go httpSrv.Serve(ln) //nolint:errcheck
+	go httpSrv.Serve(p.Listener) //nolint:errcheck
 	go p.Srv.RunSessionEviction(ctx, 30*time.Minute)
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
