@@ -86,6 +86,7 @@ func TestForward_httpErrorStatusReturnsJSONRPCError(t *testing.T) {
 		{"unauthorized", http.StatusUnauthorized, "unauthorized"},
 		{"forbidden", http.StatusForbidden, "forbidden: loopback only"},
 		{"badRequest", http.StatusBadRequest, "read error"},
+		{"internalServerError", http.StatusInternalServerError, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
