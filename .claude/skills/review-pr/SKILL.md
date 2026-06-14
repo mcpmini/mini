@@ -10,9 +10,20 @@ Adversarial review of $ARGUMENTS (or the current branch diff if blank).
 
 Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REJECT.
 
-## Step 0 — Gather the diff and run checks
+## Step 0 — Gather the diff and check out the PR branch
 
-Use the GitHub MCP tools if available, otherwise fall back to the `gh` CLI. Get the PR description, diff, and full file list. Then **read every changed file in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
+Use the GitHub MCP tools if available, otherwise fall back to the `gh` CLI. Get the PR description, diff, and full file list.
+
+**Check out the PR branch in a dedicated worktree** so you can read the actual changed files (not the diff against your current branch) and run the check suite against the PR's code:
+
+1. Extract the PR number from the arguments (e.g. `1` from `https://github.com/mcpmini/mini/pull/1` or from `#1` or bare `1`).
+2. Fetch the PR's head ref via `git fetch origin <head-branch>`.
+3. Create a worktree: `git worktree add .claude/worktrees/review-pr-<number> FETCH_HEAD --detach`. Using detached HEAD means this works even if another worktree already has the branch checked out.
+4. Switch into it with `EnterWorktree` using the `path` parameter (not `name`).
+
+If the worktree already exists (e.g. from a prior review), enter it directly with `EnterWorktree(path: ".claude/worktrees/review-pr-<number>")`.
+
+Then **read every changed file in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
 
 Fire off the full check suite in the background — it covers build, staticcheck, golangci-lint, function length, parameter count, return value checks, and the race-detector test suite — then continue immediately with Pass 1:
 ```bash
