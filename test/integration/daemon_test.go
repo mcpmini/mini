@@ -327,10 +327,8 @@ func decodeRPCToolText(t *testing.T, body io.Reader) string {
 	t.Helper()
 	var rpc struct {
 		Result struct {
-			Content []struct {
-				Text string `json:"text"`
-			} `json:"content"`
-			IsError bool `json:"isError"`
+			Content []struct{ Text string `json:"text"` } `json:"content"`
+			IsError bool                                  `json:"isError"`
 		} `json:"result"`
 		Error any `json:"error"`
 	}
