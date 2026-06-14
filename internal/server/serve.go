@@ -20,7 +20,7 @@ import (
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	sessionID := transport.NewSessionID()
 	session := s.sessions.getOrCreate(sessionID)
-	session.proxyMode.Store(s.proxyMode) // inherit server-level mode for standalone runs
+	session.setToolMode(s.toolMode) // inherit server-level mode for standalone runs
 	defer s.sessions.delete(sessionID)
 	return s.serveLoop(ctx, in, out, session)
 }
@@ -248,21 +248,21 @@ func handleCancelled(params json.RawMessage, session *Session) {
 
 const initInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
 
-const proxyInitInstructions = "Responses are projected for efficiency. read(path) for full data. config for server management."
+const passthroughInitInstructions = "Responses are projected for efficiency. read(path) for full data. config for server management."
 
 type initializeClientParams struct {
-	MiniProxyMode bool `json:"_mini_proxy_mode"`
+	ToolMode string `json:"_mini_tool_mode"`
 }
 
 func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any, error) {
 	var p initializeClientParams
 	json.Unmarshal(params, &p) //nolint:errcheck // best-effort; standard clients omit this field
-	if p.MiniProxyMode {
-		session.proxyMode.Store(true)
+	if p.ToolMode == transport.ToolModeCompactValue {
+		session.setToolMode(transport.ToolModeCompact)
 	}
 	instructions := initInstructions
-	if session.proxyMode.Load() {
-		instructions = proxyInitInstructions
+	if session.toolMode() == transport.ToolModePassthrough {
+		instructions = passthroughInitInstructions
 	}
 	return transport.InitializeResult{
 		ProtocolVersion: transport.ProtocolVersion,
@@ -273,8 +273,8 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 }
 
 func (s *Server) handleToolsList(session *Session) (any, error) {
-	if session.proxyMode.Load() {
-		return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
+	if session.toolMode() == transport.ToolModePassthrough {
+		return map[string]any{"tools": buildPassthroughToolSchemas(s.reg.AllFull())}, nil
 	}
 	return map[string]any{"tools": s.toolSchemas}, nil
 }
@@ -322,8 +322,8 @@ func normalizeToolCallResult(result any) any {
 }
 
 func (s *Server) routeTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
-	if session.proxyMode.Load() {
-		return s.routeProxyTool(ctx, name, args, session)
+	if session.toolMode() == transport.ToolModePassthrough {
+		return s.routePassthroughTool(ctx, name, args, session)
 	}
 	return s.routeStandardTool(ctx, name, args, session)
 }

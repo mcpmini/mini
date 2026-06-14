@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func serverPort(t *testing.T, srv *httptest.Server) int {
@@ -174,23 +176,23 @@ func TestRun_multipleRequestsAllForwarded(t *testing.T) {
 	}
 }
 
-func TestInjectProxyMode_initialize_addsFlag(t *testing.T) {
+func TestInjectCompactMode_initialize_addsFlag(t *testing.T) {
 	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{}}}`)
-	got := injectProxyMode(line)
+	got := injectCompactMode(line)
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
 	}
 	if err := json.Unmarshal(got, &msg); err != nil {
 		t.Fatalf("unmarshal result: %v\ngot: %s", err, got)
 	}
-	if string(msg.Params["_mini_proxy_mode"]) != "true" {
-		t.Errorf("_mini_proxy_mode = %s, want true", msg.Params["_mini_proxy_mode"])
+	if string(msg.Params["_mini_tool_mode"]) != `"compact"` {
+		t.Errorf("_mini_tool_mode = %s, want \"compact\"", msg.Params["_mini_tool_mode"])
 	}
 }
 
-func TestInjectProxyMode_initialize_preservesExistingParams(t *testing.T) {
+func TestInjectCompactMode_initialize_preservesExistingParams(t *testing.T) {
 	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"test"}}}`)
-	got := injectProxyMode(line)
+	got := injectCompactMode(line)
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
 	}
@@ -205,43 +207,43 @@ func TestInjectProxyMode_initialize_preservesExistingParams(t *testing.T) {
 	}
 }
 
-func TestInjectProxyMode_nonInitialize_unchanged(t *testing.T) {
+func TestInjectCompactMode_nonInitialize_unchanged(t *testing.T) {
 	cases := []string{
 		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"foo"}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 	}
 	for _, line := range cases {
-		got := injectProxyMode([]byte(line))
+		got := injectCompactMode([]byte(line))
 		if string(got) != line {
 			t.Errorf("non-initialize message modified:\nwant: %s\n got: %s", line, got)
 		}
 	}
 }
 
-func TestInjectProxyMode_malformedJSON_unchanged(t *testing.T) {
+func TestInjectCompactMode_malformedJSON_unchanged(t *testing.T) {
 	line := []byte(`not valid json`)
-	got := injectProxyMode(line)
+	got := injectCompactMode(line)
 	if string(got) != string(line) {
 		t.Errorf("malformed JSON should be returned unchanged, got: %s", got)
 	}
 }
 
-func TestInjectProxyMode_initialize_noParams_addsFlag(t *testing.T) {
+func TestInjectCompactMode_initialize_noParams_addsFlag(t *testing.T) {
 	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize"}`)
-	got := injectProxyMode(line)
+	got := injectCompactMode(line)
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
 	}
 	if err := json.Unmarshal(got, &msg); err != nil {
 		t.Fatalf("unmarshal result: %v\ngot: %s", err, got)
 	}
-	if string(msg.Params["_mini_proxy_mode"]) != "true" {
-		t.Errorf("_mini_proxy_mode = %s, want true", msg.Params["_mini_proxy_mode"])
+	if string(msg.Params["_mini_tool_mode"]) != `"compact"` {
+		t.Errorf("_mini_tool_mode = %s, want \"compact\"", msg.Params["_mini_tool_mode"])
 	}
 }
 
-func TestRun_proxyMode_injectsIntoInitialize(t *testing.T) {
+func TestRun_compact_injectsIntoInitialize(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
@@ -255,7 +257,7 @@ func TestRun_proxyMode_injectsIntoInitialize(t *testing.T) {
 		SessionID: "sess",
 		In:        strings.NewReader(initMsg),
 		Out:       io.Discard,
-		ProxyMode: true,
+		ToolMode:  transport.ToolModeCompact,
 	}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -267,12 +269,12 @@ func TestRun_proxyMode_injectsIntoInitialize(t *testing.T) {
 	if err := json.Unmarshal(gotBody, &msg); err != nil {
 		t.Fatalf("unmarshal forwarded body: %v\nbody: %s", err, gotBody)
 	}
-	if string(msg.Params["_mini_proxy_mode"]) != "true" {
-		t.Errorf("daemon did not receive _mini_proxy_mode=true; params: %v", msg.Params)
+	if string(msg.Params["_mini_tool_mode"]) != `"compact"` {
+		t.Errorf("daemon did not receive _mini_tool_mode=\"compact\"; params: %v", msg.Params)
 	}
 }
 
-func TestRun_standardMode_doesNotInjectFlag(t *testing.T) {
+func TestRun_passthrough_doesNotInjectFlag(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
@@ -286,7 +288,7 @@ func TestRun_standardMode_doesNotInjectFlag(t *testing.T) {
 		SessionID: "sess",
 		In:        strings.NewReader(initMsg),
 		Out:       io.Discard,
-		ProxyMode: false,
+		ToolMode:  transport.ToolModePassthrough,
 	}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -298,8 +300,8 @@ func TestRun_standardMode_doesNotInjectFlag(t *testing.T) {
 	if err := json.Unmarshal(gotBody, &msg); err != nil {
 		t.Fatalf("unmarshal forwarded body: %v", err)
 	}
-	if msg.Params["_mini_proxy_mode"] != nil {
-		t.Errorf("standard mode should not inject _mini_proxy_mode; params: %v", msg.Params)
+	if msg.Params["_mini_tool_mode"] != nil {
+		t.Errorf("passthrough mode should not inject _mini_tool_mode; params: %v", msg.Params)
 	}
 }
 
@@ -350,7 +352,9 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 	var toolCalls, initCalls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		var msg struct{ Method string `json:"method"` }
+		var msg struct {
+			Method string `json:"method"`
+		}
 		json.Unmarshal(body, &msg) //nolint:errcheck
 		switch msg.Method {
 		case "initialize":
