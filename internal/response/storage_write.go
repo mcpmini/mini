@@ -50,7 +50,7 @@ func (s *Store) WritePair(slimData map[string]any, rawJSON []byte) (string, erro
 func (s *Store) openPairWithSlim(base string, slimData map[string]any, slimJSON, rawJSON []byte) (string, error) {
 	const maxAttempts = 200
 	for i := range maxAttempts {
-		path, done, err := s.tryWritePair(base, i, slimData, slimJSON, rawJSON)
+		path, done, err := s.tryWritePair(writePairAttempt{Base: base, Attempt: i, SlimData: slimData, SlimJSON: slimJSON, RawJSON: rawJSON})
 		if done {
 			return path, err
 		}
@@ -58,13 +58,21 @@ func (s *Store) openPairWithSlim(base string, slimData map[string]any, slimJSON,
 	return "", fmt.Errorf("write pair: name collision for %s", base)
 }
 
-func (s *Store) tryWritePair(base string, attempt int, slimData map[string]any, slimJSON, rawJSON []byte) (string, bool, error) {
-	slimPath, rawPath := pairPaths(s.dir, base, attempt)
-	finalJSON, err := injectRawPath(slimData, slimJSON, rawPath)
+type writePairAttempt struct {
+	Base     string
+	Attempt  int
+	SlimData map[string]any
+	SlimJSON []byte
+	RawJSON  []byte
+}
+
+func (s *Store) tryWritePair(p writePairAttempt) (string, bool, error) {
+	slimPath, rawPath := pairPaths(s.dir, p.Base, p.Attempt)
+	finalJSON, err := injectRawPath(p.SlimData, p.SlimJSON, rawPath)
 	if err != nil {
 		return "", true, err
 	}
-	size, err := s.writePairFiles(slimPath, rawPath, finalJSON, rawJSON)
+	size, err := s.writePairFiles(slimPath, rawPath, finalJSON, p.RawJSON)
 	if retryPairWrite(err) {
 		return "", false, nil
 	}
