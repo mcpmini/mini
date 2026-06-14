@@ -29,6 +29,7 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
 3. **Trust boundaries**: what new inputs arrive from outside (user, config, network, MCP tool args, env vars) and where do they land?
 4. **New control paths**: what new error paths, goroutine launches, or auth checks does the change introduce?
 5. **Candidate list**: for each of Passes 2a–2c, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
+6. **Call-site audit**: for every function or method whose signature, parameters, return contract, or behavior changes in this diff — including new helper functions immediately wired into multiple places — grep for *all* call sites, not just the ones visible in the diff hunks. For each call site, note: what conditional/state context surrounds it, what value it produces for the changed parameter/contract under the new behavior, and whether that's correct for this call site's purpose. List every call site explicitly — a function correct for the call site the author had in mind can be wrong for a call site that existed before the change, or a sibling call site added in the same diff. Carry any call site whose correctness is unclear into Pass 2c.
 
 Produce a brief triage note to drive Passes 2–4. Do not write it into the final report.
 
