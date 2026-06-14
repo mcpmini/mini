@@ -74,16 +74,20 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 	}()
 }
 
-func (s *Server) dispatchWithCancel(ctx context.Context, line []byte, session *Session, writeOut func(any)) {
+func (s *Server) handleLineCancellable(ctx context.Context, line []byte, session *Session) (transport.Response, bool) {
 	rawID := peekRequestID(line)
-	if len(rawID) > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithCancel(ctx)
-		session.registerInFlight(rawID, cancel)
-		defer session.removeInFlight(rawID)
-		defer cancel()
+	if len(rawID) == 0 {
+		return s.handleLine(ctx, line, session)
 	}
-	if resp, send := s.handleLine(ctx, line, session); send {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	session.registerInFlight(rawID, cancel)
+	defer session.removeInFlight(rawID)
+	return s.handleLine(ctx, line, session)
+}
+
+func (s *Server) dispatchWithCancel(ctx context.Context, line []byte, session *Session, writeOut func(any)) {
+	if resp, send := s.handleLineCancellable(ctx, line, session); send {
 		writeOut(resp)
 	}
 }

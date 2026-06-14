@@ -160,6 +160,58 @@ func TestHTTPConnection_5xxError(t *testing.T) {
 	expectCallErrorContains(t, conn, "500")
 }
 
+func TestHTTPConnection_502Error(t *testing.T) {
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad gateway", http.StatusBadGateway)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	expectCallErrorContains(t, conn, "502")
+}
+
+func TestHTTPConnection_200WithNonJSONBody(t *testing.T) {
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("<html>not json</html>")) //nolint:errcheck
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected error for non-JSON 200 response")
+	}
+	if !strings.Contains(err.Error(), "parse response") {
+		t.Errorf("error should mention parse failure, got: %v", err)
+	}
+}
+
+func TestHTTPConnection_connectionDroppedMidResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"jsonrpc"`)) //nolint:errcheck
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("ResponseWriter does not support hijacking")
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		conn.Close()
+	}))
+	defer srv.Close()
+
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected error for connection dropped mid-response")
+	}
+}
+
 func TestHTTPConnection_redirectBlocked(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("redirect was followed — session token could be exfiltrated")

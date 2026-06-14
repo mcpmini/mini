@@ -61,7 +61,7 @@ func (s *Server) servePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	resp, send := s.handleLine(r.Context(), req.body, req.session)
+	resp, send := s.handleLineCancellable(r.Context(), req.body, req.session)
 	writeMCPResponse(w, r, mcpResponseParams{SessionID: req.sessionID, Resp: resp, Send: send})
 }
 

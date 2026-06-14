@@ -77,6 +77,47 @@ func TestForward_daemonUnreachableReturnsErrorEnvelope(t *testing.T) {
 	}
 }
 
+func TestForward_httpErrorStatusReturnsJSONRPCError(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+	}{
+		{"unauthorized", http.StatusUnauthorized, "unauthorized"},
+		{"forbidden", http.StatusForbidden, "forbidden: loopback only"},
+		{"badRequest", http.StatusBadRequest, "read error"},
+		{"internalServerError", http.StatusInternalServerError, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				fmt.Fprint(w, tc.body)
+			}))
+			defer srv.Close()
+			resp := forward(&http.Client{}, serverPort(t, srv), "sess", []byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call"}`))
+			var rpc struct {
+				ID    json.RawMessage `json:"id"`
+				Error *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(resp, &rpc); err != nil {
+				t.Fatalf("response is not valid JSON-RPC: %v\ngot: %s", err, resp)
+			}
+			if string(rpc.ID) != "7" {
+				t.Errorf("id = %s, want 7", rpc.ID)
+			}
+			if rpc.Error == nil {
+				t.Fatalf("expected error object, got: %s", resp)
+			}
+			if strings.TrimSpace(string(resp)) == tc.body {
+				t.Errorf("raw daemon body forwarded verbatim: %s", resp)
+			}
+		})
+	}
+}
+
 func TestForward_202NotificationReturnsNil(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)

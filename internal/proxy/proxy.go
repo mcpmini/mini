@@ -187,7 +187,7 @@ func forward(client *http.Client, port int, sessionID string, body []byte) []byt
 		return daemonErrorResponse(body, "daemon unreachable: "+err.Error())
 	}
 	defer resp.Body.Close()
-	return readForwardResponse(resp)
+	return readForwardResponse(resp, body)
 }
 
 func newDaemonRequest(port int, sessionID string, body []byte) (*http.Request, error) {
@@ -201,9 +201,13 @@ func newDaemonRequest(port int, sessionID string, body []byte) (*http.Request, e
 	return req, nil
 }
 
-func readForwardResponse(resp *http.Response) []byte {
+func readForwardResponse(resp *http.Response, reqBody []byte) []byte {
 	if resp.StatusCode == http.StatusAccepted {
 		return nil // notification — no response expected
+	}
+	if resp.StatusCode >= 400 {
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return daemonErrorResponse(reqBody, fmt.Sprintf("daemon returned HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(errBody)))
 	}
 	result, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	return bytes.TrimSpace(result)
