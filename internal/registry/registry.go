@@ -40,17 +40,21 @@ func (r *Registry) AddServer(p ServerParams) {
 }
 
 func (r *Registry) addServerLocked(p ServerParams) {
-	resolution := resolveAliases(p.Defs, p.AliasByToolName)
+	names := make([]string, 0, len(p.Defs))
+	for _, def := range p.Defs {
+		names = append(names, def.Name)
+	}
+	resolution := ResolveAliases(names, p.AliasByToolName)
 	seen := make(map[string]bool, len(p.Defs))
 	for _, def := range p.Defs {
 		if !config.ValidToolName.MatchString(def.Name) {
 			continue
 		}
-		if resolution.dropped[def.Name] {
+		if resolution.WasDropped(def.Name) {
 			slog.Default().Warn("alias collides; using real name",
 				"server", p.Name, "tool", def.Name, "alias", p.AliasByToolName[def.Name])
 		}
-		entry := buildEntry(entryParams{server: p.Name, def: def, perm: p.Perm, alias: resolution.aliasFor(def.Name)})
+		entry := buildEntry(entryParams{server: p.Name, def: def, perm: p.Perm, alias: resolution.AliasFor(def.Name)})
 		if seen[entry.FullName] {
 			slog.Default().Warn("duplicate tool name from upstream; skipping", "server", p.Name, "tool", def.Name)
 			continue

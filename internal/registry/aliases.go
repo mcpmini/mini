@@ -1,50 +1,55 @@
 package registry
 
-import (
-	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/transport"
-)
+import "github.com/mcpmini/mini/internal/config"
 
-type aliasResolution struct {
-	visible map[string]string // realToolName → visibleName (alias if assigned, realToolName if not or collision)
-	dropped map[string]bool   // realToolNames whose alias was dropped due to a name collision
+// AliasResolution is the result of resolving alias assignments for a tool set.
+type AliasResolution struct {
+	visible map[string]string // realToolName → visibleName
+	dropped map[string]bool   // realToolNames whose alias was reverted due to collision
 }
 
-func (res aliasResolution) aliasFor(realName string) string {
-	if visibleName := res.visible[realName]; visibleName != realName {
+// AliasFor returns the accepted alias for realName, or "" if none was assigned
+// or if the alias was reverted due to a collision.
+func (r AliasResolution) AliasFor(realName string) string {
+	if visibleName := r.visible[realName]; visibleName != realName {
 		return visibleName
 	}
 	return ""
 }
 
-// resolveAliases computes the final visible name for each tool, reverting to
-// the real name for aliases that collide with a real tool name or with another
-// alias (symmetric: no "first one wins").
-func resolveAliases(defs []transport.ToolDefinition, aliasByToolName map[string]string) aliasResolution {
-	realNames := make(map[string]bool, len(defs))
-	for _, def := range defs {
-		realNames[def.Name] = true
+// WasDropped reports whether realName's alias was reverted due to a collision
+// with a real tool name or with another alias.
+func (r AliasResolution) WasDropped(realName string) bool {
+	return r.dropped[realName]
+}
+
+// ResolveAliases computes the final visible name for each tool in realNames,
+// reverting aliases that collide with a real tool name or with each other
+// (symmetric — neither alias wins on a clash).
+func ResolveAliases(realNames []string, aliasByToolName map[string]string) AliasResolution {
+	nameSet := make(map[string]bool, len(realNames))
+	for _, n := range realNames {
+		nameSet[n] = true
 	}
 
-	visible := make(map[string]string, len(defs))
+	visible := make(map[string]string, len(realNames))
 	dropped := make(map[string]bool)
 	claim := make(map[string][]string)
 
-	for _, def := range defs {
-		visibleName := def.Name
-		if toolAlias := aliasByToolName[def.Name]; toolAlias != "" && config.ValidToolName.MatchString(toolAlias) {
-			if realNames[toolAlias] {
+	for _, name := range realNames {
+		visibleName := name
+		if alias := aliasByToolName[name]; alias != "" && config.ValidToolName.MatchString(alias) {
+			if nameSet[alias] {
 				// Alias collides with a real tool name — revert immediately.
-				dropped[def.Name] = true
+				dropped[name] = true
 			} else {
-				visibleName = toolAlias
+				visibleName = alias
 			}
 		}
-		visible[def.Name] = visibleName
-		claim[visibleName] = append(claim[visibleName], def.Name)
+		visible[name] = visibleName
+		claim[visibleName] = append(claim[visibleName], name)
 	}
 
-	// Revert aliases that collide with each other (both claim the same visible name).
 	for realName, visibleName := range visible {
 		if visibleName != realName && len(claim[visibleName]) > 1 {
 			visible[realName] = realName
@@ -52,5 +57,5 @@ func resolveAliases(defs []transport.ToolDefinition, aliasByToolName map[string]
 		}
 	}
 
-	return aliasResolution{visible: visible, dropped: dropped}
+	return AliasResolution{visible: visible, dropped: dropped}
 }
