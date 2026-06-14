@@ -263,10 +263,10 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 	var p initializeClientParams
 	json.Unmarshal(params, &p) //nolint:errcheck // best-effort; standard clients omit this field
 	if p.ToolMode == transport.ToolModeCompactValue {
-		session.setToolMode(ToolModeCompact)
+		session.setToolMode(transport.ToolModeCompact)
 	}
 	instructions := initInstructions
-	if session.toolMode() == ToolModePassthrough {
+	if session.toolMode() == transport.ToolModePassthrough {
 		instructions = passthroughInitInstructions
 	}
 	return transport.InitializeResult{
@@ -278,7 +278,7 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 }
 
 func (s *Server) handleToolsList(session *Session) (any, error) {
-	if session.toolMode() == ToolModePassthrough {
+	if session.toolMode() == transport.ToolModePassthrough {
 		return map[string]any{"tools": buildPassthroughToolSchemas(s.reg.AllFull())}, nil
 	}
 	return map[string]any{"tools": s.toolSchemas}, nil
@@ -327,7 +327,7 @@ func normalizeToolCallResult(result any) any {
 }
 
 func (s *Server) routeTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
-	if session.toolMode() == ToolModePassthrough {
+	if session.toolMode() == transport.ToolModePassthrough {
 		return s.routePassthroughTool(ctx, name, args, session)
 	}
 	return s.routeStandardTool(ctx, name, args, session)

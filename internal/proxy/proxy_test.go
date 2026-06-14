@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func serverPort(t *testing.T, srv *httptest.Server) int {
@@ -366,7 +368,7 @@ func TestRun_compact_injectsIntoInitialize(t *testing.T) {
 		fmt.Fprint(w, rpcResult(1, `{}`))
 	})
 	mustRunProxy(t, RunParams{
-		Port: serverPort(t, srv), SessionID: "sess", Compact: true,
+		Port: serverPort(t, srv), SessionID: "sess", ToolMode: transport.ToolModeCompact,
 		In: strings.NewReader(rpcRequest(1, "initialize") + "\n"),
 	})
 	var msg struct {

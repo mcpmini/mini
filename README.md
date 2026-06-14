@@ -326,9 +326,11 @@ This is useful when:
 
 ## Compact tool mode
 
-First, the background. Some clients **defer** (lazy-load) MCP tool schemas: they tell the model only the tool *names* upfront and fetch a tool's full schema on demand the first time the model reaches for it. Claude Code works this way ([details](docs/claude-code-mcp-loading.md)). For those clients, mini's default passthrough mode is strictly better — exposing the entire upstream tool surface costs nothing at session start, and the model calls each tool against its native schema.
+**Passthrough is the default and right choice for most users.** mini's primary value is minifying upstream responses — stripping noise, capping long strings, and returning only what your agent actually needs. That happens in every mode regardless.
 
-Other clients load **every** tool schema eagerly at session start. There, a large catalog of servers is a large fixed token cost on turn one, every session. Compact mode is for that case: it collapses everything behind 4 fixed tools, so the upfront cost stays constant no matter how many upstream servers you add.
+Some clients **defer** (lazy-load) MCP tool schemas: they tell the model only the tool *names* upfront and fetch a tool's full schema on demand the first time the model reaches for it. Claude Code works this way ([details](docs/claude-code-mcp-loading.md)). For those clients, passthrough is strictly better — the full upstream tool surface is exposed at zero upfront cost, and the model calls each tool with its native schema.
+
+**Compact mode** (`mini connect --tool-mode compact`) is a niche option for clients that load every tool schema eagerly at session start. It collapses everything behind 4 fixed tools, keeping the upfront schema cost constant regardless of how many upstream servers you add. The trade-off: the agent must call `list` to discover tools before it can invoke them — an extra round-trip — and it can't see argument schemas without that `list` first.
 
 ```bash
 mini connect --tool-mode compact
@@ -341,9 +343,7 @@ mini connect --tool-mode compact
 | `perm_call` | The path for `protected` tools — the seam your client should always ask before running ([Permissions](#permissions)) |
 | `config` | Add/remove servers, adjust projections, check status |
 
-The agent discovers what's available via `list` and invokes tools via `call`. The trade-off: an extra round-trip (`list` before `call`), and the model can't see a tool's argument schema without a `list` first, so it calls less confidently. That's why passthrough is the default.
-
-**If you're on Claude Code (or any client that defers schemas), don't use compact mode** — you'd be giving up native schemas and adding a round-trip to solve a cost you don't have. Reach for it only when your client loads all schemas upfront *and* you have enough servers that the upfront cost actually hurts.
+**If you're on Claude Code (or any client that defers schemas), don't use compact mode** — you'd be giving up native schemas and adding a round-trip to solve a cost you don't have.
 
 ## Commands
 

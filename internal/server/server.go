@@ -9,6 +9,7 @@ import (
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 type ServerOption func(*Server)
@@ -24,7 +25,7 @@ func WithClock(c clock.Clock) ServerOption {
 // server__tool instead of behind the 4-tool abstraction, and mini does not
 // apply perm_call; clients such as Claude configure per-tool approval/allow
 // rules against the exposed upstream tool names.
-func WithToolMode(m ToolMode) ServerOption {
+func WithToolMode(m transport.ToolMode) ServerOption {
 	return func(s *Server) { s.toolMode = m }
 }
 
@@ -55,7 +56,7 @@ type Server struct {
 	sessions             *sessionStore
 	logger               *slog.Logger
 	clock                clock.Clock
-	toolMode             ToolMode
+	toolMode             transport.ToolMode
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
 	// Lock ordering: when both mu and authMu must be acquired, always acquire mu first.

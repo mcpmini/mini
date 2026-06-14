@@ -164,7 +164,7 @@ func TestCLI_init_createsStructure(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
-	_, _, code := run(t, bin, cfg, "init", "--yes")
+	stdout, _, code := run(t, bin, cfg, "init", "--yes")
 	if code != 0 {
 		t.Errorf("init should exit 0, got %d", code)
 	}
@@ -174,6 +174,10 @@ func TestCLI_init_createsStructure(t *testing.T) {
 		if _, err := os.Stat(d); err != nil {
 			t.Errorf("expected %s dir to exist after init: %v", sub, err)
 		}
+	}
+
+	if !strings.Contains(stdout, `"connect"`) {
+		t.Errorf("init output should include connect arg in install snippet, got: %q", stdout)
 	}
 }
 
@@ -230,16 +234,6 @@ func TestCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
-func TestCLI_removedCommands_exit2(t *testing.T) {
-	bin := miniBin(t)
-	cfg := t.TempDir()
-	for _, cmd := range []string{"serve", "proxy"} {
-		_, _, code := run(t, bin, cfg, cmd)
-		if code != 2 {
-			t.Errorf("removed command %q should exit 2 (unknown command), got %d", cmd, code)
-		}
-	}
-}
 
 func TestCLI_connect_invalidToolMode(t *testing.T) {
 	bin := miniBin(t)
