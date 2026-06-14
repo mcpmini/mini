@@ -51,32 +51,11 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	var callStarted sync.WaitGroup
 	callStarted.Add(1)
 	var callCtx context.Context
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, newSlowBlockingConn(&callStarted, &callCtx))
 
-	// Fake connection that blocks until its context is cancelled.
-	blocking := &blockingFakeConn{
-		tools: []transport.ToolDefinition{{
-			Name:        "slow",
-			Description: "slow tool",
-			InputSchema: json.RawMessage(`{"type":"object"}`),
-		}},
-		onCall: func(ctx context.Context) {
-			callCtx = ctx
-			callStarted.Done()
-			<-ctx.Done() // block until cancelled
-		},
-	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, blocking)
-
-	callReq := callToolWithID(42, "call", map[string]any{
-		"server": "s",
-		"tool":   "slow",
-		"params": map[string]any{},
-	})
-	cancelNotif := notification("notifications/cancelled", map[string]any{"requestId": 42})
-
-	// Use a pipe so we can write cancelNotif only after the call has registered.
-	// Sending both in a single buffer risks the cancel goroutine running before
-	// registerInFlight has been called.
+	// Use a pipe so we can write the cancel notification only after the call
+	// has registered. Sending both in a single buffer risks the cancel
+	// goroutine running before registerInFlight has been called.
 	pr, pw := io.Pipe()
 	ctx, ctxCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer ctxCancel()
@@ -84,25 +63,17 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ctx, pr, &out) }()
 
-	// Write initialize + callReq through the pipe.
-	pw.Write(buildServeInput([][]byte{callReq})) //nolint:errcheck
+	pw.Write(buildServeInput([][]byte{slowCallReq(42)})) //nolint:errcheck
 
-	// Wait for the call to register in-flight before sending the cancel.
 	if !waitTimeout(&callStarted, 3*time.Second) {
 		pw.Close()
 		t.Fatal("upstream call did not start within timeout")
 	}
 
-	// Now write the cancel notification — registration is guaranteed.
-	pw.Write(cancelNotif) //nolint:errcheck
+	pw.Write(notification("notifications/cancelled", map[string]any{"requestId": 42})) //nolint:errcheck
 	pw.Close()
 
-	select {
-	case <-callCtx.Done():
-		// correct: upstream context was cancelled
-	case <-time.After(2 * time.Second):
-		t.Error("upstream call context was not cancelled after notifications/cancelled")
-	}
+	assertContextCanceled(t, callCtx, "after notifications/cancelled")
 	<-serveErr
 }
 
@@ -117,27 +88,10 @@ func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 	var callStarted sync.WaitGroup
 	callStarted.Add(1)
 	var callCtx context.Context
-
-	blocking := &blockingFakeConn{
-		tools: []transport.ToolDefinition{{
-			Name:        "slow",
-			Description: "slow tool",
-			InputSchema: json.RawMessage(`{"type":"object"}`),
-		}},
-		onCall: func(ctx context.Context) {
-			callCtx = ctx
-			callStarted.Done()
-			<-ctx.Done()
-		},
-	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, blocking)
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, newSlowBlockingConn(&callStarted, &callCtx))
 
 	sessionID := initSession(t, ts)
-	go drainMCPPost(t, ts, callToolWithID(42, "call", map[string]any{
-		"server": "s",
-		"tool":   "slow",
-		"params": map[string]any{},
-	}), sessionID)
+	go drainMCPPost(t, ts, slowCallReq(42), sessionID)
 
 	if !waitTimeout(&callStarted, 3*time.Second) {
 		t.Fatal("upstream call did not start within timeout")
@@ -145,11 +99,7 @@ func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 
 	drainMCPPost(t, ts, notification("notifications/cancelled", map[string]any{"requestId": 42}), sessionID)
 
-	select {
-	case <-callCtx.Done():
-	case <-time.After(2 * time.Second):
-		t.Error("upstream call context was not cancelled after notifications/cancelled over HTTP")
-	}
+	assertContextCanceled(t, callCtx, "over HTTP")
 }
 
 // TestCancellation_UnknownMethodReturnsError verifies that a completely unknown
@@ -190,6 +140,43 @@ func callToolWithID(id int, name string, args any) []byte {
 	}
 	b, _ := json.Marshal(msg)
 	return append(b, '\n')
+}
+
+// newSlowBlockingConn returns a connection exposing a single "slow" tool
+// whose Call blocks until its context is canceled. callStarted is signaled
+// once the call begins, and callCtx is set to the context the call observed.
+func newSlowBlockingConn(callStarted *sync.WaitGroup, callCtx *context.Context) *blockingFakeConn {
+	return &blockingFakeConn{
+		tools: []transport.ToolDefinition{{
+			Name:        "slow",
+			Description: "slow tool",
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		}},
+		onCall: func(ctx context.Context) {
+			*callCtx = ctx
+			callStarted.Done()
+			<-ctx.Done()
+		},
+	}
+}
+
+// slowCallReq builds a tools/call request for the "slow" tool on server "s".
+func slowCallReq(id int) []byte {
+	return callToolWithID(id, "call", map[string]any{
+		"server": "s",
+		"tool":   "slow",
+		"params": map[string]any{},
+	})
+}
+
+// assertContextCanceled fails the test if ctx is not done within 2 seconds.
+func assertContextCanceled(t *testing.T, ctx context.Context, msg string) {
+	t.Helper()
+	select {
+	case <-ctx.Done():
+	case <-time.After(2 * time.Second):
+		t.Errorf("upstream call context was not canceled %s", msg)
+	}
 }
 
 func waitTimeout(wg *sync.WaitGroup, d time.Duration) bool {
