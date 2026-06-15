@@ -1,3 +1,8 @@
+// The daemon listens on localhost, but localhost alone is not an auth boundary —
+// any local process or browser-driven request can reach it. A bearer token written
+// to a 0600 file restricts access to processes running as the same user, closing
+// the gap between "reachable" and "authorized." The daemon mints a fresh token on
+// every start; clients (the proxy) read it from disk before connecting.
 package daemon
 
 import (
@@ -8,12 +13,10 @@ import (
 	"strings"
 )
 
-// TokenFile returns the path to the daemon bearer-token file in configDir.
 func TokenFile(configDir string) string {
 	return filepath.Join(configDir, "daemon.token")
 }
 
-// GenerateToken returns a cryptographically random 32-byte token as a hex string.
 func GenerateToken() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
@@ -22,7 +25,6 @@ func GenerateToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-// WriteToken mints a fresh token and atomically writes it to TokenFile(configDir).
 func WriteToken(configDir string) (string, error) {
 	token, err := GenerateToken()
 	if err != nil {
@@ -31,7 +33,6 @@ func WriteToken(configDir string) (string, error) {
 	return token, atomicWriteFile(TokenFile(configDir), token)
 }
 
-// ReadToken reads the daemon bearer token from TokenFile(configDir).
 func ReadToken(configDir string) (string, error) {
 	data, err := os.ReadFile(TokenFile(configDir))
 	if err != nil {
