@@ -1,8 +1,8 @@
-// The daemon listens on localhost, but localhost alone is not an auth boundary —
-// any local process or browser-driven request can reach it. A bearer token written
-// to a 0600 file restricts access to processes running as the same user, closing
-// the gap between "reachable" and "authorized." The daemon mints a fresh token on
-// every start; clients (the proxy) read it from disk before connecting.
+// Localhost alone is not an auth boundary — any local process or browser-driven
+// request can reach the daemon (DNS rebinding, SSRF, malicious browser extensions).
+// To reduce this attack surface, clients must present a bearer token stored on disk.
+// The daemon mints a fresh token on every start; clients read it from the token file
+// and automatically pick up a rotated token when the daemon restarts.
 package daemon
 
 import (
@@ -41,9 +41,8 @@ func ReadToken(configDir string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// atomicWriteFile writes data to path via a temp file and a rename, so a concurrent
-// reader never observes a partial or empty file and the result is 0600 even when it
-// replaces a stale file with looser permissions.
+// Concurrent readers (proxies refreshing tokens) never see partial content because
+// rename is atomic; the 0600 mode comes from CreateTemp regardless of prior file perms.
 func atomicWriteFile(path, data string) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {

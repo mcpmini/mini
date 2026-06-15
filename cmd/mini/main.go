@@ -249,9 +249,7 @@ func buildAndConnectServer(ctx context.Context, p BuildServerParams, opts ...ser
 	return srv
 }
 
-// appendNonLoopbackHostOpt disables the loopback-Host check when --http binds to a
-// non-loopback address, so legitimate remote clients aren't rejected. The danger-flag
-// policy is still enforced separately in checkLoopbackPolicy before the listener starts.
+// Without this, the DNS-rebinding Host check rejects legitimate remote clients.
 func appendNonLoopbackHostOpt(opts []server.ServerOption, httpAddr string) []server.ServerOption {
 	if httpAddr == "" {
 		return opts
