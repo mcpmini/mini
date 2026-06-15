@@ -41,8 +41,9 @@ func ReadToken(configDir string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// Concurrent readers (proxies refreshing tokens) never see partial content because
-// rename is atomic; the 0600 mode comes from CreateTemp regardless of prior file perms.
+// Standard atomic-write pattern (CreateTemp + Rename); see github.com/natefinch/atomic
+// for the canonical Go implementation. We inline it to force 0600 (natefinch preserves
+// existing perms, which would weaken security if a stale file had looser mode).
 func atomicWriteFile(path, data string) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
