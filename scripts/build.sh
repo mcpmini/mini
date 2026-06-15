@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Build the mini binary with an accurate version string.
-#
 # debug.ReadBuildInfo's embedded VCS info is unreliable for builds done from a
 # git worktree (golang/go#58218, #64772), so we compute the revision via git
 # directly and inject it with -ldflags.
