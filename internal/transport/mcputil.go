@@ -31,7 +31,8 @@ func toToolDefs(tools []MCPTool) []ToolDefinition {
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: t.InputSchema,
-			ReadOnly:    t.Annotations != nil && t.Annotations.ReadOnlyHint,
+			Annotations: t.Annotations,
+			ReadOnly:    readOnlyHint(t.Annotations),
 		}
 	}
 	return defs

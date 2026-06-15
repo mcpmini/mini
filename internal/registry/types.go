@@ -30,6 +30,7 @@ type ToolEntry struct {
 	Description   string
 	DescLower     string // pre-lowercased for search
 	InputSchema   json.RawMessage
+	Annotations   json.RawMessage
 	Permission    config.PermissionLevel
 	// ReadOnly is set when the upstream MCP advertised readOnlyHint:true in annotations.
 	// Read-only tools are callable via call even without a projection entry.
