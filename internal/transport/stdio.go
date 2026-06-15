@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"sync"
 	"sync/atomic"
+
+	"github.com/mcpmini/mini/internal/version"
 )
 
 type StdioConnection struct {
@@ -178,7 +180,7 @@ func newInitializeParams() InitializeParams {
 	return InitializeParams{
 		ProtocolVersion: ProtocolVersion,
 		Capabilities:    map[string]any{},
-		ClientInfo:      ClientInfo{Name: "mini", Version: Version},
+		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 	}
 }
 

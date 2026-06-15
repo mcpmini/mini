@@ -11,6 +11,18 @@ import (
 	"time"
 )
 
+func TestCLI_version(t *testing.T) {
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		stdout, _, code := runCLI(t, t.TempDir(), args...)
+		if code != 0 {
+			t.Errorf("%v exited %d", args, code)
+		}
+		if v := strings.TrimSpace(stdout); v != expectedVersion {
+			t.Errorf("%v output %q, want %q", args, v, expectedVersion)
+		}
+	}
+}
+
 func TestCLI_ls_empty(t *testing.T) {
 	stdout, _, code := runCLI(t, t.TempDir(), "ls")
 	if code != 0 {

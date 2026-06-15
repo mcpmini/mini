@@ -19,6 +19,7 @@ import (
 	"github.com/mcpmini/mini/internal/proxy"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/version"
 )
 
 const standaloneHTTPSessionMaxIdle = 30 * time.Minute
@@ -80,7 +81,7 @@ func main() {
 		os.Exit(2)
 	}
 	if *versionFlag {
-		fmt.Println(transport.Version)
+		fmt.Println(version.Version)
 		return
 	}
 	dispatch(*configDir, fs.Args())
@@ -103,7 +104,7 @@ var commands = map[string]func(string, []string){
 	"setup":     runInit,
 	"call":      runCall,
 	"perm-call": runPermCall,
-	"version":   func(_ string, _ []string) { fmt.Println(transport.Version) },
+	"version":   func(_ string, _ []string) { fmt.Println(version.Version) },
 }
 
 func mustRun(err error) {
