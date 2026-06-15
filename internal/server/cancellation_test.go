@@ -88,7 +88,7 @@ func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 	var callCtx context.Context
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, newSlowBlockingConn(&callStarted, &callCtx))
 
-	sessionID := initSession(t, ts)
+	sessionID := initCompactSession(t, ts)
 	go drainMCPPost(t, ts, slowCallReq(42), sessionID)
 
 	if !waitTimeout(&callStarted, 3*time.Second) {
