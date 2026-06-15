@@ -1,10 +1,13 @@
-package transport
+package version
 
 import (
 	"fmt"
 	"runtime/debug"
 	"strings"
 )
+
+// Version is the build version, populated at startup from embedded VCS build info.
+var Version = "dev"
 
 func init() {
 	info, ok := debug.ReadBuildInfo()

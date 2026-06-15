@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/version"
 )
 
 const maxConcurrentForwards = 32
@@ -150,7 +151,7 @@ func reinitDaemon(client *http.Client, port int, sessionID string, proxyMode boo
 	params, _ := json.Marshal(transport.InitializeParams{
 		ProtocolVersion: transport.ProtocolVersion,
 		Capabilities:    map[string]any{},
-		ClientInfo:      transport.ClientInfo{Name: "mini", Version: transport.Version},
+		ClientInfo:      transport.ClientInfo{Name: "mini", Version: version.Version},
 	})
 	initMsg, _ := json.Marshal(transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)})
 	forward(client, port, sessionID, maybeInjectProxy(initMsg, proxyMode))

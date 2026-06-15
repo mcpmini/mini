@@ -13,6 +13,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/response"
 	"github.com/mcpmini/mini/internal/transport"
+	"github.com/mcpmini/mini/internal/version"
 )
 
 // Serve dispatches each request in its own goroutine so slow upstream calls
@@ -271,7 +272,7 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 	return transport.InitializeResult{
 		ProtocolVersion: transport.ProtocolVersion,
 		Capabilities:    map[string]any{"tools": map[string]any{"listChanged": true}},
-		ServerInfo:      transport.ServerInfo{Name: "mini", Version: transport.Version},
+		ServerInfo:      transport.ServerInfo{Name: "mini", Version: version.Version},
 		Instructions:    instructions,
 	}, nil
 }

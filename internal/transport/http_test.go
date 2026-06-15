@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/version"
 )
 
 func okRPCResponse(id any) []byte {
@@ -75,7 +77,7 @@ func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
 func TestHTTPConnection_versionHeaderSent(t *testing.T) {
 	var receivedVersion string
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		receivedVersion = r.Header.Get("X-Minimcp-Version")
+		receivedVersion = r.Header.Get("X-Mini-Version")
 		json.NewEncoder(w).Encode(map[string]any{
 			"jsonrpc": "2.0", "id": 1, "result": map[string]any{},
 		})
@@ -83,15 +85,15 @@ func TestHTTPConnection_versionHeaderSent(t *testing.T) {
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 
-	if receivedVersion != Version {
-		t.Errorf("expected X-Minimcp-Version: %s, got %q", Version, receivedVersion)
+	if receivedVersion != version.Version {
+		t.Errorf("expected X-Mini-Version: %s, got %q", version.Version, receivedVersion)
 	}
 }
 
 func TestHTTPConnection_versionHeaderAlwaysSent(t *testing.T) {
 	var receivedVersion string
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		receivedVersion = r.Header.Get("X-Minimcp-Version")
+		receivedVersion = r.Header.Get("X-Mini-Version")
 		json.NewEncoder(w).Encode(map[string]any{
 			"jsonrpc": "2.0", "id": 1, "result": map[string]any{},
 		})
@@ -100,7 +102,7 @@ func TestHTTPConnection_versionHeaderAlwaysSent(t *testing.T) {
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 
 	if receivedVersion == "" {
-		t.Error("expected X-Minimcp-Version header to be sent")
+		t.Error("expected X-Mini-Version header to be sent")
 	}
 }
 

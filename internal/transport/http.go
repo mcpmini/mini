@@ -13,10 +13,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mcpmini/mini/internal/version"
 )
 
-// Version is populated at startup from embedded VCS build info; "dev" if unavailable.
-var Version = "dev"
 
 // HTTPConnection implements Connection for streamable HTTP / SSE MCP servers.
 // The GitHub MCP and similar servers use this transport: each call is a POST,
@@ -228,7 +228,7 @@ func (c *HTTPConnection) setRequestHeaders(req *http.Request) {
 	// Spec (Streamable HTTP): client MUST include MCP-Protocol-Version on all
 	// post-initialize requests so the server can reject version mismatches.
 	req.Header.Set("MCP-Protocol-Version", ProtocolVersion)
-	req.Header.Set("X-Minimcp-Version", Version)
+	req.Header.Set("X-Mini-Version", version.Version)
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
@@ -311,7 +311,7 @@ func (c *HTTPConnection) sendInitialize(ctx context.Context) error {
 	params, _ := json.Marshal(InitializeParams{
 		ProtocolVersion: ProtocolVersion,
 		Capabilities:    map[string]any{},
-		ClientInfo:      ClientInfo{Name: "mini", Version: Version},
+		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 	})
 	_, err := c.Call(ctx, "initialize", params)
 	return err
