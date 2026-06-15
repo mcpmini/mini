@@ -221,6 +221,80 @@ func TestDaemon_HTTPRejectsMissingToken(t *testing.T) {
 	}
 }
 
+func TestDaemon_HTTPRejectsWrongToken(t *testing.T) {
+	baseURL, _ := daemonBaseURL(t)
+	resp := daemonPost(t, baseURL, daemonPostOpts{Token: "wrong-token-value"})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for wrong token, got %d", resp.StatusCode)
+	}
+}
+
+func TestDaemon_HostHeaderRejection(t *testing.T) {
+	baseURL, configDir := daemonBaseURL(t)
+	token := readDaemonToken(t, configDir)
+	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token, Host: "evil.com"})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-loopback Host, got %d", resp.StatusCode)
+	}
+}
+
+func TestDaemon_CrossOriginRejection(t *testing.T) {
+	baseURL, configDir := daemonBaseURL(t)
+	token := readDaemonToken(t, configDir)
+	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token, Origin: "http://evil.com"})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected 403 for cross-origin request, got %d", resp.StatusCode)
+	}
+}
+
+func TestDaemon_TokenFilePermissions(t *testing.T) {
+	_, configDir := daemonBaseURL(t)
+	fi, err := os.Stat(filepath.Join(configDir, "daemon.token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0600 {
+		t.Fatalf("expected token file mode 0600, got %04o", perm)
+	}
+}
+
+type daemonPostOpts struct {
+	Token  string
+	Host   string
+	Origin string
+}
+
+func daemonPost(t *testing.T, baseURL string, opts daemonPostOpts) *http.Response {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "test", "version": "0"},
+		},
+	})
+	req, _ := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+	if opts.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+opts.Token)
+	}
+	if opts.Host != "" {
+		req.Host = opts.Host
+	}
+	if opts.Origin != "" {
+		req.Header.Set("Origin", opts.Origin)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 func daemonBaseURL(t *testing.T) (string, string) {
 	t.Helper()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
