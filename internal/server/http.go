@@ -36,6 +36,9 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden: non-loopback Host", http.StatusForbidden)
 		return
 	}
+	// A malicious page can reach the local daemon, but the browser sets Origin to
+	// the attacker's domain — rejecting mismatched Origins blocks cross-origin access.
+	// We do NOT fall back to X-Forwarded-Host: it's attacker-controllable.
 	if origin := r.Header.Get("Origin"); origin != "" && !isSameHost(r, origin) {
 		http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
 		return

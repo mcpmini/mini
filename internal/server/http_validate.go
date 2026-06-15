@@ -18,13 +18,13 @@ import (
 // actual entropy (all-hyphen strings would pass length but fail the entropy check).
 var sessionIDPattern = regexp.MustCompile(`^[a-f0-9-]{32,128}$`)
 
-// authorizeDaemon enforces the bearer token when one is configured (daemon mode).
-// The stdio and serve --http paths leave daemonAuthToken empty and skip this check.
 func (s *Server) authorizeDaemon(w http.ResponseWriter, r *http.Request) bool {
 	if s.daemonAuthToken == "" {
 		return true
 	}
 	got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	// Constant-time compare prevents a timing side-channel from leaking the token
+	// byte-by-byte, even though this is localhost-only today.
 	if ok && subtle.ConstantTimeCompare([]byte(got), []byte(s.daemonAuthToken)) == 1 {
 		return true
 	}
@@ -32,8 +32,9 @@ func (s *Server) authorizeDaemon(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// hostIsLoopback rejects DNS-rebinding: a rebound request carries the attacker's
-// domain in Host, so only a loopback host-part is allowed. Port is stripped first.
+// A DNS-rebinding attack tricks the browser into resolving the attacker's domain to
+// 127.0.0.1, so the request arrives locally but with Host set to the attacker's domain.
+// Only allowing loopback Host values blocks this class of attack.
 func hostIsLoopback(host string) bool {
 	if host == "" {
 		return false
@@ -45,10 +46,6 @@ func hostIsLoopback(host string) bool {
 	return host == "127.0.0.1" || host == "::1" || host == "localhost"
 }
 
-// isSameHost blocks DNS-rebinding attacks: a malicious page can't reach the local daemon
-// by redirecting to it, because the browser will set Origin to the attacker's domain.
-// We do NOT fall back to X-Forwarded-Host: that header is attacker-controllable and would
-// defeat the protection. If r.Host is empty, the check fails conservatively.
 func isSameHost(r *http.Request, origin string) bool {
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {

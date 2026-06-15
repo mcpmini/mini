@@ -401,9 +401,7 @@ func TestDaemonAuth_HealthzUnauthenticated(t *testing.T) {
 	mustStatus(t, resp, http.StatusOK)
 }
 
-// WithAllowNonLoopbackHost (set by serve --http --dangerous-nonloopback-http) must let
-// remote clients through; otherwise that documented feature 403s every request.
-func TestHTTPServer_NonLoopbackHostAllowedWhenConfigured(t *testing.T) {
+func TestHTTPServer_AllowNonLoopbackHostSkipsHostCheck(t *testing.T) {
 	_, ts := newHTTPTestServer(t, server.WithAllowNonLoopbackHost())
 	resp := postWithHost(t, ts.URL, "203.0.113.5:4857")
 	resp.Body.Close()

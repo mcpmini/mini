@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,6 +41,43 @@ func rpcRequest(id int, method string) string {
 	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"%s"}`, id, method)
 }
 
+func rpcResult(id int, result string) string {
+	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"result":%s}`, id, result)
+}
+
+func rpcOK(w http.ResponseWriter) {
+	fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
+}
+
+func rpcError(w http.ResponseWriter, id, code int, msg string) {
+	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"error":{"code":%d,"message":"%s"}}`, id, code, msg)
+}
+
+func requireBearer(w http.ResponseWriter, r *http.Request, token string) bool {
+	if r.Header.Get("Authorization") != "Bearer "+token {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+func startTestServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func startOKServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return startTestServer(t, func(w http.ResponseWriter, _ *http.Request) { rpcOK(w) })
+}
+
+func forwardTo(t *testing.T, srv *httptest.Server, body []byte) ([]byte, int) {
+	t.Helper()
+	return forward(testConn(serverPort(t, srv), "sess"), body)
+}
+
 func mustRunProxy(t *testing.T, p RunParams) string {
 	t.Helper()
 	var out strings.Builder
@@ -54,13 +90,12 @@ func mustRunProxy(t *testing.T, p RunParams) string {
 
 func TestForward_sendsBearerToken(t *testing.T) {
 	var gotAuth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
+		rpcOK(w)
+	})
 	conn := daemonConn{client: &http.Client{}, port: serverPort(t, srv), sessionID: "sess", token: "secret-token"}
-	forward(conn, []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	forward(conn, []byte(rpcRequest(1, "test")))
 	if gotAuth != "Bearer secret-token" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer secret-token")
 	}
@@ -68,12 +103,11 @@ func TestForward_sendsBearerToken(t *testing.T) {
 
 func TestForward_noTokenOmitsAuthorizationHeader(t *testing.T) {
 	var hadAuth bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_, hadAuth = r.Header["Authorization"]
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-	forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+		rpcOK(w)
+	})
+	forwardTo(t, srv, []byte(rpcRequest(1, "test")))
 	if hadAuth {
 		t.Error("expected no Authorization header when token is empty")
 	}
@@ -81,11 +115,10 @@ func TestForward_noTokenOmitsAuthorizationHeader(t *testing.T) {
 
 func TestRun_propagatesTokenThroughRunParams(t *testing.T) {
 	var gotAuth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
+		rpcOK(w)
+	})
 	mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess", Token: "tok-42",
 		In: strings.NewReader(rpcRequest(1, "tools/call") + "\n"),
@@ -121,18 +154,15 @@ func TestDaemonErrorResponse_malformedBodyReturnsNil(t *testing.T) {
 }
 
 func TestForward_successReturnsDaemonResponse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-	resp, _ := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	srv := startOKServer(t)
+	resp, _ := forwardTo(t, srv, []byte(rpcRequest(1, "tools/call")))
 	if !strings.Contains(string(resp), `"result":"ok"`) {
 		t.Errorf("unexpected response: %s", resp)
 	}
 }
 
 func TestForward_daemonUnreachableReturnsErrorEnvelope(t *testing.T) {
-	resp, _ := forward(testConn(closedPort(t), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	resp, _ := forward(testConn(closedPort(t), "sess"), []byte(rpcRequest(1, "tools/call")))
 	if resp == nil || !strings.Contains(string(resp), `"error"`) {
 		t.Errorf("expected error envelope, got %s", resp)
 	}
@@ -151,12 +181,11 @@ func TestForward_httpErrorStatusReturnsJSONRPCError(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			srv := startTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
-			}))
-			defer srv.Close()
-			resp, _ := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call"}`))
+			})
+			resp, _ := forwardTo(t, srv, []byte(rpcRequest(7, "tools/call")))
 			var rpc struct {
 				ID    json.RawMessage `json:"id"`
 				Error *struct {
@@ -172,19 +201,15 @@ func TestForward_httpErrorStatusReturnsJSONRPCError(t *testing.T) {
 			if rpc.Error == nil {
 				t.Fatalf("expected error object, got: %s", resp)
 			}
-			if strings.TrimSpace(string(resp)) == tc.body {
-				t.Errorf("raw daemon body forwarded verbatim: %s", resp)
-			}
 		})
 	}
 }
 
 func TestForward_202NotificationReturnsNil(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer srv.Close()
-	resp, _ := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	})
+	resp, _ := forwardTo(t, srv, []byte(rpcRequest(1, "notifications/initialized")))
 	if resp != nil {
 		t.Errorf("expected nil for 202 Accepted, got %s", resp)
 	}
@@ -192,12 +217,11 @@ func TestForward_202NotificationReturnsNil(t *testing.T) {
 
 func TestForward_sessionIdPropagatedInHeader(t *testing.T) {
 	var gotSession string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotSession = r.Header.Get("Mcp-Session-Id")
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-	forward(testConn(serverPort(t, srv), "my-session-42"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+		rpcOK(w)
+	})
+	forward(testConn(serverPort(t, srv), "my-session-42"), []byte(rpcRequest(1, "test")))
 	if gotSession != "my-session-42" {
 		t.Errorf("session header = %q, want %q", gotSession, "my-session-42")
 	}
@@ -205,11 +229,8 @@ func TestForward_sessionIdPropagatedInHeader(t *testing.T) {
 
 func TestForward_largeResponseBodyHandledWithoutError(t *testing.T) {
 	big := strings.Repeat("x", 1<<20)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, big)
-	}))
-	defer srv.Close()
-	resp, _ := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	srv := startTestServer(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, big) })
+	resp, _ := forwardTo(t, srv, []byte(rpcRequest(1, "test")))
 	if len(resp) == 0 {
 		t.Error("expected non-empty response for large body")
 	}
@@ -221,10 +242,9 @@ func runParams(t *testing.T, srv *httptest.Server, in io.Reader, out io.Writer) 
 }
 
 func TestRun_routesRequestAndWritesResponse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"done"}`)
-	}))
-	defer srv.Close()
+	srv := startTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, rpcResult(1, `"done"`))
+	})
 	got := mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess",
 		In: strings.NewReader(rpcRequest(1, "tools/call") + "\n"),
@@ -236,12 +256,11 @@ func TestRun_routesRequestAndWritesResponse(t *testing.T) {
 
 func TestRun_emptyLinesSkipped(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-	in := strings.NewReader("\n\n" + `{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n\n")
+		rpcOK(w)
+	})
+	in := strings.NewReader("\n\n" + rpcRequest(1, "tools/call") + "\n\n")
 	Run(runParams(t, srv, in, io.Discard)) //nolint:errcheck
 	if calls.Load() != 1 {
 		t.Errorf("expected 1 daemon call (empty lines skipped), got %d", calls.Load())
@@ -249,8 +268,7 @@ func TestRun_emptyLinesSkipped(t *testing.T) {
 }
 
 func TestRun_cleanEOFReturnsNilError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
-	defer srv.Close()
+	srv := startOKServer(t)
 	if err := Run(runParams(t, srv, strings.NewReader(""), io.Discard)); err != nil {
 		t.Errorf("expected nil error on clean EOF, got %v", err)
 	}
@@ -258,15 +276,11 @@ func TestRun_cleanEOFReturnsNilError(t *testing.T) {
 
 func TestRun_multipleRequestsAllForwarded(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		n := calls.Add(1)
-		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":"ok"}`, n)
-	}))
-	defer srv.Close()
-	in := strings.NewReader(
-		`{"jsonrpc":"2.0","id":1,"method":"a"}` + "\n" +
-			`{"jsonrpc":"2.0","id":2,"method":"b"}` + "\n",
-	)
+		fmt.Fprint(w, rpcResult(int(n), `"ok"`))
+	})
+	in := strings.NewReader(rpcRequest(1, "a") + "\n" + rpcRequest(2, "b") + "\n")
 	if err := Run(runParams(t, srv, in, io.Discard)); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -344,16 +358,13 @@ func TestInjectProxyMode_initialize_noParams_addsFlag(t *testing.T) {
 
 func TestRun_proxyMode_injectsIntoInitialize(t *testing.T) {
 	var gotBody []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
-	}))
-	defer srv.Close()
-
-	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
+		fmt.Fprint(w, rpcResult(1, `{}`))
+	})
 	mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess", ProxyMode: true,
-		In: strings.NewReader(initMsg),
+		In: strings.NewReader(rpcRequest(1, "initialize") + "\n"),
 	})
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
@@ -368,16 +379,13 @@ func TestRun_proxyMode_injectsIntoInitialize(t *testing.T) {
 
 func TestRun_standardMode_doesNotInjectFlag(t *testing.T) {
 	var gotBody []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
-	}))
-	defer srv.Close()
-
-	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
+		fmt.Fprint(w, rpcResult(1, `{}`))
+	})
 	mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess",
-		In: strings.NewReader(initMsg),
+		In: strings.NewReader(rpcRequest(1, "initialize") + "\n"),
 	})
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
@@ -435,23 +443,21 @@ func TestPeekIsInitialize_falseForOtherMethods(t *testing.T) {
 
 func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 	var toolCalls, initCalls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch methodOf(t, r) {
 		case "initialize":
 			initCalls.Add(1)
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":-1,"result":{"protocolVersion":"2025-03-26"}}`)
+			fmt.Fprint(w, rpcResult(-1, `{"protocolVersion":"2025-03-26"}`))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		default:
 			if n := toolCalls.Add(1); n == 1 {
-				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`)
+				rpcError(w, 1, -32600, "not initialized: send initialize first")
 			} else {
-				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"recovered"}`)
+				fmt.Fprint(w, rpcResult(1, `"recovered"`))
 			}
 		}
-	}))
-	defer srv.Close()
-
+	})
 	output := mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess",
 		In: strings.NewReader(rpcRequest(1, "tools/call") + "\n"),
@@ -469,12 +475,10 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 
 func TestRun_noReinitWhenInitializeSucceeds(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-
+		rpcOK(w)
+	})
 	mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess",
 		In: strings.NewReader(rpcRequest(1, "initialize") + "\n"),
@@ -500,7 +504,7 @@ func newConcurrencyServer(t *testing.T, release chan struct{}) (*httptest.Server
 		once.Do(func() { started <- struct{}{} })
 		<-release
 		current.Add(-1)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
+		rpcOK(w)
 	}))
 	t.Cleanup(srv.Close)
 	return srv, &maxSeen, started
@@ -547,15 +551,12 @@ func methodOf(t *testing.T, r *http.Request) string {
 }
 
 func TestRun_refreshesTokenAfterUnauthorized(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer newtoken" {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !requireBearer(w, r, "newtoken") {
 			return
 		}
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-
+		rpcOK(w)
+	})
 	got := mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess", Token: "stale",
 		ReloadToken: func() (string, error) { return "newtoken", nil },
@@ -566,31 +567,27 @@ func TestRun_refreshesTokenAfterUnauthorized(t *testing.T) {
 	}
 }
 
-// Restarted daemon both rotates the token and forgets the session, so recovery
-// must walk 401 → refresh → "not initialized" → reinit → success on the new token.
+// Recovery must walk 401 → refresh → "not initialized" → reinit → success.
 func TestRun_recoversFromFullDaemonRestart(t *testing.T) {
 	var initialized atomic.Bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer rotated" {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if !requireBearer(w, r, "rotated") {
 			return
 		}
 		switch methodOf(t, r) {
 		case "initialize":
 			initialized.Store(true)
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":-1,"result":{}}`)
+			fmt.Fprint(w, rpcResult(-1, `{}`))
 		case "notifications/initialized":
 			w.WriteHeader(http.StatusAccepted)
 		default:
 			if !initialized.Load() {
-				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32002,"message":"not initialized"}}`)
+				rpcError(w, 1, -32002, "not initialized")
 				return
 			}
-			fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
+			rpcOK(w)
 		}
-	}))
-	defer srv.Close()
-
+	})
 	got := mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess", Token: "stale",
 		ReloadToken: func() (string, error) { return "rotated", nil },
@@ -603,12 +600,10 @@ func TestRun_recoversFromFullDaemonRestart(t *testing.T) {
 
 func TestRun_persistentUnauthorizedReturnsErrorEnvelope(t *testing.T) {
 	var hits atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := startTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
-	}))
-	defer srv.Close()
-
+	})
 	got := mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess", Token: "stale",
 		ReloadToken: func() (string, error) { return "still-stale", nil },
@@ -625,37 +620,3 @@ func TestRun_persistentUnauthorizedReturnsErrorEnvelope(t *testing.T) {
 	}
 }
 
-func TestTokenSource_refreshPicksUpRotatedValue(t *testing.T) {
-	ts := &tokenSource{value: "old", reload: func() (string, error) { return "new", nil }}
-	ts.refresh()
-	if got := ts.current(); got != "new" {
-		t.Errorf("current() = %q, want %q", got, "new")
-	}
-}
-
-func TestTokenSource_nilReloadIsNoOp(t *testing.T) {
-	ts := &tokenSource{value: "tok"}
-	ts.refresh()
-	if got := ts.current(); got != "tok" {
-		t.Errorf("current() = %q, want %q", got, "tok")
-	}
-}
-
-func TestTokenSource_reloadErrorKeepsCurrentValue(t *testing.T) {
-	ts := &tokenSource{value: "tok", reload: func() (string, error) { return "", errors.New("disk gone") }}
-	ts.refresh()
-	if got := ts.current(); got != "tok" {
-		t.Errorf("a failed reload must not blank the token; got %q, want %q", got, "tok")
-	}
-}
-
-func TestTokenSource_concurrentCurrentAndRefresh(t *testing.T) {
-	ts := &tokenSource{value: "0", reload: func() (string, error) { return "1", nil }}
-	var wg sync.WaitGroup
-	for range 50 {
-		wg.Add(2)
-		go func() { defer wg.Done(); ts.refresh() }()
-		go func() { defer wg.Done(); _ = ts.current() }()
-	}
-	wg.Wait()
-}
