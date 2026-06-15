@@ -70,7 +70,7 @@ func TestToToolDefs_readOnlyHintPropagated(t *testing.T) {
 }
 
 func TestToToolDefs_annotationsPassthrough(t *testing.T) {
-	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false}`)
+	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false,"fakeHint":true}`)
 	in := []MCPTool{
 		{Name: "get_file", Annotations: raw},
 	}
