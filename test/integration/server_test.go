@@ -197,6 +197,46 @@ func TestProxy_callUpstreamTool(t *testing.T) {
 	}
 }
 
+// TestProxy_toolsListAnnotationsPassthrough verifies that annotations on an
+// upstream tool are forwarded verbatim in proxy-mode tools/list.
+func TestProxy_toolsListAnnotationsPassthrough(t *testing.T) {
+	cfg := t.TempDir()
+	dir := mockFixtureDir(t, map[string]string{
+		"do_thing":        `{"ok":true}`,
+		"do_thing.schema": `{"annotations":{"readOnlyHint":true,"title":"Do Thing"}}`,
+	})
+	writeFakeServer(t, cfg, "svc", dir)
+
+	raw := startProxyServer(t, cfg).mustCall("tools/list", nil)
+	var result struct {
+		Tools []struct {
+			Name        string          `json:"name"`
+			Annotations json.RawMessage `json:"annotations"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tool := range result.Tools {
+		if tool.Name != "svc__do_thing" {
+			continue
+		}
+		var ann struct {
+			ReadOnlyHint bool   `json:"readOnlyHint"`
+			Title        string `json:"title"`
+		}
+		if err := json.Unmarshal(tool.Annotations, &ann); err != nil {
+			t.Fatalf("unmarshal annotations %s: %v", tool.Annotations, err)
+		}
+		if !ann.ReadOnlyHint || ann.Title != "Do Thing" {
+			t.Errorf("unexpected annotations: %s", tool.Annotations)
+		}
+		return
+	}
+	t.Error("svc__do_thing not found in proxy tools/list")
+}
+
 // TestServe_unreachableUpstreamDoesNotExit verifies that mini serve continues
 // running when an upstream fails to connect at startup. Previously os.Exit(1)
 // was called, which prevented startup when any server was unavailable.

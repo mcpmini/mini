@@ -19,6 +19,7 @@ type Tool struct {
 	Name        string
 	Description string
 	InputSchema json.RawMessage
+	Annotations json.RawMessage
 	FixturePath string
 	Content     string
 	WriteOp     bool // synthetic response generated from request args
@@ -54,26 +55,34 @@ func isFixtureEntry(e os.DirEntry) bool {
 func buildFixtureTool(dir, filename string) Tool {
 	name := strings.TrimSuffix(filename, ".json")
 	path := filepath.Join(dir, filename)
-	schema := loadSchema(filepath.Join(dir, name+".schema.json"))
+	schema, annotations := loadSchema(filepath.Join(dir, name+".schema.json"))
 	if isWriteOpFile(path) {
-		return Tool{Name: name, Description: schemaDescription(schema, name), InputSchema: schema, WriteOp: true}
+		return Tool{Name: name, Description: schemaDescription(schema, name), InputSchema: schema, Annotations: annotations, WriteOp: true}
 	}
-	return Tool{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, FixturePath: path}
+	return Tool{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, Annotations: annotations, FixturePath: path}
 }
 
-// loadSchema reads a .schema.json file and returns the inputSchema field, or nil.
-func loadSchema(path string) json.RawMessage {
+// loadSchema reads a .schema.json file and returns its inputSchema and
+// annotations fields (either may be nil if absent).
+func loadSchema(path string) (inputSchema, annotations json.RawMessage) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var s struct {
 		InputSchema json.RawMessage `json:"inputSchema"`
+		Annotations json.RawMessage `json:"annotations"`
 	}
-	if json.Unmarshal(data, &s) == nil && len(s.InputSchema) > 0 {
-		return s.InputSchema
+	if json.Unmarshal(data, &s) != nil {
+		return nil, nil
 	}
-	return nil
+	if len(s.InputSchema) == 0 {
+		s.InputSchema = nil
+	}
+	if len(s.Annotations) == 0 {
+		s.Annotations = nil
+	}
+	return s.InputSchema, s.Annotations
 }
 
 // schemaDescription extracts the description from a schema file, or returns the fallback.
@@ -134,6 +143,7 @@ func (r *ToolRegistry) MCPTools() []transport.MCPTool {
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: schema,
+			Annotations: t.Annotations,
 		}
 	}
 	return out
