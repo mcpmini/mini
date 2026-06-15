@@ -420,7 +420,7 @@ func inheritedPipePermission(pipe *config.PipeConfig, lookup PermLookupFunc) con
 		if !ok {
 			return config.PermProtected
 		}
-		if stepPerm == config.PermProtected {
+		if stepPerm == config.PermProtected || stepPerm == config.PermHidden {
 			perm = config.PermProtected
 		}
 	}

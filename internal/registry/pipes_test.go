@@ -66,6 +66,28 @@ func TestAddPipes_PermissionInheritsFromSteps(t *testing.T) {
 	}
 }
 
+func TestAddPipes_StepWrappingHiddenToolIsProtected(t *testing.T) {
+	r := registry.New()
+	perm := &config.PermissionsConfig{Hidden: []string{"admin_reset"}}
+	r.AddServer("gh", []transport.ToolDefinition{
+		{Name: "admin_reset"},
+	}, perm)
+	r.AddPipes([]config.PipeConfig{
+		{
+			Name:  "wraps_hidden",
+			Steps: []config.StepConfig{{ID: "step1", Server: "gh", Tool: "admin_reset"}},
+		},
+	}, r.PermLookup)
+
+	e, err := r.Lookup("user.wraps_hidden")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Permission != config.PermProtected {
+		t.Errorf("pipe wrapping a hidden tool: permission = %q, want protected", e.Permission)
+	}
+}
+
 func TestAddPipes_UnknownServerDefaultsToProtected(t *testing.T) {
 	r := registry.New()
 	pipes := []config.PipeConfig{
