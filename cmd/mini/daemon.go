@@ -105,17 +105,11 @@ type DaemonHTTPParams struct {
 
 func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	writePortFile(p.PortFile, p.Port)
-	// daemon.port is a rendezvous *hint*, not a lock. It is removed here on graceful
-	// (SIGTERM/SIGINT) shutdown, but after a SIGKILL it is left stale. That is safe:
-	// daemon.RunningPort validates the file by probing /healthz, not by trusting the
-	// file's existence or a stored PID, so a stale port self-corrects on the next read.
-	// We deliberately avoid a PID file — PID files inherit the classic Postgres/Mongo
-	// stale-lock failure modes (a recycled PID can match an unrelated live process).
-	// Alternatives considered: daemon_port: 0 (ephemeral — the respawn gets a fresh port
-	// and proxies just re-read this file; works but loses the stable-rendezvous fast path);
-	// SO_REUSEPORT (lets multiple daemons share the port — not what we want, we want one);
-	// flock (now used to coordinate respawns, see daemon.Start); and a Unix-domain socket
-	// (would drop the TCP port entirely; a possible future change). See docs/daemon.md.
+	// daemon.port is a rendezvous *hint*, not a lock: removed on graceful shutdown but left
+	// stale after a SIGKILL. That is safe because daemon.RunningPort validates it by probing
+	// /healthz rather than trusting the file's existence or a stored PID — so a stale port
+	// self-corrects on the next read, avoiding the recycled-PID failure mode of PID files.
+	// See docs/daemon.md for alternatives considered (ephemeral port, SO_REUSEPORT, flock, UDS).
 	defer os.Remove(p.PortFile)
 	httpSrv := daemonHTTPServer(p.Srv)
 	go httpSrv.Serve(p.Listener) //nolint:errcheck
@@ -126,13 +120,10 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
 }
 
-// bindPort binds the daemon's loopback listener on the fixed daemon_port. Rebinding the
-// same port right after a previous daemon died is reliable for two reasons: (1) the OS frees
-// a process's listening socket immediately when that process exits for ANY reason (including
-// SIGKILL) — a listening socket has no TIME_WAIT (TIME_WAIT only holds a previously-ESTABLISHED
-// connection's tuple, on the side that closed it, never the passive listener) — so the fixed
-// port is available for the respawn at once; and (2) Go's net.Listen sets SO_REUSEADDR by
-// default, so even if old client connections linger in TIME_WAIT the new listener still binds.
+// bindPort binds the daemon's loopback listener on the fixed daemon_port. Rebinding right
+// after the previous daemon died is reliable because the OS frees a listening socket the
+// instant its process exits (even on SIGKILL — a listener has no TIME_WAIT), and Go's
+// net.Listen sets SO_REUSEADDR so lingering client connections in TIME_WAIT don't block it.
 func bindPort(port int) (net.Listener, int) {
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
