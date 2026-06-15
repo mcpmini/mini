@@ -60,17 +60,24 @@ type ToolsListResult struct {
 	Tools []MCPTool `json:"tools"`
 }
 
-// MCPToolAnnotations carries optional MCP tool annotations.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L200
-type MCPToolAnnotations struct {
-	ReadOnlyHint bool `json:"readOnlyHint,omitempty"`
+type MCPTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"inputSchema"`
+	Annotations json.RawMessage `json:"annotations,omitempty"`
 }
 
-type MCPTool struct {
-	Name        string              `json:"name"`
-	Description string              `json:"description"`
-	InputSchema json.RawMessage     `json:"inputSchema"`
-	Annotations *MCPToolAnnotations `json:"annotations,omitempty"`
+func readOnlyHint(annotations json.RawMessage) bool {
+	if len(annotations) == 0 {
+		return false
+	}
+	var hint struct {
+		ReadOnlyHint bool `json:"readOnlyHint"`
+	}
+	if err := json.Unmarshal(annotations, &hint); err != nil {
+		return false
+	}
+	return hint.ReadOnlyHint
 }
 
 type ToolCallParams struct {
