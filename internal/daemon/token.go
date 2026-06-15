@@ -43,7 +43,7 @@ func ReadToken(configDir string) (string, error) {
 
 func atomicWriteFile(path, data string) (err error) {
 	// Write to a temp file then rename so concurrent readers never see partial content.
-	// Same pattern as github.com/natefinch/atomic — see file_unix.go#L13 at 59b8c279e6d5.
+	// https://github.com/natefinch/atomic/blob/59b8c279e6d5/file_unix.go#L13
 	// CreateTemp guarantees 0600 regardless of prior file perms.
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
