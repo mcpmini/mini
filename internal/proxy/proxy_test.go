@@ -201,6 +201,9 @@ func TestForward_httpErrorStatusReturnsJSONRPCError(t *testing.T) {
 			if rpc.Error == nil {
 				t.Fatalf("expected error object, got: %s", resp)
 			}
+			if tc.body != "" && strings.TrimSpace(string(resp)) == tc.body {
+				t.Error("raw daemon body leaked verbatim to caller")
+			}
 		})
 	}
 }

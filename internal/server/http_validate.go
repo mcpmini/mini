@@ -46,6 +46,17 @@ func hostIsLoopback(host string) bool {
 	return host == "127.0.0.1" || host == "::1" || host == "localhost"
 }
 
+// A malicious page can reach the local daemon, but the browser sets Origin to
+// the attacker's domain — rejecting mismatched Origins blocks cross-origin access.
+// We do NOT fall back to X-Forwarded-Host: it's attacker-controllable.
+func rejectCrossOrigin(w http.ResponseWriter, r *http.Request) bool {
+	if origin := r.Header.Get("Origin"); origin != "" && !isSameHost(r, origin) {
+		http.Error(w, "forbidden: cross-origin request", http.StatusForbidden)
+		return true
+	}
+	return false
+}
+
 func isSameHost(r *http.Request, origin string) bool {
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {
