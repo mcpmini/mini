@@ -193,31 +193,31 @@ func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const proxyID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	const standardID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	const passthroughID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	const compactID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
-	postMCP(t, srv, proxyID, initMsg(false))
-	postMCP(t, srv, standardID, initMsg(true))
+	postMCP(t, srv, passthroughID, initMsg(false))
+	postMCP(t, srv, compactID, initMsg(true))
 
-	proxyTools := extractToolNames(postMCP(t, srv, proxyID, toolsListMsg()))
-	standardTools := extractToolNames(postMCP(t, srv, standardID, toolsListMsg()))
+	passthroughTools := extractToolNames(postMCP(t, srv, passthroughID, toolsListMsg()))
+	compactTools := extractToolNames(postMCP(t, srv, compactID, toolsListMsg()))
 
-	if !hasToolName(proxyTools, "gh__list_issues") {
-		t.Errorf("proxy session: expected gh__list_issues, got %v", proxyTools)
+	if !hasToolName(passthroughTools, "gh__list_issues") {
+		t.Errorf("passthrough session: expected gh__list_issues, got %v", passthroughTools)
 	}
-	for _, n := range proxyTools {
+	for _, n := range passthroughTools {
 		if n == "call" || n == "perm_call" {
-			t.Errorf("proxy session should not expose standard tools, got %v", proxyTools)
+			t.Errorf("passthrough session should not expose compact tools, got %v", passthroughTools)
 			break
 		}
 	}
 
-	if !hasToolName(standardTools, "call") {
-		t.Errorf("standard session: expected call tool, got %v", standardTools)
+	if !hasToolName(compactTools, "call") {
+		t.Errorf("compact session: expected call tool, got %v", compactTools)
 	}
-	for _, n := range standardTools {
+	for _, n := range compactTools {
 		if strings.Contains(n, "__") {
-			t.Errorf("standard session should not expose upstream tools, got %v", standardTools)
+			t.Errorf("compact session should not expose upstream tools, got %v", compactTools)
 			break
 		}
 	}

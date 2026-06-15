@@ -107,10 +107,6 @@ func (s *Server) renderPassthroughResult(p renderPassthroughResultParams) string
 	return s.formatPassthroughEnvelope(p.Env, p.RawTokens)
 }
 
-// formatPassthroughEnvelope formats a proxy response using the 3-tier approach:
-// - No projection, small: raw JSON, mini invisible
-// - Projection applied, small: bracket note + inline projected JSON
-// - Large (above inline threshold): note (if projection) + file path
 func (s *Server) formatPassthroughEnvelope(env *response.Envelope, rawTokens int) string {
 	hasNote := len(env.Elided) > 0 || len(env.Truncated) > 0
 	isLarge := rawTokens > s.cfg.InlineThreshold

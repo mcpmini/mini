@@ -234,7 +234,6 @@ func TestCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
-
 func TestCLI_connect_invalidToolMode(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()

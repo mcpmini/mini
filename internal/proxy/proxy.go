@@ -76,8 +76,6 @@ func maybeInjectToolMode(line []byte, mode transport.ToolMode) []byte {
 	return line
 }
 
-// injectCompactMode only modifies initialize messages; non-initialize messages
-// and parse errors are returned unchanged.
 func injectCompactMode(line []byte) []byte {
 	if !peekIsInitialize(line) {
 		return line

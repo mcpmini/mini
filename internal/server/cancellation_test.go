@@ -114,8 +114,6 @@ func TestCancellation_UnknownMethodReturnsError(t *testing.T) {
 	}
 }
 
-// --- helpers ---
-
 func notification(method string, params any) []byte {
 	p, _ := json.Marshal(params)
 	msg := map[string]any{

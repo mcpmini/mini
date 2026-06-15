@@ -59,9 +59,6 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 	}
 }
 
-// serveAll runs a full Serve session in compact mode (the four-meta-tool
-// interface) and returns all parsed output messages. Use serveAllPassthrough
-// for the default passthrough mode.
 func serveAll(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
 	return serveAllMode(t, srv, true, lines...)
 }
@@ -159,8 +156,6 @@ func initParams(compact bool) map[string]any {
 	return params
 }
 
-// serve drives a compact-mode session (the four-meta-tool interface). Use
-// servePassthrough for the default passthrough mode.
 func serve(t *testing.T, srv *server.Server, input []byte) map[string]any {
 	return serveMode(t, srv, true, input)
 }

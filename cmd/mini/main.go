@@ -171,7 +171,7 @@ func runConnect(configDir string, args []string) {
 		fatalf("load config: %v", err)
 	}
 	logger := buildLogger(cfg, f.logLevel, os.Stderr)
-	if shouldTryProxyMode(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
+	if shouldTryDaemon(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
 		return
 	}
 	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, connectOptions(f.toolMode)...)
@@ -184,7 +184,7 @@ func connectOptions(mode transport.ToolMode) []server.ServerOption {
 	return nil
 }
 
-func shouldTryProxyMode(standalone bool, httpAddr string) bool {
+func shouldTryDaemon(standalone bool, httpAddr string) bool {
 	return !standalone && httpAddr == ""
 }
 

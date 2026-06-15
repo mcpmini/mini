@@ -20,11 +20,6 @@ func WithClock(c clock.Clock) ServerOption {
 	return func(s *Server) { s.clock = c }
 }
 
-// WithToolMode sets the server's default tool mode for standalone runs.
-// In passthrough mode (the default) upstream tools are exposed directly as
-// server__tool instead of behind the 4-tool abstraction, and mini does not
-// apply perm_call; clients such as Claude configure per-tool approval/allow
-// rules against the exposed upstream tool names.
 func WithToolMode(m transport.ToolMode) ServerOption {
 	return func(s *Server) { s.toolMode = m }
 }

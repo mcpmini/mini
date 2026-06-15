@@ -114,26 +114,18 @@ const NotificationToolsChanged = "notifications/tools/list_changed"
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx
 const NotificationCancelled = "notifications/cancelled"
 
-// ToolModeParam is the initialize-params key the bridge injects to select a
-// non-default tool mode. Passthrough is the daemon's zero-value default and
-// injects nothing; only compact is ever signaled.
+// ToolModeParam is the initialize-params key that selects a non-default tool mode.
 const ToolModeParam = "_mini_tool_mode"
 
-// ToolModeCompactValue is the wire value that selects the compact interface.
 const ToolModeCompactValue = "compact"
 
 // ToolMode selects how a session exposes upstream tools. Passthrough is the
-// zero value, so an unconfigured session (including every daemon session) is
-// passthrough for free — compact is the only mode anyone signals.
+// zero value so an unconfigured session defaults to it automatically.
 type ToolMode int32
 
 const (
-	// ToolModePassthrough exposes upstream tools directly as server__tool and
-	// minifies responses; mini is transparent in the middle.
-	ToolModePassthrough ToolMode = iota
-	// ToolModeCompact wraps all upstreams behind four meta-tools
-	// (list/call/perm_call/config).
-	ToolModeCompact
+	ToolModePassthrough ToolMode = iota // upstream tools exposed directly as server__tool
+	ToolModeCompact                     // four meta-tools: list/call/perm_call/config
 )
 
 func (m ToolMode) String() string {
