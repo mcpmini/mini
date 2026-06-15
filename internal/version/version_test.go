@@ -91,3 +91,23 @@ func TestBuildVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeVersion_buildRevisionOverride(t *testing.T) {
+	old := buildRevision
+	defer func() { buildRevision = old }()
+
+	buildRevision = "abc1234+dirty"
+	if got := computeVersion(); got != "abc1234+dirty" {
+		t.Errorf("got %q, want %q", got, "abc1234+dirty")
+	}
+}
+
+func TestComputeVersion_noBuildRevisionFallsBackToBuildInfo(t *testing.T) {
+	old := buildRevision
+	defer func() { buildRevision = old }()
+
+	buildRevision = ""
+	if got := computeVersion(); got == "" {
+		t.Error("computeVersion() with no buildRevision returned empty string")
+	}
+}

@@ -27,7 +27,7 @@ SEMVER="${VERSION#v}"
 TAG="v${SEMVER}"
 
 export PATH="/opt/homebrew/bin:$(go env GOPATH)/bin:$PATH"
-LDFLAGS="-X github.com/mcpmini/mini/internal/transport.Version=${SEMVER}"
+LDFLAGS="-X github.com/mcpmini/mini/internal/version.buildRevision=${SEMVER}"
 BIN=/tmp/mini-release-${SEMVER}
 
 step()  { echo; echo "▶  $*"; }

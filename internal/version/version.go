@@ -6,15 +6,24 @@ import (
 	"strings"
 )
 
-// Version is the build version, populated at startup from embedded VCS build info.
-var Version = "dev"
+// buildRevision is set via -ldflags -X at build time (see scripts/build.sh and
+// scripts/pre-release.sh). debug.ReadBuildInfo's embedded VCS info is unreliable
+// for builds done from a git worktree, so build scripts pass the correct
+// revision explicitly rather than relying on it.
+var buildRevision string
 
-func init() {
+// Version is the build version, resolved at startup.
+var Version = computeVersion()
+
+func computeVersion() string {
+	if buildRevision != "" {
+		return buildRevision
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		return
+		return "dev"
 	}
-	Version = buildVersion(info)
+	return buildVersion(info)
 }
 
 func buildVersion(info *debug.BuildInfo) string {
