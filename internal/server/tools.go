@@ -118,10 +118,26 @@ func upstreamToolSchema(e *registry.ToolEntry) map[string]any {
 		"description": e.Description,
 		"inputSchema": e.InputSchema,
 	}
-	if len(e.Annotations) > 0 {
+	if isJSONObject(e.Annotations) {
 		m["annotations"] = e.Annotations
 	}
 	return m
+}
+
+// isJSONObject reports whether raw is a JSON object. The MCP Tool schema
+// requires annotations to be a ToolAnnotations object; an upstream sending
+// null, an array, or a scalar would produce a non-conformant tools/list
+// response if passed through verbatim, so such values are omitted instead.
+func isJSONObject(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return false
+	}
+	_, ok := v.(map[string]any)
+	return ok
 }
 
 func schema(properties map[string]any) json.RawMessage {

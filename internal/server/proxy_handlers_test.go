@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -446,6 +447,24 @@ func findTool(tools []map[string]any, name string) map[string]any {
 	return nil
 }
 
+func assertAnnotationsEqual(t *testing.T, got any, want json.RawMessage) {
+	t.Helper()
+	gotRaw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal got annotations: %v", err)
+	}
+	var gotVal, wantVal any
+	if err := json.Unmarshal(gotRaw, &gotVal); err != nil {
+		t.Fatalf("unmarshal got annotations: %v", err)
+	}
+	if err := json.Unmarshal(want, &wantVal); err != nil {
+		t.Fatalf("unmarshal want annotations: %v", err)
+	}
+	if !reflect.DeepEqual(gotVal, wantVal) {
+		t.Errorf("annotations mismatch: got %s, want %s", gotRaw, want)
+	}
+}
+
 func TestProxy_ToolsList_AnnotationsPassthrough(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
@@ -458,14 +477,22 @@ func TestProxy_ToolsList_AnnotationsPassthrough(t *testing.T) {
 	if tool == nil {
 		t.Fatal("fs__get_file not found in tools/list")
 	}
+	assertAnnotationsEqual(t, tool["annotations"], raw)
+}
 
-	annRaw, err := json.Marshal(tool["annotations"])
-	if err != nil {
-		t.Fatalf("marshal annotations: %v", err)
+func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false,"title":"Get File"}`)
+	conn := fakeConnWithAnnotations("get_file", raw)
+	addProxyConn(t, srv, "fs2", conn)
+
+	tools := toolsList(t, srv)
+	tool := findTool(tools, "fs2__get_file")
+	if tool == nil {
+		t.Fatal("fs2__get_file not found in tools/list")
 	}
-	if string(annRaw) != string(raw) {
-		t.Errorf("annotations not passed through: got %s, want %s", annRaw, raw)
-	}
+	assertAnnotationsEqual(t, tool["annotations"], raw)
 }
 
 func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
@@ -482,6 +509,31 @@ func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
 
 	if _, hasAnnotations := tool["annotations"]; hasAnnotations {
 		t.Errorf("tool without annotations must not include annotations key, got: %v", tool["annotations"])
+	}
+}
+
+func TestProxy_ToolsList_NonObjectAnnotationsOmitted(t *testing.T) {
+	cases := map[string]json.RawMessage{
+		"null":   json.RawMessage(`null`),
+		"array":  json.RawMessage(`[]`),
+		"string": json.RawMessage(`"readonly"`),
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := newProxyServer(t)
+			defer srv.Close()
+			conn := fakeConnWithAnnotations("get_file", raw)
+			addProxyConn(t, srv, "fs_"+name, conn)
+
+			tools := toolsList(t, srv)
+			tool := findTool(tools, "fs_"+name+"__get_file")
+			if tool == nil {
+				t.Fatalf("fs_%s__get_file not found in tools/list", name)
+			}
+			if _, has := tool["annotations"]; has {
+				t.Errorf("non-object annotations (%s) must be omitted, got: %v", raw, tool["annotations"])
+			}
+		})
 	}
 }
 
