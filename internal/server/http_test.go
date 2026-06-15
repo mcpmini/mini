@@ -68,6 +68,30 @@ func initSession(t *testing.T, ts *httptest.Server) string {
 	return sessionID
 }
 
+func initCompactRequest() []byte {
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion":    "2024-11-05",
+			"capabilities":      map[string]any{},
+			"clientInfo":        map[string]any{"name": "test", "version": "0"},
+			transport.ToolModeParam: transport.ToolModeCompactValue,
+		},
+	})
+	return b
+}
+
+func initCompactSession(t *testing.T, ts *httptest.Server) string {
+	t.Helper()
+	resp := mcpPost(t, ts, initCompactRequest(), "")
+	sessionID := resp.Header.Get("Mcp-Session-Id")
+	io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	return sessionID
+}
+
 func drainMCPPost(t *testing.T, ts *httptest.Server, body []byte, sessionID string) {
 	t.Helper()
 	resp := mcpPost(t, ts, body, sessionID)
