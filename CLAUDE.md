@@ -16,7 +16,7 @@ go test -tags integration,test ./test/integration/...
 # Run a single test
 go test -tags test ./internal/server/... -run TestExecuteRoutesToUpstream -v
 
-# Build the binary (embeds an accurate `mini version` via -ldflags, even from a worktree)
+# Build the binary
 ./scripts/build.sh
 
 # Run all checks (build + lint + race tests) — same as CI
