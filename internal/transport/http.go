@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// Version is set at build time via -ldflags; defaults to "dev" for local builds.
+// Version is populated at startup from embedded VCS build info; "dev" if unavailable.
 var Version = "dev"
 
 // HTTPConnection implements Connection for streamable HTTP / SSE MCP servers.
