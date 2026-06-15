@@ -483,7 +483,7 @@ func TestProxy_ToolsList_AnnotationsPassthrough(t *testing.T) {
 func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
-	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false,"title":"Get File"}`)
+	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"title":"Get File"}`)
 	conn := fakeConnWithAnnotations("get_file", raw)
 	addProxyConn(t, srv, "fs2", conn)
 
