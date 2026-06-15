@@ -41,26 +41,24 @@ func ReadToken(configDir string) (string, error) {
 	return strings.TrimSpace(string(data)), nil
 }
 
-// Standard atomic-write pattern (CreateTemp + Rename); see github.com/natefinch/atomic
-// for the canonical Go implementation. We inline it to force 0600 (natefinch preserves
-// existing perms, which would weaken security if a stale file had looser mode).
 func atomicWriteFile(path, data string) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
 	}
-	// Cleanup only; the write/rename error that set err is the one worth returning.
 	defer func() {
 		if err != nil {
 			_ = os.Remove(tmp.Name())
 		}
 	}()
 	if _, err = tmp.WriteString(data); err != nil {
-		_ = tmp.Close() // already failing; the temp is discarded, nothing to bubble up
+		_ = tmp.Close()
 		return err
 	}
 	if err = tmp.Close(); err != nil {
 		return err
 	}
+	// Atomic rewrite: the OS replace ensures concurrent readers never see partial content.
+	// https://github.com/natefinch/atomic/blob/59b8c279e6d5/file_unix.go#L13
 	return os.Rename(tmp.Name(), path)
 }
