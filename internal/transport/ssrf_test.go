@@ -25,6 +25,14 @@ var validateURLCases = []struct {
 	{"rejects link-local 169.254.x.x", "http://169.254.169.254", true},
 	{"rejects IPv6 loopback", "http://[::1]:8080", true},
 	{"rejects IPv4-in-IPv6 loopback", "http://[::ffff:127.0.0.1]", true},
+	{"rejects unspecified IPv6", "http://[::]", true},
+	{"rejects IPv6 multicast", "http://[ff02::1]", true},
+	{"rejects IPv4 multicast", "http://224.0.0.1", true},
+	{"rejects benchmarking 198.18.x", "http://198.18.0.1", true},
+	{"rejects reserved 240.x", "http://240.0.0.1", true},
+	{"rejects NAT64 loopback", "http://[64:ff9b::7f00:1]", true},
+	{"rejects NAT64 private 10.x", "http://[64:ff9b::a00:1]", true},
+	{"accepts NAT64 public", "http://[64:ff9b::808:808]", false},
 	{"rejects malformed URL", ":not-a-url", true},
 }
 
@@ -51,6 +59,10 @@ func TestSSRFSafeDialer_BlocksPrivateIPs(t *testing.T) {
 		{"private 10.x", "10.0.0.1:80"},
 		{"link-local IMDS", "169.254.169.254:80"},
 		{"private 192.168.x", "192.168.1.1:80"},
+		{"NAT64 embedded loopback", "[64:ff9b::7f00:1]:80"},
+		{"unspecified IPv6", "[::]:80"},
+		{"benchmarking 198.18.x", "198.18.0.1:80"},
+		{"reserved 240.x", "240.0.0.1:80"},
 	}
 	d := SSRFSafeDialer()
 	for _, tc := range cases {

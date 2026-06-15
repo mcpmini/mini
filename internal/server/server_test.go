@@ -20,12 +20,12 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func newTestServer(t *testing.T) *server.Server {
+func newTestServer(t *testing.T, opts ...server.ServerOption) *server.Server {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	return server.New(cfg, logger)
+	return server.New(cfg, logger, opts...)
 }
 
 // newMCPTestServer starts a minimal HTTP MCP server advertising the given tools.

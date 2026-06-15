@@ -208,6 +208,7 @@ func serveStandalone(p ServeParams, opts ...server.ServerOption) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	injectOAuthTokens(ctx, p.ConfigDir, p.Servers)
+	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
 	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
 	defer srv.Close()
 	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
@@ -249,6 +250,17 @@ func buildAndConnectServer(ctx context.Context, p BuildServerParams, opts ...ser
 	return srv
 }
 
+// Without this, the DNS-rebinding Host check rejects legitimate remote clients.
+func appendNonLoopbackHostOpt(opts []server.ServerOption, httpAddr string) []server.ServerOption {
+	if httpAddr == "" {
+		return opts
+	}
+	if _, nonLoopback := resolveHTTPAddr(httpAddr); nonLoopback {
+		return append(opts, server.WithAllowNonLoopbackHost())
+	}
+	return opts
+}
+
 func maybeStartHTTP(addr string, handler http.Handler, logger *slog.Logger, dangerNonLoopback bool) *http.Server {
 	if addr == "" {
 		return nil
@@ -269,13 +281,15 @@ func connectViaDaemon(configDir string, logger *slog.Logger, proxyMode bool) err
 		return err
 	}
 	sessionID := transport.NewSessionID()
+	token, err := daemon.ReadToken(configDir)
+	if err != nil {
+		return fmt.Errorf("read daemon token: %w", err)
+	}
 	logger.Info("connected to mini daemon", "port", port, "session", sessionID)
 	return proxy.Run(proxy.RunParams{
-		Port:      port,
-		SessionID: sessionID,
-		In:        os.Stdin,
-		Out:       os.Stdout,
-		ProxyMode: proxyMode,
+		Port: port, SessionID: sessionID, Token: token,
+		ReloadToken: func() (string, error) { return daemon.ReadToken(configDir) },
+		In:          os.Stdin, Out: os.Stdout, ProxyMode: proxyMode,
 	})
 }
 

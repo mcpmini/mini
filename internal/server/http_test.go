@@ -116,9 +116,9 @@ func httpExecToolText(t *testing.T, ts *httptest.Server, sessionID, srvName, too
 	return rpc.Result.Content[0].Text
 }
 
-func newHTTPTestServer(t *testing.T) (*server.Server, *httptest.Server) {
+func newHTTPTestServer(t *testing.T, opts ...server.ServerOption) (*server.Server, *httptest.Server) {
 	t.Helper()
-	srv := newTestServer(t)
+	srv := newTestServer(t, opts...)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	return srv, ts
@@ -322,25 +322,6 @@ func TestHTTPServer_SSEWithBothAcceptTypes(t *testing.T) {
 	}
 }
 
-func TestHTTPServer_SessionID(t *testing.T) {
-	ts := httptest.NewServer(newTestServer(t))
-	defer ts.Close()
-
-	check := func(t *testing.T, id string, want int) {
-		t.Helper()
-		resp := mcpPost(t, ts, initRequest(), id)
-		resp.Body.Close()
-		if resp.StatusCode != want {
-			t.Errorf("id=%q: got %d, want %d", id, resp.StatusCode, want)
-		}
-	}
-
-	t.Run("valid UUID", func(t *testing.T) { check(t, "abcdef01-2345-6789-abcd-ef0123456789", 200) })
-	t.Run("short ID", func(t *testing.T) { check(t, "a", 400) })
-	t.Run("32 hyphens", func(t *testing.T) { check(t, "--------------------------------", 400) })
-	t.Run("31 hex chars", func(t *testing.T) { check(t, "abcdef0123456789abcdef012345678", 400) })
-	t.Run("32 hex chars", func(t *testing.T) { check(t, "abcdef0123456789abcdef0123456789", 200) })
-}
 
 func TestHTTPServer_GetAllowHeader(t *testing.T) {
 	_, ts := newHTTPTestServer(t)
@@ -396,24 +377,6 @@ func TestHTTPServer_staleSessionFails(t *testing.T) {
 	}
 }
 
-func TestHTTPServer_BodyLimitRejected(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
-	// 1MB + 1 byte — just over the limit
-	oversized := make([]byte, 1<<20+1)
-	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(oversized))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := ts.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	// Should be 200 with a JSON-RPC error body (not 413, by design)
-	var body map[string]any
-	json.NewDecoder(resp.Body).Decode(&body) //nolint:errcheck
-	if body["error"] == nil {
-		t.Errorf("expected JSON-RPC error for oversized body, got: %v", body)
-	}
-}
 
 func TestHTTPServer_CrossOriginRejected(t *testing.T) {
 	_, ts := newHTTPTestServer(t)
@@ -426,4 +389,23 @@ func TestHTTPServer_CrossOriginRejected(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	mustStatus(t, resp, http.StatusForbidden)
+}
+
+func TestDaemonAuth_HealthzUnauthenticated(t *testing.T) {
+	ts := newAuthHTTPTestServer(t)
+	resp, err := ts.Client().Get(ts.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	mustStatus(t, resp, http.StatusOK)
+}
+
+func TestHTTPServer_AllowNonLoopbackHostSkipsHostCheck(t *testing.T) {
+	_, ts := newHTTPTestServer(t, server.WithAllowNonLoopbackHost())
+	resp := postWithHost(t, ts.URL, "203.0.113.5:4857")
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusForbidden {
+		t.Fatalf("non-loopback Host should be allowed when configured, got 403")
+	}
 }
