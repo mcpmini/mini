@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,6 +38,20 @@ func testConn(port int, sessionID string) daemonConn {
 	return daemonConn{client: &http.Client{}, port: port, sessionID: sessionID}
 }
 
+func rpcRequest(id int, method string) string {
+	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"%s"}`, id, method)
+}
+
+func mustRunProxy(t *testing.T, p RunParams) string {
+	t.Helper()
+	var out strings.Builder
+	p.Out = &out
+	if err := Run(p); err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	return out.String()
+}
+
 func TestForward_sendsBearerToken(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -73,11 +86,10 @@ func TestRun_propagatesTokenThroughRunParams(t *testing.T) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	}))
 	defer srv.Close()
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
-	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", Token: "tok-42", In: in, Out: io.Discard}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
+	mustRunProxy(t, RunParams{
+		Port: serverPort(t, srv), SessionID: "sess", Token: "tok-42",
+		In: strings.NewReader(rpcRequest(1, "tools/call") + "\n"),
+	})
 	if gotAuth != "Bearer tok-42" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer tok-42")
 	}
@@ -213,13 +225,12 @@ func TestRun_routesRequestAndWritesResponse(t *testing.T) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"done"}`)
 	}))
 	defer srv.Close()
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
-	var out bytes.Buffer
-	if err := Run(runParams(t, srv, in, &out)); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-	if !strings.Contains(out.String(), "done") {
-		t.Errorf("unexpected output: %q", out.String())
+	got := mustRunProxy(t, RunParams{
+		Port: serverPort(t, srv), SessionID: "sess",
+		In: strings.NewReader(rpcRequest(1, "tools/call") + "\n"),
+	})
+	if !strings.Contains(got, "done") {
+		t.Errorf("unexpected output: %q", got)
 	}
 }
 
@@ -340,17 +351,10 @@ func TestRun_proxyMode_injectsIntoInitialize(t *testing.T) {
 	defer srv.Close()
 
 	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
-	p := RunParams{
-		Port:      serverPort(t, srv),
-		SessionID: "sess",
-		In:        strings.NewReader(initMsg),
-		Out:       io.Discard,
-		ProxyMode: true,
-	}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-
+	mustRunProxy(t, RunParams{
+		Port: serverPort(t, srv), SessionID: "sess", ProxyMode: true,
+		In: strings.NewReader(initMsg),
+	})
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
 	}
@@ -371,17 +375,10 @@ func TestRun_standardMode_doesNotInjectFlag(t *testing.T) {
 	defer srv.Close()
 
 	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
-	p := RunParams{
-		Port:      serverPort(t, srv),
-		SessionID: "sess",
-		In:        strings.NewReader(initMsg),
-		Out:       io.Discard,
-		ProxyMode: false,
-	}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-
+	mustRunProxy(t, RunParams{
+		Port: serverPort(t, srv), SessionID: "sess",
+		In: strings.NewReader(initMsg),
+	})
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
 	}
@@ -439,10 +436,7 @@ func TestPeekIsInitialize_falseForOtherMethods(t *testing.T) {
 func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 	var toolCalls, initCalls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		var msg struct{ Method string `json:"method"` }
-		json.Unmarshal(body, &msg) //nolint:errcheck
-		switch msg.Method {
+		switch methodOf(t, r) {
 		case "initialize":
 			initCalls.Add(1)
 			fmt.Fprint(w, `{"jsonrpc":"2.0","id":-1,"result":{"protocolVersion":"2025-03-26"}}`)
@@ -458,20 +452,18 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}` + "\n")
-	var out bytes.Buffer
-	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: &out}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
+	output := mustRunProxy(t, RunParams{
+		Port: serverPort(t, srv), SessionID: "sess",
+		In: strings.NewReader(rpcRequest(1, "tools/call") + "\n"),
+	})
 	if got := initCalls.Load(); got != 1 {
 		t.Errorf("initialize calls during reinit = %d, want 1", got)
 	}
 	if got := toolCalls.Load(); got != 2 {
 		t.Errorf("tool calls (original + retry) = %d, want 2", got)
 	}
-	if !strings.Contains(out.String(), "recovered") {
-		t.Errorf("expected recovered response in output, got: %q", out.String())
+	if !strings.Contains(output, "recovered") {
+		t.Errorf("expected recovered response in output, got: %q", output)
 	}
 }
 
@@ -483,14 +475,10 @@ func TestRun_noReinitWhenInitializeSucceeds(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
-	var out bytes.Buffer
-	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: &out}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-	// initialize returning "not initialized" would be bizarre, but even if it did,
-	// peekIsInitialize should prevent a reinit loop.
+	mustRunProxy(t, RunParams{
+		Port: serverPort(t, srv), SessionID: "sess",
+		In: strings.NewReader(rpcRequest(1, "initialize") + "\n"),
+	})
 	if got := calls.Load(); got != 1 {
 		t.Errorf("expected exactly 1 call for initialize, got %d", got)
 	}
@@ -568,18 +556,13 @@ func TestRun_refreshesTokenAfterUnauthorized(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
-	var out strings.Builder
-	p := RunParams{
+	got := mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess", Token: "stale",
 		ReloadToken: func() (string, error) { return "newtoken", nil },
-		In:          in, Out: &out,
-	}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-	if !strings.Contains(out.String(), `"result":"ok"`) {
-		t.Fatalf("expected recovery after token refresh, got %q", out.String())
+		In:          strings.NewReader(rpcRequest(1, "tools/call") + "\n"),
+	})
+	if !strings.Contains(got, `"result":"ok"`) {
+		t.Fatalf("expected recovery after token refresh, got %q", got)
 	}
 }
 
@@ -608,18 +591,13 @@ func TestRun_recoversFromFullDaemonRestart(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
-	var out strings.Builder
-	p := RunParams{
+	got := mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess", Token: "stale",
 		ReloadToken: func() (string, error) { return "rotated", nil },
-		In:          in, Out: &out,
-	}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-	if !strings.Contains(out.String(), `"result":"ok"`) {
-		t.Fatalf("expected full restart recovery, got %q", out.String())
+		In:          strings.NewReader(rpcRequest(1, "tools/call") + "\n"),
+	})
+	if !strings.Contains(got, `"result":"ok"`) {
+		t.Fatalf("expected full restart recovery, got %q", got)
 	}
 }
 
@@ -631,17 +609,11 @@ func TestRun_persistentUnauthorizedReturnsErrorEnvelope(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":7,"method":"tools/call"}` + "\n")
-	var out strings.Builder
-	p := RunParams{
+	got := mustRunProxy(t, RunParams{
 		Port: serverPort(t, srv), SessionID: "sess", Token: "stale",
 		ReloadToken: func() (string, error) { return "still-stale", nil },
-		In:          in, Out: &out,
-	}
-	if err := Run(p); err != nil {
-		t.Fatalf("Run error: %v", err)
-	}
-	got := out.String()
+		In:          strings.NewReader(rpcRequest(7, "tools/call") + "\n"),
+	})
 	if !strings.Contains(got, `"error"`) || !strings.Contains(got, `"id":7`) {
 		t.Fatalf("expected JSON-RPC error envelope, got %q", got)
 	}
