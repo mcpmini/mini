@@ -17,9 +17,6 @@ import (
 	"time"
 )
 
-// startDaemon launches mini daemon in the background and waits for it to be ready.
-// Returns the port number. Registers t.Cleanup to kill the process.
-// startDaemon launches a daemon with --port 0 so the OS assigns a free port.
 func waitForDaemon(t *testing.T, portFile string) int {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -176,21 +173,7 @@ func readDaemonToken(t *testing.T, configDir string) string {
 
 func initHTTPSession(t *testing.T, baseURL, token string) string {
 	t.Helper()
-	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "http-test", "version": "0"},
-		},
-	})
-	req, _ := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(string(body)))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token})
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	resp.Body.Close()
@@ -211,11 +194,8 @@ func TestDaemon_HTTPClientDirect(t *testing.T) {
 
 func TestDaemon_HTTPRejectsMissingToken(t *testing.T) {
 	baseURL, _ := daemonBaseURL(t)
-	resp, err := http.Post(baseURL+"/mcp", "application/json", strings.NewReader(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
+	resp := daemonPost(t, baseURL, daemonPostOpts{})
+	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d", resp.StatusCode)
 	}
