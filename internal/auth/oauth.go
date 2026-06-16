@@ -117,7 +117,7 @@ type ExchangeCodeParams struct {
 	ResultCh    chan<- PKCEResult
 }
 
-func exchangeCode(ctx context.Context, p ExchangeCodeParams) {
+func exchangeCode(ctx context.Context, p ExchangeCodeParams) { //nolint:funclen
 	defer p.Srv.Close()
 	var code string
 	select {

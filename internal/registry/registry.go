@@ -40,11 +40,7 @@ func (r *Registry) AddServer(p ServerParams) {
 }
 
 func (r *Registry) addServerLocked(p ServerParams) {
-	names := make([]string, 0, len(p.Defs))
-	for _, def := range p.Defs {
-		names = append(names, def.Name)
-	}
-	resolution := ResolveAliases(names, p.AliasByToolName)
+	resolution := ResolveAliases(toolDefNames(p.Defs), p.AliasByToolName)
 	seen := make(map[string]bool, len(p.Defs))
 	for _, def := range p.Defs {
 		if !config.ValidToolName.MatchString(def.Name) {
@@ -62,6 +58,14 @@ func (r *Registry) addServerLocked(p ServerParams) {
 		seen[entry.FullName] = true
 		r.insertEntryLocked(p.Name, entry)
 	}
+}
+
+func toolDefNames(defs []transport.ToolDefinition) []string {
+	names := make([]string, 0, len(defs))
+	for _, def := range defs {
+		names = append(names, def.Name)
+	}
+	return names
 }
 
 type entryParams struct {

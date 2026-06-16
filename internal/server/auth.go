@@ -66,7 +66,7 @@ type pkceFlowResult struct {
 	doneCh  <-chan auth.PKCEResult
 }
 
-func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) {
+func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) { //nolint:funclen
 	s.cancelExistingAuthFlow(serverName) // synchronously releases old port if any
 	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	listener, err := listenOnCallbackPort(authCtx)
