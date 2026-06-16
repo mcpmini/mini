@@ -62,8 +62,6 @@ func buildFixtureTool(dir, filename string) Tool {
 	return Tool{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, Annotations: annotations, FixturePath: path}
 }
 
-// loadSchema reads a .schema.json file and returns its inputSchema and
-// annotations fields (either may be nil if absent).
 func loadSchema(path string) (inputSchema, annotations json.RawMessage) {
 	data, err := os.ReadFile(path)
 	if err != nil {

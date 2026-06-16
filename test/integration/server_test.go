@@ -197,8 +197,6 @@ func TestProxy_callUpstreamTool(t *testing.T) {
 	}
 }
 
-// TestProxy_toolsListAnnotationsPassthrough verifies that annotations on an
-// upstream tool are forwarded verbatim in proxy-mode tools/list.
 func TestProxy_toolsListAnnotationsPassthrough(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{

@@ -87,13 +87,17 @@ func (s *Server) listDetail(fullName string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
+	m := map[string]any{
 		"name":        e.FullName,
 		"description": e.Description,
 		"server":      e.Server,
 		"permission":  e.Permission,
 		"inputSchema": e.InputSchema,
-	}, nil
+	}
+	if isJSONObject(e.Annotations) {
+		m["annotations"] = e.Annotations
+	}
+	return m, nil
 }
 
 func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
