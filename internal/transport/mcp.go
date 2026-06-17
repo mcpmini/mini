@@ -67,18 +67,6 @@ type MCPTool struct {
 	Annotations json.RawMessage `json:"annotations,omitempty"`
 }
 
-func readOnlyHint(annotations json.RawMessage) bool {
-	if len(annotations) == 0 {
-		return false
-	}
-	var hint struct {
-		ReadOnlyHint bool `json:"readOnlyHint"`
-	}
-	if err := json.Unmarshal(annotations, &hint); err != nil {
-		return false
-	}
-	return hint.ReadOnlyHint
-}
 
 type ToolCallParams struct {
 	Name      string         `json:"name"`

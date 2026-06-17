@@ -351,7 +351,7 @@ func TestBuildEntry_annotationsThreaded(t *testing.T) {
 	reg.AddServer(registry.ServerParams{
 		Name: "svc",
 		Defs: []transport.ToolDefinition{
-			{Name: "get_data", Description: "desc", InputSchema: json.RawMessage(`{}`), Annotations: raw, ReadOnly: true},
+			{Name: "get_data", Description: "desc", InputSchema: json.RawMessage(`{}`), Annotations: raw},
 		},
 		Perm: nil,
 	})
@@ -362,8 +362,5 @@ func TestBuildEntry_annotationsThreaded(t *testing.T) {
 	}
 	if string(e.Annotations) != string(raw) {
 		t.Errorf("annotations not threaded through buildEntry: got %s, want %s", e.Annotations, raw)
-	}
-	if !e.ReadOnly {
-		t.Error("readOnlyHint=true should set ReadOnly=true in entry")
 	}
 }

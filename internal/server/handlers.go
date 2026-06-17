@@ -94,7 +94,7 @@ func (s *Server) listDetail(fullName string) (any, error) {
 		"permission":  e.Permission,
 		"inputSchema": e.InputSchema,
 	}
-	if isJSONObject(e.Annotations) {
+	if len(e.Annotations) > 0 {
 		m["annotations"] = e.Annotations
 	}
 	return m, nil

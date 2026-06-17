@@ -55,20 +55,6 @@ func TestToToolDefs_empty(t *testing.T) {
 	}
 }
 
-func TestToToolDefs_readOnlyHintPropagated(t *testing.T) {
-	in := []MCPTool{
-		{Name: "get_file", Annotations: json.RawMessage(`{"readOnlyHint":true}`)},
-		{Name: "write_file"},
-	}
-	out := toToolDefs(in)
-	if !out[0].ReadOnly {
-		t.Error("readOnlyHint=true should set ReadOnly=true")
-	}
-	if out[1].ReadOnly {
-		t.Error("tool without annotation should have ReadOnly=false")
-	}
-}
-
 func TestToToolDefs_annotationsPassthrough(t *testing.T) {
 	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false,"fakeHint":true}`)
 	in := []MCPTool{
@@ -86,14 +72,8 @@ func TestToToolDefs_absentAnnotationsPreserved(t *testing.T) {
 		{Name: "write_file"},
 	}
 	out := toToolDefs(in)
-	if out[0].ReadOnly {
-		t.Error("readOnlyHint=false should leave ReadOnly=false")
-	}
 	if len(out[1].Annotations) != 0 {
 		t.Errorf("nil annotations must remain nil/empty, got: %s", out[1].Annotations)
-	}
-	if out[1].ReadOnly {
-		t.Error("absent annotations should leave ReadOnly=false")
 	}
 }
 

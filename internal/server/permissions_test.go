@@ -111,8 +111,8 @@ func newSvcWithReadOnlyTool(t *testing.T) *server.Server {
 	srv := newEdgeServer(t)
 	fake := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
-			{Name: "covered", ReadOnly: false},
-			{Name: "readOnlyGet", ReadOnly: true},
+			{Name: "covered"},
+			{Name: "readOnlyGet"},
 		},
 		Responses: map[string]json.RawMessage{
 			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"data"}]}`),

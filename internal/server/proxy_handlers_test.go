@@ -512,28 +512,5 @@ func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
 	}
 }
 
-func TestProxy_ToolsList_NonObjectAnnotationsOmitted(t *testing.T) {
-	cases := map[string]json.RawMessage{
-		"null":   json.RawMessage(`null`),
-		"array":  json.RawMessage(`[]`),
-		"string": json.RawMessage(`"readonly"`),
-	}
-	for name, raw := range cases {
-		t.Run(name, func(t *testing.T) {
-			srv := newProxyServer(t)
-			defer srv.Close()
-			conn := fakeConnWithAnnotations("get_file", raw)
-			addProxyConn(t, srv, "fs_"+name, conn)
 
-			tools := toolsList(t, srv)
-			tool := findTool(tools, "fs_"+name+"__get_file")
-			if tool == nil {
-				t.Fatalf("fs_%s__get_file not found in tools/list", name)
-			}
-			if _, has := tool["annotations"]; has {
-				t.Errorf("non-object annotations (%s) must be omitted, got: %v", raw, tool["annotations"])
-			}
-		})
-	}
-}
 
