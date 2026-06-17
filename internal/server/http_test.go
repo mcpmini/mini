@@ -197,9 +197,12 @@ func TestHTTPServer_sessionPersistsProjection(t *testing.T) {
 	fake := fakeConn("get_item")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake) //nolint:errcheck
-	sessionID := initSession(t, ts)
+	sessionID := initCompactSession(t, ts)
 	setSessionProjection(t, sessionProjectionParams{TS: ts, SessionID: sessionID, SrvName: "svc", Tool: "get_item", Proj: map[string]any{"include": []string{"id"}}})
 	text := httpExecToolText(t, ts, sessionID, "svc", "get_item")
+	if text == "" {
+		t.Fatal("no tool result — the projection assertion below would pass vacuously")
+	}
 	var env map[string]any
 	json.Unmarshal([]byte(text), &env) //nolint:errcheck
 	data, _ := json.Marshal(env["data"])
@@ -243,7 +246,7 @@ func httpExecOne(t *testing.T, ts *httptest.Server, id int, errs chan<- string) 
 	// Each goroutine gets its own session, which requires initialize first.
 	// Spec: "The initialization phase MUST be the first interaction between client and server."
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L38
-	sessionID := initSession(t, ts)
+	sessionID := initCompactSession(t, ts)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": id + 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}},
@@ -252,8 +255,11 @@ func httpExecOne(t *testing.T, ts *httptest.Server, id int, errs chan<- string) 
 	if resp.StatusCode != http.StatusOK {
 		errs <- "unexpected status"
 	}
-	io.Copy(io.Discard, resp.Body)
+	b, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
+	if !bytes.Contains(b, []byte("pong")) {
+		errs <- "missing tool result: " + string(b)
+	}
 }
 
 func assertConcurrentExecs(t *testing.T, ts *httptest.Server, n int) {
@@ -295,7 +301,7 @@ func TestHTTPServer_notFound(t *testing.T) {
 
 func ssePost(t *testing.T, ts *httptest.Server) *http.Response {
 	t.Helper()
-	sessionID := initSession(t, ts)
+	sessionID := initCompactSession(t, ts)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "list", "arguments": map[string]any{}},

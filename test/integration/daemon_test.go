@@ -76,7 +76,7 @@ func startCompactCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Sca
 	return stdin, scanner
 }
 
-func connectProxy(t *testing.T, configDir string) *mcpClient {
+func connectCompact(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
 	stdin, scanner := startCompactCmd(t, configDir)
 	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
@@ -96,7 +96,7 @@ func TestDaemon_basicToolCall(t *testing.T) {
 	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	startDaemon(t, cfg)
-	client := connectProxy(t, cfg)
+	client := connectCompact(t, cfg)
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.Error != "" {
 		t.Errorf("expected ok=true, got: %+v", e)
@@ -111,8 +111,8 @@ func TestDaemon_sessionIsolation(t *testing.T) {
 
 	startDaemon(t, cfg)
 
-	c1 := connectProxy(t, cfg)
-	c2 := connectProxy(t, cfg)
+	c1 := connectCompact(t, cfg)
+	c2 := connectCompact(t, cfg)
 
 	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, true)
 
