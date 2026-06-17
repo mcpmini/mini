@@ -122,15 +122,23 @@ func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *
 }
 
 func (c *StdioConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	raw, err := c.Call(ctx, "tools/list", nil)
+	return paginateToolsList(ctx, c.callToolsPage)
+}
+
+func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
+	var params json.RawMessage
+	if cursor != "" {
+		params, _ = json.Marshal(map[string]string{"cursor": cursor})
+	}
+	raw, err := c.Call(ctx, "tools/list", params)
 	if err != nil {
-		return nil, err
+		return ToolsListResult{}, err
 	}
 	var r ToolsListResult
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, fmt.Errorf("parse tools/list: %w", err)
+		return ToolsListResult{}, fmt.Errorf("parse tools/list: %w", err)
 	}
-	return toToolDefs(r.Tools), nil
+	return r, nil
 }
 
 func (c *StdioConnection) Health(_ context.Context) error {

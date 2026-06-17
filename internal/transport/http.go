@@ -289,15 +289,23 @@ func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error
 	if err := c.initHandshake(ctx); err != nil {
 		return nil, err
 	}
-	raw, err := c.Call(ctx, "tools/list", nil)
+	return paginateToolsList(ctx, c.callToolsPage)
+}
+
+func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
+	var params json.RawMessage
+	if cursor != "" {
+		params, _ = json.Marshal(map[string]string{"cursor": cursor})
+	}
+	raw, err := c.Call(ctx, "tools/list", params)
 	if err != nil {
-		return nil, err
+		return ToolsListResult{}, err
 	}
 	var r ToolsListResult
 	if err := json.Unmarshal(raw, &r); err != nil {
-		return nil, fmt.Errorf("parse tools/list: %w", err)
+		return ToolsListResult{}, fmt.Errorf("parse tools/list: %w", err)
 	}
-	return toToolDefs(r.Tools), nil
+	return r, nil
 }
 
 func (c *HTTPConnection) initHandshake(ctx context.Context) error {
