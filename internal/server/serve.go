@@ -259,9 +259,8 @@ type initializeClientParams struct {
 	ToolMode string `json:"_mini_tool_mode"`
 }
 
-// resolveToolMode lets a client request compact via the wire param; absent that
-// signal the session inherits the server-level default, so a standalone
-// `connect --tool-mode compact` applies over HTTP too, not just stdio.
+// Fall back to the server-level default when the client sends no wire signal, so
+// a standalone `connect --tool-mode compact` applies over HTTP too, not just stdio.
 func (s *Server) resolveToolMode(signal string) transport.ToolMode {
 	if signal == transport.ToolModeCompactValue {
 		return transport.ToolModeCompact
