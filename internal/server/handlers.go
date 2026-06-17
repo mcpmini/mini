@@ -87,16 +87,10 @@ func (s *Server) listDetail(fullName string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := map[string]any{
-		"name":        e.FullName,
-		"description": e.Description,
-		"server":      e.Server,
-		"permission":  e.Permission,
-		"inputSchema": e.InputSchema,
-	}
-	if len(e.Annotations) > 0 {
-		m["annotations"] = e.Annotations
-	}
+	m := e.SchemaFields()
+	m["name"] = e.FullName
+	m["server"] = e.Server
+	m["permission"] = e.Permission
 	return m, nil
 }
 

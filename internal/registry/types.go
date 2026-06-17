@@ -47,6 +47,17 @@ type CompactEntry struct {
 	Permission config.PermissionLevel `json:"permission"`
 }
 
+func (e *ToolEntry) SchemaFields() map[string]any {
+	m := map[string]any{
+		"description": e.Description,
+		"inputSchema": e.InputSchema,
+	}
+	if len(e.Annotations) > 0 {
+		m["annotations"] = e.Annotations
+	}
+	return m
+}
+
 func (e *ToolEntry) Compact() CompactEntry {
 	return CompactEntry{
 		Name:        e.FullName,
