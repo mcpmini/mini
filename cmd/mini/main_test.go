@@ -48,8 +48,8 @@ func TestParseToolMode(t *testing.T) {
 		in   string
 		want transport.ToolMode
 	}{
-		{"", transport.ToolModePassthrough},
-		{"passthrough", transport.ToolModePassthrough},
+		{"", transport.ToolModeProxy},
+		{"proxy", transport.ToolModeProxy},
 		{"compact", transport.ToolModeCompact},
 	}
 	for _, tc := range cases {

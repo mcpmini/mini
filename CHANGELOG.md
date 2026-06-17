@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- **One command replaces `serve` and `proxy`** — use `mini connect`. The default is **passthrough** mode (upstream tools exposed directly as `server__tool`, responses minified); pass `--tool-mode compact` for the four-meta-tool interface (`list`/`call`/`perm_call`/`config`). Both `serve` and `proxy` are removed with no aliases.
+- **One command replaces `serve` and `proxy`** — use `mini connect`. The default is **proxy** mode (upstream tools exposed directly as `server__tool`, responses minified); pass `--tool-mode compact` for the four-meta-tool interface (`list`/`call`/`perm_call`/`config`). Both `serve` and `proxy` are removed with no aliases.
 - **Bare `mini` prints help and exits 0** — it no longer starts a server.
-- **Wire format** — the `initialize` params signal changed from `_mini_proxy_mode: true` to `_mini_tool_mode: "compact"`. Passthrough is the daemon's zero-value default and injects nothing.
+- **Wire format** — the `initialize` params signal changed from `_mini_proxy_mode: true` to `_mini_tool_mode: "compact"`. Proxy is the daemon's zero-value default and injects nothing.
 
 ## v0.1.0 — 2026-06-01
 

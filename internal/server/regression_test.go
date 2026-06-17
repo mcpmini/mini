@@ -57,7 +57,7 @@ func TestRead_RejectsSymlinkEscape(t *testing.T) {
 	}
 
 	// Attempt to read via the MCP tool. This must be rejected.
-	resp := servePassthrough(t, srv, callTool("read", map[string]any{"path": symlinkPath}))
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": symlinkPath}))
 
 	// Should be an RPC-level error (errInvalidParams) or a tool-level isError.
 	if rpcErr := resp["error"]; rpcErr != nil {
@@ -110,7 +110,7 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 		t.Fatalf("create symlink: %v", err)
 	}
 
-	resp := servePassthrough(t, srv, callTool("read", map[string]any{"path": symlinkPath}))
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": symlinkPath}))
 	// Should succeed (symlink within store is allowed).
 	if rpcErr := resp["error"]; rpcErr != nil {
 		t.Fatalf("unexpected RPC error for in-store symlink: %v", rpcErr)
@@ -307,7 +307,7 @@ func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
 	// Craft a path that tries to escape via ".." without using a symlink.
 	traversal := filepath.Join(storeDir, "..", "escape.json")
 
-	resp := servePassthrough(t, srv, callTool("read", map[string]any{"path": traversal}))
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": traversal}))
 	if rpcErr := resp["error"]; rpcErr != nil {
 		return // RPC rejection is correct
 	}

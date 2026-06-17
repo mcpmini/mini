@@ -114,26 +114,25 @@ const NotificationToolsChanged = "notifications/tools/list_changed"
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx
 const NotificationCancelled = "notifications/cancelled"
 
-// ToolModeParam is the initialize-params key that selects a non-default tool mode.
 const ToolModeParam = "_mini_tool_mode"
 
 const (
-	ToolModePassthroughValue = "passthrough"
-	ToolModeCompactValue     = "compact"
+	ToolModeProxyValue   = "proxy"
+	ToolModeCompactValue = "compact"
 )
 
-// ToolMode selects how a session exposes upstream tools. Passthrough is the
-// zero value so an unconfigured session defaults to it automatically.
+// ToolMode selects how a session exposes upstream tools. Proxy is the zero
+// value so an unconfigured session defaults to it automatically.
 type ToolMode int32
 
 const (
-	ToolModePassthrough ToolMode = iota // upstream tools exposed directly as server__tool
-	ToolModeCompact                     // four meta-tools: list/call/perm_call/config
+	ToolModeProxy   ToolMode = iota // upstream tools exposed directly as server__tool
+	ToolModeCompact                 // four meta-tools: list/call/perm_call/config
 )
 
 func (m ToolMode) String() string {
 	if m == ToolModeCompact {
 		return "compact"
 	}
-	return "passthrough"
+	return "proxy"
 }

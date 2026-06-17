@@ -214,21 +214,21 @@ func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	const passthroughID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	const proxyID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 	const compactID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
-	postMCP(t, srv, passthroughID, initMsg(false))
+	postMCP(t, srv, proxyID, initMsg(false))
 	postMCP(t, srv, compactID, initMsg(true))
 
-	passthroughTools := extractToolNames(postMCP(t, srv, passthroughID, toolsListMsg()))
+	proxyTools := extractToolNames(postMCP(t, srv, proxyID, toolsListMsg()))
 	compactTools := extractToolNames(postMCP(t, srv, compactID, toolsListMsg()))
 
-	if !hasToolName(passthroughTools, "gh__list_issues") {
-		t.Errorf("passthrough session: expected gh__list_issues, got %v", passthroughTools)
+	if !hasToolName(proxyTools, "gh__list_issues") {
+		t.Errorf("proxy session: expected gh__list_issues, got %v", proxyTools)
 	}
-	for _, n := range passthroughTools {
+	for _, n := range proxyTools {
 		if n == "call" || n == "perm_call" {
-			t.Errorf("passthrough session should not expose compact tools, got %v", passthroughTools)
+			t.Errorf("proxy session should not expose compact tools, got %v", proxyTools)
 			break
 		}
 	}
@@ -255,9 +255,9 @@ func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
 		return s
 	}
 
-	passthrough := instructions(false, "cccccccc-cccc-cccc-cccc-cccccccccccc")
-	if !strings.Contains(passthrough, "read") || strings.Contains(passthrough, "perm_call") {
-		t.Errorf("passthrough instructions wrong: %q", passthrough)
+	proxy := instructions(false, "cccccccc-cccc-cccc-cccc-cccccccccccc")
+	if !strings.Contains(proxy, "read") || strings.Contains(proxy, "perm_call") {
+		t.Errorf("proxy instructions wrong: %q", proxy)
 	}
 
 	compact := instructions(true, "dddddddd-dddd-dddd-dddd-dddddddddddd")

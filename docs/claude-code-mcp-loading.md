@@ -8,7 +8,7 @@
 
 Claude Code never sends MCP tool schemas to the API upfront. Instead it sends only tool
 *names*, and the model fetches full schemas on demand via a built-in ToolSearch tool.
-This means mini's default **passthrough mode** is the right choice for Claude Code: upstream
+This means mini's default **proxy mode** is the right choice for Claude Code: upstream
 tools are exposed directly, Claude defers their schemas through its normal mechanism, and
 mini trims responses invisibly. Just run `mini connect`.
 
@@ -79,14 +79,14 @@ two round-trips per upstream call. Upstream tool names come back as text inside 
 result message, never entering the API's deferred tool mechanism. Schemas and responses
 both land in conversation messages.
 
-**Passthrough mode** (`mini connect`, the default):
+**Proxy mode** (`mini connect`, the default):
 
 mini exposes upstream tools directly (`github__list_pull_requests`, `sentry__list_issues`,
 etc.). Claude Code's deferred loading works exactly as designed: schemas defer through the
 `defer_loading` + `tool_reference` mechanism, one round-trip per call, responses still
 trimmed by mini's projections. The model doesn't know mini is there.
 
-For Claude Code, **passthrough mode is strictly better**: correct schema deferral, half the
+For Claude Code, **proxy mode is strictly better**: correct schema deferral, half the
 round-trips, same response trimming. It's the default, so `mini connect` already does the
 right thing — reach for `--tool-mode compact` only if your client loads all schemas upfront.
 

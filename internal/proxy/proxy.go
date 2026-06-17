@@ -201,7 +201,9 @@ func isNotInitialized(resp []byte) bool {
 }
 
 func peekIsInitialize(line []byte) bool {
-	var m struct{ Method string `json:"method"` }
+	var m struct {
+		Method string `json:"method"`
+	}
 	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
 }
 

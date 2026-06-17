@@ -41,12 +41,12 @@ func TestMiniFormat_AllArrayShapes(t *testing.T) {
             conn := fakeConn("list")
             conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(mustJSON(tc.raw)) + `}]}`)
             addProxyConn(t, srv, "svc", conn)
-            servePassthrough(t, srv, callTool("config", map[string]any{
+            serveProxy(t, srv, callTool("config", map[string]any{
                 "action":"set_projection","server":"svc","tool":"list",
                 "projection":map[string]any{"format":"mini"},
             }))
 
-            resp := servePassthrough(t, srv, callTool("svc__list", map[string]any{}))
+            resp := serveProxy(t, srv, callTool("svc__list", map[string]any{}))
             text := toolResultText(t, resp)
             t.Logf("output: %q", text)
 

@@ -63,7 +63,7 @@ func serveAll(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]an
 	return serveAllMode(t, srv, true, lines...)
 }
 
-func serveAllPassthrough(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
+func serveAllProxy(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
 	return serveAllMode(t, srv, false, lines...)
 }
 
@@ -160,7 +160,7 @@ func serve(t *testing.T, srv *server.Server, input []byte) map[string]any {
 	return serveMode(t, srv, true, input)
 }
 
-func servePassthrough(t *testing.T, srv *server.Server, input []byte) map[string]any {
+func serveProxy(t *testing.T, srv *server.Server, input []byte) map[string]any {
 	return serveMode(t, srv, false, input)
 }
 

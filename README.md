@@ -217,7 +217,7 @@ There is no global string truncation by default. Truncation only applies when a 
 
 ### Large responses
 
-When mini has projected a response and it is still large, it writes the response to `~/.mini/responses/` and returns a file path instead. The agent fetches it with `read` (passthrough mode) or `config action:read` (compact mode).
+When mini has projected a response and it is still large, it writes the response to `~/.mini/responses/` and returns a file path instead. The agent fetches it with `read` (proxy mode) or `config action:read` (compact mode).
 
 **This only happens when a projection config is active.** For the bundled servers (GitHub, Slack, Linear, Sentry, Jira), `mini init` installs projections automatically so trimming and file handling work out of the box. For servers you add that aren't in the bundled set, responses pass through unchanged until you write a projection config — mini is a transparent proxy for anything it has no rules for.
 
@@ -254,7 +254,7 @@ The tiers describe how much you trust the agent to run a tool unattended — not
 | `protected` | You want a human to approve it each time — deletes, sends, anything with side effects you'd want eyes on |
 | `hidden` | Never listed or callable through mini — invisible to the agent in every mode |
 
-**In passthrough mode** (the default), `protected` tools appear in the tool list and are callable — approval is handled by your client's native per-tool setting. In Claude Code, configure per-tool approval for `github__create_pull_request` the same way you would for any MCP tool.
+**In proxy mode** (the default), `protected` tools appear in the tool list and are callable — approval is handled by your client's native per-tool setting. In Claude Code, configure per-tool approval for `github__create_pull_request` the same way you would for any MCP tool.
 
 **In compact mode and via `mini call`/`mini perm-call`**, the `call`/`perm_call` split is the approval seam: `call` only runs `open` tools; `protected` tools require `perm_call`. Configure your client to always ask before running `perm_call` and never auto-approve it.
 

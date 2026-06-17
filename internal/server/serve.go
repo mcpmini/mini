@@ -253,7 +253,7 @@ func handleCancelled(params json.RawMessage, session *Session) {
 
 const compactInitInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
 
-const passthroughInitInstructions = "Responses are projected for efficiency. read(path) for full data. config for server management."
+const proxyInitInstructions = "Responses are projected for efficiency. read(path) for full data. config for server management."
 
 type initializeClientParams struct {
 	ToolMode string `json:"_mini_tool_mode"`
@@ -273,8 +273,8 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 	json.Unmarshal(params, &p) //nolint:errcheck // best-effort; standard clients omit this field
 	session.setToolMode(s.resolveToolMode(p.ToolMode))
 	instructions := compactInitInstructions
-	if session.toolMode() == transport.ToolModePassthrough {
-		instructions = passthroughInitInstructions
+	if session.toolMode() == transport.ToolModeProxy {
+		instructions = proxyInitInstructions
 	}
 	return transport.InitializeResult{
 		ProtocolVersion: transport.ProtocolVersion,
@@ -285,8 +285,8 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 }
 
 func (s *Server) handleToolsList(session *Session) (any, error) {
-	if session.toolMode() == transport.ToolModePassthrough {
-		return map[string]any{"tools": buildPassthroughToolSchemas(s.reg.AllFull())}, nil
+	if session.toolMode() == transport.ToolModeProxy {
+		return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
 	}
 	return map[string]any{"tools": s.toolSchemas}, nil
 }
@@ -334,8 +334,8 @@ func normalizeToolCallResult(result any) any {
 }
 
 func (s *Server) routeTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
-	if session.toolMode() == transport.ToolModePassthrough {
-		return s.routePassthroughTool(ctx, name, args, session)
+	if session.toolMode() == transport.ToolModeProxy {
+		return s.routeProxyTool(ctx, name, args, session)
 	}
 	return s.routeStandardTool(ctx, name, args, session)
 }

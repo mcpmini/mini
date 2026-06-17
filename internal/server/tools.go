@@ -79,7 +79,7 @@ func configureDescription() string {
 		"Use set_projection to reduce noise when tool responses are too large."
 }
 
-func buildPassthroughToolSchemas(entries []*registry.ToolEntry) []map[string]any {
+func buildProxyToolSchemas(entries []*registry.ToolEntry) []map[string]any {
 	out := []map[string]any{miniConfigSchema(), miniReadSchema()}
 	for _, e := range entries {
 		out = append(out, upstreamToolSchema(e))

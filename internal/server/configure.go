@@ -37,8 +37,8 @@ func (s *Server) handleConfigure(ctx context.Context, raw json.RawMessage, sessi
 	return result, err
 }
 
-// Notify all sessions, not just the caller's: a server add/remove changes the
-// exposed tool list of every passthrough session.
+// A server add/remove changes the exposed tool list of every proxy session,
+// not just the caller's.
 func (s *Server) notifyToolsChanged(action string) {
 	if action == "add_server" || action == "remove_server" {
 		s.notifyAllSessions()

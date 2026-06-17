@@ -382,7 +382,7 @@ func TestRun_compact_injectsIntoInitialize(t *testing.T) {
 	}
 }
 
-func TestRun_passthrough_doesNotInjectFlag(t *testing.T) {
+func TestRun_proxy_doesNotInjectFlag(t *testing.T) {
 	var gotBody []byte
 	srv := startTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
@@ -399,7 +399,7 @@ func TestRun_passthrough_doesNotInjectFlag(t *testing.T) {
 		t.Fatalf("unmarshal forwarded body: %v", err)
 	}
 	if msg.Params["_mini_tool_mode"] != nil {
-		t.Errorf("passthrough mode should not inject _mini_tool_mode; params: %v", msg.Params)
+		t.Errorf("proxy mode should not inject _mini_tool_mode; params: %v", msg.Params)
 	}
 }
 

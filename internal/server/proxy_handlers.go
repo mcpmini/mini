@@ -13,19 +13,19 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
-func (s *Server) routePassthroughTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
+func (s *Server) routeProxyTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
 	switch name {
 	case "config":
 		return s.handleConfigure(ctx, args, session)
 	case "read":
 		return s.handleRead(args)
 	default:
-		return s.handlePassthroughCall(ctx, name, args, session)
+		return s.handleProxyCall(ctx, name, args, session)
 	}
 }
 
-func (s *Server) handlePassthroughCall(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
-	server, tool, err := parsePassthroughToolName(name)
+func (s *Server) handleProxyCall(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
+	server, tool, err := parseProxyToolName(name)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
@@ -37,7 +37,7 @@ func (s *Server) handlePassthroughCall(ctx context.Context, name string, args js
 	if err != nil {
 		return nil, err
 	}
-	return s.passthroughCallUpstream(ctx, passthroughCallParams{Server: server, Tool: tool, Params: params, Entry: entry, Session: session})
+	return s.proxyCallUpstream(ctx, proxyCallParams{Server: server, Tool: tool, Params: params, Entry: entry, Session: session})
 }
 
 func unmarshalToolArgs(args json.RawMessage) (map[string]any, error) {
@@ -51,7 +51,7 @@ func unmarshalToolArgs(args json.RawMessage) (map[string]any, error) {
 	return params, nil
 }
 
-type passthroughCallParams struct {
+type proxyCallParams struct {
 	Server  string
 	Tool    string
 	Params  map[string]any
@@ -59,7 +59,7 @@ type passthroughCallParams struct {
 	Session *Session
 }
 
-func (s *Server) passthroughCallUpstream(ctx context.Context, p passthroughCallParams) (any, error) {
+func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any, error) {
 	server, tool, params := resolveTarget(executeParams{Server: p.Server, Tool: p.Tool, Params: p.Params}, p.Entry)
 	upstream, err := s.getUpstream(server)
 	if err != nil {
@@ -71,10 +71,10 @@ func (s *Server) passthroughCallUpstream(ctx context.Context, p passthroughCallP
 		p.Session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
-	return s.passthroughProject(envelopeParams{Entry: p.Entry, Tool: tool, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs})
+	return s.proxyProject(envelopeParams{Entry: p.Entry, Tool: tool, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs})
 }
 
-func (s *Server) passthroughProject(p envelopeParams) (any, error) {
+func (s *Server) proxyProject(p envelopeParams) (any, error) {
 	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
 	if projCfg == nil {
 		p.Session.recordCall(p.LatencyMs, 0, false)
@@ -85,10 +85,10 @@ func (s *Server) passthroughProject(p envelopeParams) (any, error) {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderPassthroughResult(renderPassthroughResultParams{Server: p.Entry.Server, Tool: p.Entry.ToolName.Name(), Env: env, ProjCfg: projCfg, RawTokens: stats.SummaryTokens}), nil
+	return s.renderProxyResult(renderProxyResultParams{Server: p.Entry.Server, Tool: p.Entry.ToolName.Name(), Env: env, ProjCfg: projCfg, RawTokens: stats.SummaryTokens}), nil
 }
 
-type renderPassthroughResultParams struct {
+type renderProxyResultParams struct {
 	Server    string
 	Tool      string
 	Env       *response.Envelope
@@ -96,7 +96,7 @@ type renderPassthroughResultParams struct {
 	RawTokens int
 }
 
-func (s *Server) renderPassthroughResult(p renderPassthroughResultParams) string {
+func (s *Server) renderProxyResult(p renderProxyResultParams) string {
 	format := s.cfg.ResponseFormat
 	if p.ProjCfg.Format != "" {
 		format = p.ProjCfg.Format
@@ -104,15 +104,15 @@ func (s *Server) renderPassthroughResult(p renderPassthroughResultParams) string
 	if format == "mini" {
 		return RenderLines(p.Server, p.Tool, p.Env)
 	}
-	return s.formatPassthroughEnvelope(p.Env, p.RawTokens)
+	return s.formatProxyEnvelope(p.Env, p.RawTokens)
 }
 
-func (s *Server) formatPassthroughEnvelope(env *response.Envelope, rawTokens int) string {
+func (s *Server) formatProxyEnvelope(env *response.Envelope, rawTokens int) string {
 	hasNote := len(env.Elided) > 0 || len(env.Truncated) > 0
 	isLarge := rawTokens > s.cfg.InlineThreshold
 	switch {
 	case !hasNote && !isLarge:
-		return marshalPassthroughData(env.Data)
+		return marshalProxyData(env.Data)
 	case !isLarge:
 		return formatProjectedInline(env)
 	case hasNote:
@@ -120,11 +120,11 @@ func (s *Server) formatPassthroughEnvelope(env *response.Envelope, rawTokens int
 	case env.File != nil:
 		return "File: " + *env.File
 	default:
-		return marshalPassthroughData(env.Data)
+		return marshalProxyData(env.Data)
 	}
 }
 
-func marshalPassthroughData(data any) string {
+func marshalProxyData(data any) string {
 	b, _ := json.Marshal(data)
 	return string(b)
 }
@@ -218,10 +218,10 @@ func resolveSymlinks(path string) string {
 	return abs
 }
 
-func parsePassthroughToolName(name string) (server, tool string, err error) {
+func parseProxyToolName(name string) (server, tool string, err error) {
 	idx := strings.Index(name, "__")
 	if idx < 0 {
-		return "", "", fmt.Errorf("unknown passthrough tool: %q (expected server__tool format)", name)
+		return "", "", fmt.Errorf("unknown proxy tool: %q (expected server__tool format)", name)
 	}
 	return name[:idx], name[idx+2:], nil
 }

@@ -79,11 +79,11 @@ Priority is impact on developer workflows — making agents faster, cheaper, saf
 ### v0.2 — Per-Server Proxy & Observability
 
 **Per-server transparent connect (`mini connect <server>`)**
-- `mini connect github` starts a single-server passthrough that exposes upstream tools directly without any server prefix or mini branding — Claude Code sees `list_pull_requests`, not `github__list_pull_requests`
+- `mini connect github` starts a single-server proxy that exposes upstream tools directly without any server prefix or mini branding — Claude Code sees `list_pull_requests`, not `github__list_pull_requests`
 - Users register each server independently: `claude mcp add github -- mini connect github`
-- No `config` or `read` tools exposed — pure passthrough, mini invisible to the agent
+- No `config` or `read` tools exposed — pure proxy, mini invisible to the agent
 - All projection, permission, and token-optimization logic still applies via the mini daemon
-- *Code changes*: `runConnect` accepts optional positional server name; new `server.WithSingleServerScope(name)` option; passthrough tool listing strips server prefix; routing adds it back internally
+- *Code changes*: `runConnect` accepts optional positional server name; new `server.WithSingleServerScope(name)` option; proxy tool listing strips server prefix; routing adds it back internally
 
 ### v0.2 — Observability & Broader MCP Coverage
 

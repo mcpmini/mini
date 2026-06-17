@@ -36,7 +36,7 @@ type Session struct {
 	initOnce      sync.Once
 	initAbortOnce sync.Once
 
-	mode           atomic.Int32 // holds ToolMode; zero value = ToolModePassthrough
+	mode           atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
 	totalCalls     atomic.Int64
 	totalErrors    atomic.Int64
 	totalLatencyMs atomic.Int64

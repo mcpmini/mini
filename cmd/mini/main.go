@@ -49,7 +49,7 @@ commands:
 connect flags:
   --http ADDR         Also serve HTTP MCP on ADDR; bare port or :port binds to loopback
   --standalone        Skip daemon detection, serve directly
-  --tool-mode <passthrough|compact>  passthrough (default): expose upstream tools directly; compact: four-meta-tool interface
+  --tool-mode <proxy|compact>  proxy (default): expose upstream tools directly; compact: four-meta-tool interface
   --dangerous-nonloopback-http  Allow --http to bind to non-loopback (all clients must be trusted)
 
 call / perm-call flags:
@@ -149,7 +149,7 @@ func parseConnectFlags(args []string) connectFlags {
 	httpAddr := fs.String("http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
 	standalone := fs.Bool("standalone", false, "skip daemon detection, serve directly (useful for debugging)")
 	dangerNonLoopback := fs.Bool("dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address")
-	toolMode := fs.String("tool-mode", "", "tool interface: compact for the four-meta-tool interface (default is passthrough)")
+	toolMode := fs.String("tool-mode", "", "tool interface: compact for the four-meta-tool interface (default is proxy)")
 	fs.Parse(args) //nolint:errcheck
 	return connectFlags{logLevel: *logLevel, httpAddr: *httpAddr, standalone: *standalone, dangerNonLoopback: *dangerNonLoopback, toolMode: parseToolMode(*toolMode)}
 }
@@ -158,11 +158,11 @@ func parseToolMode(m string) transport.ToolMode {
 	switch m {
 	case transport.ToolModeCompactValue:
 		return transport.ToolModeCompact
-	case "", transport.ToolModePassthroughValue:
-		return transport.ToolModePassthrough
+	case "", transport.ToolModeProxyValue:
+		return transport.ToolModeProxy
 	}
-	fatalf("invalid --tool-mode %q; valid values: passthrough, compact", m)
-	return transport.ToolModePassthrough
+	fatalf("invalid --tool-mode %q; valid values: proxy, compact", m)
+	return transport.ToolModeProxy
 }
 
 func runConnect(configDir string, args []string) {

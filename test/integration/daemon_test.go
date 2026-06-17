@@ -52,7 +52,6 @@ func startDaemon(t *testing.T, configDir string) int {
 	return waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
 }
 
-// startCompactCmd starts a compact-mode mini connect instance that bridges to the daemon.
 func startCompactCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
 	t.Helper()
 	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--tool-mode", "compact", "--log-level", "error")
