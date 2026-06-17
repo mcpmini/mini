@@ -299,12 +299,11 @@ func TestHTTPServer_notFound(t *testing.T) {
 	}
 }
 
-func ssePost(t *testing.T, ts *httptest.Server) *http.Response {
+func sseProxyToolCall(t *testing.T, ts *httptest.Server, sessionID, toolName string) *http.Response {
 	t.Helper()
-	sessionID := initCompactSession(t, ts)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "list", "arguments": map[string]any{}},
+		"params": map[string]any{"name": toolName, "arguments": map[string]any{}},
 	})
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -319,8 +318,11 @@ func ssePost(t *testing.T, ts *httptest.Server) *http.Response {
 
 func TestHTTPServer_SSEResponse(t *testing.T) {
 	srv, ts := newHTTPTestServer(t)
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConn("myTool"))
-	resp := ssePost(t, ts)
+	fake := fakeConn("myTool")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake) //nolint:errcheck
+	sessionID := initSession(t, ts)
+	resp := sseProxyToolCall(t, ts, sessionID, "svc__myTool")
 	defer resp.Body.Close()
 	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
 		t.Errorf("expected Content-Type: text/event-stream, got: %q", ct)
@@ -351,7 +353,6 @@ func TestHTTPServer_SSEWithBothAcceptTypes(t *testing.T) {
 		t.Errorf("expected SSE when Accept includes text/event-stream, got: %q", ct)
 	}
 }
-
 
 func TestHTTPServer_GetAllowHeader(t *testing.T) {
 	_, ts := newHTTPTestServer(t)
@@ -406,7 +407,6 @@ func TestHTTPServer_staleSessionFails(t *testing.T) {
 		t.Fatal("stale session blocked indefinitely — daemon restart hang not fixed")
 	}
 }
-
 
 func TestHTTPServer_CrossOriginRejected(t *testing.T) {
 	_, ts := newHTTPTestServer(t)

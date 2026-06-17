@@ -21,7 +21,6 @@ import (
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 	sessionID := transport.NewSessionID()
 	session := s.sessions.getOrCreate(sessionID)
-	session.setToolMode(s.toolMode) // inherit server-level mode for standalone runs
 	defer s.sessions.delete(sessionID)
 	return s.serveLoop(ctx, in, out, session)
 }
@@ -262,10 +261,14 @@ type initializeClientParams struct {
 // Fall back to the server-level default when the client sends no wire signal, so
 // a standalone `connect --tool-mode compact` applies over HTTP too, not just stdio.
 func (s *Server) resolveToolMode(signal string) transport.ToolMode {
-	if signal == transport.ToolModeCompactValue {
+	switch signal {
+	case transport.ToolModeCompactValue:
 		return transport.ToolModeCompact
+	case transport.ToolModeProxyValue:
+		return transport.ToolModeProxy
+	default:
+		return s.toolMode
 	}
-	return s.toolMode
 }
 
 func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any, error) {

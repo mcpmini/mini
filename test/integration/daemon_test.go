@@ -52,6 +52,43 @@ func startDaemon(t *testing.T, configDir string) int {
 	return waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
 }
 
+func startProxyCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
+	t.Helper()
+	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--log-level", "error")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stdin.Close()
+		cmd.Process.Kill() //nolint:errcheck
+		cmd.Wait()         //nolint:errcheck
+	})
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 4<<20), 4<<20)
+	return stdin, scanner
+}
+
+func connectProxy(t *testing.T, configDir string) *mcpClient {
+	t.Helper()
+	stdin, scanner := startProxyCmd(t, configDir)
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	go c.readLoop(scanner)
+	c.mustCall("initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	})
+	return c
+}
+
 func startCompactCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
 	t.Helper()
 	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--tool-mode", "compact", "--log-level", "error")
@@ -364,5 +401,26 @@ func assertInlineGetItem(t *testing.T, env envelope) {
 	}
 	if data["name"] != "test" {
 		t.Fatalf("expected data.name=test, got %#v", data["name"])
+	}
+}
+
+func TestDaemon_proxyModeToolCall(t *testing.T) {
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", dir)
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+
+	startDaemon(t, cfg)
+	client := connectProxy(t, cfg)
+	raw := client.mustCall("tools/call", map[string]any{
+		"name":      "svc__get_item",
+		"arguments": map[string]any{},
+	})
+	text, isErr := parseToolCallResult(raw)
+	if isErr {
+		t.Fatalf("proxy mode tool call returned error: %s", text)
+	}
+	if text == "" {
+		t.Error("expected non-empty response from proxy mode tool call via daemon")
 	}
 }

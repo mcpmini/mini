@@ -244,6 +244,37 @@ func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
 	}
 }
 
+// TestResolveToolMode_proxySignalOnCompactServer verifies that a client sending
+// the "proxy" wire signal on a compact-configured server gets proxy mode, not
+// compact mode. The "proxy" constant must have an effect on the wire.
+func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	defer srv.Close()
+	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+
+	params := map[string]any{
+		"protocolVersion":       transport.ProtocolVersion,
+		"capabilities":          map[string]any{},
+		"clientInfo":            map[string]any{"name": "test", "version": "0"},
+		transport.ToolModeParam: transport.ToolModeProxyValue,
+	}
+	const sessionID = "22222222-2222-2222-2222-222222222222"
+	postMCP(t, srv, sessionID, map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params})
+
+	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	if !hasToolName(tools, "gh__list_issues") {
+		t.Errorf("proxy wire signal on compact server should yield proxy session, got tools: %v", tools)
+	}
+	for _, n := range tools {
+		if n == "call" || n == "perm_call" {
+			t.Errorf("session with proxy wire signal should not expose compact tools, got: %v", tools)
+			break
+		}
+	}
+}
+
 func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
