@@ -27,15 +27,19 @@ func (r AliasResolution) WasDropped(realName string) bool {
 // reverting aliases that collide with a real tool name or with each other
 // (symmetric — neither alias wins on a clash).
 func ResolveAliases(realNames []string, aliasByToolName map[string]string) AliasResolution {
+	visible, dropped, claim := buildAliasClaims(realNames, aliasByToolName)
+	revertClashingAliases(visible, claim, dropped)
+	return AliasResolution{visible: visible, dropped: dropped}
+}
+
+func buildAliasClaims(realNames []string, aliasByToolName map[string]string) (map[string]string, map[string]bool, map[string][]string) {
 	nameSet := make(map[string]bool, len(realNames))
 	for _, n := range realNames {
 		nameSet[n] = true
 	}
-
 	visible := make(map[string]string, len(realNames))
 	dropped := make(map[string]bool)
 	claim := make(map[string][]string)
-
 	for _, name := range realNames {
 		visibleName := name
 		if alias := aliasByToolName[name]; alias != "" && config.ValidToolName.MatchString(alias) {
@@ -49,13 +53,14 @@ func ResolveAliases(realNames []string, aliasByToolName map[string]string) Alias
 		visible[name] = visibleName
 		claim[visibleName] = append(claim[visibleName], name)
 	}
+	return visible, dropped, claim
+}
 
+func revertClashingAliases(visible map[string]string, claim map[string][]string, dropped map[string]bool) {
 	for realName, visibleName := range visible {
 		if visibleName != realName && len(claim[visibleName]) > 1 {
 			visible[realName] = realName
 			dropped[realName] = true
 		}
 	}
-
-	return AliasResolution{visible: visible, dropped: dropped}
 }

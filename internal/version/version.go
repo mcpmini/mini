@@ -27,18 +27,7 @@ func computeVersion() string {
 }
 
 func buildVersion(info *debug.BuildInfo) string {
-	var rev string
-	var dirty bool
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			if len(s.Value) >= 7 {
-				rev = s.Value[:7]
-			}
-		case "vcs.modified":
-			dirty = s.Value == "true"
-		}
-	}
+	rev, dirty := extractVCSInfo(info.Settings)
 	if rev == "" {
 		return "dev"
 	}
@@ -49,4 +38,18 @@ func buildVersion(info *debug.BuildInfo) string {
 		return fmt.Sprintf("%s (%s)", v, rev)
 	}
 	return rev
+}
+
+func extractVCSInfo(settings []debug.BuildSetting) (rev string, dirty bool) {
+	for _, s := range settings {
+		switch s.Key {
+		case "vcs.revision":
+			if len(s.Value) >= 7 {
+				rev = s.Value[:7]
+			}
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	return
 }

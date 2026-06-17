@@ -1,7 +1,7 @@
 // funclen checks that no function or method exceeds the project code-line limits.
 // Warning >= 18 lines, error >= 25 lines. Comment-only lines inside the function
 // body don't count, so a well-documented invariant doesn't inflate the length.
-// Functions annotated with //nolint on their declaration line are skipped.
+// Functions annotated with //nolint:funclen on their declaration line suppress warnings (not errors).
 // Exit code 1 when any errors are found.
 //
 // Usage: funclen [dir ...]   (default: current directory, recursive)
@@ -121,12 +121,12 @@ func collectFuncIssues(f *ast.File, fset *token.FileSet, srcLines []string) []is
 
 func checkFunc(fd *ast.FuncDecl, fset *token.FileSet, srcLines []string) (issue, bool) {
 	start := fset.Position(fd.Pos()).Line
-	if isNolinted(srcLines, start) {
+	end := fset.Position(fd.End()).Line
+	lines := (end - start - 1) - skippableLines(srcLines, start+1, end-1)
+	if lines < warnAt {
 		return issue{}, false
 	}
-	end := fset.Position(fd.End()).Line
-	lines := (end - start - 1) - commentOnlyLines(srcLines, start+1, end-1)
-	if lines < warnAt {
+	if lines < errorAt && isNolinted(srcLines, start) {
 		return issue{}, false
 	}
 	return newIssue(fd, fset, lines), true
@@ -136,7 +136,7 @@ func isNolinted(srcLines []string, line int) bool {
 	if line < 1 || line > len(srcLines) {
 		return false
 	}
-	return strings.Contains(srcLines[line-1], "//nolint")
+	return strings.Contains(srcLines[line-1], "//nolint:funclen")
 }
 
 func newIssue(fd *ast.FuncDecl, fset *token.FileSet, lines int) issue {
@@ -150,16 +150,17 @@ func newIssue(fd *ast.FuncDecl, fset *token.FileSet, lines int) issue {
 	}
 }
 
-// commentOnlyLines counts lines in [start, end] (1-indexed, inclusive) that
-// consist solely of a // or /* */ comment, ignoring surrounding whitespace.
+// skippableLines counts lines in [start, end] (1-indexed, inclusive) that
+// don't represent real logic: comment-only lines and bare closing braces.
 // A line that mixes code with a trailing comment still counts as code.
-func commentOnlyLines(srcLines []string, start, end int) int {
+func skippableLines(srcLines []string, start, end int) int {
 	count := 0
 	inBlock := false
 	for i := start; i <= end && i <= len(srcLines); i++ {
+		trimmed := strings.TrimSpace(srcLines[i-1])
 		var isComment bool
-		isComment, inBlock = classifyCommentLine(strings.TrimSpace(srcLines[i-1]), inBlock)
-		if isComment {
+		isComment, inBlock = classifyCommentLine(trimmed, inBlock)
+		if isComment || trimmed == "}" {
 			count++
 		}
 	}

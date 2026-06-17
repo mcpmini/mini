@@ -108,11 +108,11 @@ func TestCommentExclusion(t *testing.T) {
 }
 
 func TestNolint(t *testing.T) {
-	t.Run("//nolint suppresses issue", func(t *testing.T) {
+	t.Run("bare //nolint does not suppress", func(t *testing.T) {
 		s := "package p\nfunc f() { //nolint\n" + codeLines(18) + "}\n"
 		issues := parseIssues(t, s)
-		if len(issues) != 0 {
-			t.Fatalf("want no issues with //nolint, got %+v", issues)
+		if len(issues) != 1 {
+			t.Fatalf("want 1 issue with bare //nolint, got %+v", issues)
 		}
 	})
 
@@ -121,6 +121,14 @@ func TestNolint(t *testing.T) {
 		issues := parseIssues(t, s)
 		if len(issues) != 0 {
 			t.Fatalf("want no issues with //nolint:funclen, got %+v", issues)
+		}
+	})
+
+	t.Run("//nolint:funclen does not suppress errors", func(t *testing.T) {
+		s := "package p\nfunc f() { //nolint:funclen\n" + codeLines(25) + "}\n"
+		issues := parseIssues(t, s)
+		if len(issues) != 1 || !issues[0].isError {
+			t.Fatalf("want 1 error even with //nolint:funclen, got %+v", issues)
 		}
 	})
 
