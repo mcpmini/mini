@@ -117,7 +117,10 @@ const NotificationCancelled = "notifications/cancelled"
 // ToolModeParam is the initialize-params key that selects a non-default tool mode.
 const ToolModeParam = "_mini_tool_mode"
 
-const ToolModeCompactValue = "compact"
+const (
+	ToolModePassthroughValue = "passthrough"
+	ToolModeCompactValue     = "compact"
+)
 
 // ToolMode selects how a session exposes upstream tools. Passthrough is the
 // zero value so an unconfigured session defaults to it automatically.

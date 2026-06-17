@@ -251,7 +251,7 @@ func handleCancelled(params json.RawMessage, session *Session) {
 	session.cancelInFlight(p.RequestID)
 }
 
-const initInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
+const compactInitInstructions = "mini is an MCP proxy. Use `list` to discover tools across connected servers, `call` to invoke them, `perm_call` for tools requiring elevated permissions, and `configure` to manage servers and settings."
 
 const passthroughInitInstructions = "Responses are projected for efficiency. read(path) for full data. config for server management."
 
@@ -265,7 +265,7 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 	if p.ToolMode == transport.ToolModeCompactValue {
 		session.setToolMode(transport.ToolModeCompact)
 	}
-	instructions := initInstructions
+	instructions := compactInitInstructions
 	if session.toolMode() == transport.ToolModePassthrough {
 		instructions = passthroughInitInstructions
 	}

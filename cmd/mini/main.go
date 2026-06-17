@@ -155,12 +155,13 @@ func parseConnectFlags(args []string) connectFlags {
 }
 
 func parseToolMode(m string) transport.ToolMode {
-	if m != "" && m != transport.ToolModeCompactValue {
-		fatalf("invalid --tool-mode %q; valid values: compact (or omit for the default passthrough mode)", m)
-	}
-	if m == transport.ToolModeCompactValue {
+	switch m {
+	case transport.ToolModeCompactValue:
 		return transport.ToolModeCompact
+	case "", transport.ToolModePassthroughValue:
+		return transport.ToolModePassthrough
 	}
+	fatalf("invalid --tool-mode %q; valid values: passthrough, compact", m)
 	return transport.ToolModePassthrough
 }
 
