@@ -27,12 +27,7 @@ func normalizeID(id any) any {
 func toToolDefs(tools []MCPTool) []ToolDefinition {
 	defs := make([]ToolDefinition, len(tools))
 	for i, t := range tools {
-		defs[i] = ToolDefinition{
-			Name:        t.Name,
-			Description: t.Description,
-			InputSchema: t.InputSchema,
-			Annotations: t.Annotations,
-		}
+		defs[i] = ToolDefinition(t)
 	}
 	return defs
 }
