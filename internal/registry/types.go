@@ -30,10 +30,8 @@ type ToolEntry struct {
 	Description   string
 	DescLower     string // pre-lowercased for search
 	InputSchema   json.RawMessage
-	Permission    config.PermissionLevel
-	// ReadOnly is set when the upstream MCP advertised readOnlyHint:true in annotations.
-	// Read-only tools are callable via call even without a projection entry.
-	ReadOnly bool
+	Annotations json.RawMessage
+	Permission  config.PermissionLevel
 
 	// Virtual-tool fields (set only for actions).
 	TargetServer string
@@ -46,8 +44,18 @@ type CompactEntry struct {
 	Name        string                 `json:"name"`
 	Server      string                 `json:"server"`
 	Description string                 `json:"description"`
-	Permission  config.PermissionLevel `json:"permission"`
-	ReadOnly    bool                   `json:"read_only,omitempty"`
+	Permission config.PermissionLevel `json:"permission"`
+}
+
+func (e *ToolEntry) SchemaFields() map[string]any {
+	m := map[string]any{
+		"description": e.Description,
+		"inputSchema": e.InputSchema,
+	}
+	if len(e.Annotations) > 0 {
+		m["annotations"] = e.Annotations
+	}
+	return m
 }
 
 func (e *ToolEntry) Compact() CompactEntry {
@@ -55,7 +63,6 @@ func (e *ToolEntry) Compact() CompactEntry {
 		Name:        e.FullName,
 		Server:      e.Server,
 		Description: e.Description,
-		Permission:  e.Permission,
-		ReadOnly:    e.ReadOnly,
+		Permission: e.Permission,
 	}
 }

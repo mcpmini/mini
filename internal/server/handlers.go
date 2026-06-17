@@ -87,13 +87,11 @@ func (s *Server) listDetail(fullName string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"name":        e.FullName,
-		"description": e.Description,
-		"server":      e.Server,
-		"permission":  e.Permission,
-		"inputSchema": e.InputSchema,
-	}, nil
+	m := e.SchemaFields()
+	m["name"] = e.FullName
+	m["server"] = e.Server
+	m["permission"] = e.Permission
+	return m, nil
 }
 
 func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {

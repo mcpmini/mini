@@ -113,11 +113,9 @@ func miniReadSchema() map[string]any {
 }
 
 func upstreamToolSchema(e *registry.ToolEntry) map[string]any {
-	return map[string]any{
-		"name":        e.Server + "__" + e.ToolName.Name(),
-		"description": e.Description,
-		"inputSchema": e.InputSchema,
-	}
+	m := e.SchemaFields()
+	m["name"] = e.Server + "__" + e.ToolName.Name()
+	return m
 }
 
 func schema(properties map[string]any) json.RawMessage {

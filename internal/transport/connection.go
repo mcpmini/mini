@@ -10,8 +10,7 @@ type ToolDefinition struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
-	// ReadOnly is true when the upstream MCP advertised readOnlyHint:true in tool annotations.
-	ReadOnly bool `json:"readOnly,omitempty"`
+	Annotations json.RawMessage `json:"annotations,omitempty"`
 }
 
 // Connection abstracts a connection to an upstream MCP server.

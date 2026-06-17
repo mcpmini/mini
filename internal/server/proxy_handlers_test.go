@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -422,4 +423,94 @@ func TestProxy_NotifyAll_OnRemoveServer(t *testing.T) {
 		t.Error("expected notifications/tools/list_changed after remove_server in proxy mode")
 	}
 }
+
+func fakeConnWithAnnotations(name string, annotations json.RawMessage) *transport.FakeConnection {
+	return &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{
+			{
+				Name:        name,
+				Description: "desc for " + name,
+				InputSchema: json.RawMessage(`{"type":"object"}`),
+				Annotations: annotations,
+			},
+		},
+		Responses: make(map[string]json.RawMessage),
+	}
+}
+
+func findTool(tools []map[string]any, name string) map[string]any {
+	for _, t := range tools {
+		if t["name"] == name {
+			return t
+		}
+	}
+	return nil
+}
+
+func assertAnnotationsEqual(t *testing.T, got any, want json.RawMessage) {
+	t.Helper()
+	gotRaw, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal got annotations: %v", err)
+	}
+	var gotVal, wantVal any
+	if err := json.Unmarshal(gotRaw, &gotVal); err != nil {
+		t.Fatalf("unmarshal got annotations: %v", err)
+	}
+	if err := json.Unmarshal(want, &wantVal); err != nil {
+		t.Fatalf("unmarshal want annotations: %v", err)
+	}
+	if !reflect.DeepEqual(gotVal, wantVal) {
+		t.Errorf("annotations mismatch: got %s, want %s", gotRaw, want)
+	}
+}
+
+func TestProxy_ToolsList_AnnotationsPassthrough(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	raw := json.RawMessage(`{"readOnlyHint":true}`)
+	conn := fakeConnWithAnnotations("get_file", raw)
+	addProxyConn(t, srv, "fs", conn)
+
+	tools := toolsList(t, srv)
+	tool := findTool(tools, "fs__get_file")
+	if tool == nil {
+		t.Fatal("fs__get_file not found in tools/list")
+	}
+	assertAnnotationsEqual(t, tool["annotations"], raw)
+}
+
+func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"title":"Get File","fakeHint":true}`)
+	conn := fakeConnWithAnnotations("get_file", raw)
+	addProxyConn(t, srv, "fs2", conn)
+
+	tools := toolsList(t, srv)
+	tool := findTool(tools, "fs2__get_file")
+	if tool == nil {
+		t.Fatal("fs2__get_file not found in tools/list")
+	}
+	assertAnnotationsEqual(t, tool["annotations"], raw)
+}
+
+func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConn("write_file")
+	addProxyConn(t, srv, "fs", conn)
+
+	tools := toolsList(t, srv)
+	tool := findTool(tools, "fs__write_file")
+	if tool == nil {
+		t.Fatal("fs__write_file not found in tools/list")
+	}
+
+	if _, hasAnnotations := tool["annotations"]; hasAnnotations {
+		t.Errorf("tool without annotations must not include annotations key, got: %v", tool["annotations"])
+	}
+}
+
+
 

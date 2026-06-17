@@ -86,8 +86,8 @@ func buildEntry(p entryParams) *ToolEntry {
 		Description:   p.def.Description,
 		DescLower:     strings.ToLower(p.def.Description),
 		InputSchema:   p.def.InputSchema,
-		Permission:    resolvePermission(p.def.Name, p.perm),
-		ReadOnly:      p.def.ReadOnly,
+		Annotations: p.def.Annotations,
+		Permission:  resolvePermission(p.def.Name, p.perm),
 	}
 }
 

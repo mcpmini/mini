@@ -344,3 +344,23 @@ func TestAllWithHidden_sorted(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildEntry_annotationsThreaded(t *testing.T) {
+	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false}`)
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: []transport.ToolDefinition{
+			{Name: "get_data", Description: "desc", InputSchema: json.RawMessage(`{}`), Annotations: raw},
+		},
+		Perm: nil,
+	})
+
+	e, err := reg.Lookup("svc.get_data")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(e.Annotations) != string(raw) {
+		t.Errorf("annotations not threaded through buildEntry: got %s, want %s", e.Annotations, raw)
+	}
+}
