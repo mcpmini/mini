@@ -32,20 +32,18 @@ func (s *Server) handleConfigure(ctx context.Context, raw json.RawMessage, sessi
 	}
 	result, err := s.dispatchConfigureAction(ctx, p, session)
 	if err == nil {
-		s.notifyToolsChanged(session, p.Action)
+		s.notifyToolsChanged(p.Action)
 	}
 	return result, err
 }
 
-func (s *Server) notifyToolsChanged(session *Session, action string) {
-	if action != "add_server" && action != "remove_server" {
-		return
-	}
-	if session.toolMode() == transport.ToolModePassthrough {
+// notifyToolsChanged notifies every session because a server add/remove changes
+// the passthrough tool list of all passthrough sessions, not just the caller's.
+// Compact sessions re-list to the same four meta-tools, so the extra signal is harmless.
+func (s *Server) notifyToolsChanged(action string) {
+	if action == "add_server" || action == "remove_server" {
 		s.notifyAllSessions()
-		return
 	}
-	session.notify(toolsChangedNotif)
 }
 
 func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams, session *Session) (any, error) {

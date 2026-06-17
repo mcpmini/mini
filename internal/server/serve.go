@@ -259,12 +259,20 @@ type initializeClientParams struct {
 	ToolMode string `json:"_mini_tool_mode"`
 }
 
+// resolveToolMode lets a client request compact via the wire param; absent that
+// signal the session inherits the server-level default, so a standalone
+// `connect --tool-mode compact` applies over HTTP too, not just stdio.
+func (s *Server) resolveToolMode(signal string) transport.ToolMode {
+	if signal == transport.ToolModeCompactValue {
+		return transport.ToolModeCompact
+	}
+	return s.toolMode
+}
+
 func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any, error) {
 	var p initializeClientParams
 	json.Unmarshal(params, &p) //nolint:errcheck // best-effort; standard clients omit this field
-	if p.ToolMode == transport.ToolModeCompactValue {
-		session.setToolMode(transport.ToolModeCompact)
-	}
+	session.setToolMode(s.resolveToolMode(p.ToolMode))
 	instructions := compactInitInstructions
 	if session.toolMode() == transport.ToolModePassthrough {
 		instructions = passthroughInitInstructions

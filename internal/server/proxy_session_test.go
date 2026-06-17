@@ -48,6 +48,27 @@ func toolsListMsg() map[string]any {
 	return map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
 }
 
+func TestHTTPSession_InheritsServerCompactMode(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	defer srv.Close()
+	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+
+	const sessionID = "11111111-1111-1111-1111-111111111111"
+	postMCP(t, srv, sessionID, initMsg(false)) // no wire signal: must inherit server default
+
+	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	if !hasToolName(tools, "call") {
+		t.Errorf("HTTP session should inherit server-level compact mode, got %v", tools)
+	}
+	for _, n := range tools {
+		if strings.Contains(n, "__") {
+			t.Errorf("compact session should not expose upstream tools, got %v", tools)
+		}
+	}
+}
+
 func extractToolNames(resp map[string]any) []string {
 	res, _ := resp["result"].(map[string]any)
 	tools, _ := res["tools"].([]any)

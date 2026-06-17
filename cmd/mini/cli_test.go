@@ -246,6 +246,17 @@ func TestCLI_connect_invalidToolMode(t *testing.T) {
 	}
 }
 
+func TestCLI_removedCommands_exitTwo(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	for _, cmd := range []string{"serve", "proxy"} {
+		_, _, code := run(t, bin, cfg, cmd)
+		if code != 2 {
+			t.Errorf("%q was removed and should exit 2 (unknown command), got %d", cmd, code)
+		}
+	}
+}
+
 func TestCLI_cleanup_empty(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()

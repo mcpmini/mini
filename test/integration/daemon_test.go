@@ -173,7 +173,7 @@ func readDaemonToken(t *testing.T, configDir string) string {
 
 func initHTTPSession(t *testing.T, baseURL, token string) string {
 	t.Helper()
-	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token})
+	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token, ToolMode: "compact"})
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	resp.Body.Close()
@@ -242,20 +242,24 @@ func TestDaemon_TokenFilePermissions(t *testing.T) {
 }
 
 type daemonPostOpts struct {
-	Token  string
-	Host   string
-	Origin string
+	Token    string
+	Host     string
+	Origin   string
+	ToolMode string
 }
 
 func daemonPost(t *testing.T, baseURL string, opts daemonPostOpts) *http.Response {
 	t.Helper()
+	params := map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	}
+	if opts.ToolMode != "" {
+		params["_mini_tool_mode"] = opts.ToolMode
+	}
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "test", "version": "0"},
-		},
+		"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params,
 	})
 	req, _ := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
