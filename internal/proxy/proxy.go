@@ -24,8 +24,7 @@ type RunParams struct {
 	In        io.Reader
 	Out       io.Writer
 	ToolMode  transport.ToolMode
-	// Reresolve re-resolves a live daemon (respawning it if needed) and returns the
-	// current port and token. Nil disables recovery (standalone / direct connections).
+	// Nil disables self-healing. Otherwise called to respawn and re-resolve the daemon after a failure.
 	Reresolve func() (port int, token string, err error)
 }
 

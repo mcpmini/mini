@@ -56,8 +56,7 @@ func readPrivateToken(configDir string) (string, error) {
 		return "", err
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		// Group/other-readable means another local user may already have read this token,
-		// so treat it as compromised and let EnsureToken re-mint rather than reuse it.
+		// Group/other-readable: another local user may have already read this; treat as compromised and re-mint.
 		return "", fmt.Errorf("token file has insecure permissions %#o", info.Mode().Perm())
 	}
 	return ReadToken(configDir)

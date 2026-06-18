@@ -8,18 +8,16 @@ import (
 	"syscall"
 )
 
-// acquireSpawnLock takes an exclusive advisory lock on <configDir>/daemon.lock so that,
-// when many proxies discover a dead daemon at once, exactly one of them spawns the
-// replacement and the rest block here until it is up. It is purely a herd-collapse
-// optimization: the OS socket bind in startDaemonHTTP is the real single-winner guarantee,
-// so losing or skipping this lock only wastes spawns, never breaks correctness.
+// acquireSpawnLock collapses the respawn herd: when many proxies detect a dead daemon at
+// once, exactly one spawns the replacement while the rest block here until it is up.
+// Herd-collapse optimization only — the OS socket bind is the real single-winner guarantee;
+// losing or skipping this lock only wastes spawn attempts, never breaks correctness.
 func acquireSpawnLock(configDir string) (release func(), err error) {
 	f, err := os.OpenFile(filepath.Join(configDir, "daemon.lock"), os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, err
 	}
-	// The kernel releases flock when the holder exits for any reason, including SIGKILL, so
-	// a spawner dying mid-start can't leave a stale lock — no PID/timestamp needed in the file.
+	// Kernel auto-releases flock on process exit (including SIGKILL) — stale locks are impossible.
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		f.Close() //nolint:errcheck
 		return nil, err

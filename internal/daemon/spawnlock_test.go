@@ -25,10 +25,7 @@ func TestAcquireSpawnLock_createsLockFile0600(t *testing.T) {
 	}
 }
 
-// TestAcquireSpawnLock_isExclusive proves a second acquire blocks until the first releases.
-// Two separate os.OpenFile calls get distinct open file descriptions, so flock(LOCK_EX)
-// contends even within one process. Ordering is asserted via a channel; -race guards the
-// shared slice.
+// Two separate os.OpenFile calls get distinct file descriptions, so flock(LOCK_EX) contends even within one process.
 func TestAcquireSpawnLock_isExclusive(t *testing.T) {
 	dir := t.TempDir()
 	release1, err := acquireSpawnLock(dir)

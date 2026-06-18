@@ -59,16 +59,14 @@ func Start(configDir string, timeout time.Duration) (int, error) {
 		return 0, fmt.Errorf("acquire daemon spawn lock: %w", err)
 	}
 	defer release()
-	// A losing racer finds the lock winner's daemon already up here and returns
-	// without spawning a second one.
+	// Losers blocked on acquireSpawnLock arrive here to find the daemon already up.
 	if port := RunningPort(configDir); port != 0 {
 		return port, nil
 	}
 	if err := spawnDaemon(exe, configDir); err != nil {
 		return 0, err
 	}
-	// The lock is held across waitForDaemon so that losers blocked on acquireSpawnLock find
-	// the daemon already up when they reach RunningPort above, rather than re-spawning it.
+	// Lock held across waitForDaemon so racers waiting on acquireSpawnLock find the daemon already up at RunningPort.
 	return waitForDaemon(configDir, timeout)
 }
 

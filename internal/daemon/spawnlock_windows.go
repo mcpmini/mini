@@ -2,8 +2,7 @@
 
 package daemon
 
-// acquireSpawnLock is a no-op on Windows: this lock only collapses the wasted-spawn herd
-// (see spawnlock_unix.go), and the OS socket bind still guarantees a single daemon here.
+// No-op on Windows: the OS socket bind guarantees a single daemon; this lock only collapses wasted spawn attempts (see spawnlock_unix.go).
 func acquireSpawnLock(_ string) (release func(), err error) {
 	return func() {}, nil
 }

@@ -488,10 +488,32 @@ func TestRun_noReinitWhenInitializeSucceeds(t *testing.T) {
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
-	// initialize returning "not initialized" would be bizarre, but even if it did,
-	// peekIsInitialize should prevent a reinit loop.
 	if got := calls.Load(); got != 1 {
 		t.Errorf("expected exactly 1 call for initialize, got %d", got)
+	}
+}
+
+func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`)
+	}))
+	defer srv.Close()
+
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
+	done := make(chan error, 1)
+	go func() { done <- Run(RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: io.Discard}) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Run did not return — reinit loop not prevented for initialize method")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Errorf("expected exactly 1 call (no reinit), got %d", got)
 	}
 }
 

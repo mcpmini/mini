@@ -105,8 +105,7 @@ func containsToken(tokens []string, want string) bool {
 	return false
 }
 
-// hijackCloseHandler accepts the connection then closes it without writing a response,
-// producing a post-send client.Do error (not a dial refusal) — the otherTransportError case.
+// Produces a post-send client.Do error (not a dial failure) by hijacking and immediately closing — exercises the outcomeOther path.
 func hijackCloseHandler(w http.ResponseWriter, _ *http.Request) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
@@ -207,10 +206,8 @@ func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 	}
 }
 
-// TestDeliver_boundedWhenRespawnedDaemonStaysDead covers the case where Reresolve SUCCEEDS
-// every time but always hands back a dead port (a respawned daemon that never comes up).
-// Recovery must still terminate within the bounded attempts and return a clean error,
-// rather than spinning forever — complements the Reresolve-erroring case above.
+// Reresolve succeeds every time but returns a dead port (daemon never comes up).
+// Proves recovery terminates within bounded attempts rather than spinning forever.
 func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
 	dead := closedPort(t)
 	var resolveCalls atomic.Int32

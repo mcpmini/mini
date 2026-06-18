@@ -2,18 +2,14 @@ package proxy
 
 import "sync"
 
-// linkState is an immutable snapshot of the daemon target: where to reach it, the
-// bearer token to use, and the generation it belongs to. gen lets concurrent forwards
-// collapse a daemon failure into a single recovery (single-flight).
+// gen tracks the daemon generation so concurrent forwards can collapse a failure into a single recovery.
 type linkState struct {
 	port  int
 	token string
 	gen   uint64
 }
 
-// daemonLink is the shared, mutex-guarded target all concurrent forwards point at.
-// The first forward to observe a dead daemon re-resolves and bumps gen; the rest see
-// the advanced gen and reuse the fresh port+token without re-resolving.
+// The first goroutine to detect a dead daemon re-resolves and bumps gen; the rest see the new gen and reuse the result.
 type daemonLink struct {
 	mu        sync.Mutex
 	state     linkState
@@ -30,10 +26,8 @@ func (d *daemonLink) snapshot() linkState {
 	return d.state
 }
 
-// recover performs at most one re-resolution per failed generation. If another goroutine
-// already advanced the generation, it returns the new state without re-resolving. The
-// lock is intentionally held across reresolve() (which may spawn a daemon): serializing
-// racers is what guarantees only one of them respawns.
+// At most one re-resolution per failed generation; lock intentionally held across reresolve()
+// (which may spawn a daemon), serializing racers so exactly one respawns.
 func (d *daemonLink) recover(failedGen uint64) (linkState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
