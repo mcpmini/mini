@@ -217,8 +217,9 @@ func TestDaemon_recoversAfterDaemonKilledMidSession(t *testing.T) {
 	}
 }
 
-// freeTCPPort asks the OS for an unused loopback port, then releases it. SO_REUSEADDR makes
-// rebinding the same port immediately afterward reliable, so the small race window is benign.
+// freeTCPPort asks the OS for an unused loopback port, then releases it. There is a brief
+// race between Close() and the daemon binding the port, but in an isolated test environment
+// another process claiming the port in that window is rare enough to be tolerated.
 func freeTCPPort(t *testing.T) int {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

@@ -67,6 +67,8 @@ func Start(configDir string, timeout time.Duration) (int, error) {
 	if err := spawnDaemon(exe, configDir); err != nil {
 		return 0, err
 	}
+	// The lock is held across waitForDaemon so that losers blocked on acquireSpawnLock find
+	// the daemon already up when they reach RunningPort above, rather than re-spawning it.
 	return waitForDaemon(configDir, timeout)
 }
 
