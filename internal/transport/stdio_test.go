@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os/exec"
+	"slices"
 	"testing"
 	"time"
 )
@@ -226,5 +227,33 @@ func TestListTools_viaPipe(t *testing.T) {
 	}
 	if len(tools) != 1 || tools[0].Name != "ping" {
 		t.Errorf("unexpected tools: %+v", tools)
+	}
+}
+
+func TestListTools_viaPipe_pagination(t *testing.T) {
+	conn, serverW, serverR := makePipeConn(t)
+
+	pages := []map[string]any{
+		{"tools": []any{map[string]any{"name": "a", "inputSchema": map[string]any{}}}, "nextCursor": "p2"},
+		{"tools": []any{map[string]any{"name": "b", "inputSchema": map[string]any{}}}},
+	}
+	go func() {
+		scanner := NewScanner(serverR)
+		for _, page := range pages {
+			if !scanner.Scan() {
+				return
+			}
+			var req Request
+			json.Unmarshal(scanner.Bytes(), &req) //nolint:errcheck
+			sendResponse(serverW, req.ID, page)
+		}
+	}()
+
+	got, err := conn.ListTools(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"a", "b"}; !slices.Equal(toolNames(got), want) {
+		t.Errorf("got %v, want %v", toolNames(got), want)
 	}
 }

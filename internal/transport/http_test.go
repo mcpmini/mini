@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -344,5 +345,38 @@ func TestClose_isNoop(t *testing.T) {
 	}
 	if err := conn.Close(); err != nil {
 		t.Errorf("second Close() returned error: %v", err)
+	}
+}
+
+func TestListTools_HTTPPagination(t *testing.T) {
+	var page int
+	pages := []map[string]any{
+		{"tools": []any{map[string]any{"name": "a", "inputSchema": map[string]any{}}}, "nextCursor": "p2"},
+		{"tools": []any{map[string]any{"name": "b", "inputSchema": map[string]any{}}}},
+	}
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"protocolVersion": ProtocolVersion},
+			})
+		case "tools/list":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": pages[page],
+			})
+			page++
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	got, err := conn.ListTools(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"a", "b"}; !slices.Equal(toolNames(got), want) {
+		t.Errorf("got %v, want %v", toolNames(got), want)
 	}
 }

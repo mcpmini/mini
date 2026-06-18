@@ -57,7 +57,8 @@ type ServerInfo struct {
 }
 
 type ToolsListResult struct {
-	Tools []MCPTool `json:"tools"`
+	Tools      []MCPTool `json:"tools"`
+	NextCursor string    `json:"nextCursor,omitempty"`
 }
 
 type MCPTool struct {

@@ -4,6 +4,8 @@ package main
 
 import (
 	"encoding/json"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,8 +13,9 @@ import (
 )
 
 type mcpHandler struct {
-	tools  *ToolRegistry
-	faults *FaultRegistry
+	tools        *ToolRegistry
+	faults       *FaultRegistry
+	listPageSize int
 }
 
 // dispatchResult carries the response and any raw-write override for fault injection.
@@ -101,7 +104,7 @@ func (h *mcpHandler) handle(req transport.Request) transport.Response {
 	case "initialize":
 		return respond(req.ID, fakeInitResult)
 	case "tools/list":
-		return respond(req.ID, transport.ToolsListResult{Tools: h.tools.MCPTools()})
+		return respond(req.ID, h.toolsListResult(req.Params))
 	case "tools/call":
 		p := parseToolCall(req.Params)
 		fault, _ := h.faults.Match(req.Method, p.Name)
@@ -109,6 +112,27 @@ func (h *mcpHandler) handle(req transport.Request) transport.Response {
 	default:
 		return methodNotFound(req)
 	}
+}
+
+func (h *mcpHandler) toolsListResult(params json.RawMessage) transport.ToolsListResult {
+	tools := h.tools.MCPTools()
+	if h.listPageSize <= 0 {
+		return transport.ToolsListResult{Tools: tools}
+	}
+	slices.SortFunc(tools, func(a, b transport.MCPTool) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	var p struct {
+		Cursor string `json:"cursor"`
+	}
+	json.Unmarshal(params, &p) //nolint:errcheck
+	offset, _ := strconv.Atoi(p.Cursor)
+	end := min(offset+h.listPageSize, len(tools))
+	r := transport.ToolsListResult{Tools: tools[offset:end]}
+	if end < len(tools) {
+		r.NextCursor = strconv.Itoa(end)
+	}
+	return r
 }
 
 func parseToolCall(raw json.RawMessage) transport.ToolCallParams {
