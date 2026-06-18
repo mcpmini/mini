@@ -236,7 +236,7 @@ func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
 	sid := "aabbccdd11223344aabbccdd11223344"
 
 	init, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize",
-		"params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "t", "version": "0"}}})
+		"params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "t", "version": "0"}, transport.ToolModeParam: transport.ToolModeCompactValue}})
 	exec, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}}})
 	postToMiniHTTP(t, ts, sid, init)
@@ -291,7 +291,7 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 
 	sid := "aabbccdd11223344aabbccdd11223344"
 	init, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize",
-		"params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "t", "version": "0"}}})
+		"params": map[string]any{"protocolVersion": "2025-03-26", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "t", "version": "0"}, transport.ToolModeParam: transport.ToolModeCompactValue}})
 	exec, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": "ping"}}})
 

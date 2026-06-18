@@ -63,7 +63,7 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ctx, pr, &out) }()
 
-	pw.Write(buildServeInput([][]byte{slowCallReq(42)})) //nolint:errcheck
+	pw.Write(buildServeInput(true, [][]byte{slowCallReq(42)})) //nolint:errcheck
 
 	if !waitTimeout(&callStarted, 3*time.Second) {
 		pw.Close()
@@ -88,7 +88,7 @@ func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 	var callCtx context.Context
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "s"}, newSlowBlockingConn(&callStarted, &callCtx))
 
-	sessionID := initSession(t, ts)
+	sessionID := initCompactSession(t, ts)
 	go drainMCPPost(t, ts, slowCallReq(42), sessionID)
 
 	if !waitTimeout(&callStarted, 3*time.Second) {
@@ -113,8 +113,6 @@ func TestCancellation_UnknownMethodReturnsError(t *testing.T) {
 		t.Errorf("error code = %v, want %d", errObj["code"], transport.CodeMethodNotFound)
 	}
 }
-
-// --- helpers ---
 
 func notification(method string, params any) []byte {
 	p, _ := json.Marshal(params)

@@ -9,6 +9,7 @@ import (
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 type ServerOption func(*Server)
@@ -19,12 +20,8 @@ func WithClock(c clock.Clock) ServerOption {
 	return func(s *Server) { s.clock = c }
 }
 
-// WithProxyMode switches the server into transparent proxy mode: upstream tools
-// are exposed directly as server__tool instead of behind the 4-tool abstraction.
-// In this mode mini does not apply perm_call; clients such as Claude configure
-// per-tool approval/allow rules against the exposed upstream tool names.
-func WithProxyMode() ServerOption {
-	return func(s *Server) { s.proxyMode = true }
+func WithToolMode(m transport.ToolMode) ServerOption {
+	return func(s *Server) { s.toolMode = m }
 }
 
 // WithDaemonAuthToken requires Authorization: Bearer <token> on the /mcp endpoint.
@@ -54,13 +51,13 @@ type Server struct {
 	sessions             *sessionStore
 	logger               *slog.Logger
 	clock                clock.Clock
-	proxyMode            bool
+	toolMode             transport.ToolMode
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
 	// Lock ordering: when both mu and authMu must be acquired, always acquire mu first.
 	mu          sync.RWMutex
 	persistMu   sync.Mutex
-	serverOpMu  sync.Mutex        // serializes concurrent add_server / remove_server for the same name
+	serverOpMu  sync.Mutex // serializes concurrent add_server / remove_server for the same name
 	removeGen   map[string]uint64 // protected by serverOpMu; incremented on each remove_server
 	authMu      sync.Mutex
 	authFlows   map[string]*authFlowState

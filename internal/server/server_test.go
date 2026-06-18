@@ -59,10 +59,17 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 	}
 }
 
-// serveAll runs a full Serve session and returns all parsed output messages.
 func serveAll(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
+	return serveAllMode(t, srv, true, lines...)
+}
+
+func serveAllProxy(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]any {
+	return serveAllMode(t, srv, false, lines...)
+}
+
+func serveAllMode(t *testing.T, srv *server.Server, compact bool, lines ...[]byte) []map[string]any {
 	t.Helper()
-	input := buildServeInput(lines)
+	input := buildServeInput(compact, lines)
 	var out bytes.Buffer
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -72,12 +79,8 @@ func serveAll(t *testing.T, srv *server.Server, lines ...[]byte) []map[string]an
 	return parseMessages(out.Bytes())
 }
 
-func buildServeInput(lines [][]byte) []byte {
-	input := rpc("initialize", map[string]any{
-		"protocolVersion": transport.ProtocolVersion,
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "test", "version": "0"},
-	})
+func buildServeInput(compact bool, lines [][]byte) []byte {
+	input := rpc("initialize", initParams(compact))
 	for _, l := range lines {
 		input = append(input, l...)
 		if len(l) > 0 && l[len(l)-1] != '\n' {
@@ -141,7 +144,27 @@ func parseResponse(t *testing.T, data []byte) map[string]any {
 	return resp
 }
 
+func initParams(compact bool) map[string]any {
+	params := map[string]any{
+		"protocolVersion": transport.ProtocolVersion,
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	}
+	if compact {
+		params[transport.ToolModeParam] = transport.ToolModeCompactValue
+	}
+	return params
+}
+
 func serve(t *testing.T, srv *server.Server, input []byte) map[string]any {
+	return serveMode(t, srv, true, input)
+}
+
+func serveProxy(t *testing.T, srv *server.Server, input []byte) map[string]any {
+	return serveMode(t, srv, false, input)
+}
+
+func serveMode(t *testing.T, srv *server.Server, compact bool, input []byte) map[string]any {
 	t.Helper()
 	var callReq struct {
 		ID json.RawMessage `json:"id"`
@@ -151,12 +174,8 @@ func serve(t *testing.T, srv *server.Server, input []byte) map[string]any {
 	}
 	wantID := string(callReq.ID)
 
-	initParams, _ := json.Marshal(map[string]any{
-		"protocolVersion": "2025-03-26",
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "test", "version": "0"},
-	})
-	initReq, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": json.RawMessage(initParams)})
+	initRaw, _ := json.Marshal(initParams(compact))
+	initReq, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": json.RawMessage(initRaw)})
 	fullInput := append(append(initReq, '\n'), input...)
 	var out bytes.Buffer
 	done := make(chan error, 1)
@@ -262,7 +281,6 @@ func mustDiscoverResults(t *testing.T, srv *server.Server, args map[string]any) 
 	}
 	return results
 }
-
 
 func TestDiscoverEmpty(t *testing.T) {
 	srv := newTestServer(t)
@@ -418,4 +436,3 @@ func TestPing_ReturnsEmptyResult(t *testing.T) {
 		t.Errorf("ping result must be {}, got: %v", resp["result"])
 	}
 }
-

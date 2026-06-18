@@ -141,7 +141,7 @@ func TestCLI_status_empty(t *testing.T) {
 }
 
 
-func TestCLI_serve_invalidConfig(t *testing.T) {
+func TestCLI_connect_invalidConfig(t *testing.T) {
 	cfg := t.TempDir()
 	os.WriteFile(filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"), 0644)
 	_, _, code := runCLI(t, cfg, "status")

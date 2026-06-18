@@ -129,7 +129,6 @@ func TestInitializedNotification_noResponse(t *testing.T) {
 	}
 }
 
-
 func fakeConnWithError(name string) *transport.FakeConnection {
 	return &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
@@ -199,9 +198,10 @@ func TestDiscoverDetailNotFound(t *testing.T) {
 
 func invalidParamsInput() []byte {
 	init := rpc("initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "t", "version": "0"},
+		"protocolVersion":       "2024-11-05",
+		"capabilities":          map[string]any{},
+		"clientInfo":            map[string]any{"name": "t", "version": "0"},
+		transport.ToolModeParam: transport.ToolModeCompactValue,
 	})
 	call := rpc("tools/call", map[string]any{
 		"name":      "call",
@@ -355,7 +355,7 @@ func TestErrorCodes_standardValues(t *testing.T) {
 		},
 		{
 			name:     "method not found -32601",
-			input:    buildServeInput([][]byte{rpc("no_such_method", nil)}),
+			input:    buildServeInput(true, [][]byte{rpc("no_such_method", nil)}),
 			wantCode: transport.CodeMethodNotFound,
 		},
 	}
@@ -389,7 +389,7 @@ func TestResponseID_echoesRequest(t *testing.T) {
 				"jsonrpc": "2.0", "id": json.RawMessage(rawID), "method": "ping",
 			})
 			reqBytes = append(reqBytes, '\n')
-			lines := rawServe(t, newTestServer(t), buildServeInput([][]byte{reqBytes}))
+			lines := rawServe(t, newTestServer(t), buildServeInput(true, [][]byte{reqBytes}))
 			for _, line := range lines {
 				var msg map[string]any
 				json.Unmarshal(line, &msg) //nolint:errcheck

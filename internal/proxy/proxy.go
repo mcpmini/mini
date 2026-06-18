@@ -27,7 +27,7 @@ type RunParams struct {
 	ReloadToken func() (string, error)
 	In          io.Reader
 	Out         io.Writer
-	ProxyMode   bool
+	ToolMode    transport.ToolMode
 }
 
 // daemonConn identifies the target daemon and the credentials for one forward.
@@ -52,7 +52,7 @@ func runWithLimit(p RunParams, limit int) error {
 	fp := newForwardPool(p, limit)
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
-		startForward(client, maybeInjectProxy(scanner.Bytes(), p.ProxyMode), fp)
+		startForward(client, maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
 	}
 	fp.wg.Wait()
 	return scanner.Err()
@@ -65,31 +65,28 @@ func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 		port: p.Port, sessionID: p.SessionID, out: p.Out,
 		tokens: &tokenSource{value: p.Token, reload: p.ReloadToken},
 		mu:     &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
-		proxyMode: p.ProxyMode,
+		toolMode: p.ToolMode,
 	}
 }
 
-func maybeInjectProxy(line []byte, proxyMode bool) []byte {
-	if proxyMode {
-		return injectProxyMode(line)
+func maybeInjectToolMode(line []byte, mode transport.ToolMode) []byte {
+	if mode == transport.ToolModeCompact {
+		return injectCompactMode(line)
 	}
 	return line
 }
 
-// injectProxyMode inserts "_mini_proxy_mode": true into the params of an
-// initialize JSON-RPC message so the daemon enables proxy mode for this session.
-// Non-initialize messages and parse errors are returned unchanged.
-func injectProxyMode(line []byte) []byte {
+func injectCompactMode(line []byte) []byte {
 	if !peekIsInitialize(line) {
 		return line
 	}
-	if result, err := withProxyModeParam(line); err == nil {
+	if result, err := withCompactModeParam(line); err == nil {
 		return result
 	}
 	return line
 }
 
-func withProxyModeParam(line []byte) ([]byte, error) {
+func withCompactModeParam(line []byte) ([]byte, error) {
 	var full map[string]json.RawMessage
 	if err := json.Unmarshal(line, &full); err != nil {
 		return nil, err
@@ -98,7 +95,7 @@ func withProxyModeParam(line []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	params["_mini_proxy_mode"] = json.RawMessage(`true`)
+	params[transport.ToolModeParam] = json.RawMessage(`"` + transport.ToolModeCompactValue + `"`)
 	if full["params"], err = json.Marshal(params); err != nil {
 		return nil, err
 	}
@@ -136,7 +133,7 @@ type forwardAsyncParams struct {
 	mu        *sync.Mutex
 	wg        *sync.WaitGroup
 	sem       chan struct{}
-	proxyMode bool
+	toolMode  transport.ToolMode
 }
 
 func (p forwardAsyncParams) conn() daemonConn {
@@ -152,7 +149,7 @@ func forwardAsync(p forwardAsyncParams) {
 	}
 	// Daemon restart or session eviction invalidates the session; reinitialize and retry.
 	if isNotInitialized(resp) && !peekIsInitialize(p.line) {
-		reinitDaemon(p.conn(), p.proxyMode)
+		reinitDaemon(p.conn(), p.toolMode)
 		if resp, _ = forward(p.conn(), p.line); resp == nil {
 			return
 		}
@@ -177,14 +174,14 @@ func forwardWithAuthRetry(p forwardAsyncParams) []byte {
 
 // reinitDaemon recovers from daemon restart or session eviction. Responses are
 // discarded — only the caller's retry of the original request is forwarded.
-func reinitDaemon(conn daemonConn, proxyMode bool) {
+func reinitDaemon(conn daemonConn, mode transport.ToolMode) {
 	params, _ := json.Marshal(transport.InitializeParams{
 		ProtocolVersion: transport.ProtocolVersion,
 		Capabilities:    map[string]any{},
 		ClientInfo:      transport.ClientInfo{Name: "mini", Version: version.Version},
 	})
 	initMsg, _ := json.Marshal(transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)})
-	forward(conn, maybeInjectProxy(initMsg, proxyMode))
+	forward(conn, maybeInjectToolMode(initMsg, mode))
 	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
 	forward(conn, notif)
 }

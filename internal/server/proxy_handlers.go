@@ -107,10 +107,6 @@ func (s *Server) renderProxyResult(p renderProxyResultParams) string {
 	return s.formatProxyEnvelope(p.Env, p.RawTokens)
 }
 
-// formatProxyEnvelope formats a proxy response using the 3-tier approach:
-// - No projection, small: raw JSON, mini invisible
-// - Projection applied, small: bracket note + inline projected JSON
-// - Large (above inline threshold): note (if projection) + file path
 func (s *Server) formatProxyEnvelope(env *response.Envelope, rawTokens int) string {
 	hasNote := len(env.Elided) > 0 || len(env.Truncated) > 0
 	isLarge := rawTokens > s.cfg.InlineThreshold
@@ -227,5 +223,9 @@ func parseProxyToolName(name string) (server, tool string, err error) {
 	if idx < 0 {
 		return "", "", fmt.Errorf("unknown proxy tool: %q (expected server__tool format)", name)
 	}
-	return name[:idx], name[idx+2:], nil
+	s, t := name[:idx], name[idx+2:]
+	if s == "" || t == "" {
+		return "", "", fmt.Errorf("invalid proxy tool name %q: server and tool must both be non-empty", name)
+	}
+	return s, t, nil
 }

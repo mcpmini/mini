@@ -47,7 +47,7 @@ func TestRead_RejectsSymlinkEscape(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
 	cfg.InlineThreshold = 10000
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
 	// Create a symlink INSIDE the store dir that points OUTSIDE it.
@@ -57,7 +57,7 @@ func TestRead_RejectsSymlinkEscape(t *testing.T) {
 	}
 
 	// Attempt to read via the MCP tool. This must be rejected.
-	resp := serve(t, srv, callTool("read", map[string]any{"path": symlinkPath}))
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": symlinkPath}))
 
 	// Should be an RPC-level error (errInvalidParams) or a tool-level isError.
 	if rpcErr := resp["error"]; rpcErr != nil {
@@ -97,7 +97,7 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
 	cfg.InlineThreshold = 10000
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
 	// Create a real file inside the store and a symlink to it, also inside.
@@ -110,7 +110,7 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 		t.Fatalf("create symlink: %v", err)
 	}
 
-	resp := serve(t, srv, callTool("read", map[string]any{"path": symlinkPath}))
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": symlinkPath}))
 	// Should succeed (symlink within store is allowed).
 	if rpcErr := resp["error"]; rpcErr != nil {
 		t.Fatalf("unexpected RPC error for in-store symlink: %v", rpcErr)
@@ -301,13 +301,13 @@ func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
 	cfg.InlineThreshold = 10000
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithProxyMode())
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
 	// Craft a path that tries to escape via ".." without using a symlink.
 	traversal := filepath.Join(storeDir, "..", "escape.json")
 
-	resp := serve(t, srv, callTool("read", map[string]any{"path": traversal}))
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": traversal}))
 	if rpcErr := resp["error"]; rpcErr != nil {
 		return // RPC rejection is correct
 	}

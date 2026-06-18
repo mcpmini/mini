@@ -32,20 +32,41 @@ func postMCP(t *testing.T, srv *server.Server, sessionID string, msg any) map[st
 	return resp
 }
 
-func initMsg(proxyMode bool) map[string]any {
+func initMsg(compact bool) map[string]any {
 	params := map[string]any{
 		"protocolVersion": transport.ProtocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	}
-	if proxyMode {
-		params["_mini_proxy_mode"] = true
+	if compact {
+		params[transport.ToolModeParam] = transport.ToolModeCompactValue
 	}
 	return map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params}
 }
 
 func toolsListMsg() map[string]any {
 	return map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
+}
+
+func TestHTTPSession_InheritsServerCompactMode(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	defer srv.Close()
+	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+
+	const sessionID = "11111111-1111-1111-1111-111111111111"
+	postMCP(t, srv, sessionID, initMsg(false)) // no wire signal: must inherit server default
+
+	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	if !hasToolName(tools, "call") {
+		t.Errorf("HTTP session should inherit server-level compact mode, got %v", tools)
+	}
+	for _, n := range tools {
+		if strings.Contains(n, "__") {
+			t.Errorf("compact session should not expose upstream tools, got %v", tools)
+		}
+	}
 }
 
 func extractToolNames(resp map[string]any) []string {
@@ -67,6 +88,42 @@ func hasToolName(names []string, name string) bool {
 	return false
 }
 
+func TestHTTPSession_DoubleInitialize_ModeLockedToFirst(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+
+	const sessionID = "22222222-2222-2222-2222-222222222222"
+	postMCP(t, srv, sessionID, initMsg(false)) // first init: proxy mode (no signal → server default)
+
+	// Second initialize sends compact signal — must not flip the session mode.
+	secondInit := initMsg(true) // compact signal
+	secondInit["id"] = 99
+	resp := postMCP(t, srv, sessionID, secondInit)
+	if resp["error"] != nil {
+		t.Errorf("second initialize should not return error: %v", resp["error"])
+	}
+
+	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	for _, n := range tools {
+		if n == "call" || n == "list" || n == "perm_call" {
+			t.Errorf("session should remain in proxy mode after double-initialize, got compact tool %q", n)
+		}
+	}
+	found := false
+	for _, n := range tools {
+		if strings.Contains(n, "__") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("session should remain in proxy mode after double-initialize, got tools: %v", tools)
+	}
+}
+
 func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
@@ -79,7 +136,7 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 	addProxyConn(t, srv, "svc", conn)
 
 	const sessionID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
-	postMCP(t, srv, sessionID, initMsg(true))
+	postMCP(t, srv, sessionID, initMsg(false))
 
 	postMCP(t, srv, sessionID, map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -116,8 +173,8 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 
 	const sessionA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001"
 	const sessionB = "bbbbbbbb-bbbb-bbbb-bbbb-000000000002"
-	postMCP(t, srv, sessionA, initMsg(true))
-	postMCP(t, srv, sessionB, initMsg(true))
+	postMCP(t, srv, sessionA, initMsg(false))
+	postMCP(t, srv, sessionB, initMsg(false))
 
 	postMCP(t, srv, sessionA, map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -158,7 +215,7 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	addProxyConn(t, srv, "svc", conn)
 
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000003"
-	postMCP(t, srv, sessionID, initMsg(true))
+	postMCP(t, srv, sessionID, initMsg(false))
 
 	postMCP(t, srv, sessionID, map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -194,32 +251,85 @@ func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
 	}
 
 	const proxyID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-	const standardID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	const compactID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
-	postMCP(t, srv, proxyID, initMsg(true))
-	postMCP(t, srv, standardID, initMsg(false))
+	postMCP(t, srv, proxyID, initMsg(false))
+	postMCP(t, srv, compactID, initMsg(true))
 
 	proxyTools := extractToolNames(postMCP(t, srv, proxyID, toolsListMsg()))
-	standardTools := extractToolNames(postMCP(t, srv, standardID, toolsListMsg()))
+	compactTools := extractToolNames(postMCP(t, srv, compactID, toolsListMsg()))
 
 	if !hasToolName(proxyTools, "gh__list_issues") {
 		t.Errorf("proxy session: expected gh__list_issues, got %v", proxyTools)
 	}
 	for _, n := range proxyTools {
 		if n == "call" || n == "perm_call" {
-			t.Errorf("proxy session should not expose standard tools, got %v", proxyTools)
+			t.Errorf("proxy session should not expose compact tools, got %v", proxyTools)
 			break
 		}
 	}
 
-	if !hasToolName(standardTools, "call") {
-		t.Errorf("standard session: expected call tool, got %v", standardTools)
+	if !hasToolName(compactTools, "call") {
+		t.Errorf("compact session: expected call tool, got %v", compactTools)
 	}
-	for _, n := range standardTools {
+	for _, n := range compactTools {
 		if strings.Contains(n, "__") {
-			t.Errorf("standard session should not expose upstream tools, got %v", standardTools)
+			t.Errorf("compact session should not expose upstream tools, got %v", compactTools)
 			break
 		}
+	}
+}
+
+// TestResolveToolMode_proxySignalOnCompactServer verifies that a client sending
+// the "proxy" wire signal on a compact-configured server gets proxy mode, not
+// compact mode. The "proxy" constant must have an effect on the wire.
+func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	defer srv.Close()
+	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+
+	params := map[string]any{
+		"protocolVersion":       transport.ProtocolVersion,
+		"capabilities":          map[string]any{},
+		"clientInfo":            map[string]any{"name": "test", "version": "0"},
+		transport.ToolModeParam: transport.ToolModeProxyValue,
+	}
+	const sessionID = "22222222-2222-2222-2222-222222222222"
+	postMCP(t, srv, sessionID, map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params})
+
+	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	if !hasToolName(tools, "gh__list_issues") {
+		t.Errorf("proxy wire signal on compact server should yield proxy session, got tools: %v", tools)
+	}
+	for _, n := range tools {
+		if n == "call" || n == "perm_call" {
+			t.Errorf("session with proxy wire signal should not expose compact tools, got: %v", tools)
+			break
+		}
+	}
+}
+
+func TestResolveToolMode_unrecognizedSignal_fallsBackToServerDefault(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	defer srv.Close()
+	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+
+	params := map[string]any{
+		"protocolVersion":       transport.ProtocolVersion,
+		"capabilities":          map[string]any{},
+		"clientInfo":            map[string]any{"name": "test", "version": "0"},
+		transport.ToolModeParam: "turbo",
+	}
+	const sessionID = "33333333-3333-3333-3333-333333333333"
+	postMCP(t, srv, sessionID, map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params})
+
+	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	if !hasToolName(tools, "call") {
+		t.Errorf("unrecognized signal should fall back to server default (compact), got tools: %v", tools)
 	}
 }
 
@@ -227,20 +337,20 @@ func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
 
-	instructions := func(proxyMode bool, sessionID string) string {
-		resp := postMCP(t, srv, sessionID, initMsg(proxyMode))
+	instructions := func(compact bool, sessionID string) string {
+		resp := postMCP(t, srv, sessionID, initMsg(compact))
 		res, _ := resp["result"].(map[string]any)
 		s, _ := res["instructions"].(string)
 		return s
 	}
 
-	proxy := instructions(true, "cccccccc-cccc-cccc-cccc-cccccccccccc")
+	proxy := instructions(false, "cccccccc-cccc-cccc-cccc-cccccccccccc")
 	if !strings.Contains(proxy, "read") || strings.Contains(proxy, "perm_call") {
 		t.Errorf("proxy instructions wrong: %q", proxy)
 	}
 
-	std := instructions(false, "dddddddd-dddd-dddd-dddd-dddddddddddd")
-	if !strings.Contains(std, "perm_call") {
-		t.Errorf("standard instructions wrong: %q", std)
+	compact := instructions(true, "dddddddd-dddd-dddd-dddd-dddddddddddd")
+	if !strings.Contains(compact, "perm_call") {
+		t.Errorf("compact instructions wrong: %q", compact)
 	}
 }

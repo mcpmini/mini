@@ -21,7 +21,9 @@ func TestServer_initialize(t *testing.T) {
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
 	var result struct {
-		ServerInfo struct{ Name string `json:"name"` } `json:"serverInfo"`
+		ServerInfo struct {
+			Name string `json:"name"`
+		} `json:"serverInfo"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatal(err)
@@ -36,7 +38,9 @@ func TestServer_toolsList(t *testing.T) {
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	raw := startServer(t, cfg).mustCall("tools/list", nil)
 	var result struct {
-		Tools []struct{ Name string `json:"name"` } `json:"tools"`
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatal(err)
@@ -98,7 +102,9 @@ func TestServer_execUnknownTool(t *testing.T) {
 		"name":      "call",
 		"arguments": map[string]any{"server": "github", "tool": "nonexistent_tool", "args": map[string]any{}},
 	})
-	var result struct{ IsError bool `json:"isError"` }
+	var result struct {
+		IsError bool `json:"isError"`
+	}
 	json.Unmarshal(raw, &result)
 	if !result.IsError {
 		t.Error("expected isError=true for unknown tool")
@@ -111,17 +117,18 @@ func TestServer_execUnknownServer(t *testing.T) {
 		"name":      "call",
 		"arguments": map[string]any{"server": "doesnotexist", "tool": "list_pull_requests", "args": map[string]any{}},
 	})
-	var result struct{ IsError bool `json:"isError"` }
+	var result struct {
+		IsError bool `json:"isError"`
+	}
 	json.Unmarshal(raw, &result)
 	if !result.IsError {
 		t.Error("expected isError=true for unknown server")
 	}
 }
 
-// startProxyServer starts mini in proxy mode and returns an mcpClient.
 func startProxyServer(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "proxy", "--log-level", "error")
+	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--log-level", "error")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +164,9 @@ func TestProxy_initialize(t *testing.T) {
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	raw := startProxyServer(t, cfg).mustCall("tools/list", nil)
 	var result struct {
-		Tools []struct{ Name string `json:"name"` } `json:"tools"`
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatal(err)
@@ -235,7 +244,7 @@ func TestProxy_toolsListAnnotationsPassthrough(t *testing.T) {
 	t.Error("svc__do_thing not found in proxy tools/list")
 }
 
-// TestServe_unreachableUpstreamDoesNotExit verifies that mini serve continues
+// TestServe_unreachableUpstreamDoesNotExit verifies that mini connect continues
 // running when an upstream fails to connect at startup. Previously os.Exit(1)
 // was called, which prevented startup when any server was unavailable.
 func TestServe_unreachableUpstreamDoesNotExit(t *testing.T) {
@@ -261,7 +270,9 @@ func TestProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 	client := startProxyServer(t, cfg)
 	raw := client.mustCall("tools/list", nil)
 	var result struct {
-		Tools []struct{ Name string `json:"name"` } `json:"tools"`
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
 	}
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatal(err)
@@ -293,7 +304,9 @@ func execGitHubToolIsError(t *testing.T, client *mcpClient, execName, tool strin
 		"name":      execName,
 		"arguments": map[string]any{"server": "github", "tool": tool, "args": map[string]any{}},
 	})
-	var r struct{ IsError bool `json:"isError"` }
+	var r struct {
+		IsError bool `json:"isError"`
+	}
 	json.Unmarshal(raw, &r) //nolint:errcheck
 	return r.IsError
 }
@@ -379,4 +392,3 @@ func TestServer_multipleUpstreams(t *testing.T) {
 		}
 	}
 }
-

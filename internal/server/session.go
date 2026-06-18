@@ -36,7 +36,8 @@ type Session struct {
 	initOnce      sync.Once
 	initAbortOnce sync.Once
 
-	proxyMode      atomic.Bool
+	mode           atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
+	modeOnce       sync.Once
 	totalCalls     atomic.Int64
 	totalErrors    atomic.Int64
 	totalLatencyMs atomic.Int64
@@ -86,6 +87,14 @@ func newSession() *Session {
 		initDone:    make(chan struct{}),
 		initAbort:   make(chan struct{}),
 	}
+}
+
+func (s *Session) toolMode() transport.ToolMode {
+	return transport.ToolMode(s.mode.Load())
+}
+
+func (s *Session) setToolModeOnce(m transport.ToolMode) {
+	s.modeOnce.Do(func() { s.mode.Store(int32(m)) })
 }
 
 func (s *Session) markInitialized() {

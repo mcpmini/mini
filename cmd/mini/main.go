@@ -31,8 +31,7 @@ type sessionEvictor interface {
 var usageText = `usage: mini [--config DIR] [--version] <command>
 
 commands:
-  serve [flags]                  Start the MCP proxy (default, stdio)
-  proxy [flags]                  Start in transparent proxy mode (exposes upstream tools directly)
+  connect [flags]                Connect an agent to mini (stdio MCP)
   daemon                         Run as a shared background daemon (HTTP)
   daemon status                  Show whether the daemon is running
   ls / list                      List configured servers
@@ -47,13 +46,10 @@ commands:
   perm-call SERVER TOOL [PARAMS] Invoke a protected tool directly
   version                        Print version
 
-serve flags:
+connect flags:
   --http ADDR         Also serve HTTP MCP on ADDR; bare port or :port binds to loopback
   --standalone        Skip daemon detection, serve directly
-  --dangerous-nonloopback-http  Allow --http to bind to non-loopback (all clients must be trusted)
-
-proxy flags:
-  --http ADDR         Also serve HTTP MCP on ADDR; bare port or :port binds to loopback
+  --tool-mode <proxy|compact>  proxy (default): expose upstream tools directly; compact: four-meta-tool interface
   --dangerous-nonloopback-http  Allow --http to bind to non-loopback (all clients must be trusted)
 
 call / perm-call flags:
@@ -88,8 +84,7 @@ func main() {
 }
 
 var commands = map[string]func(string, []string){
-	"serve":     runServe,
-	"proxy":     runProxy,
+	"connect":   runConnect,
 	"daemon":    runDaemonCmd,
 	"ls":        func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
 	"list":      func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
@@ -114,10 +109,11 @@ func mustRun(err error) {
 }
 
 func dispatch(configDir string, args []string) {
-	cmd := "serve"
-	if len(args) > 0 {
-		cmd, args = args[0], args[1:]
+	if len(args) == 0 {
+		fmt.Println(usageText)
+		return
 	}
+	cmd, args := args[0], args[1:]
 	run, ok := commands[cmd]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
@@ -139,60 +135,55 @@ func usage() {
 	fmt.Fprintln(os.Stderr, usageText)
 }
 
-type serveFlags struct {
+type connectFlags struct {
 	logLevel          string
 	httpAddr          string
 	standalone        bool
 	dangerNonLoopback bool
+	toolMode          transport.ToolMode
 }
 
-func parseServeFlags(args []string) serveFlags {
-	fs := flag.NewFlagSet("serve", flag.ExitOnError)
+func parseConnectFlags(args []string) connectFlags {
+	fs := flag.NewFlagSet("connect", flag.ExitOnError)
 	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
 	httpAddr := fs.String("http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
 	standalone := fs.Bool("standalone", false, "skip daemon detection, serve directly (useful for debugging)")
 	dangerNonLoopback := fs.Bool("dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address")
+	toolMode := fs.String("tool-mode", "", "tool interface: compact for the four-meta-tool interface (default is proxy)")
 	fs.Parse(args) //nolint:errcheck
-	return serveFlags{logLevel: *logLevel, httpAddr: *httpAddr, standalone: *standalone, dangerNonLoopback: *dangerNonLoopback}
+	return connectFlags{logLevel: *logLevel, httpAddr: *httpAddr, standalone: *standalone, dangerNonLoopback: *dangerNonLoopback, toolMode: parseToolMode(*toolMode)}
 }
 
-func runServe(configDir string, args []string) {
-	f := parseServeFlags(args)
+func parseToolMode(m string) transport.ToolMode {
+	switch m {
+	case transport.ToolModeCompactValue:
+		return transport.ToolModeCompact
+	case "", transport.ToolModeProxyValue:
+		return transport.ToolModeProxy
+	}
+	fatalf("invalid --tool-mode %q; valid values: proxy, compact", m)
+	return transport.ToolModeProxy
+}
+
+func runConnect(configDir string, args []string) {
+	f := parseConnectFlags(args)
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
 	logger := buildLogger(cfg, f.logLevel, os.Stderr)
-	if shouldTryProxyMode(f.standalone, f.httpAddr) && tryServeViaProxy(configDir, logger) {
+	if shouldTryDaemon(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
 		return
 	}
-	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback})
+	var opts []server.ServerOption
+	if f.toolMode == transport.ToolModeCompact {
+		opts = []server.ServerOption{server.WithToolMode(transport.ToolModeCompact)}
+	}
+	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, opts...)
 }
 
-func shouldTryProxyMode(standalone bool, httpAddr string) bool {
+func shouldTryDaemon(standalone bool, httpAddr string) bool {
 	return !standalone && httpAddr == ""
-}
-
-func tryServeViaProxy(configDir string, logger *slog.Logger) bool {
-	return connectViaDaemon(configDir, logger, false) == nil
-}
-
-func runProxy(configDir string, args []string) {
-	fs := flag.NewFlagSet("proxy", flag.ExitOnError)
-	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
-	httpAddr := fs.String("http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
-	dangerNonLoopback := fs.Bool("dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address (only when all network clients are trusted)")
-	fs.Parse(args) //nolint:errcheck
-
-	cfg, servers, err := config.Load(configDir)
-	if err != nil {
-		fatalf("load config: %v", err)
-	}
-	logger := buildLogger(cfg, *logLevel, os.Stderr)
-	if *httpAddr == "" && connectViaDaemon(configDir, logger, true) == nil {
-		return
-	}
-	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: *httpAddr, DangerNonLoopback: *dangerNonLoopback}, server.WithProxyMode())
 }
 
 type ServeParams struct {
@@ -275,7 +266,7 @@ func maybeStartSessionEviction(ctx context.Context, httpSrv *http.Server, srv se
 	go srv.RunSessionEviction(ctx, standaloneHTTPSessionMaxIdle)
 }
 
-func connectViaDaemon(configDir string, logger *slog.Logger, proxyMode bool) error {
+func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.ToolMode) error {
 	port, err := resolveDaemonPort(configDir, logger)
 	if err != nil {
 		return err
@@ -289,7 +280,7 @@ func connectViaDaemon(configDir string, logger *slog.Logger, proxyMode bool) err
 	return proxy.Run(proxy.RunParams{
 		Port: port, SessionID: sessionID, Token: token,
 		ReloadToken: func() (string, error) { return daemon.ReadToken(configDir) },
-		In:          os.Stdin, Out: os.Stdout, ProxyMode: proxyMode,
+		In:          os.Stdin, Out: os.Stdout, ToolMode: mode,
 	})
 }
 

@@ -52,10 +52,9 @@ func startDaemon(t *testing.T, configDir string) int {
 	return waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
 }
 
-// connectProxy starts a mini serve instance that connects to the daemon at port.
 func startProxyCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
 	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "serve", "--log-level", "error")
+	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--log-level", "error")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +89,43 @@ func connectProxy(t *testing.T, configDir string) *mcpClient {
 	return c
 }
 
+func startCompactCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
+	t.Helper()
+	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--tool-mode", "compact", "--log-level", "error")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stdin.Close()
+		cmd.Process.Kill() //nolint:errcheck
+		cmd.Wait()         //nolint:errcheck
+	})
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 4<<20), 4<<20)
+	return stdin, scanner
+}
+
+func connectCompact(t *testing.T, configDir string) *mcpClient {
+	t.Helper()
+	stdin, scanner := startCompactCmd(t, configDir)
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	go c.readLoop(scanner)
+	c.mustCall("initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	})
+	return c
+}
+
 func TestDaemon_basicToolCall(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
 	cfg := t.TempDir()
@@ -97,7 +133,7 @@ func TestDaemon_basicToolCall(t *testing.T) {
 	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	startDaemon(t, cfg)
-	client := connectProxy(t, cfg)
+	client := connectCompact(t, cfg)
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.Error != "" {
 		t.Errorf("expected ok=true, got: %+v", e)
@@ -112,8 +148,8 @@ func TestDaemon_sessionIsolation(t *testing.T) {
 
 	startDaemon(t, cfg)
 
-	c1 := connectProxy(t, cfg)
-	c2 := connectProxy(t, cfg)
+	c1 := connectCompact(t, cfg)
+	c2 := connectCompact(t, cfg)
 
 	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, true)
 
@@ -173,7 +209,7 @@ func readDaemonToken(t *testing.T, configDir string) string {
 
 func initHTTPSession(t *testing.T, baseURL, token string) string {
 	t.Helper()
-	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token})
+	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token, ToolMode: "compact"})
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	resp.Body.Close()
@@ -242,20 +278,24 @@ func TestDaemon_TokenFilePermissions(t *testing.T) {
 }
 
 type daemonPostOpts struct {
-	Token  string
-	Host   string
-	Origin string
+	Token    string
+	Host     string
+	Origin   string
+	ToolMode string
 }
 
 func daemonPost(t *testing.T, baseURL string, opts daemonPostOpts) *http.Response {
 	t.Helper()
+	params := map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	}
+	if opts.ToolMode != "" {
+		params["_mini_tool_mode"] = opts.ToolMode
+	}
 	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "initialize",
-		"params": map[string]any{
-			"protocolVersion": "2024-11-05",
-			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "test", "version": "0"},
-		},
+		"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params,
 	})
 	req, _ := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -361,5 +401,26 @@ func assertInlineGetItem(t *testing.T, env envelope) {
 	}
 	if data["name"] != "test" {
 		t.Fatalf("expected data.name=test, got %#v", data["name"])
+	}
+}
+
+func TestDaemon_proxyModeToolCall(t *testing.T) {
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", dir)
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+
+	startDaemon(t, cfg)
+	client := connectProxy(t, cfg)
+	raw := client.mustCall("tools/call", map[string]any{
+		"name":      "svc__get_item",
+		"arguments": map[string]any{},
+	})
+	text, isErr := parseToolCallResult(raw)
+	if isErr {
+		t.Fatalf("proxy mode tool call returned error: %s", text)
+	}
+	if text == "" {
+		t.Error("expected non-empty response from proxy mode tool call via daemon")
 	}
 }

@@ -58,7 +58,7 @@ func claudeDesktopPath(home string) agentClient {
 func miniSnippet(binaryPath string) map[string]any {
 	return map[string]any{
 		"command": binaryPath,
-		"args":    []string{},
+		"args":    []string{"connect"},
 	}
 }
 
