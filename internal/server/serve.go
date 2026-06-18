@@ -28,8 +28,10 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, session *Session) error {
 	notifyCh := session.enableNotifications()
 	writeOut, closeNotify := startNotifyForwarder(out, notifyCh)
-	defer closeNotify()                  // runs second: closes channel, drains forwarder
-	defer session.disableNotifications() // runs first: nil field before channel closes
+	// Order matters: disableNotifications must nil the field before closeNotify
+	// closes the channel, else notify() can send on a closed channel.
+	defer closeNotify()
+	defer session.disableNotifications(notifyCh)
 	var wg sync.WaitGroup
 	scanner := transport.NewScanner(in)
 	for scanner.Scan() {

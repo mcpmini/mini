@@ -25,6 +25,7 @@ type StdioConnection struct {
 	shutdownOnce sync.Once // guards stdin.Close, Kill, Wait
 	logger       *slog.Logger
 	mu           sync.Mutex // guards stdin writes
+	onNotify     func(method string)
 }
 
 type StdioCommand struct {
@@ -32,6 +33,9 @@ type StdioCommand struct {
 	Args    []string
 	Env     []string
 	Logger  *slog.Logger
+	// Runs on the read loop for each server-initiated notification, so it MUST
+	// NOT block — dispatch any upstream calls to a goroutine.
+	OnNotify func(method string)
 }
 
 func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
@@ -60,6 +64,7 @@ func startSubprocess(ctx context.Context, p StdioCommand) (*StdioConnection, err
 		return nil, fmt.Errorf("start %s: %w", p.Command, err)
 	}
 	c := newConn(cmd, stdin, stdout, p.Logger)
+	c.onNotify = p.OnNotify
 	go c.readLoop()
 	return c, nil
 }
@@ -217,9 +222,23 @@ func (c *StdioConnection) dispatch(line []byte) {
 		return
 	}
 	if resp.ID == nil {
-		return // notification, ignore
+		c.handleNotification(line)
+		return
 	}
 	c.pending.deliver(resp.ID, &resp)
+}
+
+func (c *StdioConnection) handleNotification(line []byte) {
+	if c.onNotify == nil {
+		return
+	}
+	var n struct {
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(line, &n); err != nil || n.Method == "" {
+		return
+	}
+	c.onNotify(n.Method)
 }
 
 func (c *StdioConnection) writeJSON(v any) error {

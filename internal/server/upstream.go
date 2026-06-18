@@ -39,6 +39,10 @@ type upstreamServer struct {
 	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
 	onReconnect  func()        // called after successful reconnect; used in tests
 
+	refreshMu      sync.Mutex // guards refresh single-flight state below
+	refreshActive  bool
+	refreshPending bool
+
 	calls          atomic.Int64
 	errs           atomic.Int64
 	totalLatencyMs atomic.Int64
@@ -106,10 +110,35 @@ func (u *upstreamServer) callConn(ctx context.Context, params json.RawMessage) (
 	// in-flight calls to finish. HTTPConnection.Close is a no-op so a
 	// swap-during-call is safe; StdioConnection kills the subprocess, which
 	// unblocks the call with an error.
+	return u.currentConn().Call(ctx, "tools/call", params)
+}
+
+func (u *upstreamServer) currentConn() transport.Connection {
 	u.mu.RLock()
-	conn := u.conn
-	u.mu.RUnlock()
-	return conn.Call(ctx, "tools/call", params)
+	defer u.mu.RUnlock()
+	return u.conn
+}
+
+func (u *upstreamServer) beginRefresh() bool {
+	u.refreshMu.Lock()
+	defer u.refreshMu.Unlock()
+	if u.refreshActive {
+		u.refreshPending = true // coalesce into the in-flight re-list
+		return false
+	}
+	u.refreshActive = true
+	return true
+}
+
+func (u *upstreamServer) endRefresh() bool {
+	u.refreshMu.Lock()
+	defer u.refreshMu.Unlock()
+	if u.refreshPending { // a notification landed mid-list; loop again so it isn't lost
+		u.refreshPending = false
+		return true
+	}
+	u.refreshActive = false
+	return false
 }
 
 func (u *upstreamServer) classifyCallError(err error) error {

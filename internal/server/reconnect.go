@@ -64,7 +64,7 @@ func (s *Server) dialAndList(u *upstreamServer) (transport.Connection, []transpo
 
 func (s *Server) dialForReconnect(u *upstreamServer) (transport.Connection, error) {
 	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
-	conn, err := dialUpstream(ctx, s.logger, s.cfg, u.cfg)
+	conn, err := s.dialUpstream(ctx, u.cfg)
 	cancel()
 	if err != nil {
 		s.logger.Warn("reconnect failed", "server", u.cfg.Name, "err", err)
@@ -103,11 +103,16 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 func (s *Server) replaceRegistryToolsLocked(u *upstreamServer, tools []transport.ToolDefinition) {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
+	// remove_server cancels u.ctx under serverOpMu before deleting the registry
+	// entry; bail so a concurrent reconnect/refresh cannot resurrect the server.
+	if u.ctx.Err() != nil {
+		return
+	}
 	u.lastDefs = tools
 	s.reg.ReplaceServer(registry.ServerParams{
-		Name:    u.cfg.Name,
-		Defs:    tools,
-		Perm:    u.cfg.Permissions,
+		Name:            u.cfg.Name,
+		Defs:            tools,
+		Perm:            u.cfg.Permissions,
 		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 	})
 }

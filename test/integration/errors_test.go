@@ -55,7 +55,7 @@ func TestError_upstreamNeverStarts(t *testing.T) {
 	writeServerConfig(t, cfg, "bad", "name: bad\ncommand: /nonexistent_binary_xyz_does_not_exist\n")
 
 	stdin, scanner := startMiniCmd(t, cfg)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), notifications: make(chan string, 16), t: t}
 	go c.readLoop(scanner)
 	// Server must respond to initialize (not crash)
 	c.mustCall("initialize", map[string]any{

@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -13,7 +12,7 @@ import (
 )
 
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
-	conn, err := dialUpstream(ctx, s.logger, s.cfg, sc)
+	conn, err := s.dialUpstream(ctx, sc)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", sc.Name, err)
 	}
@@ -24,8 +23,14 @@ func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn
 	return s.registerUpstream(ctx, sc, conn)
 }
 
-func dialUpstream(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig) (transport.Connection, error) {
-	return invoke.Dial(ctx, logger, cfg, sc)
+func (s *Server) dialUpstream(ctx context.Context, sc config.ServerConfig) (transport.Connection, error) {
+	name := sc.Name
+	return invoke.Dial(ctx, invoke.DialParams{
+		Logger:   s.logger,
+		Cfg:      s.cfg,
+		SC:       sc,
+		OnNotify: func(method string) { s.onUpstreamNotification(name, method) },
+	})
 }
 
 // SetReconnectHook sets a callback that fires after a successful automatic reconnect

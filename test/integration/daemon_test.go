@@ -79,7 +79,7 @@ func startProxyCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scann
 func connectProxy(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
 	stdin, scanner := startProxyCmd(t, configDir)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), notifications: make(chan string, 16), t: t}
 	go c.readLoop(scanner)
 	c.mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
@@ -116,7 +116,7 @@ func startCompactCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Sca
 func connectCompact(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
 	stdin, scanner := startCompactCmd(t, configDir)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), notifications: make(chan string, 16), t: t}
 	go c.readLoop(scanner)
 	c.mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
@@ -422,5 +422,33 @@ func TestDaemon_proxyModeToolCall(t *testing.T) {
 	}
 	if text == "" {
 		t.Error("expected non-empty response from proxy mode tool call via daemon")
+	}
+}
+
+func TestDaemon_clientReceivesToolUpdateWhenUpstreamAdvertisesNewTool(t *testing.T) {
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
+	cfg := t.TempDir()
+	controlFile := writeControllableFakeServer(t, cfg, "svc", dir)
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+
+	startDaemon(t, cfg)
+	client := connectProxy(t, cfg)
+	control := controlFor(t, controlFile)
+
+	// The proxy opens its notification stream asynchronously; re-advertise until
+	// it is registered, since list_changed is delivered, not replayed.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		control.AddTool("brand_new_tool")
+		if m, ok := client.nextNotification(250 * time.Millisecond); ok && m == "notifications/tools/list_changed" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("agent never received the upstream's tools/list_changed via the daemon stream")
+		}
+	}
+
+	if names := client.toolNames(); !names["svc__brand_new_tool"] {
+		t.Errorf("after the upstream advertised it, mini did not expose svc__brand_new_tool; got %v", names)
 	}
 }

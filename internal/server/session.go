@@ -241,12 +241,11 @@ func (s *Session) enableNotifications() chan json.RawMessage {
 	return ch
 }
 
-// disableNotifications nils the notification channel so future notify() calls
-// are no-ops. Must be called before the channel is closed to prevent any
-// goroutine from sending to a closed channel.
-func (s *Session) disableNotifications() {
+func (s *Session) disableNotifications(ch chan json.RawMessage) {
 	s.mu.Lock()
-	s.notifyCh = nil
+	if s.notifyCh == ch { // detach only our own channel, never one a newer stream installed
+		s.notifyCh = nil
+	}
 	s.mu.Unlock()
 }
 
