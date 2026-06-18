@@ -267,6 +267,9 @@ func (s *Server) resolveToolMode(signal string) transport.ToolMode {
 	case transport.ToolModeProxyValue:
 		return transport.ToolModeProxy
 	default:
+		if signal != "" {
+			s.logger.Warn("unrecognized _mini_tool_mode signal; using server default", "signal", signal)
+		}
 		return s.toolMode
 	}
 }
@@ -274,7 +277,7 @@ func (s *Server) resolveToolMode(signal string) transport.ToolMode {
 func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any, error) {
 	var p initializeClientParams
 	json.Unmarshal(params, &p) //nolint:errcheck // best-effort; standard clients omit this field
-	session.setToolMode(s.resolveToolMode(p.ToolMode))
+	session.setToolModeOnce(s.resolveToolMode(p.ToolMode))
 	instructions := compactInitInstructions
 	if session.toolMode() == transport.ToolModeProxy {
 		instructions = proxyInitInstructions

@@ -223,5 +223,9 @@ func parseProxyToolName(name string) (server, tool string, err error) {
 	if idx < 0 {
 		return "", "", fmt.Errorf("unknown proxy tool: %q (expected server__tool format)", name)
 	}
-	return name[:idx], name[idx+2:], nil
+	s, t := name[:idx], name[idx+2:]
+	if s == "" || t == "" {
+		return "", "", fmt.Errorf("invalid proxy tool name %q: server and tool must both be non-empty", name)
+	}
+	return s, t, nil
 }

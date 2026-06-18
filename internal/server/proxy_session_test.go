@@ -88,6 +88,42 @@ func hasToolName(names []string, name string) bool {
 	return false
 }
 
+func TestHTTPSession_DoubleInitialize_ModeLockedToFirst(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+
+	const sessionID = "22222222-2222-2222-2222-222222222222"
+	postMCP(t, srv, sessionID, initMsg(false)) // first init: proxy mode (no signal → server default)
+
+	// Second initialize sends compact signal — must not flip the session mode.
+	secondInit := initMsg(true) // compact signal
+	secondInit["id"] = 99
+	resp := postMCP(t, srv, sessionID, secondInit)
+	if resp["error"] != nil {
+		t.Errorf("second initialize should not return error: %v", resp["error"])
+	}
+
+	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	for _, n := range tools {
+		if n == "call" || n == "list" || n == "perm_call" {
+			t.Errorf("session should remain in proxy mode after double-initialize, got compact tool %q", n)
+		}
+	}
+	found := false
+	for _, n := range tools {
+		if strings.Contains(n, "__") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("session should remain in proxy mode after double-initialize, got tools: %v", tools)
+	}
+}
+
 func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()

@@ -62,7 +62,7 @@ func (r *Runner) miniMCPConfig(env *Env, servers map[string]string, callLogDir s
 		"mcpServers": map[string]any{
 			"mini": map[string]any{
 				"command": r.MiniBin,
-				"args":    []string{"--config", configDir, "serve", "--standalone", "--log-level", "error"},
+				"args":    []string{"--config", configDir, "connect", "--standalone", "--log-level", "error"},
 			},
 		},
 	})
@@ -153,7 +153,7 @@ func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir 
 	if err != nil {
 		return "", err
 	}
-	return writeMCPConfig(env, miniServerConfig(r.MiniBin, configDir, "proxy", "--log-level", "error"))
+	return writeMCPConfig(env, miniServerConfig(r.MiniBin, configDir, "connect", "--log-level", "error"))
 }
 
 func (r *Runner) writeMiniProxyConfig(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {
