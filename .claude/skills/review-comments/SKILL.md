@@ -45,9 +45,12 @@ Work through each alternative in order. If any applies, apply it and the comment
    - States a fact a reader gets for free by navigating the code (e.g. "shared by callers
      X and Y" — one find-references away). Don't manufacture a why-framing just to save it.
 
-5. **Trim** — if a multi-sentence comment has a load-bearing clause mixed with
-   restatement, cut everything except the load-bearing clause. Never keep a sentence
-   that describes *what*; only sentences that explain *why* a non-obvious constraint exists.
+5. **Trim and lead with the why** — cut everything that describes what the code does
+   (already visible) and lead with the deep why. A comment that survives should open with
+   the external constraint, not the implementation detail:
+   `// old clients can send "foo":"bar", validate for legacy compat` not
+   `// validate x because old clients send "foo":"bar"`. One clause is almost always
+   enough — if a kept comment runs past one line, trim harder.
 
 6. **Keep** — a comment reaches Keep only after all five alternatives above are genuinely
    exhausted. Before marking Keep, apply three additional checks:
@@ -69,8 +72,7 @@ Work through each alternative in order. If any applies, apply it and the comment
      even if they feel useful today. Low-drift comments about stable external constraints
      are safer to keep.
 
-   If you find yourself keeping more than one or two comments in a diff, reconsider —
-   you are probably being too lenient.
+   Expect to remove 80–90% of comments on a first pass through a diff.
 
    The one standing exception: `// Foo does X` doc comments on *exported* identifiers
    are Go convention. Keep them even when they read as "what."
