@@ -44,11 +44,13 @@ func (p forwardAsyncParams) handleRecoverable(kind outcomeKind, state linkState,
 	}
 	if kind == outcomeTransportDown || kind == outcomeUnauthorized {
 		next, err := p.link.recover(state.gen)
-		if err != nil || (next.gen == state.gen && p.link.reresolve == nil) {
+		if err != nil || next.gen == state.gen {
 			return state, false
 		}
 		state = next
 	}
+	// Every goroutine that sees a new generation reinits, not just the reresolve winner.
+	// The server handles concurrent initializations safely (sync.Once on markInitialized).
 	if !isInit {
 		reinitDaemon(p.connAt(state), p.toolMode)
 	}

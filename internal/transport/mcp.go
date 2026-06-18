@@ -68,7 +68,6 @@ type MCPTool struct {
 	Annotations json.RawMessage `json:"annotations,omitempty"`
 }
 
-
 type ToolCallParams struct {
 	Name      string         `json:"name"`
 	Arguments map[string]any `json:"arguments"`

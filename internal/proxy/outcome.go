@@ -45,17 +45,18 @@ func classifyForward(conn daemonConn, body []byte) forwardOutcome {
 	return classifyResponse(resp, body)
 }
 
-// classifyDoError maps a client.Do failure. Only a dial-time connection refusal proves
-// the request never reached the daemon; everything else is treated as potentially
-// post-send (fail safe — never double-execute a non-idempotent write).
+// classifyDoError maps a client.Do failure. Any dial-phase error proves the request
+// never reached the daemon (TCP handshake never completed → no bytes sent); everything
+// else is treated as potentially post-send (fail safe — never double-execute a
+// non-idempotent write).
 func classifyDoError(body []byte, err error) forwardOutcome {
-	if isDialConnRefused(err) {
+	if isDialError(err) {
 		return forwardOutcome{kind: outcomeTransportDown, resp: daemonErrorResponse(body, "daemon unreachable: "+err.Error())}
 	}
 	return forwardOutcome{kind: outcomeOther, resp: daemonErrorResponse(body, "daemon unreachable: "+err.Error())}
 }
 
-func isDialConnRefused(err error) bool {
+func isDialError(err error) bool {
 	if errors.Is(err, syscall.ECONNREFUSED) {
 		return true
 	}
