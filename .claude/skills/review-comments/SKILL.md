@@ -38,19 +38,39 @@ Work through each alternative in order. If any applies, apply it and the comment
    subtle invariant? If yes: write (or rename an existing) test that documents the
    behavior by exercising it. Tests are compiled and kept honest; comments aren't.
 
-4. **Delete outright** — does it restate what the code does, act as a section divider,
-   repeat the signature, or describe something a reader gets for free by reading the
-   next line? Delete it.
+4. **Delete outright** — delete if any of the following:
+   - Restates what the code does in English
+   - Acts as a section divider or structural marker
+   - Repeats information already in the function name, type, or signature
+   - States a fact a reader gets for free by navigating the code (e.g. "shared by callers
+     X and Y" — one find-references away). Don't manufacture a why-framing just to save it.
 
 5. **Trim** — if a multi-sentence comment has a load-bearing clause mixed with
    restatement, cut everything except the load-bearing clause. Never keep a sentence
    that describes *what*; only sentences that explain *why* a non-obvious constraint exists.
 
-6. **Keep** — a comment survives only if all five alternatives above have been genuinely
-   exhausted: no rename would capture it, no function name would capture it, no test
-   would be better, it isn't restatement, and trimming has already been applied. This
-   should be rare. If you find yourself keeping more than one or two comments in a diff,
-   reconsider — you are probably being too lenient.
+6. **Keep** — a comment reaches Keep only after all five alternatives above are genuinely
+   exhausted. Before marking Keep, apply three additional checks:
+
+   - **Deep why, not shallow why.** A comment that references internal implementation
+     ("have to do this because `internalServeFunc` passes this structure down") is a
+     shallow why — it will rot as the code evolves and teaches nothing about the world.
+     A comment that explains an external constraint — client or consumer behavior,
+     protocol requirements, backward compatibility, data invariants that originate
+     outside this codebase — is a deep why. Deep why: keep. Shallow why: push the author
+     to articulate the underlying external constraint, or delete.
+
+   - **Verify claims.** If the comment asserts "this prevents X" or "this blocks Y",
+     check that claim against the actual code. Don't take it on faith. A comment that
+     makes a false or misleading claim is worse than no comment.
+
+   - **Drift risk.** Will this comment go stale silently if the adjacent code changes?
+     High-drift comments attached to volatile implementation details should be deleted
+     even if they feel useful today. Low-drift comments about stable external constraints
+     are safer to keep.
+
+   If you find yourself keeping more than one or two comments in a diff, reconsider —
+   you are probably being too lenient.
 
    The one standing exception: `// Foo does X` doc comments on *exported* identifiers
    are Go convention. Keep them even when they read as "what."
@@ -63,5 +83,5 @@ extractions, run the relevant tests to confirm nothing broke.
 ## Step 4 — Report
 
 One line per comment touched: `file:line — verdict — one-sentence reason`. For any comment
-kept, state explicitly which of the six paths above it survived and why. If the diff had
-no net-new comments, say so in one line.
+kept, state explicitly which alternatives it survived and what external constraint it
+documents. If the diff had no net-new comments, say so in one line.
