@@ -237,6 +237,7 @@ func TestListTools_viaPipe_pagination(t *testing.T) {
 		{"tools": []any{map[string]any{"name": "a", "inputSchema": map[string]any{}}}, "nextCursor": "p2"},
 		{"tools": []any{map[string]any{"name": "b", "inputSchema": map[string]any{}}}},
 	}
+	cursorCh := make(chan string, len(pages))
 	go func() {
 		scanner := NewScanner(serverR)
 		for _, page := range pages {
@@ -245,6 +246,11 @@ func TestListTools_viaPipe_pagination(t *testing.T) {
 			}
 			var req Request
 			json.Unmarshal(scanner.Bytes(), &req) //nolint:errcheck
+			var p struct {
+				Cursor string `json:"cursor"`
+			}
+			json.Unmarshal(req.Params, &p) //nolint:errcheck
+			cursorCh <- p.Cursor
 			sendResponse(serverW, req.ID, page)
 		}
 	}()
@@ -255,5 +261,9 @@ func TestListTools_viaPipe_pagination(t *testing.T) {
 	}
 	if want := []string{"a", "b"}; !slices.Equal(toolNames(got), want) {
 		t.Errorf("got %v, want %v", toolNames(got), want)
+	}
+	gotCursors := []string{<-cursorCh, <-cursorCh}
+	if want := []string{"", "p2"}; !slices.Equal(gotCursors, want) {
+		t.Errorf("cursors: got %v, want %v", gotCursors, want)
 	}
 }

@@ -136,6 +136,39 @@ func TestPaginateToolsList_emptyPageWithCursor(t *testing.T) {
 	}
 }
 
+func TestPaginateToolsList_errorOnFirstPage(t *testing.T) {
+	sentinel := errors.New("upstream unavailable")
+	callPage := func(_ context.Context, _ string) (ToolsListResult, error) {
+		return ToolsListResult{}, sentinel
+	}
+	got, err := paginateToolsList(context.Background(), callPage)
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel error, got %v", err)
+	}
+	if got != nil {
+		t.Errorf("expected nil tools, got %v", got)
+	}
+}
+
+func TestPaginateToolsList_errorOnSubsequentPage(t *testing.T) {
+	sentinel := errors.New("page 2 failed")
+	calls := 0
+	callPage := func(_ context.Context, _ string) (ToolsListResult, error) {
+		calls++
+		if calls == 1 {
+			return ToolsListResult{Tools: []MCPTool{makeTool("a")}, NextCursor: "page2"}, nil
+		}
+		return ToolsListResult{}, sentinel
+	}
+	got, err := paginateToolsList(context.Background(), callPage)
+	if err != nil {
+		t.Errorf("expected nil error, got %v", err)
+	}
+	if want := []string{"a"}; !slices.Equal(toolNames(got), want) {
+		t.Errorf("tools: got %v, want %v", toolNames(got), want)
+	}
+}
+
 func TestPaginateToolsList_contextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	calls := 0
