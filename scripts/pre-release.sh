@@ -91,7 +91,7 @@ cat <<'EOF'
   Work through each item, then confirm below.
 
   Protocol
-  [ ] mini serve --standalone responds to initialize + tools/list over stdio
+  [ ] mini connect --standalone responds to initialize + tools/list over stdio
   [ ] tools/call routes correctly to a real upstream (use mini call or Claude)
 
   Proxy mode
