@@ -19,7 +19,7 @@ export ANTHROPIC_API_KEY=...
 go test -tags evals -v -timeout 10m ./evals/...
 ```
 
-Each eval spawns a full mini instance with real upstream connections and runs Claude as the agent against it.
+Each eval spawns a full mini proxy with real upstream connections and runs Claude as the agent against it.
 
 ## What evals test
 

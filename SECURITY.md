@@ -61,10 +61,10 @@ HTTP header values containing CR, LF, or NUL characters are rejected by Go's `ne
 
 ### HTTP mode binding
 
-`mini connect --http ADDR` listens for HTTP MCP connections. By default:
+`mini serve --http ADDR` listens for HTTP MCP connections. By default:
 
 - A bare port (`4857`) or colon-prefixed port (`:4857`) binds to `127.0.0.1` (loopback only).
-- Any other host component (e.g. `0.0.0.0:4857`) is considered non-loopback and **requires** passing `--dangerous-nonloopback-http` to `mini connect`. Without the flag, the server exits with an error.
+- Any other host component (e.g. `0.0.0.0:4857`) is considered non-loopback and **requires** passing `--dangerous-nonloopback-http` to `mini serve`. Without the flag, the server exits with an error.
 - When `--dangerous-nonloopback-http` is passed, a warning is logged and the server starts; the operator is responsible for ensuring all network clients are trusted (e.g. via firewall rules or VPN).
 
 The daemon (`mini daemon`) always binds to `127.0.0.1` and does not accept a host override.

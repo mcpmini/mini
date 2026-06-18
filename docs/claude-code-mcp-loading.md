@@ -8,9 +8,9 @@
 
 Claude Code never sends MCP tool schemas to the API upfront. Instead it sends only tool
 *names*, and the model fetches full schemas on demand via a built-in ToolSearch tool.
-This means mini's default **proxy mode** is the right choice for Claude Code: upstream
-tools are exposed directly, Claude defers their schemas through its normal mechanism, and
-mini trims responses invisibly. Just run `mini connect`.
+This means mini's **proxy mode** is the right choice for Claude Code: upstream tools are
+exposed directly, Claude defers their schemas through its normal mechanism, and mini trims
+responses invisibly.
 
 ---
 
@@ -72,14 +72,14 @@ keeps the prompt cache stable and prevents paying for schemas the model never en
 
 ## Why this matters for mini
 
-**Compact mode** (`mini connect --tool-mode compact`, 4-tool interface):
+**Standard mode** (`mini serve`, 4-tool interface):
 
 The model calls `mini.list` to discover tools, then `mini.call` for every invocation —
 two round-trips per upstream call. Upstream tool names come back as text inside a tool
 result message, never entering the API's deferred tool mechanism. Schemas and responses
 both land in conversation messages.
 
-**Proxy mode** (`mini connect`, the default):
+**Proxy mode** (`mini proxy`):
 
 mini exposes upstream tools directly (`github__list_pull_requests`, `sentry__list_issues`,
 etc.). Claude Code's deferred loading works exactly as designed: schemas defer through the
@@ -87,8 +87,7 @@ etc.). Claude Code's deferred loading works exactly as designed: schemas defer t
 trimmed by mini's projections. The model doesn't know mini is there.
 
 For Claude Code, **proxy mode is strictly better**: correct schema deferral, half the
-round-trips, same response trimming. It's the default, so `mini connect` already does the
-right thing — reach for `--tool-mode compact` only if your client loads all schemas upfront.
+round-trips, same response trimming.
 
 ---
 
@@ -100,7 +99,7 @@ Controlled by `ENABLE_TOOL_SEARCH` (default: always defer all MCP tools):
 |---|---|
 | unset / `true` | Always defer — all MCP tools discovered via ToolSearch |
 | `auto` / `auto:N` | Defer only when schemas would exceed N% of context window (default 10%) |
-| `false` | Disabled — all schemas sent upfront (use `--tool-mode compact`) |
+| `false` | Disabled — all schemas sent upfront (standard mode) |
 
 Only supported on Claude Sonnet 4+ and Opus 4+. Haiku falls back to sending all schemas
 upfront automatically.

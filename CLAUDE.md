@@ -17,7 +17,7 @@ go test -tags integration,test ./test/integration/...
 go test -tags test ./internal/server/... -run TestExecuteRoutesToUpstream -v
 
 # Build the binary
-./scripts/build.sh
+go build -o mini ./cmd/mini
 
 # Run all checks (build + lint + race tests) — same as CI
 ./check.sh
@@ -172,14 +172,12 @@ resp := serve(t, srv, callTool("call", map[string]any{"server": "myserver", "too
 text := toolResultText(t, resp)
 ```
 
-`serve()` in `server_test.go` prepends the `initialize` handshake and signals **compact** mode; `serveProxy()` (and `serveAllProxy()`) drive the default **proxy** mode. For transport-level tests, `makePipeConn()` in `stdio_test.go` creates a pipe-backed `StdioConnection` without spawning a subprocess.
-
-Sessions are either proxy (`transport.ToolModeProxy`, the zero value default) or compact (`transport.ToolModeCompact`); the bridge signals compact via `_mini_tool_mode: "compact"` in the `initialize` params and injects nothing for proxy.
+`serve()` in `server_test.go` automatically prepends the `initialize` handshake. For transport-level tests, `makePipeConn()` in `stdio_test.go` creates a pipe-backed `StdioConnection` without spawning a subprocess.
 
 ### CLI subcommands
 
-`mini [--config DIR] <command>`: `connect`, `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`. Bare `mini` (no subcommand) prints help and exits 0 — it does not start a server.
+`mini [--config DIR] <command>`: `serve` (default), `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
 
-- `connect [--http ADDR] [--standalone] [--tool-mode compact]` — stdio MCP; proxy by default, `--tool-mode compact` for the four-tool interface; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
+- `serve [--http ADDR] [--standalone]` — stdio proxy; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
 - `daemon [--port N]` — run as shared HTTP daemon (background)
 - `daemon status` — show whether the daemon is running

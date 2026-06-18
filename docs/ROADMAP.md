@@ -43,7 +43,7 @@ mini is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upst
 - `mini init` — interactive setup wizard
 
 **HTTP mode and daemon**
-- `mini connect --http :4857` to also accept HTTP/SSE connections alongside stdio
+- `mini serve --http :4857` to also accept HTTP/SSE connections alongside stdio
 - `mini daemon` — shared background daemon; multiple agents connect via HTTP without spawning new subprocesses
 - stdio `serve` auto-detects a running daemon and proxies through it (transparent to agents)
 
@@ -78,12 +78,12 @@ Priority is impact on developer workflows — making agents faster, cheaper, saf
 
 ### v0.2 — Per-Server Proxy & Observability
 
-**Per-server transparent connect (`mini connect <server>`)**
-- `mini connect github` starts a single-server proxy that exposes upstream tools directly without any server prefix or mini branding — Claude Code sees `list_pull_requests`, not `github__list_pull_requests`
-- Users register each server independently: `claude mcp add github -- mini connect github`
-- No `config` or `read` tools exposed — pure proxy, mini invisible to the agent
+**Per-server transparent proxy (`mini proxy <server>`)**
+- `mini proxy github` starts a single-server proxy that exposes upstream tools directly without any server prefix or mini branding — Claude Code sees `list_pull_requests`, not `github__list_pull_requests`
+- Users register each server independently: `claude mcp add github -- mini proxy github`
+- No `config` or `read` tools exposed — pure passthrough, mini invisible to the agent
 - All projection, permission, and token-optimization logic still applies via the mini daemon
-- *Code changes*: `runConnect` accepts optional positional server name; new `server.WithSingleServerScope(name)` option; proxy tool listing strips server prefix; routing adds it back internally
+- *Code changes*: `runProxy` accepts optional positional server name; new `server.WithSingleServerProxy(name)` option; proxy tool listing strips server prefix; routing adds it back internally
 
 ### v0.2 — Observability & Broader MCP Coverage
 
