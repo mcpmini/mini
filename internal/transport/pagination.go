@@ -14,19 +14,35 @@ func paginateToolsList(ctx context.Context, callPage func(context.Context, strin
 	for range maxToolsListPages {
 		r, err := callPage(ctx, cursor)
 		if err != nil {
-			return nil, err
+			return partialOrError(ctx, tools, err)
 		}
 		tools = append(tools, toToolDefs(r.Tools)...)
-		if r.NextCursor == "" {
+		next, ok := advanceCursor(seen, r.NextCursor)
+		if !ok {
 			return tools, nil
 		}
-		if seen[r.NextCursor] {
-			slog.Warn("tools/list: duplicate cursor, stopping pagination")
-			return tools, nil
-		}
-		seen[r.NextCursor] = true
-		cursor = r.NextCursor
+		cursor = next
 	}
 	slog.Warn("tools/list: page cap reached", "pages", maxToolsListPages)
 	return tools, nil
+}
+
+func partialOrError(ctx context.Context, tools []ToolDefinition, err error) ([]ToolDefinition, error) {
+	if len(tools) > 0 && ctx.Err() == nil {
+		slog.Warn("tools/list: error mid-pagination, returning partial results", "err", err)
+		return tools, nil
+	}
+	return nil, err
+}
+
+func advanceCursor(seen map[string]bool, next string) (string, bool) {
+	if next == "" {
+		return "", false
+	}
+	if seen[next] {
+		slog.Warn("tools/list: duplicate cursor, stopping pagination")
+		return "", false
+	}
+	seen[next] = true
+	return next, true
 }
