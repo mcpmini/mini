@@ -175,14 +175,11 @@ func runConnect(configDir string, args []string) {
 	if shouldTryDaemon(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
 		return
 	}
-	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, connectOptions(f.toolMode)...)
-}
-
-func connectOptions(mode transport.ToolMode) []server.ServerOption {
-	if mode == transport.ToolModeCompact {
-		return []server.ServerOption{server.WithToolMode(transport.ToolModeCompact)}
+	var opts []server.ServerOption
+	if f.toolMode == transport.ToolModeCompact {
+		opts = []server.ServerOption{server.WithToolMode(transport.ToolModeCompact)}
 	}
-	return nil
+	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, opts...)
 }
 
 func shouldTryDaemon(standalone bool, httpAddr string) bool {

@@ -311,6 +311,28 @@ func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
 	}
 }
 
+func TestResolveToolMode_unrecognizedSignal_fallsBackToServerDefault(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	defer srv.Close()
+	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
+
+	params := map[string]any{
+		"protocolVersion":       transport.ProtocolVersion,
+		"capabilities":          map[string]any{},
+		"clientInfo":            map[string]any{"name": "test", "version": "0"},
+		transport.ToolModeParam: "turbo",
+	}
+	const sessionID = "33333333-3333-3333-3333-333333333333"
+	postMCP(t, srv, sessionID, map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": params})
+
+	tools := extractToolNames(postMCP(t, srv, sessionID, toolsListMsg()))
+	if !hasToolName(tools, "call") {
+		t.Errorf("unrecognized signal should fall back to server default (compact), got tools: %v", tools)
+	}
+}
+
 func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()

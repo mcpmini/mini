@@ -62,7 +62,7 @@ func (r *Runner) miniMCPConfig(env *Env, servers map[string]string, callLogDir s
 		"mcpServers": map[string]any{
 			"mini": map[string]any{
 				"command": r.MiniBin,
-				"args":    []string{"--config", configDir, "connect", "--standalone", "--log-level", "error"},
+				"args":    []string{"--config", configDir, "connect", "--standalone", "--tool-mode", "compact", "--log-level", "error"},
 			},
 		},
 	})
