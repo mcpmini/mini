@@ -69,3 +69,11 @@ func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
 		t.Error("github.yaml should have been written")
 	}
 }
+
+func TestClaudeCodeInstallCommand(t *testing.T) {
+	got := claudeCodeInstallCommand("/path/to/mini")
+	want := "claude mcp add mini -- /path/to/mini connect"
+	if got != want {
+		t.Fatalf("claudeCodeInstallCommand() = %q, want %q", got, want)
+	}
+}

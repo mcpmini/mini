@@ -43,9 +43,9 @@ mini is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upst
 - `mini init` — interactive setup wizard
 
 **HTTP mode and daemon**
-- `mini serve --http :4857` to also accept HTTP/SSE connections alongside stdio
+- `mini connect --http :4857` to also accept HTTP/SSE connections alongside stdio
 - `mini daemon` — shared background daemon; multiple agents connect via HTTP without spawning new subprocesses
-- stdio `serve` auto-detects a running daemon and proxies through it (transparent to agents)
+- stdio `connect` auto-detects a running daemon and proxies through it (transparent to agents)
 
 **Observability**
 - Per-call: `estimated_raw_tokens`, `estimated_tokens_saved`, `latency_ms` in every call response envelope
