@@ -115,7 +115,7 @@ func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
 	s := st.getOrCreate("stdio")
 	ch := s.enableNotifications()
 	defer func() {
-		s.disableNotifications()
+		s.disableNotifications(ch)
 		close(ch)
 	}()
 	s.mu.Lock()
@@ -212,4 +212,3 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 		t.Errorf("expected 0 sessions after eviction, got %d", srv.sessions.count())
 	}
 }
-

@@ -186,11 +186,25 @@ func runCLIWithStdin(t *testing.T, stdin string, configDir string, args ...strin
 
 func writeFakeServer(t *testing.T, configDir, serverName, fixtures string) {
 	t.Helper()
+	writeFakeServerYAML(t, configDir, serverName, fakeServerYAML(serverName, fixtures))
+}
+
+func writeControllableFakeServer(t *testing.T, configDir, serverName, fixtures string) string {
+	t.Helper()
+	controlFile := filepath.Join(configDir, serverName+".control")
+	yaml := fmt.Sprintf("name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n  - --control-file\n  - %s\n",
+		serverName, fakemcpBin, fixtures, controlFile)
+	writeFakeServerYAML(t, configDir, serverName, yaml)
+	return controlFile
+}
+
+func writeFakeServerYAML(t *testing.T, configDir, serverName, yaml string) {
+	t.Helper()
 	dir := filepath.Join(configDir, "servers")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	writeStringFile(t, filepath.Join(dir, serverName+".yaml"), fakeServerYAML(serverName, fixtures))
+	writeStringFile(t, filepath.Join(dir, serverName+".yaml"), yaml)
 }
 
 type FakeMCPControl struct {
@@ -278,6 +292,30 @@ func (c *FakeMCPControl) ClearFaults() {
 	resp.Body.Close()
 }
 
+func (c *FakeMCPControl) AddTool(name string) {
+	c.t.Helper()
+	body := fmt.Sprintf(`{"name":%q,"description":"added at runtime","content":"{}"}`, name)
+	req, _ := http.NewRequest(http.MethodPut, "http://"+c.addr+"/tools", strings.NewReader(body))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		c.t.Fatalf("AddTool: %v", err)
+	}
+	resp.Body.Close()
+}
+
+func controlFor(t *testing.T, controlFile string) *FakeMCPControl {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(controlFile); err == nil && len(b) > 0 {
+			return &FakeMCPControl{addr: strings.TrimSpace(string(b)), t: t}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("fakemcp did not write its control address to %s", controlFile)
+	return nil
+}
+
 type mcpResult struct {
 	raw json.RawMessage
 	err error
@@ -293,11 +331,12 @@ type mcpMessage struct {
 }
 
 type mcpClient struct {
-	stdin   io.WriteCloser
-	pending sync.Map // int64 → chan *mcpResult
-	nextID  atomic.Int64
-	done    chan struct{}
-	t       *testing.T
+	stdin         io.WriteCloser
+	pending       sync.Map // int64 → chan *mcpResult
+	nextID        atomic.Int64
+	done          chan struct{}
+	notifications chan string // server→client notification methods, e.g. tools/list_changed
+	t             *testing.T
 }
 
 func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
@@ -327,7 +366,7 @@ func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanne
 func startServer(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
 	stdin, scanner := startMiniCmd(t, configDir)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), notifications: make(chan string, 16), t: t}
 	go c.readLoop(scanner)
 	c.mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
@@ -345,6 +384,7 @@ func (c *mcpClient) readLoop(scanner *bufio.Scanner) {
 			continue
 		}
 		if string(msg.ID) == "null" || len(msg.ID) == 0 {
+			c.captureNotification(scanner.Bytes())
 			continue
 		}
 		var id int64
@@ -386,6 +426,50 @@ func (c *mcpClient) call(method string, params any) (json.RawMessage, error) {
 	case <-c.done:
 		return nil, fmt.Errorf("connection closed waiting for response to %s", method)
 	}
+}
+
+func (c *mcpClient) captureNotification(line []byte) {
+	if c.notifications == nil {
+		return
+	}
+	var n struct {
+		Method string `json:"method"`
+	}
+	if json.Unmarshal(line, &n) != nil || n.Method == "" {
+		return
+	}
+	select {
+	case c.notifications <- n.Method:
+	default:
+	}
+}
+
+func (c *mcpClient) nextNotification(timeout time.Duration) (string, bool) {
+	select {
+	case m := <-c.notifications:
+		return m, true
+	case <-time.After(timeout):
+		return "", false
+	case <-c.done:
+		return "", false
+	}
+}
+
+func (c *mcpClient) toolNames() map[string]bool {
+	c.t.Helper()
+	var result struct {
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(c.mustCall("tools/list", nil), &result); err != nil {
+		c.t.Fatal(err)
+	}
+	names := make(map[string]bool, len(result.Tools))
+	for _, tool := range result.Tools {
+		names[tool.Name] = true
+	}
+	return names
 }
 
 func (c *mcpClient) setProjection(server, tool string, proj map[string]any, sessionOnly bool) {

@@ -109,7 +109,8 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	writePortFile(p.PortFile, p.Port)
 	defer os.Remove(p.PortFile)
 	httpSrv := daemonHTTPServer(p.Srv)
-	go httpSrv.Serve(p.Listener) //nolint:errcheck
+	httpSrv.RegisterOnShutdown(p.Srv.ShutdownStreams) // else an open SSE stream holds Shutdown until its timeout
+	go httpSrv.Serve(p.Listener)                      //nolint:errcheck
 	go p.Srv.RunSessionEviction(ctx, 30*time.Minute)
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

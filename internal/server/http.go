@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -42,10 +43,75 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		s.servePost(w, r)
+	case http.MethodGet:
+		s.serveStream(w, r)
 	default:
-		w.Header().Set("Allow", "POST")
+		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+type flushWriter interface {
+	http.ResponseWriter
+	http.Flusher
+}
+
+func (s *Server) serveStream(w http.ResponseWriter, r *http.Request) {
+	fw, ok := w.(flushWriter)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	sessionID, ok := parseSessionID(w, r)
+	if !ok {
+		return
+	}
+	session := s.sessions.getOrCreate(sessionID)
+	ch := session.enableNotifications()
+	defer session.disableNotifications(ch)
+	writeStreamHeaders(w, sessionID)
+	fw.Flush()
+	ctx, cancel := s.streamContext(r.Context())
+	defer cancel()
+	streamNotifications(ctx, fw, ch)
+}
+
+func (s *Server) streamContext(reqCtx context.Context) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(reqCtx)
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-s.streamShutdown:
+			cancel() // release the stream so it can't hold up graceful shutdown
+		}
+	}()
+	return ctx, cancel
+}
+
+func (s *Server) ShutdownStreams() {
+	s.streamShutdownOnce.Do(func() { close(s.streamShutdown) })
+}
+
+func streamNotifications(ctx context.Context, fw flushWriter, ch <-chan json.RawMessage) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-ch:
+			if _, err := fmt.Fprintf(fw, "event: message\ndata: %s\n\n", msg); err != nil {
+				return
+			}
+			fw.Flush()
+		}
+	}
+}
+
+func writeStreamHeaders(w http.ResponseWriter, sessionID string) {
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-cache")
+	h.Set("X-Accel-Buffering", "no")
+	h.Set("Mcp-Session-Id", sessionID)
 }
 
 type parsedPostRequest struct {

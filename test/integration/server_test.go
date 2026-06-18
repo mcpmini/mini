@@ -147,7 +147,7 @@ func startProxyServer(t *testing.T, configDir string) *mcpClient {
 	})
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 4<<20), 4<<20)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), notifications: make(chan string, 16), t: t}
 	go c.readLoop(scanner)
 	c.mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",

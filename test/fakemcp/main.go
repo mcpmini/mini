@@ -34,11 +34,13 @@ type fakeOpts struct {
 	tools        *ToolRegistry
 	faults       *FaultRegistry
 	listPageSize int
+	controlFile  string
 }
 
 func parseFlags() (fakeOpts, error) {
 	fixturesDir := flag.String("fixtures", "", "directory of fixture JSON files (each .json = one tool)")
 	_ = flag.String("control-addr", "127.0.0.1:0", "host:port for HTTP control API (0 = random port)")
+	controlFile := flag.String("control-file", "", "write the HTTP control API address to this file on startup")
 	initialFault := flag.String("initial-fault", "", "JSON-encoded Fault to apply at startup (e.g. for subprocess fault injection)")
 	callLog := flag.String("call-log", "", "append a JSON line per tool call to this file")
 	listPageSize := flag.Int("list-page-size", 0, "paginate tools/list at this page size (0 = disabled)")
@@ -49,7 +51,7 @@ func parseFlags() (fakeOpts, error) {
 	if err := setInitialFault(faults, *initialFault); err != nil {
 		return fakeOpts{}, err
 	}
-	return fakeOpts{tools: tools, faults: faults, listPageSize: *listPageSize}, nil
+	return fakeOpts{tools: tools, faults: faults, listPageSize: *listPageSize, controlFile: *controlFile}, nil
 }
 
 func loadFixtures(tools *ToolRegistry, fixturesDir string) {
@@ -76,11 +78,22 @@ func main() {
 		fmt.Fprintf(os.Stderr, "fakemcp: %v\n", err)
 		os.Exit(1)
 	}
-	addr, err := startControlServer(opts.faults, opts.tools)
+	out := &stdoutWriter{w: os.Stdout}
+	addr, err := startControlServer(opts.faults, opts.tools, out)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fakemcp: control server: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stderr, "fakemcp control=%s\n", addr)
-	serve(&mcpHandler{tools: opts.tools, faults: opts.faults, listPageSize: opts.listPageSize})
+	writeControlFile(opts.controlFile, addr)
+	serve(&mcpHandler{tools: opts.tools, faults: opts.faults, listPageSize: opts.listPageSize}, out)
+}
+
+func writeControlFile(path, addr string) {
+	if path == "" {
+		return
+	}
+	if err := os.WriteFile(path, []byte(addr), 0600); err != nil {
+		fmt.Fprintf(os.Stderr, "fakemcp: control file: %v\n", err)
+	}
 }

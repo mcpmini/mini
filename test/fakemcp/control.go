@@ -11,14 +11,15 @@ import (
 type controlServer struct {
 	faults *FaultRegistry
 	tools  *ToolRegistry
+	out    *stdoutWriter
 }
 
-func startControlServer(faults *FaultRegistry, tools *ToolRegistry) (string, error) {
+func startControlServer(faults *FaultRegistry, tools *ToolRegistry, out *stdoutWriter) (string, error) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", err
 	}
-	srv := &controlServer{faults: faults, tools: tools}
+	srv := &controlServer{faults: faults, tools: tools, out: out}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/fault", srv.handleFault)
 	mux.HandleFunc("/faults", srv.handleFaults)
@@ -59,6 +60,7 @@ func (s *controlServer) handleTools(w http.ResponseWriter, r *http.Request) {
 		s.handleToolsPut(w, r)
 	case http.MethodDelete:
 		s.tools.Remove(r.URL.Query().Get("name"))
+		s.out.notifyToolsChanged()
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodGet:
 		json.NewEncoder(w).Encode(s.tools.List()) //nolint:errcheck
@@ -74,6 +76,7 @@ func (s *controlServer) handleToolsPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.tools.Add(tool)
+	s.out.notifyToolsChanged()
 	w.WriteHeader(http.StatusNoContent)
 }
 

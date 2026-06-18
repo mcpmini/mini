@@ -4,6 +4,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -50,10 +51,14 @@ func runWithLimit(p RunParams, limit int) error {
 	// tool configured with tool_timeout longer than the hard-coded value.
 	client := &http.Client{}
 	fp := newForwardPool(p, limit)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startNotificationStream(ctx, fp.wg, fp.streamConn(client))
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
 		startForward(client, maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
 	}
+	cancel()
 	fp.wg.Wait()
 	return scanner.Err()
 }
@@ -138,6 +143,17 @@ type forwardAsyncParams struct {
 
 func (p forwardAsyncParams) conn() daemonConn {
 	return daemonConn{client: p.client, port: p.port, sessionID: p.sessionID, token: p.tokens.current()}
+}
+
+func (p forwardAsyncParams) streamConn(client *http.Client) streamConn {
+	return streamConn{
+		client:    client,
+		port:      p.port,
+		sessionID: p.sessionID,
+		tokens:    p.tokens,
+		out:       p.out,
+		mu:        p.mu,
+	}
 }
 
 func forwardAsync(p forwardAsyncParams) {
