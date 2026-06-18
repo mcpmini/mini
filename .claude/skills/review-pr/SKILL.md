@@ -253,9 +253,6 @@ Output the report directly in the conversation.
 ## Test coverage verdict
 [What is tested, what is missing, whether the gap is a blocker.]
 
-## Confirmed safe
-[Patterns that looked suspicious but were traced and found correct. Include the reason so they aren't re-flagged next time.]
-
 ## Summary table
 | # | Severity | Pass | File:Line | Finding |
 |---|---|---|---|---|
