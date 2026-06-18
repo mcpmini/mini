@@ -1,13 +1,14 @@
 // Localhost alone is not an auth boundary — any local process or browser-driven
 // request can reach the daemon (DNS rebinding, SSRF, malicious browser extensions).
 // To reduce this attack surface, clients must present a bearer token stored on disk.
-// The daemon mints a fresh token on every start; clients read it from the token file
-// and automatically pick up a rotated token when the daemon restarts.
+// The daemon reuses a persisted token across restarts (see EnsureToken) so a respawned
+// daemon keeps the same token and already-connected proxies aren't rejected with 401.
 package daemon
 
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +40,27 @@ func ReadToken(configDir string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+// EnsureToken returns the existing daemon token, re-minting it if missing or insecurely permissioned.
+func EnsureToken(configDir string) (string, error) {
+	if tok, err := readPrivateToken(configDir); err == nil && tok != "" {
+		return tok, nil
+	}
+	return WriteToken(configDir)
+}
+
+func readPrivateToken(configDir string) (string, error) {
+	info, err := os.Stat(TokenFile(configDir))
+	if err != nil {
+		return "", err
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		// Group/other-readable means another local user may already have read this token,
+		// so treat it as compromised and let EnsureToken re-mint rather than reuse it.
+		return "", fmt.Errorf("token file has insecure permissions %#o", info.Mode().Perm())
+	}
+	return ReadToken(configDir)
 }
 
 func atomicWriteFile(path, data string) (err error) {

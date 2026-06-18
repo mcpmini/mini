@@ -54,6 +54,16 @@ func Start(configDir string, timeout time.Duration) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("find executable: %w", err)
 	}
+	release, err := acquireSpawnLock(configDir)
+	if err != nil {
+		return 0, fmt.Errorf("acquire daemon spawn lock: %w", err)
+	}
+	defer release()
+	// A losing racer finds the lock winner's daemon already up here and returns
+	// without spawning a second one.
+	if port := RunningPort(configDir); port != 0 {
+		return port, nil
+	}
 	if err := spawnDaemon(exe, configDir); err != nil {
 		return 0, err
 	}

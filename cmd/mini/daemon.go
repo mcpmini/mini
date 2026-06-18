@@ -31,7 +31,7 @@ func runDaemon(configDir string, args []string) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	// Bind before minting: a daemon that loses the port race dies here without
-	// touching the shared token file, so it can't leave a stale token behind.
+	// touching the shared token file, so it can't rotate the token connected proxies use.
 	ln, actualPort := bindPort(resolveDaemonListenPort(cfg, port))
 	serveDaemon(ctx, DaemonServeParams{
 		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger,
@@ -60,8 +60,6 @@ type DaemonServeParams struct {
 func serveDaemon(ctx context.Context, p DaemonServeParams) {
 	injectOAuthTokens(ctx, p.ConfigDir, p.Servers)
 	token := mintDaemonToken(p.ConfigDir)
-	// Best-effort cleanup on exit; a stale token is inert and the next daemon overwrites it.
-	defer func() { _ = os.Remove(daemon.TokenFile(p.ConfigDir)) }()
 	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, server.WithDaemonAuthToken(token))
 	defer srv.Close()
 	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, PortFile: p.PortFile, Listener: p.Listener, Port: p.Port})
@@ -75,7 +73,7 @@ func resolveDaemonListenPort(cfg *config.Config, flagPort int) int {
 }
 
 func mintDaemonToken(configDir string) string {
-	token, err := daemon.WriteToken(configDir)
+	token, err := daemon.EnsureToken(configDir)
 	if err != nil {
 		fatalf("write daemon token: %v", err)
 	}
@@ -107,6 +105,8 @@ type DaemonHTTPParams struct {
 
 func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	writePortFile(p.PortFile, p.Port)
+	// Best-effort cleanup, not required for correctness: a stale file left by SIGKILL just
+	// fails RunningPort's /healthz probe on the next read. See docs/daemon.md.
 	defer os.Remove(p.PortFile)
 	httpSrv := daemonHTTPServer(p.Srv)
 	go httpSrv.Serve(p.Listener) //nolint:errcheck
@@ -117,6 +117,8 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
 }
 
+// bindPort binds the daemon's loopback listener on the fixed daemon_port. A respawn can
+// rebind immediately even after the previous daemon's SIGKILL — see docs/daemon.md.
 func bindPort(port int) (net.Listener, int) {
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {

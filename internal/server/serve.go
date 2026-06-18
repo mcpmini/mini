@@ -168,7 +168,7 @@ func (s *Server) handleLine(ctx context.Context, line []byte, session *Session) 
 
 func (s *Server) handleRequest(ctx context.Context, req transport.Request, session *Session) (transport.Response, bool) {
 	if !s.awaitInitialization(ctx, req, session) {
-		return errorResponse(req.ID, transport.CodeInvalidRequest, "not initialized: send initialize first"), true
+		return errorResponse(req.ID, transport.CodeInvalidRequest, transport.NotInitializedMessage), true
 	}
 	s.logger.Debug("agent request", "method", req.Method, "id", req.ID)
 	result, err := s.dispatch(ctx, req, session)

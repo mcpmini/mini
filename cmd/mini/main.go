@@ -267,21 +267,35 @@ func maybeStartSessionEviction(ctx context.Context, httpSrv *http.Server, srv se
 }
 
 func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.ToolMode) error {
-	port, err := resolveDaemonPort(configDir, logger)
+	reresolve := daemonReresolver(configDir, logger)
+	port, token, err := reresolve()
 	if err != nil {
 		return err
 	}
 	sessionID := transport.NewSessionID()
-	token, err := daemon.ReadToken(configDir)
-	if err != nil {
-		return fmt.Errorf("read daemon token: %w", err)
-	}
 	logger.Info("connected to mini daemon", "port", port, "session", sessionID)
 	return proxy.Run(proxy.RunParams{
 		Port: port, SessionID: sessionID, Token: token,
-		ReloadToken: func() (string, error) { return daemon.ReadToken(configDir) },
-		In:          os.Stdin, Out: os.Stdout, ToolMode: mode,
+		In: os.Stdin, Out: os.Stdout, ToolMode: mode, Reresolve: reresolve,
 	})
+}
+
+// daemonReresolver re-resolves a live daemon for an open proxy, respawning it via
+// resolveDaemonPort if it died. With the default fixed daemon_port, the OS bind in
+// daemon.Start arbitrates among racing proxies so exactly one respawns and the rest connect
+// to the winner; with daemon_port: 0 (OS-assigned) racers may briefly start more than one.
+func daemonReresolver(configDir string, logger *slog.Logger) func() (int, string, error) {
+	return func() (int, string, error) {
+		port, err := resolveDaemonPort(configDir, logger)
+		if err != nil {
+			return 0, "", err
+		}
+		token, err := daemon.ReadToken(configDir)
+		if err != nil {
+			return 0, "", fmt.Errorf("read daemon token: %w", err)
+		}
+		return port, token, nil
+	}
 }
 
 func resolveDaemonPort(configDir string, logger *slog.Logger) (int, error) {
