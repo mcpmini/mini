@@ -350,7 +350,7 @@ func TestClose_isNoop(t *testing.T) {
 
 func TestListTools_HTTPPagination(t *testing.T) {
 	var page int
-	var receivedCursors []string
+	cursorCh := make(chan string, 2)
 	pages := []map[string]any{
 		{"tools": []any{map[string]any{"name": "a", "inputSchema": map[string]any{}}}, "nextCursor": "p2"},
 		{"tools": []any{map[string]any{"name": "b", "inputSchema": map[string]any{}}}},
@@ -369,7 +369,7 @@ func TestListTools_HTTPPagination(t *testing.T) {
 			if params, ok := req["params"].(map[string]any); ok {
 				cursor, _ = params["cursor"].(string)
 			}
-			receivedCursors = append(receivedCursors, cursor)
+			cursorCh <- cursor
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
 				"result": pages[page],
@@ -385,7 +385,8 @@ func TestListTools_HTTPPagination(t *testing.T) {
 	if want := []string{"a", "b"}; !slices.Equal(toolNames(got), want) {
 		t.Errorf("got %v, want %v", toolNames(got), want)
 	}
-	if want := []string{"", "p2"}; !slices.Equal(receivedCursors, want) {
-		t.Errorf("cursors: got %v, want %v", receivedCursors, want)
+	gotCursors := []string{<-cursorCh, <-cursorCh}
+	if want := []string{"", "p2"}; !slices.Equal(gotCursors, want) {
+		t.Errorf("cursors: got %v, want %v", gotCursors, want)
 	}
 }
