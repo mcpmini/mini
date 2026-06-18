@@ -3,8 +3,10 @@
 package server_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -183,6 +185,79 @@ func assertRemoveServer(t *testing.T, srv *server.Server) {
 	}
 	if text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{}))); strings.Contains(text, "dynamic_fs") {
 		t.Errorf("dynamic_fs still present after remove: %s", text)
+	}
+}
+
+// TestHelperEnvEcho is not a real test — it's a subprocess helper invoked by
+// TestStdioEnvPassthrough. It implements a minimal MCP server with one tool,
+// get_env, that returns MINI_TEST_VAR from its environment.
+func TestHelperEnvEcho(t *testing.T) {
+	if os.Getenv("MINI_HELPER_PROCESS") != "1" {
+		return
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var req map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
+			continue
+		}
+		id := req["id"]
+		if id == nil {
+			continue
+		}
+		switch method, _ := req["method"].(string); method {
+		case "initialize":
+			envEchoWrite(id, map[string]any{
+				"protocolVersion": "2024-11-05",
+				"serverInfo":      map[string]any{"name": "envecho", "version": "0"},
+				"capabilities":    map[string]any{},
+			})
+		case "tools/list":
+			envEchoWrite(id, map[string]any{
+				"tools": []any{map[string]any{
+					"name":        "get_env",
+					"description": "returns MINI_TEST_VAR",
+					"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+				}},
+			})
+		case "tools/call":
+			envEchoWrite(id, map[string]any{
+				"content": []any{map[string]any{"type": "text", "text": os.Getenv("MINI_TEST_VAR")}},
+			})
+		}
+	}
+	os.Exit(0)
+}
+
+func envEchoWrite(id any, result any) {
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+	fmt.Fprintf(os.Stdout, "%s\n", b)
+}
+
+// TestStdioEnvPassthrough verifies that ServerConfig.Env reaches the subprocess.
+// Env replaces (not appends to) the subprocess environment, so callers must
+// include PATH and other required vars explicitly alongside any auth tokens.
+func TestStdioEnvPassthrough(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.InlineThreshold = 10000
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+
+	sc := config.ServerConfig{
+		Name:    "envtest",
+		Command: os.Args[0],
+		Args:    []string{"-test.run=TestHelperEnvEcho"},
+		Env:     []string{"MINI_HELPER_PROCESS=1", "MINI_TEST_VAR=hello_from_mini"},
+	}
+	if err := srv.AddUpstream(context.Background(), sc); err != nil {
+		t.Fatalf("AddUpstream: %v", err)
+	}
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "envtest", "tool": "get_env", "params": map[string]any{},
+	}))
+	if text := toolResultText(t, resp); !strings.Contains(text, "hello_from_mini") {
+		t.Errorf("MINI_TEST_VAR not in subprocess response, got: %s", text)
 	}
 }
 
