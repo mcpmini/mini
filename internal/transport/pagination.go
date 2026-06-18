@@ -27,8 +27,6 @@ func paginateToolsList(ctx context.Context, callPage func(context.Context, strin
 	return tools, nil
 }
 
-// Some tools beat none for mid-page server errors; context errors propagate since
-// the caller explicitly aborted.
 func partialOrError(ctx context.Context, tools []ToolDefinition, err error) ([]ToolDefinition, error) {
 	if len(tools) > 0 && ctx.Err() == nil {
 		slog.Warn("tools/list: error mid-pagination, returning partial results", "err", err)
