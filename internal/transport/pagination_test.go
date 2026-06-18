@@ -2,6 +2,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 )
@@ -147,7 +148,7 @@ func TestPaginateToolsList_contextCancellation(t *testing.T) {
 		return ToolsListResult{}, ctx.Err()
 	}
 	_, err := paginateToolsList(ctx, callPage)
-	if err != context.Canceled {
+	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled, got %v", err)
 	}
 }

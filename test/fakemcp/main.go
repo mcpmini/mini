@@ -31,8 +31,9 @@ import (
 )
 
 type fakeOpts struct {
-	tools  *ToolRegistry
-	faults *FaultRegistry
+	tools        *ToolRegistry
+	faults       *FaultRegistry
+	listPageSize int
 }
 
 func parseFlags() (fakeOpts, error) {
@@ -40,6 +41,7 @@ func parseFlags() (fakeOpts, error) {
 	_ = flag.String("control-addr", "127.0.0.1:0", "host:port for HTTP control API (0 = random port)")
 	initialFault := flag.String("initial-fault", "", "JSON-encoded Fault to apply at startup (e.g. for subprocess fault injection)")
 	callLog := flag.String("call-log", "", "append a JSON line per tool call to this file")
+	listPageSize := flag.Int("list-page-size", 0, "paginate tools/list at this page size (0 = disabled)")
 	flag.Parse()
 	faults := &FaultRegistry{}
 	tools := newToolRegistry(*callLog)
@@ -47,7 +49,7 @@ func parseFlags() (fakeOpts, error) {
 	if err := setInitialFault(faults, *initialFault); err != nil {
 		return fakeOpts{}, err
 	}
-	return fakeOpts{tools: tools, faults: faults}, nil
+	return fakeOpts{tools: tools, faults: faults, listPageSize: *listPageSize}, nil
 }
 
 func loadFixtures(tools *ToolRegistry, fixturesDir string) {
@@ -80,5 +82,5 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stderr, "fakemcp control=%s\n", addr)
-	serve(&mcpHandler{tools: opts.tools, faults: opts.faults})
+	serve(&mcpHandler{tools: opts.tools, faults: opts.faults, listPageSize: opts.listPageSize})
 }
