@@ -158,8 +158,7 @@ func TestDeliver_singleFlightRecoversOnce(t *testing.T) {
 		fmt.Fprintf(&lines, `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{}}`+"\n", i)
 	}
 	var out bytes.Buffer
-	var outMu sync.Mutex
-	p := RunParams{Port: dead, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &lockedWriter{w: &out, mu: &outMu}, Reresolve: reresolve}
+	p := RunParams{Port: dead, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Reresolve: reresolve}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -169,17 +168,6 @@ func TestDeliver_singleFlightRecoversOnce(t *testing.T) {
 	if got := strings.Count(out.String(), `"result":"ok"`); got != n {
 		t.Errorf("recovered results = %d, want %d", got, n)
 	}
-}
-
-type lockedWriter struct {
-	w  io.Writer
-	mu *sync.Mutex
-}
-
-func (l *lockedWriter) Write(b []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.w.Write(b)
 }
 
 func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {

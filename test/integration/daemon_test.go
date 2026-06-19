@@ -199,6 +199,7 @@ func TestDaemon_recoversAfterDaemonKilledMidSession(t *testing.T) {
 	writeConfig(t, cfg, "inline_threshold: 50000\ndaemon_port: 0\n")
 
 	cmd := startKillableDaemon(t, cfg)
+	// Single proxy → single respawn → daemon.port holds the one respawned daemon's port.
 	t.Cleanup(func() { killDaemonOnPort(portFromFile(t, filepath.Join(cfg, "daemon.port"))) })
 	tokenBefore := readDaemonToken(t, cfg)
 	client := connectCompact(t, cfg)
