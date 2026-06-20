@@ -19,7 +19,6 @@ func TestNotification_toolsChangedAfterAddServer(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.DangerousAllowPrivateURLs = true
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 

@@ -34,7 +34,6 @@ func TestMiniFormat_AllArrayShapes(t *testing.T) {
         t.Run(tc.name, func(t *testing.T) {
             cfg := config.DefaultConfig()
             cfg.ResponseDir = t.TempDir()
-            cfg.InlineThreshold = 100000
             srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
             defer srv.Close()
 

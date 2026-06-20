@@ -46,7 +46,6 @@ func TestRead_RejectsSymlinkEscape(t *testing.T) {
 	storeDir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -96,7 +95,6 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 	storeDir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -300,7 +298,6 @@ func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
 	storeDir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 

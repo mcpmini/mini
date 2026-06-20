@@ -173,7 +173,6 @@ func newAliasConfigServer(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 	return srv
@@ -204,7 +203,6 @@ func TestAlias_serverSetProjectionTakesEffect(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 
@@ -279,7 +277,6 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			dir := t.TempDir()
 			cfg := config.DefaultConfig()
 			cfg.ResponseDir = t.TempDir()
-			cfg.InlineThreshold = 10000
 			srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			t.Cleanup(srv.Close)
 
@@ -307,7 +304,6 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 func TestAlias_miniFormatHeaderShowsAlias(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.ResponseFormat = "mini"
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
@@ -332,7 +328,6 @@ func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 

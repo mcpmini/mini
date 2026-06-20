@@ -21,7 +21,6 @@ func newProxyServer(t *testing.T) *server.Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 50
 	return server.New(cfg, logger)
 }
 
@@ -234,7 +233,7 @@ func TestProxy_Call_IncludeFilter_NoElision_InlineJSON(t *testing.T) {
 }
 
 func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
-	srv := newProxyServer(t) // InlineThreshold=50
+	srv := newProxyServer(t)
 	defer srv.Close()
 	conn := fakeConn("get_issue")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"this is a very long body that will be truncated\"}"}]}`)
@@ -264,7 +263,6 @@ func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
 func TestProxy_Call_MiniFormat_RendersLines(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000 // keep inline
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -294,7 +292,6 @@ func TestProxy_Call_MiniFormat_RendersLines(t *testing.T) {
 func TestProxy_Call_GlobalMiniFormat_Respected(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.ResponseFormat = "mini"
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
@@ -324,7 +321,6 @@ func TestProxy_Call_MiniFormat_PerSession(t *testing.T) {
 	// is proxy by the zero-value default, with no server-level option set.
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 100000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 

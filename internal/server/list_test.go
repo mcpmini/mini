@@ -31,7 +31,6 @@ func TestList_hidden_disabledByConfig_returnsError(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DisableListHidden = true
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	resp := serve(t, srv, callTool("list", map[string]any{"hidden": true}))

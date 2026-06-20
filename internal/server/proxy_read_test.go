@@ -16,7 +16,6 @@ import (
 func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 1 // force file writes
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -36,7 +35,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	t.Logf("initial response: %s", text1)
 
 	if !strings.Contains(text1, "File:") {
-		t.Skip("response was not written to file (threshold not triggered)")
+		t.Fatal("expected file to be written — elision of 'secret' should trigger raw file write")
 	}
 
 	var filePath string

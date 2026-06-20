@@ -26,7 +26,6 @@ func newNpxServer(t *testing.T) *server.Server {
 	}
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 	return srv
@@ -101,7 +100,6 @@ func TestReadFileTruncation(t *testing.T) {
 	// Use a global string limit to verify truncation is applied to plain-string responses.
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.DefaultStringLimit = 100
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
@@ -263,7 +261,8 @@ func TestAddRemoveServer(t *testing.T) {
 		t.Skip("npx not available")
 	}
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir, cfg.InlineThreshold, cfg.DangerousAllowRuntimeStdio = t.TempDir(), 10000, true
+	cfg.ResponseDir = t.TempDir()
+	cfg.DangerousAllowRuntimeStdio = true
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 	dir := realPath(t, t.TempDir())

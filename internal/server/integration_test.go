@@ -25,7 +25,6 @@ func setupFSServer(t *testing.T, allowedDir string) (*server.Server, context.Can
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = allowedDir
-	cfg.InlineThreshold = 500
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	sc := config.ServerConfig{
 		Name: "fs", Command: "npx",

@@ -22,7 +22,6 @@ func TestConfigureReload_emptyDir(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
@@ -46,7 +45,6 @@ func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
@@ -70,7 +68,6 @@ func newServerAllowPrivate(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.DangerousAllowPrivateURLs = true
 	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
@@ -138,7 +135,6 @@ func newReadOnlyConfigServer(t *testing.T) *server.Server {
 	t.Cleanup(func() { os.Chmod(dir, 0700) }) //nolint:errcheck
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
@@ -181,7 +177,6 @@ func newConfigServer(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 	return srv
@@ -320,7 +315,6 @@ func newSessionServer(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
