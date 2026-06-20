@@ -106,8 +106,7 @@ const ProtocolVersion = "2025-03-26"
 // NotificationInitialized is the method name sent after the initialize handshake.
 const NotificationInitialized = "notifications/initialized"
 
-// Server error string for pre-init requests. The proxy does HasPrefix on this to detect lost
-// sessions — the two must not drift apart.
+// The proxy does HasPrefix on this to detect lost sessions — the two must not drift apart.
 const NotInitializedMessage = "not initialized: send initialize first"
 
 // NotificationToolsChanged is sent when the available tool set changes.

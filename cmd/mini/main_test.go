@@ -7,12 +7,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -114,20 +114,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	return <-outCh
 }
 
-// Short path: macOS caps Unix socket paths at 104 bytes, which t.TempDir() exceeds.
-func shortConfigDir(t *testing.T) string {
-	t.Helper()
-	base := "/tmp"
-	if runtime.GOOS == "windows" {
-		base = ""
-	}
-	dir, err := os.MkdirTemp(base, "mini")
-	if err != nil {
-		t.Fatalf("mkdir temp: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck
-	return dir
-}
+func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 
 func socketHealthServer(t *testing.T, dir, body string) {
 	t.Helper()

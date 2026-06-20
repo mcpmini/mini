@@ -8,32 +8,18 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// Short path: macOS caps Unix socket paths at 104 bytes, which t.TempDir() exceeds.
-func shortSocketDir(t *testing.T) string {
-	t.Helper()
-	base := "/tmp"
-	if runtime.GOOS == "windows" {
-		base = ""
-	}
-	dir, err := os.MkdirTemp(base, "mini")
-	if err != nil {
-		t.Fatalf("mkdir temp: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck
-	return dir
-}
+func shortSocketDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 
 func serveSocket(t *testing.T, h http.HandlerFunc) *http.Client {
 	t.Helper()

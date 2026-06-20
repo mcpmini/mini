@@ -12,30 +12,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
-// Short path: macOS caps Unix socket paths at 104 bytes, which t.TempDir() exceeds — and the
-// real binary refuses to start on a too-long socket path.
-func shortConfigDir(t *testing.T) string {
-	t.Helper()
-	base := "/tmp"
-	if runtime.GOOS == "windows" {
-		base = ""
-	}
-	dir, err := os.MkdirTemp(base, "mini")
-	if err != nil {
-		t.Fatalf("mkdir temp: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck
-	return dir
-}
+func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 
 func socketPath(cfg string) string { return filepath.Join(cfg, "daemon.sock") }
 
