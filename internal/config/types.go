@@ -3,8 +3,8 @@ package config
 // Config is the top-level mini configuration.
 type Config struct {
 	// DefaultStringLimit is the default max chars for string fields across all
-	// projections. 0 means no limit (default). Override per-field with
-	// string_limits in a projection config.
+	// projections. 0 means no limit. Override per-field with string_limits in a
+	// projection config.
 	DefaultStringLimit int `yaml:"default_string_limit"`
 
 	// DefaultDepthLimit is the default max nesting depth. 0 means no limit (default).
@@ -79,7 +79,7 @@ var DefaultContentFields = []string{
 
 func DefaultConfig() *Config {
 	return &Config{
-		DefaultStringLimit:   0,
+		DefaultStringLimit:   2000,
 		DefaultDepthLimit:    0,
 		AutoStripThreshold:   0,
 		ResponseTTL:          "1h",
