@@ -18,14 +18,15 @@ func TestResponse_inlineSmallResponse(t *testing.T) {
 	}
 }
 
-func TestResponse_largeResponseWrittenToFile(t *testing.T) {
+func TestResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", fixturesDir+"/github")
-	writeConfig(t, cfg, "inline_threshold: 1\nresponse_dir: "+t.TempDir()+"\n")
+	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
+	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  exclude_always: [secret]\n")
 
-	e := startServer(t, cfg).execEnvelope("github", "list_pull_requests", nil)
+	e := startServer(t, cfg).execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
-		t.Fatal("large response should have written a file")
+		t.Fatal("projected response should have written a raw file")
 	}
 	if _, err := os.Stat(*e.File); err != nil {
 		t.Errorf("response file %q should exist: %v", *e.File, err)
@@ -34,10 +35,11 @@ func TestResponse_largeResponseWrittenToFile(t *testing.T) {
 
 func TestResponse_responseFileIsValidJSON(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", fixturesDir+"/github")
-	writeConfig(t, cfg, "inline_threshold: 1\nresponse_dir: "+t.TempDir()+"\n")
+	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
+	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  exclude_always: [secret]\n")
 
-	e := startServer(t, cfg).execEnvelope("github", "list_pull_requests", nil)
+	e := startServer(t, cfg).execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}

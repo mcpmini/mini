@@ -105,9 +105,9 @@ func miniConfigSchema() map[string]any {
 func miniReadSchema() map[string]any {
 	return map[string]any{
 		"name":        "read",
-		"description": "Read a projected or raw response file written by mini. Pass the path from the response note. .json returns projected data; .raw.json returns the full upstream response.",
+		"description": "Read a raw upstream response file written by mini. Pass the path from the response note.",
 		"inputSchema": schema(map[string]any{
-			"path": prop("string", "File path from the response note (.json for projected, .raw.json for full upstream)"),
+			"path": prop("string", "File path from the response note"),
 		}),
 	}
 }
