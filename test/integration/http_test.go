@@ -53,7 +53,6 @@ func TestHTTP_403ReturnsError(t *testing.T) {
 
 func TestHTTP_addServerSSRFBlocked(t *testing.T) {
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	client := startServer(t, cfg)
 	raw := client.mustCall("tools/call", map[string]any{
 		"name": "config",

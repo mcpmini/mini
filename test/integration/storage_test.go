@@ -37,12 +37,12 @@ func TestStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
-	writeConfig(t, cfg, "inline_threshold: 0\nresponse_dir: "+respDir+"\n")
+	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	client := startServer(t, cfg)
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File != nil {
-		t.Errorf("inline_threshold should not force file writes without projection, got %q", *e.File)
+		t.Errorf("unprojected response must not write a file, got %q", *e.File)
 	}
 }
 
@@ -133,7 +133,7 @@ func TestStorage_cleanupRetainsNonExpired(t *testing.T) {
 func TestStorage_unprojectedLargeResponseInlines(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", fixturesDir+"/github")
-	writeConfig(t, cfg, "inline_threshold: 1\nresponse_dir: "+t.TempDir()+"\n")
+	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
 	client := startServer(t, cfg)
 
 	e := client.execEnvelope("github", "list_pull_requests", nil)
@@ -142,5 +142,22 @@ func TestStorage_unprojectedLargeResponseInlines(t *testing.T) {
 	}
 	if e.Data == nil {
 		t.Error("expected data field to be present for inline response")
+	}
+}
+
+func TestStorage_nonJSONResponseFromUpstreamPassedThrough(t *testing.T) {
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_status": `plain text response`}))
+	client := startServer(t, cfg)
+
+	result, isErr := client.execToolAllowError("svc", "get_status", nil)
+	if isErr {
+		t.Fatalf("expected success for non-JSON response, got error: %s", result)
+	}
+	if result == "" {
+		t.Error("expected non-empty response")
+	}
+	if !strings.Contains(result, "plain text response") {
+		t.Errorf("expected original text to be present in response, got: %s", result)
 	}
 }

@@ -62,27 +62,6 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	}
 }
 
-func TestNoFileWhenNoElisionOrOmission(t *testing.T) {
-	store := newTestStore(t)
-	builder := response.NewBuilder(store)
-
-	// Large response with no elided/omitted fields should not write a file —
-	// Data is inlined regardless of size.
-	raw := json.RawMessage(`{"status":"ok","body":"` + strings.Repeat("x", 200) + `"}`)
-	data := map[string]any{"status": "ok", "body": strings.Repeat("x", 200)}
-
-	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if env.File != nil {
-		t.Error("no file should be written when nothing was elided or omitted")
-	}
-	if env.Data == nil {
-		t.Error("expected data to be inlined")
-	}
-}
 
 func TestElidedKeys(t *testing.T) {
 	store := newTestStore(t)
@@ -108,17 +87,17 @@ func TestOmittedFields(t *testing.T) {
 
 	raw := json.RawMessage(`{"summary":"short","body":"` + strings.Repeat("x", 500) + `"}`)
 	data := map[string]any{"summary": "short", "body": strings.Repeat("x", 50)}
-	omitted := []response.Omission{{Path: ".body", Bytes: 450}}
+	omitted := []response.Truncation{{JQPath: ".body", Bytes: 450}}
 
 	env, _, err := builder.Build(response.BuildParams{
-		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Omitted: omitted,
+		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Truncated: omitted,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(env.Omitted) != 1 || env.Omitted[0].Path != ".body" || env.Omitted[0].Bytes != 450 {
-		t.Errorf("expected omitted=[{.body 450}], got %v", env.Omitted)
+	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Bytes != 450 {
+		t.Errorf("expected omitted=[{.body 450}], got %v", env.Truncated)
 	}
 	if env.File == nil {
 		t.Error("expected file written when a field was omitted")

@@ -451,7 +451,7 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 type envelope struct {
 	Data        any            `json:"data"`
 	Elided      []string       `json:"elided"`
-	Omitted     []omission     `json:"omitted"`
+	Truncated    []truncation     `json:"truncated"`
 	File        *string        `json:"file"`
 	Passthrough map[string]any `json:"passthrough"`
 	Error       string         `json:"error"`
@@ -459,8 +459,8 @@ type envelope struct {
 	Retryable   bool           `json:"retryable"`
 }
 
-type omission struct {
-	Path  string `json:"path"`
+type truncation struct {
+	JQPath string `json:"path"`
 	Bytes int    `json:"bytes"`
 }
 
@@ -524,7 +524,6 @@ func quickServerWith(t *testing.T, fixtures map[string]string, cfgYAML, projYAML
 		writeConfig(t, cfg, cfgYAML)
 		return startQuickServer(t, cfg, projYAML)
 	}
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	return startQuickServer(t, cfg, projYAML)
 }
 
@@ -534,7 +533,6 @@ func quickServer(t *testing.T, fixtures map[string]string) *mcpClient {
 	dir := mockFixtureDir(t, fixtures)
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	return startServer(t, cfg)
 }
 
@@ -552,7 +550,6 @@ func faultServer(t *testing.T, fixtures map[string]string, fault map[string]any,
 	cfg := t.TempDir()
 	faultJSON, _ := json.Marshal(fault)
 	writeFaultServer(t, faultServerParams{ConfigDir: cfg, ServerName: "svc", Fixtures: dir, FaultJSON: string(faultJSON), ToolTimeout: toolTimeout})
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	return startServer(t, cfg)
 }
 

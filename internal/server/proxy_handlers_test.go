@@ -173,20 +173,18 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 	if !strings.Contains(text, "elided") {
 		t.Errorf("expected 'elided' in projection note: %s", text)
 	}
-	// data is always inlined
-	if !strings.Contains(text, `"id"`) {
-		t.Errorf("expected inlined data in response: %s", text)
+	if !strings.Contains(text, `"id"`) || strings.Contains(text, `"secret"`) {
+		t.Errorf("expected id present and secret absent in response: %s", text)
 	}
 }
 
-func TestProxy_Call_WithProjection_NoElision_InlineJSON(t *testing.T) {
+func TestProxy_NestedExclusion_ReturnsPlainJSONWithoutEnvelope(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 	conn := fakeConn("list_prs")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"items\":[{\"id\":1,\"body\":\"long body text here\"}]}"}]}`)
 	addProxyConn(t, srv, "gh", conn)
 
-	// exclude_always on a field nested inside an array doesn't produce top-level elision
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "gh",
@@ -198,13 +196,12 @@ func TestProxy_Call_WithProjection_NoElision_InlineJSON(t *testing.T) {
 	text := toolResultText(t, resp)
 	t.Logf("proxy nested-exclude response: %s", text)
 
-	// No top-level elision → no projection note, no file — data inlined as compact JSON
 	if strings.HasPrefix(text, "[Projected") {
 		t.Errorf("expected no projection note for nested-only exclusion: %s", text)
 	}
 }
 
-func TestProxy_Call_IncludeFilter_NoElision_InlineJSON(t *testing.T) {
+func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 	conn := fakeConn("get_data")
@@ -222,13 +219,18 @@ func TestProxy_Call_IncludeFilter_NoElision_InlineJSON(t *testing.T) {
 	text := toolResultText(t, resp)
 	t.Logf("include-filter no-elision response: %s", text)
 
-	// include matches all fields → no elision → no projection note, inline JSON
 	if strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected no [Projected] note when nothing elided: %s", text)
+		t.Errorf("expected no projection envelope when nothing elided: %s", text)
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
 		t.Errorf("expected valid JSON response: %s", text)
+	}
+	if id, _ := parsed["id"].(float64); id != 1 {
+		t.Errorf("expected id:1, got %v", parsed["id"])
+	}
+	if val, _ := parsed["value"].(string); val != "data" {
+		t.Errorf("expected value:data, got %v", parsed["value"])
 	}
 }
 

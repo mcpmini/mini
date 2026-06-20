@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// WriteRaw writes already-marshalled JSON bytes to disk as pretty-printed JSON.
+// WriteRaw pretty-prints before writing — "raw" refers to the unprocessed upstream bytes, not the on-disk format.
 func (s *Store) WriteRaw(raw []byte) (string, error) {
 	return s.writeBytes(prettyJSON(raw))
 }

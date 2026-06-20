@@ -20,7 +20,7 @@ type BuildParams struct {
 	Raw         json.RawMessage
 	Summary     any
 	Elided      []string
-	Omitted     []Omission
+	Truncated    []Truncation
 	Hint        string
 	Passthrough map[string]any
 }
@@ -30,7 +30,7 @@ func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
 	summaryTokens := EstimateTokens(p.Summary)
 	stats := CallStats{RawTokens: rawTokens, SummaryTokens: summaryTokens}
 	e := newEnvelope(p)
-	if len(p.Elided) > 0 || len(p.Omitted) > 0 {
+	if len(p.Elided) > 0 || len(p.Truncated) > 0 {
 		if err := b.writeRawFile(e, p); err != nil {
 			return nil, stats, err
 		}
@@ -42,7 +42,7 @@ func newEnvelope(p BuildParams) *Envelope {
 	return &Envelope{
 		Data:        p.Summary,
 		Elided:      nilIfEmpty(p.Elided),
-		Omitted:     p.Omitted,
+		Truncated:     p.Truncated,
 		Hint:        p.Hint,
 		Passthrough: nilIfEmptyMap(p.Passthrough),
 	}

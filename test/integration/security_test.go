@@ -11,7 +11,6 @@ import (
 func noSSRFClient(t *testing.T) *mcpClient {
 	t.Helper()
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	return startServer(t, cfg)
 }
 

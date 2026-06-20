@@ -10,24 +10,19 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// Omission records a field whose value was truncated or replaced. Path is a
-// dot/bracket pointer into the projected response (e.g. ".files[3].patch").
-type Omission struct {
-	Path  string `json:"path"`
-	Bytes int    `json:"bytes"`
+type Truncation struct {
+	JQPath string `json:"path"` // e.g. .files[3].patch
+	Bytes  int    `json:"bytes"`
 }
 
 type Result struct {
 	Summary     any
 	ElidedKeys  []string
 	Passthrough map[string]any
-	Omitted     []Omission
+	Truncated    []Truncation
 	Hint        string
 }
 
-// projCtx carries the merged config plus per-call traversal state. path is
-// passed by value so each recursive call gets its own slice — no push/pop
-// bookkeeping and no shared-backing-array aliasing bugs.
 type projCtx struct {
 	cfg   *effectiveConfig
 	depth int
@@ -39,7 +34,7 @@ type projCtx struct {
 func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 	effective := mergeWithDefaults(cfg, defaults)
 	ctx := projCtx{cfg: effective, depth: 0, path: nil}
-	var omitted []Omission
+	var omitted []Truncation
 	summary := project(value, ctx, &omitted)
 	elided := collectElided(value, summary, "")
 	passthrough := extractPassthrough(value, effective.passthrough)
@@ -48,16 +43,16 @@ func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 		Summary:     summary,
 		ElidedKeys:  elided,
 		Passthrough: passthrough,
-		Omitted:     omitted,
+		Truncated:     omitted,
 		Hint:        effective.hint,
 	}
 }
 
-func sortOmissions(omitted []Omission) {
-	sort.Slice(omitted, func(i, j int) bool { return omitted[i].Path < omitted[j].Path })
+func sortOmissions(omitted []Truncation) {
+	sort.Slice(omitted, func(i, j int) bool { return omitted[i].JQPath < omitted[j].JQPath })
 }
 
-func project(value any, ctx projCtx, omitted *[]Omission) any {
+func project(value any, ctx projCtx, omitted *[]Truncation) any {
 	if ctx.cfg.depthLimit > 0 && ctx.depth >= ctx.cfg.depthLimit {
 		return "[depth limit reached]"
 	}
@@ -68,13 +63,13 @@ func project(value any, ctx projCtx, omitted *[]Omission) any {
 	case []any:
 		return projectArray(v, ctx, omitted)
 	case string:
-		return projectString(v, ctx, "", omitted, ctx.path)
+		return projectString(v, ctx, "", omitted)
 	default:
 		return value
 	}
 }
 
-func projectMap(m map[string]any, ctx projCtx, omitted *[]Omission) map[string]any {
+func projectMap(m map[string]any, ctx projCtx, omitted *[]Truncation) map[string]any {
 	out := make(map[string]any)
 	for k, v := range m {
 		if shouldSkipField(k, ctx.cfg, ctx.depth) {
@@ -92,11 +87,12 @@ func shouldSkipField(key string, cfg *effectiveConfig, depth int) bool {
 	return depth == 0 && len(cfg.include) > 0 && !isIncluded(key, cfg.include) && !isPassthrough(key, cfg.passthrough)
 }
 
-func projectMapValue(value any, ctx projCtx, fieldName string, omitted *[]Omission) any {
+func projectMapValue(value any, ctx projCtx, fieldName string, omitted *[]Truncation) any {
+	// Cloning the path because we're recursing during field path traversal
 	childPath := append(slices.Clone(ctx.path), fieldName)
 	switch sv := value.(type) {
 	case string:
-		return projectString(sv, ctx, fieldName, omitted, childPath)
+		return projectString(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth, path: childPath}, fieldName, omitted)
 	case map[string]any:
 		return project(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth + 1, path: childPath}, omitted)
 	case []any:
@@ -106,14 +102,15 @@ func projectMapValue(value any, ctx projCtx, fieldName string, omitted *[]Omissi
 	}
 }
 
-func projectArray(arr []any, ctx projCtx, omitted *[]Omission) []any {
+func projectArray(arr []any, ctx projCtx, omitted *[]Truncation) []any {
 	return projectNamedArray(arr, ctx, "", omitted)
 }
 
-func projectNamedArray(arr []any, ctx projCtx, fieldName string, omitted *[]Omission) []any {
+func projectNamedArray(arr []any, ctx projCtx, fieldName string, omitted *[]Truncation) []any {
 	arr, original := truncateArray(arr, ctx.cfg.arrayLimitFor(fieldName))
 	out := make([]any, len(arr), projectedArrayCap(len(arr), original))
 	for i, v := range arr {
+		// Cloning the path because we're recursing during field path traversal
 		itemCtx := projCtx{cfg: ctx.cfg, depth: ctx.depth, path: append(slices.Clone(ctx.path), fmt.Sprintf("[%d]", i))}
 		out[i] = project(v, itemCtx, omitted)
 	}
@@ -138,17 +135,17 @@ func projectedArrayCap(currentLen, originalLen int) int {
 	return currentLen
 }
 
-func projectString(s string, ctx projCtx, fieldName string, omitted *[]Omission, path []string) string {
+func projectString(s string, ctx projCtx, fieldName string, omitted *[]Truncation) string {
 	if ctx.cfg.stripContent || (ctx.cfg.autoStripThreshold > 0 && len(s) >= ctx.cfg.autoStripThreshold && ctx.cfg.contentFieldSet[fieldName]) {
 		s = StripMarkup(s)
 	}
 	if omitLimit := ctx.cfg.omitLimitFor(fieldName); omitLimit > 0 && len(s) > omitLimit {
-		return replaceWithPlaceholder(s, formatPath(path), omitted)
+		return replaceWithPlaceholder(s, formatPath(ctx.path), omitted)
 	}
 	limit := ctx.cfg.stringLimitFor(fieldName)
 	if limit > 0 && len(s) > limit {
 		cut := truncateAtBoundary(s, limit)
-		recordOmission(formatPath(path), len(s)-len(cut), omitted)
+		recordOmission(formatPath(ctx.path), len(s)-len(cut), omitted)
 		return cut
 	}
 	return s
@@ -170,7 +167,7 @@ func formatPath(path []string) string {
 	return b.String()
 }
 
-func replaceWithPlaceholder(s, path string, omitted *[]Omission) string {
+func replaceWithPlaceholder(s, path string, omitted *[]Truncation) string {
 	recordOmission(path, len(s), omitted)
 	if path == "" {
 		return fmt.Sprintf("<omitted: %d chars — see raw>", len(s))
@@ -178,8 +175,8 @@ func replaceWithPlaceholder(s, path string, omitted *[]Omission) string {
 	return fmt.Sprintf("<omitted: %d chars — see raw, path %s>", len(s), path)
 }
 
-func recordOmission(path string, bytes int, omitted *[]Omission) {
-	*omitted = append(*omitted, Omission{Path: path, Bytes: bytes})
+func recordOmission(path string, bytes int, omitted *[]Truncation) {
+	*omitted = append(*omitted, Truncation{JQPath: path, Bytes: bytes})
 }
 
 func isIncluded(key string, include []string) bool { return slices.Contains(include, key) }

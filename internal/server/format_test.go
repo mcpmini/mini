@@ -136,7 +136,6 @@ func TestLinesFormatIncludesFilePathWhenElisionOccurs(t *testing.T) {
 
 func elisionLinesResponse(t *testing.T, payload string) []string {
 	t.Helper()
-	// Use exclude_always to trigger elision, which causes a raw file to be written.
 	srv := newSrvWithResponse(t, "mini", payload)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",

@@ -260,6 +260,35 @@ func parseEnvelope(t *testing.T, text string) map[string]any {
 	return env
 }
 
+type proxyEnvelope struct {
+	HasMini bool
+	Msg     string
+	Hint    string
+	File    string
+	Data    map[string]any
+}
+
+func parseProxyEnvelope(t *testing.T, text string) proxyEnvelope {
+	t.Helper()
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(text), &raw); err != nil {
+		t.Fatalf("expected JSON from proxy: %s", text)
+	}
+	env := proxyEnvelope{}
+	if mini, ok := raw["__mini"].(map[string]any); ok {
+		env.HasMini = true
+		env.Msg, _ = mini["msg"].(string)
+		env.Hint, _ = mini["hint"].(string)
+		env.File, _ = mini["file"].(string)
+	}
+	if data, ok := raw["data"].(map[string]any); ok {
+		env.Data = data
+	} else {
+		env.Data = raw
+	}
+	return env
+}
+
 func toolResultText(t *testing.T, resp map[string]any) string {
 	t.Helper()
 	if errVal := resp["error"]; errVal != nil {

@@ -234,14 +234,13 @@ func TestBuildEnvelope_TruncationRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(env.Omitted) == 0 || env.Omitted[0].Bytes == 0 {
-		t.Errorf("expected omitted[0].Bytes > 0, got %v", env.Omitted)
+	if len(env.Truncated) == 0 || env.Truncated[0].Bytes == 0 {
+		t.Errorf("expected omitted[0].Bytes > 0, got %v", env.Truncated)
 	}
 	b, _ := json.Marshal(env.Data)
 	if contains(string(b), longBody) {
 		t.Errorf("body should be truncated in data, got full value")
 	}
-	// file written when omission occurred
 }
 
 // Invoke (end-to-end)

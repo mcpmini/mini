@@ -116,7 +116,7 @@ func TestReadFileTruncation(t *testing.T) {
 	if env["error"] != nil {
 		t.Fatalf("read_file failed: %v", env)
 	}
-	omitted, _ := env["omitted"].([]any)
+	omitted, _ := env["truncated"].([]any)
 	if len(omitted) == 0 {
 		t.Errorf("expected omitted entries in envelope after string limit applied, got: %v", env)
 	}

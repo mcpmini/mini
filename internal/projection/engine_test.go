@@ -101,8 +101,8 @@ func TestStringTruncation(t *testing.T) {
 	if m["body"] != want {
 		t.Errorf("body = %q, want %q", m["body"], want)
 	}
-	if len(result.Omitted) != 1 || result.Omitted[0].Bytes != 1900 {
-		t.Errorf("omitted = %v, want [{.body 1900}]", result.Omitted)
+	if len(result.Truncated) != 1 || result.Truncated[0].Bytes != 1900 {
+		t.Errorf("omitted = %v, want [{.body 1900}]", result.Truncated)
 	}
 }
 
@@ -247,8 +247,8 @@ func TestNamedStringLimit(t *testing.T) {
 	if m["body"].(string) != wantBody {
 		t.Errorf("body = %q, want %q", m["body"], wantBody)
 	}
-	if len(result.Omitted) != 1 || result.Omitted[0].Path != ".body" || result.Omitted[0].Bytes != 20 {
-		t.Errorf("omitted = %v, want [{.body 20}]", result.Omitted)
+	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".body" || result.Truncated[0].Bytes != 20 {
+		t.Errorf("omitted = %v, want [{.body 20}]", result.Truncated)
 	}
 	// title has no named limit — should pass through untruncated
 	if m["title"].(string) != long {
@@ -360,13 +360,13 @@ func TestArrayElementOmissionPath(t *testing.T) {
 
 	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
 
-	if len(result.Omitted) != 2 {
-		t.Fatalf("expected 2 omissions (one per long element), got %v", result.Omitted)
+	if len(result.Truncated) != 2 {
+		t.Fatalf("expected 2 omissions (one per long element), got %v", result.Truncated)
 	}
-	for i, o := range result.Omitted {
+	for i, o := range result.Truncated {
 		want := "[" + string(rune('0'+i)) + "]"
-		if o.Path != want {
-			t.Errorf("omission[%d].Path = %q, want %q", i, o.Path, want)
+		if o.JQPath != want {
+			t.Errorf("omission[%d].JQPath = %q, want %q", i, o.JQPath, want)
 		}
 	}
 }
@@ -379,13 +379,13 @@ func TestArrayElementOmissionPathInsideObject(t *testing.T) {
 
 	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
 
-	if len(result.Omitted) != 2 {
-		t.Fatalf("expected 2 omissions, got %v", result.Omitted)
+	if len(result.Truncated) != 2 {
+		t.Fatalf("expected 2 omissions, got %v", result.Truncated)
 	}
-	for i, o := range result.Omitted {
+	for i, o := range result.Truncated {
 		want := ".lines[" + string(rune('0'+i)) + "]"
-		if o.Path != want {
-			t.Errorf("omission[%d].Path = %q, want %q", i, o.Path, want)
+		if o.JQPath != want {
+			t.Errorf("omission[%d].JQPath = %q, want %q", i, o.JQPath, want)
 		}
 	}
 }
@@ -409,8 +409,8 @@ func TestOmitLimits(t *testing.T) {
 	if !strings.HasPrefix(m["patch"].(string), "<omitted:") {
 		t.Errorf("patch should be replaced with omit placeholder, got %q", m["patch"])
 	}
-	if len(result.Omitted) != 1 || result.Omitted[0].Path != ".patch" {
-		t.Errorf("expected one omission for .patch, got %v", result.Omitted)
+	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".patch" {
+		t.Errorf("expected one omission for .patch, got %v", result.Truncated)
 	}
 	if strings.HasPrefix(m["title"].(string), "<omitted:") {
 		t.Errorf("title should not be omitted (no omit_limits entry), got %q", m["title"])

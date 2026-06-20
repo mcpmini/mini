@@ -14,7 +14,6 @@ func callSetup(t *testing.T, fixtures map[string]string) string {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, fixtures)
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 500000\n")
 	return cfg
 }
 
@@ -219,7 +218,7 @@ func TestCLICall_ConfigFormatMini(t *testing.T) {
 		"get_item": `{"id":1,"name":"thing"}`,
 	})
 	// Set response_format: mini in config — call should default to mini without -m
-	writeConfig(t, cfg, "inline_threshold: 500000\nresponse_format: mini\n")
+	writeConfig(t, cfg, "response_format: mini\n")
 	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
@@ -233,7 +232,7 @@ func TestCLICall_FlagOverridesConfigFormat(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1}`,
 	})
-	writeConfig(t, cfg, "inline_threshold: 500000\nresponse_format: mini\n")
+	writeConfig(t, cfg, "response_format: mini\n")
 	// -j should override mini default
 	stdout, _, code := runCLI(t, cfg, "call", "-j", "svc", "get_item")
 	if code != 0 {
@@ -273,7 +272,7 @@ func TestCLICall_ProjectionWritesFile(t *testing.T) {
 		"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`,
 	})
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 500000\nresponse_dir: "+respDir+"\n")
+	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	writeProjection(t, cfg, "svc", "get_item:\n  exclude_always: [secret]\n")
 
 	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item")

@@ -344,9 +344,8 @@ func TestNewStore_invalidDir(t *testing.T) {
 	}
 }
 
-func TestWriteRaw_unwritableFile(t *testing.T) {
+func TestWriteRaw_nonJSONResponsesFromUpstreamsWrittenSuccessfully(t *testing.T) {
 	s := newStore(t)
-	// WriteRaw with invalid JSON still succeeds (prettyJSON passes through)
 	path, err := s.WriteRaw([]byte(`not json`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)

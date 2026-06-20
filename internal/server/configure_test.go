@@ -248,9 +248,9 @@ func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
 		t.Fatalf("get_doc failed: %v", env)
 	}
 
-	omitted, _ := env["omitted"].([]any)
+	omitted, _ := env["truncated"].([]any)
 	if len(omitted) == 0 {
-		t.Errorf("expected omitted entries, got %v", env["omitted"])
+		t.Errorf("expected omitted entries, got %v", env["truncated"])
 	}
 	var bodyBytes float64
 	for _, o := range omitted {
@@ -266,7 +266,9 @@ func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
 	if int(bodyBytes) < 200 {
 		t.Errorf("expected at least 200 bytes removed from body, got %v", bodyBytes)
 	}
-	// file is written when omission occurred
+	if env["file"] == nil {
+		t.Error("expected file to be written when truncation occurred")
+	}
 }
 
 func assertHealthStats(t *testing.T, srv *server.Server, svcName string, wantCalls int) {
@@ -427,7 +429,7 @@ func TestSlimProjectionMode(t *testing.T) {
 	}
 	var slimEnv map[string]any
 	json.Unmarshal([]byte(textSlim), &slimEnv)
-	omitted, _ := slimEnv["omitted"].([]any)
+	omitted, _ := slimEnv["truncated"].([]any)
 	if len(omitted) == 0 {
 		t.Errorf("expected omitted entries in slim envelope, got: %v", slimEnv)
 	}

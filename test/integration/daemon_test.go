@@ -138,7 +138,6 @@ func daemonForTest(t *testing.T) string {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	return cfg
 }
 
@@ -215,7 +214,6 @@ func TestDaemon_sessionIsolation(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"x","name":"test"}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	startDaemon(t, cfg)
 	c1 := connectCompact(t, cfg)
@@ -237,7 +235,6 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"ping": `{"ok":true}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	// No daemon running — --standalone should work without trying to start one.
 	client := startServer(t, cfg)
@@ -247,8 +244,7 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 }
 
 func TestDaemon_healthzEndpoint(t *testing.T) {
-	cfg := shortConfigDir(t)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	cfg := t.TempDir()
 	startDaemon(t, cfg)
 
 	resp, err := daemonHTTPClient(cfg).Get("http://localhost/healthz")
@@ -509,6 +505,8 @@ func daemonPost(t *testing.T, cfg string, opts daemonPostOpts) *http.Response {
 	return resp
 }
 
+
+
 type httpToolCall struct {
 	sessionID string
 	token     string
@@ -587,3 +585,4 @@ func assertInlineGetItem(t *testing.T, env envelope) {
 		t.Fatalf("expected data.name=test, got %#v", data["name"])
 	}
 }
+

@@ -80,7 +80,6 @@ func TestServer_execWithProjection(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeProjection(t, cfg, "github", "list_pull_requests:\n  include: [number, title]\n")
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	rawFixture, err := os.ReadFile(filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
 	if err != nil {

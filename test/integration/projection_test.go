@@ -74,7 +74,7 @@ func TestProjection_omittedEnvelope(t *testing.T) {
 	longStr := strings.Repeat("w", 400)
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"short","body":"` + longStr + `"}`},
-		"inline_threshold: 50000\n",
+		"",
 		"get_item:\n  string_limits:\n    body: 60\n")
 
 	env := client.execEnvelope("svc", "get_item", nil)
@@ -82,15 +82,15 @@ func TestProjection_omittedEnvelope(t *testing.T) {
 		t.Fatalf("expected success, got error: %s", env.Error)
 	}
 
-	if len(env.Omitted) != 1 || env.Omitted[0].Path != ".body" || env.Omitted[0].Bytes <= 0 {
-		t.Fatalf("expected one omitted .body entry, got %v", env.Omitted)
+	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Bytes <= 0 {
+		t.Fatalf("expected one omitted .body entry, got %v", env.Truncated)
 	}
 	// 400 chars → limit 60, so at least 300 bytes removed
-	if env.Omitted[0].Bytes < 300 {
-		t.Errorf("expected at least 300 bytes removed from body, got %d", env.Omitted[0].Bytes)
+	if env.Truncated[0].Bytes < 300 {
+		t.Errorf("expected at least 300 bytes removed from body, got %d", env.Truncated[0].Bytes)
 	}
-	for _, o := range env.Omitted {
-		if o.Path == ".title" {
+	for _, o := range env.Truncated {
+		if o.JQPath == ".title" {
 			t.Errorf("short field 'title' should not appear in omitted")
 		}
 	}
@@ -103,7 +103,7 @@ func TestProjection_omittedEnvelope(t *testing.T) {
 func TestProjection_arrayLimit(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_repo": `{"issues":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5}],"name":"repo"}`},
-		"inline_threshold: 50000\n",
+		"",
 		"get_repo:\n  array_limits:\n    issues: 3\n")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_repo", nil).Data)
@@ -190,7 +190,6 @@ func TestProjection_persistToDisk(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"title":"hello","secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	client1 := startServer(t, cfg)
 	client1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, false)
@@ -245,7 +244,7 @@ func TestProjection_includeAndExcludeAlways(t *testing.T) {
 func TestProjection_globalDefaultsApply(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"description":"` + strings.Repeat("x", 300) + `"}`},
-		"default_string_limit: 50\ninline_threshold: 50000\n", "")
+		"default_string_limit: 50\n", "")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
@@ -269,7 +268,6 @@ func TestProjection_persistMergesWithExistingYAML(t *testing.T) {
 	})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	c1 := startServer(t, cfg)
 	c1.setProjection("svc", "tool_a", map[string]any{"exclude_always": []string{"secret_a"}}, false)
 	c2 := startServer(t, cfg)
@@ -283,7 +281,6 @@ func TestProjection_persistDoesNotAffectRunningSession(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	c1 := startServer(t, cfg)
 	c2 := startServer(t, cfg)
 	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)
@@ -308,7 +305,7 @@ func TestProjection_linesFormat(t *testing.T) {
 func TestProjection_linesFormatGlobal(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		"inline_threshold: 50000\nresponse_format: mini\n", "")
+		"response_format: mini\n", "")
 
 	text := client.execTool("svc", "list_items", nil)
 	if !strings.Contains(text, "[svc.list_items]") {

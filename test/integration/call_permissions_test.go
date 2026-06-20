@@ -14,7 +14,6 @@ func callSetupWithPerms(t *testing.T, fixtures map[string]string, serverExtra st
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, fixtures)
 	writeServerYAML(t, cfg, "svc", dir, serverExtra)
-	writeConfig(t, cfg, "inline_threshold: 500000\n")
 	return cfg
 }
 
