@@ -21,9 +21,7 @@ func RenderLines(server, tool string, e *response.Envelope) string {
 		fmt.Fprintf(&b, "ERROR %s: %s\n", e.Error, e.Message)
 		return b.String()
 	}
-	if e.File == nil {
-		writeLineData(&b, e.Data)
-	}
+	writeLineData(&b, e.Data)
 	return b.String()
 }
 

@@ -101,8 +101,8 @@ func TestStringTruncation(t *testing.T) {
 	if m["body"] != want {
 		t.Errorf("body = %q, want %q", m["body"], want)
 	}
-	if result.Truncated["body"] != 1900 {
-		t.Errorf("truncated[body] = %d, want 1900", result.Truncated["body"])
+	if len(result.Omitted) != 1 || result.Omitted[0].Bytes != 1900 {
+		t.Errorf("omitted = %v, want [{.body 1900}]", result.Omitted)
 	}
 }
 
@@ -247,15 +247,12 @@ func TestNamedStringLimit(t *testing.T) {
 	if m["body"].(string) != wantBody {
 		t.Errorf("body = %q, want %q", m["body"], wantBody)
 	}
-	if result.Truncated["body"] != 20 {
-		t.Errorf("truncated[body] = %d, want 20", result.Truncated["body"])
+	if len(result.Omitted) != 1 || result.Omitted[0].Path != ".body" || result.Omitted[0].Bytes != 20 {
+		t.Errorf("omitted = %v, want [{.body 20}]", result.Omitted)
 	}
 	// title has no named limit — should pass through untruncated
 	if m["title"].(string) != long {
 		t.Errorf("title should not be truncated")
-	}
-	if result.Truncated["title"] != 0 {
-		t.Errorf("title should not be in truncated map, got %d", result.Truncated["title"])
 	}
 }
 

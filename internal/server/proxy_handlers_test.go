@@ -150,8 +150,8 @@ func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
 	}
 }
 
-func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
-	srv := newProxyServer(t) // InlineThreshold=50
+func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
+	srv := newProxyServer(t)
 	defer srv.Close()
 	conn := fakeConn("list_repos")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`)
@@ -166,27 +166,28 @@ func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("gh__list_repos", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("proxy small+projection response: %s", text)
+	t.Logf("proxy elision response: %s", text)
 
 	if !strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected [Projected] note for small response with projection: %s", text)
+		t.Errorf("expected [Projected] note when field elided: %s", text)
 	}
-	if strings.Contains(text, "File:") {
-		t.Errorf("small response should be inline, not file path: %s", text)
+	if !strings.Contains(text, "elided") {
+		t.Errorf("expected 'elided' in projection note: %s", text)
+	}
+	// data is always inlined
+	if !strings.Contains(text, `"id"`) {
+		t.Errorf("expected inlined data in response: %s", text)
 	}
 }
 
-func TestProxy_Call_WithProjection_Large_FilePath(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 1 // force all responses to be "large"
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+func TestProxy_Call_WithProjection_NoElision_InlineJSON(t *testing.T) {
+	srv := newProxyServer(t)
 	defer srv.Close()
-
 	conn := fakeConn("list_prs")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"items\":[{\"id\":1,\"body\":\"long body text here\"}]}"}]}`)
 	addProxyConn(t, srv, "gh", conn)
 
+	// exclude_always on a field nested inside an array doesn't produce top-level elision
 	serveProxy(t, srv, callTool("config", map[string]any{
 		"action":     "set_projection",
 		"server":     "gh",
@@ -196,20 +197,17 @@ func TestProxy_Call_WithProjection_Large_FilePath(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("gh__list_prs", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("proxy large response: %s", text)
+	t.Logf("proxy nested-exclude response: %s", text)
 
-	if !strings.Contains(text, "File:") {
-		t.Errorf("expected File: path in large projected response: %s", text)
+	// No top-level elision → no projection note, no file — data inlined as compact JSON
+	if strings.HasPrefix(text, "[Projected") {
+		t.Errorf("expected no projection note for nested-only exclusion: %s", text)
 	}
 }
 
-func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 1 // force all responses to file
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+func TestProxy_Call_IncludeFilter_NoElision_InlineJSON(t *testing.T) {
+	srv := newProxyServer(t)
 	defer srv.Close()
-
 	conn := fakeConn("get_data")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"value\":\"data\"}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
@@ -223,13 +221,15 @@ func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("svc__get_data", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("large projection-no-note response: %s", text)
+	t.Logf("include-filter no-elision response: %s", text)
 
+	// include matches all fields → no elision → no projection note, inline JSON
 	if strings.HasPrefix(text, "[Projected") {
 		t.Errorf("expected no [Projected] note when nothing elided: %s", text)
 	}
-	if !strings.HasPrefix(text, "File:") {
-		t.Errorf("expected File: path for large response with projection: %s", text)
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+		t.Errorf("expected valid JSON response: %s", text)
 	}
 }
 

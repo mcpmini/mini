@@ -6,12 +6,11 @@ import (
 )
 
 type Builder struct {
-	store     *Store
-	threshold int
+	store *Store
 }
 
-func NewBuilder(store *Store, threshold int) *Builder {
-	return &Builder{store: store, threshold: threshold}
+func NewBuilder(store *Store) *Builder {
+	return &Builder{store: store}
 }
 
 // BuildParams holds inputs for Builder.Build.
@@ -21,7 +20,8 @@ type BuildParams struct {
 	Raw         json.RawMessage
 	Summary     any
 	Elided      []string
-	Truncated   map[string]int
+	Omitted     []Omission
+	Hint        string
 	Passthrough map[string]any
 }
 
@@ -30,8 +30,8 @@ func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
 	summaryTokens := EstimateTokens(p.Summary)
 	stats := CallStats{RawTokens: rawTokens, SummaryTokens: summaryTokens}
 	e := newEnvelope(p)
-	if summaryTokens > b.threshold || len(p.Elided) > 0 || len(p.Truncated) > 0 {
-		if err := b.writeFiles(e, p); err != nil {
+	if len(p.Elided) > 0 || len(p.Omitted) > 0 {
+		if err := b.writeRawFile(e, p); err != nil {
 			return nil, stats, err
 		}
 	}
@@ -42,13 +42,14 @@ func newEnvelope(p BuildParams) *Envelope {
 	return &Envelope{
 		Data:        p.Summary,
 		Elided:      nilIfEmpty(p.Elided),
-		Truncated:   nilIfEmptyIntMap(p.Truncated),
+		Omitted:     p.Omitted,
+		Hint:        p.Hint,
 		Passthrough: nilIfEmptyMap(p.Passthrough),
 	}
 }
 
-func (b *Builder) writeFiles(e *Envelope, p BuildParams) error {
-	path, err := b.store.WritePair(Slimify(p.Summary), p.Raw)
+func (b *Builder) writeRawFile(e *Envelope, p BuildParams) error {
+	path, err := b.store.WriteRaw(p.Raw)
 	if err != nil {
 		return fmt.Errorf("store response: %w", err)
 	}
@@ -73,13 +74,6 @@ func nilIfEmpty(s []string) []string {
 }
 
 func nilIfEmptyMap(m map[string]any) map[string]any {
-	if len(m) == 0 {
-		return nil
-	}
-	return m
-}
-
-func nilIfEmptyIntMap(m map[string]int) map[string]int {
 	if len(m) == 0 {
 		return nil
 	}

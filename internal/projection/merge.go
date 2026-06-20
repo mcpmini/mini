@@ -26,13 +26,14 @@ type effectiveConfig struct {
 	passthrough        []string
 	arrayLimits        map[string]int
 	stringLimits       map[string]int
+	omitLimits         map[string]int
 	defaultArrayLimit  int
 	defaultStringLimit int
 	depthLimit         int
 	stripContent       bool
 	contentFieldSet    map[string]bool // precomputed set for O(1) lookup
 	autoStripThreshold int
-	truncated          map[string]int // populated during Apply; field → bytes removed
+	hint               string
 }
 
 const (
@@ -81,6 +82,10 @@ func effectiveFromDefaults(d *Defaults) *effectiveConfig {
 	return e
 }
 
+func (c *effectiveConfig) omitLimitFor(field string) int {
+	return c.omitLimits[field]
+}
+
 func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	if cfg.Mode == "slim" {
 		applySlimMode(e)
@@ -90,6 +95,8 @@ func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	e.passthrough = cfg.Passthrough
 	e.arrayLimits = cfg.ArrayLimits
 	e.stringLimits = cfg.StringLimits
+	e.omitLimits = cfg.OmitLimits
+	e.hint = cfg.Hint
 	if cfg.DepthLimit > 0 {
 		e.depthLimit = cfg.DepthLimit
 	}
