@@ -194,8 +194,40 @@ func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 	}
 }
 
-// Reresolve succeeds every time but returns a dead port (daemon never comes up).
-// Proves recovery terminates within bounded attempts rather than spinning forever.
+func TestDeliver_persistent401ReturnsErrorEnvelope(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "go away", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+	port := serverPort(t, srv)
+
+	var resolveCalls atomic.Int32
+	reresolve := func() (int, string, error) {
+		resolveCalls.Add(1)
+		return port, "same-stale-token", nil
+	}
+	in := strings.NewReader(toolCallLine())
+	var out bytes.Buffer
+	p := RunParams{Port: port, SessionID: "sess", Token: "same-stale-token", In: in, Out: &out, Reresolve: reresolve}
+	done := make(chan error, 1)
+	go func() { done <- Run(p) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-timeoutAfter():
+		t.Fatal("Run did not return — persistent 401 recovery is not bounded")
+	}
+	got := out.String()
+	if !strings.Contains(got, `"error"`) {
+		t.Errorf("expected JSON-RPC error envelope, got %q", got)
+	}
+	if strings.Contains(got, "go away") {
+		t.Error("raw 401 body leaked verbatim to agent")
+	}
+}
+
 func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
 	dead := closedPort(t)
 	var resolveCalls atomic.Int32

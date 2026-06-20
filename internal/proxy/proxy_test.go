@@ -133,6 +133,7 @@ func TestForward_httpErrorStatusProducesJSONRPCEnvelope(t *testing.T) {
 		status int
 		body   string
 	}{
+		{"unauthorized", http.StatusUnauthorized, "unauthorized"},
 		{"forbidden", http.StatusForbidden, "loopback only"},
 		{"badRequest", http.StatusBadRequest, "read error"},
 		{"internalServerError", http.StatusInternalServerError, "oops"},

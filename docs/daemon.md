@@ -2,7 +2,7 @@
 
 ## Why a daemon exists
 
-mini works fine with no daemon at all: each chat runs its own `mini serve` process that talks to
+mini works fine with no daemon at all: each chat runs its own `mini connect` process that talks to
 upstream MCP servers directly. The daemon is an optimization that two problems make worthwhile
 once you have more than one chat open:
 
@@ -19,23 +19,23 @@ logs), but the zero-config path never requires it.
 
 ## How it works
 
-From the agent's side nothing changes: it speaks MCP over stdio to `mini serve`, exactly as it
-would with no daemon. `mini serve` just becomes a thin **proxy** that forwards each request to the
-shared daemon over loopback instead of connecting to upstreams itself.
+From the agent's side nothing changes: it speaks MCP over stdio to `mini connect`, exactly as it
+would with no daemon. `mini connect` just forwards each request to the shared daemon over loopback
+instead of connecting to upstreams itself.
 
 ```mermaid
 flowchart LR
-    A[chat A] -->|stdio| PA[mini serve<br/>proxy]
-    B[chat B] -->|stdio| PB[mini serve<br/>proxy]
-    C[chat C] -->|stdio| PC[mini serve<br/>proxy]
+    A[chat A] -->|stdio| PA[mini connect]
+    B[chat B] -->|stdio| PB[mini connect]
+    C[chat C] -->|stdio| PC[mini connect]
     PA --> D
     PB --> D
     PC -->|"loopback HTTP<br/>POST /mcp"| D[mini daemon<br/>127.0.0.1]
     D -->|stdio / HTTP| U[upstream MCP servers]
 ```
 
-- Many proxies, one daemon. The daemon owns the upstream connections, projections, and per-chat
-  sessions; each proxy just relays JSON-RPC over `POST /mcp`.
+- Many `mini connect` processes, one daemon. The daemon owns the upstream connections, projections,
+  and per-chat sessions; each `mini connect` just relays JSON-RPC over `POST /mcp`.
 - The code lives in `internal/proxy` (the proxy side), `internal/server` (the HTTP daemon),
   `internal/daemon` (rendezvous and the spawn lock), and `cmd/mini/daemon.go` (lifecycle).
 - **Only the chat path uses the daemon today.** Direct CLI commands like `mini call` and `mini ls`
@@ -44,7 +44,7 @@ flowchart LR
 
 ## How a chat connects
 
-When `mini serve` starts, it finds or starts the daemon, then forwards requests to it:
+When `mini connect` starts, it finds or starts the daemon, then forwards requests to it:
 
 1. **Find it.** A `daemon.port` file records where a daemon *might* be. It's only a hint — liveness
    comes from probing `GET /healthz` and seeing a `200`, never from the file existing or from a

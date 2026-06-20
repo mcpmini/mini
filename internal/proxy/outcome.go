@@ -49,7 +49,7 @@ func classifyDoError(body []byte, err error) forwardOutcome {
 	if isDialError(err) {
 		return forwardOutcome{kind: outcomeTransportDown, resp: daemonErrorResponse(body, "daemon unreachable: "+err.Error())}
 	}
-	return forwardOutcome{kind: outcomeOther, resp: daemonErrorResponse(body, "daemon unreachable: "+err.Error())}
+	return forwardOutcome{kind: outcomeOther, resp: daemonErrorResponse(body, "daemon error: "+err.Error())}
 }
 
 func isDialError(err error) bool {
