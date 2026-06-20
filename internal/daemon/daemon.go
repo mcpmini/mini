@@ -34,10 +34,11 @@ func CheckSocketPath(configDir string) error {
 
 // Running reports whether a live daemon answers /healthz on its socket; a stale socket file fails the probe.
 func Running(configDir string) bool {
-	return healthcheck(SocketPath(configDir))
+	return SocketHealthy(SocketPath(configDir))
 }
 
-func healthcheck(socket string) bool {
+// SocketHealthy reports whether a live daemon is answering /healthz on the given socket path.
+func SocketHealthy(socket string) bool {
 	resp, err := SocketClient(socket, 2*time.Second).Get("http://localhost/healthz")
 	if err != nil {
 		return false
@@ -66,19 +67,12 @@ func Start(configDir string, timeout time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("find executable: %w", err)
 	}
-	release, err := acquireSpawnLock(configDir)
-	if err != nil {
-		return fmt.Errorf("acquire daemon spawn lock: %w", err)
-	}
-	defer release()
-	// Losers blocked on acquireSpawnLock arrive here to find the daemon already up.
 	if Running(configDir) {
 		return nil
 	}
 	if err := spawnDaemon(exe, configDir); err != nil {
 		return err
 	}
-	// Lock held across waitForDaemon so racers waiting on acquireSpawnLock find the daemon already up.
 	return waitForDaemon(configDir, timeout)
 }
 

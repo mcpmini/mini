@@ -108,10 +108,15 @@ func bindSocket(socket string) net.Listener {
 	_ = os.Chmod(dir, 0700)
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
-		// net.Listen failed on a leftover socket; ensureDaemonNotRunning confirmed nothing live answers, so it's stale.
+		if daemon.SocketHealthy(socket) {
+			// Another daemon won the concurrent-spawn race; exit so it remains the sole daemon.
+			os.Exit(0)
+		}
+		// Stale socket left by a previous SIGKILL: remove and reclaim.
 		_ = os.Remove(socket)
 		if ln, err = net.Listen("unix", socket); err != nil {
-			fatalf("listen on %s: %v", socket, err)
+			// Another daemon claimed the socket between our healthcheck and remove; exit.
+			os.Exit(0)
 		}
 	}
 	// Linux honors the socket file's own mode on connect; a permissive umask would otherwise leave it world-writable.
