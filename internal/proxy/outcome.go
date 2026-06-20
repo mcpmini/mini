@@ -13,16 +13,11 @@ import (
 type outcomeKind int
 
 const (
-	// outcomeOK: HTTP response received; body (including any JSON-RPC error) returned as-is.
-	outcomeOK outcomeKind = iota
-	// outcomeTransportDown: dial failed; request never reached daemon → safe to respawn and retry.
-	outcomeTransportDown
-	// outcomeUnauthorized: HTTP 401. Rejected before processing → safe to refresh token and retry.
-	outcomeUnauthorized
-	// outcomeNotInitialized: daemon up but session lost → safe to reinit and retry.
-	outcomeNotInitialized
-	// outcomeOther: post-send failure or unclassifiable; write may have run → never retry.
-	outcomeOther
+	outcomeOK             outcomeKind = iota
+	outcomeTransportDown              // dial failed → safe to respawn and retry
+	outcomeUnauthorized               // 401 rejected before processing → safe to refresh token and retry
+	outcomeNotInitialized             // session lost → safe to reinit and retry
+	outcomeOther                      // post-send or unclassifiable; write may have run → never retry
 )
 
 type forwardOutcome struct {

@@ -34,15 +34,13 @@ func (p forwardAsyncParams) deliver() []byte {
 	return classifyForward(p.connAt(state), p.line).resp
 }
 
-// Re-resolves daemon for transport/auth failures (or reuses current target for lost sessions),
-// then reinits. ok=false means recovery is disabled or failed.
 func (p forwardAsyncParams) handleRecoverable(kind outcomeKind, state linkState, isInit bool) (linkState, bool) {
 	if kind == outcomeNotInitialized && isInit {
 		return state, false
 	}
 	if kind == outcomeTransportDown || kind == outcomeUnauthorized {
-		next, err := p.link.recover(state.gen)
-		if err != nil || next.gen == state.gen {
+		next, err := p.link.recover(state.generation)
+		if err != nil || next.generation == state.generation {
 			return state, false
 		}
 		state = next
@@ -54,7 +52,6 @@ func (p forwardAsyncParams) handleRecoverable(kind outcomeKind, state linkState,
 	return state, true
 }
 
-// Decorrelates retry timing across multiple proxies detecting the same daemon death at once.
 func jitteredBackoff(attempt int) time.Duration {
 	base := recoveryBackoff << attempt
 	return base/2 + time.Duration(rand.Int64N(int64(base/2)+1))
