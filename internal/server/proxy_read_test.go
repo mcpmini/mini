@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -126,6 +127,40 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 	result, ok := resp2["result"].(map[string]any)
 	if !ok || result["isError"] != true {
 		t.Errorf("expected error for invalid jq filter, got: %v", resp2)
+	}
+}
+
+func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+
+	conn := fakeConn("get_thing")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":5,\"secret\":\"x\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	serveProxy(t, srv, callTool("config", map[string]any{
+		"action":     "set_projection",
+		"server":     "svc",
+		"tool":       "get_thing",
+		"projection": map[string]any{"exclude_always": []string{"secret"}},
+	}))
+
+	resp1 := serveProxy(t, srv, callTool("svc__get_thing", map[string]any{}))
+	text1 := toolResultText(t, resp1)
+	var env map[string]any
+	_ = json.Unmarshal([]byte(text1), &env)
+	fullPath, _ := env["__mini"].(map[string]any)["file"].(string)
+	if fullPath == "" {
+		t.Fatalf("expected file path in __mini, got: %s", text1)
+	}
+	filename := filepath.Base(fullPath)
+
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filename}))
+	text2 := toolResultText(t, resp2)
+	if text2 == "" {
+		t.Error("read returned empty content using filename-only path")
 	}
 }
 

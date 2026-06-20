@@ -8,65 +8,36 @@ import (
 	"time"
 )
 
-func TestLoadEntry_recordsRawPairSize(t *testing.T) {
-	fixture := loadedStoreWithPair(t)
-	if len(fixture.store.files) != 1 {
-		t.Fatalf("expected 1 loaded file, got %d", len(fixture.store.files))
-	}
-	if fixture.store.files[0].rawPath != fixture.rawPath {
-		t.Fatalf("rawPath = %q, want %q", fixture.store.files[0].rawPath, fixture.rawPath)
-	}
-	wantSize := int64(len(fixture.slim) + len(fixture.raw))
-	if fixture.store.usedBytes != wantSize {
-		t.Fatalf("usedBytes = %d, want %d", fixture.store.usedBytes, wantSize)
-	}
+func epochBase(at time.Time) string {
+	return fmt.Sprintf("%d_deadbeef", at.Unix())
 }
 
-type loadedStoreFixture struct {
-	store   *Store
-	rawPath string
-	slim    []byte
-	raw     []byte
-}
-
-func loadedStoreWithPair(t *testing.T) loadedStoreFixture {
-	t.Helper()
+func TestLoadEntry_recordsSize(t *testing.T) {
 	dir := t.TempDir()
-	base := fmt.Sprintf("%s123", time.Now().UTC().Format(tsLayout))
+	base := epochBase(time.Now())
 	slimPath := filepath.Join(dir, base+".json")
-	rawPath := filepath.Join(dir, base+".raw.json")
-	slim := []byte(`{"ok":true}`)
-	raw := []byte(`{"full":"data"}`)
-	writeLoadFixture(t, slimPath, slim)
-	writeLoadFixture(t, rawPath, raw)
-	s := &Store{dir: dir, ttl: time.Hour}
-	loadNamedEntry(t, s, filepath.Base(slimPath))
-	return loadedStoreFixture{store: s, rawPath: rawPath, slim: slim, raw: raw}
-}
-
-func loadNamedEntry(t *testing.T, s *Store, name string) {
-	t.Helper()
-	entries, err := os.ReadDir(s.dir)
-	if err != nil {
+	data := []byte(`{"ok":true}`)
+	if err := os.WriteFile(slimPath, data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range entries {
-		if entry.Name() == name {
-			s.loadEntry(entry, time.Now())
+	s := &Store{dir: dir, ttl: time.Hour}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.Name() == filepath.Base(slimPath) {
+			s.loadEntry(e, time.Now())
 		}
 	}
-}
-
-func writeLoadFixture(t *testing.T, path string, data []byte) {
-	t.Helper()
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		t.Fatal(err)
+	if len(s.files) != 1 {
+		t.Fatalf("expected 1 loaded file, got %d", len(s.files))
+	}
+	if s.usedBytes != int64(len(data)) {
+		t.Fatalf("usedBytes = %d, want %d", s.usedBytes, len(data))
 	}
 }
 
 func TestLoadEntry_skipsRawCompanionFiles(t *testing.T) {
 	dir := t.TempDir()
-	base := fmt.Sprintf("%s123", time.Now().UTC().Format(tsLayout))
+	base := epochBase(time.Now())
 	rawPath := filepath.Join(dir, base+".raw.json")
 	if err := os.WriteFile(rawPath, []byte(`{"full":"data"}`), 0600); err != nil {
 		t.Fatal(err)

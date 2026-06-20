@@ -20,7 +20,6 @@ type Store struct {
 
 type storedFile struct {
 	path    string
-	rawPath string // paired .raw.json file, empty if none
 	size    int64
 	expires time.Time
 }
@@ -78,4 +77,3 @@ func uniqueBase(base string, i int) string {
 	return fmt.Sprintf("%s_%04d", base, i)
 }
 
-const tsLayout = "20060102150405"

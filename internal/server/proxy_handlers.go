@@ -146,6 +146,7 @@ func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, erro
 	if err != nil {
 		return nil, err
 	}
+	path = s.resolveReadPath(path)
 	if err := s.validateStorePath(path); err != nil {
 		return nil, err
 	}
@@ -161,6 +162,13 @@ func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, erro
 		return nil, fmt.Errorf("%w: read filter: %w", errInvalidParams, err)
 	}
 	return out, nil
+}
+
+func (s *Server) resolveReadPath(path string) string {
+	if filepath.IsAbs(path) || strings.ContainsRune(path, filepath.Separator) {
+		return path
+	}
+	return filepath.Join(s.store.Dir(), path)
 }
 
 func parseReadArgs(raw json.RawMessage) (path, filter string, err error) {

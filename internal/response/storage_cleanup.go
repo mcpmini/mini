@@ -43,21 +43,6 @@ func partitionByExpiry(files []storedFile) (kept, expired []storedFile) {
 	return
 }
 
-func (s *Store) evictIfNeeded(incoming int64) {
-	if s.budgetBytes == 0 {
-		return
-	}
-	s.mu.Lock()
-	var toRemove []storedFile
-	for s.usedBytes+incoming > s.budgetBytes && len(s.files) > 0 {
-		toRemove = append(toRemove, s.files[0])
-		s.usedBytes -= s.files[0].size
-		s.files = s.files[1:]
-	}
-	s.mu.Unlock()
-	removeFiles(toRemove)
-}
-
 // evictOvershoot removes oldest files until usedBytes is within the budget.
 // Must be called with s.mu held. Returns the removed entries so the caller can
 // delete the files after releasing the lock (file I/O must not run under the mutex).
@@ -78,9 +63,6 @@ func (s *Store) evictOvershoot() []storedFile {
 func removeFiles(files []storedFile) {
 	for _, f := range files {
 		warnRemoveErr(os.Remove(f.path))
-		if f.rawPath != "" {
-			warnRemoveErr(os.Remove(f.rawPath))
-		}
 	}
 }
 

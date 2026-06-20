@@ -173,7 +173,6 @@ func TestLoadExisting_ignoresNonTimestampFiles(t *testing.T) {
 func TestEvictOvershoot_concurrentWritesBudgetEnforced(t *testing.T) {
 	dir := t.TempDir()
 	// Tiny budget: 2 files of ~600KB each = 1.2MB > 1MB budget.
-	// Concurrent writes both pass evictIfNeeded, then evictOvershoot cleans up.
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
 	defer s.Close()
 
@@ -206,7 +205,6 @@ func TestEvictOvershoot_keepsNewestFile(t *testing.T) {
 	path1, _ := s.WriteRaw(small)
 
 	// Write a file that together with path1 exceeds budget.
-	// evictIfNeeded removes path1 first, then writes large. Verify large is kept.
 	large := []byte(`{"data":"` + strings.Repeat("x", 900*1024) + `"}`)
 	path2, err := s.WriteRaw(large)
 	if err != nil {
@@ -279,14 +277,24 @@ func TestPrettyJSON_emptyObject(t *testing.T) {
 }
 
 func TestParseTimestamp_validName(t *testing.T) {
-	// tsLayout = "20060102150405" (14 chars) + 3 ms digits = 17 chars
-	name := "20260314123456789.json"
+	name := "1750466675_c0ffee00.json"
 	ts, ok := parseTimestamp(name)
 	if !ok {
 		t.Fatalf("expected valid timestamp, got false")
 	}
-	if ts.Year() != 2026 || ts.Month() != 3 || ts.Day() != 14 {
-		t.Errorf("unexpected parsed time: %v", ts)
+	if ts.Year() != 2025 {
+		t.Errorf("unexpected year for epoch 1750466675: %v", ts)
+	}
+}
+
+func TestParseTimestamp_epochFormat(t *testing.T) {
+	name := "1750466675_cafebabe.json"
+	ts, ok := parseTimestamp(name)
+	if !ok {
+		t.Fatal("expected valid epoch timestamp, got false")
+	}
+	if ts.Year() != 2025 {
+		t.Errorf("unexpected year for epoch 1750466675: got %d", ts.Year())
 	}
 }
 
@@ -298,19 +306,22 @@ func TestParseTimestamp_tooShort(t *testing.T) {
 }
 
 func TestParseTimestamp_invalidFormat(t *testing.T) {
-	// 17+ chars but not a valid timestamp
-	_, ok := parseTimestamp("notavalidtimesta.json")
-	if ok {
-		t.Error("expected false for invalid timestamp format")
+	cases := []string{
+		"notafilename.json",
+		"nodash.json",
+		"nohash_.json",
+		"abc_deadbeef.json",
+	}
+	for _, name := range cases {
+		_, ok := parseTimestamp(name)
+		if ok {
+			t.Errorf("expected false for %s", name)
+		}
 	}
 }
 
 func TestParseTimestamp_rawFileIgnored(t *testing.T) {
-	// raw files have ".raw.json" extension, loadExisting skips them
-	// This tests that the ext check works (raw files contain ".raw.")
-	name := "20260314123456789.raw.json"
-	// This has ext ".json" technically but contains ".raw." so loadExisting skips it
-	// parseTimestamp itself would parse it, the filtering is in loadExisting
+	name := "1750466675_deadbeef.raw.json"
 	_, ok := parseTimestamp(name)
 	if !ok {
 		t.Error("parseTimestamp doesn't filter raw files (loadExisting does) — this should parse ok")
@@ -331,6 +342,19 @@ func TestWriteRaw_writesFile(t *testing.T) {
 	rawData, _ := os.ReadFile(path)
 	if !json.Valid(rawData) {
 		t.Errorf("raw file is not valid JSON: %s", rawData)
+	}
+}
+
+func TestWriteRaw_filenameHasHashSuffix(t *testing.T) {
+	s := newStore(t)
+	path, err := s.WriteRaw([]byte(`{"key":"value"}`))
+	if err != nil {
+		t.Fatalf("WriteRaw: %v", err)
+	}
+	base := strings.TrimSuffix(filepath.Base(path), ".json")
+	parts := strings.SplitN(base, "_", 2)
+	if len(parts) != 2 || len(parts[0]) < 10 || len(parts[1]) != 8 {
+		t.Errorf("expected {epoch}_{hash8}.json, got %s", filepath.Base(path))
 	}
 }
 
