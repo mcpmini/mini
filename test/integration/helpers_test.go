@@ -451,12 +451,17 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 type envelope struct {
 	Data        any            `json:"data"`
 	Elided      []string       `json:"elided"`
-	Truncated   map[string]int `json:"truncated"`
+	Omitted     []omission     `json:"omitted"`
 	File        *string        `json:"file"`
 	Passthrough map[string]any `json:"passthrough"`
 	Error       string         `json:"error"`
 	Message     string         `json:"message"`
 	Retryable   bool           `json:"retryable"`
+}
+
+type omission struct {
+	Path  string `json:"path"`
+	Bytes int    `json:"bytes"`
 }
 
 func (c *mcpClient) execEnvelope(server, tool string, args map[string]any) envelope {

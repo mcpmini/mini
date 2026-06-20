@@ -70,7 +70,7 @@ func TestProjection_stringLimit(t *testing.T) {
 	}
 }
 
-func TestProjection_truncatedEnvelope(t *testing.T) {
+func TestProjection_omittedEnvelope(t *testing.T) {
 	longStr := strings.Repeat("w", 400)
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"short","body":"` + longStr + `"}`},
@@ -82,17 +82,17 @@ func TestProjection_truncatedEnvelope(t *testing.T) {
 		t.Fatalf("expected success, got error: %s", env.Error)
 	}
 
-	bytesRemoved, ok := env.Truncated["body"]
-	if !ok || bytesRemoved <= 0 {
-		t.Errorf("expected truncated[body] > 0, got %v", env.Truncated)
+	if len(env.Omitted) != 1 || env.Omitted[0].Path != ".body" || env.Omitted[0].Bytes <= 0 {
+		t.Fatalf("expected one omitted .body entry, got %v", env.Omitted)
 	}
 	// 400 chars → limit 60, so at least 300 bytes removed
-	if bytesRemoved < 300 {
-		t.Errorf("expected ≥300 bytes removed from body, got %d", bytesRemoved)
+	if env.Omitted[0].Bytes < 300 {
+		t.Errorf("expected at least 300 bytes removed from body, got %d", env.Omitted[0].Bytes)
 	}
-	// short fields must not appear in truncated
-	if _, present := env.Truncated["title"]; present {
-		t.Errorf("short field 'title' should not appear in truncated")
+	for _, o := range env.Omitted {
+		if o.Path == ".title" {
+			t.Errorf("short field 'title' should not appear in omitted")
+		}
 	}
 	// file written because truncation counts as projection
 	if env.File == nil {
@@ -166,7 +166,6 @@ func TestProjection_configurePersistsAcrossCalls(t *testing.T) {
 		}
 	}
 }
-
 
 func TestProjection_toolSpecificOverridesWildcard(t *testing.T) {
 	client := quickServerWith(t,
@@ -316,6 +315,3 @@ func TestProjection_linesFormatGlobal(t *testing.T) {
 		t.Errorf("global response_format:mini should include tool header [svc.list_items], got: %s", text)
 	}
 }
-
-
-
