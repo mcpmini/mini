@@ -59,6 +59,75 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	}
 }
 
+func TestProxy_MiniRead_WithFilter(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+
+	conn := fakeConn("get_data")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":99,\"name\":\"widget\",\"secret\":\"x\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	serveProxy(t, srv, callTool("config", map[string]any{
+		"action":     "set_projection",
+		"server":     "svc",
+		"tool":       "get_data",
+		"projection": map[string]any{"exclude_always": []string{"secret"}},
+	}))
+
+	resp1 := serveProxy(t, srv, callTool("svc__get_data", map[string]any{}))
+	text1 := toolResultText(t, resp1)
+	var env map[string]any
+	_ = json.Unmarshal([]byte(text1), &env)
+	filePath, _ := env["__mini"].(map[string]any)["file"].(string)
+	if filePath == "" {
+		t.Fatalf("expected file path in __mini, got: %s", text1)
+	}
+
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath, "filter": ".name"}))
+	text2 := toolResultText(t, resp2)
+	if text2 != `"widget"` {
+		t.Errorf("filter .name: expected %q, got %q", `"widget"`, text2)
+	}
+}
+
+func TestProxy_MiniRead_FilterError(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+
+	conn := fakeConn("get_data2")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	serveProxy(t, srv, callTool("config", map[string]any{
+		"action":     "set_projection",
+		"server":     "svc",
+		"tool":       "get_data2",
+		"projection": map[string]any{"exclude_always": []string{"secret"}},
+	}))
+
+	resp1 := serveProxy(t, srv, callTool("svc__get_data2", map[string]any{}))
+	text1 := toolResultText(t, resp1)
+	var env map[string]any
+	_ = json.Unmarshal([]byte(text1), &env)
+	filePath, _ := env["__mini"].(map[string]any)["file"].(string)
+	if filePath == "" {
+		t.Fatalf("expected file path in __mini, got: %s", text1)
+	}
+
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath, "filter": ".nonexistent"}))
+	if resp2["error"] != nil {
+		return // RPC-level error is correct
+	}
+	result, ok := resp2["result"].(map[string]any)
+	if !ok || result["isError"] != true {
+		t.Errorf("expected error for nonexistent filter key, got: %v", resp2)
+	}
+}
+
 func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()

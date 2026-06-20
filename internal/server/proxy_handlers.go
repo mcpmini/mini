@@ -141,7 +141,7 @@ func formatProjectedInline(env *response.Envelope) string {
 }
 
 func (s *Server) handleRead(raw json.RawMessage) (any, error) {
-	path, err := parseReadPath(raw)
+	path, filter, err := parseReadArgs(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -152,20 +152,28 @@ func (s *Server) handleRead(raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read: %w", err)
 	}
-	return string(b), nil
+	if filter == "" {
+		return string(b), nil
+	}
+	out, err := applyReadFilter(b, filter)
+	if err != nil {
+		return nil, fmt.Errorf("%w: read filter: %w", errInvalidParams, err)
+	}
+	return string(out), nil
 }
 
-func parseReadPath(raw json.RawMessage) (string, error) {
+func parseReadArgs(raw json.RawMessage) (path, filter string, err error) {
 	var p struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Filter string `json:"filter"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return "", fmt.Errorf("%w: read: %w", errInvalidParams, err)
+		return "", "", fmt.Errorf("%w: read: %w", errInvalidParams, err)
 	}
 	if p.Path == "" {
-		return "", fmt.Errorf("%w: read: path is required", errInvalidParams)
+		return "", "", fmt.Errorf("%w: read: path is required", errInvalidParams)
 	}
-	return p.Path, nil
+	return p.Path, p.Filter, nil
 }
 
 func (s *Server) validateStorePath(path string) error {

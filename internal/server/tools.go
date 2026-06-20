@@ -105,9 +105,10 @@ func miniConfigSchema() map[string]any {
 func miniReadSchema() map[string]any {
 	return map[string]any{
 		"name":        "read",
-		"description": "Read a raw upstream response file written by mini. Pass the path from the response note.",
+		"description": "Read a raw upstream response file written by mini. Pass the path from the response note. Use filter to drill into a specific field (e.g. .items.[0].body) instead of reading the full file.",
 		"inputSchema": schema(map[string]any{
-			"path": prop("string", "File path from the response note"),
+			"path":   prop("string", "File path from the response note"),
+			"filter": prop("string", "Optional dot-path to extract a field (e.g. .items, .[0], .items.[0].body)"),
 		}),
 	}
 }
