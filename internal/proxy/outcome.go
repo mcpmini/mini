@@ -77,9 +77,11 @@ func classifyResponse(resp *http.Response, body []byte) forwardOutcome {
 	return forwardOutcome{kind: outcomeOK, resp: out}
 }
 
+// daemonURL's host is a placeholder — conn.client dials the Unix socket regardless; "localhost" passes the loopback-Host check.
+const daemonURL = "http://localhost/mcp"
+
 func newDaemonRequest(conn daemonConn, body []byte) (*http.Request, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/mcp", conn.port)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)) //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
+	req, err := http.NewRequest(http.MethodPost, daemonURL, bytes.NewReader(body)) //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
 	if err != nil {
 		return nil, err
 	}

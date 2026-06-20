@@ -267,46 +267,45 @@ func maybeStartSessionEviction(ctx context.Context, httpSrv *http.Server, srv se
 }
 
 func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.ToolMode) error {
+	if err := daemon.CheckSocketPath(configDir); err != nil {
+		return err
+	}
 	reresolve := daemonReresolver(configDir, logger)
-	port, token, err := reresolve()
+	token, err := reresolve()
 	if err != nil {
 		return err
 	}
+	socket := daemon.SocketPath(configDir)
 	sessionID := transport.NewSessionID()
-	logger.Info("connected to mini daemon", "port", port, "session", sessionID)
+	logger.Info("connected to mini daemon", "socket", socket, "session", sessionID)
 	return proxy.Run(proxy.RunParams{
-		Port: port, SessionID: sessionID, Token: token,
+		Client: daemon.SocketClient(socket, 0), SessionID: sessionID, Token: token,
 		In: os.Stdin, Out: os.Stdout, ToolMode: mode, Reresolve: reresolve,
 	})
 }
 
-// daemonReresolver re-resolves a live daemon for an open proxy, respawning it via
-// resolveDaemonPort if it died. With the default fixed daemon_port, the OS bind in
-// daemon.Start arbitrates among racing proxies so exactly one respawns and the rest connect
-// to the winner; with daemon_port: 0 (OS-assigned) racers may briefly start more than one.
-func daemonReresolver(configDir string, logger *slog.Logger) func() (int, string, error) {
-	return func() (int, string, error) {
-		port, err := resolveDaemonPort(configDir, logger)
-		if err != nil {
-			return 0, "", err
+func daemonReresolver(configDir string, logger *slog.Logger) func() (string, error) {
+	return func() (string, error) {
+		if err := ensureDaemonRunning(configDir, logger); err != nil {
+			return "", err
 		}
 		token, err := daemon.ReadToken(configDir)
 		if err != nil {
-			return 0, "", fmt.Errorf("read daemon token: %w", err)
+			return "", fmt.Errorf("read daemon token: %w", err)
 		}
-		return port, token, nil
+		return token, nil
 	}
 }
 
-func resolveDaemonPort(configDir string, logger *slog.Logger) (int, error) {
-	if port := daemon.RunningPort(configDir); port != 0 {
-		return port, nil
+func ensureDaemonRunning(configDir string, logger *slog.Logger) error {
+	if daemon.Running(configDir) {
+		return nil
 	}
-	port, err := daemon.Start(configDir, 3*time.Second)
-	if err != nil {
-		logger.Warn("daemon unavailable, running standalone", "err", err)
+	if err := daemon.Start(configDir, 3*time.Second); err != nil {
+		logger.Warn("daemon unavailable", "err", err)
+		return err
 	}
-	return port, err
+	return nil
 }
 
 func buildLogger(cfg *config.Config, override string, w io.Writer) *slog.Logger {

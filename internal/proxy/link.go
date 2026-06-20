@@ -4,7 +4,6 @@ import "sync"
 
 // gen tracks the daemon generation so concurrent forwards can collapse a failure into a single recovery.
 type linkState struct {
-	port  int
 	token string
 	gen   uint64
 }
@@ -13,11 +12,11 @@ type linkState struct {
 type daemonLink struct {
 	mu        sync.Mutex
 	state     linkState
-	reresolve func() (int, string, error) // nil = recovery disabled (standalone)
+	reresolve func() (token string, err error) // nil = recovery disabled (standalone)
 }
 
-func newDaemonLink(port int, token string, reresolve func() (int, string, error)) *daemonLink {
-	return &daemonLink{state: linkState{port: port, token: token}, reresolve: reresolve}
+func newDaemonLink(token string, reresolve func() (string, error)) *daemonLink {
+	return &daemonLink{state: linkState{token: token}, reresolve: reresolve}
 }
 
 func (d *daemonLink) snapshot() linkState {
@@ -34,10 +33,10 @@ func (d *daemonLink) recover(failedGen uint64) (linkState, error) {
 	if d.state.gen != failedGen || d.reresolve == nil {
 		return d.state, nil
 	}
-	p, t, err := d.reresolve()
+	t, err := d.reresolve()
 	if err != nil {
 		return d.state, err
 	}
-	d.state = linkState{port: p, token: t, gen: d.state.gen + 1}
+	d.state = linkState{token: t, gen: d.state.gen + 1}
 	return d.state, nil
 }

@@ -1,8 +1,6 @@
-// Localhost alone is not an auth boundary — any local process or browser-driven
-// request can reach the daemon (DNS rebinding, SSRF, malicious browser extensions).
-// To reduce this attack surface, clients must present a bearer token stored on disk.
-// The daemon reuses a persisted token across restarts (see EnsureToken) so a respawned
-// daemon keeps the same token and already-connected proxies aren't rejected with 401.
+// The daemon's access boundary is the Unix socket under the per-user-private configDir (see
+// SocketPath); this bearer token is defense-in-depth. It persists across restarts (see
+// EnsureToken) so a respawned daemon keeps the same token and connected proxies aren't 401'd.
 package daemon
 
 import (

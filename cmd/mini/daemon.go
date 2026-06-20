@@ -11,8 +11,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
@@ -22,20 +20,20 @@ import (
 )
 
 func runDaemon(configDir string, args []string) {
-	port, logLevel := parseDaemonFlags(args)
+	logLevel := parseDaemonFlags(args)
+	if err := daemon.CheckSocketPath(configDir); err != nil {
+		fatalf("%v", err)
+	}
 	cfg, servers := loadDaemonConfig(configDir)
-	portFile := ensureDaemonNotRunning(configDir)
+	socket := ensureDaemonNotRunning(configDir)
 	logW := daemon.OpenCappedLog(filepath.Join(configDir, "daemon.log"))
 	defer logW.Close()
 	logger := buildLogger(cfg, logLevel, logW)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	// Bind before minting: a daemon that loses the port race dies here without
-	// touching the shared token file, so it can't rotate the token connected proxies use.
-	ln, actualPort := bindPort(resolveDaemonListenPort(cfg, port))
+	ln := bindSocket(socket)
 	serveDaemon(ctx, DaemonServeParams{
-		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger,
-		Listener: ln, Port: actualPort, PortFile: portFile,
+		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, Listener: ln,
 	})
 }
 
@@ -53,8 +51,6 @@ type DaemonServeParams struct {
 	Servers   []config.ServerConfig
 	Logger    *slog.Logger
 	Listener  net.Listener
-	Port      int
-	PortFile  string
 }
 
 func serveDaemon(ctx context.Context, p DaemonServeParams) {
@@ -62,14 +58,7 @@ func serveDaemon(ctx context.Context, p DaemonServeParams) {
 	token := mintDaemonToken(p.ConfigDir)
 	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, server.WithDaemonAuthToken(token))
 	defer srv.Close()
-	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, PortFile: p.PortFile, Listener: p.Listener, Port: p.Port})
-}
-
-func resolveDaemonListenPort(cfg *config.Config, flagPort int) int {
-	if flagPort >= 0 {
-		return flagPort
-	}
-	return cfg.DaemonPort
+	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: p.Listener})
 }
 
 func mintDaemonToken(configDir string) string {
@@ -81,60 +70,53 @@ func mintDaemonToken(configDir string) string {
 }
 
 func ensureDaemonNotRunning(configDir string) string {
-	portFile := daemon.PortFile(configDir)
-	if daemon.RunningPort(configDir) != 0 {
-		fatalf("daemon already running (port file: %s)", portFile)
+	if daemon.Running(configDir) {
+		fatalf("daemon already running (socket: %s)", daemon.SocketPath(configDir))
 	}
-	return portFile
+	return daemon.SocketPath(configDir)
 }
 
-func parseDaemonFlags(args []string) (int, string) {
+func parseDaemonFlags(args []string) string {
 	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
-	port := fs.Int("port", -1, "port to listen on (-1 = use daemon_port from config; 0 = OS-assigned random port)")
 	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
 	fs.Parse(args) //nolint:errcheck
-	return *port, *logLevel
+	return *logLevel
 }
 
 type DaemonHTTPParams struct {
 	Srv      *server.Server
-	PortFile string
 	Listener net.Listener
-	Port     int
 }
 
 func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
-	writePortFile(p.PortFile, p.Port)
-	// Best-effort cleanup, not required for correctness: a stale file left by SIGKILL just
-	// fails RunningPort's /healthz probe on the next read. See docs/daemon.md.
-	defer os.Remove(p.PortFile)
 	httpSrv := daemonHTTPServer(p.Srv)
 	go httpSrv.Serve(p.Listener) //nolint:errcheck
 	go p.Srv.RunSessionEviction(ctx, 30*time.Minute)
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	// Closing the listener unlinks the socket; a SIGKILL skips this and bindSocket clears it next start.
 	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
 }
 
-// bindPort binds the daemon's loopback listener on the fixed daemon_port. A respawn can
-// rebind immediately even after the previous daemon's SIGKILL — see docs/daemon.md.
-func bindPort(port int) (net.Listener, int) {
-	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+func bindSocket(socket string) net.Listener {
+	dir := filepath.Dir(socket)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		fatalf("create socket dir: %v", err)
+	}
+	// The dir's permissions are the access boundary — macOS ignores the socket file's own mode on connect.
+	_ = os.Chmod(dir, 0700)
+	ln, err := net.Listen("unix", socket)
 	if err != nil {
-		fatalf("listen: %v", err)
+		// net.Listen failed on a leftover socket; ensureDaemonNotRunning confirmed nothing live answers, so it's stale.
+		_ = os.Remove(socket)
+		if ln, err = net.Listen("unix", socket); err != nil {
+			fatalf("listen on %s: %v", socket, err)
+		}
 	}
-	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
-	if !ok {
-		fatalf("listener address is not TCP: %T", ln.Addr())
-	}
-	return ln, tcpAddr.Port
-}
-
-func writePortFile(portFile string, port int) {
-	if err := os.WriteFile(portFile, []byte(strconv.Itoa(port)), 0600); err != nil {
-		fatalf("write port file: %v", err)
-	}
+	// Linux honors the socket file's own mode on connect; a permissive umask would otherwise leave it world-writable.
+	_ = os.Chmod(socket, 0600)
+	return ln
 }
 
 func daemonHTTPServer(srv *server.Server) *http.Server {
@@ -149,43 +131,12 @@ func daemonHTTPServer(srv *server.Server) *http.Server {
 }
 
 func runDaemonStatus(configDir string) {
-	portFile := daemon.PortFile(configDir)
-	portNum, err := readDaemonPort(portFile)
+	resp, err := daemon.SocketClient(daemon.SocketPath(configDir), 2*time.Second).Get("http://localhost/healthz")
 	if err != nil {
-		printDaemonStatusReadErr(err)
-		return
-	}
-	fetchDaemonHealth(portNum)
-}
-
-func fetchDaemonHealth(portNum int) {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", portNum))
-	if err != nil {
-		fmt.Printf("daemon: port file exists (port %d) but not responding\n", portNum)
+		fmt.Println("daemon: not running")
 		return
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("daemon: running on port %d — %s\n", portNum, body)
-}
-
-func readDaemonPort(portFile string) (int, error) {
-	data, err := os.ReadFile(portFile)
-	if err != nil {
-		return 0, err
-	}
-	portNum, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || portNum < 1 || portNum > 65535 {
-		return 0, fmt.Errorf("port file %s contains invalid port", portFile)
-	}
-	return portNum, nil
-}
-
-func printDaemonStatusReadErr(err error) {
-	if os.IsNotExist(err) {
-		fmt.Println("daemon: not running")
-		return
-	}
-	fmt.Printf("daemon: %v\n", err)
+	fmt.Printf("daemon: running — %s\n", body)
 }

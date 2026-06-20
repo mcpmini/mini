@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,19 +39,36 @@ func okHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func newSockPath(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(shortSocketDir(t), "d.sock")
+}
+
+// Simulates a daemon respawning on the fixed socket path: the proxy keeps dialing it, so this makes a dead link live.
+func startSocketServer(t *testing.T, sock string, h http.HandlerFunc) {
+	t.Helper()
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen unix %s: %v", sock, err)
+	}
+	srv := &http.Server{Handler: h}
+	go srv.Serve(ln)                  //nolint:errcheck
+	t.Cleanup(func() { srv.Close() }) //nolint:errcheck
+}
+
 func TestDeliver_transportDownRecoversViaReresolve(t *testing.T) {
-	live := httptest.NewServer(http.HandlerFunc(okHandler))
-	defer live.Close()
-	livePort := serverPort(t, live)
+	sock := newSockPath(t)
+	client := socketDialClient(sock)
 
 	var resolveCalls atomic.Int32
-	reresolve := func() (int, string, error) {
+	reresolve := func() (string, error) {
 		resolveCalls.Add(1)
-		return livePort, "tok", nil
+		startSocketServer(t, sock, okHandler) // respawn the daemon on the same socket
+		return "tok", nil
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Port: closedPort(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -65,7 +83,7 @@ func TestDeliver_transportDownRecoversViaReresolve(t *testing.T) {
 func TestDeliver_unauthorizedRefreshesTokenAndRetries(t *testing.T) {
 	var seenTokens []string
 	var mu sync.Mutex
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		auth := r.Header.Get("Authorization")
 		mu.Lock()
 		seenTokens = append(seenTokens, auth)
@@ -75,14 +93,12 @@ func TestDeliver_unauthorizedRefreshesTokenAndRetries(t *testing.T) {
 			return
 		}
 		okHandler(w, r)
-	}))
-	defer srv.Close()
-	port := serverPort(t, srv)
+	})
 
-	reresolve := func() (int, string, error) { return port, "fresh", nil }
+	reresolve := func() (string, error) { return "fresh", nil }
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Port: port, SessionID: "sess", Token: "stale", In: in, Out: &out, Reresolve: reresolve}
+	p := RunParams{Client: client, SessionID: "sess", Token: "stale", In: in, Out: &out, Reresolve: reresolve}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -119,17 +135,16 @@ func hijackCloseHandler(w http.ResponseWriter, _ *http.Request) {
 }
 
 func TestDeliver_midFlightErrorDoesNotRetry(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(hijackCloseHandler))
-	defer srv.Close()
+	client := serveSocket(t, hijackCloseHandler)
 
 	var resolveCalls atomic.Int32
-	reresolve := func() (int, string, error) {
+	reresolve := func() (string, error) {
 		resolveCalls.Add(1)
-		return serverPort(t, srv), "tok", nil
+		return "tok", nil
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -142,15 +157,14 @@ func TestDeliver_midFlightErrorDoesNotRetry(t *testing.T) {
 }
 
 func TestDeliver_singleFlightRecoversOnce(t *testing.T) {
-	live := httptest.NewServer(http.HandlerFunc(okHandler))
-	defer live.Close()
-	livePort := serverPort(t, live)
-	dead := closedPort(t)
+	sock := newSockPath(t)
+	client := socketDialClient(sock)
 
 	var resolveCalls atomic.Int32
-	reresolve := func() (int, string, error) {
+	reresolve := func() (string, error) {
 		resolveCalls.Add(1)
-		return livePort, "tok", nil
+		startSocketServer(t, sock, okHandler)
+		return "tok", nil
 	}
 	const n = 16
 	var lines strings.Builder
@@ -158,7 +172,7 @@ func TestDeliver_singleFlightRecoversOnce(t *testing.T) {
 		fmt.Fprintf(&lines, `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{}}`+"\n", i)
 	}
 	var out bytes.Buffer
-	p := RunParams{Port: dead, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Reresolve: reresolve}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Reresolve: reresolve}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -172,13 +186,13 @@ func TestDeliver_singleFlightRecoversOnce(t *testing.T) {
 
 func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 	var resolveCalls atomic.Int32
-	reresolve := func() (int, string, error) {
+	reresolve := func() (string, error) {
 		resolveCalls.Add(1)
-		return 0, "", fmt.Errorf("daemon down")
+		return "", fmt.Errorf("daemon down")
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Port: closedPort(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
+	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
 	done := make(chan error, 1)
 	go func() { done <- Run(p) }()
 	select {
@@ -195,20 +209,18 @@ func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 }
 
 func TestDeliver_persistent401ReturnsErrorEnvelope(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "go away", http.StatusUnauthorized)
-	}))
-	defer srv.Close()
-	port := serverPort(t, srv)
+	})
 
 	var resolveCalls atomic.Int32
-	reresolve := func() (int, string, error) {
+	reresolve := func() (string, error) {
 		resolveCalls.Add(1)
-		return port, "same-stale-token", nil
+		return "same-stale-token", nil
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Port: port, SessionID: "sess", Token: "same-stale-token", In: in, Out: &out, Reresolve: reresolve}
+	p := RunParams{Client: client, SessionID: "sess", Token: "same-stale-token", In: in, Out: &out, Reresolve: reresolve}
 	done := make(chan error, 1)
 	go func() { done <- Run(p) }()
 	select {
@@ -229,15 +241,14 @@ func TestDeliver_persistent401ReturnsErrorEnvelope(t *testing.T) {
 }
 
 func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
-	dead := closedPort(t)
 	var resolveCalls atomic.Int32
-	reresolve := func() (int, string, error) {
+	reresolve := func() (string, error) {
 		resolveCalls.Add(1)
-		return dead, "tok", nil
+		return "tok", nil // token refreshes, but the daemon never comes back on the socket
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Port: dead, SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
+	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Reresolve: reresolve}
 	done := make(chan error, 1)
 	go func() { done <- Run(p) }()
 	select {

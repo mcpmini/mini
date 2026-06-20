@@ -14,14 +14,14 @@ once you have more than one chat open:
   touches a credential.
 
 **You never start the daemon yourself.** The first chat that needs it spawns it on demand, and it
-keeps running for later chats. You *can* run `mini daemon` by hand (e.g. to pin a port or read
-logs), but the zero-config path never requires it.
+keeps running for later chats. You *can* run `mini daemon` by hand (e.g. to read logs), but the
+zero-config path never requires it.
 
 ## How it works
 
 From the agent's side nothing changes: it speaks MCP over stdio to `mini connect`, exactly as it
-would with no daemon. `mini connect` just forwards each request to the shared daemon over loopback
-instead of connecting to upstreams itself.
+would with no daemon. `mini connect` just forwards each request to the shared daemon over a Unix
+domain socket instead of connecting to upstreams itself.
 
 ```mermaid
 flowchart LR
@@ -30,12 +30,13 @@ flowchart LR
     C[chat C] -->|stdio| PC[mini connect]
     PA --> D
     PB --> D
-    PC -->|"loopback HTTP<br/>POST /mcp"| D[mini daemon<br/>127.0.0.1]
+    PC -->|"HTTP over<br/>Unix socket<br/>POST /mcp"| D["mini daemon<br/>~/.mini/daemon.sock"]
     D -->|stdio / HTTP| U[upstream MCP servers]
 ```
 
 - Many `mini connect` processes, one daemon. The daemon owns the upstream connections, projections,
-  and per-chat sessions; each `mini connect` just relays JSON-RPC over `POST /mcp`.
+  and per-chat sessions; each `mini connect` just relays JSON-RPC over `POST /mcp` (HTTP spoken over
+  the socket — the request URL host is a placeholder the dialer ignores).
 - The code lives in `internal/proxy` (the proxy side), `internal/server` (the HTTP daemon),
   `internal/daemon` (rendezvous and the spawn lock), and `cmd/mini/daemon.go` (lifecycle).
 - **Only the chat path uses the daemon today.** Direct CLI commands like `mini call` and `mini ls`
@@ -46,9 +47,10 @@ flowchart LR
 
 When `mini connect` starts, it finds or starts the daemon, then forwards requests to it:
 
-1. **Find it.** A `daemon.port` file records where a daemon *might* be. It's only a hint — liveness
-   comes from probing `GET /healthz` and seeing a `200`, never from the file existing or from a
-   stored PID. `/healthz` reports `{"ok":true,"sessions":N}`.
+1. **Find it.** The socket path is fixed — `<configDir>/daemon.sock` — so there is no rendezvous
+   file to read. Liveness comes from probing `GET /healthz` over the socket and seeing a `200`,
+   never from the socket file existing or from a stored PID. `/healthz` reports
+   `{"ok":true,"sessions":N}`.
 2. **Or start it.** No healthy daemon → spawn one, under a lock so that a crowd of chats
    reconnecting at the same instant produces a single daemon rather than a pile-up.
 3. **Authenticate.** Read the bearer token from disk and send it with every forwarded request.
@@ -69,39 +71,35 @@ When `mini connect` starts, it finds or starts the daemon, then forwards request
 - **Root / full system compromise.** Same.
 
 **In scope** — the genuinely new surface mini introduces by running a credential-holding listener
-on loopback and making outbound fetches:
+and making outbound fetches:
 
-- **Browser DNS rebinding.** A web page you visit is untrusted code that can reach the loopback
-  interface. Without defense it could `POST` to `127.0.0.1/mcp` and spend your upstream
-  credentials. This is the marquee localhost threat and the main reason the daemon is locked down.
-- **Other local users on a shared host.** Loopback is shared by everyone on the machine, so on a
-  multi-user box another account can reach the daemon's port.
+- **Browser DNS rebinding.** A web page you visit is untrusted code that can reach loopback network
+  services ([CORS & DNS rebinding](https://github.blog/security/application-security/localhost-dangers-cors-and-dns-rebinding/)).
+  A browser cannot open an `AF_UNIX` socket, so the daemon's socket is simply unreachable from a
+  page; the `Host` check (below) backs this up.
+- **Other local users on a shared host.** The socket lives in the per-user-private `configDir`, so
+  another local account can neither connect to it nor recreate the path to impersonate the daemon.
+  Filesystem permissions are the boundary.
 - **SSRF.** Because mini fetches outbound, a crafted or attacker-controlled upstream URL could try
   to reach internal services or resolve to a private IP.
 
-**Residual, and documented.** On loopback TCP another local user could squat `daemon_port` in the
-brief gap after a daemon dies and harvest the token a reconnecting proxy sends. The `0600` files
-limit who can attempt it; moving to a Unix socket would remove port-squatting entirely (see the
-last section).
-
 ## Security posture
 
-Each defense maps directly to an in-scope threat above:
-
-- **Bearer token → browser rebinding + other local users.** `mini daemon` mints a 32-byte
-  `crypto/rand` token and writes it `0600` to `daemon.token` via an atomic temp-file rename. `/mcp`
-  requires `Authorization: Bearer <token>`, compared with `crypto/subtle`. A web page can't read
-  the file, so it can't forge the header — **the file permissions are the real boundary.**
-  `/healthz` stays open (it holds no secret and exists to be polled for liveness).
+- **Unix socket → browser rebinding + other local users (primary).** The daemon listens on
+  `<configDir>/daemon.sock`, not a loopback TCP port. `configDir`'s filesystem permissions are the
+  access boundary: no browser can reach an `AF_UNIX` socket, and no other local user can connect to
+  or squat one in a private directory. This is what closes the two in-scope local threats.
+- **Bearer token (defense-in-depth).** `mini daemon` mints a 32-byte `crypto/rand` token and writes
+  it `0600` to `daemon.token` via an atomic temp-file rename. `/mcp` requires
+  `Authorization: Bearer <token>`, compared with `crypto/subtle`. The socket already gates access;
+  the token is a second layer. `/healthz` stays open (it holds no secret and is polled for liveness).
 - **Stable token across restarts → availability.** A respawned daemon reuses the persisted token
   instead of rotating it, so chats already connected survive a daemon respawn rather than breaking
   with `401`. It's reused only if the file is still `0600`; a looser file is treated as
   compromised and re-minted.
-- **Loopback-`Host` check → DNS rebinding.** `/mcp` rejects any request whose `Host` isn't a
-  loopback identity (`127.0.0.1`, `::1`, `localhost`), so a page that rebinds `evil.com →
-  127.0.0.1` is refused even though the TCP connection lands on loopback — the rebound request
-  still carries the attacker's `Host`. Skipped only for an explicit `--dangerous-nonloopback-http`
-  bind, where the operator has declared all clients trusted.
+- **Loopback-`Host` check (defense-in-depth).** `/mcp` rejects any request whose `Host` isn't a
+  loopback identity (`127.0.0.1`, `::1`, `localhost`); proxies send `localhost`. Redundant with the
+  socket for the default path, but kept so the `--dangerous-nonloopback-http` TCP path stays guarded.
 - **SSRF-safe dialer → SSRF.** Outbound URLs pass `ValidateURL`, then a dialer that re-validates
   the *resolved* IP at connect time (rejecting private / loopback / link-local / NAT64 / etc.) so
   DNS can't rebind a validated hostname to an internal address. The client also refuses redirects,
@@ -116,11 +114,12 @@ call without anyone restarting anything:
    are retried: a dial failure (never reached the daemon), `401` (rejected before dispatch), or
    `not initialized` (the session was lost, gated before dispatch). Anything else — including a
    connection reset *after* the bytes were sent — is returned to the agent unretried.
-2. **Respawn, single-winner.** The proxy re-resolves the daemon, spawning a replacement if needed.
-   A `flock` spawn lock lets one proxy spawn while the rest block and then find it already up. The
-   OS socket bind sits underneath as the ultimate guarantee — only one process can bind
-   `daemon_port` — so two daemons are impossible even if the lock is skipped; the lock only removes
-   the wasted-spawn herd at scale.
+2. **Respawn, single-winner.** The proxy respawns the daemon if needed. A `flock` spawn lock lets
+   one proxy spawn while the rest block and then find it already up. Binding the socket sits
+   underneath as the ultimate guarantee — only one process can `net.Listen` on the path — so two
+   daemons are impossible even if the lock is skipped; the lock only removes the wasted-spawn herd
+   at scale. The socket path is fixed, so recovery never has to re-address: a respawned daemon
+   returns on the same path and the proxy's client keeps working.
 3. **Reconnect.** Re-read the token, re-`initialize` the session, retry the original request.
    Bounded attempts with jittered backoff.
 4. **One recovery per proxy.** Concurrent in-flight requests share a generation-counted,
@@ -132,24 +131,19 @@ If the bytes reached the daemon, it may already have run a non-idempotent upstre
 `create_issue`. Replaying that is worse than surfacing an error, so any uncertain case fails safe
 and goes back to the agent. We retry only when we can *prove* the request never ran.
 
-## Port lifecycle
+## Socket lifecycle
 
-The port is freed the instant the daemon dies, on any signal. The kernel closes a dead process's
-descriptors — including the listening socket — as it exits, and a listening socket has no
-`TIME_WAIT` (that applies to established connections, on the side that closed first), so
-`daemon_port` is available for the respawn immediately, even after `SIGKILL`. Go's `net.Listen`
-sets `SO_REUSEADDR`, so the rebind succeeds even if old client connections linger in `TIME_WAIT`.
-
-`SIGTERM` removes `daemon.port`; `SIGKILL` leaves it stale. That's harmless: liveness is the
-`/healthz` probe, so a stale file pointing at a dead or recycled port simply fails the probe and
-reads as "no daemon." This is exactly why liveness is a health probe and not a PID or
+On a clean exit (`SIGTERM`/`SIGINT`) the daemon's `Shutdown` closes the listener, which unlinks the
+socket file. A `SIGKILL` skips that, leaving a **stale socket file** on disk. That's harmless:
+liveness is the `/healthz` probe, so a stale file with no listener behind it fails the probe and
+reads as "no daemon." The next daemon's `bindSocket` finds the stale file (the `net.Listen` fails),
+removes it, and rebinds. This is exactly why liveness is a health probe and not a PID or
 file-existence check.
 
-**Fixed vs ephemeral port.** A fixed `daemon_port` gives a stable rendezvous: a respawn returns on
-the same port, a proxy's cached port stays valid, and recovery is fast. `daemon_port: 0`
-(OS-assigned) also works — the respawn lands on a new port and the proxy re-reads the file — but
-loses that fast path, and single-winner contention only bites with a fixed port (two `:0` racers
-bind two different ports). The test suite covers both.
+**Path length.** A Unix socket path is capped by the kernel (104 bytes on macOS, 108 on Linux), so
+`<configDir>/daemon.sock` must stay short. The default `~/.mini` is well within bounds; an unusually
+deep `--config` directory is rejected up front with a clear error rather than a cryptic bind
+failure (`daemon.CheckSocketPath`).
 
 ## Single-instance: what we use, what we rejected
 
@@ -159,16 +153,9 @@ prior art.
 
 | Approach | Who uses it | Verdict |
 |---|---|---|
-| **OS socket bind** (one binder wins, the rest get `EADDRINUSE`) | tmux, git-credential-cache, Redis, most single-instance servers | **Primary.** The kernel is the lock and releases it on death — no stale state possible. |
-| **`flock` spawn lock** | `apt`/`dpkg` locks, many CLIs | **Added,** to collapse the spawn herd at scale. Advisory, auto-released on process death. |
+| **Unix socket bind** (one binder wins; the path is the lock) | ssh-agent, Docker (`docker.sock`), gpg-agent, [tmux](https://man7.org/linux/man-pages/man1/tmux.1.html), [git-credential-cache](https://git-scm.com/docs/git-credential-cache--daemon) | **Primary.** No TCP port (so nothing to squat), filesystem permissions are the access boundary, and the kernel releases the bind on death — no stale lock. Works on macOS/Linux and Windows (`AF_UNIX`). |
+| **[`flock`](https://man7.org/linux/man-pages/man2/flock.2.html) spawn lock** | `apt`/`dpkg` locks, many CLIs | **Added,** to collapse the spawn herd at scale. Advisory, auto-released on process death. |
 | **`/healthz` liveness probe** | Kubernetes liveness/readiness, cloud load balancers | **Used** for rendezvous. Beats `kill(pid,0)` — it confirms the service actually answers, defeating PID reuse. |
-| **PID file** | PostgreSQL (`postmaster.pid`), MongoDB (`mongod.lock`), nginx, sshd | **Rejected.** The classic stale-lock / PID-reuse failure: a manual `rm` after a crash, a recycled PID matching an unrelated process, broken on Windows. If used at all, it's debug metadata *behind* a real lock — never the lock itself. |
+| **PID file** | [PostgreSQL `postmaster.pid`](https://www.crunchydata.com/blog/postgres-postmaster-file-explained), MongoDB (`mongod.lock`), nginx, sshd | **Rejected.** The classic stale-lock / PID-reuse failure: a manual `rm` after a crash, a recycled PID matching an unrelated process, broken on Windows. If used at all, it's debug metadata *behind* a real lock — never the lock itself. |
 | **OS supervision** | systemd, launchd, Windows services, runit | **Right for managed/server deployments** where the OS owns the lifecycle — not the zero-config default we want. |
-| **Unix socket** | ssh-agent, Docker (`docker.sock`), gpg-agent, MySQL | **Future.** Removes the TCP port (and port-squatting), makes the socket path the lock, and replaces the token with filesystem permissions + peer credentials. |
-
-References: [tmux(1)](https://man7.org/linux/man-pages/man1/tmux.1.html),
-[git-credential-cache--daemon](https://git-scm.com/docs/git-credential-cache--daemon),
-[flock(2)](https://man7.org/linux/man-pages/man2/flock.2.html),
-[PostgreSQL postmaster.pid](https://www.crunchydata.com/blog/postgres-postmaster-file-explained),
-[RFC 8252](https://www.rfc-editor.org/rfc/rfc8252.html),
-[localhost CORS & DNS rebinding](https://github.blog/security/application-security/localhost-dangers-cors-and-dns-rebinding/).
+| **Loopback TCP port** | Redis, Jupyter, Chrome remote debugging | **Rejected.** A shared port any local user can squat and any browser can reach (DNS rebinding); the recurring localhost-security footgun. |

@@ -18,20 +18,20 @@ const maxConcurrentForwards = 32
 
 // RunParams configures a daemon proxy run.
 type RunParams struct {
-	Port      int
+	// Client's transport targets the daemon's socket; one client serves all forwards.
+	Client    *http.Client
 	SessionID string
 	Token     string
 	In        io.Reader
 	Out       io.Writer
 	ToolMode  transport.ToolMode
-	// Nil disables self-healing. Otherwise called to respawn and re-resolve the daemon after a failure.
-	Reresolve func() (port int, token string, err error)
+	// Nil disables self-healing. Otherwise called to respawn the daemon and re-read the token after a failure.
+	Reresolve func() (token string, err error)
 }
 
 // daemonConn identifies the target daemon and the credentials for one forward.
 type daemonConn struct {
 	client    *http.Client
-	port      int
 	sessionID string
 	token     string
 }
@@ -43,11 +43,10 @@ func Run(p RunParams) error {
 }
 
 func runWithLimit(p RunParams, limit int) error {
-	// No client-level timeout: tool deadlines are enforced by the daemon's
-	// per-call context (ToolTimeout). A fixed timeout here would break any
-	// tool configured with tool_timeout longer than the hard-coded value.
-	client := &http.Client{}
-	fp := newForwardPool(p, client, limit)
+	// p.Client has no client-level timeout: tool deadlines are enforced by the daemon's
+	// per-call context (ToolTimeout). A fixed timeout here would break any tool configured
+	// with tool_timeout longer than the hard-coded value.
+	fp := newForwardPool(p, p.Client, limit)
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
 		startForward(maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
@@ -59,7 +58,7 @@ func runWithLimit(p RunParams, limit int) error {
 func newForwardPool(p RunParams, client *http.Client, limit int) forwardAsyncParams {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	link := newDaemonLink(p.Port, p.Token, p.Reresolve)
+	link := newDaemonLink(p.Token, p.Reresolve)
 	return forwardAsyncParams{
 		client: client, link: link, sessionID: p.SessionID, out: p.Out,
 		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
@@ -133,7 +132,7 @@ type forwardAsyncParams struct {
 }
 
 func (p forwardAsyncParams) connAt(s linkState) daemonConn {
-	return daemonConn{client: p.client, port: s.port, sessionID: p.sessionID, token: s.token}
+	return daemonConn{client: p.client, sessionID: p.sessionID, token: s.token}
 }
 
 func forwardAsync(p forwardAsyncParams) {

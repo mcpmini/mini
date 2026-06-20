@@ -2,12 +2,15 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,37 +20,58 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func serverPort(t *testing.T, srv *httptest.Server) int {
+// Short path: macOS caps Unix socket paths at 104 bytes, which t.TempDir() exceeds.
+func shortSocketDir(t *testing.T) string {
 	t.Helper()
-	u, err := url.Parse(srv.URL)
-	if err != nil {
-		t.Fatalf("parse server URL: %v", err)
+	base := "/tmp"
+	if runtime.GOOS == "windows" {
+		base = ""
 	}
-	var port int
-	fmt.Sscanf(u.Port(), "%d", &port)
-	return port
+	dir, err := os.MkdirTemp(base, "mini")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck
+	return dir
 }
 
-func closedPort(t *testing.T) int {
+func serveSocket(t *testing.T, h http.HandlerFunc) *http.Client {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
-	port := serverPort(t, srv)
-	srv.Close()
-	return port
+	sock := filepath.Join(shortSocketDir(t), "d.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatalf("listen unix: %v", err)
+	}
+	srv := &http.Server{Handler: h}
+	go srv.Serve(ln)                  //nolint:errcheck
+	t.Cleanup(func() { srv.Close() }) //nolint:errcheck
+	return socketDialClient(sock)
 }
 
-func testConn(port int, sessionID string) daemonConn {
-	return daemonConn{client: &http.Client{}, port: port, sessionID: sessionID}
+func socketDialClient(sock string) *http.Client {
+	return &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+		},
+	}}
+}
+
+func deadClient(t *testing.T) *http.Client {
+	t.Helper()
+	return socketDialClient(filepath.Join(shortSocketDir(t), "nonexistent.sock"))
+}
+
+func testConn(client *http.Client, sessionID string) daemonConn {
+	return daemonConn{client: client, sessionID: sessionID}
 }
 
 func TestForward_sendsBearerToken(t *testing.T) {
 	var gotAuth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-	conn := daemonConn{client: &http.Client{}, port: serverPort(t, srv), sessionID: "sess", token: "secret-token"}
+	})
+	conn := daemonConn{client: client, sessionID: "sess", token: "secret-token"}
 	forward(conn, []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if gotAuth != "Bearer secret-token" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer secret-token")
@@ -56,12 +80,11 @@ func TestForward_sendsBearerToken(t *testing.T) {
 
 func TestForward_noTokenOmitsAuthorizationHeader(t *testing.T) {
 	var hadAuth bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		_, hadAuth = r.Header["Authorization"]
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-	forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	})
+	forward(testConn(client, "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if hadAuth {
 		t.Error("expected no Authorization header when token is empty")
 	}
@@ -69,13 +92,12 @@ func TestForward_noTokenOmitsAuthorizationHeader(t *testing.T) {
 
 func TestRun_propagatesTokenThroughRunParams(t *testing.T) {
 	var gotAuth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
+	})
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
-	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", Token: "tok-42", In: in, Out: io.Discard}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok-42", In: in, Out: io.Discard}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -110,18 +132,17 @@ func TestDaemonErrorResponse_malformedBodyReturnsNil(t *testing.T) {
 }
 
 func TestForward_successReturnsDaemonResponse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	})
+	resp := forward(testConn(client, "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
 	if !strings.Contains(string(resp), `"result":"ok"`) {
 		t.Errorf("unexpected response: %s", resp)
 	}
 }
 
 func TestForward_daemonUnreachableReturnsErrorEnvelope(t *testing.T) {
-	resp := forward(testConn(closedPort(t), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	resp := forward(testConn(deadClient(t), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
 	if resp == nil || !strings.Contains(string(resp), `"error"`) {
 		t.Errorf("expected error envelope, got %s", resp)
 	}
@@ -141,12 +162,11 @@ func TestForward_httpErrorStatusProducesJSONRPCEnvelope(t *testing.T) {
 	reqBody := []byte(`{"jsonrpc":"2.0","id":7,"method":"tools/call"}`)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
-			}))
-			defer srv.Close()
-			resp := forward(testConn(serverPort(t, srv), "sess"), reqBody)
+			})
+			resp := forward(testConn(client, "sess"), reqBody)
 			var rpc struct {
 				ID    json.RawMessage `json:"id"`
 				Error *struct{ Message string `json:"message"` } `json:"error"`
@@ -168,11 +188,10 @@ func TestForward_httpErrorStatusProducesJSONRPCEnvelope(t *testing.T) {
 }
 
 func TestForward_202NotificationReturnsNil(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer srv.Close()
-	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	})
+	resp := forward(testConn(client, "sess"), []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
 	if resp != nil {
 		t.Errorf("expected nil for 202 Accepted, got %s", resp)
 	}
@@ -180,12 +199,11 @@ func TestForward_202NotificationReturnsNil(t *testing.T) {
 
 func TestForward_sessionIdPropagatedInHeader(t *testing.T) {
 	var gotSession string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		gotSession = r.Header.Get("Mcp-Session-Id")
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
-	forward(testConn(serverPort(t, srv), "my-session-42"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	})
+	forward(testConn(client, "my-session-42"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if gotSession != "my-session-42" {
 		t.Errorf("session header = %q, want %q", gotSession, "my-session-42")
 	}
@@ -193,29 +211,26 @@ func TestForward_sessionIdPropagatedInHeader(t *testing.T) {
 
 func TestForward_largeResponseBodyHandledWithoutError(t *testing.T) {
 	big := strings.Repeat("x", 1<<20)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, big)
-	}))
-	defer srv.Close()
-	resp := forward(testConn(serverPort(t, srv), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	})
+	resp := forward(testConn(client, "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if len(resp) == 0 {
 		t.Error("expected non-empty response for large body")
 	}
 }
 
-func runParams(t *testing.T, srv *httptest.Server, in io.Reader, out io.Writer) RunParams {
-	t.Helper()
-	return RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: out}
+func runParams(client *http.Client, in io.Reader, out io.Writer) RunParams {
+	return RunParams{Client: client, SessionID: "sess", In: in, Out: out}
 }
 
 func TestRun_routesRequestAndWritesResponse(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"done"}`)
-	}))
-	defer srv.Close()
+	})
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
 	var out bytes.Buffer
-	if err := Run(runParams(t, srv, in, &out)); err != nil {
+	if err := Run(runParams(client, in, &out)); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if !strings.Contains(out.String(), "done") {
@@ -225,38 +240,35 @@ func TestRun_routesRequestAndWritesResponse(t *testing.T) {
 
 func TestRun_emptyLinesSkipped(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
+	})
 	in := strings.NewReader("\n\n" + `{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n\n")
-	Run(runParams(t, srv, in, io.Discard)) //nolint:errcheck
+	Run(runParams(client, in, io.Discard)) //nolint:errcheck
 	if calls.Load() != 1 {
 		t.Errorf("expected 1 daemon call (empty lines skipped), got %d", calls.Load())
 	}
 }
 
 func TestRun_cleanEOFReturnsNilError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
-	defer srv.Close()
-	if err := Run(runParams(t, srv, strings.NewReader(""), io.Discard)); err != nil {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {})
+	if err := Run(runParams(client, strings.NewReader(""), io.Discard)); err != nil {
 		t.Errorf("expected nil error on clean EOF, got %v", err)
 	}
 }
 
 func TestRun_multipleRequestsAllForwarded(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		n := calls.Add(1)
 		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":"ok"}`, n)
-	}))
-	defer srv.Close()
+	})
 	in := strings.NewReader(
 		`{"jsonrpc":"2.0","id":1,"method":"a"}` + "\n" +
 			`{"jsonrpc":"2.0","id":2,"method":"b"}` + "\n",
 	)
-	if err := Run(runParams(t, srv, in, io.Discard)); err != nil {
+	if err := Run(runParams(client, in, io.Discard)); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if calls.Load() != 2 {
@@ -333,15 +345,14 @@ func TestInjectCompactMode_initialize_noParams_addsFlag(t *testing.T) {
 
 func TestRun_compact_injectsIntoInitialize(t *testing.T) {
 	var gotBody []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
-	}))
-	defer srv.Close()
+	})
 
 	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
 	p := RunParams{
-		Port:      serverPort(t, srv),
+		Client:    client,
 		SessionID: "sess",
 		In:        strings.NewReader(initMsg),
 		Out:       io.Discard,
@@ -364,15 +375,14 @@ func TestRun_compact_injectsIntoInitialize(t *testing.T) {
 
 func TestRun_proxy_doesNotInjectFlag(t *testing.T) {
 	var gotBody []byte
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
-	}))
-	defer srv.Close()
+	})
 
 	initMsg := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26"}}` + "\n"
 	p := RunParams{
-		Port:      serverPort(t, srv),
+		Client:    client,
 		SessionID: "sess",
 		In:        strings.NewReader(initMsg),
 		Out:       io.Discard,
@@ -438,7 +448,7 @@ func TestPeekIsInitialize_falseForOtherMethods(t *testing.T) {
 
 func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 	var toolCalls, initCalls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var msg struct{ Method string `json:"method"` }
 		json.Unmarshal(body, &msg) //nolint:errcheck
@@ -455,12 +465,11 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"recovered"}`)
 			}
 		}
-	}))
-	defer srv.Close()
+	})
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}` + "\n")
 	var out bytes.Buffer
-	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: &out}
+	p := RunParams{Client: client, SessionID: "sess", In: in, Out: &out}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -477,15 +486,14 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 
 func TestRun_noReinitWhenInitializeSucceeds(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	defer srv.Close()
+	})
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
 	var out bytes.Buffer
-	p := RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: &out}
+	p := RunParams{Client: client, SessionID: "sess", In: in, Out: &out}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -496,15 +504,14 @@ func TestRun_noReinitWhenInitializeSucceeds(t *testing.T) {
 
 func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
 	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`)
-	}))
-	defer srv.Close()
+	})
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
 	done := make(chan error, 1)
-	go func() { done <- Run(RunParams{Port: serverPort(t, srv), SessionID: "sess", In: in, Out: io.Discard}) }()
+	go func() { done <- Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard}) }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -518,12 +525,12 @@ func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
 	}
 }
 
-func newConcurrencyServer(t *testing.T, release chan struct{}) (*httptest.Server, *atomic.Int32, <-chan struct{}) {
+func newConcurrencyServer(t *testing.T, release chan struct{}) (*http.Client, *atomic.Int32, <-chan struct{}) {
 	t.Helper()
 	var current, maxSeen atomic.Int32
 	var once sync.Once
 	started := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		n := current.Add(1)
 		for {
 			prev := maxSeen.Load()
@@ -535,20 +542,19 @@ func newConcurrencyServer(t *testing.T, release chan struct{}) (*httptest.Server
 		<-release
 		current.Add(-1)
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
-	}))
-	t.Cleanup(srv.Close)
-	return srv, &maxSeen, started
+	})
+	return client, &maxSeen, started
 }
 
 func TestRunWithLimit_capsConcurrentForwards(t *testing.T) {
 	release := make(chan struct{})
-	srv, maxSeen, started := newConcurrencyServer(t, release)
+	client, maxSeen, started := newConcurrencyServer(t, release)
 	done := make(chan error, 1)
 	input := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"a"}` + "\n" +
 		`{"jsonrpc":"2.0","id":2,"method":"b"}` + "\n" +
 		`{"jsonrpc":"2.0","id":3,"method":"c"}` + "\n")
 	go func() {
-		done <- runWithLimit(RunParams{Port: serverPort(t, srv), SessionID: "sess", In: input, Out: io.Discard}, 1)
+		done <- runWithLimit(RunParams{Client: client, SessionID: "sess", In: input, Out: io.Discard}, 1)
 	}()
 	select {
 	case <-started:

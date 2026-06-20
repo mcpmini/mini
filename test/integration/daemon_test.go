@@ -4,14 +4,15 @@ package integration_test
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,28 +21,57 @@ import (
 	"time"
 )
 
-func waitForDaemon(t *testing.T, portFile string) int {
+// Short path: macOS caps Unix socket paths at 104 bytes, which t.TempDir() exceeds — and the
+// real binary refuses to start on a too-long socket path.
+func shortConfigDir(t *testing.T) string {
+	t.Helper()
+	base := "/tmp"
+	if runtime.GOOS == "windows" {
+		base = ""
+	}
+	dir, err := os.MkdirTemp(base, "mini")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck
+	return dir
+}
+
+func socketPath(cfg string) string { return filepath.Join(cfg, "daemon.sock") }
+
+func daemonHTTPClient(cfg string) *http.Client {
+	sock := socketPath(cfg)
+	return &http.Client{Transport: &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+		},
+	}}
+}
+
+func daemonHealthy(cfg string) bool {
+	resp, err := daemonHTTPClient(cfg).Get("http://localhost/healthz")
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func waitForDaemon(t *testing.T, cfg string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if data, err := os.ReadFile(portFile); err == nil {
-			port, _ := strconv.Atoi(strings.TrimSpace(string(data)))
-			if port != 0 {
-				resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
-				if err == nil && resp.StatusCode == http.StatusOK {
-					return port
-				}
-			}
+		if daemonHealthy(cfg) {
+			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatal("daemon did not start within 5s")
-	return 0
+	t.Fatal("daemon did not become healthy within 5s")
 }
 
-func startDaemon(t *testing.T, configDir string) int {
+func startDaemon(t *testing.T, cfg string) *exec.Cmd {
 	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "daemon", "--port", "0")
+	cmd := exec.Command(miniBin, "--config", cfg, "daemon")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
@@ -50,167 +80,227 @@ func startDaemon(t *testing.T, configDir string) int {
 	t.Cleanup(func() {
 		cmd.Process.Kill() //nolint:errcheck
 		cmd.Wait()         //nolint:errcheck
-		os.Remove(filepath.Join(configDir, "daemon.port"))
+		reapDaemons(cfg)
 	})
-	return waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
-}
-
-func startProxyCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
-	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--log-level", "error")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		stdin.Close()
-		cmd.Process.Kill() //nolint:errcheck
-		cmd.Wait()         //nolint:errcheck
-	})
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 4<<20), 4<<20)
-	return stdin, scanner
-}
-
-func connectProxy(t *testing.T, configDir string) *mcpClient {
-	t.Helper()
-	stdin, scanner := startProxyCmd(t, configDir)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
-	go c.readLoop(scanner)
-	c.mustCall("initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "test", "version": "0"},
-	})
-	return c
-}
-
-func startCompactCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
-	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--tool-mode", "compact", "--log-level", "error")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		stdin.Close()
-		cmd.Process.Kill() //nolint:errcheck
-		cmd.Wait()         //nolint:errcheck
-	})
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 4<<20), 4<<20)
-	return stdin, scanner
-}
-
-func connectCompact(t *testing.T, configDir string) *mcpClient {
-	t.Helper()
-	stdin, scanner := startCompactCmd(t, configDir)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
-	go c.readLoop(scanner)
-	c.mustCall("initialize", map[string]any{
-		"protocolVersion": "2024-11-05",
-		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "test", "version": "0"},
-	})
-	return c
-}
-
-// startKillableDaemon starts a daemon reading its port from config (daemon_port: 0 →
-// OS-assigned) so a proxy respawn — which also reads config — behaves identically.
-func startKillableDaemon(t *testing.T, configDir string) *exec.Cmd {
-	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "daemon")
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		cmd.Process.Kill() //nolint:errcheck
-		cmd.Wait()         //nolint:errcheck
-		os.Remove(filepath.Join(configDir, "daemon.port"))
-	})
-	waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
+	waitForDaemon(t, cfg)
 	return cmd
 }
 
-func killDaemon(t *testing.T, cmd *exec.Cmd, portFile string) {
+func killDaemonProc(t *testing.T, cmd *exec.Cmd, cfg string, sig syscall.Signal) {
 	t.Helper()
-	if err := cmd.Process.Kill(); err != nil {
-		t.Fatalf("kill daemon: %v", err)
+	if err := cmd.Process.Signal(sig); err != nil {
+		t.Fatalf("signal daemon: %v", err)
 	}
 	cmd.Wait() //nolint:errcheck
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://127.0.0.1:" + portFromFile(t, portFile) + "/healthz")
-		if err != nil {
+		if !daemonHealthy(cfg) {
 			return
 		}
-		resp.Body.Close()
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatal("daemon still healthy after kill")
+	t.Fatalf("daemon still healthy after %v", sig)
 }
 
-// killDaemonOnPort kills by PID, for a daemon the proxy respawned where the test has
-// no *exec.Cmd to call killDaemon on.
-func killDaemonOnPort(port string) {
-	if port == "0" || port == "" {
-		return
+func daemonPIDs(t *testing.T, cfg string) []int {
+	t.Helper()
+	// Proxy processes carry "<cfg> connect", so matching "<cfg> daemon" counts only daemons.
+	out, err := exec.Command("pgrep", "-f", cfg+" daemon").Output()
+	if err != nil {
+		return nil // pgrep exits 1 when nothing matches
 	}
-	out, err := exec.Command("lsof", "-ti", "tcp:"+port).Output()
+	var pids []int
+	for _, s := range strings.Fields(string(out)) {
+		if pid, err := strconv.Atoi(s); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
+func reapDaemons(cfg string) {
+	out, err := exec.Command("pgrep", "-f", cfg+" daemon").Output()
 	if err != nil {
 		return
 	}
-	for _, pidStr := range strings.Fields(string(out)) {
-		if pid, err := strconv.Atoi(pidStr); err == nil {
+	for _, s := range strings.Fields(string(out)) {
+		if pid, err := strconv.Atoi(s); err == nil {
 			syscall.Kill(pid, syscall.SIGKILL) //nolint:errcheck
 		}
 	}
 }
 
-func portFromFile(t *testing.T, portFile string) string {
+func readDaemonToken(t *testing.T, cfg string) string {
 	t.Helper()
-	data, err := os.ReadFile(portFile)
+	data, err := os.ReadFile(filepath.Join(cfg, "daemon.token"))
 	if err != nil {
-		return "0"
+		t.Fatalf("read daemon token: %v", err)
 	}
 	return strings.TrimSpace(string(data))
 }
 
-func TestDaemon_recoversAfterDaemonKilledMidSession(t *testing.T) {
+func daemonForTest(t *testing.T) string {
+	t.Helper()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
-	cfg := t.TempDir()
+	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\ndaemon_port: 0\n")
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	return cfg
+}
 
-	cmd := startKillableDaemon(t, cfg)
-	// Single proxy → single respawn → daemon.port holds the one respawned daemon's port.
-	t.Cleanup(func() { killDaemonOnPort(portFromFile(t, filepath.Join(cfg, "daemon.port"))) })
+func startProxyCmd(t *testing.T, cfg, toolMode string) (io.WriteCloser, *bufio.Scanner) {
+	t.Helper()
+	args := []string{"--config", cfg, "connect", "--log-level", "error"}
+	if toolMode != "" {
+		args = append(args, "--tool-mode", toolMode)
+	}
+	cmd := exec.Command(miniBin, args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		stdin.Close()      //nolint:errcheck
+		cmd.Process.Kill() //nolint:errcheck
+		cmd.Wait()         //nolint:errcheck
+	})
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 4<<20), 4<<20)
+	return stdin, scanner
+}
+
+func connect(t *testing.T, cfg, toolMode string) *mcpClient {
+	t.Helper()
+	stdin, scanner := startProxyCmd(t, cfg, toolMode)
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	go c.readLoop(scanner)
+	c.mustCall("initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	})
+	return c
+}
+
+func connectProxy(t *testing.T, cfg string) *mcpClient   { return connect(t, cfg, "") }
+func connectCompact(t *testing.T, cfg string) *mcpClient { return connect(t, cfg, "compact") }
+
+func TestDaemon_basicToolCall(t *testing.T) {
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	client := connectCompact(t, cfg)
+	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+		t.Errorf("expected ok=true, got: %+v", e)
+	}
+}
+
+func TestDaemon_spawnsOnDemandAndReuses(t *testing.T) {
+	cfg := daemonForTest(t)
+	t.Cleanup(func() { reapDaemons(cfg) })
+
+	c1 := connectProxy(t, cfg)
+	c1.mustCall("tools/list", map[string]any{})
+	if !daemonHealthy(cfg) {
+		t.Fatal("first connect did not spawn a daemon")
+	}
+	c2 := connectProxy(t, cfg)
+	c2.mustCall("tools/list", map[string]any{})
+	if got := len(daemonPIDs(t, cfg)); got != 1 {
+		t.Errorf("expected exactly 1 daemon shared by two proxies, got %d", got)
+	}
+}
+
+func TestDaemon_sessionIsolation(t *testing.T) {
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"x","name":"test"}`})
+	cfg := shortConfigDir(t)
+	writeFakeServer(t, cfg, "svc", dir)
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+
+	startDaemon(t, cfg)
+	c1 := connectCompact(t, cfg)
+	c2 := connectCompact(t, cfg)
+
+	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, true)
+
+	b1, _ := json.Marshal(c1.execEnvelope("svc", "get_item", nil).Data)
+	if strings.Contains(string(b1), "secret") {
+		t.Errorf("c1: session projection should exclude secret, got: %s", b1)
+	}
+	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)
+	if !strings.Contains(string(b2), "secret") {
+		t.Errorf("c2: different session should still have secret, got: %s", b2)
+	}
+}
+
+func TestDaemon_standaloneFlag(t *testing.T) {
+	dir := mockFixtureDir(t, map[string]string{"ping": `{"ok":true}`})
+	cfg := shortConfigDir(t)
+	writeFakeServer(t, cfg, "svc", dir)
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+
+	// No daemon running — --standalone should work without trying to start one.
+	client := startServer(t, cfg)
+	if e := client.execEnvelope("svc", "ping", nil); e.Error != "" {
+		t.Errorf("standalone mode: expected ok=true, got: %+v", e)
+	}
+}
+
+func TestDaemon_healthzEndpoint(t *testing.T) {
+	cfg := shortConfigDir(t)
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	startDaemon(t, cfg)
+
+	resp, err := daemonHTTPClient(cfg).Get("http://localhost/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var body map[string]any
+	json.NewDecoder(resp.Body).Decode(&body) //nolint:errcheck
+	if body["ok"] != true {
+		t.Errorf("healthz should return ok=true, got: %v", body)
+	}
+}
+
+func TestDaemon_proxyModeToolCall(t *testing.T) {
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	client := connectProxy(t, cfg)
+	raw := client.mustCall("tools/call", map[string]any{
+		"name":      "svc__get_item",
+		"arguments": map[string]any{},
+	})
+	text, isErr := parseToolCallResult(raw)
+	if isErr {
+		t.Fatalf("proxy mode tool call returned error: %s", text)
+	}
+	if text == "" {
+		t.Error("expected non-empty response from proxy mode tool call via daemon")
+	}
+}
+
+func TestDaemon_recoversAfterGracefulKill(t *testing.T) {
+	cfg := daemonForTest(t)
+	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
 	client := connectCompact(t, cfg)
 	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
 		t.Fatalf("pre-kill call failed: %+v", e)
 	}
 
-	killDaemon(t, cmd, filepath.Join(cfg, "daemon.port"))
+	killDaemonProc(t, cmd, cfg, syscall.SIGTERM)
 
-	e := client.execEnvelope("svc", "get_item", nil)
-	if e.Error != "" {
+	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
 		t.Fatalf("post-kill call did not recover: %+v", e)
 	}
 	if got := readDaemonToken(t, cfg); got != tokenBefore {
@@ -218,107 +308,34 @@ func TestDaemon_recoversAfterDaemonKilledMidSession(t *testing.T) {
 	}
 }
 
-// freeTCPPort asks the OS for an unused loopback port, then releases it. There is a brief
-// race between Close() and the daemon binding the port, but in an isolated test environment
-// another process claiming the port in that window is rare enough to be tolerated.
-func freeTCPPort(t *testing.T) int {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve free port: %v", err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close() //nolint:errcheck
-	return port
-}
-
-// startFixedPortDaemon starts a killable daemon bound to a fixed daemon_port so that a proxy
-// respawn rebinds the same port — making real port-contention (the thundering herd) observable.
-func startFixedPortDaemon(t *testing.T, configDir string) *exec.Cmd {
-	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "daemon")
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		cmd.Process.Kill() //nolint:errcheck
-		cmd.Wait()         //nolint:errcheck
-	})
-	waitForDaemon(t, filepath.Join(configDir, "daemon.port"))
-	return cmd
-}
-
-func sigkillDaemon(t *testing.T, cmd *exec.Cmd, portFile string) {
-	t.Helper()
-	if err := cmd.Process.Signal(syscall.SIGKILL); err != nil {
-		t.Fatalf("SIGKILL daemon: %v", err)
-	}
-	cmd.Wait() //nolint:errcheck
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://127.0.0.1:" + portFromFile(t, portFile) + "/healthz")
-		if err != nil {
-			return
-		}
-		resp.Body.Close()
-		time.Sleep(50 * time.Millisecond)
-	}
-	t.Fatal("daemon still healthy after SIGKILL")
-}
-
-// TestDaemon_recoversAfterSIGKILL kills the daemon with SIGKILL so its deferred port-file
-// removal never runs and daemon.port is left STALE. The proxy's next call must still recover
-// (proving RunningPort's /healthz probe rejects the stale file rather than trusting it) and
-// reuse the persisted token.
-func TestDaemon_recoversAfterSIGKILL(t *testing.T) {
-	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
-	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
-	port := freeTCPPort(t)
-	writeConfig(t, cfg, fmt.Sprintf("inline_threshold: 50000\ndaemon_port: %d\n", port))
-
-	cmd := startFixedPortDaemon(t, cfg)
-	portFile := filepath.Join(cfg, "daemon.port")
-	t.Cleanup(func() { killDaemonListeners(port) })
+func TestDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
+	cfg := daemonForTest(t)
+	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
 	client := connectCompact(t, cfg)
 	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
 		t.Fatalf("pre-kill call failed: %+v", e)
 	}
 
-	sigkillDaemon(t, cmd, portFile)
-	if _, err := os.Stat(portFile); err != nil {
-		t.Fatalf("expected stale port file to remain after SIGKILL, got: %v", err)
+	killDaemonProc(t, cmd, cfg, syscall.SIGKILL)
+	// SIGKILL has no clean Close to unlink the socket, so the file is left stale; recovery must clear it.
+	if _, err := os.Stat(socketPath(cfg)); err != nil {
+		t.Fatalf("expected stale socket file to remain after SIGKILL, got: %v", err)
 	}
 
-	e := client.execEnvelope("svc", "get_item", nil)
-	if e.Error != "" {
-		t.Fatalf("post-SIGKILL call did not recover despite stale port file: %+v", e)
+	if e := client.execEnvelope("svc", "get_item", nil); e.Error != "" {
+		t.Fatalf("post-SIGKILL call did not recover despite stale socket: %+v", e)
 	}
 	if got := readDaemonToken(t, cfg); got != tokenBefore {
 		t.Errorf("daemon token rotated across SIGKILL respawn: before=%q after=%q", tokenBefore, got)
 	}
 }
 
-// TestDaemon_manyClientsRecover is the scale test. N proxies share one fixed-port daemon;
-// after it is SIGKILL'd, every proxy's next call must recover, the token must be reused, and
-// exactly ONE daemon ends up bound to the port. This proves end-to-end single-winner recovery
-// at scale. It does NOT isolate the flock spawn lock: the OS socket bind alone leaves one
-// listener (losers fail EADDRINUSE and exit), so the test passes with or without the lock. The
-// lock only collapses wasted spawn attempts, which the OS bind makes invisible here.
-func TestDaemon_manyClientsRecover(t *testing.T) {
+func TestDaemon_manyClientsRecoverSingleWinner(t *testing.T) {
 	const n = 20
-	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
-	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
-	port := freeTCPPort(t)
-	writeConfig(t, cfg, fmt.Sprintf("inline_threshold: 50000\ndaemon_port: %d\n", port))
-
-	cmd := startFixedPortDaemon(t, cfg)
-	portFile := filepath.Join(cfg, "daemon.port")
-	t.Cleanup(func() { killDaemonListeners(port) })
+	cfg := daemonForTest(t)
+	cmd := startDaemon(t, cfg)
+	t.Cleanup(func() { reapDaemons(cfg) })
 	tokenBefore := readDaemonToken(t, cfg)
 
 	clients := make([]*mcpClient, n)
@@ -329,14 +346,15 @@ func TestDaemon_manyClientsRecover(t *testing.T) {
 		}
 	}
 
-	sigkillDaemon(t, cmd, portFile)
+	killDaemonProc(t, cmd, cfg, syscall.SIGKILL)
 	recoverAllClients(t, clients)
 
 	if got := readDaemonToken(t, cfg); got != tokenBefore {
 		t.Errorf("daemon token rotated across respawn: before=%q after=%q", tokenBefore, got)
 	}
-	if got := daemonListenerCount(t, port); got != 1 {
-		t.Errorf("expected exactly one daemon listening on port %d after recovery, got %d", port, got)
+	// net.Listen on the socket guarantees one daemon survives the herd; the flock only collapses wasted spawns.
+	if got := len(daemonPIDs(t, cfg)); got != 1 {
+		t.Errorf("expected exactly one daemon after herd recovery, got %d", got)
 	}
 }
 
@@ -361,122 +379,9 @@ func recoverAllClients(t *testing.T, clients []*mcpClient) {
 	}
 }
 
-func listenerPIDs(port int) []int {
-	out, err := exec.Command("lsof", "-ti", "tcp:"+strconv.Itoa(port), "-sTCP:LISTEN").Output()
-	if err != nil {
-		return nil
-	}
-	self := os.Getpid()
-	var pids []int
-	for _, s := range strings.Fields(string(out)) {
-		if pid, err := strconv.Atoi(s); err == nil && pid != self {
-			pids = append(pids, pid)
-		}
-	}
-	return pids
-}
-
-// daemonListenerCount returns how many distinct processes hold a *listening* socket on port.
-// More than one means a respawn herd leaked extra daemons that lost the port bind. It is
-// scoped to LISTEN sockets so the test's own healthz client connections are never counted.
-func daemonListenerCount(t *testing.T, port int) int {
+func initHTTPSession(t *testing.T, cfg, token string) string {
 	t.Helper()
-	return len(listenerPIDs(port))
-}
-
-// killDaemonListeners reaps daemons a proxy respawned (and that the test owns no cmd handle
-// for). It targets only LISTEN sockets — never the test process's own client connections to
-// the port — so it cannot SIGKILL the test binary itself.
-func killDaemonListeners(port int) {
-	for _, pid := range listenerPIDs(port) {
-		syscall.Kill(pid, syscall.SIGKILL) //nolint:errcheck
-	}
-}
-
-func TestDaemon_basicToolCall(t *testing.T) {
-	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
-	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
-
-	startDaemon(t, cfg)
-	client := connectCompact(t, cfg)
-	e := client.execEnvelope("svc", "get_item", nil)
-	if e.Error != "" {
-		t.Errorf("expected ok=true, got: %+v", e)
-	}
-}
-
-func TestDaemon_sessionIsolation(t *testing.T) {
-	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"x","name":"test"}`})
-	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
-
-	startDaemon(t, cfg)
-
-	c1 := connectCompact(t, cfg)
-	c2 := connectCompact(t, cfg)
-
-	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, true)
-
-	b1, _ := json.Marshal(c1.execEnvelope("svc", "get_item", nil).Data)
-	if strings.Contains(string(b1), "secret") {
-		t.Errorf("c1: session projection should exclude secret, got: %s", b1)
-	}
-
-	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)
-	if !strings.Contains(string(b2), "secret") {
-		t.Errorf("c2: different session should still have secret, got: %s", b2)
-	}
-}
-
-func TestDaemon_standaloneFlag(t *testing.T) {
-	dir := mockFixtureDir(t, map[string]string{"ping": `{"ok":true}`})
-	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
-
-	// No daemon running — --standalone should work without trying to start one
-	client := startServer(t, cfg)
-	e := client.execEnvelope("svc", "ping", nil)
-	if e.Error != "" {
-		t.Errorf("standalone mode: expected ok=true, got: %+v", e)
-	}
-}
-
-func TestDaemon_healthzEndpoint(t *testing.T) {
-	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
-
-	port := startDaemon(t, cfg)
-	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
-	}
-	var body map[string]any
-	json.NewDecoder(resp.Body).Decode(&body) //nolint:errcheck
-	if body["ok"] != true {
-		t.Errorf("healthz should return ok=true, got: %v", body)
-	}
-}
-
-func readDaemonToken(t *testing.T, configDir string) string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(configDir, "daemon.token"))
-	if err != nil {
-		t.Fatalf("read daemon token: %v", err)
-	}
-	return strings.TrimSpace(string(data))
-}
-
-func initHTTPSession(t *testing.T, baseURL, token string) string {
-	t.Helper()
-	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token, ToolMode: "compact"})
+	resp := daemonPost(t, cfg, daemonPostOpts{Token: token, ToolMode: "compact"})
 	sessionID := resp.Header.Get("Mcp-Session-Id")
 	io.Copy(io.Discard, resp.Body) //nolint:errcheck
 	resp.Body.Close()
@@ -487,17 +392,18 @@ func initHTTPSession(t *testing.T, baseURL, token string) string {
 }
 
 func TestDaemon_HTTPClientDirect(t *testing.T) {
-	baseURL, configDir := daemonBaseURL(t)
-	token := readDaemonToken(t, configDir)
-	sessionID := initHTTPSession(t, baseURL, token)
-	resp := postHTTPToolCall(t, httpToolCall{baseURL: baseURL, sessionID: sessionID, token: token, server: "svc", tool: "get_item"})
-	env := decodeDaemonEnvelope(t, resp)
-	assertInlineGetItem(t, env)
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	token := readDaemonToken(t, cfg)
+	sessionID := initHTTPSession(t, cfg, token)
+	resp := postHTTPToolCall(t, cfg, httpToolCall{sessionID: sessionID, token: token, server: "svc", tool: "get_item"})
+	assertInlineGetItem(t, decodeDaemonEnvelope(t, resp))
 }
 
 func TestDaemon_HTTPRejectsMissingToken(t *testing.T) {
-	baseURL, _ := daemonBaseURL(t)
-	resp := daemonPost(t, baseURL, daemonPostOpts{})
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	resp := daemonPost(t, cfg, daemonPostOpts{})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without token, got %d", resp.StatusCode)
@@ -505,8 +411,9 @@ func TestDaemon_HTTPRejectsMissingToken(t *testing.T) {
 }
 
 func TestDaemon_HTTPRejectsWrongToken(t *testing.T) {
-	baseURL, _ := daemonBaseURL(t)
-	resp := daemonPost(t, baseURL, daemonPostOpts{Token: "wrong-token-value"})
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	resp := daemonPost(t, cfg, daemonPostOpts{Token: "wrong-token-value"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for wrong token, got %d", resp.StatusCode)
@@ -514,9 +421,9 @@ func TestDaemon_HTTPRejectsWrongToken(t *testing.T) {
 }
 
 func TestDaemon_HostHeaderRejection(t *testing.T) {
-	baseURL, configDir := daemonBaseURL(t)
-	token := readDaemonToken(t, configDir)
-	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token, Host: "evil.com"})
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	resp := daemonPost(t, cfg, daemonPostOpts{Token: readDaemonToken(t, cfg), Host: "evil.com"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 for non-loopback Host, got %d", resp.StatusCode)
@@ -524,18 +431,44 @@ func TestDaemon_HostHeaderRejection(t *testing.T) {
 }
 
 func TestDaemon_CrossOriginRejection(t *testing.T) {
-	baseURL, configDir := daemonBaseURL(t)
-	token := readDaemonToken(t, configDir)
-	resp := daemonPost(t, baseURL, daemonPostOpts{Token: token, Origin: "http://evil.com"})
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	resp := daemonPost(t, cfg, daemonPostOpts{Token: readDaemonToken(t, cfg), Origin: "http://evil.com"})
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 for cross-origin request, got %d", resp.StatusCode)
 	}
 }
 
+func TestDaemon_socketAndDirArePrivate(t *testing.T) {
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+
+	si, err := os.Stat(socketPath(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if si.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("expected a Unix socket, got mode %v", si.Mode())
+	}
+	// Linux honors the socket file's own mode on connect.
+	if perm := si.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("socket is group/other-accessible: %04o", perm)
+	}
+	di, err := os.Stat(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// macOS ignores the socket file's mode on connect, so the directory's mode is the boundary there.
+	if perm := di.Mode().Perm(); perm&0o077 != 0 {
+		t.Errorf("socket dir is group/other-accessible: %04o", perm)
+	}
+}
+
 func TestDaemon_TokenFilePermissions(t *testing.T) {
-	_, configDir := daemonBaseURL(t)
-	fi, err := os.Stat(filepath.Join(configDir, "daemon.token"))
+	cfg := daemonForTest(t)
+	startDaemon(t, cfg)
+	fi, err := os.Stat(filepath.Join(cfg, "daemon.token"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +484,7 @@ type daemonPostOpts struct {
 	ToolMode string
 }
 
-func daemonPost(t *testing.T, baseURL string, opts daemonPostOpts) *http.Response {
+func daemonPost(t *testing.T, cfg string, opts daemonPostOpts) *http.Response {
 	t.Helper()
 	params := map[string]any{
 		"protocolVersion": "2024-11-05",
@@ -564,7 +497,7 @@ func daemonPost(t *testing.T, baseURL string, opts daemonPostOpts) *http.Respons
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params,
 	})
-	req, _ := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(string(body)))
+	req, _ := http.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	if opts.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+opts.Token)
@@ -575,41 +508,31 @@ func daemonPost(t *testing.T, baseURL string, opts daemonPostOpts) *http.Respons
 	if opts.Origin != "" {
 		req.Header.Set("Origin", opts.Origin)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonHTTPClient(cfg).Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return resp
 }
 
-func daemonBaseURL(t *testing.T) (string, string) {
-	t.Helper()
-	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
-	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
-	return fmt.Sprintf("http://127.0.0.1:%d", startDaemon(t, cfg)), cfg
-}
-
 type httpToolCall struct {
-	baseURL   string
 	sessionID string
 	token     string
 	server    string
 	tool      string
 }
 
-func postHTTPToolCall(t *testing.T, c httpToolCall) *http.Response {
+func postHTTPToolCall(t *testing.T, cfg string, c httpToolCall) *http.Response {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
 		"params": map[string]any{"name": "call", "arguments": map[string]any{"server": c.server, "tool": c.tool}},
 	})
-	req, _ := http.NewRequest(http.MethodPost, c.baseURL+"/mcp", strings.NewReader(string(body)))
+	req, _ := http.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Mcp-Session-Id", c.sessionID)
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonHTTPClient(cfg).Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -668,26 +591,5 @@ func assertInlineGetItem(t *testing.T, env envelope) {
 	}
 	if data["name"] != "test" {
 		t.Fatalf("expected data.name=test, got %#v", data["name"])
-	}
-}
-
-func TestDaemon_proxyModeToolCall(t *testing.T) {
-	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
-	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
-
-	startDaemon(t, cfg)
-	client := connectProxy(t, cfg)
-	raw := client.mustCall("tools/call", map[string]any{
-		"name":      "svc__get_item",
-		"arguments": map[string]any{},
-	})
-	text, isErr := parseToolCallResult(raw)
-	if isErr {
-		t.Fatalf("proxy mode tool call returned error: %s", text)
-	}
-	if text == "" {
-		t.Error("expected non-empty response from proxy mode tool call via daemon")
 	}
 }

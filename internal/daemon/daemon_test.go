@@ -1,33 +1,42 @@
 package daemon_test
 
 import (
-	"fmt"
+	"net"
 	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/daemon"
 )
 
-func writePortFile(t *testing.T, dir string, port int) {
+// Short path: macOS caps Unix socket paths at 104 bytes, which t.TempDir() exceeds.
+func shortConfigDir(t *testing.T) string {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, "daemon.port"), []byte(fmt.Sprintf("%d", port)), 0644); err != nil {
-		t.Fatal(err)
+	base := "/tmp"
+	if runtime.GOOS == "windows" {
+		base = ""
 	}
+	dir, err := os.MkdirTemp(base, "mini")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck
+	return dir
 }
 
-func serverPort(t *testing.T, srv *httptest.Server) int {
+func startUnixServer(t *testing.T, sock string, h http.HandlerFunc) {
 	t.Helper()
-	u, err := url.Parse(srv.URL)
+	ln, err := net.Listen("unix", sock)
 	if err != nil {
-		t.Fatalf("parse URL: %v", err)
+		t.Fatalf("listen unix %s: %v", sock, err)
 	}
-	var port int
-	fmt.Sscanf(u.Port(), "%d", &port)
-	return port
+	srv := &http.Server{Handler: h}
+	go srv.Serve(ln)                  //nolint:errcheck
+	t.Cleanup(func() { srv.Close() }) //nolint:errcheck
 }
 
 func TestEnsureToken_reusesExistingNonEmptyToken(t *testing.T) {
@@ -102,75 +111,81 @@ func TestEnsureToken_mintsWhenEmpty(t *testing.T) {
 	}
 }
 
-func TestPortFile(t *testing.T) {
-	got := daemon.PortFile("/my/config")
-	want := filepath.Join("/my/config", "daemon.port")
+func TestSocketPath(t *testing.T) {
+	got := daemon.SocketPath("/my/config")
+	want := filepath.Join("/my/config", "daemon.sock")
 	if got != want {
-		t.Errorf("PortFile = %q, want %q", got, want)
+		t.Errorf("SocketPath = %q, want %q", got, want)
 	}
 }
 
-func TestRunningPort_missingFile(t *testing.T) {
-	if got := daemon.RunningPort(t.TempDir()); got != 0 {
-		t.Errorf("expected 0, got %d", got)
+func TestCheckSocketPath_shortPathOK(t *testing.T) {
+	if err := daemon.CheckSocketPath("/tmp/mini"); err != nil {
+		t.Errorf("CheckSocketPath(short) = %v, want nil", err)
 	}
 }
 
-func TestRunningPort_nonNumericContent(t *testing.T) {
-	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "daemon.port"), []byte("not-a-port"), 0644) //nolint:errcheck
-	if got := daemon.RunningPort(dir); got != 0 {
-		t.Errorf("expected 0 for non-numeric port file, got %d", got)
+func TestCheckSocketPath_tooLongRejected(t *testing.T) {
+	dir := "/tmp/" + strings.Repeat("x", 120)
+	err := daemon.CheckSocketPath(dir)
+	if err == nil {
+		t.Fatal("CheckSocketPath(long) = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "too long") {
+		t.Errorf("error = %q, want it to mention the path is too long", err)
 	}
 }
 
-func TestRunningPort_healthyDaemonReturnsPort(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+func TestRunning_noSocketReturnsFalse(t *testing.T) {
+	if daemon.Running(shortConfigDir(t)) {
+		t.Error("expected false when no socket exists")
+	}
+}
+
+func TestRunning_healthyDaemonReturnsTrue(t *testing.T) {
+	dir := shortConfigDir(t)
+	startUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-	port := serverPort(t, srv)
-	dir := t.TempDir()
-	writePortFile(t, dir, port)
-	if got := daemon.RunningPort(dir); got != port {
-		t.Errorf("RunningPort = %d, want %d", got, port)
+	})
+	if !daemon.Running(dir) {
+		t.Error("expected true for healthy daemon")
 	}
 }
 
-func TestRunningPort_non200ReturnsZero(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+func TestRunning_non200ReturnsFalse(t *testing.T) {
+	dir := shortConfigDir(t)
+	startUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	dir := t.TempDir()
-	writePortFile(t, dir, serverPort(t, srv))
-	if got := daemon.RunningPort(dir); got != 0 {
-		t.Errorf("expected 0 for non-200 daemon, got %d", got)
+	})
+	if daemon.Running(dir) {
+		t.Error("expected false for non-200 daemon")
 	}
 }
 
-func TestRunningPort_connectionRefusedReturnsZero(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
-	port := serverPort(t, srv)
-	srv.Close()
-	dir := t.TempDir()
-	writePortFile(t, dir, port)
-	if got := daemon.RunningPort(dir); got != 0 {
-		t.Errorf("expected 0 for unreachable daemon, got %d", got)
+func TestRunning_staleSocketFileReturnsFalse(t *testing.T) {
+	dir := shortConfigDir(t)
+	if err := os.WriteFile(daemon.SocketPath(dir), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if daemon.Running(dir) {
+		t.Error("expected false for a non-socket file at the socket path")
 	}
 }
 
-func TestRunningPort_checksHealthzPath(t *testing.T) {
-	var gotPath string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
+func TestRunning_checksHealthzPath(t *testing.T) {
+	dir := shortConfigDir(t)
+	gotPath := make(chan string, 1)
+	startUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, r *http.Request) {
+		gotPath <- r.URL.Path
 		w.WriteHeader(http.StatusOK)
-	}))
-	defer srv.Close()
-	dir := t.TempDir()
-	writePortFile(t, dir, serverPort(t, srv))
-	daemon.RunningPort(dir)
-	if gotPath != "/healthz" {
-		t.Errorf("expected /healthz path, got %q", gotPath)
+	})
+	daemon.Running(dir)
+	select {
+	case p := <-gotPath:
+		if p != "/healthz" {
+			t.Errorf("expected /healthz path, got %q", p)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("healthcheck did not call the daemon")
 	}
 }
