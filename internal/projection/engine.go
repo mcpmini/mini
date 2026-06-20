@@ -68,7 +68,7 @@ func project(value any, ctx projCtx, omitted *[]Omission) any {
 	case []any:
 		return projectArray(v, ctx, omitted)
 	case string:
-		return projectString(v, ctx, "", omitted)
+		return projectString(v, ctx, "", omitted, ctx.path)
 	default:
 		return value
 	}
@@ -138,31 +138,28 @@ func projectedArrayCap(currentLen, originalLen int) int {
 	return currentLen
 }
 
-// projectString applies markup stripping, then omit_limits (full replacement
-// with a placeholder), then string_limits (boundary-aware truncation). path,
-// if provided, is the field's full pointer into the response.
-func projectString(s string, ctx projCtx, fieldName string, omitted *[]Omission, path ...[]string) string {
+func projectString(s string, ctx projCtx, fieldName string, omitted *[]Omission, path []string) string {
 	if ctx.cfg.stripContent || (ctx.cfg.autoStripThreshold > 0 && len(s) >= ctx.cfg.autoStripThreshold && ctx.cfg.contentFieldSet[fieldName]) {
 		s = StripMarkup(s)
 	}
 	if omitLimit := ctx.cfg.omitLimitFor(fieldName); omitLimit > 0 && len(s) > omitLimit {
-		return replaceWithPlaceholder(s, fieldPath(path), omitted)
+		return replaceWithPlaceholder(s, formatPath(path), omitted)
 	}
 	limit := ctx.cfg.stringLimitFor(fieldName)
 	if limit > 0 && len(s) > limit {
 		cut := truncateAtBoundary(s, limit)
-		recordOmission(fieldPath(path), len(s)-len(cut), omitted)
+		recordOmission(formatPath(path), len(s)-len(cut), omitted)
 		return cut
 	}
 	return s
 }
 
-func fieldPath(path [][]string) string {
-	if len(path) == 0 || len(path[0]) == 0 {
+func formatPath(path []string) string {
+	if len(path) == 0 {
 		return ""
 	}
 	var b strings.Builder
-	for _, seg := range path[0] {
+	for _, seg := range path {
 		if strings.HasPrefix(seg, "[") {
 			b.WriteString(seg)
 		} else {

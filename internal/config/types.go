@@ -2,11 +2,6 @@ package config
 
 // Config is the top-level mini configuration.
 type Config struct {
-	// InlineThreshold is the max projected-response token estimate below which
-	// responses are returned inline (no file written). Measured after projection
-	// and slimming — the actual tokens the agent would see inline. Default: 2000.
-	InlineThreshold int `yaml:"inline_threshold"`
-
 	// DefaultStringLimit is the default max chars for string fields across all
 	// projections. 0 means no limit (default). Override per-field with
 	// string_limits in a projection config.
@@ -84,7 +79,6 @@ var DefaultContentFields = []string{
 
 func DefaultConfig() *Config {
 	return &Config{
-		InlineThreshold:      3500,
 		DefaultStringLimit:   0,
 		DefaultDepthLimit:    0,
 		AutoStripThreshold:   0,

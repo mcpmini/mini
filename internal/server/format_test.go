@@ -18,15 +18,14 @@ import (
 )
 
 func newSrvWithFormat(t *testing.T, format string) *server.Server {
-	return newSrvWithResponse(t, format, 10000, `[{"number":1,"title":"bug one","state":"open"},{"number":2,"title":"feat two","state":"closed"}]`)
+	return newSrvWithResponse(t, format, `[{"number":1,"title":"bug one","state":"open"},{"number":2,"title":"feat two","state":"closed"}]`)
 }
 
-func newSrvWithResponse(t *testing.T, format string, inlineThreshold int, payload string) *server.Server {
+func newSrvWithResponse(t *testing.T, format string, payload string) *server.Server {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = inlineThreshold
 	cfg.ResponseFormat = format
 	srv := server.New(cfg, logger)
 
@@ -99,7 +98,6 @@ func newSrvWithConfigFormat(t *testing.T, format string) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.ResponseFormat = format
 	issues := `[{"number":1,"title":"bug"},{"number":2,"title":"feat"}]`
 	issuesJSON, _ := json.Marshal(issues)
@@ -139,7 +137,7 @@ func TestLinesFormatIncludesFilePathWhenElisionOccurs(t *testing.T) {
 func elisionLinesResponse(t *testing.T, payload string) []string {
 	t.Helper()
 	// Use exclude_always to trigger elision, which causes a raw file to be written.
-	srv := newSrvWithResponse(t, "mini", 10000, payload)
+	srv := newSrvWithResponse(t, "mini", payload)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
 		"projection": map[string]any{"format": "mini", "exclude_always": []string{"secret"}},

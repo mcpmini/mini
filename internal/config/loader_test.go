@@ -77,9 +77,6 @@ func assertOneServerName(t *testing.T, dir, want string) {
 
 func assertDefaultLoadState(t *testing.T, cfg *config.Config, servers []config.ServerConfig) {
 	t.Helper()
-	if cfg.InlineThreshold != 3500 {
-		t.Errorf("expected default inline threshold 2000, got %d", cfg.InlineThreshold)
-	}
 	if len(servers) != 0 {
 		t.Errorf("expected no servers, got %d", len(servers))
 	}
@@ -109,14 +106,10 @@ func TestLoadMainConfig(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 log_level: debug
-inline_threshold: 200
 `)
 	cfg, _ := mustLoadConfig(t, dir)
 	if cfg.LogLevel != "debug" {
 		t.Errorf("expected debug, got %s", cfg.LogLevel)
-	}
-	if cfg.InlineThreshold != 200 {
-		t.Errorf("expected 200, got %d", cfg.InlineThreshold)
 	}
 }
 
@@ -395,7 +388,6 @@ func assertDefaultConfigFields(t *testing.T, cfg *config.Config) {
 		got  any
 		want any
 	}{
-		{"InlineThreshold", cfg.InlineThreshold, 3500},
 		{"DefaultDepthLimit", cfg.DefaultDepthLimit, 0},
 		{"DefaultStringLimit", cfg.DefaultStringLimit, 0},
 		{"LogLevel", cfg.LogLevel, "info"},

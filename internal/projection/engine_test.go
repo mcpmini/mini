@@ -354,6 +354,69 @@ func TestTruncateAtBoundary_utf8Safe(t *testing.T) {
 	}
 }
 
+func TestArrayElementOmissionPath(t *testing.T) {
+	long := strings.Repeat("x", 500)
+	value := []any{long, long, "short"}
+
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+
+	if len(result.Omitted) != 2 {
+		t.Fatalf("expected 2 omissions (one per long element), got %v", result.Omitted)
+	}
+	for i, o := range result.Omitted {
+		want := "[" + string(rune('0'+i)) + "]"
+		if o.Path != want {
+			t.Errorf("omission[%d].Path = %q, want %q", i, o.Path, want)
+		}
+	}
+}
+
+func TestArrayElementOmissionPathInsideObject(t *testing.T) {
+	long := strings.Repeat("x", 500)
+	value := map[string]any{
+		"lines": []any{long, long},
+	}
+
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+
+	if len(result.Omitted) != 2 {
+		t.Fatalf("expected 2 omissions, got %v", result.Omitted)
+	}
+	for i, o := range result.Omitted {
+		want := ".lines[" + string(rune('0'+i)) + "]"
+		if o.Path != want {
+			t.Errorf("omission[%d].Path = %q, want %q", i, o.Path, want)
+		}
+	}
+}
+
+func TestOmitLimits(t *testing.T) {
+	long := strings.Repeat("x", 500)
+	cfg := &config.ProjectionConfig{
+		OmitLimits: map[string]int{"patch": 100},
+	}
+	value := map[string]any{
+		"patch": long,
+		"title": long,
+	}
+
+	result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+	m := result.Summary.(map[string]any)
+
+	if _, ok := m["patch"].(string); !ok {
+		t.Fatal("patch should still be present as placeholder string")
+	}
+	if !strings.HasPrefix(m["patch"].(string), "<omitted:") {
+		t.Errorf("patch should be replaced with omit placeholder, got %q", m["patch"])
+	}
+	if len(result.Omitted) != 1 || result.Omitted[0].Path != ".patch" {
+		t.Errorf("expected one omission for .patch, got %v", result.Omitted)
+	}
+	if strings.HasPrefix(m["title"].(string), "<omitted:") {
+		t.Errorf("title should not be omitted (no omit_limits entry), got %q", m["title"])
+	}
+}
+
 func TestSlimKeepsFalseAndZeroValues(t *testing.T) {
 	cfg := &config.ProjectionConfig{}
 	value := map[string]any{

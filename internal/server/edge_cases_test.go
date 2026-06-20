@@ -20,7 +20,6 @@ func newEdgeServer(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 

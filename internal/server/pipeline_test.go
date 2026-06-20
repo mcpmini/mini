@@ -28,7 +28,6 @@ func newPipelineServer(t *testing.T, toolName string, response string) (*server.
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	fake := &transport.FakeConnection{
 		Tools:     []transport.ToolDefinition{{Name: toolName, Description: toolName, InputSchema: json.RawMessage(`{}`)}},

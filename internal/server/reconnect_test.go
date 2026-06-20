@@ -115,7 +115,6 @@ func newReconnectSrv(t *testing.T) (*server.Server, *clock.Fake) {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	fakeClock := clock.NewFake(time.Now())
 	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock)), fakeClock
 }
@@ -204,7 +203,6 @@ func newPerSessionSrv(t *testing.T, url string) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: url, SessionMode: config.SessionModePerSession}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
@@ -318,7 +316,6 @@ func TestClose_concurrentConnError(t *testing.T) {
 	for i := range 50 {
 		cfg := config.DefaultConfig()
 		cfg.ResponseDir = t.TempDir()
-		cfg.InlineThreshold = 10000
 		fakeClock := clock.NewFake(time.Now())
 		srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock))
 
