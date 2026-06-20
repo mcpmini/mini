@@ -12,16 +12,16 @@ Do not explain away suspicious patterns — investigate until you have proof or 
 
 ## Step 0 — Gather the diff and check out the PR branch
 
-Use the GitHub MCP tools if available, otherwise fall back to the `gh` CLI. Get the PR description, diff, and full file list.
+Use GitHub through mini's MCP integration or the mini CLI when possible to dogfood this repository's tooling. Otherwise, fall back to the `gh` CLI. Get the PR description, diff, and full file list.
 
 **Check out the PR branch in a dedicated worktree** so you can read the actual changed files (not the diff against your current branch) and run the check suite against the PR's code:
 
 1. Extract the PR number from the arguments (e.g. `1` from `https://github.com/mcpmini/mini/pull/1` or from `#1` or bare `1`).
 2. Fetch the PR's head ref via `git fetch origin <head-branch>`.
-3. Create a worktree: `git worktree add .claude/worktrees/review-pr-<number> FETCH_HEAD --detach`. Using detached HEAD means this works even if another worktree already has the branch checked out.
-4. Switch into it with `EnterWorktree` using the `path` parameter (not `name`).
+3. Create a worktree: `git worktree add .agents/worktrees/review-pr-<number> FETCH_HEAD --detach`. Using detached HEAD means this works even if another worktree already has the branch checked out.
+4. Use the coding agent's native worktree support when available, e.g. Claude Code `EnterWorktree(path: ".agents/worktrees/review-pr-<number>")`. Otherwise, run subsequent commands from `.agents/worktrees/review-pr-<number>`.
 
-If the worktree already exists (e.g. from a prior review), enter it directly with `EnterWorktree(path: ".claude/worktrees/review-pr-<number>")`.
+If the worktree already exists (e.g. from a prior review), enter it directly.
 
 Then **read every changed file in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
 
@@ -206,7 +206,7 @@ go test -race -tags test -run TestReview ./path/to/package/... -v
 
 This pass works only from the diff — no deep exploration. Flag quickly, one line each.
 
-**Project style violations** (CLAUDE.md):
+**Project style violations** (AGENTS.md):
 - Boolean or empty-string flags as positional args — `check.sh` catches function length and param count mechanically; this is what it misses
 
 **Comments that shouldn't exist:**
