@@ -188,10 +188,8 @@ func assertRemoveServer(t *testing.T, srv *server.Server) {
 	}
 }
 
-// TestHelperEnvEcho is not a real test — it's a subprocess helper invoked by
-// TestStdioEnvPassthrough. It implements a minimal MCP server with one tool,
-// get_env, that returns MINI_TEST_VAR from its environment.
-func TestHelperEnvEcho(t *testing.T) {
+// TestHelperProcessEnvEcho is not a real test — the Test prefix lets -test.run invoke it as a subprocess MCP server.
+func TestHelperProcessEnvEcho(t *testing.T) {
 	if os.Getenv("MINI_HELPER_PROCESS") != "1" {
 		return
 	}
@@ -234,7 +232,6 @@ func envEchoWrite(id any, result any) {
 	fmt.Fprintf(os.Stdout, "%s\n", b)
 }
 
-// TestStdioEnvPassthrough verifies that ServerConfig.Env reaches the subprocess.
 // Env replaces (not appends to) the subprocess environment, so callers must
 // include PATH and other required vars explicitly alongside any auth tokens.
 func TestStdioEnvPassthrough(t *testing.T) {
@@ -247,7 +244,7 @@ func TestStdioEnvPassthrough(t *testing.T) {
 	sc := config.ServerConfig{
 		Name:    "envtest",
 		Command: os.Args[0],
-		Args:    []string{"-test.run=TestHelperEnvEcho"},
+		Args:    []string{"-test.run=TestHelperProcessEnvEcho"},
 		Env:     []string{"MINI_HELPER_PROCESS=1", "MINI_TEST_VAR=hello_from_mini"},
 	}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
