@@ -75,7 +75,7 @@ func atomicWriteFile(path, data string) (err error) {
 		}
 	}()
 	if _, err = tmp.WriteString(data); err != nil {
-		_ = tmp.Close() // already failing; the temp is discarded, nothing to bubble up
+		_ = tmp.Close()
 		return err
 	}
 	if err = tmp.Close(); err != nil {

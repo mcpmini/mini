@@ -38,7 +38,7 @@ flowchart LR
   and per-chat sessions; each `mini connect` just relays JSON-RPC over `POST /mcp` (HTTP spoken over
   the socket — the request URL host is a placeholder the dialer ignores).
 - The code lives in `internal/proxy` (the proxy side), `internal/server` (the HTTP daemon),
-  `internal/daemon` (rendezvous and the spawn lock), and `cmd/mini/daemon.go` (lifecycle).
+  `internal/daemon` (rendezvous and spawn lock), and `cmd/mini/daemon.go` (lifecycle).
 - **Only the chat path uses the daemon today.** Direct CLI commands like `mini call` and `mini ls`
   currently connect to upstreams themselves and don't go through the daemon — they could be routed
   through it later to share its warm connections, but aren't yet.
@@ -114,12 +114,12 @@ call without anyone restarting anything:
    are retried: a dial failure (never reached the daemon), `401` (rejected before dispatch), or
    `not initialized` (the session was lost, gated before dispatch). Anything else — including a
    connection reset *after* the bytes were sent — is returned to the agent unretried.
-2. **Respawn, single-winner.** The proxy respawns the daemon if needed. A `flock` spawn lock lets
-   one proxy spawn while the rest block and then find it already up. Binding the socket sits
-   underneath as the ultimate guarantee — only one process can `net.Listen` on the path — so two
-   daemons are impossible even if the lock is skipped; the lock only removes the wasted-spawn herd
-   at scale. The socket path is fixed, so recovery never has to re-address: a respawned daemon
-   returns on the same path and the proxy's client keeps working.
+2. **Respawn, single-winner.** The proxy respawns the daemon if needed. A `flock` spawn lock
+   serializes the attempt so that concurrent proxies produce a single daemon rather than a herd.
+   Binding the socket is the ultimate guarantee — only one process can `net.Listen` on the path —
+   so two daemons are impossible even if the lock is skipped; the lock eliminates the wasted-spawn
+   herd and the TOCTOU window during slow startup. The socket path is fixed, so recovery never has
+   to re-address: a respawned daemon returns on the same path and the proxy's client keeps working.
 3. **Reconnect.** Re-read the token, re-`initialize` the session, retry the original request.
    Bounded attempts with jittered backoff.
 4. **One recovery per proxy.** Concurrent in-flight requests share a generation-counted,
@@ -154,7 +154,7 @@ prior art.
 | Approach | Who uses it | Verdict |
 |---|---|---|
 | **Unix socket bind** (one binder wins; the path is the lock) | ssh-agent, Docker (`docker.sock`), gpg-agent, [tmux](https://man7.org/linux/man-pages/man1/tmux.1.html), [git-credential-cache](https://git-scm.com/docs/git-credential-cache--daemon) | **Primary.** No TCP port (so nothing to squat), filesystem permissions are the access boundary, and the kernel releases the bind on death — no stale lock. Works on macOS/Linux and Windows (`AF_UNIX`). |
-| **[`flock`](https://man7.org/linux/man-pages/man2/flock.2.html) spawn lock** | `apt`/`dpkg` locks, many CLIs | **Added,** to collapse the spawn herd at scale. Advisory, auto-released on process death. |
+| **[`flock`](https://man7.org/linux/man-pages/man2/flock.2.html) spawn lock** | `apt`/`dpkg` locks, BuildKit, Syncthing, Podman | **Used** to serialize the spawn herd. Advisory, auto-released on process death. Same approach as [`gofrs/flock`](https://github.com/gofrs/flock), hand-rolled to avoid the dependency. |
 | **`/healthz` liveness probe** | Kubernetes liveness/readiness, cloud load balancers | **Used** for rendezvous. Beats `kill(pid,0)` — it confirms the service actually answers, defeating PID reuse. |
 | **PID file** | [PostgreSQL `postmaster.pid`](https://www.crunchydata.com/blog/postgres-postmaster-file-explained), MongoDB (`mongod.lock`), nginx, sshd | **Rejected.** The classic stale-lock / PID-reuse failure: a manual `rm` after a crash, a recycled PID matching an unrelated process, broken on Windows. If used at all, it's debug metadata *behind* a real lock — never the lock itself. |
 | **OS supervision** | systemd, launchd, Windows services, runit | **Right for managed/server deployments** where the OS owns the lifecycle — not the zero-config default we want. |

@@ -143,5 +143,9 @@ func runDaemonStatus(configDir string) {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		fmt.Printf("daemon: unhealthy (HTTP %d) — %s\n", resp.StatusCode, body)
+		return
+	}
 	fmt.Printf("daemon: running — %s\n", body)
 }

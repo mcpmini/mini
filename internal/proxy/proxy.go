@@ -16,7 +16,6 @@ import (
 
 const maxConcurrentForwards = 32
 
-// RunParams configures a daemon proxy run.
 type RunParams struct {
 	// Client's transport targets the daemon's socket; one client serves all forwards.
 	Client    *http.Client
@@ -29,15 +28,12 @@ type RunParams struct {
 	Reresolve func() (token string, err error)
 }
 
-// daemonConn identifies the target daemon and the credentials for one forward.
 type daemonConn struct {
 	client    *http.Client
 	sessionID string
 	token     string
 }
 
-// Run reads JSON-RPC from p.In, forwards each request to the daemon at p.Port,
-// and writes responses back to p.Out. Blocks until EOF.
 func Run(p RunParams) error {
 	return runWithLimit(p, maxConcurrentForwards)
 }

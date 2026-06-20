@@ -2,13 +2,11 @@ package proxy
 
 import "sync"
 
-// gen tracks the daemon generation so concurrent forwards can collapse a failure into a single recovery.
 type linkState struct {
-	token string
-	gen   uint64
+	token      string
+	generation uint64
 }
 
-// The first goroutine to detect a dead daemon re-resolves and bumps gen; the rest see the new gen and reuse the result.
 type daemonLink struct {
 	mu        sync.Mutex
 	state     linkState
@@ -30,13 +28,13 @@ func (d *daemonLink) snapshot() linkState {
 func (d *daemonLink) recover(failedGen uint64) (linkState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.state.gen != failedGen || d.reresolve == nil {
+	if d.state.generation != failedGen || d.reresolve == nil {
 		return d.state, nil
 	}
 	t, err := d.reresolve()
 	if err != nil {
 		return d.state, err
 	}
-	d.state = linkState{token: t, gen: d.state.gen + 1}
+	d.state = linkState{token: t, generation: d.state.generation + 1}
 	return d.state, nil
 }
