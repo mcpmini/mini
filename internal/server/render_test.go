@@ -347,6 +347,36 @@ func TestRenderLines_data(t *testing.T) {
 	})
 }
 
+func TestRenderLines_notes(t *testing.T) {
+	t.Run("elided keys produce note line", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Elided: []string{"secret", "token"}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: secret, token elided") {
+			t.Errorf("expected note line with elided keys, got: %q", out)
+		}
+	})
+	t.Run("hint produces hint line", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Hint: "use get_item for full details"}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "hint: use get_item for full details") {
+			t.Errorf("expected hint line, got: %q", out)
+		}
+	})
+	t.Run("note and hint both present", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Elided: []string{"secret"}, Hint: "call read for full data"}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note:") || !strings.Contains(out, "hint:") {
+			t.Errorf("expected both note and hint lines, got: %q", out)
+		}
+	})
+	t.Run("no projection metadata produces no note or hint", func(t *testing.T) {
+		out := RenderLines("srv", "tool", makeEnvelope(true, "hello"))
+		if strings.Contains(out, "note:") || strings.Contains(out, "hint:") {
+			t.Errorf("expected no note or hint for clean envelope, got: %q", out)
+		}
+	})
+}
+
 func TestRenderLines_collections(t *testing.T) {
 	t.Run("top-level array produces one line per item", func(t *testing.T) {
 		items := []any{map[string]any{"name": "alice"}, map[string]any{"name": "bob"}}

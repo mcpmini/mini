@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -34,19 +33,17 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	text1 := toolResultText(t, resp1)
 	t.Logf("initial response: %s", text1)
 
-	if !strings.Contains(text1, "File:") {
-		t.Fatal("expected file to be written — exclusion of 'secret' should trigger raw file write")
+	var env map[string]any
+	if err := json.Unmarshal([]byte(text1), &env); err != nil {
+		t.Fatalf("expected JSON envelope from projected call, got: %s", text1)
 	}
-
-	var filePath string
-	for _, line := range strings.Split(text1, "\n") {
-		if strings.HasPrefix(line, "File: ") {
-			filePath = strings.TrimPrefix(line, "File: ")
-			break
-		}
+	mini, _ := env["__mini"].(map[string]any)
+	if mini == nil {
+		t.Fatal("expected __mini key — exclusion of 'secret' should produce projection envelope")
 	}
+	filePath, _ := mini["file"].(string)
 	if filePath == "" {
-		t.Fatalf("could not extract file path from: %s", text1)
+		t.Fatalf("expected __mini.file to be set, got: %s", text1)
 	}
 
 	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath}))

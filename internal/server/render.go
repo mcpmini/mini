@@ -21,6 +21,9 @@ func RenderLines(server, tool string, e *response.Envelope) string {
 		fmt.Fprintf(&b, "ERROR %s: %s\n", e.Error, e.Message)
 		return b.String()
 	}
+	if note := projectionNote(e); note != "" {
+		fmt.Fprintf(&b, "note: %s\n", note)
+	}
 	writeLineData(&b, e.Data)
 	return b.String()
 }

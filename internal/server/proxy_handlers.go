@@ -76,10 +76,6 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 
 func (s *Server) proxyProject(p envelopeParams) (any, error) {
 	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
-	if projCfg == nil {
-		p.Session.recordCall(p.LatencyMs, 0, false)
-		return string(p.Raw), nil
-	}
 	env, stats, err := s.buildProjectedEnvelope(p.Entry.Server, p.Tool, p.Raw, projCfg)
 	if err != nil {
 		return nil, err
@@ -97,7 +93,7 @@ type renderProxyResultParams struct {
 
 func (s *Server) renderProxyResult(p renderProxyResultParams) string {
 	format := s.cfg.ResponseFormat
-	if p.ProjCfg.Format != "" {
+	if p.ProjCfg != nil && p.ProjCfg.Format != "" {
 		format = p.ProjCfg.Format
 	}
 	if format == "mini" {
@@ -123,12 +119,16 @@ func marshalProxyData(data any) string {
 }
 
 func formatProjectedInline(env *response.Envelope) string {
-	b, _ := json.MarshalIndent(env.Data, "", "  ")
-	header := "[Projected — " + projectionNote(env) + "]"
-	if env.File != nil {
-		header += "\nFile: " + *env.File
+	meta := map[string]any{}
+	if note := projectionNote(env); note != "" {
+		meta["msg"] = note
 	}
-	return header + "\n" + string(b)
+	if env.File != nil {
+		meta["file"] = *env.File
+	}
+	out := map[string]any{"__mini": meta, "data": env.Data}
+	b, _ := json.Marshal(out)
+	return string(b)
 }
 
 func projectionNote(env *response.Envelope) string {
