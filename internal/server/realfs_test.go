@@ -235,7 +235,6 @@ func envEchoWrite(id any, result any) {
 func TestStdioEnvPassthrough(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 
