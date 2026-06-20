@@ -130,19 +130,19 @@ func TestLinesFormatPerToolOverride(t *testing.T) {
 	}
 }
 
-func TestLinesFormatIncludesSpilledFilePath(t *testing.T) {
-	payload := `{"items":[{"number":1,"title":"` + strings.Repeat("x", 400) + `"},{"number":2,"title":"` + strings.Repeat("y", 400) + `"}]}`
-	lines := spilledLinesResponse(t, payload)
-	assertSpilledLinesFormat(t, lines)
+func TestLinesFormatIncludesFilePathWhenElisionOccurs(t *testing.T) {
+	payload := `{"items":[{"number":1,"title":"bug one"},{"number":2,"title":"feat two"}],"secret":"hidden"}`
+	lines := elisionLinesResponse(t, payload)
+	assertElisionLinesFormat(t, lines)
 }
 
-func spilledLinesResponse(t *testing.T, payload string) []string {
+func elisionLinesResponse(t *testing.T, payload string) []string {
 	t.Helper()
-	// Use threshold=1 so the raw response always exceeds it, triggering file write.
-	srv := newSrvWithResponse(t, "mini", 1, payload)
+	// Use exclude_always to trigger elision, which causes a raw file to be written.
+	srv := newSrvWithResponse(t, "mini", 10000, payload)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"format": "mini"},
+		"projection": map[string]any{"format": "mini", "exclude_always": []string{"secret"}},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
@@ -154,22 +154,22 @@ func spilledLinesResponse(t *testing.T, payload string) []string {
 	return strings.Split(strings.TrimSpace(text), "\n")
 }
 
-func assertSpilledLinesFormat(t *testing.T, lines []string) {
+func assertElisionLinesFormat(t *testing.T, lines []string) {
 	t.Helper()
-	if len(lines) != 1 {
-		t.Fatalf("expected single header line for spilled response, got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
+	if len(lines) < 2 {
+		t.Fatalf("expected header + data lines, got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
 	}
 	if !strings.HasPrefix(lines[0], "[gh.list_issues] file:") {
-		t.Fatalf("expected file header, got: %s", lines[0])
+		t.Fatalf("expected file header on first line, got: %s", lines[0])
 	}
-	assertSpilledLinesFile(t, lines[0])
+	assertElisionLinesFile(t, lines[0])
 }
 
-func assertSpilledLinesFile(t *testing.T, header string) {
+func assertElisionLinesFile(t *testing.T, header string) {
 	t.Helper()
 	path := strings.TrimPrefix(header, "[gh.list_issues] file:")
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected spilled response file to exist: %v", err)
+		t.Fatalf("expected raw response file to exist: %v", err)
 	}
 }
 

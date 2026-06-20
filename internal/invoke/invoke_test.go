@@ -45,7 +45,7 @@ func noopBuilder(t *testing.T) *response.Builder {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	return response.NewBuilder(store, 500000)
+	return response.NewBuilder(store)
 }
 
 func noopDefaults() *projection.Defaults {
@@ -234,14 +234,14 @@ func TestBuildEnvelope_TruncationRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if env.Truncated["body"] == 0 {
-		t.Errorf("expected truncated[body] > 0, got %v", env.Truncated)
+	if len(env.Omitted) == 0 || env.Omitted[0].Bytes == 0 {
+		t.Errorf("expected omitted[0].Bytes > 0, got %v", env.Omitted)
 	}
 	b, _ := json.Marshal(env.Data)
 	if contains(string(b), longBody) {
 		t.Errorf("body should be truncated in data, got full value")
 	}
-	// file only written when summary exceeds inline_threshold, not on truncation alone
+	// file written when omission occurred
 }
 
 // Invoke (end-to-end)

@@ -76,25 +76,20 @@ func TestEvictExpired_keepsNonExpired(t *testing.T) {
 	}
 }
 
-func TestEvictExpired_removesRawPairFile(t *testing.T) {
+func TestEvictExpired_removesRawFile(t *testing.T) {
 	dir := t.TempDir()
-	s, _ := NewStore(StoreConfig{Dir: dir, TTL: 50*time.Millisecond, BudgetMB: 100, CleanupInterval: time.Hour})
+	s, _ := NewStore(StoreConfig{Dir: dir, TTL: 50 * time.Millisecond, BudgetMB: 100, CleanupInterval: time.Hour})
 	defer s.Close()
 
-	slim := map[string]any{"_meta": map[string]any{}, "data": "test"}
-	slimPath, err := s.WritePair(slim, []byte(`{"full":"data"}`))
+	path, err := s.WriteRaw([]byte(`{"full":"data"}`))
 	if err != nil {
-		t.Fatalf("WritePair: %v", err)
+		t.Fatalf("WriteRaw: %v", err)
 	}
-	rawPath := strings.TrimSuffix(slimPath, ".json") + ".raw.json"
 
 	time.Sleep(100 * time.Millisecond)
 	s.evictExpired()
 
-	if _, err := os.Stat(slimPath); !os.IsNotExist(err) {
-		t.Error("slim file should be deleted after TTL")
-	}
-	if _, err := os.Stat(rawPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("raw file should be deleted after TTL")
 	}
 }
@@ -322,46 +317,20 @@ func TestParseTimestamp_rawFileIgnored(t *testing.T) {
 	}
 }
 
-func TestWritePair_writesBothFiles(t *testing.T) {
+func TestWriteRaw_writesFile(t *testing.T) {
 	s := newStore(t)
-	slim := map[string]any{"_meta": map[string]any{}, "items": []any{"a", "b"}}
-	slimPath, err := s.WritePair(slim, []byte(`{"raw":true,"items":["a","b"]}`))
+	path, err := s.WriteRaw([]byte(`{"raw":true,"items":["a","b"]}`))
 	if err != nil {
-		t.Fatalf("WritePair: %v", err)
+		t.Fatalf("WriteRaw: %v", err)
 	}
 
-	rawPath := strings.TrimSuffix(slimPath, ".json") + ".raw.json"
-
-	if _, err := os.Stat(slimPath); err != nil {
-		t.Errorf("slim file not written: %v", err)
-	}
-	if _, err := os.Stat(rawPath); err != nil {
+	if _, err := os.Stat(path); err != nil {
 		t.Errorf("raw file not written: %v", err)
 	}
 
-	// Raw file should be pretty-printed
-	rawData, _ := os.ReadFile(rawPath)
+	rawData, _ := os.ReadFile(path)
 	if !json.Valid(rawData) {
 		t.Errorf("raw file is not valid JSON: %s", rawData)
-	}
-}
-
-func TestWritePair_setsRawPathInMeta(t *testing.T) {
-	s := newStore(t)
-	slim := map[string]any{"_meta": map[string]any{"id": "test"}, "data": "x"}
-	slimPath, err := s.WritePair(slim, []byte(`{"raw":"data"}`))
-	if err != nil {
-		t.Fatalf("WritePair: %v", err)
-	}
-
-	slimData, _ := os.ReadFile(slimPath)
-	var out map[string]any
-	json.Unmarshal(slimData, &out)
-
-	meta, _ := out["_meta"].(map[string]any)
-	rawVal, _ := meta["raw"].(string)
-	if !strings.HasSuffix(rawVal, ".raw.json") {
-		t.Errorf("expected _meta.raw to point to .raw.json file, got: %v", rawVal)
 	}
 }
 
@@ -375,15 +344,16 @@ func TestNewStore_invalidDir(t *testing.T) {
 	}
 }
 
-func TestWritePair_marshalError(t *testing.T) {
+func TestWriteRaw_unwritableFile(t *testing.T) {
 	s := newStore(t)
-	slimData := map[string]any{
-		"_meta": map[string]any{},
-		"bad":   make(chan int),
+	// WriteRaw with invalid JSON still succeeds (prettyJSON passes through)
+	path, err := s.WriteRaw([]byte(`not json`))
+	if err != nil {
+		t.Fatalf("WriteRaw: %v", err)
 	}
-	_, err := s.WritePair(slimData, []byte(`{"ok":true}`))
-	if err == nil {
-		t.Error("expected error when slimData contains an unmarshalable value")
+	data, _ := os.ReadFile(path)
+	if string(data) != "not json" {
+		t.Errorf("expected passthrough for non-JSON, got: %s", data)
 	}
 }
 
@@ -415,24 +385,19 @@ func TestWriteRaw_concurrent(t *testing.T) {
 	}
 }
 
-// TestWritePair_doesNotMutateCallerMap ensures WritePair does not mutate the
-// _meta sub-map of the slimData passed by the caller. Regression for the bug
-// where injectRawPath wrote directly into the caller's map.
-func TestWritePair_doesNotMutateCallerMap(t *testing.T) {
+func TestWriteRaw_prettyPrintsValidJSON(t *testing.T) {
 	s := newStore(t)
-	meta := map[string]any{"shape": "object", "fields": []string{"a", "b"}}
-	slim := map[string]any{"_meta": meta, "a": 1, "b": 2}
-
-	_, err := s.WritePair(slim, []byte(`{"a":1,"b":2}`))
+	compact := []byte(`{"a":1,"b":[1,2,3]}`)
+	path, err := s.WriteRaw(compact)
 	if err != nil {
-		t.Fatalf("WritePair: %v", err)
+		t.Fatalf("WriteRaw: %v", err)
 	}
-
-	if _, injected := meta["raw"]; injected {
-		t.Error("WritePair mutated caller's _meta map: raw key was injected")
+	data, _ := os.ReadFile(path)
+	if string(data) == string(compact) {
+		t.Error("expected pretty-printed output to differ from compact input")
 	}
-	if _, injected := slim["raw"]; injected {
-		t.Error("WritePair mutated caller's slim map: unexpected raw key")
+	if !json.Valid(data) {
+		t.Errorf("expected valid JSON output, got: %s", data)
 	}
 }
 
