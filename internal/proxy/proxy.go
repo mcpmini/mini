@@ -26,8 +26,7 @@ type RunParams struct {
 	Resolver  *DaemonResolver // nil = standalone, no recovery
 }
 
-// DaemonSession is an authenticated conversation with the daemon: a client dialed to the daemon
-// socket, the session ID, and the current bearer token.
+// DaemonSession is an initialized, authenticated conversation with the daemon.
 type DaemonSession struct {
 	client    *http.Client
 	sessionID string
@@ -38,7 +37,6 @@ func (s DaemonSession) Send(body []byte) []byte {
 	return classifyForward(s, body).resp
 }
 
-// Forwarder sends one agent line to the daemon, healing on safe failures.
 type Forwarder struct {
 	session  DaemonSession
 	resolver *DaemonResolver

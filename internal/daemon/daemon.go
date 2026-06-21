@@ -47,7 +47,7 @@ func SocketClient(socket string, timeout time.Duration) *http.Client {
 func socketTransport(socket string) *http.Transport {
 	return &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			// the daemon listens on a unix socket
+			// network and address come from the request URL; ignored because the daemon listens on a Unix socket
 			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 		},
 	}
