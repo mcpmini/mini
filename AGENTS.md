@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code when working with code in this repository.
+This file provides guidance to coding agents and contributors working in this repository.
 
 ## Commands
 
@@ -84,6 +84,10 @@ Instead:
 - Use separate test files per component (`pending_test.go`, `prefix_writer_test.go`) — the filename is the grouping
 - Use table-driven tests with a `name` field for permutation coverage
 - Write test function names descriptively enough that no separator is needed
+
+## Review workflow
+
+For code reviews, use the `review-pr` skill as the detailed guide. When reviewing your own output, spin up an adversarial limited-context subagent with a red-team mindset so it can give neutral feedback without being anchored by the implementation thread.
 
 ## Architecture
 

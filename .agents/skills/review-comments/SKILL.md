@@ -2,7 +2,6 @@
 name: review-comments
 description: Adversarial audit of every net-new comment in the diff. Default verdict is DELETE — a comment survives only if no code change could replace it. Run before committing or pushing any change that added comments.
 argument-hint: [optional: path or commit range, default is uncommitted + unpushed diff]
-allowed-tools: Read, Grep, Bash, Edit
 ---
 
 Audit net-new comments in $ARGUMENTS (default: `git diff` of uncommitted changes plus any

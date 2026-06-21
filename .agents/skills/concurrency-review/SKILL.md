@@ -2,7 +2,6 @@
 name: concurrency-review
 description: Deep adversarial concurrency audit of Go code — phases by impact: crashes, hangs, leaks, races, correctness, tests. Assumes bugs exist. Reports findings in the conversation.
 argument-hint: [file/package paths, or blank for full repo]
-allowed-tools: Read, Grep, Glob, Bash, Write
 ---
 
 Adversarial concurrency audit of $ARGUMENTS (default: the full repo). **Assume bugs exist. Work through every phase.** Output findings directly in the conversation.

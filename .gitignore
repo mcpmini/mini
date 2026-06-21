@@ -24,13 +24,22 @@ spec-compliance-*.md
 implementation-review-*.md
 security-review-*.md
 
-# tooling
+# agent-local state; keep only the shared skills directory tracked.
+# .agents/worktrees and other agent scratch state stay ignored.
 .claude/*
+!.claude/skills
 !.claude/skills/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 .mini/
 .DS_Store
 *.env
 .env*
+
+# private local fixture staging
+benchmarks/fixtures/**/*.private.json
+benchmarks/fixtures/**/private/
 
 # test output
 coverage.out
