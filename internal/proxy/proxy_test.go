@@ -2,11 +2,9 @@ package proxy
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -15,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -24,27 +23,13 @@ func shortSocketDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 func serveSocket(t *testing.T, h http.HandlerFunc) *http.Client {
 	t.Helper()
 	sock := filepath.Join(shortSocketDir(t), "d.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatalf("listen unix: %v", err)
-	}
-	srv := &http.Server{Handler: h}
-	go srv.Serve(ln)                  //nolint:errcheck
-	t.Cleanup(func() { srv.Close() }) //nolint:errcheck
-	return socketDialClient(sock)
-}
-
-func socketDialClient(sock string) *http.Client {
-	return &http.Client{Transport: &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, "unix", sock)
-		},
-	}}
+	testutil.StartUnixServer(t, sock, h)
+	return daemon.SocketClient(sock, 0)
 }
 
 func deadClient(t *testing.T) *http.Client {
 	t.Helper()
-	return socketDialClient(filepath.Join(shortSocketDir(t), "nonexistent.sock"))
+	return daemon.SocketClient(filepath.Join(shortSocketDir(t), "nonexistent.sock"), 0)
 }
 
 func testConn(client *http.Client, sessionID string) daemonConn {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func timeoutAfter() <-chan time.Time {
@@ -44,26 +46,15 @@ func newSockPath(t *testing.T) string {
 	return filepath.Join(shortSocketDir(t), "d.sock")
 }
 
-// Simulates a daemon respawning on the fixed socket path: the proxy keeps dialing it, so this makes a dead link live.
-func startSocketServer(t *testing.T, sock string, h http.HandlerFunc) {
-	t.Helper()
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatalf("listen unix %s: %v", sock, err)
-	}
-	srv := &http.Server{Handler: h}
-	go srv.Serve(ln)                  //nolint:errcheck
-	t.Cleanup(func() { srv.Close() }) //nolint:errcheck
-}
 
 func TestDeliver_transportDownRecoversViaReresolve(t *testing.T) {
 	sock := newSockPath(t)
-	client := socketDialClient(sock)
+	client := daemon.SocketClient(sock, 0)
 
 	var resolveCalls atomic.Int32
 	reresolve := func() (string, error) {
 		resolveCalls.Add(1)
-		startSocketServer(t, sock, okHandler) // respawn the daemon on the same socket
+		testutil.StartUnixServer(t, sock, okHandler) // respawn the daemon on the same socket
 		return "tok", nil
 	}
 	in := strings.NewReader(toolCallLine())
@@ -158,12 +149,12 @@ func TestDeliver_midFlightErrorDoesNotRetry(t *testing.T) {
 
 func TestDeliver_singleFlightRecoversOnce(t *testing.T) {
 	sock := newSockPath(t)
-	client := socketDialClient(sock)
+	client := daemon.SocketClient(sock, 0)
 
 	var resolveCalls atomic.Int32
 	reresolve := func() (string, error) {
 		resolveCalls.Add(1)
-		startSocketServer(t, sock, okHandler)
+		testutil.StartUnixServer(t, sock, okHandler)
 		return "tok", nil
 	}
 	const n = 16

@@ -1,7 +1,6 @@
 package daemon_test
 
 import (
-	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,17 +13,6 @@ import (
 )
 
 func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
-
-func startUnixServer(t *testing.T, sock string, h http.HandlerFunc) {
-	t.Helper()
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatalf("listen unix %s: %v", sock, err)
-	}
-	srv := &http.Server{Handler: h}
-	go srv.Serve(ln)                  //nolint:errcheck
-	t.Cleanup(func() { srv.Close() }) //nolint:errcheck
-}
 
 func TestEnsureToken_reusesExistingNonEmptyToken(t *testing.T) {
 	dir := t.TempDir()
@@ -131,7 +119,7 @@ func TestRunning_noSocketReturnsFalse(t *testing.T) {
 
 func TestRunning_healthyDaemonReturnsTrue(t *testing.T) {
 	dir := shortConfigDir(t)
-	startUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, _ *http.Request) {
+	testutil.StartUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	if !daemon.Running(dir) {
@@ -141,7 +129,7 @@ func TestRunning_healthyDaemonReturnsTrue(t *testing.T) {
 
 func TestRunning_non200ReturnsFalse(t *testing.T) {
 	dir := shortConfigDir(t)
-	startUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, _ *http.Request) {
+	testutil.StartUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 	if daemon.Running(dir) {
@@ -162,7 +150,7 @@ func TestRunning_staleSocketFileReturnsFalse(t *testing.T) {
 func TestRunning_checksHealthzPath(t *testing.T) {
 	dir := shortConfigDir(t)
 	gotPath := make(chan string, 1)
-	startUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, r *http.Request) {
+	testutil.StartUnixServer(t, daemon.SocketPath(dir), func(w http.ResponseWriter, r *http.Request) {
 		gotPath <- r.URL.Path
 		w.WriteHeader(http.StatusOK)
 	})
