@@ -17,7 +17,6 @@ import (
 const maxConcurrentForwards = 32
 
 type RunParams struct {
-	// Client's transport targets the daemon's socket; one client serves all forwards.
 	Client    *http.Client
 	SessionID string
 	Token     string

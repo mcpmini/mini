@@ -19,19 +19,20 @@ const (
 func (p forwardAsyncParams) deliver() []byte {
 	state := p.link.snapshot()
 	isInit := peekIsInitialize(p.line)
-	for attempt := range maxRecoveryAttempts-1 {
-		out := classifyForward(p.connAt(state), p.line)
+	var out forwardOutcome
+	for attempt := range maxRecoveryAttempts {
+		out = classifyForward(p.connAt(state), p.line)
 		if out.kind == outcomeOK || out.kind == outcomeOther {
-			return out.resp
+			break
 		}
 		next, ok := p.handleRecoverable(out.kind, state, isInit)
-		if !ok {
-			return out.resp
+		if !ok || attempt+1 == maxRecoveryAttempts {
+			break
 		}
 		state = next
 		time.Sleep(jitteredBackoff(attempt))
 	}
-	return classifyForward(p.connAt(state), p.line).resp
+	return out.resp
 }
 
 func (p forwardAsyncParams) handleRecoverable(kind outcomeKind, state linkState, isInit bool) (linkState, bool) {
@@ -45,7 +46,7 @@ func (p forwardAsyncParams) handleRecoverable(kind outcomeKind, state linkState,
 		}
 		state = next
 	}
-	// Every goroutine with a new gen reinits, not just the reresolve winner; server's sync.Once on markInitialized makes this safe.
+	// Every goroutine with a new gen reinits independently; concurrent reinit on a session is idempotent.
 	if !isInit {
 		reinitDaemon(p.connAt(state), p.toolMode)
 	}
