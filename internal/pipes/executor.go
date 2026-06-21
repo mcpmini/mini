@@ -40,6 +40,22 @@ type Result struct {
 	LatencyMs     int64             `json:"latency_ms"`
 }
 
+type execState struct {
+	inputs map[string]any
+	steps  map[string]any
+	env    map[string]string
+	caller CallerFunc
+	result *Result
+}
+
+type stepExec struct {
+	ctx   context.Context
+	step  config.StepConfig
+	exprs *compiledStep
+	env   map[string]any
+	exec  *execState
+}
+
 // Execute runs all steps of the compiled pipe and returns the result.
 func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, caller CallerFunc) *Result {
 	start := time.Now()
@@ -51,16 +67,21 @@ func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, call
 		result.Error = err.Error()
 		return result
 	}
-	state := make(map[string]any)
-	envMap := buildEnvMap()
-	ok, failedStep := cp.runSteps(ctx, inputs, state, envMap, caller, result)
+	exec := &execState{
+		inputs: inputs,
+		steps:  make(map[string]any),
+		env:    buildEnvMap(),
+		caller: caller,
+		result: result,
+	}
+	ok, failedStep := cp.runSteps(ctx, exec)
 	if !ok {
 		result.FailedStep = failedStep
-		result.PartialOutput, result.OutputErrors = cp.evalOutput(inputs, state, envMap)
+		result.PartialOutput, result.OutputErrors = cp.evalOutput(inputs, exec.steps, exec.env)
 		return result
 	}
 	result.OK = true
-	result.Output, result.OutputErrors = cp.evalOutput(inputs, state, envMap)
+	result.Output, result.OutputErrors = cp.evalOutput(inputs, exec.steps, exec.env)
 	return result
 }
 
@@ -110,63 +131,67 @@ func buildEnvMap() map[string]string {
 	return envMap
 }
 
-func (cp *CompiledPipe) runSteps(ctx context.Context, inputs map[string]any, state map[string]any, envMap map[string]string, caller CallerFunc, result *Result) (bool, string) {
+func (cp *CompiledPipe) runSteps(ctx context.Context, exec *execState) (bool, string) {
 	for _, step := range cp.Config.Steps {
-		cs := cp.stepExprs[step.ID]
-		env := buildRuntimeEnv(inputs, state, envMap)
-		skipped, err := cp.runOneStep(ctx, step, cs, env, state, caller)
+		skipped, err := cp.runOneStep(stepExec{
+			ctx:   ctx,
+			step:  step,
+			exprs: cp.stepExprs[step.ID],
+			env:   buildRuntimeEnv(exec.inputs, exec.steps, exec.env),
+			exec:  exec,
+		})
 		sr := makeStepResult(step, skipped, err)
-		result.Steps = append(result.Steps, sr)
+		exec.result.Steps = append(exec.result.Steps, sr)
 		if err != nil && !step.ContinueOnError {
-			result.Error = fmt.Sprintf("step %q failed: %s", step.ID, err)
+			exec.result.Error = fmt.Sprintf("step %q failed: %s", step.ID, err)
 			return false, step.ID
 		}
 	}
 	return true, ""
 }
 
-func (cp *CompiledPipe) runOneStep(ctx context.Context, step config.StepConfig, cs *compiledStep, env map[string]any, state map[string]any, caller CallerFunc) (skipped bool, err error) {
-	if cs != nil && cs.ifProg != nil {
-		val, evalErr := runProg(cs.ifProg, env)
+func (cp *CompiledPipe) runOneStep(run stepExec) (skipped bool, err error) {
+	if run.exprs != nil && run.exprs.ifProg != nil {
+		val, evalErr := runProg(run.exprs.ifProg, run.env)
 		if evalErr != nil {
 			return false, fmt.Errorf("if condition: %w", evalErr)
 		}
 		if !isTruthy(val) {
-			state[step.ID] = nil
+			run.exec.steps[run.step.ID] = nil
 			return true, nil
 		}
 	}
-	if len(step.Set) > 0 {
-		return false, cp.runSetStep(step, cs, env, state)
+	if len(run.step.Set) > 0 {
+		return false, cp.runSetStep(run)
 	}
-	return false, cp.runToolStep(ctx, step, cs, env, state, caller)
+	return false, cp.runToolStep(run)
 }
 
-func (cp *CompiledPipe) runSetStep(step config.StepConfig, cs *compiledStep, env map[string]any, state map[string]any) error {
+func (cp *CompiledPipe) runSetStep(run stepExec) error {
 	result := map[string]any{"ok": true}
-	for name, prog := range cs.setProgs {
-		val, err := runProg(prog, env)
+	for name, prog := range run.exprs.setProgs {
+		val, err := runProg(prog, run.env)
 		if err != nil {
 			return fmt.Errorf("set.%s: %w", name, err)
 		}
 		result[name] = val
 	}
-	state[step.ID] = result
+	run.exec.steps[run.step.ID] = result
 	return nil
 }
 
-func (cp *CompiledPipe) runToolStep(ctx context.Context, step config.StepConfig, cs *compiledStep, env map[string]any, state map[string]any, caller CallerFunc) error {
-	args, err := interpolateArgs(step.Args, cs, env)
+func (cp *CompiledPipe) runToolStep(run stepExec) error {
+	args, err := interpolateArgs(run.step.Args, run.exprs, run.env)
 	if err != nil {
 		return fmt.Errorf("arg interpolation: %w", err)
 	}
-	raw, callErr := caller(ctx, step.Server, step.Tool, args)
+	raw, callErr := run.exec.caller(run.ctx, run.step.Server, run.step.Tool, args)
 	if callErr != nil {
-		state[step.ID] = map[string]any{"ok": false, "error": callErr.Error()}
+		run.exec.steps[run.step.ID] = map[string]any{"ok": false, "error": callErr.Error()}
 		return callErr
 	}
 	stepState := map[string]any{"ok": true, "result": parseToolResult(raw)}
-	state[step.ID] = stepState
+	run.exec.steps[run.step.ID] = stepState
 	return nil
 }
 

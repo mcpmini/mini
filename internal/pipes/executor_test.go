@@ -308,7 +308,7 @@ func TestExecutor_IfConditionEvalError(t *testing.T) {
 
 func TestExecutor_StepResultAvailableToNextStep(t *testing.T) {
 	pipe := config.PipeConfig{
-		Name: "chain_pipe",
+		Name:   "chain_pipe",
 		Inputs: map[string]config.InputSchema{},
 		Steps: []config.StepConfig{
 			{ID: "first", Server: "gh", Tool: "create_pr"},

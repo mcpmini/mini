@@ -250,9 +250,9 @@ type ProjectionConfig struct {
 	Include       []string       `yaml:"include,omitempty"        json:"include,omitempty"`
 	ExcludeAlways []string       `yaml:"exclude_always,omitempty" json:"exclude_always,omitempty"`
 	Passthrough   []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
-	ArrayLimits  map[string]int `yaml:"array_limits,omitempty"   json:"array_limits,omitempty"`
-	StringLimits map[string]int `yaml:"string_limits,omitempty"  json:"string_limits,omitempty"`
-	DepthLimit   int            `yaml:"depth_limit,omitempty"    json:"depth_limit,omitempty"`
-	StripMarkup  bool           `yaml:"strip_markup,omitempty"   json:"strip_markup,omitempty"`
-	Format       string         `yaml:"format,omitempty"         json:"format,omitempty"`
+	ArrayLimits   map[string]int `yaml:"array_limits,omitempty"   json:"array_limits,omitempty"`
+	StringLimits  map[string]int `yaml:"string_limits,omitempty"  json:"string_limits,omitempty"`
+	DepthLimit    int            `yaml:"depth_limit,omitempty"    json:"depth_limit,omitempty"`
+	StripMarkup   bool           `yaml:"strip_markup,omitempty"   json:"strip_markup,omitempty"`
+	Format        string         `yaml:"format,omitempty"         json:"format,omitempty"`
 }
