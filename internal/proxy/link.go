@@ -8,8 +8,9 @@ type linkState struct {
 }
 
 type daemonLink struct {
-	mu    sync.Mutex
-	state linkState
+	mu         sync.Mutex
+	state      linkState
+	resolveErr error // set when Resolve() fails; cleared on next successful resolve
 }
 
 func newDaemonLink(token string) *daemonLink {
@@ -26,14 +27,18 @@ func (d *daemonLink) recover(failedGen uint64, resolver *DaemonResolver) (linkSt
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.state.generation != failedGen || resolver == nil {
-		// a concurrent caller already recovered, or self-healing is off
-		return d.state, nil
+		// a concurrent caller already recovered, or self-healing is off;
+		// propagate any resolve error so callers fail fast instead of retrying
+		return d.state, d.resolveErr
 	}
 	// Many callers can hit a dead daemon at once; holding the lock across
 	// Resolve means the first one respawns and bumps the generation
 	// while the rest fall out at the guard above.
+	d.resolveErr = nil
 	t, err := resolver.Resolve()
 	if err != nil {
+		d.state.generation++ // bump so subsequent callers skip Resolve and fail fast
+		d.resolveErr = err
 		return d.state, err
 	}
 	d.state = linkState{token: t, generation: d.state.generation + 1}

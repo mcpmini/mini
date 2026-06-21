@@ -46,7 +46,6 @@ func newSockPath(t *testing.T) string {
 	return filepath.Join(shortSocketDir(t), "d.sock")
 }
 
-
 func TestDeliver_transportDownRecoversViaReresolve(t *testing.T) {
 	sock := newSockPath(t)
 	client := daemon.SocketClient(sock, 0)
@@ -255,5 +254,41 @@ func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
 	}
 	if resolveCalls.Load() == 0 {
 		t.Error("expected at least one Reresolve attempt before giving up")
+	}
+}
+
+func TestDeliver_singleFlightOnResolveFailure(t *testing.T) {
+	const n = 8
+	sock := newSockPath(t)
+	client := daemon.SocketClient(sock, 0)
+
+	var resolveCalls atomic.Int32
+	reresolve := func() (string, error) {
+		resolveCalls.Add(1)
+		time.Sleep(50 * time.Millisecond) // simulate slow spawn that fails
+		return "", fmt.Errorf("daemon down")
+	}
+
+	var lines strings.Builder
+	for i := range n {
+		fmt.Fprintf(&lines, `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{}}`+"\n", i)
+	}
+	var out bytes.Buffer
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	done := make(chan error, 1)
+	go func() { done <- Run(p) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+	case <-timeoutAfter():
+		t.Fatal("Run did not return — single-flight not holding on resolve failure")
+	}
+	if got := resolveCalls.Load(); got > 3 {
+		t.Errorf("Resolve calls = %d with %d goroutines; single-flight should prevent N×timeout stacking", got, n)
+	}
+	if !strings.Contains(out.String(), `"error"`) {
+		t.Errorf("expected error responses on exhaustion, got: %q", out.String())
 	}
 }

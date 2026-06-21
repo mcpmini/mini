@@ -115,7 +115,7 @@ func bindSocket(socket string) net.Listener {
 		}
 		_ = os.Remove(socket)
 		if ln, err = net.Listen("unix", socket); err != nil {
-			os.Exit(0)
+			fatalf("bind socket %s: %v", socket, err)
 		}
 	}
 	// Linux honors the socket file's own mode on connect; a permissive umask would otherwise leave it world-writable.
