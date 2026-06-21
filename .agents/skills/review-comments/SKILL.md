@@ -51,7 +51,16 @@ Work through each alternative in order. If any applies, apply it and the comment
    `// validate x because old clients send "foo":"bar"`. One clause is almost always
    enough — if a kept comment runs past one line, trim harder.
 
-6. **Keep** — a comment reaches Keep only after all five alternatives above are genuinely
+6. **Relocate to the line it explains** — a surviving comment belongs *inside* the function,
+   on the specific statement it explains, not floating above the function signature. A
+   header comment claims to describe the whole function but usually explains just one line,
+   and it silently drifts the moment that line moves or the function grows. Make the function
+   name carry the "what"; put the comment next to the exact bit of code it justifies, as
+   locally as possible. Above-the-signature comments are reserved for genuine doc comments on
+   *exported* identifiers (Go convention) and for a true one-line whole-function summary the
+   name itself cannot carry — not for explaining one statement in the body.
+
+7. **Keep** — a comment reaches Keep only after all six alternatives above are genuinely
    exhausted. Before marking Keep, apply three additional checks:
 
    - **Deep why, not shallow why.** A comment that references internal implementation

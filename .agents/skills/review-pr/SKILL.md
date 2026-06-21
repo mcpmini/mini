@@ -206,22 +206,23 @@ go test -race -tags test -run TestReview ./path/to/package/... -v
 
 This pass works only from the diff — no deep exploration. Flag quickly, one line each.
 
+Convention findings default to **MEDIUM** — the project has strict, explicit rules about comments, naming, and structure (AGENTS.md). Violating them is not cosmetic; it degrades maintainability and readability, which are priority #2 in the project's principles. Reserve LOW only for findings so trivial they border on preference (e.g. a mildly verbose variable name that still communicates correctly).
+
 **Project style violations** (AGENTS.md):
 - Boolean or empty-string flags as positional args — `check.sh` catches function length and param count mechanically; this is what it misses
 
-**Comments that shouldn't exist:**
+**Comments that shouldn't exist (MEDIUM):**
 - Describes what the code does rather than why (rename instead)
 - Section dividers in test files (`// --- setup ---`, `// --- act ---`)
 - Doc-style comment on a function whose name already conveys the contract
 
-**AI verbosity signals:**
+**Naming and design (MEDIUM):**
+- Names that don't self-document (force the reader to read the body to understand purpose)
+- Abstractions that don't earn their keep (helper with one call site, unnecessary indirection)
 - Defensive nil/error checks for values the framework guarantees non-nil/non-error
-- An abstraction or helper with exactly one call site
 - Unnecessary intermediate variables whose only purpose is naming an already-clear expression
 
-**Duplication:** does the new code replicate logic that already exists? Grep for the pattern before flagging.
-
-These are LOW severity unless they conceal a real bug. One line each. Move on.
+**Duplication (MEDIUM):** does the new code replicate logic that already exists elsewhere in the codebase? Grep for the pattern before flagging. Identical or near-identical functions/blocks copied across 2+ packages are MEDIUM — extract to a shared helper. Even 2 copies is worth flagging if the logic is non-trivial (> 3 lines); 3+ copies is always MEDIUM. Duplication is not a style nit — it's a correctness risk (one copy gets fixed, the others don't).
 
 ## Report
 
@@ -248,7 +249,7 @@ Output the report directly in the conversation.
 
 ## 🟡 LOW — [title]
 **Pass:** Conventions | Correctness
-[One line. What and where.]
+[One line. What and where. Reserve LOW for truly trivial findings — borderline preference calls, not rule violations.]
 
 ## Test coverage verdict
 [What is tested, what is missing, whether the gap is a blocker.]
