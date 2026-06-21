@@ -3,13 +3,16 @@
 package server_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +22,53 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
+
+func TestMain(m *testing.M) {
+	if os.Getenv("MINI_HELPER_PROCESS") == "1" {
+		runEnvEchoServer()
+		os.Exit(0)
+	}
+	os.Exit(m.Run())
+}
+
+func runEnvEchoServer() {
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var req map[string]any
+		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
+			continue
+		}
+		id := req["id"]
+		if id == nil {
+			continue
+		}
+		switch method, _ := req["method"].(string); method {
+		case "initialize":
+			envEchoWrite(id, map[string]any{
+				"protocolVersion": "2024-11-05",
+				"serverInfo":      map[string]any{"name": "envecho", "version": "0"},
+				"capabilities":    map[string]any{},
+			})
+		case "tools/list":
+			envEchoWrite(id, map[string]any{
+				"tools": []any{map[string]any{
+					"name":        "get_env",
+					"description": "returns MINI_TEST_VAR",
+					"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+				}},
+			})
+		case "tools/call":
+			envEchoWrite(id, map[string]any{
+				"content": []any{map[string]any{"type": "text", "text": os.Getenv("MINI_TEST_VAR")}},
+			})
+		}
+	}
+}
+
+func envEchoWrite(id any, result any) {
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+	fmt.Fprintf(os.Stdout, "%s\n", b)
+}
 
 func newTestServer(t *testing.T, opts ...server.ServerOption) *server.Server {
 	t.Helper()

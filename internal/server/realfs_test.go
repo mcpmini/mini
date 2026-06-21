@@ -3,10 +3,8 @@
 package server_test
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -188,52 +186,6 @@ func assertRemoveServer(t *testing.T, srv *server.Server) {
 	}
 }
 
-// TestHelperProcessEnvEcho is not a real test — the Test prefix lets -test.run invoke it as a subprocess MCP server.
-func TestHelperProcessEnvEcho(t *testing.T) {
-	if os.Getenv("MINI_HELPER_PROCESS") != "1" {
-		return
-	}
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		var req map[string]any
-		if err := json.Unmarshal(scanner.Bytes(), &req); err != nil {
-			continue
-		}
-		id := req["id"]
-		if id == nil {
-			continue
-		}
-		switch method, _ := req["method"].(string); method {
-		case "initialize":
-			envEchoWrite(id, map[string]any{
-				"protocolVersion": "2024-11-05",
-				"serverInfo":      map[string]any{"name": "envecho", "version": "0"},
-				"capabilities":    map[string]any{},
-			})
-		case "tools/list":
-			envEchoWrite(id, map[string]any{
-				"tools": []any{map[string]any{
-					"name":        "get_env",
-					"description": "returns MINI_TEST_VAR",
-					"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
-				}},
-			})
-		case "tools/call":
-			envEchoWrite(id, map[string]any{
-				"content": []any{map[string]any{"type": "text", "text": os.Getenv("MINI_TEST_VAR")}},
-			})
-		}
-	}
-	os.Exit(0)
-}
-
-func envEchoWrite(id any, result any) {
-	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
-	fmt.Fprintf(os.Stdout, "%s\n", b)
-}
-
-// Env replaces (not appends to) the subprocess environment, so callers must
-// include PATH and other required vars explicitly alongside any auth tokens.
 func TestStdioEnvPassthrough(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
@@ -244,7 +196,6 @@ func TestStdioEnvPassthrough(t *testing.T) {
 	sc := config.ServerConfig{
 		Name:    "envtest",
 		Command: os.Args[0],
-		Args:    []string{"-test.run=TestHelperProcessEnvEcho"},
 		Env:     []string{"MINI_HELPER_PROCESS=1", "MINI_TEST_VAR=hello_from_mini"},
 	}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
