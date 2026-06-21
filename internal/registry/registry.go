@@ -35,9 +35,26 @@ type ServerParams struct {
 }
 
 func (r *Registry) AddServer(p ServerParams) {
+	if config.IsReservedServerName(p.Name) {
+		slog.Default().Warn("ignoring server with reserved name", "server", p.Name)
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.addServerLocked(p)
+}
+
+func (r *Registry) PermLookup(server, tool string) (config.PermissionLevel, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	full := server + "." + tool
+	if e, ok := r.tools[full]; ok {
+		return e.Permission, true
+	}
+	if e, ok := r.hidden[full]; ok {
+		return e.Permission, true
+	}
+	return "", false
 }
 
 func (r *Registry) addServerLocked(p ServerParams) {
@@ -357,7 +374,7 @@ func (r *Registry) buildPipeEntry(pipe *config.PipeConfig, lookup PermLookupFunc
 	schema := buildPipeInputSchema(pipe.Inputs)
 	return &ToolEntry{
 		Server:        config.UserServerName,
-		Name:          pipe.Name,
+		ToolName:      ToolName{UpstreamName: pipe.Name},
 		FullName:      full,
 		FullNameLower: strings.ToLower(full),
 		Description:   pipe.Description,

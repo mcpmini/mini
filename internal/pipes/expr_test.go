@@ -87,6 +87,53 @@ func TestCompile_InvalidOutputExpr(t *testing.T) {
 	}
 }
 
+func TestCompile_UnknownStepReference(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "p",
+		Steps: []config.StepConfig{
+			{ID: "s1", Server: "gh", Tool: "t", Args: map[string]any{
+				"x": "{{ steps.missing.result.id }}",
+			}},
+		},
+	}
+	_, err := pipes.Compile(pipe)
+	if err == nil {
+		t.Fatal("expected compile error for unknown step reference")
+	}
+}
+
+func TestCompile_UnknownDeclaredInputReference(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "p",
+		Inputs: map[string]config.InputSchema{
+			"title": {Type: "string"},
+		},
+		Steps: []config.StepConfig{
+			{ID: "s1", Server: "gh", Tool: "t", Args: map[string]any{
+				"x": "{{ inputs.missing }}",
+			}},
+		},
+	}
+	_, err := pipes.Compile(pipe)
+	if err == nil {
+		t.Fatal("expected compile error for unknown declared input reference")
+	}
+}
+
+func TestCompile_SchemaLessInputReferenceAllowed(t *testing.T) {
+	pipe := config.PipeConfig{
+		Name: "p",
+		Steps: []config.StepConfig{
+			{ID: "s1", Server: "gh", Tool: "t", Args: map[string]any{
+				"x": "{{ inputs.dynamic }}",
+			}},
+		},
+	}
+	if _, err := pipes.Compile(pipe); err != nil {
+		t.Fatalf("expected no compile error for schemaless input reference: %v", err)
+	}
+}
+
 func TestCompile_MultipleErrors_AllReported(t *testing.T) {
 	pipe := config.PipeConfig{
 		Name: "p",

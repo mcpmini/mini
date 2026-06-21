@@ -21,6 +21,7 @@ func runPipe(configDir string, args []string) {
 		fmt.Fprintln(os.Stderr, "usage: mini pipe <list|run|check> [flags]")
 		os.Exit(2)
 	}
+	requirePipesEnabled(configDir)
 	sub, rest := args[0], args[1:]
 	switch sub {
 	case "list":
@@ -32,6 +33,18 @@ func runPipe(configDir string, args []string) {
 	default:
 		fmt.Fprintf(os.Stderr, "mini pipe: unknown subcommand %q\n", sub)
 		os.Exit(2)
+	}
+}
+
+func requirePipesEnabled(configDir string) {
+	cfg, _, err := config.Load(configDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "mini: load config: %v\n", err)
+		os.Exit(1)
+	}
+	if !cfg.EnablePipes {
+		fmt.Fprintln(os.Stderr, "mini: pipes are experimental and disabled (set enable_pipes: true in config.yaml)")
+		os.Exit(1)
 	}
 }
 
@@ -116,13 +129,18 @@ func loadCompiledPipe(configDir, pipeName string) *pipes.CompiledPipe {
 
 func directPipeExec(ctx context.Context, configDir, pipeName string, inputs map[string]any) *pipes.Result {
 	cp := loadCompiledPipe(configDir, pipeName)
+	cfg, servers := mustLoadConfig(configDir)
+	caller := buildPipeRunCaller(ctx, configDir, cfg, servers)
+	return cp.Execute(ctx, inputs, caller)
+}
+
+func mustLoadConfig(configDir string) (*config.Config, []config.ServerConfig) {
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: load config: %v\n", err)
 		os.Exit(1)
 	}
-	caller := buildPipeRunCaller(ctx, configDir, cfg, servers)
-	return cp.Execute(ctx, inputs, caller)
+	return cfg, servers
 }
 
 func findPipeByName(pipes []config.PipeConfig, name string) *config.PipeConfig {
@@ -136,7 +154,7 @@ func findPipeByName(pipes []config.PipeConfig, name string) *config.PipeConfig {
 
 func buildPipeRunCaller(ctx context.Context, configDir string, cfg *config.Config, servers []config.ServerConfig) pipes.CallerFunc {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	srv := buildAndConnectServer(ctx, cfg, configDir, logger, servers)
+	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: cfg, ConfigDir: configDir, Logger: logger, Servers: servers})
 	return srv.MakeRawCaller(ctx)
 }
 

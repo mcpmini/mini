@@ -290,7 +290,7 @@ func TestExecutor_IfConditionEvalError(t *testing.T) {
 		Name: "eval_err_pipe",
 		Steps: []config.StepConfig{
 			{ID: "step1", Server: "gh", Tool: "t"},
-			{ID: "guarded", Server: "gh", Tool: "t", If: "{{ steps.missing_step.result.x }}"},
+			{ID: "guarded", Server: "gh", Tool: "t", If: "{{ steps.step1.result[0] }}"},
 		},
 	}
 	cp, err := pipes.Compile(pipe)
@@ -298,8 +298,11 @@ func TestExecutor_IfConditionEvalError(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := cp.Execute(context.Background(), nil, makeCaller(nil))
-	if !result.OK {
-		t.Log("step eval error propagated:", result.Error)
+	if result.OK {
+		t.Fatal("expected runtime expression error to fail the pipe")
+	}
+	if result.FailedStep != "guarded" {
+		t.Errorf("FailedStep = %q, want guarded", result.FailedStep)
 	}
 }
 

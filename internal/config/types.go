@@ -48,6 +48,9 @@ type Config struct {
 	// hidden tools. When false (default), agents and admins can audit hidden tools.
 	DisableListHidden bool `yaml:"disable_list_hidden"`
 
+	// EnablePipes exposes experimental user-defined pipes from ~/.mini/pipes/.
+	EnablePipes bool `yaml:"enable_pipes"`
+
 	// DangerousAllowRuntimeStdio permits add_server to launch arbitrary stdio
 	// subprocesses at runtime. Off by default — stdio transports exec commands
 	// and should only be registered at startup from trusted config files.

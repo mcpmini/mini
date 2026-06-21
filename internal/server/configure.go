@@ -222,6 +222,9 @@ func (s *Server) validateAddServerParams(p configureParams) error {
 	if err := validateServerName(p.ServerCfg.Name); err != nil {
 		return err
 	}
+	if config.IsReservedServerName(p.ServerCfg.Name) {
+		return fmt.Errorf("server name %q is reserved", p.ServerCfg.Name)
+	}
 	return s.validateRuntimeTransport(p.ServerCfg)
 }
 

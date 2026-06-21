@@ -4,9 +4,9 @@
 
 ### Features
 
-- **Pipes** — YAML-defined multi-step tool sequences exposed as virtual tools on the `user` server; supports input validation, expression interpolation (`{{ inputs.x }}`, `{{ steps.id.result.field }}`), conditional steps (`if:`), set steps, `continue_on_error`, and an `output:` block for structured results
+- **Experimental pipes** — opt-in with `enable_pipes: true`; YAML-defined multi-step tool sequences are exposed as virtual tools on the `user` server and support input validation, expression interpolation (`{{ inputs.x }}`, `{{ steps.id.result.field }}`), conditional steps (`if:`), set steps, `continue_on_error`, and an `output:` block for structured results
 - **`mini pipe list`** — lists loaded pipes with step counts and descriptions; surfaces load/validation errors with non-zero exit
-- **`mini pipe run <name> [--args '{}']`** — executes a pipe directly from the CLI; routes through the daemon when it's running
+- **`mini pipe run <name> [--args '{}']`** — executes a pipe directly from the CLI
 - **`mini pipe check [name]`** — validates pipe YAML and expressions before install; exits non-zero on any error
 - Permission inheritance for pipes: a pipe calling any protected step is automatically protected; explicit `permission: protected/hidden` override available
 

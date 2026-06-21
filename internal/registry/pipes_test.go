@@ -37,10 +37,10 @@ func TestAddPipes_RegistersUnderUserServer(t *testing.T) {
 func TestAddPipes_PermissionInheritsFromSteps(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"delete_branch"}}
-	r.AddServer("gh", []transport.ToolDefinition{
+	r.AddServer(registry.ServerParams{Name: "gh", Defs: []transport.ToolDefinition{
 		{Name: "create_pr"},
 		{Name: "delete_branch"},
-	}, perm)
+	}, Perm: perm})
 	pipes := []config.PipeConfig{
 		{
 			Name: "safe_pipe",
@@ -69,9 +69,9 @@ func TestAddPipes_PermissionInheritsFromSteps(t *testing.T) {
 func TestAddPipes_StepWrappingHiddenToolIsProtected(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Hidden: []string{"admin_reset"}}
-	r.AddServer("gh", []transport.ToolDefinition{
+	r.AddServer(registry.ServerParams{Name: "gh", Defs: []transport.ToolDefinition{
 		{Name: "admin_reset"},
-	}, perm)
+	}, Perm: perm})
 	r.AddPipes([]config.PipeConfig{
 		{
 			Name:  "wraps_hidden",
@@ -107,9 +107,9 @@ func TestAddPipes_UnknownServerDefaultsToProtected(t *testing.T) {
 
 func TestAddServer_RejectsReservedName(t *testing.T) {
 	r := registry.New()
-	r.AddServer(config.UserServerName, []transport.ToolDefinition{
+	r.AddServer(registry.ServerParams{Name: config.UserServerName, Defs: []transport.ToolDefinition{
 		{Name: "some_tool"},
-	}, nil)
+	}})
 	all := r.All()
 	for _, e := range all {
 		if e.Server == config.UserServerName && e.Name == "user.some_tool" {
@@ -144,9 +144,9 @@ func TestAddPipes_ExplicitProtectedPermission(t *testing.T) {
 func TestAddPipes_ExplicitOpenCannotDowngradeProtectedStep(t *testing.T) {
 	r := registry.New()
 	perm := &config.PermissionsConfig{Protected: []string{"delete_branch"}}
-	r.AddServer("gh", []transport.ToolDefinition{
+	r.AddServer(registry.ServerParams{Name: "gh", Defs: []transport.ToolDefinition{
 		{Name: "delete_branch"},
-	}, perm)
+	}, Perm: perm})
 	r.AddPipes([]config.PipeConfig{
 		{
 			Name:       "open_pipe",

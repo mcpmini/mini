@@ -11,9 +11,9 @@ import (
 )
 
 func (s *Server) executePipe(ctx context.Context, entry *registry.ToolEntry, inputs map[string]any, session *Session) (any, error) {
-	cp := s.getPipe(entry.Name)
+	cp := s.getPipe(entry.ToolName.Name())
 	if cp == nil {
-		return nil, fmt.Errorf("pipe not found: %s", entry.Name)
+		return nil, fmt.Errorf("pipe not found: %s", entry.ToolName.Name())
 	}
 	caller := s.makePipeCaller(ctx, session)
 	return cp.Execute(ctx, inputs, caller), nil
@@ -39,7 +39,7 @@ func (s *Server) callRaw(ctx context.Context, server, tool string, args map[stri
 	if err != nil {
 		return nil, err
 	}
-	raw, _, toolErr := s.dispatchRaw(ctx, upstream, tool, args, session)
+	raw, _, toolErr := s.dispatchRaw(ctx, dispatchParams{Upstream: upstream, Tool: tool, Params: args, Session: session})
 	return raw, toolErr
 }
 

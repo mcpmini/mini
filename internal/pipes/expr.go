@@ -14,6 +14,8 @@ import (
 
 // exprPattern matches {{ expression }} in string values.
 var exprPattern = regexp.MustCompile(`\{\{(.+?)\}\}`)
+var stepRefPattern = regexp.MustCompile(`\bsteps\.([A-Za-z_][A-Za-z0-9_]*)\b`)
+var inputRefPattern = regexp.MustCompile(`\binputs\.([A-Za-z_][A-Za-z0-9_]*)\b`)
 
 // CompiledPipe holds a PipeConfig with all expressions pre-compiled.
 type CompiledPipe struct {
@@ -205,11 +207,46 @@ func parseExprSegments(s string, matches [][]int, env map[string]any) ([]exprSeg
 }
 
 func compileExpr(exprStr string, env map[string]any) (*vm.Program, error) {
+	if err := validateKnownRefs(exprStr, env); err != nil {
+		return nil, err
+	}
 	return expr.Compile(exprStr,
 		expr.Env(env),
 		expr.AllowUndefinedVariables(),
 		expr.AsAny(),
 	)
+}
+
+func validateKnownRefs(exprStr string, env map[string]any) error {
+	var errs []error
+	errs = append(errs, validateStepRefs(exprStr, env)...)
+	errs = append(errs, validateInputRefs(exprStr, env)...)
+	return errors.Join(errs...)
+}
+
+func validateStepRefs(exprStr string, env map[string]any) []error {
+	steps, _ := env["steps"].(map[string]any)
+	var errs []error
+	for _, match := range stepRefPattern.FindAllStringSubmatch(exprStr, -1) {
+		if _, ok := steps[match[1]]; !ok {
+			errs = append(errs, fmt.Errorf("unknown step %q", match[1]))
+		}
+	}
+	return errs
+}
+
+func validateInputRefs(exprStr string, env map[string]any) []error {
+	inputs, _ := env["inputs"].(map[string]any)
+	if len(inputs) == 0 {
+		return nil
+	}
+	var errs []error
+	for _, match := range inputRefPattern.FindAllStringSubmatch(exprStr, -1) {
+		if _, ok := inputs[match[1]]; !ok {
+			errs = append(errs, fmt.Errorf("unknown input %q", match[1]))
+		}
+	}
+	return errs
 }
 
 // stripBraces removes {{ }} delimiters from if/set expressions. The pipe spec

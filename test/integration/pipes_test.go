@@ -60,6 +60,11 @@ func writePipe(t *testing.T, configDir, name, content string) {
 	}
 }
 
+func writePipesConfig(t *testing.T, configDir string) {
+	t.Helper()
+	writeConfig(t, configDir, "inline_threshold: 50000\nenable_pipes: true\n")
+}
+
 func parsePipeResult(t *testing.T, text string) pipeResult {
 	t.Helper()
 	var pr pipeResult
@@ -82,7 +87,7 @@ func findStep(steps []pipeStepResult, id string) (pipeStepResult, bool) {
 func twoServerConfig(t *testing.T, ghFixtures, slFixtures map[string]string) string {
 	t.Helper()
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "github", mockFixtureDir(t, ghFixtures))
 	writeFakeServer(t, cfg, "slack", mockFixtureDir(t, slFixtures))
 	return cfg
@@ -164,11 +169,11 @@ func TestPipes_OutputInterpolatesUpstreamFields(t *testing.T) {
 
 func TestPipes_ContinueOnError_SlackFails_PipeSucceeds(t *testing.T) {
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "github", mockFixtureDir(t, map[string]string{"create_pull_request": `{"__write_op":true}`}))
 	slDir := mockFixtureDir(t, map[string]string{"post_message": `{"__write_op":true}`})
 	const faultJSON = `{"tool":"post_message","type":"error_response","message":"channel_not_found"}`
-	writeFaultServer(t, cfg, "slack", slDir, faultJSON, "", "")
+	writeFaultServer(t, faultServerParams{ConfigDir: cfg, ServerName: "slack", Fixtures: slDir, FaultJSON: faultJSON})
 	writePipe(t, cfg, "create_and_notify", createAndNotifyPipe)
 	client := startServer(t, cfg)
 
@@ -214,7 +219,7 @@ steps:
       text: done
 `
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "github", mockFixtureDir(t, map[string]string{
 		"failing_tool": `{"__mcp_error":"simulated upstream failure"}`,
 	}))
@@ -257,7 +262,7 @@ output:
   pr_number: "{{ steps.create.result.number }}"
 `
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "github", mockFixtureDir(t, map[string]string{
 		"create_pull_request": `{"__write_op":true}`,
 		"add_labels":          `{"__write_op":true}`,
@@ -300,7 +305,7 @@ output:
   is_high_number: "{{ steps.classify.is_high_number }}"
 `
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "github", mockFixtureDir(t, map[string]string{"create_pull_request": `{"__write_op":true}`}))
 	writePipe(t, cfg, "classify_pipe", setPipe)
 	client := startServer(t, cfg)
@@ -357,6 +362,18 @@ func TestPipes_AppearsInList(t *testing.T) {
 	}
 }
 
+func TestPipes_DisabledByDefault_NotListed(t *testing.T) {
+	cfg := t.TempDir()
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipe(t, cfg, "create_and_notify", createAndNotifyPipe)
+	client := startServer(t, cfg)
+
+	listing := client.listTools("")
+	if strings.Contains(listing, "create_and_notify") {
+		t.Errorf("pipes should be disabled by default, got list output: %s", listing)
+	}
+}
+
 func TestPipes_BadPipe_DoesNotPreventGoodPipesLoading(t *testing.T) {
 	const goodPipe = `name: good_pipe
 description: This one works
@@ -369,7 +386,7 @@ steps:
       base: main
 `
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "github", mockFixtureDir(t, map[string]string{"create_pull_request": `{"__write_op":true}`}))
 
 	// Bad pipe: no steps (validation error).
@@ -399,7 +416,7 @@ steps:
           base: main
 `
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "github", mockFixtureDir(t, map[string]string{"create_pull_request": `{"__write_op":true}`}))
 	writePipe(t, cfg, "parallel_pipe", parallelPipe)
 	client := startServer(t, cfg)
@@ -413,7 +430,7 @@ steps:
 
 func TestPipes_ReservedServerName_RejectedAtConfigLoad(t *testing.T) {
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	// Write a server config file named "user" — should be rejected at load.
 	dir := filepath.Join(cfg, "servers")
 	os.MkdirAll(dir, 0700) //nolint:errcheck
@@ -430,7 +447,7 @@ func TestPipes_ReservedServerName_RejectedAtConfigLoad(t *testing.T) {
 
 func TestPipes_CLIList_ShowsNameAndDescription(t *testing.T) {
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "github", mockFixtureDir(t, map[string]string{"create_pull_request": `{"__write_op":true}`}))
 	writePipe(t, cfg, "create_and_notify", createAndNotifyPipe)
 
@@ -443,6 +460,20 @@ func TestPipes_CLIList_ShowsNameAndDescription(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "Create PR and notify Slack") {
 		t.Errorf("expected pipe description in output, got: %s", stdout)
+	}
+}
+
+func TestPipes_CLIRequiresOptIn(t *testing.T) {
+	cfg := t.TempDir()
+	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipe(t, cfg, "create_and_notify", createAndNotifyPipe)
+
+	_, stderr, code := runCLI(t, cfg, "pipe", "list")
+	if code == 0 {
+		t.Fatal("expected pipe list to fail when pipes are disabled")
+	}
+	if !strings.Contains(stderr, "enable_pipes") {
+		t.Errorf("expected enable_pipes hint in stderr, got: %s", stderr)
 	}
 }
 
@@ -598,7 +629,7 @@ steps:
       text: "{{ env.MINI_TEST_ENV_VAR }}"
 `
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writeFakeServer(t, cfg, "slack", mockFixtureDir(t, map[string]string{"post_message": `{"__write_op":true}`}))
 	writePipe(t, cfg, "env_pipe", envPipe)
 
@@ -624,7 +655,7 @@ steps:
       base: main
 `
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writePipe(t, cfg, "good_pipe", goodPipe)
 	writePipe(t, cfg, "bad_pipe", "name: bad_pipe\nsteps: []\n")
 
@@ -654,7 +685,7 @@ steps:
       base: main
 `
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writePipesConfig(t, cfg)
 	writePipe(t, cfg, "valid_pipe", goodPipe)
 
 	stdout, _, code := runCLI(t, cfg, "pipe", "check")

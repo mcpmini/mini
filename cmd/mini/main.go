@@ -45,8 +45,8 @@ commands:
   init / setup [--yes]           Interactive setup wizard
   call SERVER TOOL [PARAMS]      Invoke an open tool directly (exit 1 on tool error)
   perm-call SERVER TOOL [PARAMS] Invoke a protected tool directly
-  pipe list                      List loaded pipes
-  pipe run <name> [--args '...'] Execute a pipe
+  pipe list                      List loaded pipes (requires enable_pipes: true)
+  pipe run <name> [--args '...'] Execute a pipe (requires enable_pipes: true)
   version                        Print version
 
 connect flags:
@@ -242,7 +242,7 @@ func buildAndConnectServer(ctx context.Context, p BuildServerParams, opts ...ser
 			}
 		}
 	}
-	loadAndRegisterPipes(p.ConfigDir, p.Logger, srv)
+	loadAndRegisterPipes(p.Cfg, p.ConfigDir, p.Logger, srv)
 	return srv
 }
 
@@ -257,7 +257,10 @@ func appendNonLoopbackHostOpt(opts []server.ServerOption, httpAddr string) []ser
 	return opts
 }
 
-func loadAndRegisterPipes(configDir string, logger *slog.Logger, srv *server.Server) {
+func loadAndRegisterPipes(cfg *config.Config, configDir string, logger *slog.Logger, srv *server.Server) {
+	if !cfg.EnablePipes {
+		return
+	}
 	pipeCfgs, err := config.LoadPipes(configDir)
 	if err != nil {
 		logger.Warn("pipe load errors", "err", err)
