@@ -25,12 +25,12 @@ type forwardOutcome struct {
 	resp []byte
 }
 
-func classifyForward(conn daemonConn, body []byte) forwardOutcome {
-	req, err := newDaemonRequest(conn, body)
+func classifyForward(sess DaemonSession, body []byte) forwardOutcome {
+	req, err := newDaemonRequest(sess, body)
 	if err != nil {
 		return forwardOutcome{kind: outcomeOther, resp: daemonErrorResponse(body, "build request: "+err.Error())}
 	}
-	resp, err := conn.client.Do(req)
+	resp, err := sess.client.Do(req)
 	if err != nil {
 		return classifyDoError(body, err)
 	}
@@ -72,18 +72,18 @@ func classifyResponse(resp *http.Response, body []byte) forwardOutcome {
 	return forwardOutcome{kind: outcomeOK, resp: out}
 }
 
-// daemonURL's host is a placeholder — conn.client dials the Unix socket regardless; "localhost" passes the loopback-Host check.
+// "localhost" passes the daemon's loopback-Host check
 const daemonURL = "http://localhost/mcp"
 
-func newDaemonRequest(conn daemonConn, body []byte) (*http.Request, error) {
+func newDaemonRequest(sess DaemonSession, body []byte) (*http.Request, error) {
 	req, err := http.NewRequest(http.MethodPost, daemonURL, bytes.NewReader(body)) //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", conn.sessionID)
-	if conn.token != "" {
-		req.Header.Set("Authorization", "Bearer "+conn.token)
+	req.Header.Set("Mcp-Session-Id", sess.sessionID)
+	if sess.token != "" {
+		req.Header.Set("Authorization", "Bearer "+sess.token)
 	}
 	return req, nil
 }

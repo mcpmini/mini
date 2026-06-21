@@ -32,8 +32,8 @@ func deadClient(t *testing.T) *http.Client {
 	return daemon.SocketClient(filepath.Join(shortSocketDir(t), "nonexistent.sock"), 0)
 }
 
-func testConn(client *http.Client, sessionID string) daemonConn {
-	return daemonConn{client: client, sessionID: sessionID}
+func testConn(client *http.Client, sessionID string) DaemonSession {
+	return DaemonSession{client: client, sessionID: sessionID}
 }
 
 func TestForward_sendsBearerToken(t *testing.T) {
@@ -42,8 +42,8 @@ func TestForward_sendsBearerToken(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	})
-	conn := daemonConn{client: client, sessionID: "sess", token: "secret-token"}
-	forward(conn, []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	conn := DaemonSession{client: client, sessionID: "sess", token: "secret-token"}
+	conn.Send([]byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if gotAuth != "Bearer secret-token" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer secret-token")
 	}
@@ -55,7 +55,7 @@ func TestForward_noTokenOmitsAuthorizationHeader(t *testing.T) {
 		_, hadAuth = r.Header["Authorization"]
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	})
-	forward(testConn(client, "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	testConn(client, "sess").Send([]byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if hadAuth {
 		t.Error("expected no Authorization header when token is empty")
 	}
@@ -106,14 +106,14 @@ func TestForward_successReturnsDaemonResponse(t *testing.T) {
 	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	})
-	resp := forward(testConn(client, "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	resp := testConn(client, "sess").Send([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
 	if !strings.Contains(string(resp), `"result":"ok"`) {
 		t.Errorf("unexpected response: %s", resp)
 	}
 }
 
 func TestForward_daemonUnreachableReturnsErrorEnvelope(t *testing.T) {
-	resp := forward(testConn(deadClient(t), "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
+	resp := testConn(deadClient(t), "sess").Send([]byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}`))
 	if resp == nil || !strings.Contains(string(resp), `"error"`) {
 		t.Errorf("expected error envelope, got %s", resp)
 	}
@@ -137,7 +137,7 @@ func TestForward_httpErrorStatusProducesJSONRPCEnvelope(t *testing.T) {
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
 			})
-			resp := forward(testConn(client, "sess"), reqBody)
+			resp := testConn(client, "sess").Send(reqBody)
 			var rpc struct {
 				ID    json.RawMessage `json:"id"`
 				Error *struct{ Message string `json:"message"` } `json:"error"`
@@ -162,7 +162,7 @@ func TestForward_202NotificationReturnsNil(t *testing.T) {
 	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	})
-	resp := forward(testConn(client, "sess"), []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	resp := testConn(client, "sess").Send([]byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
 	if resp != nil {
 		t.Errorf("expected nil for 202 Accepted, got %s", resp)
 	}
@@ -174,7 +174,7 @@ func TestForward_sessionIdPropagatedInHeader(t *testing.T) {
 		gotSession = r.Header.Get("Mcp-Session-Id")
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	})
-	forward(testConn(client, "my-session-42"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	testConn(client, "my-session-42").Send([]byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if gotSession != "my-session-42" {
 		t.Errorf("session header = %q, want %q", gotSession, "my-session-42")
 	}
@@ -185,7 +185,7 @@ func TestForward_largeResponseBodyHandledWithoutError(t *testing.T) {
 	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, big)
 	})
-	resp := forward(testConn(client, "sess"), []byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
+	resp := testConn(client, "sess").Send([]byte(`{"jsonrpc":"2.0","id":1,"method":"test"}`))
 	if len(resp) == 0 {
 		t.Error("expected non-empty response for large body")
 	}

@@ -40,8 +40,6 @@ func SocketHealthy(socket string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// SocketClient returns an HTTP client that dials the daemon's Unix socket; the request URL host
-// is ignored by the dialer, so callers use http://localhost (which passes the loopback-Host check).
 func SocketClient(socket string, timeout time.Duration) *http.Client {
 	return &http.Client{Timeout: timeout, Transport: socketTransport(socket)}
 }
@@ -49,6 +47,7 @@ func SocketClient(socket string, timeout time.Duration) *http.Client {
 func socketTransport(socket string) *http.Transport {
 	return &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			// the daemon listens on a unix socket
 			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
 		},
 	}

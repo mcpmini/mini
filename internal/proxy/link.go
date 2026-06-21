@@ -8,13 +8,12 @@ type linkState struct {
 }
 
 type daemonLink struct {
-	mu        sync.Mutex
-	state     linkState
-	reresolve func() (token string, err error) // nil = recovery disabled (standalone)
+	mu    sync.Mutex
+	state linkState
 }
 
-func newDaemonLink(token string, reresolve func() (string, error)) *daemonLink {
-	return &daemonLink{state: linkState{token: token}, reresolve: reresolve}
+func newDaemonLink(token string) *daemonLink {
+	return &daemonLink{state: linkState{token: token}}
 }
 
 func (d *daemonLink) snapshot() linkState {
@@ -23,15 +22,17 @@ func (d *daemonLink) snapshot() linkState {
 	return d.state
 }
 
-// At most one re-resolution per failed generation; lock intentionally held across reresolve()
-// (which may spawn a daemon), serializing racers so exactly one respawns.
-func (d *daemonLink) recover(failedGen uint64) (linkState, error) {
+func (d *daemonLink) recover(failedGen uint64, resolver *DaemonResolver) (linkState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.state.generation != failedGen || d.reresolve == nil {
+	if d.state.generation != failedGen || resolver == nil {
+		// a concurrent caller already recovered, or self-healing is off
 		return d.state, nil
 	}
-	t, err := d.reresolve()
+	// Many callers can hit a dead daemon at once; holding the lock across
+	// Resolve means the first one respawns and bumps the generation
+	// while the rest fall out at the guard above.
+	t, err := resolver.Resolve()
 	if err != nil {
 		return d.state, err
 	}

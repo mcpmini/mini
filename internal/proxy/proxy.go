@@ -23,14 +23,33 @@ type RunParams struct {
 	In        io.Reader
 	Out       io.Writer
 	ToolMode  transport.ToolMode
-	// Nil disables self-healing. Otherwise called to respawn the daemon and re-read the token after a failure.
-	Reresolve func() (token string, err error)
+	Resolver  *DaemonResolver // nil = standalone, no recovery
 }
 
-type daemonConn struct {
+// DaemonSession is an authenticated conversation with the daemon: a client dialed to the daemon
+// socket, the session ID, and the current bearer token.
+type DaemonSession struct {
 	client    *http.Client
 	sessionID string
 	token     string
+}
+
+func (s DaemonSession) Send(body []byte) []byte {
+	return classifyForward(s, body).resp
+}
+
+// Forwarder sends one agent line to the daemon, healing on safe failures.
+type Forwarder struct {
+	session  DaemonSession
+	resolver *DaemonResolver
+	link     *daemonLink
+	toolMode transport.ToolMode
+}
+
+func (f *Forwarder) sessionAt(state linkState) DaemonSession {
+	s := f.session
+	s.token = state.token
+	return s
 }
 
 func Run(p RunParams) error {
@@ -53,11 +72,15 @@ func runWithLimit(p RunParams, limit int) error {
 func newForwardPool(p RunParams, client *http.Client, limit int) forwardAsyncParams {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	link := newDaemonLink(p.Token, p.Reresolve)
-	return forwardAsyncParams{
-		client: client, link: link, sessionID: p.SessionID, out: p.Out,
-		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
+	forwarder := &Forwarder{
+		session:  DaemonSession{client: client, sessionID: p.SessionID},
+		resolver: p.Resolver,
+		link:     newDaemonLink(p.Token),
 		toolMode: p.ToolMode,
+	}
+	return forwardAsyncParams{
+		forwarder: forwarder, out: p.Out,
+		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
 	}
 }
 
@@ -115,25 +138,18 @@ func startForward(line []byte, p forwardAsyncParams) {
 }
 
 type forwardAsyncParams struct {
-	client    *http.Client
-	link      *daemonLink
-	sessionID string
+	forwarder *Forwarder
 	line      []byte
 	out       io.Writer
 	mu        *sync.Mutex
 	wg        *sync.WaitGroup
 	sem       chan struct{}
-	toolMode  transport.ToolMode
-}
-
-func (p forwardAsyncParams) connAt(s linkState) daemonConn {
-	return daemonConn{client: p.client, sessionID: p.sessionID, token: s.token}
 }
 
 func forwardAsync(p forwardAsyncParams) {
 	defer p.wg.Done()
 	defer func() { <-p.sem }()
-	if resp := p.deliver(); resp != nil {
+	if resp := p.forwarder.Forward(p.line); resp != nil {
 		p.writeResponse(resp)
 	}
 }
@@ -163,10 +179,6 @@ func peekIsInitialize(line []byte) bool {
 		Method string `json:"method"`
 	}
 	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
-}
-
-func forward(conn daemonConn, body []byte) []byte {
-	return classifyForward(conn, body).resp
 }
 
 type requestID struct {

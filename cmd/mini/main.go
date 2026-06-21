@@ -280,7 +280,7 @@ func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.Tool
 	logger.Info("connected to mini daemon", "socket", socket, "session", sessionID)
 	return proxy.Run(proxy.RunParams{
 		Client: daemon.SocketClient(socket, 0), SessionID: sessionID, Token: token,
-		In: os.Stdin, Out: os.Stdout, ToolMode: mode, Reresolve: reresolve,
+		In: os.Stdin, Out: os.Stdout, ToolMode: mode, Resolver: proxy.NewDaemonResolver(reresolve),
 	})
 }
 

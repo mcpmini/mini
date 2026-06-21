@@ -95,7 +95,7 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	<-ctx.Done()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	// Closing the listener unlinks the socket; a SIGKILL skips this and bindSocket clears it next start.
+	// Closing the listener unlinks the socket; a SIGKILL leaves a stale one for the next bindSocket to reclaim.
 	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
 }
 
@@ -107,15 +107,14 @@ func bindSocket(socket string) net.Listener {
 	// The dir's permissions are the access boundary — macOS ignores the socket file's own mode on connect.
 	_ = os.Chmod(dir, 0700)
 	ln, err := net.Listen("unix", socket)
+	// Binding the socket is the single-winner election: if another daemon is healthy
+	// on this socket we exit; if a stale socket remains from a SIGKILL we reclaim it.
 	if err != nil {
 		if daemon.SocketHealthy(socket) {
-			// Another daemon won the concurrent-spawn race; exit so it remains the sole daemon.
 			os.Exit(0)
 		}
-		// Stale socket left by a previous SIGKILL: remove and reclaim.
 		_ = os.Remove(socket)
 		if ln, err = net.Listen("unix", socket); err != nil {
-			// Another daemon claimed the socket between our healthcheck and remove; exit.
 			os.Exit(0)
 		}
 	}
