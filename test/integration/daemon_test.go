@@ -19,10 +19,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
+func shortConfigDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "mini")
+	if err != nil {
+		t.Fatalf("mkdir temp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck
+	return dir
+}
 
 func socketPath(cfg string) string { return filepath.Join(cfg, "daemon.sock") }
 
