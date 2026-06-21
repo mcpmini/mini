@@ -267,32 +267,45 @@ func maybeStartSessionEviction(ctx context.Context, httpSrv *http.Server, srv se
 }
 
 func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.ToolMode) error {
-	port, err := resolveDaemonPort(configDir, logger)
+	if err := daemon.CheckSocketPath(configDir); err != nil {
+		return err
+	}
+	reresolve := daemonReresolver(configDir, logger)
+	token, err := reresolve()
 	if err != nil {
 		return err
 	}
+	socket := daemon.SocketPath(configDir)
 	sessionID := transport.NewSessionID()
-	token, err := daemon.ReadToken(configDir)
-	if err != nil {
-		return fmt.Errorf("read daemon token: %w", err)
-	}
-	logger.Info("connected to mini daemon", "port", port, "session", sessionID)
+	logger.Info("connected to mini daemon", "socket", socket, "session", sessionID)
 	return proxy.Run(proxy.RunParams{
-		Port: port, SessionID: sessionID, Token: token,
-		ReloadToken: func() (string, error) { return daemon.ReadToken(configDir) },
-		In:          os.Stdin, Out: os.Stdout, ToolMode: mode,
+		Client: daemon.SocketClient(socket, 0), SessionID: sessionID, Token: token,
+		In: os.Stdin, Out: os.Stdout, ToolMode: mode, Resolver: proxy.NewDaemonResolver(reresolve),
 	})
 }
 
-func resolveDaemonPort(configDir string, logger *slog.Logger) (int, error) {
-	if port := daemon.RunningPort(configDir); port != 0 {
-		return port, nil
+func daemonReresolver(configDir string, logger *slog.Logger) func() (string, error) {
+	return func() (string, error) {
+		if err := ensureDaemonRunning(configDir, logger); err != nil {
+			return "", err
+		}
+		token, err := daemon.ReadToken(configDir)
+		if err != nil {
+			return "", fmt.Errorf("read daemon token: %w", err)
+		}
+		return token, nil
 	}
-	port, err := daemon.Start(configDir, 3*time.Second)
-	if err != nil {
-		logger.Warn("daemon unavailable, running standalone", "err", err)
+}
+
+func ensureDaemonRunning(configDir string, logger *slog.Logger) error {
+	if daemon.Running(configDir) {
+		return nil
 	}
-	return port, err
+	if err := daemon.Start(configDir, 3*time.Second); err != nil {
+		logger.Warn("daemon unavailable", "err", err)
+		return err
+	}
+	return nil
 }
 
 func buildLogger(cfg *config.Config, override string, w io.Writer) *slog.Logger {

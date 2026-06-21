@@ -12,60 +12,73 @@ import (
 	"sync"
 
 	"github.com/mcpmini/mini/internal/transport"
-	"github.com/mcpmini/mini/internal/version"
 )
 
 const maxConcurrentForwards = 32
 
-// RunParams configures a daemon proxy run.
 type RunParams struct {
-	Port      int
+	Client    *http.Client
 	SessionID string
 	Token     string
-	// ReloadToken re-reads the token after a daemon restart rotates it; the proxy
-	// calls it on a 401, then retries. Nil disables refresh.
-	ReloadToken func() (string, error)
-	In          io.Reader
-	Out         io.Writer
-	ToolMode    transport.ToolMode
+	In        io.Reader
+	Out       io.Writer
+	ToolMode  transport.ToolMode
+	Resolver  *DaemonResolver // nil = standalone, no recovery
 }
 
-// daemonConn identifies the target daemon and the credentials for one forward.
-type daemonConn struct {
+// DaemonSession is an initialized, authenticated conversation with the daemon.
+type DaemonSession struct {
 	client    *http.Client
-	port      int
 	sessionID string
 	token     string
 }
 
-// Run reads JSON-RPC from p.In, forwards each request to the daemon at p.Port,
-// and writes responses back to p.Out. Blocks until EOF.
+func (s DaemonSession) Send(body []byte) []byte {
+	return classifyForward(s, body).resp
+}
+
+type Forwarder struct {
+	session  DaemonSession
+	resolver *DaemonResolver
+	link     *daemonLink
+	toolMode transport.ToolMode
+}
+
+func (f *Forwarder) sessionAt(state linkState) DaemonSession {
+	s := f.session
+	s.token = state.token
+	return s
+}
+
 func Run(p RunParams) error {
 	return runWithLimit(p, maxConcurrentForwards)
 }
 
 func runWithLimit(p RunParams, limit int) error {
-	// No client-level timeout: tool deadlines are enforced by the daemon's
-	// per-call context (ToolTimeout). A fixed timeout here would break any
-	// tool configured with tool_timeout longer than the hard-coded value.
-	client := &http.Client{}
-	fp := newForwardPool(p, limit)
+	// p.Client has no client-level timeout: tool deadlines are enforced by the daemon's
+	// per-call context (ToolTimeout). A fixed timeout here would break any tool configured
+	// with tool_timeout longer than the hard-coded value.
+	fp := newForwardPool(p, p.Client, limit)
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
-		startForward(client, maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
+		startForward(maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
 	}
 	fp.wg.Wait()
 	return scanner.Err()
 }
 
-func newForwardPool(p RunParams, limit int) forwardAsyncParams {
+func newForwardPool(p RunParams, client *http.Client, limit int) forwardAsyncParams {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	return forwardAsyncParams{
-		port: p.Port, sessionID: p.SessionID, out: p.Out,
-		tokens: &tokenSource{value: p.Token, reload: p.ReloadToken},
-		mu:     &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
+	forwarder := &Forwarder{
+		session:  DaemonSession{client: client, sessionID: p.SessionID},
+		resolver: p.Resolver,
+		link:     newDaemonLink(p.Token),
 		toolMode: p.ToolMode,
+	}
+	return forwardAsyncParams{
+		forwarder: forwarder, out: p.Out,
+		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
 	}
 }
 
@@ -112,78 +125,37 @@ func extractInitParams(full map[string]json.RawMessage) (map[string]json.RawMess
 	return params, nil
 }
 
-func startForward(client *http.Client, line []byte, p forwardAsyncParams) {
+func startForward(line []byte, p forwardAsyncParams) {
 	if len(line) == 0 {
 		return
 	}
 	p.line = bytes.Clone(line)
-	p.client = client
 	p.sem <- struct{}{}
 	p.wg.Add(1)
 	go forwardAsync(p)
 }
 
 type forwardAsyncParams struct {
-	client    *http.Client
-	port      int
-	sessionID string
-	tokens    *tokenSource
+	forwarder *Forwarder
 	line      []byte
 	out       io.Writer
 	mu        *sync.Mutex
 	wg        *sync.WaitGroup
 	sem       chan struct{}
-	toolMode  transport.ToolMode
-}
-
-func (p forwardAsyncParams) conn() daemonConn {
-	return daemonConn{client: p.client, port: p.port, sessionID: p.sessionID, token: p.tokens.current()}
 }
 
 func forwardAsync(p forwardAsyncParams) {
 	defer p.wg.Done()
 	defer func() { <-p.sem }()
-	resp := forwardWithAuthRetry(p)
-	if resp == nil {
-		return
+	if resp := p.forwarder.Forward(p.line); resp != nil {
+		p.writeResponse(resp)
 	}
-	// Daemon restart or session eviction invalidates the session; reinitialize and retry.
-	if isNotInitialized(resp) && !peekIsInitialize(p.line) {
-		reinitDaemon(p.conn(), p.toolMode)
-		if resp, _ = forward(p.conn(), p.line); resp == nil {
-			return
-		}
-	}
+}
+
+func (p forwardAsyncParams) writeResponse(resp []byte) {
 	p.mu.Lock()
 	fmt.Fprintf(p.out, "%s\n", resp) //nolint:errcheck
 	p.mu.Unlock()
-}
-
-func forwardWithAuthRetry(p forwardAsyncParams) []byte {
-	resp, status := forward(p.conn(), p.line)
-	if status != http.StatusUnauthorized {
-		return resp
-	}
-	p.tokens.refresh() // 401: daemon restarted and rotated the token — pick up the new one
-	resp, status = forward(p.conn(), p.line)
-	if status == http.StatusUnauthorized {
-		return daemonErrorResponse(p.line, "daemon rejected credentials") // don't leak the raw 401 body
-	}
-	return resp
-}
-
-// reinitDaemon recovers from daemon restart or session eviction. Responses are
-// discarded — only the caller's retry of the original request is forwarded.
-func reinitDaemon(conn daemonConn, mode transport.ToolMode) {
-	params, _ := json.Marshal(transport.InitializeParams{
-		ProtocolVersion: transport.ProtocolVersion,
-		Capabilities:    map[string]any{},
-		ClientInfo:      transport.ClientInfo{Name: "mini", Version: version.Version},
-	})
-	initMsg, _ := json.Marshal(transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)})
-	forward(conn, maybeInjectToolMode(initMsg, mode))
-	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
-	forward(conn, notif)
 }
 
 func isNotInitialized(resp []byte) bool {
@@ -197,7 +169,7 @@ func isNotInitialized(resp []byte) bool {
 	}
 	return json.Unmarshal(resp, &rpc) == nil &&
 		rpc.Error != nil &&
-		strings.HasPrefix(rpc.Error.Message, "not initialized")
+		strings.HasPrefix(rpc.Error.Message, transport.NotInitializedMessage)
 }
 
 func peekIsInitialize(line []byte) bool {
@@ -205,45 +177,6 @@ func peekIsInitialize(line []byte) bool {
 		Method string `json:"method"`
 	}
 	return json.Unmarshal(line, &m) == nil && m.Method == "initialize"
-}
-
-func forward(conn daemonConn, body []byte) ([]byte, int) {
-	req, err := newDaemonRequest(conn, body)
-	if err != nil {
-		return nil, 0
-	}
-	resp, err := conn.client.Do(req)
-	if err != nil {
-		return daemonErrorResponse(body, "daemon unreachable: "+err.Error()), 0 // 0: unreachable, not an HTTP status
-	}
-	defer resp.Body.Close()
-	return readForwardResponse(resp, body), resp.StatusCode
-}
-
-func newDaemonRequest(conn daemonConn, body []byte) (*http.Request, error) {
-	url := fmt.Sprintf("http://127.0.0.1:%d/mcp", conn.port)
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)) //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Mcp-Session-Id", conn.sessionID)
-	if conn.token != "" {
-		req.Header.Set("Authorization", "Bearer "+conn.token)
-	}
-	return req, nil
-}
-
-func readForwardResponse(resp *http.Response, reqBody []byte) []byte {
-	if resp.StatusCode == http.StatusAccepted {
-		return nil // notification — no response expected
-	}
-	if resp.StatusCode >= 400 {
-		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return daemonErrorResponse(reqBody, fmt.Sprintf("daemon returned HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(errBody)))
-	}
-	result, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	return bytes.TrimSpace(result)
 }
 
 type requestID struct {

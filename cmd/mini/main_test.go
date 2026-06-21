@@ -7,12 +7,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -114,60 +114,36 @@ func captureStdout(t *testing.T, fn func()) string {
 	return <-outCh
 }
 
-func healthServer(t *testing.T, body string) (port int, closeFn func()) {
+func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
+
+func socketHealthServer(t *testing.T, dir, body string) {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := net.Listen("unix", daemon.SocketPath(dir))
 	if err != nil {
-		t.Fatalf("Listen: %v", err)
+		t.Fatalf("listen unix: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, body)
 	})
 	srv := &http.Server{Handler: mux}
-	go srv.Serve(ln) //nolint:errcheck
-
-	return ln.Addr().(*net.TCPAddr).Port, func() {
-		_ = srv.Close()
-		_ = ln.Close()
-	}
-}
-
-func writeDaemonPortFile(t *testing.T, dir string, portText string) string {
-	t.Helper()
-	path := filepath.Join(dir, "daemon.port")
-	if err := os.WriteFile(path, []byte(portText), 0600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	return path
+	go srv.Serve(ln)                  //nolint:errcheck
+	t.Cleanup(func() { srv.Close() }) //nolint:errcheck
 }
 
 func TestRunDaemonStatusNotRunning(t *testing.T) {
-	out := captureStdout(t, func() { runDaemonStatus(t.TempDir()) })
+	out := captureStdout(t, func() { runDaemonStatus(shortConfigDir(t)) })
 	if out != "daemon: not running\n" {
 		t.Fatalf("stdout = %q, want not running message", out)
 	}
 }
 
-func TestRunDaemonStatusInvalidPortFile(t *testing.T) {
-	dir := t.TempDir()
-	portFile := writeDaemonPortFile(t, dir, "not-a-port")
-
-	out := captureStdout(t, func() { runDaemonStatus(dir) })
-	want := "daemon: port file " + portFile + " contains invalid port\n"
-	if out != want {
-		t.Fatalf("stdout = %q, want %q", out, want)
-	}
-}
-
 func TestRunDaemonStatusRunning(t *testing.T) {
-	dir := t.TempDir()
-	port, closeFn := healthServer(t, `{"ok":true}`)
-	defer closeFn()
-	writeDaemonPortFile(t, dir, strconv.Itoa(port))
+	dir := shortConfigDir(t)
+	socketHealthServer(t, dir, `{"ok":true}`)
 
 	out := captureStdout(t, func() { runDaemonStatus(dir) })
-	if !strings.Contains(out, "daemon: running on port "+strconv.Itoa(port)) {
+	if !strings.Contains(out, "daemon: running") {
 		t.Fatalf("expected running message, got %q", out)
 	}
 	if !strings.Contains(out, `{"ok":true}`) {
@@ -175,19 +151,14 @@ func TestRunDaemonStatusRunning(t *testing.T) {
 	}
 }
 
-func TestRunDaemonStatusStalePortFile(t *testing.T) {
-	dir := t.TempDir()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("Listen: %v", err)
+func TestRunDaemonStatusStaleSocket(t *testing.T) {
+	dir := shortConfigDir(t)
+	if err := os.WriteFile(daemon.SocketPath(dir), nil, 0600); err != nil {
+		t.Fatal(err)
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
-	writeDaemonPortFile(t, dir, strconv.Itoa(port))
-
 	out := captureStdout(t, func() { runDaemonStatus(dir) })
-	if !strings.Contains(out, "daemon: port file exists (port "+strconv.Itoa(port)+") but not responding") {
-		t.Fatalf("expected stale port warning, got %q", out)
+	if out != "daemon: not running\n" {
+		t.Fatalf("stale socket should read as not running, got %q", out)
 	}
 }
 

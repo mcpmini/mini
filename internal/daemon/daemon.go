@@ -3,44 +3,36 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 )
 
-// PortFile returns the path to the daemon port file in configDir.
-func PortFile(configDir string) string {
-	return filepath.Join(configDir, "daemon.port")
+func SocketPath(configDir string) string {
+	return filepath.Join(configDir, "daemon.sock")
 }
 
-// RunningPort returns the TCP port the daemon is listening on, or 0 if not running.
-func RunningPort(configDir string) int {
-	port, err := readPortFile(PortFile(configDir))
-	if err != nil {
-		return 0
+// sun_path caps Unix socket paths at 104 bytes on macOS, 108 on Linux; 100 stays under both.
+const maxSocketPathLen = 100
+
+func CheckSocketPath(configDir string) error {
+	if p := SocketPath(configDir); len(p) > maxSocketPathLen {
+		return fmt.Errorf("daemon socket path is too long (%d > %d bytes): %s — use a shorter --config directory", len(p), maxSocketPathLen, p)
 	}
-	if !healthcheckPort(port) {
-		return 0
-	}
-	return port
+	return nil
 }
 
-func readPortFile(path string) (int, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(strings.TrimSpace(string(data)))
+func Running(configDir string) bool {
+	return SocketHealthy(SocketPath(configDir))
 }
 
-func healthcheckPort(port int) bool {
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", port))
+func SocketHealthy(socket string) bool {
+	resp, err := SocketClient(socket, 2*time.Second).Get("http://localhost/healthz")
 	if err != nil {
 		return false
 	}
@@ -48,14 +40,34 @@ func healthcheckPort(port int) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// Start launches a daemon in the background and waits up to timeout for it to be ready.
-func Start(configDir string, timeout time.Duration) (int, error) {
+func SocketClient(socket string, timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, Transport: socketTransport(socket)}
+}
+
+func socketTransport(socket string) *http.Transport {
+	return &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			// network and address come from the request URL; ignored because the daemon listens on a Unix socket
+			return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+		},
+	}
+}
+
+func Start(configDir string, timeout time.Duration) error {
 	exe, err := os.Executable()
 	if err != nil {
-		return 0, fmt.Errorf("find executable: %w", err)
+		return fmt.Errorf("find executable: %w", err)
+	}
+	release, err := acquireSpawnLock(configDir)
+	if err != nil {
+		return fmt.Errorf("acquire daemon spawn lock: %w", err)
+	}
+	defer release()
+	if Running(configDir) {
+		return nil
 	}
 	if err := spawnDaemon(exe, configDir); err != nil {
-		return 0, err
+		return err
 	}
 	return waitForDaemon(configDir, timeout)
 }
@@ -68,13 +80,13 @@ func spawnDaemon(exe, configDir string) error {
 	return nil
 }
 
-func waitForDaemon(configDir string, timeout time.Duration) (int, error) {
+func waitForDaemon(configDir string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if port := RunningPort(configDir); port != 0 {
-			return port, nil
+		if Running(configDir) {
+			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return 0, fmt.Errorf("daemon did not start within %v", timeout)
+	return fmt.Errorf("daemon did not start within %v", timeout)
 }
