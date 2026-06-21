@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"testing"
@@ -8,7 +9,7 @@ import (
 
 func StartUnixServer(t *testing.T, sock string, h http.HandlerFunc) {
 	t.Helper()
-	ln, err := net.Listen("unix", sock)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
 	if err != nil {
 		t.Fatalf("listen unix %s: %v", sock, err)
 	}
