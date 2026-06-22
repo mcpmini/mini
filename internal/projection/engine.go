@@ -11,7 +11,7 @@ import (
 )
 
 type Truncation struct {
-	JQPath string `json:"path"`
+	JQPath string `json:"path"` // e.g. .files[3].patch
 	Chars  int    `json:"chars,omitempty"`
 	Items  int    `json:"items,omitempty"`
 }
