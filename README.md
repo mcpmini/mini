@@ -167,6 +167,31 @@ mini re-exposes each upstream tool under a namespaced name (`github__list_pull_r
 
 `mini connect` auto-detects a running daemon and routes through it, sharing one set of upstream connections across all agent sessions. If no daemon is running, `mini connect` starts one on demand. You usually do not need to manage it yourself; use `mini daemon status` to check whether it is running, or `mini daemon` to start it manually.
 
+```mermaid
+graph TB
+    subgraph before["Without daemon: each chat owns upstream connections"]
+        direction LR
+        a1[Claude Code 1] --> g1[GitHub MCP]
+        a1 --> l1[Linear MCP]
+        a2[Claude Code 2] --> g2[GitHub MCP]
+        a2 --> l2[Linear MCP]
+        a3[Cursor] --> g3[GitHub MCP]
+        a3 --> l3[Linear MCP]
+    end
+
+    subgraph after["With daemon: mini connect relays to one shared daemon"]
+        direction LR
+        b1[Claude Code 1] --> p1[mini connect]
+        b2[Claude Code 2] --> p2[mini connect]
+        b3[Cursor] --> p3[mini connect]
+        p1 --> d[mini daemon]
+        p2 --> d
+        p3 --> d
+        d --> bg[GitHub MCP]
+        d --> bl[Linear MCP]
+    end
+```
+
 ## Projection config
 
 Projections are the rules that control what mini keeps, limits, or removes from responses. They live in `~/.mini/servers/<server>.proj.yaml` and are installed automatically for known servers by `mini init`.

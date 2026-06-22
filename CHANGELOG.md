@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 — 2026-06-21
 
 - **One command replaces `serve` and `proxy`** — use `mini connect`. The default is **proxy** mode (upstream tools exposed directly as `server__tool`, responses minified); pass `--tool-mode compact` for the four-meta-tool interface (`list`/`call`/`perm_call`/`config`). Both `serve` and `proxy` are removed with no aliases.
 - **Bare `mini` prints help and exits 0** — it no longer starts a server.
