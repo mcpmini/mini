@@ -138,7 +138,7 @@ func projectString(s string, ctx projCtx, fieldName string, omitted *[]Truncatio
 	limit := ctx.cfg.stringLimitFor(fieldName)
 	if limit > 0 && len(s) > limit {
 		cut := truncateAtBoundary(s, limit)
-		recordOmission(formatPath(ctx.path), len(s)-len(cut), omitted)
+		recordOmission(formatPath(ctx.path), utf8.RuneCountInString(s)-utf8.RuneCountInString(cut), omitted)
 		return cut
 	}
 	return s
@@ -180,11 +180,12 @@ func isIdentifierSafe(s string) bool {
 }
 
 func replaceWithPlaceholder(s, path string, omitted *[]Truncation) string {
-	*omitted = append(*omitted, Truncation{JQPath: path, Chars: len(s)})
+	n := utf8.RuneCountInString(s)
+	*omitted = append(*omitted, Truncation{JQPath: path, Chars: n})
 	if path == "" {
-		return fmt.Sprintf("<omitted: %d chars — see raw>", len(s))
+		return fmt.Sprintf("<omitted: %d chars — see raw>", n)
 	}
-	return fmt.Sprintf("<omitted: %d chars — see raw, path %s>", len(s), path)
+	return fmt.Sprintf("<omitted: %d chars — see raw, path %s>", n, path)
 }
 
 func recordOmission(path string, chars int, omitted *[]Truncation) {
