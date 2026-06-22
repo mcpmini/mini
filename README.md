@@ -64,13 +64,13 @@ go install github.com/mcpmini/mini/cmd/mini@latest
 
 ## Connect to your agent
 
-Every client connects mini the same way — by running `mini connect`. The fastest path is to let mini wire up the clients you already have installed:
+Every client connects mini the same way — by running `mini connect`. Use `mini init` to import the MCP servers you already configured elsewhere:
 
 ```bash
 mini init   # imports servers from Claude Code, Codex, Cursor, and more
 ```
 
-To register it with a specific client by hand:
+Then register mini with your client:
 
 ```bash
 # Claude Code
