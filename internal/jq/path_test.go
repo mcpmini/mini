@@ -2,7 +2,10 @@
 
 package jq
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestFormatPath(t *testing.T) {
 	cases := []struct {
@@ -14,17 +17,45 @@ func TestFormatPath(t *testing.T) {
 		{"single identifier", []string{"items"}, ".items"},
 		{"chained identifiers", []string{"items", "[0]", "body"}, ".items[0].body"},
 		{"array index first", []string{"[0]", "body"}, ".[0].body"},
+		{"consecutive array indices", []string{"[0]", "[1]", "body"}, ".[0][1].body"},
 		{"non-identifier key", []string{"foo bar"}, `.["foo bar"]`},
 		{"non-identifier key first", []string{"foo bar", "baz"}, `.["foo bar"].baz`},
 		{"leading digit key", []string{"1leading"}, `.["1leading"]`},
 		{"dash key", []string{"has-dash"}, `.["has-dash"]`},
-		{"key with quote", []string{`fo"o`}, `.["fo\"o"]`},
+		{"backslash key", []string{`a\b`}, `.["a\\b"]`},
+		{"quoted key", []string{`say "hi"`}, `.["say \"hi\""]`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := FormatPath(tc.path)
 			if got != tc.want {
 				t.Errorf("FormatPath(%v) = %q, want %q", tc.path, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatPath_roundTripViaEval(t *testing.T) {
+	cases := []struct {
+		name  string
+		path  []string
+		input string
+		want  string
+	}{
+		{"root array index", []string{"[0]", "body"}, `[{"body":"ok"}]`, `"ok"`},
+		{"nested array index", []string{"items", "[0]", "body"}, `{"items":[{"body":"ok"}]}`, `"ok"`},
+		{"bracket key", []string{"body text"}, `{"body text":"ok"}`, `"ok"`},
+		{"backslash key", []string{`a\b`}, `{"a\\b":"ok"}`, `"ok"`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			filter := FormatPath(c.path)
+			got, err := Eval(context.Background(), []byte(c.input), filter)
+			if err != nil {
+				t.Fatalf("Eval(%q, %q): %v", c.input, filter, err)
+			}
+			if got != c.want {
+				t.Errorf("Eval(%q, %q) = %q, want %q", c.input, filter, got, c.want)
 			}
 		})
 	}
