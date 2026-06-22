@@ -244,7 +244,7 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 }
 
 func TestDaemon_healthzEndpoint(t *testing.T) {
-	cfg := t.TempDir()
+	cfg := shortConfigDir(t)
 	startDaemon(t, cfg)
 
 	resp, err := daemonHTTPClient(cfg).Get("http://localhost/healthz")

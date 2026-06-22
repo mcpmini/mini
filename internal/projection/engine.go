@@ -152,12 +152,31 @@ func formatPath(path []string) string {
 	for _, seg := range path {
 		if strings.HasPrefix(seg, "[") {
 			b.WriteString(seg)
-		} else {
+		} else if isIdentifierSafe(seg) {
 			b.WriteByte('.')
 			b.WriteString(seg)
+		} else {
+			b.WriteString(`["`)
+			b.WriteString(strings.ReplaceAll(seg, `"`, `\"`))
+			b.WriteString(`"]`)
 		}
 	}
 	return b.String()
+}
+
+func isIdentifierSafe(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		if i == 0 && (r >= '0' && r <= '9') {
+			return false
+		}
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func replaceWithPlaceholder(s, path string, omitted *[]Truncation) string {

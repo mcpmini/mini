@@ -419,6 +419,25 @@ func TestOmitLimits(t *testing.T) {
 	}
 }
 
+func TestElidedPathBracketNotationForNonIdentifierKey(t *testing.T) {
+	value := map[string]any{
+		"body text": strings.Repeat("x", 500),
+		"normal":    strings.Repeat("x", 500),
+	}
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+
+	paths := make(map[string]bool)
+	for _, o := range result.Truncated {
+		paths[o.JQPath] = true
+	}
+	if !paths[`["body text"]`] {
+		t.Errorf("expected bracket notation for key with space, got paths %v", result.Truncated)
+	}
+	if !paths[".normal"] {
+		t.Errorf("expected dot notation for identifier-safe key, got paths %v", result.Truncated)
+	}
+}
+
 func TestSlimKeepsFalseAndZeroValues(t *testing.T) {
 	cfg := &config.ProjectionConfig{}
 	value := map[string]any{
