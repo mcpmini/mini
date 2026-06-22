@@ -120,8 +120,14 @@ func marshalProxyData(data any) string {
 
 func formatProjectedInline(env *response.Envelope) string {
 	meta := map[string]any{}
-	if note := projectionNote(env); note != "" {
-		meta["msg"] = note
+	if len(env.Excluded) > 0 {
+		meta["excluded"] = env.Excluded
+	}
+	if len(env.Truncated) > 0 {
+		meta["truncated"] = env.Truncated
+	}
+	if len(env.Excluded) > 0 || len(env.Truncated) > 0 {
+		meta["msg"] = "Response truncated, use mini's read(<file>, <jq expr>) tool to fetch truncated fields"
 	}
 	if env.File != nil {
 		meta["file"] = *env.File
@@ -129,23 +135,6 @@ func formatProjectedInline(env *response.Envelope) string {
 	out := map[string]any{"__mini": meta, "data": env.Data}
 	b, _ := json.Marshal(out)
 	return string(b)
-}
-
-func projectionNote(env *response.Envelope) string {
-	var parts []string
-	if len(env.Excluded) > 0 {
-		parts = append(parts, strings.Join(env.Excluded, ", ")+" excluded")
-	}
-	for _, o := range env.Truncated {
-		if o.Items > 0 {
-			parts = append(parts, fmt.Sprintf("%s capped (%d items removed)", o.JQPath, o.Items))
-		} else if o.JQPath != "" {
-			parts = append(parts, fmt.Sprintf("%s truncated (%d chars)", o.JQPath, o.Chars))
-		} else {
-			parts = append(parts, fmt.Sprintf("truncated (%d chars)", o.Chars))
-		}
-	}
-	return strings.Join(parts, "; ")
 }
 
 func (s *Server) handleRead(raw json.RawMessage) (any, error) {

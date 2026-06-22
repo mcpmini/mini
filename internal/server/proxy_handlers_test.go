@@ -196,8 +196,8 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 	if mini == nil {
 		t.Fatalf("expected __mini key in envelope: %s", text)
 	}
-	if msg, _ := mini["msg"].(string); !strings.Contains(msg, "excluded") {
-		t.Errorf("expected 'excluded' in __mini.msg: %s", text)
+	if excluded, _ := mini["excluded"].([]any); len(excluded) == 0 {
+		t.Errorf("expected __mini.excluded to list excluded paths: %s", text)
 	}
 	if env["data"] == nil {
 		t.Errorf("expected data key in envelope: %s", text)
