@@ -461,7 +461,8 @@ type envelope struct {
 
 type truncation struct {
 	JQPath string `json:"path"`
-	Bytes int    `json:"bytes"`
+	Chars  int    `json:"chars"`
+	Items  int    `json:"items"`
 }
 
 func (c *mcpClient) execEnvelope(server, tool string, args map[string]any) envelope {

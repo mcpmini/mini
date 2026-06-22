@@ -178,7 +178,7 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 	}
 }
 
-func TestProxy_NestedExclusion_ReturnsPlainJSONWithoutEnvelope(t *testing.T) {
+func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 	conn := fakeConn("list_prs")
@@ -196,8 +196,11 @@ func TestProxy_NestedExclusion_ReturnsPlainJSONWithoutEnvelope(t *testing.T) {
 	text := toolResultText(t, resp)
 	t.Logf("proxy nested-exclude response: %s", text)
 
-	if strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected no projection note for nested-only exclusion: %s", text)
+	if !strings.Contains(text, ".items[].body") {
+		t.Errorf("expected elided path .items[].body reported in response, got: %s", text)
+	}
+	if !strings.Contains(text, "File:") {
+		t.Errorf("expected raw file written for nested exclusion, got: %s", text)
 	}
 }
 

@@ -87,7 +87,7 @@ func TestOmittedFields(t *testing.T) {
 
 	raw := json.RawMessage(`{"summary":"short","body":"` + strings.Repeat("x", 500) + `"}`)
 	data := map[string]any{"summary": "short", "body": strings.Repeat("x", 50)}
-	omitted := []response.Truncation{{JQPath: ".body", Bytes: 450}}
+	omitted := []response.Truncation{{JQPath: ".body", Chars: 450}}
 
 	env, _, err := builder.Build(response.BuildParams{
 		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Truncated: omitted,
@@ -96,7 +96,7 @@ func TestOmittedFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Bytes != 450 {
+	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Chars != 450 {
 		t.Errorf("expected omitted=[{.body 450}], got %v", env.Truncated)
 	}
 	if env.File == nil {

@@ -227,7 +227,7 @@ func TestProjectionExcludeFields(t *testing.T) {
 	assertExcluded(t, summary, "created", "permissions", "isDirectory")
 }
 
-func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
+func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 	srv := newConfigServer(t)
 	longBody := strings.Repeat("z", 300)
 	payload := `{"id":1,"title":"short","body":"` + longBody + `"}`
@@ -252,19 +252,19 @@ func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
 	if len(omitted) == 0 {
 		t.Errorf("expected omitted entries, got %v", env["truncated"])
 	}
-	var bodyBytes float64
+	var bodyChars float64
 	for _, o := range omitted {
 		om, _ := o.(map[string]any)
 		if om["path"] == ".body" {
-			bodyBytes, _ = om["bytes"].(float64)
+			bodyChars, _ = om["chars"].(float64)
 		}
 	}
-	if bodyBytes <= 0 {
-		t.Errorf("expected omitted[body].bytes > 0, got omitted=%v", omitted)
+	if bodyChars <= 0 {
+		t.Errorf("expected omitted[body].chars > 0, got omitted=%v", omitted)
 	}
 	// body had 300 chars, limit 50 → removed ≥ 200
-	if int(bodyBytes) < 200 {
-		t.Errorf("expected at least 200 bytes removed from body, got %v", bodyBytes)
+	if int(bodyChars) < 200 {
+		t.Errorf("expected at least 200 chars removed from body, got %v", bodyChars)
 	}
 	if env["file"] == nil {
 		t.Error("expected file to be written when truncation occurred")

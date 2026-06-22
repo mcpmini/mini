@@ -64,17 +64,17 @@ func TestExcludeAlways(t *testing.T) {
 }
 
 func TestArrayLimit(t *testing.T) {
-	t.Run("per-projection limit truncates with sentinel", func(t *testing.T) {
+	t.Run("per-projection limit produces truncation metadata", func(t *testing.T) {
 		value := map[string]any{"steps": []any{"a", "b", "c", "d", "e"}}
 		cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"steps": 2}}
 		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
 		m := result.Summary.(map[string]any)
 		steps := m["steps"].([]any)
-		if len(steps) != 3 { // 2 items + sentinel
-			t.Errorf("expected 2 items + sentinel = 3, got %d", len(steps))
+		if len(steps) != 2 {
+			t.Errorf("expected 2 items (no sentinel), got %d", len(steps))
 		}
-		if steps[2] != "...+3 more" {
-			t.Errorf("expected sentinel, got %v", steps[2])
+		if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".steps" || result.Truncated[0].Items != 3 {
+			t.Errorf("expected truncation metadata {.steps items:3}, got %v", result.Truncated)
 		}
 	})
 
@@ -101,8 +101,8 @@ func TestStringTruncation(t *testing.T) {
 	if m["body"] != want {
 		t.Errorf("body = %q, want %q", m["body"], want)
 	}
-	if len(result.Truncated) != 1 || result.Truncated[0].Bytes != 1900 {
-		t.Errorf("omitted = %v, want [{.body 1900}]", result.Truncated)
+	if len(result.Truncated) != 1 || result.Truncated[0].Chars != 1900 {
+		t.Errorf("omitted = %v, want [{.body chars:1900}]", result.Truncated)
 	}
 }
 
@@ -197,7 +197,7 @@ func TestIncludeFilterOnlyTopLevel_preservesNestedFields(t *testing.T) {
 	}
 }
 
-func namedArrayLimitsResult(t *testing.T) map[string]any {
+func namedArrayLimitsApply(t *testing.T) projection.Result {
 	t.Helper()
 	cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"issues": 5}}
 	value := map[string]any{
@@ -206,22 +206,24 @@ func namedArrayLimitsResult(t *testing.T) map[string]any {
 	}
 	limits := &projection.Defaults{StringLimit: 1000, DepthLimit: 5,
 		ContentFields: []string{}, AutoStripThreshold: 0}
-	return projection.Apply(value, cfg, limits).Summary.(map[string]any)
+	return projection.Apply(value, cfg, limits)
 }
 
 func TestNamedArrayLimit_namedLimitApplied(t *testing.T) {
-	m := namedArrayLimitsResult(t)
+	result := namedArrayLimitsApply(t)
+	m := result.Summary.(map[string]any)
 	issues := m["issues"].([]any)
-	if len(issues) != 6 {
-		t.Errorf("expected 5 items + sentinel = 6, got %d", len(issues))
+	if len(issues) != 5 {
+		t.Errorf("expected 5 items (no sentinel), got %d", len(issues))
 	}
-	if issues[5] != "...+2 more" {
-		t.Errorf("expected sentinel ...+2 more, got %v", issues[5])
+	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".issues" || result.Truncated[0].Items != 2 {
+		t.Errorf("expected truncation metadata {.issues items:2}, got %v", result.Truncated)
 	}
 }
 
 func TestNamedArrayLimit_unlimitedForOtherFields(t *testing.T) {
-	m := namedArrayLimitsResult(t)
+	result := namedArrayLimitsApply(t)
+	m := result.Summary.(map[string]any)
 	other := m["other_list"].([]any)
 	if len(other) != 5 {
 		t.Errorf("expected all 5 items (no global limit), got %d", len(other))
@@ -247,8 +249,8 @@ func TestNamedStringLimit(t *testing.T) {
 	if m["body"].(string) != wantBody {
 		t.Errorf("body = %q, want %q", m["body"], wantBody)
 	}
-	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".body" || result.Truncated[0].Bytes != 20 {
-		t.Errorf("omitted = %v, want [{.body 20}]", result.Truncated)
+	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".body" || result.Truncated[0].Chars != 20 {
+		t.Errorf("omitted = %v, want [{.body chars:20}]", result.Truncated)
 	}
 	// title has no named limit — should pass through untruncated
 	if m["title"].(string) != long {
@@ -275,8 +277,8 @@ func TestSlimMode_stringAndArrayLimits(t *testing.T) {
 	if m["body"].(string) != wantBody {
 		t.Errorf("slim body = %q, want %q", m["body"], wantBody)
 	}
-	if len(m["items"].([]any)) > 4 {
-		t.Errorf("slim mode: items should be capped at 3 + sentinel, got %d", len(m["items"].([]any)))
+	if len(m["items"].([]any)) > 3 {
+		t.Errorf("slim mode: items should be capped at 3 (no sentinel), got %d", len(m["items"].([]any)))
 	}
 }
 

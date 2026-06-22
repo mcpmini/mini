@@ -33,13 +33,13 @@ func TestProjection_elidedFieldsReported(t *testing.T) {
 
 	found := false
 	for _, v := range e.Elided {
-		if v == "node_id" {
+		if v == ".node_id" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected 'node_id' in elided list, got: %v", e.Elided)
+		t.Errorf("expected '.node_id' in elided list, got: %v", e.Elided)
 	}
 }
 
@@ -82,12 +82,12 @@ func TestProjection_omittedEnvelope(t *testing.T) {
 		t.Fatalf("expected success, got error: %s", env.Error)
 	}
 
-	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Bytes <= 0 {
+	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Chars <= 0 {
 		t.Fatalf("expected one omitted .body entry, got %v", env.Truncated)
 	}
-	// 400 chars → limit 60, so at least 300 bytes removed
-	if env.Truncated[0].Bytes < 300 {
-		t.Errorf("expected at least 300 bytes removed from body, got %d", env.Truncated[0].Bytes)
+	// 400 chars → limit 60, so at least 300 chars removed
+	if env.Truncated[0].Chars < 300 {
+		t.Errorf("expected at least 300 chars removed from body, got %d", env.Truncated[0].Chars)
 	}
 	for _, o := range env.Truncated {
 		if o.JQPath == ".title" {
