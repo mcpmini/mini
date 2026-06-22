@@ -36,8 +36,8 @@ func TestRunCleanup(t *testing.T) {
 			t.Fatalf("runCleanup: %v", err)
 		}
 		got := out.String()
-		if !strings.Contains(got, "removed 1 file pair(s)") {
-			t.Errorf("output = %q, want 'removed 1 file pair(s)'", got)
+		if !strings.Contains(got, "removed 1 file(s)") {
+			t.Errorf("output = %q, want 'removed 1 file(s)'", got)
 		}
 		if !strings.Contains(got, "freed") {
 			t.Errorf("output = %q, want 'freed' bytes info", got)
