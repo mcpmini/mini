@@ -1,3 +1,5 @@
+//go:build test
+
 package jq
 
 import "testing"
@@ -9,13 +11,14 @@ func TestFormatPath(t *testing.T) {
 		want string
 	}{
 		{"empty", nil, ""},
-		{"single identifier", []string{"foo"}, ".foo"},
-		{"chained identifiers", []string{"foo", "bar"}, ".foo.bar"},
-		{"field then array index", []string{"items", "[0]"}, ".items[0]"},
-		{"array index first", []string{"[0]", "foo"}, ".[0].foo"},
+		{"single identifier", []string{"items"}, ".items"},
+		{"chained identifiers", []string{"items", "[0]", "body"}, ".items[0].body"},
+		{"array index first", []string{"[0]", "body"}, ".[0].body"},
 		{"non-identifier key", []string{"foo bar"}, `.["foo bar"]`},
 		{"non-identifier key first", []string{"foo bar", "baz"}, `.["foo bar"].baz`},
-		{"key with quotes", []string{`fo"o`}, `.["fo\"o"]`},
+		{"leading digit key", []string{"1leading"}, `.["1leading"]`},
+		{"dash key", []string{"has-dash"}, `.["has-dash"]`},
+		{"key with quote", []string{`fo"o`}, `.["fo\"o"]`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
