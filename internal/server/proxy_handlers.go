@@ -18,7 +18,7 @@ func (s *Server) routeProxyTool(ctx context.Context, name string, args json.RawM
 	case "config":
 		return s.handleConfigure(ctx, args, session)
 	case "read":
-		return s.handleRead(args)
+		return s.handleRead(ctx, args)
 	default:
 		return s.handleProxyCall(ctx, name, args, session)
 	}
@@ -140,7 +140,7 @@ func formatProjectedInline(env *response.Envelope) string {
 	return string(b)
 }
 
-func (s *Server) handleRead(raw json.RawMessage) (any, error) {
+func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, error) {
 	path, filter, err := parseReadArgs(raw)
 	if err != nil {
 		return nil, err
@@ -155,11 +155,11 @@ func (s *Server) handleRead(raw json.RawMessage) (any, error) {
 	if filter == "" {
 		return string(b), nil
 	}
-	out, err := applyReadFilter(b, filter)
+	out, err := applyReadFilter(ctx, b, filter)
 	if err != nil {
 		return nil, fmt.Errorf("%w: read filter: %w", errInvalidParams, err)
 	}
-	return string(out), nil
+	return out, nil
 }
 
 func parseReadArgs(raw json.RawMessage) (path, filter string, err error) {

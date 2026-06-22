@@ -92,7 +92,7 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 	}
 }
 
-func TestProxy_MiniRead_FilterError(t *testing.T) {
+func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -118,13 +118,13 @@ func TestProxy_MiniRead_FilterError(t *testing.T) {
 		t.Fatalf("expected file path in __mini, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath, "filter": ".nonexistent"}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath, "filter": "!!!invalid_jq!!!"}))
 	if resp2["error"] != nil {
 		return // RPC-level error is correct
 	}
 	result, ok := resp2["result"].(map[string]any)
 	if !ok || result["isError"] != true {
-		t.Errorf("expected error for nonexistent filter key, got: %v", resp2)
+		t.Errorf("expected error for invalid jq filter, got: %v", resp2)
 	}
 }
 
