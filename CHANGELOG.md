@@ -8,7 +8,6 @@
 - **More complete auth and config support** — OAuth flows now track the 2025-11-25 MCP auth updates, and server configs can use `${VAR}` environment interpolation.
 - **Stronger daemon behavior** — daemon traffic is authenticated, local-only assumptions are enforced more carefully, and `mini connect` can recover when a daemon dies before handling a request.
 - **More complete MCP compatibility** — HTTP/SSE upstreams now follow `tools/list` pagination, pass tool annotations through in proxy mode, and return structured JSON-RPC errors for daemon HTTP failures.
-- **Large response handling fix** — projected responses that elide or truncate fields now write response files when needed instead of incorrectly staying inline.
 
 ## v0.1.0 — 2026-06-01
 
