@@ -583,4 +583,3 @@ func assertInlineGetItem(t *testing.T, env envelope) {
 		t.Fatalf("expected data.name=test, got %#v", data["name"])
 	}
 }
-
