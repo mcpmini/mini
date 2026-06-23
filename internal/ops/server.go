@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/defaults"
 )
 
 // WriteServer validates name, writes servers/<name>.yaml, and installs a
@@ -16,12 +17,28 @@ func WriteServer(configDir string, sc config.ServerConfig) error {
 	if !config.ValidServerName.MatchString(sc.Name) {
 		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", sc.Name)
 	}
+	applyBundledAuth(&sc)
 	if err := writeServerYAML(configDir, sc); err != nil {
 		return err
 	}
 	InstallBundledProjection(configDir, sc)
 	installBundledPermissions(configDir, sc)
 	return nil
+}
+
+func applyBundledAuth(sc *config.ServerConfig) {
+	if sc.Auth != nil {
+		return
+	}
+	data := defaults.AuthFor(sc.Name)
+	if data == nil {
+		return
+	}
+	var ac config.AuthConfig
+	if err := yaml.Unmarshal(data, &ac); err != nil {
+		return
+	}
+	sc.Auth = &ac
 }
 
 func writeServerYAML(configDir string, sc config.ServerConfig) error {

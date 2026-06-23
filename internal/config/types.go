@@ -164,22 +164,31 @@ type AuthConfig struct {
 	Type string `yaml:"type"`
 
 	// For apikey/bearer: the token value or env var reference ($MY_TOKEN)
-	Token string `yaml:"token"`
+	Token string `yaml:"token,omitempty"`
 
 	// Header name for injection. Default: "Authorization"
-	Header string `yaml:"header"`
+	Header string `yaml:"header,omitempty"`
 
 	// OAuth2 fields
-	ClientID     string   `yaml:"client_id"`
-	ClientSecret string   `yaml:"client_secret"`
-	AuthURL      string   `yaml:"auth_url"`
-	TokenURL     string   `yaml:"token_url"`
-	Scopes       []string `yaml:"scopes"`
+	ClientID     string   `yaml:"client_id,omitempty"`
+	ClientSecret string   `yaml:"client_secret,omitempty"`
+	AuthURL      string   `yaml:"auth_url,omitempty"`
+	TokenURL     string   `yaml:"token_url,omitempty"`
+	Scopes       []string `yaml:"scopes,omitempty"`
 
 	// ResourceURL is the canonical URI of the MCP server sent as the RFC 8707
 	// resource parameter in auth and token requests. Populated automatically
 	// from the server URL during discovery; not set by users in YAML.
 	ResourceURL string `yaml:"-"`
+
+	// CallbackPort overrides the loopback port for the OAuth2 redirect URI.
+	// Required when using a pre-registered client_id with fixed redirect URIs
+	// (e.g. Slack's public MCP client is registered for http://localhost:3118/callback).
+	CallbackPort int `yaml:"callback_port,omitempty"`
+
+	// ExtraAuthParams adds fixed key=value parameters to the authorization URL.
+	// Use for provider-specific extensions not covered by standard OAuth2 fields.
+	ExtraAuthParams map[string]string `yaml:"extra_auth_params,omitempty"`
 
 	// BrowserCmd overrides the command used to open the OAuth2 browser window.
 	// Useful for targeting a specific browser profile, e.g.:

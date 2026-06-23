@@ -35,6 +35,7 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 		"authorization_endpoint":                "https://as.example.com/authorize",
 		"token_endpoint":                        "https://as.example.com/token",
 		"client_id_metadata_document_supported": true,
+		"code_challenge_methods_supported":      []string{"S256"},
 	})
 	defer asSrv.Close()
 
@@ -50,6 +51,34 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 	}
 	if sc.Auth.ResourceURL != sc.URL {
 		t.Errorf("ResourceURL = %q, want %q", sc.Auth.ResourceURL, sc.URL)
+	}
+}
+
+func TestResolveEndpoints_cachedRegistrationBeforesCIMD(t *testing.T) {
+	// Servers like Linear advertise CIMD but reject arbitrary metadata URLs.
+	// A cached DCR client_id must win over CIMD to avoid re-fetching and failing.
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                "https://as.example.com/authorize",
+		"token_endpoint":                        "https://as.example.com/token",
+		"client_id_metadata_document_supported": true,
+		"code_challenge_methods_supported":      []string{"S256"},
+	})
+	defer asSrv.Close()
+
+	dir := t.TempDir()
+	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "cached-id"}); err != nil {
+		t.Fatal(err)
+	}
+
+	sc := &config.ServerConfig{
+		URL:  asSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{Type: "oauth2"},
+	}
+	if err := auth.ResolveEndpoints(context.Background(), dir, "srv", sc); err != nil {
+		t.Fatal(err)
+	}
+	if sc.Auth.ClientID != "cached-id" {
+		t.Errorf("ClientID = %q, want cached-id (cached DCR must beat CIMD)", sc.Auth.ClientID)
 	}
 }
 

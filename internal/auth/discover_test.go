@@ -28,9 +28,10 @@ func serveASMeta(t *testing.T, path string, meta map[string]any) *httptest.Serve
 
 func TestDiscover_rootASMeta(t *testing.T) {
 	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint": "https://as.example.com/authorize",
-		"token_endpoint":         "https://as.example.com/token",
-		"registration_endpoint":  "https://as.example.com/register",
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"registration_endpoint":           "https://as.example.com/register",
+		"code_challenge_methods_supported": []string{"S256"},
 	})
 	defer srv.Close()
 
@@ -59,9 +60,10 @@ func TestDiscover_pathInsertedASMeta(t *testing.T) {
 		case "/.well-known/oauth-authorization-server/tenant":
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"authorization_endpoint": "https://as.example.com/authorize",
-				"token_endpoint":         "https://as.example.com/token",
-				"registration_endpoint":  "https://as.example.com/register",
+				"authorization_endpoint":          "https://as.example.com/authorize",
+				"token_endpoint":                  "https://as.example.com/token",
+				"registration_endpoint":           "https://as.example.com/register",
+				"code_challenge_methods_supported": []string{"S256"},
 			})
 		default:
 			http.NotFound(w, r)
@@ -84,8 +86,9 @@ func TestDiscover_pathInsertedASMeta(t *testing.T) {
 func TestDiscover_wwwAuthenticateHeader(t *testing.T) {
 	// Two-server setup: MCP server returns 401 pointing to a separate AS
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint": "https://as.example.com/authorize",
-		"token_endpoint":         "https://as.example.com/token",
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"code_challenge_methods_supported": []string{"S256"},
 	})
 	defer asSrv.Close()
 
@@ -123,6 +126,7 @@ func TestDiscover_cimdSupported(t *testing.T) {
 		"authorization_endpoint":                  "https://as.example.com/authorize",
 		"token_endpoint":                          "https://as.example.com/token",
 		"client_id_metadata_document_supported":   true,
+		"code_challenge_methods_supported":        []string{"S256"},
 	})
 	defer srv.Close()
 
@@ -155,6 +159,20 @@ func TestDiscover_404_fallsBack(t *testing.T) {
 	}
 }
 
+func TestDiscover_noPKCE_returnsError(t *testing.T) {
+	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint": "https://as.example.com/authorize",
+		"token_endpoint":         "https://as.example.com/token",
+		// code_challenge_methods_supported absent — MUST refuse per MCP spec
+	})
+	defer srv.Close()
+
+	_, err := auth.Discover(context.Background(), srv.URL)
+	if err == nil {
+		t.Error("expected error when code_challenge_methods_supported absent")
+	}
+}
+
 func TestDiscover_serverError_returnsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -169,8 +187,9 @@ func TestDiscover_serverError_returnsError(t *testing.T) {
 
 func TestDiscover_noPathURL(t *testing.T) {
 	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint": "https://as.example.com/authorize",
-		"token_endpoint":         "https://as.example.com/token",
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"code_challenge_methods_supported": []string{"S256"},
 	})
 	defer srv.Close()
 
