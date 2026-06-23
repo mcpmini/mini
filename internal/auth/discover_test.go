@@ -258,3 +258,69 @@ func TestDiscover_cancelledContext_returnsError(t *testing.T) {
 		t.Error("expected error for cancelled context, got nil")
 	}
 }
+
+func TestDiscover_scopesFromPRM(t *testing.T) {
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	defer asSrv.Close()
+
+	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"authorization_servers": []string{asSrv.URL},
+			"scopes_supported":      []string{"channels:read", "chat:write"},
+		})
+	}))
+	defer prmSrv.Close()
+
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer mcpSrv.Close()
+
+	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta.Scopes) != 2 || meta.Scopes[0] != "channels:read" || meta.Scopes[1] != "chat:write" {
+		t.Errorf("Scopes from PRM: got %v, want [channels:read chat:write]", meta.Scopes)
+	}
+}
+
+func TestDiscover_scopeFromWWWAuthenticateBeforesPRM(t *testing.T) {
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	defer asSrv.Close()
+
+	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"authorization_servers": []string{asSrv.URL},
+			"scopes_supported":      []string{"channels:read", "chat:write"},
+		})
+	}))
+	defer prmSrv.Close()
+
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// scope in WWW-Authenticate header takes priority over PRM scopes_supported
+		w.Header().Set("WWW-Authenticate",
+			`Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource", scope="files:read"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer mcpSrv.Close()
+
+	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta.Scopes) != 1 || meta.Scopes[0] != "files:read" {
+		t.Errorf("Scopes: got %v, want [files:read] (WWW-Authenticate scope should beat PRM)", meta.Scopes)
+	}
+}

@@ -172,6 +172,32 @@ func TestStartPKCEFlow_nonBlocking(t *testing.T) {
 	}
 }
 
+func TestStartPKCEFlow_redirectURIUsesLocalhost(t *testing.T) {
+	mock := newMockAuthServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	if err != nil {
+		t.Fatalf("StartPKCEFlow: %v", err)
+	}
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("parse auth URL: %v", err)
+	}
+	redirectURI := parsed.Query().Get("redirect_uri")
+	redirectParsed, err := url.Parse(redirectURI)
+	if err != nil {
+		t.Fatalf("parse redirect_uri: %v", err)
+	}
+	if redirectParsed.Hostname() != "localhost" {
+		t.Errorf("redirect_uri host = %q, want localhost", redirectParsed.Hostname())
+	}
+	// Drain channel so test doesn't leak.
+	cancel()
+	<-doneCh
+}
+
 func TestIsNotFound(t *testing.T) {
 	_, err := auth.Load(t.TempDir(), "nonexistent")
 	if !auth.IsNotFound(err) {
