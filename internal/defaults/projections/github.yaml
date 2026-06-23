@@ -87,6 +87,7 @@ search_issues:
   exclude_always: [score]
 
 get_file_contents:
+  exclude_always: [url, git_url, download_url, html_url, _links]
 
 list_repository_contents:
   include: [name, path, type, size, sha]

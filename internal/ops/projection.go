@@ -21,7 +21,7 @@ type serverMatcher struct {
 var knownServers = []serverMatcher{
 	{projection: "github", urlParts: []string{"github.com", "githubcopilot.com"}, cmdParts: []string{"server-github"}},
 	{projection: "slack", urlParts: []string{"slack.com"}, cmdParts: []string{"server-slack", "slack-mcp"}},
-	{projection: "atlassian", urlParts: []string{"atlassian.net", "jira.com"}, cmdParts: []string{"mcp-atlassian", "server-jira", "confluence-mcp"}},
+	{projection: "atlassian", urlParts: []string{"atlassian.net", "atlassian.com", "jira.com"}, cmdParts: []string{"mcp-atlassian", "server-jira", "confluence-mcp"}},
 	{projection: "linear", urlParts: []string{"linear.app"}, cmdParts: []string{"server-linear", "linear-mcp"}},
 	{projection: "sentry", urlParts: []string{"sentry.io"}, cmdParts: []string{"server-sentry"}},
 }
