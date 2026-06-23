@@ -170,6 +170,37 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 
 **Proof standard**: for logic bugs, state the input that triggers the wrong behavior and the actual vs. expected outcome. For resource leaks, identify the specific exit path that skips the close.
 
+## Pass 2d — Structure
+
+**Skip this pass** if the diff is a small fix, a config change, or touches only test files. This pass is for diffs that introduce or modify abstractions: new types, new files, new multi-function flows, or significant restructuring.
+
+Passes 2a–2c work bottom-up: read a function, evaluate it. This pass works top-down: map the flows first, then check whether the code's decomposition matches the domain. Each function can look correct in isolation while the overall decomposition is wrong — bottom-up reading cannot surface that.
+
+**Prioritize this pass** when the diff shows these signals in a changed package:
+- Functions with 4+ parameters (a missing domain type)
+- Bare `func()` parameters or closure captures (a domain concept without a name)
+- High comment density in non-test code (the code needs explaining because the abstractions are wrong)
+- Tests with heavy setup boilerplate (boundaries are in the wrong place — testing one concept requires building another)
+
+For each package the diff substantially changes:
+
+1. **Map the flows and name the verbs.** Before reading any function body, trace every execution flow through the package — not just the changed code, but the full flows that pass through it. Name each flow and each action within it as a domain verb phrase ("resolve daemon", "forward request", "refresh expired token"). The verbs are the exercise: as you name actions across flows, the natural methods emerge. Verbs that share state belong on the same type. Verbs that don't share state belong on different types. A verb with no name in the code (inline logic, bare callback) is a missing abstraction. If you can't name a flow without using implementation terms, note that — it's already a signal.
+
+2. **Derive the domain model.** Given the flows and verbs, if you were writing this from scratch, what types would you create? Group verbs by shared state into types. The gap between this blank-slate design and the actual code is the finding.
+
+3. **Compare to actual structure.** Map each domain concept to the types, files, and functions that implement it. Flag:
+   - **Mixed concerns**: a new or modified type handles verbs from multiple unrelated domain concepts. Test: changing concept A forces touching code that implements concept B.
+   - **Missing abstractions**: bare callbacks, anonymous functions, or inline logic where the flows show a named domain concept. Especially: `func()` parameters or closure captures that represent a real domain action with no name.
+   - **Cryptic naming**: new names that don't map to any domain verb or noun — you can't predict the behavior without reading the body.
+   - **Wrong boundaries**: the diff draws type/file boundaries that don't align with the domain model.
+   - **Over-abstraction**: indirection that doesn't correspond to any domain concept — an interface with one implementation and no test fake, a wrapper that adds no behavior.
+
+**Proof standard:** name the domain concept(s), show where they appear in the flow list, and show the specific mismatch in the code. Not "this could be split" — "these are two independent domain concepts (X and Y) sharing a type because [specific evidence]."
+
+Structural findings are **MEDIUM** by default. **HIGH** only if the mismatch makes a critical flow untestable or forces changes across 3+ unrelated files.
+
+For a deeper standalone structural review, use the `structure-review` skill.
+
 ## Pass 3 — Tests
 
 Read the tests for every changed function. For each:
