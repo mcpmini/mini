@@ -106,6 +106,35 @@ func TestStringTruncation(t *testing.T) {
 	}
 }
 
+func TestStringTruncation_CJKUsesCharCount(t *testing.T) {
+	// 700 CJK chars = 2100 bytes. A 2000-char limit should keep all 700 chars.
+	cjk := strings.Repeat("中", 700)
+	value := map[string]any{"body": cjk}
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 2000, DepthLimit: 5})
+	m := result.Summary.(map[string]any)
+	if m["body"] != cjk {
+		t.Errorf("expected 700 CJK chars preserved, got %d chars", utf8.RuneCountInString(m["body"].(string)))
+	}
+	if len(result.Truncated) != 0 {
+		t.Errorf("expected no truncation for 700 chars under 2000-char limit, got %v", result.Truncated)
+	}
+}
+
+func TestStringTruncation_CJKTruncatesAtRuneCount(t *testing.T) {
+	// 1000 CJK chars = 3000 bytes. A 500-char limit should keep ~500 chars, not ~166.
+	cjk := strings.Repeat("中", 1000)
+	value := map[string]any{"body": cjk}
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 500, DepthLimit: 5})
+	m := result.Summary.(map[string]any)
+	got := utf8.RuneCountInString(m["body"].(string))
+	if got > 500 {
+		t.Errorf("expected at most 500 CJK chars, got %d", got)
+	}
+	if got < 450 {
+		t.Errorf("expected at least 450 CJK chars (near 500-char limit), got %d", got)
+	}
+}
+
 // TestDepthLimit verifies that depth is counted from 0 (top-level = depth 0).
 // With depthLimit=2: depth 0 (top-level) and depth 1 (a) are projected,
 // but depth 2 (a.b) returns "[depth limit reached]".

@@ -1,16 +1,14 @@
 package transport
 
 import (
-	"crypto/rand"
 	"fmt"
+
+	"github.com/mcpmini/mini/internal/randutil"
 )
 
 // NewSessionID generates a random UUID v4 for session identification.
 func NewSessionID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic("crypto/rand unavailable: " + err.Error())
-	}
+	b := randutil.Bytes(16)
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 

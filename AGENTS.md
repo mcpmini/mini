@@ -125,20 +125,23 @@ agent → Serve() → session handler → handleList / handleExecute / handleExe
 
 ### Response envelope
 
-Every `call`/`perm_call` call returns:
+When projection removes or truncates data, `call`/`perm_call` wraps the response:
 ```json
 {
-  "server", "tool", "ok", "summary",
-  "response_meta", "elided_keys", "passthrough",
-  "inline": true/false,
-  "estimated_raw_tokens": N,
-  "estimated_tokens_saved": N,
-  "latency_ms": N
+  "__mini": {
+    "msg": "Response truncated, use mini's read(<file>, <jq expr>) tool to fetch truncated fields",
+    "file": "/path/to/<epoch>_<hash8>.json",
+    "elided": [".secret", ".internal"],
+    "truncated": [{"path": ".body", "chars": 420}, {"path": ".items", "items": 73}]
+  },
+  "data": { ... }
 }
 ```
-- Responses < `inline_threshold` tokens: `inline=true`, no file written
-- Larger responses: written to `~/.mini/responses/<timestamp>.json` (slim) and `<timestamp>.raw.json` (full)
-- Token counts are estimates (labeled as such); latency is wall-clock upstream call time
+- `elided`: jq-style paths of fields removed entirely by projection
+- `truncated[].chars`: characters (runes) removed from a string field
+- `truncated[].items`: items removed from an array field by array limit
+- When no data is removed, the response is plain JSON with no `__mini` wrapper
+- Raw recovery files written to `~/.mini/responses/<epoch>_<hash8>.json` when data is lost
 
 ### Config directory layout
 
