@@ -42,7 +42,7 @@ func newEnvelope(p BuildParams) *Envelope {
 	return &Envelope{
 		Data:        p.Summary,
 		Elided:      nilIfEmpty(p.Elided),
-		Truncated:     p.Truncated,
+		Truncated:   nilIfEmptyTruncated(p.Truncated),
 		Hint:        p.Hint,
 		Passthrough: nilIfEmptyMap(p.Passthrough),
 	}
@@ -78,4 +78,11 @@ func nilIfEmptyMap(m map[string]any) map[string]any {
 		return nil
 	}
 	return m
+}
+
+func nilIfEmptyTruncated(t []Truncation) []Truncation {
+	if len(t) == 0 {
+		return nil
+	}
+	return t
 }

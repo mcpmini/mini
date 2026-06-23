@@ -21,7 +21,6 @@ func collapseElided(paths []string) []string {
 	return out
 }
 
-// indexedToWildcard replaces [N] (numeric index) with [] in a jq path.
 func indexedToWildcard(p string) string {
 	if !strings.ContainsRune(p, '[') {
 		return p

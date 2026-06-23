@@ -1,8 +1,3 @@
-// Package randutil provides helpers for cryptographically secure random bytes.
-//
-// crypto/rand.Read never returns a non-nil error. If the OS random source is
-// unavailable it crashes the program irrecoverably rather than returning an
-// error. See https://github.com/golang/go/blob/go1.24.0/src/crypto/rand/rand.go#L60-L83
 package randutil
 
 import (
@@ -10,10 +5,9 @@ import (
 	"encoding/hex"
 )
 
-// Bytes returns n cryptographically secure random bytes.
 func Bytes(n int) []byte {
 	b := make([]byte, n)
-	rand.Read(b) //nolint:errcheck
+	rand.Read(b) //nolint:errcheck // Go 1.20+: crashes rather than errors when OS rand is unavailable — go.dev/issue/66821
 	return b
 }
 

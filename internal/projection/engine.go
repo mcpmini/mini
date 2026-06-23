@@ -3,7 +3,6 @@ package projection
 import (
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -50,7 +49,7 @@ func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 }
 
 func sortTruncated(truncated []Truncation) {
-	sort.Slice(truncated, func(i, j int) bool { return truncated[i].JQPath < truncated[j].JQPath })
+	slices.SortFunc(truncated, func(a, b Truncation) int { return strings.Compare(a.JQPath, b.JQPath) })
 }
 
 func project(value any, ctx projCtx, elided *[]string, truncated *[]Truncation) any {
