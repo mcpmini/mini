@@ -109,12 +109,12 @@ func TestCLICall_WithProjection(t *testing.T) {
 	}
 	found := false
 	for _, e := range env.Elided {
-		if e == "secret" {
+		if e == ".secret" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected 'secret' in elided list, got %v", env.Elided)
+		t.Errorf("expected '.secret' in elided list, got %v", env.Elided)
 	}
 }
 
