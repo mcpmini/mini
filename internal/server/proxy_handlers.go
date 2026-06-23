@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/jq"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
 )
@@ -155,7 +156,7 @@ func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, erro
 	if filter == "" {
 		return string(b), nil
 	}
-	out, err := applyReadFilter(ctx, b, filter)
+	out, err := jq.Eval(ctx, b, filter)
 	if err != nil {
 		return nil, fmt.Errorf("%w: read filter: %w", errInvalidParams, err)
 	}
