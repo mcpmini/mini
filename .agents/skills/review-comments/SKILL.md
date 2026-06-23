@@ -26,8 +26,14 @@ existed before this diff and were only moved or reflowed.
 
 Work through each alternative in order. If any applies, apply it and the comment is gone.
 
-1. **Rename** — would a better function, variable, or type name make this comment
+1. **Rename** — would a better function, variable, field, or type name make this comment
    unnecessary? If yes: rename and delete. Good names are free; comments have a cost.
+   Scan every identifier the comment mentions — not just the function or type it sits above.
+   A struct-level comment that describes one field is really a field-naming problem.
+   For test functions: the name *is* the comment. Make it long enough to be self-documenting
+   (`TestLogin_ExpiredToken_ReturnsUnauthorized` not `TestTokenExpiry`). Name tests from
+   the caller's perspective — what does the caller observe? — not from the internal
+   mechanism being exercised.
 
 2. **Extract a function** — is the comment marking a block of logic ("// validate the
    token", "// build response")? If yes: extract that block into a named function and
@@ -41,6 +47,9 @@ Work through each alternative in order. If any applies, apply it and the comment
    - Restates what the code does in English
    - Acts as a section divider or structural marker
    - Repeats information already in the function name, type, or signature
+   - Redundant with the containing type's doc comment — before keeping a field comment,
+     read the struct or interface doc. If it already covers when/how/why the field is set,
+     the field comment is dead weight.
    - States a fact a reader gets for free by navigating the code (e.g. "shared by callers
      X and Y" — one find-references away). Don't manufacture a why-framing just to save it.
 
@@ -59,21 +68,32 @@ Work through each alternative in order. If any applies, apply it and the comment
    locally as possible. Above-the-signature comments are reserved for genuine doc comments on
    *exported* identifiers (Go convention) and for a true one-line whole-function summary the
    name itself cannot carry — not for explaining one statement in the body.
+   **After relocating, re-apply step 1.** Moving a comment from a struct to a field often
+   unlocks a rename that wasn't visible at the struct level. A comment "uses ISO 8601
+   format" floating above the struct becomes a rename opportunity once it lands on the
+   `Date` field — rename to `ISO8601Date` and delete.
 
 7. **Keep** — a comment reaches Keep only after all six alternatives above are genuinely
    exhausted. Before marking Keep, apply three additional checks:
 
-   - **Deep why, not shallow why.** A comment that references internal implementation
-     ("have to do this because `internalServeFunc` passes this structure down") is a
-     shallow why — it will rot as the code evolves and teaches nothing about the world.
-     A comment that explains an external constraint — client or consumer behavior,
-     protocol requirements, backward compatibility, data invariants that originate
-     outside this codebase — is a deep why. Deep why: keep. Shallow why: push the author
-     to articulate the underlying external constraint, or delete.
+   - **Deep why, not shallow why.** The deep why is the constraint a developer needs to
+     understand to safely modify the code — not the mechanism by which it works.
+     `// retry because the server returns 503 during rolling deploys` (developer constraint:
+     don't remove this retry or deploys break) is deep.
+     `// retry by sleeping 100ms then re-dialing the connection` (mechanism) is shallow —
+     a developer can read that from the next two lines. External constraints — client
+     behavior, protocol requirements, backward compatibility, data invariants from outside
+     this codebase — are almost always deep. Internal implementation references are almost
+     always shallow. Deep why: keep. Shallow why: push the author to articulate the
+     underlying constraint, or delete.
 
-   - **Verify claims.** If the comment asserts "this prevents X" or "this blocks Y",
-     check that claim against the actual code. Don't take it on faith. A comment that
-     makes a false or misleading claim is worse than no comment.
+   - **Verify claims.** Check every factual claim in the comment against the actual code.
+     Not just assertions like "this prevents X" — also causal claims ("passed by value so
+     each call gets its own copy"), behavioral claims ("always set", "never nil"), and
+     format claims ("uses dot-notation"). Read the code and confirm the mechanism is what
+     the comment says it is. Comments that describe assertions in tests: verify the
+     assertion itself is still correct, not just whether the comment is redundant. A comment
+     that makes a false or stale claim is actively harmful.
 
    - **Drift risk.** Will this comment go stale silently if the adjacent code changes?
      High-drift comments attached to volatile implementation details should be deleted
@@ -83,7 +103,16 @@ Work through each alternative in order. If any applies, apply it and the comment
    Expect to remove 80–90% of comments on a first pass through a diff.
 
    The one standing exception: `// Foo does X` doc comments on *exported* identifiers
-   are Go convention. Keep them even when they read as "what."
+   are Go convention. Keep them even when they read as "what." But do not over-apply this:
+   a comment sitting above a struct that actually describes a specific field is not a
+   struct doc comment — it's a misplaced field comment. Relocate it (step 6) and re-evaluate.
+
+## Step 2.5 — Structural smell check
+
+If you removed 5+ comments from a single function or file, that density is a signal: the
+code probably needs explaining because the abstractions are wrong, not because the logic is
+subtle. Note this in the report and recommend running `structure-review` on the package.
+Don't attempt the structural analysis yourself — this skill is scoped to comments.
 
 ## Step 3 — Apply changes
 
