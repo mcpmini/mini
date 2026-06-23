@@ -24,7 +24,7 @@ const LoopbackCallbackPath = "/callback"
 // redirect URIs — DCR must register the same URI the PKCE flow sends. 6464 = MINI.
 const LoopbackCallbackPort = 6464
 
-const loopbackCallbackURI = "http://127.0.0.1:6464" + LoopbackCallbackPath
+const loopbackCallbackURI = "http://localhost:6464" + LoopbackCallbackPath
 
 // Register performs RFC 7591 dynamic client registration and returns the client_id.
 func Register(ctx context.Context, registrationURL string) (string, error) {
