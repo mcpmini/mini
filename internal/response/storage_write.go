@@ -1,13 +1,14 @@
 package response
 
 import (
-	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/mcpmini/mini/internal/randutil"
 )
 
 // WriteRaw pretty-prints before writing — "raw" refers to the unprocessed upstream bytes, not the on-disk format.
@@ -48,11 +49,9 @@ func prettyJSON(b []byte) []byte {
 
 func newFileBase() string {
 	now := time.Now()
-	var r [4]byte
-	rand.Read(r[:]) //nolint:errcheck
 	h := fnv.New32a()
 	fmt.Fprintf(h, "%d", now.UnixNano())
-	h.Write(r[:])
+	h.Write(randutil.Bytes(4))
 	return fmt.Sprintf("%d_%08x", now.Unix(), h.Sum32())
 }
 
