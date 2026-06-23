@@ -4,6 +4,7 @@ package jq_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -77,6 +78,18 @@ func TestEval_nonJSONInput(t *testing.T) {
 	_, err := jq.Eval(context.Background(), []byte("not json"), ".field")
 	if err == nil {
 		t.Error("expected error for non-JSON input")
+	}
+}
+
+func TestEval_resultCountCapReturnsError(t *testing.T) {
+	items := make([]any, 10001)
+	for i := range items {
+		items[i] = i
+	}
+	data, _ := json.Marshal(items)
+	_, err := jq.Eval(context.Background(), data, ".[]")
+	if err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Errorf("expected cap error, got %v", err)
 	}
 }
 
