@@ -376,6 +376,13 @@ func TestRenderLines_notes(t *testing.T) {
 			t.Errorf("expected cap note with path, got: %q", out)
 		}
 	})
+	t.Run("string truncation produces note with path and char count", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Truncated: []projection.Truncation{{JQPath: ".body", Chars: 420}}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: .body truncated (420 chars)") {
+			t.Errorf("expected string-truncation note, got: %q", out)
+		}
+	})
 }
 
 func TestRenderLines_collections(t *testing.T) {
