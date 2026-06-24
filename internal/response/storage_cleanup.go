@@ -27,7 +27,7 @@ func (s *Store) evictExpired() {
 	}
 	s.files = kept
 	s.mu.Unlock()
-	removeFiles(toRemove)
+	s.restoreRemoveFailed(toRemove)
 }
 
 func partitionByExpiry(files []storedFile) (kept, expired []storedFile) {
@@ -60,10 +60,28 @@ func (s *Store) evictOvershoot() []storedFile {
 	return out
 }
 
-func removeFiles(files []storedFile) {
-	for _, f := range files {
-		warnRemoveErr(os.Remove(f.path))
+func (s *Store) restoreRemoveFailed(files []storedFile) {
+	failed := collectRemoveFailed(files)
+	if len(failed) == 0 {
+		return
 	}
+	s.mu.Lock()
+	for _, f := range failed {
+		s.usedBytes += f.size
+		s.files = append(s.files, f)
+	}
+	s.mu.Unlock()
+}
+
+func collectRemoveFailed(files []storedFile) []storedFile {
+	var failed []storedFile
+	for _, f := range files {
+		if err := os.Remove(f.path); err != nil && !os.IsNotExist(err) {
+			slog.Default().Warn("response store: remove file failed", "err", err)
+			failed = append(failed, f)
+		}
+	}
+	return failed
 }
 
 func warnRemoveErr(err error) {

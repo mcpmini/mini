@@ -32,7 +32,7 @@ func (s *Store) recordWrite(path string, size int64) {
 	s.usedBytes += size
 	toRemove := s.evictOvershoot()
 	s.mu.Unlock()
-	removeFiles(toRemove)
+	s.restoreRemoveFailed(toRemove)
 }
 
 func prettyJSON(b []byte) []byte {
