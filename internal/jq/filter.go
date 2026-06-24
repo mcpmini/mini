@@ -55,10 +55,10 @@ func runQuery(ctx context.Context, q *gojq.Query, v any) (string, error) {
 		if merr != nil {
 			return "", fmt.Errorf("jq marshal: %w", merr)
 		}
-		b.Write(line)
-		if b.Len() > maxOutputBytes {
+		if b.Len()+len(line) > maxOutputBytes {
 			return "", fmt.Errorf("jq: output exceeded %d bytes", maxOutputBytes)
 		}
+		b.Write(line)
 	}
 	return b.String(), nil
 }
