@@ -142,6 +142,22 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	}
 }
 
+func TestProxy_MiniRead_RejectsStoreDirItself(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": cfg.ResponseDir}))
+	if resp["error"] != nil {
+		return
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok || result["isError"] != true {
+		t.Errorf("expected error when path is the store directory itself, got: %v", resp)
+	}
+}
+
 func TestProxy_MiniRead_RequiresPath(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
