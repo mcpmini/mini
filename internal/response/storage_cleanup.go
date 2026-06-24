@@ -7,13 +7,13 @@ import (
 )
 
 func (s *Store) cleanupLoop(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
 	for {
+		t := s.clk.NewTimer(interval)
 		select {
-		case <-ticker.C:
+		case <-t.C():
 			s.evictExpired()
 		case <-s.done:
+			t.Stop()
 			return
 		}
 	}
@@ -21,7 +21,7 @@ func (s *Store) cleanupLoop(interval time.Duration) {
 
 func (s *Store) evictExpired() {
 	s.mu.Lock()
-	kept, toRemove := partitionByExpiry(s.files)
+	kept, toRemove := partitionByExpiry(s.files, s.clk.Now())
 	for _, f := range toRemove {
 		s.usedBytes -= f.size
 	}
@@ -30,8 +30,7 @@ func (s *Store) evictExpired() {
 	s.restoreRemoveFailed(toRemove)
 }
 
-func partitionByExpiry(files []storedFile) (kept, expired []storedFile) {
-	now := time.Now()
+func partitionByExpiry(files []storedFile, now time.Time) (kept, expired []storedFile) {
 	kept = files[:0]
 	for _, f := range files {
 		if f.expires.After(now) {

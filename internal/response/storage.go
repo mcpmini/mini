@@ -5,6 +5,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 type Store struct {
@@ -12,6 +14,7 @@ type Store struct {
 	ttl         time.Duration
 	budgetBytes int64
 	usedBytes   int64
+	clk         clock.Clock
 	mu          sync.Mutex
 	closeOnce   sync.Once
 	files       []storedFile
@@ -29,16 +32,22 @@ type StoreConfig struct {
 	TTL             time.Duration
 	BudgetMB        int
 	CleanupInterval time.Duration
+	Clock           clock.Clock
 }
 
 func NewStore(cfg StoreConfig) (*Store, error) {
 	if err := secureDir(cfg.Dir); err != nil {
 		return nil, err
 	}
+	clk := cfg.Clock
+	if clk == nil {
+		clk = clock.System()
+	}
 	s := &Store{
 		dir:         cfg.Dir,
 		ttl:         cfg.TTL,
 		budgetBytes: int64(cfg.BudgetMB) * 1024 * 1024,
+		clk:         clk,
 		done:        make(chan struct{}),
 	}
 	s.loadExisting()

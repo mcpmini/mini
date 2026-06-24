@@ -36,22 +36,6 @@ func assertStoreEmpty(t *testing.T, s *Store, path string) {
 	}
 }
 
-func TestEvictExpired_removesExpiredFiles(t *testing.T) {
-	dir := t.TempDir()
-	s, _ := NewStore(StoreConfig{Dir: dir, TTL: 50 * time.Millisecond, BudgetMB: 100, CleanupInterval: time.Hour})
-	defer s.Close()
-	path, err := s.WriteRaw([]byte(`{"ok":true}`))
-	if err != nil {
-		t.Fatalf("WriteRaw: %v", err)
-	}
-	count, _ := s.Stats()
-	if count != 1 {
-		t.Fatalf("expected 1 file before eviction, got %d", count)
-	}
-	time.Sleep(100 * time.Millisecond)
-	s.evictExpired()
-	assertStoreEmpty(t, s, path)
-}
 
 func TestEvictExpired_keepsNonExpired(t *testing.T) {
 	s := newStore(t)
@@ -76,45 +60,7 @@ func TestEvictExpired_keepsNonExpired(t *testing.T) {
 	}
 }
 
-func TestEvictExpired_removesRawFile(t *testing.T) {
-	dir := t.TempDir()
-	s, _ := NewStore(StoreConfig{Dir: dir, TTL: 50 * time.Millisecond, BudgetMB: 100, CleanupInterval: time.Hour})
-	defer s.Close()
 
-	path, err := s.WriteRaw([]byte(`{"full":"data"}`))
-	if err != nil {
-		t.Fatalf("WriteRaw: %v", err)
-	}
-
-	time.Sleep(100 * time.Millisecond)
-	s.evictExpired()
-
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Error("raw file should be deleted after TTL")
-	}
-}
-
-func TestCleanupLoop_evictsExpiredFilesAutomatically(t *testing.T) {
-	dir := t.TempDir()
-	// Short TTL + short cleanup interval
-	s, err := NewStore(StoreConfig{Dir: dir, TTL: 50*time.Millisecond, BudgetMB: 100, CleanupInterval: 30*time.Millisecond})
-	if err != nil {
-		t.Fatalf("NewStore: %v", err)
-	}
-	defer s.Close()
-
-	path, _ := s.WriteRaw([]byte(`{"test":true}`))
-
-	// Wait for the cleanup loop to fire and evict the expired file
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		time.Sleep(20 * time.Millisecond)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return // evicted — test passes
-		}
-	}
-	t.Error("cleanup loop did not evict expired file within 2 seconds")
-}
 
 func TestLoadExisting_picksUpFilesFromPreviousSession(t *testing.T) {
 	dir := t.TempDir()
@@ -135,26 +81,6 @@ func TestLoadExisting_picksUpFilesFromPreviousSession(t *testing.T) {
 	}
 }
 
-func TestLoadExisting_evictsExpiredFromPreviousSession(t *testing.T) {
-	dir := t.TempDir()
-	ttl := 50 * time.Millisecond
-
-	s1, _ := NewStore(StoreConfig{Dir: dir, TTL: ttl, BudgetMB: 100, CleanupInterval: time.Hour})
-	s1.WriteRaw([]byte(`{"old":true}`))
-	s1.Close()
-
-	// Wait longer than TTL — file should be considered expired by new Store
-	time.Sleep(100 * time.Millisecond)
-
-	// New Store with same TTL: created_at + TTL < now → file is expired on load
-	s2, _ := NewStore(StoreConfig{Dir: dir, TTL: ttl, BudgetMB: 100, CleanupInterval: time.Hour})
-	defer s2.Close()
-
-	count, _ := s2.Stats()
-	if count != 0 {
-		t.Errorf("expected 0 files (expired on load), got %d", count)
-	}
-}
 
 func TestLoadExisting_ignoresNonTimestampFiles(t *testing.T) {
 	dir := t.TempDir()

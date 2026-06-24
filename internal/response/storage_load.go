@@ -13,7 +13,7 @@ func (s *Store) loadExisting() {
 	if err != nil {
 		return
 	}
-	now := time.Now()
+	now := s.clk.Now()
 	for _, e := range entries {
 		s.loadEntry(e, now)
 	}

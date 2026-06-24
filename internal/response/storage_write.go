@@ -6,7 +6,6 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/mcpmini/mini/internal/randutil"
 )
@@ -17,7 +16,7 @@ func (s *Store) WriteRaw(raw []byte) (string, error) {
 }
 
 func (s *Store) writeBytes(b []byte) (string, error) {
-	base := newFileBase()
+	base := s.newFileBase()
 	path, err := s.openUnique(base, b)
 	if err != nil {
 		return "", err
@@ -28,7 +27,7 @@ func (s *Store) writeBytes(b []byte) (string, error) {
 
 func (s *Store) recordWrite(path string, size int64) {
 	s.mu.Lock()
-	s.files = append(s.files, storedFile{path: path, size: size, expires: time.Now().Add(s.ttl)})
+	s.files = append(s.files, storedFile{path: path, size: size, expires: s.clk.Now().Add(s.ttl)})
 	s.usedBytes += size
 	toRemove := s.evictOvershoot()
 	s.mu.Unlock()
@@ -47,8 +46,8 @@ func prettyJSON(b []byte) []byte {
 	return pretty
 }
 
-func newFileBase() string {
-	now := time.Now()
+func (s *Store) newFileBase() string {
+	now := s.clk.Now()
 	h := fnv.New32a()
 	fmt.Fprintf(h, "%d", now.UnixNano())
 	h.Write(randutil.Bytes(4))
