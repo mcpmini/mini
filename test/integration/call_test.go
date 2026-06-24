@@ -102,7 +102,7 @@ func TestCLICall_WithProjection(t *testing.T) {
 		t.Errorf("projected field 'secret' should be excluded, got: %s", stdout)
 	}
 	var env struct {
-		Elided []string `json:"excluded"`
+		Excluded []string `json:"excluded"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
 		t.Fatalf("parse envelope: %v", err)
