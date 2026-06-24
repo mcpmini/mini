@@ -73,7 +73,7 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_data",
-		"projection": map[string]any{"exclude_always": []string{"secret"}},
+		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
 	resp1 := serveProxy(t, srv, callTool("svc__get_data", map[string]any{}))
@@ -106,7 +106,7 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_data2",
-		"projection": map[string]any{"exclude_always": []string{"secret"}},
+		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
 	resp1 := serveProxy(t, srv, callTool("svc__get_data2", map[string]any{}))
