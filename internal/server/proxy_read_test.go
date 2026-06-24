@@ -172,13 +172,15 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": "/etc/passwd"}))
-	if resp["error"] != nil {
-		return // RPC-level error is correct
-	}
-	result, ok := resp["result"].(map[string]any)
-	if !ok || result["isError"] != true {
-		t.Errorf("expected error for path traversal, got: %v", resp)
+	for _, path := range []string{"/etc/passwd", "../../etc/passwd", "../secrets.json"} {
+		resp := serveProxy(t, srv, callTool("read", map[string]any{"path": path}))
+		if resp["error"] != nil {
+			continue
+		}
+		result, ok := resp["result"].(map[string]any)
+		if !ok || result["isError"] != true {
+			t.Errorf("path %q: expected error for traversal attempt, got: %v", path, resp)
+		}
 	}
 }
 
