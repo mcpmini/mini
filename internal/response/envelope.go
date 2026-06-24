@@ -21,8 +21,8 @@ type BuildParams struct {
 	Tool        string
 	Raw         json.RawMessage
 	Summary     any
-	Excluded      []string
-	Truncated    []projection.Truncation
+	Excluded    []string
+	Truncated   []projection.Truncation
 	Passthrough map[string]any
 }
 
@@ -42,7 +42,7 @@ func (b *Builder) Build(p BuildParams) (*Envelope, CallStats, error) {
 func newEnvelope(p BuildParams) *Envelope {
 	return &Envelope{
 		Data:        p.Summary,
-		Excluded:      nilIfEmpty(p.Excluded),
+		Excluded:    nilIfEmpty(p.Excluded),
 		Truncated:   nilIfEmptyTruncated(p.Truncated),
 		Passthrough: nilIfEmptyMap(p.Passthrough),
 	}

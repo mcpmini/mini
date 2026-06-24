@@ -165,13 +165,13 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("gh__list_repos", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("proxy elision response: %s", text)
+	t.Logf("proxy exclusion response: %s", text)
 
 	if !strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected [Projected] note when field elided: %s", text)
+		t.Errorf("expected [Projected] note when field excluded: %s", text)
 	}
 	if !strings.Contains(text, "excluded") {
-		t.Errorf("expected 'elided' in projection note: %s", text)
+		t.Errorf("expected 'excluded' in projection note: %s", text)
 	}
 	if !strings.Contains(text, `"id"`) || strings.Contains(text, `"secret"`) {
 		t.Errorf("expected id present and secret absent in response: %s", text)
@@ -197,7 +197,7 @@ func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
 	t.Logf("proxy nested-exclude response: %s", text)
 
 	if !strings.Contains(text, ".items[].body") {
-		t.Errorf("expected elided path .items[].body reported in response, got: %s", text)
+		t.Errorf("expected excluded path .items[].body reported in response, got: %s", text)
 	}
 	if !strings.Contains(text, "File:") {
 		t.Errorf("expected raw file written for nested exclusion, got: %s", text)
@@ -220,10 +220,10 @@ func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("svc__get_data", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("include-filter no-elision response: %s", text)
+	t.Logf("include-filter no-exclusion response: %s", text)
 
 	if strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected no projection envelope when nothing elided: %s", text)
+		t.Errorf("expected no projection envelope when nothing excluded: %s", text)
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(text), &parsed); err != nil {

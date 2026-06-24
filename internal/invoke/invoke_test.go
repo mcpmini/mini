@@ -211,7 +211,7 @@ func TestBuildEnvelope_WithProjection(t *testing.T) {
 		t.Errorf("expected success, got error: %s", env.Error)
 	}
 	if !containsString(env.Excluded, ".secret") {
-		t.Errorf("expected '.secret' in elided, got %v", env.Excluded)
+		t.Errorf("expected '.secret' in excluded, got %v", env.Excluded)
 	}
 	b, _ := json.Marshal(env.Data)
 	if contains(string(b), "hidden") {
@@ -235,7 +235,7 @@ func TestBuildEnvelope_TruncationRecorded(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(env.Truncated) == 0 || env.Truncated[0].Chars == 0 {
-		t.Errorf("expected omitted[0].Chars > 0, got %v", env.Truncated)
+		t.Errorf("expected truncated[0].Chars > 0, got %v", env.Truncated)
 	}
 	b, _ := json.Marshal(env.Data)
 	if contains(string(b), longBody) {

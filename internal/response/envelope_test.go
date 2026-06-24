@@ -53,7 +53,7 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	}
 
 	if env.File == nil {
-		t.Fatal("expected raw file path when fields were elided")
+		t.Fatal("expected raw file path when fields were excluded")
 	}
 	if _, err := os.Stat(*env.File); os.IsNotExist(err) {
 		t.Errorf("response file does not exist: %s", *env.File)
@@ -70,15 +70,15 @@ func TestExcludedKeys(t *testing.T) {
 
 	raw := json.RawMessage(`{"a":1,"b":2,"c":3}`)
 	data := map[string]any{"a": 1}
-	elided := []string{"b", "c"}
+	excluded := []string{"b", "c"}
 
-	env, _, err := builder.Build(response.BuildParams{Server: "s", Tool: "t", Raw: raw, Summary: data, Excluded: elided})
+	env, _, err := builder.Build(response.BuildParams{Server: "s", Tool: "t", Raw: raw, Summary: data, Excluded: excluded})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if len(env.Excluded) != 2 {
-		t.Errorf("expected 2 elided keys, got %v", env.Excluded)
+		t.Errorf("expected 2 excluded keys, got %v", env.Excluded)
 	}
 }
 
@@ -88,20 +88,20 @@ func TestOmittedFields(t *testing.T) {
 
 	raw := json.RawMessage(`{"summary":"short","body":"` + strings.Repeat("x", 500) + `"}`)
 	data := map[string]any{"summary": "short", "body": strings.Repeat("x", 50)}
-	omitted := []projection.Truncation{{JQPath: ".body", Chars: 450}}
+	truncated := []projection.Truncation{{JQPath: ".body", Chars: 450}}
 
 	env, _, err := builder.Build(response.BuildParams{
-		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Truncated: omitted,
+		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Truncated: truncated,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Chars != 450 {
-		t.Errorf("expected omitted=[{.body 450}], got %v", env.Truncated)
+		t.Errorf("expected truncated=[{.body 450}], got %v", env.Truncated)
 	}
 	if env.File == nil {
-		t.Error("expected file written when a field was omitted")
+		t.Error("expected file written when a field was truncated")
 	}
 }
 

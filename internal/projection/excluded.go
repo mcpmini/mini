@@ -29,23 +29,7 @@ func CollapseIndex(p string) string {
 	i := 0
 	for i < len(p) {
 		if p[i] == '[' && i+1 < len(p) && p[i+1] == '"' {
-			b.WriteString(`["`)
-			i += 2
-			for i < len(p) {
-				if p[i] == '\\' && i+1 < len(p) { // skip \" so it isn't mistaken for the closing "
-					b.WriteByte(p[i])
-					b.WriteByte(p[i+1])
-					i += 2
-					continue
-				}
-				if p[i] == '"' && i+1 < len(p) && p[i+1] == ']' {
-					b.WriteString(`"]`)
-					i += 2
-					break
-				}
-				b.WriteByte(p[i])
-				i++
-			}
+			i = copyQuotedKey(&b, p, i)
 			continue
 		}
 		if p[i] == '[' {
@@ -63,4 +47,26 @@ func CollapseIndex(p string) string {
 		i++
 	}
 	return b.String()
+}
+
+// copyQuotedKey copies a ["..."] quoted key segment verbatim, handling \" escapes.
+// Returns the index after the closing ].
+func copyQuotedKey(b *strings.Builder, p string, i int) int {
+	b.WriteString(`["`)
+	i += 2
+	for i < len(p) {
+		if p[i] == '\\' && i+1 < len(p) { // skip \" so it isn't mistaken for the closing "
+			b.WriteByte(p[i])
+			b.WriteByte(p[i+1])
+			i += 2
+			continue
+		}
+		if p[i] == '"' && i+1 < len(p) && p[i+1] == ']' {
+			b.WriteString(`"]`)
+			return i + 2
+		}
+		b.WriteByte(p[i])
+		i++
+	}
+	return i
 }

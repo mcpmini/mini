@@ -102,7 +102,7 @@ func TestStringTruncation(t *testing.T) {
 		t.Errorf("body = %q, want %q", m["body"], want)
 	}
 	if len(result.Truncated) != 1 || result.Truncated[0].Chars != 1900 {
-		t.Errorf("omitted = %v, want [{.body chars:1900}]", result.Truncated)
+		t.Errorf("truncated = %v, want [{.body chars:1900}]", result.Truncated)
 	}
 }
 
@@ -168,7 +168,7 @@ func TestExcludedKeys(t *testing.T) {
 
 	result := projection.Apply(value, cfg, defaultLimits)
 	if len(result.ExcludedKeys) < 2 {
-		t.Errorf("expected at least 2 elided keys, got %v", result.ExcludedKeys)
+		t.Errorf("expected at least 2 excluded keys, got %v", result.ExcludedKeys)
 	}
 }
 
@@ -279,7 +279,7 @@ func TestNamedStringLimit(t *testing.T) {
 		t.Errorf("body = %q, want %q", m["body"], wantBody)
 	}
 	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".body" || result.Truncated[0].Chars != 20 {
-		t.Errorf("omitted = %v, want [{.body chars:20}]", result.Truncated)
+		t.Errorf("truncated = %v, want [{.body chars:20}]", result.Truncated)
 	}
 	// title has no named limit — should pass through untruncated
 	if m["title"].(string) != long {
@@ -397,7 +397,7 @@ func TestArrayElementOmissionPath(t *testing.T) {
 	for i, o := range result.Truncated {
 		want := "[" + string(rune('0'+i)) + "]"
 		if o.JQPath != want {
-			t.Errorf("omission[%d].JQPath = %q, want %q", i, o.JQPath, want)
+			t.Errorf("truncation[%d].JQPath = %q, want %q", i, o.JQPath, want)
 		}
 	}
 }
@@ -416,7 +416,7 @@ func TestArrayElementOmissionPathInsideObject(t *testing.T) {
 	for i, o := range result.Truncated {
 		want := ".lines[" + string(rune('0'+i)) + "]"
 		if o.JQPath != want {
-			t.Errorf("omission[%d].JQPath = %q, want %q", i, o.JQPath, want)
+			t.Errorf("truncation[%d].JQPath = %q, want %q", i, o.JQPath, want)
 		}
 	}
 }

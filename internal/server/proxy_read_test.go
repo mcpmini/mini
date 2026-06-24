@@ -35,7 +35,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	t.Logf("initial response: %s", text1)
 
 	if !strings.Contains(text1, "File:") {
-		t.Fatal("expected file to be written — elision of 'secret' should trigger raw file write")
+		t.Fatal("expected file to be written — exclusion of 'secret' should trigger raw file write")
 	}
 
 	var filePath string

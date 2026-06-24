@@ -22,7 +22,7 @@ func DefaultsFrom(cfg *config.Config) *Defaults {
 // effectiveConfig is the merged, runtime-ready config derived from ProjectionConfig + Defaults.
 type effectiveConfig struct {
 	includeOnly        []string
-	exclude      []string
+	exclude            []string
 	passthrough        []string
 	arrayLimits        map[string]int
 	stringLimits       map[string]int

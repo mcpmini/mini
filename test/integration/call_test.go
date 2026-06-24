@@ -114,7 +114,7 @@ func TestCLICall_WithProjection(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected '.secret' in elided list, got %v", env.Elided)
+		t.Errorf("expected '.secret' in excluded list, got %v", env.Elided)
 	}
 }
 
@@ -290,7 +290,7 @@ func TestCLICall_ProjectionWritesFile(t *testing.T) {
 		t.Fatalf("unexpected error: %s", env.Error)
 	}
 	if env.File == nil {
-		t.Error("expected 'file' field in envelope when projection elided fields, got nil")
+		t.Error("expected 'file' field in envelope when projection excluded fields, got nil")
 	}
 }
 

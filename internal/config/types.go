@@ -236,15 +236,14 @@ type ActionConfig struct {
 // ProjectionConfig defines how to trim tool responses.
 type ProjectionConfig struct {
 	// Alias replaces the upstream tool name for agents; mini translates back when calling upstream.
-	Alias         string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
-	Mode          string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
-	IncludeOnly   []string       `yaml:"include_only,omitempty"   json:"include_only,omitempty"`
-	Exclude       []string       `yaml:"exclude,omitempty"        json:"exclude,omitempty"`
-	Passthrough   []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
+	Alias        string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
+	Mode         string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
+	IncludeOnly  []string       `yaml:"include_only,omitempty"   json:"include_only,omitempty"`
+	Exclude      []string       `yaml:"exclude,omitempty"        json:"exclude,omitempty"`
+	Passthrough  []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
 	ArrayLimits  map[string]int `yaml:"array_limits,omitempty"   json:"array_limits,omitempty"`
 	StringLimits map[string]int `yaml:"string_limits,omitempty"  json:"string_limits,omitempty"`
 	DepthLimit   int            `yaml:"depth_limit,omitempty"    json:"depth_limit,omitempty"`
 	StripMarkup  bool           `yaml:"strip_markup,omitempty"   json:"strip_markup,omitempty"`
 	Format       string         `yaml:"format,omitempty"         json:"format,omitempty"`
-
 }

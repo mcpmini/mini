@@ -16,9 +16,9 @@ type Truncation struct {
 }
 
 type Result struct {
-	Summary     any
+	Summary      any
 	ExcludedKeys []string
-	Passthrough map[string]any
+	Passthrough  map[string]any
 	Truncated    []Truncation
 }
 
@@ -41,8 +41,8 @@ func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 	return Result{
 		Summary:      summary,
 		ExcludedKeys: collapseExcluded(excluded),
-		Passthrough: passthrough,
-		Truncated:   truncated,
+		Passthrough:  passthrough,
+		Truncated:    truncated,
 	}
 }
 
@@ -132,7 +132,7 @@ func projectString(s string, ctx projCtx, fieldName string, truncated *[]Truncat
 	limit := ctx.cfg.stringLimitFor(fieldName)
 	if limit > 0 && utf8.RuneCountInString(s) > limit {
 		cut := truncateAtBoundary(s, limit)
-		recordOmission(formatPath(ctx.path), utf8.RuneCountInString(s)-utf8.RuneCountInString(cut), truncated)
+		recordTruncation(formatPath(ctx.path), utf8.RuneCountInString(s)-utf8.RuneCountInString(cut), truncated)
 		return cut
 	}
 	return s
@@ -173,12 +173,12 @@ func isIdentifierSafe(s string) bool {
 	return true
 }
 
-func recordOmission(path string, chars int, truncated *[]Truncation) {
+func recordTruncation(path string, chars int, truncated *[]Truncation) {
 	*truncated = append(*truncated, Truncation{JQPath: path, Chars: chars})
 }
 
 func isIncluded(key string, includeOnly []string) bool { return slices.Contains(includeOnly, key) }
-func isPassthrough(key string, pt []string) bool   { return slices.Contains(pt, key) }
+func isPassthrough(key string, pt []string) bool       { return slices.Contains(pt, key) }
 
 func isExcluded(key string, exclude []string) bool {
 	for _, k := range exclude {

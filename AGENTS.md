@@ -117,8 +117,8 @@ agent → Serve() → session handler → handleList / handleExecute / handleExe
 | `internal/config` | `Config`, `ServerConfig`, `ProjectionConfig`, `ActionConfig` types + YAML loader; `ValidServerName` regex |
 | `internal/registry` | Tool index keyed by `"server.tool"`; permission resolution; action (virtual tool) support |
 | `internal/server` | `Server` struct + `Serve()` loop + handlers; `Session` (per-connection projection overrides) |
-| `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ElidedKeys, Passthrough}`; HTML/MD stripping |
-| `internal/response` | `Builder`/`Store`; inline vs. file threshold; TTL-based file lifecycle |
+| `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ExcludedKeys, Passthrough}`; HTML/MD stripping |
+| `internal/response` | `Builder`/`Store`; always-inline projected data; TTL-based raw file lifecycle |
 | `internal/auth` | API key + OAuth2 PKCE token storage |
 | `internal/daemon` | Background daemon HTTP server; port file management (liveness via HTTP healthz, not PID) |
 | `internal/proxy` | stdio→HTTP bridge; connects agent stdio to daemon HTTP |

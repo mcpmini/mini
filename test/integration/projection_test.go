@@ -39,7 +39,7 @@ func TestProjection_elidedFieldsReported(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("expected '.node_id' in elided list, got: %v", e.Elided)
+		t.Errorf("expected '.node_id' in excluded list, got: %v", e.Elided)
 	}
 }
 
@@ -83,7 +83,7 @@ func TestProjection_omittedEnvelope(t *testing.T) {
 	}
 
 	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Chars <= 0 {
-		t.Fatalf("expected one omitted .body entry, got %v", env.Truncated)
+		t.Fatalf("expected one truncated .body entry, got %v", env.Truncated)
 	}
 	// 400 chars → limit 60, so at least 300 chars removed
 	if env.Truncated[0].Chars < 300 {
@@ -91,7 +91,7 @@ func TestProjection_omittedEnvelope(t *testing.T) {
 	}
 	for _, o := range env.Truncated {
 		if o.JQPath == ".title" {
-			t.Errorf("short field 'title' should not appear in omitted")
+			t.Errorf("short field 'title' should not appear in truncated")
 		}
 	}
 	// file written because truncation counts as projection

@@ -60,7 +60,7 @@ func TestConfigureAddServer_noConfig(t *testing.T) {
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "add_server"}))
 	result := resp["result"].(map[string]any)
 	if result["isError"] != true {
-		t.Errorf("expected isError=true when config omitted, got: %v", result)
+		t.Errorf("expected isError=true when config truncated, got: %v", result)
 	}
 }
 
@@ -248,19 +248,19 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 		t.Fatalf("get_doc failed: %v", env)
 	}
 
-	omitted, _ := env["truncated"].([]any)
-	if len(omitted) == 0 {
-		t.Errorf("expected omitted entries, got %v", env["truncated"])
+	truncated, _ := env["truncated"].([]any)
+	if len(truncated) == 0 {
+		t.Errorf("expected truncated entries, got %v", env["truncated"])
 	}
 	var bodyChars float64
-	for _, o := range omitted {
+	for _, o := range truncated {
 		om, _ := o.(map[string]any)
 		if om["path"] == ".body" {
 			bodyChars, _ = om["chars"].(float64)
 		}
 	}
 	if bodyChars <= 0 {
-		t.Errorf("expected omitted[body].chars > 0, got omitted=%v", omitted)
+		t.Errorf("expected truncated[body].chars > 0, got truncated=%v", truncated)
 	}
 	// body had 300 chars, limit 50 → removed ≥ 200
 	if int(bodyChars) < 200 {
@@ -429,8 +429,8 @@ func TestSlimProjectionMode(t *testing.T) {
 	}
 	var slimEnv map[string]any
 	json.Unmarshal([]byte(textSlim), &slimEnv)
-	omitted, _ := slimEnv["truncated"].([]any)
-	if len(omitted) == 0 {
-		t.Errorf("expected omitted entries in slim envelope, got: %v", slimEnv)
+	truncated, _ := slimEnv["truncated"].([]any)
+	if len(truncated) == 0 {
+		t.Errorf("expected truncated entries in slim envelope, got: %v", slimEnv)
 	}
 }
