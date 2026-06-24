@@ -32,14 +32,14 @@ func TestProjection_elidedFieldsReported(t *testing.T) {
 	e := client.execEnvelope("svc", "get_item", nil)
 
 	found := false
-	for _, v := range e.Elided {
+	for _, v := range e.Excluded {
 		if v == ".node_id" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected '.node_id' in excluded list, got: %v", e.Elided)
+		t.Errorf("expected '.node_id' in excluded list, got: %v", e.Excluded)
 	}
 }
 

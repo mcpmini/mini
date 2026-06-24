@@ -130,14 +130,14 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 {
   "__mini": {
     "msg": "Response truncated, use mini's read(<file>, <jq expr>) tool to fetch truncated fields",
-    "file": "/path/to/<epoch>_<hash8>.json",
-    "elided": [".secret", ".internal"],
+    "file": "<epoch>_<hash8>.json",
+    "excluded": [".secret", ".internal"],
     "truncated": [{"path": ".body", "chars": 420}, {"path": ".items", "items": 73}]
   },
   "data": { ... }
 }
 ```
-- `elided`: jq-style paths of fields removed entirely by projection
+- `excluded`: jq-style paths of fields removed entirely by projection
 - `truncated[].chars`: characters (runes) removed from a string field
 - `truncated[].items`: items removed from an array field by array limit
 - When no data is removed, the response is plain JSON with no `__mini` wrapper

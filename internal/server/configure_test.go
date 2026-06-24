@@ -60,7 +60,7 @@ func TestConfigureAddServer_noConfig(t *testing.T) {
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "add_server"}))
 	result := resp["result"].(map[string]any)
 	if result["isError"] != true {
-		t.Errorf("expected isError=true when config truncated, got: %v", result)
+		t.Errorf("expected isError=true when config omitted, got: %v", result)
 	}
 }
 

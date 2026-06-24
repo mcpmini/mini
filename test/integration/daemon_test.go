@@ -505,8 +505,6 @@ func daemonPost(t *testing.T, cfg string, opts daemonPostOpts) *http.Response {
 	return resp
 }
 
-
-
 type httpToolCall struct {
 	sessionID string
 	token     string

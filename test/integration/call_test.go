@@ -108,13 +108,13 @@ func TestCLICall_WithProjection(t *testing.T) {
 		t.Fatalf("parse envelope: %v", err)
 	}
 	found := false
-	for _, e := range env.Elided {
+	for _, e := range env.Excluded {
 		if e == ".secret" {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected '.secret' in excluded list, got %v", env.Elided)
+		t.Errorf("expected '.secret' in excluded list, got %v", env.Excluded)
 	}
 }
 

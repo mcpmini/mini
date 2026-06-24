@@ -1,8 +1,4 @@
 # Philosophy: docs/default-config-philosophy.md
-# For list ops that already return minimal fields (GitHub Copilot MCP pre-filters
-# responses), exclude_always on image URLs is sufficient; no include list needed.
-# For list ops over raw REST/GraphQL responses, include lists are used to control
-# which top-level fields pass through.
 # String limits follow the doc: 1500 for list bodies, 500 for commit messages,
 # 8000 for detail views. The bar for exclusion is high — keep the field if unsure.
 
