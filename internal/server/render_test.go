@@ -348,31 +348,17 @@ func TestRenderLines_data(t *testing.T) {
 }
 
 func TestRenderLines_notes(t *testing.T) {
-	t.Run("elided keys produce note line", func(t *testing.T) {
-		e := &response.Envelope{Data: "ok", Elided: []string{"secret", "token"}}
+	t.Run("excluded keys produce note line", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Excluded: []string{"secret", "token"}}
 		out := RenderLines("srv", "tool", e)
-		if !strings.Contains(out, "note: secret, token elided") {
-			t.Errorf("expected note line with elided keys, got: %q", out)
+		if !strings.Contains(out, "note: secret, token excluded") {
+			t.Errorf("expected note line with excluded keys, got: %q", out)
 		}
 	})
-	t.Run("hint produces hint line", func(t *testing.T) {
-		e := &response.Envelope{Data: "ok", Hint: "use get_item for full details"}
-		out := RenderLines("srv", "tool", e)
-		if !strings.Contains(out, "hint: use get_item for full details") {
-			t.Errorf("expected hint line, got: %q", out)
-		}
-	})
-	t.Run("note and hint both present", func(t *testing.T) {
-		e := &response.Envelope{Data: "ok", Elided: []string{"secret"}, Hint: "call read for full data"}
-		out := RenderLines("srv", "tool", e)
-		if !strings.Contains(out, "note:") || !strings.Contains(out, "hint:") {
-			t.Errorf("expected both note and hint lines, got: %q", out)
-		}
-	})
-	t.Run("no projection metadata produces no note or hint", func(t *testing.T) {
+	t.Run("no projection metadata produces no note", func(t *testing.T) {
 		out := RenderLines("srv", "tool", makeEnvelope(true, "hello"))
-		if strings.Contains(out, "note:") || strings.Contains(out, "hint:") {
-			t.Errorf("expected no note or hint for clean envelope, got: %q", out)
+		if strings.Contains(out, "note:") {
+			t.Errorf("expected no note for clean envelope, got: %q", out)
 		}
 	})
 }
