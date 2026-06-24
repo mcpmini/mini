@@ -55,7 +55,6 @@ func newFileBase() string {
 	return fmt.Sprintf("%d_%08x", now.Unix(), h.Sum32())
 }
 
-// openUnique writes b to base+".json", retrying up to 3 times on collision.
 // O_EXCL guarantees atomicity; collisions should not occur in practice with random filenames.
 func (s *Store) openUnique(base string, b []byte) (string, error) {
 	const maxAttempts = 3
