@@ -1,0 +1,311 @@
+package pipes
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/expr-lang/expr/vm"
+
+	"github.com/mcpmini/mini/internal/config"
+)
+
+// CallerFunc dispatches a tool call to an upstream server and returns the raw JSON response.
+type CallerFunc func(ctx context.Context, server, tool string, args map[string]any) (json.RawMessage, error)
+
+// StepResult records the outcome of one executed step.
+type StepResult struct {
+	ID              string `json:"id"`
+	OK              bool   `json:"ok,omitempty"`
+	Skipped         bool   `json:"skipped,omitempty"`
+	Silent          bool   `json:"silent,omitempty"`
+	ContinueOnError bool   `json:"continue_on_error,omitempty"`
+	Error           string `json:"error,omitempty"`
+}
+
+// Result is the structured output of a pipe execution.
+type Result struct {
+	Server        string            `json:"server"`
+	Tool          string            `json:"tool"`
+	OK            bool              `json:"ok"`
+	Output        map[string]any    `json:"output,omitempty"`
+	Steps         []StepResult      `json:"steps"`
+	Error         string            `json:"error,omitempty"`
+	FailedStep    string            `json:"failed_step,omitempty"`
+	PartialOutput map[string]any    `json:"partial_output,omitempty"`
+	OutputErrors  map[string]string `json:"output_errors,omitempty"`
+	LatencyMs     int64             `json:"latency_ms"`
+}
+
+type execState struct {
+	inputs map[string]any
+	steps  map[string]any
+	env    map[string]string
+	caller CallerFunc
+	result *Result
+}
+
+type stepExec struct {
+	ctx   context.Context
+	step  config.StepConfig
+	exprs *compiledStep
+	env   map[string]any
+	exec  *execState
+}
+
+// Execute runs all steps of the compiled pipe and returns the result.
+func (cp *CompiledPipe) Execute(ctx context.Context, inputs map[string]any, caller CallerFunc) *Result {
+	start := time.Now()
+	result := &Result{Server: config.UserServerName, Tool: cp.Config.Name}
+	defer func() { result.LatencyMs = time.Since(start).Milliseconds() }()
+
+	inputs = applyInputDefaults(cp.Config, inputs)
+	if err := validateInputs(cp.Config, inputs); err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	exec := &execState{
+		inputs: inputs,
+		steps:  make(map[string]any),
+		env:    buildEnvMap(),
+		caller: caller,
+		result: result,
+	}
+	ok, failedStep := cp.runSteps(ctx, exec)
+	if !ok {
+		result.FailedStep = failedStep
+		result.PartialOutput, result.OutputErrors = cp.evalOutput(inputs, exec.steps, exec.env)
+		return result
+	}
+	result.OK = true
+	result.Output, result.OutputErrors = cp.evalOutput(inputs, exec.steps, exec.env)
+	return result
+}
+
+// applyInputDefaults fills in declared defaults for optional inputs the
+// caller omitted, so {{ inputs.x }} resolves to the configured default
+// rather than nil.
+func applyInputDefaults(pipe config.PipeConfig, inputs map[string]any) map[string]any {
+	for name, schema := range pipe.Inputs {
+		if schema.Default == nil {
+			continue
+		}
+		if _, ok := inputs[name]; ok {
+			continue
+		}
+		if inputs == nil {
+			inputs = make(map[string]any, len(pipe.Inputs))
+		}
+		inputs[name] = schema.Default
+	}
+	return inputs
+}
+
+func validateInputs(pipe config.PipeConfig, inputs map[string]any) error {
+	for name, schema := range pipe.Inputs {
+		if schema.Required {
+			if _, ok := inputs[name]; !ok {
+				return fmt.Errorf("missing required input: %s", name)
+			}
+		}
+	}
+	return nil
+}
+
+// buildEnvMap exposes the full process environment to pipe expressions as
+// {{ env.KEY }}. Pipes run server-side, so only the mini process environment
+// is exposed — not the agent's environment. This is intentional: it lets
+// pipes consume secrets (e.g. API tokens) that mini already holds via
+// environment variables without requiring them to be passed as pipe inputs.
+func buildEnvMap() map[string]string {
+	envMap := make(map[string]string)
+	for _, kv := range os.Environ() {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) == 2 {
+			envMap[parts[0]] = parts[1]
+		}
+	}
+	return envMap
+}
+
+func (cp *CompiledPipe) runSteps(ctx context.Context, exec *execState) (bool, string) {
+	for _, step := range cp.Config.Steps {
+		skipped, err := cp.runOneStep(stepExec{
+			ctx:   ctx,
+			step:  step,
+			exprs: cp.stepExprs[step.ID],
+			env:   buildRuntimeEnv(exec.inputs, exec.steps, exec.env),
+			exec:  exec,
+		})
+		sr := makeStepResult(step, skipped, err)
+		exec.result.Steps = append(exec.result.Steps, sr)
+		if err != nil && !step.ContinueOnError {
+			exec.result.Error = fmt.Sprintf("step %q failed: %s", step.ID, err)
+			return false, step.ID
+		}
+	}
+	return true, ""
+}
+
+func (cp *CompiledPipe) runOneStep(run stepExec) (skipped bool, err error) {
+	if run.exprs != nil && run.exprs.ifProg != nil {
+		val, evalErr := runProg(run.exprs.ifProg, run.env)
+		if evalErr != nil {
+			return false, fmt.Errorf("if condition: %w", evalErr)
+		}
+		if !isTruthy(val) {
+			run.exec.steps[run.step.ID] = nil
+			return true, nil
+		}
+	}
+	if len(run.step.Set) > 0 {
+		return false, cp.runSetStep(run)
+	}
+	return false, cp.runToolStep(run)
+}
+
+func (cp *CompiledPipe) runSetStep(run stepExec) error {
+	result := map[string]any{"ok": true}
+	for name, prog := range run.exprs.setProgs {
+		val, err := runProg(prog, run.env)
+		if err != nil {
+			return fmt.Errorf("set.%s: %w", name, err)
+		}
+		result[name] = val
+	}
+	run.exec.steps[run.step.ID] = result
+	return nil
+}
+
+func (cp *CompiledPipe) runToolStep(run stepExec) error {
+	args, err := interpolateArgs(run.step.Args, run.exprs, run.env)
+	if err != nil {
+		return fmt.Errorf("arg interpolation: %w", err)
+	}
+	raw, callErr := run.exec.caller(run.ctx, run.step.Server, run.step.Tool, args)
+	if callErr != nil {
+		run.exec.steps[run.step.ID] = map[string]any{"ok": false, "error": callErr.Error()}
+		return callErr
+	}
+	stepState := map[string]any{"ok": true, "result": parseToolResult(raw)}
+	run.exec.steps[run.step.ID] = stepState
+	return nil
+}
+
+func interpolateArgs(args map[string]any, cs *compiledStep, env map[string]any) (map[string]any, error) {
+	if cs == nil || len(cs.argProgs) == 0 {
+		return args, nil
+	}
+	out := make(map[string]any, len(args))
+	for k, v := range args {
+		out[k] = v
+	}
+	for key, segs := range cs.argProgs {
+		val, err := evalSegments(segs, env)
+		if err != nil {
+			return nil, fmt.Errorf("args.%s: %w", key, err)
+		}
+		out[key] = val
+	}
+	return out, nil
+}
+
+func evalSegments(segs []*exprSegment, env map[string]any) (any, error) {
+	if len(segs) == 1 && segs[0].prog != nil {
+		return runProg(segs[0].prog, env)
+	}
+	var sb strings.Builder
+	for _, seg := range segs {
+		if seg.prog == nil {
+			sb.WriteString(seg.literal)
+			continue
+		}
+		val, err := runProg(seg.prog, env)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(&sb, "%v", val)
+	}
+	return sb.String(), nil
+}
+
+func (cp *CompiledPipe) evalOutput(inputs map[string]any, state map[string]any, envMap map[string]string) (map[string]any, map[string]string) {
+	if len(cp.outputExprs) == 0 {
+		return nil, nil
+	}
+	env := buildRuntimeEnv(inputs, state, envMap)
+	out := make(map[string]any, len(cp.outputExprs))
+	var errs map[string]string
+	for field, segs := range cp.outputExprs {
+		val, err := evalSegments(segs, env)
+		if err != nil {
+			if errs == nil {
+				errs = make(map[string]string)
+			}
+			errs[field] = err.Error()
+			continue
+		}
+		out[field] = val
+	}
+	return out, errs
+}
+
+func buildRuntimeEnv(inputs map[string]any, state map[string]any, envMap map[string]string) map[string]any {
+	return map[string]any{
+		"inputs": inputs,
+		"steps":  state,
+		"env":    envMap,
+	}
+}
+
+func parseToolResult(raw json.RawMessage) any {
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return string(raw)
+	}
+	return out
+}
+
+func makeStepResult(step config.StepConfig, skipped bool, err error) StepResult {
+	sr := StepResult{
+		ID:              step.ID,
+		Silent:          step.Silent,
+		ContinueOnError: step.ContinueOnError,
+	}
+	if skipped {
+		sr.Skipped = true
+	} else if err != nil {
+		sr.OK = false
+		sr.Error = err.Error()
+	} else {
+		sr.OK = true
+	}
+	return sr
+}
+
+func runProg(prog *vm.Program, env any) (any, error) {
+	v := vm.VM{}
+	return v.Run(prog, env)
+}
+
+func isTruthy(val any) bool {
+	if val == nil {
+		return false
+	}
+	switch v := val.(type) {
+	case bool:
+		return v
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	case float64:
+		return v != 0
+	case string:
+		return v != ""
+	}
+	return true
+}
