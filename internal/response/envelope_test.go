@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
 )
 
@@ -87,7 +88,7 @@ func TestOmittedFields(t *testing.T) {
 
 	raw := json.RawMessage(`{"summary":"short","body":"` + strings.Repeat("x", 500) + `"}`)
 	data := map[string]any{"summary": "short", "body": strings.Repeat("x", 50)}
-	omitted := []response.Truncation{{JQPath: ".body", Chars: 450}}
+	omitted := []projection.Truncation{{JQPath: ".body", Chars: 450}}
 
 	env, _, err := builder.Build(response.BuildParams{
 		Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Truncated: omitted,
@@ -101,25 +102,6 @@ func TestOmittedFields(t *testing.T) {
 	}
 	if env.File == nil {
 		t.Error("expected file written when a field was omitted")
-	}
-}
-
-func TestHintPassedThrough(t *testing.T) {
-	store := newTestStore(t)
-	builder := response.NewBuilder(store)
-
-	raw := json.RawMessage(`{"a":1,"b":2}`)
-	data := map[string]any{"a": 1}
-
-	env, _, err := builder.Build(response.BuildParams{
-		Server: "s", Tool: "t", Raw: raw, Summary: data, Elided: []string{"b"}, Hint: "see other_tool for full data",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if env.Hint != "see other_tool for full data" {
-		t.Errorf("Hint = %q, want config hint", env.Hint)
 	}
 }
 

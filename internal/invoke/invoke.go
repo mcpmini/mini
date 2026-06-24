@@ -93,7 +93,6 @@ func buildResponseParams(p BuildEnvelopeParams, result projection.Result) respon
 		Summary:     result.Summary,
 		Elided:      result.ElidedKeys,
 		Truncated:     result.Truncated,
-		Hint:        result.Hint,
 		Passthrough: result.Passthrough,
 	}
 }

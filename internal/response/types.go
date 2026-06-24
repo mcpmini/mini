@@ -2,9 +2,6 @@ package response
 
 import "github.com/mcpmini/mini/internal/projection"
 
-// Truncation is projection.Truncation — imported here so callers don't need the projection package.
-type Truncation = projection.Truncation
-
 // Envelope is what agents receive for every execute call.
 // On success: Data is set. On error: Error and Message are set.
 type Envelope struct {
@@ -13,10 +10,8 @@ type Envelope struct {
 	// Elided lists field names stripped by the projection engine.
 	Elided []string `json:"elided,omitempty"`
 
-	Truncated []Truncation `json:"truncated,omitempty"`
+	Truncated []projection.Truncation `json:"truncated,omitempty"`
 
-	// Hint is a user-defined string in their config returned to agents when invoking this tool.
-	Hint string `json:"hint,omitempty"`
 
 	// File is the path to the full raw upstream response, set when any
 	// projection (elision or truncation) was applied.

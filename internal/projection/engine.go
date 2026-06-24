@@ -20,7 +20,6 @@ type Result struct {
 	ElidedKeys  []string
 	Passthrough map[string]any
 	Truncated    []Truncation
-	Hint        string
 }
 
 type projCtx struct {
@@ -44,7 +43,6 @@ func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 		ElidedKeys:  collapseElided(elided),
 		Passthrough: passthrough,
 		Truncated:   truncated,
-		Hint:        effective.hint,
 	}
 }
 

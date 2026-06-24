@@ -248,6 +248,4 @@ type ProjectionConfig struct {
 	StripMarkup  bool           `yaml:"strip_markup,omitempty"   json:"strip_markup,omitempty"`
 	Format       string         `yaml:"format,omitempty"         json:"format,omitempty"`
 
-	// Hint is a user-defined string in their config returned to agents when invoking this tool.
-	Hint string `yaml:"hint,omitempty" json:"hint,omitempty"`
 }

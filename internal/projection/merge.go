@@ -33,7 +33,6 @@ type effectiveConfig struct {
 	stripContent       bool
 	contentFieldSet    map[string]bool // precomputed set for O(1) lookup
 	autoStripThreshold int
-	hint               string
 }
 
 const (
@@ -96,7 +95,6 @@ func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	e.arrayLimits = cfg.ArrayLimits
 	e.stringLimits = cfg.StringLimits
 	e.omitLimits = cfg.OmitLimits
-	e.hint = cfg.Hint
 	if cfg.DepthLimit > 0 {
 		e.depthLimit = cfg.DepthLimit
 	}

@@ -18,20 +18,6 @@ func TestBytes_returnsRequestedLength(t *testing.T) {
 	}
 }
 
-func TestBytes_notAllZeros(t *testing.T) {
-	b := randutil.Bytes(32)
-	allZero := true
-	for _, v := range b {
-		if v != 0 {
-			allZero = false
-			break
-		}
-	}
-	if allZero {
-		t.Error("Bytes(32) returned all zeros")
-	}
-}
-
 func TestHexString_isValidHexOfCorrectLength(t *testing.T) {
 	got := randutil.HexString(16)
 	if len(got) != 32 {

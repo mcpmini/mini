@@ -114,7 +114,7 @@ func formatProxyEnvelope(env *response.Envelope) string {
 }
 
 func hasProjectionNote(env *response.Envelope) bool {
-	return len(env.Elided) > 0 || len(env.Truncated) > 0 || env.Hint != ""
+	return len(env.Elided) > 0 || len(env.Truncated) > 0
 }
 
 func marshalProxyData(data any) string {
@@ -144,9 +144,6 @@ func projectionNote(env *response.Envelope) string {
 		} else {
 			parts = append(parts, fmt.Sprintf("truncated (%d chars)", o.Chars))
 		}
-	}
-	if env.Hint != "" {
-		parts = append(parts, env.Hint)
 	}
 	return strings.Join(parts, "; ")
 }

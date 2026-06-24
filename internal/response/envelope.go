@@ -3,6 +3,8 @@ package response
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/mcpmini/mini/internal/projection"
 )
 
 type Builder struct {
@@ -20,8 +22,7 @@ type BuildParams struct {
 	Raw         json.RawMessage
 	Summary     any
 	Elided      []string
-	Truncated    []Truncation
-	Hint        string
+	Truncated    []projection.Truncation
 	Passthrough map[string]any
 }
 
@@ -43,7 +44,6 @@ func newEnvelope(p BuildParams) *Envelope {
 		Data:        p.Summary,
 		Elided:      nilIfEmpty(p.Elided),
 		Truncated:   nilIfEmptyTruncated(p.Truncated),
-		Hint:        p.Hint,
 		Passthrough: nilIfEmptyMap(p.Passthrough),
 	}
 }
@@ -80,7 +80,7 @@ func nilIfEmptyMap(m map[string]any) map[string]any {
 	return m
 }
 
-func nilIfEmptyTruncated(t []Truncation) []Truncation {
+func nilIfEmptyTruncated(t []projection.Truncation) []projection.Truncation {
 	if len(t) == 0 {
 		return nil
 	}
