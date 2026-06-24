@@ -93,6 +93,23 @@ func TestEval_resultCountCapReturnsError(t *testing.T) {
 	}
 }
 
+func TestEval_byteCapAtBoundary(t *testing.T) {
+	// maxOutputBytes = 4MB; a JSON string of 4MB-2 bytes marshals to exactly 4MB (with quotes).
+	atCap := strings.Repeat("x", 4*1024*1024-2)
+	data, _ := json.Marshal(atCap)
+	_, err := jq.Eval(context.Background(), data, ".")
+	if err != nil {
+		t.Errorf("result at exactly the cap should not error: %v", err)
+	}
+
+	overCap := strings.Repeat("x", 4*1024*1024-1)
+	data, _ = json.Marshal(overCap)
+	_, err = jq.Eval(context.Background(), data, ".")
+	if err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Errorf("result one byte over cap should error, got: %v", err)
+	}
+}
+
 func TestEval_contextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
