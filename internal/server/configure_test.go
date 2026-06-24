@@ -146,7 +146,7 @@ func TestSetProjection_persistenceFailureReturnsError(t *testing.T) {
 
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "myTool",
-		"projection": map[string]any{"exclude_always": []string{"secret"}},
+		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 	result, _ := resp["result"].(map[string]any)
 	if result == nil || result["isError"] != true {

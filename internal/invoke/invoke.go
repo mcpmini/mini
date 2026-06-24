@@ -91,7 +91,7 @@ func buildResponseParams(p BuildEnvelopeParams, result projection.Result) respon
 		Tool:        p.Tool,
 		Raw:         p.Raw,
 		Summary:     result.Summary,
-		Elided:      result.ElidedKeys,
+		Excluded:    result.ExcludedKeys,
 		Truncated:     result.Truncated,
 		Passthrough: result.Passthrough,
 	}

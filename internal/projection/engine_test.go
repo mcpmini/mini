@@ -48,8 +48,8 @@ func TestIncludeFilter(t *testing.T) {
 	}
 }
 
-func TestExcludeAlways(t *testing.T) {
-	cfg := &config.ProjectionConfig{ExcludeAlways: []string{"env", "pipeline.configuration"}}
+func TestExclude(t *testing.T) {
+	cfg := &config.ProjectionConfig{Exclude: []string{"env", "pipeline.configuration"}}
 	value := map[string]any{
 		"status": "ok",
 		"env":    map[string]any{"SECRET": "123"},
@@ -158,7 +158,7 @@ func TestDepthLimit(t *testing.T) {
 	}
 }
 
-func TestElidedKeys(t *testing.T) {
+func TestExcludedKeys(t *testing.T) {
 	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status"}}
 	value := map[string]any{
 		"status": "ok",
@@ -167,8 +167,8 @@ func TestElidedKeys(t *testing.T) {
 	}
 
 	result := projection.Apply(value, cfg, defaultLimits)
-	if len(result.ElidedKeys) < 2 {
-		t.Errorf("expected at least 2 elided keys, got %v", result.ElidedKeys)
+	if len(result.ExcludedKeys) < 2 {
+		t.Errorf("expected at least 2 elided keys, got %v", result.ExcludedKeys)
 	}
 }
 
@@ -418,33 +418,6 @@ func TestArrayElementOmissionPathInsideObject(t *testing.T) {
 		if o.JQPath != want {
 			t.Errorf("omission[%d].JQPath = %q, want %q", i, o.JQPath, want)
 		}
-	}
-}
-
-func TestOmitLimits(t *testing.T) {
-	long := strings.Repeat("x", 500)
-	cfg := &config.ProjectionConfig{
-		OmitLimits: map[string]int{"patch": 100},
-	}
-	value := map[string]any{
-		"patch": long,
-		"title": long,
-	}
-
-	result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
-	m := result.Summary.(map[string]any)
-
-	if _, ok := m["patch"].(string); !ok {
-		t.Fatal("patch should still be present as placeholder string")
-	}
-	if !strings.HasPrefix(m["patch"].(string), "<omitted:") {
-		t.Errorf("patch should be replaced with omit placeholder, got %q", m["patch"])
-	}
-	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".patch" {
-		t.Errorf("expected one omission for .patch, got %v", result.Truncated)
-	}
-	if strings.HasPrefix(m["title"].(string), "<omitted:") {
-		t.Errorf("title should not be omitted (no omit_limits entry), got %q", m["title"])
 	}
 }
 

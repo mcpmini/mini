@@ -7,7 +7,7 @@
 # 8000 for detail views. The bar for exclusion is high — keep the field if unsure.
 
 list_pull_requests:
-  exclude_always: [avatar_url]
+  exclude: [avatar_url]
   string_limits:
     body: 1500
 
@@ -17,22 +17,22 @@ list_issues:
 
 # Detail tools: generous limits. Agent may need to read and reference the full body.
 issue_read:
-  exclude_always: [avatar_url]
+  exclude: [avatar_url]
   string_limits:
     body: 8000
 
 pull_request_read:
-  exclude_always: [avatar_url]
+  exclude: [avatar_url]
   string_limits:
     body: 8000
 
 get_issue:
-  exclude_always: [avatar_url]
+  exclude: [avatar_url]
   string_limits:
     body: 8000
 
 get_pull_request:
-  exclude_always: [avatar_url]
+  exclude: [avatar_url]
   string_limits:
     body: 8000
 
@@ -43,7 +43,7 @@ list_pull_request_files:
     patch: 5000
 
 get_commit:
-  exclude_always: [avatar_url]
+  exclude: [avatar_url]
   string_limits:
     message: 2000
     patch: 3000
@@ -51,7 +51,7 @@ get_commit:
     files: 50
 
 list_commits:
-  exclude_always: [avatar_url]
+  exclude: [avatar_url]
   array_limits:
     default: 30
   string_limits:
@@ -63,7 +63,7 @@ search_code:
     text_matches: 3
   string_limits:
     fragment: 500
-  exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
+  exclude: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 search_repositories:
   array_limits:
@@ -71,7 +71,7 @@ search_repositories:
     topics: 10
   string_limits:
     description: 400
-  exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
+  exclude: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 search_issues:
   array_limits:
@@ -79,10 +79,10 @@ search_issues:
     labels: 5
   string_limits:
     body: 500
-  exclude_always: [score]
+  exclude: [score]
 
 get_file_contents:
-  exclude_always: [url, git_url, download_url, html_url, _links]
+  exclude: [url, git_url, download_url, html_url, _links]
 
 list_repository_contents:
   array_limits:

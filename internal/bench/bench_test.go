@@ -66,7 +66,7 @@ func TestMeasure_projectionReducesTokens(t *testing.T) {
 	cfg := &config.ProjectionConfig{
 		IncludeOnly:   []string{"number", "title", "body", "labels"},
 		StringLimits:  map[string]int{"body": 200},
-		ExcludeAlways: []string{"node_id", "url", "_links"},
+		Exclude: []string{"node_id", "url", "_links"},
 	}
 	results := bench.Measure(bench.Case{Server: "test", Tool: "list_prs", Raw: raw, ProjConfig: cfg}, defaults)
 	if results[1].Tokens >= results[0].Tokens {

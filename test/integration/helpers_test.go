@@ -450,7 +450,7 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 
 type envelope struct {
 	Data        any            `json:"data"`
-	Elided      []string       `json:"elided"`
+	Elided      []string       `json:"excluded"`
 	Truncated    []truncation     `json:"truncated"`
 	File        *string        `json:"file"`
 	Passthrough map[string]any `json:"passthrough"`

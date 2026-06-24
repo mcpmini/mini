@@ -2,7 +2,7 @@ list_issues:
   array_limits:
     nodes: 25
     labels: 5
-  exclude_always: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
+  exclude: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
   string_limits:
     description: 2000
 
@@ -10,30 +10,30 @@ search_issues:
   array_limits:
     nodes: 20
     labels: 5
-  exclude_always: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
+  exclude: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
   string_limits:
     description: 1000
 
 # Detail tools: agent may read and update — no include filter, generous limits
 get_issue:
-  exclude_always: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
+  exclude: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
   string_limits:
     description: 5000
 
 create_issue:
-  exclude_always: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
+  exclude: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
   string_limits:
     description: 5000
 
 update_issue:
-  exclude_always: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
+  exclude: [sortOrder, subIssueSortOrder, archivedAt, autoArchivedAt, autoClosedAt, canceledAt, completedAt, snoozedUntilAt, trashed, previousIdentifiers]
   string_limits:
     description: 5000
 
 list_projects:
   array_limits:
     nodes: 20
-  exclude_always: [sortOrder, archivedAt, autoArchivedAt, trashed]
+  exclude: [sortOrder, archivedAt, autoArchivedAt, trashed]
 
 list_teams:
   array_limits:
@@ -42,7 +42,7 @@ list_teams:
 list_cycles:
   array_limits:
     nodes: 10
-  exclude_always: [archivedAt, autoArchivedAt]
+  exclude: [archivedAt, autoArchivedAt]
 
 list_comments:
   array_limits:

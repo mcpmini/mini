@@ -92,7 +92,7 @@ func TestCLICall_WithProjection(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`,
 	})
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude_always: [secret]\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 
 	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item")
 	if code != 0 {
@@ -102,7 +102,7 @@ func TestCLICall_WithProjection(t *testing.T) {
 		t.Errorf("projected field 'secret' should be excluded, got: %s", stdout)
 	}
 	var env struct {
-		Elided []string `json:"elided"`
+		Elided []string `json:"excluded"`
 	}
 	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
 		t.Fatalf("parse envelope: %v", err)
@@ -273,7 +273,7 @@ func TestCLICall_ProjectionWritesFile(t *testing.T) {
 	})
 	writeFakeServer(t, cfg, "svc", dir)
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude_always: [secret]\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 
 	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item")
 	if code != 0 {

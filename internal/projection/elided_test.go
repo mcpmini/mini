@@ -7,26 +7,26 @@ import (
 
 func TestCollapseElided_deduplicatesArrayIndices(t *testing.T) {
 	paths := []string{".items[0].secret", ".items[1].secret", ".items[2].secret"}
-	got := collapseElided(paths)
+	got := collapseExcluded(paths)
 	want := []string{".items[].secret"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("collapseElided() = %#v, want %#v", got, want)
+		t.Fatalf("collapseExcluded() = %#v, want %#v", got, want)
 	}
 }
 
 func TestCollapseElided_keepsDistinctPaths(t *testing.T) {
 	paths := []string{".items[0].secret", ".items[0].other", ".meta"}
-	got := collapseElided(paths)
+	got := collapseExcluded(paths)
 	slices.Sort(got)
 	want := []string{".items[].other", ".items[].secret", ".meta"}
 	if !slices.Equal(got, want) {
-		t.Fatalf("collapseElided() = %#v, want %#v", got, want)
+		t.Fatalf("collapseExcluded() = %#v, want %#v", got, want)
 	}
 }
 
 func TestCollapseElided_emptyInput(t *testing.T) {
-	if got := collapseElided(nil); got != nil {
-		t.Fatalf("collapseElided(nil) = %v, want nil", got)
+	if got := collapseExcluded(nil); got != nil {
+		t.Fatalf("collapseExcluded(nil) = %v, want nil", got)
 	}
 }
 

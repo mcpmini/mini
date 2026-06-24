@@ -17,7 +17,7 @@ func projectedResponseClient(t *testing.T, extraConfig string) (*mcpClient, stri
 	respDir := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","body":"full text"}`}))
 	writeConfig(t, cfg, extraConfig+"response_dir: "+respDir+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude_always: [secret]\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 	return startServer(t, cfg), respDir, cfg
 }
 

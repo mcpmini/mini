@@ -11,13 +11,13 @@ import (
 func TestProjection_excludeAlways(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc","internal_ref":"xyz"}`},
-		"", "get_item:\n  exclude_always: [node_id, internal_ref]\n")
+		"", "get_item:\n  exclude: [node_id, internal_ref]\n")
 
 	e := client.execEnvelope("svc", "get_item", nil)
 
 	b, _ := json.Marshal(e.Data)
 	if strings.Contains(string(b), "node_id") || strings.Contains(string(b), "internal_ref") {
-		t.Errorf("exclude_always fields should be absent, got: %s", b)
+		t.Errorf("exclude fields should be absent, got: %s", b)
 	}
 	if !strings.Contains(string(b), "title") {
 		t.Errorf("non-excluded field 'title' should remain, got: %s", b)
@@ -27,7 +27,7 @@ func TestProjection_excludeAlways(t *testing.T) {
 func TestProjection_elidedFieldsReported(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
-		"", "get_item:\n  exclude_always: [node_id]\n")
+		"", "get_item:\n  exclude: [node_id]\n")
 
 	e := client.execEnvelope("svc", "get_item", nil)
 
@@ -121,12 +121,12 @@ func TestProjection_wildcardAppliesAllTools(t *testing.T) {
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
 			"get_b": `{"id":2,"node_id":"def","title":"b"}`,
 		},
-		"", "\"*\":\n  exclude_always: [node_id]\n")
+		"", "\"*\":\n  exclude: [node_id]\n")
 
 	for _, tool := range []string{"get_a", "get_b"} {
 		b, _ := json.Marshal(client.execEnvelope("svc", tool, nil).Data)
 		if strings.Contains(string(b), "node_id") {
-			t.Errorf("tool %s: wildcard exclude_always should remove node_id, got: %s", tool, b)
+			t.Errorf("tool %s: wildcard exclude should remove node_id, got: %s", tool, b)
 		}
 	}
 }
@@ -135,7 +135,7 @@ func TestProjection_inlineInServerYAML(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"node_id":"abc","title":"hello"}`})
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", "name: svc\ncommand: "+fakemcpBin+
-		"\nargs:\n  - --fixtures\n  - "+dir+"\nprojections:\n  get_item:\n    exclude_always: [node_id]\n")
+		"\nargs:\n  - --fixtures\n  - "+dir+"\nprojections:\n  get_item:\n    exclude: [node_id]\n")
 
 	b, _ := json.Marshal(startServer(t, cfg).execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "node_id") {
@@ -157,7 +157,7 @@ func TestProjection_sessionOverridesServerLevel(t *testing.T) {
 
 func TestProjection_configurePersistsAcrossCalls(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"title":"hello","secret":"hidden"}`})
-	client.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, true)
+	client.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, true)
 
 	for i := range 2 {
 		b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
@@ -173,7 +173,7 @@ func TestProjection_toolSpecificOverridesWildcard(t *testing.T) {
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
 			"get_b": `{"id":2,"node_id":"def","title":"b"}`,
 		},
-		"", "\"*\":\n  exclude_always: [node_id]\nget_b:\n  include_only: [id, node_id, title]\n")
+		"", "\"*\":\n  exclude: [node_id]\nget_b:\n  include_only: [id, node_id, title]\n")
 
 	bA, _ := json.Marshal(client.execEnvelope("svc", "get_a", nil).Data)
 	if strings.Contains(string(bA), "node_id") {
@@ -192,7 +192,7 @@ func TestProjection_persistToDisk(t *testing.T) {
 	writeFakeServer(t, cfg, "svc", dir)
 
 	client1 := startServer(t, cfg)
-	client1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, false)
+	client1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
 
 	client2 := startServer(t, cfg)
 	b, _ := json.Marshal(client2.execEnvelope("svc", "get_item", nil).Data)
@@ -226,15 +226,15 @@ func TestProjection_passthrough(t *testing.T) {
 	}
 }
 
-func TestProjection_includeAndExcludeAlways(t *testing.T) {
+func TestProjection_includeAndExclude(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
-		"", "get_item:\n  include_only: [id, title, node_id]\n  exclude_always: [node_id]\n")
+		"", "get_item:\n  include_only: [id, title, node_id]\n  exclude: [node_id]\n")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
 	if strings.Contains(data, "node_id") {
-		t.Errorf("exclude_always should remove node_id even if it's in include, got: %s", data)
+		t.Errorf("exclude should remove node_id even if it's in include, got: %s", data)
 	}
 	if !strings.Contains(data, `"title"`) || !strings.Contains(data, `"id"`) {
 		t.Errorf("include fields id and title should remain, got: %s", data)
@@ -269,9 +269,9 @@ func TestProjection_persistMergesWithExistingYAML(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
 	c1 := startServer(t, cfg)
-	c1.setProjection("svc", "tool_a", map[string]any{"exclude_always": []string{"secret_a"}}, false)
+	c1.setProjection("svc", "tool_a", map[string]any{"exclude": []string{"secret_a"}}, false)
 	c2 := startServer(t, cfg)
-	c2.setProjection("svc", "tool_b", map[string]any{"exclude_always": []string{"secret_b"}}, false)
+	c2.setProjection("svc", "tool_b", map[string]any{"exclude": []string{"secret_b"}}, false)
 	c3 := startServer(t, cfg)
 	assertToolExcludes(t, c3, "svc", "tool_a", "secret_a")
 	assertToolExcludes(t, c3, "svc", "tool_b", "secret_b")
@@ -287,7 +287,7 @@ func TestProjection_persistDoesNotAffectRunningSession(t *testing.T) {
 	if !strings.Contains(string(b2), "secret") {
 		t.Fatal("expected secret field before projection")
 	}
-	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, false)
+	c1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
 	assertSessionIsolation(t, cfg, c2)
 }
 

@@ -139,7 +139,7 @@ func elisionLinesResponse(t *testing.T, payload string) []string {
 	srv := newSrvWithResponse(t, "mini", payload)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"format": "mini", "exclude_always": []string{"secret"}},
+		"projection": map[string]any{"format": "mini", "exclude": []string{"secret"}},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},

@@ -160,7 +160,7 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "gh",
 		"tool":       "list_repos",
-		"projection": map[string]any{"exclude_always": []string{"secret"}},
+		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("gh__list_repos", map[string]any{}))
@@ -170,7 +170,7 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 	if !strings.HasPrefix(text, "[Projected") {
 		t.Errorf("expected [Projected] note when field elided: %s", text)
 	}
-	if !strings.Contains(text, "elided") {
+	if !strings.Contains(text, "excluded") {
 		t.Errorf("expected 'elided' in projection note: %s", text)
 	}
 	if !strings.Contains(text, `"id"`) || strings.Contains(text, `"secret"`) {
@@ -189,7 +189,7 @@ func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "gh",
 		"tool":       "list_prs",
-		"projection": map[string]any{"exclude_always": []string{"body"}},
+		"projection": map[string]any{"exclude": []string{"body"}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("gh__list_prs", map[string]any{}))
@@ -309,7 +309,7 @@ func TestProxy_Call_GlobalMiniFormat_Respected(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_user",
-		"projection": map[string]any{"exclude_always": []string{}},
+		"projection": map[string]any{"exclude": []string{}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))

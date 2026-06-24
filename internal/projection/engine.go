@@ -17,7 +17,7 @@ type Truncation struct {
 
 type Result struct {
 	Summary     any
-	ElidedKeys  []string
+	ExcludedKeys []string
 	Passthrough map[string]any
 	Truncated    []Truncation
 }
@@ -33,14 +33,14 @@ type projCtx struct {
 func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 	effective := mergeWithDefaults(cfg, defaults)
 	ctx := projCtx{cfg: effective, depth: 0, path: nil}
-	var elided []string
+	var excluded []string
 	var truncated []Truncation
-	summary := project(value, ctx, &elided, &truncated)
+	summary := project(value, ctx, &excluded, &truncated)
 	passthrough := extractPassthrough(value, effective.passthrough)
 	sortTruncated(truncated)
 	return Result{
-		Summary:     summary,
-		ElidedKeys:  collapseElided(elided),
+		Summary:      summary,
+		ExcludedKeys: collapseExcluded(excluded),
 		Passthrough: passthrough,
 		Truncated:   truncated,
 	}
@@ -50,16 +50,16 @@ func sortTruncated(truncated []Truncation) {
 	slices.SortFunc(truncated, func(a, b Truncation) int { return strings.Compare(a.JQPath, b.JQPath) })
 }
 
-func project(value any, ctx projCtx, elided *[]string, truncated *[]Truncation) any {
+func project(value any, ctx projCtx, excluded *[]string, truncated *[]Truncation) any {
 	if ctx.cfg.depthLimit > 0 && ctx.depth >= ctx.cfg.depthLimit {
 		return "[depth limit reached]"
 	}
 
 	switch v := value.(type) {
 	case map[string]any:
-		return projectMap(v, ctx, elided, truncated)
+		return projectMap(v, ctx, excluded, truncated)
 	case []any:
-		return projectArray(v, ctx, elided, truncated)
+		return projectArray(v, ctx, excluded, truncated)
 	case string:
 		return projectString(v, ctx, "", truncated)
 	default:
@@ -67,49 +67,49 @@ func project(value any, ctx projCtx, elided *[]string, truncated *[]Truncation) 
 	}
 }
 
-func projectMap(m map[string]any, ctx projCtx, elided *[]string, truncated *[]Truncation) map[string]any {
+func projectMap(m map[string]any, ctx projCtx, excluded *[]string, truncated *[]Truncation) map[string]any {
 	out := make(map[string]any)
 	for k, v := range m {
 		if shouldSkipField(k, ctx.cfg, ctx.depth) {
-			*elided = append(*elided, formatPath(append(slices.Clone(ctx.path), k)))
+			*excluded = append(*excluded, formatPath(append(slices.Clone(ctx.path), k)))
 			continue
 		}
-		out[k] = projectMapValue(v, ctx, k, elided, truncated)
+		out[k] = projectMapValue(v, ctx, k, excluded, truncated)
 	}
 	return out
 }
 
 func shouldSkipField(key string, cfg *effectiveConfig, depth int) bool {
-	if isExcluded(key, cfg.excludeAlways) {
+	if isExcluded(key, cfg.exclude) {
 		return true
 	}
 	return depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly) && !isPassthrough(key, cfg.passthrough)
 }
 
-func projectMapValue(value any, ctx projCtx, fieldName string, elided *[]string, truncated *[]Truncation) any {
+func projectMapValue(value any, ctx projCtx, fieldName string, excluded *[]string, truncated *[]Truncation) any {
 	childPath := append(slices.Clone(ctx.path), fieldName)
 	switch sv := value.(type) {
 	case string:
 		return projectString(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth, path: childPath}, fieldName, truncated)
 	case map[string]any:
-		return project(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth + 1, path: childPath}, elided, truncated)
+		return project(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth + 1, path: childPath}, excluded, truncated)
 	case []any:
-		return projectNamedArray(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth + 1, path: childPath}, fieldName, elided, truncated)
+		return projectNamedArray(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth + 1, path: childPath}, fieldName, excluded, truncated)
 	default:
 		return value
 	}
 }
 
-func projectArray(arr []any, ctx projCtx, elided *[]string, truncated *[]Truncation) []any {
-	return projectNamedArray(arr, ctx, "", elided, truncated)
+func projectArray(arr []any, ctx projCtx, excluded *[]string, truncated *[]Truncation) []any {
+	return projectNamedArray(arr, ctx, "", excluded, truncated)
 }
 
-func projectNamedArray(arr []any, ctx projCtx, fieldName string, elided *[]string, truncated *[]Truncation) []any {
+func projectNamedArray(arr []any, ctx projCtx, fieldName string, excluded *[]string, truncated *[]Truncation) []any {
 	arr, original := truncateArray(arr, ctx.cfg.arrayLimitFor(fieldName))
 	out := make([]any, len(arr))
 	for i, v := range arr {
 		itemCtx := projCtx{cfg: ctx.cfg, depth: ctx.depth, path: append(slices.Clone(ctx.path), fmt.Sprintf("[%d]", i))}
-		out[i] = project(v, itemCtx, elided, truncated)
+		out[i] = project(v, itemCtx, excluded, truncated)
 	}
 	if len(arr) < original {
 		*truncated = append(*truncated, Truncation{JQPath: formatPath(ctx.path), Items: original - len(arr)})
@@ -128,9 +128,6 @@ func truncateArray(arr []any, limit int) ([]any, int) {
 func projectString(s string, ctx projCtx, fieldName string, truncated *[]Truncation) string {
 	if ctx.cfg.stripContent || (ctx.cfg.autoStripThreshold > 0 && len(s) >= ctx.cfg.autoStripThreshold && ctx.cfg.contentFieldSet[fieldName]) {
 		s = StripMarkup(s)
-	}
-	if omitLimit := ctx.cfg.omitLimitFor(fieldName); omitLimit > 0 && utf8.RuneCountInString(s) > omitLimit {
-		return replaceWithPlaceholder(s, formatPath(ctx.path), truncated)
 	}
 	limit := ctx.cfg.stringLimitFor(fieldName)
 	if limit > 0 && utf8.RuneCountInString(s) > limit {
@@ -174,15 +171,6 @@ func isIdentifierSafe(s string) bool {
 		}
 	}
 	return true
-}
-
-func replaceWithPlaceholder(s, path string, truncated *[]Truncation) string {
-	n := utf8.RuneCountInString(s)
-	*truncated = append(*truncated, Truncation{JQPath: path, Chars: n})
-	if path == "" {
-		return fmt.Sprintf("<omitted: %d chars — see raw>", n)
-	}
-	return fmt.Sprintf("<omitted: %d chars — see raw, path %s>", n, path)
 }
 
 func recordOmission(path string, chars int, truncated *[]Truncation) {

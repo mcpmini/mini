@@ -7,14 +7,11 @@ import "github.com/mcpmini/mini/internal/projection"
 type Envelope struct {
 	Data any `json:"data,omitempty"`
 
-	// Elided lists field names stripped by the projection engine.
-	Elided []string `json:"elided,omitempty"`
-
+	Excluded  []string                `json:"excluded,omitempty"`
 	Truncated []projection.Truncation `json:"truncated,omitempty"`
 
-
 	// File is the path to the full raw upstream response, set when any
-	// projection (elision or truncation) was applied.
+	// projection was applied.
 	File *string `json:"file,omitempty"`
 
 	// Passthrough contains fields explicitly preserved from projection rules.

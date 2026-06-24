@@ -13,7 +13,7 @@ func TestSession_configureIndependentTools(t *testing.T) {
 		"tool_a": `{"id":1,"secret":"hidden","title":"a"}`,
 		"tool_b": `{"id":2,"secret":"visible","title":"b"}`,
 	})
-	client.setProjection("svc", "tool_a", map[string]any{"exclude_always": []string{"secret"}}, true)
+	client.setProjection("svc", "tool_a", map[string]any{"exclude": []string{"secret"}}, true)
 
 	bA, _ := json.Marshal(client.execEnvelope("svc", "tool_a", nil).Data)
 	if strings.Contains(string(bA), "secret") {

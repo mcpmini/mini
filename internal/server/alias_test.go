@@ -187,7 +187,7 @@ func TestAlias_sessionSetProjectionStoresUnderRealName(t *testing.T) {
 
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_prs",
-		"projection":   map[string]any{"exclude_always": []string{"secret"}},
+		"projection":   map[string]any{"exclude": []string{"secret"}},
 		"session_only": true,
 	}))
 	text := toolResultText(t, resp)
@@ -219,7 +219,7 @@ func TestAlias_serverSetProjectionTakesEffect(t *testing.T) {
 
 	configResp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "get_pr",
-		"projection": map[string]any{"exclude_always": []string{"secret"}},
+		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 	if configText := toolResultText(t, configResp); strings.Contains(configText, "error") {
 		t.Fatalf("set_projection failed: %s", configText)
@@ -242,7 +242,7 @@ func TestAlias_setProjectionResponseEchoesAlias(t *testing.T) {
 
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "aliased_tool",
-		"projection":   map[string]any{"exclude_always": []string{"x"}},
+		"projection":   map[string]any{"exclude": []string{"x"}},
 		"session_only": true,
 	}))
 	text := toolResultText(t, resp)
@@ -339,7 +339,7 @@ func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "pr",
-		"projection": map[string]any{"exclude_always": []string{"body"}},
+		"projection": map[string]any{"exclude": []string{"body"}},
 	}))
 	if text := toolResultText(t, resp); strings.Contains(text, "error") {
 		t.Fatalf("set_projection failed: %s", text)

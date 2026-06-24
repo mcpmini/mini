@@ -2,10 +2,7 @@ package projection
 
 import "strings"
 
-// collapseElided deduplicates elided jq paths by converting numeric array
-// indices to [] wildcards, so .items[0].secret and .items[1].secret both
-// become .items[].secret and are reported once.
-func collapseElided(paths []string) []string {
+func collapseExcluded(paths []string) []string {
 	if len(paths) == 0 {
 		return nil
 	}

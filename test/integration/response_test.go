@@ -22,7 +22,7 @@ func TestResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
 	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude_always: [secret]\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 
 	e := startServer(t, cfg).execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
@@ -37,7 +37,7 @@ func TestResponse_responseFileIsValidJSON(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
 	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude_always: [secret]\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 
 	e := startServer(t, cfg).execEnvelope("svc", "get_item", nil)
 	if e.File == nil {

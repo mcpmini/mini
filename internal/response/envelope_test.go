@@ -47,7 +47,7 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	raw := json.RawMessage(`{"status":"ok","body":"secret content"}`)
 	data := map[string]any{"status": "ok"}
 
-	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Elided: []string{"body"}})
+	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Excluded: []string{"body"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 }
 
 
-func TestElidedKeys(t *testing.T) {
+func TestExcludedKeys(t *testing.T) {
 	store := newTestStore(t)
 	builder := response.NewBuilder(store)
 
@@ -72,13 +72,13 @@ func TestElidedKeys(t *testing.T) {
 	data := map[string]any{"a": 1}
 	elided := []string{"b", "c"}
 
-	env, _, err := builder.Build(response.BuildParams{Server: "s", Tool: "t", Raw: raw, Summary: data, Elided: elided})
+	env, _, err := builder.Build(response.BuildParams{Server: "s", Tool: "t", Raw: raw, Summary: data, Excluded: elided})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(env.Elided) != 2 {
-		t.Errorf("expected 2 elided keys, got %v", env.Elided)
+	if len(env.Excluded) != 2 {
+		t.Errorf("expected 2 elided keys, got %v", env.Excluded)
 	}
 }
 

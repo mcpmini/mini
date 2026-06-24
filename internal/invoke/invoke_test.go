@@ -195,7 +195,7 @@ func TestBuildEnvelope_NoProjection(t *testing.T) {
 
 func TestBuildEnvelope_WithProjection(t *testing.T) {
 	raw := json.RawMessage(`{"id":1,"secret":"hidden","name":"Alice"}`)
-	projCfg := &config.ProjectionConfig{ExcludeAlways: []string{"secret"}}
+	projCfg := &config.ProjectionConfig{Exclude: []string{"secret"}}
 	env, _, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
 		Server:   "svc",
 		Tool:     "get",
@@ -210,8 +210,8 @@ func TestBuildEnvelope_WithProjection(t *testing.T) {
 	if env.Error != "" {
 		t.Errorf("expected success, got error: %s", env.Error)
 	}
-	if !containsString(env.Elided, ".secret") {
-		t.Errorf("expected '.secret' in elided, got %v", env.Elided)
+	if !containsString(env.Excluded, ".secret") {
+		t.Errorf("expected '.secret' in elided, got %v", env.Excluded)
 	}
 	b, _ := json.Marshal(env.Data)
 	if contains(string(b), "hidden") {

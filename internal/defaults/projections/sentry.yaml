@@ -7,7 +7,7 @@ list_issues:
 get_issue_details:
   # pluginActions/pluginContexts/pluginIssues are Sentry UI extension points,
   # not issue data — agents never act on these.
-  exclude_always: [pluginActions, pluginContexts, pluginIssues, seenBy, userReport, annotations]
+  exclude: [pluginActions, pluginContexts, pluginIssues, seenBy, userReport, annotations]
   string_limits:
     message: 5000
 

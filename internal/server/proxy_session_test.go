@@ -141,7 +141,7 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
 		}},
 	})
 
@@ -178,7 +178,7 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
 		}},
 	})
 
@@ -218,7 +218,7 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
 		}},
 	})
 

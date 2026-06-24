@@ -219,7 +219,7 @@ func TestDaemon_sessionIsolation(t *testing.T) {
 	c1 := connectCompact(t, cfg)
 	c2 := connectCompact(t, cfg)
 
-	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, true)
+	c1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, true)
 
 	b1, _ := json.Marshal(c1.execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b1), "secret") {

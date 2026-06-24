@@ -187,6 +187,6 @@ func TestConcurrency_twoClientsSessionIsolation(t *testing.T) {
 	if !strings.Contains(string(b2), "secret") {
 		t.Fatal("c2 should see secret before any projection")
 	}
-	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, false)
+	c1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
 	assertSessionIsolation(t, cfg, c2)
 }

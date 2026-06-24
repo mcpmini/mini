@@ -379,7 +379,7 @@ func TestInlineProjections_AppliedOnAddConnection(t *testing.T) {
 	conn := fakeConn("get_item")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"name\":\"foo\"}"}]}`)
 
-	projCfg := &config.ProjectionConfig{ExcludeAlways: []string{"secret"}}
+	projCfg := &config.ProjectionConfig{Exclude: []string{"secret"}}
 	sc := config.ServerConfig{
 		Name:        "svc",
 		Projections: map[string]*config.ProjectionConfig{"get_item": projCfg},

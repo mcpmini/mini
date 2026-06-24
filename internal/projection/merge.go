@@ -22,11 +22,10 @@ func DefaultsFrom(cfg *config.Config) *Defaults {
 // effectiveConfig is the merged, runtime-ready config derived from ProjectionConfig + Defaults.
 type effectiveConfig struct {
 	includeOnly        []string
-	excludeAlways      []string
+	exclude      []string
 	passthrough        []string
 	arrayLimits        map[string]int
 	stringLimits       map[string]int
-	omitLimits         map[string]int
 	defaultArrayLimit  int
 	defaultStringLimit int
 	depthLimit         int
@@ -81,20 +80,15 @@ func effectiveFromDefaults(d *Defaults) *effectiveConfig {
 	return e
 }
 
-func (c *effectiveConfig) omitLimitFor(field string) int {
-	return c.omitLimits[field]
-}
-
 func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	if cfg.Mode == "slim" {
 		applySlimMode(e)
 	}
 	e.includeOnly = cfg.IncludeOnly
-	e.excludeAlways = cfg.ExcludeAlways
+	e.exclude = cfg.Exclude
 	e.passthrough = cfg.Passthrough
 	e.arrayLimits = cfg.ArrayLimits
 	e.stringLimits = cfg.StringLimits
-	e.omitLimits = cfg.OmitLimits
 	if cfg.DepthLimit > 0 {
 		e.depthLimit = cfg.DepthLimit
 	}
