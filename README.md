@@ -264,7 +264,7 @@ For most users the bundled projections are enough. If you want to tune them:
 # ~/.mini/projections/github.yaml
 
 list_pull_requests:
-  exclude_always: [avatar_url]   # strip provably-useless fields
+  exclude: [avatar_url]   # strip provably-useless fields
   string_limits:
     body: 1500                   # cap at 1500 chars in list view
 

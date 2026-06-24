@@ -3,7 +3,6 @@ package ops
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -56,20 +55,10 @@ func purgeExpired(dir string, entries []os.DirEntry, cutoff time.Time) (removed 
 }
 
 func purgeEntry(path string, size int64) int64 {
-	freed := size
 	os.Remove(path)
-	rawPath := rawPairPath(path)
-	if ri, err := os.Stat(rawPath); err == nil {
-		freed += ri.Size()
-		os.Remove(rawPath)
-	}
-	return freed
+	return size
 }
 
 func shouldSkipCleanupEntry(e os.DirEntry) bool {
-	return e.IsDir() || strings.HasSuffix(e.Name(), ".raw.json")
-}
-
-func rawPairPath(path string) string {
-	return strings.TrimSuffix(path, ".json") + ".raw.json"
+	return e.IsDir()
 }

@@ -57,7 +57,7 @@ For detail/get and write operations:
 
 - Avoid `include` filters unless the response shape is proven safe.
 - Use larger string limits, usually around 5000 chars.
-- Use `exclude_always` only for fields proven to be useless noise.
+- Use `exclude` only for fields proven to be useless noise.
 
 Do not add `depth_limit` to defaults. Do not set `strip_markup` unless the specific tool embeds raw HTML that adds no value.
 

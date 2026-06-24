@@ -27,12 +27,9 @@ func TestRunCleanup(t *testing.T) {
 		os.MkdirAll(respDir, 0700)
 
 		oldJSON := filepath.Join(respDir, "old.json")
-		oldRaw := filepath.Join(respDir, "old.raw.json")
 		os.WriteFile(oldJSON, []byte(`{"ok":true}`), 0600)
-		os.WriteFile(oldRaw, []byte(`{"raw":true}`), 0600)
 		past := time.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
-		os.Chtimes(oldRaw, past, past)
 
 		var out bytes.Buffer
 		if err := runCleanup(dir, &out); err != nil {
