@@ -49,8 +49,6 @@ func CollapseIndex(p string) string {
 	return b.String()
 }
 
-// copyQuotedKey copies a ["..."] quoted key segment verbatim, handling \" escapes.
-// Returns the index after the closing ].
 func copyQuotedKey(b *strings.Builder, p string, i int) int {
 	b.WriteString(`["`)
 	i += 2
