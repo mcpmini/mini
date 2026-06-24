@@ -144,7 +144,7 @@ func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_thing",
-		"projection": map[string]any{"exclude_always": []string{"secret"}},
+		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
 	resp1 := serveProxy(t, srv, callTool("svc__get_thing", map[string]any{}))
