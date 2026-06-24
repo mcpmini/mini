@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
 )
 
@@ -359,6 +360,20 @@ func TestRenderLines_notes(t *testing.T) {
 		out := RenderLines("srv", "tool", makeEnvelope(true, "hello"))
 		if strings.Contains(out, "note:") {
 			t.Errorf("expected no note for clean envelope, got: %q", out)
+		}
+	})
+	t.Run("root-array cap produces note without path prefix", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Truncated: []projection.Truncation{{Items: 5}}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: capped (5 items removed)") {
+			t.Errorf("expected cap note without path, got: %q", out)
+		}
+	})
+	t.Run("named array cap produces note with path prefix", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Truncated: []projection.Truncation{{JQPath: ".items", Items: 3}}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: .items capped (3 items removed)") {
+			t.Errorf("expected cap note with path, got: %q", out)
 		}
 	})
 }
