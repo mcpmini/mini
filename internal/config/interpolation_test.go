@@ -153,6 +153,7 @@ list_issues:
 	proj := sc.Projections["list_issues"]
 	if proj == nil {
 		t.Fatal("expected list_issues projection to be loaded")
+		return
 	}
 	if proj.Format != "${UNSET_PROJ_VAR_XXXX}" {
 		t.Errorf("expected projection format to be literal, got %q", proj.Format)

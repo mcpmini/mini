@@ -191,6 +191,7 @@ my_tool:
 	proj := sc.Projections["my_tool"]
 	if proj == nil {
 		t.Fatal("expected projection")
+		return
 	}
 	if len(proj.IncludeOnly) != 1 || proj.IncludeOnly[0] != "dir_field" {
 		t.Errorf("expected dir projection to win, got include_only=%v", proj.IncludeOnly)
