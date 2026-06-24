@@ -162,6 +162,10 @@ func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
 	if text2 == "" {
 		t.Error("read returned empty content using filename-only path")
 	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(text2), &parsed); err != nil {
+		t.Errorf("read content via filename-only path should be JSON: %s", text2)
+	}
 }
 
 func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
