@@ -35,7 +35,7 @@ func prListRaw(t *testing.T) []byte {
 
 func TestMeasure_rawIsLargestTokenCount(t *testing.T) {
 	cfg := &config.ProjectionConfig{
-		Include:      []string{"id", "title", "body"},
+		IncludeOnly:  []string{"id", "title", "body"},
 		StringLimits: map[string]int{"body": 100},
 		StripMarkup: true,
 	}
@@ -64,7 +64,7 @@ func TestMeasure_projectionReducesTokens(t *testing.T) {
 		"_links": map[string]any{"self": "https://...", "html": "https://...", "commits": "https://..."},
 	})
 	cfg := &config.ProjectionConfig{
-		Include:       []string{"number", "title", "body", "labels"},
+		IncludeOnly:   []string{"number", "title", "body", "labels"},
 		StringLimits:  map[string]int{"body": 200},
 		ExcludeAlways: []string{"node_id", "url", "_links"},
 	}
@@ -104,7 +104,7 @@ func fixtureDir(t *testing.T) string {
 	writeFixture(t, benchDir, "github", "list_pull_requests", `[{"number":1,"title":"Test"}]`)
 	writeFixture(t, benchDir, "github", "list_issues", `[{"number":2,"title":"Bug"}]`)
 	writeFixture(t, benchDir, "linear", "list_issues", `{"nodes":[{"id":"abc"}]}`)
-	writeProjection(t, benchDir, "github", "list_pull_requests:\n  include: [number, title]\n  string_limits:\n    body: 300\n")
+	writeProjection(t, benchDir, "github", "list_pull_requests:\n  include_only: [number, title]\n  string_limits:\n    body: 300\n")
 	return benchDir
 }
 

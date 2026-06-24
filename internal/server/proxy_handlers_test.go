@@ -215,7 +215,7 @@ func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_data",
-		"projection": map[string]any{"include": []string{"id", "value"}},
+		"projection": map[string]any{"include_only": []string{"id", "value"}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("svc__get_data", map[string]any{}))

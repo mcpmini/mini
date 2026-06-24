@@ -69,7 +69,7 @@ func TestStorage_responseDirAutoCreated(t *testing.T) {
 	respDir := filepath.Join(t.TempDir(), "auto_created_responses")
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  include: [id]\n  hint: response dir test\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  include_only: [id]\n  hint: response dir test\n")
 
 	client := startServer(t, cfg)
 	e := client.execEnvelope("svc", "get_item", nil)

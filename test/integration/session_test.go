@@ -28,7 +28,7 @@ func TestSession_configureIndependentTools(t *testing.T) {
 
 func TestSession_multipleExecCallsShareProjection(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"title":"hello","noise":"strip this"}`})
-	client.setProjection("svc", "get_item", map[string]any{"include": []string{"id", "title"}}, true)
+	client.setProjection("svc", "get_item", map[string]any{"include_only": []string{"id", "title"}}, true)
 
 	for i := range 3 {
 		b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)

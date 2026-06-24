@@ -238,7 +238,7 @@ type ProjectionConfig struct {
 	// Alias replaces the upstream tool name for agents; mini translates back when calling upstream.
 	Alias         string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
 	Mode          string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
-	Include       []string       `yaml:"include,omitempty"        json:"include,omitempty"`
+	IncludeOnly   []string       `yaml:"include_only,omitempty"   json:"include_only,omitempty"`
 	ExcludeAlways []string       `yaml:"exclude_always,omitempty" json:"exclude_always,omitempty"`
 	Passthrough   []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
 	ArrayLimits  map[string]int `yaml:"array_limits,omitempty"   json:"array_limits,omitempty"`

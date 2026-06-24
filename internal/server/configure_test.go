@@ -218,7 +218,7 @@ func TestProjectionExcludeFields(t *testing.T) {
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "fs"}, fake)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "get_file_info",
-		"projection": map[string]any{"include": []string{"name", "size"}},
+		"projection": map[string]any{"include_only": []string{"name", "size"}},
 	}))
 	summary := execGetFileInfo(t, srv)
 	if summary["name"] == nil {
@@ -396,7 +396,7 @@ func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
 		"action":       "set_projection",
 		"server":       "svc",
 		"tool":         "getData",
-		"projection":   map[string]any{"include": []string{"a"}},
+		"projection":   map[string]any{"include_only": []string{"a"}},
 		"session_only": true,
 	}))
 

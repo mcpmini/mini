@@ -85,7 +85,7 @@ func shouldSkipField(key string, cfg *effectiveConfig, depth int) bool {
 	if isExcluded(key, cfg.excludeAlways) {
 		return true
 	}
-	return depth == 0 && len(cfg.include) > 0 && !isIncluded(key, cfg.include) && !isPassthrough(key, cfg.passthrough)
+	return depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly) && !isPassthrough(key, cfg.passthrough)
 }
 
 func projectMapValue(value any, ctx projCtx, fieldName string, elided *[]string, truncated *[]Truncation) any {
@@ -191,7 +191,7 @@ func recordOmission(path string, chars int, truncated *[]Truncation) {
 	*truncated = append(*truncated, Truncation{JQPath: path, Chars: chars})
 }
 
-func isIncluded(key string, include []string) bool { return slices.Contains(include, key) }
+func isIncluded(key string, includeOnly []string) bool { return slices.Contains(includeOnly, key) }
 func isPassthrough(key string, pt []string) bool   { return slices.Contains(pt, key) }
 
 func isExcluded(key string, exclude []string) bool {

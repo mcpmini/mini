@@ -12,7 +12,7 @@ list_pull_requests:
     body: 1500
 
 list_issues:
-  include: [issues, totalCount, pageInfo]
+  include_only: [issues, totalCount, pageInfo]
   string_limits:
     body: 1500
 
@@ -38,7 +38,7 @@ get_pull_request:
     body: 8000
 
 list_pull_request_files:
-  include: [filename, status, additions, deletions, changes, patch]
+  include_only: [filename, status, additions, deletions, changes, patch]
   array_limits:
     default: 100
   string_limits:
@@ -60,7 +60,7 @@ list_commits:
     message: 500
 
 search_code:
-  include: [total_count, incomplete_results, items]
+  include_only: [total_count, incomplete_results, items]
   array_limits:
     items: 20
     text_matches: 3
@@ -69,7 +69,7 @@ search_code:
   exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 search_repositories:
-  include: [total_count, incomplete_results, items]
+  include_only: [total_count, incomplete_results, items]
   array_limits:
     items: 15
     topics: 10
@@ -78,7 +78,7 @@ search_repositories:
   exclude_always: [score, gravatar_id, archive_url, assignees_url, blobs_url, branches_url, collaborators_url, comments_url, commits_url, compare_url, contents_url, contributors_url, deployments_url, downloads_url, events_url, forks_url, git_commits_url, git_refs_url, git_tags_url, hooks_url, issue_comment_url, issue_events_url, issues_url, keys_url, labels_url, languages_url, merges_url, milestones_url, notifications_url, pulls_url, releases_url, stargazers_url, statuses_url, subscribers_url, subscription_url, tags_url, teams_url, trees_url]
 
 search_issues:
-  include: [total_count, items]
+  include_only: [total_count, items]
   array_limits:
     items: 20
     labels: 5
@@ -90,6 +90,6 @@ get_file_contents:
   exclude_always: [url, git_url, download_url, html_url, _links]
 
 list_repository_contents:
-  include: [name, path, type, size, sha]
+  include_only: [name, path, type, size, sha]
   array_limits:
     default: 200

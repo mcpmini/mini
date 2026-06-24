@@ -146,7 +146,7 @@ func TestProjectionNotInterpolated(t *testing.T) {
 command: my-mcp`)
 	writeFile(t, filepath.Join(dir, "projections", "svc.yaml"), `
 list_issues:
-  include: [number, title]
+  include_only: [number, title]
   format: "${UNSET_PROJ_VAR_XXXX}"
 `)
 	sc := mustLoadOneServer(t, dir)

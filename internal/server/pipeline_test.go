@@ -71,6 +71,6 @@ func TestSessionProjectionOverride(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "ci",
 		"tool":       "getBuild",
-		"projection": map[string]any{"include": []string{"build_number", "status", "branch"}},
+		"projection": map[string]any{"include_only": []string{"build_number", "status", "branch"}},
 	}))
 }

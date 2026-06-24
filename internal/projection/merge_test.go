@@ -32,7 +32,7 @@ func slimOverridesMerged(t *testing.T) *effectiveConfig {
 	defaults := &Defaults{StringLimit: 1000, DepthLimit: 4,
 		ContentFields: []string{"body"}, AutoStripThreshold: 500}
 	cfg := &config.ProjectionConfig{
-		Mode: "slim", Include: []string{"items"}, ExcludeAlways: []string{"secret"},
+		Mode: "slim", IncludeOnly: []string{"items"}, ExcludeAlways: []string{"secret"},
 		Passthrough: []string{"cursor"}, ArrayLimits: map[string]int{"items": 9},
 		StringLimits: map[string]int{"body": 42}, DepthLimit: 5,
 	}
@@ -73,8 +73,8 @@ func TestMergeWithDefaultsSlimMode_respectsNamedLimits(t *testing.T) {
 
 func TestMergeWithDefaultsSlimMode_preservesFilters(t *testing.T) {
 	got := slimOverridesMerged(t)
-	if len(got.include) != 1 || got.include[0] != "items" {
-		t.Fatalf("include = %#v, want items", got.include)
+	if len(got.includeOnly) != 1 || got.includeOnly[0] != "items" {
+		t.Fatalf("includeOnly = %#v, want items", got.includeOnly)
 	}
 	if len(got.excludeAlways) != 1 || got.excludeAlways[0] != "secret" {
 		t.Fatalf("excludeAlways = %#v, want secret", got.excludeAlways)

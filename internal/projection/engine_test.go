@@ -30,7 +30,7 @@ func TestPassthroughOnNoConfig(t *testing.T) {
 }
 
 func TestIncludeFilter(t *testing.T) {
-	cfg := &config.ProjectionConfig{Include: []string{"status", "branch"}}
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status", "branch"}}
 	value := map[string]any{
 		"status": "failed",
 		"branch": "main",
@@ -159,7 +159,7 @@ func TestDepthLimit(t *testing.T) {
 }
 
 func TestElidedKeys(t *testing.T) {
-	cfg := &config.ProjectionConfig{Include: []string{"status"}}
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status"}}
 	value := map[string]any{
 		"status": "ok",
 		"env":    "secret",
@@ -174,7 +174,7 @@ func TestElidedKeys(t *testing.T) {
 
 func TestPassthroughFields(t *testing.T) {
 	cfg := &config.ProjectionConfig{
-		Include:     []string{"status"},
+		IncludeOnly:  []string{"status"},
 		Passthrough: []string{"cursor", "next_page"},
 	}
 	value := map[string]any{
@@ -191,7 +191,7 @@ func TestPassthroughFields(t *testing.T) {
 }
 
 func TestIncludeFilterOnlyTopLevel_excludesNonListed(t *testing.T) {
-	cfg := &config.ProjectionConfig{Include: []string{"issues", "totalCount"}}
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues", "totalCount"}}
 	value := map[string]any{
 		"issues":     []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
 		"totalCount": 42,
@@ -208,7 +208,7 @@ func TestIncludeFilterOnlyTopLevel_excludesNonListed(t *testing.T) {
 }
 
 func TestIncludeFilterOnlyTopLevel_preservesNestedFields(t *testing.T) {
-	cfg := &config.ProjectionConfig{Include: []string{"issues"}}
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues"}}
 	value := map[string]any{
 		"issues": []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
 	}

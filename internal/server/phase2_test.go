@@ -58,7 +58,7 @@ func TestConfigureSetProjection(t *testing.T) {
 		"server": "ci",
 		"tool":   "getBuild",
 		"projection": map[string]any{
-			"include": []string{"status", "branch"},
+			"include_only": []string{"status", "branch"},
 		},
 	}))
 

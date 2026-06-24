@@ -46,7 +46,7 @@ func TestProjection_elidedFieldsReported(t *testing.T) {
 func TestProjection_includeOnly(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","body":"long text","created_at":"2024-01-01"}`},
-		"", "get_item:\n  include: [id, title]\n")
+		"", "get_item:\n  include_only: [id, title]\n")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
@@ -146,8 +146,8 @@ func TestProjection_inlineInServerYAML(t *testing.T) {
 func TestProjection_sessionOverridesServerLevel(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","body":"long content","extra":"strip this"}`},
-		"", "get_item:\n  include: [id, title]\n")
-	client.setProjection("svc", "get_item", map[string]any{"include": []string{"id"}}, true)
+		"", "get_item:\n  include_only: [id, title]\n")
+	client.setProjection("svc", "get_item", map[string]any{"include_only": []string{"id"}}, true)
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "title") {
@@ -173,7 +173,7 @@ func TestProjection_toolSpecificOverridesWildcard(t *testing.T) {
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
 			"get_b": `{"id":2,"node_id":"def","title":"b"}`,
 		},
-		"", "\"*\":\n  exclude_always: [node_id]\nget_b:\n  include: [id, node_id, title]\n")
+		"", "\"*\":\n  exclude_always: [node_id]\nget_b:\n  include_only: [id, node_id, title]\n")
 
 	bA, _ := json.Marshal(client.execEnvelope("svc", "get_a", nil).Data)
 	if strings.Contains(string(bA), "node_id") {
@@ -218,7 +218,7 @@ func TestProjection_depthLimit(t *testing.T) {
 func TestProjection_passthrough(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","internal_ref":"xyz"}`},
-		"", "get_item:\n  include: [id, title]\n  passthrough: [internal_ref]\n")
+		"", "get_item:\n  include_only: [id, title]\n  passthrough: [internal_ref]\n")
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if _, ok := e.Passthrough["internal_ref"]; !ok {
@@ -229,7 +229,7 @@ func TestProjection_passthrough(t *testing.T) {
 func TestProjection_includeAndExcludeAlways(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
-		"", "get_item:\n  include: [id, title, node_id]\n  exclude_always: [node_id]\n")
+		"", "get_item:\n  include_only: [id, title, node_id]\n  exclude_always: [node_id]\n")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
