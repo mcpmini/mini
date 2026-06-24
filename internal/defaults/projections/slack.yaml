@@ -1,5 +1,4 @@
 conversations_history:
-  include_only: [messages, has_more, response_metadata]
   array_limits:
     messages: 20
     reactions: 10
@@ -9,7 +8,6 @@ conversations_history:
     text: 1500
 
 conversations_replies:
-  include_only: [messages, has_more]
   array_limits:
     messages: 30
     reactions: 10
@@ -18,13 +16,11 @@ conversations_replies:
     text: 1500
 
 conversations_list:
-  include_only: [channels, response_metadata]
   array_limits:
     channels: 50
   exclude_always: [unlinked, shared_team_ids, pending_shared, pending_connected_team_ids, internal_team_ids, connected_team_ids, enterprise, context_team_id, conversation_host_id]
 
 search_messages:
-  include_only: [messages, total]
   array_limits:
     reactions: 10
     reply_users: 3
@@ -33,7 +29,6 @@ search_messages:
     text: 1500
 
 users_list:
-  include_only: [members, response_metadata]
   array_limits:
     members: 50
   exclude_always: [profile.fields, profile.image_24, profile.image_32, profile.image_48, profile.image_72, profile.image_192, profile.image_512, profile.image_1024, profile.image_original, profile.phone, profile.skype, team_id, tz_offset]

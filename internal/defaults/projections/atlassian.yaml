@@ -1,5 +1,4 @@
 jira_search:
-  include_only: [issues, total, maxResults, startAt]
   array_limits:
     issues: 25
   exclude_always: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
@@ -13,7 +12,6 @@ jira_get_issue:
     description: 5000
 
 jira_get_project_issues:
-  include_only: [issues, total, maxResults, startAt]
   array_limits:
     issues: 25
   exclude_always: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
@@ -22,7 +20,6 @@ jira_get_project_issues:
     description: 1500
 
 jira_get_all_projects:
-  include_only: [values, total, maxResults, startAt, isLast]
   array_limits:
     values: 30
   exclude_always: [avatarUrls, projectTypeKey, issueTypes, simplified, style, expand]
@@ -35,12 +32,10 @@ jira_get_project:
     description: 5000
 
 jira_get_agile_boards:
-  include_only: [values, total, maxResults, startAt, isLast]
   array_limits:
     values: 20
 
 jira_get_sprint_issues:
-  include_only: [issues, total, maxResults, startAt]
   array_limits:
     issues: 25
   exclude_always: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
@@ -49,7 +44,6 @@ jira_get_sprint_issues:
     description: 1500
 
 confluence_search:
-  include_only: [results, totalSize, start, limit]
   array_limits:
     results: 20
   exclude_always: [metadata, extensions, _links, _expandable, body.view, body.export_view, body.anonymous_export_view, history, descendants, children]
@@ -62,13 +56,11 @@ confluence_get_page:
     value: 10000
 
 confluence_get_page_children:
-  include_only: [results, size, start, limit]
   array_limits:
     results: 30
   exclude_always: [body, metadata, extensions, _links, _expandable]
 
 confluence_get_comments:
-  include_only: [results, size, start, limit]
   array_limits:
     results: 30
   exclude_always: [metadata, extensions, _expandable, _links, ancestors]

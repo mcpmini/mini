@@ -1,5 +1,4 @@
 list_issues:
-  include_only: [id, title, culprit, level, status, platform, project, metadata, firstSeen, lastSeen, count, userCount, isUnhandled, assignedTo, permalink, numComments]
   array_limits:
     default: 25
   string_limits:
@@ -13,7 +12,6 @@ get_issue_details:
     message: 5000
 
 list_events:
-  include_only: [id, eventID, message, platform, dateCreated, level, tags, user]
   array_limits:
     default: 20
     tags: 15
@@ -21,12 +19,10 @@ list_events:
     message: 1000
 
 list_projects:
-  include_only: [id, name, slug, platform, status, firstEvent, hasAccess, isMember, isBookmarked, isInternal]
   array_limits:
     default: 30
 
 list_organizations:
-  include_only: [id, name, slug, status, dateCreated, role, features]
   array_limits:
     default: 10
 

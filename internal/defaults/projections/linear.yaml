@@ -1,5 +1,4 @@
 list_issues:
-  include_only: [nodes, pageInfo]
   array_limits:
     nodes: 25
     labels: 5
@@ -8,7 +7,6 @@ list_issues:
     description: 2000
 
 search_issues:
-  include_only: [nodes, pageInfo, totalCount]
   array_limits:
     nodes: 20
     labels: 5
@@ -33,24 +31,20 @@ update_issue:
     description: 5000
 
 list_projects:
-  include_only: [nodes, pageInfo]
   array_limits:
     nodes: 20
   exclude_always: [sortOrder, archivedAt, autoArchivedAt, trashed]
 
 list_teams:
-  include_only: [nodes]
   array_limits:
     nodes: 20
 
 list_cycles:
-  include_only: [nodes]
   array_limits:
     nodes: 10
   exclude_always: [archivedAt, autoArchivedAt]
 
 list_comments:
-  include_only: [nodes, pageInfo]
   array_limits:
     nodes: 30
   string_limits:
