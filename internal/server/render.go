@@ -10,6 +10,25 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
+func projectionNote(env *response.Envelope) string {
+	var parts []string
+	if len(env.Excluded) > 0 {
+		parts = append(parts, strings.Join(env.Excluded, ", ")+" excluded")
+	}
+	for _, o := range env.Truncated {
+		if o.Items > 0 && o.JQPath != "" {
+			parts = append(parts, fmt.Sprintf("%s capped (%d items removed)", o.JQPath, o.Items))
+		} else if o.Items > 0 {
+			parts = append(parts, fmt.Sprintf("capped (%d items removed)", o.Items))
+		} else if o.JQPath != "" {
+			parts = append(parts, fmt.Sprintf("%s truncated (%d chars)", o.JQPath, o.Chars))
+		} else {
+			parts = append(parts, fmt.Sprintf("truncated (%d chars)", o.Chars))
+		}
+	}
+	return strings.Join(parts, "; ")
+}
+
 func RenderLines(server, tool string, e *response.Envelope) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[%s.%s]", server, tool)
@@ -20,6 +39,9 @@ func RenderLines(server, tool string, e *response.Envelope) string {
 	if e.Error != "" {
 		fmt.Fprintf(&b, "ERROR %s: %s\n", e.Error, e.Message)
 		return b.String()
+	}
+	if note := projectionNote(e); note != "" {
+		fmt.Fprintf(&b, "note: %s\n", note)
 	}
 	writeLineData(&b, e.Data)
 	return b.String()

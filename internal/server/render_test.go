@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
 )
 
@@ -343,6 +344,43 @@ func TestRenderLines_data(t *testing.T) {
 	t.Run("unknown scalar rendered as string", func(t *testing.T) {
 		if out := RenderLines("srv", "tool", makeEnvelope(true, float64(42))); !strings.Contains(out, "42") {
 			t.Errorf("expected scalar value in output, got: %q", out)
+		}
+	})
+}
+
+func TestRenderLines_notes(t *testing.T) {
+	t.Run("excluded keys produce note line", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Excluded: []string{"secret", "token"}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: secret, token excluded") {
+			t.Errorf("expected note line with excluded keys, got: %q", out)
+		}
+	})
+	t.Run("no projection metadata produces no note", func(t *testing.T) {
+		out := RenderLines("srv", "tool", makeEnvelope(true, "hello"))
+		if strings.Contains(out, "note:") {
+			t.Errorf("expected no note for clean envelope, got: %q", out)
+		}
+	})
+	t.Run("root-array cap produces note without path prefix", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Truncated: []projection.Truncation{{Items: 5}}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: capped (5 items removed)") {
+			t.Errorf("expected cap note without path, got: %q", out)
+		}
+	})
+	t.Run("named array cap produces note with path prefix", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Truncated: []projection.Truncation{{JQPath: ".items", Items: 3}}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: .items capped (3 items removed)") {
+			t.Errorf("expected cap note with path, got: %q", out)
+		}
+	})
+	t.Run("string truncation produces note with path and char count", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Truncated: []projection.Truncation{{JQPath: ".body", Chars: 420}}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: .body truncated (420 chars)") {
+			t.Errorf("expected string-truncation note, got: %q", out)
 		}
 	})
 }
