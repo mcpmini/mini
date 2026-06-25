@@ -171,7 +171,6 @@ func extractPassthrough(value any, keys []string) map[string]any {
 	return out
 }
 
-// truncateAtBoundary cuts at a word/sentence boundary near runeLimit.
 // Boundary searches use ASCII bytes ('.', '\n', ' ') which never appear as
 // UTF-8 continuation bytes, so cuts always land on rune boundaries.
 func truncateAtBoundary(s string, runeLimit int) string {

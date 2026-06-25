@@ -52,7 +52,6 @@ func isIdentSafe(s string) bool {
 	return true
 }
 
-// CollapseIndex replaces numeric array indices [N] with [] in a jq path.
 // Quoted keys like ["foo[0]bar"] are copied verbatim — [N] inside a quoted
 // key is part of the key name, not an array index.
 func CollapseIndex(p string) string {

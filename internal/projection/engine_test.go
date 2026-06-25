@@ -1,6 +1,7 @@
 package projection_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -180,8 +181,9 @@ func TestExcludedKeys(t *testing.T) {
 	}
 
 	result := projection.Apply(value, cfg, defaultLimits)
-	if len(result.ExcludedKeys) < 2 {
-		t.Errorf("expected at least 2 excluded keys, got %v", result.ExcludedKeys)
+	want := []string{".body", ".env"}
+	if !slices.Equal(result.ExcludedKeys, want) {
+		t.Errorf("ExcludedKeys = %v, want %v", result.ExcludedKeys, want)
 	}
 }
 
