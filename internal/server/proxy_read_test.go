@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -155,6 +156,26 @@ func TestProxy_MiniRead_RejectsStoreDirItself(t *testing.T) {
 	result, ok := resp["result"].(map[string]any)
 	if !ok || result["isError"] != true {
 		t.Errorf("expected error when path is the store directory itself, got: %v", resp)
+	}
+}
+
+func TestProxy_MiniRead_FileNotFound(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": cfg.ResponseDir + "/nonexistent.json"}))
+	if resp["error"] != nil {
+		return // RPC-level error is also acceptable
+	}
+	result, ok := resp["result"].(map[string]any)
+	if !ok || result["isError"] != true {
+		t.Errorf("expected error for non-existent file, got: %v", resp)
+	}
+	text := toolResultText(t, resp)
+	if strings.Contains(text, cfg.ResponseDir) {
+		t.Errorf("error message should not expose filesystem path, got: %s", text)
 	}
 }
 

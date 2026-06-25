@@ -151,7 +151,7 @@ func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, erro
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read: %w", err)
+		return nil, fmt.Errorf("%w: response file not found or unreadable", errInvalidParams)
 	}
 	if filter == "" {
 		return string(b), nil
@@ -178,10 +178,8 @@ func parseReadArgs(raw json.RawMessage) (path, filter string, err error) {
 }
 
 func (s *Server) validateStorePath(path string) error {
-	// EvalSymlinks resolves symlinks on both sides so a symlink inside the store
-	// dir pointing outside it cannot escape the confinement. On macOS, TempDir
-	// returns /var/... which is itself a symlink to /private/var/..., so both
-	// sides must be resolved for the prefix check to work correctly.
+	// On macOS, TempDir returns /var/... which is a symlink to /private/var/...,
+	// so both sides must be resolved for the prefix check to work correctly.
 	storeDir := resolveSymlinks(s.store.Dir())
 	abs := resolveSymlinks(path)
 	if !strings.HasPrefix(abs, storeDir+string(filepath.Separator)) {
@@ -190,8 +188,8 @@ func (s *Server) validateStorePath(path string) error {
 	return nil
 }
 
-// resolveSymlinks resolves symlinks, falling back to filepath.Abs if the path
-// does not exist yet (file written but not yet visible, or non-existent path).
+// Falls back to filepath.Abs for paths that do not exist yet (agent-provided paths
+// that haven't been created, or files cleaned up between validation and read).
 func resolveSymlinks(path string) string {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		return resolved

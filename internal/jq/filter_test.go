@@ -110,6 +110,17 @@ func TestEval_byteCapAtBoundary(t *testing.T) {
 	}
 }
 
+func TestEval_missingFieldReturnsNull(t *testing.T) {
+	data := []byte(`{"title":"hello"}`)
+	got, err := jq.Eval(context.Background(), data, ".nonexistent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "null" {
+		t.Errorf("missing field should return %q, got %q", "null", got)
+	}
+}
+
 func TestEval_contextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

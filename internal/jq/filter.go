@@ -14,7 +14,6 @@ const (
 	maxOutputResults = 10_000
 )
 
-// Eval runs a jq filter against JSON data and returns the output.
 // Multiple results are newline-separated, matching jq stream semantics.
 // An empty result set returns "". An invalid filter returns an error.
 // Output is capped at 4 MB / 10 000 results to bound memory usage.
@@ -33,32 +32,34 @@ func Eval(ctx context.Context, data []byte, filter string) (string, error) {
 func runQuery(ctx context.Context, q *gojq.Query, v any) (string, error) {
 	iter := q.RunWithContext(ctx, v)
 	var b strings.Builder
-	first := true
-	results := 0
-	for {
+	for i := 0; ; i++ {
 		out, ok := iter.Next()
 		if !ok {
-			break
+			return b.String(), nil
 		}
 		if err, ok := out.(error); ok {
 			return "", fmt.Errorf("jq: %w", err)
 		}
-		results++
-		if results > maxOutputResults {
-			return "", fmt.Errorf("jq: output exceeded %d results", maxOutputResults)
+		if err := writeResult(&b, out, i); err != nil {
+			return "", err
 		}
-		if !first {
-			b.WriteByte('\n')
-		}
-		first = false
-		line, merr := json.Marshal(out)
-		if merr != nil {
-			return "", fmt.Errorf("jq marshal: %w", merr)
-		}
-		if b.Len()+len(line) > maxOutputBytes {
-			return "", fmt.Errorf("jq: output exceeded %d bytes", maxOutputBytes)
-		}
-		b.Write(line)
 	}
-	return b.String(), nil
+}
+
+func writeResult(b *strings.Builder, out any, index int) error {
+	if index >= maxOutputResults {
+		return fmt.Errorf("jq: output exceeded %d results", maxOutputResults)
+	}
+	line, err := json.Marshal(out)
+	if err != nil {
+		return fmt.Errorf("jq marshal: %w", err)
+	}
+	if b.Len()+len(line) > maxOutputBytes {
+		return fmt.Errorf("jq: output exceeded %d bytes", maxOutputBytes)
+	}
+	if index > 0 {
+		b.WriteByte('\n')
+	}
+	b.Write(line)
+	return nil
 }
