@@ -125,19 +125,22 @@ agent → Serve() → session handler → handleList / handleExecute / handleExe
 
 ### Response envelope
 
-When projection removes or truncates data, `call`/`perm_call` prepends a header:
-```
-[Projected — .secret, .internal excluded; .body truncated (420 chars)]
-File: <epoch>_<hash8>.json
+When projection removes or truncates data, `call`/`perm_call` wraps the response:
+```json
 {
-  "id": 1,
-  "name": "widget"
+  "__mini": {
+    "msg": "Response truncated, use mini's read(<file>, <jq expr>) tool to fetch truncated fields",
+    "file": "<epoch>_<hash8>.json",
+    "excluded": [".secret", ".internal"],
+    "truncated": [{"path": ".body", "chars": 420}, {"path": ".items", "items": 73}]
+  },
+  "data": { ... }
 }
 ```
 - `excluded`: jq-style paths of fields removed entirely by projection
 - `truncated[].chars`: characters (runes) removed from a string field
 - `truncated[].items`: items removed from an array field by array limit
-- When no data is removed, the response is plain JSON with no projection header
+- When no data is removed, the response is plain JSON with no `__mini` wrapper
 - Raw recovery files written to `~/.mini/responses/<epoch>_<hash8>.json` when data is lost
 
 ### Config directory layout
