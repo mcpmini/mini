@@ -400,6 +400,19 @@ func TestTruncateAtBoundary_utf8Safe(t *testing.T) {
 	}
 }
 
+func TestTruncateAtBoundary_exactLimitNotTruncated(t *testing.T) {
+	s := strings.Repeat("x", 100)
+	cfg := &config.ProjectionConfig{StringLimits: map[string]int{"body": 100}}
+	result := projection.Apply(map[string]any{"body": s}, cfg, defaultLimits)
+	m := result.Summary.(map[string]any)
+	if got := m["body"].(string); got != s {
+		t.Errorf("string at exact limit should be unchanged, got len=%d", len(got))
+	}
+	if len(result.Truncated) != 0 {
+		t.Errorf("string at exact limit should produce no Truncated entry, got %v", result.Truncated)
+	}
+}
+
 func TestArrayElementOmissionPath(t *testing.T) {
 	long := strings.Repeat("x", 500)
 	value := []any{long, long, "short"}

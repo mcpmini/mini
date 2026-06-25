@@ -390,7 +390,7 @@ func assertDefaultConfigFields(t *testing.T, cfg *config.Config) {
 		want any
 	}{
 		{"DefaultDepthLimit", cfg.DefaultDepthLimit, 0},
-		{"DefaultStringLimit", cfg.DefaultStringLimit, 0},
+		{"DefaultStringLimit", cfg.DefaultStringLimit, 2000},
 		{"LogLevel", cfg.LogLevel, "info"},
 	}
 	for _, c := range checks {
