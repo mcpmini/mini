@@ -326,6 +326,39 @@ func TestDiscover_wwwAuthScopePreservedWhenPRMHasNoAS(t *testing.T) {
 	}
 }
 
+func TestDiscover_scopesFromPRMProbePath(t *testing.T) {
+	// When the server returns no 401, discovery falls straight to the PRM probe path.
+	// Scopes from that PRM's scopes_supported must propagate to meta.Scopes.
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	defer asSrv.Close()
+
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/oauth-protected-resource":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"authorization_servers": []string{asSrv.URL},
+				"scopes_supported":      []string{"read", "write"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mcpSrv.Close()
+
+	meta, err := auth.Discover(context.Background(), mcpSrv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta.Scopes) != 2 || meta.Scopes[0] != "read" || meta.Scopes[1] != "write" {
+		t.Errorf("Scopes from PRM probe: got %v, want [read write]", meta.Scopes)
+	}
+}
+
 func TestDiscover_noScopesWhenASMetaOnly(t *testing.T) {
 	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":          "https://as.example.com/authorize",
