@@ -11,13 +11,13 @@ import (
 func TestProjection_excludeAlways(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc","internal_ref":"xyz"}`},
-		"", "get_item:\n  exclude_always: [node_id, internal_ref]\n")
+		"", "get_item:\n  exclude: [node_id, internal_ref]\n")
 
 	e := client.execEnvelope("svc", "get_item", nil)
 
 	b, _ := json.Marshal(e.Data)
 	if strings.Contains(string(b), "node_id") || strings.Contains(string(b), "internal_ref") {
-		t.Errorf("exclude_always fields should be absent, got: %s", b)
+		t.Errorf("exclude fields should be absent, got: %s", b)
 	}
 	if !strings.Contains(string(b), "title") {
 		t.Errorf("non-excluded field 'title' should remain, got: %s", b)
@@ -27,26 +27,26 @@ func TestProjection_excludeAlways(t *testing.T) {
 func TestProjection_elidedFieldsReported(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
-		"", "get_item:\n  exclude_always: [node_id]\n")
+		"", "get_item:\n  exclude: [node_id]\n")
 
 	e := client.execEnvelope("svc", "get_item", nil)
 
 	found := false
-	for _, v := range e.Elided {
-		if v == "node_id" {
+	for _, v := range e.Excluded {
+		if v == ".node_id" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected 'node_id' in elided list, got: %v", e.Elided)
+		t.Errorf("expected '.node_id' in excluded list, got: %v", e.Excluded)
 	}
 }
 
 func TestProjection_includeOnly(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","body":"long text","created_at":"2024-01-01"}`},
-		"", "get_item:\n  include: [id, title]\n")
+		"", "get_item:\n  include_only: [id, title]\n")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
@@ -70,11 +70,11 @@ func TestProjection_stringLimit(t *testing.T) {
 	}
 }
 
-func TestProjection_truncatedEnvelope(t *testing.T) {
+func TestProjection_omittedEnvelope(t *testing.T) {
 	longStr := strings.Repeat("w", 400)
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"short","body":"` + longStr + `"}`},
-		"inline_threshold: 50000\n",
+		"",
 		"get_item:\n  string_limits:\n    body: 60\n")
 
 	env := client.execEnvelope("svc", "get_item", nil)
@@ -82,17 +82,17 @@ func TestProjection_truncatedEnvelope(t *testing.T) {
 		t.Fatalf("expected success, got error: %s", env.Error)
 	}
 
-	bytesRemoved, ok := env.Truncated["body"]
-	if !ok || bytesRemoved <= 0 {
-		t.Errorf("expected truncated[body] > 0, got %v", env.Truncated)
+	if len(env.Truncated) != 1 || env.Truncated[0].JQPath != ".body" || env.Truncated[0].Chars <= 0 {
+		t.Fatalf("expected one truncated .body entry, got %v", env.Truncated)
 	}
-	// 400 chars → limit 60, so at least 300 bytes removed
-	if bytesRemoved < 300 {
-		t.Errorf("expected ≥300 bytes removed from body, got %d", bytesRemoved)
+	// 400 chars → limit 60, so at least 300 chars removed
+	if env.Truncated[0].Chars < 300 {
+		t.Errorf("expected at least 300 chars removed from body, got %d", env.Truncated[0].Chars)
 	}
-	// short fields must not appear in truncated
-	if _, present := env.Truncated["title"]; present {
-		t.Errorf("short field 'title' should not appear in truncated")
+	for _, o := range env.Truncated {
+		if o.JQPath == ".title" {
+			t.Errorf("short field 'title' should not appear in truncated")
+		}
 	}
 	// file written because truncation counts as projection
 	if env.File == nil {
@@ -103,7 +103,7 @@ func TestProjection_truncatedEnvelope(t *testing.T) {
 func TestProjection_arrayLimit(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_repo": `{"issues":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5}],"name":"repo"}`},
-		"inline_threshold: 50000\n",
+		"",
 		"get_repo:\n  array_limits:\n    issues: 3\n")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_repo", nil).Data)
@@ -121,12 +121,12 @@ func TestProjection_wildcardAppliesAllTools(t *testing.T) {
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
 			"get_b": `{"id":2,"node_id":"def","title":"b"}`,
 		},
-		"", "\"*\":\n  exclude_always: [node_id]\n")
+		"", "\"*\":\n  exclude: [node_id]\n")
 
 	for _, tool := range []string{"get_a", "get_b"} {
 		b, _ := json.Marshal(client.execEnvelope("svc", tool, nil).Data)
 		if strings.Contains(string(b), "node_id") {
-			t.Errorf("tool %s: wildcard exclude_always should remove node_id, got: %s", tool, b)
+			t.Errorf("tool %s: wildcard exclude should remove node_id, got: %s", tool, b)
 		}
 	}
 }
@@ -135,7 +135,7 @@ func TestProjection_inlineInServerYAML(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"node_id":"abc","title":"hello"}`})
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", "name: svc\ncommand: "+fakemcpBin+
-		"\nargs:\n  - --fixtures\n  - "+dir+"\nprojections:\n  get_item:\n    exclude_always: [node_id]\n")
+		"\nargs:\n  - --fixtures\n  - "+dir+"\nprojections:\n  get_item:\n    exclude: [node_id]\n")
 
 	b, _ := json.Marshal(startServer(t, cfg).execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "node_id") {
@@ -146,8 +146,8 @@ func TestProjection_inlineInServerYAML(t *testing.T) {
 func TestProjection_sessionOverridesServerLevel(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","body":"long content","extra":"strip this"}`},
-		"", "get_item:\n  include: [id, title]\n")
-	client.setProjection("svc", "get_item", map[string]any{"include": []string{"id"}}, true)
+		"", "get_item:\n  include_only: [id, title]\n")
+	client.setProjection("svc", "get_item", map[string]any{"include_only": []string{"id"}}, true)
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "title") {
@@ -157,7 +157,7 @@ func TestProjection_sessionOverridesServerLevel(t *testing.T) {
 
 func TestProjection_configurePersistsAcrossCalls(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"title":"hello","secret":"hidden"}`})
-	client.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, true)
+	client.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, true)
 
 	for i := range 2 {
 		b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
@@ -167,14 +167,13 @@ func TestProjection_configurePersistsAcrossCalls(t *testing.T) {
 	}
 }
 
-
 func TestProjection_toolSpecificOverridesWildcard(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
 			"get_b": `{"id":2,"node_id":"def","title":"b"}`,
 		},
-		"", "\"*\":\n  exclude_always: [node_id]\nget_b:\n  include: [id, node_id, title]\n")
+		"", "\"*\":\n  exclude: [node_id]\nget_b:\n  include_only: [id, node_id, title]\n")
 
 	bA, _ := json.Marshal(client.execEnvelope("svc", "get_a", nil).Data)
 	if strings.Contains(string(bA), "node_id") {
@@ -191,10 +190,9 @@ func TestProjection_persistToDisk(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"title":"hello","secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	client1 := startServer(t, cfg)
-	client1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, false)
+	client1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
 
 	client2 := startServer(t, cfg)
 	b, _ := json.Marshal(client2.execEnvelope("svc", "get_item", nil).Data)
@@ -220,7 +218,7 @@ func TestProjection_depthLimit(t *testing.T) {
 func TestProjection_passthrough(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","internal_ref":"xyz"}`},
-		"", "get_item:\n  include: [id, title]\n  passthrough: [internal_ref]\n")
+		"", "get_item:\n  include_only: [id, title]\n  passthrough: [internal_ref]\n")
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if _, ok := e.Passthrough["internal_ref"]; !ok {
@@ -228,15 +226,15 @@ func TestProjection_passthrough(t *testing.T) {
 	}
 }
 
-func TestProjection_includeAndExcludeAlways(t *testing.T) {
+func TestProjection_includeAndExclude(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
-		"", "get_item:\n  include: [id, title, node_id]\n  exclude_always: [node_id]\n")
+		"", "get_item:\n  include_only: [id, title, node_id]\n  exclude: [node_id]\n")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
 	if strings.Contains(data, "node_id") {
-		t.Errorf("exclude_always should remove node_id even if it's in include, got: %s", data)
+		t.Errorf("exclude should remove node_id even if it's in include, got: %s", data)
 	}
 	if !strings.Contains(data, `"title"`) || !strings.Contains(data, `"id"`) {
 		t.Errorf("include fields id and title should remain, got: %s", data)
@@ -246,7 +244,7 @@ func TestProjection_includeAndExcludeAlways(t *testing.T) {
 func TestProjection_globalDefaultsApply(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"get_item": `{"id":1,"description":"` + strings.Repeat("x", 300) + `"}`},
-		"default_string_limit: 50\ninline_threshold: 50000\n", "")
+		"default_string_limit: 50\n", "")
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
@@ -270,11 +268,10 @@ func TestProjection_persistMergesWithExistingYAML(t *testing.T) {
 	})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	c1 := startServer(t, cfg)
-	c1.setProjection("svc", "tool_a", map[string]any{"exclude_always": []string{"secret_a"}}, false)
+	c1.setProjection("svc", "tool_a", map[string]any{"exclude": []string{"secret_a"}}, false)
 	c2 := startServer(t, cfg)
-	c2.setProjection("svc", "tool_b", map[string]any{"exclude_always": []string{"secret_b"}}, false)
+	c2.setProjection("svc", "tool_b", map[string]any{"exclude": []string{"secret_b"}}, false)
 	c3 := startServer(t, cfg)
 	assertToolExcludes(t, c3, "svc", "tool_a", "secret_a")
 	assertToolExcludes(t, c3, "svc", "tool_b", "secret_b")
@@ -284,14 +281,13 @@ func TestProjection_persistDoesNotAffectRunningSession(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	c1 := startServer(t, cfg)
 	c2 := startServer(t, cfg)
 	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)
 	if !strings.Contains(string(b2), "secret") {
 		t.Fatal("expected secret field before projection")
 	}
-	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, false)
+	c1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
 	assertSessionIsolation(t, cfg, c2)
 }
 
@@ -309,13 +305,10 @@ func TestProjection_linesFormat(t *testing.T) {
 func TestProjection_linesFormatGlobal(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		"inline_threshold: 50000\nresponse_format: mini\n", "")
+		"response_format: mini\n", "")
 
 	text := client.execTool("svc", "list_items", nil)
 	if !strings.Contains(text, "[svc.list_items]") {
 		t.Errorf("global response_format:mini should include tool header [svc.list_items], got: %s", text)
 	}
 }
-
-
-

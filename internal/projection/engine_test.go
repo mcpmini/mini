@@ -1,6 +1,7 @@
 package projection_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -30,7 +31,7 @@ func TestPassthroughOnNoConfig(t *testing.T) {
 }
 
 func TestIncludeFilter(t *testing.T) {
-	cfg := &config.ProjectionConfig{Include: []string{"status", "branch"}}
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status", "branch"}}
 	value := map[string]any{
 		"status": "failed",
 		"branch": "main",
@@ -48,8 +49,8 @@ func TestIncludeFilter(t *testing.T) {
 	}
 }
 
-func TestExcludeAlways(t *testing.T) {
-	cfg := &config.ProjectionConfig{ExcludeAlways: []string{"env", "pipeline.configuration"}}
+func TestExclude(t *testing.T) {
+	cfg := &config.ProjectionConfig{Exclude: []string{"env", "pipeline.configuration"}}
 	value := map[string]any{
 		"status": "ok",
 		"env":    map[string]any{"SECRET": "123"},
@@ -64,17 +65,17 @@ func TestExcludeAlways(t *testing.T) {
 }
 
 func TestArrayLimit(t *testing.T) {
-	t.Run("per-projection limit truncates with sentinel", func(t *testing.T) {
+	t.Run("per-projection limit produces truncation metadata", func(t *testing.T) {
 		value := map[string]any{"steps": []any{"a", "b", "c", "d", "e"}}
 		cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"steps": 2}}
 		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
 		m := result.Summary.(map[string]any)
 		steps := m["steps"].([]any)
-		if len(steps) != 3 { // 2 items + sentinel
-			t.Errorf("expected 2 items + sentinel = 3, got %d", len(steps))
+		if len(steps) != 2 {
+			t.Errorf("expected 2 items (no sentinel), got %d", len(steps))
 		}
-		if steps[2] != "...+3 more" {
-			t.Errorf("expected sentinel, got %v", steps[2])
+		if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".steps" || result.Truncated[0].Items != 3 {
+			t.Errorf("expected truncation metadata {.steps items:3}, got %v", result.Truncated)
 		}
 	})
 
@@ -101,8 +102,37 @@ func TestStringTruncation(t *testing.T) {
 	if m["body"] != want {
 		t.Errorf("body = %q, want %q", m["body"], want)
 	}
-	if result.Truncated["body"] != 1900 {
-		t.Errorf("truncated[body] = %d, want 1900", result.Truncated["body"])
+	if len(result.Truncated) != 1 || result.Truncated[0].Chars != 1900 {
+		t.Errorf("truncated = %v, want [{.body chars:1900}]", result.Truncated)
+	}
+}
+
+func TestStringTruncation_CJKUsesCharCount(t *testing.T) {
+	// 700 CJK chars = 2100 bytes. A 2000-char limit should keep all 700 chars.
+	cjk := strings.Repeat("中", 700)
+	value := map[string]any{"body": cjk}
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 2000, DepthLimit: 5})
+	m := result.Summary.(map[string]any)
+	if m["body"] != cjk {
+		t.Errorf("expected 700 CJK chars preserved, got %d chars", utf8.RuneCountInString(m["body"].(string)))
+	}
+	if len(result.Truncated) != 0 {
+		t.Errorf("expected no truncation for 700 chars under 2000-char limit, got %v", result.Truncated)
+	}
+}
+
+func TestStringTruncation_CJKTruncatesAtRuneCount(t *testing.T) {
+	// 1000 CJK chars = 3000 bytes. A 500-char limit should keep ~500 chars, not ~166.
+	cjk := strings.Repeat("中", 1000)
+	value := map[string]any{"body": cjk}
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 500, DepthLimit: 5})
+	m := result.Summary.(map[string]any)
+	got := utf8.RuneCountInString(m["body"].(string))
+	if got > 500 {
+		t.Errorf("expected at most 500 CJK chars, got %d", got)
+	}
+	if got < 450 {
+		t.Errorf("expected at least 450 CJK chars (near 500-char limit), got %d", got)
 	}
 }
 
@@ -129,8 +159,21 @@ func TestDepthLimit(t *testing.T) {
 	}
 }
 
-func TestElidedKeys(t *testing.T) {
-	cfg := &config.ProjectionConfig{Include: []string{"status"}}
+func TestExcludedKeys_sortedDeterministic(t *testing.T) {
+	cfg := &config.ProjectionConfig{Exclude: []string{"zebra", "apple", "mango"}}
+	value := map[string]any{"zebra": 1, "apple": 2, "mango": 3, "keep": 4}
+	result := projection.Apply(value, cfg, defaultLimits)
+	want := []string{".apple", ".mango", ".zebra"}
+	for i, k := range result.ExcludedKeys {
+		if k != want[i] {
+			t.Errorf("ExcludedKeys = %v, want %v (sorted)", result.ExcludedKeys, want)
+			break
+		}
+	}
+}
+
+func TestExcludedKeys(t *testing.T) {
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status"}}
 	value := map[string]any{
 		"status": "ok",
 		"env":    "secret",
@@ -138,14 +181,15 @@ func TestElidedKeys(t *testing.T) {
 	}
 
 	result := projection.Apply(value, cfg, defaultLimits)
-	if len(result.ElidedKeys) < 2 {
-		t.Errorf("expected at least 2 elided keys, got %v", result.ElidedKeys)
+	want := []string{".body", ".env"}
+	if !slices.Equal(result.ExcludedKeys, want) {
+		t.Errorf("ExcludedKeys = %v, want %v", result.ExcludedKeys, want)
 	}
 }
 
 func TestPassthroughFields(t *testing.T) {
 	cfg := &config.ProjectionConfig{
-		Include:     []string{"status"},
+		IncludeOnly:  []string{"status"},
 		Passthrough: []string{"cursor", "next_page"},
 	}
 	value := map[string]any{
@@ -162,7 +206,7 @@ func TestPassthroughFields(t *testing.T) {
 }
 
 func TestIncludeFilterOnlyTopLevel_excludesNonListed(t *testing.T) {
-	cfg := &config.ProjectionConfig{Include: []string{"issues", "totalCount"}}
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues", "totalCount"}}
 	value := map[string]any{
 		"issues":     []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
 		"totalCount": 42,
@@ -179,7 +223,7 @@ func TestIncludeFilterOnlyTopLevel_excludesNonListed(t *testing.T) {
 }
 
 func TestIncludeFilterOnlyTopLevel_preservesNestedFields(t *testing.T) {
-	cfg := &config.ProjectionConfig{Include: []string{"issues"}}
+	cfg := &config.ProjectionConfig{IncludeOnly: []string{"issues"}}
 	value := map[string]any{
 		"issues": []any{map[string]any{"number": 1, "title": "Bug report", "state": "open"}},
 	}
@@ -197,7 +241,7 @@ func TestIncludeFilterOnlyTopLevel_preservesNestedFields(t *testing.T) {
 	}
 }
 
-func namedArrayLimitsResult(t *testing.T) map[string]any {
+func namedArrayLimitsApply(t *testing.T) projection.Result {
 	t.Helper()
 	cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"issues": 5}}
 	value := map[string]any{
@@ -206,22 +250,24 @@ func namedArrayLimitsResult(t *testing.T) map[string]any {
 	}
 	limits := &projection.Defaults{StringLimit: 1000, DepthLimit: 5,
 		ContentFields: []string{}, AutoStripThreshold: 0}
-	return projection.Apply(value, cfg, limits).Summary.(map[string]any)
+	return projection.Apply(value, cfg, limits)
 }
 
 func TestNamedArrayLimit_namedLimitApplied(t *testing.T) {
-	m := namedArrayLimitsResult(t)
+	result := namedArrayLimitsApply(t)
+	m := result.Summary.(map[string]any)
 	issues := m["issues"].([]any)
-	if len(issues) != 6 {
-		t.Errorf("expected 5 items + sentinel = 6, got %d", len(issues))
+	if len(issues) != 5 {
+		t.Errorf("expected 5 items (no sentinel), got %d", len(issues))
 	}
-	if issues[5] != "...+2 more" {
-		t.Errorf("expected sentinel ...+2 more, got %v", issues[5])
+	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".issues" || result.Truncated[0].Items != 2 {
+		t.Errorf("expected truncation metadata {.issues items:2}, got %v", result.Truncated)
 	}
 }
 
 func TestNamedArrayLimit_unlimitedForOtherFields(t *testing.T) {
-	m := namedArrayLimitsResult(t)
+	result := namedArrayLimitsApply(t)
+	m := result.Summary.(map[string]any)
 	other := m["other_list"].([]any)
 	if len(other) != 5 {
 		t.Errorf("expected all 5 items (no global limit), got %d", len(other))
@@ -247,15 +293,12 @@ func TestNamedStringLimit(t *testing.T) {
 	if m["body"].(string) != wantBody {
 		t.Errorf("body = %q, want %q", m["body"], wantBody)
 	}
-	if result.Truncated["body"] != 20 {
-		t.Errorf("truncated[body] = %d, want 20", result.Truncated["body"])
+	if len(result.Truncated) != 1 || result.Truncated[0].JQPath != ".body" || result.Truncated[0].Chars != 20 {
+		t.Errorf("truncated = %v, want [{.body chars:20}]", result.Truncated)
 	}
 	// title has no named limit — should pass through untruncated
 	if m["title"].(string) != long {
 		t.Errorf("title should not be truncated")
-	}
-	if result.Truncated["title"] != 0 {
-		t.Errorf("title should not be in truncated map, got %d", result.Truncated["title"])
 	}
 }
 
@@ -278,8 +321,8 @@ func TestSlimMode_stringAndArrayLimits(t *testing.T) {
 	if m["body"].(string) != wantBody {
 		t.Errorf("slim body = %q, want %q", m["body"], wantBody)
 	}
-	if len(m["items"].([]any)) > 4 {
-		t.Errorf("slim mode: items should be capped at 3 + sentinel, got %d", len(m["items"].([]any)))
+	if len(m["items"].([]any)) > 3 {
+		t.Errorf("slim mode: items should be capped at 3 (no sentinel), got %d", len(m["items"].([]any)))
 	}
 }
 
@@ -354,6 +397,61 @@ func TestTruncateAtBoundary_utf8Safe(t *testing.T) {
 	truncated := m["body"].(string)
 	if !utf8.ValidString(truncated) {
 		t.Errorf("truncated string is not valid UTF-8: %q", truncated[:min(20, len(truncated))])
+	}
+}
+
+func TestArrayElementOmissionPath(t *testing.T) {
+	long := strings.Repeat("x", 500)
+	value := []any{long, long, "short"}
+
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+
+	if len(result.Truncated) != 2 {
+		t.Fatalf("expected 2 omissions (one per long element), got %v", result.Truncated)
+	}
+	for i, o := range result.Truncated {
+		want := ".[" + string(rune('0'+i)) + "]"
+		if o.JQPath != want {
+			t.Errorf("truncation[%d].JQPath = %q, want %q", i, o.JQPath, want)
+		}
+	}
+}
+
+func TestArrayElementOmissionPathInsideObject(t *testing.T) {
+	long := strings.Repeat("x", 500)
+	value := map[string]any{
+		"lines": []any{long, long},
+	}
+
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+
+	if len(result.Truncated) != 2 {
+		t.Fatalf("expected 2 omissions, got %v", result.Truncated)
+	}
+	for i, o := range result.Truncated {
+		want := ".lines[" + string(rune('0'+i)) + "]"
+		if o.JQPath != want {
+			t.Errorf("truncation[%d].JQPath = %q, want %q", i, o.JQPath, want)
+		}
+	}
+}
+
+func TestElidedPathBracketNotationForNonIdentifierKey(t *testing.T) {
+	value := map[string]any{
+		"body text": strings.Repeat("x", 500),
+		"normal":    strings.Repeat("x", 500),
+	}
+	result := projection.Apply(value, nil, &projection.Defaults{StringLimit: 100, DepthLimit: 5})
+
+	paths := make(map[string]bool)
+	for _, o := range result.Truncated {
+		paths[o.JQPath] = true
+	}
+	if !paths[`.["body text"]`] {
+		t.Errorf("expected bracket notation for key with space, got paths %v", result.Truncated)
+	}
+	if !paths[".normal"] {
+		t.Errorf("expected dot notation for identifier-safe key, got paths %v", result.Truncated)
 	}
 }
 

@@ -45,7 +45,7 @@ func noopBuilder(t *testing.T) *response.Builder {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { store.Close() })
-	return response.NewBuilder(store, 500000)
+	return response.NewBuilder(store)
 }
 
 func noopDefaults() *projection.Defaults {
@@ -195,7 +195,7 @@ func TestBuildEnvelope_NoProjection(t *testing.T) {
 
 func TestBuildEnvelope_WithProjection(t *testing.T) {
 	raw := json.RawMessage(`{"id":1,"secret":"hidden","name":"Alice"}`)
-	projCfg := &config.ProjectionConfig{ExcludeAlways: []string{"secret"}}
+	projCfg := &config.ProjectionConfig{Exclude: []string{"secret"}}
 	env, _, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
 		Server:   "svc",
 		Tool:     "get",
@@ -210,8 +210,8 @@ func TestBuildEnvelope_WithProjection(t *testing.T) {
 	if env.Error != "" {
 		t.Errorf("expected success, got error: %s", env.Error)
 	}
-	if !containsString(env.Elided, "secret") {
-		t.Errorf("expected 'secret' in elided, got %v", env.Elided)
+	if !containsString(env.Excluded, ".secret") {
+		t.Errorf("expected '.secret' in excluded, got %v", env.Excluded)
 	}
 	b, _ := json.Marshal(env.Data)
 	if contains(string(b), "hidden") {
@@ -234,14 +234,13 @@ func TestBuildEnvelope_TruncationRecorded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if env.Truncated["body"] == 0 {
-		t.Errorf("expected truncated[body] > 0, got %v", env.Truncated)
+	if len(env.Truncated) == 0 || env.Truncated[0].Chars == 0 {
+		t.Errorf("expected truncated[0].Chars > 0, got %v", env.Truncated)
 	}
 	b, _ := json.Marshal(env.Data)
 	if contains(string(b), longBody) {
 		t.Errorf("body should be truncated in data, got full value")
 	}
-	// file only written when summary exceeds inline_threshold, not on truncation alone
 }
 
 // Invoke (end-to-end)

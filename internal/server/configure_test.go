@@ -22,7 +22,6 @@ func TestConfigureReload_emptyDir(t *testing.T) {
 	dir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
@@ -46,7 +45,6 @@ func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
@@ -70,7 +68,6 @@ func newServerAllowPrivate(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.DangerousAllowPrivateURLs = true
 	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
@@ -138,7 +135,6 @@ func newReadOnlyConfigServer(t *testing.T) *server.Server {
 	t.Cleanup(func() { os.Chmod(dir, 0700) }) //nolint:errcheck
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
@@ -150,7 +146,7 @@ func TestSetProjection_persistenceFailureReturnsError(t *testing.T) {
 
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "myTool",
-		"projection": map[string]any{"exclude_always": []string{"secret"}},
+		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 	result, _ := resp["result"].(map[string]any)
 	if result == nil || result["isError"] != true {
@@ -181,7 +177,6 @@ func newConfigServer(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 	return srv
@@ -223,7 +218,7 @@ func TestProjectionExcludeFields(t *testing.T) {
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "fs"}, fake)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "get_file_info",
-		"projection": map[string]any{"include": []string{"name", "size"}},
+		"projection": map[string]any{"include_only": []string{"name", "size"}},
 	}))
 	summary := execGetFileInfo(t, srv)
 	if summary["name"] == nil {
@@ -232,7 +227,7 @@ func TestProjectionExcludeFields(t *testing.T) {
 	assertExcluded(t, summary, "created", "permissions", "isDirectory")
 }
 
-func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
+func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 	srv := newConfigServer(t)
 	longBody := strings.Repeat("z", 300)
 	payload := `{"id":1,"title":"short","body":"` + longBody + `"}`
@@ -253,20 +248,27 @@ func TestProjectionTruncation_fieldNameAndBytes(t *testing.T) {
 		t.Fatalf("get_doc failed: %v", env)
 	}
 
-	truncated, _ := env["truncated"].(map[string]any)
-	bytesRemoved, _ := truncated["body"].(float64)
-	if bytesRemoved <= 0 {
-		t.Errorf("expected truncated[body] > 0, got %v", truncated)
+	truncated, _ := env["truncated"].([]any)
+	if len(truncated) == 0 {
+		t.Errorf("expected truncated entries, got %v", env["truncated"])
+	}
+	var bodyChars float64
+	for _, o := range truncated {
+		om, _ := o.(map[string]any)
+		if om["path"] == ".body" {
+			bodyChars, _ = om["chars"].(float64)
+		}
+	}
+	if bodyChars <= 0 {
+		t.Errorf("expected truncated[body].chars > 0, got truncated=%v", truncated)
 	}
 	// body had 300 chars, limit 50 → removed ≥ 200
-	if int(bytesRemoved) < 200 {
-		t.Errorf("expected at least 200 bytes removed from body, got %v", bytesRemoved)
+	if int(bodyChars) < 200 {
+		t.Errorf("expected at least 200 chars removed from body, got %v", bodyChars)
 	}
-	// title is short — must not appear in truncated
-	if truncated["title"] != nil {
-		t.Errorf("short field should not appear in truncated, got title=%v", truncated["title"])
+	if env["file"] == nil {
+		t.Error("expected file to be written when truncation occurred")
 	}
-	// file is only written when response exceeds inline_threshold, not just because projection applied
 }
 
 func assertHealthStats(t *testing.T, srv *server.Server, svcName string, wantCalls int) {
@@ -315,7 +317,6 @@ func newSessionServer(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
@@ -395,7 +396,7 @@ func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
 		"action":       "set_projection",
 		"server":       "svc",
 		"tool":         "getData",
-		"projection":   map[string]any{"include": []string{"a"}},
+		"projection":   map[string]any{"include_only": []string{"a"}},
 		"session_only": true,
 	}))
 
@@ -428,8 +429,8 @@ func TestSlimProjectionMode(t *testing.T) {
 	}
 	var slimEnv map[string]any
 	json.Unmarshal([]byte(textSlim), &slimEnv)
-	truncated, _ := slimEnv["truncated"].(map[string]any)
+	truncated, _ := slimEnv["truncated"].([]any)
 	if len(truncated) == 0 {
-		t.Errorf("expected truncated map in slim envelope, got: %v", slimEnv)
+		t.Errorf("expected truncated entries in slim envelope, got: %v", slimEnv)
 	}
 }

@@ -77,9 +77,6 @@ func assertOneServerName(t *testing.T, dir, want string) {
 
 func assertDefaultLoadState(t *testing.T, cfg *config.Config, servers []config.ServerConfig) {
 	t.Helper()
-	if cfg.InlineThreshold != 3500 {
-		t.Errorf("expected default inline threshold 2000, got %d", cfg.InlineThreshold)
-	}
 	if len(servers) != 0 {
 		t.Errorf("expected no servers, got %d", len(servers))
 	}
@@ -109,14 +106,10 @@ func TestLoadMainConfig(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "config.yaml"), `
 log_level: debug
-inline_threshold: 200
 `)
 	cfg, _ := mustLoadConfig(t, dir)
 	if cfg.LogLevel != "debug" {
 		t.Errorf("expected debug, got %s", cfg.LogLevel)
-	}
-	if cfg.InlineThreshold != 200 {
-		t.Errorf("expected 200, got %d", cfg.InlineThreshold)
 	}
 }
 
@@ -165,7 +158,7 @@ func TestLoadProjectionConfig(t *testing.T) {
 command: gh-mcp`)
 	writeFile(t, filepath.Join(dir, "projections", "gh.yaml"), `
 list_issues:
-  include: [number, title]
+  include_only: [number, title]
   array_limits:
     labels: 3
 `)
@@ -177,8 +170,8 @@ list_issues:
 	if proj["list_issues"] == nil {
 		t.Fatal("expected list_issues projection")
 	}
-	if len(proj["list_issues"].Include) != 2 {
-		t.Errorf("expected 2 include fields, got %v", proj["list_issues"].Include)
+	if len(proj["list_issues"].IncludeOnly) != 2 {
+		t.Errorf("expected 2 include_only fields, got %v", proj["list_issues"].IncludeOnly)
 	}
 }
 
@@ -188,19 +181,20 @@ func TestLoadProjectionMerges_dirWinsOverInline(t *testing.T) {
 command: my-mcp
 projections:
   my_tool:
-    include: [inline_field]
+    include_only: [inline_field]
 `)
 	writeFile(t, filepath.Join(dir, "projections", "svc.yaml"), `
 my_tool:
-  include: [dir_field]
+  include_only: [dir_field]
 `)
 	sc := mustLoadOneServer(t, dir)
 	proj := sc.Projections["my_tool"]
 	if proj == nil {
 		t.Fatal("expected projection")
+		return
 	}
-	if len(proj.Include) != 1 || proj.Include[0] != "dir_field" {
-		t.Errorf("expected dir projection to win, got include=%v", proj.Include)
+	if len(proj.IncludeOnly) != 1 || proj.IncludeOnly[0] != "dir_field" {
+		t.Errorf("expected dir projection to win, got include_only=%v", proj.IncludeOnly)
 	}
 }
 
@@ -395,7 +389,6 @@ func assertDefaultConfigFields(t *testing.T, cfg *config.Config) {
 		got  any
 		want any
 	}{
-		{"InlineThreshold", cfg.InlineThreshold, 3500},
 		{"DefaultDepthLimit", cfg.DefaultDepthLimit, 0},
 		{"DefaultStringLimit", cfg.DefaultStringLimit, 0},
 		{"LogLevel", cfg.LogLevel, "info"},

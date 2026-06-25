@@ -90,12 +90,10 @@ func (r *Runner) buildMiniConfigDir(env *Env, servers map[string]string, callLog
 
 func miniConfigYAML(format int) string {
 	switch format {
-	case fmtPassthrough:
-		return "inline_threshold: 9999999\nresponse_format: json\n"
-	case fmtProjected:
-		return "inline_threshold: 50000\nresponse_format: json\n"
 	case fmtLines:
-		return "inline_threshold: 50000\nresponse_format: mini\n"
+		return "response_format: mini\n"
+	case fmtPassthrough, fmtProjected:
+		return "response_format: json\n"
 	default:
 		panic(fmt.Sprintf("unknown format %d", format))
 	}
@@ -158,7 +156,7 @@ func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir 
 
 func (r *Runner) writeMiniProxyConfig(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {
 	configDir := env.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(proxyConfigYAML(format)), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), nil, 0600); err != nil {
 		return "", err
 	}
 	if err := writeServersYAML(configDir, r.FakemcpBin, servers, callLogDir); err != nil {
@@ -198,14 +196,6 @@ func fakemcpArgs(fixtureDir, callLogDir, serverName string) []string {
 	return args
 }
 
-func proxyConfigYAML(format int) string {
-	switch format {
-	case fmtPassthrough:
-		return "inline_threshold: 9999999\n"
-	default:
-		return "inline_threshold: 50000\n"
-	}
-}
 
 func proxyAllowedTools(servers map[string]string, extraBuiltins string) string {
 	names := []string{"mcp__mini__config", "mcp__mini__read"}

@@ -4,31 +4,24 @@
 package daemon
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/mcpmini/mini/internal/randutil"
 )
 
 func TokenFile(configDir string) string {
 	return filepath.Join(configDir, "daemon.token")
 }
 
-func GenerateToken() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
+func GenerateToken() string {
+	return randutil.HexString(32)
 }
 
 func WriteToken(configDir string) (string, error) {
-	token, err := GenerateToken()
-	if err != nil {
-		return "", err
-	}
+	token := GenerateToken()
 	return token, atomicWriteFile(TokenFile(configDir), token)
 }
 

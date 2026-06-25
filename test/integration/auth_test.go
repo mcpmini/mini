@@ -12,7 +12,6 @@ func TestAuth_bearerTokenSentToUpstream(t *testing.T) {
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
 		"name: svc\ntransport: sse\nurl: %s\nauth:\n  type: bearer\n  token: my-secret-token\n", f.srv.URL))
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
@@ -27,7 +26,6 @@ func TestAuth_apiKeySentToUpstream(t *testing.T) {
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
 		"name: svc\ntransport: sse\nurl: %s\nauth:\n  type: apikey\n  header: X-Api-Key\n  token: my-api-key\n", f.srv.URL))
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
@@ -42,7 +40,6 @@ func TestAuth_staticHeaderForwarded(t *testing.T) {
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
 		"name: svc\ntransport: sse\nurl: %s\nheaders:\n  X-Custom-Key: custom-value\n", f.srv.URL))
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
@@ -56,7 +53,6 @@ func TestAuth_noTokenNoAuthHeader(t *testing.T) {
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
 	writeHTTPServerYAML(t, cfg, "svc", f.srv.URL)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)

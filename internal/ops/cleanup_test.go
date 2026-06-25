@@ -21,20 +21,16 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		}
 	})
 
-	t.Run("removes expired json+raw pair and reports exact bytes freed", func(t *testing.T) {
+	t.Run("removes expired json file and reports exact bytes freed", func(t *testing.T) {
 		dir := tempDir(t)
 		respDir := filepath.Join(dir, "responses")
 		os.MkdirAll(respDir, 0700)
 
 		jsonBody := []byte(`{"ok":true}`)
-		rawBody := []byte(`{"raw":true,"extra":"data"}`)
 		oldJSON := filepath.Join(respDir, "old.json")
-		oldRaw := filepath.Join(respDir, "old.raw.json")
 		os.WriteFile(oldJSON, jsonBody, 0600)
-		os.WriteFile(oldRaw, rawBody, 0600)
 		past := time.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
-		os.Chtimes(oldRaw, past, past)
 
 		removed, freed, err := ops.PurgeExpiredResponses(dir)
 		if err != nil {
@@ -43,15 +39,11 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		if removed != 1 {
 			t.Errorf("removed = %d, want 1", removed)
 		}
-		wantFreed := int64(len(jsonBody) + len(rawBody))
-		if freed != wantFreed {
-			t.Errorf("freed = %d, want %d", freed, wantFreed)
+		if freed != int64(len(jsonBody)) {
+			t.Errorf("freed = %d, want %d", freed, len(jsonBody))
 		}
 		if _, err := os.Stat(oldJSON); err == nil {
 			t.Error("old.json still exists")
-		}
-		if _, err := os.Stat(oldRaw); err == nil {
-			t.Error("old.raw.json still exists")
 		}
 	})
 
@@ -96,7 +88,7 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		}
 	})
 
-	t.Run("raw.json files are skipped as primary entries", func(t *testing.T) {
+	t.Run("legacy raw.json orphan files are cleaned up", func(t *testing.T) {
 		dir := tempDir(t)
 		respDir := filepath.Join(dir, "responses")
 		os.MkdirAll(respDir, 0700)
@@ -109,8 +101,11 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
-		if removed != 0 {
-			t.Errorf("removed = %d, want 0 (raw.json should not be counted as primary)", removed)
+		if removed != 1 {
+			t.Errorf("removed = %d, want 1 (legacy .raw.json files should be cleaned up)", removed)
+		}
+		if _, err := os.Stat(rawOnly); err == nil {
+			t.Error("orphan.raw.json should have been deleted")
 		}
 	})
 }

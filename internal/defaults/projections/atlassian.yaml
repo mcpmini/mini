@@ -1,77 +1,69 @@
 jira_search:
-  include: [issues, total, maxResults, startAt]
   array_limits:
     issues: 25
-  exclude_always: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
+  exclude: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
   string_limits:
     summary: 1000
     description: 1500
 
 jira_get_issue:
-  exclude_always: [renderedFields, changelog, schema, editmeta, operations, versionedRepresentations, transitions, watchers]
+  exclude: [renderedFields, changelog, schema, editmeta, operations, versionedRepresentations, transitions, watchers]
   string_limits:
     description: 5000
 
 jira_get_project_issues:
-  include: [issues, total, maxResults, startAt]
   array_limits:
     issues: 25
-  exclude_always: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
+  exclude: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
   string_limits:
     summary: 1000
     description: 1500
 
 jira_get_all_projects:
-  include: [values, total, maxResults, startAt, isLast]
   array_limits:
     values: 30
-  exclude_always: [avatarUrls, projectTypeKey, issueTypes, simplified, style, expand]
+  exclude: [avatarUrls, projectTypeKey, issueTypes, simplified, style, expand]
   string_limits:
     description: 1000
 
 jira_get_project:
-  exclude_always: [avatarUrls, expand, permissions, issueTypeHierarchy, insight, simplified, style]
+  exclude: [avatarUrls, expand, permissions, issueTypeHierarchy, insight, simplified, style]
   string_limits:
     description: 5000
 
 jira_get_agile_boards:
-  include: [values, total, maxResults, startAt, isLast]
   array_limits:
     values: 20
 
 jira_get_sprint_issues:
-  include: [issues, total, maxResults, startAt]
   array_limits:
     issues: 25
-  exclude_always: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
+  exclude: [renderedFields, changelog, names, schema, editmeta, operations, versionedRepresentations]
   string_limits:
     summary: 1000
     description: 1500
 
 confluence_search:
-  include: [results, totalSize, start, limit]
   array_limits:
     results: 20
-  exclude_always: [metadata, extensions, _links, _expandable, body.view, body.export_view, body.anonymous_export_view, history, descendants, children]
+  exclude: [metadata, extensions, _links, _expandable, body.view, body.export_view, body.anonymous_export_view, history, descendants, children]
   string_limits:
     excerpt: 1000
 
 confluence_get_page:
-  exclude_always: [extensions, _expandable, body.view, body.export_view, body.anonymous_export_view, descendants, children]
+  exclude: [extensions, _expandable, body.view, body.export_view, body.anonymous_export_view, descendants, children]
   string_limits:
     value: 10000
 
 confluence_get_page_children:
-  include: [results, size, start, limit]
   array_limits:
     results: 30
-  exclude_always: [body, metadata, extensions, _links, _expandable]
+  exclude: [body, metadata, extensions, _links, _expandable]
 
 confluence_get_comments:
-  include: [results, size, start, limit]
   array_limits:
     results: 30
-  exclude_always: [metadata, extensions, _expandable, _links, ancestors]
+  exclude: [metadata, extensions, _expandable, _links, ancestors]
   string_limits:
     value: 2000
 

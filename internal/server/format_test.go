@@ -18,15 +18,14 @@ import (
 )
 
 func newSrvWithFormat(t *testing.T, format string) *server.Server {
-	return newSrvWithResponse(t, format, 10000, `[{"number":1,"title":"bug one","state":"open"},{"number":2,"title":"feat two","state":"closed"}]`)
+	return newSrvWithResponse(t, format, `[{"number":1,"title":"bug one","state":"open"},{"number":2,"title":"feat two","state":"closed"}]`)
 }
 
-func newSrvWithResponse(t *testing.T, format string, inlineThreshold int, payload string) *server.Server {
+func newSrvWithResponse(t *testing.T, format string, payload string) *server.Server {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = inlineThreshold
 	cfg.ResponseFormat = format
 	srv := server.New(cfg, logger)
 
@@ -99,7 +98,6 @@ func newSrvWithConfigFormat(t *testing.T, format string) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.ResponseFormat = format
 	issues := `[{"number":1,"title":"bug"},{"number":2,"title":"feat"}]`
 	issuesJSON, _ := json.Marshal(issues)
@@ -130,19 +128,18 @@ func TestLinesFormatPerToolOverride(t *testing.T) {
 	}
 }
 
-func TestLinesFormatIncludesSpilledFilePath(t *testing.T) {
-	payload := `{"items":[{"number":1,"title":"` + strings.Repeat("x", 400) + `"},{"number":2,"title":"` + strings.Repeat("y", 400) + `"}]}`
-	lines := spilledLinesResponse(t, payload)
-	assertSpilledLinesFormat(t, lines)
+func TestLinesFormatIncludesFilePathWhenElisionOccurs(t *testing.T) {
+	payload := `{"items":[{"number":1,"title":"bug one"},{"number":2,"title":"feat two"}],"secret":"hidden"}`
+	lines := elisionLinesResponse(t, payload)
+	assertElisionLinesFormat(t, lines)
 }
 
-func spilledLinesResponse(t *testing.T, payload string) []string {
+func elisionLinesResponse(t *testing.T, payload string) []string {
 	t.Helper()
-	// Use threshold=1 so the raw response always exceeds it, triggering file write.
-	srv := newSrvWithResponse(t, "mini", 1, payload)
+	srv := newSrvWithResponse(t, "mini", payload)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"format": "mini"},
+		"projection": map[string]any{"format": "mini", "exclude": []string{"secret"}},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
@@ -154,22 +151,22 @@ func spilledLinesResponse(t *testing.T, payload string) []string {
 	return strings.Split(strings.TrimSpace(text), "\n")
 }
 
-func assertSpilledLinesFormat(t *testing.T, lines []string) {
+func assertElisionLinesFormat(t *testing.T, lines []string) {
 	t.Helper()
-	if len(lines) != 1 {
-		t.Fatalf("expected single header line for spilled response, got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
+	if len(lines) < 2 {
+		t.Fatalf("expected header + data lines, got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
 	}
 	if !strings.HasPrefix(lines[0], "[gh.list_issues] file:") {
-		t.Fatalf("expected file header, got: %s", lines[0])
+		t.Fatalf("expected file header on first line, got: %s", lines[0])
 	}
-	assertSpilledLinesFile(t, lines[0])
+	assertElisionLinesFile(t, lines[0])
 }
 
-func assertSpilledLinesFile(t *testing.T, header string) {
+func assertElisionLinesFile(t *testing.T, header string) {
 	t.Helper()
 	path := strings.TrimPrefix(header, "[gh.list_issues] file:")
 	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected spilled response file to exist: %v", err)
+		t.Fatalf("expected raw response file to exist: %v", err)
 	}
 }
 

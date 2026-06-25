@@ -12,7 +12,7 @@ import (
 func TestLifecycle_addServerAtRuntime(t *testing.T) {
 	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\ndangerous_allow_private_urls: true\n")
+	writeConfig(t, cfg, "dangerous_allow_private_urls: true\n")
 	client := startServer(t, cfg)
 
 	raw := client.mustCall("tools/call", map[string]any{
@@ -37,7 +37,6 @@ func TestLifecycle_removeServerAtRuntime(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	client := startServer(t, cfg)
 
 	if !strings.Contains(client.listTools("svc"), "get_item") {
@@ -57,7 +56,7 @@ func TestLifecycle_removeServerAtRuntime(t *testing.T) {
 
 func TestLifecycle_addServerBadURL(t *testing.T) {
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\ndangerous_allow_private_urls: true\n")
+	writeConfig(t, cfg, "dangerous_allow_private_urls: true\n")
 	client := startServer(t, cfg)
 
 	raw := client.mustCall("tools/call", map[string]any{
@@ -80,7 +79,6 @@ func TestLifecycle_disabledServerNotLoaded(t *testing.T) {
 	writeServerConfig(t, cfg, "disabled", fmt.Sprintf(
 		"name: disabled\ncommand: %s\nargs:\n  - --fixtures\n  - %s\nenabled: false\n",
 		fakemcpBin, dir))
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	client := startServer(t, cfg)
 	_, isErr := client.execToolAllowError("disabled", "get_item", nil)
@@ -100,7 +98,6 @@ func TestLifecycle_tenServersSimultaneously(t *testing.T) {
 		writeServerConfig(t, cfg, name, fmt.Sprintf(
 			"name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n", name, fakemcpBin, dir))
 	}
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	client := startServer(t, cfg)
 	listing := client.listTools("")

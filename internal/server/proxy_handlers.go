@@ -85,15 +85,14 @@ func (s *Server) proxyProject(p envelopeParams) (any, error) {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderProxyResult(renderProxyResultParams{Server: p.Entry.Server, Tool: p.Entry.ToolName.Name(), Env: env, ProjCfg: projCfg, RawTokens: stats.SummaryTokens}), nil
+	return s.renderProxyResult(renderProxyResultParams{Server: p.Entry.Server, Tool: p.Entry.ToolName.Name(), Env: env, ProjCfg: projCfg}), nil
 }
 
 type renderProxyResultParams struct {
-	Server    string
-	Tool      string
-	Env       *response.Envelope
-	ProjCfg   *config.ProjectionConfig
-	RawTokens int
+	Server  string
+	Tool    string
+	Env     *response.Envelope
+	ProjCfg *config.ProjectionConfig
 }
 
 func (s *Server) renderProxyResult(p renderProxyResultParams) string {
@@ -104,24 +103,18 @@ func (s *Server) renderProxyResult(p renderProxyResultParams) string {
 	if format == "mini" {
 		return RenderLines(p.Server, p.Tool, p.Env)
 	}
-	return s.formatProxyEnvelope(p.Env, p.RawTokens)
+	return formatProxyEnvelope(p.Env)
 }
 
-func (s *Server) formatProxyEnvelope(env *response.Envelope, rawTokens int) string {
-	hasNote := len(env.Elided) > 0 || len(env.Truncated) > 0
-	isLarge := rawTokens > s.cfg.InlineThreshold
-	switch {
-	case !hasNote && !isLarge:
-		return marshalProxyData(env.Data)
-	case !isLarge:
-		return formatProjectedInline(env)
-	case hasNote:
-		return formatProjectedFile(env)
-	case env.File != nil:
-		return "File: " + *env.File
-	default:
+func formatProxyEnvelope(env *response.Envelope) string {
+	if !hasProjectionNote(env) {
 		return marshalProxyData(env.Data)
 	}
+	return formatProjectedInline(env)
+}
+
+func hasProjectionNote(env *response.Envelope) bool {
+	return len(env.Excluded) > 0 || len(env.Truncated) > 0
 }
 
 func marshalProxyData(data any) string {
@@ -131,40 +124,28 @@ func marshalProxyData(data any) string {
 
 func formatProjectedInline(env *response.Envelope) string {
 	b, _ := json.MarshalIndent(env.Data, "", "  ")
-	return "[Projected — " + projectionNote(env) + "]\n" + string(b)
-}
-
-func formatProjectedFile(env *response.Envelope) string {
-	if env.File == nil {
-		return formatProjectedInline(env)
+	header := "[Projected — " + projectionNote(env) + "]"
+	if env.File != nil {
+		header += "\nFile: " + *env.File
 	}
-	return "[Projected — " + projectionNote(env) + "]\nFile: " + *env.File
+	return header + "\n" + string(b)
 }
 
 func projectionNote(env *response.Envelope) string {
 	var parts []string
-	if len(env.Elided) > 0 {
-		parts = append(parts, strings.Join(env.Elided, ", ")+" elided")
+	if len(env.Excluded) > 0 {
+		parts = append(parts, strings.Join(env.Excluded, ", ")+" excluded")
 	}
-	fields := sortedTruncatedFields(env.Truncated)
-	for _, field := range fields {
-		parts = append(parts, fmt.Sprintf("%s truncated (%d chars)", field, env.Truncated[field]))
-	}
-	return strings.Join(parts, "; ")
-}
-
-func sortedTruncatedFields(m map[string]int) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	// stable order for deterministic output
-	for i := 1; i < len(out); i++ {
-		for j := i; j > 0 && out[j] < out[j-1]; j-- {
-			out[j], out[j-1] = out[j-1], out[j]
+	for _, o := range env.Truncated {
+		if o.Items > 0 {
+			parts = append(parts, fmt.Sprintf("%s capped (%d items removed)", o.JQPath, o.Items))
+		} else if o.JQPath != "" {
+			parts = append(parts, fmt.Sprintf("%s truncated (%d chars)", o.JQPath, o.Chars))
+		} else {
+			parts = append(parts, fmt.Sprintf("truncated (%d chars)", o.Chars))
 		}
 	}
-	return out
+	return strings.Join(parts, "; ")
 }
 
 func (s *Server) handleRead(raw json.RawMessage) (any, error) {

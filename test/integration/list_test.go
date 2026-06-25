@@ -16,7 +16,6 @@ func TestListTools_paginatesAcrossPages(t *testing.T) {
 	}
 	dir := mockFixtureDir(t, fixtures)
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
 		"name: svc\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n  - --list-page-size\n  - \"2\"\n",
 		fakemcpBin, dir,

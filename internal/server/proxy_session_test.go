@@ -127,7 +127,6 @@ func TestHTTPSession_DoubleInitialize_ModeLockedToFirst(t *testing.T) {
 func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 100000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -142,7 +141,7 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
 		}},
 	})
 
@@ -163,7 +162,6 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 100000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -180,7 +178,7 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
 		}},
 	})
 
@@ -206,7 +204,6 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 100000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -221,7 +218,7 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "config", "arguments": map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "get_item",
-			"projection": map[string]any{"exclude_always": []string{"secret"}}, "session_only": true,
+			"projection": map[string]any{"exclude": []string{"secret"}}, "session_only": true,
 		}},
 	})
 

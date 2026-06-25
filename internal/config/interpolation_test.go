@@ -146,13 +146,14 @@ func TestProjectionNotInterpolated(t *testing.T) {
 command: my-mcp`)
 	writeFile(t, filepath.Join(dir, "projections", "svc.yaml"), `
 list_issues:
-  include: [number, title]
+  include_only: [number, title]
   format: "${UNSET_PROJ_VAR_XXXX}"
 `)
 	sc := mustLoadOneServer(t, dir)
 	proj := sc.Projections["list_issues"]
 	if proj == nil {
 		t.Fatal("expected list_issues projection to be loaded")
+		return
 	}
 	if proj.Format != "${UNSET_PROJ_VAR_XXXX}" {
 		t.Errorf("expected projection format to be literal, got %q", proj.Format)

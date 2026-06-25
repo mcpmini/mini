@@ -36,7 +36,6 @@ func serverWithActionsDir(t *testing.T, dir string) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 

@@ -79,8 +79,7 @@ func TestServer_execReturnsResponse(t *testing.T) {
 func TestServer_execWithProjection(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
-	writeProjection(t, cfg, "github", "list_pull_requests:\n  include: [number, title]\n")
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
+	writeProjection(t, cfg, "github", "list_pull_requests:\n  include_only: [number, title]\n")
 
 	rawFixture, err := os.ReadFile(filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
 	if err != nil {
@@ -343,7 +342,7 @@ func TestServer_configureProjectionOverride(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	client := startServer(t, cfg)
-	client.setProjection("github", "list_pull_requests", map[string]any{"include": []string{"number"}, "depth_limit": 1}, true)
+	client.setProjection("github", "list_pull_requests", map[string]any{"include_only": []string{"number"}, "depth_limit": 1}, true)
 
 	rawFixture, _ := os.ReadFile(filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
 	projected := client.execTool("github", "list_pull_requests", nil)

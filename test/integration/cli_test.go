@@ -300,7 +300,6 @@ func TestCLI_status_liveServer(t *testing.T) {
 		"list_items": `[]`,
 	})
 	writeServerYAML(t, cfg, "svc", dir, "")
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	stdout, _, code := runCLI(t, cfg, "status")
 	if code != 0 {

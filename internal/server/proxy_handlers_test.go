@@ -21,7 +21,6 @@ func newProxyServer(t *testing.T) *server.Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 50
 	return server.New(cfg, logger)
 }
 
@@ -150,8 +149,8 @@ func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
 	}
 }
 
-func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
-	srv := newProxyServer(t) // InlineThreshold=50
+func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
+	srv := newProxyServer(t)
 	defer srv.Close()
 	conn := fakeConn("list_repos")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`)
@@ -161,28 +160,27 @@ func TestProxy_Call_WithProjection_Small_BracketNote(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "gh",
 		"tool":       "list_repos",
-		"projection": map[string]any{"exclude_always": []string{"secret"}},
+		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("gh__list_repos", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("proxy small+projection response: %s", text)
+	t.Logf("proxy exclusion response: %s", text)
 
 	if !strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected [Projected] note for small response with projection: %s", text)
+		t.Errorf("expected [Projected] note when field excluded: %s", text)
 	}
-	if strings.Contains(text, "File:") {
-		t.Errorf("small response should be inline, not file path: %s", text)
+	if !strings.Contains(text, "excluded") {
+		t.Errorf("expected 'excluded' in projection note: %s", text)
+	}
+	if !strings.Contains(text, `"id"`) || strings.Contains(text, `"secret"`) {
+		t.Errorf("expected id present and secret absent in response: %s", text)
 	}
 }
 
-func TestProxy_Call_WithProjection_Large_FilePath(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 1 // force all responses to be "large"
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
+	srv := newProxyServer(t)
 	defer srv.Close()
-
 	conn := fakeConn("list_prs")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"items\":[{\"id\":1,\"body\":\"long body text here\"}]}"}]}`)
 	addProxyConn(t, srv, "gh", conn)
@@ -191,25 +189,24 @@ func TestProxy_Call_WithProjection_Large_FilePath(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "gh",
 		"tool":       "list_prs",
-		"projection": map[string]any{"exclude_always": []string{"body"}},
+		"projection": map[string]any{"exclude": []string{"body"}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("gh__list_prs", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("proxy large response: %s", text)
+	t.Logf("proxy nested-exclude response: %s", text)
 
+	if !strings.Contains(text, ".items[].body") {
+		t.Errorf("expected excluded path .items[].body reported in response, got: %s", text)
+	}
 	if !strings.Contains(text, "File:") {
-		t.Errorf("expected File: path in large projected response: %s", text)
+		t.Errorf("expected raw file written for nested exclusion, got: %s", text)
 	}
 }
 
-func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 1 // force all responses to file
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
+	srv := newProxyServer(t)
 	defer srv.Close()
-
 	conn := fakeConn("get_data")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"value\":\"data\"}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
@@ -218,23 +215,30 @@ func TestProxy_Call_Large_WithProjection_NoNote_FilePathOnly(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_data",
-		"projection": map[string]any{"include": []string{"id", "value"}},
+		"projection": map[string]any{"include_only": []string{"id", "value"}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("svc__get_data", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("large projection-no-note response: %s", text)
+	t.Logf("include-filter no-exclusion response: %s", text)
 
 	if strings.HasPrefix(text, "[Projected") {
-		t.Errorf("expected no [Projected] note when nothing elided: %s", text)
+		t.Errorf("expected no projection envelope when nothing excluded: %s", text)
 	}
-	if !strings.HasPrefix(text, "File:") {
-		t.Errorf("expected File: path for large response with projection: %s", text)
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
+		t.Errorf("expected valid JSON response: %s", text)
+	}
+	if id, _ := parsed["id"].(float64); id != 1 {
+		t.Errorf("expected id:1, got %v", parsed["id"])
+	}
+	if val, _ := parsed["value"].(string); val != "data" {
+		t.Errorf("expected value:data, got %v", parsed["value"])
 	}
 }
 
 func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
-	srv := newProxyServer(t) // InlineThreshold=50
+	srv := newProxyServer(t)
 	defer srv.Close()
 	conn := fakeConn("get_issue")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"this is a very long body that will be truncated\"}"}]}`)
@@ -264,7 +268,6 @@ func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
 func TestProxy_Call_MiniFormat_RendersLines(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000 // keep inline
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -294,7 +297,6 @@ func TestProxy_Call_MiniFormat_RendersLines(t *testing.T) {
 func TestProxy_Call_GlobalMiniFormat_Respected(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.ResponseFormat = "mini"
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
@@ -307,7 +309,7 @@ func TestProxy_Call_GlobalMiniFormat_Respected(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_user",
-		"projection": map[string]any{"exclude_always": []string{}},
+		"projection": map[string]any{"exclude": []string{}},
 	}))
 
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))
@@ -324,7 +326,6 @@ func TestProxy_Call_MiniFormat_PerSession(t *testing.T) {
 	// is proxy by the zero-value default, with no server-level option set.
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 100000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 

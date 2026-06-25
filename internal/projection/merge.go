@@ -21,8 +21,8 @@ func DefaultsFrom(cfg *config.Config) *Defaults {
 
 // effectiveConfig is the merged, runtime-ready config derived from ProjectionConfig + Defaults.
 type effectiveConfig struct {
-	include            []string
-	excludeAlways      []string
+	includeOnly        []string
+	exclude            []string
 	passthrough        []string
 	arrayLimits        map[string]int
 	stringLimits       map[string]int
@@ -32,7 +32,6 @@ type effectiveConfig struct {
 	stripContent       bool
 	contentFieldSet    map[string]bool // precomputed set for O(1) lookup
 	autoStripThreshold int
-	truncated          map[string]int // populated during Apply; field → bytes removed
 }
 
 const (
@@ -85,8 +84,8 @@ func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	if cfg.Mode == "slim" {
 		applySlimMode(e)
 	}
-	e.include = cfg.Include
-	e.excludeAlways = cfg.ExcludeAlways
+	e.includeOnly = cfg.IncludeOnly
+	e.exclude = cfg.Exclude
 	e.passthrough = cfg.Passthrough
 	e.arrayLimits = cfg.ArrayLimits
 	e.stringLimits = cfg.StringLimits

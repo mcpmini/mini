@@ -20,7 +20,6 @@ func newSecureServer(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
@@ -119,7 +118,6 @@ func TestAddServer_stdioRejectedByDefault(t *testing.T) {
 func TestAddServer_stdioAllowedWithFlag(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	cfg.DangerousAllowRuntimeStdio = true
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := server.New(cfg, logger)

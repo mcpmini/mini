@@ -264,7 +264,7 @@ For most users the bundled projections are enough. If you want to tune them:
 # ~/.mini/projections/github.yaml
 
 list_pull_requests:
-  exclude_always: [avatar_url]   # strip provably-useless fields
+  exclude: [avatar_url]   # strip provably-useless fields
   string_limits:
     body: 1500                   # cap at 1500 chars in list view
 
@@ -305,17 +305,10 @@ When mini has projected a response and it is still large, it writes the response
 
 **This only happens when a projection config is active.** For the bundled servers (GitHub, Slack, Linear, Sentry, Jira), `mini init` installs projections automatically so trimming and file handling work out of the box. For servers you add that aren't in the bundled set, responses pass through unchanged until you write a projection config — mini is a transparent proxy for anything it has no rules for.
 
-**What the agent receives inline vs from a file:**
+**What the agent receives:**
 
-- **Inline** — the projected JSON, same structure as the upstream response but with excluded fields and string limits applied
-- **File** — a more compact form: nested objects flattened (`user.login` → `user_login`), URL-template fields stripped, a `_meta` block added with a field list and index for quick scanning. A `.raw.json` file alongside always has the full original upstream response.
-
-**When does a response go to file?** By default, when it's larger than a typical list of 5–10 items. A list of 5 pull requests stays inline; a large code file or a 50-item search result goes to disk.
-
-Tune this with `inline_threshold` in `config.yaml`:
-
-- **Raise it** if agents are fetching response files too often (fewer round trips, more context used)
-- **Lower it** to keep context tighter (more round trips, smaller agent context)
+- **Inline** — the projected JSON, same structure as the upstream response but with excluded fields and string limits applied. mini always inlines the projected result.
+- **Raw file** — when any projection is applied (fields excluded or strings truncated), the full original upstream response is written to `~/.mini/responses/` so the agent can fetch specific fields with `read` if needed.
 
 Response files are cleaned up automatically by TTL and disk budget.
 

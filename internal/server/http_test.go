@@ -198,7 +198,7 @@ func TestHTTPServer_sessionPersistsProjection(t *testing.T) {
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake) //nolint:errcheck
 	sessionID := initCompactSession(t, ts)
-	setSessionProjection(t, sessionProjectionParams{TS: ts, SessionID: sessionID, SrvName: "svc", Tool: "get_item", Proj: map[string]any{"include": []string{"id"}}})
+	setSessionProjection(t, sessionProjectionParams{TS: ts, SessionID: sessionID, SrvName: "svc", Tool: "get_item", Proj: map[string]any{"include_only": []string{"id"}}})
 	text := httpExecToolText(t, ts, sessionID, "svc", "get_item")
 	if text == "" {
 		t.Fatal("no tool result — the projection assertion below would pass vacuously")

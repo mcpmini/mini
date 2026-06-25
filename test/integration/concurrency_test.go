@@ -33,7 +33,6 @@ func TestConcurrency_20ParallelClients(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	const n = 20
 	clients := make([]*mcpClient, n)
@@ -57,7 +56,6 @@ func TestConcurrency_parallelHTTPUpstream(t *testing.T) {
 	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	writeHTTPServerYAML(t, cfg, "svc", f.srv.URL)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	const n = 10
 	clients := make([]*mcpClient, n)
@@ -105,7 +103,6 @@ func TestConcurrency_MaxPendingRequests(t *testing.T) {
 	cfg := t.TempDir()
 	faultJSON := `{"tool":"get_item","method":"tools/call","type":"delay","delay_ms":2000}`
 	writeFaultServer(t, faultServerParams{ConfigDir: cfg, ServerName: "svc", Fixtures: dir, FaultJSON: faultJSON, Extra: "max_pending_requests: 2\n"})
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	client := startServer(t, cfg)
 	if countRejected(client, 10) == 0 {
 		t.Error("expected at least one request to be rejected with max_pending_requests: 2")
@@ -116,7 +113,6 @@ func TestConcurrency_parallel(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	const n = 5
 	clients := make([]*mcpClient, n)
@@ -157,7 +153,6 @@ func TestConcurrency_pipelinedRequests(t *testing.T) {
 	})
 	cfg := t.TempDir()
 	writeHTTPServerYAML(t, cfg, "svc", f.srv.URL)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	oks, elapsed := runNParallelExecs(startServer(t, cfg), 3)
 	for _, ok := range oks {
 		if !ok {
@@ -186,13 +181,12 @@ func TestConcurrency_twoClientsSessionIsolation(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	c1 := startServer(t, cfg)
 	c2 := startServer(t, cfg)
 	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)
 	if !strings.Contains(string(b2), "secret") {
 		t.Fatal("c2 should see secret before any projection")
 	}
-	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, false)
+	c1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
 	assertSessionIsolation(t, cfg, c2)
 }

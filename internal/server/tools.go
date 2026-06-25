@@ -60,7 +60,7 @@ func configureSchema() map[string]any {
 			"action":       prop("string", "status | set_projection | reload (re-reads projections from disk, replacing all runtime-set projections) | add_server | remove_server"),
 			"server":       prop("string", "Server name (for set_projection, add_server, remove_server)"),
 			"tool":         prop("string", "Tool name (for set_projection)"),
-			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {mode, include, exclude_always, string_limits, array_limits, strip_markup}"},
+			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {mode, include_only, exclude, string_limits, array_limits, strip_markup}"},
 			"session_only": prop("boolean", "If true, projection applies only to this session (not persisted). Default: false."),
 			"config":       map[string]any{"type": "object", "description": "ServerConfig for add_server"},
 		}),
@@ -95,7 +95,7 @@ func miniConfigSchema() map[string]any {
 			"action":       prop("string", "status | set_projection | reload | add_server | remove_server | start_auth | auth_status"),
 			"server":       prop("string", "Server name (for set_projection, add_server, remove_server)"),
 			"tool":         prop("string", "Tool name (for set_projection)"),
-			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {mode, include, exclude_always, string_limits, array_limits, strip_markup}"},
+			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {mode, include_only, exclude, string_limits, array_limits, strip_markup}"},
 			"session_only": prop("boolean", "If true, projection applies only to this session (not persisted). Default: false."),
 			"config":       map[string]any{"type": "object", "description": "ServerConfig for add_server"},
 		}),
@@ -105,9 +105,9 @@ func miniConfigSchema() map[string]any {
 func miniReadSchema() map[string]any {
 	return map[string]any{
 		"name":        "read",
-		"description": "Read a projected or raw response file written by mini. Pass the path from the response note. .json returns projected data; .raw.json returns the full upstream response.",
+		"description": "Read a raw upstream response file written by mini. Pass the path from the response note.",
 		"inputSchema": schema(map[string]any{
-			"path": prop("string", "File path from the response note (.json for projected, .raw.json for full upstream)"),
+			"path": prop("string", "File path from the response note"),
 		}),
 	}
 }

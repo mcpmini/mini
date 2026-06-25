@@ -1,5 +1,4 @@
 list_issues:
-  include: [id, title, culprit, level, status, platform, project, metadata, firstSeen, lastSeen, count, userCount, isUnhandled, assignedTo, permalink, numComments]
   array_limits:
     default: 25
   string_limits:
@@ -8,12 +7,11 @@ list_issues:
 get_issue_details:
   # pluginActions/pluginContexts/pluginIssues are Sentry UI extension points,
   # not issue data — agents never act on these.
-  exclude_always: [pluginActions, pluginContexts, pluginIssues, seenBy, userReport, annotations]
+  exclude: [pluginActions, pluginContexts, pluginIssues, seenBy, userReport, annotations]
   string_limits:
     message: 5000
 
 list_events:
-  include: [id, eventID, message, platform, dateCreated, level, tags, user]
   array_limits:
     default: 20
     tags: 15
@@ -21,12 +19,10 @@ list_events:
     message: 1000
 
 list_projects:
-  include: [id, name, slug, platform, status, firstEvent, hasAccess, isMember, isBookmarked, isInternal]
   array_limits:
     default: 30
 
 list_organizations:
-  include: [id, name, slug, status, dateCreated, role, features]
   array_limits:
     default: 10
 

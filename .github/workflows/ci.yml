@@ -7,7 +7,6 @@ on:
       - '**.md'
       - '.claude/**'
   pull_request:
-    branches: [main]
     paths-ignore:
       - '**.md'
       - '.claude/**'

@@ -28,7 +28,6 @@ func newPipelineServer(t *testing.T, toolName string, response string) (*server.
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 10000
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	fake := &transport.FakeConnection{
 		Tools:     []transport.ToolDefinition{{Name: toolName, Description: toolName, InputSchema: json.RawMessage(`{}`)}},
@@ -72,6 +71,6 @@ func TestSessionProjectionOverride(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "ci",
 		"tool":       "getBuild",
-		"projection": map[string]any{"include": []string{"build_number", "status", "branch"}},
+		"projection": map[string]any{"include_only": []string{"build_number", "status", "branch"}},
 	}))
 }

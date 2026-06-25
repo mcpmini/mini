@@ -18,7 +18,6 @@ func setupGitHubMCP(t *testing.T, ctx context.Context, token string) *server.Ser
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.InlineThreshold = 500
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	srv := server.New(cfg, logger)
 	t.Cleanup(srv.Close)

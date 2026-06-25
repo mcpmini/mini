@@ -84,7 +84,6 @@ func httpServer(t *testing.T, onCall func(int) (int, []byte)) (*fakeHTTPMCP, *mc
 	f := newFakeHTTPMCP(t, onCall)
 	cfg := t.TempDir()
 	writeHTTPServerYAML(t, cfg, "svc", f.srv.URL)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	return f, startServer(t, cfg)
 }
 

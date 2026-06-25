@@ -2,11 +2,6 @@ package config
 
 // Config is the top-level mini configuration.
 type Config struct {
-	// InlineThreshold is the max projected-response token estimate below which
-	// responses are returned inline (no file written). Measured after projection
-	// and slimming — the actual tokens the agent would see inline. Default: 2000.
-	InlineThreshold int `yaml:"inline_threshold"`
-
 	// DefaultStringLimit is the default max chars for string fields across all
 	// projections. 0 means no limit (default). Override per-field with
 	// string_limits in a projection config.
@@ -84,7 +79,6 @@ var DefaultContentFields = []string{
 
 func DefaultConfig() *Config {
 	return &Config{
-		InlineThreshold:      3500,
 		DefaultStringLimit:   0,
 		DefaultDepthLimit:    0,
 		AutoStripThreshold:   0,
@@ -242,11 +236,11 @@ type ActionConfig struct {
 // ProjectionConfig defines how to trim tool responses.
 type ProjectionConfig struct {
 	// Alias replaces the upstream tool name for agents; mini translates back when calling upstream.
-	Alias         string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
-	Mode          string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
-	Include       []string       `yaml:"include,omitempty"        json:"include,omitempty"`
-	ExcludeAlways []string       `yaml:"exclude_always,omitempty" json:"exclude_always,omitempty"`
-	Passthrough   []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
+	Alias        string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
+	Mode         string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
+	IncludeOnly  []string       `yaml:"include_only,omitempty"   json:"include_only,omitempty"`
+	Exclude      []string       `yaml:"exclude,omitempty"        json:"exclude,omitempty"`
+	Passthrough  []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
 	ArrayLimits  map[string]int `yaml:"array_limits,omitempty"   json:"array_limits,omitempty"`
 	StringLimits map[string]int `yaml:"string_limits,omitempty"  json:"string_limits,omitempty"`
 	DepthLimit   int            `yaml:"depth_limit,omitempty"    json:"depth_limit,omitempty"`

@@ -138,7 +138,6 @@ func daemonForTest(t *testing.T) string {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	return cfg
 }
 
@@ -215,13 +214,12 @@ func TestDaemon_sessionIsolation(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"x","name":"test"}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	startDaemon(t, cfg)
 	c1 := connectCompact(t, cfg)
 	c2 := connectCompact(t, cfg)
 
-	c1.setProjection("svc", "get_item", map[string]any{"exclude_always": []string{"secret"}}, true)
+	c1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, true)
 
 	b1, _ := json.Marshal(c1.execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b1), "secret") {
@@ -237,7 +235,6 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"ping": `{"ok":true}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 
 	// No daemon running — --standalone should work without trying to start one.
 	client := startServer(t, cfg)
@@ -248,7 +245,6 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 
 func TestDaemon_healthzEndpoint(t *testing.T) {
 	cfg := shortConfigDir(t)
-	writeConfig(t, cfg, "inline_threshold: 50000\n")
 	startDaemon(t, cfg)
 
 	resp, err := daemonHTTPClient(cfg).Get("http://localhost/healthz")
@@ -587,3 +583,4 @@ func assertInlineGetItem(t *testing.T, env envelope) {
 		t.Fatalf("expected data.name=test, got %#v", data["name"])
 	}
 }
+

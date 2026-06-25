@@ -117,28 +117,28 @@ agent → Serve() → session handler → handleList / handleExecute / handleExe
 | `internal/config` | `Config`, `ServerConfig`, `ProjectionConfig`, `ActionConfig` types + YAML loader; `ValidServerName` regex |
 | `internal/registry` | Tool index keyed by `"server.tool"`; permission resolution; action (virtual tool) support |
 | `internal/server` | `Server` struct + `Serve()` loop + handlers; `Session` (per-connection projection overrides) |
-| `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ElidedKeys, Passthrough}`; HTML/MD stripping |
-| `internal/response` | `Builder`/`Store`; inline vs. file threshold; TTL-based file lifecycle |
+| `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ExcludedKeys, Passthrough}`; HTML/MD stripping |
+| `internal/response` | `Builder`/`Store`; always-inline projected data; TTL-based raw file lifecycle |
 | `internal/auth` | API key + OAuth2 PKCE token storage |
 | `internal/daemon` | Background daemon HTTP server; port file management (liveness via HTTP healthz, not PID) |
 | `internal/proxy` | stdio→HTTP bridge; connects agent stdio to daemon HTTP |
 
 ### Response envelope
 
-Every `call`/`perm_call` call returns:
-```json
+When projection removes or truncates data, `call`/`perm_call` prepends a header:
+```
+[Projected — .secret, .internal excluded; .body truncated (420 chars)]
+File: <epoch>_<hash8>.json
 {
-  "server", "tool", "ok", "summary",
-  "response_meta", "elided_keys", "passthrough",
-  "inline": true/false,
-  "estimated_raw_tokens": N,
-  "estimated_tokens_saved": N,
-  "latency_ms": N
+  "id": 1,
+  "name": "widget"
 }
 ```
-- Responses < `inline_threshold` tokens: `inline=true`, no file written
-- Larger responses: written to `~/.mini/responses/<timestamp>.json` (slim) and `<timestamp>.raw.json` (full)
-- Token counts are estimates (labeled as such); latency is wall-clock upstream call time
+- `excluded`: jq-style paths of fields removed entirely by projection
+- `truncated[].chars`: characters (runes) removed from a string field
+- `truncated[].items`: items removed from an array field by array limit
+- When no data is removed, the response is plain JSON with no projection header
+- Raw recovery files written to `~/.mini/responses/<epoch>_<hash8>.json` when data is lost
 
 ### Config directory layout
 
