@@ -199,6 +199,9 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 	if excluded, _ := mini["excluded"].([]any); len(excluded) == 0 {
 		t.Errorf("expected __mini.excluded to list excluded paths: %s", text)
 	}
+	if msg, _ := mini["msg"].(string); msg == "" {
+		t.Errorf("expected __mini.msg to be set: %s", text)
+	}
 	if env["data"] == nil {
 		t.Errorf("expected data key in envelope: %s", text)
 	}
@@ -294,11 +297,67 @@ func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
 	text := toolResultText(t, resp)
 	t.Logf("truncation note response: %s", text)
 
-	if !strings.Contains(text, "truncated") {
-		t.Errorf("expected 'truncated' in projection note: %s", text)
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(text), &envelope); err != nil {
+		t.Fatalf("expected JSON envelope: %s", text)
 	}
-	if !strings.Contains(text, "body") {
-		t.Errorf("expected field name 'body' in projection note: %s", text)
+	mini, _ := envelope["__mini"].(map[string]any)
+	if mini == nil {
+		t.Fatalf("expected __mini in truncation envelope: %s", text)
+	}
+	truncated, _ := mini["truncated"].([]any)
+	if len(truncated) == 0 {
+		t.Fatalf("expected __mini.truncated to be non-empty: %s", text)
+	}
+	entry, _ := truncated[0].(map[string]any)
+	if path, _ := entry["path"].(string); path != ".body" {
+		t.Errorf("expected truncated[0].path = .body, got %q", path)
+	}
+	if chars, _ := entry["chars"].(float64); chars == 0 {
+		t.Errorf("expected truncated[0].chars > 0: %s", text)
+	}
+	if msg, _ := mini["msg"].(string); msg == "" {
+		t.Errorf("expected __mini.msg to be set: %s", text)
+	}
+}
+
+func TestProxy_Call_WithExclusionAndTruncation(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConn("get_issue")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"body\":\"this is a very long body that will be truncated by the limit\"}"}]}`)
+	addProxyConn(t, srv, "gh", conn)
+
+	serveProxy(t, srv, callTool("config", map[string]any{
+		"action": "set_projection",
+		"server": "gh",
+		"tool":   "get_issue",
+		"projection": map[string]any{
+			"exclude":       []string{"secret"},
+			"string_limits": map[string]any{"body": 5},
+		},
+	}))
+
+	resp := serveProxy(t, srv, callTool("gh__get_issue", map[string]any{}))
+	text := toolResultText(t, resp)
+	t.Logf("exclusion+truncation response: %s", text)
+
+	var envelope map[string]any
+	if err := json.Unmarshal([]byte(text), &envelope); err != nil {
+		t.Fatalf("expected JSON envelope: %s", text)
+	}
+	mini, _ := envelope["__mini"].(map[string]any)
+	if mini == nil {
+		t.Fatalf("expected __mini envelope: %s", text)
+	}
+	if excluded, _ := mini["excluded"].([]any); len(excluded) == 0 {
+		t.Errorf("expected __mini.excluded when field excluded: %s", text)
+	}
+	if truncated, _ := mini["truncated"].([]any); len(truncated) == 0 {
+		t.Errorf("expected __mini.truncated when string truncated: %s", text)
+	}
+	if msg, _ := mini["msg"].(string); msg == "" {
+		t.Errorf("expected __mini.msg to be set: %s", text)
 	}
 }
 

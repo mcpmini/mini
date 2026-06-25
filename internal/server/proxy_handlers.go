@@ -129,6 +129,9 @@ func formatProjectedInline(env *response.Envelope) string {
 	if len(env.Excluded) > 0 || len(env.Truncated) > 0 {
 		meta["msg"] = "Response truncated, use mini's read(<file>, <jq expr>) tool to fetch truncated fields"
 	}
+	if len(env.Passthrough) > 0 {
+		meta["passthrough"] = env.Passthrough
+	}
 	if env.File != nil {
 		meta["file"] = *env.File
 	}
