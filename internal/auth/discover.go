@@ -53,10 +53,15 @@ func Discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
 }
 
 func discoverASURL(ctx context.Context, serverURL string) (asURL string, scopes []string, err error) {
-	if asURL, scopes, err = asURLFromWWWAuthenticate(ctx, serverURL); err != nil || asURL != "" {
-		return asURL, scopes, err
+	var wwwAuthScopes []string
+	if asURL, wwwAuthScopes, err = asURLFromWWWAuthenticate(ctx, serverURL); err != nil || asURL != "" {
+		return asURL, wwwAuthScopes, err
 	}
+	// Per spec, WWW-Authenticate scope takes priority even when its PRM has no authorization_servers.
 	asURL, scopes, err = asURLFromPRMProbe(ctx, serverURL)
+	if len(wwwAuthScopes) > 0 {
+		scopes = wwwAuthScopes
+	}
 	return asURL, scopes, err
 }
 
