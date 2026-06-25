@@ -222,9 +222,9 @@ func resolveString(s string, args map[string]any) any {
 func fixedPlaceholderValue(s string) (any, bool) {
 	switch s {
 	case "$now":
-		return time.Now().UTC().Format(time.RFC3339), true //nolint:clocklint
+		return time.Now().UTC().Format(time.RFC3339), true
 	case "$ts":
-		return fmt.Sprintf("%.6f", float64(time.Now().UnixMilli())/1000.0), true //nolint:clocklint
+		return fmt.Sprintf("%.6f", float64(time.Now().UnixMilli())/1000.0), true
 	case "$id":
 		return 10000001, true
 	case "$sha":

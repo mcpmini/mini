@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/version"
 )
 
@@ -26,6 +27,7 @@ type HTTPConnection struct {
 	headers                 map[string]string
 	disableRetryOnRateLimit bool
 	client                  *http.Client
+	clock                   clock.Clock
 	nextID                  atomic.Int64
 	sessionID               string
 	mu                      sync.Mutex
@@ -60,6 +62,7 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 		headers:                 cfg.Headers,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
 		client:                  noRedirectClient(timeout, cfg.BlockPrivateIPs),
+		clock:                   clock.System(),
 	}, nil
 }
 
@@ -121,7 +124,7 @@ func (c *HTTPConnection) postWithRetryDelay(ctx context.Context, rpcReq Request,
 	}
 	delay := nextRetryDelay(r.delay, backoff)
 	slog.Warn("upstream http request retrying", "method", rpcReq.Method, "attempt", i+1, "delay", delay)
-	if !sleepCtx(ctx, delay) {
+	if !c.sleepCtx(ctx, delay) {
 		return nil, true, ctx.Err()
 	}
 	return nil, false, nil
@@ -193,7 +196,7 @@ func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string) (po
 	if isRetryableStatus(resp.StatusCode) {
 		return postResult{
 			retryable: true,
-			delay:     parseRetryAfter(resp.Header.Get("Retry-After")),
+			delay:     parseRetryAfter(resp.Header.Get("Retry-After"), c.clock.Now()),
 		}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
 	}
 	return postResult{}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
@@ -205,7 +208,7 @@ func isRetryableStatus(statusCode int) bool {
 
 // parseRetryAfter returns the delay from a Retry-After header value (seconds).
 // Returns -1 if header is absent or unparseable (signal: retry with backoff).
-func parseRetryAfter(h string) time.Duration {
+func parseRetryAfter(h string, now time.Time) time.Duration {
 	h = strings.TrimSpace(h)
 	if h == "" {
 		return -1
@@ -215,7 +218,7 @@ func parseRetryAfter(h string) time.Duration {
 		return min(time.Duration(secs)*time.Second, maxDelay)
 	}
 	if t, err := http.ParseTime(h); err == nil {
-		if d := time.Until(t); d > 0 { //nolint:clocklint
+		if d := t.Sub(now); d > 0 {
 			return min(d, maxDelay)
 		}
 	}
@@ -239,13 +242,13 @@ func (c *HTTPConnection) setRequestHeaders(req *http.Request) {
 	c.mu.Unlock()
 }
 
-func sleepCtx(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d) //nolint:clocklint
+func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := c.clock.NewTimer(d)
 	select {
 	case <-ctx.Done():
 		t.Stop()
 		return false
-	case <-t.C:
+	case <-t.C():
 		return true
 	}
 }

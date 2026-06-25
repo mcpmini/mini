@@ -12,7 +12,7 @@ import (
 func TestPurgeExpiredResponses(t *testing.T) {
 	t.Run("returns zero when no responses directory exists", func(t *testing.T) {
 		dir := tempDir(t)
-		removed, freed, err := ops.PurgeExpiredResponses(dir)
+		removed, freed, err := ops.PurgeExpiredResponses(dir, time.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
@@ -32,7 +32,7 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		past := time.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
 
-		removed, freed, err := ops.PurgeExpiredResponses(dir)
+		removed, freed, err := ops.PurgeExpiredResponses(dir, time.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
@@ -54,7 +54,7 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		freshJSON := filepath.Join(respDir, "fresh.json")
 		os.WriteFile(freshJSON, []byte(`{"ok":true}`), 0600)
 
-		removed, _, err := ops.PurgeExpiredResponses(dir)
+		removed, _, err := ops.PurgeExpiredResponses(dir, time.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
@@ -76,7 +76,7 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		past := time.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
 
-		removed, freed, err := ops.PurgeExpiredResponses(dir)
+		removed, freed, err := ops.PurgeExpiredResponses(dir, time.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
@@ -97,7 +97,7 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		past := time.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(rawOnly, past, past)
 
-		removed, _, err := ops.PurgeExpiredResponses(dir)
+		removed, _, err := ops.PurgeExpiredResponses(dir, time.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}

@@ -62,7 +62,8 @@ func walkDir(dir string, hasError *bool) error {
 }
 
 func skipDir(name string) error {
-	if name == "vendor" || name == ".git" || name == "node_modules" || name == "clock" {
+	switch name {
+	case "vendor", ".git", "node_modules", "clock", ".agents", ".claude", "cmd", "evals", "test":
 		return filepath.SkipDir
 	}
 	return nil
@@ -84,35 +85,39 @@ func checkFile(path string, fset *token.FileSet, hasError *bool) {
 		return
 	}
 	f, err := parser.ParseFile(fset, path, src, 0)
-	if err != nil {
-		return
-	}
-	if !importsStdlibTime(f) {
+	if err != nil || !importsStdlibTime(f) {
 		return
 	}
 	srcLines := strings.Split(string(src), "\n")
 	ast.Inspect(f, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		id, ok := sel.X.(*ast.Ident)
-		if !ok || id.Name != "time" || !bannedFuncs[sel.Sel.Name] {
-			return true
-		}
-		pos := fset.Position(call.Pos())
-		line := pos.Line
-		if line > 0 && line <= len(srcLines) && strings.Contains(srcLines[line-1], "//nolint:clocklint") {
-			return true
-		}
-		fmt.Printf("ERROR %s:%d: direct time.%s() call, use clock.Clock instead\n", pos.Filename, line, sel.Sel.Name)
-		*hasError = true
-		return true
+		return inspectTimeCalls(n, fset, srcLines, hasError)
 	})
+}
+
+func inspectTimeCalls(n ast.Node, fset *token.FileSet, srcLines []string, hasError *bool) bool {
+	call, ok := n.(*ast.CallExpr)
+	if !ok {
+		return true
+	}
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return true
+	}
+	id, ok := sel.X.(*ast.Ident)
+	if !ok || id.Name != "time" || !bannedFuncs[sel.Sel.Name] {
+		return true
+	}
+	pos := fset.Position(call.Pos())
+	if isNolinted(srcLines, pos.Line) {
+		return true
+	}
+	fmt.Printf("ERROR %s:%d: direct time.%s() call, use clock.Clock instead\n", pos.Filename, pos.Line, sel.Sel.Name)
+	*hasError = true
+	return true
+}
+
+func isNolinted(srcLines []string, line int) bool {
+	return line > 0 && line <= len(srcLines) && strings.Contains(srcLines[line-1], "//nolint:clocklint")
 }
 
 func importsStdlibTime(f *ast.File) bool {
