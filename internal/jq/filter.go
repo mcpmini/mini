@@ -54,7 +54,11 @@ func writeResult(b *strings.Builder, out any, index int) error {
 	if err != nil {
 		return fmt.Errorf("jq marshal: %w", err)
 	}
-	if b.Len()+len(line) > maxOutputBytes {
+	size := len(line)
+	if index > 0 {
+		size++ // newline separator
+	}
+	if b.Len()+size > maxOutputBytes {
 		return fmt.Errorf("jq: output exceeded %d bytes", maxOutputBytes)
 	}
 	if index > 0 {

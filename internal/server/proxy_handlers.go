@@ -128,7 +128,7 @@ func formatProjectedInline(env *response.Envelope) string {
 		meta["truncated"] = env.Truncated
 	}
 	if len(env.Excluded) > 0 || len(env.Truncated) > 0 {
-		meta["msg"] = "Response filtered, some fields were excluded or truncated. Use read(<file>, <jq filter>) to fetch full values."
+		meta["msg"] = "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values."
 	}
 	if len(env.Passthrough) > 0 {
 		meta["passthrough"] = env.Passthrough
@@ -178,8 +178,8 @@ func parseReadArgs(raw json.RawMessage) (path, filter string, err error) {
 }
 
 func (s *Server) validateStorePath(path string) error {
-	// On macOS, TempDir returns /var/... which is a symlink to /private/var/...,
-	// so both sides must be resolved for the prefix check to work correctly.
+	// EvalSymlinks on both sides prevents a symlink inside the store from escaping
+	// confinement; on macOS, TempDir itself is a symlink (/var/... → /private/var/...).
 	storeDir := resolveSymlinks(s.store.Dir())
 	abs := resolveSymlinks(path)
 	if !strings.HasPrefix(abs, storeDir+string(filepath.Separator)) {
