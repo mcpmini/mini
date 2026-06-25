@@ -129,8 +129,8 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 ```json
 {
   "__mini": {
-    "msg": "Response truncated, use mini's read(<file>, <jq expr>) tool to fetch truncated fields",
-    "file": "<timestamp>.json",
+    "msg": "Response filtered, some fields were excluded or truncated. Use read(<file>, <jq filter>) to fetch full values.",
+    "file": "~/.mini/responses/1750830563_a1b2c3d4.json",
     "excluded": [".secret", ".internal"],
     "truncated": [{"path": ".body", "chars": 420}, {"path": ".items", "items": 73}]
   },
