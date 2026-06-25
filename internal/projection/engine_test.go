@@ -158,6 +158,19 @@ func TestDepthLimit(t *testing.T) {
 	}
 }
 
+func TestExcludedKeys_sortedDeterministic(t *testing.T) {
+	cfg := &config.ProjectionConfig{Exclude: []string{"zebra", "apple", "mango"}}
+	value := map[string]any{"zebra": 1, "apple": 2, "mango": 3, "keep": 4}
+	result := projection.Apply(value, cfg, defaultLimits)
+	want := []string{".apple", ".mango", ".zebra"}
+	for i, k := range result.ExcludedKeys {
+		if k != want[i] {
+			t.Errorf("ExcludedKeys = %v, want %v (sorted)", result.ExcludedKeys, want)
+			break
+		}
+	}
+}
+
 func TestExcludedKeys(t *testing.T) {
 	cfg := &config.ProjectionConfig{IncludeOnly: []string{"status"}}
 	value := map[string]any{
@@ -395,7 +408,7 @@ func TestArrayElementOmissionPath(t *testing.T) {
 		t.Fatalf("expected 2 omissions (one per long element), got %v", result.Truncated)
 	}
 	for i, o := range result.Truncated {
-		want := "[" + string(rune('0'+i)) + "]"
+		want := ".[" + string(rune('0'+i)) + "]"
 		if o.JQPath != want {
 			t.Errorf("truncation[%d].JQPath = %q, want %q", i, o.JQPath, want)
 		}
@@ -432,7 +445,7 @@ func TestElidedPathBracketNotationForNonIdentifierKey(t *testing.T) {
 	for _, o := range result.Truncated {
 		paths[o.JQPath] = true
 	}
-	if !paths[`["body text"]`] {
+	if !paths[`.["body text"]`] {
 		t.Errorf("expected bracket notation for key with space, got paths %v", result.Truncated)
 	}
 	if !paths[".normal"] {

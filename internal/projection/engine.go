@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/jq"
 )
 
 type Truncation struct {
@@ -39,6 +40,7 @@ func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
 	ctx := projCtx{cfg: effective, excluded: &excluded, truncated: &truncated}
 	summary := project(value, ctx)
 	passthrough := extractPassthrough(value, effective.passthrough)
+	slices.Sort(excluded)
 	sortTruncated(truncated)
 	return Result{
 		Summary:      summary,
@@ -73,7 +75,7 @@ func projectMap(m map[string]any, ctx projCtx) map[string]any {
 	out := make(map[string]any)
 	for k, v := range m {
 		if shouldSkipField(k, ctx.cfg, ctx.depth) {
-			*ctx.excluded = append(*ctx.excluded, formatPath(append(slices.Clone(ctx.path), k)))
+			*ctx.excluded = append(*ctx.excluded, jq.FormatPath(append(slices.Clone(ctx.path), k)))
 			continue
 		}
 		out[k] = projectMapValue(v, ctx, k)
@@ -114,7 +116,7 @@ func projectNamedArray(arr []any, ctx projCtx, fieldName string) []any {
 		out[i] = project(v, itemCtx)
 	}
 	if len(arr) < original {
-		*ctx.truncated = append(*ctx.truncated, Truncation{JQPath: formatPath(ctx.path), Items: original - len(arr)})
+		*ctx.truncated = append(*ctx.truncated, Truncation{JQPath: jq.FormatPath(ctx.path), Items: original - len(arr)})
 	}
 	return out
 }
@@ -132,47 +134,15 @@ func projectString(s string, ctx projCtx, fieldName string) string {
 		s = StripMarkup(s)
 	}
 	limit := ctx.cfg.stringLimitFor(fieldName)
-	if limit > 0 && utf8.RuneCountInString(s) > limit {
-		cut := truncateAtBoundary(s, limit)
-		*ctx.truncated = append(*ctx.truncated, Truncation{JQPath: formatPath(ctx.path), Chars: utf8.RuneCountInString(s) - utf8.RuneCountInString(cut)})
-		return cut
+	if limit > 0 {
+		runeCount := utf8.RuneCountInString(s)
+		if runeCount > limit {
+			cut := truncateAtBoundary(s, limit)
+			*ctx.truncated = append(*ctx.truncated, Truncation{JQPath: jq.FormatPath(ctx.path), Chars: runeCount - utf8.RuneCountInString(cut)})
+			return cut
+		}
 	}
 	return s
-}
-
-func formatPath(path []string) string {
-	if len(path) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, seg := range path {
-		if strings.HasPrefix(seg, "[") {
-			b.WriteString(seg)
-		} else if isIdentifierSafe(seg) {
-			b.WriteByte('.')
-			b.WriteString(seg)
-		} else {
-			b.WriteString(`["`)
-			b.WriteString(strings.ReplaceAll(seg, `"`, `\"`))
-			b.WriteString(`"]`)
-		}
-	}
-	return b.String()
-}
-
-func isIdentifierSafe(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i, r := range s {
-		if i == 0 && (r >= '0' && r <= '9') {
-			return false
-		}
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
-			return false
-		}
-	}
-	return true
 }
 
 func isIncluded(key string, includeOnly []string) bool { return slices.Contains(includeOnly, key) }
@@ -180,10 +150,9 @@ func isPassthrough(key string, pt []string) bool       { return slices.Contains(
 
 func isExcluded(key string, exclude []string) bool {
 	for _, k := range exclude {
-		// Support dot-notation "steps[].agent" — check top-level key only.
-		top, _, hasDot := strings.Cut(k, ".")
+		top, _, _ := strings.Cut(k, ".")
 		top = strings.TrimSuffix(top, "[]")
-		if top == key || (!hasDot && k == key) {
+		if top == key {
 			return true
 		}
 	}
