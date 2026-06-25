@@ -141,7 +141,7 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 - `truncated[].chars`: characters (runes) removed from a string field
 - `truncated[].items`: items removed from an array field by array limit
 - When no data is removed, the response is plain JSON with no `__mini` wrapper
-- Raw recovery files written to `~/.mini/responses/<timestamp>.json` when data is lost
+- Raw recovery files written to `~/.mini/responses/<unix_sec>_<hash8>.json` when data is lost
 
 ### Config directory layout
 
