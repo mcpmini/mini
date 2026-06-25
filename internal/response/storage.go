@@ -14,7 +14,7 @@ type Store struct {
 	ttl         time.Duration
 	budgetBytes int64
 	usedBytes   int64
-	clk         clock.Clock
+	clock       clock.Clock
 	mu          sync.Mutex
 	closeOnce   sync.Once
 	files       []storedFile
@@ -33,6 +33,7 @@ type StoreConfig struct {
 	BudgetMB        int
 	CleanupInterval time.Duration
 	Clock           clock.Clock
+	AfterEvict      func() // called after each cleanup run; nil in production
 }
 
 func NewStore(cfg StoreConfig) (*Store, error) {
@@ -47,11 +48,11 @@ func NewStore(cfg StoreConfig) (*Store, error) {
 		dir:         cfg.Dir,
 		ttl:         cfg.TTL,
 		budgetBytes: int64(cfg.BudgetMB) * 1024 * 1024,
-		clk:         clk,
+		clock:       clk,
 		done:        make(chan struct{}),
 	}
 	s.loadExisting()
-	go s.cleanupLoop(cfg.CleanupInterval)
+	go s.cleanupLoop(cfg.CleanupInterval, cfg.AfterEvict)
 	return s, nil
 }
 
@@ -78,4 +79,3 @@ func (s *Store) Stats() (fileCount int, usedBytes int64) {
 }
 
 func (s *Store) Dir() string { return s.dir }
-

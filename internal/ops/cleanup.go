@@ -23,7 +23,7 @@ func PurgeExpiredResponses(configDir string) (removed int, freed int64, err erro
 		}
 		return 0, 0, err
 	}
-	removed, freed = purgeExpired(dir, entries, time.Now().Add(-ttl))
+	removed, freed = purgeExpired(dir, entries, time.Now().Add(-ttl)) //nolint:clocklint
 	return removed, freed, nil
 }
 

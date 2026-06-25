@@ -6,12 +6,15 @@ import (
 	"time"
 )
 
-func (s *Store) cleanupLoop(interval time.Duration) {
+func (s *Store) cleanupLoop(interval time.Duration, afterEvict func()) {
 	for {
-		t := s.clk.NewTimer(interval)
+		t := s.clock.NewTimer(interval)
 		select {
-		case <-t.C():
+		case <-t.Chan():
 			s.evictExpired()
+			if afterEvict != nil {
+				afterEvict()
+			}
 		case <-s.done:
 			t.Stop()
 			return
@@ -21,7 +24,7 @@ func (s *Store) cleanupLoop(interval time.Duration) {
 
 func (s *Store) evictExpired() {
 	s.mu.Lock()
-	kept, toRemove := partitionByExpiry(s.files, s.clk.Now())
+	kept, toRemove := partitionByExpiry(s.files, s.clock.Now())
 	for _, f := range toRemove {
 		s.usedBytes -= f.size
 	}

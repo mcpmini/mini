@@ -8,12 +8,19 @@ import "time"
 type Clock interface {
 	Now() time.Time
 	NewTimer(d time.Duration) Timer
+	NewTicker(d time.Duration) Ticker
 }
 
 // Timer mirrors time.Timer but is replaceable in tests.
 type Timer interface {
 	C() <-chan time.Time
 	Stop() bool
+}
+
+// Ticker mirrors time.Ticker but is replaceable in tests.
+type Ticker interface {
+	C() <-chan time.Time
+	Stop()
 }
 
 // System returns a Clock backed by the system clock.
@@ -28,7 +35,17 @@ func (systemClock) NewTimer(d time.Duration) Timer {
 	return &systemTimer{t}
 }
 
+func (systemClock) NewTicker(d time.Duration) Ticker {
+	t := time.NewTicker(d)
+	return &systemTicker{t}
+}
+
 type systemTimer struct{ t *time.Timer }
 
 func (r *systemTimer) C() <-chan time.Time { return r.t.C }
 func (r *systemTimer) Stop() bool         { return r.t.Stop() }
+
+type systemTicker struct{ t *time.Ticker }
+
+func (r *systemTicker) C() <-chan time.Time { return r.t.C }
+func (r *systemTicker) Stop()              { r.t.Stop() }

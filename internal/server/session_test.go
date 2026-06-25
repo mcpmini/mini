@@ -5,10 +5,12 @@ package server
 import (
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 func TestSessionStore_evictIdle_removesSession(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.System())
 	s := st.getOrCreate("abcdefghijklmnop")
 	s.mu.Lock()
 	s.lastUsed = time.Now().Add(-2 * time.Hour)
@@ -22,7 +24,7 @@ func TestSessionStore_evictIdle_removesSession(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_keepsActiveSession(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.System())
 	st.getOrCreate("abcdefghijklmnop")
 
 	st.evictIdle(time.Now().Add(-time.Hour))
@@ -33,7 +35,7 @@ func TestSessionStore_evictIdle_keepsActiveSession(t *testing.T) {
 }
 
 func TestSessionStore_getOrCreate_returnsSameSession(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.System())
 	s1 := st.getOrCreate("abcdefghijklmnop")
 	s2 := st.getOrCreate("abcdefghijklmnop")
 	if s1 != s2 {
@@ -42,7 +44,7 @@ func TestSessionStore_getOrCreate_returnsSameSession(t *testing.T) {
 }
 
 func TestSessionStore_getOrCreate_separateSessions(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.System())
 	s1 := st.getOrCreate("aaaaaaaaaaaaaaaa")
 	s2 := st.getOrCreate("bbbbbbbbbbbbbbbb")
 	if s1 == s2 {

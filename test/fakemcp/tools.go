@@ -151,7 +151,7 @@ func (r *ToolRegistry) appendCall(tool string) {
 	if r.callLog == "" {
 		return
 	}
-	line := fmt.Sprintf("{\"tool\":%q,\"ts\":%q}\n", tool, time.Now().UTC().Format(time.RFC3339Nano))
+	line := fmt.Sprintf("{\"tool\":%q,\"ts\":%q}\n", tool, time.Now().UTC().Format(time.RFC3339Nano)) //nolint:clocklint
 	f, err := os.OpenFile(r.callLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return

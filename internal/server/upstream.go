@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/transport"
@@ -34,6 +35,7 @@ type upstreamServer struct {
 	lastDefs []transport.ToolDefinition
 	ctx      context.Context
 	cancel   context.CancelFunc
+	clock    clock.Clock
 
 	reconnecting atomic.Bool
 	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
@@ -86,7 +88,7 @@ func (u *upstreamServer) acquireSem() error {
 }
 
 func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
-	now := time.Now()
+	now := u.clock.Now()
 	u.calls.Add(1)
 	u.lastCallAt.Store(&now)
 	raw, err := u.callConn(ctx, params)

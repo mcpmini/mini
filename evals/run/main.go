@@ -266,7 +266,7 @@ func openResultsFile(evalArg string, modes []string) (*os.File, string, error) {
 }
 
 func buildResultsPath(dir, evalArg string, modes []string) string {
-	ts := time.Now().Format("20060102-150405")
+	ts := time.Now().Format("20060102-150405") //nolint:clocklint
 	name := evalArg
 	if len(modes) > 0 {
 		name += "-" + strings.Join(modes, "+")

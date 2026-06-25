@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/registry"
@@ -79,7 +80,7 @@ func (s *Server) installIfNotRemoved(sc config.ServerConfig, conn transport.Conn
 }
 
 func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition) {
-	u := newUpstreamServer(sc, conn)
+	u := newUpstreamServer(sc, conn, s.clock)
 	u.lastDefs = tools
 	old := s.swapUpstream(sc.Name, u)
 	s.registerTools(sc, tools, old)
@@ -91,9 +92,9 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
 
-func newUpstreamServer(sc config.ServerConfig, conn transport.Connection) *upstreamServer {
+func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, c clock.Clock) *upstreamServer {
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel}
+	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: c}
 	if sc.MaxPendingRequests > 0 {
 		u.sem = make(chan struct{}, sc.MaxPendingRequests)
 	}
@@ -130,11 +131,11 @@ func (s *Server) currentAliasesFor(serverName string) map[string]string {
 
 // Must be called in a goroutine; blocks until ctx is canceled.
 func (s *Server) RunSessionEviction(ctx context.Context, maxIdle time.Duration) {
-	ticker := time.NewTicker(maxIdle / 2)
+	ticker := s.clock.NewTicker(maxIdle / 2)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.C():
 			s.sessions.evictIdle(s.clock.Now().Add(-maxIdle))
 		case <-ctx.Done():
 			return

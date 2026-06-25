@@ -58,7 +58,7 @@ func runClaudeCmd(cmd *exec.Cmd, outputDir string) (string, error) {
 	cmd.Stderr = &errBuf
 	done := make(chan error, 1)
 	go func() { done <- cmd.Run() }()
-	timer := time.NewTimer(420 * time.Second)
+	timer := time.NewTimer(420 * time.Second) //nolint:clocklint
 	defer timer.Stop()
 	select {
 	case err := <-done:

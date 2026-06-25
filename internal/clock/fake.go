@@ -12,10 +12,11 @@ import (
 // Use BlockUntilContext before Advance to ensure goroutines have registered
 // their timers — otherwise you race with the goroutine scheduler.
 type Fake struct {
-	mu     sync.Mutex
-	now    time.Time
-	timers []*fakeTimer
-	notify chan struct{} // closed and replaced each time a timer is registered
+	mu      sync.Mutex
+	now     time.Time
+	timers  []*fakeTimer
+	tickers []*fakeTicker
+	notify  chan struct{} // closed and replaced each time a timer or ticker is registered
 }
 
 // NewFake returns a Fake clock starting at t.
@@ -40,10 +41,33 @@ func (f *Fake) NewTimer(d time.Duration) Timer {
 	return ft
 }
 
-// Advance moves the clock forward by d, firing any timers whose deadlines have passed.
+// NewTicker registers a ticker that fires repeatedly as Advance moves the clock past each interval.
+func (f *Fake) NewTicker(d time.Duration) Ticker {
+	f.mu.Lock()
+	ft := &fakeTicker{ch: make(chan time.Time, 1), interval: d, nextFire: f.now.Add(d), clock: f}
+	f.tickers = append(f.tickers, ft)
+	close(f.notify)
+	f.notify = make(chan struct{})
+	f.mu.Unlock()
+	return ft
+}
+
+// Advance moves the clock forward by d, firing any timers and tickers whose deadlines have passed.
 func (f *Fake) Advance(d time.Duration) {
 	f.mu.Lock()
 	f.now = f.now.Add(d)
+	fired := f.partitionTimers()
+	toFire := f.advanceTickers()
+	f.mu.Unlock()
+	for _, t := range fired {
+		t.ch <- t.deadline
+	}
+	for _, item := range toFire {
+		item.ticker.ch <- item.fireTime
+	}
+}
+
+func (f *Fake) partitionTimers() []*fakeTimer {
 	var fired, remaining []*fakeTimer
 	for _, t := range f.timers {
 		if !f.now.Before(t.deadline) {
@@ -53,18 +77,34 @@ func (f *Fake) Advance(d time.Duration) {
 		}
 	}
 	f.timers = remaining
-	f.mu.Unlock()
-	for _, t := range fired {
-		t.ch <- t.deadline
-	}
+	return fired
 }
 
-// BlockUntilContext blocks until at least n timers are pending or ctx is canceled.
+type tickerFire struct {
+	ticker   *fakeTicker
+	fireTime time.Time
+}
+
+func (f *Fake) advanceTickers() []tickerFire {
+	var toFire []tickerFire
+	for _, tk := range f.tickers {
+		if tk.stopped || f.now.Before(tk.nextFire) {
+			continue
+		}
+		toFire = append(toFire, tickerFire{ticker: tk, fireTime: tk.nextFire})
+		for !f.now.Before(tk.nextFire) {
+			tk.nextFire = tk.nextFire.Add(tk.interval)
+		}
+	}
+	return toFire
+}
+
+// BlockUntilContext blocks until at least n timers or tickers are pending or ctx is canceled.
 // Call before Advance to guarantee goroutines have registered their timers.
 func (f *Fake) BlockUntilContext(ctx context.Context, n int) error {
 	for {
 		f.mu.Lock()
-		if len(f.timers) >= n {
+		if len(f.timers)+len(f.tickers) >= n {
 			f.mu.Unlock()
 			return nil
 		}
@@ -96,4 +136,26 @@ func (t *fakeTimer) Stop() bool {
 		}
 	}
 	return false
+}
+
+type fakeTicker struct {
+	ch       chan time.Time
+	interval time.Duration
+	nextFire time.Time
+	stopped  bool
+	clock    *Fake
+}
+
+func (t *fakeTicker) C() <-chan time.Time { return t.ch }
+
+func (t *fakeTicker) Stop() {
+	t.clock.mu.Lock()
+	defer t.clock.mu.Unlock()
+	t.stopped = true
+	for i, ft := range t.clock.tickers {
+		if ft == t {
+			t.clock.tickers = append(t.clock.tickers[:i], t.clock.tickers[i+1:]...)
+			return
+		}
+	}
 }

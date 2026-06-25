@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
@@ -21,6 +21,7 @@ type InvokeParams struct {
 	ProjCfg  *config.ProjectionConfig
 	ProjDefs *projection.Defaults
 	Builder  *response.Builder
+	Clock    clock.Clock
 }
 
 type InvokeResult struct {
@@ -29,7 +30,11 @@ type InvokeResult struct {
 }
 
 func Invoke(ctx context.Context, p InvokeParams) (*InvokeResult, error) {
-	raw, latencyMs, err := InvokeRaw(ctx, p.Conn, p.Tool, p.Params)
+	c := p.Clock
+	if c == nil {
+		c = clock.System()
+	}
+	raw, latencyMs, err := InvokeRaw(ctx, c, p.Conn, p.Tool, p.Params)
 	if err != nil {
 		return nil, err
 	}
@@ -52,14 +57,14 @@ func buildEnvelopeFromParams(raw json.RawMessage, p InvokeParams) (*response.Env
 	return env, err
 }
 
-func InvokeRaw(ctx context.Context, conn transport.Connection, tool string, params map[string]any) (json.RawMessage, int64, error) {
+func InvokeRaw(ctx context.Context, c clock.Clock, conn transport.Connection, tool string, params map[string]any) (json.RawMessage, int64, error) {
 	args, err := json.Marshal(transport.ToolCallParams{Name: tool, Arguments: params})
 	if err != nil {
 		return nil, 0, fmt.Errorf("marshal params: %w", err)
 	}
-	start := time.Now()
+	start := c.Now()
 	raw, err := conn.Call(ctx, "tools/call", args)
-	latency := time.Since(start).Milliseconds()
+	latency := c.Now().Sub(start).Milliseconds()
 	if err != nil {
 		return nil, latency, err
 	}

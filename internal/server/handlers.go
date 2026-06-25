@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
@@ -211,9 +210,9 @@ type dispatchParams struct {
 func (s *Server) dispatchRaw(ctx context.Context, p dispatchParams) (json.RawMessage, int64, error) {
 	ctx, cancel := applyToolTimeout(ctx, p.Upstream.cfg.ToolTimeout)
 	defer cancel()
-	start := time.Now()
+	start := s.clock.Now()
 	raw, err := s.dispatchRawCall(ctx, p)
-	return raw, time.Since(start).Milliseconds(), err
+	return raw, s.clock.Now().Sub(start).Milliseconds(), err
 }
 
 func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.RawMessage, error) {
@@ -345,14 +344,14 @@ type envelopeParams struct {
 
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
-	projStart := time.Now()
+	projStart := s.clock.Now()
 	env, stats, err := s.buildProjectedEnvelope(p.Entry.Server, p.Tool, p.Raw, projCfg)
 	if err != nil {
 		return nil, err
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
-	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", time.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
+	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", s.clock.Now().Sub(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
 	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg), nil
 }
 

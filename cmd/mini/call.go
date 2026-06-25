@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/projection"
@@ -146,7 +147,7 @@ func mustDialCall(ctx context.Context, configDir string, cc callContext) transpo
 }
 
 func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) {
-	raw, _, err := invoke.InvokeRaw(ctx, conn, cc.toolName, cc.params)
+	raw, _, err := invoke.InvokeRaw(ctx, clock.System(), conn, cc.toolName, cc.params)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: %v\n", err)
 		os.Exit(1)

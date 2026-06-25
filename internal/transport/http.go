@@ -215,7 +215,7 @@ func parseRetryAfter(h string) time.Duration {
 		return min(time.Duration(secs)*time.Second, maxDelay)
 	}
 	if t, err := http.ParseTime(h); err == nil {
-		if d := time.Until(t); d > 0 {
+		if d := time.Until(t); d > 0 { //nolint:clocklint
 			return min(d, maxDelay)
 		}
 	}
@@ -240,7 +240,7 @@ func (c *HTTPConnection) setRequestHeaders(req *http.Request) {
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {
-	t := time.NewTimer(d)
+	t := time.NewTimer(d) //nolint:clocklint
 	select {
 	case <-ctx.Done():
 		t.Stop()

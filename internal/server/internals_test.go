@@ -11,19 +11,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestSession_Conn_nilWhenEmpty(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.System())
 	if conn := s.Conn("anyserver"); conn != nil {
 		t.Errorf("expected nil for empty session, got %v", conn)
 	}
 }
 
 func TestSession_GetOrSetConn_storesFirst(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.System())
 	fake := &transport.FakeConnection{}
 	got := s.GetOrSetConn("srv", fake)
 	if got != fake {
@@ -35,7 +36,7 @@ func TestSession_GetOrSetConn_storesFirst(t *testing.T) {
 }
 
 func TestSession_GetOrSetConn_returnsExistingOnRace(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.System())
 	first := &transport.FakeConnection{}
 	second := &transport.FakeConnection{}
 
@@ -51,7 +52,7 @@ func TestSession_GetOrSetConn_returnsExistingOnRace(t *testing.T) {
 }
 
 func TestSession_idleDuration_trueWhenOld(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.System())
 	future := time.Now().Add(time.Hour)
 	if _, ok := s.idleDuration(future); !ok {
 		t.Error("expected idleDuration to return true for future deadline")
@@ -59,7 +60,7 @@ func TestSession_idleDuration_trueWhenOld(t *testing.T) {
 }
 
 func TestSession_idleDuration_falseAfterTouch(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.System())
 	s.touch()
 	past := time.Now().Add(-time.Hour)
 	if _, ok := s.idleDuration(past); ok {
@@ -68,7 +69,7 @@ func TestSession_idleDuration_falseAfterTouch(t *testing.T) {
 }
 
 func TestSession_Close_closesConns(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.System())
 	fake := &transport.FakeConnection{}
 	s.GetOrSetConn("srv", fake)
 	s.Close()
@@ -78,7 +79,7 @@ func TestSession_Close_closesConns(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_removesOldSessions(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.System())
 	s := st.getOrCreate("old")
 	// Force last-used to the past so it's considered idle.
 	s.mu.Lock()
@@ -95,7 +96,7 @@ func TestSessionStore_evictIdle_removesOldSessions(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_closesEvictedConns(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.System())
 	s := st.getOrCreate("stale")
 	fake := &transport.FakeConnection{}
 	s.GetOrSetConn("srv", fake)
@@ -111,7 +112,7 @@ func TestSessionStore_evictIdle_closesEvictedConns(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.System())
 	s := st.getOrCreate("stdio")
 	ch := s.enableNotifications()
 	defer func() {
@@ -130,7 +131,7 @@ func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_unblocksPendingWaiters(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.System())
 	s := st.getOrCreate("stale")
 	s.mu.Lock()
 	s.lastUsed = time.Now().Add(-2 * time.Hour)

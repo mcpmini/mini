@@ -9,4 +9,5 @@ golangci-lint run
 go run ./tools/funclen .
 go run ./tools/params .
 go run ./tools/returns .
+go run ./tools/clocklint .
 go test -race -tags test ./...

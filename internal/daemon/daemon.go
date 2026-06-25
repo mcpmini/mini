@@ -81,8 +81,8 @@ func spawnDaemon(exe, configDir string) error {
 }
 
 func waitForDaemon(configDir string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	deadline := time.Now().Add(timeout) //nolint:clocklint
+	for time.Now().Before(deadline) {   //nolint:clocklint
 		if Running(configDir) {
 			return nil
 		}
