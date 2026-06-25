@@ -91,11 +91,7 @@ func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceF
 }
 
 func listenOnCallbackPort(ctx context.Context, ac *config.AuthConfig) (net.Listener, error) {
-	port := auth.LoopbackCallbackPort
-	if ac != nil && ac.CallbackPort != 0 {
-		port = ac.CallbackPort
-	}
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	addr := fmt.Sprintf("localhost:%d", auth.ResolvedCallbackPort(ac))
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen for oauth callback: %w", err)

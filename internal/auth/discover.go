@@ -45,8 +45,7 @@ func Discover(ctx context.Context, serverURL string) (*ServerMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	// PRM/WWW-Authenticate scopes take priority per MCP spec scope selection strategy.
-	// AS metadata scopes_supported is a secondary fallback for compatibility.
+	// WWW-Authenticate scope takes priority over PRM scopes_supported per MCP spec §Scope Selection Strategy.
 	if len(scopeHint) > 0 {
 		meta.Scopes = scopeHint
 	}
@@ -89,17 +88,19 @@ func asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (string, []
 
 // parseWWWAuthParam extracts a quoted value for the given parameter name from a WWW-Authenticate header.
 func parseWWWAuthParam(header, param string) string {
-	prefix := param + `="`
-	i := strings.Index(header, prefix)
-	if i == -1 {
-		return ""
+	// Skip the scheme token (e.g. "Bearer ") before looking at key=value pairs.
+	rest := header
+	if i := strings.IndexByte(header, ' '); i >= 0 {
+		rest = header[i+1:]
 	}
-	rest := header[i+len(prefix):]
-	j := strings.Index(rest, `"`)
-	if j == -1 {
-		return ""
+	for _, field := range strings.Split(rest, ",") {
+		field = strings.TrimSpace(field)
+		val, ok := strings.CutPrefix(field, param+`="`)
+		if ok {
+			return strings.TrimSuffix(val, `"`)
+		}
 	}
-	return rest[:j]
+	return ""
 }
 
 func asURLFromPRMProbe(ctx context.Context, serverURL string) (string, []string, error) {
@@ -131,9 +132,6 @@ func probePRMCandidates(ctx context.Context, base, path string) (string, []strin
 	return base, nil, nil // fall back to treating the MCP server host as the AS
 }
 
-// TODO: add scopes_supported field and extract scope from WWW-Authenticate per MCP spec
-// §"Scope Selection Strategy" — clients SHOULD use advertised scopes in the auth request.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx
 type protectedResourceMeta struct {
 	AuthorizationServers []string `json:"authorization_servers"`
 	ScopesSupported      []string `json:"scopes_supported"`
@@ -230,8 +228,9 @@ func decodeASMeta(body io.Reader, metaURL string) (*ServerMeta, error) {
 	if err := json.NewDecoder(io.LimitReader(body, maxAuthBodyBytes)).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("oauth discovery: decode metadata from %s: %w", metaURL, err)
 	}
-	// MCP spec MUST: if code_challenge_methods_supported is absent or doesn't include S256,
-	// refuse to proceed. Applies only to real AS metadata, not fallback.
+	// MCP spec (2025-11-25) MUST: refuse if code_challenge_methods_supported is absent or lacks S256.
+	// This check applies only to fetched AS metadata; the fallback path (no discoverable metadata)
+	// proceeds without verification — mini always sends S256, so the AS will reject if unsupported.
 	if !pkceS256Supported(raw.PKCEMethods) {
 		return nil, fmt.Errorf("oauth discovery: authorization server %s does not support PKCE S256 (code_challenge_methods_supported=%v)", metaURL, raw.PKCEMethods)
 	}
@@ -240,7 +239,6 @@ func decodeASMeta(body io.Reader, metaURL string) (*ServerMeta, error) {
 		TokenURL:        raw.TokenURL,
 		RegistrationURL: raw.RegistrationURL,
 		CIMDSupported:   raw.CIMDSupported,
-		Scopes:          raw.ScopesSupported, // secondary fallback; overridden by PRM scopes in Discover()
 	}, nil
 }
 

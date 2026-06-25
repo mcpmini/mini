@@ -17,7 +17,9 @@ func WriteServer(configDir string, sc config.ServerConfig) error {
 	if !config.ValidServerName.MatchString(sc.Name) {
 		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", sc.Name)
 	}
-	applyBundledAuth(&sc)
+	if err := applyBundledAuth(&sc); err != nil {
+		return err
+	}
 	if err := writeServerYAML(configDir, sc); err != nil {
 		return err
 	}
@@ -26,19 +28,20 @@ func WriteServer(configDir string, sc config.ServerConfig) error {
 	return nil
 }
 
-func applyBundledAuth(sc *config.ServerConfig) {
+func applyBundledAuth(sc *config.ServerConfig) error {
 	if sc.Auth != nil {
-		return
+		return nil
 	}
 	data := defaults.AuthFor(sc.Name)
 	if data == nil {
-		return
+		return nil
 	}
 	var ac config.AuthConfig
 	if err := yaml.Unmarshal(data, &ac); err != nil {
-		return
+		return fmt.Errorf("parse bundled auth for %s: %w", sc.Name, err)
 	}
 	sc.Auth = &ac
+	return nil
 }
 
 func writeServerYAML(configDir string, sc config.ServerConfig) error {

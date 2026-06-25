@@ -118,7 +118,7 @@ func dynamicRegister(ctx context.Context, p clientRegParams) error {
 	if err := validateEndpointURL(regURL, "registration_endpoint"); err != nil {
 		return err
 	}
-	clientID, err := Register(ctx, regURL)
+	clientID, err := Register(ctx, regURL, ResolvedCallbackURI(a))
 	if err != nil {
 		return err
 	}

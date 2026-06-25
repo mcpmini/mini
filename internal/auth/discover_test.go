@@ -291,6 +291,24 @@ func TestDiscover_scopesFromPRM(t *testing.T) {
 	}
 }
 
+func TestDiscover_noScopesWhenASMetaOnly(t *testing.T) {
+	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"scopes_supported":                []string{"openid", "profile", "email"},
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	defer srv.Close()
+
+	meta, err := auth.Discover(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta.Scopes) != 0 {
+		t.Errorf("Scopes: got %v, want empty (AS metadata scopes_supported must not be used for scope selection)", meta.Scopes)
+	}
+}
+
 func TestDiscover_scopeFromWWWAuthenticateBeforesPRM(t *testing.T) {
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":          "https://as.example.com/authorize",

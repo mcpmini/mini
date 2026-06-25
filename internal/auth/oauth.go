@@ -56,11 +56,7 @@ const ClientMetadataURL = "https://mcpmini.github.io/mini/oauth/client-metadata.
 // the user completes the flow (or ctx is canceled).
 // Use StartPKCEFlowOnListener when you need to control listener lifetime.
 func StartPKCEFlow(ctx context.Context, ac *config.AuthConfig) (authURL string, done <-chan PKCEResult, err error) {
-	port := ac.CallbackPort
-	if port == 0 {
-		port = LoopbackCallbackPort
-	}
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	addr := fmt.Sprintf("localhost:%d", ResolvedCallbackPort(ac))
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return "", nil, fmt.Errorf("listen for oauth callback on %s: %w", addr, err)
@@ -77,13 +73,13 @@ func StartPKCEFlowOnListener(ctx context.Context, ac *config.AuthConfig, listene
 	verifier := oauth2.GenerateVerifier()
 	state := oauth2.GenerateVerifier()
 
-	codeCh := make(chan string, 1)
-	srv := serveCallbackListener(listener, callbackHandler(state, codeCh))
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
 		return "", nil, fmt.Errorf("oauth callback listener has unexpected address type %T", listener.Addr())
 	}
 	redirectURI := fmt.Sprintf("http://localhost:%d%s", tcpAddr.Port, LoopbackCallbackPath)
+	codeCh := make(chan string, 1)
+	srv := serveCallbackListener(listener, callbackHandler(state, codeCh))
 	cfg.RedirectURL = redirectURI
 	url := buildAuthURL(cfg, ac, state, verifier)
 

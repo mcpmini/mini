@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 type registrationRequest struct {
@@ -24,13 +26,25 @@ const LoopbackCallbackPath = "/callback"
 // redirect URIs — DCR must register the same URI the PKCE flow sends. 6464 = MINI.
 const LoopbackCallbackPort = 6464
 
-const loopbackCallbackURI = "http://localhost:6464" + LoopbackCallbackPath
+// ResolvedCallbackPort returns the configured callback port, or LoopbackCallbackPort if not set.
+func ResolvedCallbackPort(ac *config.AuthConfig) int {
+	if ac != nil && ac.CallbackPort != 0 {
+		return ac.CallbackPort
+	}
+	return LoopbackCallbackPort
+}
+
+// ResolvedCallbackURI returns the loopback redirect URI for the given AuthConfig.
+// Used by both DCR registration and the PKCE flow so they always register and send the same URI.
+func ResolvedCallbackURI(ac *config.AuthConfig) string {
+	return fmt.Sprintf("http://localhost:%d%s", ResolvedCallbackPort(ac), LoopbackCallbackPath)
+}
 
 // Register performs RFC 7591 dynamic client registration and returns the client_id.
-func Register(ctx context.Context, registrationURL string) (string, error) {
+func Register(ctx context.Context, registrationURL, callbackURI string) (string, error) {
 	body, _ := json.Marshal(registrationRequest{
 		ClientName:              "mini",
-		RedirectURIs:            []string{loopbackCallbackURI},
+		RedirectURIs:            []string{callbackURI},
 		GrantTypes:              []string{"authorization_code", "refresh_token"},
 		ResponseTypes:           []string{"code"},
 		TokenEndpointAuthMethod: "none",
