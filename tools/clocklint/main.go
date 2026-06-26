@@ -15,6 +15,8 @@ import (
 	"strings"
 )
 
+// Sleep is intentionally excluded: it's a real delay, not a clock read.
+// Use clock.NewTimer + select for fakeable sleeps in library code.
 var bannedFuncs = map[string]bool{
 	"Now":       true,
 	"Since":     true,
@@ -85,16 +87,20 @@ func checkFile(path string, fset *token.FileSet, hasError *bool) {
 		return
 	}
 	f, err := parser.ParseFile(fset, path, src, 0)
-	if err != nil || !importsStdlibTime(f) {
+	if err != nil {
+		return
+	}
+	timeIdents := timeImportIdents(f)
+	if len(timeIdents) == 0 {
 		return
 	}
 	srcLines := strings.Split(string(src), "\n")
 	ast.Inspect(f, func(n ast.Node) bool {
-		return inspectTimeCalls(n, fset, srcLines, hasError)
+		return inspectTimeCalls(n, fset, srcLines, timeIdents, hasError)
 	})
 }
 
-func inspectTimeCalls(n ast.Node, fset *token.FileSet, srcLines []string, hasError *bool) bool {
+func inspectTimeCalls(n ast.Node, fset *token.FileSet, srcLines []string, timeIdents map[string]bool, hasError *bool) bool {
 	call, ok := n.(*ast.CallExpr)
 	if !ok {
 		return true
@@ -104,7 +110,7 @@ func inspectTimeCalls(n ast.Node, fset *token.FileSet, srcLines []string, hasErr
 		return true
 	}
 	id, ok := sel.X.(*ast.Ident)
-	if !ok || id.Name != "time" || !bannedFuncs[sel.Sel.Name] {
+	if !ok || !timeIdents[id.Name] || !bannedFuncs[sel.Sel.Name] {
 		return true
 	}
 	pos := fset.Position(call.Pos())
@@ -120,12 +126,17 @@ func isNolinted(srcLines []string, line int) bool {
 	return line > 0 && line <= len(srcLines) && strings.Contains(srcLines[line-1], "//nolint:clocklint")
 }
 
-func importsStdlibTime(f *ast.File) bool {
+func timeImportIdents(f *ast.File) map[string]bool {
+	out := make(map[string]bool)
 	for _, imp := range f.Imports {
-		path := strings.Trim(imp.Path.Value, `"`)
-		if path == "time" {
-			return true
+		if strings.Trim(imp.Path.Value, `"`) != "time" {
+			continue
+		}
+		if imp.Name != nil {
+			out[imp.Name.Name] = true
+		} else {
+			out["time"] = true
 		}
 	}
-	return false
+	return out
 }

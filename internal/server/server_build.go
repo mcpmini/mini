@@ -26,7 +26,7 @@ func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger,
 	for _, o := range opts {
 		o(s)
 	}
-	s.sessions.clock = s.clock
+	s.sessions = newSessionStore(s.clock)
 	return s
 }
 
@@ -42,7 +42,6 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		store:        store,
 		projDefaults: projection.DefaultsFrom(cfg),
 		toolSchemas:  compactToolSchemas(),
-		sessions:     newSessionStore(clock.System()),
 		authFlows:    make(map[string]*authFlowState),
 		logger:       logger,
 		clock:        clock.System(),

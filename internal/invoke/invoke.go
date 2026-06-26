@@ -30,11 +30,7 @@ type InvokeResult struct {
 }
 
 func Invoke(ctx context.Context, p InvokeParams) (*InvokeResult, error) {
-	c := p.Clock
-	if c == nil {
-		c = clock.System()
-	}
-	raw, latencyMs, err := InvokeRaw(ctx, c, p.Conn, p.Tool, p.Params)
+	raw, latencyMs, err := InvokeRaw(ctx, p.Clock, p.Conn, p.Tool, p.Params)
 	if err != nil {
 		return nil, err
 	}

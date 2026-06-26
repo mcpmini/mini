@@ -179,6 +179,7 @@ func buildInvokeParams(conn transport.Connection, cc callContext, store *respons
 		ProjCfg:  resolveCallProjection(cc.sc, cc.toolName),
 		ProjDefs: projection.DefaultsFrom(cc.cfg),
 		Builder:  response.NewBuilder(store),
+		Clock:    clock.System(),
 	}
 }
 

@@ -67,7 +67,10 @@ func (f *Fake) Advance(d time.Duration) {
 		t.ch <- t.deadline
 	}
 	for _, item := range toFire {
-		item.ticker.ch <- item.fireTime
+		select {
+		case item.ticker.ch <- item.fireTime:
+		default:
+		}
 	}
 }
 

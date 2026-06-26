@@ -256,6 +256,7 @@ func TestInvoke_HappyPath(t *testing.T) {
 		ProjCfg:  nil,
 		ProjDefs: noopDefaults(),
 		Builder:  noopBuilder(t),
+		Clock:    clock.System(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -272,6 +273,7 @@ func TestInvoke_ToolError(t *testing.T) {
 		Tool:     "do_thing",
 		ProjDefs: noopDefaults(),
 		Builder:  noopBuilder(t),
+		Clock:    clock.System(),
 	})
 	if err == nil || !contains(err.Error(), "bad input") {
 		t.Errorf("expected tool error, got %v", err)
