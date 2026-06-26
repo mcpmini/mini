@@ -145,6 +145,54 @@ func TestStorage_unprojectedLargeResponseInlines(t *testing.T) {
 	}
 }
 
+func projectedProxyClient(t *testing.T) (*mcpClient, string) {
+	t.Helper()
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{
+		"get_item": `{"id":1,"secret":"hidden","body":"full text"}`,
+	}))
+	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
+	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
+	client := startProxyServer(t, cfg)
+	raw := client.mustCall("tools/call", map[string]any{
+		"name":      "svc__get_item",
+		"arguments": map[string]any{},
+	})
+	text, _ := parseToolCallResult(raw)
+	return client, text
+}
+
+func TestStorage_readByFullPath(t *testing.T) {
+	client, text := projectedProxyClient(t)
+	filePath := miniFile(t, text)
+	got := client.callRead(filePath, "")
+	if !json.Valid([]byte(got)) {
+		t.Errorf("read should return valid JSON, got: %s", got)
+	}
+	if !strings.Contains(got, `"secret"`) {
+		t.Errorf("raw file should contain excluded fields, got: %s", got)
+	}
+}
+
+func TestStorage_readByBareFilename(t *testing.T) {
+	client, text := projectedProxyClient(t)
+	filePath := miniFile(t, text)
+	byFullPath := client.callRead(filePath, "")
+	byFilename := client.callRead(filepath.Base(filePath), "")
+	if byFilename != byFullPath {
+		t.Errorf("bare filename and full path should return same content\nfull: %s\nbare: %s", byFullPath, byFilename)
+	}
+}
+
+func TestStorage_readWithJQFilter(t *testing.T) {
+	client, text := projectedProxyClient(t)
+	filePath := miniFile(t, text)
+	got := client.callRead(filePath, ".secret")
+	if got != `"hidden"` {
+		t.Errorf("filter .secret should return \"hidden\", got: %s", got)
+	}
+}
+
 func TestStorage_nonJSONResponseFromUpstreamPassedThrough(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_status": `plain text response`}))

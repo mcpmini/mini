@@ -481,6 +481,35 @@ func (c *mcpClient) execEnvelope(server, tool string, args map[string]any) envel
 	return e
 }
 
+func miniFile(t *testing.T, text string) string {
+	t.Helper()
+	var env struct {
+		Mini struct {
+			File string `json:"file"`
+		} `json:"__mini"`
+	}
+	if err := json.Unmarshal([]byte(text), &env); err != nil {
+		t.Fatalf("parse __mini response: %v\ntext: %s", err, text)
+	}
+	if env.Mini.File == "" {
+		t.Fatalf("expected __mini.file in response, got: %s", text)
+	}
+	return env.Mini.File
+}
+
+func (c *mcpClient) callRead(path, filter string) string {
+	c.t.Helper()
+	args := map[string]any{"path": path}
+	if filter != "" {
+		args["filter"] = filter
+	}
+	raw := c.mustCall("tools/call", map[string]any{
+		"name":      "read",
+		"arguments": args,
+	})
+	return toolCallText(c.t, raw)
+}
+
 func (c *mcpClient) execProtectedTool(server, tool string, args map[string]any) string {
 	c.t.Helper()
 	if args == nil {
