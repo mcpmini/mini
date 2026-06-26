@@ -107,7 +107,7 @@ func miniReadSchema() map[string]any {
 		"name":        "read",
 		"description": "Read a raw upstream response file written by mini. Pass the full path or just the filename from __mini.file. Use filter to run a jq expression and extract specific fields instead of reading the full file.",
 		"inputSchema": schema(map[string]any{
-			"path":   prop("string", "Full path or filename (e.g. 1750466675_a3f7b2.json) from __mini.file"),
+			"path":   prop("string", "Full path or filename (e.g. 1750830563123.json) from __mini.file"),
 			"filter": prop("string", "Optional jq filter (e.g. .title, .[0].body, .items[0].body, .items[] | .title)"),
 		}),
 	}
