@@ -35,7 +35,8 @@ func TestOpenBrowser_urlPassedAsArg(t *testing.T) {
 		t.Fatalf("OpenBrowser: %v", err)
 	}
 
-	for range 200 {
+	const attempts = 200 // 200 × 10ms = 2s max for subprocess to write output
+	for range attempts {
 		if data, err := os.ReadFile(outFile); err == nil {
 			if string(data) != url {
 				t.Errorf("captured URL = %q, want %q", string(data), url)
