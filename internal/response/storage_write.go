@@ -15,7 +15,7 @@ func (s *Store) WriteRaw(raw []byte) (string, error) {
 
 func (s *Store) writeBytes(b []byte) (string, error) {
 	base := s.newFileBase()
-	path, err := s.openUnique(base, b)
+	path, err := s.createUniqueFile(base, b)
 	if err != nil {
 		return "", err
 	}
@@ -48,7 +48,7 @@ func (s *Store) newFileBase() string {
 	return fmt.Sprintf("%d", s.clk.Now().UnixMilli())
 }
 
-func (s *Store) openUnique(base string, b []byte) (string, error) {
+func (s *Store) createUniqueFile(base string, b []byte) (string, error) {
 	const maxAttempts = 5
 	for i := range maxAttempts {
 		name := base
@@ -67,6 +67,8 @@ func (s *Store) openUnique(base string, b []byte) (string, error) {
 }
 
 func writeExclusive(path string, b []byte) error {
+	// O_CREATE|O_EXCL together: fails with EEXIST if the file already exists,
+	// so two concurrent callers on the same path can't both succeed.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err
