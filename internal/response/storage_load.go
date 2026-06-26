@@ -56,8 +56,5 @@ func parseTimestamp(name string) (time.Time, bool) {
 	if err != nil || n <= 0 {
 		return time.Time{}, false
 	}
-	if n > 1e11 { // milliseconds (unix ms in 2026 ≈ 1.75e12)
-		return time.UnixMilli(n), true
-	}
-	return time.Unix(n, 0), true
+	return time.UnixMilli(n), true
 }

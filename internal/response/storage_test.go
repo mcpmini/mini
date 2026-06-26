@@ -209,9 +209,8 @@ func TestParseTimestamp_validName(t *testing.T) {
 		name     string
 		wantYear int
 	}{
-		{"1750466675123.json", 2025},           // ms, no suffix
-		{"1750466675123_a3b4c5d6.json", 2025},  // ms, collision suffix
-		{"1750466675_c0ffee00.json", 2025},      // old seconds format (backward compat)
+		{"1750466675123.json", 2025},
+		{"1750466675123_a3b4c5d6.json", 2025},
 	}
 	for _, tc := range cases {
 		ts, ok := parseTimestamp(tc.name)
