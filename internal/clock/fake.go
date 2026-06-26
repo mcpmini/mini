@@ -42,10 +42,15 @@ func (f *Fake) Until(t time.Time) time.Duration        { return t.Sub(f.Now()) }
 func (f *Fake) After(d time.Duration) <-chan time.Time { return f.NewTimer(d).Chan() }
 
 // NewTimer registers a timer that fires when Advance moves the clock past its deadline.
+// A zero or negative duration fires immediately, matching time.NewTimer behavior.
 func (f *Fake) NewTimer(d time.Duration) Timer {
 	f.mu.Lock()
 	ft := &fakeTimer{ch: make(chan time.Time, 1), deadline: f.now.Add(d), clock: f}
-	f.timers = append(f.timers, ft)
+	if d <= 0 {
+		ft.ch <- f.now
+	} else {
+		f.timers = append(f.timers, ft)
+	}
 	close(f.notify)
 	f.notify = make(chan struct{})
 	f.mu.Unlock()

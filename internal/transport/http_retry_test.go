@@ -33,8 +33,7 @@ func newRateLimitedServer(t *testing.T, failUntilCall int32, calls *atomic.Int32
 func TestRetry_429WithRetryAfter_retriesAndSucceeds(t *testing.T) {
 	var calls atomic.Int32
 	srv := newRateLimitedServer(t, 3, &calls)
-	// clock.System() required: retry timers must fire on real wall clock (fake clock has no Advance caller).
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
 	result, err := conn.Call(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("expected success after retries, got: %v", err)
@@ -57,8 +56,7 @@ func TestRetry_429_exhaustsMaxRetries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// clock.System() required: retry timers must fire on real wall clock (fake clock has no Advance caller).
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
@@ -85,8 +83,7 @@ func TestRetry_503WithRetryAfter_retries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// clock.System() required: retry timers must fire on real wall clock (fake clock has no Advance caller).
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("expected success after 503 retry, got: %v", err)
