@@ -59,6 +59,9 @@ func (f *Fake) NewTimer(d time.Duration) Timer {
 
 // NewTicker registers a ticker that fires repeatedly as Advance moves the clock past each interval.
 func (f *Fake) NewTicker(d time.Duration) Ticker {
+	if d <= 0 {
+		panic("non-positive interval for NewTicker")
+	}
 	f.mu.Lock()
 	ft := &fakeTicker{ch: make(chan time.Time, 1), interval: d, nextFire: f.now.Add(d), clock: f}
 	f.tickers = append(f.tickers, ft)

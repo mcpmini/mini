@@ -37,6 +37,9 @@ type StoreConfig struct {
 }
 
 func NewStore(cfg StoreConfig) (*Store, error) {
+	if cfg.Clock == nil {
+		return nil, fmt.Errorf("StoreConfig.Clock is required")
+	}
 	if err := secureDir(cfg.Dir); err != nil {
 		return nil, err
 	}

@@ -54,6 +54,9 @@ type HTTPConnectionConfig struct {
 }
 
 func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
+	if cfg.Clock == nil {
+		return nil, fmt.Errorf("HTTPConnectionConfig.Clock is required")
+	}
 	timeout := defaultHTTPClientTimeout
 	if cfg.ClientTimeout > 0 {
 		timeout = cfg.ClientTimeout
