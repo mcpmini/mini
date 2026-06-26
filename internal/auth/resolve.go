@@ -94,6 +94,7 @@ type clientRegParams struct {
 
 func resolveClientID(ctx context.Context, p clientRegParams) error {
 	// Cached registration takes priority over CIMD per MCP spec §Client Registration Approaches.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L204-L208
 	// Servers that advertise CIMD but reject arbitrary metadata URLs (e.g. Linear) rely on this.
 	found, err := applyExistingClientReg(p.ConfigDir, p.ServerName, p.AuthConfig)
 	if err != nil || found {
