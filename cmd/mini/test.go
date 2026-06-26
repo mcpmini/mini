@@ -67,11 +67,11 @@ func checkUpstreams(ctx context.Context, srv *server.Server, servers []config.Se
 }
 
 func probeUpstream(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {
-	clk := clock.System()
+	appClock := clock.System()
 	tctx, cancel := context.WithTimeout(ctx, timeout)
-	start := clk.Now()
+	start := appClock.Now()
 	err := srv.AddUpstream(tctx, sc)
-	elapsed := clk.Since(start)
+	elapsed := appClock.Since(start)
 	cancel()
 	r := upstreamResult{name: sc.Name, transport: sc.Transport, elapsed: elapsed, err: err}
 	if err == nil {

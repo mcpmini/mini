@@ -170,14 +170,14 @@ func tsFilename(at time.Time) string {
 }
 
 func TestLoadExistingSkipsExpired(t *testing.T) {
+	fakeClock := clock.NewFake()
 	dir := t.TempDir()
-	expired := tsFilename(time.Now().Add(-2 * time.Hour))
+	expired := tsFilename(fakeClock.Now().Add(-2 * time.Hour))
 	os.WriteFile(filepath.Join(dir, expired), []byte(`{"old":true}`), 0600)
-	fresh := tsFilename(time.Now())
+	fresh := tsFilename(fakeClock.Now())
 	os.WriteFile(filepath.Join(dir, fresh), []byte(`{"new":true}`), 0600)
 
-	// clock.System() required: file timestamps use real time.Now() so the store must use the same clock to compute expiry.
-	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour, Clock: clock.System()})
+	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour, Clock: fakeClock})
 	defer store.Close()
 
 	count, _ := store.Stats()

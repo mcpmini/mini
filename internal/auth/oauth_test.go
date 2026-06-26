@@ -115,7 +115,7 @@ func TestRefresh(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 	loaded, _ := auth.Load(dir, "srv")
-	loaded.Expiry = time.Now().Add(-time.Hour)
+	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	mock.accessToken = "refreshed-access-token"
 	newTok, err := auth.Refresh(context.Background(), mock.authConfig(), loaded)
 	if err != nil {
@@ -328,7 +328,7 @@ func TestTokenValidAfterForcedExpiry(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 	loaded, _ := auth.Load(dir, "srv")
-	loaded.Expiry = time.Now().Add(-time.Hour)
+	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	auth.Save(dir, "srv", loaded) //nolint:errcheck
 	reloaded, _ := auth.Load(dir, "srv")
 	if reloaded.Valid() {

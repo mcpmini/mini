@@ -212,9 +212,7 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 	}
 	fakeClock.Advance(30 * time.Minute)
 
-	// Poll for the eviction to complete, then cancel.
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	for range 400 {
 		if srv.sessions.count() == 0 {
 			cancel()
 			<-done

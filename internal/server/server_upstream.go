@@ -91,9 +91,9 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
 
-func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, clk clock.Clock) *upstreamServer {
+func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, appClock clock.Clock) *upstreamServer {
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: clk}
+	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: appClock}
 	if sc.MaxPendingRequests > 0 {
 		u.sem = make(chan struct{}, sc.MaxPendingRequests)
 	}

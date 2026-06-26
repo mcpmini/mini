@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/testutil"
 )
@@ -58,7 +59,7 @@ func TestDeliver_transportDownRecoversViaReresolve(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestDeliver_unauthorizedRefreshesTokenAndRetries(t *testing.T) {
 	reresolve := func() (string, error) { return "fresh", nil }
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "stale", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	p := RunParams{Client: client, SessionID: "sess", Token: "stale", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -134,7 +135,7 @@ func TestDeliver_midFlightErrorDoesNotRetry(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestDeliver_singleFlightRecoversOnce(t *testing.T) {
 		fmt.Fprintf(&lines, `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{}}`+"\n", i)
 	}
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -182,7 +183,7 @@ func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
 	done := make(chan error, 1)
 	go func() { done <- Run(p) }()
 	select {
@@ -210,7 +211,7 @@ func TestDeliver_persistent401ReturnsErrorEnvelope(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "same-stale-token", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	p := RunParams{Client: client, SessionID: "sess", Token: "same-stale-token", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
 	done := make(chan error, 1)
 	go func() { done <- Run(p) }()
 	select {
@@ -238,7 +239,7 @@ func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
 	done := make(chan error, 1)
 	go func() { done <- Run(p) }()
 	select {
@@ -274,7 +275,7 @@ func TestDeliver_singleFlightOnResolveFailure(t *testing.T) {
 		fmt.Fprintf(&lines, `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{}}`+"\n", i)
 	}
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
 	done := make(chan error, 1)
 	go func() { done <- Run(p) }()
 	select {

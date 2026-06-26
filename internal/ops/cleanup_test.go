@@ -6,13 +6,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/ops"
 )
 
 func TestPurgeExpiredResponses(t *testing.T) {
 	t.Run("returns zero when no responses directory exists", func(t *testing.T) {
 		dir := tempDir(t)
-		removed, freed, err := ops.PurgeExpiredResponses(dir, time.Now())
+		fakeClock := clock.NewFake()
+		removed, freed, err := ops.PurgeExpiredResponses(dir, fakeClock.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
@@ -29,10 +31,11 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		jsonBody := []byte(`{"ok":true}`)
 		oldJSON := filepath.Join(respDir, "old.json")
 		os.WriteFile(oldJSON, jsonBody, 0600)
-		past := time.Now().Add(-30 * 24 * time.Hour)
+		fakeClock := clock.NewFake()
+		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
 
-		removed, freed, err := ops.PurgeExpiredResponses(dir, time.Now())
+		removed, freed, err := ops.PurgeExpiredResponses(dir, fakeClock.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
@@ -54,7 +57,8 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		freshJSON := filepath.Join(respDir, "fresh.json")
 		os.WriteFile(freshJSON, []byte(`{"ok":true}`), 0600)
 
-		removed, _, err := ops.PurgeExpiredResponses(dir, time.Now())
+		fakeClock := clock.NewFake()
+		removed, _, err := ops.PurgeExpiredResponses(dir, fakeClock.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
@@ -73,10 +77,11 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		jsonBody := []byte(`{"ok":true}`)
 		oldJSON := filepath.Join(respDir, "solo.json")
 		os.WriteFile(oldJSON, jsonBody, 0600)
-		past := time.Now().Add(-30 * 24 * time.Hour)
+		fakeClock := clock.NewFake()
+		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
 
-		removed, freed, err := ops.PurgeExpiredResponses(dir, time.Now())
+		removed, freed, err := ops.PurgeExpiredResponses(dir, fakeClock.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}
@@ -94,10 +99,11 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		os.MkdirAll(respDir, 0700)
 		rawOnly := filepath.Join(respDir, "orphan.raw.json")
 		os.WriteFile(rawOnly, []byte(`{}`), 0600)
-		past := time.Now().Add(-30 * 24 * time.Hour)
+		fakeClock := clock.NewFake()
+		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(rawOnly, past, past)
 
-		removed, _, err := ops.PurgeExpiredResponses(dir, time.Now())
+		removed, _, err := ops.PurgeExpiredResponses(dir, fakeClock.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)
 		}

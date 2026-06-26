@@ -62,9 +62,9 @@ func loadServerProjections(configDir string) (map[string]map[string]*config.Proj
 	return out, nil
 }
 
-func mustStore(cfg *config.Config, logger *slog.Logger, clk clock.Clock) *response.Store {
+func mustStore(cfg *config.Config, logger *slog.Logger, appClock clock.Clock) *response.Store {
 	storeCfg := response.StoreConfigFrom(cfg)
-	storeCfg.Clock = clk
+	storeCfg.Clock = appClock
 	store, err := response.NewStore(storeCfg)
 	if err == nil {
 		return store

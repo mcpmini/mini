@@ -78,7 +78,7 @@ func TestAuthStatus_validToken_returnsAuthorized(t *testing.T) {
 		AccessToken:  "test-access-token",
 		RefreshToken: "test-refresh-token",
 		TokenType:    "Bearer",
-		Expiry:       time.Now().Add(time.Hour),
+		Expiry:       time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC),
 	})
 
 	result := configureResult(t, newServerWithDir(t, dir), map[string]any{
@@ -98,7 +98,7 @@ func TestAuthStatus_expiredToken_returnsUnauthorized(t *testing.T) {
 	saveToken(t, dir, "myserver", &oauth2.Token{
 		AccessToken: "old-token",
 		TokenType:   "Bearer",
-		Expiry:      time.Now().Add(-time.Hour),
+		Expiry:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 	})
 
 	result := configureResult(t, newServerWithDir(t, dir), map[string]any{

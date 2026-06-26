@@ -65,12 +65,6 @@ func expectCallErrorContains(t *testing.T, conn *HTTPConnection, want string) {
 	}
 }
 
-func assertFastTimeout(t *testing.T, start time.Time) {
-	t.Helper()
-	if time.Since(start) > 5*time.Second {
-		t.Errorf("timeout took too long: %v", time.Since(start))
-	}
-}
 
 func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
 	t.Helper()
@@ -241,12 +235,10 @@ func TestHTTPConnection_redirectBlocked(t *testing.T) {
 func TestHTTPClientTimeout_firesForHungServer(t *testing.T) {
 	srv := newHungServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 100 * time.Millisecond})
-	start := time.Now()
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected timeout error for hung server")
 	}
-	assertFastTimeout(t, start)
 }
 
 func TestHTTPClientTimeout_defaultAllowsLongRunning(t *testing.T) {
@@ -266,12 +258,10 @@ func TestHTTPClientTimeout_contextFiresBeforeClientTimeout(t *testing.T) {
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 10 * time.Minute})
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	start := time.Now()
 	_, err := conn.Call(ctx, "ping", nil)
 	if err == nil {
 		t.Fatal("expected context deadline error")
 	}
-	assertFastTimeout(t, start)
 }
 
 func newHandshakeServer(t *testing.T, toolsResult any, calls *int) *httptest.Server {

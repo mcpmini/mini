@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/proxy"
@@ -92,7 +93,7 @@ var commands = map[string]func(string, []string){
 	"rm":        func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
 	"remove":    func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
 	"status":    func(dir string, _ []string) { runStatus(dir) },
-	"cleanup":   func(dir string, _ []string) { mustRun(runCleanup(dir, os.Stdout)) },
+	"cleanup":   func(dir string, _ []string) { mustRun(runCleanup(dir, os.Stdout, clock.System())) },
 	"auth":      runAuth,
 	"test":      runTest,
 	"init":      runInit,
@@ -281,6 +282,7 @@ func connectViaDaemon(configDir string, logger *slog.Logger, mode transport.Tool
 	return proxy.Run(proxy.RunParams{
 		Client: daemon.SocketClient(socket, 0), SessionID: sessionID, Token: token,
 		In: os.Stdin, Out: os.Stdout, ToolMode: mode, Resolver: proxy.NewDaemonResolver(reresolve),
+		Clock: clock.System(),
 	})
 }
 
@@ -301,7 +303,7 @@ func ensureDaemonRunning(configDir string, logger *slog.Logger) error {
 	if daemon.Running(configDir) {
 		return nil
 	}
-	if err := daemon.Start(configDir, 3*time.Second); err != nil {
+	if err := daemon.Start(configDir, 3*time.Second, clock.System()); err != nil {
 		logger.Warn("daemon unavailable", "err", err)
 		return err
 	}

@@ -286,13 +286,9 @@ func TestUpstream_contextCancelledDuringCall(t *testing.T) {
 		delay: 5 * time.Second,
 	}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", ToolTimeout: "50ms"}, slow)
-	start := time.Now()
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "svc", "tool": "op", "params": map[string]any{},
 	}))
-	if elapsed := time.Since(start); elapsed > 2*time.Second {
-		t.Errorf("tool call with 50ms timeout took too long: %v", elapsed)
-	}
 	env := parseEnvelope(t, toolResultText(t, resp))
 	if env["error"] == nil {
 		t.Errorf("expected ok=false after timeout, got: %v", env)

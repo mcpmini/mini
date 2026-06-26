@@ -16,7 +16,6 @@ func TestExpandEnv(t *testing.T) {
 }
 
 func TestApplyToolTimeoutDefault(t *testing.T) {
-	before := time.Now()
 	ctx, cancel := applyToolTimeout(context.Background(), "")
 	defer cancel()
 
@@ -24,7 +23,7 @@ func TestApplyToolTimeoutDefault(t *testing.T) {
 	if !ok {
 		t.Fatal("expected default timeout deadline")
 	}
-	offset := deadline.Sub(before)
+	offset := time.Until(deadline)
 	if offset < 29*time.Second || offset > 31*time.Second {
 		t.Fatalf("expected ~30s timeout from start, got %v", offset)
 	}
@@ -61,7 +60,6 @@ func TestApplyToolTimeoutRejectsInvalidOrNonPositiveDurations(t *testing.T) {
 }
 
 func TestApplyToolTimeoutUsesExplicitDuration(t *testing.T) {
-	before := time.Now()
 	ctx, cancel := applyToolTimeout(context.Background(), "50ms")
 	defer cancel()
 
@@ -69,7 +67,7 @@ func TestApplyToolTimeoutUsesExplicitDuration(t *testing.T) {
 	if !ok {
 		t.Fatal("expected explicit duration deadline")
 	}
-	offset := deadline.Sub(before)
+	offset := time.Until(deadline)
 	if offset <= 0 || offset > time.Second {
 		t.Fatalf("expected short timeout from start, got %v", offset)
 	}
