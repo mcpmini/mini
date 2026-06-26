@@ -48,13 +48,16 @@ func (s *Store) storeEntryIfFresh(e os.DirEntry, name string, created, now time.
 
 func parseTimestamp(name string) (time.Time, bool) {
 	base := strings.TrimSuffix(name, filepath.Ext(name))
-	idx := strings.IndexByte(base, '_')
-	if idx <= 0 {
+	part := base
+	if idx := strings.IndexByte(base, '_'); idx > 0 {
+		part = base[:idx]
+	}
+	n, err := strconv.ParseInt(part, 10, 64)
+	if err != nil || n <= 0 {
 		return time.Time{}, false
 	}
-	epoch, err := strconv.ParseInt(base[:idx], 10, 64)
-	if err != nil || epoch <= 0 {
-		return time.Time{}, false
+	if n > 1e11 { // milliseconds (unix ms in 2026 ≈ 1.75e12)
+		return time.UnixMilli(n), true
 	}
-	return time.Unix(epoch, 0), true
+	return time.Unix(n, 0), true
 }

@@ -79,9 +79,3 @@ func (s *Store) Stats() (fileCount int, usedBytes int64) {
 
 func (s *Store) Dir() string { return s.dir }
 
-func uniqueBase(base string, i int) string {
-	if i == 0 {
-		return base
-	}
-	return fmt.Sprintf("%s_%04d", base, i)
-}

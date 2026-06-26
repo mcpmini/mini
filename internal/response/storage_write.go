@@ -3,7 +3,6 @@ package response
 import (
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"os"
 	"path/filepath"
 
@@ -46,18 +45,17 @@ func prettyJSON(b []byte) []byte {
 }
 
 func (s *Store) newFileBase() string {
-	now := s.clk.Now()
-	h := fnv.New32a()
-	fmt.Fprintf(h, "%d", now.UnixNano())
-	h.Write(randutil.Bytes(4))
-	return fmt.Sprintf("%d_%08x", now.Unix(), h.Sum32())
+	return fmt.Sprintf("%d", s.clk.Now().UnixMilli())
 }
 
-// O_EXCL guarantees atomicity; collisions should not occur in practice with random filenames.
 func (s *Store) openUnique(base string, b []byte) (string, error) {
 	const maxAttempts = 3
 	for i := range maxAttempts {
-		path := filepath.Join(s.dir, uniqueBase(base, i)+".json")
+		name := base
+		if i > 0 {
+			name = base + "_" + randutil.HexString(4)
+		}
+		path := filepath.Join(s.dir, name+".json")
 		if err := writeExclusive(path, b); os.IsExist(err) {
 			continue
 		} else if err != nil {

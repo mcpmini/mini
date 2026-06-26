@@ -205,13 +205,23 @@ func TestPrettyJSON_emptyObject(t *testing.T) {
 }
 
 func TestParseTimestamp_validName(t *testing.T) {
-	name := "1750466675_c0ffee00.json"
-	ts, ok := parseTimestamp(name)
-	if !ok {
-		t.Fatalf("expected valid timestamp, got false")
+	cases := []struct {
+		name     string
+		wantYear int
+	}{
+		{"1750466675123.json", 2025},           // ms, no suffix
+		{"1750466675123_a3b4c5d6.json", 2025},  // ms, collision suffix
+		{"1750466675_c0ffee00.json", 2025},      // old seconds format (backward compat)
 	}
-	if ts.Year() != 2025 {
-		t.Errorf("unexpected year for epoch 1750466675: %v", ts)
+	for _, tc := range cases {
+		ts, ok := parseTimestamp(tc.name)
+		if !ok {
+			t.Errorf("%s: expected valid timestamp, got false", tc.name)
+			continue
+		}
+		if ts.Year() != tc.wantYear {
+			t.Errorf("%s: got year %d, want %d", tc.name, ts.Year(), tc.wantYear)
+		}
 	}
 }
 
@@ -262,16 +272,16 @@ func TestWriteRaw_writesFile(t *testing.T) {
 	}
 }
 
-func TestWriteRaw_filenameHasHashSuffix(t *testing.T) {
+func TestWriteRaw_filenameIsMilliseconds(t *testing.T) {
 	s := newStore(t)
 	path, err := s.WriteRaw([]byte(`{"key":"value"}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
 	base := strings.TrimSuffix(filepath.Base(path), ".json")
-	parts := strings.SplitN(base, "_", 2)
-	if len(parts) != 2 || len(parts[0]) < 10 || len(parts[1]) != 8 {
-		t.Errorf("expected {epoch}_{hash8}.json, got %s", filepath.Base(path))
+	// format: {unix_ms}.json  (13 digits, no suffix in non-collision case)
+	if len(base) != 13 {
+		t.Errorf("expected 13-digit unix ms filename, got %s", filepath.Base(path))
 	}
 }
 

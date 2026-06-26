@@ -153,19 +153,18 @@ func TestTimestampFilenames(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := filepath.Base(path)
-	// format: {epoch_seconds}_{hash8}.json  (10 + 1 + 8 + 5 = 24 chars)
+	// format: {unix_ms}.json  (13 digits)
 	if filepath.Ext(name) != ".json" {
 		t.Errorf("expected .json extension: %s", name)
 	}
 	base := strings.TrimSuffix(name, ".json")
-	parts := strings.SplitN(base, "_", 2)
-	if len(parts) != 2 || len(parts[0]) < 10 || len(parts[1]) != 8 {
-		t.Errorf("expected {epoch}_{hash8}.json, got %s", name)
+	if len(base) != 13 {
+		t.Errorf("expected 13-digit unix ms filename, got %s", name)
 	}
 }
 
 func tsFilename(at time.Time) string {
-	return fmt.Sprintf("%d_cafebabe.json", at.Unix())
+	return fmt.Sprintf("%d.json", at.UnixMilli())
 }
 
 func TestLoadExistingSkipsExpired(t *testing.T) {
