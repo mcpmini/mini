@@ -49,11 +49,11 @@ func (s *Store) newFileBase() string {
 }
 
 func (s *Store) openUnique(base string, b []byte) (string, error) {
-	const maxAttempts = 3
+	const maxAttempts = 5
 	for i := range maxAttempts {
 		name := base
 		if i > 0 {
-			name = base + "_" + randutil.HexString(4)
+			name = base + "_" + randutil.HexString(2)
 		}
 		path := filepath.Join(s.dir, name+".json")
 		if err := writeExclusive(path, b); os.IsExist(err) {
