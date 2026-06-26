@@ -210,7 +210,7 @@ func TestParseTimestamp_validName(t *testing.T) {
 		wantYear int
 	}{
 		{"1750466675123.json", 2025},
-		{"1750466675123_a3b4.json", 2025},
+		{"1750466675123_cafe.json", 2025},
 	}
 	for _, tc := range cases {
 		ts, ok := parseTimestamp(tc.name)
