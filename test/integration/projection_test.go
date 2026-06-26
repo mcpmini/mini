@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -250,6 +251,66 @@ func TestProjection_globalDefaultsApply(t *testing.T) {
 	data := string(b)
 	if strings.Contains(data, strings.Repeat("x", 100)) {
 		t.Errorf("global default_string_limit:50 should truncate long strings, got: %s", data[:min(200, len(data))])
+	}
+}
+
+func TestProjection_readRecoversProjectedData(t *testing.T) {
+	cases := []struct {
+		name       string
+		fixture    string
+		projection string
+		filter     string
+		want       string
+	}{
+		{
+			name:       "excluded field",
+			fixture:    `{"id":1,"secret":"hidden","body":"text"}`,
+			projection: "get_item:\n  exclude: [secret]\n",
+			filter:     ".secret",
+			want:       `"hidden"`,
+		},
+		{
+			name:       "truncated string",
+			fixture:    `{"id":1,"body":"` + strings.Repeat("x", 100) + `"}`,
+			projection: "get_item:\n  string_limits:\n    body: 20\n",
+			filter:     ".body",
+			want:       `"` + strings.Repeat("x", 100) + `"`,
+		},
+		{
+			name:       "truncated array",
+			fixture:    `{"id":1,"items":[{"n":1},{"n":2},{"n":3}]}`,
+			projection: "get_item:\n  array_limits:\n    items: 1\n",
+			filter:     ".items | length",
+			want:       "3",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := t.TempDir()
+			writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": tc.fixture}))
+			writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
+			writeProjection(t, cfg, "svc", tc.projection)
+			client := startProxyServer(t, cfg)
+
+			raw := client.mustCall("tools/call", map[string]any{
+				"name":      "svc__get_item",
+				"arguments": map[string]any{},
+			})
+			text, _ := parseToolCallResult(raw)
+			filePath := miniFile(t, text)
+
+			t.Run("full path", func(t *testing.T) {
+				if got := client.callRead(filePath, tc.filter); got != tc.want {
+					t.Errorf("got %q, want %q", got, tc.want)
+				}
+			})
+			t.Run("bare filename", func(t *testing.T) {
+				if got := client.callRead(filepath.Base(filePath), tc.filter); got != tc.want {
+					t.Errorf("got %q, want %q", got, tc.want)
+				}
+			})
+		})
 	}
 }
 
