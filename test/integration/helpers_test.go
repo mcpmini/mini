@@ -481,20 +481,34 @@ func (c *mcpClient) execEnvelope(server, tool string, args map[string]any) envel
 	return e
 }
 
-func miniFile(t *testing.T, text string) string {
+type miniEnv struct {
+	File      string           `json:"file"`
+	Excluded  []string         `json:"excluded"`
+	Truncated []miniTruncation `json:"truncated"`
+}
+
+type miniTruncation struct {
+	Path  string `json:"path"`
+	Chars int    `json:"chars"`
+	Items int    `json:"items"`
+}
+
+func parseMiniEnv(t *testing.T, text string) miniEnv {
 	t.Helper()
-	var env struct {
-		Mini struct {
-			File string `json:"file"`
-		} `json:"__mini"`
+	var outer struct {
+		Mini miniEnv `json:"__mini"`
 	}
-	if err := json.Unmarshal([]byte(text), &env); err != nil {
+	if err := json.Unmarshal([]byte(text), &outer); err != nil {
 		t.Fatalf("parse __mini response: %v\ntext: %s", err, text)
 	}
-	if env.Mini.File == "" {
+	if outer.Mini.File == "" {
 		t.Fatalf("expected __mini.file in response, got: %s", text)
 	}
-	return env.Mini.File
+	return outer.Mini
+}
+
+func miniFile(t *testing.T, text string) string {
+	return parseMiniEnv(t, text).File
 }
 
 func (c *mcpClient) callRead(path, filter string) string {

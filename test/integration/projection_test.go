@@ -256,32 +256,34 @@ func TestProjection_globalDefaultsApply(t *testing.T) {
 
 func TestProjection_readRecoversProjectedData(t *testing.T) {
 	cases := []struct {
-		name       string
-		fixture    string
-		projection string
-		filter     string
-		want       string
+		name        string
+		fixture     string
+		projection  string
+		wantByPath  map[string]string // path as reported in __mini → expected read() result
 	}{
 		{
 			name:       "excluded field",
-			fixture:    `{"id":1,"secret":"hidden","body":"text"}`,
+			fixture:    `{"id":1,"secret":"hidden"}`,
 			projection: "get_item:\n  exclude: [secret]\n",
-			filter:     ".secret",
-			want:       `"hidden"`,
+			wantByPath: map[string]string{
+				".secret": `"hidden"`,
+			},
 		},
 		{
 			name:       "truncated string",
 			fixture:    `{"id":1,"body":"` + strings.Repeat("x", 100) + `"}`,
 			projection: "get_item:\n  string_limits:\n    body: 20\n",
-			filter:     ".body",
-			want:       `"` + strings.Repeat("x", 100) + `"`,
+			wantByPath: map[string]string{
+				".body": `"` + strings.Repeat("x", 100) + `"`,
+			},
 		},
 		{
 			name:       "truncated array",
 			fixture:    `{"id":1,"items":[{"n":1},{"n":2},{"n":3}]}`,
 			projection: "get_item:\n  array_limits:\n    items: 1\n",
-			filter:     ".items | length",
-			want:       "3",
+			wantByPath: map[string]string{
+				".items": `[{"n":1},{"n":2},{"n":3}]`,
+			},
 		},
 	}
 
@@ -298,18 +300,45 @@ func TestProjection_readRecoversProjectedData(t *testing.T) {
 				"arguments": map[string]any{},
 			})
 			text, _ := parseToolCallResult(raw)
-			filePath := miniFile(t, text)
+			env := parseMiniEnv(t, text)
 
-			t.Run("full path", func(t *testing.T) {
-				if got := client.callRead(filePath, tc.filter); got != tc.want {
-					t.Errorf("got %q, want %q", got, tc.want)
+			reportedPaths := env.Excluded
+			for _, tr := range env.Truncated {
+				reportedPaths = append(reportedPaths, tr.Path)
+			}
+
+			for _, path := range reportedPaths {
+				want, ok := tc.wantByPath[path]
+				if !ok {
+					continue
 				}
-			})
-			t.Run("bare filename", func(t *testing.T) {
-				if got := client.callRead(filepath.Base(filePath), tc.filter); got != tc.want {
-					t.Errorf("got %q, want %q", got, tc.want)
+				t.Run(path, func(t *testing.T) {
+					t.Run("full path", func(t *testing.T) {
+						if got := client.callRead(env.File, path); got != want {
+							t.Errorf("got %q, want %q", got, want)
+						}
+					})
+					t.Run("bare filename", func(t *testing.T) {
+						if got := client.callRead(filepath.Base(env.File), path); got != want {
+							t.Errorf("got %q, want %q", got, want)
+						}
+					})
+				})
+			}
+
+			for path := range tc.wantByPath {
+				found := false
+				for _, p := range reportedPaths {
+					if p == path {
+						found = true
+						break
+					}
 				}
-			})
+				if !found {
+					t.Errorf("path %q not reported in envelope: excluded=%v truncated=%v",
+						path, env.Excluded, env.Truncated)
+				}
+			}
 		})
 	}
 }
