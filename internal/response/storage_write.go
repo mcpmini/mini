@@ -67,8 +67,8 @@ func (s *Store) createUniqueFile(base string, b []byte) (string, error) {
 }
 
 func writeExclusive(path string, b []byte) error {
-	// O_CREATE|O_EXCL together: fails with EEXIST if the file already exists,
-	// so two concurrent callers on the same path can't both succeed.
+	// O_EXCL makes create atomic at the OS level — no TOCTOU race between
+	// checking existence and opening; exactly one caller wins per path.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err
