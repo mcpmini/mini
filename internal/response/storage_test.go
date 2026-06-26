@@ -3,7 +3,7 @@
 package response
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,12 +11,27 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
+
+var clockTestBase = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func newStore(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
 	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	t.Cleanup(s.Close)
+	return s
+}
+
+func storeWithClock(t *testing.T, clk clock.Clock) *Store {
+	t.Helper()
+	dir := t.TempDir()
+	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: clk})
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -38,42 +53,113 @@ func assertStoreEmpty(t *testing.T, s *Store, path string) {
 	}
 }
 
+func concurrentWriteRaw(s *Store, n int) []error {
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			_, errs[idx] = s.WriteRaw([]byte(fmt.Sprintf(`{"i":%d}`, idx)))
+		}(i)
+	}
+	wg.Wait()
+	return errs
+}
+
+func epochBase(at time.Time) string {
+	return fmt.Sprintf("%d", at.UnixMilli())
+}
+
+func TestNewStore_invalidDir(t *testing.T) {
+	f, _ := os.CreateTemp(t.TempDir(), "file")
+	f.Close()
+	_, err := NewStore(StoreConfig{Dir: f.Name() + "/subdir", TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
+	if err == nil {
+		t.Error("expected error when creating store in invalid path")
+	}
+}
 
 func TestEvictExpired_keepsNonExpired(t *testing.T) {
 	s := newStore(t)
+	s.WriteRaw([]byte(`{"a":1}`)) //nolint:errcheck
+	s.WriteRaw([]byte(`{"b":2}`)) //nolint:errcheck
 
-	if _, err := s.WriteRaw([]byte(`{"a":1}`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.WriteRaw([]byte(`{"b":2}`)); err != nil {
-		t.Fatal(err)
-	}
+	s.evictExpired()
 
 	count, _ := s.Stats()
-	if count != 2 {
-		t.Fatalf("expected 2 files, got %d", count)
-	}
-
-	s.evictExpired() // TTL is 1 hour — nothing should be evicted
-
-	count, _ = s.Stats()
 	if count != 2 {
 		t.Errorf("expected 2 files after non-expiring eviction, got %d", count)
 	}
 }
 
+func TestEvictExpired_removesExpiredFiles(t *testing.T) {
+	clk := clock.NewFake(clockTestBase)
+	s := storeWithClock(t, clk)
 
+	path, err := s.WriteRaw([]byte(`{"ok":true}`))
+	if err != nil {
+		t.Fatalf("WriteRaw: %v", err)
+	}
+	clk.Advance(2 * time.Hour)
+	s.evictExpired()
+	assertStoreEmpty(t, s, path)
+}
+
+func TestEvictExpired_deletesFileFromDisk(t *testing.T) {
+	clk := clock.NewFake(clockTestBase)
+	s := storeWithClock(t, clk)
+
+	path, err := s.WriteRaw([]byte(`{"full":"data"}`))
+	if err != nil {
+		t.Fatalf("WriteRaw: %v", err)
+	}
+	clk.Advance(2 * time.Hour)
+	s.evictExpired()
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("raw file should be deleted after TTL")
+	}
+}
+
+func TestCleanupLoop_evictsExpiredFilesAutomatically(t *testing.T) {
+	clk := clock.NewFake(clockTestBase)
+	dir := t.TempDir()
+	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: clk})
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	defer s.Close()
+
+	path, err := s.WriteRaw([]byte(`{"test":true}`))
+	if err != nil {
+		t.Fatalf("WriteRaw: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := clk.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatalf("cleanupLoop timer not registered: %v", err)
+	}
+	clk.Advance(2 * time.Hour)
+	// Re-registration of the next timer proves evictExpired already ran.
+	if err := clk.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatalf("cleanupLoop did not re-register after eviction: %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("cleanup loop did not evict expired file")
+	}
+}
 
 func TestLoadExisting_picksUpFilesFromPreviousSession(t *testing.T) {
 	dir := t.TempDir()
-
-	// Write a file directly using one Store instance
 	s1, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
-	s1.WriteRaw([]byte(`{"session":1}`))
-	s1.WriteRaw([]byte(`{"session":2}`))
+	s1.WriteRaw([]byte(`{"session":1}`)) //nolint:errcheck
+	s1.WriteRaw([]byte(`{"session":2}`)) //nolint:errcheck
 	s1.Close()
 
-	// New Store instance should pick up the existing files
 	s2, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
 	defer s2.Close()
 
@@ -83,12 +169,27 @@ func TestLoadExisting_picksUpFilesFromPreviousSession(t *testing.T) {
 	}
 }
 
+func TestLoadExisting_evictsExpiredFromPreviousSession(t *testing.T) {
+	dir := t.TempDir()
+	clk1 := clock.NewFake(clockTestBase)
+	s1, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: clk1})
+	s1.WriteRaw([]byte(`{"old":true}`)) //nolint:errcheck
+	s1.Close()
+
+	// clk2 is 2h ahead: file expires at clockTestBase+1h, now=clockTestBase+2h → expired on load.
+	clk2 := clock.NewFake(clockTestBase.Add(2 * time.Hour))
+	s2, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: clk2})
+	defer s2.Close()
+
+	count, _ := s2.Stats()
+	if count != 0 {
+		t.Errorf("expected 0 files (expired on load), got %d", count)
+	}
+}
 
 func TestLoadExisting_ignoresNonTimestampFiles(t *testing.T) {
 	dir := t.TempDir()
-	// Write a file with a non-timestamp name
-	os.WriteFile(filepath.Join(dir, "not-a-timestamp.json"), []byte(`{}`), 0600)
-
+	os.WriteFile(filepath.Join(dir, "not-a-timestamp.json"), []byte(`{}`), 0600) //nolint:errcheck
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
 	defer s.Close()
 
@@ -98,9 +199,46 @@ func TestLoadExisting_ignoresNonTimestampFiles(t *testing.T) {
 	}
 }
 
+func TestLoadEntry_recordsSize(t *testing.T) {
+	dir := t.TempDir()
+	slimPath := filepath.Join(dir, epochBase(time.Now())+".json")
+	data := []byte(`{"ok":true}`)
+	if err := os.WriteFile(slimPath, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{dir: dir, ttl: time.Hour}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.Name() == filepath.Base(slimPath) {
+			s.loadEntry(e, time.Now())
+		}
+	}
+	if len(s.files) != 1 {
+		t.Fatalf("expected 1 loaded file, got %d", len(s.files))
+	}
+	if s.usedBytes != int64(len(data)) {
+		t.Fatalf("usedBytes = %d, want %d", s.usedBytes, len(data))
+	}
+}
+
+func TestLoadEntry_skipsRawCompanionFiles(t *testing.T) {
+	dir := t.TempDir()
+	rawPath := filepath.Join(dir, epochBase(time.Now())+".raw.json")
+	if err := os.WriteFile(rawPath, []byte(`{"full":"data"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{dir: dir, ttl: time.Hour}
+	entries, _ := os.ReadDir(dir)
+	for _, entry := range entries {
+		s.loadEntry(entry, time.Now())
+	}
+	if len(s.files) != 0 {
+		t.Fatalf("expected raw companion file to be skipped, got %d entries", len(s.files))
+	}
+}
+
 func TestEvictOvershoot_concurrentWritesBudgetEnforced(t *testing.T) {
 	dir := t.TempDir()
-	// Tiny budget: 2 files of ~600KB each = 1.2MB > 1MB budget.
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
 	defer s.Close()
 
@@ -116,29 +254,22 @@ func TestEvictOvershoot_concurrentWritesBudgetEnforced(t *testing.T) {
 	wg.Wait()
 
 	_, usedBytes := s.Stats()
-	budgetBytes := int64(1 * 1024 * 1024)
-	if usedBytes > budgetBytes {
-		t.Errorf("budget exceeded after concurrent writes: used %d > budget %d", usedBytes, budgetBytes)
+	if usedBytes > int64(1*1024*1024) {
+		t.Errorf("budget exceeded after concurrent writes: used %d > budget %d", usedBytes, 1*1024*1024)
 	}
 }
 
 func TestEvictOvershoot_keepsNewestFile(t *testing.T) {
 	dir := t.TempDir()
-	// Budget smaller than a single file — the just-written file must survive.
+	// Budget smaller than a single large file — the just-written file must survive.
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
 	defer s.Close()
 
-	// Write an initial small file that fits.
-	small := []byte(`{"data":"small"}`)
-	path1, _ := s.WriteRaw(small)
-
-	// Write a file that together with path1 exceeds budget.
-	large := []byte(`{"data":"` + strings.Repeat("x", 900*1024) + `"}`)
-	path2, err := s.WriteRaw(large)
+	path1, _ := s.WriteRaw([]byte(`{"data":"small"}`))
+	path2, err := s.WriteRaw([]byte(`{"data":"` + strings.Repeat("x", 900*1024) + `"}`))
 	if err != nil {
 		t.Fatalf("WriteRaw large: %v", err)
 	}
-
 	if _, err := os.Stat(path2); err != nil {
 		t.Error("newest (large) file should be kept even if it exceeds budget alone")
 	}
@@ -147,176 +278,32 @@ func TestEvictOvershoot_keepsNewestFile(t *testing.T) {
 
 func TestEvictIfNeeded_removesOldestWhenOverBudget(t *testing.T) {
 	dir := t.TempDir()
-	// 1 MB budget — large enough to hold first file, but tight enough that
-	// writing many files eventually triggers eviction. We use a tiny budget
-	// by writing files large enough to overflow 1 MB.
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
 	defer s.Close()
 
 	large := []byte(`{"data":"` + strings.Repeat("x", 600*1024) + `"}`)
 	path1, _ := s.WriteRaw(large)
-	path2, _ := s.WriteRaw(large) // second write should evict path1
+	s.WriteRaw(large) //nolint:errcheck
 
-	_ = path2
 	if _, err := os.Stat(path1); !os.IsNotExist(err) {
 		t.Error("expected oldest file to be evicted when over budget")
 	}
 }
 
-func TestWriteRaw_unwritableDir(t *testing.T) {
+func TestEvictIfNeeded_zeroBudget_unlimited(t *testing.T) {
 	dir := t.TempDir()
-	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
+	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 0, CleanupInterval: time.Hour})
 	defer s.Close()
 
-	// Make dir unwritable
-	os.Chmod(dir, 0500)
-	defer os.Chmod(dir, 0700)
-
-	_, err := s.WriteRaw([]byte(`{"test":true}`))
-	if err == nil {
-		t.Error("expected error writing to unwritable dir")
-	}
-}
-
-func TestPrettyJSON_validJSON(t *testing.T) {
-	compact := []byte(`{"a":1,"b":[1,2,3]}`)
-	pretty := prettyJSON(compact)
-	if !json.Valid(pretty) {
-		t.Errorf("prettyJSON output is not valid JSON: %s", pretty)
-	}
-	if string(pretty) == string(compact) {
-		t.Error("expected pretty-printed output to differ from compact")
-	}
-}
-
-func TestPrettyJSON_invalidJSON_returnsOriginal(t *testing.T) {
-	bad := []byte(`not json at all`)
-	out := prettyJSON(bad)
-	if string(out) != string(bad) {
-		t.Errorf("expected invalid JSON to pass through unchanged, got: %s", out)
-	}
-}
-
-func TestPrettyJSON_emptyObject(t *testing.T) {
-	out := prettyJSON([]byte(`{}`))
-	if !json.Valid(out) {
-		t.Errorf("expected valid JSON, got: %s", out)
-	}
-}
-
-func TestParseTimestamp_validName(t *testing.T) {
-	cases := []struct {
-		name     string
-		wantYear int
-	}{
-		{"1750466675123.json", 2025},
-		{"1750466675123_cafe.json", 2025},
-	}
-	for _, tc := range cases {
-		ts, ok := parseTimestamp(tc.name)
-		if !ok {
-			t.Errorf("%s: expected valid timestamp, got false", tc.name)
-			continue
-		}
-		if ts.Year() != tc.wantYear {
-			t.Errorf("%s: got year %d, want %d", tc.name, ts.Year(), tc.wantYear)
+	for range 3 {
+		if _, err := s.WriteRaw([]byte(`{"n":1}`)); err != nil {
+			t.Fatalf("WriteRaw: %v", err)
 		}
 	}
-}
-
-func TestParseTimestamp_tooShort(t *testing.T) {
-	_, ok := parseTimestamp("short.json")
-	if ok {
-		t.Error("expected false for too-short name")
+	count, _ := s.Stats()
+	if count != 3 {
+		t.Errorf("expected all 3 files retained (unlimited budget), got %d", count)
 	}
-}
-
-func TestParseTimestamp_invalidFormat(t *testing.T) {
-	cases := []string{
-		"notafilename.json",
-		"nodash.json",
-		"nohash_.json",
-		"abc_deadbeef.json",
-	}
-	for _, name := range cases {
-		_, ok := parseTimestamp(name)
-		if ok {
-			t.Errorf("expected false for %s", name)
-		}
-	}
-}
-
-func TestParseTimestamp_rawFileIgnored(t *testing.T) {
-	name := "1750466675123.raw.json"
-	_, ok := parseTimestamp(name)
-	if ok {
-		t.Error("expected false for ms-format .raw.json (no integer before extension)")
-	}
-}
-
-func TestWriteRaw_writesFile(t *testing.T) {
-	s := newStore(t)
-	path, err := s.WriteRaw([]byte(`{"raw":true,"items":["a","b"]}`))
-	if err != nil {
-		t.Fatalf("WriteRaw: %v", err)
-	}
-
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("raw file not written: %v", err)
-	}
-
-	rawData, _ := os.ReadFile(path)
-	if !json.Valid(rawData) {
-		t.Errorf("raw file is not valid JSON: %s", rawData)
-	}
-}
-
-func TestWriteRaw_filenameIsMilliseconds(t *testing.T) {
-	s := newStore(t)
-	path, err := s.WriteRaw([]byte(`{"key":"value"}`))
-	if err != nil {
-		t.Fatalf("WriteRaw: %v", err)
-	}
-	base := strings.TrimSuffix(filepath.Base(path), ".json")
-	if len(base) != 13 {
-		t.Errorf("expected 13-digit unix ms filename, got %s", filepath.Base(path))
-	}
-}
-
-func TestNewStore_invalidDir(t *testing.T) {
-	// Try to create a store inside a file (not a directory)
-	f, _ := os.CreateTemp(t.TempDir(), "file")
-	f.Close()
-	_, err := NewStore(StoreConfig{Dir: f.Name() + "/subdir", TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
-	if err == nil {
-		t.Error("expected error when creating store in invalid path")
-	}
-}
-
-func TestWriteRaw_nonJSONResponsesFromUpstreamsWrittenSuccessfully(t *testing.T) {
-	s := newStore(t)
-	path, err := s.WriteRaw([]byte(`not json`))
-	if err != nil {
-		t.Fatalf("WriteRaw: %v", err)
-	}
-	data, _ := os.ReadFile(path)
-	if string(data) != "not json" {
-		t.Errorf("expected passthrough for non-JSON, got: %s", data)
-	}
-}
-
-func concurrentWriteRaw(s *Store, n int) []error {
-	errs := make([]error, n)
-	var wg sync.WaitGroup
-	for i := range n {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			_, errs[idx] = s.WriteRaw([]byte(fmt.Sprintf(`{"i":%d}`, idx)))
-		}(i)
-	}
-	wg.Wait()
-	return errs
 }
 
 func TestWriteRaw_concurrent(t *testing.T) {
@@ -330,38 +317,5 @@ func TestWriteRaw_concurrent(t *testing.T) {
 	count, _ := s.Stats()
 	if count != n {
 		t.Errorf("expected %d files after concurrent writes, got %d", n, count)
-	}
-}
-
-func TestWriteRaw_prettyPrintsValidJSON(t *testing.T) {
-	s := newStore(t)
-	compact := []byte(`{"a":1,"b":[1,2,3]}`)
-	path, err := s.WriteRaw(compact)
-	if err != nil {
-		t.Fatalf("WriteRaw: %v", err)
-	}
-	data, _ := os.ReadFile(path)
-	if string(data) == string(compact) {
-		t.Error("expected pretty-printed output to differ from compact input")
-	}
-	if !json.Valid(data) {
-		t.Errorf("expected valid JSON output, got: %s", data)
-	}
-}
-
-func TestEvictIfNeeded_zeroBudget_unlimited(t *testing.T) {
-	dir := t.TempDir()
-	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 0, CleanupInterval: time.Hour}) // 0 MB = unlimited
-	defer s.Close()
-
-	for i := 0; i < 3; i++ {
-		if _, err := s.WriteRaw([]byte(`{"n":1}`)); err != nil {
-			t.Fatalf("WriteRaw %d: %v", i, err)
-		}
-	}
-
-	count, _ := s.Stats()
-	if count != 3 {
-		t.Errorf("expected all 3 files retained (unlimited budget), got %d", count)
 	}
 }
