@@ -42,6 +42,7 @@ const defaultHTTPClientTimeout = 60 * time.Second
 type HTTPConnectionConfig struct {
 	URL     string
 	Headers map[string]string
+	Clock   clock.Clock
 	// ClientTimeout is the hard network-level deadline. Zero means 60 seconds.
 	ClientTimeout time.Duration
 	// DisableRetryOnRateLimit disables automatic 429/503 retry. When true,
@@ -57,12 +58,16 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	if cfg.ClientTimeout > 0 {
 		timeout = cfg.ClientTimeout
 	}
+	c := cfg.Clock
+	if c == nil {
+		c = clock.System()
+	}
 	return &HTTPConnection{
 		url:                     cfg.URL,
 		headers:                 cfg.Headers,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
 		client:                  noRedirectClient(timeout, cfg.BlockPrivateIPs),
-		clock:                   clock.System(),
+		clock:                   c,
 	}, nil
 }
 

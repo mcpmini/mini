@@ -304,7 +304,7 @@ func (s *Server) dialPerSessionConn(ctx context.Context, upstream *upstreamServe
 	if conn := session.Conn(upstream.cfg.Name); conn != nil {
 		return conn, nil
 	}
-	conn, err := dialUpstream(ctx, s.logger, s.cfg, upstream.cfg)
+	conn, err := dialUpstream(ctx, s.logger, s.cfg, upstream.cfg, s.clock)
 	if err != nil {
 		return nil, err
 	}

@@ -7,17 +7,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 // Dial connects to an upstream MCP server, injecting auth headers.
-func Dial(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig) (transport.Connection, error) {
+func Dial(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig, c clock.Clock) (transport.Connection, error) {
 	switch sc.Transport {
 	case "http", "sse", "streamable":
 		return transport.NewHTTPConnection(transport.HTTPConnectionConfig{
 			URL:                     sc.URL,
 			Headers:                 MergedHeaders(sc),
+			Clock:                   c,
 			ClientTimeout:           parseClientTimeout(sc.HTTPClientTimeout),
 			DisableRetryOnRateLimit: sc.DisableRetryOnRateLimit,
 			BlockPrivateIPs:         sc.RuntimeAdded && !cfg.DangerousAllowPrivateURLs,

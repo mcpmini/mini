@@ -14,7 +14,7 @@ import (
 )
 
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
-	conn, err := dialUpstream(ctx, s.logger, s.cfg, sc)
+	conn, err := dialUpstream(ctx, s.logger, s.cfg, sc, s.clock)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", sc.Name, err)
 	}
@@ -25,8 +25,8 @@ func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn
 	return s.registerUpstream(ctx, sc, conn)
 }
 
-func dialUpstream(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig) (transport.Connection, error) {
-	return invoke.Dial(ctx, logger, cfg, sc)
+func dialUpstream(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig, c clock.Clock) (transport.Connection, error) {
+	return invoke.Dial(ctx, logger, cfg, sc, c)
 }
 
 // SetReconnectHook sets a callback that fires after a successful automatic reconnect

@@ -17,20 +17,22 @@ func New(cfg *config.Config, logger *slog.Logger, opts ...ServerOption) *Server 
 }
 
 func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger, opts ...ServerOption) *Server {
-	store := mustStore(cfg, logger)
 	projections, err := loadServerProjections(configDir)
 	if err != nil {
 		logger.Warn("failed to load projections", "err", err)
 	}
-	s := newServer(cfg, configDir, store, projections, logger)
+	s := newServer(cfg, configDir, projections, logger)
 	for _, o := range opts {
 		o(s)
 	}
+	store := mustStore(cfg, logger, s.clock)
+	s.store = store
+	s.envelope = response.NewBuilder(store)
 	s.sessions = newSessionStore(s.clock)
 	return s
 }
 
-func newServer(cfg *config.Config, configDir string, store *response.Store, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server { //nolint:funclen
+func newServer(cfg *config.Config, configDir string, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server {
 	return &Server{
 		cfg:          cfg,
 		configDir:    configDir,
@@ -38,8 +40,6 @@ func newServer(cfg *config.Config, configDir string, store *response.Store, proj
 		upstreams:    make(map[string]*upstreamServer),
 		removeGen:    make(map[string]uint64),
 		projections:  projections,
-		envelope:     response.NewBuilder(store),
-		store:        store,
 		projDefaults: projection.DefaultsFrom(cfg),
 		toolSchemas:  compactToolSchemas(),
 		authFlows:    make(map[string]*authFlowState),
@@ -62,8 +62,9 @@ func loadServerProjections(configDir string) (map[string]map[string]*config.Proj
 	return out, nil
 }
 
-func mustStore(cfg *config.Config, logger *slog.Logger) *response.Store {
+func mustStore(cfg *config.Config, logger *slog.Logger, c clock.Clock) *response.Store {
 	storeCfg := response.StoreConfigFrom(cfg)
+	storeCfg.Clock = c
 	store, err := response.NewStore(storeCfg)
 	if err == nil {
 		return store

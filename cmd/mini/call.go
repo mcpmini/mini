@@ -138,7 +138,7 @@ func mustDialCall(ctx context.Context, configDir string, cc callContext) transpo
 		injectToken(ctx, configDir, cc.sc)
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	conn, err := invoke.Dial(ctx, logger, cc.cfg, *cc.sc)
+	conn, err := invoke.Dial(ctx, logger, cc.cfg, *cc.sc, clock.System())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: connect to %s: %v\n", cc.serverName, err)
 		os.Exit(2)
