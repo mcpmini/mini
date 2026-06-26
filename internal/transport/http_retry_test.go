@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 func newRateLimitedServer(t *testing.T, failUntilCall int32, calls *atomic.Int32) *httptest.Server {
@@ -29,7 +31,7 @@ func newRateLimitedServer(t *testing.T, failUntilCall int32, calls *atomic.Int32
 func TestRetry_429WithRetryAfter_retriesAndSucceeds(t *testing.T) {
 	var calls atomic.Int32
 	srv := newRateLimitedServer(t, 3, &calls)
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
 	result, err := conn.Call(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("expected success after retries, got: %v", err)
@@ -52,7 +54,7 @@ func TestRetry_429_exhaustsMaxRetries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
@@ -79,7 +81,7 @@ func TestRetry_503WithRetryAfter_retries(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("expected success after 503 retry, got: %v", err)
@@ -102,7 +104,7 @@ func TestRetry_429WithoutRetryAfter_usesExponentialBackoff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	_, err := conn.Call(ctx, "ping", nil)
@@ -119,7 +121,7 @@ func TestRetry_contextCancelledDuringBackoff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
@@ -144,7 +146,7 @@ func TestRetry_nonRetryable4xx_noRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error for 401")
@@ -166,6 +168,7 @@ func TestRetry_passThroughRateLimits_returnsImmediately(t *testing.T) {
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{
 		URL:                     srv.URL,
+		Clock:                   clock.System(),
 		DisableRetryOnRateLimit: true,
 	})
 	_, err := conn.Call(t.Context(), "ping", nil)

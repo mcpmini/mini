@@ -41,6 +41,7 @@ func noopBuilder(t *testing.T) *response.Builder {
 		Dir:             t.TempDir(),
 		TTL:             time.Hour,
 		CleanupInterval: time.Hour,
+		Clock:           clock.System(),
 	})
 	if err != nil {
 		t.Fatal(err)

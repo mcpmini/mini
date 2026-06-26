@@ -58,16 +58,12 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	if cfg.ClientTimeout > 0 {
 		timeout = cfg.ClientTimeout
 	}
-	c := cfg.Clock
-	if c == nil {
-		c = clock.System()
-	}
 	return &HTTPConnection{
 		url:                     cfg.URL,
 		headers:                 cfg.Headers,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
 		client:                  noRedirectClient(timeout, cfg.BlockPrivateIPs),
-		clock:                   c,
+		clock:                   cfg.Clock,
 	}, nil
 }
 
@@ -253,7 +249,7 @@ func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
 	case <-ctx.Done():
 		t.Stop()
 		return false
-	case <-t.C():
+	case <-t.Chan():
 		return true
 	}
 }

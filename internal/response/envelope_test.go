@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
 )
@@ -16,7 +17,7 @@ import (
 func newTestStore(t *testing.T) *response.Store {
 	t.Helper()
 	dir := t.TempDir()
-	store, err := response.NewStore(response.StoreConfig{Dir: dir, TTL: 15 * time.Minute, BudgetMB: 200, CleanupInterval: time.Hour})
+	store, err := response.NewStore(response.StoreConfig{Dir: dir, TTL: 15 * time.Minute, BudgetMB: 200, CleanupInterval: time.Hour, Clock: clock.System()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +174,7 @@ func TestLoadExistingSkipsExpired(t *testing.T) {
 	fresh := tsFilename(time.Now())
 	os.WriteFile(filepath.Join(dir, fresh), []byte(`{"new":true}`), 0600)
 
-	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour})
+	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour, Clock: clock.System()})
 	defer store.Close()
 
 	count, _ := store.Stats()
@@ -187,7 +188,7 @@ func TestLoadExistingSkipsExpired(t *testing.T) {
 
 func TestStoreDiskBudget(t *testing.T) {
 	dir := t.TempDir()
-	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
+	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour, Clock: clock.System()})
 
 	raw := []byte(`{"data":"` + strings.Repeat("x", 600*1024) + `"}`)
 	for range 5 {

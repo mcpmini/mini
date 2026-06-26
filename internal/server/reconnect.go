@@ -29,7 +29,7 @@ func (s *Server) sleepBackoff(u *upstreamServer, d time.Duration) bool {
 	case <-u.ctx.Done():
 		t.Stop()
 		return false
-	case <-t.C():
+	case <-t.Chan():
 		return true
 	}
 }

@@ -53,14 +53,14 @@ func buildEnvelopeFromParams(raw json.RawMessage, p InvokeParams) (*response.Env
 	return env, err
 }
 
-func InvokeRaw(ctx context.Context, c clock.Clock, conn transport.Connection, tool string, params map[string]any) (json.RawMessage, int64, error) {
+func InvokeRaw(ctx context.Context, clk clock.Clock, conn transport.Connection, tool string, params map[string]any) (json.RawMessage, int64, error) {
 	args, err := json.Marshal(transport.ToolCallParams{Name: tool, Arguments: params})
 	if err != nil {
 		return nil, 0, fmt.Errorf("marshal params: %w", err)
 	}
-	start := c.Now()
+	start := clk.Now()
 	raw, err := conn.Call(ctx, "tools/call", args)
-	latency := c.Now().Sub(start).Milliseconds()
+	latency := clk.Now().Sub(start).Milliseconds()
 	if err != nil {
 		return nil, latency, err
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/version"
 )
 
@@ -40,6 +41,9 @@ func newJSONRPCServer(t *testing.T, handler func(http.ResponseWriter, *http.Requ
 
 func mustHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection {
 	t.Helper()
+	if cfg.Clock == nil {
+		cfg.Clock = clock.System()
+	}
 	conn, err := NewHTTPConnection(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -227,7 +231,7 @@ func TestHTTPConnection_redirectBlocked(t *testing.T) {
 	}))
 	defer redirecter.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL, Clock: clock.System()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	_ = err
 }

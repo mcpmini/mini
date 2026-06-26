@@ -16,8 +16,8 @@ type ServerOption func(*Server)
 
 // WithClock replaces the server's clock. Used in tests to inject a fake clock
 // so reconnect backoff timers fire immediately without real sleeps.
-func WithClock(c clock.Clock) ServerOption {
-	return func(s *Server) { s.clock = c }
+func WithClock(clk clock.Clock) ServerOption {
+	return func(s *Server) { s.clock = clk }
 }
 
 func WithToolMode(m transport.ToolMode) ServerOption {

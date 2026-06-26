@@ -250,6 +250,7 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 
 func mustCallStore(cfg *config.Config, logger *slog.Logger) *response.Store {
 	sc := response.StoreConfigFrom(cfg)
+	sc.Clock = clock.System()
 	store, err := response.NewStore(sc)
 	if err != nil {
 		logger.Warn("could not open response store, using temp dir", "err", err)

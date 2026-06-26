@@ -25,8 +25,8 @@ func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn
 	return s.registerUpstream(ctx, sc, conn)
 }
 
-func dialUpstream(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig, c clock.Clock) (transport.Connection, error) {
-	return invoke.Dial(ctx, logger, cfg, sc, c)
+func dialUpstream(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig, clk clock.Clock) (transport.Connection, error) {
+	return invoke.Dial(ctx, logger, cfg, sc, clk)
 }
 
 // SetReconnectHook sets a callback that fires after a successful automatic reconnect
@@ -92,9 +92,9 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
 
-func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, c clock.Clock) *upstreamServer {
+func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, clk clock.Clock) *upstreamServer {
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: c}
+	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: clk}
 	if sc.MaxPendingRequests > 0 {
 		u.sem = make(chan struct{}, sc.MaxPendingRequests)
 	}
@@ -135,7 +135,7 @@ func (s *Server) RunSessionEviction(ctx context.Context, maxIdle time.Duration) 
 	defer ticker.Stop()
 	for {
 		select {
-		case <-ticker.C():
+		case <-ticker.Chan():
 			s.sessions.evictIdle(s.clock.Now().Add(-maxIdle))
 		case <-ctx.Done():
 			return

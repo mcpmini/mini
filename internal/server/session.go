@@ -79,14 +79,14 @@ func (s *Session) getDialOnce(serverName string) *dialOnce {
 	return d
 }
 
-func newSession(c clock.Clock) *Session {
+func newSession(clk clock.Clock) *Session {
 	return &Session{
 		projections: make(map[string]*config.ProjectionConfig),
 		conns:       make(map[string]transport.Connection),
 		dialMap:     make(map[string]*dialOnce),
 		inFlight:    make(map[string]context.CancelFunc),
-		lastUsed:    c.Now(),
-		clock:       c,
+		lastUsed:    clk.Now(),
+		clock:       clk,
 		initDone:    make(chan struct{}),
 		initAbort:   make(chan struct{}),
 	}
@@ -299,8 +299,8 @@ type sessionStore struct {
 	clock    clock.Clock
 }
 
-func newSessionStore(c clock.Clock) *sessionStore {
-	return &sessionStore{sessions: make(map[string]*Session), clock: c}
+func newSessionStore(clk clock.Clock) *sessionStore {
+	return &sessionStore{sessions: make(map[string]*Session), clock: clk}
 }
 
 func sessionIDPrefix(id string) string {

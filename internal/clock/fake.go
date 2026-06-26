@@ -32,7 +32,7 @@ func (f *Fake) Now() time.Time {
 
 func (f *Fake) Since(t time.Time) time.Duration    { return f.Now().Sub(t) }
 func (f *Fake) Until(t time.Time) time.Duration    { return t.Sub(f.Now()) }
-func (f *Fake) After(d time.Duration) <-chan time.Time { return f.NewTimer(d).C() }
+func (f *Fake) After(d time.Duration) <-chan time.Time { return f.NewTimer(d).Chan() }
 
 // NewTimer registers a timer that fires when Advance moves the clock past its deadline.
 func (f *Fake) NewTimer(d time.Duration) Timer {
@@ -131,7 +131,7 @@ type fakeTimer struct {
 	clock    *Fake
 }
 
-func (t *fakeTimer) C() <-chan time.Time { return t.ch }
+func (t *fakeTimer) Chan() <-chan time.Time { return t.ch }
 
 func (t *fakeTimer) Stop() bool {
 	t.clock.mu.Lock()
@@ -153,7 +153,7 @@ type fakeTicker struct {
 	clock    *Fake
 }
 
-func (t *fakeTicker) C() <-chan time.Time { return t.ch }
+func (t *fakeTicker) Chan() <-chan time.Time { return t.ch }
 
 func (t *fakeTicker) Stop() {
 	t.clock.mu.Lock()
