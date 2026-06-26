@@ -40,34 +40,12 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 		{
 			name:       "truncated string",
 			projection: map[string]any{"string_limit": 100},
-			wantPaths: func(mini map[string]any) []string {
-				trunc, _ := mini["truncated"].([]any)
-				out := make([]string, 0, len(trunc))
-				for _, v := range trunc {
-					m, _ := v.(map[string]any)
-					p, _ := m["path"].(string)
-					if p != "" {
-						out = append(out, p)
-					}
-				}
-				return out
-			},
+			wantPaths:  truncatedPaths,
 		},
 		{
 			name:       "truncated array",
 			projection: map[string]any{"array_limit": 2},
-			wantPaths: func(mini map[string]any) []string {
-				trunc, _ := mini["truncated"].([]any)
-				out := make([]string, 0, len(trunc))
-				for _, v := range trunc {
-					m, _ := v.(map[string]any)
-					p, _ := m["path"].(string)
-					if p != "" {
-						out = append(out, p)
-					}
-				}
-				return out
-			},
+			wantPaths:  truncatedPaths,
 		},
 	}
 
@@ -131,6 +109,19 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+func truncatedPaths(mini map[string]any) []string {
+	trunc, _ := mini["truncated"].([]any)
+	out := make([]string, 0, len(trunc))
+	for _, v := range trunc {
+		m, _ := v.(map[string]any)
+		p, _ := m["path"].(string)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func longString(n int) string {

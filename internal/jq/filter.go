@@ -15,7 +15,7 @@ const (
 	maxOutputResults = 10_000
 )
 
-// Eval evaluates filter against data, returning results newline-separated.
+// Eval runs a jq filter against JSON data. Multiple results are newline-separated.
 // Numbers are preserved at full precision; HTML-special characters (<, >, &) are not escaped.
 // Output is capped at 4 MB / 10 000 results; context deadline bounds evaluation time.
 // For fields larger than 4 MB, omit filter to retrieve the whole file.
