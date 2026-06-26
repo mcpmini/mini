@@ -22,10 +22,11 @@ func GenerateToken() string {
 
 func WriteToken(configDir string) (string, error) {
 	token := GenerateToken()
-	if err := os.MkdirAll(filepath.Dir(TokenFile(configDir)), 0700); err != nil {
+	path := TokenFile(configDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return "", err
 	}
-	return token, atomicWriteFile(TokenFile(configDir), token)
+	return token, atomicWriteFile(path, token)
 }
 
 func ReadToken(configDir string) (string, error) {

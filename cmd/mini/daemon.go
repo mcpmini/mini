@@ -26,7 +26,7 @@ func runDaemon(configDir string, args []string) {
 	}
 	cfg, servers := loadDaemonConfig(configDir)
 	socket := ensureDaemonNotRunning(configDir)
-	logW := daemon.OpenCappedLog(filepath.Join(configDir, "daemon.log"))
+	logW := daemon.OpenCappedLog(filepath.Join(configDir, "internal", "daemon.log"))
 	defer logW.Close()
 	logger := buildLogger(cfg, logLevel, logW)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

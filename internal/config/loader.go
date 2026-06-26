@@ -132,7 +132,7 @@ func loadServerConfigs(dir string) ([]ServerConfig, error) {
 }
 
 func filterServerPaths(paths []string) []string {
-	out := paths[:0]
+	var out []string
 	for _, p := range paths {
 		if !strings.HasSuffix(p, ".proj.yaml") {
 			out = append(out, p)

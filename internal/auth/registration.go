@@ -32,15 +32,15 @@ func SaveRegistration(configDir, serverName string, r *Registration) error {
 	if !config.ValidServerName.MatchString(serverName) {
 		return fmt.Errorf("invalid server name: %q", serverName)
 	}
-	dir := filepath.Join(configDir, "internal")
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	path := registrationPath(configDir, serverName)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(registrationPath(configDir, serverName), data, 0600)
+	return os.WriteFile(path, data, 0600)
 }
 
 func registrationPath(configDir, serverName string) string {

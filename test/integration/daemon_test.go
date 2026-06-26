@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/daemon"
 )
 
 func shortConfigDir(t *testing.T) string {
@@ -31,7 +32,7 @@ func shortConfigDir(t *testing.T) string {
 	return dir
 }
 
-func socketPath(cfg string) string { return filepath.Join(cfg, "internal", "daemon.sock") }
+func socketPath(cfg string) string { return daemon.SocketPath(cfg) }
 
 func daemonHTTPClient(cfg string) *http.Client {
 	sock := socketPath(cfg)

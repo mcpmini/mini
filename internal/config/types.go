@@ -21,7 +21,7 @@ type Config struct {
 	AutoStripThreshold int `yaml:"auto_strip_threshold"`
 
 	// ResponseDir overrides where response files are written.
-	// Defaults to ~/.mini/responses/
+	// Defaults to ~/.mini/internal/responses/
 	ResponseDir string `yaml:"response_dir"`
 
 	// ResponseTTL is how long response files live (e.g. "1h"). Default: 1h.
@@ -211,7 +211,7 @@ const (
 )
 
 // ActionConfig defines a virtual tool that pre-fills arguments for a real tool.
-// Actions live in ~/.mini/actions/<name>.yaml.
+// Actions live in ~/.mini/internal/actions/<name>.yaml.
 type ActionConfig struct {
 	// Name is the virtual tool name (without server prefix).
 	Name string `yaml:"name"`
