@@ -16,8 +16,7 @@ import (
 )
 
 // TestProxy_MiniRead_JQRoundTrip verifies that jq paths in __mini.excluded and
-// __mini.truncated can be used directly as read filters, and that the output
-// matches running jq against the raw file directly.
+// __mini.truncated can be used directly as read() filters against the raw file.
 func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 	upstream := `{"id":1,"secret":"key-123","body":"` + longString(3000) + `","items":[{"n":1},{"n":2},{"n":3},{"n":4},{"n":5}]}`
 
@@ -127,7 +126,7 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 				got := toolResultText(t, resp2)
 
 				if got != want {
-					t.Errorf("read(file, %q): got %q, want %q (jq control)", path, got, want)
+					t.Errorf("read(file, %q): got %q, want %q", path, got, want)
 				}
 			}
 		})

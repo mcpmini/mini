@@ -129,3 +129,25 @@ func TestEval_contextCancellation(t *testing.T) {
 		t.Error("expected error for cancelled context")
 	}
 }
+
+func TestEval_htmlCharactersNotEscaped(t *testing.T) {
+	data := []byte(`{"body":"<html>a & b</html>"}`)
+	got, err := jq.Eval(context.Background(), data, ".body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != `"<html>a & b</html>"` {
+		t.Errorf("HTML chars must not be escaped, got %q", got)
+	}
+}
+
+func TestEval_largeIntegerPreserved(t *testing.T) {
+	data := []byte(`{"id":1234567890123456789}`)
+	got, err := jq.Eval(context.Background(), data, ".id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "1234567890123456789" {
+		t.Errorf("large integer must not lose precision, got %q", got)
+	}
+}

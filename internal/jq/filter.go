@@ -1,6 +1,7 @@
 package jq
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,16 +15,19 @@ const (
 	maxOutputResults = 10_000
 )
 
-// Multiple results are newline-separated, matching jq stream semantics.
-// An empty result set returns "". An invalid filter returns an error.
-// Output is capped at 4 MB / 10 000 results to bound memory usage.
+// Eval evaluates filter against data, returning results newline-separated.
+// Numbers are preserved at full precision; HTML-special characters (<, >, &) are not escaped.
+// Output is capped at 4 MB / 10 000 results; context deadline bounds evaluation time.
+// For fields larger than 4 MB, omit filter to retrieve the whole file.
 func Eval(ctx context.Context, data []byte, filter string) (string, error) {
 	q, err := gojq.Parse(filter)
 	if err != nil {
 		return "", fmt.Errorf("invalid jq filter %q: %w", filter, err)
 	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var v any
-	if err := json.Unmarshal(data, &v); err != nil {
+	if err := dec.Decode(&v); err != nil {
 		return "", fmt.Errorf("not valid JSON: %w", err)
 	}
 	return runQuery(ctx, q, v)
@@ -50,10 +54,14 @@ func writeResult(b *strings.Builder, out any, index int) error {
 	if index >= maxOutputResults {
 		return fmt.Errorf("jq: output exceeded %d results", maxOutputResults)
 	}
-	line, err := json.Marshal(out)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(out); err != nil {
 		return fmt.Errorf("jq marshal: %w", err)
 	}
+	line := buf.Bytes()
+	line = line[:len(line)-1] // trim trailing newline that Encode appends
 	size := len(line)
 	if index > 0 {
 		size++ // newline separator
