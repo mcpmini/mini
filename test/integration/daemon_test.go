@@ -31,7 +31,7 @@ func shortConfigDir(t *testing.T) string {
 	return dir
 }
 
-func socketPath(cfg string) string { return filepath.Join(cfg, "daemon.sock") }
+func socketPath(cfg string) string { return filepath.Join(cfg, "internal", "daemon.sock") }
 
 func daemonHTTPClient(cfg string) *http.Client {
 	sock := socketPath(cfg)
@@ -126,7 +126,7 @@ func reapDaemons(cfg string) {
 
 func readDaemonToken(t *testing.T, cfg string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(cfg, "daemon.token"))
+	data, err := os.ReadFile(filepath.Join(cfg, "internal", "daemon.token"))
 	if err != nil {
 		t.Fatalf("read daemon token: %v", err)
 	}
@@ -458,7 +458,7 @@ func TestDaemon_socketAndDirArePrivate(t *testing.T) {
 func TestDaemon_TokenFilePermissions(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
-	fi, err := os.Stat(filepath.Join(cfg, "daemon.token"))
+	fi, err := os.Stat(filepath.Join(cfg, "internal", "daemon.token"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -125,7 +125,7 @@ func TestInterpolateActionConfig(t *testing.T) {
 	t.Run("default_args substituted", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("MY_TOKEN", "secretval")
-		writeFile(t, filepath.Join(dir, "actions", "myaction.yaml"), `
+		writeFile(t, filepath.Join(dir, "internal", "actions", "myaction.yaml"), `
 name: myaction
 server: gh
 tool: list_issues
@@ -144,7 +144,7 @@ func TestProjectionNotInterpolated(t *testing.T) {
 	os.Unsetenv("UNSET_PROJ_VAR_XXXX")
 	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `name: svc
 command: my-mcp`)
-	writeFile(t, filepath.Join(dir, "projections", "svc.yaml"), `
+	writeFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), `
 list_issues:
   include_only: [number, title]
   format: "${UNSET_PROJ_VAR_XXXX}"

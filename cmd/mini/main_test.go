@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -118,7 +119,9 @@ func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 
 func socketHealthServer(t *testing.T, dir, body string) {
 	t.Helper()
-	ln, err := net.Listen("unix", daemon.SocketPath(dir))
+	sp := daemon.SocketPath(dir)
+	os.MkdirAll(filepath.Dir(sp), 0700) //nolint:errcheck
+	ln, err := net.Listen("unix", sp)
 	if err != nil {
 		t.Fatalf("listen unix: %v", err)
 	}
@@ -153,7 +156,9 @@ func TestRunDaemonStatusRunning(t *testing.T) {
 
 func TestRunDaemonStatusStaleSocket(t *testing.T) {
 	dir := shortConfigDir(t)
-	if err := os.WriteFile(daemon.SocketPath(dir), nil, 0600); err != nil {
+	sp := daemon.SocketPath(dir)
+	os.MkdirAll(filepath.Dir(sp), 0700) //nolint:errcheck
+	if err := os.WriteFile(sp, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	out := captureStdout(t, func() { runDaemonStatus(dir) })

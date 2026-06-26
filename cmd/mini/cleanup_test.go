@@ -23,7 +23,7 @@ func TestRunCleanup(t *testing.T) {
 
 	t.Run("reports removed count and freed bytes for expired files", func(t *testing.T) {
 		dir := t.TempDir()
-		respDir := filepath.Join(dir, "responses")
+		respDir := filepath.Join(dir, "internal", "responses")
 		os.MkdirAll(respDir, 0700)
 
 		oldJSON := filepath.Join(respDir, "old.json")
@@ -46,7 +46,7 @@ func TestRunCleanup(t *testing.T) {
 
 	t.Run("does not remove fresh files", func(t *testing.T) {
 		dir := t.TempDir()
-		respDir := filepath.Join(dir, "responses")
+		respDir := filepath.Join(dir, "internal", "responses")
 		os.MkdirAll(respDir, 0700)
 		freshJSON := filepath.Join(respDir, "fresh.json")
 		os.WriteFile(freshJSON, []byte(`{"ok":true}`), 0600)

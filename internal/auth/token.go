@@ -39,7 +39,7 @@ func Save(configDir, serverName string, t *oauth2.Token) error {
 	if !config.ValidServerName.MatchString(serverName) {
 		return fmt.Errorf("invalid server name: %q", serverName)
 	}
-	dir := filepath.Join(configDir, "tokens")
+	dir := filepath.Join(configDir, "internal")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -55,5 +55,5 @@ func IsNotFound(err error) bool {
 }
 
 func tokenPath(configDir, serverName string) string {
-	return filepath.Join(configDir, "tokens", serverName+".json")
+	return filepath.Join(configDir, "internal", serverName+".token.json")
 }

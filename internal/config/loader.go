@@ -48,7 +48,7 @@ func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
 }
 
 func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig, error) {
-	pattern := filepath.Join(dir, "projections", "*.yaml")
+	pattern := filepath.Join(dir, "servers", "*.proj.yaml")
 	paths, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err
@@ -63,7 +63,7 @@ func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig,
 }
 
 func loadOneProjectionFile(out map[string]map[string]*ProjectionConfig, p string) error {
-	serverName := filepath.Base(p[:len(p)-5])
+	serverName := strings.TrimSuffix(filepath.Base(p), ".proj.yaml")
 	if !ValidServerName.MatchString(serverName) {
 		return nil
 	}
@@ -128,7 +128,17 @@ func loadServerConfigs(dir string) ([]ServerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loadServerFiles(paths)
+	return loadServerFiles(filterServerPaths(paths))
+}
+
+func filterServerPaths(paths []string) []string {
+	out := paths[:0]
+	for _, p := range paths {
+		if !strings.HasSuffix(p, ".proj.yaml") {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func loadServerFiles(paths []string) ([]ServerConfig, error) {
@@ -170,10 +180,8 @@ func readAndInterpolate(path string) ([]byte, error) {
 	return data, nil
 }
 
-// LoadActions reads ~/.mini/actions/*.yaml files.
-// Each file defines a single ActionConfig.
 func LoadActions(dir string) ([]ActionConfig, error) {
-	pattern := filepath.Join(dir, "actions", "*.yaml")
+	pattern := filepath.Join(dir, "internal", "actions", "*.yaml")
 	paths, err := filepath.Glob(pattern)
 	if err != nil {
 		return nil, err

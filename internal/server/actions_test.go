@@ -27,7 +27,7 @@ default_args:
 
 func writeActionYAML(t *testing.T, dir string) {
 	t.Helper()
-	actionsDir := filepath.Join(dir, "actions")
+	actionsDir := filepath.Join(dir, "internal", "actions")
 	os.MkdirAll(actionsDir, 0700)
 	os.WriteFile(filepath.Join(actionsDir, "my_search.yaml"), []byte(actionYAML), 0600)
 }
@@ -78,7 +78,7 @@ func TestLoadActions_emptyDir(t *testing.T) {
 
 func TestLoadActions_invalidYAML(t *testing.T) {
 	dir := t.TempDir()
-	actionsDir := filepath.Join(dir, "actions")
+	actionsDir := filepath.Join(dir, "internal", "actions")
 	os.MkdirAll(actionsDir, 0700)
 	os.WriteFile(filepath.Join(actionsDir, "bad.yaml"), []byte(":\t invalid"), 0600)
 

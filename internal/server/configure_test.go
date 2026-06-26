@@ -38,9 +38,9 @@ func TestConfigureReload_emptyDir(t *testing.T) {
 
 func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 	dir := t.TempDir()
-	projDir := filepath.Join(dir, "projections")
-	os.MkdirAll(projDir, 0700)
-	os.WriteFile(filepath.Join(projDir, "myserver.yaml"), []byte("search:\n  string_limit: 50\n"), 0600)
+	serversDir := filepath.Join(dir, "servers")
+	os.MkdirAll(serversDir, 0700)
+	os.WriteFile(filepath.Join(serversDir, "myserver.proj.yaml"), []byte("search:\n  string_limit: 50\n"), 0600)
 	os.WriteFile(filepath.Join(dir, "servers.yaml"), []byte("servers:\n  - name: myserver\n    command: echo\n"), 0600)
 
 	cfg := config.DefaultConfig()

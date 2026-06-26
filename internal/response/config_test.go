@@ -29,8 +29,8 @@ func TestStoreConfigFrom(t *testing.T) {
 	t.Run("defaults to home dir when ResponseDir empty", func(t *testing.T) {
 		cfg := &config.Config{}
 		sc := StoreConfigFrom(cfg)
-		if !strings.HasSuffix(sc.Dir, "/.mini/responses") {
-			t.Errorf("Dir = %q, want suffix /.mini/responses", sc.Dir)
+		if !strings.HasSuffix(sc.Dir, "/.mini/internal/responses") {
+			t.Errorf("Dir = %q, want suffix /.mini/internal/responses", sc.Dir)
 		}
 	})
 

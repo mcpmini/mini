@@ -22,7 +22,7 @@ func responseDir(cfg *config.Config) string {
 		return cfg.ResponseDir
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".mini", "responses")
+	return filepath.Join(home, ".mini", "internal", "responses")
 }
 
 func parseOrDefaultDuration(spec string, fallback time.Duration) time.Duration {

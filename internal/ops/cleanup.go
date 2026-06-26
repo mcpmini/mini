@@ -30,7 +30,7 @@ func PurgeExpiredResponses(configDir string) (removed int, freed int64, err erro
 func resolveResponseDir(cfg *config.Config, configDir string) (string, time.Duration) {
 	dir := cfg.ResponseDir
 	if dir == "" {
-		dir = filepath.Join(configDir, "responses")
+		dir = filepath.Join(configDir, "internal", "responses")
 	}
 	ttl, err := time.ParseDuration(cfg.ResponseTTL)
 	if err != nil {

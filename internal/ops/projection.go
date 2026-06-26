@@ -55,7 +55,7 @@ func InstallBundledProjection(configDir string, sc config.ServerConfig) {
 	if bundled == nil {
 		return
 	}
-	dest := filepath.Join(configDir, "projections", sc.Name+".yaml")
+	dest := filepath.Join(configDir, "servers", sc.Name+".proj.yaml")
 	writeBundledProjection(dest, bundled)
 }
 
