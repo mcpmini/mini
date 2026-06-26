@@ -19,8 +19,15 @@ type Fake struct {
 	notify  chan struct{} // closed and replaced each time a timer or ticker is registered
 }
 
-// NewFake returns a Fake clock starting at t.
-func NewFake(t time.Time) *Fake {
+var defaultEpoch = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+
+// NewFake returns a Fake clock starting at the default epoch (2025-01-01 UTC).
+func NewFake() *Fake {
+	return NewFakeAt(defaultEpoch)
+}
+
+// NewFakeAt returns a Fake clock starting at t.
+func NewFakeAt(t time.Time) *Fake {
 	return &Fake{now: t, notify: make(chan struct{})}
 }
 

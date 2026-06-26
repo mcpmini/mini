@@ -41,7 +41,7 @@ func noopBuilder(t *testing.T) *response.Builder {
 		Dir:             t.TempDir(),
 		TTL:             time.Hour,
 		CleanupInterval: time.Hour,
-		Clock:           clock.System(),
+		Clock:           clock.NewFake(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestExtractContent_StructuredContentPreferText(t *testing.T) {
 
 func TestInvokeRaw_BasicCall(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse(`{"id":42}`, false))
-	raw, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: "my_tool", Params: map[string]any{"x": 1}})
+	raw, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool", Params: map[string]any{"x": 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestInvokeRaw_BasicCall(t *testing.T) {
 
 func TestInvokeRaw_ToolError(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse("something failed", true))
-	_, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: "my_tool"})
+	_, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"})
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -155,7 +155,7 @@ func TestInvokeRaw_ToolError(t *testing.T) {
 
 func TestInvokeRaw_ConnError(t *testing.T) {
 	conn := &transport.FakeConnection{Err: errors.New("network down")}
-	_, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: "my_tool"})
+	_, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"})
 	if err == nil || !contains(err.Error(), "network down") {
 		t.Errorf("expected conn error, got %v", err)
 	}
@@ -163,7 +163,7 @@ func TestInvokeRaw_ConnError(t *testing.T) {
 
 func TestInvokeRaw_NilParams(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse(`"ok"`, false))
-	raw, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: "my_tool"})
+	raw, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +257,7 @@ func TestInvoke_HappyPath(t *testing.T) {
 		ProjCfg:  nil,
 		ProjDefs: noopDefaults(),
 		Builder:  noopBuilder(t),
-		Clock:    clock.System(),
+		Clock:    clock.NewFake(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -274,7 +274,7 @@ func TestInvoke_ToolError(t *testing.T) {
 		Tool:     "do_thing",
 		ProjDefs: noopDefaults(),
 		Builder:  noopBuilder(t),
-		Clock:    clock.System(),
+		Clock:    clock.NewFake(),
 	})
 	if err == nil || !contains(err.Error(), "bad input") {
 		t.Errorf("expected tool error, got %v", err)

@@ -1,3 +1,5 @@
+//go:build test
+
 package transport
 
 import (
@@ -42,7 +44,7 @@ func newJSONRPCServer(t *testing.T, handler func(http.ResponseWriter, *http.Requ
 func mustHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection {
 	t.Helper()
 	if cfg.Clock == nil {
-		cfg.Clock = clock.System()
+		cfg.Clock = clock.NewFake()
 	}
 	conn, err := NewHTTPConnection(cfg)
 	if err != nil {
@@ -231,7 +233,7 @@ func TestHTTPConnection_redirectBlocked(t *testing.T) {
 	}))
 	defer redirecter.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL, Clock: clock.System()})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL, Clock: clock.NewFake()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	_ = err
 }

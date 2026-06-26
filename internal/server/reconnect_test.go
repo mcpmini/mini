@@ -115,7 +115,7 @@ func newReconnectSrv(t *testing.T) (*server.Server, *clock.Fake) {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	fakeClock := clock.NewFake(time.Now())
+	fakeClock := clock.NewFake()
 	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock)), fakeClock
 }
 
@@ -316,7 +316,7 @@ func TestClose_concurrentConnError(t *testing.T) {
 	for i := range 50 {
 		cfg := config.DefaultConfig()
 		cfg.ResponseDir = t.TempDir()
-		fakeClock := clock.NewFake(time.Now())
+		fakeClock := clock.NewFake()
 		srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock))
 
 		// slow is a connection that blocks until released, then returns a transport error.

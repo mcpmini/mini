@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 	"io"
-	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/ops"
 )
 
 func runCleanup(configDir string, out io.Writer) error {
-	removed, freed, err := ops.PurgeExpiredResponses(configDir, time.Now()) //nolint:clocklint
+	removed, freed, err := ops.PurgeExpiredResponses(configDir, clock.System().Now())
 	if err != nil {
 		return fmt.Errorf("cleanup: %w", err)
 	}

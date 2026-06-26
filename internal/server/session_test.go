@@ -10,11 +10,11 @@ import (
 )
 
 func TestSessionStore_evictIdle_removesSession(t *testing.T) {
-	fc := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
-	st := newSessionStore(fc)
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
 	st.getOrCreate("abcdefghijklmnop")
-	fc.Advance(2 * time.Hour)
-	st.evictIdle(fc.Now().Add(-time.Hour))
+	fakeClock.Advance(2 * time.Hour)
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
 	if st.count() != 0 {
 		t.Errorf("expected 0 sessions after eviction, got %d", st.count())
@@ -22,10 +22,10 @@ func TestSessionStore_evictIdle_removesSession(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_keepsActiveSession(t *testing.T) {
-	fc := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
-	st := newSessionStore(fc)
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
 	st.getOrCreate("abcdefghijklmnop")
-	st.evictIdle(fc.Now().Add(-time.Hour))
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
 	if st.count() != 1 {
 		t.Errorf("expected 1 session (recently used), got %d", st.count())
@@ -33,7 +33,7 @@ func TestSessionStore_evictIdle_keepsActiveSession(t *testing.T) {
 }
 
 func TestSessionStore_getOrCreate_returnsSameSession(t *testing.T) {
-	st := newSessionStore(clock.System())
+	st := newSessionStore(clock.NewFake())
 	s1 := st.getOrCreate("abcdefghijklmnop")
 	s2 := st.getOrCreate("abcdefghijklmnop")
 	if s1 != s2 {
@@ -42,7 +42,7 @@ func TestSessionStore_getOrCreate_returnsSameSession(t *testing.T) {
 }
 
 func TestSessionStore_getOrCreate_separateSessions(t *testing.T) {
-	st := newSessionStore(clock.System())
+	st := newSessionStore(clock.NewFake())
 	s1 := st.getOrCreate("aaaaaaaaaaaaaaaa")
 	s2 := st.getOrCreate("bbbbbbbbbbbbbbbb")
 	if s1 == s2 {

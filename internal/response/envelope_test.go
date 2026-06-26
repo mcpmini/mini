@@ -1,3 +1,5 @@
+//go:build test
+
 package response_test
 
 import (
@@ -17,7 +19,7 @@ import (
 func newTestStore(t *testing.T) *response.Store {
 	t.Helper()
 	dir := t.TempDir()
-	store, err := response.NewStore(response.StoreConfig{Dir: dir, TTL: 15 * time.Minute, BudgetMB: 200, CleanupInterval: time.Hour, Clock: clock.System()})
+	store, err := response.NewStore(response.StoreConfig{Dir: dir, TTL: 15 * time.Minute, BudgetMB: 200, CleanupInterval: time.Hour, Clock: clock.NewFake()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,6 +176,7 @@ func TestLoadExistingSkipsExpired(t *testing.T) {
 	fresh := tsFilename(time.Now())
 	os.WriteFile(filepath.Join(dir, fresh), []byte(`{"new":true}`), 0600)
 
+	// clock.System() required: file timestamps use real time.Now() so the store must use the same clock to compute expiry.
 	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour, Clock: clock.System()})
 	defer store.Close()
 
@@ -188,7 +191,7 @@ func TestLoadExistingSkipsExpired(t *testing.T) {
 
 func TestStoreDiskBudget(t *testing.T) {
 	dir := t.TempDir()
-	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour, Clock: clock.System()})
+	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour, Clock: clock.NewFake()})
 
 	raw := []byte(`{"data":"` + strings.Repeat("x", 600*1024) + `"}`)
 	for range 5 {
