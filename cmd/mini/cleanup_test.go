@@ -54,8 +54,11 @@ func TestRunCleanup(t *testing.T) {
 		freshJSON := filepath.Join(respDir, "fresh.json")
 		os.WriteFile(freshJSON, []byte(`{"ok":true}`), 0600)
 
+		fakeClock := clock.NewFake()
+		now := fakeClock.Now()
+		os.Chtimes(freshJSON, now, now)
 		var out bytes.Buffer
-		runCleanup(dir, &out, clock.NewFake()) //nolint:errcheck
+		runCleanup(dir, &out, fakeClock) //nolint:errcheck
 
 		if _, err := os.Stat(freshJSON); err != nil {
 			t.Error("fresh.json was incorrectly removed")

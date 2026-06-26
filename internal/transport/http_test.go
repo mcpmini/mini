@@ -232,13 +232,22 @@ func TestHTTPConnection_redirectBlocked(t *testing.T) {
 	_ = err
 }
 
+func assertFastTimeout(t *testing.T, start time.Time) {
+	t.Helper()
+	if elapsed := time.Since(start); elapsed >= 5*time.Second {
+		t.Errorf("timeout fired too slowly: %v", elapsed)
+	}
+}
+
 func TestHTTPClientTimeout_firesForHungServer(t *testing.T) {
 	srv := newHungServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 100 * time.Millisecond})
+	start := time.Now()
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected timeout error for hung server")
 	}
+	assertFastTimeout(t, start)
 }
 
 func TestHTTPClientTimeout_defaultAllowsLongRunning(t *testing.T) {
@@ -258,10 +267,12 @@ func TestHTTPClientTimeout_contextFiresBeforeClientTimeout(t *testing.T) {
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 10 * time.Minute})
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
+	start := time.Now()
 	_, err := conn.Call(ctx, "ping", nil)
 	if err == nil {
 		t.Fatal("expected context deadline error")
 	}
+	assertFastTimeout(t, start)
 }
 
 func newHandshakeServer(t *testing.T, toolsResult any, calls *int) *httptest.Server {

@@ -55,7 +55,7 @@ func socketTransport(socket string) *http.Transport {
 	}
 }
 
-func Start(configDir string, timeout time.Duration, clk clock.Clock) error {
+func Start(configDir string, timeout time.Duration, clock clock.Clock) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("find executable: %w", err)
@@ -71,7 +71,7 @@ func Start(configDir string, timeout time.Duration, clk clock.Clock) error {
 	if err := spawnDaemon(exe, configDir); err != nil {
 		return err
 	}
-	return waitForDaemon(configDir, timeout, clk)
+	return waitForDaemon(configDir, timeout, clock)
 }
 
 func spawnDaemon(exe, configDir string) error {
@@ -82,14 +82,14 @@ func spawnDaemon(exe, configDir string) error {
 	return nil
 }
 
-func waitForDaemon(configDir string, timeout time.Duration, clk clock.Clock) error {
-	deadline := clk.NewTimer(timeout)
+func waitForDaemon(configDir string, timeout time.Duration, clock clock.Clock) error {
+	deadline := clock.NewTimer(timeout)
 	defer deadline.Stop()
 	for {
 		if Running(configDir) {
 			return nil
 		}
-		sleep := clk.NewTimer(100 * time.Millisecond)
+		sleep := clock.NewTimer(100 * time.Millisecond)
 		select {
 		case <-sleep.Chan():
 		case <-deadline.Chan():

@@ -58,6 +58,8 @@ func TestPurgeExpiredResponses(t *testing.T) {
 		os.WriteFile(freshJSON, []byte(`{"ok":true}`), 0600)
 
 		fakeClock := clock.NewFake()
+		now := fakeClock.Now()
+		os.Chtimes(freshJSON, now, now)
 		removed, _, err := ops.PurgeExpiredResponses(dir, fakeClock.Now())
 		if err != nil {
 			t.Fatalf("PurgeExpiredResponses: %v", err)

@@ -135,7 +135,7 @@ func TestDeliver_midFlightErrorDoesNotRetry(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.NewFake()}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}

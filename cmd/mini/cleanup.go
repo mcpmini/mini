@@ -8,8 +8,8 @@ import (
 	"github.com/mcpmini/mini/internal/ops"
 )
 
-func runCleanup(configDir string, out io.Writer, appClock clock.Clock) error {
-	removed, freed, err := ops.PurgeExpiredResponses(configDir, appClock.Now())
+func runCleanup(configDir string, out io.Writer, clock clock.Clock) error {
+	removed, freed, err := ops.PurgeExpiredResponses(configDir, clock.Now())
 	if err != nil {
 		return fmt.Errorf("cleanup: %w", err)
 	}

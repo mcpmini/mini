@@ -14,7 +14,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-const stressIterations = 100
+const stressIterations = 500
 
 // TestConcurrentConfigureExec triggers configure+call contention to expose races
 // between Server.mu write (configure) and read (call) paths.
