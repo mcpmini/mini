@@ -17,9 +17,9 @@ func projectionNote(env *response.Envelope) string {
 	}
 	for _, o := range env.Truncated {
 		if o.Items > 0 && o.JQPath != "" {
-			parts = append(parts, fmt.Sprintf("%s capped (%d items removed)", o.JQPath, o.Items))
+			parts = append(parts, fmt.Sprintf("%s truncated (%d items removed)", o.JQPath, o.Items))
 		} else if o.Items > 0 {
-			parts = append(parts, fmt.Sprintf("capped (%d items removed)", o.Items))
+			parts = append(parts, fmt.Sprintf("truncated (%d items removed)", o.Items))
 		} else if o.JQPath != "" {
 			parts = append(parts, fmt.Sprintf("%s truncated (%d chars)", o.JQPath, o.Chars))
 		} else {
