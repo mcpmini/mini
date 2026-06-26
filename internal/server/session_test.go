@@ -10,13 +10,11 @@ import (
 )
 
 func TestSessionStore_evictIdle_removesSession(t *testing.T) {
-	st := newSessionStore(clock.System())
-	s := st.getOrCreate("abcdefghijklmnop")
-	s.mu.Lock()
-	s.lastUsed = time.Now().Add(-2 * time.Hour)
-	s.mu.Unlock()
-
-	st.evictIdle(time.Now().Add(-time.Hour))
+	fc := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	st := newSessionStore(fc)
+	st.getOrCreate("abcdefghijklmnop")
+	fc.Advance(2 * time.Hour)
+	st.evictIdle(fc.Now().Add(-time.Hour))
 
 	if st.count() != 0 {
 		t.Errorf("expected 0 sessions after eviction, got %d", st.count())
@@ -24,10 +22,10 @@ func TestSessionStore_evictIdle_removesSession(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_keepsActiveSession(t *testing.T) {
-	st := newSessionStore(clock.System())
+	fc := clock.NewFake(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	st := newSessionStore(fc)
 	st.getOrCreate("abcdefghijklmnop")
-
-	st.evictIdle(time.Now().Add(-time.Hour))
+	st.evictIdle(fc.Now().Add(-time.Hour))
 
 	if st.count() != 1 {
 		t.Errorf("expected 1 session (recently used), got %d", st.count())

@@ -49,3 +49,15 @@ type systemTicker struct{ t *time.Ticker }
 
 func (r *systemTicker) C() <-chan time.Time { return r.t.C }
 func (r *systemTicker) Stop()              { r.t.Stop() }
+
+func Since(c Clock, t time.Time) time.Duration {
+	return c.Now().Sub(t)
+}
+
+func Until(c Clock, t time.Time) time.Duration {
+	return t.Sub(c.Now())
+}
+
+func After(c Clock, d time.Duration) <-chan time.Time {
+	return c.NewTimer(d).C()
+}

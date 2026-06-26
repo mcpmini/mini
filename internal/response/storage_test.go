@@ -15,12 +15,15 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 )
 
-var clockTestBase = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-
-func newStore(t *testing.T) *Store {
+func newTestStore(t *testing.T, cfg StoreConfig) *Store {
 	t.Helper()
-	dir := t.TempDir()
-	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
+	if cfg.Dir == "" {
+		cfg.Dir = t.TempDir()
+	}
+	if cfg.Clock == nil {
+		cfg.Clock = clock.NewFake()
+	}
+	s, err := NewStore(cfg)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -28,15 +31,9 @@ func newStore(t *testing.T) *Store {
 	return s
 }
 
-func storeWithClock(t *testing.T, fakeClock clock.Clock) *Store {
+func newStore(t *testing.T) *Store {
 	t.Helper()
-	dir := t.TempDir()
-	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
-	if err != nil {
-		t.Fatalf("NewStore: %v", err)
-	}
-	t.Cleanup(s.Close)
-	return s
+	return newTestStore(t, StoreConfig{TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
 }
 
 func assertStoreEmpty(t *testing.T, s *Store, path string) {
@@ -94,27 +91,29 @@ func TestEvictExpired_keepsNonExpired(t *testing.T) {
 }
 
 func TestEvictExpired_removesExpiredFiles(t *testing.T) {
-	fakeClock := clock.NewFake(clockTestBase)
-	s := storeWithClock(t, fakeClock)
-
+	fc := clock.NewFake()
+	dir := t.TempDir()
+	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fc})
 	path, err := s.WriteRaw([]byte(`{"ok":true}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	fakeClock.Advance(2 * time.Hour)
+	fc.Advance(2 * time.Minute)
 	s.evictExpired()
 	assertStoreEmpty(t, s, path)
 }
 
-func TestEvictExpired_deletesFileFromDisk(t *testing.T) {
-	fakeClock := clock.NewFake(clockTestBase)
-	s := storeWithClock(t, fakeClock)
+func TestEvictExpired_removesRawFile(t *testing.T) {
+	fc := clock.NewFake()
+	dir := t.TempDir()
+	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fc})
 
 	path, err := s.WriteRaw([]byte(`{"full":"data"}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	fakeClock.Advance(2 * time.Hour)
+
+	fc.Advance(2 * time.Minute)
 	s.evictExpired()
 
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -123,31 +122,23 @@ func TestEvictExpired_deletesFileFromDisk(t *testing.T) {
 }
 
 func TestCleanupLoop_evictsExpiredFilesAutomatically(t *testing.T) {
-	fakeClock := clock.NewFake(clockTestBase)
+	fc := clock.NewFake()
 	dir := t.TempDir()
-	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
-	if err != nil {
-		t.Fatalf("NewStore: %v", err)
-	}
-	defer s.Close()
+	evicted := make(chan struct{}, 1)
+	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: 5 * time.Minute, Clock: fc, AfterEvict: func() { evicted <- struct{}{} }})
 
-	path, err := s.WriteRaw([]byte(`{"test":true}`))
-	if err != nil {
-		t.Fatalf("WriteRaw: %v", err)
-	}
+	path, _ := s.WriteRaw([]byte(`{"test":true}`))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
-		t.Fatalf("cleanupLoop timer not registered: %v", err)
+	if err := fc.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatalf("waiting for cleanup timer: %v", err)
 	}
-	fakeClock.Advance(2 * time.Hour)
-	// Re-registration of the next timer proves evictExpired already ran.
-	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
-		t.Fatalf("cleanupLoop did not re-register after eviction: %v", err)
-	}
+	fc.Advance(time.Minute + 5*time.Minute)
 
+	select {
+	case <-evicted:
+	case <-t.Context().Done():
+		t.Fatal("cleanup loop did not run")
+	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("cleanup loop did not evict expired file")
 	}
@@ -170,15 +161,15 @@ func TestLoadExisting_picksUpFilesFromPreviousSession(t *testing.T) {
 }
 
 func TestLoadExisting_evictsExpiredFromPreviousSession(t *testing.T) {
+	fc := clock.NewFake()
 	dir := t.TempDir()
-	fakeClock1 := clock.NewFake(clockTestBase)
-	s1, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock1})
+
+	s1 := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fc})
 	s1.WriteRaw([]byte(`{"old":true}`)) //nolint:errcheck
 	s1.Close()
 
-	// fakeClock2 is 2h ahead: file expires at clockTestBase+1h, now=clockTestBase+2h → expired on load.
-	fakeClock2 := clock.NewFake(clockTestBase.Add(2 * time.Hour))
-	s2, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock2})
+	fc.Advance(2 * time.Minute)
+	s2 := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fc})
 	defer s2.Close()
 
 	count, _ := s2.Stats()
@@ -261,7 +252,6 @@ func TestEvictOvershoot_concurrentWritesBudgetEnforced(t *testing.T) {
 
 func TestEvictOvershoot_keepsNewestFile(t *testing.T) {
 	dir := t.TempDir()
-	// Budget smaller than a single large file — the just-written file must survive.
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
 	defer s.Close()
 
@@ -277,12 +267,14 @@ func TestEvictOvershoot_keepsNewestFile(t *testing.T) {
 }
 
 func TestEvictIfNeeded_removesOldestWhenOverBudget(t *testing.T) {
+	fc := clock.NewFake()
 	dir := t.TempDir()
-	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
+	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour, Clock: fc})
 	defer s.Close()
 
 	large := []byte(`{"data":"` + strings.Repeat("x", 600*1024) + `"}`)
 	path1, _ := s.WriteRaw(large)
+	fc.Advance(time.Millisecond)
 	s.WriteRaw(large) //nolint:errcheck
 
 	if _, err := os.Stat(path1); !os.IsNotExist(err) {
