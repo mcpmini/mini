@@ -9,7 +9,7 @@ import (
 )
 
 func epochBase(at time.Time) string {
-	return fmt.Sprintf("%d_deadbeef", at.Unix())
+	return fmt.Sprintf("%d", at.UnixMilli())
 }
 
 func TestLoadEntry_recordsSize(t *testing.T) {
