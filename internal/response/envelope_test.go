@@ -153,7 +153,6 @@ func TestTimestampFilenames(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := filepath.Base(path)
-	// format: {unix_ms}.json  (13 digits)
 	if filepath.Ext(name) != ".json" {
 		t.Errorf("expected .json extension: %s", name)
 	}

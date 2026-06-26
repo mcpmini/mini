@@ -248,10 +248,10 @@ func TestParseTimestamp_invalidFormat(t *testing.T) {
 }
 
 func TestParseTimestamp_rawFileIgnored(t *testing.T) {
-	name := "1750466675_deadbeef.raw.json"
+	name := "1750466675123.raw.json"
 	_, ok := parseTimestamp(name)
-	if !ok {
-		t.Error("parseTimestamp doesn't filter raw files (loadExisting does) — this should parse ok")
+	if ok {
+		t.Error("expected false for ms-format .raw.json (no integer before extension)")
 	}
 }
 
@@ -279,7 +279,6 @@ func TestWriteRaw_filenameIsMilliseconds(t *testing.T) {
 		t.Fatalf("WriteRaw: %v", err)
 	}
 	base := strings.TrimSuffix(filepath.Base(path), ".json")
-	// format: {unix_ms}.json  (13 digits, no suffix in non-collision case)
 	if len(base) != 13 {
 		t.Errorf("expected 13-digit unix ms filename, got %s", filepath.Base(path))
 	}
