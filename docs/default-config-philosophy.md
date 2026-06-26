@@ -130,6 +130,6 @@ permissions:
     - delete_file        # add individual tools to hidden
 ```
 
-For projections, use `mini config action=set_projection` to tune per-tool settings mid-session, or edit `~/.mini/projections/<server>.yaml` directly.
+For projections, use `mini config action=set_projection` to tune per-tool settings mid-session, or edit `~/.mini/servers/<server>.proj.yaml` directly.
 
 Bundled defaults are only applied when `mini add` first installs the server and the user has not set explicit permissions or projections. They are never re-applied on subsequent runs.

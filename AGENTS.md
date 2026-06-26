@@ -147,12 +147,10 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 
 ```
 ~/.mini/
-  config.yaml              # global Config
-  servers/<name>.yaml      # one ServerConfig per upstream
-  projections/<name>.yaml  # ProjectionConfig map (tool → config)
-  actions/<name>.yaml      # ActionConfig (virtual tools with pre-filled args)
-  responses/               # auto-managed response store
-  tokens/                  # OAuth token cache
+  config.yaml                # global Config
+  servers/<name>.yaml        # one ServerConfig per upstream
+  servers/<name>.proj.yaml   # ProjectionConfig map (tool → config)
+  internal/                  # machine-managed runtime state
 ```
 
 Projections can be embedded inline in a server's YAML under `projections:`. A `"*"` key is a wildcard applying to all tools on that server.
