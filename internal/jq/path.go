@@ -15,26 +15,28 @@ func FormatPath(path []string) string {
 	}
 	var b strings.Builder
 	for _, seg := range path {
-		switch {
-		case strings.HasPrefix(seg, "["):
-			if b.Len() == 0 {
-				b.WriteByte('.')
-			}
-			b.WriteString(seg)
-		case isIdentSafe(seg):
-			b.WriteByte('.')
-			b.WriteString(seg)
-		default:
-			if b.Len() == 0 {
-				b.WriteByte('.')
-			}
-			key, _ := json.Marshal(seg)
-			b.WriteByte('[')
-			b.Write(key)
-			b.WriteByte(']')
-		}
+		writeSegment(&b, seg)
 	}
 	return b.String()
+}
+
+func writeSegment(b *strings.Builder, seg string) {
+	if isIdentSafe(seg) {
+		b.WriteByte('.')
+		b.WriteString(seg)
+		return
+	}
+	if b.Len() == 0 {
+		b.WriteByte('.')
+	}
+	if strings.HasPrefix(seg, "[") {
+		b.WriteString(seg)
+		return
+	}
+	key, _ := json.Marshal(seg)
+	b.WriteByte('[')
+	b.Write(key)
+	b.WriteByte(']')
 }
 
 func isIdentSafe(s string) bool {

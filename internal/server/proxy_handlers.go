@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/jq"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
 )
@@ -18,7 +19,7 @@ func (s *Server) routeProxyTool(ctx context.Context, name string, args json.RawM
 	case "config":
 		return s.handleConfigure(ctx, args, session)
 	case "read":
-		return s.handleRead(args)
+		return s.handleRead(ctx, args)
 	default:
 		return s.handleProxyCall(ctx, name, args, session)
 	}
@@ -127,7 +128,7 @@ func formatProjectedInline(env *response.Envelope) string {
 		meta["truncated"] = env.Truncated
 	}
 	if len(env.Excluded) > 0 || len(env.Truncated) > 0 {
-		meta["msg"] = "Response filtered, some fields were excluded or truncated. Use read(<file>, <jq filter>) to fetch full values."
+		meta["msg"] = "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values."
 	}
 	if len(env.Passthrough) > 0 {
 		meta["passthrough"] = env.Passthrough
@@ -140,8 +141,8 @@ func formatProjectedInline(env *response.Envelope) string {
 	return string(b)
 }
 
-func (s *Server) handleRead(raw json.RawMessage) (any, error) {
-	path, err := parseReadPath(raw)
+func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, error) {
+	path, filter, err := parseReadArgs(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -150,29 +151,35 @@ func (s *Server) handleRead(raw json.RawMessage) (any, error) {
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read: %w", err)
+		return nil, fmt.Errorf("%w: response file not found or unreadable", errInvalidParams)
 	}
-	return string(b), nil
+	if filter == "" {
+		return string(b), nil
+	}
+	out, err := jq.Eval(ctx, b, filter)
+	if err != nil {
+		return nil, fmt.Errorf("%w: read filter: %w", errInvalidParams, err)
+	}
+	return out, nil
 }
 
-func parseReadPath(raw json.RawMessage) (string, error) {
+func parseReadArgs(raw json.RawMessage) (path, filter string, err error) {
 	var p struct {
-		Path string `json:"path"`
+		Path   string `json:"path"`
+		Filter string `json:"filter"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
-		return "", fmt.Errorf("%w: read: %w", errInvalidParams, err)
+		return "", "", fmt.Errorf("%w: read: %w", errInvalidParams, err)
 	}
 	if p.Path == "" {
-		return "", fmt.Errorf("%w: read: path is required", errInvalidParams)
+		return "", "", fmt.Errorf("%w: read: path is required", errInvalidParams)
 	}
-	return p.Path, nil
+	return p.Path, p.Filter, nil
 }
 
 func (s *Server) validateStorePath(path string) error {
-	// EvalSymlinks resolves symlinks on both sides so a symlink inside the store
-	// dir pointing outside it cannot escape the confinement. On macOS, TempDir
-	// returns /var/... which is itself a symlink to /private/var/..., so both
-	// sides must be resolved for the prefix check to work correctly.
+	// EvalSymlinks on both sides prevents a symlink inside the store from escaping
+	// confinement; on macOS, TempDir itself is a symlink (/var/... → /private/var/...).
 	storeDir := resolveSymlinks(s.store.Dir())
 	abs := resolveSymlinks(path)
 	if !strings.HasPrefix(abs, storeDir+string(filepath.Separator)) {
@@ -181,8 +188,8 @@ func (s *Server) validateStorePath(path string) error {
 	return nil
 }
 
-// resolveSymlinks resolves symlinks, falling back to filepath.Abs if the path
-// does not exist yet (file written but not yet visible, or non-existent path).
+// Falls back to filepath.Abs for paths that do not exist yet (agent-provided paths
+// that haven't been created, or files cleaned up between validation and read).
 func resolveSymlinks(path string) string {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		return resolved
