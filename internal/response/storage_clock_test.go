@@ -42,7 +42,7 @@ func TestEvictExpired_removesExpiredFiles(t *testing.T) {
 	assertStoreEmpty(t, s, path)
 }
 
-func TestEvictExpired_removesRawFile(t *testing.T) {
+func TestEvictExpired_deletesFileFromDisk(t *testing.T) {
 	clk := clock.NewFake(clockTestBase)
 	s := storeWithClock(t, clk)
 

@@ -74,16 +74,17 @@ func (s *Store) restoreRemoveFailed(files []storedFile) {
 func collectRemoveFailed(files []storedFile) []storedFile {
 	var failed []storedFile
 	for _, f := range files {
-		if err := os.Remove(f.path); err != nil && !os.IsNotExist(err) {
-			slog.Default().Warn("response store: remove file failed", "err", err)
+		if warnRemoveErr(os.Remove(f.path)) {
 			failed = append(failed, f)
 		}
 	}
 	return failed
 }
 
-func warnRemoveErr(err error) {
-	if err != nil && !os.IsNotExist(err) {
-		slog.Default().Warn("response store: remove file failed", "err", err)
+func warnRemoveErr(err error) bool {
+	if err == nil || os.IsNotExist(err) {
+		return false
 	}
+	slog.Default().Warn("response store: remove file failed", "err", err)
+	return true
 }

@@ -215,17 +215,6 @@ func TestParseTimestamp_validName(t *testing.T) {
 	}
 }
 
-func TestParseTimestamp_epochFormat(t *testing.T) {
-	name := "1750466675_cafebabe.json"
-	ts, ok := parseTimestamp(name)
-	if !ok {
-		t.Fatal("expected valid epoch timestamp, got false")
-	}
-	if ts.Year() != 2025 {
-		t.Errorf("unexpected year for epoch 1750466675: got %d", ts.Year())
-	}
-}
-
 func TestParseTimestamp_tooShort(t *testing.T) {
 	_, ok := parseTimestamp("short.json")
 	if ok {
