@@ -136,7 +136,7 @@ func TestExtractContent_StructuredContentPreferText(t *testing.T) {
 
 func TestInvokeRaw_BasicCall(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse(`{"id":42}`, false))
-	raw, _, err := invoke.InvokeRaw(context.Background(), clock.System(), conn, "my_tool", map[string]any{"x": 1})
+	raw, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: "my_tool", Params: map[string]any{"x": 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestInvokeRaw_BasicCall(t *testing.T) {
 
 func TestInvokeRaw_ToolError(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse("something failed", true))
-	_, _, err := invoke.InvokeRaw(context.Background(), clock.System(), conn, "my_tool", nil)
+	_, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: "my_tool"})
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -155,7 +155,7 @@ func TestInvokeRaw_ToolError(t *testing.T) {
 
 func TestInvokeRaw_ConnError(t *testing.T) {
 	conn := &transport.FakeConnection{Err: errors.New("network down")}
-	_, _, err := invoke.InvokeRaw(context.Background(), clock.System(), conn, "my_tool", nil)
+	_, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: "my_tool"})
 	if err == nil || !contains(err.Error(), "network down") {
 		t.Errorf("expected conn error, got %v", err)
 	}
@@ -163,7 +163,7 @@ func TestInvokeRaw_ConnError(t *testing.T) {
 
 func TestInvokeRaw_NilParams(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse(`"ok"`, false))
-	raw, _, err := invoke.InvokeRaw(context.Background(), clock.System(), conn, "my_tool", nil)
+	raw, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: "my_tool"})
 	if err != nil {
 		t.Fatal(err)
 	}

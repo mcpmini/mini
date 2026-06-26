@@ -207,7 +207,7 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 		srv.RunSessionEviction(ctx, time.Hour)
 	}()
 
-	if err := fc.BlockUntilContext(context.Background(), 1); err != nil {
+	if err := fc.BlockUntilContext(context.Background(), 2); err != nil {
 		t.Fatal("ticker not registered:", err)
 	}
 	fc.Advance(30 * time.Minute)

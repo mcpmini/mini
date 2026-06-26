@@ -212,7 +212,7 @@ func (s *Server) dispatchRaw(ctx context.Context, p dispatchParams) (json.RawMes
 	defer cancel()
 	start := s.clock.Now()
 	raw, err := s.dispatchRawCall(ctx, p)
-	return raw, s.clock.Now().Sub(start).Milliseconds(), err
+	return raw, s.clock.Since(start).Milliseconds(), err
 }
 
 func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.RawMessage, error) {
@@ -304,7 +304,7 @@ func (s *Server) dialPerSessionConn(ctx context.Context, upstream *upstreamServe
 	if conn := session.Conn(upstream.cfg.Name); conn != nil {
 		return conn, nil
 	}
-	conn, err := dialUpstream(ctx, s.logger, s.cfg, upstream.cfg, s.clock)
+	conn, err := s.dialUpstream(ctx, upstream.cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +351,7 @@ func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
-	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", s.clock.Now().Sub(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
+	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", s.clock.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
 	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg), nil
 }
 

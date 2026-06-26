@@ -64,7 +64,7 @@ func (s *Server) dialAndList(u *upstreamServer) (transport.Connection, []transpo
 
 func (s *Server) dialForReconnect(u *upstreamServer) (transport.Connection, error) {
 	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
-	conn, err := dialUpstream(ctx, s.logger, s.cfg, u.cfg, s.clock)
+	conn, err := s.dialUpstream(ctx, u.cfg)
 	cancel()
 	if err != nil {
 		s.logger.Warn("reconnect failed", "server", u.cfg.Name, "err", err)

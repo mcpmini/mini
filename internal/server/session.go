@@ -290,7 +290,7 @@ func (s *Session) idleDuration(deadline time.Time) (time.Duration, bool) {
 	if !s.lastUsed.Before(deadline) {
 		return 0, false
 	}
-	return s.clock.Now().Sub(s.lastUsed), true
+	return s.clock.Since(s.lastUsed), true
 }
 
 type sessionStore struct {

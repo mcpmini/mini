@@ -9,7 +9,7 @@ import (
 )
 
 func runCleanup(configDir string, out io.Writer) error {
-	removed, freed, err := ops.PurgeExpiredResponses(configDir, time.Now())
+	removed, freed, err := ops.PurgeExpiredResponses(configDir, time.Now()) //nolint:clocklint
 	if err != nil {
 		return fmt.Errorf("cleanup: %w", err)
 	}

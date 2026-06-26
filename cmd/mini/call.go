@@ -138,7 +138,7 @@ func mustDialCall(ctx context.Context, configDir string, cc callContext) transpo
 		injectToken(ctx, configDir, cc.sc)
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	conn, err := invoke.Dial(ctx, logger, cc.cfg, *cc.sc, clock.System())
+	conn, err := invoke.Dial(ctx, invoke.DialParams{Logger: logger, Config: cc.cfg, Server: *cc.sc, Clock: clock.System()})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: connect to %s: %v\n", cc.serverName, err)
 		os.Exit(2)
@@ -147,7 +147,7 @@ func mustDialCall(ctx context.Context, configDir string, cc callContext) transpo
 }
 
 func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) {
-	raw, _, err := invoke.InvokeRaw(ctx, clock.System(), conn, cc.toolName, cc.params)
+	raw, _, err := invoke.InvokeRaw(ctx, invoke.InvokeRawParams{Clock: clock.System(), Conn: conn, Tool: cc.toolName, Params: cc.params})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: %v\n", err)
 		os.Exit(1)

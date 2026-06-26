@@ -31,9 +31,9 @@ func System() Clock { return systemClock{} }
 
 type systemClock struct{}
 
-func (systemClock) Now() time.Time                    { return time.Now() }
-func (systemClock) Since(t time.Time) time.Duration    { return time.Since(t) }
-func (systemClock) Until(t time.Time) time.Duration    { return time.Until(t) }
+func (systemClock) Now() time.Time                         { return time.Now() }
+func (systemClock) Since(t time.Time) time.Duration        { return time.Since(t) }
+func (systemClock) Until(t time.Time) time.Duration        { return time.Until(t) }
 func (systemClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 func (systemClock) NewTimer(d time.Duration) Timer {
@@ -49,10 +49,9 @@ func (systemClock) NewTicker(d time.Duration) Ticker {
 type systemTimer struct{ t *time.Timer }
 
 func (r *systemTimer) Chan() <-chan time.Time { return r.t.C }
-func (r *systemTimer) Stop() bool            { return r.t.Stop() }
+func (r *systemTimer) Stop() bool             { return r.t.Stop() }
 
 type systemTicker struct{ t *time.Ticker }
 
 func (r *systemTicker) Chan() <-chan time.Time { return r.t.C }
-func (r *systemTicker) Stop()              { r.t.Stop() }
-
+func (r *systemTicker) Stop()                  { r.t.Stop() }

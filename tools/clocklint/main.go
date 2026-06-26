@@ -55,9 +55,6 @@ func walkDir(dir string, hasError *bool) error {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
-		if isInClockPackage(path) {
-			return nil
-		}
 		checkFile(path, fset, hasError)
 		return nil
 	})
@@ -65,20 +62,10 @@ func walkDir(dir string, hasError *bool) error {
 
 func skipDir(name string) error {
 	switch name {
-	case "vendor", ".git", "node_modules", "clock", ".agents", ".claude", "cmd", "evals", "test":
+	case "vendor", ".git", "node_modules", "clock", ".agents", ".claude", "evals", "test":
 		return filepath.SkipDir
 	}
 	return nil
-}
-
-func isInClockPackage(path string) bool {
-	parts := strings.Split(filepath.ToSlash(path), "/")
-	for _, p := range parts {
-		if p == "clock" {
-			return true
-		}
-	}
-	return false
 }
 
 func checkFile(path string, fset *token.FileSet, hasError *bool) {
