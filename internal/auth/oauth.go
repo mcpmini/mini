@@ -89,12 +89,14 @@ func StartPKCEFlowOnListener(ctx context.Context, ac *config.AuthConfig, listene
 }
 
 func buildAuthURL(cfg *oauth2.Config, ac *config.AuthConfig, state, verifier string) string {
-	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
-	if ac.ResourceURL != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("resource", ac.ResourceURL))
-	}
+	// ExtraAuthParams first so computed security params (resource, code_challenge) always win.
+	var opts []oauth2.AuthCodeOption
 	for k, v := range ac.ExtraAuthParams {
 		opts = append(opts, oauth2.SetAuthURLParam(k, v))
+	}
+	opts = append(opts, oauth2.S256ChallengeOption(verifier))
+	if ac.ResourceURL != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("resource", ac.ResourceURL))
 	}
 	return cfg.AuthCodeURL(state, opts...)
 }

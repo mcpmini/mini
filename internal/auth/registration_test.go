@@ -45,7 +45,6 @@ func TestLoadRegistration_invalidName(t *testing.T) {
 
 func TestSaveRegistration_createsDir(t *testing.T) {
 	dir := t.TempDir()
-	// registrations/ subdir doesn't exist yet — Save should create it
 	if err := auth.SaveRegistration(dir, "svc", &auth.Registration{ClientID: "id1"}); err != nil {
 		t.Fatalf("save: %v", err)
 	}

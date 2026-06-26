@@ -347,6 +347,37 @@ func TestLoopbackCallbackPath_consistent(t *testing.T) {
 	<-doneCh
 }
 
+func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
+	mock := newMockAuthServer(t)
+	ac := mock.authConfig()
+	ac.ResourceURL = "https://resource.example.com"
+	ac.ExtraAuthParams = map[string]string{
+		"resource": "https://evil.example.com", // must not win
+		"prompt":   "consent",                  // must pass through
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, ac)
+	if err != nil {
+		t.Fatalf("StartPKCEFlow: %v", err)
+	}
+	defer func() { cancel(); <-doneCh }()
+
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("parse auth URL: %v", err)
+	}
+	q := parsed.Query()
+	if got := q.Get("resource"); got != "https://resource.example.com" {
+		t.Errorf("resource = %q, want %q — ExtraAuthParams must not override computed resource", got, "https://resource.example.com")
+	}
+	if got := q.Get("prompt"); got != "consent" {
+		t.Errorf("prompt = %q, want consent — ExtraAuthParams should pass through", got)
+	}
+}
+
 func TestTokenValidAfterForcedExpiry(t *testing.T) {
 	mock := newMockAuthServer(t)
 	dir := t.TempDir()
