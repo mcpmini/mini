@@ -7,6 +7,9 @@ import "time"
 // Clock abstracts the time operations used by this codebase.
 type Clock interface {
 	Now() time.Time
+	Since(t time.Time) time.Duration
+	Until(t time.Time) time.Duration
+	After(d time.Duration) <-chan time.Time
 	NewTimer(d time.Duration) Timer
 	NewTicker(d time.Duration) Ticker
 }
@@ -28,7 +31,10 @@ func System() Clock { return systemClock{} }
 
 type systemClock struct{}
 
-func (systemClock) Now() time.Time { return time.Now() }
+func (systemClock) Now() time.Time                    { return time.Now() }
+func (systemClock) Since(t time.Time) time.Duration    { return time.Since(t) }
+func (systemClock) Until(t time.Time) time.Duration    { return time.Until(t) }
+func (systemClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 func (systemClock) NewTimer(d time.Duration) Timer {
 	t := time.NewTimer(d)
@@ -50,14 +56,3 @@ type systemTicker struct{ t *time.Ticker }
 func (r *systemTicker) C() <-chan time.Time { return r.t.C }
 func (r *systemTicker) Stop()              { r.t.Stop() }
 
-func Since(c Clock, t time.Time) time.Duration {
-	return c.Now().Sub(t)
-}
-
-func Until(c Clock, t time.Time) time.Duration {
-	return t.Sub(c.Now())
-}
-
-func After(c Clock, d time.Duration) <-chan time.Time {
-	return c.NewTimer(d).C()
-}

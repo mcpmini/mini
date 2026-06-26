@@ -30,6 +30,10 @@ func (f *Fake) Now() time.Time {
 	return f.now
 }
 
+func (f *Fake) Since(t time.Time) time.Duration    { return f.Now().Sub(t) }
+func (f *Fake) Until(t time.Time) time.Duration    { return t.Sub(f.Now()) }
+func (f *Fake) After(d time.Duration) <-chan time.Time { return f.NewTimer(d).C() }
+
 // NewTimer registers a timer that fires when Advance moves the clock past its deadline.
 func (f *Fake) NewTimer(d time.Duration) Timer {
 	f.mu.Lock()
