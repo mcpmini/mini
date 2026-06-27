@@ -69,6 +69,9 @@ func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
 		}
 		a.TokenURL = meta.TokenURL
 	}
+	if len(a.Scopes) == 0 && len(meta.Scopes) > 0 {
+		a.Scopes = meta.Scopes
+	}
 	return nil
 }
 
@@ -90,13 +93,16 @@ type clientRegParams struct {
 }
 
 func resolveClientID(ctx context.Context, p clientRegParams) error {
-	if p.Meta != nil && p.Meta.CIMDSupported {
-		p.AuthConfig.ClientID = ClientMetadataURL
-		return nil
-	}
+	// Cached registration takes priority over CIMD per MCP spec §Client Registration Approaches.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L204-L208
+	// Servers that advertise CIMD but reject arbitrary metadata URLs (e.g. Linear) rely on this.
 	found, err := applyExistingClientReg(p.ConfigDir, p.ServerName, p.AuthConfig)
 	if err != nil || found {
 		return err
+	}
+	if p.Meta != nil && p.Meta.CIMDSupported {
+		p.AuthConfig.ClientID = ClientMetadataURL
+		return nil
 	}
 	return dynamicRegister(ctx, p)
 }
@@ -113,7 +119,7 @@ func dynamicRegister(ctx context.Context, p clientRegParams) error {
 	if err := validateEndpointURL(regURL, "registration_endpoint"); err != nil {
 		return err
 	}
-	clientID, err := Register(ctx, regURL)
+	clientID, err := Register(ctx, regURL, ResolvedCallbackURI(a))
 	if err != nil {
 		return err
 	}

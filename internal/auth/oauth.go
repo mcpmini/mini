@@ -46,17 +46,17 @@ func PKCEFlow(ctx context.Context, ac *config.AuthConfig, openBrowser func(strin
 }
 
 // ClientMetadataURL is mini's CIMD document URL — the stable client_id used when
-// the AS advertises client_id_metadata_document_supported.
+// the authorization server advertises client_id_metadata_document_supported.
 // GitHub Pages serves application/json; raw.githubusercontent.com serves text/plain,
-// which strict ASes reject when fetching client metadata documents.
-const ClientMetadataURL = "https://minimcp.github.io/minimcp/oauth/client-metadata.json"
+// which strict authorization servers reject when fetching client metadata documents.
+const ClientMetadataURL = "https://mcpmini.github.io/mini/oauth/client-metadata.json"
 
 // StartPKCEFlow starts an OAuth2 PKCE flow without blocking.
 // Returns the authorization URL and a channel that receives the result when
 // the user completes the flow (or ctx is canceled).
 // Use StartPKCEFlowOnListener when you need to control listener lifetime.
 func StartPKCEFlow(ctx context.Context, ac *config.AuthConfig) (authURL string, done <-chan PKCEResult, err error) {
-	addr := fmt.Sprintf("127.0.0.1:%d", LoopbackCallbackPort)
+	addr := fmt.Sprintf("localhost:%d", ResolvedCallbackPort(ac))
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		return "", nil, fmt.Errorf("listen for oauth callback on %s: %w", addr, err)
@@ -73,22 +73,43 @@ func StartPKCEFlowOnListener(ctx context.Context, ac *config.AuthConfig, listene
 	verifier := oauth2.GenerateVerifier()
 	state := oauth2.GenerateVerifier()
 
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		return "", nil, fmt.Errorf("oauth callback listener has unexpected address type %T", listener.Addr())
+	}
+	redirectURI := fmt.Sprintf("http://localhost:%d%s", tcpAddr.Port, LoopbackCallbackPath)
 	codeCh := make(chan string, 1)
 	srv := serveCallbackListener(listener, callbackHandler(state, codeCh))
-	cfg.RedirectURL = loopbackCallbackURI
-	url := buildAuthURL(cfg, state, verifier, ac.ResourceURL)
+	cfg.RedirectURL = redirectURI
+	url := buildAuthURL(cfg, buildAuthURLParams{
+		state:           state,
+		verifier:        verifier,
+		resourceURL:     ac.ResourceURL,
+		extraAuthParams: ac.ExtraAuthParams,
+	})
 
 	resultCh := make(chan PKCEResult, 1)
 	go exchangeCode(ctx, ExchangeCodeParams{Cfg: cfg, Verifier: verifier, ResourceURL: ac.ResourceURL, CodeCh: codeCh, Srv: srv, ResultCh: resultCh})
 	return url, resultCh, nil
 }
 
-func buildAuthURL(cfg *oauth2.Config, state, verifier, resourceURL string) string {
-	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
-	if resourceURL != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("resource", resourceURL))
+type buildAuthURLParams struct {
+	state, verifier string
+	resourceURL     string
+	extraAuthParams map[string]string
+}
+
+func buildAuthURL(cfg *oauth2.Config, p buildAuthURLParams) string {
+	// ExtraAuthParams first so computed security params (resource, code_challenge) always win.
+	var opts []oauth2.AuthCodeOption
+	for k, v := range p.extraAuthParams {
+		opts = append(opts, oauth2.SetAuthURLParam(k, v))
 	}
-	return cfg.AuthCodeURL(state, opts...)
+	opts = append(opts, oauth2.S256ChallengeOption(p.verifier))
+	if p.resourceURL != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("resource", p.resourceURL))
+	}
+	return cfg.AuthCodeURL(p.state, opts...)
 }
 
 func serveCallbackListener(listener net.Listener, handler http.Handler) *http.Server {

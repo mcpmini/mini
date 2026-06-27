@@ -172,6 +172,32 @@ func TestStartPKCEFlow_nonBlocking(t *testing.T) {
 	}
 }
 
+func TestStartPKCEFlow_redirectURIUsesLocalhost(t *testing.T) {
+	mock := newMockAuthServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	if err != nil {
+		t.Fatalf("StartPKCEFlow: %v", err)
+	}
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("parse auth URL: %v", err)
+	}
+	redirectURI := parsed.Query().Get("redirect_uri")
+	redirectParsed, err := url.Parse(redirectURI)
+	if err != nil {
+		t.Fatalf("parse redirect_uri: %v", err)
+	}
+	if redirectParsed.Hostname() != "localhost" {
+		t.Errorf("redirect_uri host = %q, want localhost", redirectParsed.Hostname())
+	}
+	// Drain channel so test doesn't leak.
+	cancel()
+	<-doneCh
+}
+
 func TestIsNotFound(t *testing.T) {
 	_, err := auth.Load(t.TempDir(), "nonexistent")
 	if !auth.IsNotFound(err) {
@@ -319,6 +345,37 @@ func TestLoopbackCallbackPath_consistent(t *testing.T) {
 
 	cancel()
 	<-doneCh
+}
+
+func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
+	mock := newMockAuthServer(t)
+	ac := mock.authConfig()
+	ac.ResourceURL = "https://resource.example.com"
+	ac.ExtraAuthParams = map[string]string{
+		"resource": "https://evil.example.com", // must not win
+		"prompt":   "consent",                  // must pass through
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, ac)
+	if err != nil {
+		t.Fatalf("StartPKCEFlow: %v", err)
+	}
+	defer func() { cancel(); <-doneCh }()
+
+	parsed, err := url.Parse(authURL)
+	if err != nil {
+		t.Fatalf("parse auth URL: %v", err)
+	}
+	q := parsed.Query()
+	if got := q.Get("resource"); got != "https://resource.example.com" {
+		t.Errorf("resource = %q, want %q — ExtraAuthParams must not override computed resource", got, "https://resource.example.com")
+	}
+	if got := q.Get("prompt"); got != "consent" {
+		t.Errorf("prompt = %q, want consent — ExtraAuthParams should pass through", got)
+	}
 }
 
 func TestTokenValidAfterForcedExpiry(t *testing.T) {

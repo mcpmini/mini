@@ -4,6 +4,9 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -35,6 +38,7 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 		"authorization_endpoint":                "https://as.example.com/authorize",
 		"token_endpoint":                        "https://as.example.com/token",
 		"client_id_metadata_document_supported": true,
+		"code_challenge_methods_supported":      []string{"S256"},
 	})
 	defer asSrv.Close()
 
@@ -50,6 +54,90 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 	}
 	if sc.Auth.ResourceURL != sc.URL {
 		t.Errorf("ResourceURL = %q, want %q", sc.Auth.ResourceURL, sc.URL)
+	}
+}
+
+func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
+	// Servers like Linear advertise CIMD but reject arbitrary metadata URLs.
+	// A cached DCR client_id must win over CIMD to avoid re-fetching and failing.
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                "https://as.example.com/authorize",
+		"token_endpoint":                        "https://as.example.com/token",
+		"client_id_metadata_document_supported": true,
+		"code_challenge_methods_supported":      []string{"S256"},
+	})
+	defer asSrv.Close()
+
+	dir := t.TempDir()
+	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "cached-id"}); err != nil {
+		t.Fatal(err)
+	}
+
+	sc := &config.ServerConfig{
+		URL:  asSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{Type: "oauth2"},
+	}
+	if err := auth.ResolveEndpoints(context.Background(), dir, "srv", sc); err != nil {
+		t.Fatal(err)
+	}
+	if sc.Auth.ClientID != "cached-id" {
+		t.Errorf("ClientID = %q, want cached-id (cached DCR must beat CIMD)", sc.Auth.ClientID)
+	}
+}
+
+func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	defer asSrv.Close()
+
+	prmSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"authorization_servers": []string{asSrv.URL},
+			"scopes_supported":      []string{"channels:read", "chat:write"},
+		})
+	}))
+	defer prmSrv.Close()
+
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer mcpSrv.Close()
+
+	sc := &config.ServerConfig{
+		URL:  mcpSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured"},
+	}
+	if err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc); err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.Auth.Scopes) != 2 || sc.Auth.Scopes[0] != "channels:read" {
+		t.Errorf("Scopes = %v, want [channels:read chat:write]", sc.Auth.Scopes)
+	}
+}
+
+func TestResolveEndpoints_userScopesNotOverwritten(t *testing.T) {
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":          "https://as.example.com/authorize",
+		"token_endpoint":                  "https://as.example.com/token",
+		"code_challenge_methods_supported": []string{"S256"},
+		"scopes_supported":                []string{"channels:read"},
+	})
+	defer asSrv.Close()
+
+	sc := &config.ServerConfig{
+		URL:  asSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured", Scopes: []string{"custom:scope"}},
+	}
+	if err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc); err != nil {
+		t.Fatal(err)
+	}
+	if len(sc.Auth.Scopes) != 1 || sc.Auth.Scopes[0] != "custom:scope" {
+		t.Errorf("Scopes = %v, want user-configured [custom:scope] preserved", sc.Auth.Scopes)
 	}
 }
 

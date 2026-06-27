@@ -2,7 +2,7 @@ package defaults
 
 import "embed"
 
-//go:embed projections/*.yaml permissions/*.yaml
+//go:embed projections/*.yaml permissions/*.yaml auth/*.yaml
 var FS embed.FS
 
 // ProjectionFor returns the bundled projection YAML for the given server name,
@@ -19,6 +19,16 @@ func ProjectionFor(serverName string) []byte {
 // or nil if no bundled defaults exist for that name.
 func PermissionsFor(serverName string) []byte {
 	data, err := FS.ReadFile("permissions/" + serverName + ".yaml")
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// AuthFor returns the bundled auth config YAML for the given server name,
+// or nil if no bundled defaults exist for that name.
+func AuthFor(serverName string) []byte {
+	data, err := FS.ReadFile("auth/" + serverName + ".yaml")
 	if err != nil {
 		return nil
 	}

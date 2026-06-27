@@ -1,0 +1,6 @@
+type: oauth2
+# Slack's pre-registered MCP client for Claude Code — approved by Slack.
+# callback_port 3118 is required: the redirect URI registered with this app is
+# http://localhost:3118/callback. Scopes are auto-discovered from AS metadata.
+client_id: "1601185624273.8899143856786"
+callback_port: 3118
