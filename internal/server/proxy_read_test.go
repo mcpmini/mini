@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -151,20 +150,22 @@ func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
 	text1 := toolResultText(t, resp1)
 	var env map[string]any
 	_ = json.Unmarshal([]byte(text1), &env)
-	fullPath, _ := env["__mini"].(map[string]any)["file"].(string)
-	if fullPath == "" {
-		t.Fatalf("expected file path in __mini, got: %s", text1)
+	key, _ := env["__mini"].(map[string]any)["file"].(string)
+	if key == "" {
+		t.Fatalf("expected file key in __mini, got: %s", text1)
 	}
-	filename := filepath.Base(fullPath)
+	if strings.ContainsAny(key, "/\\") || strings.HasSuffix(key, ".json") {
+		t.Errorf("__mini.file should be a bare key with no path or extension, got: %s", key)
+	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filename}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key}))
 	text2 := toolResultText(t, resp2)
 	if text2 == "" {
-		t.Error("read returned empty content using filename-only path")
+		t.Error("read returned empty content using bare key")
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(text2), &parsed); err != nil {
-		t.Errorf("read content via filename-only path should be JSON: %s", text2)
+		t.Errorf("read content via bare key should be JSON: %s", text2)
 	}
 }
 

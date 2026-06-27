@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -83,7 +84,7 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 				t.Fatalf("expected __mini.file, got: %s", text)
 			}
 
-			rawFile, err := os.ReadFile(filePath)
+			rawFile, err := os.ReadFile(filepath.Join(cfg.ResponseDir, filePath+".json"))
 			if err != nil {
 				t.Fatalf("read raw file: %v", err)
 			}

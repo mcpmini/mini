@@ -168,6 +168,9 @@ func (s *Server) resolveReadPath(path string) string {
 	if filepath.IsAbs(path) || strings.ContainsRune(path, filepath.Separator) {
 		return path
 	}
+	if filepath.Ext(path) == "" {
+		path = path + ".json"
+	}
 	return filepath.Join(s.store.Dir(), path)
 }
 

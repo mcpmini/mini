@@ -8,7 +8,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 
@@ -164,9 +163,9 @@ func assertElisionLinesFormat(t *testing.T, lines []string) {
 
 func assertElisionLinesFile(t *testing.T, header string) {
 	t.Helper()
-	path := strings.TrimPrefix(header, "[gh.list_issues] file:")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected raw response file to exist: %v", err)
+	key := strings.TrimPrefix(header, "[gh.list_issues] file:")
+	if strings.ContainsAny(key, "/\\") || strings.HasSuffix(key, ".json") || len(key) < 13 {
+		t.Fatalf("expected bare key in file header (no path, no extension), got: %s", key)
 	}
 }
 

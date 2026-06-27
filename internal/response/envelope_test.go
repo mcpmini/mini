@@ -58,7 +58,7 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	if env.File == nil {
 		t.Fatal("expected raw file path when fields were excluded")
 	}
-	if _, err := os.Stat(*env.File); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(store.Dir(), *env.File+".json")); os.IsNotExist(err) {
 		t.Errorf("response file does not exist: %s", *env.File)
 	}
 	if env.Data == nil {
@@ -151,17 +151,16 @@ func TestTokenEstimation(t *testing.T) {
 func TestTimestampFilenames(t *testing.T) {
 	store := newTestStore(t)
 	raw, _ := json.Marshal(map[string]any{"x": "y"})
-	path, err := store.WriteRaw(raw)
+	key, err := store.WriteRaw(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := filepath.Base(path)
-	if filepath.Ext(name) != ".json" {
-		t.Errorf("expected .json extension: %s", name)
+	base := key
+	if idx := strings.IndexByte(key, '_'); idx > 0 {
+		base = key[:idx]
 	}
-	base := strings.TrimSuffix(name, ".json")
 	if len(base) != 13 {
-		t.Errorf("expected 13-digit unix ms filename, got %s", name)
+		t.Errorf("expected 13-digit unix ms key, got %s", key)
 	}
 }
 
