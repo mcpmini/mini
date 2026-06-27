@@ -341,7 +341,7 @@ How these tiers are enforced depends on which mode mini is running in.
 For servers that require OAuth2 (Linear, Slack):
 
 ```bash
-mini auth linear   # opens browser for PKCE flow, token stored in ~/.mini/internal/
+mini auth linear   # opens browser to complete auth handshake
 ```
 
 For servers using API keys or Bearer tokens, set them in the server config or reference an env var:
