@@ -5,19 +5,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
+
+	"github.com/mcpmini/mini/internal/randutil"
 )
 
-// WriteRaw pretty-prints before writing — "raw" refers to the unprocessed upstream bytes, not the on-disk format.
 func (s *Store) WriteRaw(raw []byte) (string, error) {
 	return s.writeBytes(prettyJSON(raw))
 }
 
 func (s *Store) writeBytes(b []byte) (string, error) {
-	s.evictIfNeeded(int64(len(b)))
-
-	base := newTimestampBase()
-	path, err := s.openUnique(base, b)
+	base := s.newFileBase()
+	path, err := s.createUniqueFile(base, b)
 	if err != nil {
 		return "", err
 	}
@@ -27,11 +25,11 @@ func (s *Store) writeBytes(b []byte) (string, error) {
 
 func (s *Store) recordWrite(path string, size int64) {
 	s.mu.Lock()
-	s.files = append(s.files, storedFile{path: path, size: size, expires: time.Now().Add(s.ttl)})
+	s.files = append(s.files, storedFile{path: path, size: size, expires: s.clk.Now().Add(s.ttl)})
 	s.usedBytes += size
 	toRemove := s.evictOvershoot()
 	s.mu.Unlock()
-	removeFiles(toRemove)
+	s.restoreRemoveFailed(toRemove)
 }
 
 func prettyJSON(b []byte) []byte {
@@ -46,20 +44,18 @@ func prettyJSON(b []byte) []byte {
 	return pretty
 }
 
-func newTimestampBase() string {
-	now := time.Now().UTC()
-	return fmt.Sprintf("%s%03d", now.Format(tsLayout), now.Nanosecond()/1_000_000)
+func (s *Store) newFileBase() string {
+	return fmt.Sprintf("%d", s.clk.Now().UnixMilli())
 }
 
-// openUnique writes b to base+".json". On collision it retries with a numeric
-// suffix (_0001, _0002, …) until it finds a free slot or exceeds maxAttempts.
-// O_EXCL guarantees atomicity: concurrent callers each advance through a
-// different suffix, so up to maxAttempts goroutines can collide on the same
-// millisecond without error.
-func (s *Store) openUnique(base string, b []byte) (string, error) {
-	const maxAttempts = 200
+func (s *Store) createUniqueFile(base string, b []byte) (string, error) {
+	const maxAttempts = 5
 	for i := range maxAttempts {
-		path := filepath.Join(s.dir, uniqueBase(base, i)+".json")
+		name := base
+		if i > 0 {
+			name = base + "_" + randutil.HexString(2)
+		}
+		path := filepath.Join(s.dir, name+".json")
 		if err := writeExclusive(path, b); os.IsExist(err) {
 			continue
 		} else if err != nil {
@@ -71,6 +67,8 @@ func (s *Store) openUnique(base string, b []byte) (string, error) {
 }
 
 func writeExclusive(path string, b []byte) error {
+	// O_EXCL makes create atomic at the OS level — no TOCTOU race between
+	// checking existence and opening; exactly one caller wins per path.
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err

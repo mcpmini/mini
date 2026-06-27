@@ -5,6 +5,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 type Store struct {
@@ -12,6 +14,7 @@ type Store struct {
 	ttl         time.Duration
 	budgetBytes int64
 	usedBytes   int64
+	clk         clock.Clock
 	mu          sync.Mutex
 	closeOnce   sync.Once
 	files       []storedFile
@@ -20,7 +23,6 @@ type Store struct {
 
 type storedFile struct {
 	path    string
-	rawPath string // paired .raw.json file, empty if none
 	size    int64
 	expires time.Time
 }
@@ -30,16 +32,22 @@ type StoreConfig struct {
 	TTL             time.Duration
 	BudgetMB        int
 	CleanupInterval time.Duration
+	Clock           clock.Clock
 }
 
 func NewStore(cfg StoreConfig) (*Store, error) {
 	if err := secureDir(cfg.Dir); err != nil {
 		return nil, err
 	}
+	clk := cfg.Clock
+	if clk == nil {
+		clk = clock.System()
+	}
 	s := &Store{
 		dir:         cfg.Dir,
 		ttl:         cfg.TTL,
 		budgetBytes: int64(cfg.BudgetMB) * 1024 * 1024,
+		clk:         clk,
 		done:        make(chan struct{}),
 	}
 	s.loadExisting()
@@ -71,11 +79,3 @@ func (s *Store) Stats() (fileCount int, usedBytes int64) {
 
 func (s *Store) Dir() string { return s.dir }
 
-func uniqueBase(base string, i int) string {
-	if i == 0 {
-		return base
-	}
-	return fmt.Sprintf("%s_%04d", base, i)
-}
-
-const tsLayout = "20060102150405"

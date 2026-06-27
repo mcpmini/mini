@@ -153,16 +153,17 @@ func TestTimestampFilenames(t *testing.T) {
 		t.Fatal(err)
 	}
 	name := filepath.Base(path)
-	if len(name) != 17+len(".json") {
-		t.Errorf("unexpected filename format: %s", name)
-	}
 	if filepath.Ext(name) != ".json" {
 		t.Errorf("expected .json extension: %s", name)
+	}
+	base := strings.TrimSuffix(name, ".json")
+	if len(base) != 13 {
+		t.Errorf("expected 13-digit unix ms filename, got %s", name)
 	}
 }
 
 func tsFilename(at time.Time) string {
-	return fmt.Sprintf("%s%03d.json", at.UTC().Format("20060102150405"), at.UTC().Nanosecond()/1_000_000)
+	return fmt.Sprintf("%d.json", at.UnixMilli())
 }
 
 func TestLoadExistingSkipsExpired(t *testing.T) {

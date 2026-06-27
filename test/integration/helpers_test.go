@@ -481,6 +481,49 @@ func (c *mcpClient) execEnvelope(server, tool string, args map[string]any) envel
 	return e
 }
 
+type miniEnv struct {
+	File      string           `json:"file"`
+	Excluded  []string         `json:"excluded"`
+	Truncated []miniTruncation `json:"truncated"`
+}
+
+type miniTruncation struct {
+	Path  string `json:"path"`
+	Chars int    `json:"chars"`
+	Items int    `json:"items"`
+}
+
+func parseMiniEnv(t *testing.T, text string) miniEnv {
+	t.Helper()
+	var outer struct {
+		Mini miniEnv `json:"__mini"`
+	}
+	if err := json.Unmarshal([]byte(text), &outer); err != nil {
+		t.Fatalf("parse __mini response: %v\ntext: %s", err, text)
+	}
+	if outer.Mini.File == "" {
+		t.Fatalf("expected __mini.file in response, got: %s", text)
+	}
+	return outer.Mini
+}
+
+func miniFile(t *testing.T, text string) string {
+	return parseMiniEnv(t, text).File
+}
+
+func (c *mcpClient) callRead(path, filter string) string {
+	c.t.Helper()
+	args := map[string]any{"path": path}
+	if filter != "" {
+		args["filter"] = filter
+	}
+	raw := c.mustCall("tools/call", map[string]any{
+		"name":      "read",
+		"arguments": args,
+	})
+	return toolCallText(c.t, raw)
+}
+
 func (c *mcpClient) execProtectedTool(server, tool string, args map[string]any) string {
 	c.t.Helper()
 	if args == nil {

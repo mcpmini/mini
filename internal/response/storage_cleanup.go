@@ -7,13 +7,13 @@ import (
 )
 
 func (s *Store) cleanupLoop(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
 	for {
+		t := s.clk.NewTimer(interval)
 		select {
-		case <-ticker.C:
+		case <-t.C():
 			s.evictExpired()
 		case <-s.done:
+			t.Stop()
 			return
 		}
 	}
@@ -21,17 +21,16 @@ func (s *Store) cleanupLoop(interval time.Duration) {
 
 func (s *Store) evictExpired() {
 	s.mu.Lock()
-	kept, toRemove := partitionByExpiry(s.files)
+	kept, toRemove := partitionByExpiry(s.files, s.clk.Now())
 	for _, f := range toRemove {
 		s.usedBytes -= f.size
 	}
 	s.files = kept
 	s.mu.Unlock()
-	removeFiles(toRemove)
+	s.restoreRemoveFailed(toRemove)
 }
 
-func partitionByExpiry(files []storedFile) (kept, expired []storedFile) {
-	now := time.Now()
+func partitionByExpiry(files []storedFile, now time.Time) (kept, expired []storedFile) {
 	kept = files[:0]
 	for _, f := range files {
 		if f.expires.After(now) {
@@ -43,22 +42,6 @@ func partitionByExpiry(files []storedFile) (kept, expired []storedFile) {
 	return
 }
 
-func (s *Store) evictIfNeeded(incoming int64) {
-	if s.budgetBytes == 0 {
-		return
-	}
-	s.mu.Lock()
-	var toRemove []storedFile
-	for s.usedBytes+incoming > s.budgetBytes && len(s.files) > 0 {
-		toRemove = append(toRemove, s.files[0])
-		s.usedBytes -= s.files[0].size
-		s.files = s.files[1:]
-	}
-	s.mu.Unlock()
-	removeFiles(toRemove)
-}
-
-// evictOvershoot removes oldest files until usedBytes is within the budget.
 // Must be called with s.mu held. Returns the removed entries so the caller can
 // delete the files after releasing the lock (file I/O must not run under the mutex).
 // Keeps at least one file (the one just written) even if the budget is tight.
@@ -75,17 +58,33 @@ func (s *Store) evictOvershoot() []storedFile {
 	return out
 }
 
-func removeFiles(files []storedFile) {
-	for _, f := range files {
-		warnRemoveErr(os.Remove(f.path))
-		if f.rawPath != "" {
-			warnRemoveErr(os.Remove(f.rawPath))
-		}
+func (s *Store) restoreRemoveFailed(files []storedFile) {
+	failed := collectRemoveFailed(files)
+	if len(failed) == 0 {
+		return
 	}
+	s.mu.Lock()
+	for _, f := range failed {
+		s.usedBytes += f.size
+	}
+	s.files = append(failed, s.files...)
+	s.mu.Unlock()
 }
 
-func warnRemoveErr(err error) {
-	if err != nil && !os.IsNotExist(err) {
-		slog.Default().Warn("response store: remove file failed", "err", err)
+func collectRemoveFailed(files []storedFile) []storedFile {
+	var failed []storedFile
+	for _, f := range files {
+		if warnRemoveErr(os.Remove(f.path)) {
+			failed = append(failed, f)
+		}
 	}
+	return failed
+}
+
+func warnRemoveErr(err error) bool {
+	if err == nil || os.IsNotExist(err) {
+		return false
+	}
+	slog.Default().Warn("response store: remove file failed", "err", err)
+	return true
 }

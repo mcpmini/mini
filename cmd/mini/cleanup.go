@@ -15,7 +15,7 @@ func runCleanup(configDir string, out io.Writer) error {
 	if removed == 0 {
 		fmt.Fprintln(out, "nothing to clean up")
 	} else {
-		fmt.Fprintf(out, "removed %d file pair(s), freed %.1f MB\n", removed, float64(freed)/1e6)
+		fmt.Fprintf(out, "removed %d file(s), freed %.1f MB\n", removed, float64(freed)/1e6)
 	}
 	return nil
 }

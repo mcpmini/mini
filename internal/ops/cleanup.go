@@ -8,8 +8,8 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// PurgeExpiredResponses removes response file pairs older than the configured TTL.
-// Returns the number of pairs removed and bytes freed.
+// PurgeExpiredResponses removes response files older than the configured TTL.
+// Returns the number of files removed and bytes freed.
 func PurgeExpiredResponses(configDir string) (removed int, freed int64, err error) {
 	cfg, _, err := config.Load(configDir)
 	if err != nil {
