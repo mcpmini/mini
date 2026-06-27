@@ -201,10 +201,11 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	evicted := make(chan struct{}, 1)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		srv.RunSessionEviction(ctx, time.Hour)
+		srv.runSessionEviction(ctx, time.Hour, func() { evicted <- struct{}{} })
 	}()
 
 	if err := fakeClock.BlockUntilContext(context.Background(), 2); err != nil {
@@ -212,14 +213,15 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 	}
 	fakeClock.Advance(30 * time.Minute)
 
-	for range 400 {
-		if srv.sessions.count() == 0 {
-			cancel()
-			<-done
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-evicted:
+	case <-t.Context().Done():
+		t.Fatal("eviction did not complete")
 	}
-	t.Errorf("expected 0 sessions after eviction, got %d", srv.sessions.count())
+	cancel()
+	<-done
+	if got := srv.sessions.count(); got != 0 {
+		t.Errorf("expected 0 sessions after eviction, got %d", got)
+	}
 }
 

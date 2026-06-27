@@ -130,12 +130,19 @@ func (s *Server) currentAliasesFor(serverName string) map[string]string {
 
 // Must be called in a goroutine; blocks until ctx is canceled.
 func (s *Server) RunSessionEviction(ctx context.Context, maxIdle time.Duration) {
+	s.runSessionEviction(ctx, maxIdle, nil)
+}
+
+func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, afterEvict func()) {
 	ticker := s.clock.NewTicker(maxIdle / 2)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.Chan():
 			s.sessions.evictIdle(s.clock.Now().Add(-maxIdle))
+			if afterEvict != nil {
+				afterEvict()
+			}
 		case <-ctx.Done():
 			return
 		}
