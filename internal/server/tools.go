@@ -105,9 +105,9 @@ func miniConfigSchema() map[string]any {
 func miniReadSchema() map[string]any {
 	return map[string]any{
 		"name":        "read",
-		"description": "Read a raw upstream response file written by mini. Pass the full path or just the filename from __mini.file. Use filter to run a jq expression and extract specific fields instead of reading the full file.",
+		"description": "Read a raw upstream response file written by mini. Pass the bare key from __mini.file (e.g. 1750830563123). Use filter to run a jq expression and extract specific fields instead of reading the full file.",
 		"inputSchema": schema(map[string]any{
-			"path":   prop("string", "Full path or filename (e.g. 1750830563123.json) from __mini.file"),
+			"file":   prop("string", "Bare key (e.g. 1750830563123) from __mini.file"),
 			"filter": prop("string", "Optional jq filter (e.g. .title, .[0].body, .items[0].body, .items[] | .title)"),
 		}),
 	}

@@ -142,15 +142,15 @@ func formatProjectedInline(env *response.Envelope) string {
 }
 
 func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, error) {
-	path, filter, err := parseReadArgs(raw)
+	file, filter, err := parseReadArgs(raw)
 	if err != nil {
 		return nil, err
 	}
-	path = s.resolveReadPath(path)
-	if err := s.validateStorePath(path); err != nil {
+	file = s.resolveReadPath(file)
+	if err := s.validateStorePath(file); err != nil {
 		return nil, err
 	}
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("%w: response file not found or unreadable", errInvalidParams)
 	}
@@ -164,25 +164,25 @@ func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, erro
 	return out, nil
 }
 
-func (s *Server) resolveReadPath(path string) string {
-	if filepath.IsAbs(path) || strings.ContainsRune(path, filepath.Separator) {
-		return path
+func (s *Server) resolveReadPath(file string) string {
+	if filepath.Ext(file) == "" {
+		file = file + ".json"
 	}
-	return filepath.Join(s.store.Dir(), path)
+	return filepath.Join(s.store.Dir(), file)
 }
 
-func parseReadArgs(raw json.RawMessage) (path, filter string, err error) {
+func parseReadArgs(raw json.RawMessage) (file, filter string, err error) {
 	var p struct {
-		Path   string `json:"path"`
+		File   string `json:"file"`
 		Filter string `json:"filter"`
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return "", "", fmt.Errorf("%w: read: %w", errInvalidParams, err)
 	}
-	if p.Path == "" {
-		return "", "", fmt.Errorf("%w: read: path is required", errInvalidParams)
+	if p.File == "" {
+		return "", "", fmt.Errorf("%w: read: file is required", errInvalidParams)
 	}
-	return p.Path, p.Filter, nil
+	return p.File, p.Filter, nil
 }
 
 func (s *Server) validateStorePath(path string) error {

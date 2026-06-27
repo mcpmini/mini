@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -78,12 +79,12 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 			if mini == nil {
 				t.Fatal("expected __mini envelope from projection")
 			}
-			filePath, _ := mini["file"].(string)
-			if filePath == "" {
+			key, _ := mini["file"].(string)
+			if key == "" {
 				t.Fatalf("expected __mini.file, got: %s", text)
 			}
 
-			rawFile, err := os.ReadFile(filePath)
+			rawFile, err := os.ReadFile(filepath.Join(cfg.ResponseDir, key+".json"))
 			if err != nil {
 				t.Fatalf("read raw file: %v", err)
 			}
@@ -100,7 +101,7 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 					continue
 				}
 
-				resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath, "filter": path}))
+				resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key, "filter": path}))
 				got := toolResultText(t, resp2)
 
 				if got != want {

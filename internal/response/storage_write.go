@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mcpmini/mini/internal/randutil"
 )
 
 func (s *Store) WriteRaw(raw []byte) (string, error) {
-	return s.writeBytes(prettyJSON(raw))
+	path, err := s.writeBytes(prettyJSON(raw))
+	if err != nil {
+		return "", err
+	}
+	name := filepath.Base(path)
+	return strings.TrimSuffix(name, filepath.Ext(name)), nil
 }
 
 func (s *Store) writeBytes(b []byte) (string, error) {

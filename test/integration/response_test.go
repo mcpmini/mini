@@ -5,6 +5,7 @@ package integration_test
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -20,30 +21,32 @@ func TestResponse_inlineSmallResponse(t *testing.T) {
 
 func TestResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 	cfg := t.TempDir()
+	respDir := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
-	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
+	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 
 	e := startServer(t, cfg).execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
 		t.Fatal("projected response should have written a raw file")
 	}
-	if _, err := os.Stat(*e.File); err != nil {
+	if _, err := os.Stat(filepath.Join(respDir, *e.File+".json")); err != nil {
 		t.Errorf("response file %q should exist: %v", *e.File, err)
 	}
 }
 
 func TestResponse_responseFileIsValidJSON(t *testing.T) {
 	cfg := t.TempDir()
+	respDir := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
-	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
+	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 
 	e := startServer(t, cfg).execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}
-	data, err := os.ReadFile(*e.File)
+	data, err := os.ReadFile(filepath.Join(respDir, *e.File+".json"))
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}

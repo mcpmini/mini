@@ -35,7 +35,7 @@ func newStore(t *testing.T) *Store {
 	return newTestStore(t, StoreConfig{TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
 }
 
-func assertStoreEmpty(t *testing.T, s *Store, path string) {
+func assertStoreEmpty(t *testing.T, s *Store, key string) {
 	t.Helper()
 	count, used := s.Stats()
 	if count != 0 {
@@ -44,7 +44,7 @@ func assertStoreEmpty(t *testing.T, s *Store, path string) {
 	if used != 0 {
 		t.Errorf("expected 0 bytes after eviction, got %d", used)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.dir, key+".json")); !os.IsNotExist(err) {
 		t.Errorf("expected file to be deleted after TTL expiry")
 	}
 }
@@ -90,55 +90,56 @@ func TestEvictExpired_keepsNonExpired(t *testing.T) {
 }
 
 func TestEvictExpired_removesExpiredFiles(t *testing.T) {
-	fc := clock.NewFake()
+	fakeClock := clock.NewFake()
 	dir := t.TempDir()
-	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fc})
-	path, err := s.WriteRaw([]byte(`{"ok":true}`))
+	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
+
+	key, err := s.WriteRaw([]byte(`{"ok":true}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	fc.Advance(2 * time.Minute)
+	fakeClock.Advance(2 * time.Minute)
 	s.evictExpired()
-	assertStoreEmpty(t, s, path)
+	assertStoreEmpty(t, s, key)
 }
 
 func TestEvictExpired_removesRawFile(t *testing.T) {
-	fc := clock.NewFake()
+	fakeClock := clock.NewFake()
 	dir := t.TempDir()
-	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fc})
+	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
 
-	path, err := s.WriteRaw([]byte(`{"full":"data"}`))
+	key, err := s.WriteRaw([]byte(`{"full":"data"}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
 
-	fc.Advance(2 * time.Minute)
+	fakeClock.Advance(2 * time.Minute)
 	s.evictExpired()
 
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.dir, key+".json")); !os.IsNotExist(err) {
 		t.Error("raw file should be deleted after TTL")
 	}
 }
 
 func TestCleanupLoop_evictsExpiredFilesAutomatically(t *testing.T) {
-	fc := clock.NewFake()
+	fakeClock := clock.NewFake()
 	dir := t.TempDir()
 	evicted := make(chan struct{}, 1)
-	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: 5 * time.Minute, Clock: fc, AfterEvict: func() { evicted <- struct{}{} }})
+	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: 5 * time.Minute, Clock: fakeClock, AfterEvict: func() { evicted <- struct{}{} }})
 
-	path, _ := s.WriteRaw([]byte(`{"test":true}`))
+	key, _ := s.WriteRaw([]byte(`{"test":true}`))
 
-	if err := fc.BlockUntilContext(t.Context(), 1); err != nil {
+	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatalf("waiting for cleanup timer: %v", err)
 	}
-	fc.Advance(time.Minute + 5*time.Minute)
+	fakeClock.Advance(time.Minute + 5*time.Minute)
 
 	select {
 	case <-evicted:
 	case <-t.Context().Done():
 		t.Fatal("cleanup loop did not run")
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.dir, key+".json")); !os.IsNotExist(err) {
 		t.Error("cleanup loop did not evict expired file")
 	}
 }
@@ -254,29 +255,29 @@ func TestEvictOvershoot_keepsNewestFile(t *testing.T) {
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour})
 	defer s.Close()
 
-	path1, _ := s.WriteRaw([]byte(`{"data":"small"}`))
-	path2, err := s.WriteRaw([]byte(`{"data":"` + strings.Repeat("x", 900*1024) + `"}`))
+	key1, _ := s.WriteRaw([]byte(`{"data":"small"}`))
+	key2, err := s.WriteRaw([]byte(`{"data":"` + strings.Repeat("x", 900*1024) + `"}`))
 	if err != nil {
 		t.Fatalf("WriteRaw large: %v", err)
 	}
-	if _, err := os.Stat(path2); err != nil {
+	if _, err := os.Stat(filepath.Join(s.dir, key2+".json")); err != nil {
 		t.Error("newest (large) file should be kept even if it exceeds budget alone")
 	}
-	_ = path1
+	_ = key1
 }
 
 func TestEvictIfNeeded_removesOldestWhenOverBudget(t *testing.T) {
-	fc := clock.NewFake()
+	fakeClock := clock.NewFake()
 	dir := t.TempDir()
-	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour, Clock: fc})
+	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour, Clock: fakeClock})
 	defer s.Close()
 
 	large := []byte(`{"data":"` + strings.Repeat("x", 600*1024) + `"}`)
-	path1, _ := s.WriteRaw(large)
-	fc.Advance(time.Millisecond)
+	key1, _ := s.WriteRaw(large)
+	fakeClock.Advance(time.Millisecond)
 	s.WriteRaw(large) //nolint:errcheck
 
-	if _, err := os.Stat(path1); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.dir, key1+".json")); !os.IsNotExist(err) {
 		t.Error("expected oldest file to be evicted when over budget")
 	}
 }

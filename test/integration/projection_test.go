@@ -4,7 +4,6 @@ package integration_test
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -313,16 +312,9 @@ func TestProjection_readRecoversProjectedData(t *testing.T) {
 					continue
 				}
 				t.Run(path, func(t *testing.T) {
-					t.Run("full path", func(t *testing.T) {
-						if got := client.callRead(env.File, path); got != want {
-							t.Errorf("got %q, want %q", got, want)
-						}
-					})
-					t.Run("bare filename", func(t *testing.T) {
-						if got := client.callRead(filepath.Base(env.File), path); got != want {
-							t.Errorf("got %q, want %q", got, want)
-						}
-					})
+					if got := client.callRead(env.File, path); got != want {
+						t.Errorf("got %q, want %q", got, want)
+					}
 				})
 			}
 

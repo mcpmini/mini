@@ -12,10 +12,11 @@ import (
 
 func TestWriteRaw_writesFile(t *testing.T) {
 	s := newStore(t)
-	path, err := s.WriteRaw([]byte(`{"raw":true,"items":["a","b"]}`))
+	key, err := s.WriteRaw([]byte(`{"raw":true,"items":["a","b"]}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
+	path := filepath.Join(s.dir, key+".json")
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("raw file not written: %v", err)
 	}
@@ -27,13 +28,16 @@ func TestWriteRaw_writesFile(t *testing.T) {
 
 func TestWriteRaw_filenameIsMilliseconds(t *testing.T) {
 	s := newStore(t)
-	path, err := s.WriteRaw([]byte(`{"key":"value"}`))
+	key, err := s.WriteRaw([]byte(`{"key":"value"}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	base := strings.TrimSuffix(filepath.Base(path), ".json")
+	base := key
+	if idx := strings.IndexByte(key, '_'); idx > 0 {
+		base = key[:idx]
+	}
 	if len(base) != 13 {
-		t.Errorf("expected 13-digit unix ms filename, got %s", filepath.Base(path))
+		t.Errorf("expected 13-digit unix ms key, got %s", key)
 	}
 }
 
@@ -51,11 +55,11 @@ func TestWriteRaw_unwritableDir(t *testing.T) {
 
 func TestWriteRaw_nonJSONPassesThrough(t *testing.T) {
 	s := newStore(t)
-	path, err := s.WriteRaw([]byte(`not json`))
+	key, err := s.WriteRaw([]byte(`not json`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	data, _ := os.ReadFile(path)
+	data, _ := os.ReadFile(filepath.Join(s.dir, key+".json"))
 	if string(data) != "not json" {
 		t.Errorf("expected passthrough for non-JSON, got: %s", data)
 	}
@@ -64,11 +68,11 @@ func TestWriteRaw_nonJSONPassesThrough(t *testing.T) {
 func TestWriteRaw_prettyPrintsValidJSON(t *testing.T) {
 	s := newStore(t)
 	compact := []byte(`{"a":1,"b":[1,2,3]}`)
-	path, err := s.WriteRaw(compact)
+	key, err := s.WriteRaw(compact)
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	data, _ := os.ReadFile(path)
+	data, _ := os.ReadFile(filepath.Join(s.dir, key+".json"))
 	if string(data) == string(compact) {
 		t.Error("expected pretty-printed output to differ from compact input")
 	}

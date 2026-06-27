@@ -8,7 +8,6 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 	"testing"
 
@@ -164,9 +163,47 @@ func assertElisionLinesFormat(t *testing.T, lines []string) {
 
 func assertElisionLinesFile(t *testing.T, header string) {
 	t.Helper()
-	path := strings.TrimPrefix(header, "[gh.list_issues] file:")
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("expected raw response file to exist: %v", err)
+	key := strings.TrimPrefix(header, "[gh.list_issues] file:")
+	if strings.ContainsAny(key, "/\\") || strings.HasSuffix(key, ".json") || len(key) < 13 {
+		t.Fatalf("expected bare key in file header (no path, no extension), got: %s", key)
+	}
+}
+
+func TestLinesFormatBareKeyResolvesToReadableFile(t *testing.T) {
+	payload := `{"items":[{"id":1,"title":"bug"}],"secret":"hidden"}`
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.ResponseFormat = "mini"
+	srv := server.New(cfg, logger)
+	defer srv.Close()
+
+	conn := fakeConn("list_issues")
+	payloadJSON, _ := json.Marshal(payload)
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)
+	addProxyConn(t, srv, "gh", conn)
+
+	serveProxy(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "gh", "tool": "list_issues",
+		"projection": map[string]any{"exclude": []string{"secret"}},
+	}))
+
+	resp := serveProxy(t, srv, callTool("gh__list_issues", map[string]any{}))
+	text := toolResultText(t, resp)
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "[gh.list_issues] file:") {
+		t.Fatalf("expected file header in mini format output, got: %s", text)
+	}
+	key := strings.TrimPrefix(lines[0], "[gh.list_issues] file:")
+
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key}))
+	content := toolResultText(t, resp2)
+	if content == "" {
+		t.Fatal("read returned empty content for bare key from mini format")
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+		t.Errorf("read via mini-format bare key should return valid JSON: %s", content)
 	}
 }
 
