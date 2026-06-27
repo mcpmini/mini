@@ -27,10 +27,9 @@ func TestStorage_rawFileExists(t *testing.T) {
 	if e.File == nil {
 		t.Fatal("expected file response for projected payload")
 	}
-	if _, err := os.Stat(*e.File); err != nil {
+	if _, err := os.Stat(filepath.Join(respDir, *e.File+".json")); err != nil {
 		t.Errorf("raw file %q should exist: %v", *e.File, err)
 	}
-	_ = respDir
 }
 
 func TestStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
@@ -47,12 +46,12 @@ func TestStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 }
 
 func TestStorage_rawFileIsPrettyPrinted(t *testing.T) {
-	client, _, _ := projectedResponseClient(t, "")
+	client, respDir, _ := projectedResponseClient(t, "")
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}
-	data, err := os.ReadFile(*e.File)
+	data, err := os.ReadFile(filepath.Join(respDir, *e.File+".json"))
 	if err != nil {
 		t.Fatalf("read raw file: %v", err)
 	}
@@ -101,13 +100,13 @@ func TestStorage_diskBudgetEvictsOldest(t *testing.T) {
 }
 
 func TestStorage_cleanupDeletesExpired(t *testing.T) {
-	client, _, cfg := projectedResponseClient(t, "")
+	client, respDir, cfg := projectedResponseClient(t, "")
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}
-	rawPath := *e.File
+	rawPath := filepath.Join(respDir, *e.File+".json")
 	backdateFile(t, rawPath, 8*24*time.Hour)
 
 	runCLI(t, cfg, "cleanup")
@@ -117,13 +116,13 @@ func TestStorage_cleanupDeletesExpired(t *testing.T) {
 }
 
 func TestStorage_cleanupRetainsNonExpired(t *testing.T) {
-	client, _, cfg := projectedResponseClient(t, "")
+	client, respDir, cfg := projectedResponseClient(t, "")
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}
-	rawPath := *e.File
+	rawPath := filepath.Join(respDir, *e.File+".json")
 	runCLI(t, cfg, "cleanup")
 	if _, err := os.Stat(rawPath); err != nil {
 		t.Errorf("non-expired file should not be deleted by cleanup: %v", err)
