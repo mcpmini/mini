@@ -196,7 +196,7 @@ func TestLinesFormatBareKeyResolvesToReadableFile(t *testing.T) {
 	}
 	key := strings.TrimPrefix(lines[0], "[gh.list_issues] file:")
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key}))
 	content := toolResultText(t, resp2)
 	if content == "" {
 		t.Fatal("read returned empty content for bare key from mini format")

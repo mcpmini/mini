@@ -101,7 +101,7 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 					continue
 				}
 
-				resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key, "filter": path}))
+				resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key, "filter": path}))
 				got := toolResultText(t, resp2)
 
 				if got != want {

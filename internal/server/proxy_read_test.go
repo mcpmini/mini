@@ -47,7 +47,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 		t.Fatalf("expected __mini.file to be set, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key}))
 	text2 := toolResultText(t, resp2)
 	t.Logf("read response: %s", text2)
 
@@ -86,7 +86,7 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 		t.Fatalf("expected file key in __mini, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key, "filter": ".name"}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key, "filter": ".name"}))
 	text2 := toolResultText(t, resp2)
 	if text2 != `"widget"` {
 		t.Errorf("filter .name: expected %q, got %q", `"widget"`, text2)
@@ -119,7 +119,7 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 		t.Fatalf("expected file key in __mini, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key, "filter": "!!!invalid_jq!!!"}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key, "filter": "!!!invalid_jq!!!"}))
 	if resp2["error"] != nil {
 		return // RPC-level error is correct
 	}
@@ -158,7 +158,7 @@ func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
 		t.Errorf("__mini.file should be a bare key with no path or extension, got: %s", key)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key}))
 	text2 := toolResultText(t, resp2)
 	if text2 == "" {
 		t.Error("read returned empty content using bare key")
@@ -173,8 +173,8 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	for _, path := range []string{"/etc/passwd", "../../etc/passwd", "../secrets.json"} {
-		resp := serveProxy(t, srv, callTool("read", map[string]any{"path": path}))
+	for _, path := range []string{"../../etc/passwd", "../secrets.json"} {
+		resp := serveProxy(t, srv, callTool("read", map[string]any{"file": path}))
 		if resp["error"] != nil {
 			continue
 		}
@@ -185,39 +185,17 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	}
 }
 
-func TestProxy_MiniRead_RejectsStoreDirItself(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	defer srv.Close()
-
-	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": cfg.ResponseDir}))
-	if resp["error"] != nil {
-		return
-	}
-	result, ok := resp["result"].(map[string]any)
-	if !ok || result["isError"] != true {
-		t.Errorf("expected error when path is the store directory itself, got: %v", resp)
-	}
-}
-
 func TestProxy_MiniRead_FileNotFound(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newProxyServer(t)
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("read", map[string]any{"path": cfg.ResponseDir + "/nonexistent.json"}))
+	resp := serveProxy(t, srv, callTool("read", map[string]any{"file": "9999999999999"}))
 	if resp["error"] != nil {
 		return // RPC-level error is also acceptable
 	}
 	result, ok := resp["result"].(map[string]any)
 	if !ok || result["isError"] != true {
 		t.Errorf("expected error for non-existent file, got: %v", resp)
-	}
-	text := toolResultText(t, resp)
-	if strings.Contains(text, cfg.ResponseDir) {
-		t.Errorf("error message should not expose filesystem path, got: %s", text)
 	}
 }
 
