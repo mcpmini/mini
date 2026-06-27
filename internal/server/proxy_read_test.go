@@ -42,12 +42,12 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	if mini == nil {
 		t.Fatal("expected __mini key — exclusion of 'secret' should produce projection envelope")
 	}
-	filePath, _ := mini["file"].(string)
-	if filePath == "" {
+	key, _ := mini["file"].(string)
+	if key == "" {
 		t.Fatalf("expected __mini.file to be set, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key}))
 	text2 := toolResultText(t, resp2)
 	t.Logf("read response: %s", text2)
 
@@ -81,12 +81,12 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 	text1 := toolResultText(t, resp1)
 	var env map[string]any
 	_ = json.Unmarshal([]byte(text1), &env)
-	filePath, _ := env["__mini"].(map[string]any)["file"].(string)
-	if filePath == "" {
-		t.Fatalf("expected file path in __mini, got: %s", text1)
+	key, _ := env["__mini"].(map[string]any)["file"].(string)
+	if key == "" {
+		t.Fatalf("expected file key in __mini, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath, "filter": ".name"}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key, "filter": ".name"}))
 	text2 := toolResultText(t, resp2)
 	if text2 != `"widget"` {
 		t.Errorf("filter .name: expected %q, got %q", `"widget"`, text2)
@@ -114,12 +114,12 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 	text1 := toolResultText(t, resp1)
 	var env map[string]any
 	_ = json.Unmarshal([]byte(text1), &env)
-	filePath, _ := env["__mini"].(map[string]any)["file"].(string)
-	if filePath == "" {
-		t.Fatalf("expected file path in __mini, got: %s", text1)
+	key, _ := env["__mini"].(map[string]any)["file"].(string)
+	if key == "" {
+		t.Fatalf("expected file key in __mini, got: %s", text1)
 	}
 
-	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": filePath, "filter": "!!!invalid_jq!!!"}))
+	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"path": key, "filter": "!!!invalid_jq!!!"}))
 	if resp2["error"] != nil {
 		return // RPC-level error is correct
 	}

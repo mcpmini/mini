@@ -90,16 +90,17 @@ func TestEvictExpired_keepsNonExpired(t *testing.T) {
 }
 
 func TestEvictExpired_removesExpiredFiles(t *testing.T) {
-	fc := clock.NewFake()
+	fakeClock := clock.NewFake()
 	dir := t.TempDir()
-	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fc})
-	path, err := s.WriteRaw([]byte(`{"ok":true}`))
+	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
+
+	key, err := s.WriteRaw([]byte(`{"ok":true}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	fc.Advance(2 * time.Minute)
+	fakeClock.Advance(2 * time.Minute)
 	s.evictExpired()
-	assertStoreEmpty(t, s, path)
+	assertStoreEmpty(t, s, key)
 }
 
 func TestEvictExpired_removesRawFile(t *testing.T) {

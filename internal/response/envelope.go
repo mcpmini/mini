@@ -49,11 +49,11 @@ func newEnvelope(p BuildParams) *Envelope {
 }
 
 func (b *Builder) writeRawFile(e *Envelope, p BuildParams) error {
-	path, err := b.store.WriteRaw(p.Raw)
+	key, err := b.store.WriteRaw(p.Raw)
 	if err != nil {
 		return fmt.Errorf("store response: %w", err)
 	}
-	e.File = &path
+	e.File = &key
 	return nil
 }
 
