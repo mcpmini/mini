@@ -17,7 +17,7 @@ func TestAcquireSpawnLock(t *testing.T) {
 			t.Fatalf("acquireSpawnLock: %v", err)
 		}
 		defer release()
-		info, err := os.Stat(filepath.Join(dir, "internal", "daemon.lock"))
+		info, err := os.Stat(filepath.Join(dir, "internal", "daemon", "daemon.lock"))
 		if err != nil {
 			t.Fatalf("stat: %v", err)
 		}

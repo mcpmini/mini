@@ -127,7 +127,7 @@ func reapDaemons(cfg string) {
 
 func readDaemonToken(t *testing.T, cfg string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(cfg, "internal", "daemon.token"))
+	data, err := os.ReadFile(filepath.Join(cfg, "internal", "daemon", "daemon.token"))
 	if err != nil {
 		t.Fatalf("read daemon token: %v", err)
 	}
@@ -459,7 +459,7 @@ func TestDaemon_socketAndDirArePrivate(t *testing.T) {
 func TestDaemon_TokenFilePermissions(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
-	fi, err := os.Stat(filepath.Join(cfg, "internal", "daemon.token"))
+	fi, err := os.Stat(filepath.Join(cfg, "internal", "daemon", "daemon.token"))
 	if err != nil {
 		t.Fatal(err)
 	}

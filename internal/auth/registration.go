@@ -44,5 +44,5 @@ func SaveRegistration(configDir, serverName string, r *Registration) error {
 }
 
 func registrationPath(configDir, serverName string) string {
-	return filepath.Join(configDir, "internal", serverName+".client.json")
+	return filepath.Join(configDir, "internal", serverName+".dcr.json")
 }

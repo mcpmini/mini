@@ -13,7 +13,7 @@ import (
 )
 
 func TokenFile(configDir string) string {
-	return filepath.Join(configDir, "internal", "daemon.token")
+	return filepath.Join(configDir, "internal", "daemon", "daemon.token")
 }
 
 func GenerateToken() string {

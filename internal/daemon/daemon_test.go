@@ -91,7 +91,7 @@ func TestEnsureToken_mintsWhenEmpty(t *testing.T) {
 
 func TestSocketPath(t *testing.T) {
 	got := daemon.SocketPath("/my/config")
-	want := filepath.Join("/my/config", "internal", "daemon.sock")
+	want := filepath.Join("/my/config", "internal", "daemon", "daemon.sock")
 	if got != want {
 		t.Errorf("SocketPath = %q, want %q", got, want)
 	}

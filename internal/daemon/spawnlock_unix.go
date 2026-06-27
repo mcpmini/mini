@@ -13,7 +13,7 @@ import (
 // this lock eliminates wasted spawn attempts and the TOCTOU window in bindSocket during slow
 // startup (OAuth injection, upstream connections).
 func acquireSpawnLock(configDir string) (release func(), err error) {
-	lockPath := filepath.Join(configDir, "internal", "daemon.lock")
+	lockPath := filepath.Join(configDir, "internal", "daemon", "daemon.lock")
 	if err := os.MkdirAll(filepath.Dir(lockPath), 0700); err != nil {
 		return nil, err
 	}
