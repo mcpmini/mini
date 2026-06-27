@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -17,6 +18,7 @@ type Session struct {
 	projections map[string]*config.ProjectionConfig
 	conns       map[string]transport.Connection
 	lastUsed    time.Time
+	clock       clock.Clock
 	notifyCh    chan json.RawMessage // non-nil only in stdio sessions; set by Serve
 	dialMu      sync.Mutex
 	dialMap     map[string]*dialOnce
@@ -77,13 +79,14 @@ func (s *Session) getDialOnce(serverName string) *dialOnce {
 	return d
 }
 
-func newSession() *Session {
+func newSession(clock clock.Clock) *Session {
 	return &Session{
 		projections: make(map[string]*config.ProjectionConfig),
 		conns:       make(map[string]transport.Connection),
 		dialMap:     make(map[string]*dialOnce),
 		inFlight:    make(map[string]context.CancelFunc),
-		lastUsed:    time.Now(),
+		lastUsed:    clock.Now(),
+		clock:       clock,
 		initDone:    make(chan struct{}),
 		initAbort:   make(chan struct{}),
 	}
@@ -158,7 +161,7 @@ func (s *Session) SetProjection(toolFullName string, p *config.ProjectionConfig)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.projections[toolFullName] = p
-	s.lastUsed = time.Now()
+	s.lastUsed = s.clock.Now()
 }
 
 func (s *Session) Projection(toolFullName string) *config.ProjectionConfig {
@@ -265,7 +268,7 @@ func (s *Session) notify(msg json.RawMessage) {
 
 func (s *Session) touch() {
 	s.mu.Lock()
-	s.lastUsed = time.Now()
+	s.lastUsed = s.clock.Now()
 	s.mu.Unlock()
 }
 
@@ -287,16 +290,17 @@ func (s *Session) idleDuration(deadline time.Time) (time.Duration, bool) {
 	if !s.lastUsed.Before(deadline) {
 		return 0, false
 	}
-	return time.Since(s.lastUsed), true
+	return s.clock.Since(s.lastUsed), true
 }
 
 type sessionStore struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
+	clock    clock.Clock
 }
 
-func newSessionStore() *sessionStore {
-	return &sessionStore{sessions: make(map[string]*Session)}
+func newSessionStore(clock clock.Clock) *sessionStore {
+	return &sessionStore{sessions: make(map[string]*Session), clock: clock}
 }
 
 func sessionIDPrefix(id string) string {
@@ -310,7 +314,7 @@ func (st *sessionStore) getOrCreate(id string) *Session {
 	st.mu.Lock()
 	s, ok := st.sessions[id]
 	if !ok {
-		s = newSession()
+		s = newSession(st.clock)
 		st.sessions[id] = s
 	}
 	s.touch()

@@ -1,3 +1,5 @@
+//go:build test
+
 package proxy
 
 import (
@@ -13,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
@@ -68,7 +71,7 @@ func TestRun_propagatesTokenThroughRunParams(t *testing.T) {
 		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
 	})
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok-42", In: in, Out: io.Discard}
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok-42", In: in, Out: io.Discard, Clock: clock.NewFake()}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -192,7 +195,7 @@ func TestForward_largeResponseBodyHandledWithoutError(t *testing.T) {
 }
 
 func runParams(client *http.Client, in io.Reader, out io.Writer) RunParams {
-	return RunParams{Client: client, SessionID: "sess", In: in, Out: out}
+	return RunParams{Client: client, SessionID: "sess", In: in, Out: out, Clock: clock.NewFake()}
 }
 
 func TestRun_routesRequestAndWritesResponse(t *testing.T) {
@@ -328,6 +331,7 @@ func TestRun_compact_injectsIntoInitialize(t *testing.T) {
 		In:        strings.NewReader(initMsg),
 		Out:       io.Discard,
 		ToolMode:  transport.ToolModeCompact,
+		Clock:     clock.NewFake(),
 	}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -358,6 +362,7 @@ func TestRun_proxy_doesNotInjectFlag(t *testing.T) {
 		In:        strings.NewReader(initMsg),
 		Out:       io.Discard,
 		ToolMode:  transport.ToolModeProxy,
+		Clock:     clock.NewFake(),
 	}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
@@ -440,7 +445,7 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}` + "\n")
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", In: in, Out: &out}
+	p := RunParams{Client: client, SessionID: "sess", In: in, Out: &out, Clock: clock.System()}
 	if err := Run(p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
@@ -482,7 +487,7 @@ func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
 	done := make(chan error, 1)
-	go func() { done <- Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard}) }()
+	go func() { done <- Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard, Clock: clock.NewFake()}) }()
 	select {
 	case err := <-done:
 		if err != nil {
@@ -525,7 +530,7 @@ func TestRunWithLimit_capsConcurrentForwards(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"b"}` + "\n" +
 		`{"jsonrpc":"2.0","id":3,"method":"c"}` + "\n")
 	go func() {
-		done <- runWithLimit(RunParams{Client: client, SessionID: "sess", In: input, Out: io.Discard}, 1)
+		done <- runWithLimit(RunParams{Client: client, SessionID: "sess", In: input, Out: io.Discard, Clock: clock.NewFake()}, 1)
 	}()
 	select {
 	case <-started:

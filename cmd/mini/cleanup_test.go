@@ -1,3 +1,5 @@
+//go:build test
+
 package main
 
 import (
@@ -7,13 +9,15 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 func TestRunCleanup(t *testing.T) {
 	t.Run("no responses directory prints nothing to clean up", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
-		if err := runCleanup(dir, &out); err != nil {
+		if err := runCleanup(dir, &out, clock.NewFake()); err != nil {
 			t.Fatalf("runCleanup: %v", err)
 		}
 		if !strings.Contains(out.String(), "nothing to clean up") {
@@ -28,11 +32,12 @@ func TestRunCleanup(t *testing.T) {
 
 		oldJSON := filepath.Join(respDir, "old.json")
 		os.WriteFile(oldJSON, []byte(`{"ok":true}`), 0600)
-		past := time.Now().Add(-30 * 24 * time.Hour)
+		fakeClock := clock.NewFake()
+		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
 
 		var out bytes.Buffer
-		if err := runCleanup(dir, &out); err != nil {
+		if err := runCleanup(dir, &out, fakeClock); err != nil {
 			t.Fatalf("runCleanup: %v", err)
 		}
 		got := out.String()
@@ -51,8 +56,11 @@ func TestRunCleanup(t *testing.T) {
 		freshJSON := filepath.Join(respDir, "fresh.json")
 		os.WriteFile(freshJSON, []byte(`{"ok":true}`), 0600)
 
+		fakeClock := clock.NewFake()
+		now := fakeClock.Now()
+		os.Chtimes(freshJSON, now, now)
 		var out bytes.Buffer
-		runCleanup(dir, &out) //nolint:errcheck
+		runCleanup(dir, &out, fakeClock) //nolint:errcheck
 
 		if _, err := os.Stat(freshJSON); err != nil {
 			t.Error("fresh.json was incorrectly removed")

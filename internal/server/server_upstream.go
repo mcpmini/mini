@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/registry"
@@ -13,7 +13,7 @@ import (
 )
 
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
-	conn, err := dialUpstream(ctx, s.logger, s.cfg, sc)
+	conn, err := s.dialUpstream(ctx, sc)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", sc.Name, err)
 	}
@@ -24,8 +24,8 @@ func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn
 	return s.registerUpstream(ctx, sc, conn)
 }
 
-func dialUpstream(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig) (transport.Connection, error) {
-	return invoke.Dial(ctx, logger, cfg, sc)
+func (s *Server) dialUpstream(ctx context.Context, sc config.ServerConfig) (transport.Connection, error) {
+	return invoke.Dial(ctx, invoke.DialParams{Logger: s.logger, Config: s.cfg, Server: sc, Clock: s.clock})
 }
 
 // SetReconnectHook sets a callback that fires after a successful automatic reconnect
@@ -79,7 +79,7 @@ func (s *Server) installIfNotRemoved(sc config.ServerConfig, conn transport.Conn
 }
 
 func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition) {
-	u := newUpstreamServer(sc, conn)
+	u := newUpstreamServer(sc, conn, s.clock)
 	u.lastDefs = tools
 	old := s.swapUpstream(sc.Name, u)
 	s.registerTools(sc, tools, old)
@@ -91,9 +91,9 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
 
-func newUpstreamServer(sc config.ServerConfig, conn transport.Connection) *upstreamServer {
+func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, clock clock.Clock) *upstreamServer {
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel}
+	u := &upstreamServer{cfg: sc, conn: conn, ctx: ctx, cancel: cancel, clock: clock}
 	if sc.MaxPendingRequests > 0 {
 		u.sem = make(chan struct{}, sc.MaxPendingRequests)
 	}
@@ -130,12 +130,19 @@ func (s *Server) currentAliasesFor(serverName string) map[string]string {
 
 // Must be called in a goroutine; blocks until ctx is canceled.
 func (s *Server) RunSessionEviction(ctx context.Context, maxIdle time.Duration) {
-	ticker := time.NewTicker(maxIdle / 2)
+	s.runSessionEviction(ctx, maxIdle, nil)
+}
+
+func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, afterEvict func()) {
+	ticker := s.clock.NewTicker(maxIdle / 2)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-ticker.C:
+		case <-ticker.Chan():
 			s.sessions.evictIdle(s.clock.Now().Add(-maxIdle))
+			if afterEvict != nil {
+				afterEvict()
+			}
 		case <-ctx.Done():
 			return
 		}

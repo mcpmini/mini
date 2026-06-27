@@ -7,23 +7,31 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// Dial connects to an upstream MCP server, injecting auth headers.
-func Dial(ctx context.Context, logger *slog.Logger, cfg *config.Config, sc config.ServerConfig) (transport.Connection, error) {
-	switch sc.Transport {
+type DialParams struct {
+	Logger *slog.Logger
+	Config *config.Config
+	Server config.ServerConfig
+	Clock  clock.Clock
+}
+
+func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
+	switch p.Server.Transport {
 	case "http", "sse", "streamable":
 		return transport.NewHTTPConnection(transport.HTTPConnectionConfig{
-			URL:                     sc.URL,
-			Headers:                 MergedHeaders(sc),
-			ClientTimeout:           parseClientTimeout(sc.HTTPClientTimeout),
-			DisableRetryOnRateLimit: sc.DisableRetryOnRateLimit,
-			BlockPrivateIPs:         sc.RuntimeAdded && !cfg.DangerousAllowPrivateURLs,
+			URL:                     p.Server.URL,
+			Headers:                 MergedHeaders(p.Server),
+			Clock:                   p.Clock,
+			ClientTimeout:           parseClientTimeout(p.Server.HTTPClientTimeout),
+			DisableRetryOnRateLimit: p.Server.DisableRetryOnRateLimit,
+			BlockPrivateIPs:         p.Server.RuntimeAdded && !p.Config.DangerousAllowPrivateURLs,
 		})
 	default:
-		return transport.NewStdioConnection(ctx, transport.StdioCommand{Command: sc.Command, Args: sc.Args, Env: sc.Env, Logger: logger})
+		return transport.NewStdioConnection(ctx, transport.StdioCommand{Command: p.Server.Command, Args: p.Server.Args, Env: p.Server.Env, Logger: p.Logger})
 	}
 }
 

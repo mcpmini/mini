@@ -30,7 +30,7 @@ func (f *Forwarder) Forward(line []byte) []byte {
 			break
 		}
 		state = next
-		time.Sleep(jitteredBackoff(attempt))
+		<-f.clock.NewTimer(jitteredBackoff(attempt)).Chan()
 	}
 	return out.resp
 }

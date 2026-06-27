@@ -8,12 +8,13 @@ import (
 	"runtime"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
+
+const stressIterations = 500
 
 // TestConcurrentConfigureExec triggers configure+call contention to expose races
 // between Server.mu write (configure) and read (call) paths.
@@ -24,16 +25,15 @@ func TestConcurrentConfigureExec(t *testing.T) {
 	srv.AddConnection(ctx, config.ServerConfig{Name: "beta"}, fakeConnWithResponse("toolB", `{"content":[{"type":"text","text":"b"}]}`))
 
 	goroutinesBefore := runtime.NumGoroutine()
-	deadline := time.Now().Add(2 * time.Second)
 	var wg sync.WaitGroup
 
 	for range 5 {
 		wg.Add(1)
-		go runExecWorker(t, srv, deadline, &wg)
+		go runExecWorker(t, srv, &wg)
 	}
 	for range 2 {
 		wg.Add(1)
-		go runConfigureWorker(t, srv, ctx, deadline, &wg)
+		go runConfigureWorker(t, srv, ctx, &wg)
 	}
 	wg.Wait()
 
@@ -42,10 +42,10 @@ func TestConcurrentConfigureExec(t *testing.T) {
 	}
 }
 
-func runExecWorker(t *testing.T, srv *server.Server, deadline time.Time, wg *sync.WaitGroup) {
+func runExecWorker(t *testing.T, srv *server.Server, wg *sync.WaitGroup) {
 	t.Helper()
 	defer wg.Done()
-	for time.Now().Before(deadline) {
+	for range stressIterations {
 		resp := serve(t, srv, callTool("call", map[string]any{
 			"server": "alpha", "tool": "toolA", "params": map[string]any{},
 		}))
@@ -53,11 +53,11 @@ func runExecWorker(t *testing.T, srv *server.Server, deadline time.Time, wg *syn
 	}
 }
 
-func runConfigureWorker(t *testing.T, srv *server.Server, ctx context.Context, deadline time.Time, wg *sync.WaitGroup) {
+func runConfigureWorker(t *testing.T, srv *server.Server, ctx context.Context, wg *sync.WaitGroup) {
 	t.Helper()
 	defer wg.Done()
 	fake := fakeConnWithResponse("toolC", `{"content":[{"type":"text","text":"c"}]}`)
-	for time.Now().Before(deadline) {
+	for range stressIterations {
 		srv.AddConnection(ctx, config.ServerConfig{Name: "dynamic"}, fake)
 		serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "dynamic"}))    //nolint:errcheck
 		serve(t, srv, callTool("config", map[string]any{                                                      //nolint:errcheck

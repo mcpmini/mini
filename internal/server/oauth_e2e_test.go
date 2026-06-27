@@ -94,8 +94,7 @@ func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server
 
 func waitForServerConnected(t *testing.T, srv *server.Server, svcName string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	for range 100 {
 		statusText := toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))
 		var status map[string]any
 		if err := json.Unmarshal([]byte(statusText), &status); err == nil {
@@ -144,8 +143,7 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 	var authResult map[string]any
 	json.Unmarshal([]byte(authText), &authResult)
 	visitCallback(authResult["url"].(string)) //nolint:errcheck
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	for range 100 {
 		listText := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
 		var tools []any
 		if err := json.Unmarshal([]byte(listText), &tools); err == nil && len(tools) == 2 {

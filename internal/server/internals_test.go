@@ -11,19 +11,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestSession_Conn_nilWhenEmpty(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.NewFake())
 	if conn := s.Conn("anyserver"); conn != nil {
 		t.Errorf("expected nil for empty session, got %v", conn)
 	}
 }
 
 func TestSession_GetOrSetConn_storesFirst(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.NewFake())
 	fake := &transport.FakeConnection{}
 	got := s.GetOrSetConn("srv", fake)
 	if got != fake {
@@ -35,7 +36,7 @@ func TestSession_GetOrSetConn_storesFirst(t *testing.T) {
 }
 
 func TestSession_GetOrSetConn_returnsExistingOnRace(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.NewFake())
 	first := &transport.FakeConnection{}
 	second := &transport.FakeConnection{}
 
@@ -51,24 +52,25 @@ func TestSession_GetOrSetConn_returnsExistingOnRace(t *testing.T) {
 }
 
 func TestSession_idleDuration_trueWhenOld(t *testing.T) {
-	s := newSession()
-	future := time.Now().Add(time.Hour)
-	if _, ok := s.idleDuration(future); !ok {
+	fakeClock := clock.NewFake()
+	s := newSession(fakeClock)
+	fakeClock.Advance(2 * time.Hour)
+	if _, ok := s.idleDuration(fakeClock.Now().Add(-time.Hour)); !ok {
 		t.Error("expected idleDuration to return true for future deadline")
 	}
 }
 
 func TestSession_idleDuration_falseAfterTouch(t *testing.T) {
-	s := newSession()
+	fakeClock := clock.NewFake()
+	s := newSession(fakeClock)
 	s.touch()
-	past := time.Now().Add(-time.Hour)
-	if _, ok := s.idleDuration(past); ok {
+	if _, ok := s.idleDuration(fakeClock.Now().Add(-time.Hour)); ok {
 		t.Error("expected idleDuration to return false after recent touch")
 	}
 }
 
 func TestSession_Close_closesConns(t *testing.T) {
-	s := newSession()
+	s := newSession(clock.NewFake())
 	fake := &transport.FakeConnection{}
 	s.GetOrSetConn("srv", fake)
 	s.Close()
@@ -78,16 +80,13 @@ func TestSession_Close_closesConns(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_removesOldSessions(t *testing.T) {
-	st := newSessionStore()
-	s := st.getOrCreate("old")
-	// Force last-used to the past so it's considered idle.
-	s.mu.Lock()
-	s.lastUsed = time.Now().Add(-2 * time.Hour)
-	s.mu.Unlock()
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
+	st.getOrCreate("old")
+	fakeClock.Advance(2 * time.Hour)
+	st.getOrCreate("fresh")
 
-	st.getOrCreate("fresh") // touched just now
-
-	st.evictIdle(time.Now().Add(-time.Hour))
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
 	if st.count() != 1 {
 		t.Errorf("expected 1 session after eviction, got %d", st.count())
@@ -95,15 +94,14 @@ func TestSessionStore_evictIdle_removesOldSessions(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_closesEvictedConns(t *testing.T) {
-	st := newSessionStore()
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
 	s := st.getOrCreate("stale")
 	fake := &transport.FakeConnection{}
 	s.GetOrSetConn("srv", fake)
-	s.mu.Lock()
-	s.lastUsed = time.Now().Add(-2 * time.Hour)
-	s.mu.Unlock()
+	fakeClock.Advance(2 * time.Hour)
 
-	st.evictIdle(time.Now().Add(-time.Hour))
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
 	if !fake.Closed {
 		t.Error("expected evicted session's connections to be closed")
@@ -111,18 +109,17 @@ func TestSessionStore_evictIdle_closesEvictedConns(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
-	st := newSessionStore()
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
 	s := st.getOrCreate("stdio")
 	ch := s.enableNotifications()
 	defer func() {
 		s.disableNotifications()
 		close(ch)
 	}()
-	s.mu.Lock()
-	s.lastUsed = time.Now().Add(-2 * time.Hour)
-	s.mu.Unlock()
+	fakeClock.Advance(2 * time.Hour)
 
-	st.evictIdle(time.Now().Add(-time.Hour))
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
 	if st.count() != 1 {
 		t.Fatalf("expected active stdio session to be preserved, got %d sessions", st.count())
@@ -130,18 +127,17 @@ func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_unblocksPendingWaiters(t *testing.T) {
-	st := newSessionStore()
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
 	s := st.getOrCreate("stale")
-	s.mu.Lock()
-	s.lastUsed = time.Now().Add(-2 * time.Hour)
-	s.mu.Unlock()
+	fakeClock.Advance(2 * time.Hour)
 
 	unblocked := make(chan bool, 1)
 	go func() {
 		unblocked <- s.waitInitialized(context.Background())
 	}()
 
-	st.evictIdle(time.Now().Add(-time.Hour))
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
 	select {
 	case got := <-unblocked:
@@ -193,23 +189,39 @@ func TestIsSameHost_matching(t *testing.T) {
 }
 
 func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
+	fakeClock := clock.NewFake()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewWithConfigDir(cfg, t.TempDir(), logger)
+	srv := NewWithConfigDir(cfg, t.TempDir(), logger, WithClock(fakeClock))
 
-	// Create a session and mark it as old.
-	s := srv.sessions.getOrCreate("old-session")
-	s.mu.Lock()
-	s.lastUsed = time.Now().Add(-2 * time.Hour)
-	s.mu.Unlock()
+	srv.sessions.getOrCreate("old-session")
+	fakeClock.Advance(2 * time.Hour)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	srv.RunSessionEviction(ctx, 50*time.Millisecond)
 
-	if srv.sessions.count() != 0 {
-		t.Errorf("expected 0 sessions after eviction, got %d", srv.sessions.count())
+	evicted := make(chan struct{}, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.runSessionEviction(ctx, time.Hour, func() { evicted <- struct{}{} })
+	}()
+
+	if err := fakeClock.BlockUntilContext(context.Background(), 2); err != nil {
+		t.Fatal("ticker not registered:", err)
+	}
+	fakeClock.Advance(30 * time.Minute)
+
+	select {
+	case <-evicted:
+	case <-t.Context().Done():
+		t.Fatal("eviction did not complete")
+	}
+	cancel()
+	<-done
+	if got := srv.sessions.count(); got != 0 {
+		t.Errorf("expected 0 sessions after eviction, got %d", got)
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 
 // PurgeExpiredResponses removes response files older than the configured TTL.
 // Returns the number of files removed and bytes freed.
-func PurgeExpiredResponses(configDir string) (removed int, freed int64, err error) {
+func PurgeExpiredResponses(configDir string, now time.Time) (removed int, freed int64, err error) {
 	cfg, _, err := config.Load(configDir)
 	if err != nil {
 		return 0, 0, err
@@ -23,7 +23,7 @@ func PurgeExpiredResponses(configDir string) (removed int, freed int64, err erro
 		}
 		return 0, 0, err
 	}
-	removed, freed = purgeExpired(dir, entries, time.Now().Add(-ttl))
+	removed, freed = purgeExpired(dir, entries, now.Add(-ttl))
 	return removed, freed, nil
 }
 

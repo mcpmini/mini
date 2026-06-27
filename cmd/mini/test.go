@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -66,10 +67,11 @@ func checkUpstreams(ctx context.Context, srv *server.Server, servers []config.Se
 }
 
 func probeUpstream(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {
+	clock := clock.System()
 	tctx, cancel := context.WithTimeout(ctx, timeout)
-	start := time.Now()
+	start := clock.Now()
 	err := srv.AddUpstream(tctx, sc)
-	elapsed := time.Since(start)
+	elapsed := clock.Since(start)
 	cancel()
 	r := upstreamResult{name: sc.Name, transport: sc.Transport, elapsed: elapsed, err: err}
 	if err == nil {

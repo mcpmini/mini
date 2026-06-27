@@ -5,16 +5,16 @@ package server
 import (
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 func TestSessionStore_evictIdle_removesSession(t *testing.T) {
-	st := newSessionStore()
-	s := st.getOrCreate("abcdefghijklmnop")
-	s.mu.Lock()
-	s.lastUsed = time.Now().Add(-2 * time.Hour)
-	s.mu.Unlock()
-
-	st.evictIdle(time.Now().Add(-time.Hour))
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
+	st.getOrCreate("abcdefghijklmnop")
+	fakeClock.Advance(2 * time.Hour)
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
 	if st.count() != 0 {
 		t.Errorf("expected 0 sessions after eviction, got %d", st.count())
@@ -22,10 +22,10 @@ func TestSessionStore_evictIdle_removesSession(t *testing.T) {
 }
 
 func TestSessionStore_evictIdle_keepsActiveSession(t *testing.T) {
-	st := newSessionStore()
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
 	st.getOrCreate("abcdefghijklmnop")
-
-	st.evictIdle(time.Now().Add(-time.Hour))
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
 
 	if st.count() != 1 {
 		t.Errorf("expected 1 session (recently used), got %d", st.count())
@@ -33,7 +33,7 @@ func TestSessionStore_evictIdle_keepsActiveSession(t *testing.T) {
 }
 
 func TestSessionStore_getOrCreate_returnsSameSession(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.NewFake())
 	s1 := st.getOrCreate("abcdefghijklmnop")
 	s2 := st.getOrCreate("abcdefghijklmnop")
 	if s1 != s2 {
@@ -42,7 +42,7 @@ func TestSessionStore_getOrCreate_returnsSameSession(t *testing.T) {
 }
 
 func TestSessionStore_getOrCreate_separateSessions(t *testing.T) {
-	st := newSessionStore()
+	st := newSessionStore(clock.NewFake())
 	s1 := st.getOrCreate("aaaaaaaaaaaaaaaa")
 	s2 := st.getOrCreate("bbbbbbbbbbbbbbbb")
 	if s1 == s2 {

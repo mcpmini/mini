@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -24,6 +25,7 @@ type RunParams struct {
 	Out       io.Writer
 	ToolMode  transport.ToolMode
 	Resolver  *DaemonResolver // nil = standalone, no recovery
+	Clock     clock.Clock
 }
 
 // DaemonSession is an initialized, authenticated conversation with the daemon.
@@ -42,6 +44,7 @@ type Forwarder struct {
 	resolver *DaemonResolver
 	link     *daemonLink
 	toolMode transport.ToolMode
+	clock    clock.Clock
 }
 
 func (f *Forwarder) sessionAt(state linkState) DaemonSession {
@@ -75,6 +78,7 @@ func newForwardPool(p RunParams, client *http.Client, limit int) forwardAsyncPar
 		resolver: p.Resolver,
 		link:     newDaemonLink(p.Token),
 		toolMode: p.ToolMode,
+		clock:    p.Clock,
 	}
 	return forwardAsyncParams{
 		forwarder: forwarder, out: p.Out,

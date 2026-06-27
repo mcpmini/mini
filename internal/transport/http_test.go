@@ -1,3 +1,5 @@
+//go:build test
+
 package transport
 
 import (
@@ -11,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/version"
 )
 
@@ -40,6 +43,9 @@ func newJSONRPCServer(t *testing.T, handler func(http.ResponseWriter, *http.Requ
 
 func mustHTTPConn(t *testing.T, cfg HTTPConnectionConfig) *HTTPConnection {
 	t.Helper()
+	if cfg.Clock == nil {
+		cfg.Clock = clock.NewFake()
+	}
 	conn, err := NewHTTPConnection(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -59,12 +65,6 @@ func expectCallErrorContains(t *testing.T, conn *HTTPConnection, want string) {
 	}
 }
 
-func assertFastTimeout(t *testing.T, start time.Time) {
-	t.Helper()
-	if time.Since(start) > 5*time.Second {
-		t.Errorf("timeout took too long: %v", time.Since(start))
-	}
-}
 
 func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
 	t.Helper()
@@ -227,9 +227,16 @@ func TestHTTPConnection_redirectBlocked(t *testing.T) {
 	}))
 	defer redirecter.Close()
 
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL})
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL, Clock: clock.NewFake()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	_ = err
+}
+
+func assertFastTimeout(t *testing.T, start time.Time) {
+	t.Helper()
+	if elapsed := time.Since(start); elapsed >= 5*time.Second {
+		t.Errorf("timeout fired too slowly: %v", elapsed)
+	}
 }
 
 func TestHTTPClientTimeout_firesForHungServer(t *testing.T) {

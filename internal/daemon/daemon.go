@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 func SocketPath(configDir string) string {
@@ -53,7 +55,7 @@ func socketTransport(socket string) *http.Transport {
 	}
 }
 
-func Start(configDir string, timeout time.Duration) error {
+func Start(configDir string, timeout time.Duration, clock clock.Clock) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("find executable: %w", err)
@@ -69,7 +71,7 @@ func Start(configDir string, timeout time.Duration) error {
 	if err := spawnDaemon(exe, configDir); err != nil {
 		return err
 	}
-	return waitForDaemon(configDir, timeout)
+	return waitForDaemon(configDir, timeout, clock)
 }
 
 func spawnDaemon(exe, configDir string) error {
@@ -80,13 +82,19 @@ func spawnDaemon(exe, configDir string) error {
 	return nil
 }
 
-func waitForDaemon(configDir string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+func waitForDaemon(configDir string, timeout time.Duration, clock clock.Clock) error {
+	deadline := clock.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
 		if Running(configDir) {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		sleep := clock.NewTimer(100 * time.Millisecond)
+		select {
+		case <-sleep.Chan():
+		case <-deadline.Chan():
+			sleep.Stop()
+			return fmt.Errorf("daemon did not start within %v", timeout)
+		}
 	}
-	return fmt.Errorf("daemon did not start within %v", timeout)
 }

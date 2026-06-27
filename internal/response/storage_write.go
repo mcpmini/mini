@@ -25,7 +25,7 @@ func (s *Store) writeBytes(b []byte) (string, error) {
 
 func (s *Store) recordWrite(path string, size int64) {
 	s.mu.Lock()
-	s.files = append(s.files, storedFile{path: path, size: size, expires: s.clk.Now().Add(s.ttl)})
+	s.files = append(s.files, storedFile{path: path, size: size, expires: s.clock.Now().Add(s.ttl)})
 	s.usedBytes += size
 	toRemove := s.evictOvershoot()
 	s.mu.Unlock()
@@ -45,7 +45,7 @@ func prettyJSON(b []byte) []byte {
 }
 
 func (s *Store) newFileBase() string {
-	return fmt.Sprintf("%d", s.clk.Now().UnixMilli())
+	return fmt.Sprintf("%d", s.clock.Now().UnixMilli())
 }
 
 func (s *Store) createUniqueFile(base string, b []byte) (string, error) {

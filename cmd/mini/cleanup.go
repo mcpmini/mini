@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/ops"
 )
 
-func runCleanup(configDir string, out io.Writer) error {
-	removed, freed, err := ops.PurgeExpiredResponses(configDir)
+func runCleanup(configDir string, out io.Writer, clock clock.Clock) error {
+	removed, freed, err := ops.PurgeExpiredResponses(configDir, clock.Now())
 	if err != nil {
 		return fmt.Errorf("cleanup: %w", err)
 	}
