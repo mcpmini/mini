@@ -57,7 +57,7 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 	}
 }
 
-func TestResolveEndpoints_cachedRegistrationBeforesCIMD(t *testing.T) {
+func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 	// Servers like Linear advertise CIMD but reject arbitrary metadata URLs.
 	// A cached DCR client_id must win over CIMD to avoid re-fetching and failing.
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{

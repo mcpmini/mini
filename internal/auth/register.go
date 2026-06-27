@@ -34,7 +34,6 @@ func ResolvedCallbackPort(ac *config.AuthConfig) int {
 	return LoopbackCallbackPort
 }
 
-// ResolvedCallbackURI returns the loopback redirect URI for the given AuthConfig.
 // Used by both DCR registration and the PKCE flow so they always register and send the same URI.
 func ResolvedCallbackURI(ac *config.AuthConfig) string {
 	return fmt.Sprintf("http://localhost:%d%s", ResolvedCallbackPort(ac), LoopbackCallbackPath)

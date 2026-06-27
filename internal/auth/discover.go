@@ -41,7 +41,6 @@ type asRef struct {
 	Scopes []string
 }
 
-// preferScopes returns primary if non-empty, otherwise fallback.
 // WWW-Authenticate scope takes priority over PRM scopes_supported per MCP spec §Scope Selection Strategy.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L333-L340
 func preferScopes(primary, fallback []string) []string {
@@ -99,7 +98,7 @@ func asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (asRef, err
 }
 
 func parseWWWAuthParam(header, param string) string {
-	// Skip the scheme token (e.g. "Bearer ") before looking at key=value pairs.
+	// RFC 6750: the auth-scheme token (e.g. "Bearer") precedes the key=value params.
 	rest := header
 	if i := strings.IndexByte(header, ' '); i >= 0 {
 		rest = header[i+1:]
@@ -212,8 +211,7 @@ type rawASMeta struct {
 	TokenURL        string   `json:"token_endpoint"`
 	RegistrationURL string   `json:"registration_endpoint"`
 	CIMDSupported   bool     `json:"client_id_metadata_document_supported"`
-	ScopesSupported []string `json:"scopes_supported"`
-	PKCEMethods     []string `json:"code_challenge_methods_supported"`
+	PKCEMethods []string `json:"code_challenge_methods_supported"`
 }
 
 func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {

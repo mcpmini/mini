@@ -163,7 +163,6 @@ func TestDiscover_noPKCE_returnsError(t *testing.T) {
 	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint": "https://as.example.com/authorize",
 		"token_endpoint":         "https://as.example.com/token",
-		// code_challenge_methods_supported absent — MUST refuse per MCP spec
 	})
 	defer srv.Close()
 
