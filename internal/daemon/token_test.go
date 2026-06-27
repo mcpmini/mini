@@ -2,6 +2,7 @@ package daemon_test
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/daemon"
@@ -10,6 +11,7 @@ import (
 func TestWriteToken_replacesLooseFileWith0600(t *testing.T) {
 	configDir := t.TempDir()
 	stale := daemon.TokenFile(configDir)
+	os.MkdirAll(filepath.Dir(stale), 0700) //nolint:errcheck
 	if err := os.WriteFile(stale, []byte("old"), 0644); err != nil {
 		t.Fatalf("seed stale token: %v", err)
 	}

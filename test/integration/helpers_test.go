@@ -643,16 +643,16 @@ func writeConfig(t *testing.T, configDir, content string) {
 
 func writeProjection(t *testing.T, configDir, serverName, content string) {
 	t.Helper()
-	dir := filepath.Join(configDir, "projections")
+	dir := filepath.Join(configDir, "servers")
 	os.MkdirAll(dir, 0700)
-	if err := os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(content), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, serverName+".proj.yaml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func writeAction(t *testing.T, configDir, content string, name string) {
 	t.Helper()
-	dir := filepath.Join(configDir, "actions")
+	dir := filepath.Join(configDir, "internal", "actions")
 	os.MkdirAll(dir, 0700)
 	if err := os.WriteFile(filepath.Join(dir, name+".yaml"), []byte(content), 0600); err != nil {
 		t.Fatal(err)

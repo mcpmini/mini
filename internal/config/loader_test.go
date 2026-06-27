@@ -156,7 +156,7 @@ func TestLoadProjectionConfig(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), `name: gh
 command: gh-mcp`)
-	writeFile(t, filepath.Join(dir, "projections", "gh.yaml"), `
+	writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), `
 list_issues:
   include_only: [number, title]
   array_limits:
@@ -183,7 +183,7 @@ projections:
   my_tool:
     include_only: [inline_field]
 `)
-	writeFile(t, filepath.Join(dir, "projections", "svc.yaml"), `
+	writeFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), `
 my_tool:
   include_only: [dir_field]
 `)
@@ -200,7 +200,7 @@ my_tool:
 
 func TestLoadActions_basic(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "actions", "my_prs.yaml"), `
+	writeFile(t, filepath.Join(dir, "internal", "actions", "my_prs.yaml"), `
 name: my_prs
 description: My open PRs
 server: gh
@@ -226,7 +226,7 @@ func assertActionDefaults(t *testing.T, ac config.ActionConfig, wantName, wantKe
 func TestLoadActions_nameFromFilename(t *testing.T) {
 	dir := t.TempDir()
 	// action file with no name field → name derived from filename
-	writeFile(t, filepath.Join(dir, "actions", "my_action.yaml"), `
+	writeFile(t, filepath.Join(dir, "internal", "actions", "my_action.yaml"), `
 server: gh
 tool: list_issues
 `)
@@ -349,31 +349,31 @@ func TestLoad_deduplicatesDuplicateServerNames(t *testing.T) {
 
 func TestLoadProjection_malformedYAML_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "projections", "srv.yaml"), `not: valid: yaml: [`)
+	writeFile(t, filepath.Join(dir, "servers", "srv.proj.yaml"), `not: valid: yaml: [`)
 	expectLoadError(t, dir)
 }
 
 func TestLoadActions_malformedYAML_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "actions", "bad.yaml"), `not: valid: yaml: [`)
+	writeFile(t, filepath.Join(dir, "internal", "actions", "bad.yaml"), `not: valid: yaml: [`)
 	expectLoadActionsError(t, dir)
 }
 
 func TestLoadActions_invalidActionName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "actions", "bad.yaml"), "name: \"bad name\"\nserver: gh\ntool: list\n")
+	writeFile(t, filepath.Join(dir, "internal", "actions", "bad.yaml"), "name: \"bad name\"\nserver: gh\ntool: list\n")
 	expectLoadActionsError(t, dir)
 }
 
 func TestLoadActions_invalidServerName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "actions", "act.yaml"), "name: act\nserver: \"bad server\"\ntool: list\n")
+	writeFile(t, filepath.Join(dir, "internal", "actions", "act.yaml"), "name: act\nserver: \"bad server\"\ntool: list\n")
 	expectLoadActionsError(t, dir)
 }
 
 func TestLoadActions_invalidToolName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "actions", "act.yaml"), "name: act\nserver: gh\ntool: \"bad/tool\"\n")
+	writeFile(t, filepath.Join(dir, "internal", "actions", "act.yaml"), "name: act\nserver: gh\ntool: \"bad/tool\"\n")
 	expectLoadActionsError(t, dir)
 }
 

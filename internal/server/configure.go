@@ -342,11 +342,11 @@ func (s *Server) persistProjectionsLocked(serverName string) error {
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(s.configDir, "projections")
+	dir := filepath.Join(s.configDir, "servers")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, serverName+".yaml"), b, 0600)
+	return os.WriteFile(filepath.Join(dir, serverName+".proj.yaml"), b, 0600)
 }
 
 func (s *Server) marshalServerProjections(serverName string) ([]byte, error) {

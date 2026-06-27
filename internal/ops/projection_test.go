@@ -43,7 +43,7 @@ func TestInstallBundledProjection(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "my-github", URL: "https://api.github.com/mcp"}
 		ops.InstallBundledProjection(dir, sc)
-		dest := filepath.Join(dir, "projections", "my-github.yaml")
+		dest := filepath.Join(dir, "servers", "my-github.proj.yaml")
 		if _, err := os.Stat(dest); err != nil {
 			t.Fatalf("projection file not created: %v", err)
 		}
@@ -53,7 +53,7 @@ func TestInstallBundledProjection(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "unknown", URL: "https://example.com"}
 		ops.InstallBundledProjection(dir, sc)
-		dest := filepath.Join(dir, "projections", "unknown.yaml")
+		dest := filepath.Join(dir, "servers", "unknown.proj.yaml")
 		if _, err := os.Stat(dest); err == nil {
 			t.Fatal("expected no projection for unknown server")
 		}
@@ -61,9 +61,9 @@ func TestInstallBundledProjection(t *testing.T) {
 
 	t.Run("existing file is not overwritten", func(t *testing.T) {
 		dir := tempDir(t)
-		projDir := filepath.Join(dir, "projections")
-		os.MkdirAll(projDir, 0700)
-		dest := filepath.Join(projDir, "my-slack.yaml")
+		serversDir := filepath.Join(dir, "servers")
+		os.MkdirAll(serversDir, 0700)
+		dest := filepath.Join(serversDir, "my-slack.proj.yaml")
 		original := []byte("# custom\n")
 		os.WriteFile(dest, original, 0600)
 		sc := config.ServerConfig{Name: "my-slack", URL: "https://slack.com/mcp"}

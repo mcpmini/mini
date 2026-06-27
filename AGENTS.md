@@ -130,7 +130,7 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 {
   "__mini": {
     "msg": "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values.",
-    "file": "~/.mini/responses/1750830563123.json",
+    "file": "~/.mini/internal/responses/1750830563123.json",
     "excluded": [".secret", ".internal"],
     "truncated": [{"path": ".body", "chars": 420}, {"path": ".items", "items": 73}]
   },
@@ -141,18 +141,18 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 - `truncated[].chars`: characters (runes) removed from a string field
 - `truncated[].items`: items removed from an array field by array limit
 - When no data is removed, the response is plain JSON with no `__mini` wrapper
-- Raw recovery files written to `~/.mini/responses/<unix_ms>.json` (e.g. `1750830563123.json`) when data is lost
+- Raw recovery files written to `~/.mini/internal/responses/<unix_ms>.json` (e.g. `1750830563123.json`) when data is lost
 
 ### Config directory layout
 
 ```
 ~/.mini/
-  config.yaml              # global Config
-  servers/<name>.yaml      # one ServerConfig per upstream
-  projections/<name>.yaml  # ProjectionConfig map (tool → config)
-  actions/<name>.yaml      # ActionConfig (virtual tools with pre-filled args)
-  responses/               # auto-managed response store
-  tokens/                  # OAuth token cache
+  config.yaml                # global Config
+  servers/<name>.yaml        # one ServerConfig per upstream
+  servers/<name>.proj.yaml   # ProjectionConfig map (tool → config)
+  internal/                  # machine-managed runtime state
+    daemon/                  # daemon runtime files (sock, token, lock, log)
+    responses/               # raw recovery files for projected responses
 ```
 
 Projections can be embedded inline in a server's YAML under `projections:`. A `"*"` key is a wildcard applying to all tools on that server.

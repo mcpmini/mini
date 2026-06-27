@@ -13,7 +13,7 @@ import (
 )
 
 func TokenFile(configDir string) string {
-	return filepath.Join(configDir, "daemon.token")
+	return filepath.Join(configDir, "internal", "daemon", "daemon.token")
 }
 
 func GenerateToken() string {
@@ -22,7 +22,11 @@ func GenerateToken() string {
 
 func WriteToken(configDir string) (string, error) {
 	token := GenerateToken()
-	return token, atomicWriteFile(TokenFile(configDir), token)
+	path := TokenFile(configDir)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return "", err
+	}
+	return token, atomicWriteFile(path, token)
 }
 
 func ReadToken(configDir string) (string, error) {

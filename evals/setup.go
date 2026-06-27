@@ -122,13 +122,13 @@ func buildServerYAML(fakemcpBin, name, fixtureDir, callLogDir string) string {
 }
 
 func writeBundledProjections(configDir string, r *Runner, servers map[string]string) error {
-	projDir := filepath.Join(configDir, "projections")
-	if err := os.MkdirAll(projDir, 0700); err != nil {
+	serversDir := filepath.Join(configDir, "servers")
+	if err := os.MkdirAll(serversDir, 0700); err != nil {
 		return err
 	}
 	srcDir := filepath.Join(r.RepoRoot, "internal", "defaults", "projections")
 	for name := range servers {
-		if err := writeBundledProjection(srcDir, projDir, name); err != nil {
+		if err := writeBundledProjection(srcDir, serversDir, name); err != nil {
 			if os.IsNotExist(err) {
 				continue
 			}
@@ -138,12 +138,12 @@ func writeBundledProjections(configDir string, r *Runner, servers map[string]str
 	return nil
 }
 
-func writeBundledProjection(srcDir, projDir, name string) error {
+func writeBundledProjection(srcDir, serversDir, name string) error {
 	data, err := os.ReadFile(filepath.Join(srcDir, name+".yaml"))
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(projDir, name+".yaml"), data, 0600)
+	return os.WriteFile(filepath.Join(serversDir, name+".proj.yaml"), data, 0600)
 }
 
 func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {

@@ -13,7 +13,11 @@ import (
 // daemon instead of a herd. See spawnlock_unix.go for rationale.
 // LockFileEx requires a non-nil Overlapped even for synchronous use; locking 1 byte suffices as an advisory mutex.
 func acquireSpawnLock(configDir string) (release func(), err error) {
-	f, err := os.OpenFile(filepath.Join(configDir, "daemon.lock"), os.O_RDWR|os.O_CREATE, 0600)
+	lockPath := filepath.Join(configDir, "internal", "daemon", "daemon.lock")
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0700); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, err
 	}

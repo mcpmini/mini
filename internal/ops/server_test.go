@@ -106,7 +106,7 @@ func TestWriteServer(t *testing.T) {
 		if err := ops.WriteServer(dir, sc); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
-		dest := filepath.Join(dir, "projections", "gh.yaml")
+		dest := filepath.Join(dir, "servers", "gh.proj.yaml")
 		data, err := os.ReadFile(dest)
 		if err != nil {
 			t.Fatalf("bundled projection not installed: %v", err)

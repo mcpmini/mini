@@ -170,7 +170,7 @@ func TestCLI_init_createsStructure(t *testing.T) {
 		t.Errorf("init should exit 0, got %d", code)
 	}
 
-	for _, sub := range []string{"servers", "projections", "responses", "tokens"} {
+	for _, sub := range []string{"servers", "internal", "internal/responses"} {
 		d := filepath.Join(cfg, sub)
 		if _, err := os.Stat(d); err != nil {
 			t.Errorf("expected %s dir to exist after init: %v", sub, err)

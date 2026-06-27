@@ -185,7 +185,7 @@ func TestSave_tokenFilePermissions(t *testing.T) {
 	if err := auth.Save(dir, "myserver", pkceToken(t, mock)); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	assertTokenFilesPrivate(t, dir+"/tokens")
+	assertTokenFilesPrivate(t, dir+"/internal")
 }
 
 func assertTokenFilesPrivate(t *testing.T, tokensDir string) {

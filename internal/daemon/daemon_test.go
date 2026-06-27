@@ -50,6 +50,7 @@ func TestEnsureToken_mintsWhenAbsent(t *testing.T) {
 func TestEnsureToken_reMintsOnLoosePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := daemon.TokenFile(dir)
+	os.MkdirAll(filepath.Dir(path), 0700) //nolint:errcheck
 	if err := os.WriteFile(path, []byte("loose-secret"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +75,9 @@ func TestEnsureToken_reMintsOnLoosePermissions(t *testing.T) {
 
 func TestEnsureToken_mintsWhenEmpty(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(daemon.TokenFile(dir), []byte("   "), 0600); err != nil {
+	p := daemon.TokenFile(dir)
+	os.MkdirAll(filepath.Dir(p), 0700) //nolint:errcheck
+	if err := os.WriteFile(p, []byte("   "), 0600); err != nil {
 		t.Fatal(err)
 	}
 	got, err := daemon.EnsureToken(dir)
@@ -88,7 +91,7 @@ func TestEnsureToken_mintsWhenEmpty(t *testing.T) {
 
 func TestSocketPath(t *testing.T) {
 	got := daemon.SocketPath("/my/config")
-	want := filepath.Join("/my/config", "daemon.sock")
+	want := filepath.Join("/my/config", "internal", "daemon", "daemon.sock")
 	if got != want {
 		t.Errorf("SocketPath = %q, want %q", got, want)
 	}
@@ -139,7 +142,9 @@ func TestRunning_non200ReturnsFalse(t *testing.T) {
 
 func TestRunning_staleSocketFileReturnsFalse(t *testing.T) {
 	dir := shortConfigDir(t)
-	if err := os.WriteFile(daemon.SocketPath(dir), nil, 0600); err != nil {
+	sp := daemon.SocketPath(dir)
+	os.MkdirAll(filepath.Dir(sp), 0700) //nolint:errcheck
+	if err := os.WriteFile(sp, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if daemon.Running(dir) {

@@ -256,12 +256,12 @@ graph TB
 
 ## Projection config
 
-Projections are the rules that control what mini keeps, limits, or removes from responses. They live in `~/.mini/projections/<server>.yaml` and are installed automatically for known servers by `mini init`.
+Projections are the rules that control what mini keeps, limits, or removes from responses. They live in `~/.mini/servers/<server>.proj.yaml` and are installed automatically for known servers by `mini init`.
 
 For most users the bundled projections are enough. If you want to tune them:
 
 ```yaml
-# ~/.mini/projections/github.yaml
+# ~/.mini/servers/github.proj.yaml
 
 list_pull_requests:
   exclude: [avatar_url]   # strip provably-useless fields
@@ -281,9 +281,8 @@ Config directory layout:
 ~/.mini/
   config.yaml              # global settings (see below)
   servers/<name>.yaml      # one file per upstream server
-  projections/<name>.yaml  # per-tool field rules
-  responses/               # auto-managed response files
-  tokens/                  # OAuth token cache
+  servers/<name>.proj.yaml # per-tool field rules
+  internal/                # machine-managed runtime state
 ```
 
 ### Global config
@@ -342,7 +341,7 @@ How these tiers are enforced depends on which mode mini is running in.
 For servers that require OAuth2 (Linear, Slack):
 
 ```bash
-mini auth linear   # opens browser for PKCE flow, token stored in ~/.mini/tokens/
+mini auth linear   # opens browser to complete auth handshake
 ```
 
 For servers using API keys or Bearer tokens, set them in the server config or reference an env var:

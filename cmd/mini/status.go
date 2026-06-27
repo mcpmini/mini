@@ -75,7 +75,7 @@ func runStatus(configDir string) {
 }
 
 func buildStatusServer(cfg *config.Config, configDir string) *server.Server {
-	cfg.ResponseDir = filepath.Join(configDir, "responses")
+	cfg.ResponseDir = filepath.Join(configDir, "internal", "responses")
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return server.NewWithConfigDir(cfg, configDir, logger)
 }

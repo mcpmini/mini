@@ -14,7 +14,7 @@ import (
 )
 
 func SocketPath(configDir string) string {
-	return filepath.Join(configDir, "daemon.sock")
+	return filepath.Join(configDir, "internal", "daemon", "daemon.sock")
 }
 
 // sun_path caps Unix socket paths at 104 bytes on macOS, 108 on Linux; 100 stays under both.
