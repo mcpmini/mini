@@ -507,10 +507,6 @@ func parseMiniEnv(t *testing.T, text string) miniEnv {
 	return outer.Mini
 }
 
-func miniFile(t *testing.T, text string) string {
-	return parseMiniEnv(t, text).File
-}
-
 func (c *mcpClient) callRead(file, filter string) string {
 	c.t.Helper()
 	args := map[string]any{"file": file}

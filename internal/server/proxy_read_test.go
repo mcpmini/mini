@@ -173,7 +173,7 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
 
-	for _, path := range []string{"../../etc/passwd", "../secrets.json"} {
+	for _, path := range []string{"../../etc/passwd", "../secrets.json", "../../etc/shadow.json"} {
 		resp := serveProxy(t, srv, callTool("read", map[string]any{"file": path}))
 		if resp["error"] != nil {
 			continue
@@ -186,7 +186,9 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 }
 
 func TestProxy_MiniRead_FileNotFound(t *testing.T) {
-	srv := newProxyServer(t)
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
 	resp := serveProxy(t, srv, callTool("read", map[string]any{"file": "9999999999999"}))
@@ -196,6 +198,10 @@ func TestProxy_MiniRead_FileNotFound(t *testing.T) {
 	result, ok := resp["result"].(map[string]any)
 	if !ok || result["isError"] != true {
 		t.Errorf("expected error for non-existent file, got: %v", resp)
+	}
+	text := toolResultText(t, resp)
+	if strings.Contains(text, cfg.ResponseDir) {
+		t.Errorf("error message must not expose store path, got: %s", text)
 	}
 }
 
