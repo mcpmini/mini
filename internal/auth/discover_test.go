@@ -410,3 +410,29 @@ func TestDiscover_scopeFromWWWAuthenticateBeforesPRM(t *testing.T) {
 		t.Errorf("Scopes: got %v, want [files:read] (WWW-Authenticate scope should beat PRM)", meta.Scopes)
 	}
 }
+
+func TestDiscover_scopeFromWWWAuthenticateWithoutResourceMetadata(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/oauth-authorization-server":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"authorization_endpoint":           "https://as.example.com/authorize",
+				"token_endpoint":                   "https://as.example.com/token",
+				"code_challenge_methods_supported": []string{"S256"},
+			})
+		default:
+			w.Header().Set("WWW-Authenticate", `Bearer scope="files:read"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+
+	meta, err := auth.Discover(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(meta.Scopes) != 1 || meta.Scopes[0] != "files:read" {
+		t.Errorf("Scopes: got %v, want [files:read]", meta.Scopes)
+	}
+}

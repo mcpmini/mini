@@ -89,12 +89,12 @@ func asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (asRef, err
 	}
 	header := resp.Header.Get("WWW-Authenticate")
 	rmURL := parseWWWAuthParam(header, "resource_metadata")
+	scopesFromHeader := strings.Fields(parseWWWAuthParam(header, "scope"))
 	if rmURL == "" {
-		return asRef{}, nil
+		return asRef{Scopes: scopesFromHeader}, nil
 	}
-	wwwAuthScopes := strings.Fields(parseWWWAuthParam(header, "scope"))
 	prmRef, err := fetchASURLFromPRM(ctx, rmURL)
-	prmRef.Scopes = preferScopes(wwwAuthScopes, prmRef.Scopes)
+	prmRef.Scopes = preferScopes(scopesFromHeader, prmRef.Scopes)
 	return prmRef, err
 }
 
