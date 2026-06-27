@@ -104,16 +104,16 @@ func TestEvictExpired_removesExpiredFiles(t *testing.T) {
 }
 
 func TestEvictExpired_removesRawFile(t *testing.T) {
-	fc := clock.NewFake()
+	fakeClock := clock.NewFake()
 	dir := t.TempDir()
-	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fc})
+	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
 
 	key, err := s.WriteRaw([]byte(`{"full":"data"}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
 
-	fc.Advance(2 * time.Minute)
+	fakeClock.Advance(2 * time.Minute)
 	s.evictExpired()
 
 	if _, err := os.Stat(filepath.Join(s.dir, key+".json")); !os.IsNotExist(err) {
