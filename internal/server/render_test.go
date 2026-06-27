@@ -56,7 +56,7 @@ var formatScalarCases = []struct {
 }{
 	{"nil", nil, "-"},
 	{"bool true", true, "true"},
-	{"bool false", false, "-"},
+	{"bool false", false, "false"},
 	{"float64 zero", float64(0), "-"},
 	{"float64 nonzero", float64(42), "42"},
 	{"int nonzero", 7, "7"},
@@ -367,6 +367,16 @@ func TestRenderLines_notes(t *testing.T) {
 		out := RenderLines("srv", "tool", e)
 		if !strings.Contains(out, "note: truncated (5 items removed)") {
 			t.Errorf("expected truncated note without path, got: %q", out)
+		}
+	})
+	t.Run("root-path dot produces note without dot prefix", func(t *testing.T) {
+		e := &response.Envelope{Data: "ok", Truncated: []projection.Truncation{{JQPath: ".", Items: 5}}}
+		out := RenderLines("srv", "tool", e)
+		if !strings.Contains(out, "note: truncated (5 items removed)") {
+			t.Errorf("expected truncated note without path, got: %q", out)
+		}
+		if strings.Contains(out, ". truncated") {
+			t.Errorf("expected no dot prefix in note, got: %q", out)
 		}
 	})
 	t.Run("named array truncation produces note with path prefix", func(t *testing.T) {

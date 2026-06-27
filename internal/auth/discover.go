@@ -147,7 +147,21 @@ type protectedResourceMeta struct {
 	ScopesSupported      []string `json:"scopes_supported"`
 }
 
+func requireHTTPURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid resource_metadata URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported protocol scheme %q in resource_metadata URL", u.Scheme)
+	}
+	return nil
+}
+
 func fetchASURLFromPRM(ctx context.Context, prmURL string) (asRef, error) {
+	if err := requireHTTPURL(prmURL); err != nil {
+		return asRef{}, err
+	}
 	resp, err := doDiscoveryRequest(ctx, prmURL)
 	if err != nil {
 		if ctx.Err() != nil {

@@ -53,10 +53,6 @@ type Config struct {
 	// test environments where upstreams run on localhost.
 	DangerousAllowPrivateURLs bool `yaml:"dangerous_allow_private_urls"`
 
-	// DaemonPort is the TCP port the daemon listens on. Default: 4857.
-	// Agents connect to http://127.0.0.1:<DaemonPort>/mcp.
-	DaemonPort int `yaml:"daemon_port"`
-
 	// BrowserCommand sets the browser to open for OAuth flows. Applies to both
 	// `mini auth` (CLI) and agent-initiated auth (config:start_auth).
 	BrowserCommand string `yaml:"browser_command,omitempty"`
@@ -84,9 +80,8 @@ func DefaultConfig() *Config {
 		AutoStripThreshold:   0,
 		ResponseTTL:          "1h",
 		ResponseDiskBudgetMB: 500,
-		LogLevel:             "info",
-		ContentFields:        DefaultContentFields,
-		DaemonPort:           4857,
+		LogLevel:      "info",
+		ContentFields: DefaultContentFields,
 	}
 }
 
@@ -246,7 +241,6 @@ type ActionConfig struct {
 type ProjectionConfig struct {
 	// Alias replaces the upstream tool name for agents; mini translates back when calling upstream.
 	Alias        string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
-	Mode         string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
 	IncludeOnly  []string       `yaml:"include_only,omitempty"   json:"include_only,omitempty"`
 	Exclude      []string       `yaml:"exclude,omitempty"        json:"exclude,omitempty"`
 	Passthrough  []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`

@@ -17,10 +17,41 @@ func TestCollapseElided_deduplicatesArrayIndices(t *testing.T) {
 func TestCollapseElided_keepsDistinctPaths(t *testing.T) {
 	paths := []string{".items[0].secret", ".items[0].other", ".meta"}
 	got := collapseExcluded(paths)
-	slices.Sort(got)
 	want := []string{".items[].other", ".items[].secret", ".meta"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("collapseExcluded() = %#v, want %#v", got, want)
+	}
+}
+
+func TestCollapseElided_outputIsSorted(t *testing.T) {
+	cases := []struct {
+		name  string
+		paths []string
+		want  []string
+	}{
+		{
+			name:  "reverse input order",
+			paths: []string{".z", ".a", ".m"},
+			want:  []string{".a", ".m", ".z"},
+		},
+		{
+			name:  "collapsed array indices sort after collapse",
+			paths: []string{".items[1].name", ".items[0].name", ".items[2].age", ".items[0].age"},
+			want:  []string{".items[].age", ".items[].name"},
+		},
+		{
+			name:  "mixed plain and array paths",
+			paths: []string{".z[0].x", ".a", ".z[1].x", ".b"},
+			want:  []string{".a", ".b", ".z[].x"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := collapseExcluded(tc.paths)
+			if !slices.Equal(got, tc.want) {
+				t.Fatalf("collapseExcluded(%v) = %v, want %v", tc.paths, got, tc.want)
+			}
+		})
 	}
 }
 

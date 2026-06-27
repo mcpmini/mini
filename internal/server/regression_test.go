@@ -122,7 +122,7 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Finding 2 (MEDIUM): concurrent add_server / remove_server TOCTOU
 //
-// Before the fix, remove_server held s.mu only during detachUpstream, then
+// Before the fix, remove_server held s.stateMu only during detachUpstream, then
 // released it before reg.RemoveServer. A racing add_server could insert a
 // new upstream and register its tools between the two steps; reg.RemoveServer
 // would then delete those fresh tools.

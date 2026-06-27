@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -433,5 +434,25 @@ func TestDiscover_scopeFromWWWAuthenticateWithoutResourceMetadata(t *testing.T) 
 	}
 	if len(meta.Scopes) != 1 || meta.Scopes[0] != "files:read" {
 		t.Errorf("Scopes: got %v, want [files:read]", meta.Scopes)
+	}
+}
+
+func TestDiscover_nonHTTPSchemes_rejected(t *testing.T) {
+	auth.UseLoopbackHTTPClient()
+	for _, maliciousURL := range []string{"file:///etc/passwd", "ftp://example.com/prm.json"} {
+		t.Run(maliciousURL, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+maliciousURL+`"`)
+				w.WriteHeader(http.StatusUnauthorized)
+			}))
+			defer srv.Close()
+			_, err := auth.Discover(context.Background(), srv.URL)
+			if err == nil {
+				t.Fatalf("Discover with malicious resource_metadata %q succeeded, want error", maliciousURL)
+			}
+			if !strings.Contains(err.Error(), "unsupported protocol scheme") {
+				t.Errorf("expected \"unsupported protocol scheme\" error, got: %v", err)
+			}
+		})
 	}
 }

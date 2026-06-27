@@ -52,6 +52,11 @@ func (c *cappedLog) Write(p []byte) (int, error) {
 }
 
 func (c *cappedLog) rotate() {
+	if c.f == os.Stderr {
+		// closing os.Stderr silences the daemon — reset counter so writes don't re-trigger rotation
+		c.written = 0
+		return
+	}
 	c.f.Close()
 	os.Rename(c.path, c.path+".old") //nolint:errcheck — rotation is best-effort; if rename fails the .old file is overwritten
 	f, err := os.OpenFile(c.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
