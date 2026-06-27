@@ -468,6 +468,46 @@ func TestElidedPathBracketNotationForNonIdentifierKey(t *testing.T) {
 	}
 }
 
+func TestDefaultArrayLimit(t *testing.T) {
+	t.Run("default truncates root-level array", func(t *testing.T) {
+		cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"default": 2}}
+		value := []any{1, 2, 3, 4, 5}
+		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+		arr := result.Summary.([]any)
+		if len(arr) != 2 {
+			t.Errorf("expected 2 items, got %d", len(arr))
+		}
+		if len(result.Truncated) != 1 || result.Truncated[0].Items != 3 || result.Truncated[0].JQPath != "" {
+			t.Errorf("expected truncation {path:\"\", items:3}, got %v", result.Truncated)
+		}
+	})
+
+	t.Run("default applies to unnamed arrays, named limit wins for named field", func(t *testing.T) {
+		cfg := &config.ProjectionConfig{ArrayLimits: map[string]int{"default": 2, "labels": 5}}
+		value := map[string]any{
+			"labels": []any{1, 2, 3, 4, 5, 6, 7, 8},
+			"other":  []any{"a", "b", "c", "d", "e"},
+		}
+		result := projection.Apply(value, cfg, &projection.Defaults{StringLimit: 1000, DepthLimit: 5})
+		m := result.Summary.(map[string]any)
+		if len(m["labels"].([]any)) != 5 {
+			t.Errorf("labels: expected 5 items (named limit), got %d", len(m["labels"].([]any)))
+		}
+		if len(m["other"].([]any)) != 2 {
+			t.Errorf("other: expected 2 items (default limit), got %d", len(m["other"].([]any)))
+		}
+		if len(result.Truncated) != 2 {
+			t.Fatalf("expected 2 truncation entries, got %v", result.Truncated)
+		}
+		if result.Truncated[0].JQPath != ".labels" || result.Truncated[0].Items != 3 {
+			t.Errorf("truncated[0]: expected {.labels items:3}, got %v", result.Truncated[0])
+		}
+		if result.Truncated[1].JQPath != ".other" || result.Truncated[1].Items != 3 {
+			t.Errorf("truncated[1]: expected {.other items:3}, got %v", result.Truncated[1])
+		}
+	})
+}
+
 func TestSlimKeepsFalseAndZeroValues(t *testing.T) {
 	cfg := &config.ProjectionConfig{}
 	value := map[string]any{

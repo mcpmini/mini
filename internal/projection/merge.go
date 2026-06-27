@@ -88,6 +88,9 @@ func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	e.exclude = cfg.Exclude
 	e.passthrough = cfg.Passthrough
 	e.arrayLimits = cfg.ArrayLimits
+	if v, ok := cfg.ArrayLimits["default"]; ok {
+		e.defaultArrayLimit = v
+	}
 	e.stringLimits = cfg.StringLimits
 	if cfg.DepthLimit > 0 {
 		e.depthLimit = cfg.DepthLimit
