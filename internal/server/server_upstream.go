@@ -63,9 +63,9 @@ func (s *Server) dialUpstream(ctx context.Context, sc config.ServerConfig) (tran
 // SetReconnectHook sets a callback that fires after a successful automatic reconnect
 // for the named server. Used in tests to replace polling with a deterministic signal.
 func (s *Server) SetReconnectHook(serverName string, fn func()) {
-	s.mu.RLock()
+	s.stateMu.RLock()
 	u := s.upstreams[serverName]
-	s.mu.RUnlock()
+	s.stateMu.RUnlock()
 	if u == nil {
 		return
 	}
@@ -77,9 +77,9 @@ func (s *Server) SetReconnectHook(serverName string, fn func()) {
 // IsReconnecting reports whether the named server is currently in a reconnect loop.
 // Used in tests to assert that application-level errors do not trigger reconnects.
 func (s *Server) IsReconnecting(serverName string) bool {
-	s.mu.RLock()
+	s.stateMu.RLock()
 	u := s.upstreams[serverName]
-	s.mu.RUnlock()
+	s.stateMu.RUnlock()
 	return u != nil && u.reconnecting.Load()
 }
 
@@ -117,9 +117,9 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.registerTools(sc, tools, old)
 	s.attachNotificationHandler(u, conn)
 	if sc.Projections != nil {
-		s.mu.Lock()
+		s.stateMu.Lock()
 		s.projections[sc.Name] = sc.Projections
-		s.mu.Unlock()
+		s.stateMu.Unlock()
 	}
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
@@ -134,10 +134,10 @@ func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, clock 
 }
 
 func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
-	s.mu.Lock()
+	s.stateMu.Lock()
 	old := s.upstreams[name]
 	s.upstreams[name] = u
-	s.mu.Unlock()
+	s.stateMu.Unlock()
 	return old
 }
 
@@ -155,9 +155,9 @@ func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDef
 // projections — unlike the install-time sc.Projections snapshot, this
 // reflects any config reload since the server was added.
 func (s *Server) currentAliasesFor(serverName string) map[string]string {
-	s.mu.RLock()
+	s.stateMu.RLock()
 	proj := s.projections[serverName]
-	s.mu.RUnlock()
+	s.stateMu.RUnlock()
 	return config.AliasesFromProjections(proj)
 }
 
@@ -207,8 +207,8 @@ func cancelAuthFlows(flows map[string]*authFlowState) {
 }
 
 func (s *Server) snapshotUpstreams() []*upstreamServer {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	upstreams := make([]*upstreamServer, 0, len(s.upstreams))
 	for _, u := range s.upstreams {
 		upstreams = append(upstreams, u)

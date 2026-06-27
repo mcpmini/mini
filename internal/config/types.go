@@ -53,10 +53,6 @@ type Config struct {
 	// test environments where upstreams run on localhost.
 	DangerousAllowPrivateURLs bool `yaml:"dangerous_allow_private_urls"`
 
-	// DaemonPort is the TCP port the daemon listens on. Default: 4857.
-	// Agents connect to http://127.0.0.1:<DaemonPort>/mcp.
-	DaemonPort int `yaml:"daemon_port"`
-
 	// BrowserCommand sets the browser to open for OAuth flows. Applies to both
 	// `mini auth` (CLI) and agent-initiated auth (config:start_auth).
 	BrowserCommand string `yaml:"browser_command,omitempty"`
@@ -86,7 +82,6 @@ func DefaultConfig() *Config {
 		ResponseDiskBudgetMB: 500,
 		LogLevel:             "info",
 		ContentFields:        DefaultContentFields,
-		DaemonPort:           4857,
 	}
 }
 
@@ -259,11 +254,10 @@ type ActionConfig struct {
 // ProjectionConfig defines how to trim tool responses.
 type ProjectionConfig struct {
 	// Alias replaces the upstream tool name for agents; mini translates back when calling upstream.
-	Alias        string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
-	Mode         string         `yaml:"mode,omitempty"           json:"mode,omitempty"`
-	IncludeOnly  []string       `yaml:"include_only,omitempty"   json:"include_only,omitempty"`
-	Exclude      []string       `yaml:"exclude,omitempty"        json:"exclude,omitempty"`
-	Passthrough  []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
+	Alias       string         `yaml:"alias,omitempty"          json:"alias,omitempty"`
+	IncludeOnly []string       `yaml:"include_only,omitempty"   json:"include_only,omitempty"`
+	Exclude     []string       `yaml:"exclude,omitempty"        json:"exclude,omitempty"`
+	Passthrough []string       `yaml:"passthrough,omitempty"    json:"passthrough,omitempty"`
 	ArrayLimits map[string]int `yaml:"array_limits,omitempty"  json:"array_limits,omitempty"`
 	// StringLimits overrides the global DefaultStringLimit per field name.
 	// 0 disables truncation for that field (ignoring the global default).

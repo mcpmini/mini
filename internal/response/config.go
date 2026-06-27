@@ -1,28 +1,26 @@
 package response
 
 import (
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func StoreConfigFrom(cfg *config.Config) StoreConfig {
+func StoreConfigFrom(cfg *config.Config, configDir string) StoreConfig {
 	return StoreConfig{
-		Dir:             responseDir(cfg),
+		Dir:             responseDir(cfg, configDir),
 		TTL:             parseOrDefaultDuration(cfg.ResponseTTL, time.Hour),
 		BudgetMB:        cfg.ResponseDiskBudgetMB,
 		CleanupInterval: time.Hour,
 	}
 }
 
-func responseDir(cfg *config.Config) string {
+func responseDir(cfg *config.Config, configDir string) string {
 	if cfg.ResponseDir != "" {
 		return cfg.ResponseDir
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".mini", "internal", "responses")
+	return filepath.Join(configDir, "internal", "responses")
 }
 
 func parseOrDefaultDuration(spec string, fallback time.Duration) time.Duration {

@@ -158,8 +158,8 @@ func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bo
 	if session.Projection(toolFullName(server, tool)) != nil {
 		return true
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	toolMap := s.projections[server]
 	return len(toolMap) == 0 || toolMap[tool] != nil || toolMap["*"] != nil
 }
@@ -217,7 +217,7 @@ type envelopeParams struct {
 	Session   *Session
 	Upstream  *upstreamServer
 	LatencyMs int64
-	Bypass bool
+	Bypass    bool
 }
 
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
@@ -268,8 +268,8 @@ func (s *Server) resolveProjection(server, tool string, session *Session) *confi
 	if p := session.Projection(toolFullName(server, tool)); p != nil {
 		return p
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	toolMap := s.projections[server]
 	if toolMap == nil {
 		return nil

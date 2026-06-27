@@ -34,12 +34,6 @@ type effectiveConfig struct {
 	autoStripThreshold int
 }
 
-const (
-	slimStringLimit = 200
-	slimArrayLimit  = 3
-	slimDepthLimit  = 2
-)
-
 func (c *effectiveConfig) stringLimitFor(field string) int {
 	if v, ok := c.stringLimits[field]; ok {
 		return v
@@ -81,9 +75,6 @@ func effectiveFromDefaults(d *Defaults) *effectiveConfig {
 }
 
 func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
-	if cfg.Mode == "slim" {
-		applySlimMode(e)
-	}
 	e.includeOnly = cfg.IncludeOnly
 	e.exclude = cfg.Exclude
 	e.passthrough = cfg.Passthrough
@@ -98,11 +89,4 @@ func applyProjectionConfig(e *effectiveConfig, cfg *config.ProjectionConfig) {
 	if cfg.StripMarkup {
 		e.stripContent = true
 	}
-}
-
-func applySlimMode(e *effectiveConfig) {
-	e.defaultStringLimit = slimStringLimit
-	e.defaultArrayLimit = slimArrayLimit
-	e.depthLimit = slimDepthLimit
-	e.stripContent = true
 }

@@ -122,7 +122,7 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Finding 2 (MEDIUM): concurrent add_server / remove_server TOCTOU
 //
-// Before the fix, remove_server held s.mu only during detachUpstream, then
+// Before the fix, remove_server held s.stateMu only during detachUpstream, then
 // released it before reg.RemoveServer. A racing add_server could insert a
 // new upstream and register its tools between the two steps; reg.RemoveServer
 // would then delete those fresh tools.
@@ -242,7 +242,7 @@ func TestRemoveServer_ClearsProjections(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "search",
-		"projection": map[string]any{"mode": "slim"},
+		"projection": map[string]any{"string_limits": map[string]any{"text": 10}},
 	}))
 	if !strings.Contains(toolResultText(t, resp), `"ok":true`) {
 		t.Fatalf("set_projection failed: %v", resp)
@@ -275,17 +275,12 @@ func TestRemoveServer_ClearsProjections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The call should use perm_call (no projection coverage) or inline without
-	// slim-mode truncation. Either way, the stale "slim" projection must NOT apply.
-	// We check that the response is NOT slimmed (i.e. the full 200-char response comes back).
-	resp = serve(t, srv, callTool("perm_call", map[string]any{
+	resp = serve(t, srv, callTool("call", map[string]any{
 		"server": "svc", "tool": "search", "params": map[string]any{},
 	}))
 	text := toolResultText(t, resp)
-	// With stale slim projection the text would be truncated; without it the full
-	// upstream response (embedded in the envelope) should contain the 200 x's.
-	if strings.Contains(text, "slim") {
-		t.Errorf("stale slim projection still active after server removal and re-add: %s", text)
+	if !strings.Contains(text, strings.Repeat("x", 200)) {
+		t.Errorf("stale projection still active after server removal and re-add: %s", text)
 	}
 }
 

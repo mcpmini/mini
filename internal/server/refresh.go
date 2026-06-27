@@ -131,8 +131,8 @@ func (s *Server) isCurrentUpstreamConnLocked(u *upstreamServer, conn transport.C
 	if conn == nil || u.ctx.Err() != nil || u.conn != conn {
 		return false
 	}
-	s.mu.RLock()
+	s.stateMu.RLock()
 	current := s.upstreams[u.cfg.Name] == u
-	s.mu.RUnlock()
+	s.stateMu.RUnlock()
 	return current
 }

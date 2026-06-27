@@ -189,7 +189,7 @@ func TestExcludedKeys(t *testing.T) {
 
 func TestPassthroughFields(t *testing.T) {
 	cfg := &config.ProjectionConfig{
-		IncludeOnly:  []string{"status"},
+		IncludeOnly: []string{"status"},
 		Passthrough: []string{"cursor", "next_page"},
 	}
 	value := map[string]any{
@@ -299,38 +299,6 @@ func TestNamedStringLimit(t *testing.T) {
 	// title has no named limit — should pass through untruncated
 	if m["title"].(string) != long {
 		t.Errorf("title should not be truncated")
-	}
-}
-
-func slimModeResult(t *testing.T) map[string]any {
-	t.Helper()
-	cfg := &config.ProjectionConfig{Mode: "slim"}
-	long := strings.Repeat("x", 500)
-	value := map[string]any{
-		"body":   long,
-		"items":  []any{1, 2, 3, 4, 5, 6, 7},
-		"nested": map[string]any{"a": map[string]any{"b": map[string]any{"c": "deep"}}},
-	}
-	return projection.Apply(value, cfg, defaultLimits).Summary.(map[string]any)
-}
-
-func TestSlimMode_stringAndArrayLimits(t *testing.T) {
-	m := slimModeResult(t)
-	// 500 bytes of 'x' with slim limit 200 — no boundaries → exact 200 chars, removed 300.
-	wantBody := strings.Repeat("x", 200)
-	if m["body"].(string) != wantBody {
-		t.Errorf("slim body = %q, want %q", m["body"], wantBody)
-	}
-	if len(m["items"].([]any)) > 3 {
-		t.Errorf("slim mode: items should be capped at 3 (no sentinel), got %d", len(m["items"].([]any)))
-	}
-}
-
-func TestSlimMode_depthLimit(t *testing.T) {
-	m := slimModeResult(t)
-	nested := m["nested"].(map[string]any)
-	if nested["a"] != "[depth limit reached]" {
-		t.Errorf("slim mode: depth 2 should cut nested.a, got %v", nested["a"])
 	}
 }
 
@@ -477,8 +445,8 @@ func TestDefaultArrayLimit(t *testing.T) {
 		if len(arr) != 2 {
 			t.Errorf("expected 2 items, got %d", len(arr))
 		}
-		if len(result.Truncated) != 1 || result.Truncated[0].Items != 3 || result.Truncated[0].JQPath != "" {
-			t.Errorf("expected truncation {path:\"\", items:3}, got %v", result.Truncated)
+		if len(result.Truncated) != 1 || result.Truncated[0].Items != 3 || result.Truncated[0].JQPath != "." {
+			t.Errorf("expected truncation {path:\".\", items:3}, got %v", result.Truncated)
 		}
 	})
 
@@ -523,5 +491,78 @@ func TestSlimKeepsFalseAndZeroValues(t *testing.T) {
 		if _, ok := m[key]; !ok {
 			t.Errorf("key %q should be present in projected output, not dropped", key)
 		}
+	}
+}
+
+func TestTopLevelString_longTruncatesWithDotPath(t *testing.T) {
+	long := strings.Repeat("word ", 300) // 1500 runes, over defaultLimits.StringLimit=1000
+	result := projection.Apply(long, nil, defaultLimits)
+
+	s, ok := result.Summary.(string)
+	if !ok {
+		t.Fatalf("expected string summary, got %T", result.Summary)
+	}
+	if utf8.RuneCountInString(s) >= 1500 {
+		t.Error("expected truncation, summary is still full length")
+	}
+	if len(result.Truncated) != 1 {
+		t.Fatalf("expected 1 truncation, got %d", len(result.Truncated))
+	}
+	if result.Truncated[0].JQPath != "." {
+		t.Errorf("JQPath = %q, want %q", result.Truncated[0].JQPath, ".")
+	}
+	if result.Truncated[0].Chars <= 0 {
+		t.Errorf("Chars = %d, expected > 0", result.Truncated[0].Chars)
+	}
+}
+
+func TestTopLevelString_shortPassesThrough(t *testing.T) {
+	short := "hello world"
+	result := projection.Apply(short, nil, defaultLimits)
+
+	s, ok := result.Summary.(string)
+	if !ok {
+		t.Fatalf("expected string summary, got %T", result.Summary)
+	}
+	if s != short {
+		t.Errorf("short string changed: got %q, want %q", s, short)
+	}
+	if len(result.Truncated) != 0 {
+		t.Errorf("expected no truncations for short string, got %v", result.Truncated)
+	}
+}
+
+func TestTopLevelScalar_passesThrough(t *testing.T) {
+	for _, v := range []any{float64(42), true, false, nil} {
+		result := projection.Apply(v, nil, defaultLimits)
+		if result.Summary != v {
+			t.Errorf("scalar %v changed to %v", v, result.Summary)
+		}
+		if len(result.Truncated) != 0 {
+			t.Errorf("scalar %v produced unexpected truncations", v)
+		}
+	}
+}
+
+func TestTopLevelString_markupTreatedAsPlainString(t *testing.T) {
+	// Mini does not parse or strip markup in top-level strings — only in string
+	// fields within objects (where the HTML/MD stripping logic runs). This test
+	// documents that behavior as intentional: truncation is by rune count only.
+	xml := strings.Repeat("<item>value</item>", 200) // 3600 chars, over defaultLimits.StringLimit=1000
+	result := projection.Apply(xml, nil, defaultLimits)
+
+	s, ok := result.Summary.(string)
+	if !ok {
+		t.Fatalf("expected string summary, got %T", result.Summary)
+	}
+	// String must be truncated but markup must not be stripped.
+	if utf8.RuneCountInString(s) >= 3600 {
+		t.Error("expected top-level XML string to be truncated")
+	}
+	if !strings.Contains(s, "<item>") {
+		t.Error("markup should be preserved in top-level string (no HTML stripping at root level)")
+	}
+	if len(result.Truncated) == 0 {
+		t.Error("expected truncation metadata for oversized top-level string")
 	}
 }

@@ -151,3 +151,17 @@ func TestEval_largeIntegerPreserved(t *testing.T) {
 		t.Errorf("large integer must not lose precision, got %q", got)
 	}
 }
+
+func TestEval_envAccessBlocked(t *testing.T) {
+	t.Setenv("MINI_TEST_SENTINEL", "secret")
+	ctx := context.Background()
+	for _, filter := range []string{"$ENV.MINI_TEST_SENTINEL", "env.MINI_TEST_SENTINEL"} {
+		out, err := jq.Eval(ctx, []byte(`{}`), filter)
+		if err != nil {
+			continue // error is also acceptable — env is blocked
+		}
+		if strings.Contains(out, "secret") {
+			t.Errorf("filter %q leaked env var: %s", filter, out)
+		}
+	}
+}

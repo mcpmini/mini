@@ -25,7 +25,7 @@ func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger,
 	for _, o := range opts {
 		o(s)
 	}
-	store := mustStore(cfg, logger, s.clock)
+	store := mustStore(cfg, configDir, logger, s.clock)
 	s.store = store
 	s.envelope = response.NewBuilder(store)
 	s.sessions = newSessionStore(s.clock)
@@ -62,8 +62,8 @@ func loadServerProjections(configDir string) (map[string]map[string]*config.Proj
 	return out, nil
 }
 
-func mustStore(cfg *config.Config, logger *slog.Logger, clock clock.Clock) *response.Store {
-	storeCfg := response.StoreConfigFrom(cfg)
+func mustStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {
+	storeCfg := response.StoreConfigFrom(cfg, configDir)
 	storeCfg.Clock = clock
 	store, err := response.NewStore(storeCfg)
 	if err == nil {

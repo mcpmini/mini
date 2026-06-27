@@ -83,6 +83,7 @@ func (f callFlags) enabledCount() int {
 type callContext struct {
 	cfg        *config.Config
 	sc         *config.ServerConfig
+	configDir  string
 	serverName string
 	toolName   string
 	params     map[string]any
@@ -109,21 +110,13 @@ func runCallCmd(configDir string, args []string, f callFlags, protected bool) {
 }
 
 func parseCallContext(configDir string, args []string) callContext {
-	serverName, toolName, params := resolveCallPos(args)
-	cfg, sc := loadCallCtx(configDir, serverName)
-	return callContext{cfg: cfg, sc: sc, serverName: serverName, toolName: toolName, params: params}
-}
-
-func resolveCallPos(pos []string) (serverName, toolName string, params map[string]any) {
-	if len(pos) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: mini call [-j|-m|-r] <server> <tool> [<json-params>|-]")
-		os.Exit(2)
-	}
-	params, ok := parseParams(pos)
+	params, ok := parseParams(args)
 	if !ok {
 		os.Exit(2)
 	}
-	return pos[0], pos[1], params
+	serverName, toolName := args[0], args[1]
+	cfg, sc := loadCallCtx(configDir, serverName)
+	return callContext{cfg: cfg, sc: sc, configDir: configDir, serverName: serverName, toolName: toolName, params: params}
 }
 
 func loadCallCtx(configDir, serverName string) (*config.Config, *config.ServerConfig) {
@@ -184,7 +177,7 @@ func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) 
 }
 
 func executeProjected(ctx context.Context, conn transport.Connection, cc callContext, mode callOutput) {
-	store := openCallStore(cc.cfg, cc.clock)
+	store := openCallStore(cc.cfg, cc.configDir, cc.clock)
 	defer store.Close()
 
 	result, err := invoke.Invoke(ctx, buildInvokeParams(conn, cc, store))
@@ -193,9 +186,9 @@ func executeProjected(ctx context.Context, conn transport.Connection, cc callCon
 	printCallOutput(cc.serverName, cc.toolName, result.Envelope, mode)
 }
 
-func openCallStore(cfg *config.Config, clock clock.Clock) *response.Store {
+func openCallStore(cfg *config.Config, configDir string, clock clock.Clock) *response.Store {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	return mustCallStore(cfg, logger, clock)
+	return mustCallStore(cfg, configDir, logger, clock)
 }
 
 func buildInvokeParams(conn transport.Connection, cc callContext, store *response.Store) invoke.InvokeParams {
@@ -276,8 +269,8 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 	return sc.Projections["*"]
 }
 
-func mustCallStore(cfg *config.Config, logger *slog.Logger, clock clock.Clock) *response.Store {
-	sc := response.StoreConfigFrom(cfg)
+func mustCallStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {
+	sc := response.StoreConfigFrom(cfg, configDir)
 	sc.Clock = clock
 	store, err := response.NewStore(sc)
 	if err != nil {

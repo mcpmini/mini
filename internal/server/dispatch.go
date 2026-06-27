@@ -98,15 +98,15 @@ func (s *Server) dialPerSessionConn(ctx context.Context, upstream *upstreamServe
 }
 
 func (s *Server) isUpstreamRegistered(name string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	_, ok := s.upstreams[name]
 	return ok
 }
 
 func (s *Server) getUpstream(serverName string) (*upstreamServer, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	u, ok := s.upstreams[serverName]
 	if !ok {
 		return nil, fmt.Errorf("server not connected: %s", serverName)
