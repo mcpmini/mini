@@ -28,10 +28,10 @@ func newStore(t *testing.T) *Store {
 	return s
 }
 
-func storeWithClock(t *testing.T, clk clock.Clock) *Store {
+func storeWithClock(t *testing.T, fakeClock clock.Clock) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: clk})
+	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -94,27 +94,27 @@ func TestEvictExpired_keepsNonExpired(t *testing.T) {
 }
 
 func TestEvictExpired_removesExpiredFiles(t *testing.T) {
-	clk := clock.NewFake(clockTestBase)
-	s := storeWithClock(t, clk)
+	fakeClock := clock.NewFake(clockTestBase)
+	s := storeWithClock(t, fakeClock)
 
 	path, err := s.WriteRaw([]byte(`{"ok":true}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	clk.Advance(2 * time.Hour)
+	fakeClock.Advance(2 * time.Hour)
 	s.evictExpired()
 	assertStoreEmpty(t, s, path)
 }
 
 func TestEvictExpired_deletesFileFromDisk(t *testing.T) {
-	clk := clock.NewFake(clockTestBase)
-	s := storeWithClock(t, clk)
+	fakeClock := clock.NewFake(clockTestBase)
+	s := storeWithClock(t, fakeClock)
 
 	path, err := s.WriteRaw([]byte(`{"full":"data"}`))
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	clk.Advance(2 * time.Hour)
+	fakeClock.Advance(2 * time.Hour)
 	s.evictExpired()
 
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -123,9 +123,9 @@ func TestEvictExpired_deletesFileFromDisk(t *testing.T) {
 }
 
 func TestCleanupLoop_evictsExpiredFilesAutomatically(t *testing.T) {
-	clk := clock.NewFake(clockTestBase)
+	fakeClock := clock.NewFake(clockTestBase)
 	dir := t.TempDir()
-	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: clk})
+	s, err := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -139,12 +139,12 @@ func TestCleanupLoop_evictsExpiredFilesAutomatically(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := clk.BlockUntilContext(ctx, 1); err != nil {
+	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
 		t.Fatalf("cleanupLoop timer not registered: %v", err)
 	}
-	clk.Advance(2 * time.Hour)
+	fakeClock.Advance(2 * time.Hour)
 	// Re-registration of the next timer proves evictExpired already ran.
-	if err := clk.BlockUntilContext(ctx, 1); err != nil {
+	if err := fakeClock.BlockUntilContext(ctx, 1); err != nil {
 		t.Fatalf("cleanupLoop did not re-register after eviction: %v", err)
 	}
 
@@ -171,14 +171,14 @@ func TestLoadExisting_picksUpFilesFromPreviousSession(t *testing.T) {
 
 func TestLoadExisting_evictsExpiredFromPreviousSession(t *testing.T) {
 	dir := t.TempDir()
-	clk1 := clock.NewFake(clockTestBase)
-	s1, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: clk1})
+	fakeClock1 := clock.NewFake(clockTestBase)
+	s1, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock1})
 	s1.WriteRaw([]byte(`{"old":true}`)) //nolint:errcheck
 	s1.Close()
 
-	// clk2 is 2h ahead: file expires at clockTestBase+1h, now=clockTestBase+2h → expired on load.
-	clk2 := clock.NewFake(clockTestBase.Add(2 * time.Hour))
-	s2, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: clk2})
+	// fakeClock2 is 2h ahead: file expires at clockTestBase+1h, now=clockTestBase+2h → expired on load.
+	fakeClock2 := clock.NewFake(clockTestBase.Add(2 * time.Hour))
+	s2, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock2})
 	defer s2.Close()
 
 	count, _ := s2.Stats()
