@@ -16,3 +16,8 @@ func UseLoopbackHTTPClient() {
 		},
 	}
 }
+
+// UseLoopbackURLValidation bypasses the SSRF URL check so tests can use httptest loopback endpoints.
+func UseLoopbackURLValidation() {
+	validateEndpointURL = func(string, string) error { return nil }
+}

@@ -85,6 +85,40 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 	}
 }
 
+func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
+	// When registration_endpoint is present alongside CIMD, DCR must be tried first.
+	// Servers like Linear advertise CIMD but reject unknown metadata URLs; DCR works for all conforming servers.
+	var dcrCalled bool
+	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		dcrCalled = true
+		json.NewEncoder(w).Encode(map[string]string{"client_id": "dcr-client-id"}) //nolint:errcheck
+	}))
+	defer regSrv.Close()
+
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                "https://as.example.com/authorize",
+		"token_endpoint":                        "https://as.example.com/token",
+		"client_id_metadata_document_supported": true,
+		"registration_endpoint":                 regSrv.URL + "/register",
+		"code_challenge_methods_supported":      []string{"S256"},
+	})
+	defer asSrv.Close()
+
+	sc := &config.ServerConfig{
+		URL:  asSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{Type: "oauth2"},
+	}
+	if err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc); err != nil {
+		t.Fatal(err)
+	}
+	if !dcrCalled {
+		t.Error("DCR endpoint was not called: CIMD must have been used instead")
+	}
+	if sc.Auth.ClientID != "dcr-client-id" {
+		t.Errorf("ClientID = %q, want dcr-client-id", sc.Auth.ClientID)
+	}
+}
+
 func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":          "https://as.example.com/authorize",
