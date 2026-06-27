@@ -86,8 +86,7 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 }
 
 func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
-	// When registration_endpoint is present alongside CIMD, DCR must be tried first.
-	// Servers like Linear advertise CIMD but reject unknown metadata URLs; DCR works for all conforming servers.
+	// Servers like Linear advertise CIMD but reject unknown metadata URLs; DCR must be tried first.
 	var dcrCalled bool
 	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		dcrCalled = true

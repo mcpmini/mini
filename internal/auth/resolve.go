@@ -93,10 +93,8 @@ type clientRegParams struct {
 }
 
 func resolveClientID(ctx context.Context, p clientRegParams) error {
-	// Priority: cached registration → DCR (if registration_endpoint available) → CIMD → error.
-	// DCR before CIMD: servers like Linear advertise CIMD support but only accept pre-approved
-	// metadata URLs and reject ours with "Invalid client". DCR succeeds wherever CIMD would fail.
-	// The MCP spec uses SHOULD (not MUST) on priority order, so this deviation is compliant.
+	// DCR before CIMD: servers like Linear advertise CIMD but only accept pre-approved metadata URLs,
+	// rejecting ours with "Invalid client". MCP spec §Client Registration Approaches uses SHOULD.
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L204-L208
 	found, err := applyExistingClientReg(p.ConfigDir, p.ServerName, p.AuthConfig)
 	if err != nil || found {
