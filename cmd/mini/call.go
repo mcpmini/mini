@@ -46,6 +46,7 @@ type callFlags struct {
 type callContext struct {
 	cfg        *config.Config
 	sc         *config.ServerConfig
+	configDir  string
 	serverName string
 	toolName   string
 	params     map[string]any
@@ -75,7 +76,7 @@ func parseCallContext(configDir string, args []string) (callFlags, callContext) 
 	f, pos := parseCallFlags(args)
 	serverName, toolName, params := resolveCallPos(pos)
 	cfg, sc := loadCallCtx(configDir, serverName)
-	return f, callContext{cfg: cfg, sc: sc, serverName: serverName, toolName: toolName, params: params}
+	return f, callContext{cfg: cfg, sc: sc, configDir: configDir, serverName: serverName, toolName: toolName, params: params}
 }
 
 func parseCallFlags(args []string) (callFlags, []string) {
@@ -158,7 +159,7 @@ func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) 
 }
 
 func executeProjected(ctx context.Context, conn transport.Connection, cc callContext, mode callOutput) {
-	store := openCallStore(cc.cfg, cc.clock)
+	store := openCallStore(cc.cfg, cc.configDir, cc.clock)
 	defer store.Close()
 
 	result, err := invoke.Invoke(ctx, buildInvokeParams(conn, cc, store))
@@ -167,9 +168,9 @@ func executeProjected(ctx context.Context, conn transport.Connection, cc callCon
 	printCallOutput(cc.serverName, cc.toolName, result.Envelope, mode)
 }
 
-func openCallStore(cfg *config.Config, clock clock.Clock) *response.Store {
+func openCallStore(cfg *config.Config, configDir string, clock clock.Clock) *response.Store {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	return mustCallStore(cfg, logger, clock)
+	return mustCallStore(cfg, configDir, logger, clock)
 }
 
 func buildInvokeParams(conn transport.Connection, cc callContext, store *response.Store) invoke.InvokeParams {
@@ -250,8 +251,8 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 	return sc.Projections["*"]
 }
 
-func mustCallStore(cfg *config.Config, logger *slog.Logger, clock clock.Clock) *response.Store {
-	sc := response.StoreConfigFrom(cfg)
+func mustCallStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {
+	sc := response.StoreConfigFrom(cfg, configDir)
 	sc.Clock = clock
 	store, err := response.NewStore(sc)
 	if err != nil {

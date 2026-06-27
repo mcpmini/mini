@@ -11,7 +11,7 @@ import (
 // syntax (["body text"]); array index segments are passed through verbatim ([N]).
 func FormatPath(path []string) string {
 	if len(path) == 0 {
-		return ""
+		return "."
 	}
 	var b strings.Builder
 	for _, seg := range path {

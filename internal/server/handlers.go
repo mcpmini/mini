@@ -159,8 +159,8 @@ func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bo
 	if session.Projection(toolFullName(server, tool)) != nil {
 		return true
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	toolMap := s.projections[server]
 	return len(toolMap) == 0 || toolMap[tool] != nil || toolMap["*"] != nil
 }
@@ -316,8 +316,8 @@ func (s *Server) dialPerSessionConn(ctx context.Context, upstream *upstreamServe
 }
 
 func (s *Server) isUpstreamRegistered(name string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	_, ok := s.upstreams[name]
 	return ok
 }
@@ -381,8 +381,8 @@ func (s *Server) resolveProjection(server, tool string, session *Session) *confi
 	if p := session.Projection(toolFullName(server, tool)); p != nil {
 		return p
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	toolMap := s.projections[server]
 	if toolMap == nil {
 		return nil
@@ -394,8 +394,8 @@ func (s *Server) resolveProjection(server, tool string, session *Session) *confi
 }
 
 func (s *Server) getUpstream(serverName string) (*upstreamServer, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	u, ok := s.upstreams[serverName]
 	if !ok {
 		return nil, fmt.Errorf("server not connected: %s", serverName)

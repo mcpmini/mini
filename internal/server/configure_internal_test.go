@@ -49,8 +49,8 @@ func TestSetServerProjectionWaitsForPersistLockBeforeMemoryUpdate(t *testing.T) 
 }
 
 func (s *Server) projectionForTest(serverName, tool string) *config.ProjectionConfig {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	if s.projections[serverName] == nil {
 		return nil
 	}

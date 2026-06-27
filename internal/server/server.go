@@ -54,8 +54,10 @@ type Server struct {
 	toolMode             transport.ToolMode
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
-	// Lock ordering: when both mu and authMu must be acquired, always acquire mu first.
-	mu          sync.RWMutex
+	// Lock ordering: persistMu → serverOpMu → stateMu → authMu.
+	// stateMu is the innermost hot-path lock (RLock on every request);
+	// the outer locks serialize cold-path admin operations.
+	stateMu     sync.RWMutex
 	persistMu   sync.Mutex
 	serverOpMu  sync.Mutex // serializes concurrent add_server / remove_server for the same name
 	removeGen   map[string]uint64 // protected by serverOpMu; incremented on each remove_server

@@ -110,11 +110,8 @@ type tickerFire struct {
 func (f *Fake) advanceTickers() []tickerFire {
 	var toFire []tickerFire
 	for _, tk := range f.tickers {
-		if tk.stopped || f.now.Before(tk.nextFire) {
-			continue
-		}
-		toFire = append(toFire, tickerFire{ticker: tk, fireTime: tk.nextFire})
 		for !f.now.Before(tk.nextFire) {
+			toFire = append(toFire, tickerFire{ticker: tk, fireTime: tk.nextFire})
 			tk.nextFire = tk.nextFire.Add(tk.interval)
 		}
 	}
@@ -164,7 +161,6 @@ type fakeTicker struct {
 	ch       chan time.Time
 	interval time.Duration
 	nextFire time.Time
-	stopped  bool
 	clock    *Fake
 }
 
@@ -173,7 +169,6 @@ func (t *fakeTicker) Chan() <-chan time.Time { return t.ch }
 func (t *fakeTicker) Stop() {
 	t.clock.mu.Lock()
 	defer t.clock.mu.Unlock()
-	t.stopped = true
 	for i, ft := range t.clock.tickers {
 		if ft == t {
 			t.clock.tickers = append(t.clock.tickers[:i], t.clock.tickers[i+1:]...)

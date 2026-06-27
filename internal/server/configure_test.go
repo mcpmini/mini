@@ -304,15 +304,6 @@ func TestHealthStatsAfterCalls(t *testing.T) {
 	assertHealthStats(t, srv, "svc", nCalls)
 }
 
-func makeListItemsFake(longDesc string) *transport.FakeConnection {
-	items := `[{"id":1,"description":"` + longDesc + `"},{"id":2,"description":"` + longDesc + `"},{"id":3,"description":"` + longDesc + `"}]`
-	itemsJSON, _ := json.Marshal(items)
-	return &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: "list_items", Description: "list", InputSchema: json.RawMessage(`{}`)}},
-		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(itemsJSON) + `}]}`)},
-	}
-}
-
 func newSessionServer(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
@@ -409,28 +400,3 @@ func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
 	}
 }
 
-func TestSlimProjectionMode(t *testing.T) {
-	srv := newConfigServer(t)
-	longDesc := strings.Repeat("word ", 60)
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, makeListItemsFake(longDesc))
-	execListItems := func() string {
-		return toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-			"server": "svc", "tool": "list_items", "params": map[string]any{},
-		})))
-	}
-	textFull := execListItems()
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "list_items",
-		"projection": map[string]any{"mode": "slim"},
-	}))
-	textSlim := execListItems()
-	if len(textSlim) >= len(textFull) {
-		t.Errorf("slim (%d bytes) should be shorter than full (%d bytes)", len(textSlim), len(textFull))
-	}
-	var slimEnv map[string]any
-	json.Unmarshal([]byte(textSlim), &slimEnv)
-	truncated, _ := slimEnv["truncated"].([]any)
-	if len(truncated) == 0 {
-		t.Errorf("expected truncated entries in slim envelope, got: %v", slimEnv)
-	}
-}

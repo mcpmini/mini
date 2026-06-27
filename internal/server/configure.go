@@ -119,8 +119,8 @@ func (s *Server) setServerProjection(p configureParams, visibleTool string) (any
 }
 
 func (s *Server) storeServerProjection(serverName, tool string, projection *config.ProjectionConfig) *config.ProjectionConfig {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	if s.projections[serverName] == nil {
 		s.projections[serverName] = make(map[string]*config.ProjectionConfig)
 	}
@@ -147,8 +147,8 @@ func preserveAlias(projection, prev *config.ProjectionConfig) *config.Projection
 }
 
 func (s *Server) restoreServerProjection(serverName, tool string, prev *config.ProjectionConfig) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	if prev != nil {
 		s.projections[serverName][tool] = prev
 		return
@@ -173,9 +173,9 @@ func (s *Server) reloadProjections() (any, error) {
 }
 
 func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig) {
-	s.mu.Lock()
+	s.stateMu.Lock()
 	s.projections = projections
-	s.mu.Unlock()
+	s.stateMu.Unlock()
 }
 
 func (s *Server) reapplyAliases() {
@@ -278,8 +278,8 @@ func (s *Server) detachAndCloseServer(serverName string) {
 }
 
 func (s *Server) detachUpstream(serverName string) *upstreamServer {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
 	u := s.upstreams[serverName]
 	delete(s.upstreams, serverName)
 	delete(s.projections, serverName)
@@ -303,8 +303,8 @@ func (s *Server) collectStatusData() (map[string]any, map[string][]string) {
 }
 
 func (s *Server) snapshotStatusInputs() (map[string]*upstreamServer, map[string][]string) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	upstreamsCopy := make(map[string]*upstreamServer, len(s.upstreams))
 	for name, u := range s.upstreams {
 		upstreamsCopy[name] = u
@@ -350,7 +350,7 @@ func (s *Server) persistProjectionsLocked(serverName string) error {
 }
 
 func (s *Server) marshalServerProjections(serverName string) ([]byte, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
 	return yaml.Marshal(s.projections[serverName])
 }

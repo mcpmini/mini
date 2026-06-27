@@ -112,14 +112,25 @@ func probePRMCandidates(ctx context.Context, base, path string) (string, error) 
 	return base, nil // fall back to treating the MCP server host as the AS
 }
 
-// TODO: add scopes_supported field and extract scope from WWW-Authenticate per MCP spec
-// §"Scope Selection Strategy" — clients SHOULD use advertised scopes in the auth request.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx
 type protectedResourceMeta struct {
 	AuthorizationServers []string `json:"authorization_servers"`
 }
 
+func requireHTTPURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid resource_metadata URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported protocol scheme %q in resource_metadata URL", u.Scheme)
+	}
+	return nil
+}
+
 func fetchASURLFromPRM(ctx context.Context, prmURL string) (string, error) {
+	if err := requireHTTPURL(prmURL); err != nil {
+		return "", err
+	}
 	resp, err := doDiscoveryRequest(ctx, prmURL)
 	if err != nil {
 		if ctx.Err() != nil {

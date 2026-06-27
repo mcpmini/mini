@@ -61,7 +61,7 @@ func runWithLimit(p RunParams, limit int) error {
 	// p.Client has no client-level timeout: tool deadlines are enforced by the daemon's
 	// per-call context (ToolTimeout). A fixed timeout here would break any tool configured
 	// with tool_timeout longer than the hard-coded value.
-	fp := newForwardPool(p, p.Client, limit)
+	fp := newForwardPool(p, limit)
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
 		startForward(maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
@@ -70,11 +70,11 @@ func runWithLimit(p RunParams, limit int) error {
 	return scanner.Err()
 }
 
-func newForwardPool(p RunParams, client *http.Client, limit int) forwardAsyncParams {
+func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	forwarder := &Forwarder{
-		session:  DaemonSession{client: client, sessionID: p.SessionID},
+		session:  DaemonSession{client: p.Client, sessionID: p.SessionID},
 		resolver: p.Resolver,
 		link:     newDaemonLink(p.Token),
 		toolMode: p.ToolMode,

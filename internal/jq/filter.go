@@ -34,7 +34,12 @@ func Eval(ctx context.Context, data []byte, filter string) (string, error) {
 }
 
 func runQuery(ctx context.Context, q *gojq.Query, v any) (string, error) {
-	iter := q.RunWithContext(ctx, v)
+	// agent filters must not read process env vars — WithEnvironLoader blocks $ENV/env access
+	code, err := gojq.Compile(q, gojq.WithEnvironLoader(func() []string { return nil }))
+	if err != nil {
+		return "", fmt.Errorf("jq compile: %w", err)
+	}
+	iter := code.RunWithContext(ctx, v)
 	var b strings.Builder
 	for i := 0; ; i++ {
 		out, ok := iter.Next()
@@ -50,18 +55,25 @@ func runQuery(ctx context.Context, q *gojq.Query, v any) (string, error) {
 	}
 }
 
-func writeResult(b *strings.Builder, out any, index int) error {
-	if index >= maxOutputResults {
-		return fmt.Errorf("jq: output exceeded %d results", maxOutputResults)
-	}
+func marshalJSON(out any) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(out); err != nil {
-		return fmt.Errorf("jq marshal: %w", err)
+		return nil, fmt.Errorf("jq marshal: %w", err)
 	}
-	line := buf.Bytes()
-	line = line[:len(line)-1] // trim trailing newline that Encode appends
+	b := buf.Bytes()
+	return b[:len(b)-1], nil // trim trailing newline that Encode appends
+}
+
+func writeResult(b *strings.Builder, out any, index int) error {
+	if index >= maxOutputResults {
+		return fmt.Errorf("jq: output exceeded %d results", maxOutputResults)
+	}
+	line, err := marshalJSON(out)
+	if err != nil {
+		return err
+	}
 	size := len(line)
 	if index > 0 {
 		size++ // newline separator
