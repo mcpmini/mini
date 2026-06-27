@@ -93,7 +93,7 @@ For code reviews, use the `review-pr` skill as the detailed guide. When reviewin
 
 mini is a context-optimizing MCP proxy. Agents talk to it via stdio; it routes calls to one or more upstream MCP servers (stdio or HTTP/SSE).
 
-**4 tools exposed to agents:** `list` (discover), `call` (execute), `perm_call` (execute protected), `config` (runtime admin)
+**Default (proxy) mode:** mini re-exposes each upstream tool directly (`github__list_pull_requests`, etc.). **Compact mode** (`--tool-mode compact`): 4 meta-tools — `list` (discover), `call` (execute), `perm_call` (execute protected), `config` (runtime admin)
 
 **Request flow:**
 
@@ -130,7 +130,7 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 {
   "__mini": {
     "msg": "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values.",
-    "file": "~/.mini/internal/responses/1750830563123.json",
+    "file": "1750830563123",
     "excluded": [".secret", ".internal"],
     "truncated": [{"path": ".body", "chars": 420}, {"path": ".items", "items": 73}]
   },
@@ -141,7 +141,7 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 - `truncated[].chars`: characters (runes) removed from a string field
 - `truncated[].items`: items removed from an array field by array limit
 - When no data is removed, the response is plain JSON with no `__mini` wrapper
-- Raw recovery files written to `~/.mini/internal/responses/<unix_ms>.json` (e.g. `1750830563123.json`) when data is lost
+- Raw recovery files written to `~/.mini/internal/responses/` when data is lost; the bare key (e.g. `1750830563123`) is enough to fetch via `read`
 
 ### Config directory layout
 
@@ -183,8 +183,8 @@ text := toolResultText(t, resp)
 
 ### CLI subcommands
 
-`mini [--config DIR] <command>`: `serve` (default), `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
+`mini [--config DIR] <command>`: `connect`, `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
 
-- `serve [--http ADDR] [--standalone]` — stdio proxy; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
-- `daemon [--port N]` — run as shared HTTP daemon (background)
+- `connect [--http ADDR] [--standalone] [--tool-mode compact]` — connect an agent via stdio; proxy mode by default; `--tool-mode compact` for the 4-meta-tool interface
+- `daemon` — run as shared Unix socket daemon (background)
 - `daemon status` — show whether the daemon is running
