@@ -81,24 +81,35 @@ func StartPKCEFlowOnListener(ctx context.Context, ac *config.AuthConfig, listene
 	codeCh := make(chan string, 1)
 	srv := serveCallbackListener(listener, callbackHandler(state, codeCh))
 	cfg.RedirectURL = redirectURI
-	url := buildAuthURL(cfg, ac, state, verifier)
+	url := buildAuthURL(cfg, buildAuthURLParams{
+		state:           state,
+		verifier:        verifier,
+		resourceURL:     ac.ResourceURL,
+		extraAuthParams: ac.ExtraAuthParams,
+	})
 
 	resultCh := make(chan PKCEResult, 1)
 	go exchangeCode(ctx, ExchangeCodeParams{Cfg: cfg, Verifier: verifier, ResourceURL: ac.ResourceURL, CodeCh: codeCh, Srv: srv, ResultCh: resultCh})
 	return url, resultCh, nil
 }
 
-func buildAuthURL(cfg *oauth2.Config, ac *config.AuthConfig, state, verifier string) string {
+type buildAuthURLParams struct {
+	state, verifier string
+	resourceURL     string
+	extraAuthParams map[string]string
+}
+
+func buildAuthURL(cfg *oauth2.Config, p buildAuthURLParams) string {
 	// ExtraAuthParams first so computed security params (resource, code_challenge) always win.
 	var opts []oauth2.AuthCodeOption
-	for k, v := range ac.ExtraAuthParams {
+	for k, v := range p.extraAuthParams {
 		opts = append(opts, oauth2.SetAuthURLParam(k, v))
 	}
-	opts = append(opts, oauth2.S256ChallengeOption(verifier))
-	if ac.ResourceURL != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("resource", ac.ResourceURL))
+	opts = append(opts, oauth2.S256ChallengeOption(p.verifier))
+	if p.resourceURL != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("resource", p.resourceURL))
 	}
-	return cfg.AuthCodeURL(state, opts...)
+	return cfg.AuthCodeURL(p.state, opts...)
 }
 
 func serveCallbackListener(listener net.Listener, handler http.Handler) *http.Server {
