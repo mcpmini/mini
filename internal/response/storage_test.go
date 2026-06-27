@@ -3,7 +3,6 @@
 package response
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
