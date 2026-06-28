@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func makeTool(name string) MCPTool {
-	return MCPTool{Name: name}
+func makeTool(name string) ToolDefinition {
+	return ToolDefinition{Name: name}
 }
 
 func toolNames(defs []ToolDefinition) []string {
@@ -23,7 +23,7 @@ func TestPaginateToolsList_singlePage(t *testing.T) {
 	calls := 0
 	callPage := func(_ context.Context, cursor string) (ToolsListResult, error) {
 		calls++
-		return ToolsListResult{Tools: []MCPTool{makeTool("a"), makeTool("b")}}, nil
+		return ToolsListResult{Tools: []ToolDefinition{makeTool("a"), makeTool("b")}}, nil
 	}
 	got, err := paginateToolsList(context.Background(), callPage)
 	if err != nil {
@@ -42,9 +42,9 @@ func TestPaginateToolsList_twoPages(t *testing.T) {
 	callPage := func(_ context.Context, cursor string) (ToolsListResult, error) {
 		receivedCursors = append(receivedCursors, cursor)
 		if cursor == "" {
-			return ToolsListResult{Tools: []MCPTool{makeTool("a")}, NextCursor: "page2"}, nil
+			return ToolsListResult{Tools: []ToolDefinition{makeTool("a")}, NextCursor: "page2"}, nil
 		}
-		return ToolsListResult{Tools: []MCPTool{makeTool("b")}}, nil
+		return ToolsListResult{Tools: []ToolDefinition{makeTool("b")}}, nil
 	}
 	got, err := paginateToolsList(context.Background(), callPage)
 	if err != nil {
@@ -62,7 +62,7 @@ func TestPaginateToolsList_threePages(t *testing.T) {
 	cursors := map[string]string{"": "page2", "page2": "page3"}
 	tools := map[string]string{"": "a", "page2": "b", "page3": "c"}
 	callPage := func(_ context.Context, cursor string) (ToolsListResult, error) {
-		r := ToolsListResult{Tools: []MCPTool{makeTool(tools[cursor])}}
+		r := ToolsListResult{Tools: []ToolDefinition{makeTool(tools[cursor])}}
 		if next, ok := cursors[cursor]; ok {
 			r.NextCursor = next
 		}
@@ -83,7 +83,7 @@ func TestPaginateToolsList_maxPagesReached(t *testing.T) {
 		calls++
 		nextCursor := "page" + string(rune('0'+calls))
 		return ToolsListResult{
-			Tools:      []MCPTool{makeTool("t")},
+			Tools:      []ToolDefinition{makeTool("t")},
 			NextCursor: nextCursor,
 		}, nil
 	}
@@ -104,7 +104,7 @@ func TestPaginateToolsList_duplicateCursor(t *testing.T) {
 	callPage := func(_ context.Context, cursor string) (ToolsListResult, error) {
 		calls++
 		return ToolsListResult{
-			Tools:      []MCPTool{makeTool("t")},
+			Tools:      []ToolDefinition{makeTool("t")},
 			NextCursor: "stuck",
 		}, nil
 	}
@@ -125,7 +125,7 @@ func TestPaginateToolsList_emptyPageWithCursor(t *testing.T) {
 		if cursor == "" {
 			return ToolsListResult{NextCursor: "page2"}, nil
 		}
-		return ToolsListResult{Tools: []MCPTool{makeTool("a")}}, nil
+		return ToolsListResult{Tools: []ToolDefinition{makeTool("a")}}, nil
 	}
 	got, err := paginateToolsList(context.Background(), callPage)
 	if err != nil {
@@ -156,7 +156,7 @@ func TestPaginateToolsList_errorOnSubsequentPage(t *testing.T) {
 	callPage := func(_ context.Context, _ string) (ToolsListResult, error) {
 		calls++
 		if calls == 1 {
-			return ToolsListResult{Tools: []MCPTool{makeTool("a")}, NextCursor: "page2"}, nil
+			return ToolsListResult{Tools: []ToolDefinition{makeTool("a")}, NextCursor: "page2"}, nil
 		}
 		return ToolsListResult{}, sentinel
 	}
@@ -176,7 +176,7 @@ func TestPaginateToolsList_contextCancellation(t *testing.T) {
 		calls++
 		if calls == 1 {
 			cancel()
-			return ToolsListResult{Tools: []MCPTool{makeTool("a")}, NextCursor: "page2"}, nil
+			return ToolsListResult{Tools: []ToolDefinition{makeTool("a")}, NextCursor: "page2"}, nil
 		}
 		return ToolsListResult{}, ctx.Err()
 	}

@@ -19,6 +19,13 @@ type ToolDefinition struct {
 	Execution    json.RawMessage `json:"execution,omitempty"`
 }
 
+func (d ToolDefinition) ToMap() map[string]any {
+	var m map[string]any
+	b, _ := json.Marshal(d)
+	_ = json.Unmarshal(b, &m)
+	return m
+}
+
 // Connection abstracts a connection to an upstream MCP server.
 // Implementations: StdioConnection (subprocess), SSEConnection (HTTP/SSE).
 type Connection interface {

@@ -86,7 +86,7 @@ func (s *Server) listDetail(fullName string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	m := e.SchemaFields()
+	m := e.Def.ToMap()
 	m["name"] = e.FullName
 	m["server"] = e.Server
 	m["permission"] = e.Permission

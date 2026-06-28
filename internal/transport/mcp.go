@@ -57,20 +57,8 @@ type ServerInfo struct {
 }
 
 type ToolsListResult struct {
-	Tools      []MCPTool `json:"tools"`
-	NextCursor string    `json:"nextCursor,omitempty"`
-}
-
-type MCPTool struct {
-	Name         string          `json:"name"`
-	Description  string          `json:"description"`
-	InputSchema  json.RawMessage `json:"inputSchema"`
-	Annotations  json.RawMessage `json:"annotations,omitempty"`
-	Title        json.RawMessage `json:"title,omitempty"`
-	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
-	Meta         json.RawMessage `json:"_meta,omitempty"`
-	Icons        json.RawMessage `json:"icons,omitempty"`
-	Execution    json.RawMessage `json:"execution,omitempty"`
+	Tools      []ToolDefinition `json:"tools"`
+	NextCursor string           `json:"nextCursor,omitempty"`
 }
 
 type ToolCallParams struct {

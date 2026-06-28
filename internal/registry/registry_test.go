@@ -360,7 +360,7 @@ func TestBuildEntry_annotationsThreaded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(e.Annotations) != string(raw) {
-		t.Errorf("annotations not threaded through buildEntry: got %s, want %s", e.Annotations, raw)
+	if string(e.Def.Annotations) != string(raw) {
+		t.Errorf("annotations not threaded through buildEntry: got %s, want %s", e.Def.Annotations, raw)
 	}
 }

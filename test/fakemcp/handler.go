@@ -119,7 +119,7 @@ func (h *mcpHandler) toolsListResult(params json.RawMessage) transport.ToolsList
 	if h.listPageSize <= 0 {
 		return transport.ToolsListResult{Tools: tools}
 	}
-	slices.SortFunc(tools, func(a, b transport.MCPTool) int {
+	slices.SortFunc(tools, func(a, b transport.ToolDefinition) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 	var p struct {
