@@ -93,13 +93,13 @@ type clientRegParams struct {
 }
 
 func resolveClientID(ctx context.Context, p clientRegParams) error {
-	// DCR before CIMD: servers like Linear advertise CIMD but only accept pre-approved metadata URLs,
-	// rejecting ours with "Invalid client". MCP spec §Client Registration Approaches uses SHOULD.
-	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L204-L208
 	found, err := applyExistingClientReg(p.ConfigDir, p.ServerName, p.AuthConfig)
 	if err != nil || found {
 		return err
 	}
+	// DCR before CIMD: servers like Linear advertise CIMD but only accept pre-approved metadata URLs,
+	// rejecting ours with "Invalid client". MCP spec §Client Registration Approaches uses SHOULD.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L204-L208
 	if p.Meta != nil && p.Meta.RegistrationURL != "" {
 		return dynamicRegister(ctx, p)
 	}
