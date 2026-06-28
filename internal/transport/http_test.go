@@ -316,26 +316,19 @@ func TestListTools_successfulHandshakeAndList(t *testing.T) {
 
 func TestListTools_propagatesInputSchema(t *testing.T) {
 	schema := `{"type":"object","properties":{"path":{"type":"string"}}}`
-	tools := []any{map[string]any{"name": "read_file", "inputSchema": json.RawMessage(schema)}}
+	outputSchema := `{"type":"string"}`
+	tools := []any{map[string]any{
+		"name":         "read_file",
+		"inputSchema":  json.RawMessage(schema),
+		"title":        json.RawMessage(`"Read File"`),
+		"outputSchema": json.RawMessage(outputSchema),
+	}}
 	srv := newHandshakeServer(t, tools, nil)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	got := mustListTools(t, conn)
 	if string(got[0].InputSchema) != schema {
 		t.Errorf("schema mismatch: got %s", got[0].InputSchema)
 	}
-}
-
-func TestListTools_propagatesNewFields(t *testing.T) {
-	outputSchema := `{"type":"string"}`
-	tools := []any{map[string]any{
-		"name":         "my_tool",
-		"inputSchema":  map[string]any{},
-		"title":        json.RawMessage(`"My Tool"`),
-		"outputSchema": json.RawMessage(outputSchema),
-	}}
-	srv := newHandshakeServer(t, tools, nil)
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	got := mustListTools(t, conn)
 	if len(got[0].Title) == 0 {
 		t.Error("Title not propagated from upstream")
 	}

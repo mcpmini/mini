@@ -6,6 +6,7 @@ import (
 )
 
 // ToolDefinition is a compact representation of a tool from an upstream MCP server.
+// Fields follow the MCP Tool schema: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-11-25/schema.json
 type ToolDefinition struct {
 	Name         string          `json:"name"`
 	Description  string          `json:"description"`
@@ -13,7 +14,7 @@ type ToolDefinition struct {
 	Annotations  json.RawMessage `json:"annotations,omitempty"`
 	Title        json.RawMessage `json:"title,omitempty"`
 	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
-	Meta         json.RawMessage `json:"_meta,omitempty"`
+	Meta         json.RawMessage `json:"_meta,omitempty"` // Go identifiers cannot start with underscore
 	Icons        json.RawMessage `json:"icons,omitempty"`
 	Execution    json.RawMessage `json:"execution,omitempty"`
 }

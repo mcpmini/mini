@@ -7,7 +7,7 @@ import (
 	"github.com/mcpmini/mini/internal/registry"
 )
 
-func TestSchemaFields_includesNewFields(t *testing.T) {
+func TestSchemaFields_includesOptionalFields(t *testing.T) {
 	e := &registry.ToolEntry{
 		Description:  "test tool",
 		InputSchema:  json.RawMessage(`{}`),
@@ -25,7 +25,7 @@ func TestSchemaFields_includesNewFields(t *testing.T) {
 	}
 }
 
-func TestSchemaFields_excludesAbsentNewFields(t *testing.T) {
+func TestSchemaFields_excludesAbsentOptionalFields(t *testing.T) {
 	e := &registry.ToolEntry{
 		Description: "test tool",
 		InputSchema: json.RawMessage(`{}`),

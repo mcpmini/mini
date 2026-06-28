@@ -43,23 +43,6 @@ func TestList_hidden_disabledByConfig_returnsError(t *testing.T) {
 
 func TestList_detail_returnsSchema(t *testing.T) {
 	srv := newTestServer(t)
-	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fakeConn("myTool"))
-
-	text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{"tool": "svc.myTool", "detail": true})))
-	var detail map[string]any
-	if err := json.Unmarshal([]byte(text), &detail); err != nil {
-		t.Fatalf("expected JSON object for detail: %s", text)
-	}
-	if detail["name"] != "svc.myTool" {
-		t.Errorf("expected name=svc.myTool, got: %v", detail["name"])
-	}
-	if detail["inputSchema"] == nil {
-		t.Error("expected inputSchema in detail response")
-	}
-}
-
-func TestList_detail_newFieldsPassthrough(t *testing.T) {
-	srv := newTestServer(t)
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
 			Name:         "myTool",
@@ -79,6 +62,12 @@ func TestList_detail_newFieldsPassthrough(t *testing.T) {
 	var detail map[string]any
 	if err := json.Unmarshal([]byte(text), &detail); err != nil {
 		t.Fatalf("expected JSON object for detail: %s", text)
+	}
+	if detail["name"] != "svc.myTool" {
+		t.Errorf("expected name=svc.myTool, got: %v", detail["name"])
+	}
+	if detail["inputSchema"] == nil {
+		t.Error("expected inputSchema in detail response")
 	}
 	for _, key := range []string{"title", "outputSchema", "_meta", "icons", "execution"} {
 		if detail[key] == nil {
