@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -93,6 +94,7 @@ func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]string{"client_id": "dcr-client-id"}) //nolint:errcheck
 	}))
 	defer regSrv.Close()
+	auth.UseLoopbackURLValidation(t)
 
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                "https://as.example.com/authorize",
@@ -118,10 +120,80 @@ func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
 	}
 }
 
+
+func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
+	tests := []struct {
+		name string
+		meta map[string]any
+		want string
+	}{
+		{
+			name: "authorization endpoint",
+			meta: map[string]any{
+				"authorization_endpoint":           "http://127.0.0.1/authorize",
+				"token_endpoint":                   "https://as.example.com/token",
+				"code_challenge_methods_supported": []string{"S256"},
+			},
+			want: "authorization_endpoint",
+		},
+		{
+			name: "token endpoint",
+			meta: map[string]any{
+				"authorization_endpoint":           "https://as.example.com/authorize",
+				"token_endpoint":                   "http://127.0.0.1/token",
+				"code_challenge_methods_supported": []string{"S256"},
+			},
+			want: "token_endpoint",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", tc.meta)
+			defer asSrv.Close()
+
+			sc := &config.ServerConfig{
+				URL:  asSrv.URL + "/mcp",
+				Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured"},
+			}
+			err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc)
+			if err == nil {
+				t.Fatal("expected loopback endpoint validation error")
+			}
+			if got := err.Error(); got == "" || !strings.Contains(got, tc.want) {
+				t.Fatalf("error = %q, want mention of %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveEndpoints_rejectsLoopbackRegistrationEndpoint(t *testing.T) {
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                "https://as.example.com/authorize",
+		"token_endpoint":                        "https://as.example.com/token",
+		"client_id_metadata_document_supported": false,
+		"registration_endpoint":                 "http://127.0.0.1/register",
+		"code_challenge_methods_supported":      []string{"S256"},
+	})
+	defer asSrv.Close()
+
+	sc := &config.ServerConfig{
+		URL:  asSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{Type: "oauth2"},
+	}
+	err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc)
+	if err == nil {
+		t.Fatal("expected loopback registration endpoint validation error")
+	}
+	if got := err.Error(); got == "" || !strings.Contains(got, "registration_endpoint") {
+		t.Fatalf("error = %q, want mention of registration_endpoint", got)
+	}
+}
+
 func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint":          "https://as.example.com/authorize",
-		"token_endpoint":                  "https://as.example.com/token",
+		"authorization_endpoint":           "https://as.example.com/authorize",
+		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
 	defer asSrv.Close()
@@ -155,10 +227,10 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 
 func TestResolveEndpoints_userScopesNotOverwritten(t *testing.T) {
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint":          "https://as.example.com/authorize",
-		"token_endpoint":                  "https://as.example.com/token",
+		"authorization_endpoint":           "https://as.example.com/authorize",
+		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
-		"scopes_supported":                []string{"channels:read"},
+		"scopes_supported":                 []string{"channels:read"},
 	})
 	defer asSrv.Close()
 
