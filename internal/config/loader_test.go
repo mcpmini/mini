@@ -175,6 +175,36 @@ list_issues:
 	}
 }
 
+func TestLoadProjectionConfig_doesNotLoadProjectionFileAsServer(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), "log_level: info\n")
+	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp-ci\n")
+	writeFile(t, filepath.Join(dir, "servers", "ci.proj.yaml"), `
+getBuild:
+  include_only:
+    - build_number
+    - status
+    - branch
+`)
+	_, servers := mustLoadConfig(t, dir)
+	if len(servers) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(servers))
+	}
+	if servers[0].Name != "ci" {
+		t.Fatalf("expected server ci, got %q", servers[0].Name)
+	}
+	if servers[0].Projections == nil {
+		t.Fatal("expected projections to be loaded")
+	}
+	proj := servers[0].Projections["getBuild"]
+	if proj == nil {
+		t.Fatal("expected getBuild projection")
+	}
+	if got := proj.IncludeOnly; len(got) != 3 || got[0] != "build_number" || got[1] != "status" || got[2] != "branch" {
+		t.Fatalf("unexpected include_only: %v", got)
+	}
+}
+
 func TestLoadProjectionMerges_dirWinsOverInline(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `name: svc
@@ -196,6 +226,13 @@ my_tool:
 	if len(proj.IncludeOnly) != 1 || proj.IncludeOnly[0] != "dir_field" {
 		t.Errorf("expected dir projection to win, got include_only=%v", proj.IncludeOnly)
 	}
+}
+
+func TestLoadMalformedProjectionConfig(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp-ci\n")
+	writeFile(t, filepath.Join(dir, "servers", "ci.proj.yaml"), `getBuild: [`)
+	expectLoadError(t, dir)
 }
 
 func TestLoadActions_basic(t *testing.T) {
