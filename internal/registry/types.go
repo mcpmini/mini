@@ -30,8 +30,13 @@ type ToolEntry struct {
 	Description   string
 	DescLower     string // pre-lowercased for search
 	InputSchema   json.RawMessage
-	Annotations json.RawMessage
-	Permission  config.PermissionLevel
+	Annotations   json.RawMessage
+	Title         json.RawMessage
+	OutputSchema  json.RawMessage
+	Meta          json.RawMessage
+	Icons         json.RawMessage
+	Execution     json.RawMessage
+	Permission    config.PermissionLevel
 
 	// Virtual-tool fields (set only for actions).
 	TargetServer string
@@ -54,6 +59,21 @@ func (e *ToolEntry) SchemaFields() map[string]any {
 	}
 	if len(e.Annotations) > 0 {
 		m["annotations"] = e.Annotations
+	}
+	if len(e.Title) > 0 {
+		m["title"] = e.Title
+	}
+	if len(e.OutputSchema) > 0 {
+		m["outputSchema"] = e.OutputSchema
+	}
+	if len(e.Meta) > 0 {
+		m["_meta"] = e.Meta
+	}
+	if len(e.Icons) > 0 {
+		m["icons"] = e.Icons
+	}
+	if len(e.Execution) > 0 {
+		m["execution"] = e.Execution
 	}
 	return m
 }

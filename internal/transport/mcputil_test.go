@@ -77,6 +77,52 @@ func TestToToolDefs_absentAnnotationsPreserved(t *testing.T) {
 	}
 }
 
+func TestToToolDefs_newFieldsPassthrough(t *testing.T) {
+	in := []MCPTool{{
+		Name:         "my_tool",
+		Title:        json.RawMessage(`"My Tool"`),
+		OutputSchema: json.RawMessage(`{"type":"string"}`),
+		Meta:         json.RawMessage(`{"key":"val"}`),
+		Icons:        json.RawMessage(`{"url":"http://example.com/icon.png"}`),
+		Execution:    json.RawMessage(`{"timeout":30}`),
+	}}
+	out := toToolDefs(in)
+	if string(out[0].Title) != `"My Tool"` {
+		t.Errorf("Title not propagated: %s", out[0].Title)
+	}
+	if string(out[0].OutputSchema) != `{"type":"string"}` {
+		t.Errorf("OutputSchema not propagated: %s", out[0].OutputSchema)
+	}
+	if string(out[0].Meta) != `{"key":"val"}` {
+		t.Errorf("Meta not propagated: %s", out[0].Meta)
+	}
+	if string(out[0].Icons) != `{"url":"http://example.com/icon.png"}` {
+		t.Errorf("Icons not propagated: %s", out[0].Icons)
+	}
+	if string(out[0].Execution) != `{"timeout":30}` {
+		t.Errorf("Execution not propagated: %s", out[0].Execution)
+	}
+}
+
+func TestToToolDefs_absentNewFieldsPreserved(t *testing.T) {
+	out := toToolDefs([]MCPTool{{Name: "plain"}})
+	if len(out[0].Title) != 0 {
+		t.Errorf("Title must be nil when absent, got: %s", out[0].Title)
+	}
+	if len(out[0].OutputSchema) != 0 {
+		t.Errorf("OutputSchema must be nil when absent, got: %s", out[0].OutputSchema)
+	}
+	if len(out[0].Meta) != 0 {
+		t.Errorf("Meta must be nil when absent, got: %s", out[0].Meta)
+	}
+	if len(out[0].Icons) != 0 {
+		t.Errorf("Icons must be nil when absent, got: %s", out[0].Icons)
+	}
+	if len(out[0].Execution) != 0 {
+		t.Errorf("Execution must be nil when absent, got: %s", out[0].Execution)
+	}
+}
+
 func TestToToolDefs_multipleTools(t *testing.T) {
 	in := []MCPTool{
 		{Name: "a"}, {Name: "b"}, {Name: "c"},

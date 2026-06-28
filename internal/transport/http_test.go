@@ -325,6 +325,25 @@ func TestListTools_propagatesInputSchema(t *testing.T) {
 	}
 }
 
+func TestListTools_propagatesNewFields(t *testing.T) {
+	outputSchema := `{"type":"string"}`
+	tools := []any{map[string]any{
+		"name":         "my_tool",
+		"inputSchema":  map[string]any{},
+		"title":        json.RawMessage(`"My Tool"`),
+		"outputSchema": json.RawMessage(outputSchema),
+	}}
+	srv := newHandshakeServer(t, tools, nil)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	got := mustListTools(t, conn)
+	if len(got[0].Title) == 0 {
+		t.Error("Title not propagated from upstream")
+	}
+	if string(got[0].OutputSchema) != outputSchema {
+		t.Errorf("OutputSchema mismatch: got %s, want %s", got[0].OutputSchema, outputSchema)
+	}
+}
+
 func TestHealth_returns200(t *testing.T) {
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -7,10 +7,15 @@ import (
 
 // ToolDefinition is a compact representation of a tool from an upstream MCP server.
 type ToolDefinition struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
-	Annotations json.RawMessage `json:"annotations,omitempty"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  json.RawMessage `json:"inputSchema,omitempty"`
+	Annotations  json.RawMessage `json:"annotations,omitempty"`
+	Title        json.RawMessage `json:"title,omitempty"`
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+	Meta         json.RawMessage `json:"_meta,omitempty"`
+	Icons        json.RawMessage `json:"icons,omitempty"`
+	Execution    json.RawMessage `json:"execution,omitempty"`
 }
 
 // Connection abstracts a connection to an upstream MCP server.

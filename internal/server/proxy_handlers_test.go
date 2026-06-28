@@ -607,3 +607,57 @@ func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
 		t.Errorf("tool without annotations must not include annotations key, got: %v", tool["annotations"])
 	}
 }
+
+func fakeConnWithNewFields(name string) *transport.FakeConnection {
+	return &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{
+			{
+				Name:         name,
+				Description:  "desc for " + name,
+				InputSchema:  json.RawMessage(`{"type":"object"}`),
+				Title:        json.RawMessage(`"My Tool"`),
+				OutputSchema: json.RawMessage(`{"type":"string"}`),
+				Meta:         json.RawMessage(`{"key":"val"}`),
+				Icons:        json.RawMessage(`{"url":"http://example.com/icon.png"}`),
+				Execution:    json.RawMessage(`{"timeout":30}`),
+			},
+		},
+		Responses: make(map[string]json.RawMessage),
+	}
+}
+
+func TestProxy_ToolsList_NewFieldsPassthrough(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConnWithNewFields("my_tool")
+	addProxyConn(t, srv, "svc", conn)
+
+	tools := toolsList(t, srv)
+	tool := findTool(tools, "svc__my_tool")
+	if tool == nil {
+		t.Fatal("svc__my_tool not found in tools/list")
+	}
+	for _, key := range []string{"title", "outputSchema", "_meta", "icons", "execution"} {
+		if tool[key] == nil {
+			t.Errorf("expected %q in tool definition, got nil", key)
+		}
+	}
+}
+
+func TestProxy_ToolsList_AbsentNewFieldsOmitted(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConn("plain_tool")
+	addProxyConn(t, srv, "svc", conn)
+
+	tools := toolsList(t, srv)
+	tool := findTool(tools, "svc__plain_tool")
+	if tool == nil {
+		t.Fatal("svc__plain_tool not found in tools/list")
+	}
+	for _, key := range []string{"title", "outputSchema", "_meta", "icons", "execution"} {
+		if _, ok := tool[key]; ok {
+			t.Errorf("tool without %q must not include that key, got: %v", key, tool[key])
+		}
+	}
+}

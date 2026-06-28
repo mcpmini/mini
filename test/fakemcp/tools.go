@@ -16,13 +16,18 @@ import (
 )
 
 type Tool struct {
-	Name        string
-	Description string
-	InputSchema json.RawMessage
-	Annotations json.RawMessage
-	FixturePath string
-	Content     string
-	WriteOp     bool // synthetic response generated from request args
+	Name         string
+	Description  string
+	InputSchema  json.RawMessage
+	Annotations  json.RawMessage
+	Title        json.RawMessage
+	OutputSchema json.RawMessage
+	Meta         json.RawMessage
+	Icons        json.RawMessage
+	Execution    json.RawMessage
+	FixturePath  string
+	Content      string
+	WriteOp      bool // synthetic response generated from request args
 }
 
 type ToolRegistry struct {
@@ -138,10 +143,15 @@ func (r *ToolRegistry) MCPTools() []transport.MCPTool {
 			schema = emptySchema
 		}
 		out[i] = transport.MCPTool{
-			Name:        t.Name,
-			Description: t.Description,
-			InputSchema: schema,
-			Annotations: t.Annotations,
+			Name:         t.Name,
+			Description:  t.Description,
+			InputSchema:  schema,
+			Annotations:  t.Annotations,
+			Title:        t.Title,
+			OutputSchema: t.OutputSchema,
+			Meta:         t.Meta,
+			Icons:        t.Icons,
+			Execution:    t.Execution,
 		}
 	}
 	return out
