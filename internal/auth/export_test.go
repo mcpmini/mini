@@ -17,12 +17,3 @@ func UseLoopbackHTTPClient() {
 	}
 }
 
-// UseLoopbackURLValidation bypasses the SSRF URL check for one test so it can
-// exercise loopback registration endpoints without weakening unrelated tests.
-func UseLoopbackURLValidation(t interface{ Cleanup(func()) }) {
-	prev := validateEndpointURL
-	validateEndpointURL = func(string, string) error { return nil }
-	t.Cleanup(func() {
-		validateEndpointURL = prev
-	})
-}

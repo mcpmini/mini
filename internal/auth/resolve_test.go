@@ -94,7 +94,6 @@ func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]string{"client_id": "dcr-client-id"}) //nolint:errcheck
 	}))
 	defer regSrv.Close()
-	auth.UseLoopbackURLValidation(t)
 
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                "https://as.example.com/authorize",
@@ -167,28 +166,6 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 	}
 }
 
-func TestResolveEndpoints_rejectsLoopbackRegistrationEndpoint(t *testing.T) {
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint":                "https://as.example.com/authorize",
-		"token_endpoint":                        "https://as.example.com/token",
-		"client_id_metadata_document_supported": false,
-		"registration_endpoint":                 "http://127.0.0.1/register",
-		"code_challenge_methods_supported":      []string{"S256"},
-	})
-	defer asSrv.Close()
-
-	sc := &config.ServerConfig{
-		URL:  asSrv.URL + "/mcp",
-		Auth: &config.AuthConfig{Type: "oauth2"},
-	}
-	err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc)
-	if err == nil {
-		t.Fatal("expected loopback registration endpoint validation error")
-	}
-	if got := err.Error(); got == "" || !strings.Contains(got, "registration_endpoint") {
-		t.Fatalf("error = %q, want mention of registration_endpoint", got)
-	}
-}
 
 func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{

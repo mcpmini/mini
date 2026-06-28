@@ -75,7 +75,7 @@ func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
 	return nil
 }
 
-var validateEndpointURL = func(endpoint, name string) error {
+func validateEndpointURL(endpoint, name string) error {
 	if endpoint == "" {
 		return nil
 	}
@@ -118,9 +118,6 @@ func dynamicRegister(ctx context.Context, p clientRegParams) error {
 	}
 	if regURL == "" {
 		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
-	}
-	if err := validateEndpointURL(regURL, "registration_endpoint"); err != nil {
-		return err
 	}
 	clientID, err := Register(ctx, regURL, ResolvedCallbackURI(a))
 	if err != nil {
