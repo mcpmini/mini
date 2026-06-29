@@ -35,7 +35,7 @@ commands:
   connect [flags]                Connect an agent to mini (stdio MCP)
   daemon                         Run as a shared background daemon (HTTP)
   daemon status                  Show whether the daemon is running
-  ls / list                      List configured servers
+  ls / list [SERVER [TOOL]]      List servers, server tools, or tool detail
   add NAME [flags]               Add a server
   rm / remove NAME               Remove a server
   status                         Show server health
@@ -87,8 +87,8 @@ func main() {
 var commands = map[string]func(string, []string){
 	"connect":   runConnect,
 	"daemon":    runDaemonCmd,
-	"ls":        func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
-	"list":      func(dir string, _ []string) { mustRun(runList(dir, os.Stdout)) },
+	"ls":        func(dir string, args []string) { mustRun(runList(dir, args, os.Stdout)) },
+	"list":      func(dir string, args []string) { mustRun(runList(dir, args, os.Stdout)) },
 	"add":       func(dir string, args []string) { mustRun(runAdd(dir, args, os.Stdout)) },
 	"rm":        func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
 	"remove":    func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
