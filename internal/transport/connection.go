@@ -21,8 +21,9 @@ type ToolDefinition struct {
 
 func (d ToolDefinition) ToMap() map[string]any {
 	var m map[string]any
-	b, _ := json.Marshal(d)        // fields are string/RawMessage — cannot fail //nolint:errcheck
-	_ = json.Unmarshal(b, &m)     //nolint:errcheck
+	// Cannot fail: ToolDefinition was JSON-deserialized from upstream, so re-serializing it is always valid.
+	b, _ := json.Marshal(d)   //nolint:errcheck
+	_ = json.Unmarshal(b, &m) //nolint:errcheck
 	return m
 }
 
