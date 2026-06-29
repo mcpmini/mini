@@ -117,8 +117,11 @@ func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {
 	if len(result.Content) == 1 && len(texts) == 1 {
 		return extractSingleText(texts[0])
 	}
-	if len(result.Content) == 0 && len(result.StructuredContent) > 0 {
-		return result.StructuredContent, nil
+	if len(result.Content) == 0 {
+		if len(result.StructuredContent) > 0 {
+			return result.StructuredContent, nil
+		}
+		return json.RawMessage("[]"), nil
 	}
 	return rawContentArray(raw)
 }

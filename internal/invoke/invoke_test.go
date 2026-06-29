@@ -122,6 +122,27 @@ func TestExtractContent_MultiContentRawArray(t *testing.T) {
 			t.Errorf("got %s", out)
 		}
 	})
+
+	t.Run("single non-text block", func(t *testing.T) {
+		raw := json.RawMessage(`{"content":[{"type":"image","data":"abc","mimeType":"image/png"}],"isError":false}`)
+		out, err := invoke.ExtractContent(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != `[{"type":"image","data":"abc","mimeType":"image/png"}]` {
+			t.Errorf("got %s", out)
+		}
+	})
+
+	t.Run("null result", func(t *testing.T) {
+		out, err := invoke.ExtractContent(json.RawMessage(`null`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != `[]` {
+			t.Errorf("got %s, want []", out)
+		}
+	})
 }
 
 func TestExtractContent_IsError(t *testing.T) {
