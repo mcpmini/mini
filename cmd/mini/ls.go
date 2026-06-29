@@ -19,7 +19,7 @@ import (
 )
 
 func listServerTools(configDir, serverName string, out io.Writer) error {
-	conn, sc, err := dialServer(configDir, serverName)
+	conn, _, err := dialServer(configDir, serverName)
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func listServerTools(configDir, serverName string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("list tools: %w", err)
 	}
-	printToolTable(out, sc, tools)
+	printToolTable(out, tools)
 	return nil
 }
 
@@ -68,15 +68,17 @@ func dialServer(configDir, serverName string) (transport.Connection, *config.Ser
 	if sc == nil {
 		return nil, nil, fmt.Errorf("server %q not found", serverName)
 	}
+	ctx := context.Background()
+	injectToken(ctx, configDir, sc)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	conn, err := invoke.Dial(context.Background(), invoke.DialParams{Logger: logger, Config: cfg, Server: *sc, Clock: clock.System()})
+	conn, err := invoke.Dial(ctx, invoke.DialParams{Logger: logger, Config: cfg, Server: *sc, Clock: clock.System()})
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect to %s: %w", serverName, err)
 	}
 	return conn, sc, nil
 }
 
-func printToolTable(out io.Writer, sc *config.ServerConfig, tools []transport.ToolDefinition) {
+func printToolTable(out io.Writer, tools []transport.ToolDefinition) {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "TOOL\tDESCRIPTION")
 	for _, t := range tools {
@@ -132,22 +134,18 @@ func parseArgDefs(schema json.RawMessage) []argDef {
 	if err := json.Unmarshal(schema, &s); err != nil {
 		return nil
 	}
-	required := make(map[string]bool, len(s.Required))
-	for _, r := range s.Required {
-		required[r] = true
-	}
+	return buildArgDefs(s)
+}
+
+func buildArgDefs(s rawInputSchema) []argDef {
+	req := requiredSet(s.Required)
 	args := make([]argDef, 0, len(s.Properties))
 	for name, prop := range s.Properties {
 		t := prop.Type
 		if t == "" {
 			t = "any"
 		}
-		args = append(args, argDef{
-			Name:        name,
-			Type:        t,
-			Description: prop.Description,
-			Required:    required[name],
-		})
+		args = append(args, argDef{Name: name, Type: t, Description: prop.Description, Required: req[name]})
 	}
 	sort.Slice(args, func(i, j int) bool {
 		if args[i].Required != args[j].Required {
@@ -156,6 +154,14 @@ func parseArgDefs(schema json.RawMessage) []argDef {
 		return args[i].Name < args[j].Name
 	})
 	return args
+}
+
+func requiredSet(names []string) map[string]bool {
+	m := make(map[string]bool, len(names))
+	for _, n := range names {
+		m[n] = true
+	}
+	return m
 }
 
 func formatSignature(toolName string, args []argDef) string {

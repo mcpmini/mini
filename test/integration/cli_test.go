@@ -313,6 +313,61 @@ func TestCLI_status_liveServer(t *testing.T) {
 	}
 }
 
+func TestCLI_ls_server_lists_tools(t *testing.T) {
+	cfg := t.TempDir()
+	dir := mockFixtureDir(t, map[string]string{
+		"get_item":   `{"id":1}`,
+		"list_items": `[]`,
+	})
+	writeServerYAML(t, cfg, "svc", dir, "")
+
+	stdout, _, code := runCLI(t, cfg, "ls", "svc")
+	if code != 0 {
+		t.Fatalf("ls <server> should exit 0, got %d\nstdout: %s", code, stdout)
+	}
+	if !strings.Contains(stdout, "get_item") {
+		t.Errorf("expected tool name in output, got: %s", stdout)
+	}
+	if !strings.Contains(stdout, "TOOL") {
+		t.Errorf("expected TOOL header in output, got: %s", stdout)
+	}
+}
+
+func TestCLI_ls_tool_detail(t *testing.T) {
+	cfg := t.TempDir()
+	dir := mockFixtureDir(t, map[string]string{
+		"get_item":   `{"id":1}`,
+		"list_items": `[]`,
+	})
+	writeServerYAML(t, cfg, "svc", dir, "")
+
+	stdout, _, code := runCLI(t, cfg, "ls", "svc", "get_item")
+	if code != 0 {
+		t.Fatalf("ls <server> <tool> should exit 0, got %d\nstdout: %s", code, stdout)
+	}
+	if !strings.Contains(stdout, "get_item") {
+		t.Errorf("expected tool name in detail output, got: %s", stdout)
+	}
+}
+
+func TestCLI_ls_unknown_server_exits_nonzero(t *testing.T) {
+	_, _, code := runCLI(t, t.TempDir(), "ls", "ghost")
+	if code == 0 {
+		t.Error("ls with unknown server should exit non-zero")
+	}
+}
+
+func TestCLI_ls_unknown_tool_exits_nonzero(t *testing.T) {
+	cfg := t.TempDir()
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
+	writeServerYAML(t, cfg, "svc", dir, "")
+
+	_, _, code := runCLI(t, cfg, "ls", "svc", "nonexistent_tool")
+	if code == 0 {
+		t.Error("ls with unknown tool should exit non-zero")
+	}
+}
+
 func writeClaudeConfig(t *testing.T, serverDef any) string {
 	t.Helper()
 	data, _ := json.Marshal(map[string]any{

@@ -167,7 +167,7 @@ func TestPrintToolTable(t *testing.T) {
 		},
 	}
 	var out bytes.Buffer
-	printToolTable(&out, nil, tools)
+	printToolTable(&out, tools)
 	got := out.String()
 	if !strings.Contains(got, "TOOL") {
 		t.Errorf("missing TOOL header: %q", got)
