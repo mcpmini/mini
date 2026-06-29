@@ -16,13 +16,10 @@ import (
 )
 
 type Tool struct {
-	Name        string
-	Description string
-	InputSchema json.RawMessage
-	Annotations json.RawMessage
-	FixturePath string
-	Content     string
-	WriteOp     bool // synthetic response generated from request args
+	ToolDefinition transport.ToolDefinition
+	FixturePath    string
+	Content        string
+	WriteOp        bool // synthetic response generated from request args
 }
 
 type ToolRegistry struct {
@@ -57,9 +54,9 @@ func buildFixtureTool(dir, filename string) Tool {
 	path := filepath.Join(dir, filename)
 	schema, annotations := loadSchema(filepath.Join(dir, name+".schema.json"))
 	if isWriteOpFile(path) {
-		return Tool{Name: name, Description: schemaDescription(schema, name), InputSchema: schema, Annotations: annotations, WriteOp: true}
+		return Tool{ToolDefinition: transport.ToolDefinition{Name: name, Description: schemaDescription(schema, name), InputSchema: schema, Annotations: annotations}, WriteOp: true}
 	}
-	return Tool{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, Annotations: annotations, FixturePath: path}
+	return Tool{ToolDefinition: transport.ToolDefinition{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, Annotations: annotations}, FixturePath: path}
 }
 
 func loadSchema(path string) (inputSchema, annotations json.RawMessage) {
@@ -108,7 +105,7 @@ func isWriteOpFile(path string) bool {
 func (r *ToolRegistry) Add(t Tool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.tools[t.Name] = t
+	r.tools[t.ToolDefinition.Name] = t
 }
 
 func (r *ToolRegistry) Remove(name string) {
@@ -129,20 +126,15 @@ func (r *ToolRegistry) List() []Tool {
 
 var emptySchema = json.RawMessage(`{"type":"object","properties":{}}`)
 
-func (r *ToolRegistry) MCPTools() []transport.MCPTool {
+func (r *ToolRegistry) MCPTools() []transport.ToolDefinition {
 	tools := r.List()
-	out := make([]transport.MCPTool, len(tools))
+	out := make([]transport.ToolDefinition, len(tools))
 	for i, t := range tools {
-		schema := t.InputSchema
-		if len(schema) == 0 {
-			schema = emptySchema
+		def := t.ToolDefinition
+		if len(def.InputSchema) == 0 {
+			def.InputSchema = emptySchema
 		}
-		out[i] = transport.MCPTool{
-			Name:        t.Name,
-			Description: t.Description,
-			InputSchema: schema,
-			Annotations: t.Annotations,
-		}
+		out[i] = def
 	}
 	return out
 }

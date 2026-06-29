@@ -16,7 +16,7 @@ func paginateToolsList(ctx context.Context, callPage func(context.Context, strin
 		if err != nil {
 			return partialOrError(ctx, tools, err)
 		}
-		tools = append(tools, toToolDefs(r.Tools)...)
+		tools = append(tools, r.Tools...)
 		next, ok := advanceCursor(seen, r.NextCursor)
 		if !ok {
 			return tools, nil

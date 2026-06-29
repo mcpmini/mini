@@ -1,9 +1,8 @@
 package registry
 
 import (
-	"encoding/json"
-
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 // ToolName pairs the upstream dispatch name with the agent-visible name.
@@ -27,11 +26,9 @@ type ToolEntry struct {
 	ToolName      ToolName
 	FullName      string // "server.tool" using visible name (alias if set)
 	FullNameLower string // pre-lowercased for search
-	Description   string
+	Def           transport.ToolDefinition
 	DescLower     string // pre-lowercased for search
-	InputSchema   json.RawMessage
-	Annotations json.RawMessage
-	Permission  config.PermissionLevel
+	Permission    config.PermissionLevel
 
 	// Virtual-tool fields (set only for actions).
 	TargetServer string
@@ -44,25 +41,14 @@ type CompactEntry struct {
 	Name        string                 `json:"name"`
 	Server      string                 `json:"server"`
 	Description string                 `json:"description"`
-	Permission config.PermissionLevel `json:"permission"`
-}
-
-func (e *ToolEntry) SchemaFields() map[string]any {
-	m := map[string]any{
-		"description": e.Description,
-		"inputSchema": e.InputSchema,
-	}
-	if len(e.Annotations) > 0 {
-		m["annotations"] = e.Annotations
-	}
-	return m
+	Permission  config.PermissionLevel `json:"permission"`
 }
 
 func (e *ToolEntry) Compact() CompactEntry {
 	return CompactEntry{
 		Name:        e.FullName,
 		Server:      e.Server,
-		Description: e.Description,
-		Permission: e.Permission,
+		Description: e.Def.Description,
+		Permission:  e.Permission,
 	}
 }

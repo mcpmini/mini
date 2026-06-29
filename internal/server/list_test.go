@@ -10,6 +10,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestList_hidden_includesHiddenTools(t *testing.T) {
@@ -42,7 +43,20 @@ func TestList_hidden_disabledByConfig_returnsError(t *testing.T) {
 
 func TestList_detail_returnsSchema(t *testing.T) {
 	srv := newTestServer(t)
-	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fakeConn("myTool"))
+	conn := &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{{
+			Name:         "myTool",
+			Description:  "my tool",
+			InputSchema:  json.RawMessage(`{"type":"object"}`),
+			Title:        json.RawMessage(`"My Tool"`),
+			OutputSchema: json.RawMessage(`{"type":"string"}`),
+			Meta:         json.RawMessage(`{"key":"val"}`),
+			Icons:        json.RawMessage(`{"url":"http://example.com/icon.png"}`),
+			Execution:    json.RawMessage(`{"timeout":30}`),
+		}},
+		Responses: make(map[string]json.RawMessage),
+	}
+	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, conn)
 
 	text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{"tool": "svc.myTool", "detail": true})))
 	var detail map[string]any
@@ -54,6 +68,11 @@ func TestList_detail_returnsSchema(t *testing.T) {
 	}
 	if detail["inputSchema"] == nil {
 		t.Error("expected inputSchema in detail response")
+	}
+	for _, key := range []string{"title", "outputSchema", "_meta", "icons", "execution"} {
+		if detail[key] == nil {
+			t.Errorf("expected %q in detail response, got nil; full: %s", key, text)
+		}
 	}
 }
 

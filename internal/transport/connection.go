@@ -6,11 +6,26 @@ import (
 )
 
 // ToolDefinition is a compact representation of a tool from an upstream MCP server.
+// Fields follow the MCP Tool schema: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/schema/2025-11-25/schema.json
 type ToolDefinition struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"inputSchema,omitempty"`
-	Annotations json.RawMessage `json:"annotations,omitempty"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  json.RawMessage `json:"inputSchema,omitempty"`
+	Annotations  json.RawMessage `json:"annotations,omitempty"`
+	Title        json.RawMessage `json:"title,omitempty"`
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
+	Meta         json.RawMessage `json:"_meta,omitempty"` // Go identifiers cannot start with underscore
+	Icons        json.RawMessage `json:"icons,omitempty"`
+	Execution    json.RawMessage `json:"execution,omitempty"`
+}
+
+func (def ToolDefinition) ToMap() map[string]any {
+	var m map[string]any
+	// Callers need to add extra keys before serializing, so we convert to a map.
+	// Cannot fail: re-serializing JSON we already deserialized from upstream.
+	raw, _ := json.Marshal(def)   //nolint:errcheck
+	_ = json.Unmarshal(raw, &m)   //nolint:errcheck
+	return m
 }
 
 // Connection abstracts a connection to an upstream MCP server.

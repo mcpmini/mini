@@ -83,11 +83,9 @@ func buildEntry(p entryParams) *ToolEntry {
 		ToolName:      name,
 		FullName:      full,
 		FullNameLower: strings.ToLower(full),
-		Description:   p.def.Description,
+		Def:           p.def,
 		DescLower:     strings.ToLower(p.def.Description),
-		InputSchema:   p.def.InputSchema,
-		Annotations: p.def.Annotations,
-		Permission:  resolvePermission(p.def.Name, p.perm),
+		Permission:    resolvePermission(p.def.Name, p.perm),
 	}
 }
 
@@ -125,7 +123,7 @@ func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 		ToolName:      ToolName{UpstreamName: ac.Name},
 		FullName:      full,
 		FullNameLower: strings.ToLower(full),
-		Description:   ac.Description,
+		Def:           transport.ToolDefinition{Description: ac.Description},
 		DescLower:     strings.ToLower(ac.Description),
 		Permission:    r.actionPermission(ac),
 		TargetServer:  ac.Server,

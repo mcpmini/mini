@@ -22,10 +22,3 @@ func normalizeID(id any) any {
 	return id
 }
 
-func toToolDefs(tools []MCPTool) []ToolDefinition {
-	defs := make([]ToolDefinition, len(tools))
-	for i, t := range tools {
-		defs[i] = ToolDefinition(t)
-	}
-	return defs
-}

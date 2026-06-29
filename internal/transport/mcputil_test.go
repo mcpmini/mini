@@ -29,65 +29,36 @@ func TestNormalizeID_int64_unchanged(t *testing.T) {
 	}
 }
 
-func TestToToolDefs_mapsAllFields(t *testing.T) {
-	schema := json.RawMessage(`{"type":"object"}`)
-	in := []MCPTool{
-		{Name: "read_file", Description: "reads a file", InputSchema: schema},
+func TestToMap_includesOptionalFields(t *testing.T) {
+	d := ToolDefinition{
+		Name:         "my_tool",
+		Description:  "test tool",
+		InputSchema:  json.RawMessage(`{}`),
+		Title:        json.RawMessage(`"My Tool"`),
+		OutputSchema: json.RawMessage(`{"type":"string"}`),
+		Meta:         json.RawMessage(`{"key":"val"}`),
+		Icons:        json.RawMessage(`{"url":"http://example.com/icon.png"}`),
+		Execution:    json.RawMessage(`{"timeout":30}`),
 	}
-	out := toToolDefs(in)
-	if len(out) != 1 {
-		t.Fatalf("expected 1, got %d", len(out))
-	}
-	if out[0].Name != "read_file" {
-		t.Errorf("unexpected name: %s", out[0].Name)
-	}
-	if out[0].Description != "reads a file" {
-		t.Errorf("unexpected description: %s", out[0].Description)
-	}
-	if string(out[0].InputSchema) != string(schema) {
-		t.Errorf("schema not propagated: %s", out[0].InputSchema)
-	}
-}
-
-func TestToToolDefs_empty(t *testing.T) {
-	if out := toToolDefs(nil); len(out) != 0 {
-		t.Errorf("expected empty, got %d", len(out))
-	}
-}
-
-func TestToToolDefs_annotationsPassthrough(t *testing.T) {
-	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false,"fakeHint":true}`)
-	in := []MCPTool{
-		{Name: "get_file", Annotations: raw},
-	}
-	out := toToolDefs(in)
-	if string(out[0].Annotations) != string(raw) {
-		t.Errorf("annotations not preserved verbatim: got %s, want %s", out[0].Annotations, raw)
-	}
-}
-
-func TestToToolDefs_absentAnnotationsPreserved(t *testing.T) {
-	in := []MCPTool{
-		{Name: "get_file", Annotations: json.RawMessage(`{"readOnlyHint":false}`)},
-		{Name: "write_file"},
-	}
-	out := toToolDefs(in)
-	if len(out[1].Annotations) != 0 {
-		t.Errorf("nil annotations must remain nil/empty, got: %s", out[1].Annotations)
-	}
-}
-
-func TestToToolDefs_multipleTools(t *testing.T) {
-	in := []MCPTool{
-		{Name: "a"}, {Name: "b"}, {Name: "c"},
-	}
-	out := toToolDefs(in)
-	if len(out) != 3 {
-		t.Fatalf("expected 3, got %d", len(out))
-	}
-	for i, name := range []string{"a", "b", "c"} {
-		if out[i].Name != name {
-			t.Errorf("out[%d].Name = %s, want %s", i, out[i].Name, name)
+	m := d.ToMap()
+	for _, key := range []string{"title", "outputSchema", "_meta", "icons", "execution"} {
+		if _, ok := m[key]; !ok {
+			t.Errorf("ToMap() missing key %q", key)
 		}
 	}
 }
+
+func TestToMap_excludesAbsentOptionalFields(t *testing.T) {
+	d := ToolDefinition{
+		Name:        "plain_tool",
+		Description: "test tool",
+		InputSchema: json.RawMessage(`{}`),
+	}
+	m := d.ToMap()
+	for _, key := range []string{"title", "outputSchema", "_meta", "icons", "execution"} {
+		if _, ok := m[key]; ok {
+			t.Errorf("ToMap() should omit absent key %q", key)
+		}
+	}
+}
+
