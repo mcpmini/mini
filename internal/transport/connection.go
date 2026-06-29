@@ -19,11 +19,11 @@ type ToolDefinition struct {
 	Execution    json.RawMessage `json:"execution,omitempty"`
 }
 
-func (d ToolDefinition) ToMap() map[string]any {
+func (def ToolDefinition) ToMap() map[string]any {
 	var m map[string]any
-	// Cannot fail: ToolDefinition was JSON-deserialized from upstream, so re-serializing it is always valid.
-	b, _ := json.Marshal(d)   //nolint:errcheck
-	_ = json.Unmarshal(b, &m) //nolint:errcheck
+	// Cannot fail: re-serializing JSON we already deserialized from upstream.
+	raw, _ := json.Marshal(def)   //nolint:errcheck
+	_ = json.Unmarshal(raw, &m)   //nolint:errcheck
 	return m
 }
 
