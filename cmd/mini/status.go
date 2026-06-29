@@ -21,10 +21,9 @@ func runList(configDir string, args []string, out io.Writer) error {
 	case 1:
 		return listServerTools(configDir, args[0], out)
 	case 2:
-		return listToolDetail(configDir, args[0], args[1], out)
+		return listToolDetail(toolDetailParams{ConfigDir: configDir, ServerName: args[0], ToolName: args[1], Out: out})
 	default:
-		fmt.Fprintln(out, "usage: mini ls [SERVER [TOOL]]")
-		return nil
+		return fmt.Errorf("usage: mini ls [SERVER [TOOL]]")
 	}
 }
 

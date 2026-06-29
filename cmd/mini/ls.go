@@ -19,44 +19,50 @@ import (
 )
 
 func listServerTools(configDir, serverName string, out io.Writer) error {
-	conn, _, err := dialServer(configDir, serverName)
+	tools, cleanup, err := fetchTools(configDir, serverName)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	tools, err := conn.ListTools(ctx)
-	if err != nil {
-		return fmt.Errorf("list tools: %w", err)
-	}
+	defer cleanup()
 	printToolTable(out, tools)
 	return nil
 }
 
-func listToolDetail(configDir, serverName, toolName string, out io.Writer) error {
-	conn, _, err := dialServer(configDir, serverName)
+type toolDetailParams struct {
+	ConfigDir  string
+	ServerName string
+	ToolName   string
+	Out        io.Writer
+}
+
+func listToolDetail(p toolDetailParams) error {
+	tools, cleanup, err := fetchTools(p.ConfigDir, p.ServerName)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	tools, err := conn.ListTools(ctx)
-	if err != nil {
-		return fmt.Errorf("list tools: %w", err)
-	}
+	defer cleanup()
 	for _, t := range tools {
-		if t.Name == toolName {
-			printToolDetail(out, t)
+		if t.Name == p.ToolName {
+			printToolDetail(p.Out, t)
 			return nil
 		}
 	}
-	return fmt.Errorf("tool %q not found on server %q", toolName, serverName)
+	return fmt.Errorf("tool %q not found on server %q", p.ToolName, p.ServerName)
+}
+
+func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(), error) {
+	conn, _, err := dialServer(configDir, serverName)
+	if err != nil {
+		return nil, nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	tools, err := conn.ListTools(ctx)
+	if err != nil {
+		cancel()
+		conn.Close() //nolint:errcheck
+		return nil, nil, fmt.Errorf("list tools: %w", err)
+	}
+	return tools, func() { cancel(); conn.Close() }, nil //nolint:errcheck
 }
 
 func dialServer(configDir, serverName string) (transport.Connection, *config.ServerConfig, error) {
@@ -69,7 +75,9 @@ func dialServer(configDir, serverName string) (transport.Connection, *config.Ser
 		return nil, nil, fmt.Errorf("server %q not found", serverName)
 	}
 	ctx := context.Background()
-	injectToken(ctx, configDir, sc)
+	if sc.Auth != nil && sc.Auth.Type == "oauth2" {
+		injectToken(ctx, configDir, sc)
+	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	conn, err := invoke.Dial(ctx, invoke.DialParams{Logger: logger, Config: cfg, Server: *sc, Clock: clock.System()})
 	if err != nil {
