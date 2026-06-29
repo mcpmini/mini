@@ -51,7 +51,7 @@ func listToolDetail(p toolDetailParams) error {
 }
 
 func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(), error) {
-	conn, _, err := dialServer(configDir, serverName)
+	conn, err := dialServer(configDir, serverName)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -65,14 +65,14 @@ func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(
 	return tools, func() { cancel(); conn.Close() }, nil //nolint:errcheck
 }
 
-func dialServer(configDir, serverName string) (transport.Connection, *config.ServerConfig, error) {
+func dialServer(configDir, serverName string) (transport.Connection, error) {
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load config: %w", err)
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 	sc := config.FindServer(servers, serverName)
 	if sc == nil {
-		return nil, nil, fmt.Errorf("server %q not found", serverName)
+		return nil, fmt.Errorf("server %q not found", serverName)
 	}
 	ctx := context.Background()
 	if sc.Auth != nil && sc.Auth.Type == "oauth2" {
@@ -81,9 +81,9 @@ func dialServer(configDir, serverName string) (transport.Connection, *config.Ser
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	conn, err := invoke.Dial(ctx, invoke.DialParams{Logger: logger, Config: cfg, Server: *sc, Clock: clock.System()})
 	if err != nil {
-		return nil, nil, fmt.Errorf("connect to %s: %w", serverName, err)
+		return nil, fmt.Errorf("connect to %s: %w", serverName, err)
 	}
-	return conn, sc, nil
+	return conn, nil
 }
 
 func printToolTable(out io.Writer, tools []transport.ToolDefinition) {
