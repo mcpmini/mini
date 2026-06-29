@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestCLI_version(t *testing.T) {
+func TestCLIVersion(t *testing.T) {
 	for _, args := range [][]string{{"version"}, {"--version"}} {
 		stdout, _, code := runCLI(t, t.TempDir(), args...)
 		if code != 0 {
@@ -23,7 +23,7 @@ func TestCLI_version(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_empty(t *testing.T) {
+func TestCLILsEmpty(t *testing.T) {
 	stdout, _, code := runCLI(t, t.TempDir(), "ls")
 	if code != 0 {
 		t.Errorf("ls with empty config should exit 0, got %d", code)
@@ -33,7 +33,7 @@ func TestCLI_ls_empty(t *testing.T) {
 	}
 }
 
-func TestCLI_add_then_ls(t *testing.T) {
+func TestCLIAddThenLs(t *testing.T) {
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
 	stdout, _, code := runCLI(t, cfg, "ls")
@@ -42,7 +42,7 @@ func TestCLI_add_then_ls(t *testing.T) {
 	}
 }
 
-func TestCLI_add_url_createsFile(t *testing.T) {
+func TestCLIAddUrlCreatesFile(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
 	if code != 0 {
@@ -53,7 +53,7 @@ func TestCLI_add_url_createsFile(t *testing.T) {
 	}
 }
 
-func TestCLI_add_command_createsFile(t *testing.T) {
+func TestCLIAddCommandCreatesFile(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
 	if code != 0 {
@@ -64,7 +64,7 @@ func TestCLI_add_command_createsFile(t *testing.T) {
 	}
 }
 
-func TestCLI_rm(t *testing.T) {
+func TestCLIRm(t *testing.T) {
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
 	_, _, code := runCLI(t, cfg, "rm", "myserver")
@@ -77,35 +77,35 @@ func TestCLI_rm(t *testing.T) {
 	}
 }
 
-func TestCLI_rm_nonexistent(t *testing.T) {
+func TestCLIRmNonexistent(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "rm", "ghost")
 	if code == 0 {
 		t.Error("rm of nonexistent server should exit non-zero")
 	}
 }
 
-func TestCLI_add_invalidName(t *testing.T) {
+func TestCLIAddInvalidName(t *testing.T) {
 	_, stderr, code := runCLI(t, t.TempDir(), "add", "bad/name", "--url", "http://example.com")
 	if code == 0 || !strings.Contains(stderr, "invalid server name") {
 		t.Errorf("expected non-zero exit + 'invalid server name', got code=%d stderr=%q", code, stderr)
 	}
 }
 
-func TestCLI_add_noURLorCommand(t *testing.T) {
+func TestCLIAddNoURLOrCommand(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "add", "myserver")
 	if code == 0 {
 		t.Error("add with no URL or command should exit non-zero")
 	}
 }
 
-func TestCLI_unknownCommand(t *testing.T) {
+func TestCLIUnknownCommand(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "boguscommand")
 	if code != 2 {
 		t.Errorf("unknown command should exit 2, got %d", code)
 	}
 }
 
-func TestCLI_add_fromClaude(t *testing.T) {
+func TestCLIAddFromClaude(t *testing.T) {
 	cfg := t.TempDir()
 	claudeConfig := writeClaudeConfig(t, map[string]any{
 		"command": "npx",
@@ -120,7 +120,7 @@ func TestCLI_add_fromClaude(t *testing.T) {
 	}
 }
 
-func TestCLI_init_createsDirectories(t *testing.T) {
+func TestCLIInitCreatesDirectories(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "init", "--yes")
 	if code != 0 {
@@ -133,15 +133,14 @@ func TestCLI_init_createsDirectories(t *testing.T) {
 	}
 }
 
-func TestCLI_status_empty(t *testing.T) {
+func TestCLIStatusEmpty(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "status")
 	if code != 0 {
 		t.Errorf("status with no servers should exit 0, got %d", code)
 	}
 }
 
-
-func TestCLI_connect_invalidConfig(t *testing.T) {
+func TestCLIConnectInvalidConfig(t *testing.T) {
 	cfg := t.TempDir()
 	os.WriteFile(filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"), 0644)
 	_, _, code := runCLI(t, cfg, "status")
@@ -150,7 +149,7 @@ func TestCLI_connect_invalidConfig(t *testing.T) {
 	}
 }
 
-func TestCLI_add_protected(t *testing.T) {
+func TestCLIAddProtected(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--protected", "list_items")
 	if code != 0 {
@@ -177,7 +176,7 @@ func writeClaudeCodeConfig(t *testing.T, servers map[string]any) string {
 	return path
 }
 
-func TestCLI_add_fromClaude_claudeCode(t *testing.T) {
+func TestCLIAddFromClaudeCode(t *testing.T) {
 	cfg := t.TempDir()
 	path := writeClaudeCodeConfig(t, map[string]any{
 		"code-server": map[string]any{
@@ -194,7 +193,7 @@ func TestCLI_add_fromClaude_claudeCode(t *testing.T) {
 	}
 }
 
-func TestCLI_add_header(t *testing.T) {
+func TestCLIAddHeader(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp",
 		"--header", "Authorization=Bearer tok", "--header", "X-Custom=val")
@@ -210,7 +209,7 @@ func TestCLI_add_header(t *testing.T) {
 	}
 }
 
-func TestCLI_status_unreachable(t *testing.T) {
+func TestCLIStatusUnreachable(t *testing.T) {
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "bad", "name: bad\ncommand: /nonexistent_binary_xyz\n")
 	_, _, code := runCLI(t, cfg, "status")
@@ -219,7 +218,7 @@ func TestCLI_status_unreachable(t *testing.T) {
 	}
 }
 
-func TestCLI_init_fromPath(t *testing.T) {
+func TestCLIInitFromPath(t *testing.T) {
 	claudePath := writeClaudeConfig(t, map[string]any{
 		"command": "npx",
 		"args":    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
@@ -234,7 +233,7 @@ func TestCLI_init_fromPath(t *testing.T) {
 	}
 }
 
-func TestCLI_cleanup_deletesExpiredFiles(t *testing.T) {
+func TestCLICleanupDeletesExpiredFiles(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
@@ -253,7 +252,7 @@ func TestCLI_cleanup_deletesExpiredFiles(t *testing.T) {
 	}
 }
 
-func TestCLI_cleanup_retainsNonExpiredFiles(t *testing.T) {
+func TestCLICleanupRetainsNonExpiredFiles(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
@@ -267,21 +266,21 @@ func TestCLI_cleanup_retainsNonExpiredFiles(t *testing.T) {
 	}
 }
 
-func TestCLI_cleanup_exits0(t *testing.T) {
+func TestCLICleanupExits0(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "cleanup")
 	if code != 0 {
 		t.Errorf("cleanup with no responses dir should exit 0, got %d", code)
 	}
 }
 
-func TestCLI_auth_serverNotFound(t *testing.T) {
+func TestCLIAuthServerNotFound(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "auth", "nonexistent")
 	if code == 0 {
 		t.Error("auth for nonexistent server should exit non-zero")
 	}
 }
 
-func TestCLI_auth_noOAuth2Config(t *testing.T) {
+func TestCLIAuthNoOAuth2Config(t *testing.T) {
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
 	_, stderr, code := runCLI(t, cfg, "auth", "myserver")
@@ -293,7 +292,7 @@ func TestCLI_auth_noOAuth2Config(t *testing.T) {
 	}
 }
 
-func TestCLI_status_liveServer(t *testing.T) {
+func TestCLIStatusLiveServer(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -313,7 +312,7 @@ func TestCLI_status_liveServer(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_server_lists_tools(t *testing.T) {
+func TestCLILsServerListsTools(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -333,7 +332,7 @@ func TestCLI_ls_server_lists_tools(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_tool_detail(t *testing.T) {
+func TestCLILsToolDetail(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -350,14 +349,14 @@ func TestCLI_ls_tool_detail(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_unknown_server_exits_nonzero(t *testing.T) {
+func TestCLILsUnknownServerExitsNonzero(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "ls", "ghost")
 	if code == 0 {
 		t.Error("ls with unknown server should exit non-zero")
 	}
 }
 
-func TestCLI_ls_unknown_tool_exits_nonzero(t *testing.T) {
+func TestCLILsUnknownToolExitsNonzero(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeServerYAML(t, cfg, "svc", dir, "")
@@ -377,4 +376,3 @@ func writeClaudeConfig(t *testing.T, serverDef any) string {
 	os.WriteFile(path, data, 0644)
 	return path
 }
-
