@@ -113,12 +113,18 @@ func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {
 	if result.IsError {
 		return nil, fmt.Errorf("tool returned error: %s", joinText(result.Content))
 	}
-	text := strings.TrimSpace(joinText(result.Content))
-	if text == "" && len(result.StructuredContent) > 0 {
-		// Spec 2025-06-18: servers SHOULD include text for backwards compat, but
-		// if they don't, use structuredContent directly.
+	texts := textBlocks(result.Content)
+	if len(result.Content) == 1 && len(texts) == 1 {
+		return extractSingleText(texts[0])
+	}
+	if len(result.Content) == 0 && len(result.StructuredContent) > 0 {
 		return result.StructuredContent, nil
 	}
+	return rawContentArray(raw)
+}
+
+func extractSingleText(text string) (json.RawMessage, error) {
+	text = strings.TrimSpace(text)
 	if json.Valid([]byte(text)) {
 		return json.RawMessage(text), nil
 	}
@@ -126,12 +132,26 @@ func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {
 	return b, err
 }
 
-func joinText(items []transport.ContentItem) string {
-	var parts []string
+func rawContentArray(raw json.RawMessage) (json.RawMessage, error) {
+	var envelope struct {
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, err
+	}
+	return envelope.Content, nil
+}
+
+func textBlocks(items []transport.ContentItem) []string {
+	var texts []string
 	for _, item := range items {
 		if item.Type == "text" && item.Text != "" {
-			parts = append(parts, item.Text)
+			texts = append(texts, item.Text)
 		}
 	}
-	return strings.Join(parts, "\n")
+	return texts
+}
+
+func joinText(items []transport.ContentItem) string {
+	return strings.Join(textBlocks(items), "\n")
 }
