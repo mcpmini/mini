@@ -84,9 +84,65 @@ func TestExtractContent_MultiContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(out) != `"foo\nbar"` {
+	if string(out) != `[{"type":"text","text":"foo"},{"type":"text","text":"bar"}]` {
 		t.Errorf("got %s", out)
 	}
+}
+
+func TestExtractContent_MultiContentRawArray(t *testing.T) {
+	t.Run("two JSON text blocks", func(t *testing.T) {
+		raw := json.RawMessage(`{"content":[{"type":"text","text":"{\"page\":1}"},{"type":"text","text":"{\"page\":2}"}],"isError":false}`)
+		out, err := invoke.ExtractContent(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != `[{"type":"text","text":"{\"page\":1}"},{"type":"text","text":"{\"page\":2}"}]` {
+			t.Errorf("got %s", out)
+		}
+	})
+
+	t.Run("prose and JSON text blocks", func(t *testing.T) {
+		raw := json.RawMessage(`{"content":[{"type":"text","text":"here is the data:"},{"type":"text","text":"{\"id\":42}"}],"isError":false}`)
+		out, err := invoke.ExtractContent(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != `[{"type":"text","text":"here is the data:"},{"type":"text","text":"{\"id\":42}"}]` {
+			t.Errorf("got %s", out)
+		}
+	})
+
+	t.Run("image and text blocks", func(t *testing.T) {
+		raw := json.RawMessage(`{"content":[{"type":"image","data":"abc","mimeType":"image/png"},{"type":"text","text":"caption"}],"isError":false}`)
+		out, err := invoke.ExtractContent(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != `[{"type":"image","data":"abc","mimeType":"image/png"},{"type":"text","text":"caption"}]` {
+			t.Errorf("got %s", out)
+		}
+	})
+
+	t.Run("single non-text block", func(t *testing.T) {
+		raw := json.RawMessage(`{"content":[{"type":"image","data":"abc","mimeType":"image/png"}],"isError":false}`)
+		out, err := invoke.ExtractContent(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != `[{"type":"image","data":"abc","mimeType":"image/png"}]` {
+			t.Errorf("got %s", out)
+		}
+	})
+
+	t.Run("null result", func(t *testing.T) {
+		out, err := invoke.ExtractContent(json.RawMessage(`null`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(out) != `[]` {
+			t.Errorf("got %s, want []", out)
+		}
+	})
 }
 
 func TestExtractContent_IsError(t *testing.T) {
