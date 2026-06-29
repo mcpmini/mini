@@ -14,7 +14,20 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func runList(configDir string, out io.Writer) error {
+func runList(configDir string, args []string, out io.Writer) error {
+	switch len(args) {
+	case 0:
+		return listAllServers(configDir, out)
+	case 1:
+		return listServerTools(configDir, args[0], out)
+	case 2:
+		return listToolDetail(toolDetailParams{ConfigDir: configDir, ServerName: args[0], ToolName: args[1], Out: out})
+	default:
+		return fmt.Errorf("usage: mini ls [SERVER [TOOL]]")
+	}
+}
+
+func listAllServers(configDir string, out io.Writer) error {
 	_, servers, err := config.Load(configDir)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
