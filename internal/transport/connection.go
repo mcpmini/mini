@@ -19,13 +19,10 @@ type ToolDefinition struct {
 	Execution    json.RawMessage `json:"execution,omitempty"`
 }
 
-// ToMap serializes d to a map. Errors are ignored: fields are strings and
-// json.RawMessage, so Marshal cannot fail; its output is therefore valid JSON,
-// so Unmarshal cannot fail either.
 func (d ToolDefinition) ToMap() map[string]any {
 	var m map[string]any
-	b, _ := json.Marshal(d)
-	_ = json.Unmarshal(b, &m)
+	b, _ := json.Marshal(d)        // fields are string/RawMessage — cannot fail //nolint:errcheck
+	_ = json.Unmarshal(b, &m)     //nolint:errcheck
 	return m
 }
 
