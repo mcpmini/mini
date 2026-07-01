@@ -2,13 +2,9 @@ package response
 
 import "github.com/mcpmini/mini/internal/projection"
 
-// ProxyMsg is shown in ProjectionMeta whenever projection excluded or
-// truncated fields, pointing the agent at read() for full recovery.
 const ProxyMsg = "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values."
 
-// ProxyResult is the stable envelope every successful flat-proxy tool call
-// returns. Data is never omitted, even when nil, so callers can always find
-// the result at the same JSON path.
+// Data uses json:"data" without omitempty so null serializes as {"data":null}.
 type ProxyResult struct {
 	Data any             `json:"data"`
 	Mini *ProjectionMeta `json:"__mini,omitempty"`
@@ -22,8 +18,6 @@ type ProjectionMeta struct {
 	Passthrough map[string]any          `json:"passthrough,omitempty"`
 }
 
-// NewProxyResult builds the stable proxy envelope from an internal Envelope.
-// __mini is omitted entirely when projection left the response unaltered.
 func NewProxyResult(env *Envelope) ProxyResult {
 	return ProxyResult{Data: env.Data, Mini: buildProjectionMeta(env)}
 }
