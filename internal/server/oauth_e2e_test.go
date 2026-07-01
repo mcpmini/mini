@@ -272,6 +272,29 @@ func TestAddUpstream_bare401WithNoEvidenceDoesNotMarkOAuth(t *testing.T) {
 	}
 }
 
+func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer mcpSrv.Close()
+
+	dir := t.TempDir()
+	writeServerYAML(t, dir, "statictoken", "name: statictoken\ntransport: http\nurl: "+mcpSrv.URL+"\nheaders:\n  Authorization: Bearer some-static-token\n")
+	srv := newServerWithDir(t, dir)
+	defer srv.Close()
+
+	sc := loadServerConfig(t, dir, "statictoken")
+	if err := srv.AddUpstream(context.Background(), sc); err == nil {
+		t.Fatal("expected AddUpstream to return an error")
+	}
+
+	got := readServerYAML(t, dir, "statictoken")
+	if got.Auth != nil {
+		t.Errorf("Auth = %+v, a server with a manually-configured Authorization header must never be marked oauth2 — RFC 6750 mandates the same Bearer challenge for an expired static token", got.Auth)
+	}
+}
+
 func TestAddUpstream_runtimeAddedNeverPersistsToDisk(t *testing.T) {
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")

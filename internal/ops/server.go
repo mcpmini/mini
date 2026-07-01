@@ -61,6 +61,9 @@ func writeServerYAML(configDir string, sc config.ServerConfig) error {
 // PersistAuthConfig sets auth on an existing server's YAML file, preserving other fields.
 // No-op if the server has no config file (e.g. an in-memory runtime-added server).
 func PersistAuthConfig(configDir, serverName string, ac config.AuthConfig) error {
+	if !config.ValidServerName.MatchString(serverName) {
+		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", serverName)
+	}
 	path := filepath.Join(configDir, "servers", serverName+".yaml")
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

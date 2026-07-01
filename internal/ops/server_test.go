@@ -253,6 +253,13 @@ func TestPersistAuthConfig(t *testing.T) {
 			t.Fatal("expected no file to be created for missing server")
 		}
 	})
+
+	t.Run("rejects invalid server name", func(t *testing.T) {
+		dir := tempDir(t)
+		if err := ops.PersistAuthConfig(dir, "../escape", config.AuthConfig{Type: "oauth2"}); err == nil {
+			t.Fatal("expected error for invalid server name")
+		}
+	})
 }
 
 func TestDeleteServer(t *testing.T) {

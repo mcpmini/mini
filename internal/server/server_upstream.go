@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -33,7 +34,7 @@ func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error 
 // collide with an existing, trusted, already-configured server, so this must never touch disk
 // for them (PersistAuthConfig would happily rewrite that unrelated server's real config).
 func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig, connErr error) error {
-	if sc.RuntimeAdded || sc.Auth != nil || !sc.IsHTTPTransport() {
+	if sc.RuntimeAdded || sc.Auth != nil || !sc.IsHTTPTransport() || hasManualAuthHeader(sc.Headers) {
 		return connErr
 	}
 	var uerr *transport.UnauthorizedError
@@ -45,6 +46,20 @@ func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig
 		return connErr
 	}
 	return fmt.Errorf("%s requires OAuth authorization (discovered via 401); run `mini auth %s`: %w", sc.Name, sc.Name, connErr)
+}
+
+// hasManualAuthHeader reports whether the server already has a hand-configured Authorization
+// header (e.g. a static bearer/API token via `mini add --header`). RFC 6750 mandates the same
+// `WWW-Authenticate: Bearer` challenge for an expired static bearer token as for one that's
+// actually OAuth-issued, so a 401 alone can't tell the two apart — an existing Authorization
+// header is the decisive signal that this server's auth mechanism is already user-chosen.
+func hasManualAuthHeader(headers map[string]string) bool {
+	for k := range headers {
+		if strings.EqualFold(k, "Authorization") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {

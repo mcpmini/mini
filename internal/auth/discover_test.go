@@ -461,6 +461,22 @@ func TestRequiresOAuth_nonBearerSchemeIsNotOAuth(t *testing.T) {
 	}
 }
 
+func TestRequiresOAuth_nonBearerSchemeSkipsPRMFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/oauth-protected-resource" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"authorization_servers":["https://as.example.com"]}`)) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	if auth.RequiresOAuth(context.Background(), srv.URL, `Basic realm="internal"`) {
+		t.Fatal("expected false — a Basic challenge is decisive even if a PRM document coincidentally exists at the same origin")
+	}
+}
+
 func TestRequiresOAuth_prmDocumentConfirmsOAuth(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/.well-known/oauth-protected-resource" {
