@@ -113,14 +113,16 @@ func ExtractContent(raw json.RawMessage) (json.RawMessage, error) {
 	if result.IsError {
 		return nil, fmt.Errorf("tool returned error: %s", joinText(result.Content))
 	}
+	// structuredContent is the canonical form; text in content is a backward-compat duplicate.
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/357adac4b75939ef8ea37d3c40681be0b1db7d26/schema/2025-11-25/schema.ts#L1115
+	if len(result.StructuredContent) > 0 {
+		return result.StructuredContent, nil
+	}
 	texts := textBlocks(result.Content)
 	if len(result.Content) == 1 && len(texts) == 1 {
 		return extractSingleText(texts[0])
 	}
 	if len(result.Content) == 0 {
-		if len(result.StructuredContent) > 0 {
-			return result.StructuredContent, nil
-		}
 		return json.RawMessage("[]"), nil
 	}
 	return rawContentArray(raw)
