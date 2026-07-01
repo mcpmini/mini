@@ -340,12 +340,15 @@ type envelopeParams struct {
 	Session   *Session
 	Upstream  *upstreamServer
 	LatencyMs int64
+
+	// Bypass is only ever set true by proxy mode's __mini.projection:"raw".
+	Bypass bool
 }
 
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
 	projStart := s.clock.Now()
-	env, stats, err := s.buildProjectedEnvelope(p.Entry.Server, p.Tool, p.Raw, projCfg)
+	env, stats, err := s.buildProjectedEnvelope(projectedEnvelopeParams{Server: p.Entry.Server, Tool: p.Tool, Raw: p.Raw, ProjCfg: projCfg})
 	if err != nil {
 		return nil, err
 	}
@@ -355,14 +358,23 @@ func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg), nil
 }
 
-func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage, projCfg *config.ProjectionConfig) (*response.Envelope, response.CallStats, error) {
+type projectedEnvelopeParams struct {
+	Server  string
+	Tool    string
+	Raw     json.RawMessage
+	ProjCfg *config.ProjectionConfig
+	Bypass  bool
+}
+
+func (s *Server) buildProjectedEnvelope(p projectedEnvelopeParams) (*response.Envelope, response.CallStats, error) {
 	return invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
-		Server:   server,
-		Tool:     tool,
-		Raw:      raw,
-		ProjCfg:  projCfg,
-		ProjDefs: s.projDefaults,
-		Builder:  s.envelope,
+		Server:           p.Server,
+		Tool:             p.Tool,
+		Raw:              p.Raw,
+		ProjCfg:          p.ProjCfg,
+		ProjDefs:         s.projDefaults,
+		Builder:          s.envelope,
+		BypassProjection: p.Bypass,
 	})
 }
 
