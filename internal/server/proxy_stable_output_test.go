@@ -52,6 +52,27 @@ func TestProxy_StableOutput_AllRootShapesWrapInData(t *testing.T) {
 	}
 }
 
+func TestProxy_StableOutput_TextAndStructuredContentMatch(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConn("get_value")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	resp := serveProxy(t, srv, callTool("svc__get_value", map[string]any{}))
+	result := resp["result"].(map[string]any)
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	structured, ok := result["structuredContent"]
+	if !ok {
+		t.Fatal("expected structuredContent in proxy result")
+	}
+	structuredBytes, _ := json.Marshal(structured)
+	var fromText, fromStructured any
+	json.Unmarshal([]byte(text), &fromText)
+	json.Unmarshal(structuredBytes, &fromStructured)
+	assertDeepEqual(t, fromText, fromStructured)
+}
+
 func TestProxy_StableOutput_MiniOmittedWhenUnaltered(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()

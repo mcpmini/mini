@@ -24,7 +24,7 @@ func proxyUpstreamToolSchema(e *registry.ToolEntry) map[string]any {
 }
 
 func proxyInputSchema(e *registry.ToolEntry) map[string]any {
-	args := scopedSchema(e.Def.InputSchema, e.Server, e.ToolName.Name(), "input", defaultObjectSchema)
+	args := scopedSchema(schemaScope{Raw: e.Def.InputSchema, Server: e.Server, Tool: e.ToolName.Name(), Kind: "input", Fallback: defaultObjectSchema})
 	wrapped := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -53,7 +53,7 @@ func miniInputControlSchema() map[string]any {
 }
 
 func proxyOutputSchema(e *registry.ToolEntry) map[string]any {
-	data := scopedSchema(e.Def.OutputSchema, e.Server, e.ToolName.Name(), "output", defaultEmptySchema)
+	data := scopedSchema(schemaScope{Raw: e.Def.OutputSchema, Server: e.Server, Tool: e.ToolName.Name(), Kind: "output", Fallback: defaultEmptySchema})
 	return map[string]any{
 		"type":     "object",
 		"required": []string{"data"},
@@ -92,12 +92,19 @@ func truncatedItemsSchema() map[string]any {
 	}
 }
 
-// scopedSchema gives the schema an absolute $id so its internal $ref/$defs
-// keep resolving correctly once nested under "args" or "data".
-func scopedSchema(raw json.RawMessage, server, tool, kind string, fallback func() map[string]any) map[string]any {
-	schema := parseSchema(raw, fallback)
+type schemaScope struct {
+	Raw      json.RawMessage
+	Server   string
+	Tool     string
+	Kind     string
+	Fallback func() map[string]any
+}
+
+// Adds a synthetic $id so internal $ref/$defs keep resolving once nested.
+func scopedSchema(s schemaScope) map[string]any {
+	schema := parseSchema(s.Raw, s.Fallback)
 	if _, hasID := schema["$id"]; !hasID {
-		schema["$id"] = fmt.Sprintf("mini:schema:%s/%s/%s", server, tool, kind)
+		schema["$id"] = fmt.Sprintf("mini:schema:%s/%s/%s", s.Server, s.Tool, s.Kind)
 	}
 	return schema
 }
