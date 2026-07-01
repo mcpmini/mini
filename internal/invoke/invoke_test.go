@@ -322,6 +322,53 @@ func TestBuildEnvelope_TruncationRecorded(t *testing.T) {
 	}
 }
 
+func TestBuildEnvelope_BypassProjectionIgnoresConfigAndDefaults(t *testing.T) {
+	longBody := strings.Repeat("x", 500)
+	raw := json.RawMessage(`{"id":1,"secret":"hidden","body":"` + longBody + `"}`)
+	projCfg := &config.ProjectionConfig{Exclude: []string{"secret"}, StringLimits: map[string]int{"body": 50}}
+	env, _, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
+		Server:           "svc",
+		Tool:             "get",
+		Raw:              raw,
+		ProjCfg:          projCfg,
+		ProjDefs:         &projection.Defaults{StringLimit: 10},
+		Builder:          noopBuilder(t),
+		BypassProjection: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(env.Excluded) != 0 || len(env.Truncated) != 0 {
+		t.Errorf("bypass must produce no exclusions/truncations, got excluded=%v truncated=%v", env.Excluded, env.Truncated)
+	}
+	if env.File != nil {
+		t.Errorf("bypass must not write a recovery file, got %v", *env.File)
+	}
+	b, _ := json.Marshal(env.Data)
+	if !contains(string(b), "hidden") || !contains(string(b), longBody) {
+		t.Errorf("bypass must return the complete upstream value untouched, got: %s", b)
+	}
+}
+
+func TestBuildEnvelope_BypassProjectionIgnoresNilConfig(t *testing.T) {
+	raw := json.RawMessage(`{"id":1}`)
+	env, _, err := invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
+		Server:           "svc",
+		Tool:             "get",
+		Raw:              raw,
+		ProjCfg:          nil,
+		ProjDefs:         nil,
+		Builder:          noopBuilder(t),
+		BypassProjection: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.Data == nil {
+		t.Error("expected data even with nil ProjCfg/ProjDefs")
+	}
+}
+
 // Invoke (end-to-end)
 
 func TestInvoke_HappyPath(t *testing.T) {

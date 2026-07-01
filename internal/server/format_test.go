@@ -169,6 +169,9 @@ func assertElisionLinesFile(t *testing.T, header string) {
 	}
 }
 
+// Mini format only applies to compact mode, but the response store is shared,
+// so a file written by a compact-mode call must still be readable via the
+// proxy-mode `read` tool.
 func TestLinesFormatBareKeyResolvesToReadableFile(t *testing.T) {
 	payload := `{"items":[{"id":1,"title":"bug"}],"secret":"hidden"}`
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -183,12 +186,14 @@ func TestLinesFormatBareKeyResolvesToReadableFile(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)
 	addProxyConn(t, srv, "gh", conn)
 
-	serveProxy(t, srv, callTool("config", map[string]any{
+	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp := serveProxy(t, srv, callTool("gh__list_issues", map[string]any{}))
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "gh", "tool": "list_issues", "params": map[string]any{},
+	}))
 	text := toolResultText(t, resp)
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	if len(lines) == 0 || !strings.HasPrefix(lines[0], "[gh.list_issues] file:") {

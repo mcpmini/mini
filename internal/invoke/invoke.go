@@ -82,6 +82,10 @@ type BuildEnvelopeParams struct {
 	ProjCfg  *config.ProjectionConfig
 	ProjDefs *projection.Defaults
 	Builder  *response.Builder
+
+	// BypassProjection returns the upstream value untouched: no exclusions,
+	// truncations, or recovery file. Used for per-call __mini.projection:"raw".
+	BypassProjection bool
 }
 
 func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, response.CallStats, error) {
@@ -89,8 +93,15 @@ func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, response.CallStat
 	if err := json.Unmarshal(p.Raw, &value); err != nil {
 		return nil, response.CallStats{}, fmt.Errorf("parse upstream response: %w", err)
 	}
-	result := projection.Apply(value, p.ProjCfg, p.ProjDefs)
+	result := projectionResult(value, p)
 	return p.Builder.Build(buildResponseParams(p, result))
+}
+
+func projectionResult(value any, p BuildEnvelopeParams) projection.Result {
+	if p.BypassProjection {
+		return projection.Result{Summary: value}
+	}
+	return projection.Apply(value, p.ProjCfg, p.ProjDefs)
 }
 
 func buildResponseParams(p BuildEnvelopeParams, result projection.Result) response.BuildParams {
