@@ -89,6 +89,36 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
+	t.Run("auto-authorize failure does not exit the process", func(t *testing.T) {
+		// Regression test for a bug where the auto-authorize path reused mini auth's
+		// os.Exit(1)-on-failure code, killing the whole process (and this test binary)
+		// mid-command even though the server had already been added successfully. This
+		// server 401s with a Bearer challenge on a loopback URL, which SSRF validation
+		// rejects during OAuth endpoint discovery — a real, reachable failure mode.
+		oauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer oauthSrv.Close()
+
+		dir := t.TempDir()
+		var out bytes.Buffer
+		if err := runAdd(dir, []string{"myserver", "--url", oauthSrv.URL}, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+		if !strings.Contains(out.String(), "requires OAuth authorization") {
+			t.Errorf("output = %q, want it to mention OAuth is required", out.String())
+		}
+		if !strings.Contains(out.String(), "run `mini auth myserver` to retry") {
+			t.Errorf("output = %q, want a graceful failure message pointing at manual retry", out.String())
+		}
+		var sc importers.ServerYAML
+		readServerYAML(t, dir, "myserver", &sc)
+		if sc.URL != oauthSrv.URL {
+			t.Errorf("URL = %q, server config should still have been written despite auto-authorize failing", sc.URL)
+		}
+	})
+
 	t.Run("--protected flag marks tool", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer

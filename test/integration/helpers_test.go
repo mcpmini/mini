@@ -4,7 +4,6 @@ package integration_test
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -166,23 +165,6 @@ func runCLI(t *testing.T, configDir string, args ...string) (stdout, stderr stri
 		}
 	}
 	return outBuf.String(), errBuf.String(), exitCode
-}
-
-// runCLIWithDeadline runs the CLI and force-kills it once deadline elapses, returning
-// whatever stdout/stderr had been produced up to that point. For subcommands (like the
-// interactive OAuth authorization flow) that intentionally block waiting on user input,
-// this lets a test observe the output produced before the blocking point without waiting
-// out the command's own multi-minute timeout.
-func runCLIWithDeadline(t *testing.T, configDir string, deadline time.Duration, args ...string) (stdout, stderr string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), deadline)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, miniBin, cliArgs(configDir, args)...)
-	var outBuf, errBuf strings.Builder
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	cmd.Run() //nolint:errcheck
-	return outBuf.String(), errBuf.String()
 }
 
 func runCLIWithStdin(t *testing.T, stdin string, configDir string, args ...string) (stdout, stderr string, exitCode int) {

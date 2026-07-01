@@ -58,21 +58,34 @@ type pkceFlowParams struct {
 	sc         *config.ServerConfig
 }
 
+// runPKCEFlow drives the interactive OAuth flow for the top-level `mini auth` command,
+// where a failure should end the process — there is nothing else for the command to do.
 func runPKCEFlow(p pkceFlowParams) {
+	token, err := doPKCEFlow(p)
+	if err != nil {
+		fatalf("%v", err)
+	}
+	printAuthResult(p.serverName, token.Expiry)
+}
+
+// doPKCEFlow runs the same flow but reports failure as a returned error instead of
+// exiting the process, so callers with other work in flight (like `mini add`, which has
+// already written the server's config by the time it calls this) can recover gracefully.
+func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", p.serverName)
 	if err := auth.ResolveEndpoints(ctx, p.configDir, p.serverName, p.sc); err != nil {
-		fatalf("resolve oauth config: %v", err)
+		return nil, fmt.Errorf("resolve oauth config: %w", err)
 	}
 	token, err := auth.PKCEFlow(ctx, p.sc.Auth, p.opener)
 	if err != nil {
-		fatalf("auth flow: %v", err)
+		return nil, fmt.Errorf("auth flow: %w", err)
 	}
 	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
-		fatalf("save token: %v", err)
+		return nil, fmt.Errorf("save token: %w", err)
 	}
-	printAuthResult(p.serverName, token.Expiry)
+	return token, nil
 }
 
 func authOpener(perServerCmd, globalCmd string, disabled bool) func(string) error {

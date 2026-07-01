@@ -373,9 +373,15 @@ func TestCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
 	cfg := t.TempDir()
 	writeConfig(t, cfg, "disable_auth_browser_open: true\n")
 
-	stdout, _ := runCLIWithDeadline(t, cfg, 5*time.Second, "add", "myserver", "--url", unauthorized.URL)
+	stdout, _, code := runCLI(t, cfg, "add", "myserver", "--url", unauthorized.URL)
+	if code != 0 {
+		t.Errorf("expected exit 0 even though auto-authorization can't complete against a loopback test server, got %d", code)
+	}
 	if !strings.Contains(stdout, "requires OAuth authorization") {
 		t.Errorf("expected stdout to mention required OAuth authorization, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "run `mini auth myserver` to retry") {
+		t.Errorf("expected stdout to point at a manual retry after the automatic flow fails, got: %q", stdout)
 	}
 
 	data, err := os.ReadFile(filepath.Join(cfg, "servers", "myserver.yaml"))

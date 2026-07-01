@@ -282,7 +282,7 @@ const maxAuthBodyBytes = 64 << 10
 // Metadata document exists at the well-known URI. A bare 401 with neither returns false rather
 // than guessing, since it's more likely a plain auth failure (expired token, IP block) than OAuth.
 func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool {
-	if wwwAuthenticate != "" {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(wwwAuthenticate)), "bearer") {
 		return true
 	}
 	u, err := url.Parse(serverURL)

@@ -214,13 +214,13 @@ func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string) (po
 			delay:     parseRetryAfter(resp.Header.Get("Retry-After"), c.clock.Now()),
 		}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
 	}
-	return postResult{}, unauthorizedErrOrNil(resp, method, errBody)
+	return postResult{}, nonRetryableHTTPError(resp, method, errBody)
 }
 
-// unauthorizedErrOrNil wraps *UnauthorizedError for 401 responses so callers can
+// nonRetryableHTTPError wraps *UnauthorizedError for 401 responses so callers can
 // distinguish an OAuth challenge from a bare 401 via errors.As, while keeping the
 // same message shape for every other non-retryable status.
-func unauthorizedErrOrNil(resp *http.Response, method string, errBody []byte) error {
+func nonRetryableHTTPError(resp *http.Response, method string, errBody []byte) error {
 	if resp.StatusCode != http.StatusUnauthorized {
 		return fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
 	}

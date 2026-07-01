@@ -166,23 +166,21 @@ func parseHeaders(pairs []string) map[string]string {
 // connectAndAuthorizeIfNeeded probes a freshly-added HTTP server and, if it turns out to need
 // OAuth (either just-discovered via a 401, or already known via a bundled default like
 // atlassian/linear/slack), immediately runs the same interactive authorization flow `mini auth`
-// uses — so `mini add` leaves the server ready to use in one step.
+// uses — so `mini add` leaves the server ready to use in one step. Unlike `mini auth`, failure
+// here must never abort the process: the server's config was already written successfully, so
+// a failed auto-authorize attempt is reported and left for a later `mini auth` retry.
 func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 	sc, ok := loadServerConfigForAdd(configDir, name)
 	if !ok || !sc.IsHTTPTransport() {
 		return
 	}
 	if sc.Auth == nil {
-		probeAndReport(configDir, sc, out)
-		sc, ok = loadServerConfigForAdd(configDir, name)
-		if !ok {
-			return
-		}
+		sc = probeAndReload(configDir, sc, out)
 	}
 	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
 		return
 	}
-	authorizeServer(configDir, name, sc, out)
+	authorizeServer(authorizeParams{configDir: configDir, name: name, sc: sc, out: out})
 }
 
 func loadServerConfigForAdd(configDir, name string) (config.ServerConfig, bool) {
@@ -197,12 +195,24 @@ func loadServerConfigForAdd(configDir, name string) (config.ServerConfig, bool) 
 	return *sc, true
 }
 
-func probeAndReport(configDir string, sc config.ServerConfig, out io.Writer) {
-	if err := probeConnection(configDir, sc); err != nil {
-		fmt.Fprintf(out, "note: could not connect to %s yet; run `mini test` to retry\n", sc.Name)
-		return
+// probeAndReload attempts a connection and returns the reloaded config, which picks up any
+// auth: type: oauth2 that connecting just caused to be persisted. Reports the outcome, except
+// when OAuth was the reason for failure — authorizeServer reports that case instead, since a
+// follow-up auth flow is about to run and a "could not connect" message would be misleading.
+func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) config.ServerConfig {
+	connectErr := probeConnection(configDir, sc)
+	reloaded, ok := loadServerConfigForAdd(configDir, sc.Name)
+	if !ok {
+		return sc
 	}
-	fmt.Fprintf(out, "connected to %s\n", sc.Name)
+	switch {
+	case connectErr == nil:
+		fmt.Fprintf(out, "connected to %s\n", sc.Name)
+	case reloaded.Auth != nil && reloaded.Auth.Type == "oauth2":
+	default:
+		fmt.Fprintf(out, "note: could not connect to %s yet; run `mini test` to retry\n", sc.Name)
+	}
+	return reloaded
 }
 
 func probeConnection(configDir string, sc config.ServerConfig) error {
@@ -218,17 +228,29 @@ func probeConnection(configDir string, sc config.ServerConfig) error {
 	return srv.AddUpstream(ctx, sc)
 }
 
-func authorizeServer(configDir, name string, sc config.ServerConfig, out io.Writer) {
-	cfg, _, err := config.Load(configDir)
+type authorizeParams struct {
+	configDir string
+	name      string
+	sc        config.ServerConfig
+	out       io.Writer
+}
+
+func authorizeServer(p authorizeParams) {
+	cfg, _, err := config.Load(p.configDir)
 	if err != nil {
-		fmt.Fprintf(out, "warning: reload config for auth: %v\n", err)
+		fmt.Fprintf(p.out, "warning: reload config for auth: %v\n", err)
 		return
 	}
-	fmt.Fprintf(out, "%s requires OAuth authorization\n", name)
-	runPKCEFlow(pkceFlowParams{
-		configDir:  configDir,
-		serverName: name,
-		opener:     authOpener(sc.Auth.BrowserCmd, cfg.BrowserCommand, cfg.DisableAuthBrowserOpen),
-		sc:         &sc,
+	fmt.Fprintf(p.out, "%s requires OAuth authorization\n", p.name)
+	token, err := doPKCEFlow(pkceFlowParams{
+		configDir:  p.configDir,
+		serverName: p.name,
+		opener:     authOpener(p.sc.Auth.BrowserCmd, cfg.BrowserCommand, cfg.DisableAuthBrowserOpen),
+		sc:         &p.sc,
 	})
+	if err != nil {
+		fmt.Fprintf(p.out, "note: automatic authorization failed (%v); run `mini auth %s` to retry\n", err, p.name)
+		return
+	}
+	printAuthResult(p.name, token.Expiry)
 }

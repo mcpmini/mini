@@ -436,7 +436,7 @@ func TestDiscover_scopeFromWWWAuthenticateWithoutResourceMetadata(t *testing.T) 
 	}
 }
 
-func TestRequiresOAuth_headerPresentShortCircuitsWithoutNetworkCall(t *testing.T) {
+func TestRequiresOAuth_bearerChallengeShortCircuitsWithoutNetworkCall(t *testing.T) {
 	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
@@ -444,11 +444,20 @@ func TestRequiresOAuth_headerPresentShortCircuitsWithoutNetworkCall(t *testing.T
 	}))
 	defer srv.Close()
 
-	if !auth.RequiresOAuth(context.Background(), srv.URL+"/mcp", "Bearer") {
-		t.Fatal("expected true when WWW-Authenticate header is present")
+	if !auth.RequiresOAuth(context.Background(), srv.URL+"/mcp", `Bearer realm="mcp"`) {
+		t.Fatal("expected true for a Bearer challenge")
 	}
 	if called {
 		t.Error("expected no network call when header already confirms OAuth")
+	}
+}
+
+func TestRequiresOAuth_nonBearerSchemeIsNotOAuth(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+
+	if auth.RequiresOAuth(context.Background(), srv.URL, `Basic realm="internal"`) {
+		t.Fatal("expected false for a Basic challenge — it's a legitimate non-OAuth auth mechanism")
 	}
 }
 
