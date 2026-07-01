@@ -158,6 +158,14 @@ func (sc ServerConfig) IsEnabled() bool {
 	return sc.Enabled == nil || *sc.Enabled
 }
 
+func (sc ServerConfig) IsHTTPTransport() bool {
+	switch sc.Transport {
+	case "http", "sse", "streamable":
+		return true
+	}
+	return false
+}
+
 // AuthConfig describes how to authenticate with an upstream server.
 type AuthConfig struct {
 	// Type: "apikey", "bearer", "oauth2"

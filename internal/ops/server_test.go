@@ -214,6 +214,47 @@ func TestWriteServer_bundledAuthApplied(t *testing.T) {
 	})
 }
 
+func TestPersistAuthConfig(t *testing.T) {
+	t.Run("sets auth while preserving other fields", func(t *testing.T) {
+		dir := tempDir(t)
+		sc := config.ServerConfig{
+			Name:      "remote",
+			Transport: "http",
+			URL:       "https://example.com/mcp",
+			Headers:   map[string]string{"X-Custom": "yes"},
+		}
+		if err := ops.WriteServer(dir, sc); err != nil {
+			t.Fatalf("WriteServer: %v", err)
+		}
+
+		if err := ops.PersistAuthConfig(dir, "remote", config.AuthConfig{Type: "oauth2"}); err != nil {
+			t.Fatalf("PersistAuthConfig: %v", err)
+		}
+
+		var got config.ServerConfig
+		readYAML(t, filepath.Join(dir, "servers", "remote.yaml"), &got)
+		if got.Auth == nil || got.Auth.Type != "oauth2" {
+			t.Errorf("Auth = %+v, want type oauth2", got.Auth)
+		}
+		if got.URL != "https://example.com/mcp" {
+			t.Errorf("URL = %q, preserved field lost", got.URL)
+		}
+		if got.Headers["X-Custom"] != "yes" {
+			t.Errorf("Headers = %v, preserved field lost", got.Headers)
+		}
+	})
+
+	t.Run("no-ops and creates no file when target does not exist", func(t *testing.T) {
+		dir := tempDir(t)
+		if err := ops.PersistAuthConfig(dir, "ghost", config.AuthConfig{Type: "oauth2"}); err != nil {
+			t.Fatalf("PersistAuthConfig: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "servers", "ghost.yaml")); !os.IsNotExist(err) {
+			t.Fatal("expected no file to be created for missing server")
+		}
+	})
+}
+
 func TestDeleteServer(t *testing.T) {
 	t.Run("removes the server file", func(t *testing.T) {
 		dir := tempDir(t)

@@ -4,6 +4,8 @@ package integration_test
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,7 +114,7 @@ func TestCLI_ls_UnknownTool(t *testing.T) {
 
 func TestCLI_add_ThenLs(t *testing.T) {
 	cfg := t.TempDir()
-	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
+	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	stdout, _, code := runCLI(t, cfg, "ls")
 	if code != 0 || !strings.Contains(stdout, "myserver") {
 		t.Errorf("ls after add: code=%d, output=%q", code, stdout)
@@ -121,7 +123,7 @@ func TestCLI_add_ThenLs(t *testing.T) {
 
 func TestCLI_add_UrlCreatesFile(t *testing.T) {
 	cfg := t.TempDir()
-	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
+	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	if code != 0 {
 		t.Fatalf("add should exit 0, got %d", code)
 	}
@@ -142,7 +144,7 @@ func TestCLI_add_CommandCreatesFile(t *testing.T) {
 }
 
 func TestCLI_add_InvalidName(t *testing.T) {
-	_, stderr, code := runCLI(t, t.TempDir(), "add", "bad/name", "--url", "http://example.com")
+	_, stderr, code := runCLI(t, t.TempDir(), "add", "bad/name", "--url", "http://example.com", "--no-connect")
 	if code == 0 || !strings.Contains(stderr, "invalid server name") {
 		t.Errorf("expected non-zero exit + 'invalid server name', got code=%d stderr=%q", code, stderr)
 	}
@@ -157,7 +159,7 @@ func TestCLI_add_NoURLOrCommand(t *testing.T) {
 
 func TestCLI_add_Protected(t *testing.T) {
 	cfg := t.TempDir()
-	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--protected", "list_items")
+	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--protected", "list_items", "--no-connect")
 	if code != 0 {
 		t.Fatalf("add --protected should exit 0, got %d", code)
 	}
@@ -173,7 +175,7 @@ func TestCLI_add_Protected(t *testing.T) {
 func TestCLI_add_Header(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp",
-		"--header", "Authorization=Bearer tok", "--header", "X-Custom=val")
+		"--header", "Authorization=Bearer tok", "--header", "X-Custom=val", "--no-connect")
 	if code != 0 {
 		t.Fatalf("add --header should exit 0, got %d", code)
 	}
@@ -220,7 +222,7 @@ func TestCLI_add_FromClaudeCode(t *testing.T) {
 
 func TestCLI_rm_Server(t *testing.T) {
 	cfg := t.TempDir()
-	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
+	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	_, _, code := runCLI(t, cfg, "rm", "myserver")
 	if code != 0 {
 		t.Errorf("rm should exit 0, got %d", code)
@@ -351,13 +353,37 @@ func TestCLI_auth_ServerNotFound(t *testing.T) {
 
 func TestCLI_auth_NoOAuth2Config(t *testing.T) {
 	cfg := t.TempDir()
-	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp")
+	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	_, stderr, code := runCLI(t, cfg, "auth", "myserver")
 	if code == 0 {
 		t.Error("auth for server without oauth2 config should exit non-zero")
 	}
 	if !strings.Contains(stderr, "oauth2") {
 		t.Errorf("expected 'oauth2' in stderr, got: %s", stderr)
+	}
+}
+
+func TestCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
+	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer unauthorized.Close()
+
+	cfg := t.TempDir()
+	writeConfig(t, cfg, "disable_auth_browser_open: true\n")
+
+	stdout, _ := runCLIWithDeadline(t, cfg, 5*time.Second, "add", "myserver", "--url", unauthorized.URL)
+	if !strings.Contains(stdout, "requires OAuth authorization") {
+		t.Errorf("expected stdout to mention required OAuth authorization, got: %q", stdout)
+	}
+
+	data, err := os.ReadFile(filepath.Join(cfg, "servers", "myserver.yaml"))
+	if err != nil {
+		t.Fatalf("server YAML should exist: %v", err)
+	}
+	if !strings.Contains(string(data), "type: oauth2") {
+		t.Errorf("server YAML should have gained auth: type: oauth2, got: %s", data)
 	}
 }
 

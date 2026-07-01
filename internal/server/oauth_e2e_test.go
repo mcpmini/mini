@@ -20,6 +20,7 @@ import (
 func oauthMCPHandler(validToken string, tools []map[string]any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer "+validToken {
+			w.Header().Set("WWW-Authenticate", "Bearer")
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}

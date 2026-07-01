@@ -39,6 +39,17 @@ type HTTPConnection struct {
 // slow tools (tool_timeout > 60s) should set http_client_timeout in their server YAML.
 const defaultHTTPClientTimeout = 60 * time.Second
 
+// UnauthorizedError signals an HTTP 401 response, carrying the WWW-Authenticate
+// header (RFC 9728 §5.1) so callers can distinguish an OAuth challenge from a
+// bare 401 (expired static token, IP block, WAF) without guessing.
+type UnauthorizedError struct {
+	WWWAuthenticate string
+}
+
+func (e *UnauthorizedError) Error() string {
+	return fmt.Sprintf("unauthorized (WWW-Authenticate: %q)", e.WWWAuthenticate)
+}
+
 type HTTPConnectionConfig struct {
 	URL     string
 	Headers map[string]string
@@ -203,7 +214,18 @@ func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string) (po
 			delay:     parseRetryAfter(resp.Header.Get("Retry-After"), c.clock.Now()),
 		}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
 	}
-	return postResult{}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
+	return postResult{}, unauthorizedErrOrNil(resp, method, errBody)
+}
+
+// unauthorizedErrOrNil wraps *UnauthorizedError for 401 responses so callers can
+// distinguish an OAuth challenge from a bare 401 via errors.As, while keeping the
+// same message shape for every other non-retryable status.
+func unauthorizedErrOrNil(resp *http.Response, method string, errBody []byte) error {
+	if resp.StatusCode != http.StatusUnauthorized {
+		return fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
+	}
+	return fmt.Errorf("http %s: status %d: %w", method, resp.StatusCode,
+		&UnauthorizedError{WWWAuthenticate: resp.Header.Get("WWW-Authenticate")})
 }
 
 func isRetryableStatus(statusCode int) bool {

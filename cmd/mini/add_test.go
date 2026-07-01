@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +14,29 @@ import (
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
 )
+
+func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		id := req["id"]
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+				"result": map[string]any{"protocolVersion": "2024-11-05",
+					"capabilities": map[string]any{"tools": map[string]any{}},
+					"serverInfo":   map[string]any{"name": "fake", "version": "0"}}})
+		case "tools/list":
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+				"result": map[string]any{"tools": []map[string]any{}}})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil}) //nolint:errcheck
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
 
 func TestRunAdd(t *testing.T) {
 	t.Run("stdio command creates server file", func(t *testing.T) {
@@ -30,9 +56,10 @@ func TestRunAdd(t *testing.T) {
 	})
 
 	t.Run("--url flag creates http server", func(t *testing.T) {
+		mcpSrv := fakeUnauthenticatedMCPServer(t)
 		dir := t.TempDir()
 		var out bytes.Buffer
-		if err := runAdd(dir, []string{"gh", "--url", "https://api.github.com/mcp"}, &out); err != nil {
+		if err := runAdd(dir, []string{"gh", "--url", mcpSrv.URL}, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
 		var sc importers.ServerYAML
@@ -40,15 +67,18 @@ func TestRunAdd(t *testing.T) {
 		if sc.Transport != "http" {
 			t.Errorf("Transport = %q, want 'http'", sc.Transport)
 		}
-		if sc.URL != "https://api.github.com/mcp" {
-			t.Errorf("URL = %q, want 'https://api.github.com/mcp'", sc.URL)
+		if sc.URL != mcpSrv.URL {
+			t.Errorf("URL = %q, want %q", sc.URL, mcpSrv.URL)
+		}
+		if !strings.Contains(out.String(), "connected to gh") {
+			t.Errorf("output = %q, want it to mention a successful connect", out.String())
 		}
 	})
 
 	t.Run("--header flag is stored", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
-		args := []string{"svc", "--url", "https://example.com", "--header", "Authorization=Bearer tok"}
+		args := []string{"svc", "--url", "https://example.com", "--header", "Authorization=Bearer tok", "--no-connect"}
 		if err := runAdd(dir, args, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}

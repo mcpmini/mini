@@ -20,8 +20,7 @@ type DialParams struct {
 }
 
 func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
-	switch p.Server.Transport {
-	case "http", "sse", "streamable":
+	if p.Server.IsHTTPTransport() {
 		return transport.NewHTTPConnection(transport.HTTPConnectionConfig{
 			URL:                     p.Server.URL,
 			Headers:                 MergedHeaders(p.Server),
@@ -30,9 +29,8 @@ func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
 			DisableRetryOnRateLimit: p.Server.DisableRetryOnRateLimit,
 			BlockPrivateIPs:         p.Server.RuntimeAdded && !p.Config.DangerousAllowPrivateURLs,
 		})
-	default:
-		return transport.NewStdioConnection(ctx, transport.StdioCommand{Command: p.Server.Command, Args: p.Server.Args, Env: p.Server.Env, Logger: p.Logger})
 	}
+	return transport.NewStdioConnection(ctx, transport.StdioCommand{Command: p.Server.Command, Args: p.Server.Args, Env: p.Server.Env, Logger: p.Logger})
 }
 
 // MergedHeaders returns the HTTP headers for sc, including injected auth.

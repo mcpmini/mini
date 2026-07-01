@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
+	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -17,7 +20,31 @@ func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error 
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", sc.Name, err)
 	}
-	return s.registerUpstream(ctx, sc, conn)
+	if err := s.registerUpstream(ctx, sc, conn); err != nil {
+		return s.markOAuthIfRequired(ctx, sc, err)
+	}
+	return nil
+}
+
+// markOAuthIfRequired persists auth: type: oauth2 to the server's config file when a live
+// connection attempt reveals (per RFC 9728) the upstream requires OAuth, and returns an
+// actionable error pointing at `mini auth`. RuntimeAdded servers are untrusted (agent-controlled
+// via the MCP config tool) and are never persisted to their own file — but their Name could
+// collide with an existing, trusted, already-configured server, so this must never touch disk
+// for them (PersistAuthConfig would happily rewrite that unrelated server's real config).
+func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig, connErr error) error {
+	if sc.RuntimeAdded || sc.Auth != nil || !sc.IsHTTPTransport() {
+		return connErr
+	}
+	var uerr *transport.UnauthorizedError
+	if !errors.As(connErr, &uerr) || !auth.RequiresOAuth(ctx, sc.URL, uerr.WWWAuthenticate) {
+		return connErr
+	}
+	if err := ops.PersistAuthConfig(s.configDir, sc.Name, config.AuthConfig{Type: "oauth2"}); err != nil {
+		s.logger.Warn("persist discovered oauth config", "server", sc.Name, "err", err)
+		return connErr
+	}
+	return fmt.Errorf("%s requires OAuth authorization (discovered via 401); run `mini auth %s`: %w", sc.Name, sc.Name, connErr)
 }
 
 func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {

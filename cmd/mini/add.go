@@ -34,7 +34,7 @@ func addByName(configDir string, remaining []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return addNamedServer(configDir, sf)
+	return addNamedServer(configDir, sf, out)
 }
 
 type importFlags struct {
@@ -58,6 +58,7 @@ type serverFlags struct {
 	headers   stringSlice
 	protected stringSlice
 	cmdArgs   []string
+	noConnect bool
 }
 
 func parseServerFlags(args []string, out io.Writer) (serverFlags, error) {
@@ -67,6 +68,7 @@ func parseServerFlags(args []string, out io.Writer) (serverFlags, error) {
 	fs.StringVar(&f.url, "url", "", "HTTP/SSE server URL")
 	fs.Var(&f.headers, "header", "HTTP header as Key=Value (repeatable)")
 	fs.Var(&f.protected, "protected", "tool name to mark protected (repeatable)")
+	fs.BoolVar(&f.noConnect, "no-connect", false, "skip the post-add connectivity check and OAuth authorization")
 	if err := fs.Parse(args[1:]); err != nil {
 		return serverFlags{}, err
 	}
@@ -91,9 +93,15 @@ func handleImportFlags(configDir string, f importFlags) (handled bool, err error
 	}
 }
 
-func addNamedServer(configDir string, sf serverFlags) error {
+func addNamedServer(configDir string, sf serverFlags, out io.Writer) error {
 	if sf.url != "" {
-		return importers.WriteServerYAML(configDir, sf.name, httpServerYAML(sf.name, sf.url, sf.headers, sf.protected))
+		if err := importers.WriteServerYAML(configDir, sf.name, httpServerYAML(sf.name, sf.url, sf.headers, sf.protected)); err != nil {
+			return err
+		}
+		if !sf.noConnect {
+			connectAndAuthorizeIfNeeded(configDir, sf.name, out)
+		}
+		return nil
 	}
 	if len(sf.cmdArgs) == 0 {
 		return fmt.Errorf("provide --url or a command after NAME")

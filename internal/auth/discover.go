@@ -276,3 +276,25 @@ func doDiscoveryRequest(ctx context.Context, metaURL string) (*http.Response, er
 }
 
 const maxAuthBodyBytes = 64 << 10
+
+// RequiresOAuth reports whether a 401 from serverURL is confirmed to need OAuth per RFC 9728 —
+// either the WWW-Authenticate header itself signals a Bearer challenge, or a Protected Resource
+// Metadata document exists at the well-known URI. A bare 401 with neither returns false rather
+// than guessing, since it's more likely a plain auth failure (expired token, IP block) than OAuth.
+func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool {
+	if wwwAuthenticate != "" {
+		return true
+	}
+	u, err := url.Parse(serverURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+	base := u.Scheme + "://" + u.Host
+	path := strings.TrimRight(u.Path, "/")
+	for _, c := range []string{base + "/.well-known/oauth-protected-resource" + path, base + "/.well-known/oauth-protected-resource"} {
+		if ref, _ := fetchASURLFromPRM(ctx, c); ref.URL != "" {
+			return true
+		}
+	}
+	return false
+}
