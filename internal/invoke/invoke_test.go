@@ -176,15 +176,36 @@ func TestExtractContent_StructuredContentFallback(t *testing.T) {
 	}
 }
 
-func TestExtractContent_StructuredContentPreferText(t *testing.T) {
-	// When both text and structuredContent are present, text wins (backwards compat).
-	raw := json.RawMessage(`{"content":[{"type":"text","text":"{\"temp\":72}"}],"structuredContent":{"temp":72}}`)
+func TestExtractContent_StructuredContentPreferredOverText(t *testing.T) {
+	raw := json.RawMessage(`{"content":[{"type":"text","text":"plain text fallback"}],"structuredContent":{"temp":72,"unit":"F"}}`)
 	out, err := invoke.ExtractContent(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(out) != `{"temp":72}` {
-		t.Errorf("got %s, want text-content value", out)
+	if string(out) != `{"temp":72,"unit":"F"}` {
+		t.Errorf("got %s, want structuredContent", out)
+	}
+}
+
+func TestExtractContent_StructuredContentPreferredOverJSONText(t *testing.T) {
+	raw := json.RawMessage(`{"content":[{"type":"text","text":"{\"old\":true}"}],"structuredContent":{"new":true}}`)
+	out, err := invoke.ExtractContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != `{"new":true}` {
+		t.Errorf("got %s, want structuredContent not parsed text", out)
+	}
+}
+
+func TestExtractContent_StructuredContentPreferredOverMultiBlockContent(t *testing.T) {
+	raw := json.RawMessage(`{"content":[{"type":"text","text":"foo"},{"type":"text","text":"bar"}],"structuredContent":{"combined":true}}`)
+	out, err := invoke.ExtractContent(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != `{"combined":true}` {
+		t.Errorf("got %s, want structuredContent not raw content array", out)
 	}
 }
 
