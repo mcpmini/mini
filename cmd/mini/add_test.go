@@ -75,6 +75,47 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
+	t.Run("connect failure unrelated to OAuth reports a plain note", func(t *testing.T) {
+		mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		unreachableURL := mcpSrv.URL
+		mcpSrv.Close() // closed before use: connection refused, not a 401
+
+		dir := t.TempDir()
+		var out bytes.Buffer
+		if err := runAdd(dir, []string{"gh", "--url", unreachableURL}, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+		if !strings.Contains(out.String(), "note: could not connect to gh yet; run `mini test` to retry") {
+			t.Errorf("output = %q, want the plain connect-failure note", out.String())
+		}
+		if strings.Contains(out.String(), "OAuth") {
+			t.Errorf("output = %q, a non-OAuth connect failure should never mention OAuth", out.String())
+		}
+	})
+
+	t.Run("--no-connect skips the connectivity probe", func(t *testing.T) {
+		hit := false
+		mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			hit = true
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer mcpSrv.Close()
+
+		dir := t.TempDir()
+		var out bytes.Buffer
+		if err := runAdd(dir, []string{"gh", "--url", mcpSrv.URL, "--no-connect"}, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+		if hit {
+			t.Error("--no-connect should skip the connectivity probe, but the server received a request")
+		}
+		if strings.Contains(out.String(), "connected") || strings.Contains(out.String(), "OAuth") {
+			t.Errorf("output = %q, --no-connect should produce no connect/auth messages", out.String())
+		}
+	})
+
 	t.Run("--header flag is stored", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer

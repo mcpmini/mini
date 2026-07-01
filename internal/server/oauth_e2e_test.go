@@ -295,6 +295,34 @@ func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 	}
 }
 
+func TestAddUpstream_customAuthHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
+	// A server authenticating via a non-Authorization header (e.g. X-Api-Key) is just as
+	// vulnerable to the RFC 6750 ambiguity as one using Authorization — an expired static
+	// key server and an OAuth-protected server can both answer a 401 with WWW-Authenticate:
+	// Bearer, so any manually-configured header must be treated as decisive evidence of an
+	// already-chosen auth mechanism, not just the literal "Authorization" key.
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer mcpSrv.Close()
+
+	dir := t.TempDir()
+	writeServerYAML(t, dir, "apikeyserver", "name: apikeyserver\ntransport: http\nurl: "+mcpSrv.URL+"\nheaders:\n  X-Api-Key: some-static-key\n")
+	srv := newServerWithDir(t, dir)
+	defer srv.Close()
+
+	sc := loadServerConfig(t, dir, "apikeyserver")
+	if err := srv.AddUpstream(context.Background(), sc); err == nil {
+		t.Fatal("expected AddUpstream to return an error")
+	}
+
+	got := readServerYAML(t, dir, "apikeyserver")
+	if got.Auth != nil {
+		t.Errorf("Auth = %+v, a server with any manually-configured header must never be marked oauth2", got.Auth)
+	}
+}
+
 func TestAddUpstream_runtimeAddedNeverPersistsToDisk(t *testing.T) {
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")

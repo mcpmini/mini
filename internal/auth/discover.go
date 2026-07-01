@@ -125,12 +125,19 @@ func asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
 	return probePRMCandidates(ctx, base, strings.TrimRight(u.Path, "/"))
 }
 
-func probePRMCandidates(ctx context.Context, base, path string) (asRef, error) {
+// prmCandidateURLs returns the well-known PRM URIs to probe for base+path, per RFC 9728's
+// path-suffixed and root conventions. The root candidate is only distinct (and worth a second
+// request) when path is non-empty.
+func prmCandidateURLs(base, path string) []string {
 	candidates := []string{base + "/.well-known/oauth-protected-resource" + path}
 	if path != "" {
 		candidates = append(candidates, base+"/.well-known/oauth-protected-resource")
 	}
-	for _, c := range candidates {
+	return candidates
+}
+
+func probePRMCandidates(ctx context.Context, base, path string) (asRef, error) {
+	for _, c := range prmCandidateURLs(base, path) {
 		ref, err := fetchASURLFromPRM(ctx, c)
 		if err != nil {
 			return asRef{}, err
@@ -298,7 +305,7 @@ func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool 
 	}
 	base := u.Scheme + "://" + u.Host
 	path := strings.TrimRight(u.Path, "/")
-	for _, c := range []string{base + "/.well-known/oauth-protected-resource" + path, base + "/.well-known/oauth-protected-resource"} {
+	for _, c := range prmCandidateURLs(base, path) {
 		if ref, _ := fetchASURLFromPRM(ctx, c); ref.URL != "" {
 			return true
 		}
