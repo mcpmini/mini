@@ -26,7 +26,7 @@ func TestAliasesFromProjections(t *testing.T) {
 			name: "mixed aliased and non-aliased tools",
 			proj: map[string]*config.ProjectionConfig{
 				"list_pull_requests": {Alias: "list_prs"},
-				"get_issue":          {Mode: "summary"},
+				"get_issue":          {IncludeOnly: []string{"id"}},
 			},
 			want: map[string]string{"list_pull_requests": "list_prs"},
 		},
@@ -40,7 +40,7 @@ func TestAliasesFromProjections(t *testing.T) {
 		{
 			name: "no tool defines an alias",
 			proj: map[string]*config.ProjectionConfig{
-				"get_issue": {Mode: "summary"},
+				"get_issue": {IncludeOnly: []string{"id"}},
 			},
 			want: nil,
 		},

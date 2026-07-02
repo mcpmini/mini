@@ -13,7 +13,7 @@ func TestFormatPath(t *testing.T) {
 		path []string
 		want string
 	}{
-		{"empty", nil, ""},
+		{"empty", nil, "."},
 		{"single identifier", []string{"items"}, ".items"},
 		{"chained identifiers", []string{"items", "[0]", "body"}, ".items[0].body"},
 		{"array index first", []string{"[0]", "body"}, ".[0].body"},

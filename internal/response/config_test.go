@@ -1,7 +1,6 @@
 package response
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -11,7 +10,7 @@ import (
 func TestStoreConfigFrom(t *testing.T) {
 	t.Run("uses ResponseDir when set", func(t *testing.T) {
 		cfg := &config.Config{ResponseDir: "/custom/path", ResponseTTL: "2h", ResponseDiskBudgetMB: 100}
-		sc := StoreConfigFrom(cfg)
+		sc := StoreConfigFrom(cfg, "/any/configdir")
 		if sc.Dir != "/custom/path" {
 			t.Errorf("Dir = %q, want /custom/path", sc.Dir)
 		}
@@ -26,18 +25,19 @@ func TestStoreConfigFrom(t *testing.T) {
 		}
 	})
 
-	t.Run("defaults to home dir when ResponseDir empty", func(t *testing.T) {
+	t.Run("defaults to configDir when ResponseDir empty", func(t *testing.T) {
 		cfg := &config.Config{}
-		sc := StoreConfigFrom(cfg)
-		if !strings.HasSuffix(sc.Dir, "/.mini/internal/responses") {
-			t.Errorf("Dir = %q, want suffix /.mini/internal/responses", sc.Dir)
+		sc := StoreConfigFrom(cfg, "/my/profile")
+		want := "/my/profile/internal/responses"
+		if sc.Dir != want {
+			t.Errorf("Dir = %q, want %q", sc.Dir, want)
 		}
 	})
 
 	t.Run("defaults TTL to 1h on empty or invalid", func(t *testing.T) {
 		for _, spec := range []string{"", "notaduration"} {
 			cfg := &config.Config{ResponseTTL: spec}
-			sc := StoreConfigFrom(cfg)
+			sc := StoreConfigFrom(cfg, "/any/configdir")
 			if sc.TTL != time.Hour {
 				t.Errorf("TTL with %q = %v, want 1h", spec, sc.TTL)
 			}

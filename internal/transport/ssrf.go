@@ -39,32 +39,29 @@ func isPrivateHostname(host string) bool {
 		strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal")
 }
 
-// validatePrivateIP checks if ip falls in any ssrfPrivateRanges CIDR block.
-// Unmaps IPv4-in-IPv6 (e.g. ::ffff:127.0.0.1) before checking.
+func isPrivateIP(ip net.IP) bool {
+	for _, cidr := range ssrfPrivateRanges {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// NAT64 (64:ff9b::/96): To4() does not unmap it, so ip[12:16] bypasses IPv4 range checks without this.
 func validatePrivateIP(host string, ip net.IP) error {
 	if v4 := ip.To4(); v4 != nil {
 		ip = v4
 	}
-	if err := validateNAT64Embedded(host, ip); err != nil {
-		return err
-	}
-	for _, cidr := range ssrfPrivateRanges {
-		if cidr.Contains(ip) {
+	if ip16 := ip.To16(); ip16 != nil && nat64Prefix.Contains(ip16) {
+		if isPrivateIP(net.IP(ip16[12:16])) {
 			return fmt.Errorf("URL host %q resolves to a private/loopback address", host)
 		}
 	}
-	return nil
-}
-
-// validateNAT64Embedded re-validates the IPv4 embedded in a NAT64 address.
-// To4() does not unmap the 64:ff9b::/96 prefix, so its low 32 bits (ip[12:16])
-// would otherwise slip past the IPv4 ranges and route to e.g. 127.0.0.1.
-func validateNAT64Embedded(host string, ip net.IP) error {
-	ip16 := ip.To16()
-	if ip16 == nil || !nat64Prefix.Contains(ip16) {
-		return nil
+	if isPrivateIP(ip) {
+		return fmt.Errorf("URL host %q resolves to a private/loopback address", host)
 	}
-	return validatePrivateIP(host, net.IP(ip16[12:16]))
+	return nil
 }
 
 // SSRFSafeDialer returns a DialContext that resolves hostnames before connecting

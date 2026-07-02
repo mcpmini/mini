@@ -16,11 +16,11 @@ func projectionNote(env *response.Envelope) string {
 		parts = append(parts, strings.Join(env.Excluded, ", ")+" excluded")
 	}
 	for _, o := range env.Truncated {
-		if o.Items > 0 && o.JQPath != "" {
+		if o.Items > 0 && o.JQPath != "" && o.JQPath != "." {
 			parts = append(parts, fmt.Sprintf("%s truncated (%d items removed)", o.JQPath, o.Items))
 		} else if o.Items > 0 {
 			parts = append(parts, fmt.Sprintf("truncated (%d items removed)", o.Items))
-		} else if o.JQPath != "" {
+		} else if o.JQPath != "" && o.JQPath != "." {
 			parts = append(parts, fmt.Sprintf("%s truncated (%d chars)", o.JQPath, o.Chars))
 		} else {
 			parts = append(parts, fmt.Sprintf("truncated (%d chars)", o.Chars))
@@ -205,7 +205,7 @@ func formatBool(b bool) string {
 	if b {
 		return "true"
 	}
-	return "-"
+	return "false"
 }
 
 func formatFloat(f float64) string {

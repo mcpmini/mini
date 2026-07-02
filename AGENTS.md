@@ -36,7 +36,7 @@ Every feature decision should serve one of these two goals.
 
 ### Size limits
 
-- Functions: aim for ≤ 15 lines; anything > 25 lines must be broken into smaller functions
+- Functions: aim for ≤ 18 lines; anything > 25 lines must be broken into smaller functions
 - Files: aim for ≤ 300 lines; > 450 lines warrants a refactor; > 500 lines is a critical priority
 
 ### Function signatures
@@ -185,6 +185,6 @@ text := toolResultText(t, resp)
 
 `mini [--config DIR] <command>`: `serve` (default), `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
 
-- `serve [--http ADDR] [--standalone]` — stdio proxy; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
-- `daemon [--port N]` — run as shared HTTP daemon (background)
+- `connect [--http ADDR] [--standalone]` — stdio proxy; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
+- `daemon` — run as shared HTTP daemon (background)
 - `daemon status` — show whether the daemon is running
