@@ -1,6 +1,7 @@
 package response
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -39,15 +40,11 @@ func (s *Store) recordWrite(path string, size int64) {
 }
 
 func prettyJSON(b []byte) []byte {
-	var v any
-	if err := json.Unmarshal(b, &v); err != nil {
+	var buf bytes.Buffer
+	if err := json.Indent(&buf, b, "", "  "); err != nil {
 		return b
 	}
-	pretty, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return b
-	}
-	return pretty
+	return buf.Bytes()
 }
 
 func (s *Store) newFileBase() string {

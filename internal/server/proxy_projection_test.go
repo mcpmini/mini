@@ -140,3 +140,24 @@ func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) 
 	}
 	wg.Wait()
 }
+
+func TestProxy_DefaultProjection_PreservesLargeIntegers(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+	conn := fakeConn("get_item")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":9007199254740993,\"secret\":\"hidden\"}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	serveProxy(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "get_item",
+		"projection": map[string]any{"exclude": []string{"secret"}},
+	}))
+
+	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{}))
+	text := toolResultText(t, resp)
+	if !strings.Contains(text, "9007199254740993") {
+		t.Errorf("default projection corrupted large integer: %s", text)
+	}
+}
