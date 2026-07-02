@@ -38,10 +38,10 @@ commands:
   ls / list [SERVER [TOOL]]      List servers, server tools, or tool detail
   add NAME [flags]               Add a server
   rm / remove NAME               Remove a server
-  status                         Show server health (may persist a discovered auth: type: oauth2)
+  status                         Show server health
   cleanup                        Delete expired response files
   auth NAME                      Authorize a server via OAuth2 (PKCE flow)
-  test [--timeout T]             CI-safe health check (exits 1 on any failure; may persist a discovered auth: type: oauth2)
+  test [--timeout T]             CI-safe health check (exits 1 on any failure)
   init / setup [--yes]           Interactive setup wizard
   call SERVER TOOL [PARAMS]      Invoke an open tool directly (exit 1 on tool error)
   perm-call SERVER TOOL [PARAMS] Invoke a protected tool directly

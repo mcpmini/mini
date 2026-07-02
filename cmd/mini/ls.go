@@ -75,7 +75,7 @@ func dialServer(configDir, serverName string) (transport.Connection, error) {
 		return nil, fmt.Errorf("server %q not found", serverName)
 	}
 	ctx := context.Background()
-	if sc.Auth != nil && sc.Auth.Type == "oauth2" {
+	if sc.Auth != nil && sc.Auth.Type == config.AuthTypeOAuth2 {
 		injectToken(ctx, configDir, sc)
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))

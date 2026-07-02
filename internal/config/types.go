@@ -166,9 +166,15 @@ func (sc ServerConfig) IsHTTPTransport() bool {
 	return false
 }
 
+const (
+	AuthTypeAPIKey = "apikey"
+	AuthTypeBearer = "bearer"
+	AuthTypeOAuth2 = "oauth2"
+)
+
 // AuthConfig describes how to authenticate with an upstream server.
 type AuthConfig struct {
-	// Type: "apikey", "bearer", "oauth2"
+	// Type: AuthTypeAPIKey, AuthTypeBearer, or AuthTypeOAuth2
 	Type string `yaml:"type"`
 
 	// For apikey/bearer: the token value or env var reference ($MY_TOKEN)

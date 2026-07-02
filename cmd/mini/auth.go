@@ -112,7 +112,7 @@ func printAuthResult(name string, expiry time.Time) {
 func injectOAuthTokens(ctx context.Context, configDir string, servers []config.ServerConfig) {
 	for i := range servers {
 		sc := &servers[i]
-		if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 {
 			continue
 		}
 		injectToken(ctx, configDir, sc)

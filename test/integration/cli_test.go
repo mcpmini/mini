@@ -387,7 +387,7 @@ func TestCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(cfg, "servers", "myserver.yaml")); err != nil {
 		t.Fatalf("server YAML should exist: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(cfg, "internal", "myserver.oauth-detected.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(cfg, "internal", "myserver.meta.json")); err != nil {
 		t.Errorf("expected the oauth-detected marker to be written, got: %v", err)
 	}
 }

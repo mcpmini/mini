@@ -54,7 +54,7 @@ func injectAuth(headers map[string]string, auth *config.AuthConfig) {
 	if name == "" {
 		name = "Authorization"
 	}
-	if auth.Type == "apikey" {
+	if auth.Type == config.AuthTypeAPIKey {
 		headers[name] = token
 		return
 	}

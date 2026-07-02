@@ -15,7 +15,9 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-const addConnectTimeout = 15 * time.Second
+// addProbeTimeout bounds the connectivity check to the MCP server itself — not the OAuth
+// authorization window, which is a separate 5-minute timeout in doPKCEFlow (auth.go).
+const addProbeTimeout = 15 * time.Second
 
 type stringSlice []string
 
@@ -168,11 +170,13 @@ func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 	if !ok || !sc.IsHTTPTransport() {
 		return
 	}
+	// Only probe if Auth is still unknown — config.Load already merges in bundled defaults
+	// (atlassian/linear/slack) and any prior detection, so a non-nil Auth here means
+	// there's nothing left to discover.
 	if sc.Auth == nil {
-		// Bundled defaults (atlassian/linear/slack) already set Auth before a connection is attempted.
 		sc = probeAndReload(configDir, sc, out)
 	}
-	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+	if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 {
 		return
 	}
 	authorizeServer(authorizeParams{configDir: configDir, name: name, sc: sc, out: out})
@@ -192,7 +196,7 @@ func loadServerConfigForAdd(configDir, name string) (config.ServerConfig, bool) 
 
 func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) config.ServerConfig {
 	connectErr := probeConnection(configDir, sc)
-	// Connecting may have persisted auth: type: oauth2 (see markOAuthIfRequired) — reload to pick it up.
+	// Connecting may have triggered OAuth detection (markOAuthIfRequired) — reload to see it merged in.
 	reloaded, ok := loadServerConfigForAdd(configDir, sc.Name)
 	if !ok {
 		return sc
@@ -200,7 +204,7 @@ func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) con
 	switch {
 	case connectErr == nil:
 		fmt.Fprintf(out, "connected to %s\n", sc.Name)
-	case reloaded.Auth != nil && reloaded.Auth.Type == "oauth2":
+	case reloaded.Auth != nil && reloaded.Auth.Type == config.AuthTypeOAuth2:
 		// authorizeServer reports this case next; "could not connect" here would be misleading.
 	default:
 		fmt.Fprintf(out, "note: could not connect to %s yet; run `mini test` to retry\n", sc.Name)
@@ -216,7 +220,7 @@ func probeConnection(configDir string, sc config.ServerConfig) error {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := server.NewWithConfigDir(cfg, configDir, logger)
 	defer srv.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), addConnectTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), addProbeTimeout)
 	defer cancel()
 	return srv.AddUpstream(ctx, sc)
 }

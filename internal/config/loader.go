@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mcpmini/mini/internal/defaults"
 )
 
 // ValidServerName matches the allowed character set for server names used in
@@ -132,25 +135,61 @@ func loadServerConfigs(dir string) ([]ServerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	applyDetectedOAuth(dir, servers)
+	mergeKnownAuth(dir, servers)
 	return servers, nil
 }
 
-// OAuthDetectedMarkerPath is exported so internal/auth can write here directly —
+// ServerMetaPath is exported so internal/auth can write here directly —
 // internal/auth already imports internal/config, so the reverse import isn't possible.
-func OAuthDetectedMarkerPath(configDir, serverName string) string {
-	return filepath.Join(configDir, "internal", serverName+".oauth-detected.json")
+func ServerMetaPath(configDir, serverName string) string {
+	return filepath.Join(configDir, "internal", serverName+".meta.json")
 }
 
-func applyDetectedOAuth(dir string, servers []ServerConfig) {
+// ServerMeta holds machine-detected facts about a server that don't belong in its
+// user-editable YAML.
+type ServerMeta struct {
+	OAuthDetected bool `json:"oauth_detected,omitempty"`
+}
+
+// mergeKnownAuth fills in Auth for servers that didn't set one themselves, from either
+// source of "this server needs oauth2": a bundled default for well-known servers
+// (atlassian/linear/slack), or a marker left by a prior live-connection detection. A
+// server's own auth: block always wins over either — this only fills in the gaps.
+func mergeKnownAuth(dir string, servers []ServerConfig) {
 	for i := range servers {
 		if servers[i].Auth != nil {
 			continue
 		}
-		if _, err := os.Stat(OAuthDetectedMarkerPath(dir, servers[i].Name)); err == nil {
-			servers[i].Auth = &AuthConfig{Type: "oauth2"}
+		if ac := bundledAuth(servers[i].Name); ac != nil {
+			servers[i].Auth = ac
+			continue
+		}
+		if readServerMeta(dir, servers[i].Name).OAuthDetected {
+			servers[i].Auth = &AuthConfig{Type: AuthTypeOAuth2}
 		}
 	}
+}
+
+func bundledAuth(serverName string) *AuthConfig {
+	data := defaults.AuthFor(serverName)
+	if data == nil {
+		return nil
+	}
+	var ac AuthConfig
+	if yaml.Unmarshal(data, &ac) != nil {
+		return nil
+	}
+	return &ac
+}
+
+func readServerMeta(configDir, serverName string) ServerMeta {
+	data, err := os.ReadFile(ServerMetaPath(configDir, serverName))
+	if err != nil {
+		return ServerMeta{}
+	}
+	var m ServerMeta
+	json.Unmarshal(data, &m) //nolint:errcheck
+	return m
 }
 
 func filterServerPaths(paths []string) []string {

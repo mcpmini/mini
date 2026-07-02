@@ -327,6 +327,54 @@ auth:
 	}
 }
 
+func TestLoadServerConfig_mergesBundledAuthForKnownServer(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+name: slack
+transport: http
+url: https://mcp.slack.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		t.Fatalf("Auth = %+v, want type oauth2 merged in from the slack bundled default", sc.Auth)
+	}
+	if sc.Auth.ClientID == "" {
+		t.Error("ClientID is empty — Slack's pre-registered client_id was not merged in")
+	}
+	if sc.Auth.CallbackPort != 3118 {
+		t.Errorf("CallbackPort = %d, want 3118", sc.Auth.CallbackPort)
+	}
+}
+
+func TestLoadServerConfig_unknownServerGetsNoBundledAuth(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "unknown.yaml"), `
+name: unknown
+transport: http
+url: https://example.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth != nil {
+		t.Errorf("Auth = %+v, want nil for a server with no bundled default", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_existingAuthTakesPrecedenceOverBundledDefault(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+name: slack
+transport: http
+url: https://mcp.slack.com/mcp
+auth:
+  type: apikey
+  token: mytoken
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "apikey" {
+		t.Errorf("Auth = %+v, a hand-configured auth block must never be overridden by a bundled default", sc.Auth)
+	}
+}
+
 func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType, wantClientID string) {
 	t.Helper()
 	if sc.Auth == nil {

@@ -26,11 +26,9 @@ func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error 
 }
 
 func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig, connErr error) error {
-	// RuntimeAdded servers are agent-controlled (via the MCP config tool) and untrusted — their
-	// Name could collide with an existing, trusted server, so this must never touch disk for them.
-	// A manually-configured header is also skipped: RFC 6750 mandates the same
-	// `WWW-Authenticate: Bearer` challenge for an expired static token as for one that's actually
-	// OAuth-issued, so a hand-set header is the decisive signal the user already chose a mechanism.
+	// RuntimeAdded servers could collide by name with an existing server — never write for them.
+	// A manually-configured header is decisive too: RFC 6750 gives an expired static token the
+	// same 401 challenge as real OAuth, so a hand-set header means the user already chose.
 	if sc.RuntimeAdded || sc.Auth != nil || !sc.IsHTTPTransport() || len(sc.Headers) > 0 {
 		return connErr
 	}
