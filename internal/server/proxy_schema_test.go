@@ -196,6 +196,27 @@ func TestProxySchema_UpstreamAbsoluteSchemaIDPreserved(t *testing.T) {
 	}
 }
 
+func TestProxySchema_NullUpstreamSchemaDoesNotPanic(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := &transport.FakeConnection{
+		Tools: []transport.ToolDefinition{
+			{Name: "null_input", Description: "desc", InputSchema: json.RawMessage(`null`)},
+			{Name: "null_output", Description: "desc", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`null`)},
+		},
+		Responses: make(map[string]json.RawMessage),
+	}
+	addProxyConn(t, srv, "svc", conn)
+
+	tools := toolsList(t, srv)
+	if findTool(tools, "svc__null_input") == nil {
+		t.Error("svc__null_input should appear in tools/list despite null inputSchema")
+	}
+	if findTool(tools, "svc__null_output") == nil {
+		t.Error("svc__null_output should appear in tools/list despite null outputSchema")
+	}
+}
+
 func TestProxySchema_RefsWithinArgsStayUnrewritten(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()
