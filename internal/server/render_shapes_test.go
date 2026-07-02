@@ -66,6 +66,44 @@ func TestMiniFormat_AllArrayShapes(t *testing.T) {
 	}
 }
 
+func TestMiniFormat_NumericValuesPreserved(t *testing.T) {
+	cases := []struct {
+		name       string
+		raw        string
+		wantValues []string
+	}{
+		{"uniform array", `[{"number":7,"title":"Bug"},{"number":9,"title":"Feat"}]`, []string{"7", "9", "Bug", "Feat"}},
+		{"non-uniform array", `[{"number":7,"title":"Bug","labels":["x"]},{"number":9,"title":"Feat"}]`, []string{"7", "9", "Bug", "Feat"}},
+		{"single item", `[{"id":42,"name":"solo"}]`, []string{"42", "solo"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.ResponseDir = t.TempDir()
+			srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			defer srv.Close()
+
+			conn := fakeConn("list")
+			conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(mustJSON(tc.raw)) + `}]}`)
+			addTestConnection(t, srv, config.ServerConfig{Name: "svc"}, conn)
+			serve(t, srv, callTool("config", map[string]any{
+				"action": "set_projection", "server": "svc", "tool": "list",
+				"projection": map[string]any{"format": "mini"},
+			}))
+
+			resp := serve(t, srv, callTool("call", map[string]any{
+				"server": "svc", "tool": "list", "params": map[string]any{},
+			}))
+			text := toolResultText(t, resp)
+			for _, v := range tc.wantValues {
+				if !strings.Contains(text, v) {
+					t.Errorf("expected value %q in mini format output: %s", v, text)
+				}
+			}
+		})
+	}
+}
+
 func mustJSON(s string) json.RawMessage {
 	b, _ := json.Marshal(s)
 	return b

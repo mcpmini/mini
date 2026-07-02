@@ -186,6 +186,8 @@ func formatScalar(v any) string {
 		return formatBool(sv)
 	case float64:
 		return formatFloat(sv)
+	case json.Number:
+		return sv.String()
 	case int:
 		return formatInt(int64(sv))
 	case int64:
@@ -261,6 +263,8 @@ func classifyNumeric(nums []string, k string, v any) []string {
 	switch sv := v.(type) {
 	case float64:
 		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%s", k, formatFloat(sv)))
+	case json.Number:
+		return appendNumeric(nums, sv.String() != "0", fmt.Sprintf("%s:%s", k, sv.String()))
 	case int:
 		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%d", k, sv))
 	case int64:
