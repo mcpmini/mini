@@ -114,7 +114,7 @@ func parseSchema(raw json.RawMessage, fallback func() map[string]any) map[string
 		return fallback()
 	}
 	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
+	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
 		return fallback()
 	}
 	return m

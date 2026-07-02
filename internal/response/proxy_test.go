@@ -68,29 +68,35 @@ func TestNewProxyResult_TruncatedFieldsPopulateMiniWithMsg(t *testing.T) {
 	}
 }
 
-func TestNewProxyResult_FileSetWithoutMsgWhenNoExclusionOrTruncation(t *testing.T) {
+func TestNewProxyResult_FileAloneDoesNotSetMini(t *testing.T) {
 	key := "1234567890"
 	env := &response.Envelope{Data: map[string]any{"id": 1}, File: &key}
 	pr := response.NewProxyResult(env)
-	if pr.Mini == nil {
-		t.Fatal("expected Mini to be set when File is present")
-	}
-	if pr.Mini.File != key {
-		t.Errorf("File = %q, want %q", pr.Mini.File, key)
-	}
-	if pr.Mini.Msg != "" {
-		t.Errorf("expected no Msg when nothing was excluded or truncated, got %q", pr.Mini.Msg)
+	if pr.Mini != nil {
+		t.Errorf("file alone without excluded/truncated must not trigger __mini, got: %+v", pr.Mini)
 	}
 }
 
-func TestNewProxyResult_PassthroughAloneSetsMini(t *testing.T) {
+func TestNewProxyResult_PassthroughAloneDoesNotSetMini(t *testing.T) {
 	env := &response.Envelope{Data: map[string]any{"id": 1}, Passthrough: map[string]any{"cursor": "abc"}}
 	pr := response.NewProxyResult(env)
+	if pr.Mini != nil {
+		t.Errorf("passthrough alone must not trigger __mini (completeness signal), got: %+v", pr.Mini)
+	}
+}
+
+func TestNewProxyResult_PassthroughIncludedWhenAltered(t *testing.T) {
+	env := &response.Envelope{
+		Data:        map[string]any{"id": 1},
+		Excluded:    []string{".secret"},
+		Passthrough: map[string]any{"cursor": "abc"},
+	}
+	pr := response.NewProxyResult(env)
 	if pr.Mini == nil {
-		t.Fatal("expected Mini to be set when Passthrough is present")
+		t.Fatal("expected Mini when fields excluded")
 	}
 	if pr.Mini.Passthrough["cursor"] != "abc" {
-		t.Errorf("Passthrough = %v", pr.Mini.Passthrough)
+		t.Errorf("passthrough should be included when __mini is present, got: %v", pr.Mini.Passthrough)
 	}
 }
 

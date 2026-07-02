@@ -41,5 +41,5 @@ func buildProjectionMeta(env *Envelope) *ProjectionMeta {
 }
 
 func envelopeWasAltered(env *Envelope) bool {
-	return len(env.Excluded) > 0 || len(env.Truncated) > 0 || len(env.Passthrough) > 0 || env.File != nil
+	return len(env.Excluded) > 0 || len(env.Truncated) > 0
 }
