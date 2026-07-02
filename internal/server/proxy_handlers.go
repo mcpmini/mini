@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -112,7 +113,9 @@ func extractProxyArgs(envelope map[string]json.RawMessage) (map[string]any, erro
 		return map[string]any{}, nil
 	}
 	var args map[string]any
-	if err := json.Unmarshal(raw, &args); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&args); err != nil {
 		return nil, fmt.Errorf("%w: args must be an object: %w", errInvalidParams, err)
 	}
 	if args == nil {

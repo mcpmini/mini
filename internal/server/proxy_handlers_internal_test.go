@@ -4,6 +4,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -62,7 +63,7 @@ func TestParseProxyRequest_ArgsForwarded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if req.Args["state"] != "open" || req.Args["limit"] != float64(5) {
+	if req.Args["state"] != "open" || fmt.Sprint(req.Args["limit"]) != "5" {
 		t.Errorf("args not forwarded correctly: %v", req.Args)
 	}
 }
@@ -146,6 +147,20 @@ func TestParseProxyRequest_ArgsMustBeObject(t *testing.T) {
 func TestParseProxyRequest_MiniMustBeObject(t *testing.T) {
 	if _, err := parseProxyRequest(json.RawMessage(`{"__mini":"raw"}`)); err == nil {
 		t.Error("expected error for non-object __mini")
+	}
+}
+
+func TestExtractProxyArgs_PreservesLargeIntegers(t *testing.T) {
+	envelope := map[string]json.RawMessage{
+		"args": json.RawMessage(`{"id":9007199254740993}`),
+	}
+	args, err := extractProxyArgs(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(args)
+	if !strings.Contains(string(b), "9007199254740993") {
+		t.Errorf("large integer corrupted: got %s", b)
 	}
 }
 
