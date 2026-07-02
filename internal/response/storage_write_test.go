@@ -140,3 +140,11 @@ func TestParseTimestamp_invalidNames(t *testing.T) {
 		}
 	}
 }
+
+func TestPrettyJSON_PreservesLargeIntegers(t *testing.T) {
+	input := []byte(`{"id":9007199254740993,"name":"test"}`)
+	got := prettyJSON(input)
+	if !strings.Contains(string(got), "9007199254740993") {
+		t.Errorf("prettyJSON corrupted large integer: %s", got)
+	}
+}

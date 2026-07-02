@@ -11,7 +11,6 @@ import (
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
-	"github.com/mcpmini/mini/internal/transport"
 )
 
 func (s *Server) logToolError(server, tool string, latencyMs int64, err error) {
@@ -200,128 +199,6 @@ func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool str
 	return p.Server, p.Tool, p.Params
 }
 
-type dispatchParams struct {
-	Upstream *upstreamServer
-	Tool     string
-	Params   map[string]any
-	Session  *Session
-}
-
-func (s *Server) dispatchRaw(ctx context.Context, p dispatchParams) (json.RawMessage, int64, error) {
-	ctx, cancel := applyToolTimeout(ctx, p.Upstream.cfg.ToolTimeout)
-	defer cancel()
-	start := s.clock.Now()
-	raw, err := s.dispatchRawCall(ctx, p)
-	return raw, s.clock.Since(start).Milliseconds(), err
-}
-
-func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.RawMessage, error) {
-	if p.Upstream.cfg.SessionMode == config.SessionModePerSession {
-		return s.callPerSession(ctx, p)
-	}
-	raw, err := p.Upstream.callTool(ctx, p.Tool, p.Params)
-	s.maybeReconnect(p.Upstream, err)
-	return raw, err
-}
-
-func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
-	if err == nil || !isConnError(err) {
-		return
-	}
-	// Skip if upstream is already shutting down. callConn releases u.mu.RLock
-	// before returning, so there is a narrow window where Close() can complete
-	// reconnectWg.Wait() before this goroutine calls reconnectWg.Add(1). The
-	// WaitGroup won't panic (w==0 when Wait already returned), but the goroutine
-	// would run briefly after Close() returns. Checking Err() prevents that.
-	if upstream.ctx.Err() != nil {
-		return
-	}
-	if !upstream.reconnecting.CompareAndSwap(false, true) {
-		return
-	}
-	s.spawnReconnect(upstream)
-}
-
-func (s *Server) spawnReconnect(upstream *upstreamServer) {
-	s.reconnectWg.Add(1)
-	go func() {
-		defer s.reconnectWg.Done()
-		s.reconnectLoop(upstream)
-	}()
-}
-
-func (s *Server) callPerSession(ctx context.Context, p dispatchParams) (json.RawMessage, error) {
-	conn, err := s.getOrDialSessionConn(ctx, p.Upstream, p.Session)
-	if err != nil {
-		return nil, fmt.Errorf("per_session dial: %w", err)
-	}
-	args, _ := json.Marshal(transport.ToolCallParams{Name: p.Tool, Arguments: p.Params})
-	raw, err := conn.Call(ctx, "tools/call", args)
-	if err != nil {
-		return nil, s.handleSessionConnErr(p.Upstream, p.Session, conn, err)
-	}
-	result, toolErr := invoke.ExtractContent(raw)
-	return result, toolErr
-}
-
-func (s *Server) handleSessionConnErr(upstream *upstreamServer, session *Session, conn transport.Connection, err error) error {
-	var rpcErr *transport.RPCError
-	if errors.As(err, &rpcErr) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return err
-	}
-	s.logger.Warn("per-session connection error", "server", upstream.cfg.Name, "err", err)
-	// EvictConn removes only if this conn is still the active one (identity
-	// check), then we close it ourselves. This prevents a concurrent
-	// goroutine's close from racing with our in-flight call.
-	session.EvictConn(upstream.cfg.Name, conn)
-	conn.Close()
-	return connError{err}
-}
-
-func (s *Server) getOrDialSessionConn(ctx context.Context, upstream *upstreamServer, session *Session) (transport.Connection, error) {
-	if conn := session.Conn(upstream.cfg.Name); conn != nil {
-		return conn, nil
-	}
-	conn, err := session.dialOnceFor(upstream.cfg.Name, func() (transport.Connection, error) {
-		return s.dialPerSessionConn(ctx, upstream, session)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return s.checkDialedConn(upstream.cfg.Name, conn, session)
-}
-
-func (s *Server) checkDialedConn(name string, conn transport.Connection, session *Session) (transport.Connection, error) {
-	if s.isUpstreamRegistered(name) {
-		return conn, nil
-	}
-	session.RemoveConn(name)
-	conn.Close()
-	return nil, fmt.Errorf("server %q removed during dial", name)
-}
-
-func (s *Server) dialPerSessionConn(ctx context.Context, upstream *upstreamServer, session *Session) (transport.Connection, error) {
-	if conn := session.Conn(upstream.cfg.Name); conn != nil {
-		return conn, nil
-	}
-	conn, err := s.dialUpstream(ctx, upstream.cfg)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := conn.ListTools(ctx); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("init per_session conn: %w", err)
-	}
-	return session.GetOrSetConn(upstream.cfg.Name, conn), nil
-}
-
-func (s *Server) isUpstreamRegistered(name string) bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	_, ok := s.upstreams[name]
-	return ok
-}
-
 func mergeArgs(defaults, overrides map[string]any) map[string]any {
 	out := make(map[string]any, len(defaults)+len(overrides))
 	for k, v := range defaults {
@@ -340,12 +217,15 @@ type envelopeParams struct {
 	Session   *Session
 	Upstream  *upstreamServer
 	LatencyMs int64
+
+	// Bypass is only ever set true by proxy mode's __mini.projection:"raw".
+	Bypass bool
 }
 
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
 	projStart := s.clock.Now()
-	env, stats, err := s.buildProjectedEnvelope(p.Entry.Server, p.Tool, p.Raw, projCfg)
+	env, stats, err := s.buildProjectedEnvelope(projectedEnvelopeParams{Server: p.Entry.Server, Tool: p.Tool, Raw: p.Raw, ProjCfg: projCfg})
 	if err != nil {
 		return nil, err
 	}
@@ -355,14 +235,23 @@ func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg), nil
 }
 
-func (s *Server) buildProjectedEnvelope(server, tool string, raw json.RawMessage, projCfg *config.ProjectionConfig) (*response.Envelope, response.CallStats, error) {
+type projectedEnvelopeParams struct {
+	Server  string
+	Tool    string
+	Raw     json.RawMessage
+	ProjCfg *config.ProjectionConfig
+	Bypass  bool
+}
+
+func (s *Server) buildProjectedEnvelope(p projectedEnvelopeParams) (*response.Envelope, response.CallStats, error) {
 	return invoke.BuildEnvelope(invoke.BuildEnvelopeParams{
-		Server:   server,
-		Tool:     tool,
-		Raw:      raw,
-		ProjCfg:  projCfg,
-		ProjDefs: s.projDefaults,
-		Builder:  s.envelope,
+		Server:           p.Server,
+		Tool:             p.Tool,
+		Raw:              p.Raw,
+		ProjCfg:          p.ProjCfg,
+		ProjDefs:         s.projDefaults,
+		Builder:          s.envelope,
+		BypassProjection: p.Bypass,
 	})
 }
 
@@ -391,16 +280,6 @@ func (s *Server) resolveProjection(server, tool string, session *Session) *confi
 		return p
 	}
 	return toolMap["*"]
-}
-
-func (s *Server) getUpstream(serverName string) (*upstreamServer, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	u, ok := s.upstreams[serverName]
-	if !ok {
-		return nil, fmt.Errorf("server not connected: %s", serverName)
-	}
-	return u, nil
 }
 
 func unmarshalOptional(raw json.RawMessage, v any) error {
