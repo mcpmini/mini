@@ -128,7 +128,29 @@ func loadServerConfigs(dir string) ([]ServerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return loadServerFiles(filterServerPaths(paths))
+	servers, err := loadServerFiles(filterServerPaths(paths))
+	if err != nil {
+		return nil, err
+	}
+	applyDetectedOAuth(dir, servers)
+	return servers, nil
+}
+
+// OAuthDetectedMarkerPath is exported so internal/auth can write here directly —
+// internal/auth already imports internal/config, so the reverse import isn't possible.
+func OAuthDetectedMarkerPath(configDir, serverName string) string {
+	return filepath.Join(configDir, "internal", serverName+".oauth-detected.json")
+}
+
+func applyDetectedOAuth(dir string, servers []ServerConfig) {
+	for i := range servers {
+		if servers[i].Auth != nil {
+			continue
+		}
+		if _, err := os.Stat(OAuthDetectedMarkerPath(dir, servers[i].Name)); err == nil {
+			servers[i].Auth = &AuthConfig{Type: "oauth2"}
+		}
+	}
 }
 
 func filterServerPaths(paths []string) []string {

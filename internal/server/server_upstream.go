@@ -10,7 +10,6 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
-	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -39,8 +38,8 @@ func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig
 	if !errors.As(connErr, &uerr) || !auth.RequiresOAuth(ctx, sc.URL, uerr.WWWAuthenticate) {
 		return connErr
 	}
-	if err := ops.PersistAuthConfig(s.configDir, sc.Name, config.AuthConfig{Type: "oauth2"}); err != nil {
-		s.logger.Warn("persist discovered oauth config", "server", sc.Name, "err", err)
+	if err := auth.MarkOAuthDetected(s.configDir, sc.Name); err != nil {
+		s.logger.Warn("persist discovered oauth requirement", "server", sc.Name, "err", err)
 		return connErr
 	}
 	return fmt.Errorf("%s requires OAuth authorization (discovered via 401); run `mini auth %s`: %w", sc.Name, sc.Name, connErr)

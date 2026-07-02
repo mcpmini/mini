@@ -384,12 +384,11 @@ func TestCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
 		t.Errorf("expected stdout to point at a manual retry after the automatic flow fails, got: %q", stdout)
 	}
 
-	data, err := os.ReadFile(filepath.Join(cfg, "servers", "myserver.yaml"))
-	if err != nil {
+	if _, err := os.Stat(filepath.Join(cfg, "servers", "myserver.yaml")); err != nil {
 		t.Fatalf("server YAML should exist: %v", err)
 	}
-	if !strings.Contains(string(data), "type: oauth2") {
-		t.Errorf("server YAML should have gained auth: type: oauth2, got: %s", data)
+	if _, err := os.Stat(filepath.Join(cfg, "internal", "myserver.oauth-detected.json")); err != nil {
+		t.Errorf("expected the oauth-detected marker to be written, got: %v", err)
 	}
 }
 

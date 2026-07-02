@@ -58,31 +58,6 @@ func writeServerYAML(configDir string, sc config.ServerConfig) error {
 	return nil
 }
 
-func PersistAuthConfig(configDir, serverName string, ac config.AuthConfig) error {
-	if !config.ValidServerName.MatchString(serverName) {
-		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", serverName)
-	}
-	path := filepath.Join(configDir, "servers", serverName+".yaml")
-	data, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		// No config file to persist to (e.g. an in-memory runtime-added server) — nothing to do.
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-	var sc config.ServerConfig
-	if err := yaml.Unmarshal(data, &sc); err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
-	}
-	sc.Auth = &ac
-	out, err := yaml.Marshal(sc)
-	if err != nil {
-		return fmt.Errorf("marshal %s: %w", path, err)
-	}
-	return os.WriteFile(path, out, 0600)
-}
-
 // DeleteServer removes servers/<name>.yaml.
 func DeleteServer(configDir, name string) error {
 	if !config.ValidServerName.MatchString(name) {

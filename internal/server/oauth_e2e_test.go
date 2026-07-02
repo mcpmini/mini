@@ -19,6 +19,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -213,9 +214,12 @@ func TestAddUpstream_detectsOAuthFrom401(t *testing.T) {
 		t.Errorf("error should mention `mini auth needsauth`, got: %v", err)
 	}
 
-	got := readServerYAML(t, dir, "needsauth")
+	if !auth.IsOAuthDetected(dir, "needsauth") {
+		t.Error("expected the oauth-detected marker to be written")
+	}
+	got := loadServerConfig(t, dir, "needsauth")
 	if got.Auth == nil || got.Auth.Type != "oauth2" {
-		t.Errorf("Auth = %+v, want type oauth2 persisted to yaml", got.Auth)
+		t.Errorf("Auth = %+v, want type oauth2 merged in from the detected marker", got.Auth)
 	}
 }
 
@@ -266,9 +270,8 @@ func TestAddUpstream_bare401WithNoEvidenceDoesNotMarkOAuth(t *testing.T) {
 		t.Errorf("error should not claim OAuth is required, got: %v", err)
 	}
 
-	got := readServerYAML(t, dir, "plain401")
-	if got.Auth != nil {
-		t.Errorf("Auth = %+v, expected no auth field written", got.Auth)
+	if auth.IsOAuthDetected(dir, "plain401") {
+		t.Error("a bare 401 with no PRM/header evidence must not write the oauth-detected marker")
 	}
 }
 
@@ -289,9 +292,8 @@ func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 		t.Fatal("expected AddUpstream to return an error")
 	}
 
-	got := readServerYAML(t, dir, "statictoken")
-	if got.Auth != nil {
-		t.Errorf("Auth = %+v, a server with a manually-configured Authorization header must never be marked oauth2 — RFC 6750 mandates the same Bearer challenge for an expired static token", got.Auth)
+	if auth.IsOAuthDetected(dir, "statictoken") {
+		t.Error("a server with a manually-configured Authorization header must never be marked oauth2 — RFC 6750 mandates the same Bearer challenge for an expired static token")
 	}
 }
 
@@ -312,9 +314,8 @@ func TestAddUpstream_customAuthHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 		t.Fatal("expected AddUpstream to return an error")
 	}
 
-	got := readServerYAML(t, dir, "apikeyserver")
-	if got.Auth != nil {
-		t.Errorf("Auth = %+v, a server with any manually-configured header must never be marked oauth2", got.Auth)
+	if auth.IsOAuthDetected(dir, "apikeyserver") {
+		t.Error("a server with any manually-configured header must never be marked oauth2")
 	}
 }
 
@@ -339,6 +340,9 @@ func TestAddUpstream_runtimeAddedNeverPersistsToDisk(t *testing.T) {
 		t.Fatal("expected AddUpstream to return an error")
 	}
 
+	if auth.IsOAuthDetected(dir, "collide") {
+		t.Error("a runtime-added server must never write the oauth-detected marker for a colliding name")
+	}
 	got := readServerYAML(t, dir, "collide")
 	if got.Auth != nil {
 		t.Errorf("Auth = %+v, runtime-added server must never rewrite an existing server's config", got.Auth)

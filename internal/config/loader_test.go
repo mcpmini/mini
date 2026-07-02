@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -289,6 +290,41 @@ auth:
 		t.Fatal("expected auth config to be loaded")
 	}
 	assertAuthConfig(t, sc, "oauth2", "abc123")
+}
+
+func TestLoadServerConfig_mergesDetectedOAuthMarker(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), `
+name: detected
+transport: http
+url: https://example.com/mcp
+`)
+	if err := auth.MarkOAuthDetected(dir, "detected"); err != nil {
+		t.Fatalf("MarkOAuthDetected: %v", err)
+	}
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		t.Errorf("Auth = %+v, want type oauth2 merged in from the detected marker", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_existingAuthTakesPrecedenceOverDetectedMarker(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "hasauth.yaml"), `
+name: hasauth
+transport: http
+url: https://example.com/mcp
+auth:
+  type: apikey
+  token: secret
+`)
+	if err := auth.MarkOAuthDetected(dir, "hasauth"); err != nil {
+		t.Fatalf("MarkOAuthDetected: %v", err)
+	}
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "apikey" {
+		t.Errorf("Auth = %+v, a hand-configured auth block must never be overridden by a detected marker", sc.Auth)
+	}
 }
 
 func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType, wantClientID string) {
