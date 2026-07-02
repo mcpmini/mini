@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -192,6 +193,34 @@ func bytesContainsMini(s string) bool {
 	}
 	_, ok := parsed["__mini"]
 	return ok
+}
+
+func TestProxy_RawBypass_PreservesLargeIntegers(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConn("get_item")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":9007199254740993}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}))
+	text := toolResultText(t, resp)
+	if !strings.Contains(text, "9007199254740993") {
+		t.Errorf("raw bypass corrupted large integer: %s", text)
+	}
+}
+
+func TestProxy_ForwardsLargeIntegerArgs(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConn("get_item")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	serveProxy(t, srv, callTool("svc__get_item", map[string]any{"args": map[string]any{"id": json.Number("9007199254740993")}}))
+	lastParams := string(conn.LastParams)
+	if !strings.Contains(lastParams, "9007199254740993") {
+		t.Errorf("large integer corrupted in forwarded args: %s", lastParams)
+	}
 }
 
 func assertDeepEqual(t *testing.T, got, want any) {

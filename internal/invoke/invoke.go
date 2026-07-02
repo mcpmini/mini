@@ -89,19 +89,16 @@ type BuildEnvelopeParams struct {
 }
 
 func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, response.CallStats, error) {
+	if p.BypassProjection {
+		result := projection.Result{Summary: p.Raw}
+		return p.Builder.Build(buildResponseParams(p, result))
+	}
 	var value any
 	if err := json.Unmarshal(p.Raw, &value); err != nil {
 		return nil, response.CallStats{}, fmt.Errorf("parse upstream response: %w", err)
 	}
-	result := projectionResult(value, p)
+	result := projection.Apply(value, p.ProjCfg, p.ProjDefs)
 	return p.Builder.Build(buildResponseParams(p, result))
-}
-
-func projectionResult(value any, p BuildEnvelopeParams) projection.Result {
-	if p.BypassProjection {
-		return projection.Result{Summary: value}
-	}
-	return projection.Apply(value, p.ProjCfg, p.ProjDefs)
 }
 
 func buildResponseParams(p BuildEnvelopeParams, result projection.Result) response.BuildParams {
