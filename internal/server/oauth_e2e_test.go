@@ -296,11 +296,6 @@ func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 }
 
 func TestAddUpstream_customAuthHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
-	// A server authenticating via a non-Authorization header (e.g. X-Api-Key) is just as
-	// vulnerable to the RFC 6750 ambiguity as one using Authorization — an expired static
-	// key server and an OAuth-protected server can both answer a 401 with WWW-Authenticate:
-	// Bearer, so any manually-configured header must be treated as decisive evidence of an
-	// already-chosen auth mechanism, not just the literal "Authorization" key.
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
@@ -335,10 +330,7 @@ func TestAddUpstream_runtimeAddedNeverPersistsToDisk(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.DisableAuthBrowserOpen = true
-	// DangerousAllowPrivateURLs lets the dial reach the loopback httptest server so the
-	// test actually exercises markOAuthIfRequired's RuntimeAdded guard, rather than
-	// failing earlier at SSRF dial validation for an unrelated reason.
-	cfg.DangerousAllowPrivateURLs = true
+	cfg.DangerousAllowPrivateURLs = true // let the dial reach the loopback server; exercise the RuntimeAdded guard, not SSRF validation
 	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 

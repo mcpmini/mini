@@ -131,11 +131,8 @@ func TestRunAdd(t *testing.T) {
 	})
 
 	t.Run("auto-authorize failure does not exit the process", func(t *testing.T) {
-		// Regression test for a bug where the auto-authorize path reused mini auth's
-		// os.Exit(1)-on-failure code, killing the whole process (and this test binary)
-		// mid-command even though the server had already been added successfully. This
-		// server 401s with a Bearer challenge on a loopback URL, which SSRF validation
-		// rejects during OAuth endpoint discovery — a real, reachable failure mode.
+		// This server 401s with a Bearer challenge on a loopback URL, which SSRF validation
+		// rejects during OAuth endpoint discovery — a real, reachable auto-authorize failure.
 		oauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			w.WriteHeader(http.StatusUnauthorized)

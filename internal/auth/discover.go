@@ -125,9 +125,6 @@ func asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
 	return probePRMCandidates(ctx, base, strings.TrimRight(u.Path, "/"))
 }
 
-// prmCandidateURLs returns the well-known PRM URIs to probe for base+path, per RFC 9728's
-// path-suffixed and root conventions. The root candidate is only distinct (and worth a second
-// request) when path is non-empty.
 func prmCandidateURLs(base, path string) []string {
 	candidates := []string{base + "/.well-known/oauth-protected-resource" + path}
 	if path != "" {
@@ -284,19 +281,15 @@ func doDiscoveryRequest(ctx context.Context, metaURL string) (*http.Response, er
 
 const maxAuthBodyBytes = 64 << 10
 
-// RequiresOAuth reports whether a 401 from serverURL is confirmed to need OAuth per RFC 9728 —
-// either the WWW-Authenticate header itself signals a Bearer challenge, or (only when the header
-// is absent entirely) a Protected Resource Metadata document exists at the well-known URI. A bare
-// 401 with neither returns false rather than guessing, since it's more likely a plain auth
-// failure (expired token, IP block) than OAuth. A non-Bearer scheme (Basic, Digest, ...) is a
-// decisive "not OAuth" signal on its own — it must not fall through to the PRM check, since a
-// document that happens to exist at the same origin doesn't apply to this specific challenge.
+// RequiresOAuth reports whether a 401 from serverURL is confirmed (per RFC 9728) to need OAuth.
 func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool {
 	scheme := strings.ToLower(strings.TrimSpace(wwwAuthenticate))
 	if strings.HasPrefix(scheme, "bearer") {
 		return true
 	}
 	if scheme != "" {
+		// A non-Bearer scheme (Basic, Digest, ...) is decisive on its own — a PRM document
+		// that happens to exist at the same origin doesn't apply to this specific challenge.
 		return false
 	}
 	u, err := url.Parse(serverURL)

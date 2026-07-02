@@ -39,9 +39,8 @@ type HTTPConnection struct {
 // slow tools (tool_timeout > 60s) should set http_client_timeout in their server YAML.
 const defaultHTTPClientTimeout = 60 * time.Second
 
-// UnauthorizedError signals an HTTP 401 response, carrying the WWW-Authenticate
-// header (RFC 9728 §5.1) so callers can distinguish an OAuth challenge from a
-// bare 401 (expired static token, IP block, WAF) without guessing.
+// UnauthorizedError carries the WWW-Authenticate header from a 401 response so callers
+// can distinguish an OAuth challenge (RFC 9728 §5.1) from a bare auth failure.
 type UnauthorizedError struct {
 	WWWAuthenticate string
 }
@@ -217,9 +216,6 @@ func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string) (po
 	return postResult{}, nonRetryableHTTPError(resp, method, errBody)
 }
 
-// nonRetryableHTTPError wraps *UnauthorizedError for 401 responses so callers can
-// distinguish an OAuth challenge from a bare 401 via errors.As, while keeping the
-// same message shape for every other non-retryable status.
 func nonRetryableHTTPError(resp *http.Response, method string, errBody []byte) error {
 	if resp.StatusCode != http.StatusUnauthorized {
 		return fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)

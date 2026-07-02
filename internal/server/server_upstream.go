@@ -26,17 +26,12 @@ func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error 
 	return nil
 }
 
-// markOAuthIfRequired persists auth: type: oauth2 to the server's config file when a live
-// connection attempt reveals (per RFC 9728) the upstream requires OAuth, and returns an
-// actionable error pointing at `mini auth`. RuntimeAdded servers are untrusted (agent-controlled
-// via the MCP config tool) and are never persisted to their own file — but their Name could
-// collide with an existing, trusted, already-configured server, so this must never touch disk
-// for them (PersistAuthConfig would happily rewrite that unrelated server's real config). A
-// server with any manually-configured header is also skipped: RFC 6750 mandates the same
-// `WWW-Authenticate: Bearer` challenge for an expired static token (under any header name, not
-// just Authorization) as for one that's actually OAuth-issued, so a 401 alone can't tell these
-// apart — a hand-set header is the decisive signal the user already chose an auth mechanism.
 func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig, connErr error) error {
+	// RuntimeAdded servers are agent-controlled (via the MCP config tool) and untrusted — their
+	// Name could collide with an existing, trusted server, so this must never touch disk for them.
+	// A manually-configured header is also skipped: RFC 6750 mandates the same
+	// `WWW-Authenticate: Bearer` challenge for an expired static token as for one that's actually
+	// OAuth-issued, so a hand-set header is the decisive signal the user already chose a mechanism.
 	if sc.RuntimeAdded || sc.Auth != nil || !sc.IsHTTPTransport() || len(sc.Headers) > 0 {
 		return connErr
 	}

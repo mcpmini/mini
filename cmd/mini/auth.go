@@ -58,8 +58,6 @@ type pkceFlowParams struct {
 	sc         *config.ServerConfig
 }
 
-// runPKCEFlow drives the interactive OAuth flow for the top-level `mini auth` command,
-// where a failure should end the process — there is nothing else for the command to do.
 func runPKCEFlow(p pkceFlowParams) {
 	token, err := doPKCEFlow(p)
 	if err != nil {
@@ -68,9 +66,6 @@ func runPKCEFlow(p pkceFlowParams) {
 	printAuthResult(p.serverName, token.Expiry)
 }
 
-// doPKCEFlow runs the same flow but reports failure as a returned error instead of
-// exiting the process, so callers with other work in flight (like `mini add`, which has
-// already written the server's config by the time it calls this) can recover gracefully.
 func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
