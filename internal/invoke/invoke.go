@@ -1,6 +1,7 @@
 package invoke
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -94,7 +95,9 @@ func BuildEnvelope(p BuildEnvelopeParams) (*response.Envelope, response.CallStat
 		return p.Builder.Build(buildResponseParams(p, result))
 	}
 	var value any
-	if err := json.Unmarshal(p.Raw, &value); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(p.Raw))
+	dec.UseNumber()
+	if err := dec.Decode(&value); err != nil {
 		return nil, response.CallStats{}, fmt.Errorf("parse upstream response: %w", err)
 	}
 	result := projection.Apply(value, p.ProjCfg, p.ProjDefs)
