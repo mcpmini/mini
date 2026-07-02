@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +9,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/mcpmini/mini/internal/defaults"
 )
 
 // ValidServerName matches the allowed character set for server names used in
@@ -44,7 +47,9 @@ func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return cfg, deduplicateServers(append(servers, cfg.Servers...)), nil
+	combined := deduplicateServers(append(servers, cfg.Servers...))
+	mergeKnownAuth(configDir, combined)
+	return cfg, combined, nil
 }
 
 func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig, error) {
@@ -129,6 +134,62 @@ func loadServerConfigs(dir string) ([]ServerConfig, error) {
 		return nil, err
 	}
 	return loadServerFiles(filterServerPaths(paths))
+}
+
+// ServerMetaPath is exported so internal/auth can write here directly —
+// internal/auth already imports internal/config, so the reverse import isn't possible.
+func ServerMetaPath(configDir, serverName string) string {
+	return filepath.Join(configDir, "internal", serverName+".meta.json")
+}
+
+// ServerMeta holds machine-detected facts about a server that don't belong in its
+// user-editable YAML.
+type ServerMeta struct {
+	OAuthDetected bool `json:"oauth_detected,omitempty"`
+}
+
+// mergeKnownAuth fills in Auth from a bundled default or a prior detection marker —
+// but never overrides a server's own auth: block.
+func mergeKnownAuth(dir string, servers []ServerConfig) {
+	for i := range servers {
+		if servers[i].Auth != nil {
+			continue
+		}
+		if ac := bundledAuth(servers[i]); ac != nil {
+			servers[i].Auth = ac
+			continue
+		}
+		if readServerMeta(dir, servers[i].Name).OAuthDetected {
+			servers[i].Auth = &AuthConfig{Type: AuthTypeOAuth2}
+		}
+	}
+}
+
+func bundledAuth(sc ServerConfig) *AuthConfig {
+	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
+	key := defaults.DetectKey(cmdLine, strings.ToLower(sc.URL))
+	if key == "" {
+		return nil
+	}
+	data := defaults.AuthFor(key)
+	if data == nil {
+		return nil
+	}
+	var ac AuthConfig
+	if yaml.Unmarshal(data, &ac) != nil {
+		return nil
+	}
+	return &ac
+}
+
+func readServerMeta(configDir, serverName string) ServerMeta {
+	data, err := os.ReadFile(ServerMetaPath(configDir, serverName))
+	if err != nil {
+		return ServerMeta{}
+	}
+	var m ServerMeta
+	json.Unmarshal(data, &m) //nolint:errcheck
+	return m
 }
 
 func filterServerPaths(paths []string) []string {

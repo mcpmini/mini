@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -289,6 +290,132 @@ auth:
 		t.Fatal("expected auth config to be loaded")
 	}
 	assertAuthConfig(t, sc, "oauth2", "abc123")
+}
+
+func TestLoadServerConfig_mergesDetectedOAuthMarker(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), `
+name: detected
+transport: http
+url: https://example.com/mcp
+`)
+	if err := auth.MarkOAuthDetected(dir, "detected"); err != nil {
+		t.Fatalf("MarkOAuthDetected: %v", err)
+	}
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		t.Errorf("Auth = %+v, want type oauth2 merged in from the detected marker", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_existingAuthTakesPrecedenceOverDetectedMarker(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "hasauth.yaml"), `
+name: hasauth
+transport: http
+url: https://example.com/mcp
+auth:
+  type: apikey
+  token: secret
+`)
+	if err := auth.MarkOAuthDetected(dir, "hasauth"); err != nil {
+		t.Fatalf("MarkOAuthDetected: %v", err)
+	}
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "apikey" {
+		t.Errorf("Auth = %+v, a hand-configured auth block must never be overridden by a detected marker", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_mergesBundledAuthForKnownServer(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+name: slack
+transport: http
+url: https://mcp.slack.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		t.Fatalf("Auth = %+v, want type oauth2 merged in from the slack bundled default", sc.Auth)
+	}
+	if sc.Auth.ClientID == "" {
+		t.Error("ClientID is empty — Slack's pre-registered client_id was not merged in")
+	}
+	if sc.Auth.CallbackPort != 3118 {
+		t.Errorf("CallbackPort = %d, want 3118", sc.Auth.CallbackPort)
+	}
+}
+
+func TestLoadServerConfig_bundledAuthMatchesByURLNotName(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+name: slack
+transport: http
+url: https://example.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth != nil {
+		t.Errorf("Auth = %+v, a server merely named 'slack' but pointed elsewhere must not get Slack's bundled OAuth credentials", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_bundledAuthMatchesRenamedKnownServer(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "myslack.yaml"), `
+name: myslack
+transport: http
+url: https://mcp.slack.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		t.Errorf("Auth = %+v, a server pointed at slack.com should get the bundled default regardless of its chosen name", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_unknownServerGetsNoBundledAuth(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "unknown.yaml"), `
+name: unknown
+transport: http
+url: https://example.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth != nil {
+		t.Errorf("Auth = %+v, want nil for a server with no bundled default", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_existingAuthTakesPrecedenceOverBundledDefault(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+name: slack
+transport: http
+url: https://mcp.slack.com/mcp
+auth:
+  type: apikey
+  token: mytoken
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "apikey" {
+		t.Errorf("Auth = %+v, a hand-configured auth block must never be overridden by a bundled default", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_mergesKnownAuthForInlineConfigYAMLServers(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+servers:
+  - name: slack
+    transport: http
+    url: https://mcp.slack.com/mcp
+`)
+	_, servers := mustLoadConfig(t, dir)
+	if len(servers) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(servers))
+	}
+	if servers[0].Auth == nil || servers[0].Auth.Type != "oauth2" {
+		t.Errorf("Auth = %+v, a server declared inline in config.yaml should get the same bundled/detected merge as one in servers/", servers[0].Auth)
+	}
 }
 
 func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType, wantClientID string) {

@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
 )
@@ -159,61 +160,6 @@ func TestWriteServer(t *testing.T) {
 	})
 }
 
-func TestWriteServer_bundledAuthApplied(t *testing.T) {
-	t.Run("slack gets client_id and callback_port pre-filled", func(t *testing.T) {
-		dir := tempDir(t)
-		sc := config.ServerConfig{Name: "slack", Transport: "http", URL: "https://mcp.slack.com/mcp"}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
-		}
-		var got config.ServerConfig
-		readYAML(t, filepath.Join(dir, "servers", "slack.yaml"), &got)
-		if got.Auth == nil {
-			t.Fatal("Auth is nil — bundled auth defaults not applied")
-		}
-		if got.Auth.Type != "oauth2" {
-			t.Errorf("Auth.Type = %q, want oauth2", got.Auth.Type)
-		}
-		if got.Auth.ClientID == "" {
-			t.Error("Auth.ClientID is empty — Slack client_id not bundled")
-		}
-		if got.Auth.CallbackPort != 3118 {
-			t.Errorf("Auth.CallbackPort = %d, want 3118", got.Auth.CallbackPort)
-		}
-	})
-
-	t.Run("unknown server gets no auth defaults", func(t *testing.T) {
-		dir := tempDir(t)
-		sc := config.ServerConfig{Name: "unknown", Transport: "http", URL: "https://example.com/mcp"}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
-		}
-		var got config.ServerConfig
-		readYAML(t, filepath.Join(dir, "servers", "unknown.yaml"), &got)
-		if got.Auth != nil {
-			t.Errorf("Auth should be nil for unknown server, got %+v", got.Auth)
-		}
-	})
-
-	t.Run("explicit auth not overwritten by bundled defaults", func(t *testing.T) {
-		dir := tempDir(t)
-		sc := config.ServerConfig{
-			Name:      "slack",
-			Transport: "http",
-			URL:       "https://mcp.slack.com/mcp",
-			Auth:      &config.AuthConfig{Type: "apikey", Token: "mytoken"},
-		}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
-		}
-		var got config.ServerConfig
-		readYAML(t, filepath.Join(dir, "servers", "slack.yaml"), &got)
-		if got.Auth == nil || got.Auth.Type != "apikey" {
-			t.Errorf("explicit auth overwritten: got %+v", got.Auth)
-		}
-	})
-}
-
 func TestDeleteServer(t *testing.T) {
 	t.Run("removes the server file", func(t *testing.T) {
 		dir := tempDir(t)
@@ -237,6 +183,20 @@ func TestDeleteServer(t *testing.T) {
 		dir := tempDir(t)
 		if err := ops.DeleteServer(dir, "bad name!"); err == nil {
 			t.Fatal("expected error for invalid server name")
+		}
+	})
+
+	t.Run("also clears the oauth-detected marker", func(t *testing.T) {
+		dir := tempDir(t)
+		ops.WriteServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
+		if err := auth.MarkOAuthDetected(dir, "toremove"); err != nil {
+			t.Fatalf("MarkOAuthDetected: %v", err)
+		}
+		if err := ops.DeleteServer(dir, "toremove"); err != nil {
+			t.Fatalf("DeleteServer: %v", err)
+		}
+		if auth.IsOAuthDetected(dir, "toremove") {
+			t.Error("a server reusing this name would inherit a stale oauth-detected marker")
 		}
 	})
 }

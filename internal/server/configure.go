@@ -226,12 +226,10 @@ func (s *Server) validateAddServerParams(p configureParams) error {
 }
 
 func (s *Server) validateRuntimeTransport(sc *config.ServerConfig) error {
-	switch sc.Transport {
-	case "http", "sse", "streamable":
+	if sc.IsHTTPTransport() {
 		return s.validateRuntimeHTTPTransport(sc)
-	default:
-		return s.validateRuntimeStdioTransport(sc)
 	}
+	return s.validateRuntimeStdioTransport(sc)
 }
 
 func (s *Server) validateRuntimeHTTPTransport(sc *config.ServerConfig) error {

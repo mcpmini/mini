@@ -1,14 +1,22 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/server"
 )
+
+// addProbeTimeout bounds only the connectivity check — doPKCEFlow has its own 5-minute OAuth window.
+const addProbeTimeout = 15 * time.Second
 
 type stringSlice []string
 
@@ -34,7 +42,7 @@ func addByName(configDir string, remaining []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return addNamedServer(configDir, sf)
+	return addNamedServer(configDir, sf, out)
 }
 
 type importFlags struct {
@@ -58,6 +66,7 @@ type serverFlags struct {
 	headers   stringSlice
 	protected stringSlice
 	cmdArgs   []string
+	noConnect bool
 }
 
 func parseServerFlags(args []string, out io.Writer) (serverFlags, error) {
@@ -67,6 +76,7 @@ func parseServerFlags(args []string, out io.Writer) (serverFlags, error) {
 	fs.StringVar(&f.url, "url", "", "HTTP/SSE server URL")
 	fs.Var(&f.headers, "header", "HTTP header as Key=Value (repeatable)")
 	fs.Var(&f.protected, "protected", "tool name to mark protected (repeatable)")
+	fs.BoolVar(&f.noConnect, "no-connect", false, "skip the post-add connectivity check and OAuth authorization")
 	if err := fs.Parse(args[1:]); err != nil {
 		return serverFlags{}, err
 	}
@@ -91,9 +101,15 @@ func handleImportFlags(configDir string, f importFlags) (handled bool, err error
 	}
 }
 
-func addNamedServer(configDir string, sf serverFlags) error {
+func addNamedServer(configDir string, sf serverFlags, out io.Writer) error {
 	if sf.url != "" {
-		return importers.WriteServerYAML(configDir, sf.name, httpServerYAML(sf.name, sf.url, sf.headers, sf.protected))
+		if err := importers.WriteServerYAML(configDir, sf.name, httpServerYAML(sf.name, sf.url, sf.headers, sf.protected)); err != nil {
+			return err
+		}
+		if !sf.noConnect {
+			connectAndAuthorizeIfNeeded(configDir, sf.name, out)
+		}
+		return nil
 	}
 	if len(sf.cmdArgs) == 0 {
 		return fmt.Errorf("provide --url or a command after NAME")
@@ -146,4 +162,90 @@ func parseHeaders(pairs []string) map[string]string {
 		out[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
 	return out
+}
+
+func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
+	sc, ok := loadServerConfigForAdd(configDir, name)
+	if !ok || !sc.IsHTTPTransport() {
+		return
+	}
+	// Only probe if Auth is still unknown — config.Load already merges in bundled/detected
+	// auth, so a non-nil Auth here means there's nothing left to discover.
+	if sc.Auth == nil {
+		sc = probeAndReload(configDir, sc, out)
+	}
+	if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 {
+		return
+	}
+	authorizeServer(authorizeParams{configDir: configDir, name: name, sc: sc, out: out})
+}
+
+func loadServerConfigForAdd(configDir, name string) (config.ServerConfig, bool) {
+	_, servers, err := config.Load(configDir)
+	if err != nil {
+		return config.ServerConfig{}, false
+	}
+	sc := config.FindServer(servers, name)
+	if sc == nil {
+		return config.ServerConfig{}, false
+	}
+	return *sc, true
+}
+
+func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) config.ServerConfig {
+	connectErr := probeConnection(configDir, sc)
+	// Connecting may have triggered OAuth detection (markOAuthIfRequired) — reload to see it merged in.
+	reloaded, ok := loadServerConfigForAdd(configDir, sc.Name)
+	if !ok {
+		return sc
+	}
+	switch {
+	case connectErr == nil:
+		fmt.Fprintf(out, "connected to %s\n", sc.Name)
+	case reloaded.Auth != nil && reloaded.Auth.Type == config.AuthTypeOAuth2:
+		// authorizeServer reports this case next; "could not connect" here would be misleading.
+	default:
+		fmt.Fprintf(out, "note: could not connect to %s yet; run `mini test` to retry\n", sc.Name)
+	}
+	return reloaded
+}
+
+func probeConnection(configDir string, sc config.ServerConfig) error {
+	cfg, _, err := config.Load(configDir)
+	if err != nil {
+		return err
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := server.NewWithConfigDir(cfg, configDir, logger)
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), addProbeTimeout)
+	defer cancel()
+	return srv.AddUpstream(ctx, sc)
+}
+
+type authorizeParams struct {
+	configDir string
+	name      string
+	sc        config.ServerConfig
+	out       io.Writer
+}
+
+func authorizeServer(p authorizeParams) {
+	cfg, _, err := config.Load(p.configDir)
+	if err != nil {
+		fmt.Fprintf(p.out, "warning: reload config for auth: %v\n", err)
+		return
+	}
+	fmt.Fprintf(p.out, "%s requires OAuth authorization\n", p.name)
+	token, err := doPKCEFlow(pkceFlowParams{
+		configDir:  p.configDir,
+		serverName: p.name,
+		opener:     authOpener(p.sc.Auth.BrowserCmd, cfg.BrowserCommand, cfg.DisableAuthBrowserOpen),
+		sc:         &p.sc,
+	})
+	if err != nil {
+		fmt.Fprintf(p.out, "note: automatic authorization failed (%v); run `mini auth %s` to retry\n", err, p.name)
+		return
+	}
+	printAuthResult(p.name, token.Expiry)
 }

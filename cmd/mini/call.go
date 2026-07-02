@@ -136,7 +136,7 @@ func callPermissionError(perm *config.PermissionsConfig, toolName string, protec
 }
 
 func mustDialCall(ctx context.Context, configDir string, cc callContext) transport.Connection {
-	if cc.sc.Auth != nil && cc.sc.Auth.Type == "oauth2" {
+	if cc.sc.Auth != nil && cc.sc.Auth.Type == config.AuthTypeOAuth2 {
 		injectToken(ctx, configDir, cc.sc)
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
