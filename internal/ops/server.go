@@ -38,7 +38,8 @@ func writeServerYAML(configDir string, sc config.ServerConfig) error {
 	return nil
 }
 
-// DeleteServer removes servers/<name>.yaml.
+// DeleteServer removes servers/<name>.yaml and any oauth-detected marker for it —
+// otherwise a later server reusing the same name would inherit stale auth state.
 func DeleteServer(configDir, name string) error {
 	if !config.ValidServerName.MatchString(name) {
 		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", name)
@@ -47,5 +48,6 @@ func DeleteServer(configDir, name string) error {
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove %s: %w", path, err)
 	}
+	os.Remove(config.ServerMetaPath(configDir, name)) //nolint:errcheck
 	return nil
 }

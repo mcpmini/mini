@@ -47,7 +47,9 @@ func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return cfg, deduplicateServers(append(servers, cfg.Servers...)), nil
+	combined := deduplicateServers(append(servers, cfg.Servers...))
+	mergeKnownAuth(configDir, combined)
+	return cfg, combined, nil
 }
 
 func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig, error) {
@@ -131,12 +133,7 @@ func loadServerConfigs(dir string) ([]ServerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	servers, err := loadServerFiles(filterServerPaths(paths))
-	if err != nil {
-		return nil, err
-	}
-	mergeKnownAuth(dir, servers)
-	return servers, nil
+	return loadServerFiles(filterServerPaths(paths))
 }
 
 // ServerMetaPath is exported so internal/auth can write here directly —
@@ -151,16 +148,14 @@ type ServerMeta struct {
 	OAuthDetected bool `json:"oauth_detected,omitempty"`
 }
 
-// mergeKnownAuth fills in Auth for servers that didn't set one themselves, from either
-// source of "this server needs oauth2": a bundled default for well-known servers
-// (atlassian/linear/slack), or a marker left by a prior live-connection detection. A
-// server's own auth: block always wins over either — this only fills in the gaps.
+// mergeKnownAuth fills in Auth from a bundled default or a prior detection marker —
+// but never overrides a server's own auth: block.
 func mergeKnownAuth(dir string, servers []ServerConfig) {
 	for i := range servers {
 		if servers[i].Auth != nil {
 			continue
 		}
-		if ac := bundledAuth(servers[i].Name); ac != nil {
+		if ac := bundledAuth(servers[i]); ac != nil {
 			servers[i].Auth = ac
 			continue
 		}
@@ -170,8 +165,13 @@ func mergeKnownAuth(dir string, servers []ServerConfig) {
 	}
 }
 
-func bundledAuth(serverName string) *AuthConfig {
-	data := defaults.AuthFor(serverName)
+func bundledAuth(sc ServerConfig) *AuthConfig {
+	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
+	key := defaults.DetectKey(cmdLine, strings.ToLower(sc.URL))
+	if key == "" {
+		return nil
+	}
+	data := defaults.AuthFor(key)
 	if data == nil {
 		return nil
 	}

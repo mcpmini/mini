@@ -80,7 +80,7 @@ func TestRunAdd(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		unreachableURL := mcpSrv.URL
-		mcpSrv.Close() // closed before use: connection refused, not a 401
+		mcpSrv.Close()
 
 		dir := t.TempDir()
 		var out bytes.Buffer

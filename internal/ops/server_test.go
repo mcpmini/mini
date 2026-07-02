@@ -8,6 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
 )
@@ -182,6 +183,20 @@ func TestDeleteServer(t *testing.T) {
 		dir := tempDir(t)
 		if err := ops.DeleteServer(dir, "bad name!"); err == nil {
 			t.Fatal("expected error for invalid server name")
+		}
+	})
+
+	t.Run("also clears the oauth-detected marker", func(t *testing.T) {
+		dir := tempDir(t)
+		ops.WriteServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
+		if err := auth.MarkOAuthDetected(dir, "toremove"); err != nil {
+			t.Fatalf("MarkOAuthDetected: %v", err)
+		}
+		if err := ops.DeleteServer(dir, "toremove"); err != nil {
+			t.Fatalf("DeleteServer: %v", err)
+		}
+		if auth.IsOAuthDetected(dir, "toremove") {
+			t.Error("a server reusing this name would inherit a stale oauth-detected marker")
 		}
 	})
 }

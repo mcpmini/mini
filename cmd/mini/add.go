@@ -15,8 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-// addProbeTimeout bounds the connectivity check to the MCP server itself — not the OAuth
-// authorization window, which is a separate 5-minute timeout in doPKCEFlow (auth.go).
+// addProbeTimeout bounds only the connectivity check — doPKCEFlow has its own 5-minute OAuth window.
 const addProbeTimeout = 15 * time.Second
 
 type stringSlice []string
@@ -170,9 +169,8 @@ func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 	if !ok || !sc.IsHTTPTransport() {
 		return
 	}
-	// Only probe if Auth is still unknown — config.Load already merges in bundled defaults
-	// (atlassian/linear/slack) and any prior detection, so a non-nil Auth here means
-	// there's nothing left to discover.
+	// Only probe if Auth is still unknown — config.Load already merges in bundled/detected
+	// auth, so a non-nil Auth here means there's nothing left to discover.
 	if sc.Auth == nil {
 		sc = probeAndReload(configDir, sc, out)
 	}

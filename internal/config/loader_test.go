@@ -346,6 +346,32 @@ url: https://mcp.slack.com/mcp
 	}
 }
 
+func TestLoadServerConfig_bundledAuthMatchesByURLNotName(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+name: slack
+transport: http
+url: https://example.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth != nil {
+		t.Errorf("Auth = %+v, a server merely named 'slack' but pointed elsewhere must not get Slack's bundled OAuth credentials", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_bundledAuthMatchesRenamedKnownServer(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "myslack.yaml"), `
+name: myslack
+transport: http
+url: https://mcp.slack.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		t.Errorf("Auth = %+v, a server pointed at slack.com should get the bundled default regardless of its chosen name", sc.Auth)
+	}
+}
+
 func TestLoadServerConfig_unknownServerGetsNoBundledAuth(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "unknown.yaml"), `
@@ -372,6 +398,23 @@ auth:
 	sc := mustLoadOneServer(t, dir)
 	if sc.Auth == nil || sc.Auth.Type != "apikey" {
 		t.Errorf("Auth = %+v, a hand-configured auth block must never be overridden by a bundled default", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_mergesKnownAuthForInlineConfigYAMLServers(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+servers:
+  - name: slack
+    transport: http
+    url: https://mcp.slack.com/mcp
+`)
+	_, servers := mustLoadConfig(t, dir)
+	if len(servers) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(servers))
+	}
+	if servers[0].Auth == nil || servers[0].Auth.Type != "oauth2" {
+		t.Errorf("Auth = %+v, a server declared inline in config.yaml should get the same bundled/detected merge as one in servers/", servers[0].Auth)
 	}
 }
 

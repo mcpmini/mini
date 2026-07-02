@@ -25,6 +25,9 @@ func MarkOAuthDetected(configDir, serverName string) error {
 }
 
 func IsOAuthDetected(configDir, serverName string) bool {
+	if !config.ValidServerName.MatchString(serverName) {
+		return false
+	}
 	data, err := os.ReadFile(config.ServerMetaPath(configDir, serverName))
 	if err != nil {
 		return false
