@@ -8,6 +8,32 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
+	if err == nil || !isConnError(err) {
+		return
+	}
+	// Skip if upstream is already shutting down. callConn releases u.mu.RLock
+	// before returning, so there is a narrow window where Close() can complete
+	// reconnectWg.Wait() before this goroutine calls reconnectWg.Add(1). The
+	// WaitGroup won't panic (w==0 when Wait already returned), but the goroutine
+	// would run briefly after Close() returns. Checking Err() prevents that.
+	if upstream.ctx.Err() != nil {
+		return
+	}
+	if !upstream.reconnecting.CompareAndSwap(false, true) {
+		return
+	}
+	s.spawnReconnect(upstream)
+}
+
+func (s *Server) spawnReconnect(upstream *upstreamServer) {
+	s.reconnectWg.Add(1)
+	go func() {
+		defer s.reconnectWg.Done()
+		s.reconnectLoop(upstream)
+	}()
+}
+
 func (s *Server) reconnectLoop(u *upstreamServer) {
 	defer u.reconnecting.Store(false)
 	backoff := time.Second
