@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/forge"
@@ -78,6 +79,9 @@ func TestExecute_syntaxError(t *testing.T) {
 	if !containsAny(fe.Message, "SyntaxError", "Expected") {
 		t.Errorf("Message = %q, want a useful syntax diagnostic", fe.Message)
 	}
+	if strings.Contains(fe.Message, "base64,") {
+		t.Errorf("Message = %q, want the data: URL collapsed to \"code\"", fe.Message)
+	}
 }
 
 func TestExecute_runtimeThrow(t *testing.T) {
@@ -94,6 +98,9 @@ func TestExecute_runtimeThrow(t *testing.T) {
 	}
 	if !containsAny(fe.Message, "code:1:") {
 		t.Errorf("Message = %q, want a stack location matching the user's source line numbers", fe.Message)
+	}
+	if strings.Contains(fe.Message, "base64,") {
+		t.Errorf("Message = %q, want the data: URL collapsed to \"code\"", fe.Message)
 	}
 }
 

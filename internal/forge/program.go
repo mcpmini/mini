@@ -29,16 +29,19 @@ func buildProgram(code string, input []byte, marker string) string {
 // reordered behind buffered console.log output, and Deno.exit(0) right after
 // kills any timers the user code left dangling.
 const harnessTemplate = `
+function __sanitize(text) {
+  return String(text).replaceAll(/data:text\/typescript;base64,[A-Za-z0-9+/=]+/g, "code");
+}
+
 // The stack's first line already reads "Class: message", so the stack replaces the
 // bare message; harness frames and the base64 data: URL are noise to the agent.
 function __describe(e) {
-  if (!e?.stack) return String(e?.message ?? e);
-  return String(e.stack)
+  if (!e?.stack) return __sanitize(e?.message ?? e);
+  return __sanitize(String(e.stack)
     .split("\n")
     .filter((l) => !l.includes("$deno$stdin"))
     .slice(0, 5)
-    .join("\n")
-    .replaceAll(/data:text\/typescript;base64,[A-Za-z0-9+/=]+/g, "code");
+    .join("\n"));
 }
 
 async function __run() {
@@ -47,7 +50,7 @@ async function __run() {
   try {
     __mod = await import(__dataUrl);
   } catch (e) {
-    const __msg = String(e?.message ?? e);
+    const __msg = __sanitize(e?.message ?? e);
     const __kind = __msg.includes("SyntaxError") ? "syntax" : "runtime";
     return { error: { kind: __kind, message: __msg } };
   }

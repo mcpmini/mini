@@ -62,9 +62,10 @@ func newDenoCmd(runCtx context.Context, denoPath, program string, opts execOptio
 // runArgs must keep --no-remote (or --cached-only, once packages are in
 // play) as the only default: --allow-net/--allow-env are appended only when
 // the caller has non-empty grants, so an unconfigured code_mode stays fully
-// denied on both flag paths.
+// denied on both flag paths. --no-config prevents a deno.json discovered from
+// the daemon's cwd (or any parent) from remapping imports inside the sandbox.
 func runArgs(opts execOptions) []string {
-	args := []string{"run", "--no-prompt", remoteFlag(opts.packages)}
+	args := []string{"run", "--no-prompt", "--no-config", remoteFlag(opts.packages)}
 	args = append(args, netFlag(opts)...)
 	if len(opts.env) > 0 {
 		args = append(args, "--allow-env="+strings.Join(opts.env, ","))

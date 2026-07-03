@@ -15,7 +15,7 @@ func resolveDeps(ctx context.Context, denoPath string, packages, extraEnv []stri
 	resolveCtx, cancel := context.WithTimeout(ctx, depResolveTimeout)
 	defer cancel()
 
-	args := append([]string{"cache"}, packages...)
+	args := append([]string{"cache", "--no-config"}, packages...)
 	cmd := exec.CommandContext(resolveCtx, denoPath, args...)
 	cmd.Env = append(childEnv(), extraEnv...)
 
