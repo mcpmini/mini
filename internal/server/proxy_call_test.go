@@ -112,9 +112,7 @@ func TestProxy_ErrorBehavior_ToolErrorNotWrappedInData(t *testing.T) {
 	}
 }
 
-// Registry lookup for an unknown server__tool fails before any envelope is
-// built, so this surfaces as a JSON-RPC error, not an isError tool result —
-// accept either, matching TestProxy_UnknownTool_ReturnsError.
+// Registry lookup fails before any envelope is built, so this surfaces as a JSON-RPC error, not an isError tool result.
 func TestProxy_ErrorBehavior_UnknownServerReturnsToolError(t *testing.T) {
 	srv := newProxyServer(t)
 	defer srv.Close()

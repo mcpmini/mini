@@ -217,8 +217,6 @@ type envelopeParams struct {
 	Session   *Session
 	Upstream  *upstreamServer
 	LatencyMs int64
-
-	// Bypass is only ever set true by proxy mode's __mini.projection:"raw".
 	Bypass bool
 }
 

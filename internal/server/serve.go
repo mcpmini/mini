@@ -392,8 +392,6 @@ func toolOKResult(content any) map[string]any {
 	}
 }
 
-// proxyToolResult marshals once so content.text and structuredContent can
-// never drift from each other.
 func proxyToolResult(pr response.ProxyResult) map[string]any {
 	b, err := json.Marshal(pr)
 	if err != nil {

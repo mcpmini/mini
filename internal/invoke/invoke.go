@@ -83,9 +83,6 @@ type BuildEnvelopeParams struct {
 	ProjCfg  *config.ProjectionConfig
 	ProjDefs *projection.Defaults
 	Builder  *response.Builder
-
-	// BypassProjection returns the upstream value untouched: no exclusions,
-	// truncations, or recovery file. Used for per-call __mini.projection:"raw".
 	BypassProjection bool
 }
 

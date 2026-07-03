@@ -408,7 +408,6 @@ func TestProxy_Call_GlobalFormatMini_Ignored(t *testing.T) {
 	}
 }
 
-// Exercises the daemon/HTTP path (postMCP) rather than serveProxy.
 func TestProxy_Call_SessionFormatMini_Ignored(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
@@ -613,7 +612,19 @@ func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
 			t.Errorf("tool without %q must not include that key, got: %v", key, tool[key])
 		}
 	}
-	// Unlike the other optional fields, outputSchema is always synthesized.
+}
+
+func TestProxy_ToolsList_OutputSchemaAlwaysSynthesized(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConn("write_file")
+	addProxyConn(t, srv, "fs", conn)
+
+	tools := toolsList(t, srv)
+	tool := findTool(tools, "fs__write_file")
+	if tool == nil {
+		t.Fatal("fs__write_file not found in tools/list")
+	}
 	if _, ok := tool["outputSchema"]; !ok {
 		t.Error("proxy mode must always advertise outputSchema, even for tools without one upstream")
 	}

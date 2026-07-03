@@ -169,9 +169,7 @@ func assertElisionLinesFile(t *testing.T, header string) {
 	}
 }
 
-// Mini format only applies to compact mode, but the response store is shared,
-// so a file written by a compact-mode call must still be readable via the
-// proxy-mode `read` tool.
+// The response store is shared across format modes: a file written by mini-format must be readable via the proxy read tool.
 func TestLinesFormatBareKeyResolvesToReadableFile(t *testing.T) {
 	payload := `{"items":[{"id":1,"title":"bug"}],"secret":"hidden"}`
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
