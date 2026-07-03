@@ -150,6 +150,86 @@ func TestExecuteCode_ImportsCachedPackage(t *testing.T) {
 	}
 }
 
+func TestExecuteCode_PackagesThroughDaemonProxy(t *testing.T) {
+	requireCached(t, "jsr:@std/csv@1")
+	cfg := shortConfigDir(t)
+	codeModeConfig(t, cfg)
+	startDaemon(t, cfg)
+	client := connectCompact(t, cfg)
+
+	code := `async () => {
+		const { parse } = await import("jsr:@std/csv@1");
+		return parse("a,b\n1,2", { skipFirstRow: true });
+	}`
+	args := map[string]any{"code": code, "packages": []string{"jsr:@std/csv@1"}}
+	raw := client.mustCall("tools/call", map[string]any{"name": "execute_code", "arguments": args})
+	text, isErr := parseToolCallResult(raw)
+	if isErr {
+		t.Fatalf("expected success through daemon, got error: %s", text)
+	}
+	if text != `[{"a":"1","b":"2"}]` {
+		t.Errorf(`expected [{"a":"1","b":"2"}], got %s`, text)
+	}
+}
+
+func TestExecuteCode_UnresolvablePackageFailsOverWire(t *testing.T) {
+	requireDeno(t)
+	cfg := t.TempDir()
+	codeModeConfig(t, cfg)
+	client := startServer(t, cfg)
+
+	args := map[string]any{"code": "async () => 1", "packages": []string{"npm:@mini-forge-test/nope-xyz"}}
+	raw := client.mustCall("tools/call", map[string]any{"name": "execute_code", "arguments": args})
+	text, isErr := parseToolCallResult(raw)
+	if !isErr {
+		t.Fatalf("expected isError=true for unresolvable package, got success: %s", text)
+	}
+	if !strings.Contains(text, "dependency") {
+		t.Errorf("expected error text to mention dependency, got: %s", text)
+	}
+}
+
+func TestExecuteCode_WireSchemaDeclaresInputTypeUnionAndPackages(t *testing.T) {
+	cfg := t.TempDir()
+	codeModeConfig(t, cfg)
+	client := startServer(t, cfg)
+
+	input, packages := executeCodeWireSchema(t, client.mustCall("tools/list", nil))
+	if types, _ := input["type"].([]any); len(types) == 0 {
+		t.Errorf("input.type must be an explicit type union — untyped properties get string-encoded by some MCP clients — got: %v", input["type"])
+	}
+	if packages == nil {
+		t.Error("expected packages property in execute_code wire schema")
+	}
+}
+
+func executeCodeWireSchema(t *testing.T, raw json.RawMessage) (input, packages map[string]any) {
+	t.Helper()
+	var result struct {
+		Tools []struct {
+			Name        string         `json:"name"`
+			InputSchema map[string]any `json:"inputSchema"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		t.Fatalf("parse tools/list: %v", err)
+	}
+	for _, tool := range result.Tools {
+		if tool.Name != "execute_code" {
+			continue
+		}
+		props, _ := tool.InputSchema["properties"].(map[string]any)
+		input, _ = props["input"].(map[string]any)
+		packages, _ = props["packages"].(map[string]any)
+		if input == nil {
+			t.Fatal("execute_code wire schema has no input property")
+		}
+		return input, packages
+	}
+	t.Fatal("execute_code not found in tools/list")
+	return nil, nil
+}
+
 func TestExecuteCode_SandboxDenialOverWire(t *testing.T) {
 	requireDeno(t)
 	cfg := t.TempDir()
