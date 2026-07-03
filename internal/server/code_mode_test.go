@@ -78,6 +78,37 @@ func TestExecuteCode_EnabledToolsList(t *testing.T) {
 	})
 }
 
+func TestExecuteCode_InputSchemaDeclaresExplicitTypeUnion(t *testing.T) {
+	srv := newCodeModeServer(t, true)
+	resp := serve(t, srv, rpc("tools/list", nil))
+	input := executeCodeInputProperty(t, resp)
+	types, _ := input["type"].([]any)
+	if len(types) == 0 {
+		t.Fatalf("input.type must be an explicit type union — untyped properties get string-encoded by some MCP clients — got: %v", input["type"])
+	}
+}
+
+func executeCodeInputProperty(t *testing.T, resp map[string]any) map[string]any {
+	t.Helper()
+	result, _ := resp["result"].(map[string]any)
+	tools, _ := result["tools"].([]any)
+	for _, tool := range tools {
+		m, _ := tool.(map[string]any)
+		if m["name"] != "execute_code" {
+			continue
+		}
+		schema, _ := m["inputSchema"].(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		input, _ := props["input"].(map[string]any)
+		if input == nil {
+			t.Fatal("execute_code inputSchema has no input property")
+		}
+		return input
+	}
+	t.Fatal("execute_code not found in tools/list")
+	return nil
+}
+
 func TestExecuteCode_MissingCode(t *testing.T) {
 	srv := newCodeModeServer(t, true)
 	resp := serve(t, srv, callTool("execute_code", map[string]any{}))
