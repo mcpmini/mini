@@ -371,7 +371,17 @@ func (c *mcpClient) mustCall(method string, params any) json.RawMessage {
 }
 
 func (c *mcpClient) call(method string, params any) (json.RawMessage, error) {
-	id := c.nextID.Add(1)
+	_, ch := c.callAsync(method, params)
+	select {
+	case r := <-ch:
+		return r.raw, r.err
+	case <-c.done:
+		return nil, fmt.Errorf("connection closed waiting for response to %s", method)
+	}
+}
+
+func (c *mcpClient) callAsync(method string, params any) (id int64, result <-chan *mcpResult) {
+	id = c.nextID.Add(1)
 	ch := make(chan *mcpResult, 1)
 	c.pending.Store(id, ch)
 
@@ -379,13 +389,14 @@ func (c *mcpClient) call(method string, params any) (json.RawMessage, error) {
 	req := map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)}
 	b, _ := json.Marshal(req)
 	fmt.Fprintf(c.stdin, "%s\n", b)
+	return id, ch
+}
 
-	select {
-	case r := <-ch:
-		return r.raw, r.err
-	case <-c.done:
-		return nil, fmt.Errorf("connection closed waiting for response to %s", method)
-	}
+func (c *mcpClient) notify(method string, params any) {
+	p, _ := json.Marshal(params)
+	req := map[string]any{"jsonrpc": "2.0", "method": method, "params": json.RawMessage(p)}
+	b, _ := json.Marshal(req)
+	fmt.Fprintf(c.stdin, "%s\n", b)
 }
 
 func (c *mcpClient) setProjection(server, tool string, proj map[string]any, sessionOnly bool) {
@@ -511,7 +522,7 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 type envelope struct {
 	Data        any            `json:"data"`
 	Excluded    []string       `json:"excluded"`
-	Truncated    []truncation     `json:"truncated"`
+	Truncated   []truncation   `json:"truncated"`
 	File        *string        `json:"file"`
 	Passthrough map[string]any `json:"passthrough"`
 	Error       string         `json:"error"`
