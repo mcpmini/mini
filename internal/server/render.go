@@ -178,6 +178,8 @@ func sanitizeLine(s string) string {
 	return s
 }
 
+// nil/false/zero all collapse to "-" so the compact table stays token-cheap;
+// callers can't distinguish "absent" from "explicit zero" from this alone.
 func formatScalar(v any) string {
 	switch sv := v.(type) {
 	case nil:
@@ -187,7 +189,7 @@ func formatScalar(v any) string {
 	case float64:
 		return formatFloat(sv)
 	case json.Number:
-		return sv.String()
+		return formatJSONNumber(sv)
 	case int:
 		return formatInt(int64(sv))
 	case int64:
@@ -196,6 +198,18 @@ func formatScalar(v any) string {
 		return formatString(sv)
 	}
 	return marshalScalar(v)
+}
+
+func formatJSONNumber(n json.Number) string {
+	if jsonNumberIsZero(n) {
+		return "-"
+	}
+	return n.String()
+}
+
+func jsonNumberIsZero(n json.Number) bool {
+	f, _ := n.Float64() // n is always decoder-produced from a valid JSON number literal, so this cannot fail
+	return f == 0
 }
 
 func marshalScalar(v any) string {
@@ -264,8 +278,7 @@ func classifyNumeric(nums []string, k string, v any) []string {
 	case float64:
 		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%s", k, formatFloat(sv)))
 	case json.Number:
-		f, _ := sv.Float64()
-		return appendNumeric(nums, f != 0, fmt.Sprintf("%s:%s", k, sv.String()))
+		return appendNumeric(nums, !jsonNumberIsZero(sv), fmt.Sprintf("%s:%s", k, sv.String()))
 	case int:
 		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%d", k, sv))
 	case int64:

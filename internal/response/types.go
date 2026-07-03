@@ -1,23 +1,57 @@
 package response
 
-import "github.com/mcpmini/mini/internal/projection"
+import (
+	"encoding/json"
+
+	"github.com/mcpmini/mini/internal/projection"
+)
 
 // Envelope is what agents receive for every execute call.
 // On success: Data is set. On error: Error and Message are set.
 type Envelope struct {
-	Data any `json:"data,omitempty"`
+	Data any
 
-	Excluded  []string                `json:"excluded,omitempty"`
-	Truncated []projection.Truncation `json:"truncated,omitempty"`
+	Excluded  []string
+	Truncated []projection.Truncation
 
 	// File is the path to the full raw upstream response, set when any
 	// projection was applied.
-	File *string `json:"file,omitempty"`
+	File *string
 
 	// Passthrough contains fields explicitly preserved from projection rules.
-	Passthrough map[string]any `json:"passthrough,omitempty"`
+	Passthrough map[string]any
 
 	// Error fields (set on failure only).
+	Error     string
+	Message   string
+	Retryable bool
+	Action    string
+}
+
+// MarshalJSON keeps "data" out of the wire shape entirely on error — even
+// "data":null would blur the isError signal agents rely on to skip past a
+// failed call without inspecting its payload.
+func (e Envelope) MarshalJSON() ([]byte, error) {
+	if e.Error != "" {
+		return json.Marshal(envelopeErrorJSON{
+			Error: e.Error, Message: e.Message, Retryable: e.Retryable, Action: e.Action,
+		})
+	}
+	return json.Marshal(envelopeSuccessJSON{
+		Data: e.Data, Excluded: e.Excluded, Truncated: e.Truncated,
+		File: e.File, Passthrough: e.Passthrough,
+	})
+}
+
+type envelopeSuccessJSON struct {
+	Data        any                     `json:"data"`
+	Excluded    []string                `json:"excluded,omitempty"`
+	Truncated   []projection.Truncation `json:"truncated,omitempty"`
+	File        *string                 `json:"file,omitempty"`
+	Passthrough map[string]any          `json:"passthrough,omitempty"`
+}
+
+type envelopeErrorJSON struct {
 	Error     string `json:"error,omitempty"`
 	Message   string `json:"message,omitempty"`
 	Retryable bool   `json:"retryable,omitempty"`

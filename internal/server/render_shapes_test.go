@@ -104,6 +104,45 @@ func TestMiniFormat_NumericValuesPreserved(t *testing.T) {
 	}
 }
 
+func TestMiniFormat_ZeroValueSuppressedAcrossRenderPaths(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		want    string
+		notWant string
+	}{
+		{"uniform array table row", `[{"count":0,"title":"Bug"},{"count":9,"title":"Feat"}]`, "- Bug", "0 Bug"},
+		{"single item line", `[{"count":0,"title":"solo"}]`, "title:solo", "count:0"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.ResponseDir = t.TempDir()
+			srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			defer srv.Close()
+
+			conn := fakeConn("list")
+			conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(mustJSON(tc.raw)) + `}]}`)
+			addTestConnection(t, srv, config.ServerConfig{Name: "svc"}, conn)
+			serve(t, srv, callTool("config", map[string]any{
+				"action": "set_projection", "server": "svc", "tool": "list",
+				"projection": map[string]any{"format": "mini"},
+			}))
+
+			resp := serve(t, srv, callTool("call", map[string]any{
+				"server": "svc", "tool": "list", "params": map[string]any{},
+			}))
+			text := toolResultText(t, resp)
+			if !strings.Contains(text, tc.want) {
+				t.Errorf("expected %q in mini format output: %s", tc.want, text)
+			}
+			if strings.Contains(text, tc.notWant) {
+				t.Errorf("expected zero value suppressed (no %q) in mini format output: %s", tc.notWant, text)
+			}
+		})
+	}
+}
+
 func mustJSON(s string) json.RawMessage {
 	b, _ := json.Marshal(s)
 	return b
