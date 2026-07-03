@@ -26,6 +26,9 @@ func newAuthCmd(configDir string) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if helpRequested(args) {
+				return cmd.Help()
+			}
 			runAuth(configDir, args[0])
 			return nil
 		},

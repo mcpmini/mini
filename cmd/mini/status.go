@@ -23,6 +23,9 @@ func newLsCmd(configDir string) *cobra.Command {
 		Short:              "List servers, server tools, or tool detail",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if helpRequested(args) {
+				return cmd.Help()
+			}
 			return runList(configDir, args, cmd.OutOrStdout())
 		},
 	}

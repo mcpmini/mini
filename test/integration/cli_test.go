@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -238,6 +239,35 @@ func TestCLI_add_FromClaudeCode(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cfg, "servers", "code-server.yaml")); err != nil {
 		t.Errorf("expected code-server.yaml to exist: %v", err)
+	}
+}
+
+func TestCLI_configFlagAfterSubcommand_IsHonored(t *testing.T) {
+	cfg := t.TempDir()
+	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
+
+	cmd := exec.Command(miniBin, "rm", "myserver", "--config", cfg)
+	var errOut strings.Builder
+	cmd.Stderr = &errOut
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("rm with --config after the subcommand should exit 0: %v (stderr=%s)", err, errOut.String())
+	}
+
+	stdout, _, code := runCLI(t, cfg, "ls")
+	if code != 0 || strings.Contains(stdout, "myserver") {
+		t.Errorf("myserver should be removed from %s via post-subcommand --config, got code=%d ls=%q", cfg, code, stdout)
+	}
+}
+
+func TestCLI_addHelp_ShowsFlagsDespiteDisabledParsing(t *testing.T) {
+	cmd := exec.Command(miniBin, "add", "--help")
+	var out strings.Builder
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("add --help should exit 0: %v", err)
+	}
+	if !strings.Contains(out.String(), "--url") {
+		t.Errorf("expected --url in `add --help` output, got: %q", out.String())
 	}
 }
 

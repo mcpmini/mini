@@ -49,6 +49,9 @@ func newAddCmd(configDir string) *cobra.Command {
 		Long:               addLongHelp,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if helpRequested(args) {
+				return cmd.Help()
+			}
 			return runAdd(configDir, args, cmd.OutOrStdout())
 		},
 	}
@@ -61,6 +64,9 @@ func newRmCmd(configDir string) *cobra.Command {
 		Short:              "Remove a server",
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if helpRequested(args) {
+				return cmd.Help()
+			}
 			return runRemove(configDir, args, cmd.OutOrStdout())
 		},
 	}

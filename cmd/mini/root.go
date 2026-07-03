@@ -21,25 +21,47 @@ func main() {
 	}
 }
 
-// --config is resolved manually rather than via cobra's PersistentFlags: several
-// subcommands set DisableFlagParsing to avoid misreading arbitrary server/tool
-// names as flags, which silently disables cobra's own persistent-flag parsing too.
+// --config is resolved here, not via cobra's PersistentFlags, because
+// DisableFlagParsing (set on several subcommands below) silently skips
+// inherited persistent-flag parsing too — a cobra-declared --config would be
+// accepted but discarded on those commands. Stops at "--" so that terminator
+// keeps its usual end-of-options meaning for whoever parses the remainder.
 func extractConfigDir(args []string) (configDir string, rest []string) {
 	configDir = config.DefaultConfigDir()
-	i := 0
-	for ; i < len(args); i++ {
-		if args[i] == "--config" && i+1 < len(args) {
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			rest = append(rest, args[i:]...)
+			break
+		}
+		if a == "--config" && i+1 < len(args) {
 			configDir = args[i+1]
 			i++
 			continue
 		}
-		if v, ok := strings.CutPrefix(args[i], "--config="); ok {
+		if v, ok := strings.CutPrefix(a, "--config="); ok {
 			configDir = v
 			continue
 		}
-		break
+		rest = append(rest, a)
 	}
-	return configDir, args[i:]
+	return configDir, rest
+}
+
+// helpRequested checks for a bare -h/--help token. DisableFlagParsing commands
+// never reach cobra's own help handling, so each must check for this itself
+// before treating args as positionals. Stops at "--" so an escaped literal
+// -h/--help positional isn't misread as a help request.
+func helpRequested(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "-h" || a == "--help" {
+			return true
+		}
+	}
+	return false
 }
 
 func newRootCmd(configDir string) *cobra.Command {
