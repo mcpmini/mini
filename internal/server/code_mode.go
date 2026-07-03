@@ -9,8 +9,9 @@ import (
 )
 
 type executeCodeRequest struct {
-	Code  string          `json:"code"`
-	Input json.RawMessage `json:"input"`
+	Code     string          `json:"code"`
+	Input    json.RawMessage `json:"input"`
+	Packages []string        `json:"packages"`
 }
 
 func (s *Server) handleExecuteCode(ctx context.Context, raw json.RawMessage) (any, error) {
@@ -21,7 +22,7 @@ func (s *Server) handleExecuteCode(ctx context.Context, raw json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
-	return forge.Execute(ctx, forge.Params{Code: req.Code, Input: req.Input})
+	return forge.Execute(ctx, forge.Params{Code: req.Code, Input: req.Input, Packages: req.Packages})
 }
 
 func parseExecuteCodeRequest(raw json.RawMessage) (executeCodeRequest, error) {

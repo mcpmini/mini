@@ -62,7 +62,11 @@ async function __run() {
   try {
     __result = await __fn(__input);
   } catch (e) {
-    return { error: { kind: "runtime", message: __describe(e) } };
+    let __msg = __describe(e);
+    if (__msg.includes("--cached-only")) {
+      __msg += " (this package must be listed in the packages parameter so the host can resolve it before execution)";
+    }
+    return { error: { kind: "runtime", message: __msg } };
   }
   if (__result === undefined) __result = null;
 
