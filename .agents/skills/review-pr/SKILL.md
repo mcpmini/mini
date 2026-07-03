@@ -10,26 +10,29 @@ Adversarial review of $ARGUMENTS (or the current branch diff if blank).
 
 Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REJECT.
 
+## Non-negotiables (apply to every pass)
+
+1. **No unproven findings.** A suspicion is not a finding. Each pass defines a proof standard; a finding that doesn't meet it gets investigated further or dropped — never reported at HIGH or MEDIUM with "could/might/may" language.
+2. **Re-verify before reporting.** For every finding, re-open the cited file at the cited line and confirm the code exists and says what you claim. A finding with a wrong line number or misquoted code is worse than no finding.
+3. **Pick up check.sh results.** Do not write the report until the background check suite from Step 0 has finished and you have read its log.
+4. **Verdict is mechanical.** Derive the verdict from the findings table using the rules at the end — never from overall impression.
+
 ## Step 0 — Gather the diff and check out the PR branch
 
-Use GitHub through mini's MCP integration or the mini CLI when possible to dogfood this repository's tooling. Otherwise, fall back to the `gh` CLI. Get the PR description, diff, and full file list.
-
-**Check out the PR branch in a dedicated worktree** so you can read the actual changed files (not the diff against your current branch) and run the check suite against the PR's code:
-
-1. Extract the PR number from the arguments (e.g. `1` from `https://github.com/mcpmini/mini/pull/1` or from `#1` or bare `1`).
-2. Fetch the PR's head ref via `git fetch origin <head-branch>`.
-3. Create a worktree: `git worktree add .agents/worktrees/review-pr-<number> FETCH_HEAD --detach`. Using detached HEAD means this works even if another worktree already has the branch checked out.
-4. Use the coding agent's native worktree support when available, e.g. Claude Code `EnterWorktree(path: ".agents/worktrees/review-pr-<number>")`. Otherwise, run subsequent commands from `.agents/worktrees/review-pr-<number>`.
-
-If the worktree already exists (e.g. from a prior review), enter it directly.
-
-Then **read every changed file in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
-
-Fire off the full check suite in the background — it covers build, staticcheck, golangci-lint, function length, parameter count, return value checks, and the race-detector test suite — then continue immediately with Pass 1:
-```bash
-./check.sh 2>&1 | tee /tmp/review-pr-check-$(date +%s).log
-```
-Run this with `run_in_background: true` and note the log path. You will be notified when it finishes. Pick up the results before writing the report — any failure introduced by the PR is a finding.
+1. Resolve the PR number from the arguments (`1` from `https://github.com/mcpmini/mini/pull/1`, from `#1`, or bare `1`). If the arguments are blank, review the current branch's diff against main in the current checkout and skip to step 5.
+2. Get the PR description, diff, and full file list. Use GitHub through mini's MCP integration or the mini CLI when possible to dogfood this repository's tooling; otherwise fall back to the `gh` CLI.
+3. Check out the PR head in a dedicated worktree so you review the PR's actual files (not the diff against your current branch) and run the check suite against the PR's code. If `.agents/worktrees/review-pr-<number>` already exists from a prior review, reuse it; otherwise:
+   ```bash
+   git fetch origin <head-branch>
+   git worktree add .agents/worktrees/review-pr-<number> FETCH_HEAD --detach
+   ```
+   Detached HEAD works even if another worktree already has the branch checked out.
+4. Enter the worktree — with Claude Code use `EnterWorktree(path: ".agents/worktrees/review-pr-<number>")`; otherwise run all subsequent commands from that directory.
+5. Fire off the full check suite in the background (`run_in_background: true`) and note the log path, then continue immediately with Pass 1. It covers build, staticcheck, golangci-lint, function length, parameter count, return value checks, and the race-detector test suite. You will be notified when it finishes; pick up the results before writing the report — any failure introduced by the PR is a finding.
+   ```bash
+   ./check.sh 2>&1 | tee /tmp/review-pr-check-$(date +%s).log
+   ```
+6. Read every changed file **in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
 
 ## Pass 1 — Triage
 
@@ -40,7 +43,13 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
 3. **Trust boundaries**: what new inputs arrive from outside (user, config, network, MCP tool args, env vars) and where do they land?
 4. **New control paths**: what new error paths, goroutine launches, or auth checks does the change introduce?
 5. **Candidate list**: for each of Passes 2a–2c, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
-6. **Call-site audit**: for every function or method whose signature, parameters, return contract, or behavior changes in this diff — including new helper functions immediately wired into multiple places — grep for *all* call sites, not just the ones visible in the diff hunks. For each call site, note: what conditional/state context surrounds it, what value it produces for the changed parameter/contract under the new behavior, and whether that's correct for this call site's purpose. List every call site explicitly — a function correct for the call site the author had in mind can be wrong for a call site that existed before the change, or a sibling call site added in the same diff. Carry any call site whose correctness is unclear into Pass 2c.
+6. **Call-site audit** — for every function or method whose signature, parameters, return contract, or behavior changes in this diff, including new helper functions immediately wired into multiple places:
+   a. Grep for *all* call sites — not just the ones visible in the diff hunks.
+   b. List every call site explicitly with file:line.
+   c. For each call site, note: what conditional/state context surrounds it, what value it produces for the changed parameter/contract under the new behavior, and whether that's correct for *this call site's* purpose.
+   d. Carry any call site whose correctness is unclear into Pass 2c.
+
+   A function correct for the call site the author had in mind can be wrong for a call site that existed before the change, or for a sibling call site added in the same diff.
 
 Produce a brief triage note to drive Passes 2–4. Do not write it into the final report.
 
@@ -100,7 +109,10 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 - `http.Server.Shutdown(context.Background())` — if any handler can block indefinitely (disabled tool timeout, hanging subprocess), the process never exits; always pass a bounded context
 - RLock held across a network call — blocks reconnect from taking the write lock; snapshot the pointer under the lock, release, then call
 
-**Blocking without guaranteed escape** — for every `select` that blocks on channels: trace every code path that closes or sends to each case channel. Are all equivalent calling paths (different transports, error returns, shutdown sequences, session eviction) guaranteed to eventually fire one of the cases? A `select` on `done | abort | ctx.Done()` where `abort` is only closed in the stdio path but not the HTTP path blocks forever on HTTP after session eviction or daemon restart. The race detector will not catch this. Also check: is there a deadline on the blocking context as a backstop even if the primary escape is missing?
+**Blocking without guaranteed escape** — for every `select` that blocks on channels:
+- Trace every code path that closes or sends to each case channel.
+- Verify *all* equivalent calling paths — different transports, error returns, shutdown sequences, session eviction — eventually fire one of the cases. Example: a `select` on `done | abort | ctx.Done()` where `abort` is only closed in the stdio path blocks forever on HTTP after session eviction or daemon restart. The race detector will not catch this.
+- Check for a deadline on the blocking context as a backstop even when the primary escape looks present.
 
 **Asymmetric cleanup across equivalent paths** — when a lifecycle action (closing a channel, calling a cancel func, calling `markAborted`, setting a flag) runs in one handling path, grep for the equivalent action in every other path that shares the same lifecycle. If `serveLoop` (stdio) calls `markAborted()` on exit but the HTTP handler never does, every HTTP session is stuck after eviction or restart.
 
@@ -254,6 +266,15 @@ Convention findings default to **MEDIUM** — the project has strict, explicit r
 - Unnecessary intermediate variables whose only purpose is naming an already-clear expression
 
 **Duplication (MEDIUM):** does the new code replicate logic that already exists elsewhere in the codebase? Grep for the pattern before flagging. Identical or near-identical functions/blocks copied across 2+ packages are MEDIUM — extract to a shared helper. Even 2 copies is worth flagging if the logic is non-trivial (> 3 lines); 3+ copies is always MEDIUM. Duplication is not a style nit — it's a correctness risk (one copy gets fixed, the others don't).
+
+## Pre-report gate
+
+Complete every item before writing the report:
+
+1. Read the check.sh log from Step 0 in full. Any failure introduced by the PR is a finding.
+2. For each candidate finding, re-read the cited code and confirm all three: the file:line is right, the quoted code matches, and the trigger scenario actually reaches that code. If any of the three can't be confirmed, drop the finding.
+3. For each finding, check the diff: is the issue introduced or made worse by this PR, or pre-existing? Pre-existing issues go in a one-line "Pre-existing (not blocking)" note and do not count toward the verdict.
+4. Confirm every Pass 1 candidate and every call site from the call-site audit was investigated. Anything skipped must be listed explicitly in the report as not investigated.
 
 ## Report
 

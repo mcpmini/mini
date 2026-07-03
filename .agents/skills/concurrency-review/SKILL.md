@@ -6,6 +6,10 @@ argument-hint: [file/package paths, or blank for full repo]
 
 Adversarial concurrency audit of $ARGUMENTS (default: the full repo). **Assume bugs exist. Work through every phase.** Output findings directly in the conversation.
 
+**Proof standard for every finding:** name the shared state, the two (or more) goroutines involved, and the concrete interleaving or blocking scenario — which paths run concurrently, what timing, what input. "Could race" or "might deadlock" is not a finding; investigate until you can state the scenario, or record it under Non-issues with the reason it's safe.
+
+In the grep commands below, `$PKGS` means the directories under review — the paths in $ARGUMENTS, or `./internal ./cmd` for a full-repo audit. Always pass explicit paths; `grep -rn 'pattern'` with no path hangs reading stdin.
+
 ---
 
 ## Phase 1 — Automated tools (always run first)
@@ -28,7 +32,7 @@ Record every failure verbatim. The race detector catches runtime races that manu
 `concurrent map read and map write` is a **hard fatal crash**, not a data race the detector reliably catches in all test configurations. Find every map accessed from multiple goroutines and verify lock coverage on **all** read paths including `range` iteration.
 
 ```bash
-grep -n 'range ' ...   # maps ranged — are they shared?
+rg -n 'range ' $PKGS   # maps ranged — are they shared across goroutines?
 ```
 
 Slices sharing a backing array under concurrent append are the same class.
@@ -90,7 +94,7 @@ Grep for every `go ` launch:
 `defer` fires on function return, not loop iteration. Deferred calls (file closes, mutex unlocks, connection closes) accumulate for the entire loop duration — a silent resource exhaustion bug at high volume.
 
 ```bash
-grep -n 'defer' ... # look for defers inside for/range blocks
+rg -n 'defer ' $PKGS   # look for defers inside for/range blocks
 ```
 
 ### Fan-out without bounded concurrency
@@ -184,21 +188,28 @@ Tests run with `t.Parallel()` share package-level state. Any global variable, pa
 ## Smell-test greps — run these, investigate every hit
 
 ```bash
-grep -rn 'go func()'               # no WaitGroup, done-channel, or context → orphan?
-grep -rn 'context\.Background()'   # inside spawned goroutine or blocking call?
-grep -rn 'time\.After('            # inside select loop → timer leak?
-grep -rn 'time\.Tick('             # always leaks — should be NewTicker
-grep -rn 'defer'                   # inside for/range → accumulates until return?
-grep -rn 'Shutdown(context\.Background' # blocks forever if handler hangs
-grep -rn '\.RLock()'               # followed by network/file I/O before RUnlock?
-grep -rn 'sync\.Pool'              # objects zeroed before Put?
-grep -rn '\.Load()' | grep '\.Store\|\.Add'  # compound atomic — needs CAS?
-grep -rn 'close(ch\|done\|abort)'  # without sync.Once nearby?
-grep -rn '\.Signal()'              # should this be Broadcast()?
-grep -rn 'go .*{' | grep 'for '   # fan-out in loop — bounded?
+rg -n 'go func\(' $PKGS                    # no WaitGroup, done-channel, or context → orphan?
+rg -n 'context\.(Background|TODO)\(\)' $PKGS  # inside spawned goroutine or blocking call?
+rg -n 'time\.After\(' $PKGS                # inside select loop → timer leak?
+rg -n 'time\.Tick\(' $PKGS                 # always leaks — should be NewTicker
+rg -n 'defer ' $PKGS                       # inside for/range → accumulates until return?
+rg -n 'Shutdown\(context\.Background' $PKGS  # blocks forever if handler hangs
+rg -n '\.RLock\(\)' $PKGS                  # followed by network/file I/O before RUnlock?
+rg -n 'sync\.Pool' $PKGS                   # objects zeroed before Put?
+rg -n '\.Load\(\)' $PKGS | rg '\.Store|\.Add'  # compound atomic — needs CAS?
+rg -n 'close\(' $PKGS                      # multiple potential closers without sync.Once?
+rg -n '\.Signal\(\)' $PKGS                 # should this be Broadcast()?
+rg -n '^\s*go ' $PKGS                      # inside a for loop or per-request handler → bounded?
 ```
 
 ---
+
+## Pre-report gate
+
+1. Collect the Phase 1 tool output; quote failures verbatim in the report.
+2. For each finding, re-open the cited file and confirm the line number and quoted code are correct.
+3. Check each finding against the proof standard: shared state named, goroutines named, interleaving stated. Anything that fails goes back for investigation or into Non-issues — not the report.
+4. Confirm every phase was worked, including Phase 7 (tests). If a phase surfaced nothing, say so in one line rather than omitting it.
 
 ## Report format
 

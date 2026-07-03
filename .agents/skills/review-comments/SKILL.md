@@ -22,9 +22,19 @@ git diff @{upstream}..HEAD --unified=0 -- '*.go'        # committed but unpushed
 Extract every added line (`+`) that is a comment or doc comment block. Skip comments that
 existed before this diff and were only moved or reflowed.
 
+For each candidate, open the file and read the full containing function or type — plus the
+containing struct's doc comment for field comments. Never judge a comment from the diff
+hunk alone; redundancy and false claims are only visible in the surrounding code.
+
 ## Step 2 — For each candidate, exhaust every alternative to keeping it
 
 Work through each alternative in order. If any applies, apply it and the comment is gone.
+
+**Keep a worksheet.** For every candidate, write one line as you go recording each
+alternative attempted and why it did not apply, e.g.
+`engine.go:42 — rename: no identifier carries it / extract: single stmt / test: exists / delete: makes a why-claim → verify claim → KEEP`.
+A Keep verdict without a recorded attempt at every prior alternative is invalid — go back
+and attempt them. The worksheet is also your Step 4 report.
 
 1. **Rename** — would a better function, variable, field, or type name make this comment
    unnecessary? If yes: rename and delete. Good names are free; comments have a cost.
@@ -100,7 +110,10 @@ Work through each alternative in order. If any applies, apply it and the comment
      even if they feel useful today. Low-drift comments about stable external constraints
      are safer to keep.
 
-   Expect to remove 80–90% of comments on a first pass through a diff.
+   Expect to remove 80–90% of comments on a first pass through a diff. **Calibration gate:**
+   if more than 1 in 5 candidates earned Keep, your bar is too low — re-audit every Keep
+   assuming the verdict is wrong, and for each state which specific external constraint it
+   documents that no rename, extraction, or test could capture.
 
    The one standing exception: `// Foo does X` doc comments on *exported* identifiers
    are Go convention. Keep them even when they read as "what." But do not over-apply this:

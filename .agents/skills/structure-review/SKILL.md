@@ -67,6 +67,17 @@ For each entry point, trace the complete execution flow end-to-end. Follow throu
 
 Write out the numbered flow list with the verb chain for each flow. This is the primary output of the review — the types, methods, and boundaries fall out of it directly.
 
+Format each flow entry like this (imitate the structure, not the content):
+
+```
+3. Recover daemon connection after auth failure
+   Trigger: request fails with 401 from the daemon
+   Chain: detect stale token → re-resolve daemon address → re-run handshake → replay original request
+   State: reads port file + token file; writes new session token
+   Failure variants: daemon gone (→ flow 4, spawn daemon); token refresh fails (→ surface auth error)
+   Termination: original caller receives the response or the auth error
+```
+
 ---
 
 ## Phase 3 — Derive the domain model from the flows
@@ -197,3 +208,5 @@ structure matches the domain. Prevents re-flagging in future reviews.]
 ```
 
 Focus findings on structural mismatches the flows reveal. Don't flag code that is well-structured for its domain — confirm it in non-issues.
+
+**Gate before writing the report:** every finding must cite the flow number(s) from Phase 2 that expose the mismatch. A finding you cannot tie to a mapped flow is bottom-up opinion — drop it or go back and map the flow that motivates it.
