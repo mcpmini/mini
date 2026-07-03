@@ -264,7 +264,8 @@ func classifyNumeric(nums []string, k string, v any) []string {
 	case float64:
 		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%s", k, formatFloat(sv)))
 	case json.Number:
-		return appendNumeric(nums, sv.String() != "0", fmt.Sprintf("%s:%s", k, sv.String()))
+		f, _ := sv.Float64()
+		return appendNumeric(nums, f != 0, fmt.Sprintf("%s:%s", k, sv.String()))
 	case int:
 		return appendNumeric(nums, sv != 0, fmt.Sprintf("%s:%d", k, sv))
 	case int64:

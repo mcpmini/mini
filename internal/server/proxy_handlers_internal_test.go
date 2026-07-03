@@ -95,11 +95,11 @@ func TestParseProxyRequest_ProjectionControlValues(t *testing.T) {
 	tests := []struct {
 		name      string
 		mini      string
-		want      ProjectionMode
+		want      projectionMode
 		wantError bool
 	}{
-		{name: "default", mini: `{"projection":"default"}`, want: ProjectionDefault},
-		{name: "raw", mini: `{"projection":"raw"}`, want: ProjectionRaw},
+		{name: "default", mini: `{"projection":"default"}`, want: projectionDefault},
+		{name: "raw", mini: `{"projection":"raw"}`, want: projectionRaw},
 		{name: "empty object", mini: `{}`, want: ""},
 		{name: "invalid value", mini: `{"projection":"summary"}`, wantError: true},
 	}

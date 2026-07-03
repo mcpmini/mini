@@ -55,19 +55,19 @@ type proxyRequest struct {
 	Controls proxyControls
 }
 
-type ProjectionMode string
+type projectionMode string
 
 const (
-	ProjectionDefault ProjectionMode = "default"
-	ProjectionRaw     ProjectionMode = "raw"
+	projectionDefault projectionMode = "default"
+	projectionRaw     projectionMode = "raw"
 )
 
-func (m ProjectionMode) Valid() bool {
-	return m == "" || m == ProjectionDefault || m == ProjectionRaw
+func (m projectionMode) Valid() bool {
+	return m == "" || m == projectionDefault || m == projectionRaw
 }
 
 type proxyControls struct {
-	Projection ProjectionMode
+	Projection projectionMode
 }
 
 func parseProxyRequest(raw json.RawMessage) (proxyRequest, error) {
@@ -130,7 +130,7 @@ func extractProxyControls(envelope map[string]json.RawMessage) (proxyControls, e
 		return proxyControls{}, nil
 	}
 	var c struct {
-		Projection ProjectionMode `json:"projection"`
+		Projection projectionMode `json:"projection"`
 	}
 	if err := json.Unmarshal(raw, &c); err != nil {
 		return proxyControls{}, fmt.Errorf("%w: __mini must be an object: %w", errInvalidParams, err)
@@ -163,7 +163,7 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
 	ep := envelopeParams{Entry: p.Entry, Tool: tool, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs}
-	ep.Bypass = p.Controls.Projection == ProjectionRaw
+	ep.Bypass = p.Controls.Projection == projectionRaw
 	return s.proxyProject(ep)
 }
 
