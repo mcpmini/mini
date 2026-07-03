@@ -294,6 +294,41 @@ func TestCLICall_ProjectionWritesFile(t *testing.T) {
 	}
 }
 
+func TestCLICall_NullResult_PreservesDataKey(t *testing.T) {
+	cfg := callSetup(t, map[string]string{"get_nothing": `null`})
+	stdout, _, code := runCLI(t, cfg, "call", "-j", "svc", "get_nothing")
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d\nstdout: %s", code, stdout)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(stdout), &raw); err != nil {
+		t.Fatalf("stdout not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	data, ok := raw["data"]
+	if !ok {
+		t.Fatalf("expected a 'data' key present even for a null result, got: %s", stdout)
+	}
+	if string(data) != "null" {
+		t.Errorf(`expected "data":null, got "data":%s`, data)
+	}
+}
+
+func TestCLICall_MiniFormat_ZeroValueSuppressed(t *testing.T) {
+	cfg := callSetup(t, map[string]string{
+		"list_items": `[{"count":0,"title":"Bug"},{"count":9,"title":"Feat"}]`,
+	})
+	stdout, _, code := runCLI(t, cfg, "call", "-m", "svc", "list_items")
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d", code)
+	}
+	if strings.Contains(stdout, "0 Bug") {
+		t.Errorf("expected zero-value 'count' suppressed to '-', got literal 0: %s", stdout)
+	}
+	if !strings.Contains(stdout, "- Bug") {
+		t.Errorf("expected zero-value row rendered as '- Bug', got: %s", stdout)
+	}
+}
+
 func TestCLICall_UnreachableServer_ExitsNonZero(t *testing.T) {
 	cfg := t.TempDir()
 	// HTTP transport is lazy — dial succeeds, error surfaces on first call (exit 1).
