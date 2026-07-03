@@ -5,6 +5,7 @@ package forge_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,6 +115,9 @@ func TestExecute_largeReturnValueIsOutputTooLargeNotRunnerError(t *testing.T) {
 	fe := asForgeError(t, err)
 	if fe.Kind != forge.KindOutputTooLarge {
 		t.Errorf("Kind = %q, want %q (a partial writeSync must not surface as \"no result emitted\")", fe.Kind, forge.KindOutputTooLarge)
+	}
+	if strings.Contains(fe.Console, "xxxx") {
+		t.Errorf("Console = %q, want the capped payload excluded from the console tail", fe.Console)
 	}
 }
 

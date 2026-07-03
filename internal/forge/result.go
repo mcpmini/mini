@@ -20,15 +20,21 @@ type harnessError struct {
 }
 
 func classify(result runResult, parentCtx, runCtx context.Context, marker string) (json.RawMessage, error) {
+	idx := bytes.LastIndex(result.stdout, []byte(marker))
 	if result.outputTooLarge {
+		// A capped oversized payload sits after the marker; only genuine
+		// pre-marker console output is worth echoing back.
+		console := result.stdout
+		if idx >= 0 {
+			console = result.stdout[:idx]
+		}
 		return nil, &Error{
 			Kind:    KindOutputTooLarge,
 			Message: "program output exceeded the 8MB limit",
-			Console: consoleTail(result.stdout, result.stderr),
+			Console: consoleTail(console, result.stderr),
 		}
 	}
 
-	idx := bytes.LastIndex(result.stdout, []byte(marker))
 	if idx < 0 {
 		return nil, classifyNoMarker(result, parentCtx, runCtx)
 	}
