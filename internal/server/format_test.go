@@ -169,8 +169,7 @@ func assertElisionLinesFile(t *testing.T, header string) {
 	}
 }
 
-// The response store is shared across format modes: a file written by mini-format must be readable via the proxy read tool.
-func TestLinesFormatBareKeyResolvesToReadableFile(t *testing.T) {
+func TestReadTool_ResolvesFileWrittenByCompactModeMiniFormat(t *testing.T) {
 	payload := `{"items":[{"id":1,"title":"bug"}],"secret":"hidden"}`
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()

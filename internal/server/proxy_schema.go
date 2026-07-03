@@ -100,7 +100,8 @@ type schemaScope struct {
 	Fallback func() map[string]any
 }
 
-// Adds a synthetic $id so internal $ref/$defs keep resolving once nested.
+// Nesting under args/data would break a client's $ref/$defs resolution unless
+// anchored by a fresh $id.
 func scopedSchema(s schemaScope) map[string]any {
 	schema := parseSchema(s.Raw, s.Fallback)
 	if _, hasID := schema["$id"]; !hasID {
