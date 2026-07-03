@@ -111,8 +111,11 @@ func executeCodeSchema() map[string]any {
 			"Returns the function's return value as JSON. Use for multi-step computation over data to keep " +
 			"intermediate results out of context.",
 		"inputSchema": schemaRequired(map[string]any{
-			"code":  prop("string", "Source of an async function"),
-			"input": map[string]any{"description": "JSON value passed as the function's argument"},
+			"code": prop("string", "Source of an async function"),
+			"input": map[string]any{
+				"type":        []string{"object", "array", "string", "number", "boolean", "null"},
+				"description": "JSON value passed as the function's argument",
+			},
 		}, "code"),
 	}
 }
