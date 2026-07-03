@@ -32,15 +32,24 @@ func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig
 	if sc.RuntimeAdded || sc.Auth != nil || !sc.IsHTTPTransport() || len(sc.Headers) > 0 {
 		return connErr
 	}
+	// Already marked: skip re-running the PRM probe and rewriting the marker on every
+	// reconnect backoff cycle against a persistently-401 upstream.
+	if config.IsOAuthDetected(s.configDir, sc.Name) {
+		return oauthRequiredError(sc.Name, connErr)
+	}
 	var uerr *transport.UnauthorizedError
 	if !errors.As(connErr, &uerr) || !auth.RequiresOAuth(ctx, sc.URL, uerr.WWWAuthenticate) {
 		return connErr
 	}
-	if err := auth.MarkOAuthDetected(s.configDir, sc.Name); err != nil {
+	if err := config.MarkOAuthDetected(s.configDir, sc.Name); err != nil {
 		s.logger.Warn("persist discovered oauth requirement", "server", sc.Name, "err", err)
 		return connErr
 	}
-	return fmt.Errorf("%s requires OAuth authorization (discovered via 401); run `mini auth %s`: %w", sc.Name, sc.Name, connErr)
+	return oauthRequiredError(sc.Name, connErr)
+}
+
+func oauthRequiredError(serverName string, connErr error) error {
+	return fmt.Errorf("%s requires OAuth authorization (discovered via 401); run `mini auth %s`: %w", serverName, serverName, connErr)
 }
 
 func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {

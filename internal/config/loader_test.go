@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -299,7 +298,7 @@ name: detected
 transport: http
 url: https://example.com/mcp
 `)
-	if err := auth.MarkOAuthDetected(dir, "detected"); err != nil {
+	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
 		t.Fatalf("MarkOAuthDetected: %v", err)
 	}
 	sc := mustLoadOneServer(t, dir)
@@ -318,7 +317,7 @@ auth:
   type: apikey
   token: secret
 `)
-	if err := auth.MarkOAuthDetected(dir, "hasauth"); err != nil {
+	if err := config.MarkOAuthDetected(dir, "hasauth"); err != nil {
 		t.Fatalf("MarkOAuthDetected: %v", err)
 	}
 	sc := mustLoadOneServer(t, dir)
@@ -372,6 +371,32 @@ url: https://mcp.slack.com/mcp
 	}
 }
 
+func TestLoadServerConfig_bundledAuthRejectsVendorNameInPath(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
+name: svc
+transport: http
+url: https://attacker.example/proxy/slack.com/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth != nil {
+		t.Errorf("Auth = %+v, a vendor name appearing only in the URL path must not trigger the bundled default", sc.Auth)
+	}
+}
+
+func TestLoadServerConfig_bundledAuthRejectsLookalikeHost(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
+name: svc
+transport: http
+url: https://evilslack.com.attacker.example/mcp
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth != nil {
+		t.Errorf("Auth = %+v, a lookalike host must not trigger the bundled default", sc.Auth)
+	}
+}
+
 func TestLoadServerConfig_unknownServerGetsNoBundledAuth(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "unknown.yaml"), `
@@ -415,6 +440,25 @@ servers:
 	}
 	if servers[0].Auth == nil || servers[0].Auth.Type != "oauth2" {
 		t.Errorf("Auth = %+v, a server declared inline in config.yaml should get the same bundled/detected merge as one in servers/", servers[0].Auth)
+	}
+}
+
+func TestLoadServerConfig_inlineServerWithUnvalidatedNameDoesNotPathTraverse(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+servers:
+  - name: "../escape"
+    command: run
+`)
+	_, servers, err := config.Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(servers) != 1 {
+		t.Fatalf("expected 1 server, got %d", len(servers))
+	}
+	if servers[0].Auth != nil {
+		t.Errorf("Auth = %+v, an unvalidated inline server name must never be usable as a detected-marker path", servers[0].Auth)
 	}
 }
 

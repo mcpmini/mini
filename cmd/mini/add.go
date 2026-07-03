@@ -165,38 +165,41 @@ func parseHeaders(pairs []string) map[string]string {
 }
 
 func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
-	sc, ok := loadServerConfigForAdd(configDir, name)
-	if !ok || !sc.IsHTTPTransport() {
+	scp, err := loadServerConfigForAdd(configDir, name)
+	if err != nil {
+		fmt.Fprintf(out, "warning: could not reload config to check for required auth: %v\n", err)
 		return
 	}
+	if scp == nil || !scp.IsHTTPTransport() {
+		return
+	}
+	sc := *scp
 	// Only probe if Auth is still unknown — config.Load already merges in bundled/detected
 	// auth, so a non-nil Auth here means there's nothing left to discover.
 	if sc.Auth == nil {
 		sc = probeAndReload(configDir, sc, out)
 	}
-	if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 {
+	// A hand-set header means the user already chose their own auth — never override it
+	// with an interactive OAuth flow, even for a known vendor's bundled default.
+	if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 || len(sc.Headers) > 0 {
 		return
 	}
 	authorizeServer(authorizeParams{configDir: configDir, name: name, sc: sc, out: out})
 }
 
-func loadServerConfigForAdd(configDir, name string) (config.ServerConfig, bool) {
+func loadServerConfigForAdd(configDir, name string) (*config.ServerConfig, error) {
 	_, servers, err := config.Load(configDir)
 	if err != nil {
-		return config.ServerConfig{}, false
+		return nil, err
 	}
-	sc := config.FindServer(servers, name)
-	if sc == nil {
-		return config.ServerConfig{}, false
-	}
-	return *sc, true
+	return config.FindServer(servers, name), nil
 }
 
 func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) config.ServerConfig {
 	connectErr := probeConnection(configDir, sc)
 	// Connecting may have triggered OAuth detection (markOAuthIfRequired) — reload to see it merged in.
-	reloaded, ok := loadServerConfigForAdd(configDir, sc.Name)
-	if !ok {
+	reloaded, err := loadServerConfigForAdd(configDir, sc.Name)
+	if err != nil || reloaded == nil {
 		return sc
 	}
 	switch {
@@ -207,7 +210,7 @@ func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) con
 	default:
 		fmt.Fprintf(out, "note: could not connect to %s yet; run `mini test` to retry\n", sc.Name)
 	}
-	return reloaded
+	return *reloaded
 }
 
 func probeConnection(configDir string, sc config.ServerConfig) error {

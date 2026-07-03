@@ -130,6 +130,18 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
+	t.Run("--header suppresses auto-authorize even for a bundled-vendor URL", func(t *testing.T) {
+		dir := t.TempDir()
+		var out bytes.Buffer
+		args := []string{"svc", "--url", "https://slack.com/mcp", "--header", "Authorization=Bearer xoxb-test"}
+		if err := runAdd(dir, args, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+		if strings.Contains(out.String(), "OAuth") {
+			t.Errorf("output = %q, an explicit --header should suppress the automatic OAuth flow for a known vendor", out.String())
+		}
+	})
+
 	t.Run("auto-authorize failure does not exit the process", func(t *testing.T) {
 		// This server 401s with a Bearer challenge on a loopback URL, which SSRF validation
 		// rejects during OAuth endpoint discovery — a real, reachable auto-authorize failure.
@@ -154,6 +166,24 @@ func TestRunAdd(t *testing.T) {
 		readServerYAML(t, dir, "myserver", &sc)
 		if sc.URL != oauthSrv.URL {
 			t.Errorf("URL = %q, server config should still have been written despite auto-authorize failing", sc.URL)
+		}
+	})
+
+	t.Run("warns instead of silently skipping when config reload fails", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "servers"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "servers", "broken.yaml"), []byte("not: valid: yaml: ["), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		var out bytes.Buffer
+		if err := runAdd(dir, []string{"svc", "--url", "https://example.com"}, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+		if !strings.Contains(out.String(), "warning:") {
+			t.Errorf("output = %q, want a warning when config reload fails instead of silence", out.String())
 		}
 	})
 

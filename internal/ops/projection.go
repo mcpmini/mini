@@ -14,7 +14,7 @@ import (
 
 func DetectProjectionKey(sc config.ServerConfig) string {
 	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
-	return defaults.DetectKey(cmdLine, strings.ToLower(sc.URL))
+	return defaults.DetectKey(cmdLine, sc.URL)
 }
 
 func InstallBundledProjection(configDir string, sc config.ServerConfig) {

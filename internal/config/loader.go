@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,18 +135,6 @@ func loadServerConfigs(dir string) ([]ServerConfig, error) {
 	return loadServerFiles(filterServerPaths(paths))
 }
 
-// ServerMetaPath is exported so internal/auth can write here directly —
-// internal/auth already imports internal/config, so the reverse import isn't possible.
-func ServerMetaPath(configDir, serverName string) string {
-	return filepath.Join(configDir, "internal", serverName+".meta.json")
-}
-
-// ServerMeta holds machine-detected facts about a server that don't belong in its
-// user-editable YAML.
-type ServerMeta struct {
-	OAuthDetected bool `json:"oauth_detected,omitempty"`
-}
-
 // mergeKnownAuth fills in Auth from a bundled default or a prior detection marker —
 // but never overrides a server's own auth: block.
 func mergeKnownAuth(dir string, servers []ServerConfig) {
@@ -167,7 +154,7 @@ func mergeKnownAuth(dir string, servers []ServerConfig) {
 
 func bundledAuth(sc ServerConfig) *AuthConfig {
 	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
-	key := defaults.DetectKey(cmdLine, strings.ToLower(sc.URL))
+	key := defaults.DetectKey(cmdLine, sc.URL)
 	if key == "" {
 		return nil
 	}
@@ -180,16 +167,6 @@ func bundledAuth(sc ServerConfig) *AuthConfig {
 		return nil
 	}
 	return &ac
-}
-
-func readServerMeta(configDir, serverName string) ServerMeta {
-	data, err := os.ReadFile(ServerMetaPath(configDir, serverName))
-	if err != nil {
-		return ServerMeta{}
-	}
-	var m ServerMeta
-	json.Unmarshal(data, &m) //nolint:errcheck
-	return m
 }
 
 func filterServerPaths(paths []string) []string {

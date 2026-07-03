@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
@@ -188,7 +187,7 @@ func TestReconnect_detectsOAuthRequirement(t *testing.T) {
 	fakeClock.Advance(time.Second)
 
 	deadline := time.Now().Add(5 * time.Second)
-	for !auth.IsOAuthDetected(configDir, "svc") {
+	for !config.IsOAuthDetected(configDir, "svc") {
 		if time.Now().After(deadline) {
 			t.Fatal("timed out waiting for the reconnect path to detect the OAuth requirement")
 		}
