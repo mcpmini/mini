@@ -39,6 +39,16 @@ type HTTPConnection struct {
 // slow tools (tool_timeout > 60s) should set http_client_timeout in their server YAML.
 const defaultHTTPClientTimeout = 60 * time.Second
 
+// UnauthorizedError carries the WWW-Authenticate header from a 401 response so callers
+// can distinguish an OAuth challenge (RFC 9728 §5.1) from a bare auth failure.
+type UnauthorizedError struct {
+	WWWAuthenticate string
+}
+
+func (e *UnauthorizedError) Error() string {
+	return fmt.Sprintf("unauthorized (WWW-Authenticate: %q)", e.WWWAuthenticate)
+}
+
 type HTTPConnectionConfig struct {
 	URL     string
 	Headers map[string]string
@@ -203,7 +213,15 @@ func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string) (po
 			delay:     parseRetryAfter(resp.Header.Get("Retry-After"), c.clock.Now()),
 		}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
 	}
-	return postResult{}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
+	return postResult{}, nonRetryableHTTPError(resp, method, errBody)
+}
+
+func nonRetryableHTTPError(resp *http.Response, method string, errBody []byte) error {
+	if resp.StatusCode != http.StatusUnauthorized {
+		return fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
+	}
+	return fmt.Errorf("http %s: status %d: %w", method, resp.StatusCode,
+		&UnauthorizedError{WWWAuthenticate: resp.Header.Get("WWW-Authenticate")})
 }
 
 func isRetryableStatus(statusCode int) bool {

@@ -64,6 +64,7 @@ add flags:
   --cmd CMD [ARGS]    Stdio command (default if no --url)
   --header K=V        HTTP header (repeatable)
   --protected TOOL    Mark tool as protected (repeatable)
+  --no-connect        Skip the post-add connectivity check and OAuth authorization
   --from-claude PATH  Import from Claude Desktop / Claude Code config JSON
   --from-cursor PATH  Import from Cursor mcp.json
   --from-codex PATH   Import from Codex config.toml

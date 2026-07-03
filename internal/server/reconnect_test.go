@@ -160,6 +160,41 @@ func TestReconnect_successAfterFailure(t *testing.T) {
 	assertEnvelopeOK(t, srv, "svc", "ping", true)
 }
 
+func TestReconnect_detectsOAuthRequirement(t *testing.T) {
+	oauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer oauthSrv.Close()
+
+	configDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	fakeClock := clock.NewFake()
+	srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock))
+	defer srv.Close()
+
+	var errOnCall bool
+	srv.AddConnection(context.Background(), config.ServerConfig{
+		Name: "svc", Transport: "http", URL: oauthSrv.URL,
+	}, makeErrConn(&errOnCall))
+	errOnCall = true
+	assertEnvelopeOK(t, srv, "svc", "ping", false)
+
+	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatalf("waiting for reconnect timer: %v", err)
+	}
+	fakeClock.Advance(time.Second)
+
+	deadline := time.Now().Add(5 * time.Second)
+	for !config.IsOAuthDetected(configDir, "svc") {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for the reconnect path to detect the OAuth requirement")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func writeToolsCallResp(w http.ResponseWriter, id any, callsSeen int, rpcErrOnCall *int) {
 	if *rpcErrOnCall > 0 && callsSeen == *rpcErrOnCall {
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32602, "message": "bad args"}}) //nolint:errcheck

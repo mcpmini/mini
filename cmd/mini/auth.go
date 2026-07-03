@@ -59,20 +59,28 @@ type pkceFlowParams struct {
 }
 
 func runPKCEFlow(p pkceFlowParams) {
+	token, err := doPKCEFlow(p)
+	if err != nil {
+		fatalf("%v", err)
+	}
+	printAuthResult(p.serverName, token.Expiry)
+}
+
+func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", p.serverName)
 	if err := auth.ResolveEndpoints(ctx, p.configDir, p.serverName, p.sc); err != nil {
-		fatalf("resolve oauth config: %v", err)
+		return nil, fmt.Errorf("resolve oauth config: %w", err)
 	}
 	token, err := auth.PKCEFlow(ctx, p.sc.Auth, p.opener)
 	if err != nil {
-		fatalf("auth flow: %v", err)
+		return nil, fmt.Errorf("auth flow: %w", err)
 	}
 	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
-		fatalf("save token: %v", err)
+		return nil, fmt.Errorf("save token: %w", err)
 	}
-	printAuthResult(p.serverName, token.Expiry)
+	return token, nil
 }
 
 func authOpener(perServerCmd, globalCmd string, disabled bool) func(string) error {
@@ -104,7 +112,7 @@ func printAuthResult(name string, expiry time.Time) {
 func injectOAuthTokens(ctx context.Context, configDir string, servers []config.ServerConfig) {
 	for i := range servers {
 		sc := &servers[i]
-		if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+		if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 {
 			continue
 		}
 		injectToken(ctx, configDir, sc)

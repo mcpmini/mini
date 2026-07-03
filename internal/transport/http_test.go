@@ -5,6 +5,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -153,6 +154,26 @@ func TestHTTPConnection_4xxError(t *testing.T) {
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	expectCallErrorContains(t, conn, "401")
+}
+
+func TestHTTPConnection_401WrapsUnauthorizedError(t *testing.T) {
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://example.com/.well-known/oauth-protected-resource"`)
+		http.Error(w, "not authorized", http.StatusUnauthorized)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected call error")
+	}
+	var uerr *UnauthorizedError
+	if !errors.As(err, &uerr) {
+		t.Fatalf("expected error to wrap *UnauthorizedError, got: %v", err)
+	}
+	want := `Bearer resource_metadata="https://example.com/.well-known/oauth-protected-resource"`
+	if uerr.WWWAuthenticate != want {
+		t.Errorf("WWWAuthenticate = %q, want %q", uerr.WWWAuthenticate, want)
+	}
 }
 
 func TestHTTPConnection_5xxError(t *testing.T) {

@@ -125,12 +125,16 @@ func asURLFromPRMProbe(ctx context.Context, serverURL string) (asRef, error) {
 	return probePRMCandidates(ctx, base, strings.TrimRight(u.Path, "/"))
 }
 
-func probePRMCandidates(ctx context.Context, base, path string) (asRef, error) {
+func prmCandidateURLs(base, path string) []string {
 	candidates := []string{base + "/.well-known/oauth-protected-resource" + path}
 	if path != "" {
 		candidates = append(candidates, base+"/.well-known/oauth-protected-resource")
 	}
-	for _, c := range candidates {
+	return candidates
+}
+
+func probePRMCandidates(ctx context.Context, base, path string) (asRef, error) {
+	for _, c := range prmCandidateURLs(base, path) {
 		ref, err := fetchASURLFromPRM(ctx, c)
 		if err != nil {
 			return asRef{}, err
@@ -276,3 +280,28 @@ func doDiscoveryRequest(ctx context.Context, metaURL string) (*http.Response, er
 }
 
 const maxAuthBodyBytes = 64 << 10
+
+// RequiresOAuth reports whether a 401 from serverURL is confirmed (per RFC 9728) to need OAuth.
+func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool {
+	scheme := strings.ToLower(strings.TrimSpace(wwwAuthenticate))
+	if strings.HasPrefix(scheme, "bearer") {
+		return true
+	}
+	if scheme != "" {
+		// A non-Bearer scheme (Basic, Digest, ...) is decisive on its own — a PRM document
+		// that happens to exist at the same origin doesn't apply to this specific challenge.
+		return false
+	}
+	u, err := url.Parse(serverURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return false
+	}
+	base := u.Scheme + "://" + u.Host
+	path := strings.TrimRight(u.Path, "/")
+	for _, c := range prmCandidateURLs(base, path) {
+		if ref, _ := fetchASURLFromPRM(ctx, c); ref.URL != "" {
+			return true
+		}
+	}
+	return false
+}

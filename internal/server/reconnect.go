@@ -74,10 +74,11 @@ func (s *Server) dialForReconnect(u *upstreamServer) (transport.Connection, erro
 
 func (s *Server) listToolsForReconnect(u *upstreamServer, conn transport.Connection) ([]transport.ToolDefinition, error) {
 	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
+	defer cancel()
 	tools, err := conn.ListTools(ctx)
-	cancel()
 	if err != nil {
 		conn.Close()
+		err = s.markOAuthIfRequired(ctx, u.cfg, err)
 		s.logger.Warn("reconnect list tools failed", "server", u.cfg.Name, "err", err)
 	}
 	return tools, err

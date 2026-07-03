@@ -8,7 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/defaults"
 )
 
 // WriteServer validates name, writes servers/<name>.yaml, and installs a
@@ -17,30 +16,11 @@ func WriteServer(configDir string, sc config.ServerConfig) error {
 	if !config.ValidServerName.MatchString(sc.Name) {
 		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", sc.Name)
 	}
-	if err := applyBundledAuth(&sc); err != nil {
-		return err
-	}
 	if err := writeServerYAML(configDir, sc); err != nil {
 		return err
 	}
 	InstallBundledProjection(configDir, sc)
 	installBundledPermissions(configDir, sc)
-	return nil
-}
-
-func applyBundledAuth(sc *config.ServerConfig) error {
-	if sc.Auth != nil {
-		return nil
-	}
-	data := defaults.AuthFor(sc.Name)
-	if data == nil {
-		return nil
-	}
-	var ac config.AuthConfig
-	if err := yaml.Unmarshal(data, &ac); err != nil {
-		return fmt.Errorf("parse bundled auth for %s: %w", sc.Name, err)
-	}
-	sc.Auth = &ac
 	return nil
 }
 
@@ -58,7 +38,8 @@ func writeServerYAML(configDir string, sc config.ServerConfig) error {
 	return nil
 }
 
-// DeleteServer removes servers/<name>.yaml.
+// DeleteServer removes servers/<name>.yaml and any oauth-detected marker for it —
+// otherwise a later server reusing the same name would inherit stale auth state.
 func DeleteServer(configDir, name string) error {
 	if !config.ValidServerName.MatchString(name) {
 		return fmt.Errorf("invalid server name %q: must match ^[a-zA-Z0-9_-]+$", name)
@@ -67,5 +48,6 @@ func DeleteServer(configDir, name string) error {
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove %s: %w", path, err)
 	}
+	os.Remove(config.ServerMetaPath(configDir, name)) //nolint:errcheck
 	return nil
 }

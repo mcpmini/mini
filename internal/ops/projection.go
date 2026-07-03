@@ -12,38 +12,9 @@ import (
 	"github.com/mcpmini/mini/internal/defaults"
 )
 
-type serverMatcher struct {
-	projection string
-	urlParts   []string
-	cmdParts   []string
-}
-
-var knownServers = []serverMatcher{
-	{projection: "github", urlParts: []string{"github.com", "githubcopilot.com"}, cmdParts: []string{"server-github"}},
-	{projection: "slack", urlParts: []string{"slack.com"}, cmdParts: []string{"server-slack", "slack-mcp"}},
-	{projection: "atlassian", urlParts: []string{"atlassian.net", "atlassian.com", "jira.com"}, cmdParts: []string{"mcp-atlassian", "server-jira", "confluence-mcp"}},
-	{projection: "linear", urlParts: []string{"linear.app"}, cmdParts: []string{"server-linear", "linear-mcp"}},
-	{projection: "sentry", urlParts: []string{"sentry.io"}, cmdParts: []string{"server-sentry"}},
-}
-
 func DetectProjectionKey(sc config.ServerConfig) string {
 	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
-	urlLower := strings.ToLower(sc.URL)
-	for _, m := range knownServers {
-		if containsAny(urlLower, m.urlParts) || containsAny(cmdLine, m.cmdParts) {
-			return m.projection
-		}
-	}
-	return ""
-}
-
-func containsAny(s string, parts []string) bool {
-	for _, p := range parts {
-		if strings.Contains(s, p) {
-			return true
-		}
-	}
-	return false
+	return defaults.DetectKey(cmdLine, sc.URL)
 }
 
 func InstallBundledProjection(configDir string, sc config.ServerConfig) {

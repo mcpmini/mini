@@ -9,7 +9,7 @@ import (
 )
 
 func ValidateOAuthServer(serverName string, sc config.ServerConfig) error {
-	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
+	if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 {
 		return fmt.Errorf("server %q does not have oauth2 auth configured", serverName)
 	}
 	return nil
