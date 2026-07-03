@@ -137,6 +137,33 @@ func TestCLI_unknownCommand(t *testing.T) {
 	}
 }
 
+func TestCLI_rm_missingName_exitsTwo(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	_, _, code := run(t, bin, cfg, "rm")
+	if code != 2 {
+		t.Errorf("rm with no NAME should exit 2, got %d", code)
+	}
+}
+
+func TestCLI_auth_missingName_exitsTwo(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	_, _, code := run(t, bin, cfg, "auth")
+	if code != 2 {
+		t.Errorf("auth with no server name should exit 2, got %d", code)
+	}
+}
+
+func TestCLI_ls_tooManyArgs_exitsTwo(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	_, _, code := run(t, bin, cfg, "ls", "a", "b", "c")
+	if code != 2 {
+		t.Errorf("ls with 3 args should exit 2, got %d", code)
+	}
+}
+
 func TestCLI_test_noServers(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()

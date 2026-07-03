@@ -32,6 +32,27 @@ func TestCLIUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestCLIRmMissingName_ExitsTwo(t *testing.T) {
+	_, _, code := runCLI(t, t.TempDir(), "rm")
+	if code != 2 {
+		t.Errorf("rm with no NAME should exit 2, got %d", code)
+	}
+}
+
+func TestCLIAuthMissingName_ExitsTwo(t *testing.T) {
+	_, _, code := runCLI(t, t.TempDir(), "auth")
+	if code != 2 {
+		t.Errorf("auth with no server name should exit 2, got %d", code)
+	}
+}
+
+func TestCLILsTooManyArgs_ExitsTwo(t *testing.T) {
+	_, _, code := runCLI(t, t.TempDir(), "ls", "a", "b", "c")
+	if code != 2 {
+		t.Errorf("ls with 3 args should exit 2, got %d", code)
+	}
+}
+
 func TestCLIConnectInvalidConfig(t *testing.T) {
 	cfg := t.TempDir()
 	os.WriteFile(filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"), 0644)
