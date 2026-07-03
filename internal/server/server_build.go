@@ -41,7 +41,7 @@ func newServer(cfg *config.Config, configDir string, projections map[string]map[
 		removeGen:    make(map[string]uint64),
 		projections:  projections,
 		projDefaults: projection.DefaultsFrom(cfg),
-		toolSchemas:  compactToolSchemas(),
+		toolSchemas:  toolSchemasFor(cfg),
 		authFlows:    make(map[string]*authFlowState),
 		logger:       logger,
 		clock:        clock.System(),

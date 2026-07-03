@@ -292,7 +292,11 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 
 func (s *Server) handleToolsList(session *Session) (any, error) {
 	if session.toolMode() == transport.ToolModeProxy {
-		return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
+		tools := buildProxyToolSchemas(s.reg.AllFull())
+		if s.cfg.ExperimentalCodeMode {
+			tools = append(tools, executeCodeSchema())
+		}
+		return map[string]any{"tools": tools}, nil
 	}
 	return map[string]any{"tools": s.toolSchemas}, nil
 }
@@ -356,6 +360,8 @@ func (s *Server) routeStandardTool(ctx context.Context, name string, args json.R
 		return s.handleExecuteProtected(ctx, args, session)
 	case "config":
 		return s.handleConfigure(ctx, args, session)
+	case "execute_code":
+		return s.handleExecuteCode(ctx, args)
 	default:
 		return nil, fmt.Errorf("%w: unknown tool: %s", errInvalidParams, name)
 	}
