@@ -67,29 +67,37 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 		}
 		return
 	}
+	// Registration must happen here on the scanner goroutine, not inside the request
+	// goroutine: a notifications/cancelled on a later line would otherwise race the
+	// registration and silently lose the cancellation.
+	ctx, finish := registerCancellable(p.ctx, line, p.session)
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		s.dispatchWithCancel(p.ctx, line, p.session, p.writeOut)
+		defer finish()
+		if resp, send := s.handleLine(ctx, line, p.session); send {
+			p.writeOut(resp)
+		}
 	}()
 }
 
-func (s *Server) handleLineCancellable(ctx context.Context, line []byte, session *Session) (transport.Response, bool) {
+func registerCancellable(ctx context.Context, line []byte, session *Session) (context.Context, func()) {
 	rawID := peekRequestID(line)
 	if len(rawID) == 0 {
-		return s.handleLine(ctx, line, session)
+		return ctx, func() {}
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	session.registerInFlight(rawID, cancel)
-	defer session.removeInFlight(rawID)
-	return s.handleLine(ctx, line, session)
+	return ctx, func() {
+		session.removeInFlight(rawID)
+		cancel()
+	}
 }
 
-func (s *Server) dispatchWithCancel(ctx context.Context, line []byte, session *Session, writeOut func(any)) {
-	if resp, send := s.handleLineCancellable(ctx, line, session); send {
-		writeOut(resp)
-	}
+func (s *Server) handleLineCancellable(ctx context.Context, line []byte, session *Session) (transport.Response, bool) {
+	ctx, finish := registerCancellable(ctx, line, session)
+	defer finish()
+	return s.handleLine(ctx, line, session)
 }
 
 func peekMethod(line []byte) string {
