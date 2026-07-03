@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +10,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"github.com/spf13/cobra"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -20,6 +21,40 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
+
+const callLongHelp = `Invoke a tool directly, bypassing the list/call MCP interface.
+
+  -j    JSON output (projected envelope, default)
+  -m    mini format (compact key:value)
+  -r    raw upstream response, no projection
+
+PARAMS is a JSON string or - to read from stdin. Use -- to pass a literal
+SERVER, TOOL, or PARAMS value that would otherwise be read as a flag, e.g.
+mini call svc -- -r`
+
+func newCallCmd(configDir string) *cobra.Command {
+	return &cobra.Command{
+		Use:                "call SERVER TOOL [PARAMS]",
+		Short:              "Invoke an open tool directly (exit 1 on tool error)",
+		Long:               callLongHelp,
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runCall(configDir, args)
+			return nil
+		},
+	}
+}
+
+func newPermCallCmd(configDir string) *cobra.Command {
+	cmd := newCallCmd(configDir)
+	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
+	cmd.Short = "Invoke a protected tool directly"
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		runPermCall(configDir, args)
+		return nil
+	}
+	return cmd
+}
 
 func runCall(configDir string, args []string) {
 	runCallCmd(configDir, args, false)
@@ -79,13 +114,25 @@ func parseCallContext(configDir string, args []string) (callFlags, callContext) 
 }
 
 func parseCallFlags(args []string) (callFlags, []string) {
-	fs := flag.NewFlagSet("call", flag.ExitOnError)
 	f := callFlags{}
-	fs.BoolVar(&f.json, "j", false, "JSON output (projected envelope, default)")
-	fs.BoolVar(&f.mini, "m", false, "mini format (compact key:value)")
-	fs.BoolVar(&f.raw, "r", false, "raw upstream response, no projection")
-	fs.Parse(args) //nolint:errcheck
-	return f, fs.Args()
+	var pos []string
+	for i, a := range args {
+		if a == "--" {
+			pos = append(pos, args[i+1:]...)
+			break
+		}
+		switch a {
+		case "-j":
+			f.json = true
+		case "-m":
+			f.mini = true
+		case "-r":
+			f.raw = true
+		default:
+			pos = append(pos, a)
+		}
+	}
+	return f, pos
 }
 
 func resolveCallPos(pos []string) (serverName, toolName string, params map[string]any) {

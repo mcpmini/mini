@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -23,6 +25,47 @@ type stringSlice []string
 func (s *stringSlice) String() string     { return strings.Join(*s, ", ") }
 func (s *stringSlice) Set(v string) error { *s = append(*s, v); return nil }
 
+const addLongHelp = `Add a server by name with an HTTP/SSE URL or a stdio command, or import
+servers from another agent's config.
+
+Flags:
+  --url URL             HTTP/SSE server URL
+  --header K=V          HTTP header (repeatable)
+  --protected TOOL      Mark tool as protected (repeatable)
+  --no-connect          Skip the post-add connectivity check and OAuth authorization
+  --from-claude PATH    Import from Claude Desktop / Claude Code config JSON
+  --from-cursor PATH    Import from Cursor mcp.json
+  --from-codex PATH     Import from Codex config.toml
+  --from-gemini PATH    Import from Gemini CLI settings.json
+  --from-openclaw PATH  Import from OpenClaw (MoltBot) openclaw.json config
+
+The stdio command is positional, given after NAME with no leading flag, e.g.:
+mini add gh npx -y server-github`
+
+func newAddCmd(configDir string) *cobra.Command {
+	return &cobra.Command{
+		Use:                "add NAME [--url URL | CMD ARGS...] [flags]",
+		Short:              "Add a server",
+		Long:               addLongHelp,
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdd(configDir, args, cmd.OutOrStdout())
+		},
+	}
+}
+
+func newRmCmd(configDir string) *cobra.Command {
+	return &cobra.Command{
+		Use:                "rm NAME",
+		Aliases:            []string{"remove"},
+		Short:              "Remove a server",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRemove(configDir, args, cmd.OutOrStdout())
+		},
+	}
+}
+
 func runAdd(configDir string, args []string, out io.Writer) error {
 	remaining, fromFlags, err := parseImportFlags(args, out)
 	if err != nil {
@@ -36,7 +79,7 @@ func runAdd(configDir string, args []string, out io.Writer) error {
 
 func addByName(configDir string, remaining []string, out io.Writer) error {
 	if len(remaining) == 0 {
-		return fmt.Errorf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
+		return usageErrf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
 	}
 	sf, err := parseServerFlags(remaining, out)
 	if err != nil {
@@ -112,7 +155,7 @@ func addNamedServer(configDir string, sf serverFlags, out io.Writer) error {
 		return nil
 	}
 	if len(sf.cmdArgs) == 0 {
-		return fmt.Errorf("provide --url or a command after NAME")
+		return usageErrf("provide --url or a command after NAME")
 	}
 	return importers.WriteServerYAML(configDir, sf.name, stdioServerYAML(sf.name, sf.cmdArgs, sf.protected))
 }
@@ -145,7 +188,7 @@ func permissionsYAML(protected stringSlice) *importers.PermissionsYAML {
 
 func runRemove(configDir string, args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: mini rm NAME")
+		return usageErrf("usage: mini rm NAME")
 	}
 	name := args[0]
 	if err := ops.DeleteServer(configDir, name); err != nil {

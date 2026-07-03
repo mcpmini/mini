@@ -2,21 +2,37 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 	"time"
 
 	"golang.org/x/oauth2"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func runAuth(configDir string, args []string) {
-	fs := flag.NewFlagSet("auth", flag.ExitOnError)
-	fs.Parse(args)
-	serverName := requireAuthServer(fs)
+func newAuthCmd(configDir string) *cobra.Command {
+	return &cobra.Command{
+		Use:                "auth NAME",
+		Short:              "Authorize a server via OAuth2 (PKCE flow)",
+		DisableFlagParsing: true,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return usageErrf("usage: mini auth <server-name>")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runAuth(configDir, args[0])
+			return nil
+		},
+	}
+}
+
+func runAuth(configDir, serverName string) {
 	cfg, sc, err := loadOAuthServerAndConfig(configDir, serverName)
 	if err != nil {
 		fatalf("%v", err)
@@ -27,13 +43,6 @@ func runAuth(configDir string, args []string) {
 		opener:     authOpener(sc.Auth.BrowserCmd, cfg.BrowserCommand, cfg.DisableAuthBrowserOpen),
 		sc:         sc,
 	})
-}
-
-func requireAuthServer(fs *flag.FlagSet) string {
-	if fs.NArg() == 0 {
-		fatalf("usage: mini auth <server-name>")
-	}
-	return fs.Arg(0)
 }
 
 func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *config.ServerConfig, error) {

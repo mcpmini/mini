@@ -4,9 +4,21 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/ops"
 )
+
+func newCleanupCmd(configDir string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "cleanup",
+		Short: "Delete expired response files",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCleanup(configDir, cmd.OutOrStdout(), clock.System())
+		},
+	}
+}
 
 func runCleanup(configDir string, out io.Writer, clock clock.Clock) error {
 	removed, freed, err := ops.PurgeExpiredResponses(configDir, clock.Now())

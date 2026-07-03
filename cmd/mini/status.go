@@ -10,9 +10,34 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
+
+func newLsCmd(configDir string) *cobra.Command {
+	return &cobra.Command{
+		Use:                "ls [SERVER] [TOOL]",
+		Aliases:            []string{"list"},
+		Short:              "List servers, server tools, or tool detail",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runList(configDir, args, cmd.OutOrStdout())
+		},
+	}
+}
+
+func newStatusCmd(configDir string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show server health",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runStatus(configDir)
+			return nil
+		},
+	}
+}
 
 func runList(configDir string, args []string, out io.Writer) error {
 	switch len(args) {
@@ -23,7 +48,7 @@ func runList(configDir string, args []string, out io.Writer) error {
 	case 2:
 		return listToolDetail(toolDetailParams{ConfigDir: configDir, ServerName: args[0], ToolName: args[1], Out: out})
 	default:
-		return fmt.Errorf("usage: mini ls [SERVER [TOOL]]")
+		return usageErrf("usage: mini ls [SERVER [TOOL]]")
 	}
 }
 

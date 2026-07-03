@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,127 +13,20 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/proxy"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
-	"github.com/mcpmini/mini/internal/version"
 )
 
 const standaloneHTTPSessionMaxIdle = 30 * time.Minute
 
 type sessionEvictor interface {
 	RunSessionEviction(context.Context, time.Duration)
-}
-
-var usageText = `usage: mini [--config DIR] [--version] <command>
-
-commands:
-  connect [flags]                Connect an agent to mini (stdio MCP)
-  daemon                         Run as a shared background daemon (HTTP)
-  daemon status                  Show whether the daemon is running
-  ls / list [SERVER [TOOL]]      List servers, server tools, or tool detail
-  add NAME [flags]               Add a server
-  rm / remove NAME               Remove a server
-  status                         Show server health
-  cleanup                        Delete expired response files
-  auth NAME                      Authorize a server via OAuth2 (PKCE flow)
-  test [--timeout T]             CI-safe health check (exits 1 on any failure)
-  init / setup [--yes]           Interactive setup wizard
-  call SERVER TOOL [PARAMS]      Invoke an open tool directly (exit 1 on tool error)
-  perm-call SERVER TOOL [PARAMS] Invoke a protected tool directly
-  version                        Print version
-
-connect flags:
-  --http ADDR         Also serve HTTP MCP on ADDR; bare port or :port binds to loopback
-  --standalone        Skip daemon detection, serve directly
-  --tool-mode <proxy|compact>  proxy (default): expose upstream tools directly; compact: four-meta-tool interface
-  --dangerous-nonloopback-http  Allow --http to bind to non-loopback (all clients must be trusted)
-
-call / perm-call flags:
-  -j    JSON output (projected envelope, default)
-  -m    mini format (compact key:value)
-  -r    raw upstream response, no projection
-  PARAMS is a JSON string or - to read from stdin
-
-add flags:
-  --url URL           HTTP/SSE server URL
-  --cmd CMD [ARGS]    Stdio command (default if no --url)
-  --header K=V        HTTP header (repeatable)
-  --protected TOOL    Mark tool as protected (repeatable)
-  --no-connect        Skip the post-add connectivity check and OAuth authorization
-  --from-claude PATH  Import from Claude Desktop / Claude Code config JSON
-  --from-cursor PATH  Import from Cursor mcp.json
-  --from-codex PATH   Import from Codex config.toml
-  --from-gemini PATH  Import from Gemini CLI settings.json`
-
-func main() {
-	fs := flag.NewFlagSet("mini", flag.ContinueOnError)
-	configDir := fs.String("config", config.DefaultConfigDir(), "config directory")
-	versionFlag := fs.Bool("version", false, "print version and exit")
-	fs.Usage = usage
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		os.Exit(2)
-	}
-	if *versionFlag {
-		fmt.Println(version.Version)
-		return
-	}
-	dispatch(*configDir, fs.Args())
-}
-
-var commands = map[string]func(string, []string){
-	"connect":   runConnect,
-	"daemon":    runDaemonCmd,
-	"ls":        func(dir string, args []string) { mustRun(runList(dir, args, os.Stdout)) },
-	"list":      func(dir string, args []string) { mustRun(runList(dir, args, os.Stdout)) },
-	"add":       func(dir string, args []string) { mustRun(runAdd(dir, args, os.Stdout)) },
-	"rm":        func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
-	"remove":    func(dir string, args []string) { mustRun(runRemove(dir, args, os.Stdout)) },
-	"status":    func(dir string, _ []string) { runStatus(dir) },
-	"cleanup":   func(dir string, _ []string) { mustRun(runCleanup(dir, os.Stdout, clock.System())) },
-	"auth":      runAuth,
-	"test":      runTest,
-	"init":      runInit,
-	"setup":     runInit,
-	"call":      runCall,
-	"perm-call": runPermCall,
-	"version":   func(_ string, _ []string) { fmt.Println(version.Version) },
-}
-
-func mustRun(err error) {
-	if err != nil {
-		fatalf("%v", err)
-	}
-}
-
-func dispatch(configDir string, args []string) {
-	if len(args) == 0 {
-		fmt.Println(usageText)
-		return
-	}
-	cmd, args := args[0], args[1:]
-	run, ok := commands[cmd]
-	if !ok {
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		usage()
-		os.Exit(2)
-	}
-	run(configDir, args)
-}
-
-func runDaemonCmd(configDir string, args []string) {
-	if len(args) > 0 && args[0] == "status" {
-		runDaemonStatus(configDir)
-	} else {
-		runDaemon(configDir, args)
-	}
-}
-
-func usage() {
-	fmt.Fprintln(os.Stderr, usageText)
 }
 
 type connectFlags struct {
@@ -145,15 +37,25 @@ type connectFlags struct {
 	toolMode          transport.ToolMode
 }
 
-func parseConnectFlags(args []string) connectFlags {
-	fs := flag.NewFlagSet("connect", flag.ExitOnError)
-	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
-	httpAddr := fs.String("http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
-	standalone := fs.Bool("standalone", false, "skip daemon detection, serve directly (useful for debugging)")
-	dangerNonLoopback := fs.Bool("dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address")
-	toolMode := fs.String("tool-mode", "", "tool interface: compact for the four-meta-tool interface (default is proxy)")
-	fs.Parse(args) //nolint:errcheck
-	return connectFlags{logLevel: *logLevel, httpAddr: *httpAddr, standalone: *standalone, dangerNonLoopback: *dangerNonLoopback, toolMode: parseToolMode(*toolMode)}
+func newConnectCmd(configDir string) *cobra.Command {
+	f := connectFlags{}
+	var toolModeStr string
+	cmd := &cobra.Command{
+		Use:   "connect",
+		Short: "Connect an agent to mini (stdio MCP)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			f.toolMode = parseToolMode(toolModeStr)
+			runConnect(configDir, f)
+			return nil
+		},
+	}
+	fl := cmd.Flags()
+	fl.StringVar(&f.logLevel, "log-level", "", "log level (debug|info|warn|error)")
+	fl.StringVar(&f.httpAddr, "http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
+	fl.BoolVar(&f.standalone, "standalone", false, "skip daemon detection, serve directly (useful for debugging)")
+	fl.BoolVar(&f.dangerNonLoopback, "dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address")
+	fl.StringVar(&toolModeStr, "tool-mode", "", "tool interface: compact for the four-meta-tool interface (default is proxy)")
+	return cmd
 }
 
 func parseToolMode(m string) transport.ToolMode {
@@ -167,8 +69,7 @@ func parseToolMode(m string) transport.ToolMode {
 	return transport.ToolModeProxy
 }
 
-func runConnect(configDir string, args []string) {
-	f := parseConnectFlags(args)
+func runConnect(configDir string, f connectFlags) {
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
 		fatalf("load config: %v", err)

@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"text/tabwriter"
 	"time"
+
+	"github.com/spf13/cobra"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -23,14 +24,25 @@ type upstreamResult struct {
 	err       error
 }
 
-func runTest(configDir string, args []string) {
-	fs := flag.NewFlagSet("test", flag.ExitOnError)
-	timeout := fs.Duration("timeout", 30*time.Second, "per-upstream connect timeout")
-	fs.Parse(args)
+func newTestCmd(configDir string) *cobra.Command {
+	var timeout time.Duration
+	cmd := &cobra.Command{
+		Use:   "test",
+		Short: "CI-safe health check (exits 1 on any failure)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runTest(configDir, timeout)
+			return nil
+		},
+	}
+	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "per-upstream connect timeout")
+	return cmd
+}
+
+func runTest(configDir string, timeout time.Duration) {
 	ctx := context.Background()
 	srv, enabled := buildTestServer(ctx, configDir)
 	defer srv.Close()
-	printTestResults(checkUpstreams(ctx, srv, enabled, *timeout))
+	printTestResults(checkUpstreams(ctx, srv, enabled, timeout))
 }
 
 func buildTestServer(ctx context.Context, configDir string) (*server.Server, []config.ServerConfig) {
