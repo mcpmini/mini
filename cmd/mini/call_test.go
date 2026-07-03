@@ -21,6 +21,9 @@ func TestParseCallFlags(t *testing.T) {
 		{"flags mixed between positionals", []string{"svc", "-j", "tool", "-m"}, callFlags{json: true, mini: true}, []string{"svc", "tool"}},
 		{"no flags", []string{"svc", "tool"}, callFlags{}, []string{"svc", "tool"}},
 		{"all flags trailing", []string{"svc", "tool", "{}", "-j", "-m", "-r"}, callFlags{json: true, mini: true, raw: true}, []string{"svc", "tool", "{}"}},
+		{"double dash stops flag parsing", []string{"svc", "--", "-r", "{}"}, callFlags{}, []string{"svc", "-r", "{}"}},
+		{"flag before double dash still parsed", []string{"-r", "svc", "--", "-m", "{}"}, callFlags{raw: true}, []string{"svc", "-m", "{}"}},
+		{"literal tool named -r escaped with double dash", []string{"svc", "--", "-r"}, callFlags{}, []string{"svc", "-r"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

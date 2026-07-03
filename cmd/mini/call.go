@@ -80,7 +80,11 @@ func parseCallContext(configDir string, args []string) (callFlags, callContext) 
 func parseCallFlags(args []string) (callFlags, []string) {
 	f := callFlags{}
 	var pos []string
-	for _, a := range args {
+	for i, a := range args {
+		if a == "--" {
+			pos = append(pos, args[i+1:]...)
+			break
+		}
 		switch a {
 		case "-j":
 			f.json = true
