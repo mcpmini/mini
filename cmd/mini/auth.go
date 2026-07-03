@@ -19,15 +19,12 @@ func newAuthCmd(configDir string) *cobra.Command {
 		Use:                "auth NAME",
 		Short:              "Authorize a server via OAuth2 (PKCE flow)",
 		DisableFlagParsing: true,
-		Args: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return usageErrf("usage: mini auth <server-name>")
-			}
-			return nil
-		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if helpRequested(args) {
 				return cmd.Help()
+			}
+			if len(args) == 0 {
+				return usageErrf("usage: mini auth <server-name>")
 			}
 			runAuth(configDir, args[0])
 			return nil

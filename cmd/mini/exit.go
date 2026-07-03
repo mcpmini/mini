@@ -23,9 +23,7 @@ func exitCodeFor(err error) int {
 	if errors.As(err, &ee) {
 		return ee.code
 	}
-	// cobra's Find() has no typed error for an unrecognized subcommand; pinned by
-	// TestExitCodeFor so a wording change here fails CI instead of silently
-	// reverting to exit 1.
+	// cobra has no typed error for unknown commands; TestExitCodeFor pins this string match.
 	if strings.HasPrefix(err.Error(), "unknown command ") {
 		return 2
 	}

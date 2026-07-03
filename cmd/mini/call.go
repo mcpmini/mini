@@ -22,7 +22,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-const callFlagHelp = `
+const callFlagHelpFmt = `
   -j    JSON output (projected envelope, default)
   -m    mini format (compact key:value)
   -r    raw upstream response, no projection
@@ -35,7 +35,7 @@ func newCallCmd(configDir string) *cobra.Command {
 	return &cobra.Command{
 		Use:                "call SERVER TOOL [PARAMS]",
 		Short:              "Invoke an open tool directly (exit 1 on tool error)",
-		Long:               "Invoke a tool directly, bypassing the list/call MCP interface.\n" + fmt.Sprintf(callFlagHelp, "call"),
+		Long:               "Invoke a tool directly, bypassing the list/call MCP interface.\n" + fmt.Sprintf(callFlagHelpFmt, "call"),
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if helpRequested(args) {
@@ -51,7 +51,7 @@ func newPermCallCmd(configDir string) *cobra.Command {
 	cmd := newCallCmd(configDir)
 	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
 	cmd.Short = "Invoke a protected tool directly"
-	cmd.Long = "Invoke a protected tool directly, bypassing the list/perm_call MCP interface.\n" + fmt.Sprintf(callFlagHelp, "perm-call")
+	cmd.Long = "Invoke a protected tool directly, bypassing the list/perm_call MCP interface.\n" + fmt.Sprintf(callFlagHelpFmt, "perm-call")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if helpRequested(args) {
 			return cmd.Help()

@@ -24,13 +24,12 @@ func main() {
 // --config is resolved here, not via cobra's PersistentFlags, because
 // DisableFlagParsing (set on several subcommands below) silently skips
 // inherited persistent-flag parsing too — a cobra-declared --config would be
-// accepted but discarded on those commands. Stops at "--" so that terminator
-// keeps its usual end-of-options meaning for whoever parses the remainder.
+// accepted but discarded on those commands.
 func extractConfigDir(args []string) (configDir string, rest []string) {
 	configDir = config.DefaultConfigDir()
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if a == "--" {
+		if a == "--" { // stop so "--" keeps its end-of-options meaning for downstream parsers
 			rest = append(rest, args[i:]...)
 			break
 		}
@@ -48,10 +47,7 @@ func extractConfigDir(args []string) (configDir string, rest []string) {
 	return configDir, rest
 }
 
-// helpRequested checks for a bare -h/--help token. DisableFlagParsing commands
-// never reach cobra's own help handling, so each must check for this itself
-// before treating args as positionals. Stops at "--" so an escaped literal
-// -h/--help positional isn't misread as a help request.
+// DisableFlagParsing commands never reach cobra's own help handling, so each must check for this itself.
 func helpRequested(args []string) bool {
 	for _, a := range args {
 		if a == "--" {
