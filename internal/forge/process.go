@@ -22,8 +22,13 @@ type runResult struct {
 	outputTooLarge bool
 }
 
-func runDeno(runCtx context.Context, denoPath, program string) (runResult, error) {
-	cmd := newDenoCmd(runCtx, denoPath, program)
+type execOptions struct {
+	packages []string
+	extraEnv []string
+}
+
+func runDeno(runCtx context.Context, denoPath, program string, opts execOptions) (runResult, error) {
+	cmd := newDenoCmd(runCtx, denoPath, program, opts)
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -42,12 +47,22 @@ func runDeno(runCtx context.Context, denoPath, program string) (runResult, error
 	return result, nil
 }
 
-func newDenoCmd(runCtx context.Context, denoPath, program string) *exec.Cmd {
-	cmd := exec.CommandContext(runCtx, denoPath, "run", "--no-prompt", "--no-remote", "-")
-	cmd.Env = childEnv()
+func newDenoCmd(runCtx context.Context, denoPath, program string, opts execOptions) *exec.Cmd {
+	cmd := exec.CommandContext(runCtx, denoPath, runArgs(opts.packages)...)
+	cmd.Env = append(childEnv(), opts.extraEnv...)
 	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
 	return cmd
+}
+
+// Stage 1 flags must stay exactly as-is when no packages are requested;
+// --cached-only permits cached remote modules while the program still has
+// no network capability of its own.
+func runArgs(packages []string) []string {
+	if len(packages) == 0 {
+		return []string{"run", "--no-prompt", "--no-remote", "-"}
+	}
+	return []string{"run", "--no-prompt", "--cached-only", "-"}
 }
 
 func captureOutput(cmd *exec.Cmd, stdoutPipe, stderrPipe io.Reader) runResult {
@@ -88,7 +103,7 @@ func captureCapped(r io.Reader, capBytes int) (data []byte, tooLarge bool) {
 }
 
 func childEnv() []string {
-	env := []string{"DENO_NO_UPDATE_CHECK=1"}
+	env := []string{"DENO_NO_UPDATE_CHECK=1", "NO_COLOR=1"}
 	if v, ok := os.LookupEnv("PATH"); ok {
 		env = append(env, "PATH="+v)
 	}

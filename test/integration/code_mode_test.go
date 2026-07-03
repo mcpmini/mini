@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"context"
 	"encoding/json"
 	"os/exec"
 	"strings"
@@ -16,6 +17,17 @@ func requireDeno(t *testing.T) {
 	t.Helper()
 	if _, err := exec.LookPath("deno"); err != nil {
 		t.Skip("deno not found in PATH")
+	}
+}
+
+func requireCached(t *testing.T, specifiers ...string) {
+	t.Helper()
+	requireDeno(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	args := append([]string{"cache"}, specifiers...)
+	if out, err := exec.CommandContext(ctx, "deno", args...).CombinedOutput(); err != nil {
+		t.Skipf("could not resolve %v (likely offline): %v\n%s", specifiers, err, out)
 	}
 }
 
@@ -115,6 +127,27 @@ func TestExecuteCode_DaemonProxyPath(t *testing.T) {
 		t.Fatalf("expected execute_code in daemon tools/list, got: %v", names)
 	}
 	assertCanonicalSum(t, client)
+}
+
+func TestExecuteCode_ImportsCachedPackage(t *testing.T) {
+	requireCached(t, "jsr:@std/csv@1")
+	cfg := t.TempDir()
+	codeModeConfig(t, cfg)
+	client := startServer(t, cfg)
+
+	code := `async () => {
+		const { parse } = await import("jsr:@std/csv@1");
+		return parse("a,b\n1,2", { skipFirstRow: true });
+	}`
+	args := map[string]any{"code": code, "packages": []string{"jsr:@std/csv@1"}}
+	raw := client.mustCall("tools/call", map[string]any{"name": "execute_code", "arguments": args})
+	text, isErr := parseToolCallResult(raw)
+	if isErr {
+		t.Fatalf("expected success, got error: %s", text)
+	}
+	if text != `[{"a":"1","b":"2"}]` {
+		t.Errorf(`expected [{"a":"1","b":"2"}], got %s`, text)
+	}
 }
 
 func TestExecuteCode_SandboxDenialOverWire(t *testing.T) {

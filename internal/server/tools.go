@@ -104,19 +104,33 @@ func miniConfigSchema() map[string]any {
 
 func executeCodeSchema() map[string]any {
 	return map[string]any{
-		"name": "execute_code",
-		"description": "Execute TypeScript in a sandboxed Deno subprocess (no filesystem, network, env, " +
-			"or subprocess access; no imports). code: source of an async function, e.g. " +
-			"\"async (input) => input.items.filter(i => i.open)\". input: JSON value passed as its argument. " +
-			"Returns the function's return value as JSON. Use for multi-step computation over data to keep " +
-			"intermediate results out of context.",
-		"inputSchema": schemaRequired(map[string]any{
-			"code": prop("string", "Source of an async function"),
-			"input": map[string]any{
-				"type":        []string{"object", "array", "string", "number", "boolean", "null"},
-				"description": "JSON value passed as the function's argument",
-			},
-		}, "code"),
+		"name":        "execute_code",
+		"description": executeCodeDescription(),
+		"inputSchema": schemaRequired(executeCodeProperties(), "code"),
+	}
+}
+
+func executeCodeDescription() string {
+	return "Execute TypeScript in a sandboxed Deno subprocess (no filesystem, network, env, " +
+		"or subprocess access). code: source of an async function, e.g. " +
+		"\"async (input) => input.items.filter(i => i.open)\". input: JSON value passed as its argument. " +
+		"Code may only import packages listed in packages, via await import(...). " +
+		"Returns the function's return value as JSON. Use for multi-step computation over data to keep " +
+		"intermediate results out of context."
+}
+
+func executeCodeProperties() map[string]any {
+	return map[string]any{
+		"code": prop("string", "Source of an async function"),
+		"input": map[string]any{
+			"type":        []string{"object", "array", "string", "number", "boolean", "null"},
+			"description": "JSON value passed as the function's argument",
+		},
+		"packages": map[string]any{
+			"type":        "array",
+			"items":       map[string]any{"type": "string"},
+			"description": "npm:/jsr: package specifiers the code may import, e.g. [\"npm:zod@3\"]; resolved and cached by the host before execution",
+		},
 	}
 }
 

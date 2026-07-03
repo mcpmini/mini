@@ -12,9 +12,10 @@ import (
 )
 
 type Params struct {
-	Code    string
-	Input   json.RawMessage
-	Timeout time.Duration
+	Code     string
+	Input    json.RawMessage
+	Timeout  time.Duration
+	Packages []string
 }
 
 type ErrorKind string
@@ -27,6 +28,7 @@ const (
 	KindNotSerializable ErrorKind = "not_serializable"
 	KindOutputTooLarge  ErrorKind = "output_too_large"
 	KindRunner          ErrorKind = "runner"
+	KindDependency      ErrorKind = "dependency"
 )
 
 type Error struct {
@@ -51,21 +53,41 @@ const (
 // Execute runs Code in a fresh sandboxed Deno subprocess and returns the
 // function's return value serialized as JSON.
 func Execute(ctx context.Context, p Params) (json.RawMessage, error) {
-	if len(p.Input) > 0 && !json.Valid(p.Input) {
-		return nil, &Error{Kind: KindRunner, Message: "input is not valid JSON"}
+	return execute(ctx, p, nil)
+}
+
+func execute(ctx context.Context, p Params, extraEnv []string) (json.RawMessage, error) {
+	if err := validateParams(p); err != nil {
+		return nil, err
 	}
 	denoPath, err := lookupDeno()
 	if err != nil {
 		return nil, err
 	}
+	if len(p.Packages) > 0 {
+		if err := resolveDeps(ctx, denoPath, p.Packages, extraEnv); err != nil {
+			return nil, err
+		}
+	}
+	return runAndClassify(ctx, denoPath, p, extraEnv)
+}
 
+func validateParams(p Params) error {
+	if len(p.Input) > 0 && !json.Valid(p.Input) {
+		return &Error{Kind: KindRunner, Message: "input is not valid JSON"}
+	}
+	return validatePackages(p.Packages)
+}
+
+func runAndClassify(ctx context.Context, denoPath string, p Params, extraEnv []string) (json.RawMessage, error) {
 	marker := randutil.HexString(markerBytes)
 	program := buildProgram(p.Code, p.Input, marker)
 
 	runCtx, cancel := context.WithTimeout(ctx, resolveTimeout(p.Timeout))
 	defer cancel()
 
-	result, runErr := runDeno(runCtx, denoPath, program)
+	opts := execOptions{packages: p.Packages, extraEnv: extraEnv}
+	result, runErr := runDeno(runCtx, denoPath, program, opts)
 	if runErr != nil {
 		return nil, &Error{Kind: KindRunner, Message: runErr.Error()}
 	}
