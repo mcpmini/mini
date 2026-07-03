@@ -3,10 +3,37 @@
 package main
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 )
+
+func TestParseCallFlags(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		wantF   callFlags
+		wantPos []string
+	}{
+		{"flags before positionals", []string{"-r", "svc", "tool", "{}"}, callFlags{raw: true}, []string{"svc", "tool", "{}"}},
+		{"flags after positionals", []string{"svc", "tool", "{}", "-r"}, callFlags{raw: true}, []string{"svc", "tool", "{}"}},
+		{"flags mixed between positionals", []string{"svc", "-j", "tool", "-m"}, callFlags{json: true, mini: true}, []string{"svc", "tool"}},
+		{"no flags", []string{"svc", "tool"}, callFlags{}, []string{"svc", "tool"}},
+		{"all flags trailing", []string{"svc", "tool", "{}", "-j", "-m", "-r"}, callFlags{json: true, mini: true, raw: true}, []string{"svc", "tool", "{}"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, pos := parseCallFlags(tc.args)
+			if f != tc.wantF {
+				t.Errorf("flags: got %+v, want %+v", f, tc.wantF)
+			}
+			if !slices.Equal(pos, tc.wantPos) {
+				t.Errorf("pos: got %v, want %v", pos, tc.wantPos)
+			}
+		})
+	}
+}
 
 func TestResolveCallOutput(t *testing.T) {
 	cases := []struct {

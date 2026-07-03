@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -79,13 +78,21 @@ func parseCallContext(configDir string, args []string) (callFlags, callContext) 
 }
 
 func parseCallFlags(args []string) (callFlags, []string) {
-	fs := flag.NewFlagSet("call", flag.ExitOnError)
 	f := callFlags{}
-	fs.BoolVar(&f.json, "j", false, "JSON output (projected envelope, default)")
-	fs.BoolVar(&f.mini, "m", false, "mini format (compact key:value)")
-	fs.BoolVar(&f.raw, "r", false, "raw upstream response, no projection")
-	fs.Parse(args) //nolint:errcheck
-	return f, fs.Args()
+	var pos []string
+	for _, a := range args {
+		switch a {
+		case "-j":
+			f.json = true
+		case "-m":
+			f.mini = true
+		case "-r":
+			f.raw = true
+		default:
+			pos = append(pos, a)
+		}
+	}
+	return f, pos
 }
 
 func resolveCallPos(pos []string) (serverName, toolName string, params map[string]any) {
