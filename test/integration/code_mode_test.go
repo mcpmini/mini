@@ -5,6 +5,10 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os/exec"
 	"strings"
 	"testing"
@@ -33,7 +37,7 @@ func requireCached(t *testing.T, specifiers ...string) {
 
 func codeModeConfig(t *testing.T, configDir string) {
 	t.Helper()
-	writeConfig(t, configDir, "experimental_code_mode: true\n")
+	writeConfig(t, configDir, "code_mode:\n  enabled: true\n")
 }
 
 func execCode(t *testing.T, c *mcpClient, code string, input any) (string, bool) {
@@ -96,7 +100,7 @@ func TestExecuteCode_DisabledByDefault(t *testing.T) {
 }
 
 // Unit tests construct config.Config directly, so only this test covers YAML
-// loading of experimental_code_mode through the real binary.
+// loading of code_mode.enabled through the real binary.
 func TestExecuteCode_EnabledViaConfig(t *testing.T) {
 	requireDeno(t)
 	cfg := t.TempDir()
@@ -268,6 +272,53 @@ func assertCancelledPromptly(t *testing.T, resultCh <-chan *mcpResult) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for cancelled response")
 	}
+}
+
+func TestExecuteCode_NetAllowListOverWire(t *testing.T) {
+	requireDeno(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("granted")) //nolint:errcheck // test server, best-effort write
+	}))
+	defer ts.Close()
+
+	cfg := t.TempDir()
+	writeConfig(t, cfg, "code_mode:\n  enabled: true\n  url_allow_list:\n    - \""+listenerHostPort(t, ts)+"\"\n")
+	client := startServer(t, cfg)
+
+	t.Run("allowlisted host roundtrips the body", func(t *testing.T) {
+		code := `async (input) => { const r = await fetch(input.url); return await r.text(); }`
+		text, isErr := execCode(t, client, code, map[string]any{"url": ts.URL})
+		if isErr {
+			t.Fatalf("expected success, got error: %s", text)
+		}
+		if text != `"granted"` {
+			t.Errorf(`expected "granted", got %s`, text)
+		}
+	})
+
+	t.Run("non-allowlisted host is denied", func(t *testing.T) {
+		code := `async () => { await fetch("https://api.evil.example"); }`
+		text, isErr := execCode(t, client, code, nil)
+		if !isErr {
+			t.Fatalf("expected isError=true, got success: %s", text)
+		}
+		if !strings.Contains(text, "net access") {
+			t.Errorf("expected error text to mention net access, got: %s", text)
+		}
+	})
+}
+
+func listenerHostPort(t *testing.T, ts *httptest.Server) string {
+	t.Helper()
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	_, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		t.Fatalf("split host:port from %q: %v", u.Host, err)
+	}
+	return "127.0.0.1:" + port
 }
 
 func assertCancelledResult(t *testing.T, r *mcpResult) {

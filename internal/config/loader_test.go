@@ -113,6 +113,32 @@ log_level: debug
 	}
 }
 
+func TestLoadMainConfig_CodeModeGrants(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "config.yaml"), `
+code_mode:
+  enabled: true
+  url_allow_list:
+    - api.github.com
+  env_var_allow_list:
+    - GITHUB_TOKEN
+  dangerous_allow_any_url: true
+`)
+	cfg, _ := mustLoadConfig(t, dir)
+	if !cfg.CodeMode.Enabled {
+		t.Error("expected CodeMode.Enabled to be true")
+	}
+	if len(cfg.CodeMode.URLAllowList) != 1 || cfg.CodeMode.URLAllowList[0] != "api.github.com" {
+		t.Errorf("expected URLAllowList [api.github.com], got %v", cfg.CodeMode.URLAllowList)
+	}
+	if len(cfg.CodeMode.EnvVarAllowList) != 1 || cfg.CodeMode.EnvVarAllowList[0] != "GITHUB_TOKEN" {
+		t.Errorf("expected EnvVarAllowList [GITHUB_TOKEN], got %v", cfg.CodeMode.EnvVarAllowList)
+	}
+	if !cfg.CodeMode.DangerousAllowAnyURL {
+		t.Error("expected DangerousAllowAnyURL to be true")
+	}
+}
+
 func TestLoadServerConfigs(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), `

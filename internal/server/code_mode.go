@@ -15,14 +15,21 @@ type executeCodeRequest struct {
 }
 
 func (s *Server) handleExecuteCode(ctx context.Context, raw json.RawMessage) (any, error) {
-	if !s.cfg.ExperimentalCodeMode {
+	if !s.cfg.CodeMode.Enabled {
 		return nil, fmt.Errorf("%w: unknown tool: execute_code", errInvalidParams)
 	}
 	req, err := parseExecuteCodeRequest(raw)
 	if err != nil {
 		return nil, err
 	}
-	return forge.Execute(ctx, forge.Params{Code: req.Code, Input: req.Input, Packages: req.Packages})
+	return forge.Execute(ctx, forge.Params{
+		Code:                 req.Code,
+		Input:                req.Input,
+		Packages:             req.Packages,
+		Net:                  s.cfg.CodeMode.URLAllowList,
+		Env:                  s.cfg.CodeMode.EnvVarAllowList,
+		DangerousAllowAllNet: s.cfg.CodeMode.DangerousAllowAnyURL,
+	})
 }
 
 func parseExecuteCodeRequest(raw json.RawMessage) (executeCodeRequest, error) {

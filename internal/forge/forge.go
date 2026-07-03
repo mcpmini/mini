@@ -16,6 +16,15 @@ type Params struct {
 	Input    json.RawMessage
 	Timeout  time.Duration
 	Packages []string
+
+	// Net and Env are the effective grants for this run, resolved by the
+	// caller from config.CodeModeConfig — never widened by the agent's request.
+	Net []string
+	Env []string
+
+	// DangerousAllowAllNet grants unrestricted network access (bare
+	// --allow-net), ignoring Net for flag purposes.
+	DangerousAllowAllNet bool
 }
 
 type ErrorKind string
@@ -81,7 +90,13 @@ func validateParams(p Params) error {
 	if len(p.Input) > 0 && !json.Valid(p.Input) {
 		return &Error{Kind: KindRunner, Message: "input is not valid JSON"}
 	}
-	return validatePackages(p.Packages)
+	if err := validatePackages(p.Packages); err != nil {
+		return err
+	}
+	if err := validateNetAllowList(p.Net); err != nil {
+		return err
+	}
+	return validateEnvAllowList(p.Env)
 }
 
 func runAndClassify(ctx context.Context, denoPath string, p Params, extraEnv []string) (json.RawMessage, error) {
@@ -91,7 +106,13 @@ func runAndClassify(ctx context.Context, denoPath string, p Params, extraEnv []s
 	runCtx, cancel := context.WithTimeout(ctx, resolveTimeout(p.Timeout))
 	defer cancel()
 
-	opts := execOptions{packages: p.Packages, extraEnv: extraEnv}
+	opts := execOptions{
+		packages:    p.Packages,
+		net:         p.Net,
+		env:         p.Env,
+		allowAllNet: p.DangerousAllowAllNet,
+		extraEnv:    extraEnv,
+	}
 	result, runErr := runDeno(runCtx, denoPath, program, opts)
 	if runErr != nil {
 		return nil, &Error{Kind: KindRunner, Message: runErr.Error()}

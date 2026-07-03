@@ -8,7 +8,7 @@ import (
 
 func toolSchemasFor(cfg *config.Config) []map[string]any {
 	schemas := compactToolSchemas()
-	if cfg.ExperimentalCodeMode {
+	if cfg.CodeMode.Enabled {
 		schemas = append(schemas, executeCodeSchema())
 	}
 	return schemas
@@ -111,8 +111,9 @@ func executeCodeSchema() map[string]any {
 }
 
 func executeCodeDescription() string {
-	return "Execute TypeScript in a sandboxed Deno subprocess (no filesystem, network, env, " +
-		"or subprocess access). code: source of an async function, e.g. " +
+	return "Execute TypeScript in a sandboxed Deno subprocess (no filesystem or subprocess access; " +
+		"network and env restricted to the user-configured code_mode allowlists, denied by default). " +
+		"code: source of an async function, e.g. " +
 		"\"async (input) => input.items.filter(i => i.open)\". input: JSON value passed as its argument. " +
 		"Declare every package the code imports in packages and import via await import(...); " +
 		"undeclared packages are not downloaded at runtime. " +

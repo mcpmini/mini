@@ -66,6 +66,9 @@ async function __run() {
     if (__msg.includes("--cached-only")) {
       __msg += " (this package must be listed in the packages parameter so the host can resolve it before execution)";
     }
+    if (__msg.includes("net access")) {
+      __msg += " (host must be listed in code_mode.url_allow_list in mini's config)";
+    }
     return { error: { kind: "runtime", message: __msg } };
   }
   if (__result === undefined) __result = null;

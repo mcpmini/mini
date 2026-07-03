@@ -23,8 +23,11 @@ type runResult struct {
 }
 
 type execOptions struct {
-	packages []string
-	extraEnv []string
+	packages    []string
+	net         []string
+	env         []string
+	allowAllNet bool
+	extraEnv    []string
 }
 
 func runDeno(runCtx context.Context, denoPath, program string, opts execOptions) (runResult, error) {
@@ -48,21 +51,59 @@ func runDeno(runCtx context.Context, denoPath, program string, opts execOptions)
 }
 
 func newDenoCmd(runCtx context.Context, denoPath, program string, opts execOptions) *exec.Cmd {
-	cmd := exec.CommandContext(runCtx, denoPath, runArgs(opts.packages)...)
+	cmd := exec.CommandContext(runCtx, denoPath, runArgs(opts)...)
 	cmd.Env = append(childEnv(), opts.extraEnv...)
+	cmd.Env = append(cmd.Env, grantedEnvValues(opts.env)...)
 	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
 	return cmd
 }
 
-// Stage 1 flags must stay exactly as-is when no packages are requested;
-// --cached-only permits cached remote modules while the program still has
-// no network capability of its own.
-func runArgs(packages []string) []string {
-	if len(packages) == 0 {
-		return []string{"run", "--no-prompt", "--no-remote", "-"}
+// runArgs must keep --no-remote (or --cached-only, once packages are in
+// play) as the only default: --allow-net/--allow-env are appended only when
+// the caller has non-empty grants, so an unconfigured code_mode stays fully
+// denied on both flag paths.
+func runArgs(opts execOptions) []string {
+	args := []string{"run", "--no-prompt", remoteFlag(opts.packages)}
+	args = append(args, netFlag(opts)...)
+	if len(opts.env) > 0 {
+		args = append(args, "--allow-env="+strings.Join(opts.env, ","))
 	}
-	return []string{"run", "--no-prompt", "--cached-only", "-"}
+	return append(args, "-")
+}
+
+// netFlag prefers the dangerous bare-all grant over the scoped allowlist:
+// DangerousAllowAllNet ignores Net entirely rather than combining the two.
+func netFlag(opts execOptions) []string {
+	switch {
+	case opts.allowAllNet:
+		return []string{"--allow-net"}
+	case len(opts.net) > 0:
+		return []string{"--allow-net=" + strings.Join(opts.net, ",")}
+	default:
+		return nil
+	}
+}
+
+func remoteFlag(packages []string) string {
+	if len(packages) == 0 {
+		return "--no-remote"
+	}
+	return "--cached-only"
+}
+
+// grantedEnvValues passes through values for names present in the host
+// process env; a name granted but unset in the host is still allow-listed
+// (via runArgs) but simply reads as undefined in the program — one unset
+// var must not fail unrelated runs.
+func grantedEnvValues(names []string) []string {
+	pairs := make([]string, 0, len(names))
+	for _, name := range names {
+		if v, ok := os.LookupEnv(name); ok {
+			pairs = append(pairs, name+"="+v)
+		}
+	}
+	return pairs
 }
 
 func captureOutput(cmd *exec.Cmd, stdoutPipe, stderrPipe io.Reader) runResult {

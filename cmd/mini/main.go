@@ -134,7 +134,7 @@ type BuildServerParams struct {
 }
 
 func buildAndConnectServer(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
-	if p.Cfg.ExperimentalCodeMode {
+	if p.Cfg.CodeMode.Enabled {
 		go forge.SweepStaleDirs(p.Logger)
 	}
 	srv := server.NewWithConfigDir(p.Cfg, p.ConfigDir, p.Logger, opts...)

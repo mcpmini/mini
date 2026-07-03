@@ -12,18 +12,58 @@ import (
 )
 
 func TestRunArgs_flagSelection(t *testing.T) {
-	t.Run("no packages keeps stage-1 flags exactly", func(t *testing.T) {
-		want := "run --no-prompt --no-remote -"
-		if got := strings.Join(runArgs(nil), " "); got != want {
-			t.Errorf("runArgs(nil) = %q, want %q", got, want)
-		}
-	})
-	t.Run("packages switch to cached-only", func(t *testing.T) {
-		want := "run --no-prompt --cached-only -"
-		if got := strings.Join(runArgs([]string{"npm:zod@3"}), " "); got != want {
-			t.Errorf("runArgs(packages) = %q, want %q", got, want)
-		}
-	})
+	cases := []struct {
+		name string
+		opts execOptions
+		want string
+	}{
+		{
+			name: "no grants keeps stage-1 flags exactly",
+			opts: execOptions{},
+			want: "run --no-prompt --no-remote -",
+		},
+		{
+			name: "packages switch to cached-only",
+			opts: execOptions{packages: []string{"npm:zod@3"}},
+			want: "run --no-prompt --cached-only -",
+		},
+		{
+			name: "net grant appends allow-net",
+			opts: execOptions{net: []string{"api.github.com", "*.githubusercontent.com"}},
+			want: "run --no-prompt --no-remote --allow-net=api.github.com,*.githubusercontent.com -",
+		},
+		{
+			name: "env grant appends allow-env",
+			opts: execOptions{env: []string{"GITHUB_TOKEN", "OTHER_VAR"}},
+			want: "run --no-prompt --no-remote --allow-env=GITHUB_TOKEN,OTHER_VAR -",
+		},
+		{
+			name: "packages, net, and env combine in order",
+			opts: execOptions{
+				packages: []string{"npm:zod@3"},
+				net:      []string{"api.github.com"},
+				env:      []string{"GITHUB_TOKEN"},
+			},
+			want: "run --no-prompt --cached-only --allow-net=api.github.com --allow-env=GITHUB_TOKEN -",
+		},
+		{
+			name: "dangerous allow-all-net emits bare flag and ignores the net list",
+			opts: execOptions{allowAllNet: true, net: []string{"ignored.example.com"}},
+			want: "run --no-prompt --no-remote --allow-net -",
+		},
+		{
+			name: "dangerous allow-all-net composes with the cached-only package path",
+			opts: execOptions{allowAllNet: true, packages: []string{"npm:zod@3"}},
+			want: "run --no-prompt --cached-only --allow-net -",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := strings.Join(runArgs(tc.opts), " "); got != tc.want {
+				t.Errorf("runArgs(%+v) = %q, want %q", tc.opts, got, tc.want)
+			}
+		})
+	}
 }
 
 func TestBuildProgram_embedding(t *testing.T) {

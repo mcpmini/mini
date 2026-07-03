@@ -5,6 +5,10 @@ package server_test
 import (
 	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os/exec"
 	"strings"
 	"testing"
@@ -18,7 +22,7 @@ func newCodeModeServer(t *testing.T, enabled bool) *server.Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.ExperimentalCodeMode = enabled
+	cfg.CodeMode.Enabled = enabled
 	srv := server.New(cfg, logger)
 	t.Cleanup(srv.Close)
 	return srv
@@ -151,6 +155,72 @@ func TestExecuteCode_WithDeno(t *testing.T) {
 			t.Errorf("expected error text to mention syntax, got: %v", text)
 		}
 	})
+}
+
+func newCodeModeServerWithGrants(t *testing.T, urlAllowList []string) *server.Server {
+	t.Helper()
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.CodeMode.Enabled = true
+	cfg.CodeMode.URLAllowList = urlAllowList
+	srv := server.New(cfg, logger)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestExecuteCode_NetGrantFromConfigAllowsListedHost(t *testing.T) {
+	if _, err := exec.LookPath("deno"); err != nil {
+		t.Skip("deno not found in PATH")
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte("granted")) //nolint:errcheck // test server, best-effort write
+	}))
+	defer ts.Close()
+
+	srv := newCodeModeServerWithGrants(t, []string{hostPort(t, ts)})
+
+	resp := serve(t, srv, callTool("execute_code", map[string]any{
+		"code":  `async (input) => { const r = await fetch(input.url); return await r.text(); }`,
+		"input": map[string]any{"url": ts.URL},
+	}))
+	if text := toolResultText(t, resp); text != `"granted"` {
+		t.Errorf("expected fetched body %q, got %q", `"granted"`, text)
+	}
+}
+
+func TestExecuteCode_NoNetGrantDeniesFetch(t *testing.T) {
+	if _, err := exec.LookPath("deno"); err != nil {
+		t.Skip("deno not found in PATH")
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
+	defer ts.Close()
+
+	srv := newCodeModeServer(t, true)
+	resp := serve(t, srv, callTool("execute_code", map[string]any{
+		"code":  `async (input) => { await fetch(input.url); }`,
+		"input": map[string]any{"url": ts.URL},
+	}))
+	result, _ := resp["result"].(map[string]any)
+	if result == nil || result["isError"] != true {
+		t.Fatalf("expected isError=true, got: %v", resp)
+	}
+	if text := toolResultText(t, resp); !strings.Contains(text, "net access") {
+		t.Errorf("expected net access denial, got: %v", text)
+	}
+}
+
+func hostPort(t *testing.T, ts *httptest.Server) string {
+	t.Helper()
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	_, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		t.Fatalf("split host:port from %q: %v", u.Host, err)
+	}
+	return "127.0.0.1:" + port
 }
 
 func containsString(items []string, target string) bool {

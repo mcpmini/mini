@@ -301,7 +301,7 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 func (s *Server) handleToolsList(session *Session) (any, error) {
 	if session.toolMode() == transport.ToolModeProxy {
 		tools := buildProxyToolSchemas(s.reg.AllFull())
-		if s.cfg.ExperimentalCodeMode {
+		if s.cfg.CodeMode.Enabled {
 			tools = append(tools, executeCodeSchema())
 		}
 		return map[string]any{"tools": tools}, nil

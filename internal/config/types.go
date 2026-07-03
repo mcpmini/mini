@@ -68,9 +68,27 @@ type Config struct {
 	// Servers is a list of upstream MCP server configs (alternative to servers/ dir).
 	Servers []ServerConfig `yaml:"servers,omitempty"`
 
-	// ExperimentalCodeMode exposes the prototype execute_code tool, which runs
-	// agent-submitted TypeScript in a sandboxed Deno subprocess.
-	ExperimentalCodeMode bool `yaml:"experimental_code_mode"`
+	// CodeMode configures the experimental execute_code tool.
+	CodeMode CodeModeConfig `yaml:"code_mode"`
+}
+
+// CodeModeConfig configures the experimental execute_code tool.
+type CodeModeConfig struct {
+	// Enabled exposes the execute_code tool, which runs agent-submitted
+	// TypeScript in a sandboxed Deno subprocess.
+	Enabled bool `yaml:"enabled"`
+
+	// URLAllowList is the set of hosts programs may reach (host or host:port;
+	// "*.example.com" and "*" wildcards allowed). Empty means network fully denied.
+	URLAllowList []string `yaml:"url_allow_list"`
+
+	// EnvVarAllowList is the set of environment variable names passed through
+	// to programs. Empty means env access fully denied.
+	EnvVarAllowList []string `yaml:"env_var_allow_list"`
+
+	// DangerousAllowAnyURL grants programs unrestricted network access
+	// (bare --allow-net). Never enable this by default.
+	DangerousAllowAnyURL bool `yaml:"dangerous_allow_any_url"`
 }
 
 // SessionModePerSession is the session_mode value that gives each session its own upstream connection.
