@@ -89,6 +89,20 @@ func TestExecute_unresolvablePackageFailsAsDependencyError(t *testing.T) {
 	}
 }
 
+func TestExecute_npmImportWithoutDeclaredPackagesFailsWithoutNetworkAccess(t *testing.T) {
+	requireDeno(t)
+	_, err := forge.Execute(context.Background(), forge.Params{
+		Code: `async () => { await import("npm:is-even@1"); return null; }`,
+	})
+	fe := asForgeError(t, err)
+	if fe.Kind != forge.KindRuntime {
+		t.Fatalf("Kind = %q, want %q", fe.Kind, forge.KindRuntime)
+	}
+	if !containsAny(fe.Message, "packages parameter") {
+		t.Errorf("Message = %q, want a hint about declaring packages", fe.Message)
+	}
+}
+
 func TestExecute_unlistedPackageInvisibleEvenWhenCachedElsewhere(t *testing.T) {
 	requireDeno(t)
 	_, err := forge.Execute(context.Background(), forge.Params{

@@ -4,6 +4,7 @@ package forge_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -100,5 +101,40 @@ func TestExecute_largeStderrReturnsPromptlyWithCappedCapture(t *testing.T) {
 	}
 	if string(got) != "2" {
 		t.Errorf("follow-up result = %s, want 2", got)
+	}
+}
+
+func TestExecute_largeReturnValueIsOutputTooLargeNotRunnerError(t *testing.T) {
+	requireDeno(t)
+	code := `async () => "x".repeat(20_000_000)`
+	_, err := forge.Execute(context.Background(), forge.Params{
+		Code:    code,
+		Timeout: 20 * time.Second,
+	})
+	fe := asForgeError(t, err)
+	if fe.Kind != forge.KindOutputTooLarge {
+		t.Errorf("Kind = %q, want %q (a partial writeSync must not surface as \"no result emitted\")", fe.Kind, forge.KindOutputTooLarge)
+	}
+}
+
+func TestExecute_moderatelyLargeResultRoundTripsIntact(t *testing.T) {
+	requireDeno(t)
+	code := `async () => "y".repeat(1_000_000)`
+	got, err := forge.Execute(context.Background(), forge.Params{
+		Code:    code,
+		Timeout: 20 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var s string
+	if err := json.Unmarshal(got, &s); err != nil {
+		t.Fatalf("result is not a JSON string: %v (%s)", err, got)
+	}
+	if len(s) != 1_000_000 {
+		t.Fatalf("len(result) = %d, want 1000000", len(s))
+	}
+	if s[0] != 'y' || s[len(s)-1] != 'y' {
+		t.Errorf("result = %q...%q, want all 'y'", s[:1], s[len(s)-1:])
 	}
 }

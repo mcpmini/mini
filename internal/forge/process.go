@@ -59,13 +59,15 @@ func newDenoCmd(runCtx context.Context, denoPath, program string, opts execOptio
 	return cmd
 }
 
-// runArgs must keep --no-remote (or --cached-only, once packages are in
-// play) as the only default: --allow-net/--allow-env are appended only when
-// the caller has non-empty grants, so an unconfigured code_mode stays fully
-// denied on both flag paths. --no-config prevents a deno.json discovered from
-// the daemon's cwd (or any parent) from remapping imports inside the sandbox.
+// runArgs must keep remoteFlags' output (--no-remote --no-npm, or
+// --cached-only once packages are in play) as the only default:
+// --allow-net/--allow-env are appended only when the caller has non-empty
+// grants, so an unconfigured code_mode stays fully denied on both flag paths.
+// --no-config prevents a deno.json discovered from the daemon's cwd (or any
+// parent) from remapping imports inside the sandbox.
 func runArgs(opts execOptions) []string {
-	args := []string{"run", "--no-prompt", "--no-config", remoteFlag(opts.packages)}
+	args := []string{"run", "--no-prompt", "--no-config"}
+	args = append(args, remoteFlags(opts.packages)...)
 	args = append(args, netFlag(opts)...)
 	if len(opts.env) > 0 {
 		args = append(args, "--allow-env="+strings.Join(opts.env, ","))
@@ -86,11 +88,16 @@ func netFlag(opts execOptions) []string {
 	}
 }
 
-func remoteFlag(packages []string) string {
+// remoteFlags: --no-remote alone does not gate npm: specifier resolution, so
+// with no packages declared code could still `await import("npm:...")` and
+// have Deno fetch it from the registry at runtime; --no-npm closes that hole.
+// Once packages are declared, --cached-only already blocks any uncached
+// package (npm or jsr) from downloading, so it's sufficient on its own.
+func remoteFlags(packages []string) []string {
 	if len(packages) == 0 {
-		return "--no-remote"
+		return []string{"--no-remote", "--no-npm"}
 	}
-	return "--cached-only"
+	return []string{"--cached-only"}
 }
 
 // grantedEnvValues passes through values for names present in the host

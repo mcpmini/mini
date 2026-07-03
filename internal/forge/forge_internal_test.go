@@ -20,7 +20,7 @@ func TestRunArgs_flagSelection(t *testing.T) {
 		{
 			name: "no grants keeps stage-1 flags exactly",
 			opts: execOptions{},
-			want: "run --no-prompt --no-config --no-remote -",
+			want: "run --no-prompt --no-config --no-remote --no-npm -",
 		},
 		{
 			name: "packages switch to cached-only",
@@ -30,12 +30,12 @@ func TestRunArgs_flagSelection(t *testing.T) {
 		{
 			name: "net grant appends allow-net",
 			opts: execOptions{net: []string{"api.github.com", "*.githubusercontent.com"}},
-			want: "run --no-prompt --no-config --no-remote --allow-net=api.github.com,*.githubusercontent.com -",
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-net=api.github.com,*.githubusercontent.com -",
 		},
 		{
 			name: "env grant appends allow-env",
 			opts: execOptions{env: []string{"GITHUB_TOKEN", "OTHER_VAR"}},
-			want: "run --no-prompt --no-config --no-remote --allow-env=GITHUB_TOKEN,OTHER_VAR -",
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-env=GITHUB_TOKEN,OTHER_VAR -",
 		},
 		{
 			name: "packages, net, and env combine in order",
@@ -49,7 +49,7 @@ func TestRunArgs_flagSelection(t *testing.T) {
 		{
 			name: "dangerous allow-all-net emits bare flag and ignores the net list",
 			opts: execOptions{allowAllNet: true, net: []string{"ignored.example.com"}},
-			want: "run --no-prompt --no-config --no-remote --allow-net -",
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-net -",
 		},
 		{
 			name: "dangerous allow-all-net composes with the cached-only package path",

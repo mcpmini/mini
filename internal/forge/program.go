@@ -27,7 +27,10 @@ func buildProgram(code string, input []byte, marker string) string {
 // (message contains "SyntaxError") rather than crashing the harness. The
 // final write uses Deno.stdout.writeSync so the result marker can never be
 // reordered behind buffered console.log output, and Deno.exit(0) right after
-// kills any timers the user code left dangling.
+// kills any timers the user code left dangling. writeSync is not guaranteed
+// to write the whole buffer in one call on a pipe (observed: 1 byte written
+// of a 20MB payload before exit discarded the rest), so it runs in a loop
+// over the remaining subarray until every byte is flushed.
 const harnessTemplate = `
 function __sanitize(text) {
   return String(text).replaceAll(/data:text\/typescript;base64,[A-Za-z0-9+/=]+/g, "code");
@@ -69,6 +72,9 @@ async function __run() {
     if (__msg.includes("--cached-only")) {
       __msg += " (this package must be listed in the packages parameter so the host can resolve it before execution)";
     }
+    if (__msg.includes("--no-npm")) {
+      __msg += " (packages must be declared in the packages parameter)";
+    }
     if (__msg.includes("net access")) {
       __msg += " (host must be listed in code_mode.url_allow_list in mini's config)";
     }
@@ -94,7 +100,9 @@ try {
   __payload = { error: { kind: "runtime", message: "harness error: " + String(e?.message ?? e) } };
 } finally {
   const __out = "\n__MARKER__" + JSON.stringify(__payload);
-  Deno.stdout.writeSync(new TextEncoder().encode(__out));
+  const __buf = new TextEncoder().encode(__out);
+  let __off = 0;
+  while (__off < __buf.length) { __off += Deno.stdout.writeSync(__buf.subarray(__off)); }
   Deno.exit(0);
 }
 `
