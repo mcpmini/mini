@@ -67,6 +67,10 @@ type Config struct {
 
 	// Servers is a list of upstream MCP server configs (alternative to servers/ dir).
 	Servers []ServerConfig `yaml:"servers,omitempty"`
+
+	// ExperimentalCodeMode exposes the prototype execute_code tool, which runs
+	// agent-submitted TypeScript in a sandboxed Deno subprocess.
+	ExperimentalCodeMode bool `yaml:"experimental_code_mode"`
 }
 
 // SessionModePerSession is the session_mode value that gives each session its own upstream connection.

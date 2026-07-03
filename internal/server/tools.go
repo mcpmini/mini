@@ -1,6 +1,18 @@
 package server
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/mcpmini/mini/internal/config"
+)
+
+func toolSchemasFor(cfg *config.Config) []map[string]any {
+	schemas := compactToolSchemas()
+	if cfg.ExperimentalCodeMode {
+		schemas = append(schemas, executeCodeSchema())
+	}
+	return schemas
+}
 
 func compactToolSchemas() []map[string]any {
 	return []map[string]any{
@@ -90,6 +102,21 @@ func miniConfigSchema() map[string]any {
 	}
 }
 
+func executeCodeSchema() map[string]any {
+	return map[string]any{
+		"name": "execute_code",
+		"description": "Execute TypeScript in a sandboxed Deno subprocess (no filesystem, network, env, " +
+			"or subprocess access; no imports). code: source of an async function, e.g. " +
+			"\"async (input) => input.items.filter(i => i.open)\". input: JSON value passed as its argument. " +
+			"Returns the function's return value as JSON. Use for multi-step computation over data to keep " +
+			"intermediate results out of context.",
+		"inputSchema": schemaRequired(map[string]any{
+			"code":  prop("string", "Source of an async function"),
+			"input": map[string]any{"description": "JSON value passed as the function's argument"},
+		}, "code"),
+	}
+}
+
 func miniReadSchema() map[string]any {
 	return map[string]any{
 		"name":        "read",
@@ -105,6 +132,16 @@ func schema(properties map[string]any) json.RawMessage {
 	s := map[string]any{
 		"type":       "object",
 		"properties": properties,
+	}
+	b, _ := json.Marshal(s)
+	return b
+}
+
+func schemaRequired(properties map[string]any, required ...string) json.RawMessage {
+	s := map[string]any{
+		"type":       "object",
+		"properties": properties,
+		"required":   required,
 	}
 	b, _ := json.Marshal(s)
 	return b
