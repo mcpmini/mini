@@ -1,10 +1,6 @@
 package server
 
-import (
-	"encoding/json"
-
-	"github.com/mcpmini/mini/internal/registry"
-)
+import "encoding/json"
 
 func compactToolSchemas() []map[string]any {
 	return []map[string]any{
@@ -79,14 +75,6 @@ func configureDescription() string {
 		"Use set_projection to reduce noise when tool responses are too large."
 }
 
-func buildProxyToolSchemas(entries []*registry.ToolEntry) []map[string]any {
-	out := []map[string]any{miniConfigSchema(), miniReadSchema()}
-	for _, e := range entries {
-		out = append(out, upstreamToolSchema(e))
-	}
-	return out
-}
-
 func miniConfigSchema() map[string]any {
 	return map[string]any{
 		"name":        "config",
@@ -111,12 +99,6 @@ func miniReadSchema() map[string]any {
 			"filter": prop("string", "Optional jq filter (e.g. .title, .[0].body, .items[0].body, .items[] | .title)"),
 		}),
 	}
-}
-
-func upstreamToolSchema(e *registry.ToolEntry) map[string]any {
-	m := e.Def.ToMap()
-	m["name"] = e.Server + "__" + e.ToolName.Name()
-	return m
 }
 
 func schema(properties map[string]any) json.RawMessage {

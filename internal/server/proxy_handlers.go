@@ -1,11 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -34,30 +36,118 @@ func (s *Server) handleProxyCall(ctx context.Context, name string, args json.Raw
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
-	params, err := unmarshalToolArgs(args)
+	req, err := parseProxyRequest(args)
 	if err != nil {
 		return nil, err
 	}
-	return s.proxyCallUpstream(ctx, proxyCallParams{Server: server, Tool: tool, Params: params, Entry: entry, Session: session})
+	return s.proxyCallUpstream(ctx, proxyCallParams{
+		Server:   server,
+		Tool:     entry.ToolName.UpstreamName,
+		Params:   req.Args,
+		Entry:    entry,
+		Session:  session,
+		Controls: req.Controls,
+	})
 }
 
-func unmarshalToolArgs(args json.RawMessage) (map[string]any, error) {
-	if len(args) == 0 || string(args) == "null" {
-		return nil, nil
+type proxyRequest struct {
+	Args     map[string]any
+	Controls proxyControls
+}
+
+type projectionMode string
+
+const (
+	projectionDefault projectionMode = "default"
+	projectionRaw     projectionMode = "raw"
+)
+
+func (m projectionMode) Valid() bool {
+	return m == "" || m == projectionDefault || m == projectionRaw
+}
+
+type proxyControls struct {
+	Projection projectionMode
+}
+
+func parseProxyRequest(raw json.RawMessage) (proxyRequest, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return proxyRequest{Args: map[string]any{}}, nil
 	}
-	var params map[string]any
-	if err := json.Unmarshal(args, &params); err != nil {
-		return nil, fmt.Errorf("%w: unmarshal args: %w", errInvalidParams, err)
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return proxyRequest{}, fmt.Errorf("%w: unmarshal call arguments: %w", errInvalidParams, err)
 	}
-	return params, nil
+	if err := rejectLegacyFields(envelope); err != nil {
+		return proxyRequest{}, err
+	}
+	args, err := extractProxyArgs(envelope)
+	if err != nil {
+		return proxyRequest{}, err
+	}
+	controls, err := extractProxyControls(envelope)
+	if err != nil {
+		return proxyRequest{}, err
+	}
+	return proxyRequest{Args: args, Controls: controls}, nil
+}
+
+func rejectLegacyFields(envelope map[string]json.RawMessage) error {
+	var extra []string
+	for key := range envelope {
+		if key != "args" && key != "__mini" {
+			extra = append(extra, key)
+		}
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	sort.Strings(extra)
+	return fmt.Errorf("%w: legacy flat tool call — upstream arguments must be nested under \"args\" (unexpected field(s): %s), e.g. {\"args\": {...}}",
+		errInvalidParams, strings.Join(extra, ", "))
+}
+
+func extractProxyArgs(envelope map[string]json.RawMessage) (map[string]any, error) {
+	raw, ok := envelope["args"]
+	if !ok || string(raw) == "null" {
+		return map[string]any{}, nil
+	}
+	var args map[string]any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&args); err != nil {
+		return nil, fmt.Errorf("%w: args must be an object: %w", errInvalidParams, err)
+	}
+	if args == nil {
+		args = map[string]any{}
+	}
+	return args, nil
+}
+
+func extractProxyControls(envelope map[string]json.RawMessage) (proxyControls, error) {
+	raw, ok := envelope["__mini"]
+	if !ok || string(raw) == "null" {
+		return proxyControls{}, nil
+	}
+	var c struct {
+		Projection projectionMode `json:"projection"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return proxyControls{}, fmt.Errorf("%w: __mini must be an object: %w", errInvalidParams, err)
+	}
+	if !c.Projection.Valid() {
+		return proxyControls{}, fmt.Errorf("%w: __mini.projection must be \"default\" or \"raw\", got %q", errInvalidParams, c.Projection)
+	}
+	return proxyControls{Projection: c.Projection}, nil
 }
 
 type proxyCallParams struct {
-	Server  string
-	Tool    string
-	Params  map[string]any
-	Entry   *registry.ToolEntry
-	Session *Session
+	Server   string
+	Tool     string
+	Params   map[string]any
+	Entry    *registry.ToolEntry
+	Session  *Session
+	Controls proxyControls
 }
 
 func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any, error) {
@@ -72,73 +162,28 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 		p.Session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
-	return s.proxyProject(envelopeParams{Entry: p.Entry, Tool: tool, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs})
+	ep := envelopeParams{Entry: p.Entry, Tool: tool, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs}
+	ep.Bypass = p.Controls.Projection == projectionRaw
+	return s.proxyProject(ep)
 }
 
 func (s *Server) proxyProject(p envelopeParams) (any, error) {
-	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
-	env, stats, err := s.buildProjectedEnvelope(p.Entry.Server, p.Tool, p.Raw, projCfg)
+	var projCfg *config.ProjectionConfig
+	if !p.Bypass {
+		projCfg = s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
+	}
+	env, stats, err := s.buildProjectedEnvelope(projectedEnvelopeParams{
+		Server:  p.Entry.Server,
+		Tool:    p.Tool,
+		Raw:     p.Raw,
+		ProjCfg: projCfg,
+		Bypass:  p.Bypass,
+	})
 	if err != nil {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
-	return s.renderProxyResult(renderProxyResultParams{Server: p.Entry.Server, Tool: p.Entry.ToolName.Name(), Env: env, ProjCfg: projCfg}), nil
-}
-
-type renderProxyResultParams struct {
-	Server  string
-	Tool    string
-	Env     *response.Envelope
-	ProjCfg *config.ProjectionConfig
-}
-
-func (s *Server) renderProxyResult(p renderProxyResultParams) string {
-	format := s.cfg.ResponseFormat
-	if p.ProjCfg != nil && p.ProjCfg.Format != "" {
-		format = p.ProjCfg.Format
-	}
-	if format == "mini" {
-		return RenderLines(p.Server, p.Tool, p.Env)
-	}
-	return formatProxyEnvelope(p.Env)
-}
-
-func formatProxyEnvelope(env *response.Envelope) string {
-	if !hasProjectionNote(env) {
-		return marshalProxyData(env.Data)
-	}
-	return formatProjectedInline(env)
-}
-
-func hasProjectionNote(env *response.Envelope) bool {
-	return len(env.Excluded) > 0 || len(env.Truncated) > 0
-}
-
-func marshalProxyData(data any) string {
-	b, _ := json.Marshal(data)
-	return string(b)
-}
-
-func formatProjectedInline(env *response.Envelope) string {
-	meta := map[string]any{}
-	if len(env.Excluded) > 0 {
-		meta["excluded"] = env.Excluded
-	}
-	if len(env.Truncated) > 0 {
-		meta["truncated"] = env.Truncated
-	}
-	if len(env.Excluded) > 0 || len(env.Truncated) > 0 {
-		meta["msg"] = "Response filtered, some fields were excluded or truncated, use read(<file>, <jq filter>) to fetch full values."
-	}
-	if len(env.Passthrough) > 0 {
-		meta["passthrough"] = env.Passthrough
-	}
-	if env.File != nil {
-		meta["file"] = *env.File
-	}
-	out := map[string]any{"__mini": meta, "data": env.Data}
-	b, _ := json.Marshal(out)
-	return string(b)
+	return response.NewProxyResult(env), nil
 }
 
 func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, error) {

@@ -265,15 +265,12 @@ func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
 	if strings.Contains(text, `"__mini"`) {
 		t.Errorf("expected no __mini envelope when nothing excluded: %s", text)
 	}
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(text), &parsed); err != nil {
-		t.Errorf("expected valid JSON response: %s", text)
+	env := parseProxyEnvelope(t, text)
+	if id, _ := env.Data["id"].(float64); id != 1 {
+		t.Errorf("expected id:1, got %v", env.Data["id"])
 	}
-	if id, _ := parsed["id"].(float64); id != 1 {
-		t.Errorf("expected id:1, got %v", parsed["id"])
-	}
-	if val, _ := parsed["value"].(string); val != "data" {
-		t.Errorf("expected value:data, got %v", parsed["value"])
+	if val, _ := env.Data["value"].(string); val != "data" {
+		t.Errorf("expected value:data, got %v", env.Data["value"])
 	}
 }
 
@@ -361,7 +358,7 @@ func TestProxy_Call_WithExclusionAndTruncation(t *testing.T) {
 	}
 }
 
-func TestProxy_Call_MiniFormat_RendersLines(t *testing.T) {
+func TestProxy_Call_ToolFormatMini_Ignored(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -380,17 +377,18 @@ func TestProxy_Call_MiniFormat_RendersLines(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("mini format response: %s", text)
+	t.Logf("response: %s", text)
 
-	if !strings.Contains(text, "svc.get_user") {
-		t.Errorf("mini format should contain server.tool header: %s", text)
+	if !strings.HasPrefix(text, "{") {
+		t.Errorf("proxy mode must ignore format:mini and return JSON: %s", text)
 	}
-	if strings.HasPrefix(text, "{") {
-		t.Errorf("mini format should not be raw JSON: %s", text)
+	env := parseProxyEnvelope(t, text)
+	if name, _ := env.Data["name"].(string); name != "alice" {
+		t.Errorf("expected data.name=alice, got: %s", text)
 	}
 }
 
-func TestProxy_Call_GlobalMiniFormat_Respected(t *testing.T) {
+func TestProxy_Call_GlobalFormatMini_Ignored(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.ResponseFormat = "mini"
@@ -401,25 +399,16 @@ func TestProxy_Call_GlobalMiniFormat_Respected(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
 
-	serveProxy(t, srv, callTool("config", map[string]any{
-		"action":     "set_projection",
-		"server":     "svc",
-		"tool":       "get_user",
-		"projection": map[string]any{"exclude": []string{}},
-	}))
-
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("global mini format: %s", text)
+	t.Logf("response: %s", text)
 
-	if strings.HasPrefix(text, "{") {
-		t.Errorf("global mini format should not be raw JSON: %s", text)
+	if !strings.HasPrefix(text, "{") {
+		t.Errorf("proxy mode must ignore response_format:mini and return JSON: %s", text)
 	}
 }
 
-func TestProxy_Call_MiniFormat_PerSession(t *testing.T) {
-	// Exercises the daemon path: a session that received no _mini_tool_mode signal
-	// is proxy by the zero-value default, with no server-level option set.
+func TestProxy_Call_SessionFormatMini_Ignored(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -454,13 +443,10 @@ func TestProxy_Call_MiniFormat_PerSession(t *testing.T) {
 		t.Fatal("no content in response")
 	}
 	text, _ := content[0].(map[string]any)["text"].(string)
-	t.Logf("per-session mini format output: %q", text)
+	t.Logf("response: %q", text)
 
-	if !strings.Contains(text, "svc.list_items") {
-		t.Errorf("expected [svc.list_items] header in mini format output: %s", text)
-	}
-	if strings.HasPrefix(text, "{") {
-		t.Errorf("expected mini text format, got JSON: %s", text)
+	if !strings.HasPrefix(text, "{") {
+		t.Errorf("proxy mode must ignore session format:mini and return JSON: %s", text)
 	}
 }
 
@@ -621,9 +607,25 @@ func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
 		t.Fatal("fs__write_file not found in tools/list")
 	}
 
-	for _, key := range []string{"annotations", "title", "outputSchema", "_meta", "icons", "execution"} {
+	for _, key := range []string{"annotations", "title", "_meta", "icons", "execution"} {
 		if _, ok := tool[key]; ok {
 			t.Errorf("tool without %q must not include that key, got: %v", key, tool[key])
 		}
+	}
+}
+
+func TestProxy_ToolsList_OutputSchemaAlwaysSynthesized(t *testing.T) {
+	srv := newProxyServer(t)
+	defer srv.Close()
+	conn := fakeConn("write_file")
+	addProxyConn(t, srv, "fs", conn)
+
+	tools := toolsList(t, srv)
+	tool := findTool(tools, "fs__write_file")
+	if tool == nil {
+		t.Fatal("fs__write_file not found in tools/list")
+	}
+	if _, ok := tool["outputSchema"]; !ok {
+		t.Error("proxy mode must always advertise outputSchema, even for tools without one upstream")
 	}
 }

@@ -418,6 +418,66 @@ func (c *mcpClient) execTool(server, tool string, args map[string]any) string {
 	return toolCallText(c.t, raw)
 }
 
+type proxyResult struct {
+	Data any              `json:"data"`
+	Mini *proxyResultMini `json:"__mini"`
+}
+
+type proxyResultMini struct {
+	Msg         string           `json:"msg"`
+	File        string           `json:"file"`
+	Excluded    []string         `json:"excluded"`
+	Truncated   []miniTruncation `json:"truncated"`
+	Passthrough map[string]any   `json:"passthrough"`
+}
+
+func proxyToolArguments(args, controls map[string]any) map[string]any {
+	arguments := map[string]any{"args": args}
+	if controls != nil {
+		arguments["__mini"] = controls
+	}
+	return arguments
+}
+
+func (c *mcpClient) execProxyTool(serverDotTool string, args, controls map[string]any) proxyResult {
+	c.t.Helper()
+	raw := c.mustCall("tools/call", map[string]any{
+		"name":      serverDotTool,
+		"arguments": proxyToolArguments(args, controls),
+	})
+	text := toolCallText(c.t, raw)
+	var pr proxyResult
+	if err := json.Unmarshal([]byte(text), &pr); err != nil {
+		c.t.Fatalf("parse proxy result: %v\ntext: %s", err, text)
+	}
+	return pr
+}
+
+// execProxyToolRaw sends arguments verbatim, bypassing the {"args": ...} wrapper —
+// for testing rejection of legacy/malformed argument shapes. A rejected legacy
+// call surfaces as a JSON-RPC protocol error (invalid params), not a tool-level
+// isError result, so this uses call (not mustCall) and reports either shape.
+func (c *mcpClient) execProxyToolRaw(serverDotTool string, rawArguments map[string]any) (string, bool) {
+	c.t.Helper()
+	raw, err := c.call("tools/call", map[string]any{
+		"name":      serverDotTool,
+		"arguments": rawArguments,
+	})
+	if err != nil {
+		return err.Error(), true
+	}
+	return parseToolCallResult(raw)
+}
+
+func (c *mcpClient) execProxyToolAllowError(serverDotTool string, args, controls map[string]any) (string, bool) {
+	c.t.Helper()
+	raw := c.mustCall("tools/call", map[string]any{
+		"name":      serverDotTool,
+		"arguments": proxyToolArguments(args, controls),
+	})
+	return parseToolCallResult(raw)
+}
+
 func (c *mcpClient) listTools(server string) string {
 	c.t.Helper()
 	raw := c.mustCall("tools/call", map[string]any{
