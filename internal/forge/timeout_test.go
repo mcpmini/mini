@@ -73,3 +73,32 @@ func TestExecute_outputTooLarge(t *testing.T) {
 		t.Errorf("elapsed = %v, want the 8MB cap to be hit well before the 20s timeout", elapsed)
 	}
 }
+
+func TestExecute_largeStderrReturnsPromptlyWithCappedCapture(t *testing.T) {
+	requireDeno(t)
+	code := `async () => { console.error("e".repeat(256 * 1024)); return "done"; }`
+	start := time.Now()
+	got, err := forge.Execute(context.Background(), forge.Params{
+		Code:    code,
+		Timeout: 20 * time.Second,
+	})
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if string(got) != `"done"` {
+		t.Errorf("result = %s, want %q", got, "done")
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("elapsed = %v, want prompt return (stderr past the cap must be drained, not block the child)", elapsed)
+	}
+
+	got, err = forge.Execute(context.Background(), forge.Params{Code: "async () => 2"})
+	if err != nil {
+		t.Fatalf("follow-up Execute after large-stderr run: %v", err)
+	}
+	if string(got) != "2" {
+		t.Errorf("follow-up result = %s, want 2", got)
+	}
+}

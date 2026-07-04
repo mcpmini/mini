@@ -65,6 +65,9 @@ func captureOutput(cmd *exec.Cmd, stdoutPipe, stderrPipe io.Reader) runResult {
 	go func() {
 		defer wg.Done()
 		stderr, _ = captureCapped(stderrPipe, maxStderrBytes)
+		// Keep draining past the cap: once the kernel pipe buffer fills, the
+		// child blocks on stderr writes and the run hangs until the timeout.
+		_, _ = io.Copy(io.Discard, stderrPipe)
 	}()
 	wg.Wait()
 	return runResult{stdout: stdout, stderr: stderr, outputTooLarge: tooLarge}
