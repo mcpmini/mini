@@ -32,6 +32,10 @@ func configFrom(ac *config.AuthConfig) *oauth2.Config {
 	}
 }
 
+func oauthHTTPContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, oauth2.HTTPClient, noRedirectClient)
+}
+
 // PKCEFlow performs OAuth2 Authorization Code + PKCE.
 // Always prints the auth URL, then also attempts to open it in the browser.
 func PKCEFlow(ctx context.Context, ac *config.AuthConfig, openBrowser func(string) error) (*oauth2.Token, error) {
@@ -159,13 +163,13 @@ func exchangeCode(ctx context.Context, p ExchangeCodeParams) { //nolint:funclen
 	if p.ResourceURL != "" {
 		opts = append(opts, oauth2.SetAuthURLParam("resource", p.ResourceURL))
 	}
-	token, err := p.Cfg.Exchange(ctx, code, opts...)
+	token, err := p.Cfg.Exchange(oauthHTTPContext(ctx), code, opts...)
 	p.ResultCh <- PKCEResult{Token: token, Err: err}
 }
 
 // Refresh exchanges a refresh token for a new access token.
 func Refresh(ctx context.Context, ac *config.AuthConfig, t *oauth2.Token) (*oauth2.Token, error) {
-	src := configFrom(ac).TokenSource(ctx, t)
+	src := configFrom(ac).TokenSource(oauthHTTPContext(ctx), t)
 	return src.Token()
 }
 

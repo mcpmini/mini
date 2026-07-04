@@ -32,6 +32,23 @@ func TestSessionStore_evictIdle_keepsActiveSession(t *testing.T) {
 	}
 }
 
+func TestSessionStore_evictIdle_keepsInFlightRequest(t *testing.T) {
+	fakeClock := clock.NewFake()
+	st := newSessionStore(fakeClock)
+	s, release := st.acquire("abcdefghijklmnop")
+	fakeClock.Advance(2 * time.Hour)
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
+	if got := st.getOrCreate("abcdefghijklmnop"); got != s {
+		t.Fatal("in-flight session was evicted")
+	}
+	release()
+	fakeClock.Advance(2 * time.Hour)
+	st.evictIdle(fakeClock.Now().Add(-time.Hour))
+	if got := st.getOrCreate("abcdefghijklmnop"); got == s {
+		t.Fatal("completed idle session was not evicted")
+	}
+}
+
 func TestSessionStore_getOrCreate_returnsSameSession(t *testing.T) {
 	st := newSessionStore(clock.NewFake())
 	s1 := st.getOrCreate("abcdefghijklmnop")

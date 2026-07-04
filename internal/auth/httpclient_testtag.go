@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// UseLoopbackHTTPClient bypasses SSRFSafeDialer so tests can reach httptest servers on loopback.
 func UseLoopbackHTTPClient() {
 	noRedirectClient = &http.Client{
 		Timeout: 30 * time.Second,
@@ -16,4 +15,3 @@ func UseLoopbackHTTPClient() {
 		},
 	}
 }
-

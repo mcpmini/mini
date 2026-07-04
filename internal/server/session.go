@@ -18,6 +18,7 @@ type Session struct {
 	projections map[string]*config.ProjectionConfig
 	conns       map[string]transport.Connection
 	lastUsed    time.Time
+	activeCalls int
 	clock       clock.Clock
 	notifyCh    chan json.RawMessage // non-nil only in stdio sessions; set by Serve
 	dialMu      sync.Mutex
@@ -272,6 +273,20 @@ func (s *Session) touch() {
 	s.mu.Unlock()
 }
 
+func (s *Session) beginCall() {
+	s.mu.Lock()
+	s.activeCalls++
+	s.lastUsed = s.clock.Now()
+	s.mu.Unlock()
+}
+
+func (s *Session) endCall() {
+	s.mu.Lock()
+	s.activeCalls--
+	s.lastUsed = s.clock.Now()
+	s.mu.Unlock()
+}
+
 func (s *Session) recordCall(latencyMs, tokensSaved int64, isErr bool) {
 	s.totalCalls.Add(1)
 	s.totalLatencyMs.Add(latencyMs)
@@ -285,6 +300,9 @@ func (s *Session) idleDuration(deadline time.Time) (time.Duration, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.notifyCh != nil {
+		return 0, false
+	}
+	if s.activeCalls != 0 {
 		return 0, false
 	}
 	if !s.lastUsed.Before(deadline) {
@@ -312,17 +330,30 @@ func sessionIDPrefix(id string) string {
 
 func (st *sessionStore) getOrCreate(id string) *Session {
 	st.mu.Lock()
-	s, ok := st.sessions[id]
-	if !ok {
-		s = newSession(st.clock)
-		st.sessions[id] = s
-	}
+	s, ok := st.getOrCreateLocked(id)
 	s.touch()
 	st.mu.Unlock()
 	if !ok {
 		slog.Debug("session created", "session_id", sessionIDPrefix(id))
 	}
 	return s
+}
+
+func (st *sessionStore) acquire(id string) (*Session, func()) {
+	st.mu.Lock()
+	s, _ := st.getOrCreateLocked(id)
+	s.beginCall()
+	st.mu.Unlock()
+	return s, s.endCall
+}
+
+func (st *sessionStore) getOrCreateLocked(id string) (*Session, bool) {
+	s, ok := st.sessions[id]
+	if !ok {
+		s = newSession(st.clock)
+		st.sessions[id] = s
+	}
+	return s, ok
 }
 
 func (st *sessionStore) delete(id string) {

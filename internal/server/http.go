@@ -52,6 +52,7 @@ type parsedPostRequest struct {
 	body      []byte
 	sessionID string
 	session   *Session
+	release   func()
 }
 
 func (s *Server) servePost(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +60,7 @@ func (s *Server) servePost(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	defer req.release()
 	resp, send := s.handleLineCancellable(r.Context(), req.body, req.session)
 	writeMCPResponse(w, r, mcpResponseParams{SessionID: req.sessionID, Resp: resp, Send: send})
 }
@@ -72,7 +74,8 @@ func (s *Server) parsePostRequest(w http.ResponseWriter, r *http.Request) (parse
 	if !ok {
 		return parsedPostRequest{}, false
 	}
-	return parsedPostRequest{body, sessionID, s.sessions.getOrCreate(sessionID)}, true
+	session, release := s.sessions.acquire(sessionID)
+	return parsedPostRequest{body, sessionID, session, release}, true
 }
 
 type mcpResponseParams struct {

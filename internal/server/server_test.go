@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
@@ -28,6 +29,7 @@ func TestMain(m *testing.M) {
 		runEnvEchoServer()
 		os.Exit(0)
 	}
+	auth.UseLoopbackHTTPClient()
 	os.Exit(m.Run())
 }
 
