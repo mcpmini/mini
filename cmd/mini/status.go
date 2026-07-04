@@ -16,27 +16,24 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func newLsCmd(configDir string) *cobra.Command {
+func newLsCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:                "ls [SERVER] [TOOL]",
-		Aliases:            []string{"list"},
-		Short:              "List servers, server tools, or tool detail",
-		DisableFlagParsing: true,
+		Use:     "ls [SERVER] [TOOL]",
+		Aliases: []string{"list"},
+		Short:   "List servers, server tools, or tool detail",
+		Args:    usageArgs(cobra.MaximumNArgs(2)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if helpRequested(args) {
-				return cmd.Help()
-			}
-			return runList(configDir, args, cmd.OutOrStdout())
+			return runList(opts.configDir, args, cmd.OutOrStdout())
 		},
 	}
 }
 
-func newStatusCmd(configDir string) *cobra.Command {
+func newStatusCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show server health",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runStatus(configDir)
+			runStatus(opts.configDir)
 			return nil
 		},
 	}

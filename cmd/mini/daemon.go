@@ -20,27 +20,27 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func newDaemonCmd(configDir string) *cobra.Command {
+func newDaemonCmd(opts *rootOptions) *cobra.Command {
 	var logLevel string
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run as a shared background daemon (HTTP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runDaemon(configDir, logLevel)
+			runDaemon(opts.configDir, logLevel)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&logLevel, "log-level", "", "log level (debug|info|warn|error)")
-	cmd.AddCommand(newDaemonStatusCmd(configDir))
+	cmd.AddCommand(newDaemonStatusCmd(opts))
 	return cmd
 }
 
-func newDaemonStatusCmd(configDir string) *cobra.Command {
+func newDaemonStatusCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show whether the daemon is running",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runDaemonStatus(configDir)
+			runDaemonStatus(opts.configDir)
 			return nil
 		},
 	}

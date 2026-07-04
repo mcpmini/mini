@@ -10,12 +10,12 @@ import (
 	"github.com/mcpmini/mini/internal/ops"
 )
 
-func newCleanupCmd(configDir string) *cobra.Command {
+func newCleanupCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "cleanup",
 		Short: "Delete expired response files",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCleanup(configDir, cmd.OutOrStdout(), clock.System())
+			return runCleanup(opts.configDir, cmd.OutOrStdout(), clock.System())
 		},
 	}
 }

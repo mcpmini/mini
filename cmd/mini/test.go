@@ -24,13 +24,13 @@ type upstreamResult struct {
 	err       error
 }
 
-func newTestCmd(configDir string) *cobra.Command {
+func newTestCmd(opts *rootOptions) *cobra.Command {
 	var timeout time.Duration
 	cmd := &cobra.Command{
 		Use:   "test",
 		Short: "CI-safe health check (exits 1 on any failure)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runTest(configDir, timeout)
+			runTest(opts.configDir, timeout)
 			return nil
 		},
 	}

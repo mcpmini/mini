@@ -14,19 +14,13 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func newAuthCmd(configDir string) *cobra.Command {
+func newAuthCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
-		Use:                "auth NAME",
-		Short:              "Authorize a server via OAuth2 (PKCE flow)",
-		DisableFlagParsing: true,
+		Use:   "auth NAME",
+		Short: "Authorize a server via OAuth2 (PKCE flow)",
+		Args:  usageArgs(cobra.ExactArgs(1)),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if helpRequested(args) {
-				return cmd.Help()
-			}
-			if len(args) == 0 {
-				return usageErrf("usage: mini auth <server-name>")
-			}
-			runAuth(configDir, args[0])
+			runAuth(opts.configDir, args[0])
 			return nil
 		},
 	}

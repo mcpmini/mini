@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,90 +23,120 @@ type stringSlice []string
 
 func (s *stringSlice) String() string     { return strings.Join(*s, ", ") }
 func (s *stringSlice) Set(v string) error { *s = append(*s, v); return nil }
+func (s *stringSlice) Type() string       { return "string" }
 
-const addLongHelp = `Add a server by name with an HTTP/SSE URL or a stdio command, or import
-servers from another agent's config.
+const addLongHelp = `Add an HTTP server with --url, import another client's config with one
+--from-* flag, or use -- before a stdio command so every child argument is
+preserved unchanged.
 
-Flags:
-  --url URL             HTTP/SSE server URL
-  --header K=V          HTTP header (repeatable)
-  --protected TOOL      Mark tool as protected (repeatable)
-  --no-connect          Skip the post-add connectivity check and OAuth authorization
-  --from-claude PATH    Import from Claude Desktop / Claude Code config JSON
-  --from-cursor PATH    Import from Cursor mcp.json
-  --from-codex PATH     Import from Codex config.toml
-  --from-gemini PATH    Import from Gemini CLI settings.json
-  --from-openclaw PATH  Import from OpenClaw (MoltBot) openclaw.json config
+Examples:
+  mini add api --url https://example.com/mcp
+  mini add local --protected delete -- npx -y server-package`
 
-The stdio command is positional, given after NAME with no leading flag, e.g.:
-mini add gh npx -y server-github`
-
-func newAddCmd(configDir string) *cobra.Command {
-	return &cobra.Command{
-		Use:                "add NAME [--url URL | CMD ARGS...] [flags]",
-		Short:              "Add a server",
-		Long:               addLongHelp,
-		DisableFlagParsing: true,
+func newAddCmd(opts *rootOptions) *cobra.Command {
+	sf := serverFlags{}
+	imports := importFlags{}
+	cmd := &cobra.Command{
+		Use:   "add NAME (--url URL | -- CMD [ARGS...])",
+		Short: "Add a server",
+		Long:  addLongHelp,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if helpRequested(args) {
-				return cmd.Help()
-			}
-			return runAdd(configDir, args, cmd.OutOrStdout())
+			return runAddParsed(addParams{
+				configDir: opts.configDir,
+				args:      args,
+				dash:      cmd.ArgsLenAtDash(),
+				server:    sf,
+				imports:   imports,
+				out:       cmd.OutOrStdout(),
+			})
+		},
+	}
+	bindAddFlags(cmd, &sf, &imports)
+	return cmd
+}
+
+func bindAddFlags(cmd *cobra.Command, sf *serverFlags, imports *importFlags) {
+	flags := cmd.Flags()
+	flags.StringVar(&sf.url, "url", "", "HTTP/SSE server URL")
+	flags.Var(&sf.headers, "header", "HTTP header as Key=Value (repeatable)")
+	flags.Var(&sf.protected, "protected", "tool name to mark protected (repeatable)")
+	flags.BoolVar(&sf.noConnect, "no-connect", false, "skip connectivity check and OAuth authorization")
+	flags.StringVar(&imports.claude, "from-claude", "", "import from Claude Desktop / Claude Code config JSON")
+	flags.StringVar(&imports.cursor, "from-cursor", "", "import from Cursor mcp.json config")
+	flags.StringVar(&imports.codex, "from-codex", "", "import from Codex config.toml")
+	flags.StringVar(&imports.gemini, "from-gemini", "", "import from Gemini CLI settings.json")
+	flags.StringVar(&imports.openclaw, "from-openclaw", "", "import from OpenClaw (MoltBot) openclaw.json config")
+}
+
+func newRmCmd(opts *rootOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:     "rm NAME",
+		Aliases: []string{"remove"},
+		Short:   "Remove a server",
+		Args:    usageArgs(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runRemove(opts.configDir, args, cmd.OutOrStdout())
 		},
 	}
 }
 
-func newRmCmd(configDir string) *cobra.Command {
-	return &cobra.Command{
-		Use:                "rm NAME",
-		Aliases:            []string{"remove"},
-		Short:              "Remove a server",
-		DisableFlagParsing: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if helpRequested(args) {
-				return cmd.Help()
-			}
-			return runRemove(configDir, args, cmd.OutOrStdout())
-		},
-	}
+type addParams struct {
+	configDir string
+	args      []string
+	dash      int
+	server    serverFlags
+	imports   importFlags
+	out       io.Writer
 }
 
-func runAdd(configDir string, args []string, out io.Writer) error {
-	remaining, fromFlags, err := parseImportFlags(args, out)
-	if err != nil {
+func runAddParsed(p addParams) error {
+	if handled, err := runAddImport(p); handled {
 		return err
 	}
-	if handled, err := handleImportFlags(configDir, fromFlags); handled {
-		return err
-	}
-	return addByName(configDir, remaining, out)
+	return runAddServer(p)
 }
 
-func addByName(configDir string, remaining []string, out io.Writer) error {
-	if len(remaining) == 0 {
-		return usageErrf("usage: mini add NAME [--url URL | CMD ARGS...] [flags]")
+func runAddImport(p addParams) (bool, error) {
+	if importCount(p.imports) > 0 {
+		if importCount(p.imports) != 1 || len(p.args) != 0 || p.dash >= 0 || p.server.hasServerOptions() {
+			return true, usageErrf("import mode accepts exactly one --from-* flag and no server arguments")
+		}
+		_, err := handleImportFlags(p.configDir, p.imports)
+		return true, err
 	}
-	sf, err := parseServerFlags(remaining, out)
-	if err != nil {
-		return err
+	return false, nil
+}
+
+func runAddServer(p addParams) error {
+	if len(p.args) == 0 {
+		return usageErrf("provide NAME with --url, or NAME -- CMD [ARGS...]")
 	}
-	return addNamedServer(configDir, sf, out)
+	p.server.name = p.args[0]
+	if p.server.url != "" {
+		if p.dash >= 0 || len(p.args) != 1 {
+			return usageErrf("--url cannot be combined with a stdio command")
+		}
+		return addNamedServer(p.configDir, p.server, p.out)
+	}
+	if p.dash != 1 || len(p.args) < 2 {
+		return usageErrf("stdio servers require NAME -- CMD [ARGS...]")
+	}
+	p.server.cmdArgs = p.args[1:]
+	return addNamedServer(p.configDir, p.server, p.out)
 }
 
 type importFlags struct {
 	claude, cursor, codex, gemini, openclaw string
 }
 
-func parseImportFlags(args []string, out io.Writer) (remaining []string, flags importFlags, err error) {
-	fs := flag.NewFlagSet("add", flag.ContinueOnError)
-	fs.SetOutput(out)
-	fs.StringVar(&flags.claude, "from-claude", "", "import from Claude Desktop / Claude Code config JSON")
-	fs.StringVar(&flags.cursor, "from-cursor", "", "import from Cursor mcp.json config")
-	fs.StringVar(&flags.codex, "from-codex", "", "import from Codex config.toml")
-	fs.StringVar(&flags.gemini, "from-gemini", "", "import from Gemini CLI settings.json")
-	fs.StringVar(&flags.openclaw, "from-openclaw", "", "import from OpenClaw (MoltBot) openclaw.json config")
-	err = fs.Parse(args)
-	return fs.Args(), flags, err
+func importCount(f importFlags) int {
+	count := 0
+	for _, path := range []string{f.claude, f.cursor, f.codex, f.gemini, f.openclaw} {
+		if path != "" {
+			count++
+		}
+	}
+	return count
 }
 
 type serverFlags struct {
@@ -118,19 +147,8 @@ type serverFlags struct {
 	noConnect bool
 }
 
-func parseServerFlags(args []string, out io.Writer) (serverFlags, error) {
-	f := serverFlags{name: args[0]}
-	fs := flag.NewFlagSet("add-server", flag.ContinueOnError)
-	fs.SetOutput(out)
-	fs.StringVar(&f.url, "url", "", "HTTP/SSE server URL")
-	fs.Var(&f.headers, "header", "HTTP header as Key=Value (repeatable)")
-	fs.Var(&f.protected, "protected", "tool name to mark protected (repeatable)")
-	fs.BoolVar(&f.noConnect, "no-connect", false, "skip the post-add connectivity check and OAuth authorization")
-	if err := fs.Parse(args[1:]); err != nil {
-		return serverFlags{}, err
-	}
-	f.cmdArgs = fs.Args()
-	return f, nil
+func (f serverFlags) hasServerOptions() bool {
+	return f.url != "" || len(f.headers) > 0 || len(f.protected) > 0 || f.noConnect
 }
 
 func handleImportFlags(configDir string, f importFlags) (handled bool, err error) {
@@ -193,7 +211,7 @@ func permissionsYAML(protected stringSlice) *importers.PermissionsYAML {
 }
 
 func runRemove(configDir string, args []string, out io.Writer) error {
-	if len(args) == 0 {
+	if len(args) != 1 {
 		return usageErrf("usage: mini rm NAME")
 	}
 	name := args[0]

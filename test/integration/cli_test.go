@@ -156,7 +156,7 @@ func TestCLI_add_UrlCreatesFile(t *testing.T) {
 
 func TestCLI_add_CommandCreatesFile(t *testing.T) {
 	cfg := t.TempDir()
-	_, _, code := runCLI(t, cfg, "add", "myserver", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+	_, _, code := runCLI(t, cfg, "add", "myserver", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
 	if code != 0 {
 		t.Fatalf("add with command should exit 0, got %d", code)
 	}
@@ -242,7 +242,7 @@ func TestCLI_add_FromClaudeCode(t *testing.T) {
 	}
 }
 
-func TestCLI_configFlagAfterSubcommand_IsHonored(t *testing.T) {
+func TestCLI_configFlagMayFollowSubcommand(t *testing.T) {
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 
@@ -250,16 +250,15 @@ func TestCLI_configFlagAfterSubcommand_IsHonored(t *testing.T) {
 	var errOut strings.Builder
 	cmd.Stderr = &errOut
 	if err := cmd.Run(); err != nil {
-		t.Fatalf("rm with --config after the subcommand should exit 0: %v (stderr=%s)", err, errOut.String())
+		t.Fatalf("rm with trailing --config should exit 0: %v (stderr=%s)", err, errOut.String())
 	}
-
 	stdout, _, code := runCLI(t, cfg, "ls")
 	if code != 0 || strings.Contains(stdout, "myserver") {
-		t.Errorf("myserver should be removed from %s via post-subcommand --config, got code=%d ls=%q", cfg, code, stdout)
+		t.Errorf("leading --config did not select %s: code=%d ls=%q", cfg, code, stdout)
 	}
 }
 
-func TestCLI_addHelp_ShowsFlagsDespiteDisabledParsing(t *testing.T) {
+func TestCLI_addHelp_ShowsFlags(t *testing.T) {
 	cmd := exec.Command(miniBin, "add", "--help")
 	var out strings.Builder
 	cmd.Stdout = &out

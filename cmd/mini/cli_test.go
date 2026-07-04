@@ -77,6 +77,46 @@ func TestCLI_add_and_ls(t *testing.T) {
 	checkLsContains(t, bin, cfg, "myserver", "http")
 }
 
+func TestCLI_add_preservesChildFlags(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	cmd := exec.Command(bin, "add", "svc", "--config", cfg, "--", "/usr/bin/printf", "-h", "--config", "child-value")
+	output, err := cmd.CombinedOutput()
+	code := 0
+	if err != nil {
+		code = err.(*exec.ExitError).ExitCode()
+	}
+	if code != 0 {
+		t.Fatalf("add exited %d: %s", code, output)
+	}
+	data, err := os.ReadFile(filepath.Join(cfg, "servers", "svc.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"- -h", "- --config", "- child-value"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("server config %q does not contain %q", data, want)
+		}
+	}
+}
+
+func TestCLI_configAfterSubcommandIsAccepted(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	stdout, stderr, code := run(t, bin, t.TempDir(), "ls", "--config", cfg)
+	if code != 0 || !strings.Contains(stdout, "no servers") {
+		t.Fatalf("ls exited %d: stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestCLI_addRequiresDashBeforeStdioCommand(t *testing.T) {
+	bin := miniBin(t)
+	_, stderr, code := run(t, bin, t.TempDir(), "add", "svc", "printf", "hello")
+	if code != 2 || !strings.Contains(stderr, "require NAME -- CMD") {
+		t.Fatalf("add exited %d: %s", code, stderr)
+	}
+}
+
 func checkLsContains(t *testing.T, bin, cfg string, want ...string) {
 	t.Helper()
 	stdout, _, code := run(t, bin, cfg, "ls")

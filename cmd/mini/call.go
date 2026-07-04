@@ -22,52 +22,38 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-const callFlagHelpFmt = `
-  -j    JSON output (projected envelope, default)
-  -m    mini format (compact key:value)
-  -r    raw upstream response, no projection
+func newCallCmd(opts *rootOptions) *cobra.Command {
+	return newCallCommand(opts, false)
+}
 
-PARAMS is a JSON string or - to read from stdin. Use -- to pass a literal
-SERVER, TOOL, or PARAMS value that would otherwise be read as a flag, e.g.
-mini %s svc -- -r`
-
-func newCallCmd(configDir string) *cobra.Command {
-	return &cobra.Command{
-		Use:                "call SERVER TOOL [PARAMS]",
-		Short:              "Invoke an open tool directly (exit 1 on tool error)",
-		Long:               "Invoke a tool directly, bypassing the list/call MCP interface.\n" + fmt.Sprintf(callFlagHelpFmt, "call"),
-		DisableFlagParsing: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if helpRequested(args) {
-				return cmd.Help()
+func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
+	f := callFlags{}
+	cmd := &cobra.Command{
+		Use:   "call SERVER TOOL [PARAMS]",
+		Short: "Invoke an open tool directly (exit 1 on tool error)",
+		Args:  usageArgs(cobra.RangeArgs(2, 3)),
+		PreRunE: func(*cobra.Command, []string) error {
+			if f.enabledCount() > 1 {
+				return usageErrf("choose only one output mode: --json, --mini, or --raw")
 			}
-			runCall(configDir, args)
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runCallCmd(opts.configDir, args, f, protected)
 			return nil
 		},
 	}
-}
-
-func newPermCallCmd(configDir string) *cobra.Command {
-	cmd := newCallCmd(configDir)
-	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
-	cmd.Short = "Invoke a protected tool directly"
-	cmd.Long = "Invoke a protected tool directly, bypassing the list/perm_call MCP interface.\n" + fmt.Sprintf(callFlagHelpFmt, "perm-call")
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if helpRequested(args) {
-			return cmd.Help()
-		}
-		runPermCall(configDir, args)
-		return nil
-	}
+	cmd.Flags().BoolVarP(&f.json, "json", "j", false, "JSON output (projected envelope, default)")
+	cmd.Flags().BoolVarP(&f.mini, "mini", "m", false, "mini format (compact key:value)")
+	cmd.Flags().BoolVarP(&f.raw, "raw", "r", false, "raw upstream response, no projection")
 	return cmd
 }
 
-func runCall(configDir string, args []string) {
-	runCallCmd(configDir, args, false)
-}
-
-func runPermCall(configDir string, args []string) {
-	runCallCmd(configDir, args, true)
+func newPermCallCmd(opts *rootOptions) *cobra.Command {
+	cmd := newCallCommand(opts, true)
+	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
+	cmd.Short = "Invoke a protected tool directly"
+	return cmd
 }
 
 type callOutput int
@@ -84,6 +70,16 @@ type callFlags struct {
 	raw  bool
 }
 
+func (f callFlags) enabledCount() int {
+	count := 0
+	for _, enabled := range []bool{f.json, f.mini, f.raw} {
+		if enabled {
+			count++
+		}
+	}
+	return count
+}
+
 type callContext struct {
 	cfg        *config.Config
 	sc         *config.ServerConfig
@@ -93,8 +89,8 @@ type callContext struct {
 	clock      clock.Clock
 }
 
-func runCallCmd(configDir string, args []string, protected bool) {
-	f, cc := parseCallContext(configDir, args)
+func runCallCmd(configDir string, args []string, f callFlags, protected bool) {
+	cc := parseCallContext(configDir, args)
 	cc.clock = clock.System()
 	checkCallPermission(cc.sc, cc.toolName, protected)
 
@@ -112,33 +108,10 @@ func runCallCmd(configDir string, args []string, protected bool) {
 	executeProjected(ctx, conn, cc, mode)
 }
 
-func parseCallContext(configDir string, args []string) (callFlags, callContext) {
-	f, pos := parseCallFlags(args)
-	serverName, toolName, params := resolveCallPos(pos)
+func parseCallContext(configDir string, args []string) callContext {
+	serverName, toolName, params := resolveCallPos(args)
 	cfg, sc := loadCallCtx(configDir, serverName)
-	return f, callContext{cfg: cfg, sc: sc, serverName: serverName, toolName: toolName, params: params}
-}
-
-func parseCallFlags(args []string) (callFlags, []string) {
-	f := callFlags{}
-	var pos []string
-	for i, a := range args {
-		if a == "--" {
-			pos = append(pos, args[i+1:]...)
-			break
-		}
-		switch a {
-		case "-j":
-			f.json = true
-		case "-m":
-			f.mini = true
-		case "-r":
-			f.raw = true
-		default:
-			pos = append(pos, a)
-		}
-	}
-	return f, pos
+	return callContext{cfg: cfg, sc: sc, serverName: serverName, toolName: toolName, params: params}
 }
 
 func resolveCallPos(pos []string) (serverName, toolName string, params map[string]any) {

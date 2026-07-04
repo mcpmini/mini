@@ -21,14 +21,14 @@ type initFlags struct {
 	from string
 }
 
-func newInitCmd(configDir string) *cobra.Command {
+func newInitCmd(opts *rootOptions) *cobra.Command {
 	f := initFlags{}
 	cmd := &cobra.Command{
 		Use:     "init",
 		Aliases: []string{"setup"},
 		Short:   "Interactive setup wizard",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runInit(configDir, f)
+			runInit(opts.configDir, f)
 			return nil
 		},
 	}

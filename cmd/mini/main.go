@@ -37,7 +37,7 @@ type connectFlags struct {
 	toolMode          transport.ToolMode
 }
 
-func newConnectCmd(configDir string) *cobra.Command {
+func newConnectCmd(opts *rootOptions) *cobra.Command {
 	f := connectFlags{}
 	var toolModeStr string
 	cmd := &cobra.Command{
@@ -45,7 +45,7 @@ func newConnectCmd(configDir string) *cobra.Command {
 		Short: "Connect an agent to mini (stdio MCP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f.toolMode = parseToolMode(toolModeStr)
-			runConnect(configDir, f)
+			runConnect(opts.configDir, f)
 			return nil
 		},
 	}
