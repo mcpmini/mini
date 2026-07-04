@@ -136,6 +136,60 @@ func TestExecute_fileAllowListAcceptsHomeAndTempPaths(t *testing.T) {
 	}
 }
 
+func TestExecute_fileGrantSymlinkEntry(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("entry symlinking to /etc rejected", func(t *testing.T) {
+		link := filepath.Join(dir, "link-to-etc")
+		if err := os.Symlink("/etc", link); err != nil {
+			t.Fatalf("Symlink: %v", err)
+		}
+		_, err := forge.Execute(context.Background(), forge.Params{
+			Code:      "async () => 1",
+			ReadPaths: []string{link},
+		})
+		fe := asForgeError(t, err)
+		if fe.Kind != forge.KindRunner {
+			t.Errorf("Kind = %q, want %q", fe.Kind, forge.KindRunner)
+		}
+		if !strings.Contains(fe.Message, "resolves to") {
+			t.Errorf("Message = %q, want it to mention resolves to", fe.Message)
+		}
+	})
+
+	t.Run("entry symlinking to another temp dir accepted", func(t *testing.T) {
+		requireDeno(t)
+		target := t.TempDir()
+		real, err := filepath.EvalSymlinks(target)
+		if err != nil {
+			t.Fatalf("EvalSymlinks: %v", err)
+		}
+		link := filepath.Join(dir, "link-to-temp")
+		if err := os.Symlink(real, link); err != nil {
+			t.Fatalf("Symlink: %v", err)
+		}
+		_, err = forge.Execute(context.Background(), forge.Params{
+			Code:      "async () => 1",
+			ReadPaths: []string{link},
+		})
+		if err != nil {
+			t.Fatalf("Execute with temp symlink grant: %v", err)
+		}
+	})
+
+	t.Run("nonexistent entry under temp root accepted", func(t *testing.T) {
+		requireDeno(t)
+		nonexistent := filepath.Join(dir, "does-not-exist")
+		_, err := forge.Execute(context.Background(), forge.Params{
+			Code:      "async () => 1",
+			ReadPaths: []string{nonexistent},
+		})
+		if err != nil {
+			t.Fatalf("Execute with nonexistent grant path: %v", err)
+		}
+	})
+}
+
 func manyPaths(n int) []string {
 	paths := make([]string, n)
 	for i := range paths {

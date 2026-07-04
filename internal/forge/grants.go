@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -103,7 +104,19 @@ func validateFileEntry(entry, listName string, roots []string) error {
 		return &Error{Kind: KindRunner, Message: fmt.Sprintf(
 			"invalid %s entry %q: paths must be within your home directory or the system temp directory — code mode does not grant access to system paths", listName, entry)}
 	}
-	return nil
+	return rejectOutOfBoundsSymlinkEntry(entry, listName, roots)
+}
+
+// Deno's permission check compares a path against the allow-list textually,
+// so a grant entry that is itself a symlink out of the allowed roots would
+// silently widen access to its target.
+func rejectOutOfBoundsSymlinkEntry(entry, listName string, roots []string) error {
+	resolved, err := filepath.EvalSymlinks(entry)
+	if err != nil || withinAnyRoot(resolved, roots) {
+		return nil //nolint:nilerr // a nonexistent entry has nothing to widen
+	}
+	return &Error{Kind: KindRunner, Message: fmt.Sprintf(
+		"invalid %s entry %q: resolves to %q outside your home directory or the system temp directory", listName, entry, resolved)}
 }
 
 func allowedGrantRoots() ([]string, error) {
@@ -112,12 +125,20 @@ func allowedGrantRoots() ([]string, error) {
 		return nil, &Error{Kind: KindRunner, Message: fmt.Sprintf("resolving home directory for file grant validation: %v", err)}
 	}
 	roots := []string{filepath.Clean(home), filepath.Clean(os.TempDir())}
-	if resolved, err := filepath.EvalSymlinks(os.TempDir()); err == nil {
-		if clean := filepath.Clean(resolved); clean != roots[1] {
-			roots = append(roots, clean)
-		}
-	}
+	roots = appendResolvedVariant(roots, os.TempDir())
+	roots = appendResolvedVariant(roots, home)
 	return roots, nil
+}
+
+func appendResolvedVariant(roots []string, path string) []string {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return roots
+	}
+	if clean := filepath.Clean(resolved); !slices.Contains(roots, clean) {
+		return append(roots, clean)
+	}
+	return roots
 }
 
 func withinAnyRoot(path string, roots []string) bool {
