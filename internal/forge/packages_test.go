@@ -89,15 +89,12 @@ func TestExecute_unresolvablePackageFailsAsDependencyError(t *testing.T) {
 	}
 }
 
-func TestExecute_unlistedUncachedPackageImportFailsAsRuntimeError(t *testing.T) {
+func TestExecute_unlistedPackageInvisibleEvenWhenCachedElsewhere(t *testing.T) {
 	requireDeno(t)
-	// The developer's real cache may already hold zod, which would mask the
-	// failure this test exists to prove.
-	denoDir := t.TempDir()
-	_, err := forge.ExecuteWithEnv(context.Background(), forge.Params{
+	_, err := forge.Execute(context.Background(), forge.Params{
 		Code:     `async () => { await import("npm:zod@3"); return null; }`,
 		Packages: []string{"jsr:@std/csv@1"},
-	}, []string{"DENO_DIR=" + denoDir})
+	})
 	fe := asForgeError(t, err)
 	if fe.Kind == forge.KindDependency {
 		t.Skip("offline: could not resolve jsr:@std/csv@1 to set up the isolated cache")

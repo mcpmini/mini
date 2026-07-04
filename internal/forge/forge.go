@@ -65,6 +65,11 @@ func execute(ctx context.Context, p Params, extraEnv []string) (json.RawMessage,
 		return nil, err
 	}
 	if len(p.Packages) > 0 {
+		env, err := withPackagesCacheDir(p.Packages, extraEnv)
+		if err != nil {
+			return nil, err
+		}
+		extraEnv = env
 		if err := resolveDeps(ctx, denoPath, p.Packages, extraEnv); err != nil {
 			return nil, err
 		}
