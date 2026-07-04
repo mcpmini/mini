@@ -23,11 +23,12 @@ type runResult struct {
 }
 
 type execOptions struct {
-	packages    []string
-	net         []string
-	env         []string
-	allowAllNet bool
-	extraEnv    []string
+	packages       []string
+	net            []string
+	env            []string
+	allowAllNet    bool
+	extraEnv       []string
+	bridgeHostPort string
 }
 
 func runDeno(runCtx context.Context, denoPath, program string, opts execOptions) (runResult, error) {
@@ -78,14 +79,17 @@ func runArgs(opts execOptions) []string {
 // netFlag prefers the dangerous bare-all grant over the scoped allowlist:
 // DangerousAllowAllNet ignores Net entirely rather than combining the two.
 func netFlag(opts execOptions) []string {
-	switch {
-	case opts.allowAllNet:
+	if opts.allowAllNet {
 		return []string{"--allow-net"}
-	case len(opts.net) > 0:
-		return []string{"--allow-net=" + strings.Join(opts.net, ",")}
-	default:
+	}
+	hosts := append([]string{}, opts.net...)
+	if opts.bridgeHostPort != "" {
+		hosts = append(hosts, opts.bridgeHostPort)
+	}
+	if len(hosts) == 0 {
 		return nil
 	}
+	return []string{"--allow-net=" + strings.Join(hosts, ",")}
 }
 
 // remoteFlags: --no-remote alone does not gate npm: specifier resolution, so

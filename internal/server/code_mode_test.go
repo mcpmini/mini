@@ -3,6 +3,7 @@
 package server_test
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -230,4 +231,63 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func TestExecuteCode_ToolBridge(t *testing.T) {
+	if _, err := exec.LookPath("deno"); err != nil {
+		t.Skip("deno not found in PATH")
+	}
+
+	srv := newCodeModeServer(t, true)
+	fake := fakeConn("toolA")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
+	addTestConnection(t, srv, config.ServerConfig{Name: "myserver"}, fake)
+
+	t.Run("mini.call returns upstream content", func(t *testing.T) {
+		resp := serve(t, srv, callTool("execute_code", map[string]any{
+			"code": `async () => await mini.call("myserver", "toolA", {})`,
+		}))
+		text := toolResultText(t, resp)
+		if text != `"ok"` {
+			t.Errorf("expected %q, got %q", `"ok"`, text)
+		}
+	})
+
+	t.Run("unknown tool returns isError", func(t *testing.T) {
+		resp := serve(t, srv, callTool("execute_code", map[string]any{
+			"code": `async () => await mini.call("myserver", "unknownTool", {})`,
+		}))
+		result, _ := resp["result"].(map[string]any)
+		if result == nil || result["isError"] != true {
+			t.Fatalf("expected isError=true, got: %v", resp)
+		}
+		if text := toolResultText(t, resp); !strings.Contains(text, "tool not found") {
+			t.Errorf("expected error to mention tool not found, got: %q", text)
+		}
+	})
+}
+
+func TestExecuteCode_ToolBridge_ProtectedTool(t *testing.T) {
+	if _, err := exec.LookPath("deno"); err != nil {
+		t.Skip("deno not found in PATH")
+	}
+
+	srv := newCodeModeServer(t, true)
+	fake := fakeConn("secret")
+	addTestConnection(t, srv, config.ServerConfig{
+		Name:        "myserver",
+		Permissions: &config.PermissionsConfig{Protected: []string{"secret"}},
+	}, fake)
+
+	resp := serve(t, srv, callTool("execute_code", map[string]any{
+		"code": `async () => await mini.call("myserver", "secret", {})`,
+	}))
+	result, _ := resp["result"].(map[string]any)
+	if result == nil || result["isError"] != true {
+		t.Fatalf("expected isError=true, got: %v", resp)
+	}
+	text := toolResultText(t, resp)
+	if !strings.Contains(text, "protected") && !strings.Contains(text, "perm_call") {
+		t.Errorf("expected error to mention protected or perm_call, got: %q", text)
+	}
 }

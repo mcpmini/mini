@@ -369,7 +369,7 @@ func (s *Server) routeStandardTool(ctx context.Context, name string, args json.R
 	case "config":
 		return s.handleConfigure(ctx, args, session)
 	case "execute_code":
-		return s.handleExecuteCode(ctx, args)
+		return s.handleExecuteCode(ctx, args, session)
 	default:
 		return nil, fmt.Errorf("%w: unknown tool: %s", errInvalidParams, name)
 	}

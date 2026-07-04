@@ -23,7 +23,7 @@ func (s *Server) routeProxyTool(ctx context.Context, name string, args json.RawM
 	case "read":
 		return s.handleRead(ctx, args)
 	case "execute_code":
-		return s.handleExecuteCode(ctx, args)
+		return s.handleExecuteCode(ctx, args, session)
 	default:
 		return s.handleProxyCall(ctx, name, args, session)
 	}

@@ -25,6 +25,9 @@ type Params struct {
 	// DangerousAllowAllNet grants unrestricted network access (bare
 	// --allow-net), ignoring Net for flag purposes.
 	DangerousAllowAllNet bool
+
+	// Tools enables the mini tool bridge; nil disables it.
+	Tools ToolBridge
 }
 
 type ErrorKind string
@@ -101,23 +104,37 @@ func validateParams(p Params) error {
 
 func runAndClassify(ctx context.Context, denoPath string, p Params, extraEnv []string) (json.RawMessage, error) {
 	marker := randutil.HexString(markerBytes)
-	program := buildProgram(p.Code, p.Input, marker)
-
 	runCtx, cancel := context.WithTimeout(ctx, resolveTimeout(p.Timeout))
 	defer cancel()
-
-	opts := execOptions{
-		packages:    p.Packages,
-		net:         p.Net,
-		env:         p.Env,
-		allowAllNet: p.DangerousAllowAllNet,
-		extraEnv:    extraEnv,
+	br, err := maybeStartBridge(runCtx, p.Tools)
+	if err != nil {
+		return nil, &Error{Kind: KindRunner, Message: err.Error()}
 	}
-	result, runErr := runDeno(runCtx, denoPath, program, opts)
+	defer br.close()
+	pp := programParams{code: p.Code, input: p.Input, marker: marker, bridgeHostPort: br.hostPort, bridgeToken: br.token}
+	opts := execOptions{packages: p.Packages, net: p.Net, env: p.Env, allowAllNet: p.DangerousAllowAllNet, extraEnv: extraEnv, bridgeHostPort: br.hostPort}
+	result, runErr := runDeno(runCtx, denoPath, buildProgram(pp), opts)
 	if runErr != nil {
 		return nil, &Error{Kind: KindRunner, Message: runErr.Error()}
 	}
 	return classify(result, ctx, runCtx, marker)
+}
+
+type bridgeResult struct {
+	hostPort string
+	token    string
+	close    func()
+}
+
+func maybeStartBridge(ctx context.Context, tools ToolBridge) (bridgeResult, error) {
+	if tools == nil {
+		return bridgeResult{close: func() {}}, nil
+	}
+	b, err := startToolBridge(ctx, tools)
+	if err != nil {
+		return bridgeResult{}, err
+	}
+	return bridgeResult{hostPort: b.hostPort(), token: b.token, close: b.close}, nil
 }
 
 func lookupDeno() (string, error) {

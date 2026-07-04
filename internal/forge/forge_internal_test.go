@@ -56,6 +56,21 @@ func TestRunArgs_flagSelection(t *testing.T) {
 			opts: execOptions{allowAllNet: true, packages: []string{"npm:zod@3"}},
 			want: "run --no-prompt --no-config --cached-only --allow-net -",
 		},
+		{
+			name: "bridge host appended to net list",
+			opts: execOptions{net: []string{"api.github.com"}, bridgeHostPort: "127.0.0.1:12345"},
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-net=api.github.com,127.0.0.1:12345 -",
+		},
+		{
+			name: "bridge host alone when net empty",
+			opts: execOptions{bridgeHostPort: "127.0.0.1:12345"},
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-net=127.0.0.1:12345 -",
+		},
+		{
+			name: "allow-all-net with bridge host stays bare",
+			opts: execOptions{allowAllNet: true, bridgeHostPort: "127.0.0.1:12345"},
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-net -",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -67,7 +82,7 @@ func TestRunArgs_flagSelection(t *testing.T) {
 }
 
 func TestBuildProgram_embedding(t *testing.T) {
-	program := buildProgram("async (i) => i", []byte(`{"n":1}`), "MARKERX")
+	program := buildProgram(programParams{code: "async (i) => i", input: []byte(`{"n":1}`), marker: "MARKERX"})
 
 	t.Run("marker embedded", func(t *testing.T) {
 		if !strings.Contains(program, "MARKERX") {
@@ -86,10 +101,19 @@ func TestBuildProgram_embedding(t *testing.T) {
 		}
 	})
 	t.Run("empty input becomes null", func(t *testing.T) {
-		if !strings.Contains(buildProgram("async () => 1", nil, "M"), "const __input = null;") {
+		if !strings.Contains(buildProgram(programParams{code: "async () => 1", marker: "M"}), "const __input = null;") {
 			t.Error("program does not default missing input to null")
 		}
 	})
+}
+
+func TestNetFlag_doesNotMutateCallerNetSlice(t *testing.T) {
+	original := []string{"api.github.com"}
+	opts := execOptions{net: original, bridgeHostPort: "127.0.0.1:12345"}
+	netFlag(opts)
+	if len(original) != 1 || original[0] != "api.github.com" {
+		t.Errorf("caller's net slice was mutated: %v", original)
+	}
 }
 
 func TestClassify_errorPaths(t *testing.T) {

@@ -5,22 +5,63 @@ import (
 	"strings"
 )
 
-func buildProgram(code string, input []byte, marker string) string {
-	moduleSrc := "export default (" + code + "\n);"
+type programParams struct {
+	code           string
+	input          []byte
+	marker         string
+	bridgeHostPort string
+	bridgeToken    string
+}
+
+func buildProgram(p programParams) string {
+	moduleSrc := "export default (" + p.code + "\n);"
 	codeB64 := base64.StdEncoding.EncodeToString([]byte(moduleSrc))
-
 	inputLiteral := "null"
-	if len(input) > 0 {
-		inputLiteral = string(input)
+	if len(p.input) > 0 {
+		inputLiteral = string(p.input)
 	}
-
 	replacer := strings.NewReplacer(
-		"__MARKER__", marker,
+		"__MARKER__", p.marker,
 		"__CODE_B64__", codeB64,
 		"__INPUT_JSON__", inputLiteral,
+		"__BRIDGE_SETUP__", bridgeSetupJS(p.bridgeHostPort, p.bridgeToken),
 	)
 	return replacer.Replace(harnessTemplate)
 }
+
+func bridgeSetupJS(hostPort, token string) string {
+	if hostPort == "" {
+		return absentBridgeSetup
+	}
+	return strings.NewReplacer(
+		"__BRIDGE_HOST__", hostPort,
+		"__BRIDGE_TOKEN__", token,
+	).Replace(presentBridgeSetup)
+}
+
+const presentBridgeSetup = `async function __miniFetch(method, path, body) {
+  const res = await fetch("http://__BRIDGE_HOST__" + path, {
+    method,
+    headers: { authorization: "Bearer __BRIDGE_TOKEN__", "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let msg = text;
+    try { msg = JSON.parse(text).error ?? text; } catch {}
+    throw new Error(msg);
+  }
+  return JSON.parse(text);
+}
+globalThis.mini = {
+  list: () => __miniFetch("GET", "/list"),
+  call: (server, tool, params = {}) => __miniFetch("POST", "/call", { server, tool, params }),
+};`
+
+const absentBridgeSetup = `globalThis.mini = {
+  list: () => { throw new Error("mini tools are not available in this run"); },
+  call: () => { throw new Error("mini tools are not available in this run"); },
+};`
 
 // harnessTemplate is dynamic-imported as a data: URL so the user's code runs
 // as its own module: a syntax error in it surfaces as a catchable TypeError
@@ -46,6 +87,8 @@ function __describe(e) {
     .slice(0, 5)
     .join("\n"));
 }
+
+__BRIDGE_SETUP__
 
 async function __run() {
   const __dataUrl = "data:text/typescript;base64,__CODE_B64__";
