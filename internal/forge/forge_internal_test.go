@@ -71,6 +71,38 @@ func TestRunArgs_flagSelection(t *testing.T) {
 			opts: execOptions{allowAllNet: true, bridgeHostPort: "127.0.0.1:12345"},
 			want: "run --no-prompt --no-config --no-remote --no-npm --allow-net -",
 		},
+		{
+			name: "scratch dir alone adds allow-read and allow-write",
+			opts: execOptions{scratchDir: "/tmp/forge-scratch-xyz"},
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-read=/tmp/forge-scratch-xyz --allow-write=/tmp/forge-scratch-xyz -",
+		},
+		{
+			name: "read paths plus scratch dir",
+			opts: execOptions{readPaths: []string{"/data"}, scratchDir: "/tmp/s"},
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-read=/data,/tmp/s --allow-write=/tmp/s -",
+		},
+		{
+			name: "write paths plus scratch dir",
+			opts: execOptions{writePaths: []string{"/out"}, scratchDir: "/tmp/s"},
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-read=/tmp/s --allow-write=/out,/tmp/s -",
+		},
+		{
+			name: "both read and write paths with scratch dir",
+			opts: execOptions{readPaths: []string{"/data"}, writePaths: []string{"/out"}, scratchDir: "/tmp/s"},
+			want: "run --no-prompt --no-config --no-remote --no-npm --allow-read=/data,/tmp/s --allow-write=/out,/tmp/s -",
+		},
+		{
+			name: "all grants together",
+			opts: execOptions{
+				packages:   []string{"npm:zod@3"},
+				net:        []string{"api.github.com"},
+				env:        []string{"TOKEN"},
+				readPaths:  []string{"/data"},
+				writePaths: []string{"/out"},
+				scratchDir: "/tmp/s",
+			},
+			want: "run --no-prompt --no-config --cached-only --allow-net=api.github.com --allow-env=TOKEN --allow-read=/data,/tmp/s --allow-write=/out,/tmp/s -",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -105,6 +137,44 @@ func TestBuildProgram_embedding(t *testing.T) {
 			t.Error("program does not default missing input to null")
 		}
 	})
+}
+
+func TestFsFlag_doesNotMutateCallerSlices(t *testing.T) {
+	readOrig := []string{"/data"}
+	writeOrig := []string{"/out"}
+	opts := execOptions{readPaths: readOrig, writePaths: writeOrig, scratchDir: "/s"}
+	runArgs(opts)
+	if len(readOrig) != 1 || readOrig[0] != "/data" {
+		t.Errorf("read slice mutated: %v", readOrig)
+	}
+	if len(writeOrig) != 1 || writeOrig[0] != "/out" {
+		t.Errorf("write slice mutated: %v", writeOrig)
+	}
+}
+
+func TestRunArgs_neverEmitsDangerousFlags(t *testing.T) {
+	forbidden := []string{"--allow-run", "--allow-ffi", "--allow-sys"}
+	cases := []execOptions{
+		{},
+		{packages: []string{"npm:zod@3"}},
+		{net: []string{"api.github.com"}},
+		{allowAllNet: true},
+		{env: []string{"GITHUB_TOKEN"}},
+		{readPaths: []string{"/data"}, scratchDir: "/tmp/s"},
+		{writePaths: []string{"/out"}, scratchDir: "/tmp/s"},
+		{packages: []string{"npm:z@1"}, net: []string{"a.com"}, env: []string{"V"}, readPaths: []string{"/r"}, writePaths: []string{"/w"}, scratchDir: "/s"},
+		{allowAllNet: true, packages: []string{"npm:z@1"}, env: []string{"V"}, readPaths: []string{"/r"}, writePaths: []string{"/w"}, scratchDir: "/s"},
+		{bridgeHostPort: "127.0.0.1:9999", scratchDir: "/s"},
+	}
+	for i, opts := range cases {
+		for _, arg := range runArgs(opts) {
+			for _, f := range forbidden {
+				if strings.HasPrefix(arg, f) {
+					t.Errorf("case %d opts=%+v: runArgs produced forbidden arg %q", i, opts, arg)
+				}
+			}
+		}
+	}
 }
 
 func TestNetFlag_doesNotMutateCallerNetSlice(t *testing.T) {

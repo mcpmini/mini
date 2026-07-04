@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/forge"
@@ -112,6 +115,104 @@ func TestExecute_envGrantedButUnsetYieldsUndefinedWithoutFailing(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	assertJSONEqual(t, got, "null")
+}
+
+func TestExecute_scratchDirWriteAndReadBack(t *testing.T) {
+	requireDeno(t)
+	got, err := forge.Execute(context.Background(), forge.Params{
+		Code: `async () => {
+			const path = mini.tmpDir + "/test.txt";
+			await Deno.writeTextFile(path, "hello from scratch");
+			return await Deno.readTextFile(path);
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	assertJSONEqual(t, got, `"hello from scratch"`)
+}
+
+func TestExecute_scratchDirRemovedAfterRun(t *testing.T) {
+	requireDeno(t)
+	got, err := forge.Execute(context.Background(), forge.Params{
+		Code: `async () => mini.tmpDir`,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var dir string
+	if err := json.Unmarshal(got, &dir); err != nil {
+		t.Fatalf("unmarshal tmpDir: %v", err)
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Errorf("scratch dir %q should not exist after run, got: %v", dir, statErr)
+	}
+}
+
+func TestExecute_makeTempFileInsideScratchDir(t *testing.T) {
+	requireDeno(t)
+	got, err := forge.Execute(context.Background(), forge.Params{
+		Code: `async () => {
+			const f = await Deno.makeTempFile();
+			return f.startsWith(mini.tmpDir);
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	assertJSONEqual(t, got, "true")
+}
+
+func TestExecute_writeOutsideGrantsDenied(t *testing.T) {
+	requireDeno(t)
+	deniedPath, _ := json.Marshal(filepath.Join(os.TempDir(), "forge-denied-test"))
+	_, err := forge.Execute(context.Background(), forge.Params{
+		Code:  `async (input) => { await Deno.writeTextFile(input.path, "data"); }`,
+		Input: json.RawMessage(`{"path":` + string(deniedPath) + `}`),
+	})
+	fe := asForgeError(t, err)
+	if fe.Kind != forge.KindRuntime {
+		t.Errorf("Kind = %q, want %q", fe.Kind, forge.KindRuntime)
+	}
+	if !containsAny(fe.Message, "NotCapable", "write access") {
+		t.Errorf("Message = %q, want NotCapable or write access denial", fe.Message)
+	}
+}
+
+func TestExecute_readGrantAllowsListedPath(t *testing.T) {
+	requireDeno(t)
+	dir := t.TempDir()
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "data.txt"), []byte("granted content"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	pathJSON, _ := json.Marshal(filepath.Join(real, "data.txt"))
+	got, err := forge.Execute(context.Background(), forge.Params{
+		Code:      `async (input) => await Deno.readTextFile(input.path)`,
+		Input:     json.RawMessage(`{"path":` + string(pathJSON) + `}`),
+		ReadPaths: []string{real},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	assertJSONEqual(t, got, `"granted content"`)
+}
+
+func TestExecute_readOutsideGrantsDenied(t *testing.T) {
+	requireDeno(t)
+	_, err := forge.Execute(context.Background(), forge.Params{
+		Code: `async () => { await Deno.readTextFile("/etc/hosts"); }`,
+	})
+	fe := asForgeError(t, err)
+	if fe.Kind != forge.KindRuntime {
+		t.Errorf("Kind = %q, want %q", fe.Kind, forge.KindRuntime)
+	}
+	if !strings.Contains(fe.Message, "read access") && !strings.Contains(fe.Message, "NotCapable") {
+		t.Errorf("Message = %q, want read access denial", fe.Message)
+	}
 }
 
 func listenerHostPort(t *testing.T, ts *httptest.Server) string {

@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -293,6 +295,35 @@ func TestExecuteCode_ToolBridge(t *testing.T) {
 			t.Errorf("expected inputSchema.type=%q, got %q", `"object"`, text)
 		}
 	})
+}
+
+func TestExecuteCode_ReadGrantFromConfigAllowsListedPath(t *testing.T) {
+	if _, err := exec.LookPath("deno"); err != nil {
+		t.Skip("deno not found in PATH")
+	}
+	dir := t.TempDir()
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("server-granted"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.CodeMode.Enabled = true
+	cfg.CodeMode.FileReadAllowList = []string{real}
+	srv := server.New(cfg, logger)
+	t.Cleanup(srv.Close)
+
+	resp := serve(t, srv, callTool("execute_code", map[string]any{
+		"code":  `async (input) => await Deno.readTextFile(input.path)`,
+		"input": map[string]any{"path": filepath.Join(real, "secret.txt")},
+	}))
+	if text := toolResultText(t, resp); text != `"server-granted"` {
+		t.Errorf("expected %q, got %q", `"server-granted"`, text)
+	}
 }
 
 func TestExecuteCode_ToolBridge_ProtectedTool(t *testing.T) {

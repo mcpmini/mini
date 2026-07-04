@@ -2,6 +2,7 @@ package forge
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 )
 
@@ -11,6 +12,7 @@ type programParams struct {
 	marker         string
 	bridgeHostPort string
 	bridgeToken    string
+	scratchDir     string
 }
 
 func buildProgram(p programParams) string {
@@ -24,18 +26,22 @@ func buildProgram(p programParams) string {
 		"__MARKER__", p.marker,
 		"__CODE_B64__", codeB64,
 		"__INPUT_JSON__", inputLiteral,
-		"__BRIDGE_SETUP__", bridgeSetupJS(p.bridgeHostPort, p.bridgeToken),
+		"__BRIDGE_SETUP__", bridgeSetupJS(p.bridgeHostPort, p.bridgeToken, p.scratchDir),
 	)
 	return replacer.Replace(harnessTemplate)
 }
 
-func bridgeSetupJS(hostPort, token string) string {
+func bridgeSetupJS(hostPort, token, scratchDir string) string {
+	scratchJSON, _ := json.Marshal(scratchDir)
 	if hostPort == "" {
-		return absentBridgeSetup
+		return strings.NewReplacer(
+			"__SCRATCH_DIR_JSON__", string(scratchJSON),
+		).Replace(absentBridgeSetup)
 	}
 	return strings.NewReplacer(
 		"__BRIDGE_HOST__", hostPort,
 		"__BRIDGE_TOKEN__", token,
+		"__SCRATCH_DIR_JSON__", string(scratchJSON),
 	).Replace(presentBridgeSetup)
 }
 
@@ -56,11 +62,13 @@ const presentBridgeSetup = `async function __miniFetch(method, path, body) {
 globalThis.mini = {
   list: () => __miniFetch("GET", "/list"),
   call: (server, tool, params = {}) => __miniFetch("POST", "/call", { server, tool, params }),
+  tmpDir: __SCRATCH_DIR_JSON__,
 };`
 
 const absentBridgeSetup = `globalThis.mini = {
   list: () => { throw new Error("mini tools are not available in this run"); },
   call: () => { throw new Error("mini tools are not available in this run"); },
+  tmpDir: __SCRATCH_DIR_JSON__,
 };`
 
 // harnessTemplate is dynamic-imported as a data: URL so the user's code runs

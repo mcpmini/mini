@@ -89,6 +89,14 @@ type CodeModeConfig struct {
 	// DangerousAllowAnyURL grants programs unrestricted network access
 	// (bare --allow-net). Never enable this by default.
 	DangerousAllowAnyURL bool `yaml:"dangerous_allow_any_url"`
+
+	// FileReadAllowList is the set of absolute paths programs may read.
+	// Empty means filesystem reads fully denied (per-run scratch dir excepted).
+	FileReadAllowList []string `yaml:"file_read_allow_list"`
+
+	// FileWriteAllowList is the set of absolute paths programs may write.
+	// Empty means filesystem writes fully denied (per-run scratch dir excepted).
+	FileWriteAllowList []string `yaml:"file_write_allow_list"`
 }
 
 // SessionModePerSession is the session_mode value that gives each session its own upstream connection.

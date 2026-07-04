@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,9 @@ type execOptions struct {
 	packages       []string
 	net            []string
 	env            []string
+	readPaths      []string
+	writePaths     []string
+	scratchDir     string
 	allowAllNet    bool
 	extraEnv       []string
 	bridgeHostPort string
@@ -55,6 +59,9 @@ func newDenoCmd(runCtx context.Context, denoPath, program string, opts execOptio
 	cmd := exec.CommandContext(runCtx, denoPath, runArgs(opts)...)
 	cmd.Env = append(childEnv(), opts.extraEnv...)
 	cmd.Env = append(cmd.Env, grantedEnvValues(opts.env)...)
+	if opts.scratchDir != "" {
+		cmd.Env = append(cmd.Env, "TMPDIR="+opts.scratchDir)
+	}
 	cmd.Stdin = strings.NewReader(program)
 	cmd.WaitDelay = 2 * time.Second
 	return cmd
@@ -62,8 +69,11 @@ func newDenoCmd(runCtx context.Context, denoPath, program string, opts execOptio
 
 // runArgs must keep remoteFlags' output (--no-remote --no-npm, or
 // --cached-only once packages are in play) as the only default:
-// --allow-net/--allow-env are appended only when the caller has non-empty
-// grants, so an unconfigured code_mode stays fully denied on both flag paths.
+// --allow-net/--allow-env/--allow-read/--allow-write are appended only when
+// the caller has non-empty grants, so an unconfigured code_mode stays fully
+// denied on all flag paths. The scratch dir is host-created per run and removed
+// afterward — it is always appended to both fs flags, so the default posture
+// is still no access to the user's files.
 // --no-config prevents a deno.json discovered from the daemon's cwd (or any
 // parent) from remapping imports inside the sandbox.
 func runArgs(opts execOptions) []string {
@@ -73,7 +83,33 @@ func runArgs(opts execOptions) []string {
 	if len(opts.env) > 0 {
 		args = append(args, "--allow-env="+strings.Join(opts.env, ","))
 	}
+	args = append(args, fsFlag("--allow-read", opts.readPaths, opts.scratchDir)...)
+	args = append(args, fsFlag("--allow-write", opts.writePaths, opts.scratchDir)...)
 	return append(args, "-")
+}
+
+func fsFlag(flag string, paths []string, scratchDir string) []string {
+	all := append([]string{}, paths...)
+	if scratchDir != "" {
+		all = append(all, scratchDir)
+	}
+	if len(all) == 0 {
+		return nil
+	}
+	return []string{flag + "=" + strings.Join(all, ",")}
+}
+
+func makeScratchDir() (string, error) {
+	dir, err := os.MkdirTemp("", "forge-scratch-")
+	if err != nil {
+		return "", err
+	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		os.RemoveAll(dir) //nolint:errcheck
+		return "", err
+	}
+	return real, nil
 }
 
 // netFlag prefers the dangerous bare-all grant over the scoped allowlist:

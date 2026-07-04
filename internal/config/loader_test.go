@@ -123,6 +123,10 @@ code_mode:
   env_var_allow_list:
     - GITHUB_TOKEN
   dangerous_allow_any_url: true
+  file_read_allow_list:
+    - /Users/me/data
+  file_write_allow_list:
+    - /Users/me/output
 `)
 	cfg, _ := mustLoadConfig(t, dir)
 	if !cfg.CodeMode.Enabled {
@@ -136,6 +140,12 @@ code_mode:
 	}
 	if !cfg.CodeMode.DangerousAllowAnyURL {
 		t.Error("expected DangerousAllowAnyURL to be true")
+	}
+	if len(cfg.CodeMode.FileReadAllowList) != 1 || cfg.CodeMode.FileReadAllowList[0] != "/Users/me/data" {
+		t.Errorf("expected FileReadAllowList [/Users/me/data], got %v", cfg.CodeMode.FileReadAllowList)
+	}
+	if len(cfg.CodeMode.FileWriteAllowList) != 1 || cfg.CodeMode.FileWriteAllowList[0] != "/Users/me/output" {
+		t.Errorf("expected FileWriteAllowList [/Users/me/output], got %v", cfg.CodeMode.FileWriteAllowList)
 	}
 }
 

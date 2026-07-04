@@ -111,8 +111,10 @@ func executeCodeSchema() map[string]any {
 }
 
 func executeCodeDescription() string {
-	return "Execute TypeScript in a sandboxed Deno subprocess (no filesystem or subprocess access; " +
-		"network and env restricted to the user-configured code_mode allowlists, denied by default). " +
+	return "Execute TypeScript in a sandboxed Deno subprocess (no subprocess access; " +
+		"network and env restricted to the user-configured code_mode allowlists, denied by default; " +
+		"mini.tmpDir is a per-run scratch directory, readable and writable, deleted after the run; " +
+		"other filesystem paths are readable/writable only when listed in the owner's code_mode.file_read_allow_list / file_write_allow_list). " +
 		"code: source of an async function, e.g. " +
 		"\"async (input) => input.items.filter(i => i.open)\". input: JSON value passed as its argument. " +
 		"Declare every package the code imports in packages and import via await import(...); " +

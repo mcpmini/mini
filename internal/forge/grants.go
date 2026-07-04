@@ -2,7 +2,10 @@ package forge
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 const maxGrantEntries = 32
@@ -22,6 +25,7 @@ var reservedEnvNames = map[string]bool{
 	"DENO_DIR":             true,
 	"DENO_NO_UPDATE_CHECK": true,
 	"NO_COLOR":             true,
+	"TMPDIR":               true,
 }
 
 // Entries are never normalized or rewritten — an invalid entry fails the call
@@ -55,6 +59,67 @@ func validateEnvAllowList(names []string) error {
 		}
 	}
 	return nil
+}
+
+// Entries are never normalized — an invalid entry fails the call loudly so the
+// user fixes their config rather than mini guessing intent.
+func validateFileAllowList(entries []string, listName string) error {
+	if len(entries) > maxGrantEntries {
+		return &Error{Kind: KindRunner, Message: fmt.Sprintf(
+			"too many %s entries: %d (max %d)", listName, len(entries), maxGrantEntries)}
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	roots, err := allowedGrantRoots()
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if err := validateFileEntry(entry, listName, roots); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFileEntry(entry, listName string, roots []string) error {
+	if !filepath.IsAbs(entry) {
+		return &Error{Kind: KindRunner, Message: fmt.Sprintf(
+			"invalid %s entry %q: expected an absolute path, e.g. /Users/me/data", listName, entry)}
+	}
+	if clean := filepath.Clean(entry); entry != clean {
+		return &Error{Kind: KindRunner, Message: fmt.Sprintf(
+			"invalid %s entry %q: path is not clean, write it as %q", listName, entry, clean)}
+	}
+	if !withinAnyRoot(entry, roots) {
+		return &Error{Kind: KindRunner, Message: fmt.Sprintf(
+			"invalid %s entry %q: paths must be within your home directory or the system temp directory — code mode does not grant access to system paths", listName, entry)}
+	}
+	return nil
+}
+
+func allowedGrantRoots() ([]string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, &Error{Kind: KindRunner, Message: fmt.Sprintf("resolving home directory for file grant validation: %v", err)}
+	}
+	roots := []string{filepath.Clean(home), filepath.Clean(os.TempDir())}
+	if resolved, err := filepath.EvalSymlinks(os.TempDir()); err == nil {
+		if clean := filepath.Clean(resolved); clean != roots[1] {
+			roots = append(roots, clean)
+		}
+	}
+	return roots, nil
+}
+
+func withinAnyRoot(path string, roots []string) bool {
+	for _, root := range roots {
+		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateEnvName(name string) error {

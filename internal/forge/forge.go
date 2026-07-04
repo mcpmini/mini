@@ -5,6 +5,7 @@ package forge
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"time"
 
@@ -21,6 +22,11 @@ type Params struct {
 	// caller from config.CodeModeConfig — never widened by the agent's request.
 	Net []string
 	Env []string
+
+	// ReadPaths and WritePaths are the filesystem paths programs may read/write,
+	// resolved by the caller from config.CodeModeConfig — never widened by the agent's request.
+	ReadPaths  []string
+	WritePaths []string
 
 	// DangerousAllowAllNet grants unrestricted network access (bare
 	// --allow-net), ignoring Net for flag purposes.
@@ -99,10 +105,21 @@ func validateParams(p Params) error {
 	if err := validateNetAllowList(p.Net); err != nil {
 		return err
 	}
-	return validateEnvAllowList(p.Env)
+	if err := validateEnvAllowList(p.Env); err != nil {
+		return err
+	}
+	if err := validateFileAllowList(p.ReadPaths, "code_mode.file_read_allow_list"); err != nil {
+		return err
+	}
+	return validateFileAllowList(p.WritePaths, "code_mode.file_write_allow_list")
 }
 
 func runAndClassify(ctx context.Context, denoPath string, p Params, extraEnv []string) (json.RawMessage, error) {
+	scratchDir, err := makeScratchDir()
+	if err != nil {
+		return nil, &Error{Kind: KindRunner, Message: err.Error()}
+	}
+	defer os.RemoveAll(scratchDir)
 	marker := randutil.HexString(markerBytes)
 	runCtx, cancel := context.WithTimeout(ctx, resolveTimeout(p.Timeout))
 	defer cancel()
@@ -111,8 +128,8 @@ func runAndClassify(ctx context.Context, denoPath string, p Params, extraEnv []s
 		return nil, &Error{Kind: KindRunner, Message: err.Error()}
 	}
 	defer br.close()
-	pp := programParams{code: p.Code, input: p.Input, marker: marker, bridgeHostPort: br.hostPort, bridgeToken: br.token}
-	opts := execOptions{packages: p.Packages, net: p.Net, env: p.Env, allowAllNet: p.DangerousAllowAllNet, extraEnv: extraEnv, bridgeHostPort: br.hostPort}
+	pp := programParams{code: p.Code, input: p.Input, marker: marker, bridgeHostPort: br.hostPort, bridgeToken: br.token, scratchDir: scratchDir}
+	opts := execOptions{packages: p.Packages, net: p.Net, env: p.Env, readPaths: p.ReadPaths, writePaths: p.WritePaths, allowAllNet: p.DangerousAllowAllNet, extraEnv: extraEnv, bridgeHostPort: br.hostPort, scratchDir: scratchDir}
 	result, runErr := runDeno(runCtx, denoPath, buildProgram(pp), opts)
 	if runErr != nil {
 		return nil, &Error{Kind: KindRunner, Message: runErr.Error()}

@@ -5,6 +5,8 @@ package forge_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -73,6 +75,72 @@ func assertGrantValidationError(t *testing.T, err error, want []string) {
 			t.Errorf("Message = %q, want it to contain %q", fe.Message, sub)
 		}
 	}
+}
+
+func TestExecute_fileReadAllowListValidation(t *testing.T) {
+	cases := []struct {
+		name  string
+		paths []string
+		want  []string
+	}{
+		{"relative", []string{"relative/path"}, []string{"expected an absolute path"}},
+		{"fsRoot", []string{"/"}, []string{"within your home directory"}},
+		{"systemPath", []string{"/etc/passwd"}, []string{`"/etc/passwd"`, "within your home directory"}},
+		{"uncleanTrailingSlash", []string{"/a/"}, []string{"path is not clean", `"/a"`, `"/a/"`}},
+		{"uncleanDotDot", []string{"/a/../b"}, []string{"path is not clean"}},
+		{"uncleanDoubleSlash", []string{"//x"}, []string{"path is not clean"}},
+		{"tooMany", manyPaths(maxAllowListEntries + 1), []string{"too many"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := forge.Execute(context.Background(), forge.Params{Code: "async () => 1", ReadPaths: tc.paths})
+			assertGrantValidationError(t, err, tc.want)
+		})
+	}
+}
+
+func TestExecute_fileWriteAllowListValidation(t *testing.T) {
+	_, err := forge.Execute(context.Background(), forge.Params{Code: "async () => 1", WritePaths: []string{"relative/path"}})
+	assertGrantValidationError(t, err, []string{"expected an absolute path", "code_mode.file_write_allow_list"})
+}
+
+func TestExecute_fileAllowListEmptyIsAccepted(t *testing.T) {
+	requireDeno(t)
+	_, err := forge.Execute(context.Background(), forge.Params{Code: "async () => 1"})
+	if err != nil {
+		t.Fatalf("empty file allowlists should be accepted: %v", err)
+	}
+}
+
+func TestExecute_fileAllowListAcceptsHomeAndTempPaths(t *testing.T) {
+	requireDeno(t)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"underHome", filepath.Join(home, "forge-grant-test-data")},
+		{"underTemp", filepath.Join(filepath.Clean(os.TempDir()), "forge-grant-test-data")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := forge.Execute(context.Background(), forge.Params{Code: "async () => 1", ReadPaths: []string{tc.path}})
+			if err != nil {
+				t.Fatalf("Execute with grant %q: %v", tc.path, err)
+			}
+		})
+	}
+}
+
+func manyPaths(n int) []string {
+	paths := make([]string, n)
+	for i := range paths {
+		paths[i] = fmt.Sprintf("/data/dir%d", i)
+	}
+	return paths
 }
 
 func manyHosts(n int) []string {

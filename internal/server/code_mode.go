@@ -80,6 +80,8 @@ func (s *Server) handleExecuteCode(ctx context.Context, raw json.RawMessage, ses
 		Net:                  s.cfg.CodeMode.URLAllowList,
 		Env:                  s.cfg.CodeMode.EnvVarAllowList,
 		DangerousAllowAllNet: s.cfg.CodeMode.DangerousAllowAnyURL,
+		ReadPaths:            s.cfg.CodeMode.FileReadAllowList,
+		WritePaths:           s.cfg.CodeMode.FileWriteAllowList,
 		Tools:                &toolBridge{s: s, session: session},
 	})
 }
