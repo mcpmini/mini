@@ -61,13 +61,13 @@ HTTP header values containing CR, LF, or NUL characters are rejected by Go's `ne
 
 ### HTTP mode binding
 
-`mini serve --http ADDR` listens for HTTP MCP connections. By default:
+`mini connect --http ADDR` listens for HTTP MCP connections. By default:
 
 - A bare port (`4857`) or colon-prefixed port (`:4857`) binds to `127.0.0.1` (loopback only).
-- Any other host component (e.g. `0.0.0.0:4857`) is considered non-loopback and **requires** passing `--dangerous-nonloopback-http` to `mini serve`. Without the flag, the server exits with an error.
+- Any other host component (e.g. `0.0.0.0:4857`) is considered non-loopback and **requires** passing `--dangerous-nonloopback-http` to `mini connect`. Without the flag, the server exits with an error.
 - When `--dangerous-nonloopback-http` is passed, a warning is logged and the server starts; the operator is responsible for ensuring all network clients are trusted (e.g. via firewall rules or VPN).
 
-The daemon (`mini daemon`) always binds to `127.0.0.1` and does not accept a host override.
+The shared daemon does not open a TCP port. It listens on a Unix socket inside the private config directory.
 
 ### Session ID
 
@@ -83,7 +83,7 @@ Upstream response bodies are capped at 64MB. Error bodies from upstreams are cap
 
 ### Response file security
 
-Response files written to `~/.mini/responses/` use:
+Response files written to `~/.mini/internal/responses/` use:
 - `0700` directory permissions (restricts access to the running user)
 - `0600` file permissions
 - Timestamp-based filenames (e.g. `20060102150405123.json`). Names are not cryptographically random, but the `0700` directory permission limits access to the owning user, so unguessable names are not required.
@@ -91,15 +91,17 @@ Response files written to `~/.mini/responses/` use:
 The `read` tool (proxy mode) validates requested paths using `filepath.EvalSymlinks` before checking they are within the response directory. Symlinks inside the store that point outside it are rejected — a symlink escape would allow reading arbitrary files accessible to the process user.
 
 
-## Permission tiers
+## Tool visibility and compact-mode gates
 
-| Tier | Visibility | Callable via |
+| Setting | Applies to | Effect |
 |------|-----------|--------------|
-| `open` (default) | `list` shows it | `call` or `perm_call` |
-| `protected` | `list` shows it | `perm_call` only |
-| `hidden` | `list` hides it (unless `list(hidden:true)`) | `perm_call` only |
+| `hidden` | Proxy, compact, CLI | Filtered from normal discovery |
+| `protected` | Compact and CLI only | `call` refuses it; `perm_call` can run it |
+| `open` (default) | Compact and CLI only | `call` and `perm_call` can run it |
 
-**Note**: hidden tools are enumerable via `list(hidden:true)` unless `disable_list_hidden: true` is set in global config. Do not rely on `hidden` as a hard access control boundary without this flag.
+In default proxy mode, mini exposes upstream tools directly. Use your MCP client's approval settings for writes; mini does not enforce `protected` there.
+
+**Note**: hidden tools are enumerable through compact-mode discovery with `list(hidden:true)` unless `disable_list_hidden: true` is set in global config. Do not rely on `hidden` as a hard access control boundary without this flag.
 
 
 ## OAuth security
@@ -115,7 +117,7 @@ OAuth endpoints (`auth_url`, `token_url`) in server config files are user-manage
 
 ## Daemon
 
-The daemon uses a port file (`~/.mini/daemon.port`) for discovery. Liveness is verified via HTTP healthz before reporting the daemon as running — a stale port file left after a crash does not prevent a new daemon from starting.
+The daemon listens on `~/.mini/internal/daemon/daemon.sock`. The config directory is restricted to the current user, the socket is set to `0600`, and every request also needs the bearer token stored in `daemon.token`. Liveness is verified with an HTTP health check over the socket; a stale socket left by an unclean exit is reclaimed only after that check fails.
 
 The daemon HTTP server sets `ReadHeaderTimeout: 5s` to prevent slowloris-style attacks. No `WriteTimeout` is set because per-call tool timeouts are enforced via `context.WithTimeout` — a fixed write timeout would silently truncate responses for tools with long but legitimate timeouts.
 

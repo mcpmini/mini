@@ -6,6 +6,56 @@ MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, ava
 
 > **New to MCP?** [Model Context Protocol](https://modelcontextprotocol.io) is how AI agents connect to external tools. mini sits in front of all of them.
 
+## What it does
+
+**Before** — `list_pull_requests` on `golang/go`, raw (`mini call -r`). The `body` alone is ~6,800 characters of benchmark tables, and every PR repeats the same `head`/`base`/`user` sub-objects:
+
+```json
+{
+  "data": [
+    {
+      "number": 79998,
+      "title": "internal/bytealg: optimize memequal",
+      "body": "Implement vectorization optimization for small size memory comparing.\n\ngoos: linux\ngoarch: riscv64\n[~6,800 chars of benchmark tables]",
+      "state": "open",
+      "draft": false,
+      "merged": false,
+      "html_url": "https://github.com/golang/go/pull/79998",
+      "user": { "login": "lxq015", "id": 79146446, "profile_url": "https://github.com/lxq015", "avatar_url": "https://avatars.githubusercontent.com/u/79146446?v=4" },
+      "head": { "ref": "optimize_memequal", "sha": "bf5f9a21...", "repo": { "full_name": "lxq015/go", "description": "The Go programming language" } },
+      "base": { "ref": "master", "sha": "dfc01c32...", "repo": { "full_name": "golang/go", "description": "The Go programming language" } },
+      "created_at": "2026-06-13T07:39:36Z",
+      "updated_at": "2026-06-13T08:10:43Z"
+    },
+    { "...": "9 more PRs, same shape" }
+  ]
+}
+```
+
+**After** — the same list through a projection that keeps just the fields you scan in a list view. Default JSON (`mini call -j`):
+
+```json
+{
+  "data": [
+    { "number": 79998, "state": "open", "draft": false, "title": "internal/bytealg: optimize memequal",
+      "html_url": "https://github.com/golang/go/pull/79998" },
+    { "number": 79997, "state": "open", "draft": false, "title": "internal/bytealg: optimize indexbyte_riscv64.s",
+      "html_url": "https://github.com/golang/go/pull/79997" }
+  ]
+}
+```
+
+Or the **mini format** (`-m`) — field names once on a header row, values one line per item, no per-item key repetition. Most token-efficient for long lists:
+
+```
+[github.list_pull_requests]
+draft html_url number state title
+- https://github.com/golang/go/pull/79998 79998 open internal/bytealg: optimize memequal
+- https://github.com/golang/go/pull/79997 79997 open internal/bytealg: optimize indexbyte_riscv64.s
+```
+
+You control exactly which fields survive — see [Projection config](#projection-config). `mini call -r` always returns the untouched upstream response when you need it.
+
 ## Install
 
 ```bash
@@ -14,80 +64,43 @@ go install github.com/mcpmini/mini/cmd/mini@latest
 
 ## Connect to your agent
 
-### Claude Code
+Every client connects mini the same way — by running `mini connect`. Use `mini init` to import the MCP servers you already configured elsewhere:
 
 ```bash
-claude mcp add mini mini proxy
+mini init   # imports servers from Claude Code, Codex, Cursor, and more
 ```
 
-Mini runs in proxy mode for Claude Code, exposing your upstream tools directly as `github__list_pull_requests`, `sentry__list_issues`, etc. Claude Code only loads tool schemas it actually needs, so the full upstream surface doesn't bloat context. Responses are trimmed transparently.
-
-[Why proxy mode and how Claude Code loads MCP schemas](docs/claude-code-mcp-loading.md)
-
-### Codex
+Then register mini with your client:
 
 ```bash
-codex mcp add --name mini --command mini
+# Claude Code
+claude mcp add mini -- mini connect
 ```
 
-Or add to `~/.codex/config.toml` manually:
-
-```toml
-[mcp_servers.mini]
-command = "mini"
-```
-
-Codex loads all MCP tool schemas upfront, so the number of tools directly affects your token budget at session start. Mini's standard mode exposes exactly 4 tools regardless of how many upstream servers you have, keeping that cost fixed.
-
-[How Codex loads MCP tools](docs/codex-mcp-loading.md)
-
-### Cursor, Windsurf, Claude Desktop, Gemini
-
-```bash
-mini init   # detects your existing configs and adds mini automatically
-```
-
-Or add manually to your client's MCP config:
+Any other client: point its MCP config at `mini connect`:
 
 ```json
 {
   "mcpServers": {
-    "mini": { "command": "mini" }
+    "mini": { "command": "mini", "args": ["connect"] }
   }
 }
 ```
 
-Standard mode exposes 4 tools:
-
-| Tool | What it does |
-|---|---|
-| `list` | Discover all tools across connected servers |
-| `call` | Invoke a tool, response projected and returned |
-| `perm_call` | Same as `call` but for protected tools (write ops) |
-| `config` | Add/remove servers, adjust projections, check status |
-
-### Daemon mode
-
-If you run multiple agent sessions at once, each normally spawns its own mini process with its own upstream connections. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes, each consuming memory and holding its own auth session.
-
-The daemon shares one set of upstream connections across all sessions:
-
-```bash
-mini daemon          # start once in the background
-mini daemon status   # confirm it's running
-```
-
-Any `mini serve` or `mini proxy` invocation detects the daemon automatically and routes through it. Each session still gets its own projections and permissions.
+`mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `sentry__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
 
 ## Adding servers
 
 ### Example: GitHub MCP
 
 ```bash
+# Export a token first:
+export GITHUB_TOKEN=...
+
 # Add the server
 mini add github \
   --url https://api.githubcopilot.com/mcp \
-  --header "Authorization=Bearer $GITHUB_PERSONAL_ACCESS_TOKEN"
+  --header "Authorization=Bearer $GITHUB_TOKEN"
 
 # Check it connected
 mini status
@@ -96,7 +109,7 @@ mini status
 mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":5}'
 ```
 
-Mini detects that GitHub is a known server and installs the bundled projection and permission configs automatically.
+Mini detects that GitHub is a known server and installs the bundled projection and tool-visibility defaults automatically.
 
 ### Other servers
 
@@ -115,11 +128,11 @@ mini add --from-codex    # Codex config.toml
 mini add --from-gemini   # Gemini CLI settings.json
 ```
 
-Bundled projection and permission configs for known servers install automatically.
+Bundled projection and tool-visibility defaults for known servers install automatically.
 
 ### Bundled server configs
 
-These servers have projection and permission defaults built in — they're installed automatically when `mini add` or `mini init` detects a matching server name.
+These servers have projection and tool-visibility defaults built in — they're installed automatically when `mini add` or `mini init` detects a matching server name.
 
 | Server | Projection config | Tools covered |
 |---|---|---|
@@ -130,80 +143,6 @@ These servers have projection and permission defaults built in — they're insta
 | Atlassian | [atlassian.yaml](internal/defaults/projections/atlassian.yaml) | Jira: search, get_issue, get_project_issues, get_all_projects, get_project, get_agile_boards, get_sprint_issues — Confluence: search, get_page, get_page_children, get_comments |
 
 For servers not in this list, mini is a transparent proxy — responses pass through unchanged until you add a projection config.
-
-## What it does
-
-**Before** — one PR from the GitHub MCP:
-
-```json
-{
-  "number": 275198,
-  "title": "Remove layout control toggles",
-  "body": "Removes layout toggle buttons...\n\n[4,800 more chars]",
-  "user": { "login": "Copilot", "avatar_url": "https://avatars.githubusercontent.com/...", "id": 198982749, "node_id": "U_...", "gravatar_id": "", "url": "https://api.github.com/users/...", ... },
-  "assignees": [{ "login": "dev-user", "avatar_url": "...", "node_id": "...", ... }],
-  "head": { "ref": "fix/toggle", "sha": "73e46e32...", "repo": { "full_name": "microsoft/vscode", "node_id": "...", ... } },
-  "labels_url": "https://api.github.com/...",
-  "commits_url": "https://api.github.com/...",
-  ...40 more fields
-}
-```
-
-**After** — same PR, through mini:
-
-```json
-{
-  "number": 275198,
-  "title": "Remove layout control toggles",
-  "state": "open",
-  "draft": true,
-  "body": "Removes layout toggle buttons...[first 1500 chars]",
-  "user": { "login": "Copilot", "profile_url": "https://github.com/Copilot" },
-  "html_url": "https://github.com/microsoft/vscode/pull/275198",
-  "created_at": "2025-11-04T17:25:38Z",
-  "updated_at": "2025-11-04T18:51:15Z"
-}
-```
-
-Avatar URLs gone. Node IDs gone. URL templates gone. Body capped at 1500 chars. Multiply across 20 PRs — the savings are significant.
-
-Mini has three output modes. The same `list_pull_requests` call:
-
-**Default** (`-j`): projected JSON. Noisy fields stripped, strings capped, structure preserved:
-```bash
-mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
-```
-```json
-[
-  { "number": 68851, "title": "net/http: fix connection reuse after timeout",
-    "state": "open", "user": { "login": "gopherbot" }, "created_at": "2024-03-15T10:22:33Z" },
-  { "number": 68849, "title": "cmd/go: add workspace vendor support",
-    "state": "open", "user": { "login": "mvdan" }, "created_at": "2024-03-14T14:11:09Z" }
-]
-```
-
-**Mini** (`-m` / `response_format: mini`): field names on a single header row, values follow one per line. Most token-efficient for long lists since field names aren't repeated per item:
-```bash
-mini call -m github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
-```
-```
-number title state user_login created_at
-68851 net/http: fix connection reuse after timeout open gopherbot 2024-03-15T10:22:33Z
-68849 cmd/go: add workspace vendor support open mvdan 2024-03-14T14:11:09Z
-```
-
-**Raw** (`-r`): full upstream response, no projection. Useful for inspecting what a server returns or debugging a projection config:
-```bash
-mini call -r github list_pull_requests '{"owner":"golang","repo":"go","perPage":2}'
-```
-```json
-[{ "number": 68851, "node_id": "PR_kwDOAGrz984...", "title": "net/http: fix...",
-   "user": { "login": "gopherbot", "id": 8566187, "avatar_url": "https://avatars...",
-             "gravatar_id": "", "url": "https://api.github.com/users/gopherbot", ... },
-   "labels_url": "https://api.github.com/repos/golang/go/issues/68851/labels{/name}",
-   "commits_url": "https://api.github.com/repos/golang/go/pulls/68851/commits",
-   ... 40 more fields }]
-```
 
 ## How it works
 
@@ -222,35 +161,34 @@ sequenceDiagram
     mini-->>Agent: trimmed response (8 fields, ~400 bytes)
 ```
 
-**Serve mode** (`mini serve`): mini exposes 4 fixed tools — `list`, `call`, `perm_call`, `config`. The agent discovers what's available via `list` and invokes tools via `call`. The schema surface stays constant regardless of how many upstream servers you add, which matters for clients that load all schemas upfront.
+mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) and serves it from its own MCP server, so in your client the tools appear under `mini` and every call goes through it. mini is the one resolving, forwarding, and trimming — the agent talks to mini, mini talks to the upstreams.
 
-**Proxy mode** (`mini proxy`): mini re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, etc.) so the agent sees native schemas. This is how Claude Code connects — schema deferral means the larger tool surface doesn't add upfront cost.
+## Daemon mode
 
-**Daemon mode**: without a daemon, each agent window spawns its own mini process which spawns or connects to every configured MCP server. Three Claude Code windows means three GitHub MCP processes, three Linear MCP processes — each consuming memory and holding its own auth session. The daemon shares one set of connections across all sessions.
+`mini connect` auto-detects a running daemon and routes through it, sharing one set of upstream connections across all agent sessions. If no daemon is running, `mini connect` starts one on demand. You usually do not need to manage it yourself; use `mini daemon status` to check whether it is running, or `mini daemon` to start it manually.
 
 ```mermaid
 graph TB
-    subgraph before["Without daemon: 3 agents × 3 servers = 9 processes"]
+    subgraph before["Without daemon: each chat owns upstream connections"]
         direction LR
-        a1[Claude Code 1] --> g1[GitHub MCP]
+        a1[Claude Code] --> g1[GitHub MCP]
         a1 --> l1[Linear MCP]
-        a1 --> s1[Sentry MCP]
-        a2[Claude Code 2] --> g2[GitHub MCP]
+        a2[Codex] --> g2[GitHub MCP]
         a2 --> l2[Linear MCP]
-        a2 --> s2[Sentry MCP]
         a3[Cursor] --> g3[GitHub MCP]
         a3 --> l3[Linear MCP]
-        a3 --> s3[Sentry MCP]
     end
 
-    subgraph after["With daemon: 3 agents × 3 servers = 3 processes"]
+    subgraph after["With daemon: mini connect relays to one shared daemon"]
         direction LR
-        b1[Claude Code 1] --> d[mini daemon]
-        b2[Claude Code 2] --> d
-        b3[Cursor] --> d
+        b1[Claude Code] --> p1[mini connect]
+        b2[Codex] --> p2[mini connect]
+        b3[Cursor] --> p3[mini connect]
+        p1 --> d[mini daemon]
+        p2 --> d
+        p3 --> d
         d --> bg[GitHub MCP]
         d --> bl[Linear MCP]
-        d --> bs[Sentry MCP]
     end
 ```
 
@@ -294,47 +232,22 @@ log_level: info       # debug | info | warn | error
 response_format: json # json (default) | mini (see above)
 ```
 
-**`response_format: mini`** switches all agent responses to the compact header:values format shown above — useful if your agent handles plain text better than structured data, or if you want to squeeze more responses inline. It has no effect on responses that are too large to inline (those go to file regardless).
+**`response_format: mini`** switches projected responses to the compact header:values format shown above — useful if your agent handles plain text better than structured data.
 
 By default, mini caps strings at 2000 chars to keep responses manageable. You can raise, lower, or disable this with `default_string_limit` in `~/.mini/config.yaml` (set to `0` to disable). Projection configs can override the limit per field with `string_limits`.
 
-### Large responses
+### Recovering filtered data
 
-When mini has projected a response and it is still large, it writes the response to `~/.mini/responses/` and returns a file path instead. The agent fetches it with `read` (proxy mode) or `config action:read` (standard mode).
+mini always returns projected data inline. If projection removes or truncates anything, the response also includes `__mini.file` with a bare recovery key. The full upstream response is stored in `~/.mini/internal/responses/`; the agent can pass the key to `read`, optionally with a jq filter such as `.items[0].body`, to recover only the value it needs.
 
-**This only happens when a projection config is active.** For the bundled servers (GitHub, Slack, Linear, Sentry, Jira), `mini init` installs projections automatically so trimming and file handling work out of the box. For servers you add that aren't in the bundled set, responses pass through unchanged until you write a projection config — mini is a transparent proxy for anything it has no rules for.
+This happens only when projection actually removes data. Servers without projection rules remain transparent, and unchanged results have no `__mini` wrapper or recovery file.
 
 **What the agent receives:**
 
 - **Inline** — the projected JSON, same structure as the upstream response but with excluded fields and string limits applied. mini always inlines the projected result.
-- **Raw file** — when any projection is applied (fields excluded or strings truncated), the full original upstream response is written to `~/.mini/responses/` so the agent can fetch specific fields with `read` if needed.
+- **Raw file** — when fields are excluded or values are truncated, the full original response is written to `~/.mini/internal/responses/` and can be queried with `read`.
 
 Response files are cleaned up automatically by TTL and disk budget.
-
-## Permissions
-
-Configure per-tool access tiers in each server's config:
-
-```yaml
-# ~/.mini/servers/github.yaml
-permissions:
-  protected: [create_pull_request, merge_pull_request, delete_file]
-  hidden: [get_authenticated_app, list_app_installations]
-```
-
-Three tiers:
-
-| Tier | What it means |
-|---|---|
-| `open` (default) | Listed and callable without restriction |
-| `protected` | Listed, but requires explicit invocation to call |
-| `hidden` | Not listed at all — invisible to the agent |
-
-How these tiers are enforced depends on which mode mini is running in.
-
-**In proxy mode** (Claude Code), mini exposes each upstream tool directly as its own MCP tool. `hidden` tools are filtered from the tool list entirely so the agent never sees them. `protected` tools appear in the list and are callable — enforcement is handled by your agent's native approval system. In Claude Code, configure per-tool approval for write operations (e.g. `github__create_pull_request`) the same way you would for any MCP tool.
-
-**In standard mode** (Codex, Cursor, others), mini wraps everything behind 4 tools. `call` only executes `open` tools — calling a `protected` tool via `call` returns an error. `perm_call` is required for `protected` and `hidden` tools. This means you can configure your agent to auto-approve `call` (reads) while requiring human approval for `perm_call` (writes). `hidden` tools are invisible to `list` but can still be invoked via `perm_call` by an agent that knows the name.
 
 ## Auth
 
@@ -369,12 +282,26 @@ This is useful when:
 - You're debugging what a tool actually returns before writing a projection config
 - Your agent environment can run subprocesses but has limited MCP support
 
+## Compact tool mode
+
+Compact mode (`mini connect --tool-mode compact`) exposes exactly 4 tools regardless of how many upstream servers you have. It works similarly to `mini call`/`mini perm-call` from the CLI: the agent invokes tools through mini rather than directly:
+
+| Tool | What it does |
+|---|---|
+| `list` | Discover tools across connected servers |
+| `call` | Invoke an `open` tool; returns error for `protected` tools |
+| `perm_call` | Invoke a `protected` tool — configure your client to always ask before running this |
+| `config` | Add/remove servers, adjust projections, check status |
+
+The `open`/`protected` split only matters in compact mode and the `mini call` / `mini perm-call` CLI. In the default proxy mode, upstream tools are exposed directly and approval is handled by your MCP client, not by mini. Use your client's native per-tool approval settings for writes. `hidden` tools are filtered from normal discovery, but that is visibility control, not a security boundary.
+
+Use compact mode when your client loads every MCP tool schema eagerly at session start and a large catalog of servers is costing you context on every turn. Clients that defer schemas, like Claude Code, get no benefit from compact mode and lose native tool schemas, so stick with the default there. [How Claude Code loads MCP schemas →](docs/claude-code-mcp-loading.md)
+
 ## Commands
 
 ```
-mini serve [--http ADDR] [--standalone]   Standard mode (4-tool interface)
-mini proxy [--http ADDR]                  Proxy mode (upstream tools exposed directly)
-mini daemon [--port N]                    Run as a shared background daemon
+mini connect [--http ADDR] [--standalone] [--tool-mode proxy|compact]   Connect an agent (stdio MCP)
+mini daemon                               Run as a shared background daemon
 mini daemon status                        Check whether the daemon is running
 
 mini ls                                   List configured servers

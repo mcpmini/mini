@@ -1,10 +1,10 @@
 # mini Roadmap
 
-## What is mini (v0.1)
+## What is mini (v0.2)
 
 mini is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upstream MCP servers. Instead of agents connecting directly to every tool server, they connect to mini once and get a unified, controlled interface.
 
-### Capabilities in v0.1
+### Capabilities in v0.2
 
 **Core proxy**
 - Routes tool calls across multiple upstream MCP servers (`server.tool` namespacing)
@@ -14,12 +14,12 @@ mini is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upst
 **Context optimization**
 - Response projection: trim large responses by field inclusion/exclusion, array limits, string limits, depth limits
 - Content stripping: HTML and Markdown stripped from large text fields automatically
-- Response file store: large responses written to `~/.mini/responses/` with configurable TTL and disk budget, returning a file path agents can `cat`/`jq` instead of receiving walls of text inline
+- Raw recovery store: projected data stays inline; omitted values are recoverable from `~/.mini/internal/responses/` by bare key and jq filter
 - Per-tool and server-wide default projection configs
 
-**Access control**
-- Three permission tiers per tool: `open`, `protected` (requires `perm_call`), `hidden`
-- Per-server permission configs with default tier support
+**Tool visibility and compact-mode gates**
+- Hide rarely used tools from normal discovery
+- In compact mode and the direct CLI, route protected tools through `perm_call`
 
 **Auth**
 - API key and Bearer token injection (static or `${ENV_VAR}` references)
@@ -29,6 +29,7 @@ mini is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upst
 - Retry with exponential backoff on HTTP 429/503, respecting `Retry-After` headers (up to 3 attempts)
 - Configurable per-tool timeouts and HTTP client timeouts
 - Automatic upstream reconnection with backoff on stdio connection failure
+- Upstream `notifications/tools/list_changed` refresh mini's tool registry and notify connected sessions
 
 **Developer tooling**
 - `mini add` / `mini rm` for managing server configs
@@ -41,11 +42,12 @@ mini is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upst
 - `mini call` / `mini perm-call` — invoke upstream tools directly from the CLI without an agent
 - `mini test` — CI-safe health check (connects to each upstream, exits 1 on failure)
 - `mini init` — interactive setup wizard
+- Projection-config tool aliases for shortening verbose upstream names
 
 **HTTP mode and daemon**
-- `mini serve --http :4857` to also accept HTTP/SSE connections alongside stdio
+- `mini connect --http :4857` to also accept HTTP/SSE connections alongside stdio
 - `mini daemon` — shared background daemon; multiple agents connect via HTTP without spawning new subprocesses
-- stdio `serve` auto-detects a running daemon and proxies through it (transparent to agents)
+- stdio `connect` auto-detects a running daemon and proxies through it (transparent to agents)
 
 **Observability**
 - Per-call: `estimated_raw_tokens`, `estimated_tokens_saved`, `latency_ms` in every call response envelope
@@ -68,27 +70,17 @@ mini is an MCP proxy that sits between AI agents (Claude, Cursor, etc.) and upst
 Priority is impact on developer workflows — making agents faster, cheaper, safer, and more capable.
 
 
-### v0.2 — Per-Server Proxy & Observability
+### v0.3 — Observability & Broader MCP Coverage
 
-**Tool name aliasing in projection configs**
-- Allow projection configs to declare short aliases for tool names: `list_pull_requests: {alias: list_prs, ...}`
-- Agent sees `list_prs` in the tool list instead of `list_pull_requests`, saving schema tokens on every turn
-- Aliases are per-server and user-configurable; bundled defaults can ship opinionated aliases for verbose tool names
-- *Code changes*: `ProjectionConfig.Alias string`; registry wraps tool name on list/call; inverse map maintained for routing
-
-### v0.2 — Per-Server Proxy & Observability
-
-**Per-server transparent proxy (`mini proxy <server>`)**
-- `mini proxy github` starts a single-server proxy that exposes upstream tools directly without any server prefix or mini branding — Claude Code sees `list_pull_requests`, not `github__list_pull_requests`
-- Users register each server independently: `claude mcp add github -- mini proxy github`
+**Per-server transparent connection**
+- A future single-server mode could expose upstream tools without a server prefix or mini branding — Claude Code would see `list_pull_requests`, not `github__list_pull_requests`
+- Users would register each selected upstream independently in their client
 - No `config` or `read` tools exposed — pure passthrough, mini invisible to the agent
 - All projection, permission, and token-optimization logic still applies via the mini daemon
 - *Code changes*: `runProxy` accepts optional positional server name; new `server.WithSingleServerProxy(name)` option; proxy tool listing strips server prefix; routing adds it back internally
 
-### v0.2 — Observability & Broader MCP Coverage
-
 **Default projection configs for top developer MCPs**
-- Expand bundled projections from the v0.1 set (GitHub, Slack, Jira, Linear, Sentry) to cover the 10 most commonly used MCP servers in developer workflows
+- Expand the bundled projections (GitHub, Slack, Jira, Linear, Sentry) to cover the 10 most commonly used MCP servers in developer workflows
 - Candidates: Notion, Postgres, Puppeteer/Playwright, Brave Search, Atlassian Confluence, Datadog, PagerDuty, GitLab, Bitbucket
 - Each config ships only after being validated against real MCP tool responses (not raw REST API fixtures) — see `benchmarks/README.md`
 - *Code changes*: add projection YAMLs to `internal/defaults/projections/`; update `knownServers` in `add_projection.go`; add fixture + `fixtureValidations` entry
@@ -108,7 +100,7 @@ Priority is impact on developer workflows — making agents faster, cheaper, saf
 
 **`/metrics` endpoint on the daemon**
 - Expose per-tool call counts, error rates, and latency histograms as JSON at `GET /metrics`
-- Builds on per-session and per-upstream counters already tracked in v0.1
+- Builds on the per-session and per-upstream counters already tracked by mini
 - Format: human-readable JSON by default; optional `?format=prometheus` for Prometheus text format
 - *Code changes*: HTTP handler on daemon's existing port; no new dependencies for JSON mode
 
@@ -122,14 +114,13 @@ Priority is impact on developer workflows — making agents faster, cheaper, saf
 - Configurable log level and output (file, stderr, syslog)
 - *Code changes*: add call logging in `callUpstream`; log file rotation via `lumberjack`
 
-**CI setup**
-- GitHub Actions: `go build`, `go test`, `go vet`, `staticcheck` on every PR
-- Race detector run (`-race`) on test suite
-- Coverage report posted to PR as comment
-- *Code changes*: `.github/workflows/ci.yml`; add `//go:build ignore` guards on integration tests requiring `npx`
+**CI improvements**
+- Keep build, lint, race, and integration checks fast enough for every code PR
+- Add coverage reporting once the signal is useful enough to justify the noise
+- Keep integration-only dependencies behind build tags so the fast path stays reliable
 
 
-### v0.3 — Response Caching
+### v0.4 — Response Caching
 
 Agents frequently call the same read-only tools with identical parameters (fetching the same GitHub issue, the same file listing). Every call burns tokens and latency.
 
@@ -148,7 +139,7 @@ Agents frequently call the same read-only tools with identical parameters (fetch
 **Impact**: Read-heavy workloads (code review agents, documentation agents) could see 50-80% reduction in upstream calls.
 
 
-### v0.4 — Request & Response Pipeline
+### v0.5 — Request & Response Pipeline
 
 Agents send whatever the tool schema asks for. But often you want to rewrite inputs or outputs systematically — add a default repo, strip a wrapper object, rename a field the agent keeps getting wrong.
 
@@ -172,14 +163,14 @@ Agents send whatever the tool schema asks for. But often you want to rewrite inp
 - *Code changes*: `internal/pipeline` package; `ActionConfig` grows `Steps []PipelineStep`; new `executePipeline` in handlers
 
 
-### v0.5 — Multi-Agent & Session Isolation
+### v0.6 — Multi-Agent & Session Isolation
 
-v0.1 has one shared session per MCP connection. As teams use mini with multiple agents simultaneously, they need isolation.
+mini has one shared session per MCP connection. As teams use mini with multiple agents simultaneously, they need isolation.
 
-**HTTP listen mode**
-- mini listens on a port; multiple agents connect via HTTP/SSE
-- Each connection gets an isolated session with its own projections and identity
-- *Code changes*: `internal/server/http_server.go`; session keyed by connection, not global; `config.yaml` `listen_mode: http`
+**Session-scoped HTTP identities**
+- Multiple agents can connect over HTTP/SSE with explicit session identity
+- Each connection gets isolated projections and permissions
+- *Code changes*: session identity header or initialize metadata; projection lookup checks session identity
 
 **Per-session rate limits**
 - Max calls/minute per session, per tool, per upstream server
@@ -192,7 +183,7 @@ v0.1 has one shared session per MCP connection. As teams use mini with multiple 
 - *Code changes*: `Session` struct grows `ID string`; projection lookup checks session identity
 
 
-### v0.6 — Audit & Cost Tracking
+### v0.7 — Audit & Cost Tracking
 
 Once agents run autonomously, you need to know what they did and what it cost.
 
@@ -213,7 +204,7 @@ Once agents run autonomously, you need to know what they did and what it cost.
 - *Code changes*: `internal/redact` package; applied to audit log writes and optionally to response files
 
 
-### v0.7 — Reliability & Failover
+### v0.8 — Reliability & Failover
 
 **Fallback servers**
 - `fallback: secondary-github` in server config; if primary returns 5xx or times out, retry on fallback
@@ -236,12 +227,12 @@ Once agents run autonomously, you need to know what they did and what it cost.
 - *Code changes*: `NewHTTPConnection` creates a shared `http.Transport` with tunable pool settings
 
 
-### v0.8 — Security Hardening
+### v0.9 — Security Hardening
 
 **Human-in-the-loop approval**
-- Protected tools can require a human `yes/no` before execution (currently the `approval` package is internal-only)
+- Proxy-mode tool calls can require a human `yes/no` before execution (currently the `approval` package is internal-only)
 - Web UI approval queue: agent call arrives, mini holds it, human approves/denies via browser
-- *Code changes*: expose `internal/approval` via HTTP endpoint; `perm_call` blocks on approval channel
+- *Code changes*: expose `internal/approval` via HTTP endpoint; proxy-mode calls block on approval channel
 
 **Request signing**
 - HMAC-sign outbound HTTP requests with a shared secret; upstreams can verify
@@ -263,7 +254,7 @@ Once agents run autonomously, you need to know what they did and what it cost.
 - *Code changes*: `internal/auth/token.go` `Save`/`Load` switch on keyring availability; add `zalando/go-keyring` dependency; document `MINI_NO_KEYRING` env var.
 
 
-### v0.9 — Ecosystem & Distribution
+### v1.0 — Ecosystem & Distribution
 
 **Package distribution**
 - Homebrew formula (`brew install mini`)
@@ -286,7 +277,7 @@ Once agents run autonomously, you need to know what they did and what it cost.
 - *Code changes*: extend existing `--from-*` flags pattern in `cmd/mini/add.go`
 
 
-### v1.0 — Production Ready
+### Future — Production Ready
 
 - Stable config format with documented backwards-compatibility guarantees
 - Comprehensive user documentation (hosted docs site)
@@ -306,24 +297,10 @@ Once agents run autonomously, you need to know what they did and what it cost.
 
 ## CI Story
 
-**Immediate (add now)**
+**Current PR gate**
 
-```yaml
-# .github/workflows/ci.yml
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with: { go-version: '1.26' }
-      - run: go build ./...
-      - run: go vet ./...
-      - run: go test ./... -race -count=1 -timeout 120s
-      - run: go test ./... -coverprofile=coverage.out
-      - uses: codecov/codecov-action@v4
-```
+- Build, lint, unit, and integration jobs run on code changes.
+- Markdown-only documentation changes intentionally skip CI.
 
 **Tag integration tests** that require `npx` or network access with `//go:build integration` so the fast CI path skips them. Run integration tests nightly or on release branches.
 
@@ -336,11 +313,11 @@ jobs:
 
 Features that are clearly useful but haven't been slotted into a version yet.
 
-**Upstream tool schema refresh**
-- When mini connects to an upstream it lists available tools once and caches that list in-memory for the lifetime of the connection. Upstreams that run for days/weeks may add, remove, or rename tools without mini noticing.
-- Options: periodic background refresh (`tools/list` every N minutes, configurable per server), `notifications/tools/list_changed` support (MCP spec supports server-push change notifications — subscribe and refresh on receipt), or a `config action:refresh_tools server:<name>` command for manual triggers.
-- The notification-based approach is lowest overhead and most correct; the periodic refresh is simpler to implement and works with servers that don't emit notifications.
-- *Code changes*: `upstreamServer` subscribes to `notifications/tools/list_changed` if the upstream supports it; fallback periodic ticker; `registerTools` called again on refresh to update the registry; sessions get a `tools_changed` notification so agents can re-list.
+**Fallback tool schema refresh**
+- mini refreshes its registry when an upstream emits `notifications/tools/list_changed`.
+- Servers that do not emit notifications can still drift if they add, remove, or rename tools after the initial `tools/list`.
+- Options: periodic background refresh (`tools/list` every N minutes, configurable per server), or a `config action:refresh_tools server:<name>` command for manual triggers.
+- *Code changes*: fallback periodic ticker; `registerTools` called again on refresh to update the registry; sessions get a `tools_changed` notification so agents can re-list.
 
 ---
 
@@ -348,12 +325,12 @@ Features that are clearly useful but haven't been slotted into a version yet.
 
 | Version | Theme | Developer Impact |
 |---|---|---|
-| v0.2 | Observability + CI | Debug issues; `local_usage` shows which tools cost most |
-| v0.3 | Caching | Dramatically fewer upstream calls; faster agents |
-| v0.4 | Pipeline | Agents need less prompt engineering to use tools correctly |
-| v0.5 | Multi-agent | Teams can share one proxy; agents don't interfere |
-| v0.6 | Audit + Cost | Know what agents did and what it cost; enforce budgets |
-| v0.7 | Reliability | Upstreams go down; agents should degrade gracefully |
-| v0.8 | Security | Autonomous agents doing sensitive work need guardrails |
-| v0.9 | Ecosystem | Lower barrier to adoption; community growth |
-| v1.0 | Production | Enterprise and team adoption |
+| v0.3 | Observability | Debug issues; `local_usage` shows which tools cost most |
+| v0.4 | Caching | Dramatically fewer upstream calls; faster agents |
+| v0.5 | Pipeline | Agents need less prompt engineering to use tools correctly |
+| v0.6 | Multi-agent | Teams can share one proxy; agents don't interfere |
+| v0.7 | Audit + Cost | Know what agents did and what it cost; enforce budgets |
+| v0.8 | Reliability | Upstreams go down; agents should degrade gracefully |
+| v0.9 | Security | Autonomous agents doing sensitive work need guardrails |
+| v1.0 | Ecosystem | Lower barrier to adoption; community growth |
+| Future | Production | Enterprise and team adoption |

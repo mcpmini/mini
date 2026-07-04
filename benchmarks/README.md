@@ -31,7 +31,7 @@ go build -o mini ./cmd/mini
 # Call the tool with raw output flag — saves the raw MCP response
 ./mini call -r github list_pull_requests owner=mcpmini repo=mini
 
-# The raw response is in ~/.mini/responses/<timestamp>.raw.json
+# Raw recovery responses are in ~/.mini/internal/responses/<key>.json
 # Copy it to benchmarks/fixtures/<server>/<tool>.json
 ```
 

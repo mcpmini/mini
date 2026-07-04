@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.0 — 2026-07-08
+
+- **One command replaces `serve` and `proxy`** — use `mini connect`. The default exposes upstream tools directly as `server__tool`; pass `--tool-mode compact` for the four-meta-tool interface (`list`/`call`/`perm_call`/`config`). Both old commands are removed.
+- **Bare `mini` prints help and exits 0** — it no longer starts a server.
+- **Projected results stay inline** — when fields are removed or truncated, mini returns the projected data with a `__mini` recovery hint and stores the raw response under `~/.mini/internal/responses/`. The new `read` tool accepts the bare recovery key and an optional jq filter.
+- **Stable proxy call contract** — upstream arguments live under `args`; `__mini.projection` selects projected or raw output without colliding with an upstream tool's own fields.
+- **Tool aliases** — projection configs can rename verbose upstream tool names while mini still routes calls to the original tool.
+- **More complete auth and config support** — OAuth follows the 2025-11-25 MCP auth updates, known providers can be detected automatically, and server configs support `${VAR}` environment interpolation.
+- **Stronger daemon behavior** — the daemon now uses a private Unix socket plus bearer authentication, and `mini connect` can recover when it dies before handling a request.
+- **Dynamic tool-list refresh** — upstream `notifications/tools/list_changed` events refresh mini's registry and relay a tool-list change notification to connected sessions.
+- **More complete MCP compatibility** — HTTP/SSE upstreams now follow `tools/list` pagination, pass tool annotations through in proxy mode, and return structured JSON-RPC errors for daemon HTTP failures.
+
 ## v0.1.0 — 2026-06-01
 
 Initial release of mini, the minifying MCP proxy.

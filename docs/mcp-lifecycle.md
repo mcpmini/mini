@@ -130,7 +130,7 @@ sequenceDiagram
 
 ### Connection modes
 
-- **Standalone** (`mini serve --standalone`, or `--http`): the agent spawns mini directly; mini
+- **Standalone** (`mini connect --standalone`, or `--http`): the agent spawns mini directly; mini
   serves Layer 1 over stdio (and optionally HTTP).
 - **Daemon** (default): the agent spawns a thin `mini` **proxy**, which connects to a shared,
   long-lived **daemon** over HTTP. The proxy bridges agent stdio ↔ daemon HTTP and *forwards*
