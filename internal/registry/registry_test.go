@@ -345,6 +345,57 @@ func TestAllWithHidden_sorted(t *testing.T) {
 	}
 }
 
+func TestAllDetailed(t *testing.T) {
+	schema := json.RawMessage(`{"type":"object","properties":{"q":{"type":"string"}}}`)
+	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: []transport.ToolDefinition{
+			{Name: "search", Description: "search desc", InputSchema: schema},
+			{Name: "secret", Description: "hidden"},
+		},
+		Perm: perm,
+	})
+
+	all := reg.AllDetailed()
+
+	t.Run("hidden tools excluded", func(t *testing.T) {
+		for _, e := range all {
+			if e.Name == "svc.secret" {
+				t.Fatal("hidden tool must not appear in AllDetailed()")
+			}
+		}
+	})
+
+	t.Run("inputSchema carried through", func(t *testing.T) {
+		if len(all) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(all))
+		}
+		if string(all[0].InputSchema) != string(schema) {
+			t.Errorf("InputSchema = %s, want %s", all[0].InputSchema, schema)
+		}
+	})
+
+	t.Run("sorted by Name", func(t *testing.T) {
+		reg2 := registry.New()
+		reg2.AddServer(registry.ServerParams{
+			Name: "s",
+			Defs: []transport.ToolDefinition{
+				{Name: "zzz", InputSchema: json.RawMessage(`{}`)},
+				{Name: "aaa", InputSchema: json.RawMessage(`{}`)},
+				{Name: "mmm", InputSchema: json.RawMessage(`{}`)},
+			},
+		})
+		entries := reg2.AllDetailed()
+		for i := 1; i < len(entries); i++ {
+			if entries[i].Name < entries[i-1].Name {
+				t.Errorf("AllDetailed not sorted: %s before %s", entries[i-1].Name, entries[i].Name)
+			}
+		}
+	})
+}
+
 func TestBuildEntry_annotationsThreaded(t *testing.T) {
 	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false}`)
 	reg := registry.New()

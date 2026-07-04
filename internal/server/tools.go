@@ -119,9 +119,11 @@ func executeCodeDescription() string {
 		"undeclared packages are not downloaded at runtime. " +
 		"Returns the function's return value as JSON. Use for multi-step computation over data to keep " +
 		"intermediate results out of context. " +
-		"A global mini object bridges to mini's tools: await mini.list() returns the tool index; " +
+		"A global mini object bridges to mini's tools: await mini.list() returns full tool definitions " +
+		"including input/output schemas — check a tool's inputSchema before calling it; " +
 		"await mini.call(server, tool, params) calls an open-permission tool and returns the raw upstream " +
 		"response without projection, so full data is available — compute over it and return only what is needed. " +
+		"A call with wrong params fails with the expected parameter list. " +
 		"Protected tools must use perm_call outside execute_code."
 }
 

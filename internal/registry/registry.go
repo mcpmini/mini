@@ -279,6 +279,18 @@ func (r *Registry) All() []CompactEntry {
 	return out
 }
 
+func (r *Registry) AllDetailed() []DetailedEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	out := make([]DetailedEntry, 0, len(r.tools))
+	for _, e := range r.tools {
+		out = append(out, e.Detailed())
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
 // AllWithHidden includes tools marked permission="hidden" that All() omits.
 func (r *Registry) AllWithHidden() []CompactEntry {
 	r.mu.RLock()

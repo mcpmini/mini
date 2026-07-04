@@ -239,8 +239,9 @@ func TestExecuteCode_ToolBridge(t *testing.T) {
 	}
 
 	srv := newCodeModeServer(t, true)
-	fake := fakeConn("toolA")
+	fake := fakeConn("toolA", "toolB")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
+	fake.Tools[1].InputSchema = json.RawMessage(`{"type":"object","properties":{"owner":{"type":"string"},"repo":{"type":"string"}},"required":["owner","repo"]}`)
 	addTestConnection(t, srv, config.ServerConfig{Name: "myserver"}, fake)
 
 	t.Run("mini.call returns upstream content", func(t *testing.T) {
@@ -263,6 +264,33 @@ func TestExecuteCode_ToolBridge(t *testing.T) {
 		}
 		if text := toolResultText(t, resp); !strings.Contains(text, "tool not found") {
 			t.Errorf("expected error to mention tool not found, got: %q", text)
+		}
+	})
+
+	t.Run("missing required param explains expected params", func(t *testing.T) {
+		resp := serve(t, srv, callTool("execute_code", map[string]any{
+			"code": `async () => await mini.call("myserver", "toolB", { owner: "a" })`,
+		}))
+		result, _ := resp["result"].(map[string]any)
+		if result == nil || result["isError"] != true {
+			t.Fatalf("expected isError=true, got: %v", resp)
+		}
+		text := toolResultText(t, resp)
+		if !strings.Contains(text, `missing required "repo"`) {
+			t.Errorf("expected missing required repo, got: %q", text)
+		}
+		if !strings.Contains(text, "owner (string, required)") {
+			t.Errorf("expected expected-params summary with owner, got: %q", text)
+		}
+	})
+
+	t.Run("mini.list exposes input schema", func(t *testing.T) {
+		resp := serve(t, srv, callTool("execute_code", map[string]any{
+			"code": `async () => { const t = (await mini.list()).find((x) => x.name === "myserver.toolA"); return t.inputSchema.type; }`,
+		}))
+		text := toolResultText(t, resp)
+		if text != `"object"` {
+			t.Errorf("expected inputSchema.type=%q, got %q", `"object"`, text)
 		}
 	})
 }

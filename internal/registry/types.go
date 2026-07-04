@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"encoding/json"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -50,5 +52,28 @@ func (e *ToolEntry) Compact() CompactEntry {
 		Server:      e.Server,
 		Description: e.Def.Description,
 		Permission:  e.Permission,
+	}
+}
+
+// DetailedEntry is what the code-mode bridge returns per tool. Unlike
+// CompactEntry it carries the full schemas: bridge responses never enter
+// model context, so there is no token budget to protect in-sandbox.
+type DetailedEntry struct {
+	Name         string                 `json:"name"`
+	Server       string                 `json:"server"`
+	Description  string                 `json:"description"`
+	Permission   config.PermissionLevel `json:"permission"`
+	InputSchema  json.RawMessage        `json:"inputSchema,omitempty"`
+	OutputSchema json.RawMessage        `json:"outputSchema,omitempty"`
+}
+
+func (e *ToolEntry) Detailed() DetailedEntry {
+	return DetailedEntry{
+		Name:         e.FullName,
+		Server:       e.Server,
+		Description:  e.Def.Description,
+		Permission:   e.Permission,
+		InputSchema:  e.Def.InputSchema,
+		OutputSchema: e.Def.OutputSchema,
 	}
 }

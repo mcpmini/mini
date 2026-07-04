@@ -16,7 +16,7 @@ type toolBridge struct {
 }
 
 func (b *toolBridge) ListTools(_ context.Context) (any, error) {
-	return b.s.reg.All(), nil
+	return b.s.reg.AllDetailed(), nil
 }
 
 func (b *toolBridge) CallTool(ctx context.Context, server, tool string, params map[string]any) (json.RawMessage, error) {
@@ -30,6 +30,13 @@ func (b *toolBridge) CallTool(ctx context.Context, server, tool string, params m
 	}
 	if entry.Permission == config.PermProtected {
 		return nil, fmt.Errorf("tool %q is protected — call it with perm_call outside execute_code", entry.FullName)
+	}
+	// Action default args are merged after this point and may satisfy required
+	// params, so virtual tools skip the check.
+	if entry.TargetTool == "" {
+		if err := checkParamsAgainstSchema(entry, params); err != nil {
+			return nil, err
+		}
 	}
 	p.Tool = entry.ToolName.UpstreamName
 	return b.callRaw(ctx, p, entry)
