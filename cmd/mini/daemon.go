@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,13 +13,40 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func runDaemon(configDir string, args []string) {
-	logLevel := parseDaemonFlags(args)
+func newDaemonCmd(opts *rootOptions) *cobra.Command {
+	var logLevel string
+	cmd := &cobra.Command{
+		Use:   "daemon",
+		Short: "Run as a shared background daemon (HTTP)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runDaemon(opts.configDir, logLevel)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&logLevel, "log-level", "", "log level (debug|info|warn|error)")
+	cmd.AddCommand(newDaemonStatusCmd(opts))
+	return cmd
+}
+
+func newDaemonStatusCmd(opts *rootOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show whether the daemon is running",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runDaemonStatus(opts.configDir)
+			return nil
+		},
+	}
+}
+
+func runDaemon(configDir string, logLevel string) {
 	if err := daemon.CheckSocketPath(configDir); err != nil {
 		fatalf("%v", err)
 	}
@@ -74,13 +100,6 @@ func ensureDaemonNotRunning(configDir string) string {
 		fatalf("daemon already running (socket: %s)", daemon.SocketPath(configDir))
 	}
 	return daemon.SocketPath(configDir)
-}
-
-func parseDaemonFlags(args []string) string {
-	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
-	logLevel := fs.String("log-level", "", "log level (debug|info|warn|error)")
-	fs.Parse(args) //nolint:errcheck
-	return *logLevel
 }
 
 type DaemonHTTPParams struct {

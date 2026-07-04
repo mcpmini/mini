@@ -378,7 +378,7 @@ mini daemon [--port N]                    Run as a shared background daemon
 mini daemon status                        Check whether the daemon is running
 
 mini ls                                   List configured servers
-mini add NAME [flags]                     Add a server
+mini add NAME (--url URL | -- CMD [ARGS...])  Add a server
 mini rm NAME                              Remove a server
 mini status                               Server health and tool counts
 mini test [--timeout T]                   CI health check (exits 1 on any failure)

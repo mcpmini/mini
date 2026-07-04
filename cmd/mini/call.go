@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +10,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"github.com/spf13/cobra"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -21,12 +22,38 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func runCall(configDir string, args []string) {
-	runCallCmd(configDir, args, false)
+func newCallCmd(opts *rootOptions) *cobra.Command {
+	return newCallCommand(opts, false)
 }
 
-func runPermCall(configDir string, args []string) {
-	runCallCmd(configDir, args, true)
+func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
+	f := callFlags{}
+	cmd := &cobra.Command{
+		Use:   "call SERVER TOOL [PARAMS]",
+		Short: "Invoke an open tool directly (exit 1 on tool error)",
+		Args:  usageArgs(cobra.RangeArgs(2, 3)),
+		PreRunE: func(*cobra.Command, []string) error {
+			if f.enabledCount() > 1 {
+				return usageErrf("choose only one output mode: --json, --mini, or --raw")
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runCallCmd(opts.configDir, args, f, protected)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVarP(&f.json, "json", "j", false, "JSON output (projected envelope, default)")
+	cmd.Flags().BoolVarP(&f.mini, "mini", "m", false, "mini format (compact key:value)")
+	cmd.Flags().BoolVarP(&f.raw, "raw", "r", false, "raw upstream response, no projection")
+	return cmd
+}
+
+func newPermCallCmd(opts *rootOptions) *cobra.Command {
+	cmd := newCallCommand(opts, true)
+	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
+	cmd.Short = "Invoke a protected tool directly"
+	return cmd
 }
 
 type callOutput int
@@ -43,6 +70,16 @@ type callFlags struct {
 	raw  bool
 }
 
+func (f callFlags) enabledCount() int {
+	count := 0
+	for _, enabled := range []bool{f.json, f.mini, f.raw} {
+		if enabled {
+			count++
+		}
+	}
+	return count
+}
+
 type callContext struct {
 	cfg        *config.Config
 	sc         *config.ServerConfig
@@ -52,8 +89,8 @@ type callContext struct {
 	clock      clock.Clock
 }
 
-func runCallCmd(configDir string, args []string, protected bool) {
-	f, cc := parseCallContext(configDir, args)
+func runCallCmd(configDir string, args []string, f callFlags, protected bool) {
+	cc := parseCallContext(configDir, args)
 	cc.clock = clock.System()
 	checkCallPermission(cc.sc, cc.toolName, protected)
 
@@ -71,21 +108,10 @@ func runCallCmd(configDir string, args []string, protected bool) {
 	executeProjected(ctx, conn, cc, mode)
 }
 
-func parseCallContext(configDir string, args []string) (callFlags, callContext) {
-	f, pos := parseCallFlags(args)
-	serverName, toolName, params := resolveCallPos(pos)
+func parseCallContext(configDir string, args []string) callContext {
+	serverName, toolName, params := resolveCallPos(args)
 	cfg, sc := loadCallCtx(configDir, serverName)
-	return f, callContext{cfg: cfg, sc: sc, serverName: serverName, toolName: toolName, params: params}
-}
-
-func parseCallFlags(args []string) (callFlags, []string) {
-	fs := flag.NewFlagSet("call", flag.ExitOnError)
-	f := callFlags{}
-	fs.BoolVar(&f.json, "j", false, "JSON output (projected envelope, default)")
-	fs.BoolVar(&f.mini, "m", false, "mini format (compact key:value)")
-	fs.BoolVar(&f.raw, "r", false, "raw upstream response, no projection")
-	fs.Parse(args) //nolint:errcheck
-	return f, fs.Args()
+	return callContext{cfg: cfg, sc: sc, serverName: serverName, toolName: toolName, params: params}
 }
 
 func resolveCallPos(pos []string) (serverName, toolName string, params map[string]any) {

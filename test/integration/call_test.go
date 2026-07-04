@@ -57,7 +57,7 @@ func TestCLICall_RawMode(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":42,"secret":"visible"}`,
 	})
-	stdout, _, code := runCLI(t, cfg, "call", "-r", "svc", "get_item")
+	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item", "-r")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -78,7 +78,7 @@ func TestCLICall_MiniFormat(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":42,"name":"widget"}`,
 	})
-	stdout, _, code := runCLI(t, cfg, "call", "-m", "svc", "get_item")
+	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item", "-m")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
@@ -149,6 +149,28 @@ func TestCLICall_MissingArgs_ExitsTwo(t *testing.T) {
 	_, _, code := runCLI(t, cfg, "call", "svc")
 	if code != 2 {
 		t.Errorf("expected exit 2 for missing tool arg, got %d", code)
+	}
+}
+
+func TestCLICall_OutputModesAreMutuallyExclusive(t *testing.T) {
+	_, stderr, code := runCLI(t, t.TempDir(), "call", "svc", "tool", "-j", "-r")
+	if code != 2 || !strings.Contains(stderr, "choose only one") {
+		t.Fatalf("call exited %d: %s", code, stderr)
+	}
+}
+
+func TestCLICall_Help(t *testing.T) {
+	stdout, stderr, code := runCLI(t, t.TempDir(), "call", "--help")
+	if code != 0 || !strings.Contains(stdout, "--raw") || stderr != "" {
+		t.Fatalf("call help exited %d: stdout=%q stderr=%q", code, stdout, stderr)
+	}
+}
+
+func TestCLICall_DashEscapesLiteralToolName(t *testing.T) {
+	cfg := callSetup(t, map[string]string{"-r": `{"literal":true}`})
+	stdout, stderr, code := runCLI(t, cfg, "call", "svc", "--", "-r")
+	if code != 0 || !strings.Contains(stdout, `"literal"`) {
+		t.Fatalf("call exited %d: stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }
 
@@ -238,7 +260,9 @@ func TestCLICall_FlagOverridesConfigFormat(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
-	var env struct{ Error string `json:"error"` }
+	var env struct {
+		Error string `json:"error"`
+	}
 	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
 		t.Errorf("-j flag should produce JSON envelope: %v\nstdout: %s", err, stdout)
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,11 +39,19 @@ func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
+func runAdd(configDir string, args []string, out *bytes.Buffer) error {
+	cmd := newAddCmd(&rootOptions{configDir: configDir})
+	cmd.SetArgs(args)
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	return cmd.Execute()
+}
+
 func TestRunAdd(t *testing.T) {
 	t.Run("stdio command creates server file", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
-		if err := runAdd(dir, []string{"gh", "npx", "-y", "server-github"}, &out); err != nil {
+		if err := runAdd(dir, []string{"gh", "--", "npx", "-y", "server-github"}, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
 		var sc importers.ServerYAML
@@ -52,6 +61,20 @@ func TestRunAdd(t *testing.T) {
 		}
 		if len(sc.Args) != 2 || sc.Args[0] != "-y" {
 			t.Errorf("Args = %v, want [-y server-github]", sc.Args)
+		}
+	})
+
+	t.Run("stdio child flags are stored unchanged", func(t *testing.T) {
+		dir := t.TempDir()
+		args := []string{"svc", "--", "/usr/bin/printf", "-h", "--config", "child-value"}
+		if err := runAdd(dir, args, &bytes.Buffer{}); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+		var sc importers.ServerYAML
+		readServerYAML(t, dir, "svc", &sc)
+		want := []string{"-h", "--config", "child-value"}
+		if !slices.Equal(sc.Args, want) {
+			t.Errorf("Args = %v, want %v", sc.Args, want)
 		}
 	})
 
@@ -190,7 +213,7 @@ func TestRunAdd(t *testing.T) {
 	t.Run("--protected flag marks tool", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
-		args := []string{"svc", "--protected", "delete_everything", "run"}
+		args := []string{"svc", "--protected", "delete_everything", "--", "run"}
 		if err := runAdd(dir, args, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
@@ -219,9 +242,23 @@ func TestRunAdd(t *testing.T) {
 
 	t.Run("invalid server name returns error", func(t *testing.T) {
 		dir := t.TempDir()
-		err := runAdd(dir, []string{"bad name!", "npx"}, &bytes.Buffer{})
+		err := runAdd(dir, []string{"bad name!", "--", "npx"}, &bytes.Buffer{})
 		if err == nil {
 			t.Fatal("expected error for invalid server name")
+		}
+	})
+
+	t.Run("multiple import modes return error", func(t *testing.T) {
+		err := runAdd(t.TempDir(), []string{"--from-claude", "a.json", "--from-cursor", "b.json"}, &bytes.Buffer{})
+		if err == nil {
+			t.Fatal("expected error for multiple import modes")
+		}
+	})
+
+	t.Run("url and stdio command return error", func(t *testing.T) {
+		err := runAdd(t.TempDir(), []string{"svc", "--url", "https://example.com", "--", "command"}, &bytes.Buffer{})
+		if err == nil {
+			t.Fatal("expected error for mixed HTTP and stdio modes")
 		}
 	})
 }
@@ -230,7 +267,7 @@ func TestRunRemove(t *testing.T) {
 	t.Run("removes existing server", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
-		runAdd(dir, []string{"myserver", "run"}, &out) //nolint:errcheck
+		runAdd(dir, []string{"myserver", "--", "run"}, &out) //nolint:errcheck
 		out.Reset()
 
 		if err := runRemove(dir, []string{"myserver"}, &out); err != nil {

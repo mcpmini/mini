@@ -2,13 +2,14 @@ package main
 
 import (
 	"bufio"
-	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
 )
@@ -20,17 +21,23 @@ type initFlags struct {
 	from string
 }
 
-func parseInitFlags(args []string) initFlags {
-	fs := flag.NewFlagSet("init", flag.ExitOnError)
+func newInitCmd(opts *rootOptions) *cobra.Command {
 	f := initFlags{}
-	fs.BoolVar(&f.yes, "yes", false, "accept all prompts without interaction")
-	fs.StringVar(&f.from, "from", "", "import from specific client name or config path")
-	fs.Parse(args)
-	return f
+	cmd := &cobra.Command{
+		Use:     "init",
+		Aliases: []string{"setup"},
+		Short:   "Interactive setup wizard",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runInit(opts.configDir, f)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&f.yes, "yes", false, "accept all prompts without interaction")
+	cmd.Flags().StringVar(&f.from, "from", "", "import from specific client name or config path")
+	return cmd
 }
 
-func runInit(configDir string, args []string) {
-	f := parseInitFlags(args)
+func runInit(configDir string, f initFlags) {
 	scanner := bufio.NewScanner(os.Stdin)
 	prompt := interactivePrompter(scanner, f.yes)
 	if err := createConfigDirs(configDir); err != nil {
