@@ -88,6 +88,13 @@ func validateFileEntry(entry, listName string, roots []string) error {
 		return &Error{Kind: KindRunner, Message: fmt.Sprintf(
 			"invalid %s entry %q: expected an absolute path, e.g. /Users/me/data", listName, entry)}
 	}
+	// A comma is a legal filename byte but Deno's --allow-read/--allow-write
+	// parser splits its value on it, so one comma-bearing entry would silently
+	// expand into multiple grants and slip a system path past the home boundary.
+	if strings.ContainsRune(entry, ',') {
+		return &Error{Kind: KindRunner, Message: fmt.Sprintf(
+			"invalid %s entry %q: a comma is not allowed in a grant path", listName, entry)}
+	}
 	if clean := filepath.Clean(entry); entry != clean {
 		return &Error{Kind: KindRunner, Message: fmt.Sprintf(
 			"invalid %s entry %q: path is not clean, write it as %q", listName, entry, clean)}

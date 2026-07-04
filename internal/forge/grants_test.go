@@ -86,6 +86,7 @@ func TestExecute_fileReadAllowListValidation(t *testing.T) {
 		{"relative", []string{"relative/path"}, []string{"expected an absolute path"}},
 		{"fsRoot", []string{"/"}, []string{"within your home directory"}},
 		{"systemPath", []string{"/etc/passwd"}, []string{`"/etc/passwd"`, "within your home directory"}},
+		{"commaSmuggledSystemPath", []string{"/Users/me/ok,/etc"}, []string{`"/Users/me/ok,/etc"`, "comma is not allowed"}},
 		{"uncleanTrailingSlash", []string{"/a/"}, []string{"path is not clean", `"/a"`, `"/a/"`}},
 		{"uncleanDotDot", []string{"/a/../b"}, []string{"path is not clean"}},
 		{"uncleanDoubleSlash", []string{"//x"}, []string{"path is not clean"}},
