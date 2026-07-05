@@ -129,6 +129,27 @@ func TestRefresh(t *testing.T) {
 	}
 }
 
+func TestRefreshDoesNotFollowRedirect(t *testing.T) {
+	targetCalled := false
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		targetCalled = true
+	}))
+	defer target.Close()
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Redirect(w, &http.Request{}, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+
+	ac := &config.AuthConfig{ClientID: "client", TokenURL: redirect.URL}
+	token := &oauth2.Token{AccessToken: "expired", RefreshToken: "refresh", Expiry: time.Now().Add(-time.Hour)}
+	if _, err := auth.Refresh(context.Background(), ac, token); err == nil {
+		t.Fatal("expected redirected token refresh to fail")
+	}
+	if targetCalled {
+		t.Error("token refresh followed redirect")
+	}
+}
+
 func TestTokenSaveLoad(t *testing.T) {
 	mock := newMockAuthServer(t)
 	dir := t.TempDir()
@@ -212,6 +233,60 @@ func TestSave_tokenFilePermissions(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 	assertTokenFilesPrivate(t, dir+"/internal")
+}
+
+func TestSaveTightensExistingTokenPermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/internal/myserver.token.json"
+	if err := os.MkdirAll(dir+"/internal", 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.Save(dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Errorf("token permissions = %#o, want 0600", got)
+	}
+}
+
+func TestSaveReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
+	dir := t.TempDir()
+	internal := dir + "/internal"
+	if err := os.MkdirAll(internal, 0700); err != nil {
+		t.Fatal(err)
+	}
+	target := dir + "/target"
+	if err := os.WriteFile(target, []byte("unchanged"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := internal + "/myserver.token.json"
+	if err := os.Symlink(target, path); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := auth.Save(dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "unchanged" {
+		t.Errorf("symlink target was overwritten: %q", got)
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Error("token path remained a symlink")
+	}
 }
 
 func assertTokenFilesPrivate(t *testing.T, tokensDir string) {

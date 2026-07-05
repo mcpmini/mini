@@ -22,20 +22,28 @@ func openWithCmd(browserCmd, url string) error {
 		if len(parts) == 0 {
 			return nil
 		}
-		return exec.Command(parts[0], append(parts[1:], url)...).Start()
+		return startAndReap(exec.Command(parts[0], append(parts[1:], url)...))
 	}
-	return exec.Command("sh", "-c", browserCmd+` "$1"`, "--", url).Start()
+	return startAndReap(exec.Command("sh", "-c", browserCmd+` "$1"`, "--", url))
 }
 
 func openPlatformDefault(url string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("open", url).Start()
+		return startAndReap(exec.Command("open", url))
 	case "linux":
-		return exec.Command("xdg-open", url).Start()
+		return startAndReap(exec.Command("xdg-open", url))
 	case "windows":
-		return exec.Command("cmd", "/c", "start", url).Start()
+		return startAndReap(exec.Command("cmd", "/c", "start", url))
 	default:
 		return nil
 	}
+}
+
+func startAndReap(cmd *exec.Cmd) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	go func() { _ = cmd.Wait() }()
+	return nil
 }

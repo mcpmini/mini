@@ -207,7 +207,7 @@ func printClientInstall(c agentClient, binPath string) {
 	fmt.Println()
 	if c.Name == "Claude Code" {
 		fmt.Println("  Claude Code:")
-		fmt.Println("    claude mcp add mini " + binPath)
+		fmt.Println("    claude mcp add mini " + binPath + " connect")
 		return
 	}
 	fmt.Printf("  %s — add to %s:\n", c.Name, c.ConfigPath)
