@@ -31,6 +31,8 @@ func TestSweepStaleDirs(t *testing.T) {
 
 	staleDeno := mkDir("forge-deno-stale", 8*24*time.Hour)
 	freshDeno := mkDir("forge-deno-fresh", 2*24*time.Hour)
+	staleScratch := mkDir("forge-scratch-stale", 48*time.Hour)
+	freshScratch := mkDir("forge-scratch-fresh", 1*time.Hour)
 	other := mkDir("other-stale", 8*24*time.Hour)
 
 	forge.SweepStaleDirs(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -50,5 +52,7 @@ func TestSweepStaleDirs(t *testing.T) {
 
 	assertRemoved(staleDeno)
 	assertExists(freshDeno)
+	assertRemoved(staleScratch)
+	assertExists(freshScratch)
 	assertExists(other)
 }

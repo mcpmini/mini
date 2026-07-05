@@ -8,13 +8,17 @@ import (
 	"time"
 )
 
-const denoCacheSweepAge = 7 * 24 * time.Hour
+const (
+	denoCacheSweepAge = 7 * 24 * time.Hour
+	scratchSweepAge   = 24 * time.Hour
+)
 
-// SweepStaleDirs removes forge package cache dirs whose declared set has not
-// been used in a while. The age gate keeps a sweep from deleting caches of
-// runs in flight in another mini process: cache dirs are re-touched on every
-// use.
+// SweepStaleDirs removes forge temp dirs orphaned by a hard kill mid-run,
+// which skips the deferred cleanup. The age gates keep a sweep from deleting
+// dirs of runs in flight in another mini process: scratch dirs live at most
+// one run timeout, and package cache dirs are re-touched on every use.
 func SweepStaleDirs(logger *slog.Logger) {
+	sweepStale(logger, "forge-scratch-", scratchSweepAge)
 	sweepStale(logger, "forge-deno-", denoCacheSweepAge)
 }
 
