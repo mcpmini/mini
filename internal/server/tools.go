@@ -114,7 +114,8 @@ func executeCodeDescription() string {
 	return "Execute TypeScript in a sandboxed Deno subprocess (no filesystem, network, env, " +
 		"or subprocess access). code: source of an async function, e.g. " +
 		"\"async (input) => input.items.filter(i => i.open)\". input: JSON value passed as its argument. " +
-		"Code may only import packages listed in packages, via await import(...). " +
+		"Declare every package the code imports in packages and import via await import(...); " +
+		"undeclared packages are not downloaded at runtime. " +
 		"Returns the function's return value as JSON. Use for multi-step computation over data to keep " +
 		"intermediate results out of context."
 }
