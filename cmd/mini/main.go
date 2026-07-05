@@ -18,6 +18,7 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/forge"
 	"github.com/mcpmini/mini/internal/proxy"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
@@ -133,6 +134,9 @@ type BuildServerParams struct {
 }
 
 func buildAndConnectServer(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
+	if p.Cfg.ExperimentalCodeMode {
+		go forge.SweepStaleDirs(p.Logger)
+	}
 	srv := server.NewWithConfigDir(p.Cfg, p.ConfigDir, p.Logger, opts...)
 	for _, sc := range p.Servers {
 		if sc.IsEnabled() {
