@@ -140,6 +140,32 @@ func (f *Fake) BlockUntilContext(ctx context.Context, n int) error {
 	}
 }
 
+func (f *Fake) BlockUntilTimerContext(ctx context.Context, delay time.Duration) error {
+	for {
+		f.mu.Lock()
+		found := f.hasTimerAt(f.now.Add(delay))
+		ch := f.notify
+		f.mu.Unlock()
+		if found {
+			return nil
+		}
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (f *Fake) hasTimerAt(deadline time.Time) bool {
+	for _, timer := range f.timers {
+		if timer.deadline.Equal(deadline) {
+			return true
+		}
+	}
+	return false
+}
+
 type fakeTimer struct {
 	ch       chan time.Time
 	deadline time.Time

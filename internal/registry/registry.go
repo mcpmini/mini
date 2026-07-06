@@ -79,6 +79,7 @@ func buildEntry(p entryParams) *ToolEntry {
 	name := ToolName{UpstreamName: p.def.Name, Alias: p.alias}
 	full := p.server + "." + name.Name()
 	return &ToolEntry{
+		Kind:          ToolEntryUpstream,
 		Server:        p.server,
 		ToolName:      name,
 		FullName:      full,
@@ -119,6 +120,7 @@ func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 		targetTool = target.ToolName.UpstreamName
 	}
 	return &ToolEntry{
+		Kind:          ToolEntryAction,
 		Server:        ac.Server,
 		ToolName:      ToolName{UpstreamName: ac.Name},
 		FullName:      full,
@@ -235,14 +237,45 @@ func (r *Registry) removeServerLocked(serverName string) {
 	delete(r.byServer, serverName)
 }
 
-// ReplaceServer atomically removes the server's existing tools and registers the
-// new set. Callers outside this package (reconnect, registerUpstream) must use
-// this instead of separate Remove+Add calls to avoid a window where tools are absent.
-func (r *Registry) ReplaceServer(p ServerParams) {
+func (r *Registry) removeServerToolsLocked(serverName string) {
+	entries := r.byServer[serverName]
+	for _, entry := range entries {
+		if entry.Kind == ToolEntryUpstream {
+			delete(r.tools, entry.FullName)
+		}
+	}
+	delete(r.byServer, serverName)
+	for key, entry := range r.hidden {
+		if entry.Server == serverName && entry.Kind == ToolEntryUpstream {
+			delete(r.hidden, key)
+		}
+	}
+}
+
+func (r *Registry) ReplaceServerTools(p ServerParams) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.removeServerLocked(p.Name)
+	actions := r.serverActionsLocked(p.Name)
+	r.removeServerToolsLocked(p.Name)
 	r.addServerLocked(p)
+	for _, entry := range actions {
+		r.insertActionEntryLocked(p.Name, entry)
+	}
+}
+
+func (r *Registry) serverActionsLocked(serverName string) []*ToolEntry {
+	actions := make([]*ToolEntry, 0, len(r.byServer[serverName])+len(r.hidden))
+	for _, entry := range r.byServer[serverName] {
+		if entry.Kind == ToolEntryAction {
+			actions = append(actions, entry)
+		}
+	}
+	for _, entry := range r.hidden {
+		if entry.Server == serverName && entry.Kind == ToolEntryAction {
+			actions = append(actions, entry)
+		}
+	}
+	return actions
 }
 
 func (r *Registry) Lookup(fullName string) (*ToolEntry, error) {

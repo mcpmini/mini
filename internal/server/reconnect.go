@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -12,11 +11,12 @@ func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
 	if err == nil || !isConnError(err) {
 		return
 	}
-	// Skip if upstream is already shutting down. callConn releases u.mu.RLock
-	// before returning, so there is a narrow window where Close() can complete
-	// reconnectWg.Wait() before this goroutine calls reconnectWg.Add(1). The
-	// WaitGroup won't panic (w==0 when Wait already returned), but the goroutine
-	// would run briefly after Close() returns. Checking Err() prevents that.
+	// Skip if upstream is already shutting down. Calls snapshot the current
+	// connection pointer before returning, so there is a narrow window where
+	// Close() can complete reconnectWg.Wait() before this goroutine calls
+	// reconnectWg.Add(1). The WaitGroup won't panic (w==0 when Wait already
+	// returned), but the goroutine would run briefly after Close() returns.
+	// Checking Err() prevents that.
 	if upstream.ctx.Err() != nil {
 		return
 	}
@@ -111,44 +111,48 @@ func (s *Server) listToolsForReconnect(u *upstreamServer, conn transport.Connect
 }
 
 func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []transport.ToolDefinition) bool {
-	old, hook, ok := swapReconnectConn(u, conn)
-	if !ok {
+	swap := swapReconnectConn(u, conn)
+	if !swap.ok {
 		return false
 	}
-	if old != nil {
-		old.Close()
+	if swap.old != nil {
+		swap.old.Close()
 	}
-	s.replaceRegistryToolsLocked(u, tools)
-	s.notifyAllSessions()
+	s.attachNotificationHandler(u, conn, swap.gen)
+	changed, published := s.publishRefreshedTools(u, swap.gen, tools)
+	if published && changed {
+		s.notifyAllSessions()
+	}
 	s.logger.Info("upstream reconnected", "server", u.cfg.Name)
-	if hook != nil {
-		hook()
+	if swap.hook != nil {
+		swap.hook()
 	}
 	return true
 }
 
-func (s *Server) replaceRegistryToolsLocked(u *upstreamServer, tools []transport.ToolDefinition) {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	u.lastDefs = tools
-	s.reg.ReplaceServer(registry.ServerParams{
-		Name:    u.cfg.Name,
-		Defs:    tools,
-		Perm:    u.cfg.Permissions,
-		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
-	})
+type reconnectSwap struct {
+	old  transport.Connection
+	hook func()
+	gen  uint64
+	ok   bool
 }
 
-func swapReconnectConn(u *upstreamServer, conn transport.Connection) (transport.Connection, func(), bool) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	select {
-	case <-u.ctx.Done():
-		conn.Close()
-		return nil, nil, false
-	default:
+func swapReconnectConn(u *upstreamServer, conn transport.Connection) reconnectSwap {
+	prev, gen, ok := u.replaceConn(conn)
+	if !ok {
+		return reconnectSwap{}
 	}
-	old, hook := u.conn, u.onReconnect
-	u.conn = conn
-	return old, hook, true
+	return reconnectSwap{
+		old:  reconnectConn(prev),
+		hook: u.reconnectHook(),
+		gen:  gen,
+		ok:   true,
+	}
+}
+
+func reconnectConn(state *upstreamConnState) transport.Connection {
+	if state == nil {
+		return nil
+	}
+	return state.conn
 }

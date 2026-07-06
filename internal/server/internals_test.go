@@ -112,10 +112,12 @@ func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
 	fakeClock := clock.NewFake()
 	st := newSessionStore(fakeClock)
 	s := st.getOrCreate("stdio")
-	ch := s.enableNotifications()
+	ch, ok := s.enableNotifications()
+	if !ok {
+		t.Fatal("enableNotifications() = closed")
+	}
 	defer func() {
-		s.disableNotifications()
-		close(ch)
+		s.disableNotifications(ch)
 	}()
 	fakeClock.Advance(2 * time.Hour)
 
@@ -224,4 +226,3 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 		t.Errorf("expected 0 sessions after eviction, got %d", got)
 	}
 }
-

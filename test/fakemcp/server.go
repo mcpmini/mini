@@ -5,24 +5,22 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func serve(handler *mcpHandler) {
-	enc := json.NewEncoder(os.Stdout)
+func serve(handler *mcpHandler, sink *outputSink) {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 16<<20), 16<<20)
 	for scanner.Scan() {
-		if err := serveRequest(enc, handler, scanner.Bytes()); err != nil {
+		if err := serveRequest(handler, sink, scanner.Bytes()); err != nil {
 			return
 		}
 	}
 }
 
-func serveRequest(enc *json.Encoder, handler *mcpHandler, line []byte) error {
+func serveRequest(handler *mcpHandler, sink *outputSink, line []byte) error {
 	var req transport.Request
 	if err := json.Unmarshal(line, &req); err != nil {
 		return nil
@@ -30,16 +28,9 @@ func serveRequest(enc *json.Encoder, handler *mcpHandler, line []byte) error {
 	if req.ID == nil {
 		return nil
 	}
-	return writeResult(enc, handler.dispatch(req))
-}
-
-func writeResult(enc *json.Encoder, result dispatchResult) error {
+	result := handler.dispatch(req)
 	if result.exit {
 		os.Exit(1)
 	}
-	if result.rawWrite != nil {
-		_, err := fmt.Fprintf(os.Stdout, "%s", result.rawWrite)
-		return err
-	}
-	return enc.Encode(result.response)
+	return sink.writeResult(result)
 }

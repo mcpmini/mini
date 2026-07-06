@@ -19,6 +19,7 @@ const (
 func (f *Forwarder) Forward(line []byte) []byte {
 	state := f.link.snapshot()
 	isInit := peekIsInitialize(line)
+	isInitialized := isInitializedNotification(line)
 	var out forwardOutcome
 	for attempt := range maxRecoveryAttempts {
 		out = classifyForward(f.sessionAt(state), line)
@@ -31,6 +32,13 @@ func (f *Forwarder) Forward(line []byte) []byte {
 		}
 		state = next
 		<-f.clock.NewTimer(jitteredBackoff(attempt)).Chan()
+	}
+	if isInit && out.kind == outcomeOK {
+		f.initSeen.Store(true)
+	}
+	if isInitialized && out.kind == outcomeOK && f.initSeen.Load() && f.bridge != nil {
+		f.ready.Store(true)
+		f.bridge.Arm(state)
 	}
 	return out.resp
 }
@@ -49,6 +57,10 @@ func (f *Forwarder) handleRecoverable(kind outcomeKind, state linkState, isInit 
 	// reinit is idempotent — the daemon silently accepts duplicate initialize calls, so every goroutine can replay it safely
 	if !isInit {
 		f.sessionAt(state).Handshake(f.toolMode)
+		f.initSeen.Store(true)
+		if f.bridge != nil && f.ready.Load() {
+			f.bridge.Arm(state)
+		}
 	}
 	return state, true
 }

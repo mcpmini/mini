@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
@@ -112,4 +113,93 @@ func authCapturingMCP(t *testing.T, headerKey string) (*fakeHTTPMCP, *atomic.Val
 	}))
 	t.Cleanup(f.srv.Close)
 	return f, &captured
+}
+
+type fakeHTTPNotifierMCP struct {
+	srv           *httptest.Server
+	mu            sync.Mutex
+	tools         []map[string]any
+	notifications chan struct{}
+}
+
+func newFakeHTTPNotifierMCP(t *testing.T, tools []map[string]any) *fakeHTTPNotifierMCP {
+	t.Helper()
+	f := &fakeHTTPNotifierMCP{
+		tools:         append([]map[string]any(nil), tools...),
+		notifications: make(chan struct{}, 8),
+	}
+	f.srv = httptest.NewServer(http.HandlerFunc(f.serveHTTP))
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+func (f *fakeHTTPNotifierMCP) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		f.serveGET(w, r)
+		return
+	}
+	f.servePOST(w, r)
+}
+
+func (f *fakeHTTPNotifierMCP) serveGET(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Mcp-Session-Id") != "sess" {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	if flusher, ok := w.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	select {
+	case <-r.Context().Done():
+		return
+	case <-f.notifications:
+		fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n")
+	}
+}
+
+func (f *fakeHTTPNotifierMCP) servePOST(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID     int64           `json:"id"`
+		Method string          `json:"method"`
+		Params json.RawMessage `json:"params"`
+	}
+	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+	switch req.Method {
+	case "initialize":
+		w.Header().Set("Mcp-Session-Id", "sess")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"jsonrpc": "2.0",
+			"id":      req.ID,
+			"result": map[string]any{
+				"protocolVersion": "2025-03-26",
+				"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
+				"serverInfo":      map[string]any{"name": "fakehttpmcp", "version": "0.1.0"},
+			},
+		})
+	case "notifications/initialized":
+		w.WriteHeader(http.StatusAccepted)
+	case "tools/list":
+		f.mu.Lock()
+		tools := append([]map[string]any(nil), f.tools...)
+		f.mu.Unlock()
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"jsonrpc": "2.0",
+			"id":      req.ID,
+			"result":  map[string]any{"tools": tools},
+		})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (f *fakeHTTPNotifierMCP) setTools(tools []map[string]any) {
+	f.mu.Lock()
+	f.tools = append([]map[string]any(nil), tools...)
+	f.mu.Unlock()
+	select {
+	case f.notifications <- struct{}{}:
+	default:
+	}
 }

@@ -21,6 +21,23 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *safeBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *safeBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func shortSocketDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 
 func serveSocket(t *testing.T, h http.HandlerFunc) *http.Client {
@@ -143,7 +160,9 @@ func TestForward_httpErrorStatusProducesJSONRPCEnvelope(t *testing.T) {
 			resp := testConn(client, "sess").Send(reqBody)
 			var rpc struct {
 				ID    json.RawMessage `json:"id"`
-				Error *struct{ Message string `json:"message"` } `json:"error"`
+				Error *struct {
+					Message string `json:"message"`
+				} `json:"error"`
 			}
 			if err := json.Unmarshal(resp, &rpc); err != nil {
 				t.Fatalf("response not valid JSON-RPC: %v\ngot: %s", err, resp)
@@ -426,7 +445,9 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 	var toolCalls, initCalls atomic.Int32
 	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		var msg struct{ Method string `json:"method"` }
+		var msg struct {
+			Method string `json:"method"`
+		}
 		json.Unmarshal(body, &msg) //nolint:errcheck
 		switch msg.Method {
 		case "initialize":
@@ -460,6 +481,150 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 	}
 }
 
+func TestRun_relaysDaemonNotificationsAfterInitialized(t *testing.T) {
+	initLine := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
+	readyLine := `{"jsonrpc":"2.0","method":"notifications/initialized"}`
+	getStarted := make(chan struct{}, 1)
+	notifSent := make(chan struct{}, 1)
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n")
+			getStarted <- struct{}{}
+			notifSent <- struct{}{}
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var msg struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		json.Unmarshal(body, &msg) //nolint:errcheck
+		switch msg.Method {
+		case "initialize":
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"protocolVersion":"2025-03-26"}}`, msg.ID)
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			t.Fatalf("unexpected POST method %q", msg.Method)
+		}
+	})
+
+	inR, inW := io.Pipe()
+	out := &safeBuffer{}
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(RunParams{Client: client, SessionID: "sess", In: inR, Out: out, Clock: clock.System()})
+	}()
+
+	fmt.Fprintln(inW, initLine)
+	fmt.Fprintln(inW, readyLine)
+	select {
+	case <-getStarted:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for daemon GET stream")
+	}
+	select {
+	case <-notifSent:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for daemon notification")
+	}
+	waitForOutputContains(t, out, `"method":"notifications/tools/list_changed"`)
+	inW.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if !strings.Contains(out.String(), `"id":1`) {
+		t.Fatalf("missing initialize response in output: %q", out.String())
+	}
+	if !strings.Contains(out.String(), `"method":"notifications/tools/list_changed"`) {
+		t.Fatalf("missing relayed notification in output: %q", out.String())
+	}
+}
+
+func TestRun_reopensNotificationStreamAfterRecovery(t *testing.T) {
+	initLine := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
+	readyLine := `{"jsonrpc":"2.0","method":"notifications/initialized"}`
+	callLine := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{}}`
+	notifSent := make(chan struct{}, 1)
+	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if r.Method == http.MethodGet {
+			if auth != "Bearer fresh" {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, "event: message\ndata: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}\n\n")
+			notifSent <- struct{}{}
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		var msg struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		json.Unmarshal(body, &msg) //nolint:errcheck
+		switch msg.Method {
+		case "initialize":
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":{"protocolVersion":"2025-03-26"}}`, msg.ID)
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/call":
+			if auth != "Bearer fresh" {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%d,"result":"ok"}`, msg.ID)
+		default:
+			t.Fatalf("unexpected POST method %q", msg.Method)
+		}
+	})
+
+	inR, inW := io.Pipe()
+	out := &safeBuffer{}
+	done := make(chan error, 1)
+	go func() {
+		done <- Run(RunParams{
+			Client: client, SessionID: "sess", Token: "stale", In: inR, Out: out,
+			Resolver: NewDaemonResolver(func() (string, error) { return "fresh", nil }),
+			Clock:    clock.System(),
+		})
+	}()
+
+	fmt.Fprintln(inW, initLine)
+	fmt.Fprintln(inW, readyLine)
+	fmt.Fprintln(inW, callLine)
+	select {
+	case <-notifSent:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for recovered notification stream")
+	}
+	waitForOutputContains(t, out, `"method":"notifications/tools/list_changed"`)
+	inW.Close()
+	if err := <-done; err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if !strings.Contains(out.String(), `"result":"ok"`) {
+		t.Fatalf("missing recovered tool response: %q", out.String())
+	}
+	if !strings.Contains(out.String(), `"method":"notifications/tools/list_changed"`) {
+		t.Fatalf("missing notification after recovery: %q", out.String())
+	}
+}
+
+func waitForOutputContains(t *testing.T, out *safeBuffer, want string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(out.String(), want) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %q in output: %q", want, out.String())
+}
+
 func TestRun_noReinitWhenInitializeSucceeds(t *testing.T) {
 	var calls atomic.Int32
 	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
@@ -487,7 +652,9 @@ func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
 	done := make(chan error, 1)
-	go func() { done <- Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard, Clock: clock.NewFake()}) }()
+	go func() {
+		done <- Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard, Clock: clock.NewFake()})
+	}()
 	select {
 	case err := <-done:
 		if err != nil {

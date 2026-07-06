@@ -3,8 +3,12 @@
 package transport
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -12,124 +16,362 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 )
 
-func TestParseHTTPBody_empty(t *testing.T) {
-	result, err := parseHTTPBody([]byte{})
+func TestSplitHTTPMessages_empty(t *testing.T) {
+	got, err := splitHTTPMessages([]byte{})
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if result != nil {
-		t.Errorf("expected nil for empty body, got %s", result)
+	if got != nil {
+		t.Fatalf("expected nil, got %q", got)
 	}
 }
 
-func TestParseHTTPBody_whitespaceOnly(t *testing.T) {
-	result, err := parseHTTPBody([]byte("   \n  "))
+func TestSplitHTTPMessages_whitespaceOnly(t *testing.T) {
+	got, err := splitHTTPMessages([]byte("   \n  "))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	if result != nil {
-		t.Errorf("expected nil for whitespace body, got %s", result)
+	if got != nil {
+		t.Fatalf("expected nil, got %q", got)
 	}
 }
 
-func TestParseHTTPBody_plainJSON(t *testing.T) {
-	payload := `{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`
-	result, err := parseHTTPBody([]byte(payload))
+func TestSplitHTTPMessages_plainJSON(t *testing.T) {
+	payload := []byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`)
+	got, err := splitHTTPMessages(payload)
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	var got map[string]any
-	if err := json.Unmarshal(result, &got); err != nil {
-		t.Fatalf("result not valid JSON: %v", err)
-	}
-	if got["tools"] == nil {
-		t.Errorf("expected tools in result: %v", got)
+	if len(got) != 1 || !bytes.Equal(got[0], payload) {
+		t.Fatalf("splitHTTPMessages() = %q", got)
 	}
 }
 
-func TestParseHTTPBody_SSEWrapped(t *testing.T) {
-	body := "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n"
-	result, err := parseHTTPBody([]byte(body))
+func TestSplitHTTPMessages_SSEWrapped(t *testing.T) {
+	got, err := splitHTTPMessages([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n"))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	var got map[string]any
-	if err := json.Unmarshal(result, &got); err != nil {
-		t.Fatalf("result not valid JSON: %v", err)
+	if len(got) != 1 {
+		t.Fatalf("len(messages) = %d", len(got))
 	}
-	if got["ok"] != true {
-		t.Errorf("expected ok:true in result: %v", got)
+	var payload struct {
+		Result map[string]bool `json:"result"`
+	}
+	if err := json.Unmarshal(got[0], &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Result["ok"] {
+		t.Fatalf("result = %v", payload.Result)
 	}
 }
 
-func TestParseHTTPBody_SSEDataPrefix(t *testing.T) {
-	body := "data: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"val\":42}}\n\n"
-	result, err := parseHTTPBody([]byte(body))
+func TestSplitHTTPMessages_SSEWrappedIDFirst(t *testing.T) {
+	got, err := splitHTTPMessages([]byte("id: 7\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n"))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	var got map[string]any
-	if err := json.Unmarshal(result, &got); err != nil {
-		t.Fatalf("result not valid JSON: %v", err)
-	}
-}
-
-func TestParseHTTPBody_malformedJSON(t *testing.T) {
-	_, err := parseHTTPBody([]byte(`{"jsonrpc":"2.0", bad json`))
-	if err == nil {
-		t.Fatal("expected error for malformed JSON")
+	if len(got) != 1 {
+		t.Fatalf("len(messages) = %d", len(got))
 	}
 }
 
-func TestParseHTTPBody_RPCError(t *testing.T) {
-	payload := `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"invalid request"}}`
-	_, err := parseHTTPBody([]byte(payload))
-	if err == nil {
-		t.Fatal("expected error for RPC error response")
-	}
-	if !strings.Contains(err.Error(), "invalid request") {
-		t.Errorf("error should mention 'invalid request', got: %v", err)
-	}
-}
-
-func TestParseHTTPBody_nullResult(t *testing.T) {
-	payload := `{"jsonrpc":"2.0","id":1,"result":null}`
-	result, err := parseHTTPBody([]byte(payload))
+func TestSplitHTTPMessages_SSEWrappedCommentFirst(t *testing.T) {
+	got, err := splitHTTPMessages([]byte(": keepalive\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n"))
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatal(err)
 	}
-	_ = result
-}
-
-func TestExtractSSEData_singleDataLine(t *testing.T) {
-	body := "event: message\ndata: {\"x\":1}\n\n"
-	got := extractSSEData([]byte(body))
-	if string(got) != `{"x":1}` {
-		t.Errorf("expected {\"x\":1}, got %s", got)
+	if len(got) != 1 {
+		t.Fatalf("len(messages) = %d", len(got))
 	}
 }
 
-func TestExtractSSEData_noDataLine(t *testing.T) {
-	body := "event: ping\n\n"
-	got := extractSSEData([]byte(body))
-	if !strings.Contains(string(got), "ping") {
-		t.Errorf("expected fallback to original body, got %s", got)
+func TestSplitHTTPMessages_SSEWrappedBOM(t *testing.T) {
+	got, err := splitHTTPMessages([]byte("\xef\xbb\xbfdata: {\"ok\":true}\n\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || string(got[0]) != `{"ok":true}` {
+		t.Fatalf("splitHTTPMessages() = %q", got)
 	}
 }
 
-func TestExtractSSEData_multipleDataLines_firstWins(t *testing.T) {
-	body := "data: {\"first\":true}\ndata: {\"second\":true}\n"
-	got := extractSSEData([]byte(body))
-	if string(got) != `{"first":true}` {
-		t.Errorf("expected first data line to win, got %s", got)
+func TestSplitHTTPMessages_SSEWrappedUnknownFields(t *testing.T) {
+	stream := "vendor.field: a:b\nfield with spaces: ignored\ndata: {\"ok\":true}\n\n"
+	got, err := splitHTTPMessages([]byte(stream))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || string(got[0]) != `{"ok":true}` {
+		t.Fatalf("splitHTTPMessages() = %q", got)
 	}
 }
 
-func TestExtractSSEData_leadingWhitespace(t *testing.T) {
-	body := "event: message\ndata:   {\"trimmed\":true}  \n"
-	got := extractSSEData([]byte(body))
-	if string(got) != `{"trimmed":true}` {
-		t.Errorf("expected whitespace trimmed, got %s", got)
+func TestSplitHTTPMessages_SSEWrappedLargePreDataFields(t *testing.T) {
+	cases := []struct {
+		name      string
+		lineBytes int
+	}{
+		{name: "below_64kib", lineBytes: (64 << 10) - 1},
+		{name: "at_64kib", lineBytes: 64 << 10},
+		{name: "above_64kib", lineBytes: (64 << 10) + 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := splitHTTPMessages(sseEnvelopeWithFieldBytes(tc.lineBytes))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 1 || string(got[0]) != `{"ok":true}` {
+				t.Fatalf("splitHTTPMessages() = %q", got)
+			}
+		})
+	}
+}
+
+func TestSplitHTTPMessages_SSEWrappedLineLimit(t *testing.T) {
+	got, err := splitHTTPMessages(sseEnvelopeWithFieldBytes(maxSSELineBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || string(got[0]) != `{"ok":true}` {
+		t.Fatalf("splitHTTPMessages() = %q", got)
+	}
+
+	_, err = splitHTTPMessages(sseEnvelopeWithFieldBytes(maxSSELineBytes + 1))
+	if !errors.Is(err, errSSEMessageTooLarge) {
+		t.Fatalf("splitHTTPMessages() error = %v, want %v", err, errSSEMessageTooLarge)
+	}
+}
+
+func TestSplitHTTPMessages_JSONDoesNotFalsePositiveAsSSE(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload []byte
+	}{
+		{name: "single_line_object", payload: []byte(`{"data":{"ok":true},"event":"message"}`)},
+		{name: "pretty_object", payload: []byte("{\n  \"event\": \"message\",\n  \"data\": {\"ok\": true}\n}\n")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := splitHTTPMessages(tc.payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 1 || !bytes.Equal(got[0], bytes.TrimSpace(tc.payload)) {
+				t.Fatalf("splitHTTPMessages() = %q", got)
+			}
+		})
+	}
+}
+
+func TestScanSSEMessages_multilineData(t *testing.T) {
+	stream := "event: message\ndata: {\"jsonrpc\":\"2.0\",\ndata: \"method\":\"notifications/tools/list_changed\"}\n\n"
+	var messages []json.RawMessage
+	if err := ScanSSEMessages(strings.NewReader(stream), func(message json.RawMessage) error {
+		messages = append(messages, message)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("len(messages) = %d", len(messages))
+	}
+	var notification Notification
+	if err := json.Unmarshal(messages[0], &notification); err != nil {
+		t.Fatal(err)
+	}
+	if notification.Method != NotificationToolsChanged {
+		t.Fatalf("method = %q", notification.Method)
+	}
+}
+
+func TestScanSSEMessages_discardsUnterminatedEvent(t *testing.T) {
+	for _, stream := range []string{
+		`data: {"ok":true}`,
+		"data: {\"ok\":true}\n",
+	} {
+		called := false
+		if err := ScanSSEMessages(strings.NewReader(stream), func(json.RawMessage) error {
+			called = true
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if called {
+			t.Fatalf("handler called for %q", stream)
+		}
+	}
+}
+
+func TestScanSSEMessages_preservesDataBytes(t *testing.T) {
+	stream := "data: {\"value\":\"a  \"}\n\n" +
+		"data:  {\"value\":\"b\"}\n\n"
+	var messages []string
+	if err := ScanSSEMessages(strings.NewReader(stream), func(message json.RawMessage) error {
+		messages = append(messages, string(message))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`{"value":"a  "}`,
+		` {"value":"b"}`,
+	}
+	if !slices.Equal(messages, want) {
+		t.Fatalf("messages = %q, want %q", messages, want)
+	}
+}
+
+func TestScanSSEMessages_emptyFirstDataLine(t *testing.T) {
+	stream := "data:\n" +
+		"data: {\"ok\":true}\n\n"
+	var messages []string
+	if err := ScanSSEMessages(strings.NewReader(stream), func(message json.RawMessage) error {
+		messages = append(messages, string(message))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || messages[0] != "\n{\"ok\":true}" {
+		t.Fatalf("messages = %q", messages)
+	}
+}
+
+func TestScanSSEMessages_ignoresCommentsAndOtherFields(t *testing.T) {
+	stream := ": comment\n" +
+		"event: message\n" +
+		"id: 7\n" +
+		"data: {\"ok\":true}\n\n"
+	var messages []string
+	if err := ScanSSEMessages(strings.NewReader(stream), func(message json.RawMessage) error {
+		messages = append(messages, string(message))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || messages[0] != `{"ok":true}` {
+		t.Fatalf("messages = %q", messages)
+	}
+}
+
+func TestScanSSEMessages_handlesCRLF(t *testing.T) {
+	stream := "data: {\"ok\":true}\r\n\r\n"
+	var messages []string
+	if err := ScanSSEMessages(strings.NewReader(stream), func(message json.RawMessage) error {
+		messages = append(messages, string(message))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || messages[0] != `{"ok":true}` {
+		t.Fatalf("messages = %q", messages)
+	}
+}
+
+func TestScanSSEMessages_handlesCROnlyMultipleEvents(t *testing.T) {
+	stream := "data: {\"ok\":1}\r\rdata: {\"ok\":2}\r\r"
+	var messages []string
+	if err := ScanSSEMessages(strings.NewReader(stream), func(message json.RawMessage) error {
+		messages = append(messages, string(message))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`{"ok":1}`, `{"ok":2}`}
+	if !slices.Equal(messages, want) {
+		t.Fatalf("messages = %q, want %q", messages, want)
+	}
+}
+
+func TestScanSSEMessages_handlesMixedLineEndings(t *testing.T) {
+	stream := "event: message\r\ndata: {\"ok\":1}\n\rdata: {\"ok\":2}\r\n\r\n"
+	var messages []string
+	if err := ScanSSEMessages(strings.NewReader(stream), func(message json.RawMessage) error {
+		messages = append(messages, string(message))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`{"ok":1}`, `{"ok":2}`}
+	if !slices.Equal(messages, want) {
+		t.Fatalf("messages = %q, want %q", messages, want)
+	}
+}
+
+func TestScanSSEMessages_handlesCRLFAcrossFragmentBoundary(t *testing.T) {
+	stream := "data: {\"ok\":true}\r\n\r\n"
+	var messages []string
+	reader := &chunkedReader{
+		data:  []byte(stream),
+		sizes: []int{len("data: {\"ok\":true}\r"), 1, 1},
+	}
+	if err := ScanSSEMessages(reader, func(message json.RawMessage) error {
+		messages = append(messages, string(message))
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 1 || messages[0] != `{"ok":true}` {
+		t.Fatalf("messages = %q", messages)
+	}
+}
+
+func TestScanSSEMessages_skipsInvalidPayloads(t *testing.T) {
+	stream := "data: not-json\n\n"
+	called := false
+	if err := ScanSSEMessages(strings.NewReader(stream), func(json.RawMessage) error {
+		called = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if called {
+		t.Fatal("invalid payload should be ignored")
+	}
+}
+
+func TestScanSSEMessages_limitBoundaries(t *testing.T) {
+	makeLine := func(size int) string {
+		return "data: \"" + strings.Repeat("a", size-2) + "\"\n\n"
+	}
+	makeMultiline := func(total int) string {
+		first := (total - 8) / 2
+		second := total - 8 - first
+		return "data: [\"" + strings.Repeat("a", first) + "\",\n" +
+			"data: \"" + strings.Repeat("b", second) + "\"]\n\n"
+	}
+	cases := []struct {
+		name    string
+		stream  string
+		wantErr error
+	}{
+		{name: "below_limit", stream: makeLine(maxSSEMessageBytes - 1)},
+		{name: "at_limit", stream: makeLine(maxSSEMessageBytes)},
+		{name: "above_limit", stream: makeLine(maxSSEMessageBytes + 1), wantErr: errSSEMessageTooLarge},
+		{name: "multiline_at_limit", stream: makeMultiline(maxSSEMessageBytes)},
+		{name: "multiline_above_limit", stream: makeMultiline(maxSSEMessageBytes + 1), wantErr: errSSEMessageTooLarge},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			err := ScanSSEMessages(strings.NewReader(tc.stream), func(message json.RawMessage) error {
+				called = true
+				if len(message) > maxSSEMessageBytes {
+					t.Fatalf("message len = %d", len(message))
+				}
+				return nil
+			})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("ScanSSEMessages() error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil && !called {
+				t.Fatal("expected parsed message")
+			}
+			if tc.wantErr != nil && called {
+				t.Fatal("overflowing message should not be delivered")
+			}
+		})
 	}
 }
 
@@ -181,4 +423,36 @@ func TestParseRetryAfter_invalid(t *testing.T) {
 	if d != -1 {
 		t.Errorf("expected -1 for invalid value, got %v", d)
 	}
+}
+
+type chunkedReader struct {
+	data  []byte
+	sizes []int
+	pos   int
+	step  int
+}
+
+func sseEnvelopeWithFieldBytes(lineBytes int) []byte {
+	const prefix = "id: "
+	if lineBytes < len(prefix) {
+		panic("lineBytes too small")
+	}
+	return []byte(prefix + strings.Repeat("a", lineBytes-len(prefix)) + "\ndata: {\"ok\":true}\n\n")
+}
+
+func (r *chunkedReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.data) {
+		return 0, io.EOF
+	}
+	size := len(p)
+	if r.step < len(r.sizes) && r.sizes[r.step] < size {
+		size = r.sizes[r.step]
+	}
+	if remaining := len(r.data) - r.pos; remaining < size {
+		size = remaining
+	}
+	copy(p, r.data[r.pos:r.pos+size])
+	r.pos += size
+	r.step++
+	return size, nil
 }

@@ -11,14 +11,15 @@ import (
 type controlServer struct {
 	faults *FaultRegistry
 	tools  *ToolRegistry
+	notify func()
 }
 
-func startControlServer(faults *FaultRegistry, tools *ToolRegistry) (string, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+func startControlServer(addr string, faults *FaultRegistry, tools *ToolRegistry, notify func()) (string, error) {
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return "", err
 	}
-	srv := &controlServer{faults: faults, tools: tools}
+	srv := &controlServer{faults: faults, tools: tools, notify: notify}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/fault", srv.handleFault)
 	mux.HandleFunc("/faults", srv.handleFaults)
@@ -58,7 +59,9 @@ func (s *controlServer) handleTools(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		s.handleToolsPut(w, r)
 	case http.MethodDelete:
-		s.tools.Remove(r.URL.Query().Get("name"))
+		if s.tools.Remove(r.URL.Query().Get("name")) && s.notify != nil {
+			s.notify()
+		}
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodGet:
 		json.NewEncoder(w).Encode(s.tools.List()) //nolint:errcheck
@@ -73,7 +76,9 @@ func (s *controlServer) handleToolsPut(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	s.tools.Add(tool)
+	if s.tools.Add(tool) && s.notify != nil {
+		s.notify()
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

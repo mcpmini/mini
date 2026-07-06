@@ -133,6 +133,7 @@ func serveAllMode(t *testing.T, srv *server.Server, compact bool, lines ...[]byt
 
 func buildServeInput(compact bool, lines [][]byte) []byte {
 	input := rpc("initialize", initParams(compact))
+	input = append(input, notification(transport.NotificationInitialized, nil)...)
 	for _, l := range lines {
 		input = append(input, l...)
 		if len(l) > 0 && l[len(l)-1] != '\n' {

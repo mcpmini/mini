@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -126,6 +127,19 @@ func fakeServerYAML(serverName, fixtures string) string {
 		serverName, fakemcpBin, fixtures)
 }
 
+func fakeServerYAMLWithControlFile(serverName, fixtures, controlFile string) string {
+	return fakeServerYAMLWithArgs(serverName, fixtures, "--control-file", controlFile)
+}
+
+func fakeServerYAMLWithArgs(serverName, fixtures string, args ...string) string {
+	yaml := fmt.Sprintf("name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n",
+		serverName, fakemcpBin, fixtures)
+	for _, arg := range args {
+		yaml += "  - " + arg + "\n"
+	}
+	return yaml
+}
+
 func toolCallRaw(serverTool string, server, tool string, args map[string]any) map[string]any {
 	return map[string]any{
 		"name": serverTool,
@@ -194,88 +208,96 @@ func writeFakeServer(t *testing.T, configDir, serverName, fixtures string) {
 }
 
 type FakeMCPControl struct {
-	addr string
-	t    *testing.T
-}
-
-func startFakeMCPProcess(t *testing.T, fixtures string) io.Reader {
-	t.Helper()
-	cmd := exec.Command(fakemcpBin, "--fixtures", fixtures)
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd.Stdin, err = os.Open(os.DevNull) // fakemcp uses stdin for MCP protocol traffic
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() }) //nolint:errcheck
-	return stderrPipe
+	addrFile string
+	t        *testing.T
 }
 
 func startFakeMCP(t *testing.T, configDir, serverName, fixtures string) *FakeMCPControl {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
 	os.MkdirAll(dir, 0700) //nolint:errcheck
-	addr := readControlAddr(t, startFakeMCPProcess(t, fixtures))
-	os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(fakeServerYAML(serverName, fixtures)), 0600) //nolint:errcheck
-	return &FakeMCPControl{addr: addr, t: t}
+	addrFile := filepath.Join(t.TempDir(), "fakemcp-control-addr.txt")
+	os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(fakeServerYAMLWithControlFile(serverName, fixtures, addrFile)), 0600) //nolint:errcheck
+	return &FakeMCPControl{addrFile: addrFile, t: t}
 }
 
-func scanForControlAddr(r io.Reader) (string, error) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		if after, ok := strings.CutPrefix(scanner.Text(), "fakemcp control="); ok {
-			return after, nil
-		}
-	}
-	return "", fmt.Errorf("fakemcp did not print control address")
-}
-
-func readControlAddr(t *testing.T, r io.Reader) string {
+func startFakeMCPWithPageSize(t *testing.T, configDir, serverName, fixtures string, pageSize int) *FakeMCPControl {
 	t.Helper()
-	type result struct {
-		addr string
-		err  error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		addr, err := scanForControlAddr(r)
-		ch <- result{addr, err}
-	}()
-	select {
-	case res := <-ch:
-		if res.err != nil {
-			t.Fatal(res.err)
-		}
-		return res.addr
-	case <-time.After(10 * time.Second):
-		t.Fatal("timeout waiting for fakemcp control address")
-		return ""
-	}
+	dir := filepath.Join(configDir, "servers")
+	os.MkdirAll(dir, 0700) //nolint:errcheck
+	addrFile := filepath.Join(t.TempDir(), "fakemcp-control-addr.txt")
+	yaml := fakeServerYAMLWithArgs(serverName, fixtures, "--control-file", addrFile, "--list-page-size", strconv.Itoa(pageSize))
+	os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(yaml), 0600) //nolint:errcheck
+	return &FakeMCPControl{addrFile: addrFile, t: t}
 }
 
 func (c *FakeMCPControl) SetFault(f map[string]any) {
 	c.t.Helper()
 	body, _ := json.Marshal(f)
-	resp, err := http.Post("http://"+c.addr+"/fault", "application/json", strings.NewReader(string(body)))
-	if err != nil {
-		c.t.Fatalf("SetFault: %v", err)
-	}
-	resp.Body.Close()
+	c.doControl(http.MethodPut, "/fault", string(body))
 }
 
 func (c *FakeMCPControl) ClearFaults() {
 	c.t.Helper()
-	req, _ := http.NewRequest(http.MethodDelete, "http://"+c.addr+"/fault", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		c.t.Fatalf("ClearFaults: %v", err)
+	c.doControl(http.MethodDelete, "/fault", "")
+}
+
+func (c *FakeMCPControl) AddTool(name, content string) {
+	c.t.Helper()
+	body, _ := json.Marshal(map[string]any{
+		"ToolDefinition": map[string]any{
+			"name":        name,
+			"description": name,
+			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+		},
+		"Content": content,
+	})
+	c.doControl(http.MethodPut, "/tools", string(body))
+}
+
+func (c *FakeMCPControl) RemoveTool(name string) {
+	c.t.Helper()
+	c.doControl(http.MethodDelete, "/tools?name="+name, "")
+}
+
+func (c *FakeMCPControl) doControl(method, path, body string) {
+	c.t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		addr, err := c.resolveAddr()
+		if err != nil {
+			if time.Now().After(deadline) {
+				c.t.Fatal(err)
+			}
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		req, _ := http.NewRequest(method, "http://"+addr+path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			resp.Body.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			c.t.Fatalf("%s %s: %v", method, path, err)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	resp.Body.Close()
+}
+
+func (c *FakeMCPControl) resolveAddr() (string, error) {
+	data, err := os.ReadFile(c.addrFile)
+	if err != nil {
+		return "", err
+	}
+	addr := strings.TrimSpace(string(data))
+	if addr == "" {
+		return "", fmt.Errorf("empty control address in %s", c.addrFile)
+	}
+	return addr, nil
 }
 
 type mcpResult struct {
@@ -286,6 +308,8 @@ type mcpResult struct {
 type mcpMessage struct {
 	ID     json.RawMessage `json:"id"`
 	Result json.RawMessage `json:"result"`
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
 	Error  *struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
@@ -293,11 +317,12 @@ type mcpMessage struct {
 }
 
 type mcpClient struct {
-	stdin   io.WriteCloser
-	pending sync.Map // int64 → chan *mcpResult
-	nextID  atomic.Int64
-	done    chan struct{}
-	t       *testing.T
+	stdin         io.WriteCloser
+	pending       sync.Map // int64 → chan *mcpResult
+	nextID        atomic.Int64
+	done          chan struct{}
+	notifications chan mcpMessage
+	t             *testing.T
 }
 
 func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
@@ -327,13 +352,14 @@ func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanne
 func startServer(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
 	stdin, scanner := startMiniCmd(t, configDir)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), notifications: make(chan mcpMessage, 32), t: t}
 	go c.readLoop(scanner)
 	c.mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
+	c.notify("notifications/initialized", nil)
 	return c
 }
 
@@ -345,6 +371,10 @@ func (c *mcpClient) readLoop(scanner *bufio.Scanner) {
 			continue
 		}
 		if string(msg.ID) == "null" || len(msg.ID) == 0 {
+			select {
+			case c.notifications <- msg:
+			default:
+			}
 			continue
 		}
 		var id int64
@@ -361,6 +391,24 @@ func (c *mcpClient) readLoop(scanner *bufio.Scanner) {
 	}
 }
 
+func (c *mcpClient) waitForNotification(method string, timeout time.Duration) mcpMessage {
+	c.t.Helper()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	for {
+		select {
+		case msg := <-c.notifications:
+			if msg.Method == method {
+				return msg
+			}
+		case <-deadline.C:
+			c.t.Fatalf("timed out waiting for notification %q", method)
+		case <-c.done:
+			c.t.Fatalf("connection closed waiting for notification %q", method)
+		}
+	}
+}
+
 func (c *mcpClient) mustCall(method string, params any) json.RawMessage {
 	c.t.Helper()
 	result, err := c.call(method, params)
@@ -368,6 +416,17 @@ func (c *mcpClient) mustCall(method string, params any) json.RawMessage {
 		c.t.Fatalf("call %s: %v", method, err)
 	}
 	return result
+}
+
+func (c *mcpClient) notify(method string, params any) {
+	c.t.Helper()
+	req := map[string]any{"jsonrpc": "2.0", "method": method}
+	if params != nil {
+		p, _ := json.Marshal(params)
+		req["params"] = json.RawMessage(p)
+	}
+	b, _ := json.Marshal(req)
+	fmt.Fprintf(c.stdin, "%s\n", b)
 }
 
 func (c *mcpClient) call(method string, params any) (json.RawMessage, error) {
@@ -511,7 +570,7 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 type envelope struct {
 	Data        any            `json:"data"`
 	Excluded    []string       `json:"excluded"`
-	Truncated    []truncation     `json:"truncated"`
+	Truncated   []truncation   `json:"truncated"`
 	File        *string        `json:"file"`
 	Passthrough map[string]any `json:"passthrough"`
 	Error       string         `json:"error"`

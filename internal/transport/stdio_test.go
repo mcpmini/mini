@@ -82,6 +82,58 @@ func TestDispatch_ignoresNotification(t *testing.T) {
 	}
 }
 
+func TestDispatch_buffersNotificationUntilHandlerInstalled(t *testing.T) {
+	conn, serverW, _ := makePipeConn(t)
+	for range 32 {
+		fmt.Fprintln(serverW, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+		fmt.Fprintln(serverW, `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`)
+	}
+	drain := conn.pending.register(int64(99))
+	sendResponse(serverW, 99, map[string]any{"ok": true})
+	select {
+	case <-drain:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for pre-handler notifications to drain")
+	}
+
+	received := make(chan Notification, 8)
+	conn.SetNotificationHandler(func(notification Notification) { received <- notification })
+	select {
+	case notification := <-received:
+		if notification.Method != NotificationToolsChanged {
+			t.Fatalf("method = %q", notification.Method)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("notification emitted before handler installation was lost")
+	}
+	select {
+	case notification := <-received:
+		t.Fatalf("expected one coalesced pending invalidation, got %q", notification.Method)
+	default:
+	}
+
+	fmt.Fprintln(serverW, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	fmt.Fprintln(serverW, `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`)
+	got := []string{
+		mustReceiveNotification(t, received).Method,
+		mustReceiveNotification(t, received).Method,
+	}
+	if !slices.Equal(got, []string{NotificationInitialized, NotificationToolsChanged}) {
+		t.Fatalf("post-install notifications = %v", got)
+	}
+}
+
+func mustReceiveNotification(t *testing.T, ch <-chan Notification) Notification {
+	t.Helper()
+	select {
+	case notification := <-ch:
+		return notification
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for notification")
+		return Notification{}
+	}
+}
+
 func TestDispatch_rpcError_deliveredToWaiter(t *testing.T) {
 	conn, serverW, _ := makePipeConn(t)
 	ch := conn.pending.register(int64(5))

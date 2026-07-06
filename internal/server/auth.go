@@ -157,7 +157,6 @@ func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig, a
 	if err := s.AddUpstream(ctx, sc); err != nil {
 		s.logger.Error("reconnect after auth failed", "server", serverName, "err", err)
 	} else {
-		s.notifyAllSessions()
 		s.logger.Info("reconnected after auth", "server", serverName)
 	}
 }

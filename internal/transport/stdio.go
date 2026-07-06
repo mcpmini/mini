@@ -25,6 +25,7 @@ type StdioConnection struct {
 	shutdownOnce sync.Once // guards stdin.Close, Kill, Wait
 	logger       *slog.Logger
 	mu           sync.Mutex // guards stdin writes
+	notify       toolsChangedLatch
 }
 
 type StdioCommand struct {
@@ -93,7 +94,7 @@ func (c *StdioConnection) Call(ctx context.Context, method string, params json.R
 
 	if err := c.sendRequest(id, method, params); err != nil {
 		c.pending.remove(id)
-		return nil, err
+		return nil, &ConnectionError{Err: err}
 	}
 
 	return c.awaitResponse(ctx, id, ch)
@@ -112,7 +113,7 @@ func (c *StdioConnection) awaitResponse(ctx context.Context, id int64, ch chan *
 		c.pending.remove(id)
 		return nil, ctx.Err()
 	case <-c.done:
-		return nil, fmt.Errorf("connection closed")
+		return nil, &ConnectionError{Err: fmt.Errorf("connection closed")}
 	case resp := <-ch:
 		if resp.Error != nil {
 			return nil, resp.Error
@@ -217,9 +218,22 @@ func (c *StdioConnection) dispatch(line []byte) {
 		return
 	}
 	if resp.ID == nil {
-		return // notification, ignore
+		c.dispatchNotification(line)
+		return
 	}
 	c.pending.deliver(resp.ID, &resp)
+}
+
+func (c *StdioConnection) dispatchNotification(line []byte) {
+	var notification Notification
+	if err := json.Unmarshal(line, &notification); err != nil || notification.Method == "" {
+		return
+	}
+	c.notify.Dispatch(notification)
+}
+
+func (c *StdioConnection) SetNotificationHandler(handler func(Notification)) {
+	c.notify.SetHandler(handler)
 }
 
 func (c *StdioConnection) writeJSON(v any) error {

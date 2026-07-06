@@ -217,7 +217,7 @@ type envelopeParams struct {
 	Session   *Session
 	Upstream  *upstreamServer
 	LatencyMs int64
-	Bypass bool
+	Bypass    bool
 }
 
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {

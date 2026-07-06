@@ -26,10 +26,16 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 }
 
 func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, session *Session) error {
-	notifyCh := session.enableNotifications()
-	writeOut, closeNotify := startNotifyForwarder(out, notifyCh)
-	defer closeNotify()                  // runs second: closes channel, drains forwarder
-	defer session.disableNotifications() // runs first: nil field before channel closes
+	writeOut, waitNotify := newSerializedWriter(out), func() {}
+	if notifyCh, ok := session.enableNotifications(); ok {
+		writeOut, waitNotify = startNotifyForwarder(out, notifyCh)
+		defer func() {
+			session.disableNotifications(notifyCh)
+			waitNotify()
+		}()
+	} else {
+		defer waitNotify()
+	}
 	var wg sync.WaitGroup
 	scanner := transport.NewScanner(in)
 	for scanner.Scan() {
@@ -61,7 +67,7 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 	// on it. The spec also says the initialize request MUST NOT be cancelled, so
 	// skipping in-flight registration is correct.
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx#L32
-	if peekMethod(line) == "initialize" {
+	if method := peekMethod(line); method == "initialize" || method == transport.NotificationInitialized {
 		if resp, send := s.handleLine(p.ctx, line, p.session); send {
 			p.writeOut(resp)
 		}
@@ -131,7 +137,6 @@ func startNotifyForwarder(out io.Writer, ch chan json.RawMessage) (func(any), fu
 		}
 	}()
 	return writeOut, func() {
-		close(ch)
 		wg.Wait()
 	}
 }
@@ -228,6 +233,7 @@ func (s *Server) dispatch(ctx context.Context, req transport.Request, session *S
 	case "ping":
 		return map[string]any{}, nil
 	case transport.NotificationInitialized:
+		session.markClientReady()
 		return nil, nil
 	case transport.NotificationCancelled:
 		handleCancelled(req.Params, session)
@@ -282,9 +288,13 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 	if session.toolMode() == transport.ToolModeProxy {
 		instructions = proxyInitInstructions
 	}
+	capabilities := map[string]any{"tools": map[string]any{}}
+	if session.toolMode() == transport.ToolModeProxy {
+		capabilities = map[string]any{"tools": map[string]any{"listChanged": true}}
+	}
 	return transport.InitializeResult{
 		ProtocolVersion: transport.ProtocolVersion,
-		Capabilities:    map[string]any{"tools": map[string]any{"listChanged": true}},
+		Capabilities:    capabilities,
 		ServerInfo:      transport.ServerInfo{Name: "mini", Version: version.Version},
 		Instructions:    instructions,
 	}, nil

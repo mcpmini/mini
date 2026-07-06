@@ -102,16 +102,22 @@ func isWriteOpFile(path string) bool {
 	return bytes.Contains(data, []byte(`"__write_op"`))
 }
 
-func (r *ToolRegistry) Add(t Tool) {
+func (r *ToolRegistry) Add(t Tool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	prev, exists := r.tools[t.ToolDefinition.Name]
 	r.tools[t.ToolDefinition.Name] = t
+	return !exists || !toolEqual(prev, t)
 }
 
-func (r *ToolRegistry) Remove(name string) {
+func (r *ToolRegistry) Remove(name string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, ok := r.tools[name]; !ok {
+		return false
+	}
 	delete(r.tools, name)
+	return true
 }
 
 func (r *ToolRegistry) List() []Tool {
@@ -237,4 +243,16 @@ func mergeExistingArgs(dst, args map[string]any) {
 
 func errResult(msg string) transport.ToolCallResult {
 	return transport.ToolCallResult{IsError: true, Content: []transport.ContentItem{{Type: "text", Text: msg}}}
+}
+
+func toolEqual(a, b Tool) bool {
+	return a.FixturePath == b.FixturePath &&
+		a.Content == b.Content &&
+		a.WriteOp == b.WriteOp &&
+		string(a.ToolDefinition.InputSchema) == string(b.ToolDefinition.InputSchema) &&
+		string(a.ToolDefinition.OutputSchema) == string(b.ToolDefinition.OutputSchema) &&
+		string(a.ToolDefinition.Annotations) == string(b.ToolDefinition.Annotations) &&
+		string(a.ToolDefinition.Title) == string(b.ToolDefinition.Title) &&
+		a.ToolDefinition.Name == b.ToolDefinition.Name &&
+		a.ToolDefinition.Description == b.ToolDefinition.Description
 }

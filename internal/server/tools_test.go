@@ -73,7 +73,7 @@ func TestToolsCall_executionErrorIsIsError(t *testing.T) {
 func TestToolsListChanged_notificationShape(t *testing.T) {
 	srv := newTestServer(t)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "pre"}, fakeConn("existing"))
-	msgs := serveAll(t, srv,
+	msgs := serveAllProxy(t, srv,
 		callTool("config", map[string]any{"action": "remove_server", "server": "pre"}),
 	)
 	var found map[string]any

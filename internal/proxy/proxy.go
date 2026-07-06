@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/transport"
@@ -45,6 +46,9 @@ type Forwarder struct {
 	link     *daemonLink
 	toolMode transport.ToolMode
 	clock    clock.Clock
+	bridge   *notificationBridge
+	initSeen atomic.Bool
+	ready    atomic.Bool
 }
 
 func (f *Forwarder) sessionAt(state linkState) DaemonSession {
@@ -62,9 +66,15 @@ func runWithLimit(p RunParams, limit int) error {
 	// per-call context (ToolTimeout). A fixed timeout here would break any tool configured
 	// with tool_timeout longer than the hard-coded value.
 	fp := newForwardPool(p, p.Client, limit)
+	defer fp.close()
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
-		startForward(maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
+		line := maybeInjectToolMode(scanner.Bytes(), p.ToolMode)
+		if mustForwardSync(line) {
+			forwardSync(line, fp)
+			continue
+		}
+		startForward(line, fp)
 	}
 	fp.wg.Wait()
 	return scanner.Err()
@@ -73,12 +83,22 @@ func runWithLimit(p RunParams, limit int) error {
 func newForwardPool(p RunParams, client *http.Client, limit int) forwardAsyncParams {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	var bridge *notificationBridge
+	if p.ToolMode == transport.ToolModeProxy {
+		bridge = newNotificationBridge(
+			DaemonSession{client: client, sessionID: p.SessionID},
+			p.Out,
+			&mu,
+			p.Clock,
+		)
+	}
 	forwarder := &Forwarder{
 		session:  DaemonSession{client: client, sessionID: p.SessionID},
 		resolver: p.Resolver,
 		link:     newDaemonLink(p.Token),
 		toolMode: p.ToolMode,
 		clock:    p.Clock,
+		bridge:   bridge,
 	}
 	return forwardAsyncParams{
 		forwarder: forwarder, out: p.Out,
@@ -139,6 +159,15 @@ func startForward(line []byte, p forwardAsyncParams) {
 	go forwardAsync(p)
 }
 
+func forwardSync(line []byte, p forwardAsyncParams) {
+	if len(line) == 0 {
+		return
+	}
+	if resp := p.forwarder.Forward(bytes.Clone(line)); resp != nil {
+		p.writeResponse(resp)
+	}
+}
+
 type forwardAsyncParams struct {
 	forwarder *Forwarder
 	line      []byte
@@ -146,6 +175,12 @@ type forwardAsyncParams struct {
 	mu        *sync.Mutex
 	wg        *sync.WaitGroup
 	sem       chan struct{}
+}
+
+func (p forwardAsyncParams) close() {
+	if p.forwarder.bridge != nil {
+		p.forwarder.bridge.Close()
+	}
 }
 
 func forwardAsync(p forwardAsyncParams) {
@@ -195,6 +230,25 @@ func daemonErrorResponse(body []byte, msg string) []byte {
 		return nil // notification — no id to reply to
 	}
 	return marshalErrorResponse(req.ID, msg)
+}
+
+func peekMethod(line []byte) string {
+	var msg struct {
+		Method string `json:"method"`
+	}
+	if json.Unmarshal(line, &msg) != nil {
+		return ""
+	}
+	return msg.Method
+}
+
+func isInitializedNotification(line []byte) bool {
+	return peekMethod(line) == transport.NotificationInitialized
+}
+
+func mustForwardSync(line []byte) bool {
+	method := peekMethod(line)
+	return method == "initialize" || method == transport.NotificationInitialized
 }
 
 func marshalErrorResponse(id json.RawMessage, msg string) []byte {

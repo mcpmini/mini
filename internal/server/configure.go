@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"gopkg.in/yaml.v3"
 
@@ -31,18 +32,7 @@ func (s *Server) handleConfigure(ctx context.Context, raw json.RawMessage, sessi
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
 	result, err := s.dispatchConfigureAction(ctx, p, session)
-	if err == nil {
-		s.notifyToolsChanged(p.Action)
-	}
 	return result, err
-}
-
-func (s *Server) notifyToolsChanged(action string) {
-	if action == "add_server" || action == "remove_server" {
-		// Proxy and compact sessions share the daemon, so all need notification; a spurious
-		// tools/list_changed to a compact session is harmless (it re-fetches the same 4 meta-tools).
-		s.notifyAllSessions()
-	}
 }
 
 func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams, session *Session) (any, error) {
@@ -180,18 +170,23 @@ func (s *Server) replaceProjections(projections map[string]map[string]*config.Pr
 
 func (s *Server) reapplyAliases() {
 	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
+	before := buildProxyToolSchemas(s.reg.AllFull())
 
 	for _, u := range s.snapshotUpstreams() {
 		if u.lastDefs == nil {
 			continue
 		}
-		s.reg.ReplaceServer(registry.ServerParams{
-			Name:    u.cfg.Name,
-			Defs:    u.lastDefs,
-			Perm:    u.cfg.Permissions,
+		s.reg.ReplaceServerTools(registry.ServerParams{
+			Name:            u.cfg.Name,
+			Defs:            u.lastDefs,
+			Perm:            u.cfg.Permissions,
 			AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 		})
+	}
+	changed := !reflect.DeepEqual(before, buildProxyToolSchemas(s.reg.AllFull()))
+	s.serverOpMu.Unlock()
+	if changed {
+		s.notifyAllSessions()
 	}
 }
 
@@ -266,13 +261,18 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 
 func (s *Server) detachAndCloseServer(serverName string) {
 	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
+	before := buildProxyToolSchemas(s.reg.AllFull())
 	s.removeGen[serverName]++
 	if u := s.detachUpstream(serverName); u != nil {
 		u.shutdownAndClose()
 	}
 	s.sessions.closeServerConnections(serverName)
 	s.reg.RemoveServer(serverName)
+	changed := !reflect.DeepEqual(before, buildProxyToolSchemas(s.reg.AllFull()))
+	s.serverOpMu.Unlock()
+	if changed {
+		s.notifyAllSessions()
+	}
 }
 
 func (s *Server) detachUpstream(serverName string) *upstreamServer {

@@ -14,15 +14,15 @@ import (
 )
 
 type Session struct {
-	mu          sync.RWMutex
-	projections map[string]*config.ProjectionConfig
-	conns       map[string]transport.Connection
-	lastUsed    time.Time
-	activeCalls int
-	clock       clock.Clock
-	notifyCh    chan json.RawMessage // non-nil only in stdio sessions; set by Serve
-	dialMu      sync.Mutex
-	dialMap     map[string]*dialOnce
+	mu            sync.RWMutex
+	projections   map[string]*config.ProjectionConfig
+	conns         map[string]transport.Connection
+	lastUsed      time.Time
+	activeCalls   int
+	clock         clock.Clock
+	notifications sessionNotifications
+	dialMu        sync.Mutex
+	dialMap       map[string]*dialOnce
 	// inFlight tracks cancellable in-progress requests keyed by raw JSON request ID.
 	// Used to honor notifications/cancelled from agents.
 	inFlightMu sync.Mutex
@@ -41,6 +41,7 @@ type Session struct {
 
 	mode           atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
 	modeOnce       sync.Once
+	clientReady    atomic.Bool
 	totalCalls     atomic.Int64
 	totalErrors    atomic.Int64
 	totalLatencyMs atomic.Int64
@@ -82,14 +83,15 @@ func (s *Session) getDialOnce(serverName string) *dialOnce {
 
 func newSession(clock clock.Clock) *Session {
 	return &Session{
-		projections: make(map[string]*config.ProjectionConfig),
-		conns:       make(map[string]transport.Connection),
-		dialMap:     make(map[string]*dialOnce),
-		inFlight:    make(map[string]context.CancelFunc),
-		lastUsed:    clock.Now(),
-		clock:       clock,
-		initDone:    make(chan struct{}),
-		initAbort:   make(chan struct{}),
+		projections:   make(map[string]*config.ProjectionConfig),
+		conns:         make(map[string]transport.Connection),
+		dialMap:       make(map[string]*dialOnce),
+		inFlight:      make(map[string]context.CancelFunc),
+		lastUsed:      clock.Now(),
+		clock:         clock,
+		initDone:      make(chan struct{}),
+		initAbort:     make(chan struct{}),
+		notifications: newSessionNotifications(),
 	}
 }
 
@@ -106,6 +108,14 @@ func (s *Session) markInitialized() {
 		close(s.initDone)
 		slog.Debug("session initialized")
 	})
+}
+
+func (s *Session) markClientReady() {
+	select {
+	case <-s.initDone:
+		s.clientReady.Store(true)
+	default:
+	}
 }
 
 // markAborted is called when the Serve loop ends without initialization completing.
@@ -229,42 +239,8 @@ func (s *Session) Close() {
 	}
 	s.conns = make(map[string]transport.Connection)
 	s.mu.Unlock()
+	s.closeNotificationStreams()
 	slog.Debug("session closed")
-}
-
-// enableNotifications creates the buffered channel that carries server-initiated
-// notifications (e.g. tools/list_changed) to the client during Serve.
-// Buffer of 16: enough for any realistic burst of reconnect/add/remove events;
-// notify() is non-blocking so excess notifications are dropped rather than
-// stalling the upstream event loop. Clients refresh via list on reconnect anyway.
-func (s *Session) enableNotifications() chan json.RawMessage {
-	ch := make(chan json.RawMessage, 16)
-	s.mu.Lock()
-	s.notifyCh = ch
-	s.mu.Unlock()
-	return ch
-}
-
-// disableNotifications nils the notification channel so future notify() calls
-// are no-ops. Must be called before the channel is closed to prevent any
-// goroutine from sending to a closed channel.
-func (s *Session) disableNotifications() {
-	s.mu.Lock()
-	s.notifyCh = nil
-	s.mu.Unlock()
-}
-
-func (s *Session) notify(msg json.RawMessage) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.notifyCh == nil {
-		return
-	}
-	select {
-	case s.notifyCh <- msg:
-	default:
-		slog.Debug("notification queue full, dropping event")
-	}
 }
 
 func (s *Session) touch() {
@@ -297,11 +273,11 @@ func (s *Session) recordCall(latencyMs, tokensSaved int64, isErr bool) {
 }
 
 func (s *Session) idleDuration(deadline time.Time) (time.Duration, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if s.notifyCh != nil {
+	if s.notifications.hasOpenStreams() {
 		return 0, false
 	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.activeCalls != 0 {
 		return 0, false
 	}
@@ -354,6 +330,28 @@ func (st *sessionStore) getOrCreateLocked(id string) (*Session, bool) {
 		st.sessions[id] = s
 	}
 	return s, ok
+}
+
+func (st *sessionStore) get(id string) *Session {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.sessions[id]
+}
+
+func (st *sessionStore) closeAll() {
+	st.mu.Lock()
+	sessions := st.sessions
+	st.sessions = make(map[string]*Session)
+	st.mu.Unlock()
+	for _, session := range sessions {
+		session.Close()
+	}
+}
+
+func (st *sessionStore) closeNotificationStreams() {
+	for _, session := range st.snapshotSessions() {
+		session.closeNotificationStreams()
+	}
 }
 
 func (st *sessionStore) delete(id string) {

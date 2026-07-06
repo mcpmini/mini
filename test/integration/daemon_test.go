@@ -173,13 +173,14 @@ func startProxyCmd(t *testing.T, cfg, toolMode string) (io.WriteCloser, *bufio.S
 func connect(t *testing.T, cfg, toolMode string) *mcpClient {
 	t.Helper()
 	stdin, scanner := startProxyCmd(t, cfg, toolMode)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
+	c := &mcpClient{stdin: stdin, done: make(chan struct{}), notifications: make(chan mcpMessage, 32), t: t}
 	go c.readLoop(scanner)
 	c.mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
+	c.notify("notifications/initialized", nil)
 	return c
 }
 
@@ -548,8 +549,10 @@ func decodeRPCToolText(t *testing.T, body io.Reader) string {
 	t.Helper()
 	var rpc struct {
 		Result struct {
-			Content []struct{ Text string `json:"text"` } `json:"content"`
-			IsError bool                                  `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			IsError bool `json:"isError"`
 		} `json:"result"`
 		Error any `json:"error"`
 	}

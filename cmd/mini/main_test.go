@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -12,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -203,4 +207,108 @@ func TestDaemonShutdown_boundedContextUnblocksWithHungHandler(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Shutdown with bounded context blocked past deadline — hung handler prevented exit")
 	}
+}
+
+func TestStartDaemonHTTP_shutdownClosesOpenNotificationStream(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	socketDir := shortConfigDir(t)
+	ln := bindSocket(daemon.SocketPath(socketDir))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: ln})
+	}()
+	t.Cleanup(cancel)
+
+	client := daemon.SocketClient(daemon.SocketPath(socketDir), 0)
+	sessionID := initializeDaemonSession(t, client)
+	stream := openDaemonStream(t, client, sessionID)
+	defer stream.Body.Close()
+
+	streamDone := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(io.Discard, stream.Body)
+		streamDone <- err
+	}()
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("startDaemonHTTP did not return promptly with an open notification stream")
+	}
+	select {
+	case err := <-streamDone:
+		if err != nil {
+			t.Fatalf("stream read error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("notification stream did not close after shutdown")
+	}
+}
+
+func initializeDaemonSession(t *testing.T, client *http.Client) string {
+	t.Helper()
+	resp := postDaemonRPC(t, client, "", map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "initialize",
+		"params": map[string]any{
+			"protocolVersion": "2024-11-05",
+			"capabilities":    map[string]any{},
+			"clientInfo":      map[string]any{"name": "test", "version": "0"},
+		},
+	})
+	defer resp.Body.Close()
+	sessionID := resp.Header.Get("Mcp-Session-Id")
+	if sessionID == "" {
+		t.Fatal("initialize response missing Mcp-Session-Id")
+	}
+	postDaemonNotification(t, client, sessionID, transport.NotificationInitialized)
+	return sessionID
+}
+
+func postDaemonNotification(t *testing.T, client *http.Client, sessionID, method string) {
+	t.Helper()
+	resp := postDaemonRPC(t, client, sessionID, map[string]any{"jsonrpc": "2.0", "method": method})
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("notification %s status = %d", method, resp.StatusCode)
+	}
+}
+
+func postDaemonRPC(t *testing.T, client *http.Client, sessionID string, body map[string]any) *http.Response {
+	t.Helper()
+	raw, _ := json.Marshal(body)
+	req, _ := http.NewRequest(http.MethodPost, "http://localhost/mcp", bytes.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
+func openDaemonStream(t *testing.T, client *http.Client, sessionID string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, "http://localhost/mcp", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Mcp-Session-Id", sessionID)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("stream status = %d body=%s", resp.StatusCode, body)
+	}
+	return resp
 }

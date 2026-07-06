@@ -42,9 +42,80 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		s.servePost(w, r)
+	case http.MethodGet:
+		s.serveGet(w, r)
 	default:
-		w.Header().Set("Allow", "POST")
+		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) serveGet(w http.ResponseWriter, r *http.Request) {
+	if !acceptsSSE(r.Header.Get("Accept")) {
+		http.Error(w, "Accept must include text/event-stream", http.StatusNotAcceptable)
+		return
+	}
+	session, ok := s.streamSession(w, r)
+	if !ok {
+		return
+	}
+	flusher, ok := streamFlusher(w)
+	if !ok {
+		return
+	}
+	s.writeNotificationStream(r, w, flusher, session)
+}
+
+func (s *Server) streamSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
+	sessionID := r.Header.Get("Mcp-Session-Id")
+	if sessionID == "" {
+		http.Error(w, "Mcp-Session-Id is required", http.StatusBadRequest)
+		return nil, false
+	}
+	if !sessionIDPattern.MatchString(sessionID) || nonHyphenCount(sessionID) < 16 {
+		http.Error(w, "invalid Mcp-Session-Id", http.StatusBadRequest)
+		return nil, false
+	}
+	session := s.sessions.get(sessionID)
+	if session == nil {
+		http.Error(w, "session not found", http.StatusNotFound)
+		return nil, false
+	}
+	return session, true
+}
+
+func streamFlusher(w http.ResponseWriter) (http.Flusher, bool) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return nil, false
+	}
+	return flusher, true
+}
+
+func (s *Server) writeNotificationStream(r *http.Request, w http.ResponseWriter, flusher http.Flusher, session *Session) {
+	stream, ok := session.enableNotifications()
+	if !ok {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	defer session.disableNotifications(stream)
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case notification, open := <-stream:
+			if !open {
+				return
+			}
+			fmt.Fprintf(w, "event: message\ndata: %s\n\n", notification) //nolint:errcheck
+			flusher.Flush()
+		}
 	}
 }
 

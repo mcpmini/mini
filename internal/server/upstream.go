@@ -30,8 +30,7 @@ func isConnError(err error) bool {
 
 type upstreamServer struct {
 	cfg      config.ServerConfig
-	mu       sync.RWMutex // protects conn during reconnect
-	conn     transport.Connection
+	conn     atomic.Pointer[upstreamConnState]
 	lastDefs []transport.ToolDefinition
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -39,7 +38,11 @@ type upstreamServer struct {
 
 	reconnecting atomic.Bool
 	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
-	onReconnect  func()        // called after successful reconnect; used in tests
+	hookMu       sync.Mutex
+	onReconnect  func() // called after successful reconnect; used in tests
+	refreshMu    sync.Mutex
+	refreshing   bool
+	refreshAgain bool
 
 	calls          atomic.Int64
 	errs           atomic.Int64
@@ -49,15 +52,18 @@ type upstreamServer struct {
 	lastErrMsg     atomic.Pointer[string]
 }
 
-func (u *upstreamServer) shutdown() {
-	u.cancel()
+type upstreamConnState struct {
+	conn     transport.Connection
+	gen      uint64
+	terminal bool
 }
 
 func (u *upstreamServer) shutdownAndClose() {
-	u.shutdown()
-	u.mu.Lock()
-	u.conn.Close()
-	u.mu.Unlock()
+	conn := u.takeConnOwnership()
+	u.cancel()
+	if conn != nil {
+		conn.Close()
+	}
 }
 
 func (u *upstreamServer) callTool(ctx context.Context, toolName string, args map[string]any) (json.RawMessage, error) {
@@ -103,15 +109,11 @@ func (u *upstreamServer) dispatchCall(ctx context.Context, params json.RawMessag
 }
 
 func (u *upstreamServer) callConn(ctx context.Context, params json.RawMessage) (json.RawMessage, error) {
-	// Read conn under the lock, then release before the network call so a
-	// concurrent reconnect can take the write lock without waiting for all
-	// in-flight calls to finish. HTTPConnection.Close is a no-op so a
-	// swap-during-call is safe; StdioConnection kills the subprocess, which
-	// unblocks the call with an error.
-	u.mu.RLock()
-	conn := u.conn
-	u.mu.RUnlock()
-	return conn.Call(ctx, "tools/call", params)
+	state := u.connState()
+	if state == nil {
+		return nil, &transport.ConnectionError{Err: fmt.Errorf("connection closed")}
+	}
+	return state.conn.Call(ctx, "tools/call", params)
 }
 
 func (u *upstreamServer) classifyCallError(err error) error {
@@ -195,4 +197,79 @@ func (u *upstreamServer) recordSaved(session *Session, latencyMs, saved int64) {
 		u.estTokensSaved.Add(saved)
 	}
 	session.recordCall(latencyMs, saved, false)
+}
+
+func (u *upstreamServer) connState() *upstreamConnState {
+	state := u.conn.Load()
+	if state == nil || state.terminal {
+		return nil
+	}
+	return state
+}
+
+func (u *upstreamServer) currentConnGen() uint64 {
+	state := u.connState()
+	if state == nil {
+		return 0
+	}
+	return state.gen
+}
+
+func (u *upstreamServer) isCurrentConnGen(gen uint64) bool {
+	state := u.connState()
+	return state != nil && state.gen == gen
+}
+
+func (u *upstreamServer) initConn(conn transport.Connection) {
+	u.conn.Store(&upstreamConnState{conn: conn, gen: 1})
+}
+
+func (u *upstreamServer) replaceConn(conn transport.Connection) (*upstreamConnState, uint64, bool) {
+	for {
+		prev := u.conn.Load()
+		if prev != nil && prev.terminal {
+			conn.Close()
+			return nil, 0, false
+		}
+		next := &upstreamConnState{conn: conn, gen: nextConnGen(prev)}
+		if u.conn.CompareAndSwap(prev, next) {
+			return prev, next.gen, true
+		}
+	}
+}
+
+func nextConnGen(state *upstreamConnState) uint64 {
+	if state == nil {
+		return 1
+	}
+	return state.gen + 1
+}
+
+func (u *upstreamServer) takeConnOwnership() transport.Connection {
+	for {
+		prev := u.conn.Load()
+		if prev != nil && prev.terminal {
+			return nil
+		}
+		next := &upstreamConnState{gen: currentConnGen(prev), terminal: true}
+		if u.conn.CompareAndSwap(prev, next) {
+			if prev == nil {
+				return nil
+			}
+			return prev.conn
+		}
+	}
+}
+
+func currentConnGen(state *upstreamConnState) uint64 {
+	if state == nil {
+		return 0
+	}
+	return state.gen
+}
+
+func (u *upstreamServer) reconnectHook() func() {
+	u.hookMu.Lock()
+	defer u.hookMu.Unlock()
+	return u.onReconnect
 }

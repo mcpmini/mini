@@ -16,7 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func TestReplaceRegistryToolsLocked_usesReloadedAliases(t *testing.T) {
+func TestPublishRefreshedTools_usesReloadedAliases(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -34,7 +34,10 @@ func TestReplaceRegistryToolsLocked_usesReloadedAliases(t *testing.T) {
 	if len(upstreams) != 1 {
 		t.Fatalf("expected 1 upstream, got %d", len(upstreams))
 	}
-	srv.replaceRegistryToolsLocked(upstreams[0], tools)
+	_, published := srv.publishRefreshedTools(upstreams[0], upstreams[0].currentConnGen(), tools)
+	if !published {
+		t.Fatal("publishRefreshedTools did not publish")
+	}
 
 	names := map[string]bool{}
 	for _, e := range srv.reg.All() {

@@ -61,4 +61,3 @@ func TestToMap_excludesAbsentOptionalFields(t *testing.T) {
 		}
 	}
 }
-

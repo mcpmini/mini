@@ -83,7 +83,6 @@ func serveDaemon(ctx context.Context, p DaemonServeParams) {
 	injectOAuthTokens(ctx, p.ConfigDir, p.Servers)
 	token := mintDaemonToken(p.ConfigDir)
 	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, server.WithDaemonAuthToken(token))
-	defer srv.Close()
 	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: p.Listener})
 }
 
@@ -112,10 +111,12 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	go httpSrv.Serve(p.Listener) //nolint:errcheck
 	go p.Srv.RunSessionEviction(ctx, 30*time.Minute)
 	<-ctx.Done()
+	p.Srv.BeginShutdown()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Closing the listener unlinks the socket; a SIGKILL leaves a stale one for the next bindSocket to reclaim.
 	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
+	p.Srv.Close()
 }
 
 func bindSocket(socket string) net.Listener {

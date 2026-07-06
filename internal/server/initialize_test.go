@@ -36,7 +36,7 @@ func TestInitialize(t *testing.T) {
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L28
 func TestInitialize_CapabilitiesListChanged(t *testing.T) {
 	srv := newTestServer(t)
-	msgs := serveAll(t, srv)
+	msgs := serveAllProxy(t, srv)
 	for _, m := range msgs {
 		if m["id"] != float64(1) {
 			continue

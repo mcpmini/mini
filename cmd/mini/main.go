@@ -113,6 +113,7 @@ func serveStandalone(p ServeParams, opts ...server.ServerOption) {
 		logger.Error("serve error", "err", err)
 		os.Exit(1)
 	}
+	srv.BeginShutdown()
 	shutdownHTTP(httpSrv)
 }
 

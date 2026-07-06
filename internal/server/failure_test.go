@@ -12,7 +12,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-"sync"
+	"sync"
 	"testing"
 	"time"
 

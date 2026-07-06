@@ -66,7 +66,6 @@ func expectCallErrorContains(t *testing.T, conn *HTTPConnection, want string) {
 	}
 }
 
-
 func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
 	t.Helper()
 	got, err := conn.ListTools(context.Background())
@@ -145,6 +144,51 @@ func TestHTTPConnection_sessionIDPersisted(t *testing.T) {
 
 	if receivedSessionID != "sess-abc" {
 		t.Errorf("expected session ID sess-abc on second call, got %q", receivedSessionID)
+	}
+}
+
+func TestHTTPConnection_buffersNotificationUntilHandlerInstalled(t *testing.T) {
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: "http://example.invalid"})
+	for range 32 {
+		conn.dispatchNotification(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
+		conn.dispatchNotification(Notification{JSONRPC: "2.0", Method: NotificationToolsChanged})
+	}
+
+	received := make(chan Notification, 8)
+	conn.SetNotificationHandler(func(notification Notification) { received <- notification })
+	select {
+	case notification := <-received:
+		if notification.Method != NotificationToolsChanged {
+			t.Fatalf("method = %q", notification.Method)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("notification emitted before handler installation was lost")
+	}
+	select {
+	case notification := <-received:
+		t.Fatalf("expected one coalesced pending invalidation, got %q", notification.Method)
+	default:
+	}
+
+	conn.dispatchNotification(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
+	conn.dispatchNotification(Notification{JSONRPC: "2.0", Method: NotificationToolsChanged})
+	got := []string{
+		mustReceiveBufferedNotification(t, received).Method,
+		mustReceiveBufferedNotification(t, received).Method,
+	}
+	if !slices.Equal(got, []string{NotificationInitialized, NotificationToolsChanged}) {
+		t.Fatalf("post-install notifications = %v", got)
+	}
+}
+
+func mustReceiveBufferedNotification(t *testing.T, ch <-chan Notification) Notification {
+	t.Helper()
+	select {
+	case notification := <-ch:
+		return notification
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for notification")
+		return Notification{}
 	}
 }
 

@@ -246,7 +246,7 @@ var ssrfBlockedURLs = []string{
 	"http://localhost/steal",
 	"http://localhost:8080/mcp",
 	"http://evil.localhost/steal", // .localhost TLD
-	"http://myapp.local/api",     // mDNS .local
+	"http://myapp.local/api",      // mDNS .local
 	"http://service.internal/mcp", // GCP internal DNS
 	"ftp://example.com/data",
 }

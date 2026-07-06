@@ -148,5 +148,3 @@ func TestWithRealFilesystemMCP_WriteProtected(t *testing.T) {
 		t.Fatalf("file not written: %v", err)
 	}
 }
-
-

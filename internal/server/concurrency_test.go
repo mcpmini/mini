@@ -59,8 +59,8 @@ func runConfigureWorker(t *testing.T, srv *server.Server, ctx context.Context, w
 	fake := fakeConnWithResponse("toolC", `{"content":[{"type":"text","text":"c"}]}`)
 	for range stressIterations {
 		srv.AddConnection(ctx, config.ServerConfig{Name: "dynamic"}, fake)
-		serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "dynamic"}))    //nolint:errcheck
-		serve(t, srv, callTool("config", map[string]any{                                                      //nolint:errcheck
+		serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "dynamic"})) //nolint:errcheck
+		serve(t, srv, callTool("config", map[string]any{                                                  //nolint:errcheck
 			"action": "set_projection", "server": "alpha", "tool": "toolA",
 			"projection": map[string]any{"string_limit": 50}, "session_only": true,
 		}))

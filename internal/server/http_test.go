@@ -74,9 +74,9 @@ func initCompactRequest() []byte {
 		"id":      1,
 		"method":  "initialize",
 		"params": map[string]any{
-			"protocolVersion":    "2024-11-05",
-			"capabilities":      map[string]any{},
-			"clientInfo":        map[string]any{"name": "test", "version": "0"},
+			"protocolVersion":       "2024-11-05",
+			"capabilities":          map[string]any{},
+			"clientInfo":            map[string]any{"name": "test", "version": "0"},
 			transport.ToolModeParam: transport.ToolModeCompactValue,
 		},
 	})
@@ -185,10 +185,10 @@ func requestToolsList(t *testing.T, ts *httptest.Server, accept string) *http.Re
 	return resp
 }
 
-func assertAllowPost(t *testing.T, resp *http.Response) {
+func assertAllowMethods(t *testing.T, resp *http.Response) {
 	t.Helper()
-	if allow := resp.Header.Get("Allow"); allow != "POST" {
-		t.Errorf("expected Allow: POST, got %q", allow)
+	if allow := resp.Header.Get("Allow"); allow != "GET, POST" {
+		t.Errorf("expected Allow: GET, POST, got %q", allow)
 	}
 }
 
@@ -216,14 +216,14 @@ func TestHTTPServer_deleteReturns405(t *testing.T) {
 	resp := requestMCPMethod(t, ts, http.MethodDelete)
 	defer resp.Body.Close()
 	mustStatus(t, resp, http.StatusMethodNotAllowed)
-	assertAllowPost(t, resp)
+	assertAllowMethods(t, resp)
 }
 
 func TestHTTPServer_methodNotAllowed(t *testing.T) {
 	_, ts := newHTTPTestServer(t)
 	resp := requestMCPMethod(t, ts, http.MethodGet)
 	defer resp.Body.Close()
-	mustStatus(t, resp, http.StatusMethodNotAllowed)
+	mustStatus(t, resp, http.StatusNotAcceptable)
 }
 
 func TestHTTPServer_healthz(t *testing.T) {
@@ -356,12 +356,12 @@ func TestHTTPServer_SSEWithBothAcceptTypes(t *testing.T) {
 
 func TestHTTPServer_GetAllowHeader(t *testing.T) {
 	_, ts := newHTTPTestServer(t)
-	for _, method := range []string{http.MethodGet, http.MethodPut} {
+	for _, method := range []string{http.MethodPut} {
 		t.Run(method, func(t *testing.T) {
 			resp := requestMCPMethod(t, ts, method)
 			resp.Body.Close()
 			mustStatus(t, resp, http.StatusMethodNotAllowed)
-			assertAllowPost(t, resp)
+			assertAllowMethods(t, resp)
 		})
 	}
 }
