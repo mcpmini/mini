@@ -3,10 +3,8 @@ package server
 import (
 	"context"
 	"errors"
-	"reflect"
 	"time"
 
-	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -89,10 +87,7 @@ func (s *Server) refreshTools(u *upstreamServer) error {
 	for attempt := range 3 {
 		gen, tools, err := s.fetchCurrentTools(u)
 		if err == nil {
-			changed, published := s.publishRefreshedTools(u, gen, tools)
-			if published && changed {
-				s.notifyAllSessions()
-			}
+			s.catalog.replaceCurrent(u, gen, tools)
 			return nil
 		}
 		if transport.IsConnectionError(err) {
@@ -126,24 +121,6 @@ func (s *Server) waitRefreshRetry(u *upstreamServer, delay time.Duration) bool {
 	case <-timer.Chan():
 		return true
 	}
-}
-
-func (s *Server) publishRefreshedTools(u *upstreamServer, gen uint64, tools []transport.ToolDefinition) (bool, bool) {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	if !s.isCurrentConnectionGen(u, gen) {
-		return false, false
-	}
-	before := buildProxyToolSchemas(s.reg.AllFull())
-	u.lastDefs = tools
-	s.reg.ReplaceServerTools(registry.ServerParams{
-		Name:            u.cfg.Name,
-		Defs:            tools,
-		Perm:            u.cfg.Permissions,
-		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
-	})
-	after := buildProxyToolSchemas(s.reg.AllFull())
-	return !reflect.DeepEqual(before, after), true
 }
 
 func (s *Server) isCurrentConnectionGen(u *upstreamServer, gen uint64) bool {

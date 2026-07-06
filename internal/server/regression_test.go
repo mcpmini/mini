@@ -119,21 +119,6 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Finding 2 (MEDIUM): concurrent add_server / remove_server TOCTOU
-//
-// Before the fix, remove_server held s.mu only during detachUpstream, then
-// released it before reg.RemoveServer. A racing add_server could insert a
-// new upstream and register its tools between the two steps; reg.RemoveServer
-// would then delete those fresh tools.
-//
-// Fix: serverOpMu serializes all add/remove operations for the same name.
-// ---------------------------------------------------------------------------
-
-// TestConcurrentAddRemove_RegistryConsistency hammers concurrent add+remove
-// for the same server name and asserts that after all goroutines finish, the
-// registry is in a consistent state: either the server is present with tools,
-// or it is fully absent — never partially corrupted.
 func TestConcurrentAddRemove_RegistryConsistency(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
@@ -313,11 +298,6 @@ func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
 	t.Errorf("path traversal via '..' was not blocked: %v", resp)
 }
 
-// TestGenerationCounter_RemoveWinsRace verifies the TOCTOU fix for
-// concurrent add_server + remove_server. Before the fix, add_server could
-// complete after remove_server returned ok:true, leaving the server
-// re-registered. The generation counter in removeGen makes add_server
-// detect the concurrent remove and abort.
 func TestGenerationCounter_RemoveWinsRace(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()
@@ -366,10 +346,6 @@ func (c *slowFakeConn) ListTools(ctx context.Context) ([]transport.ToolDefinitio
 	return c.FakeConnection.ListTools(ctx)
 }
 
-// TestInlineProjections_AppliedOnAddConnection verifies that projections
-// embedded directly in a ServerConfig (sc.Projections) are installed into
-// s.projections when the server is registered. This is the installUpstreamLocked
-// branch that handles projections embedded in server YAML under projections:.
 func TestInlineProjections_AppliedOnAddConnection(t *testing.T) {
 	srv := newTestServer(t)
 	defer srv.Close()

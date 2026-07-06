@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -85,42 +84,21 @@ func (s *Server) IsReconnecting(serverName string) bool {
 }
 
 func (s *Server) registerUpstream(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {
-	gen := s.snapshotRemoveGen(sc.Name)
+	gen := s.catalog.snapshotRemovalGeneration(sc.Name)
 	tools, err := conn.ListTools(ctx)
 	if err != nil {
 		conn.Close()
 		return fmt.Errorf("list tools from %s: %w", sc.Name, err)
 	}
-	u, changed, err := s.installIfNotRemoved(sc, conn, tools, gen)
+	u, err := s.catalog.installIfCurrent(sc, conn, tools, gen)
 	if err != nil {
 		return err
 	}
 	s.attachNotificationHandler(u, conn, u.currentConnGen())
-	if changed {
-		s.notifyAllSessions()
-	}
 	return nil
 }
 
-func (s *Server) snapshotRemoveGen(name string) uint64 {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	return s.removeGen[name]
-}
-
-func (s *Server) installIfNotRemoved(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition, gen uint64) (*upstreamServer, bool, error) {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	if s.removeGen[sc.Name] != gen {
-		conn.Close()
-		return nil, false, fmt.Errorf("server %q was removed during connection setup", sc.Name)
-	}
-	u, changed := s.installUpstreamLocked(sc, conn, tools)
-	return u, changed, nil
-}
-
-func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition) (*upstreamServer, bool) {
-	before := buildProxyToolSchemas(s.reg.AllFull())
+func (s *Server) installUpstream(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition) *upstreamServer {
 	u := newUpstreamServer(sc, conn, s.clock)
 	u.lastDefs = tools
 	old := s.swapUpstream(sc.Name, u)
@@ -131,8 +109,7 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 		s.mu.Unlock()
 	}
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
-	after := buildProxyToolSchemas(s.reg.AllFull())
-	return u, !reflect.DeepEqual(before, after)
+	return u
 }
 
 func newUpstreamServer(sc config.ServerConfig, conn transport.Connection, clock clock.Clock) *upstreamServer {

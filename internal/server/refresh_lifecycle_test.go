@@ -101,7 +101,7 @@ func TestToolRefreshRemoveRaceDoesNotResurrectServer(t *testing.T) {
 	conn.notifyToolsChanged()
 	waitListCall(t, conn)
 	waitClosed(t, started, "refresh start")
-	srv.detachAndCloseServer("svc")
+	srv.catalog.remove("svc")
 	close(release)
 	waitRefreshIdle(t, srv, "svc")
 

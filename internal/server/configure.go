@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 
 	"gopkg.in/yaml.v3"
 
@@ -158,7 +157,7 @@ func (s *Server) reloadProjections() (any, error) {
 		return nil, fmt.Errorf("reload projections: %w", err)
 	}
 	s.replaceProjections(projections)
-	s.reapplyAliases()
+	s.catalog.reapplyAliases()
 	return map[string]any{"ok": true, "loaded": projectionCounts(projections)}, nil
 }
 
@@ -166,28 +165,6 @@ func (s *Server) replaceProjections(projections map[string]map[string]*config.Pr
 	s.mu.Lock()
 	s.projections = projections
 	s.mu.Unlock()
-}
-
-func (s *Server) reapplyAliases() {
-	s.serverOpMu.Lock()
-	before := buildProxyToolSchemas(s.reg.AllFull())
-
-	for _, u := range s.snapshotUpstreams() {
-		if u.lastDefs == nil {
-			continue
-		}
-		s.reg.ReplaceServerTools(registry.ServerParams{
-			Name:            u.cfg.Name,
-			Defs:            u.lastDefs,
-			Perm:            u.cfg.Permissions,
-			AliasByToolName: s.currentAliasesFor(u.cfg.Name),
-		})
-	}
-	changed := !reflect.DeepEqual(before, buildProxyToolSchemas(s.reg.AllFull()))
-	s.serverOpMu.Unlock()
-	if changed {
-		s.notifyAllSessions()
-	}
 }
 
 func projectionCounts(projections map[string]map[string]*config.ProjectionConfig) map[string]int {
@@ -254,25 +231,9 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 	if err := validateServerName(serverName); err != nil {
 		return nil, err
 	}
-	s.detachAndCloseServer(serverName)
+	s.catalog.remove(serverName)
 	s.logger.Info("server removed at runtime", "server", serverName)
 	return map[string]any{"ok": true, "server": serverName}, nil
-}
-
-func (s *Server) detachAndCloseServer(serverName string) {
-	s.serverOpMu.Lock()
-	before := buildProxyToolSchemas(s.reg.AllFull())
-	s.removeGen[serverName]++
-	if u := s.detachUpstream(serverName); u != nil {
-		u.shutdownAndClose()
-	}
-	s.sessions.closeServerConnections(serverName)
-	s.reg.RemoveServer(serverName)
-	changed := !reflect.DeepEqual(before, buildProxyToolSchemas(s.reg.AllFull()))
-	s.serverOpMu.Unlock()
-	if changed {
-		s.notifyAllSessions()
-	}
 }
 
 func (s *Server) detachUpstream(serverName string) *upstreamServer {

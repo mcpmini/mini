@@ -286,7 +286,6 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			fake := fakeConn("list_pull_requests")
 			srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: tt.initialProjection}, fake)
 
-			// Write disk projection with a new alias and reload — reapplyAliases must pick it up.
 			writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_pull_requests:\n  alias: list_prs\n")
 			serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 

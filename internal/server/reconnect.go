@@ -119,10 +119,7 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 		swap.old.Close()
 	}
 	s.attachNotificationHandler(u, conn, swap.gen)
-	changed, published := s.publishRefreshedTools(u, swap.gen, tools)
-	if published && changed {
-		s.notifyAllSessions()
-	}
+	s.catalog.replaceCurrent(u, swap.gen, tools)
 	s.logger.Info("upstream reconnected", "server", u.cfg.Name)
 	if swap.hook != nil {
 		swap.hook()

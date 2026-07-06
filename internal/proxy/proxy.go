@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/transport"
@@ -41,14 +40,12 @@ func (s DaemonSession) Send(body []byte) []byte {
 }
 
 type Forwarder struct {
-	session  DaemonSession
-	resolver *DaemonResolver
-	link     *daemonLink
-	toolMode transport.ToolMode
-	clock    clock.Clock
-	bridge   *notificationBridge
-	initSeen atomic.Bool
-	ready    atomic.Bool
+	session      DaemonSession
+	resolver     *DaemonResolver
+	link         *daemonLink
+	toolMode     transport.ToolMode
+	clock        clock.Clock
+	conversation *daemonConversation
 }
 
 func (f *Forwarder) sessionAt(state linkState) DaemonSession {
@@ -93,12 +90,12 @@ func newForwardPool(p RunParams, client *http.Client, limit int) forwardAsyncPar
 		)
 	}
 	forwarder := &Forwarder{
-		session:  DaemonSession{client: client, sessionID: p.SessionID},
-		resolver: p.Resolver,
-		link:     newDaemonLink(p.Token),
-		toolMode: p.ToolMode,
-		clock:    p.Clock,
-		bridge:   bridge,
+		session:      DaemonSession{client: client, sessionID: p.SessionID},
+		resolver:     p.Resolver,
+		link:         newDaemonLink(p.Token),
+		toolMode:     p.ToolMode,
+		clock:        p.Clock,
+		conversation: newDaemonConversation(bridge),
 	}
 	return forwardAsyncParams{
 		forwarder: forwarder, out: p.Out,
@@ -178,9 +175,7 @@ type forwardAsyncParams struct {
 }
 
 func (p forwardAsyncParams) close() {
-	if p.forwarder.bridge != nil {
-		p.forwarder.bridge.Close()
-	}
+	p.forwarder.conversation.close()
 }
 
 func forwardAsync(p forwardAsyncParams) {

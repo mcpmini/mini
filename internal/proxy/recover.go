@@ -34,11 +34,10 @@ func (f *Forwarder) Forward(line []byte) []byte {
 		<-f.clock.NewTimer(jitteredBackoff(attempt)).Chan()
 	}
 	if isInit && out.kind == outcomeOK {
-		f.initSeen.Store(true)
+		f.conversation.markInitialized()
 	}
-	if isInitialized && out.kind == outcomeOK && f.initSeen.Load() && f.bridge != nil {
-		f.ready.Store(true)
-		f.bridge.Arm(state)
+	if isInitialized && out.kind == outcomeOK {
+		f.conversation.markReady(state)
 	}
 	return out.resp
 }
@@ -57,10 +56,7 @@ func (f *Forwarder) handleRecoverable(kind outcomeKind, state linkState, isInit 
 	// reinit is idempotent — the daemon silently accepts duplicate initialize calls, so every goroutine can replay it safely
 	if !isInit {
 		f.sessionAt(state).Handshake(f.toolMode)
-		f.initSeen.Store(true)
-		if f.bridge != nil && f.ready.Load() {
-			f.bridge.Arm(state)
-		}
+		f.conversation.restore(state)
 	}
 	return state, true
 }

@@ -16,7 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func TestPublishRefreshedTools_usesReloadedAliases(t *testing.T) {
+func TestCatalogPublisherReplaceCurrentUsesReloadedAliases(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -34,9 +34,8 @@ func TestPublishRefreshedTools_usesReloadedAliases(t *testing.T) {
 	if len(upstreams) != 1 {
 		t.Fatalf("expected 1 upstream, got %d", len(upstreams))
 	}
-	_, published := srv.publishRefreshedTools(upstreams[0], upstreams[0].currentConnGen(), tools)
-	if !published {
-		t.Fatal("publishRefreshedTools did not publish")
+	if !srv.catalog.replaceCurrent(upstreams[0], upstreams[0].currentConnGen(), tools) {
+		t.Fatal("replaceCurrent did not publish")
 	}
 
 	names := map[string]bool{}

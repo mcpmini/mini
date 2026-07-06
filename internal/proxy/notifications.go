@@ -53,6 +53,10 @@ func newNotificationBridge(session DaemonSession, out io.Writer, writeMu *sync.M
 
 func (b *notificationBridge) Arm(state linkState) {
 	b.mu.Lock()
+	if b.armed && state.generation < b.desired.generation {
+		b.mu.Unlock()
+		return
+	}
 	b.armed = true
 	b.desired = state
 	b.mu.Unlock()
