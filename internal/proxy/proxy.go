@@ -5,7 +5,6 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -61,28 +60,27 @@ func runWithLimit(p RunParams, limit int) error {
 	// p.Client has no client-level timeout: tool deadlines are enforced by the daemon's
 	// per-call context (ToolTimeout). A fixed timeout here would break any tool configured
 	// with tool_timeout longer than the hard-coded value.
-	fp := newForwardPool(p, p.Client, limit)
+	fp := newForwardPool(p, limit)
+	defer fp.close()
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
-		startForward(maybeInjectToolMode(scanner.Bytes(), p.ToolMode), fp)
+		message := classifyForwardedMessage(maybeInjectToolMode(scanner.Bytes(), p.ToolMode))
+		if message.mustForwardSync() {
+			forwardSync(message, fp)
+			continue
+		}
+		startForward(message, fp)
 	}
 	fp.wg.Wait()
 	return scanner.Err()
 }
 
-func newForwardPool(p RunParams, client *http.Client, limit int) forwardAsyncParams {
-	var mu sync.Mutex
+func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	var wg sync.WaitGroup
-	forwarder := &Forwarder{
-		session:  DaemonSession{client: client, sessionID: p.SessionID},
-		resolver: p.Resolver,
-		link:     newDaemonLink(p.Token),
-		toolMode: p.ToolMode,
-		clock:    p.Clock,
-	}
 	return forwardAsyncParams{
-		forwarder: forwarder, out: p.Out,
-		mu: &mu, wg: &wg, sem: make(chan struct{}, max(1, limit)),
+		session: newProxySession(p, newSerializedWriter(p.Out)),
+		wg:      &wg,
+		sem:     make(chan struct{}, max(1, limit)),
 	}
 }
 
@@ -129,37 +127,43 @@ func extractInitParams(full map[string]json.RawMessage) (map[string]json.RawMess
 	return params, nil
 }
 
-func startForward(line []byte, p forwardAsyncParams) {
-	if len(line) == 0 {
+func startForward(message forwardedMessage, p forwardAsyncParams) {
+	if len(message.line) == 0 {
 		return
 	}
-	p.line = bytes.Clone(line)
+	p.message = forwardedMessage{line: bytes.Clone(message.line), kind: message.kind}
 	p.sem <- struct{}{}
 	p.wg.Add(1)
 	go forwardAsync(p)
 }
 
+func forwardSync(message forwardedMessage, p forwardAsyncParams) {
+	if len(message.line) == 0 {
+		return
+	}
+	cloned := forwardedMessage{line: bytes.Clone(message.line), kind: message.kind}
+	if resp := p.session.forward(cloned); resp != nil {
+		p.session.writeLine(resp)
+	}
+}
+
 type forwardAsyncParams struct {
-	forwarder *Forwarder
-	line      []byte
-	out       io.Writer
-	mu        *sync.Mutex
-	wg        *sync.WaitGroup
-	sem       chan struct{}
+	session *proxySession
+	message forwardedMessage
+	wg      *sync.WaitGroup
+	sem     chan struct{}
+}
+
+func (p forwardAsyncParams) close() {
+	p.session.close()
 }
 
 func forwardAsync(p forwardAsyncParams) {
 	defer p.wg.Done()
 	defer func() { <-p.sem }()
-	if resp := p.forwarder.Forward(p.line); resp != nil {
-		p.writeResponse(resp)
+	if resp := p.session.forward(p.message); resp != nil {
+		p.session.writeLine(resp)
 	}
-}
-
-func (p forwardAsyncParams) writeResponse(resp []byte) {
-	p.mu.Lock()
-	fmt.Fprintf(p.out, "%s\n", resp) //nolint:errcheck
-	p.mu.Unlock()
 }
 
 func isNotInitialized(resp []byte) bool {
@@ -186,6 +190,44 @@ func peekIsInitialize(line []byte) bool {
 type requestID struct {
 	ID      json.RawMessage `json:"id"`
 	JSONRPC string          `json:"jsonrpc"`
+}
+
+func peekMethod(line []byte) string {
+	var m struct {
+		Method string `json:"method"`
+	}
+	if json.Unmarshal(line, &m) != nil {
+		return ""
+	}
+	return m.Method
+}
+
+type forwardedMessageKind uint8
+
+const (
+	forwardedMessageOther forwardedMessageKind = iota
+	forwardedMessageInitialize
+	forwardedMessageInitialized
+)
+
+type forwardedMessage struct {
+	line []byte
+	kind forwardedMessageKind
+}
+
+func classifyForwardedMessage(line []byte) forwardedMessage {
+	switch peekMethod(line) {
+	case "initialize":
+		return forwardedMessage{line: line, kind: forwardedMessageInitialize}
+	case transport.NotificationInitialized:
+		return forwardedMessage{line: line, kind: forwardedMessageInitialized}
+	default:
+		return forwardedMessage{line: line, kind: forwardedMessageOther}
+	}
+}
+
+func (m forwardedMessage) mustForwardSync() bool {
+	return m.kind != forwardedMessageOther
 }
 
 func daemonErrorResponse(body []byte, msg string) []byte {

@@ -23,6 +23,7 @@ func TestNotification_toolsChangedAfterAddServer(t *testing.T) {
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	msgs := serveAll(t, srv,
+		notification("notifications/initialized", nil),
 		callTool("config", map[string]any{
 			"action": "add_server",
 			"config": map[string]any{"name": "dynamic", "transport": "http", "url": mcp.URL},
@@ -39,6 +40,7 @@ func TestNotification_toolsChangedAfterRemoveServer(t *testing.T) {
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConn("aTool")) //nolint:errcheck
 
 	msgs := serveAll(t, srv,
+		notification("notifications/initialized", nil),
 		callTool("config", map[string]any{"action": "remove_server", "server": "svc"}),
 	)
 

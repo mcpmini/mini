@@ -496,10 +496,13 @@ func TestProxy_NotifyAll_OnRemoveServer(t *testing.T) {
 	conn := fakeConn("list_issues")
 	addProxyConn(t, srv, "removeme", conn)
 
-	msgs := serveAllProxy(t, srv, callTool("config", map[string]any{
-		"action": "remove_server",
-		"server": "removeme",
-	}))
+	msgs := serveAllProxy(t, srv,
+		notification(transport.NotificationInitialized, nil),
+		callTool("config", map[string]any{
+			"action": "remove_server",
+			"server": "removeme",
+		}),
+	)
 
 	if !hasNotification(msgs, transport.NotificationToolsChanged) {
 		t.Error("expected notifications/tools/list_changed after remove_server in proxy mode")
