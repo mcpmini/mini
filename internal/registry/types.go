@@ -22,6 +22,7 @@ func (n ToolName) Name() string {
 }
 
 type ToolEntry struct {
+	Kind          ToolEntryKind
 	Server        string
 	ToolName      ToolName
 	FullName      string // "server.tool" using visible name (alias if set)
@@ -35,6 +36,13 @@ type ToolEntry struct {
 	TargetTool   string
 	DefaultArgs  map[string]any
 }
+
+type ToolEntryKind uint8
+
+const (
+	ToolEntryUpstream ToolEntryKind = iota
+	ToolEntryAction
+)
 
 // CompactEntry is what discover returns per tool — no full schema.
 type CompactEntry struct {

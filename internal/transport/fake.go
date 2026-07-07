@@ -17,9 +17,10 @@ type FakeConnection struct {
 	Responses map[string]json.RawMessage // keyed by method
 	Err       error
 
-	mu         sync.Mutex
-	LastParams json.RawMessage // params from the most recent Call invocation
-	Closed     bool
+	mu                  sync.Mutex
+	LastParams          json.RawMessage // params from the most recent Call invocation
+	Closed              bool
+	notificationHandler func(Notification)
 }
 
 func (f *FakeConnection) Call(_ context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
@@ -50,4 +51,10 @@ func (f *FakeConnection) Close() error {
 	f.Closed = true
 	f.mu.Unlock()
 	return nil
+}
+
+func (f *FakeConnection) SetNotificationHandler(handler func(Notification)) {
+	f.mu.Lock()
+	f.notificationHandler = handler
+	f.mu.Unlock()
 }

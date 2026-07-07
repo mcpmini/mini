@@ -258,7 +258,7 @@ func TestAlias_reconnectYieldsToNewRealTool(t *testing.T) {
 		t.Fatalf("alias should be reachable before reconnect: %v", err)
 	}
 
-	reg.ReplaceServer(registry.ServerParams{
+	reg.ReplaceServerTools(registry.ServerParams{
 		Name: "gh",
 		Defs: defs("list_pull_requests", "list_prs"),
 		AliasByToolName: map[string]string{

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -102,16 +103,22 @@ func isWriteOpFile(path string) bool {
 	return bytes.Contains(data, []byte(`"__write_op"`))
 }
 
-func (r *ToolRegistry) Add(t Tool) {
+func (r *ToolRegistry) Add(t Tool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	prev, exists := r.tools[t.ToolDefinition.Name]
 	r.tools[t.ToolDefinition.Name] = t
+	return !exists || !toolEqual(prev, t)
 }
 
-func (r *ToolRegistry) Remove(name string) {
+func (r *ToolRegistry) Remove(name string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if _, ok := r.tools[name]; !ok {
+		return false
+	}
 	delete(r.tools, name)
+	return true
 }
 
 func (r *ToolRegistry) List() []Tool {
@@ -233,6 +240,10 @@ func mergeExistingArgs(dst, args map[string]any) {
 			dst[k] = v
 		}
 	}
+}
+
+func toolEqual(a, b Tool) bool {
+	return reflect.DeepEqual(a, b)
 }
 
 func errResult(msg string) transport.ToolCallResult {

@@ -66,7 +66,6 @@ func expectCallErrorContains(t *testing.T, conn *HTTPConnection, want string) {
 	}
 }
 
-
 func mustListTools(t *testing.T, conn *HTTPConnection) []ToolDefinition {
 	t.Helper()
 	got, err := conn.ListTools(context.Background())
@@ -145,6 +144,51 @@ func TestHTTPConnection_sessionIDPersisted(t *testing.T) {
 
 	if receivedSessionID != "sess-abc" {
 		t.Errorf("expected session ID sess-abc on second call, got %q", receivedSessionID)
+	}
+}
+
+func TestHTTPConnection_buffersNotificationUntilHandlerInstalled(t *testing.T) {
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: "http://example.invalid"})
+	for range 32 {
+		conn.dispatchNotification(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
+		conn.dispatchNotification(Notification{JSONRPC: "2.0", Method: NotificationToolsChanged})
+	}
+
+	received := make(chan Notification, 8)
+	conn.SetNotificationHandler(func(notification Notification) { received <- notification })
+	select {
+	case notification := <-received:
+		if notification.Method != NotificationToolsChanged {
+			t.Fatalf("method = %q", notification.Method)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("notification emitted before handler installation was lost")
+	}
+	select {
+	case notification := <-received:
+		t.Fatalf("expected one coalesced pending invalidation, got %q", notification.Method)
+	default:
+	}
+
+	conn.dispatchNotification(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
+	conn.dispatchNotification(Notification{JSONRPC: "2.0", Method: NotificationToolsChanged})
+	got := []string{
+		mustReceiveBufferedNotification(t, received).Method,
+		mustReceiveBufferedNotification(t, received).Method,
+	}
+	if !slices.Equal(got, []string{NotificationInitialized, NotificationToolsChanged}) {
+		t.Fatalf("post-install notifications = %v", got)
+	}
+}
+
+func mustReceiveBufferedNotification(t *testing.T, ch <-chan Notification) Notification {
+	t.Helper()
+	select {
+	case notification := <-ch:
+		return notification
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for notification")
+		return Notification{}
 	}
 }
 
@@ -332,6 +376,85 @@ func TestListTools_successfulHandshakeAndList(t *testing.T) {
 	}
 	if calls != 3 {
 		t.Errorf("expected 3 calls (initialize + notifications/initialized + tools/list), got %d", calls)
+	}
+}
+
+func TestListTools_retriesInitializeAfterFailure(t *testing.T) {
+	var initializeCalls int
+	var listCalls int
+	tools := []any{map[string]any{"name": "do_thing", "inputSchema": map[string]any{}}}
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		switch req["method"] {
+		case "initialize":
+			initializeCalls++
+			if initializeCalls == 1 {
+				http.Error(w, "transient initialize failure", http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"protocolVersion": ProtocolVersion},
+			})
+		case "tools/list":
+			listCalls++
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"tools": tools},
+			})
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+
+	if _, err := conn.ListTools(context.Background()); err == nil {
+		t.Fatal("expected first ListTools call to fail")
+	}
+	got := mustListTools(t, conn)
+
+	if want := []string{"do_thing"}; !slices.Equal(toolNames(got), want) {
+		t.Fatalf("tool names = %v, want %v", toolNames(got), want)
+	}
+	if initializeCalls != 2 {
+		t.Fatalf("initialize calls = %d, want 2", initializeCalls)
+	}
+	if listCalls != 1 {
+		t.Fatalf("tools/list calls = %d, want 1", listCalls)
+	}
+}
+
+func TestListTools_reusesSuccessfulInitialize(t *testing.T) {
+	var initializeCalls int
+	var listCalls int
+	tools := []any{map[string]any{"name": "do_thing", "inputSchema": map[string]any{}}}
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		switch req["method"] {
+		case "initialize":
+			initializeCalls++
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"protocolVersion": ProtocolVersion},
+			})
+		case "tools/list":
+			listCalls++
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"tools": tools},
+			})
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+
+	mustListTools(t, conn)
+	mustListTools(t, conn)
+
+	if initializeCalls != 1 {
+		t.Fatalf("initialize calls = %d, want 1", initializeCalls)
+	}
+	if listCalls != 2 {
+		t.Fatalf("tools/list calls = %d, want 2", listCalls)
 	}
 }
 

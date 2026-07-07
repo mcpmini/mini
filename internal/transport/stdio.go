@@ -25,6 +25,7 @@ type StdioConnection struct {
 	shutdownOnce sync.Once // guards stdin.Close, Kill, Wait
 	logger       *slog.Logger
 	mu           sync.Mutex // guards stdin writes
+	toolsChanged toolsChangedNotifier
 }
 
 type StdioCommand struct {
@@ -217,9 +218,28 @@ func (c *StdioConnection) dispatch(line []byte) {
 		return
 	}
 	if resp.ID == nil {
-		return // notification, ignore
+		c.dispatchNotification(line)
+		return
 	}
 	c.pending.deliver(resp.ID, &resp)
+}
+
+func (c *StdioConnection) dispatchNotification(line []byte) {
+	var notification Notification
+	if err := json.Unmarshal(line, &notification); err != nil || notification.Method == "" {
+		return
+	}
+	if notification.Method == NotificationToolsChanged {
+		c.toolsChanged.NotifyToolsChanged()
+		return
+	}
+	if handler := c.toolsChanged.Handler(); handler != nil {
+		handler(notification)
+	}
+}
+
+func (c *StdioConnection) SetNotificationHandler(handler func(Notification)) {
+	c.toolsChanged.SetHandler(handler)
 }
 
 func (c *StdioConnection) writeJSON(v any) error {
