@@ -34,11 +34,14 @@ type fakeOpts struct {
 	tools        *ToolRegistry
 	faults       *FaultRegistry
 	listPageSize int
+	controlAddr  string
+	controlFile  string
 }
 
 func parseFlags() (fakeOpts, error) {
 	fixturesDir := flag.String("fixtures", "", "directory of fixture JSON files (each .json = one tool)")
-	_ = flag.String("control-addr", "127.0.0.1:0", "host:port for HTTP control API (0 = random port)")
+	controlAddr := flag.String("control-addr", "127.0.0.1:0", "host:port for HTTP control API (0 = random port)")
+	controlFile := flag.String("control-file", "", "file to write the chosen control API address to")
 	initialFault := flag.String("initial-fault", "", "JSON-encoded Fault to apply at startup (e.g. for subprocess fault injection)")
 	callLog := flag.String("call-log", "", "append a JSON line per tool call to this file")
 	listPageSize := flag.Int("list-page-size", 0, "paginate tools/list at this page size (0 = disabled)")
@@ -49,7 +52,13 @@ func parseFlags() (fakeOpts, error) {
 	if err := setInitialFault(faults, *initialFault); err != nil {
 		return fakeOpts{}, err
 	}
-	return fakeOpts{tools: tools, faults: faults, listPageSize: *listPageSize}, nil
+	return fakeOpts{
+		tools:        tools,
+		faults:       faults,
+		listPageSize: *listPageSize,
+		controlAddr:  *controlAddr,
+		controlFile:  *controlFile,
+	}, nil
 }
 
 func loadFixtures(tools *ToolRegistry, fixturesDir string) {
@@ -76,11 +85,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "fakemcp: %v\n", err)
 		os.Exit(1)
 	}
-	addr, err := startControlServer(opts.faults, opts.tools)
+	sink := newOutputSink(os.Stdout)
+	addr, err := startControlServer(opts.controlAddr, opts.faults, opts.tools, sink.notifyToolsChanged)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fakemcp: control server: %v\n", err)
 		os.Exit(1)
 	}
+	if opts.controlFile != "" {
+		if err := os.WriteFile(opts.controlFile, []byte(addr), 0600); err != nil {
+			fmt.Fprintf(os.Stderr, "fakemcp: write control file: %v\n", err)
+			os.Exit(1)
+		}
+	}
 	fmt.Fprintf(os.Stderr, "fakemcp control=%s\n", addr)
-	serve(&mcpHandler{tools: opts.tools, faults: opts.faults, listPageSize: opts.listPageSize})
+	serve(&mcpHandler{tools: opts.tools, faults: opts.faults, listPageSize: opts.listPageSize}, sink)
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/mcpmini/mini/internal/version"
 )
 
-
 // HTTPConnection implements Connection for streamable HTTP / SSE MCP servers.
 // The GitHub MCP and similar servers use this transport: each call is a POST,
 // responses may be SSE-wrapped, and a session ID is tracked across calls.
@@ -31,6 +30,12 @@ type HTTPConnection struct {
 	nextID                  atomic.Int64
 	sessionID               string
 	mu                      sync.Mutex
+	initMu                  sync.Mutex
+	initialized             bool
+	listenerCtx             context.Context
+	listenerCancel          context.CancelFunc
+	listenerWG              sync.WaitGroup
+	toolsChanged            toolsChangedNotifier
 }
 
 // defaultHTTPClientTimeout is the hard network-level backstop. Set to 2× the default
@@ -71,12 +76,15 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	if cfg.ClientTimeout > 0 {
 		timeout = cfg.ClientTimeout
 	}
+	listenerCtx, listenerCancel := context.WithCancel(context.Background())
 	return &HTTPConnection{
 		url:                     cfg.URL,
 		headers:                 cfg.Headers,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
 		client:                  noRedirectClient(timeout, cfg.BlockPrivateIPs),
 		clock:                   cfg.Clock,
+		listenerCtx:             listenerCtx,
+		listenerCancel:          listenerCancel,
 	}, nil
 }
 
@@ -164,10 +172,10 @@ func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult
 	}
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return postResult{}, fmt.Errorf("http %s: %w", rpcReq.Method, err)
+		return postResult{}, &ConnectionError{Err: fmt.Errorf("http %s: %w", rpcReq.Method, err)}
 	}
 	defer resp.Body.Close()
-	return c.processResponse(resp, rpcReq.Method)
+	return c.processResponse(resp, rpcReq)
 }
 
 func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (*http.Request, error) {
@@ -183,17 +191,53 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	return httpReq, nil
 }
 
-func (c *HTTPConnection) processResponse(resp *http.Response, method string) (postResult, error) {
+func (c *HTTPConnection) processResponse(resp *http.Response, request Request) (postResult, error) {
 	c.storeSessionID(resp.Header.Get("Mcp-Session-Id"))
 	if resp.StatusCode >= 400 {
-		return c.httpErrorResult(resp, method)
+		return c.httpErrorResult(resp, request.Method)
 	}
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return postResult{}, fmt.Errorf("read response: %w", err)
 	}
-	result, err := parseHTTPBody(respBody)
+	result, err := c.parsePostBody(respBody, request.ID)
 	return postResult{body: result}, err
+}
+
+func (c *HTTPConnection) parsePostBody(body []byte, requestID any) (json.RawMessage, error) {
+	messages, err := splitHTTPMessages(body)
+	if err != nil {
+		return nil, err
+	}
+	for _, message := range messages {
+		var rpc struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+			Result json.RawMessage `json:"result"`
+			Error  *RPCError       `json:"error"`
+		}
+		if err := json.Unmarshal(message, &rpc); err != nil {
+			return nil, fmt.Errorf("parse response: %w: %s", err, message[:min(200, len(message))])
+		}
+		if len(rpc.ID) == 0 && rpc.Method != "" {
+			c.dispatchNotification(Notification{JSONRPC: "2.0", Method: rpc.Method, Params: rpc.Params})
+			continue
+		}
+		if !sameJSONID(rpc.ID, requestID) {
+			continue
+		}
+		if rpc.Error != nil {
+			return nil, rpc.Error
+		}
+		return rpc.Result, nil
+	}
+	return nil, fmt.Errorf("response for request id %v not found", requestID)
+}
+
+func sameJSONID(raw json.RawMessage, id any) bool {
+	want, err := json.Marshal(id)
+	return err == nil && bytes.Equal(bytes.TrimSpace(raw), want)
 }
 
 func (c *HTTPConnection) storeSessionID(sessionID string) {
@@ -275,99 +319,6 @@ func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// parseHTTPBody handles both plain JSON and SSE-wrapped JSON responses.
-// SSE format: "event: message\ndata: {...json...}\n\n"
-func parseHTTPBody(body []byte) (json.RawMessage, error) {
-	body = bytes.TrimSpace(body)
-	if len(body) == 0 {
-		return nil, nil
-	}
-	jsonBytes := unwrapHTTPBody(body)
-	var rpc Response
-	if err := json.Unmarshal(jsonBytes, &rpc); err != nil {
-		return nil, fmt.Errorf("parse response: %w: %s", err, jsonBytes[:min(200, len(jsonBytes))])
-	}
-	if rpc.Error != nil {
-		return nil, rpc.Error
-	}
-	return rpc.Result, nil
-}
-
-func unwrapHTTPBody(body []byte) []byte {
-	if bytes.HasPrefix(body, []byte("event:")) || bytes.HasPrefix(body, []byte("data:")) {
-		return extractSSEData(body)
-	}
-	return body
-}
-
-func extractSSEData(body []byte) []byte {
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "data:") {
-			return []byte(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
-	}
-	return body
-}
-
-func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	if err := c.initHandshake(ctx); err != nil {
-		return nil, err
-	}
-	return paginateToolsList(ctx, c.callToolsPage)
-}
-
-func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
-	var params json.RawMessage
-	if cursor != "" {
-		params, _ = json.Marshal(map[string]string{"cursor": cursor})
-	}
-	raw, err := c.Call(ctx, "tools/list", params)
-	if err != nil {
-		return ToolsListResult{}, err
-	}
-	var r ToolsListResult
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return ToolsListResult{}, fmt.Errorf("parse tools/list: %w", err)
-	}
-	return r, nil
-}
-
-func (c *HTTPConnection) initHandshake(ctx context.Context) error {
-	if err := c.sendInitialize(ctx); err != nil {
-		return err
-	}
-	return c.sendInitializedNotification(ctx)
-}
-
-func (c *HTTPConnection) sendInitialize(ctx context.Context) error {
-	params, _ := json.Marshal(InitializeParams{
-		ProtocolVersion: ProtocolVersion,
-		Capabilities:    map[string]any{},
-		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
-	})
-	_, err := c.Call(ctx, "initialize", params)
-	return err
-}
-
-// Client MUST send notifications/initialized after a successful initialize response.
-// Stdio sends this in stdio.go:initialize; HTTP must send it as a separate POST.
-// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L88
-func (c *HTTPConnection) sendInitializedNotification(ctx context.Context) error {
-	notif, _ := json.Marshal(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(notif))
-	if err != nil {
-		return fmt.Errorf("notifications/initialized: %w", err)
-	}
-	c.setRequestHeaders(httpReq)
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("notifications/initialized: %w", err)
-	}
-	resp.Body.Close()
-	return nil
-}
-
 func (c *HTTPConnection) Health(ctx context.Context) error {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	for k, v := range c.headers {
@@ -383,5 +334,3 @@ func (c *HTTPConnection) Health(ctx context.Context) error {
 	}
 	return nil
 }
-
-func (c *HTTPConnection) Close() error { return nil }
