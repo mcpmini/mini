@@ -178,6 +178,7 @@ func TestScanSSEMessages_skipsInvalidPayloads(t *testing.T) {
 }
 
 func TestScanSSEMessages_limitBoundaries(t *testing.T) {
+	limits := testSSELimits()
 	makeLine := func(size int) string {
 		return "data: \"" + strings.Repeat("a", size-2) + "\"\n\n"
 	}
@@ -192,18 +193,18 @@ func TestScanSSEMessages_limitBoundaries(t *testing.T) {
 		stream  string
 		wantErr error
 	}{
-		{name: "below_limit", stream: makeLine(maxSSEMessageBytes - 1)},
-		{name: "at_limit", stream: makeLine(maxSSEMessageBytes)},
-		{name: "above_limit", stream: makeLine(maxSSEMessageBytes + 1), wantErr: errSSEMessageTooLarge},
-		{name: "multiline_at_limit", stream: makeMultiline(maxSSEMessageBytes)},
-		{name: "multiline_above_limit", stream: makeMultiline(maxSSEMessageBytes + 1), wantErr: errSSEMessageTooLarge},
+		{name: "below_limit", stream: makeLine(limits.messageBytes - 1)},
+		{name: "at_limit", stream: makeLine(limits.messageBytes)},
+		{name: "above_limit", stream: makeLine(limits.messageBytes + 1), wantErr: errSSEMessageTooLarge},
+		{name: "multiline_at_limit", stream: makeMultiline(limits.messageBytes)},
+		{name: "multiline_above_limit", stream: makeMultiline(limits.messageBytes + 1), wantErr: errSSEMessageTooLarge},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			called := false
-			err := ScanSSEMessages(strings.NewReader(tc.stream), func(message json.RawMessage) error {
+			err := scanSSEMessagesWithLimits(strings.NewReader(tc.stream), limits, func(message json.RawMessage) error {
 				called = true
-				if len(message) > maxSSEMessageBytes {
+				if len(message) > limits.messageBytes {
 					t.Fatalf("message len = %d", len(message))
 				}
 				return nil
@@ -219,6 +220,10 @@ func TestScanSSEMessages_limitBoundaries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func testSSELimits() sseLimits {
+	return sseLimits{messageBytes: 64, lineBytes: 72}
 }
 
 type chunkedReader struct {

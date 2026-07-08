@@ -106,14 +106,28 @@ func TestRetry_429WithoutRetryAfter_usesExponentialBackoff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// clock.System() required: backoff timers use NewTimer and must fire on real wall clock.
-	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.System()})
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	_, err := conn.Call(ctx, "ping", nil)
-	if err != nil {
+	clk := clock.NewFake()
+	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clk})
+	done := make(chan error, 1)
+	go func() {
+		_, err := conn.Call(t.Context(), "ping", nil)
+		done <- err
+	}()
+	advanceRetryTimer(t, clk)
+	advanceRetryTimer(t, clk)
+	if err := <-done; err != nil {
 		t.Fatalf("expected success after exponential backoff retries, got: %v", err)
 	}
+}
+
+func advanceRetryTimer(t *testing.T, clk *clock.Fake) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := clk.BlockUntilContext(ctx, 1); err != nil {
+		t.Fatal(err)
+	}
+	clk.Advance(time.Hour)
 }
 
 func TestRetry_contextCancelledDuringBackoff(t *testing.T) {

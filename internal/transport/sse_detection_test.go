@@ -83,14 +83,15 @@ func TestSplitHTTPMessages_SSEWrappedLargePreDataFields(t *testing.T) {
 }
 
 func TestSplitHTTPMessages_SSEWrappedLineLimit(t *testing.T) {
-	got, err := splitHTTPMessages(sseEnvelopeWithFieldBytes(maxSSELineBytes))
+	limits := testSSELimits()
+	got, err := splitHTTPMessagesWithLimits(sseEnvelopeWithFieldBytes(limits.lineBytes), limits)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || string(got[0]) != `{"ok":true}` {
 		t.Fatalf("splitHTTPMessages() = %q", got)
 	}
-	_, err = splitHTTPMessages(sseEnvelopeWithFieldBytes(maxSSELineBytes + 1))
+	_, err = splitHTTPMessagesWithLimits(sseEnvelopeWithFieldBytes(limits.lineBytes+1), limits)
 	if !errors.Is(err, errSSEMessageTooLarge) {
 		t.Fatalf("splitHTTPMessages() error = %v, want %v", err, errSSEMessageTooLarge)
 	}
