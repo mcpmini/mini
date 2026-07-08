@@ -15,12 +15,26 @@ var utf8BOM = []byte{0xef, 0xbb, 0xbf}
 
 var errSSEMessageTooLarge = errors.New("sse message exceeds 64 MiB")
 
+type sseLimits struct {
+	messageBytes int
+	lineBytes    int
+}
+
+var defaultSSELimits = sseLimits{
+	messageBytes: maxSSEMessageBytes,
+	lineBytes:    maxSSELineBytes,
+}
+
 func splitHTTPMessages(body []byte) ([]json.RawMessage, error) {
+	return splitHTTPMessagesWithLimits(body, defaultSSELimits)
+}
+
+func splitHTTPMessagesWithLimits(body []byte, limits sseLimits) ([]json.RawMessage, error) {
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) == 0 {
 		return nil, nil
 	}
-	isSSE, err := looksLikeSSE(body)
+	isSSE, err := looksLikeSSE(body, limits)
 	if err != nil {
 		return nil, err
 	}
@@ -28,15 +42,15 @@ func splitHTTPMessages(body []byte) ([]json.RawMessage, error) {
 		return []json.RawMessage{bytes.Clone(trimmed)}, nil
 	}
 	var messages []json.RawMessage
-	err = ScanSSEMessages(bytes.NewReader(body), func(message json.RawMessage) error {
+	err = scanSSEMessagesWithLimits(bytes.NewReader(body), limits, func(message json.RawMessage) error {
 		messages = append(messages, message)
 		return nil
 	})
 	return messages, err
 }
 
-func looksLikeSSE(body []byte) (bool, error) {
-	reader := newSSELineReader(bytes.NewReader(body))
+func looksLikeSSE(body []byte, limits sseLimits) (bool, error) {
+	reader := newSSELineReader(bytes.NewReader(body), limits)
 	for {
 		line, err := reader.readLine()
 		if errors.Is(err, io.EOF) {
@@ -60,9 +74,14 @@ func shouldSkipSSELine(line []byte) bool {
 }
 
 func ScanSSEMessages(body io.Reader, handle func(json.RawMessage) error) error {
+	return scanSSEMessagesWithLimits(body, defaultSSELimits, handle)
+}
+
+func scanSSEMessagesWithLimits(body io.Reader, limits sseLimits, handle func(json.RawMessage) error) error {
 	scanner := sseScanner{
-		reader: newSSELineReader(body),
+		reader: newSSELineReader(body, limits),
 		event:  make([]byte, 0, 64<<10),
+		limits: limits,
 		handle: handle,
 	}
 	return scanner.scan()
@@ -72,6 +91,7 @@ type sseScanner struct {
 	reader   *sseLineReader
 	event    []byte
 	seenData bool
+	limits   sseLimits
 	handle   func(json.RawMessage) error
 }
 
@@ -99,12 +119,12 @@ func (s *sseScanner) processLine(line []byte) error {
 		return nil
 	}
 	if s.seenData {
-		if err := appendBounded(&s.event, []byte{'\n'}); err != nil {
+		if err := appendBounded(&s.event, []byte{'\n'}, s.limits.messageBytes); err != nil {
 			return err
 		}
 	}
 	s.seenData = true
-	return appendBounded(&s.event, value)
+	return appendBounded(&s.event, value, s.limits.messageBytes)
 }
 
 func (s *sseScanner) flush() error {
@@ -122,14 +142,15 @@ func (s *sseScanner) flush() error {
 
 type sseLineReader struct {
 	reader *bufio.Reader
+	limits sseLimits
 }
 
-func newSSELineReader(body io.Reader) *sseLineReader {
+func newSSELineReader(body io.Reader, limits sseLimits) *sseLineReader {
 	reader := bufio.NewReaderSize(body, 64<<10)
 	if prefix, _ := reader.Peek(len(utf8BOM)); bytes.Equal(prefix, utf8BOM) {
 		reader.Discard(len(utf8BOM)) //nolint:errcheck
 	}
-	return &sseLineReader{reader: reader}
+	return &sseLineReader{reader: reader, limits: limits}
 }
 
 func (r *sseLineReader) readLine() ([]byte, error) {
@@ -168,7 +189,7 @@ func (r *sseLineReader) handleLineByte(line *[]byte, b byte) (bool, error) {
 		return true, nil
 	default:
 		*line = append(*line, b)
-		return false, checkSSELineLength(*line)
+		return false, r.checkLineLength(*line)
 	}
 }
 
@@ -186,16 +207,16 @@ func parseSSEDataLine(line []byte) ([]byte, []byte, bool) {
 	return field, value, true
 }
 
-func appendBounded(dst *[]byte, value []byte) error {
-	if len(value) > maxSSEMessageBytes-len(*dst) {
+func appendBounded(dst *[]byte, value []byte, maxBytes int) error {
+	if len(value) > maxBytes-len(*dst) {
 		return errSSEMessageTooLarge
 	}
 	*dst = append(*dst, value...)
 	return nil
 }
 
-func checkSSELineLength(line []byte) error {
-	if len(line) > maxSSELineBytes {
+func (r *sseLineReader) checkLineLength(line []byte) error {
+	if len(line) > r.limits.lineBytes {
 		return errSSEMessageTooLarge
 	}
 	return nil
