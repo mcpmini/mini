@@ -64,21 +64,30 @@ func runWithLimit(p RunParams, limit int) error {
 	defer fp.close()
 	scanner := transport.NewScanner(p.In)
 	for scanner.Scan() {
+		if err := fp.session.writer.Err(); err != nil {
+			break
+		}
 		message := classifyForwardedMessage(maybeInjectToolMode(scanner.Bytes(), p.ToolMode))
 		if message.mustForwardSync() {
-			forwardSync(message, fp)
+			if err := forwardSync(message, fp); err != nil {
+				fp.wg.Wait()
+				return err
+			}
 			continue
 		}
 		startForward(message, fp)
 	}
 	fp.wg.Wait()
-	return scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return fp.session.writer.Err()
 }
 
 func newForwardPool(p RunParams, limit int) forwardAsyncParams {
 	var wg sync.WaitGroup
 	return forwardAsyncParams{
-		session: newProxySession(p, newSerializedWriter(p.Out)),
+		session: newProxySession(p, newLineWriter(p.Out)),
 		wg:      &wg,
 		sem:     make(chan struct{}, max(1, limit)),
 	}
@@ -137,14 +146,15 @@ func startForward(message forwardedMessage, p forwardAsyncParams) {
 	go forwardAsync(p)
 }
 
-func forwardSync(message forwardedMessage, p forwardAsyncParams) {
+func forwardSync(message forwardedMessage, p forwardAsyncParams) error {
 	if len(message.line) == 0 {
-		return
+		return nil
 	}
 	cloned := forwardedMessage{line: bytes.Clone(message.line), kind: message.kind}
 	if resp := p.session.forward(cloned); resp != nil {
-		p.session.writeLine(resp)
+		return p.session.writeLine(resp)
 	}
+	return nil
 }
 
 type forwardAsyncParams struct {
@@ -162,7 +172,9 @@ func forwardAsync(p forwardAsyncParams) {
 	defer p.wg.Done()
 	defer func() { <-p.sem }()
 	if resp := p.session.forward(p.message); resp != nil {
-		p.session.writeLine(resp)
+		if err := p.session.writeLine(resp); err != nil {
+			return
+		}
 	}
 }
 

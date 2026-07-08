@@ -5,6 +5,7 @@ package proxy
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +21,14 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
+
+var errWriteFailed = errors.New("write failed")
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errWriteFailed
+}
 
 func shortSocketDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 
@@ -77,6 +86,17 @@ func TestRun_propagatesTokenThroughRunParams(t *testing.T) {
 	}
 	if gotAuth != "Bearer tok-42" {
 		t.Errorf("Authorization = %q, want %q", gotAuth, "Bearer tok-42")
+	}
+}
+
+func TestRun_returnsOutputWriteError(t *testing.T) {
+	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"ok"}`)
+	})
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
+	p := RunParams{Client: client, SessionID: "sess", In: in, Out: failingWriter{}, Clock: clock.NewFake()}
+	if err := Run(p); !errors.Is(err, errWriteFailed) {
+		t.Fatalf("Run error = %v, want %v", err, errWriteFailed)
 	}
 }
 
@@ -143,7 +163,9 @@ func TestForward_httpErrorStatusProducesJSONRPCEnvelope(t *testing.T) {
 			resp := testConn(client, "sess").Send(reqBody)
 			var rpc struct {
 				ID    json.RawMessage `json:"id"`
-				Error *struct{ Message string `json:"message"` } `json:"error"`
+				Error *struct {
+					Message string `json:"message"`
+				} `json:"error"`
 			}
 			if err := json.Unmarshal(resp, &rpc); err != nil {
 				t.Fatalf("response not valid JSON-RPC: %v\ngot: %s", err, resp)
@@ -426,7 +448,9 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 	var toolCalls, initCalls atomic.Int32
 	client := serveSocket(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		var msg struct{ Method string `json:"method"` }
+		var msg struct {
+			Method string `json:"method"`
+		}
 		json.Unmarshal(body, &msg) //nolint:errcheck
 		switch msg.Method {
 		case "initialize":
@@ -487,7 +511,9 @@ func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
 	done := make(chan error, 1)
-	go func() { done <- Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard, Clock: clock.NewFake()}) }()
+	go func() {
+		done <- Run(RunParams{Client: client, SessionID: "sess", In: in, Out: io.Discard, Clock: clock.NewFake()})
+	}()
 	select {
 	case err := <-done:
 		if err != nil {

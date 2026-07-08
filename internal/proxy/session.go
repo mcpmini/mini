@@ -13,13 +13,13 @@ type proxySession struct {
 	link               *daemonLink
 	toolMode           transport.ToolMode
 	clock              clock.Clock
-	writer             *serializedWriter
+	writer             *lineWriter
 	notificationStream *notificationStream
 	initialized        atomic.Bool
 	clientReady        atomic.Bool
 }
 
-func newProxySession(p RunParams, writer *serializedWriter) *proxySession {
+func newProxySession(p RunParams, writer *lineWriter) *proxySession {
 	session := DaemonSession{client: p.Client, sessionID: p.SessionID}
 	var notifications *notificationStream
 	if p.ToolMode == transport.ToolModeProxy {
@@ -42,8 +42,8 @@ func (s *proxySession) close() {
 	}
 }
 
-func (s *proxySession) writeLine(line []byte) {
-	s.writer.writeLine(line)
+func (s *proxySession) writeLine(line []byte) error {
+	return s.writer.writeLine(line)
 }
 
 func (s *proxySession) forward(message forwardedMessage) []byte {
@@ -54,7 +54,7 @@ func (s *proxySession) forward(message forwardedMessage) []byte {
 		if out.kind == outcomeOK || out.kind == outcomeOther {
 			break
 		}
-		next, ok := s.recover(state, out.kind, message.kind)
+		next, ok := s.recoverForwarding(state, out.kind, message.kind)
 		if !ok || attempt+1 == maxRecoveryAttempts {
 			break
 		}
@@ -84,11 +84,11 @@ func (s *proxySession) observeSuccessfulLifecycle(state linkState, message forwa
 	}
 }
 
-func (s *proxySession) recover(state linkState, kind outcomeKind, message forwardedMessageKind) (linkState, bool) {
+func (s *proxySession) recoverForwarding(state linkState, kind outcomeKind, message forwardedMessageKind) (linkState, bool) {
 	if kind == outcomeNotInitialized && message == forwardedMessageInitialize {
 		return state, false
 	}
-	next, ok := s.recoverLink(state, kind)
+	next, ok := s.recoverDaemonLink(state, kind)
 	if !ok {
 		return state, false
 	}
@@ -99,7 +99,7 @@ func (s *proxySession) recover(state linkState, kind outcomeKind, message forwar
 	return next, true
 }
 
-func (s *proxySession) recoverLink(state linkState, kind outcomeKind) (linkState, bool) {
+func (s *proxySession) recoverDaemonLink(state linkState, kind outcomeKind) (linkState, bool) {
 	if kind != outcomeTransportDown && kind != outcomeUnauthorized {
 		return state, true
 	}
