@@ -14,7 +14,7 @@ import (
 
 type notificationStream struct {
 	daemon DaemonSession
-	writer *serializedWriter
+	writer *lineWriter
 	clock  clock.Clock
 
 	ctx    context.Context
@@ -33,7 +33,7 @@ type activeNotificationStream struct {
 	done   chan struct{}
 }
 
-func newNotificationStream(daemon DaemonSession, writer *serializedWriter, clk clock.Clock) *notificationStream {
+func newNotificationStream(daemon DaemonSession, writer *lineWriter, clk clock.Clock) *notificationStream {
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := &notificationStream{
 		daemon: daemon,
@@ -145,6 +145,9 @@ func (s *notificationStream) waitForBind() bool {
 }
 
 func (s *notificationStream) retryDelay() bool {
+	if s.writer.Err() != nil {
+		return false
+	}
 	timer := s.clock.NewTimer(time.Second)
 	defer timer.Stop()
 	select {
@@ -190,16 +193,15 @@ func newDaemonStreamRequest(ctx context.Context, daemon DaemonSession, token str
 
 func (s *notificationStream) scan(body io.Reader) {
 	_ = transport.ScanSSEMessages(body, func(message json.RawMessage) error {
-		s.forward(message)
-		return nil
+		return s.forward(message)
 	})
 }
 
-func (s *notificationStream) forward(message json.RawMessage) {
+func (s *notificationStream) forward(message json.RawMessage) error {
 	if !json.Valid(message) {
-		return
+		return nil
 	}
-	s.writer.writeLine(message)
+	return s.writer.writeLine(message)
 }
 
 func (s *activeNotificationStream) stop() {
