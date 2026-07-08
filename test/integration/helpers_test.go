@@ -296,6 +296,7 @@ type mcpClient struct {
 	stdin   io.WriteCloser
 	pending sync.Map // int64 → chan *mcpResult
 	nextID  atomic.Int64
+	notify  chan string
 	done    chan struct{}
 	t       *testing.T
 }
@@ -327,13 +328,19 @@ func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanne
 func startServer(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
 	stdin, scanner := startMiniCmd(t, configDir)
-	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}
-	go c.readLoop(scanner)
+	c := newMCPClient(t, stdin, scanner)
 	c.mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
+	return c
+}
+
+func newMCPClient(t *testing.T, stdin io.WriteCloser, scanner *bufio.Scanner) *mcpClient {
+	t.Helper()
+	c := &mcpClient{stdin: stdin, notify: make(chan string, 32), done: make(chan struct{}), t: t}
+	go c.readLoop(scanner)
 	return c
 }
 
@@ -345,6 +352,15 @@ func (c *mcpClient) readLoop(scanner *bufio.Scanner) {
 			continue
 		}
 		if string(msg.ID) == "null" || len(msg.ID) == 0 {
+			var notification struct {
+				Method string `json:"method"`
+			}
+			if json.Unmarshal(scanner.Bytes(), &notification) == nil && notification.Method != "" {
+				select {
+				case c.notify <- notification.Method:
+				default:
+				}
+			}
 			continue
 		}
 		var id int64
@@ -357,6 +373,31 @@ func (c *mcpClient) readLoop(scanner *bufio.Scanner) {
 		}
 		if ch, ok := c.pending.LoadAndDelete(id); ok {
 			ch.(chan *mcpResult) <- r
+		}
+	}
+}
+
+func (c *mcpClient) sendNotification(method string, params any) {
+	c.t.Helper()
+	p, _ := json.Marshal(params)
+	req := map[string]any{"jsonrpc": "2.0", "method": method, "params": json.RawMessage(p)}
+	b, _ := json.Marshal(req)
+	fmt.Fprintf(c.stdin, "%s\n", b)
+}
+
+func (c *mcpClient) waitForNotification(method string, timeout time.Duration) {
+	c.t.Helper()
+	deadline := time.After(timeout)
+	for {
+		select {
+		case got := <-c.notify:
+			if got == method {
+				return
+			}
+		case <-c.done:
+			c.t.Fatalf("connection closed waiting for notification %q", method)
+		case <-deadline:
+			c.t.Fatalf("timed out waiting for notification %q", method)
 		}
 	}
 }
@@ -511,7 +552,7 @@ func toolCallText(t *testing.T, raw json.RawMessage) string {
 type envelope struct {
 	Data        any            `json:"data"`
 	Excluded    []string       `json:"excluded"`
-	Truncated    []truncation     `json:"truncated"`
+	Truncated   []truncation   `json:"truncated"`
 	File        *string        `json:"file"`
 	Passthrough map[string]any `json:"passthrough"`
 	Error       string         `json:"error"`

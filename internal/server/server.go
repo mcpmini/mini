@@ -63,11 +63,12 @@ type Server struct {
 	authFlows   map[string]*authFlowState
 	authWg      sync.WaitGroup
 	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
+	refreshWg   sync.WaitGroup
 }
 
 func (s *Server) notifyAllSessions() {
 	for _, sess := range s.sessions.snapshotSessions() {
-		sess.notify(toolsChangedNotif)
+		sess.notifyToolsChanged()
 	}
 }
 

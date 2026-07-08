@@ -26,10 +26,16 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 }
 
 func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, session *Session) error {
-	notifyCh := session.enableNotifications()
-	writeOut, closeNotify := startNotifyForwarder(out, notifyCh)
-	defer closeNotify()                  // runs second: closes channel, drains forwarder
-	defer session.disableNotifications() // runs first: nil field before channel closes
+	writeOut, waitNotify := newSerializedWriter(out), func() {}
+	if notifyCh, ok := session.openToolsChangedStream(); ok {
+		writeOut, waitNotify = startNotifyForwarder(out, notifyCh)
+		defer func() {
+			session.closeToolsChangedStream(notifyCh)
+			waitNotify()
+		}()
+	} else {
+		defer waitNotify()
+	}
 	var wg sync.WaitGroup
 	scanner := transport.NewScanner(in)
 	for scanner.Scan() {
@@ -61,7 +67,7 @@ func (s *Server) handleScannedLine(p handleScannedLineParams) {
 	// on it. The spec also says the initialize request MUST NOT be cancelled, so
 	// skipping in-flight registration is correct.
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx#L32
-	if peekMethod(line) == "initialize" {
+	if method := peekMethod(line); method == "initialize" || method == transport.NotificationInitialized {
 		if resp, send := s.handleLine(p.ctx, line, p.session); send {
 			p.writeOut(resp)
 		}
@@ -118,8 +124,7 @@ func peekRequestID(line []byte) json.RawMessage {
 }
 
 // startNotifyForwarder launches a goroutine that writes notifications from ch to out.
-// Returns a writeOut function (shared by request goroutines) and a closer that must be
-// called after all request goroutines have finished — it flushes remaining notifications.
+// The returned wait function returns after the session-owned channel is closed and drained.
 func startNotifyForwarder(out io.Writer, ch chan json.RawMessage) (func(any), func()) {
 	writeOut := newSerializedWriter(out)
 	var wg sync.WaitGroup
@@ -131,7 +136,6 @@ func startNotifyForwarder(out io.Writer, ch chan json.RawMessage) (func(any), fu
 		}
 	}()
 	return writeOut, func() {
-		close(ch)
 		wg.Wait()
 	}
 }
@@ -228,6 +232,7 @@ func (s *Server) dispatch(ctx context.Context, req transport.Request, session *S
 	case "ping":
 		return map[string]any{}, nil
 	case transport.NotificationInitialized:
+		session.markClientReady()
 		return nil, nil
 	case transport.NotificationCancelled:
 		handleCancelled(req.Params, session)

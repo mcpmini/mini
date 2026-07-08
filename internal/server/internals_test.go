@@ -112,11 +112,11 @@ func TestSessionStore_evictIdle_keepsActiveNotificationSession(t *testing.T) {
 	fakeClock := clock.NewFake()
 	st := newSessionStore(fakeClock)
 	s := st.getOrCreate("stdio")
-	ch := s.enableNotifications()
-	defer func() {
-		s.disableNotifications()
-		close(ch)
-	}()
+	ch, ok := s.openToolsChangedStream()
+	if !ok {
+		t.Fatal("expected notification stream to open")
+	}
+	defer s.closeToolsChangedStream(ch)
 	fakeClock.Advance(2 * time.Hour)
 
 	st.evictIdle(fakeClock.Now().Add(-time.Hour))
@@ -224,4 +224,3 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 		t.Errorf("expected 0 sessions after eviction, got %d", got)
 	}
 }
-

@@ -40,6 +40,9 @@ type upstreamServer struct {
 	reconnecting atomic.Bool
 	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
 	onReconnect  func()        // called after successful reconnect; used in tests
+	refreshMu    sync.Mutex
+	refreshing   bool
+	refreshPending bool
 
 	calls          atomic.Int64
 	errs           atomic.Int64

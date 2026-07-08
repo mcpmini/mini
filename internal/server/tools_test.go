@@ -74,6 +74,7 @@ func TestToolsListChanged_notificationShape(t *testing.T) {
 	srv := newTestServer(t)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "pre"}, fakeConn("existing"))
 	msgs := serveAll(t, srv,
+		notification(transport.NotificationInitialized, nil),
 		callTool("config", map[string]any{"action": "remove_server", "server": "pre"}),
 	)
 	var found map[string]any

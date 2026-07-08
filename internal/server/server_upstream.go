@@ -115,6 +115,7 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	u.lastDefs = tools
 	old := s.swapUpstream(sc.Name, u)
 	s.registerTools(sc, tools, old)
+	s.attachNotificationHandler(u, conn)
 	if sc.Projections != nil {
 		s.mu.Lock()
 		s.projections[sc.Name] = sc.Projections
@@ -185,6 +186,8 @@ func (s *Server) Close() {
 	cancelAuthFlows(s.takeAuthFlows())
 	s.authWg.Wait()
 	closeUpstreams(s.snapshotUpstreams())
+	s.sessions.closeAll()
+	s.refreshWg.Wait()
 	s.reconnectWg.Wait()
 	s.store.Close()
 }

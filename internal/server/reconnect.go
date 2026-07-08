@@ -115,6 +115,7 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	if !ok {
 		return false
 	}
+	s.attachNotificationHandler(u, conn)
 	if old != nil {
 		old.Close()
 	}
