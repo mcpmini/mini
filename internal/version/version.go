@@ -27,17 +27,24 @@ func computeVersion() string {
 }
 
 func buildVersion(info *debug.BuildInfo) string {
+	v := info.Main.Version
+	hasModVer := v != "" && v != "(devel)" && !strings.HasPrefix(v, "v0.0.0") && !strings.Contains(v, "-0.")
+
 	rev, dirty := extractVCSInfo(info.Settings)
-	if rev == "" {
-		return "dev"
-	}
 	if dirty {
 		rev += "+dirty"
 	}
-	if v := info.Main.Version; v != "" && v != "(devel)" && !strings.HasPrefix(v, "v0.0.0") && !strings.Contains(v, "-0.") {
+
+	switch {
+	case hasModVer && rev != "":
 		return fmt.Sprintf("%s (%s)", v, rev)
+	case hasModVer:
+		return v
+	case rev != "":
+		return rev
+	default:
+		return "dev"
 	}
-	return rev
 }
 
 func extractVCSInfo(settings []debug.BuildSetting) (rev string, dirty bool) {
