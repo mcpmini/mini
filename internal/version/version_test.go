@@ -85,6 +85,15 @@ func TestBuildVersion(t *testing.T) {
 			info:     &debug.BuildInfo{Main: debug.Module{Version: "v0.2.0"}},
 			expected: "v0.2.0",
 		},
+		{
+			name: "dirty flag without revision does not corrupt output",
+			info: &debug.BuildInfo{
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.modified", Value: "true"},
+				},
+			},
+			expected: "dev",
+		},
 	}
 
 	for _, tt := range tests {
