@@ -278,7 +278,7 @@ Complete every item before writing the report:
 
 ## Report
 
-Output the report directly in the conversation.
+Output the report directly in the conversation. Do **not** post it as a GitHub PR review comment or create any GitHub review artifacts — findings go back to the caller in the conversation only.
 
 ```markdown
 # PR Review — [title or branch]
