@@ -109,7 +109,7 @@ mini status
 mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":5}'
 ```
 
-Mini detects that GitHub is a known server and installs the bundled projection and tool-visibility defaults automatically.
+mini detects that GitHub is a known server and installs the bundled projection and tool-visibility defaults automatically.
 
 ### Other servers
 
@@ -146,7 +146,7 @@ For servers not in this list, mini is a transparent proxy — responses pass thr
 
 ## How it works
 
-Mini is a local process that runs on your machine and sits between your agent and your MCP servers. When your agent calls a tool, mini resolves which upstream server owns it, forwards the call, applies your projection config to the response (trimming fields, capping strings, stripping noise), then returns the result. The agent never connects to upstream servers directly.
+mini is a local process that runs on your machine and sits between your agent and your MCP servers. When your agent calls a tool, mini resolves which upstream server owns it, forwards the call, applies your projection config to the response (trimming fields, capping strings, stripping noise), then returns the result. The agent never connects to upstream servers directly.
 
 ```mermaid
 sequenceDiagram
