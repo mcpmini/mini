@@ -72,13 +72,6 @@ keeps the prompt cache stable and prevents paying for schemas the model never en
 
 ## Why this matters for mini
 
-**Compact mode** (`mini connect --tool-mode compact`, 4-tool interface):
-
-The model calls `mini.list` to discover tools, then `mini.call` for every invocation —
-two round-trips per upstream call. Upstream tool names come back as text inside a tool
-result message, never entering the API's deferred tool mechanism. Schemas and responses
-both land in conversation messages.
-
 **Proxy mode** (`mini connect`, the default):
 
 mini exposes upstream tools directly (`github__list_pull_requests`, `sentry__list_issues`,
@@ -86,24 +79,16 @@ etc.). Claude Code's deferred loading works exactly as designed: schemas defer t
 `defer_loading` + `tool_reference` mechanism, one round-trip per call, responses still
 trimmed by mini's projections. The model doesn't know mini is there.
 
+**Compact mode** (`mini connect --tool-mode compact`, 4-tool interface):
+
+The model calls `mini.list` to discover tools, then `mini.call` for every invocation —
+two round-trips per upstream call. Upstream tool names come back as text inside a tool
+result message, never entering the API's deferred tool mechanism. Schemas and responses
+both land in conversation messages.
+
 For Claude Code, **proxy mode is strictly better**: correct schema deferral, half the
-round-trips, same response trimming. It's the default, so `mini connect` already does the
-right thing — reach for `--tool-mode compact` only if your client loads all schemas upfront.
-
----
-
-## Tool search modes
-
-Controlled by `ENABLE_TOOL_SEARCH` (default: always defer all MCP tools):
-
-| Value | Behavior |
-|---|---|
-| unset / `true` | Always defer — all MCP tools discovered via ToolSearch |
-| `auto` / `auto:N` | Defer only when schemas would exceed N% of context window (default 10%) |
-| `false` | Disabled — all schemas sent upfront (use `--tool-mode compact`) |
-
-Only supported on Claude Sonnet 4+ and Opus 4+. Haiku falls back to sending all schemas
-upfront automatically.
+round-trips, same response trimming. Reach for `--tool-mode compact` only if your client
+loads all schemas upfront at session start.
 
 ---
 
