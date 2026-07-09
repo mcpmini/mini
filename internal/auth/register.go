@@ -39,10 +39,17 @@ func ResolvedCallbackURI(ac *config.AuthConfig) string {
 	return fmt.Sprintf("http://localhost:%d%s", ResolvedCallbackPort(ac), LoopbackCallbackPath)
 }
 
+// DefaultClientName is sent as client_name during dynamic client registration
+// unless a server-specific override is configured.
+const DefaultClientName = "mini"
+
 // Register performs RFC 7591 dynamic client registration and returns the client_id.
-func Register(ctx context.Context, registrationURL, callbackURI string) (string, error) {
+func Register(ctx context.Context, registrationURL, callbackURI, clientName string) (string, error) {
+	if clientName == "" {
+		clientName = DefaultClientName
+	}
 	body, _ := json.Marshal(registrationRequest{
-		ClientName:              "mini",
+		ClientName:              clientName,
 		RedirectURIs:            []string{callbackURI},
 		GrantTypes:              []string{"authorization_code", "refresh_token"},
 		ResponseTypes:           []string{"code"},

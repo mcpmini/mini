@@ -33,7 +33,7 @@ func TestRegister_success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	clientID, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
+	clientID, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestRegister_redirectURIMatchesCallbackURI(t *testing.T) {
 			}))
 			defer srv.Close()
 
-			if _, err := auth.Register(context.Background(), srv.URL, tc.callbackURI); err != nil {
+			if _, err := auth.Register(context.Background(), srv.URL, tc.callbackURI, ""); err != nil {
 				t.Fatal(err)
 			}
 			if len(registeredURIs) != 1 || registeredURIs[0] != tc.callbackURI {
@@ -87,7 +87,7 @@ func TestRegister_200OK(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	clientID, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
+	clientID, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestRegister_errorStatus(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
+	_, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil), "")
 	if err == nil {
 		t.Error("expected error for 403 response")
 	}
@@ -114,7 +114,7 @@ func TestRegister_emptyClientID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
+	_, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil), "")
 	if err == nil {
 		t.Error("expected error for empty client_id")
 	}

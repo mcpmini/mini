@@ -185,6 +185,11 @@ type AuthConfig struct {
 	TokenURL     string   `yaml:"token_url,omitempty"`
 	Scopes       []string `yaml:"scopes,omitempty"`
 
+	// ClientName is sent as client_name during dynamic client registration.
+	// Some authorization servers (e.g. Figma) allowlist specific client_name
+	// values rather than accepting arbitrary registrations. Default: "mini".
+	ClientName string `yaml:"client_name,omitempty"`
+
 	// ResourceURL is the canonical URI of the MCP server sent as the RFC 8707
 	// resource parameter in auth and token requests. Populated automatically
 	// from the server URL during discovery; not set by users in YAML.

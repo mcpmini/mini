@@ -119,7 +119,7 @@ func dynamicRegister(ctx context.Context, p clientRegParams) error {
 	if regURL == "" {
 		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
 	}
-	clientID, err := Register(ctx, regURL, ResolvedCallbackURI(a))
+	clientID, err := Register(ctx, regURL, ResolvedCallbackURI(a), a.ClientName)
 	if err != nil {
 		return err
 	}
