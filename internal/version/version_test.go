@@ -80,6 +80,11 @@ func TestBuildVersion(t *testing.T) {
 			},
 			expected: "abc1234",
 		},
+		{
+			name:     "go install: module version present, no vcs info",
+			info:     &debug.BuildInfo{Main: debug.Module{Version: "v0.2.0"}},
+			expected: "v0.2.0",
+		},
 	}
 
 	for _, tt := range tests {

@@ -31,7 +31,7 @@ func buildVersion(info *debug.BuildInfo) string {
 	hasModVer := v != "" && v != "(devel)" && !strings.HasPrefix(v, "v0.0.0") && !strings.Contains(v, "-0.")
 
 	rev, dirty := extractVCSInfo(info.Settings)
-	if dirty {
+	if rev != "" && dirty {
 		rev += "+dirty"
 	}
 
