@@ -1,10 +1,10 @@
 # Default Configuration Philosophy
 
-This document explains the principles behind mini's bundled default permission and projection configs. Anyone adding or updating a bundled default should read this first.
+This document explains the principles behind mini's bundled default visibility and projection configs. Anyone adding or updating a bundled default should read this first.
 
 ---
 
-## Permission defaults
+## Tool visibility defaults
 
 ### The core rule
 
@@ -12,24 +12,24 @@ This document explains the principles behind mini's bundled default permission a
 
 That's the bar. Not "could it ever be useful" — lots of things could ever be useful. The question is whether it belongs in a typical weekly agent workflow.
 
-### Permission tiers
+### Visibility tiers
 
-**Visible (open):** Read-only tools a developer might use any week. No confirmation required. The visible list should feel like a natural API surface.
+**Visible (open):** Tools a developer might use any week. The visible list should feel like a natural API surface.
 
-**Protected:** Write operations that could reasonably happen weekly. Agents must use `perm_call` to invoke these. The intent is not to block — it's to make writes intentional. Default stance: writes are protected.
+**Protected:** Write operations that could reasonably happen weekly. This only changes enforcement in compact mode and the direct CLI, where `call` refuses protected tools and `perm_call` can run them. In proxy mode, client approval settings are the gate.
 
-**Hidden:** Very rarely used tools. Don't appear in `list` output, don't consume schema tokens. Still callable explicitly. Default stance: if used less than once a month, hide it.
+**Hidden:** Very rarely used tools. They do not appear in normal discovery and do not consume schema tokens. Default stance: if used less than once a month, hide it.
 
 ### Applying the rules
 
 1. **Read?** Visible, unless genuinely niche (monthly or less).
-2. **Write used weekly?** Protected.
+2. **Write used weekly?** Protected for compact/CLI users; configure client approvals separately for proxy mode.
 3. **Write used rarely** (repo creation, forks, org management)? Hidden.
 4. **Platform-specific or admin-level?** Hidden.
 
 ### Why this matters
 
-Schema tokens are paid on every conversation. A server with 44 tools where 20 are irrelevant wastes tokens on every single agent turn. Good defaults mean agents start with a clean, focused surface — and can still reach niche tools when genuinely needed.
+Schema tokens are paid on every conversation. A server with 44 tools where 20 are irrelevant wastes tokens on every single agent turn. Good defaults mean agents start with a clean, focused surface.
 
 ---
 
@@ -125,11 +125,11 @@ Users can always override bundled defaults in their server YAML:
 
 ```yaml
 permissions:
-  protected: []          # remove all protected restrictions
+  protected: []          # remove compact/CLI protected gates
   hidden:
     - delete_file        # add individual tools to hidden
 ```
 
 For projections, use `mini config action=set_projection` to tune per-tool settings mid-session, or edit `~/.mini/servers/<server>.proj.yaml` directly.
 
-Bundled defaults are only applied when `mini add` first installs the server and the user has not set explicit permissions or projections. They are never re-applied on subsequent runs.
+Bundled defaults are only applied when `mini add` first installs the server and the user has not set explicit visibility settings or projections. They are never re-applied on subsequent runs.

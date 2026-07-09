@@ -93,7 +93,7 @@ For code reviews, use the `review-pr` skill as the detailed guide. When reviewin
 
 mini is a context-optimizing MCP proxy. Agents talk to it via stdio; it routes calls to one or more upstream MCP servers (stdio or HTTP/SSE).
 
-**4 tools exposed to agents:** `list` (discover), `call` (execute), `perm_call` (execute protected), `config` (runtime admin)
+**Default (proxy) mode:** mini re-exposes each upstream tool directly (`github__list_pull_requests`, etc.). **Compact mode** (`--tool-mode compact`): 4 meta-tools — `list` (discover), `call` (execute open tools), `perm_call` (execute protected tools), `config` (runtime admin)
 
 **Request flow:**
 
@@ -120,7 +120,7 @@ agent → Serve() → session handler → handleList / handleExecute / handleExe
 | `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ExcludedKeys, Passthrough}`; HTML/MD stripping |
 | `internal/response` | `Builder`/`Store`; always-inline projected data; TTL-based raw file lifecycle |
 | `internal/auth` | API key + OAuth2 PKCE token storage |
-| `internal/daemon` | Background daemon HTTP server; port file management (liveness via HTTP healthz, not PID) |
+| `internal/daemon` | Background daemon rendezvous; Unix socket, bearer token, spawn lock, and health checks |
 | `internal/proxy` | stdio→HTTP bridge; connects agent stdio to daemon HTTP |
 
 ### Response envelope
@@ -157,9 +157,9 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 
 Projections can be embedded inline in a server's YAML under `projections:`. A `"*"` key is a wildcard applying to all tools on that server.
 
-### Permissions
+### Tool visibility and compact-mode gates
 
-Three tiers: `open` (default), `protected` (requires `perm_call`), `hidden` (invisible to `list`). Defined per-server in `permissions.protected`, `permissions.hidden`, `permissions.default`.
+`hidden` filters tools from normal discovery. The `open`/`protected` split is enforced only in compact mode and the direct CLI: `call` refuses protected tools, while `perm_call` can run them. In default proxy mode, protected tools are exposed directly and approval must be handled by the MCP client.
 
 ### Security defaults
 
@@ -183,8 +183,8 @@ text := toolResultText(t, resp)
 
 ### CLI subcommands
 
-`mini [--config DIR] <command>`: `serve` (default), `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
+`mini [--config DIR] <command>`: `connect`, `daemon`, `ls`, `add`, `rm`, `status`, `cleanup`, `auth`, `test`, `init`
 
-- `connect [--http ADDR] [--standalone]` — stdio proxy; optionally also serves HTTP on ADDR; skips daemon detection if `--standalone`
-- `daemon` — run as shared HTTP daemon (background)
+- `connect [--http ADDR] [--standalone] [--tool-mode compact]` — connect an agent via stdio; proxy mode by default; `--tool-mode compact` for the 4-meta-tool interface
+- `daemon` — run as shared Unix socket daemon (background)
 - `daemon status` — show whether the daemon is running
