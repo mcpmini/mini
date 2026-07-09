@@ -1,6 +1,10 @@
 package projection
 
-import "github.com/mcpmini/mini/internal/jq"
+import (
+	"sort"
+
+	"github.com/mcpmini/mini/internal/jq"
+)
 
 func collapseExcluded(paths []string) []string {
 	if len(paths) == 0 {
@@ -15,5 +19,6 @@ func collapseExcluded(paths []string) []string {
 			out = append(out, wk)
 		}
 	}
+	sort.Strings(out)
 	return out
 }

@@ -151,7 +151,21 @@ type protectedResourceMeta struct {
 	ScopesSupported      []string `json:"scopes_supported"`
 }
 
+func requireHTTPURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid resource_metadata URL: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported protocol scheme %q in resource_metadata URL", u.Scheme)
+	}
+	return nil
+}
+
 func fetchASURLFromPRM(ctx context.Context, prmURL string) (asRef, error) {
+	if err := requireHTTPURL(prmURL); err != nil {
+		return asRef{}, err
+	}
 	resp, err := doDiscoveryRequest(ctx, prmURL)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -215,7 +229,7 @@ type rawASMeta struct {
 	TokenURL        string   `json:"token_endpoint"`
 	RegistrationURL string   `json:"registration_endpoint"`
 	CIMDSupported   bool     `json:"client_id_metadata_document_supported"`
-	PKCEMethods []string `json:"code_challenge_methods_supported"`
+	PKCEMethods     []string `json:"code_challenge_methods_supported"`
 }
 
 func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {

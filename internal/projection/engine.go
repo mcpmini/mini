@@ -31,6 +31,10 @@ type projCtx struct {
 	truncated *[]Truncation
 }
 
+func (c projCtx) child(path []string, depthDelta int) projCtx {
+	return projCtx{cfg: c.cfg, depth: c.depth + depthDelta, path: path, excluded: c.excluded, truncated: c.truncated}
+}
+
 // Apply projects a parsed JSON value using the given config.
 // Falls back to defaults when cfg is nil.
 func Apply(value any, cfg *config.ProjectionConfig, defaults *Defaults) Result {
@@ -94,11 +98,11 @@ func projectMapValue(value any, ctx projCtx, fieldName string) any {
 	childPath := append(slices.Clone(ctx.path), fieldName)
 	switch sv := value.(type) {
 	case string:
-		return projectString(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth, path: childPath, excluded: ctx.excluded, truncated: ctx.truncated}, fieldName)
+		return projectString(sv, ctx.child(childPath, 0), fieldName)
 	case map[string]any:
-		return project(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth + 1, path: childPath, excluded: ctx.excluded, truncated: ctx.truncated})
+		return project(sv, ctx.child(childPath, 1))
 	case []any:
-		return projectNamedArray(sv, projCtx{cfg: ctx.cfg, depth: ctx.depth + 1, path: childPath, excluded: ctx.excluded, truncated: ctx.truncated}, fieldName)
+		return projectNamedArray(sv, ctx.child(childPath, 1), fieldName)
 	default:
 		return value
 	}
@@ -112,7 +116,7 @@ func projectNamedArray(arr []any, ctx projCtx, fieldName string) []any {
 	arr, original := truncateArray(arr, ctx.cfg.arrayLimitFor(fieldName))
 	out := make([]any, len(arr))
 	for i, v := range arr {
-		itemCtx := projCtx{cfg: ctx.cfg, depth: ctx.depth, path: append(slices.Clone(ctx.path), fmt.Sprintf("[%d]", i)), excluded: ctx.excluded, truncated: ctx.truncated}
+		itemCtx := ctx.child(append(slices.Clone(ctx.path), fmt.Sprintf("[%d]", i)), 0)
 		out[i] = project(v, itemCtx)
 	}
 	if len(arr) < original {

@@ -161,6 +161,28 @@ func TestCappedLog_closeSafeWhenOpenFails(t *testing.T) {
 	}
 }
 
+func TestCappedLog_stderrNotClosedOnRotate(t *testing.T) {
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "daemon.log")
+
+	w := openCappedLog(logPath, testCap)
+	cl := w.(*cappedLog)
+
+	// Simulate the state after rotate() fell back to os.Stderr (e.g. log dir
+	// became unwritable mid-run). Writing past the cap must NOT call Close()
+	// on fd 2 — the guard in rotate() must catch this and bail early.
+	cl.mu.Lock()
+	cl.f = os.Stderr
+	cl.written = testCap + 1
+	cl.mu.Unlock()
+
+	w.Write(bytes.Repeat([]byte("z"), testCap+1)) //nolint:errcheck
+
+	if cl.f != os.Stderr {
+		t.Error("rotate() changed c.f away from os.Stderr; guard must prevent closing fd 2")
+	}
+}
+
 func mustReadFile(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)

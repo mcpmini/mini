@@ -27,6 +27,7 @@ func paginateToolsList(ctx context.Context, callPage func(context.Context, strin
 	return tools, nil
 }
 
+// Partial results are more useful than total failure — an agent missing a few tools can still work.
 func partialOrError(ctx context.Context, tools []ToolDefinition, err error) ([]ToolDefinition, error) {
 	if len(tools) > 0 && ctx.Err() == nil {
 		slog.Warn("tools/list: error mid-pagination, returning partial results", "err", err)
