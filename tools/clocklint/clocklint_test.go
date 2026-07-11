@@ -8,19 +8,19 @@ import (
 	"testing"
 )
 
-func writeGoFile(t *testing.T, src string) string {
+func writeGoFile(t *testing.T, name, src string) string {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "src.go")
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(src), 0600); err != nil {
 		t.Fatal(err)
 	}
 	return path
 }
 
-func runCheckFile(t *testing.T, src string) bool {
+func runCheckFile(t *testing.T, name, src string) bool {
 	t.Helper()
-	path := writeGoFile(t, src)
+	path := writeGoFile(t, name, src)
 	fset := token.NewFileSet()
 	hasError := false
 	checkFile(path, fset, &hasError)
@@ -126,7 +126,65 @@ func f() string { return "hello" }
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := runCheckFile(t, tc.src)
+			got := runCheckFile(t, "src.go", tc.src)
+			if got != tc.wantError {
+				t.Errorf("wantError=%v, got=%v", tc.wantError, got)
+			}
+		})
+	}
+}
+
+func TestClockLintTests(t *testing.T) {
+	tests := []struct {
+		name      string
+		src       string
+		wantError bool
+	}{
+		{
+			name: "clock.System() is detected in unit tests",
+			src: `package p
+import "github.com/mcpmini/mini/internal/clock"
+func TestF() { _ = clock.System() }
+`,
+			wantError: true,
+		},
+		{
+			name: "clock.NewFake() is allowed in unit tests",
+			src: `package p
+import "github.com/mcpmini/mini/internal/clock"
+func TestF() { _ = clock.NewFake() }
+`,
+			wantError: false,
+		},
+		{
+			name: "aliased clock.System() is detected in unit tests",
+			src: `package p
+import c "github.com/mcpmini/mini/internal/clock"
+func TestF() { _ = c.System() }
+`,
+			wantError: true,
+		},
+		{
+			name: "time.After() is allowed in unit tests",
+			src: `package p
+import "time"
+func TestF() { _ = time.After(0) }
+`,
+			wantError: false,
+		},
+		{
+			name: "nolint suppresses intentional clock.System() in unit tests",
+			src: `package p
+import "github.com/mcpmini/mini/internal/clock"
+func TestF() { _ = clock.System() } //nolint:clocklint
+`,
+			wantError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := runCheckFile(t, "src_test.go", tc.src)
 			if got != tc.wantError {
 				t.Errorf("wantError=%v, got=%v", tc.wantError, got)
 			}
