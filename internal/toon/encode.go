@@ -9,8 +9,10 @@ const indentUnit = "  "
 
 // Encode renders v as a TOON document per spec §5's root-form rules: a root
 // object emits its fields at indent 0, a root array emits under a bare [N]
-// header, a root scalar emits as a bare value.
+// header, a root scalar emits as a bare value. Key folding (§13.4 safe mode)
+// is always applied first.
 func Encode(v Value) (string, error) {
+	v = foldValue(v)
 	switch v.Kind {
 	case KindNull, KindBool, KindNumber, KindString:
 		return encodePrimitive(v)
