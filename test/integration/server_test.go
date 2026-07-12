@@ -153,6 +153,7 @@ func startProxyServer(t *testing.T, configDir string) *mcpClient {
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
+	waitForProxyUpstreamsSettled(t, c)
 	return c
 }
 
