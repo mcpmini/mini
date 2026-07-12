@@ -17,18 +17,12 @@ func applyToolTimeout(ctx context.Context, spec string) (context.Context, contex
 }
 
 func parseToolTimeout(spec string) (time.Duration, bool) {
-	if spec == "" {
-		return 30 * time.Second, true
-	}
-	if spec == "0" {
-		return 0, false
-	}
-	d, err := time.ParseDuration(spec)
-	if err != nil || d <= 0 {
+	d, enabled, err := config.ParseTimeoutSpec(spec, 30*time.Second)
+	if err != nil {
 		slog.Warn("invalid tool_timeout spec, no timeout applied", "spec", spec)
 		return 0, false
 	}
-	return d, true
+	return d, enabled
 }
 
 const defaultConnectTimeout = 10 * time.Second
