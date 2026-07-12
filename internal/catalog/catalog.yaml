@@ -1,0 +1,154 @@
+schema_version: 1
+entries:
+  - name: github
+    url: https://api.githubcopilot.com/mcp/
+    description: GitHub repositories and pull requests
+    category: dev
+  - name: cloudflare
+    url: https://mcp.cloudflare.com/mcp
+    description: Cloudflare platform services
+    category: dev
+  - name: vercel
+    url: https://mcp.vercel.com
+    description: Vercel deployments and projects
+    category: dev
+  - name: netlify
+    url: https://netlify-mcp.netlify.app/mcp
+    description: Netlify sites and deployments
+    category: dev
+  - name: buildkite
+    url: https://mcp.buildkite.com/mcp
+    description: Buildkite pipelines and builds
+    category: dev
+  - name: semgrep
+    url: https://mcp.semgrep.ai/sse
+    description: Semgrep code analysis
+    category: dev
+  - name: huggingface
+    url: https://hf.co/mcp
+    description: Hugging Face models and datasets
+    category: dev
+  - name: stackoverflow
+    url: https://mcp.stackoverflow.com
+    description: Stack Overflow knowledge base
+    category: dev
+  - name: aws-knowledge
+    url: https://knowledge-mcp.global.api.aws
+    description: AWS documentation and knowledge
+    category: cloud
+  - name: neon
+    url: https://mcp.neon.tech/mcp
+    description: Neon Postgres databases
+    category: data
+  - name: supabase
+    url: https://mcp.supabase.com/mcp
+    description: Supabase projects and databases
+    category: data
+  - name: airtable
+    url: https://mcp.airtable.com/mcp
+    description: Airtable bases and records
+    category: data
+  - name: prisma
+    url: https://mcp.prisma.io/mcp
+    description: Prisma data platform
+    category: data
+  - name: box
+    url: https://mcp.box.com
+    description: Box content management
+    category: data
+  - name: datadog
+    url: https://mcp.datadoghq.com/api/unstable/mcp-server/mcp
+    description: Datadog observability (US1)
+    category: observability
+  - name: newrelic
+    url: https://mcp.newrelic.com/mcp/
+    description: New Relic observability
+    category: observability
+  - name: grafana
+    url: https://mcp.grafana.com/mcp
+    description: Grafana observability
+    category: observability
+  - name: sentry
+    url: https://mcp.sentry.dev/mcp
+    description: Sentry error tracking
+    category: observability
+  - name: pagerduty
+    url: https://mcp.pagerduty.com/mcp
+    description: PagerDuty incident response
+    category: observability
+  - name: linear
+    url: https://mcp.linear.app/mcp
+    description: Linear issues and projects
+    category: project
+  - name: atlassian
+    url: https://mcp.atlassian.com/v1/mcp
+    description: Atlassian project management
+    category: project
+  - name: asana
+    url: https://mcp.asana.com/v2/mcp
+    description: Asana projects and tasks
+    category: project
+  - name: monday
+    url: https://mcp.monday.com/sse
+    description: monday.com work management
+    category: project
+  - name: slack
+    url: https://mcp.slack.com/mcp
+    description: Slack conversations and channels
+    category: comms
+  - name: intercom
+    url: https://mcp.intercom.com/mcp
+    description: Intercom customer conversations
+    category: comms
+  - name: statsig
+    url: https://api.statsig.com/v1/mcp
+    description: Statsig feature flags
+    category: flags
+  - name: figma
+    url: https://mcp.figma.com/mcp
+    description: Figma design files
+    category: design
+  - name: canva
+    url: https://mcp.canva.com/mcp
+    description: Canva designs
+    category: design
+  - name: webflow
+    url: https://mcp.webflow.com/mcp
+    description: Webflow sites
+    category: design
+  - name: stripe
+    url: https://mcp.stripe.com
+    description: Stripe payments
+    category: payments
+  - name: paypal
+    url: https://mcp.paypal.com/sse
+    description: PayPal payments
+    category: payments
+  - name: square
+    url: https://mcp.squareup.com/sse
+    description: Square payments
+    category: payments
+  - name: ramp
+    url: https://mcp.ramp.com/mcp
+    description: Ramp spend management
+    category: payments
+  - name: hubspot
+    url: https://mcp.hubspot.com
+    description: HubSpot customer relationship management
+    category: crm
+  - name: notion
+    url: https://mcp.notion.com/mcp
+    description: Notion workspace content
+    category: crm
+  - name: attio
+    url: https://mcp.attio.com/mcp
+    description: Attio customer relationship management
+    category: crm
+  - name: zapier
+    url: https://mcp.zapier.com/api/mcp/mcp
+    description: Zapier automation
+    category: automation
+  - name: apify
+    url: https://mcp.apify.com
+    description: Apify automation platform
+    category: automation
