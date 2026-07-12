@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
@@ -203,6 +204,30 @@ func TestStdioEnvPassthrough(t *testing.T) {
 	}))
 	if text := toolResultText(t, resp); !strings.Contains(text, "hello_from_mini") {
 		t.Errorf("MINI_TEST_VAR not in subprocess response, got: %s", text)
+	}
+}
+
+func TestAddUpstream_connectTimeoutSkipsHungStdioSubprocess(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+
+	sc := config.ServerConfig{
+		Name:           "hungupstream",
+		Command:        "sleep",
+		Args:           []string{"30"},
+		ConnectTimeout: "100ms",
+	}
+	start := time.Now()
+	err := srv.AddUpstream(context.Background(), sc)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected AddUpstream to fail for an upstream that never answers initialize")
+	}
+	if elapsed >= 5*time.Second {
+		t.Fatalf("AddUpstream did not respect connect_timeout, took %v", elapsed)
 	}
 }
 

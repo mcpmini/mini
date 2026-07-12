@@ -319,3 +319,45 @@ func TestListTools_viaPipe_pagination(t *testing.T) {
 		t.Errorf("cursors: got %v, want %v", gotCursors, want)
 	}
 }
+
+func TestInitialize_respectsDeadlineWhenUpstreamNeverResponds(t *testing.T) {
+	conn, _, serverR := makePipeConn(t)
+	// Drain requests so sendRequest doesn't block on the pipe write; the fake
+	// upstream reads the initialize request but never sends a response.
+	go io.Copy(io.Discard, serverR)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	err := conn.initialize(ctx)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected initialize to fail when upstream never responds")
+	}
+	if elapsed >= 5*time.Second {
+		t.Fatalf("initialize did not respect deadline, took %v", elapsed)
+	}
+}
+
+func TestNewStdioConnection_hungUpstreamKilledOnDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	conn, err := NewStdioConnection(ctx, StdioCommand{
+		Command: "sleep",
+		Args:    []string{"30"},
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		conn.Close()
+		t.Fatal("expected handshake to fail for an upstream that never answers initialize")
+	}
+	if elapsed >= 5*time.Second {
+		t.Fatalf("handshake did not respect deadline, took %v", elapsed)
+	}
+}

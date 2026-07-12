@@ -35,8 +35,13 @@ type StdioCommand struct {
 	Logger  *slog.Logger
 }
 
+// NewStdioConnection spawns the subprocess and waits for the MCP handshake to
+// complete. ctx bounds only the handshake (initialize + notifications/initialized):
+// the subprocess itself must outlive ctx once connected, so it is not spawned with
+// exec.CommandContext — a timed-out handshake is torn down explicitly via Close
+// below instead of relying on ctx cancellation to kill the process.
 func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
-	c, err := startSubprocess(ctx, p)
+	c, err := startSubprocess(p)
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +52,8 @@ func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, 
 	return c, nil
 }
 
-func startSubprocess(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
-	cmd := exec.CommandContext(ctx, p.Command, p.Args...)
+func startSubprocess(p StdioCommand) (*StdioConnection, error) {
+	cmd := exec.Command(p.Command, p.Args...)
 	if len(p.Env) > 0 {
 		cmd.Env = p.Env
 	}
