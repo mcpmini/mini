@@ -23,7 +23,8 @@ func TestDetectProjectionKey(t *testing.T) {
 		{"atlassian url", config.ServerConfig{URL: "https://myco.atlassian.net/mcp"}, "atlassian"},
 		{"atlassian cmd", config.ServerConfig{Command: "uvx", Args: []string{"mcp-atlassian"}}, "atlassian"},
 		{"linear url", config.ServerConfig{URL: "https://linear.app/mcp"}, "linear"},
-		{"sentry url", config.ServerConfig{URL: "https://mcp.sentry.io"}, "sentry"},
+		{"sentry canonical url", config.ServerConfig{URL: "https://mcp.sentry.dev/mcp"}, "sentry"},
+		{"sentry legacy url", config.ServerConfig{URL: "https://mcp.sentry.io"}, "sentry"},
 		{"unknown", config.ServerConfig{URL: "https://example.com"}, ""},
 		{"empty", config.ServerConfig{}, ""},
 	}
@@ -39,6 +40,16 @@ func TestDetectProjectionKey(t *testing.T) {
 }
 
 func TestInstallBundledProjection(t *testing.T) {
+	t.Run("canonical sentry url installs projection file", func(t *testing.T) {
+		dir := tempDir(t)
+		sc := config.ServerConfig{Name: "sentry", URL: "https://mcp.sentry.dev/mcp"}
+		ops.InstallBundledProjection(dir, sc)
+		dest := filepath.Join(dir, "servers", "sentry.proj.yaml")
+		if _, err := os.Stat(dest); err != nil {
+			t.Fatalf("projection file not created: %v", err)
+		}
+	})
+
 	t.Run("known server installs projection file", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "my-github", URL: "https://api.github.com/mcp"}

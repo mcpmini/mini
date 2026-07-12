@@ -70,6 +70,35 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	}
 }
 
+func TestCatalogSentryInstallsBundledProjection(t *testing.T) {
+	entries, err := catalog.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := catalogEntry(t, entries, "sentry")
+	if entry.URL != "https://mcp.sentry.dev/mcp" {
+		t.Fatalf("sentry URL = %q", entry.URL)
+	}
+	dir := t.TempDir()
+	if err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "servers", "sentry.proj.yaml")); err != nil {
+		t.Fatalf("sentry projection: %v", err)
+	}
+}
+
+func catalogEntry(t *testing.T, entries []catalog.Entry, name string) catalog.Entry {
+	t.Helper()
+	for _, entry := range entries {
+		if entry.Name == name {
+			return entry
+		}
+	}
+	t.Fatalf("catalog entry %q not found", name)
+	return catalog.Entry{}
+}
+
 func TestSelectCatalogEntriesRepromptsAfterInvalidSelection(t *testing.T) {
 	dir := t.TempDir()
 	answers := []string{"1,999", "1"}
