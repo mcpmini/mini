@@ -273,6 +273,25 @@ func TestLoad_invalidServerName(t *testing.T) {
 	expectLoadError(t, dir)
 }
 
+func TestLoadServerConfig_connectTimeoutParses(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nconnect_timeout: 3s\n")
+	sc := mustLoadOneServer(t, dir)
+	if sc.ConnectTimeout != "3s" {
+		t.Fatalf("expected connect_timeout %q, got %q", "3s", sc.ConnectTimeout)
+	}
+}
+
+func TestLoad_invalidConnectTimeout(t *testing.T) {
+	for _, spec := range []string{"-1s", "nonsense"} {
+		t.Run(spec, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nconnect_timeout: "+spec+"\n")
+			expectLoadError(t, dir)
+		})
+	}
+}
+
 func TestLoadServerConfig_withAuth(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "notion.yaml"), `

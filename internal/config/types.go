@@ -124,6 +124,11 @@ type ServerConfig struct {
 	// Set to "0" to disable (not recommended for production).
 	HTTPClientTimeout string `yaml:"http_client_timeout,omitempty"`
 
+	// ConnectTimeout is the deadline for the startup handshake with this upstream —
+	// subprocess spawn (stdio) or initialize (HTTP) through the first tools/list.
+	// Default "10s", "0" = no deadline. A hung upstream is skipped, not waited on forever.
+	ConnectTimeout string `yaml:"connect_timeout,omitempty"`
+
 	// MaxPendingRequests is the max number of concurrent in-flight calls to this
 	// upstream. New requests beyond this limit are rejected immediately with an
 	// error rather than queuing. 0 means unlimited (default).
