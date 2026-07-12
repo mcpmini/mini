@@ -103,7 +103,7 @@ func serveStandalone(p ServeParams, opts ...server.ServerOption) {
 	defer stop()
 	injectOAuthTokens(ctx, p.ConfigDir, p.Servers)
 	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
-	srv := buildAndConnectServer(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
+	srv := buildAndStartConnecting(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
 	defer srv.Close()
 	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
 	maybeStartSessionEviction(ctx, httpSrv, srv)
@@ -132,15 +132,13 @@ type BuildServerParams struct {
 	Servers   []config.ServerConfig
 }
 
-func buildAndConnectServer(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
+// buildAndStartConnecting builds the server and kicks off upstream connects in the
+// background; it returns before any upstream resolves so Serve can start answering
+// the agent's initialize immediately (#33). Late-arriving upstreams announce
+// themselves via the existing tools/list_changed notification.
+func buildAndStartConnecting(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
 	srv := server.NewWithConfigDir(p.Cfg, p.ConfigDir, p.Logger, opts...)
-	for _, sc := range p.Servers {
-		if sc.IsEnabled() {
-			if err := srv.AddUpstream(ctx, sc); err != nil {
-				p.Logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
-			}
-		}
-	}
+	srv.ConnectUpstreams(ctx, p.Servers)
 	return srv
 }
 

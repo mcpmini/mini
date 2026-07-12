@@ -14,6 +14,30 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+// ConnectUpstreams dials every enabled server concurrently and returns immediately;
+// callers must not block startup on upstream availability (#33). Each connect is
+// bounded by AddUpstream's per-server handshake deadline, and Close waits for all
+// of them before tearing down, so a still-connecting upstream cannot outlive the
+// server or leak its goroutine.
+func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerConfig) {
+	for _, sc := range servers {
+		if !sc.IsEnabled() {
+			continue
+		}
+		s.connectWg.Add(1)
+		go s.connectUpstreamAsync(ctx, sc)
+	}
+}
+
+func (s *Server) connectUpstreamAsync(ctx context.Context, sc config.ServerConfig) {
+	defer s.connectWg.Done()
+	if err := s.AddUpstream(ctx, sc); err != nil {
+		s.logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
+		return
+	}
+	s.notifyAllSessions()
+}
+
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
 	connectCtx, cancel := applyConnectTimeout(ctx, sc.ConnectTimeout)
 	defer cancel()
@@ -187,6 +211,7 @@ func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, 
 func (s *Server) Close() {
 	cancelAuthFlows(s.takeAuthFlows())
 	s.authWg.Wait()
+	s.connectWg.Wait()
 	closeUpstreams(s.snapshotUpstreams())
 	s.sessions.closeAll()
 	s.refreshWg.Wait()

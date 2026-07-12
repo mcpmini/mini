@@ -66,6 +66,7 @@ type Server struct {
 	authWg      sync.WaitGroup
 	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
 	refreshWg   sync.WaitGroup
+	connectWg   sync.WaitGroup // tracks in-flight ConnectUpstreams goroutines
 }
 
 func (s *Server) notifyAllSessions() {
