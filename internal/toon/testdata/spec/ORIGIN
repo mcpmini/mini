@@ -1,0 +1,6 @@
+Source: https://github.com/toon-format/spec
+Commit: f55b93ac489f297ff597d95e4c19ae84675eaeb7
+Files:  tests/fixtures/encode/*.json -> encode/, LICENSE -> LICENSE
+
+Decode fixtures (tests/fixtures/decode/) are intentionally not vendored:
+mini's toon package is encode-only.
