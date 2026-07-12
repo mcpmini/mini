@@ -1,20 +1,15 @@
 package toon
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
 
 const indentUnit = "  "
 
-var errArraysNotImplemented = errors.New("toon: arrays not implemented")
-
 // Encode renders v as a TOON document per spec §5's root-form rules: a root
-// object emits its fields at indent 0, a root scalar emits as a bare value.
-// KindArray is a valid Value shape (FromJSON/FromAny populate it fully) but
-// 1a does not implement array rendering; a later section replaces this
-// branch with the real array forms (§9).
+// object emits its fields at indent 0, a root array emits under a bare [N]
+// header, a root scalar emits as a bare value.
 func Encode(v Value) (string, error) {
 	switch v.Kind {
 	case KindNull, KindBool, KindNumber, KindString:
@@ -22,10 +17,21 @@ func Encode(v Value) (string, error) {
 	case KindObject:
 		return encodeRootObject(v.Fields)
 	case KindArray:
-		return "", errArraysNotImplemented
+		return encodeRootArray(v.Items)
 	default:
 		return "", fmt.Errorf("toon: unknown kind %d", v.Kind)
 	}
+}
+
+func encodeRootArray(items []Value) (string, error) {
+	if len(items) == 0 {
+		return "[]", nil
+	}
+	var sb strings.Builder
+	if err := writeArray(&sb, items, arrayCtx{ItemDepth: 1, AllowTabular: true}); err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(sb.String(), "\n"), nil
 }
 
 func encodeRootObject(fields []Field) (string, error) {
@@ -47,6 +53,16 @@ func writeFields(sb *strings.Builder, fields []Field, depth int) error {
 
 func writeField(sb *strings.Builder, f Field, depth int) error {
 	sb.WriteString(strings.Repeat(indentUnit, depth))
+	return writeFieldBody(sb, f, depth)
+}
+
+// writeFieldBody renders a field whose line prefix (indent or list-item
+// hyphen) has already been written; depth is the logical depth of the line.
+func writeFieldBody(sb *strings.Builder, f Field, depth int) error {
+	if f.Val.Kind == KindArray {
+		ctx := arrayCtx{Key: encodeKey(f.Key), ItemDepth: depth + 1, AllowTabular: true, FieldEmpty: true}
+		return writeArray(sb, f.Val.Items, ctx)
+	}
 	sb.WriteString(encodeKey(f.Key))
 	sb.WriteString(":")
 	return writeFieldValue(sb, f.Val, depth)
@@ -56,9 +72,6 @@ func writeFieldValue(sb *strings.Builder, v Value, depth int) error {
 	if v.Kind == KindObject {
 		sb.WriteString("\n")
 		return writeFields(sb, v.Fields, depth+1)
-	}
-	if v.Kind == KindArray {
-		return errArraysNotImplemented
 	}
 	s, err := encodePrimitive(v)
 	if err != nil {

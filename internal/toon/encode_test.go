@@ -145,20 +145,6 @@ func TestEncodeUnknownKindErrors(t *testing.T) {
 	}
 }
 
-func TestEncodeRootArrayNotImplemented(t *testing.T) {
-	v := Value{Kind: KindArray, Items: []Value{numVal("1"), numVal("2")}}
-	if _, err := Encode(v); err == nil {
-		t.Error("Encode(root array) expected error, got nil")
-	}
-}
-
-func TestEncodeNestedArrayFieldNotImplemented(t *testing.T) {
-	v := objVal(Field{Key: "tags", Val: Value{Kind: KindArray, Items: []Value{strVal("a")}}})
-	if _, err := Encode(v); err == nil {
-		t.Error("Encode(object with array field) expected error, got nil")
-	}
-}
-
 func TestEncodeObjectFieldWithUnknownKindErrors(t *testing.T) {
 	v := objVal(Field{Key: "x", Val: Value{Kind: Kind(99)}})
 	if _, err := Encode(v); err == nil {
