@@ -243,6 +243,27 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 	}
 }
 
+// TestDaemon_healthyBeforeSlowUpstreamConnects proves #33's daemon readiness
+// requirement: /healthz keys on the HTTP server serving, not on every upstream
+// having connected. A configured upstream whose initialize hangs well past the
+// per-server connect deadline must not delay the daemon becoming healthy.
+func TestDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
+	cfg := shortConfigDir(t)
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
+	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 5000}
+	faultJSON, _ := json.Marshal(fault)
+	writeFaultServer(t, faultServerParams{
+		ConfigDir: cfg, ServerName: "slow", Fixtures: dir, FaultJSON: string(faultJSON),
+		Extra: "connect_timeout: \"1s\"\n",
+	})
+
+	start := time.Now()
+	startDaemon(t, cfg)
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("daemon took %v to become healthy; want well under the upstream's 5s slow_initialize delay", elapsed)
+	}
+}
+
 func TestDaemon_healthzEndpoint(t *testing.T) {
 	cfg := shortConfigDir(t)
 	startDaemon(t, cfg)
