@@ -301,10 +301,10 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 	}
 }
 
-func TestAlias_miniFormatHeaderShowsAlias(t *testing.T) {
+func TestAlias_toonFormatDoesNotExposeRealToolName(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.ResponseFormat = "mini"
+	cfg.ResponseFormat = "toon"
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
 
@@ -316,11 +316,8 @@ func TestAlias_miniFormatHeaderShowsAlias(t *testing.T) {
 		"server": "gh", "tool": "list_prs", "params": map[string]any{},
 	}))
 	text := toolResultText(t, resp)
-	if !strings.Contains(text, "[gh.list_prs]") {
-		t.Errorf("mini format header should show alias, got: %s", text)
-	}
 	if strings.Contains(text, "list_pull_requests") {
-		t.Errorf("mini format header should not expose real tool name, got: %s", text)
+		t.Errorf("TOON output should not expose real tool name, got: %s", text)
 	}
 }
 
