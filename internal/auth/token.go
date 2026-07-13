@@ -47,10 +47,12 @@ func Save(configDir, serverName string, t *oauth2.Token) error {
 	if err != nil {
 		return err
 	}
-	return replaceTokenFile(path, data)
+	return atomicReplaceFile(path, data)
 }
 
-func replaceTokenFile(path string, data []byte) (err error) {
+// atomicReplaceFile writes data to path via a temp file + rename so readers
+// never observe a partial write.
+func atomicReplaceFile(path string, data []byte) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {
 		return err
