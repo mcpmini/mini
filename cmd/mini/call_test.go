@@ -16,12 +16,12 @@ func TestResolveCallOutput(t *testing.T) {
 		want      callOutput
 	}{
 		{"raw flag", callFlags{raw: true}, "", callOutputRaw},
-		{"mini flag", callFlags{mini: true}, "", callOutputMini},
+		{"toon flag", callFlags{toon: true}, "", callOutputToon},
 		{"json flag", callFlags{json: true}, "", callOutputJSON},
-		{"cfg mini", callFlags{}, "mini", callOutputMini},
+		{"cfg toon", callFlags{}, "toon", callOutputToon},
 		{"default", callFlags{}, "", callOutputJSON},
-		{"raw wins over mini", callFlags{raw: true, mini: true}, "", callOutputRaw},
-		{"cfg overridden by json flag", callFlags{json: true}, "mini", callOutputJSON},
+		{"raw wins over toon", callFlags{raw: true, toon: true}, "", callOutputRaw},
+		{"cfg overridden by json flag", callFlags{json: true}, "toon", callOutputJSON},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

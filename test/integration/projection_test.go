@@ -373,24 +373,24 @@ func TestProjection_persistDoesNotAffectRunningSession(t *testing.T) {
 	assertSessionIsolation(t, cfg, c2)
 }
 
-func TestProjection_linesFormat(t *testing.T) {
+func TestProjection_toonFormat(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		"", "list_items:\n  format: mini\n")
+		"", "list_items:\n  format: toon\n")
 
 	text := client.execTool("svc", "list_items", nil)
-	if !strings.Contains(text, "[svc.list_items]") {
-		t.Errorf("mini format should include tool header [svc.list_items], got: %s", text)
+	if !strings.Contains(text, "data[2]{id,name}:") {
+		t.Errorf("toon format should render a tabular data block, got: %s", text)
 	}
 }
 
-func TestProjection_linesFormatGlobal(t *testing.T) {
+func TestProjection_toonFormatGlobal(t *testing.T) {
 	client := quickServerWith(t,
 		map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		"response_format: mini\n", "")
+		"response_format: toon\n", "")
 
 	text := client.execTool("svc", "list_items", nil)
-	if !strings.Contains(text, "[svc.list_items]") {
-		t.Errorf("global response_format:mini should include tool header [svc.list_items], got: %s", text)
+	if !strings.Contains(text, "data[2]{id,name}:") {
+		t.Errorf("global response_format:toon should render a tabular data block, got: %s", text)
 	}
 }

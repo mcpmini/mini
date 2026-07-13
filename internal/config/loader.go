@@ -34,7 +34,27 @@ func Load(configDir string) (*Config, []ServerConfig, error) {
 		return nil, nil, err
 	}
 	mergeProjections(servers, projections)
+	if err := validateResponseFormats(cfg, servers); err != nil {
+		return nil, nil, err
+	}
 	return cfg, servers, nil
+}
+
+func validateResponseFormats(cfg *Config, servers []ServerConfig) error {
+	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
+		return fmt.Errorf("config.yaml: response_format: %w", err)
+	}
+	for _, s := range servers {
+		for tool, p := range s.Projections {
+			if p == nil {
+				continue
+			}
+			if err := ValidResponseFormat(p.Format); err != nil {
+				return fmt.Errorf("server %s: projection %s: format: %w", s.Name, tool, err)
+			}
+		}
+	}
+	return nil
 }
 
 func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
