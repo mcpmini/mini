@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -41,39 +42,35 @@ func newSrvWithResponse(t *testing.T, format string, payload string) *server.Ser
 	return srv
 }
 
-func TestLinesFormatRendersOneLinePerItem(t *testing.T) {
-	srv := newSrvWithFormat(t, "mini")
+func TestToonFormatRendersTabularBlock(t *testing.T) {
+	srv := newSrvWithFormat(t, "toon")
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
 	}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
-		t.Fatalf("expected lines format, got JSON: %s", text)
+		t.Fatalf("expected TOON format, got JSON: %s", text)
 	}
-	if !strings.Contains(text, "[gh.list_issues]") {
-		t.Errorf("expected header line, got: %s", text)
+	// Envelope data passes through Go maps (sorted key order on marshal), so the
+	// tabular header is alphabetical, not source JSON order.
+	if !strings.HasPrefix(text, "data[2]{number,state,title}:") {
+		t.Fatalf("expected a TOON tabular header for data, got: %s", text)
 	}
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) < 4 {
-		t.Errorf("expected at least 4 lines, got %d:\n%s", len(lines), text)
-	}
-	if !strings.Contains(lines[1], "number") && !strings.Contains(lines[1], "title") {
-		t.Errorf("expected column header row, got: %s", lines[1])
+	for _, want := range []string{"1,", "bug one", "2,", "feat two"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("expected %q in TOON output, got: %s", want, text)
+		}
 	}
 }
 
-func TestLinesFormatHasHeader(t *testing.T) {
-	srv := newSrvWithFormat(t, "mini")
+func TestToonFormatOmitsInternalTokenStats(t *testing.T) {
+	srv := newSrvWithFormat(t, "toon")
 
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
 	}))
 
 	text := toolResultText(t, resp)
-	// Header should be present, no token stats (those are internal)
-	if !strings.Contains(text, "[gh.list_issues]") {
-		t.Errorf("expected [gh.list_issues] header, got: %s", text)
-	}
 	if strings.Contains(text, "tokens:") {
 		t.Errorf("token stats should not appear in agent-facing output: %s", text)
 	}
@@ -109,72 +106,75 @@ func newSrvWithConfigFormat(t *testing.T, format string) *server.Server {
 	return srv
 }
 
-func TestLinesFormatPerToolOverride(t *testing.T) {
+func TestToonFormatPerToolOverride(t *testing.T) {
 	srv := newSrvWithConfigFormat(t, "json")
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"format": "mini"},
+		"projection": map[string]any{"format": "toon"},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
 	}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
-		t.Errorf("expected lines format (per-tool override), got JSON: %s", text)
+		t.Errorf("expected TOON format (per-tool override), got JSON: %s", text)
 	}
-	if !strings.Contains(text, "[gh.list_issues]") {
-		t.Errorf("expected header line in per-tool lines format: %s", text)
+	if !strings.HasPrefix(text, "data[2]{number,title}:") {
+		t.Errorf("expected TOON tabular block for per-tool override: %s", text)
 	}
 }
 
-func TestLinesFormatIncludesFilePathWhenElisionOccurs(t *testing.T) {
+func TestToonFormatIncludesFileFieldWhenElisionOccurs(t *testing.T) {
 	payload := `{"items":[{"number":1,"title":"bug one"},{"number":2,"title":"feat two"}],"secret":"hidden"}`
-	lines := elisionLinesResponse(t, payload)
-	assertElisionLinesFormat(t, lines)
+	text := elisionToonResponse(t, payload)
+	assertElisionToonFormat(t, text)
 }
 
-func elisionLinesResponse(t *testing.T, payload string) []string {
+func elisionToonResponse(t *testing.T, payload string) string {
 	t.Helper()
-	srv := newSrvWithResponse(t, "mini", payload)
+	srv := newSrvWithResponse(t, "toon", payload)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "gh", "tool": "list_issues",
-		"projection": map[string]any{"format": "mini", "exclude": []string{"secret"}},
+		"projection": map[string]any{"format": "toon", "exclude": []string{"secret"}},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
 	}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
-		t.Fatalf("expected lines format, got JSON: %s", text)
+		t.Fatalf("expected TOON format, got JSON: %s", text)
 	}
-	return strings.Split(strings.TrimSpace(text), "\n")
+	return text
 }
 
-func assertElisionLinesFormat(t *testing.T, lines []string) {
+func assertElisionToonFormat(t *testing.T, text string) {
 	t.Helper()
-	if len(lines) < 2 {
-		t.Fatalf("expected header + data lines, got %d lines:\n%s", len(lines), strings.Join(lines, "\n"))
+	if strings.Contains(text, "hidden") {
+		t.Errorf("excluded field value must not appear in TOON output: %s", text)
 	}
-	if !strings.HasPrefix(lines[0], "[gh.list_issues] file:") {
-		t.Fatalf("expected file header on first line, got: %s", lines[0])
-	}
-	assertElisionLinesFile(t, lines[0])
-}
-
-func assertElisionLinesFile(t *testing.T, header string) {
-	t.Helper()
-	key := strings.TrimPrefix(header, "[gh.list_issues] file:")
+	key := extractToonFileKey(t, text)
 	if strings.ContainsAny(key, "/\\") || strings.HasSuffix(key, ".json") || len(key) < 13 {
-		t.Fatalf("expected bare key in file header (no path, no extension), got: %s", key)
+		t.Fatalf("expected bare recovery key in file field (no path, no extension), got: %s", key)
 	}
 }
 
-func TestReadTool_ResolvesFileWrittenByCompactModeMiniFormat(t *testing.T) {
+func extractToonFileKey(t *testing.T, text string) string {
+	t.Helper()
+	m := regexp.MustCompile(`(?m)^file: (\S+)$`).FindStringSubmatch(text)
+	if m == nil {
+		t.Fatalf("expected a file field in TOON output, got: %s", text)
+	}
+	// Recovery keys are all-digit unix_ms timestamps, so TOON's numeric-like
+	// quoting rule (spec §7.2) always wraps them in double quotes.
+	return strings.Trim(m[1], `"`)
+}
+
+func TestReadTool_ResolvesFileWrittenByCompactModeToonFormat(t *testing.T) {
 	payload := `{"items":[{"id":1,"title":"bug"}],"secret":"hidden"}`
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.ResponseFormat = "mini"
+	cfg.ResponseFormat = "toon"
 	srv := server.New(cfg, logger)
 	defer srv.Close()
 
@@ -192,20 +192,16 @@ func TestReadTool_ResolvesFileWrittenByCompactModeMiniFormat(t *testing.T) {
 		"server": "gh", "tool": "list_issues", "params": map[string]any{},
 	}))
 	text := toolResultText(t, resp)
-	lines := strings.Split(strings.TrimSpace(text), "\n")
-	if len(lines) == 0 || !strings.HasPrefix(lines[0], "[gh.list_issues] file:") {
-		t.Fatalf("expected file header in mini format output, got: %s", text)
-	}
-	key := strings.TrimPrefix(lines[0], "[gh.list_issues] file:")
+	key := extractToonFileKey(t, text)
 
 	resp2 := serveProxy(t, srv, callTool("read", map[string]any{"file": key}))
 	content := toolResultText(t, resp2)
 	if content == "" {
-		t.Fatal("read returned empty content for bare key from mini format")
+		t.Fatal("read returned empty content for bare key from TOON format")
 	}
 	var parsed map[string]any
 	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		t.Errorf("read via mini-format bare key should return valid JSON: %s", content)
+		t.Errorf("read via TOON-format bare key should return valid JSON: %s", content)
 	}
 }
 
