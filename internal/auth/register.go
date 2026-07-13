@@ -39,8 +39,19 @@ func ResolvedCallbackURI(ac *config.AuthConfig) string {
 	return fmt.Sprintf("http://localhost:%d%s", ResolvedCallbackPort(ac), LoopbackCallbackPath)
 }
 
-// Register performs RFC 7591 dynamic client registration and returns the client_id.
-func Register(ctx context.Context, registrationURL, callbackURI string) (string, error) {
+// RegistrationResult carries whatever the server actually assigned — RFC 7591
+// §3.2.1 lets it override the requested public-client metadata, e.g. by
+// registering mini as confidential and returning a client_secret.
+type RegistrationResult struct {
+	ClientID                string
+	ClientSecret            string
+	TokenEndpointAuthMethod string
+	ClientSecretExpiresAt   int64
+}
+
+// Register performs RFC 7591 dynamic client registration, requesting
+// token_endpoint_auth_method "none" (public client with PKCE).
+func Register(ctx context.Context, registrationURL, callbackURI string) (RegistrationResult, error) {
 	body, _ := json.Marshal(registrationRequest{
 		ClientName:              "mini",
 		RedirectURIs:            []string{callbackURI},
@@ -50,10 +61,10 @@ func Register(ctx context.Context, registrationURL, callbackURI string) (string,
 	})
 	resp, err := postRegistration(ctx, registrationURL, body)
 	if err != nil {
-		return "", err
+		return RegistrationResult{}, err
 	}
 	defer resp.Body.Close()
-	return parseClientID(resp, registrationURL)
+	return parseRegistrationResponse(resp, registrationURL)
 }
 
 func postRegistration(ctx context.Context, url string, body []byte) (*http.Response, error) {
@@ -65,18 +76,26 @@ func postRegistration(ctx context.Context, url string, body []byte) (*http.Respo
 	return noRedirectClient.Do(req)
 }
 
-func parseClientID(resp *http.Response, url string) (string, error) {
+func parseRegistrationResponse(resp *http.Response, url string) (RegistrationResult, error) {
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return "", fmt.Errorf("client registration: status %d from %s", resp.StatusCode, url)
+		return RegistrationResult{}, fmt.Errorf("client registration: status %d from %s", resp.StatusCode, url)
 	}
 	var result struct {
-		ClientID string `json:"client_id"`
+		ClientID                string `json:"client_id"`
+		ClientSecret            string `json:"client_secret"`
+		TokenEndpointAuthMethod string `json:"token_endpoint_auth_method"`
+		ClientSecretExpiresAt   int64  `json:"client_secret_expires_at"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAuthBodyBytes)).Decode(&result); err != nil {
-		return "", fmt.Errorf("client registration: decode response: %w", err)
+		return RegistrationResult{}, fmt.Errorf("client registration: decode response: %w", err)
 	}
 	if result.ClientID == "" {
-		return "", fmt.Errorf("client registration: server returned empty client_id")
+		return RegistrationResult{}, fmt.Errorf("client registration: server returned empty client_id")
 	}
-	return result.ClientID, nil
+	return RegistrationResult{
+		ClientID:                result.ClientID,
+		ClientSecret:            result.ClientSecret,
+		TokenEndpointAuthMethod: result.TokenEndpointAuthMethod,
+		ClientSecretExpiresAt:   result.ClientSecretExpiresAt,
+	}, nil
 }

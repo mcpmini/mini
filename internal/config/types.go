@@ -190,6 +190,12 @@ type AuthConfig struct {
 	TokenURL     string   `yaml:"token_url,omitempty"`
 	Scopes       []string `yaml:"scopes,omitempty"`
 
+	// TokenEndpointAuthMethod selects how ClientSecret is sent during token
+	// exchange ("client_secret_basic" or "client_secret_post"). Normally
+	// hydrated at runtime from dynamic client registration; set it directly
+	// only alongside a manually pre-registered ClientID/ClientSecret pair.
+	TokenEndpointAuthMethod string `yaml:"token_endpoint_auth_method,omitempty"`
+
 	// ResourceURL is the canonical URI of the MCP server sent as the RFC 8707
 	// resource parameter in auth and token requests. Populated automatically
 	// from the server URL during discovery; not set by users in YAML.

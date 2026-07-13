@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -73,7 +74,8 @@ func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", p.serverName)
-	if err := auth.ResolveEndpoints(ctx, p.configDir, p.serverName, p.sc); err != nil {
+	resolveParams := auth.ResolveEndpointsParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
+	if err := auth.ResolveEndpoints(ctx, p.sc, resolveParams); err != nil {
 		return nil, fmt.Errorf("resolve oauth config: %w", err)
 	}
 	token, err := auth.PKCEFlow(ctx, p.sc.Auth, p.opener)
