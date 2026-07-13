@@ -357,6 +357,31 @@ func TestConfigureSetProjectionRequiresTool(t *testing.T) {
 	assertIsErrorResult(t, resp)
 }
 
+func TestConfigureSetProjection_rejectsMiniFormat(t *testing.T) {
+	t.Run("server scope", func(t *testing.T) {
+		srv := newEdgeServer(t)
+		resp := serve(t, srv, callTool("config", map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "tool1",
+			"projection": map[string]any{"format": "mini"},
+		}))
+		assertIsErrorResult(t, resp)
+		if text := toolResultText(t, resp); !strings.Contains(text, "toon") {
+			t.Errorf("expected error naming toon as the replacement, got: %s", text)
+		}
+	})
+	t.Run("session scope", func(t *testing.T) {
+		srv := newEdgeServer(t)
+		resp := serve(t, srv, callTool("config", map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "tool1", "session_only": true,
+			"projection": map[string]any{"format": "mini"},
+		}))
+		assertIsErrorResult(t, resp)
+		if text := toolResultText(t, resp); !strings.Contains(text, "toon") {
+			t.Errorf("expected error naming toon as the replacement, got: %s", text)
+		}
+	})
+}
+
 func TestConfigureRemoveServerRequiresName(t *testing.T) {
 	srv := newEdgeServer(t)
 	resp := serve(t, srv, callTool("config", map[string]any{

@@ -1,5 +1,20 @@
 package config
 
+import "fmt"
+
+// ValidResponseFormat reports whether format is a recognized response_format /
+// projection format value. The empty string means "use the default (json)".
+func ValidResponseFormat(format string) error {
+	switch format {
+	case "", "json", "toon":
+		return nil
+	case "mini":
+		return fmt.Errorf(`response format "mini" was renamed to "toon"; use "toon" instead`)
+	default:
+		return fmt.Errorf("invalid response format %q: must be \"json\" or \"toon\"", format)
+	}
+}
+
 // Config is the top-level mini configuration.
 type Config struct {
 	// DefaultStringLimit is the default max chars for string fields across all
@@ -32,8 +47,8 @@ type Config struct {
 	ResponseDiskBudgetMB int `yaml:"response_disk_budget_mb"`
 
 	// ResponseFormat controls how tool results are rendered to agents.
-	// "json" (default) returns the full envelope. "mini" returns a compact
-	// key:value text format — useful for agents that handle plain text better.
+	// "json" (default) returns the full envelope. "toon" encodes the same
+	// envelope as TOON — useful for agents that handle plain text better.
 	ResponseFormat string `yaml:"response_format"`
 
 	// LogLevel: debug, info, warn, error. Default: info.

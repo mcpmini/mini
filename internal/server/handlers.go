@@ -258,8 +258,8 @@ func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelo
 	if projCfg != nil && projCfg.Format != "" {
 		format = projCfg.Format
 	}
-	if format == "mini" {
-		return RenderLines(server, displayTool, env)
+	if format == "toon" {
+		return EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
 	}
 	return env
 }
