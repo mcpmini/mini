@@ -84,6 +84,7 @@ func serveDaemon(ctx context.Context, p DaemonServeParams) {
 	srv := buildAndStartConnecting(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers},
 		server.WithDaemonAuthToken(token), server.WithAuthProviders())
 	defer srv.Close()
+	srv.StartProjectionReload(ctx)
 	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: p.Listener})
 }
 

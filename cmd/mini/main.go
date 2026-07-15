@@ -105,6 +105,7 @@ func serveStandalone(p ServeParams, opts ...server.ServerOption) {
 	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
 	srv := buildAndStartConnecting(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
 	defer srv.Close()
+	srv.StartProjectionReload(ctx)
 	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
 	maybeStartSessionEviction(ctx, httpSrv, srv)
 	logger := p.Logger
