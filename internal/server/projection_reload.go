@@ -12,8 +12,8 @@ import (
 
 const projectionPollInterval = 5 * time.Second
 
-// StartProjectionReload polls the config dir so projection YAML edits apply
-// to a running server without a restart. The poller stops when ctx is canceled.
+// StartProjectionReload applies projection YAML edits to a live server without
+// restart. Stops when ctx is canceled.
 func (s *Server) StartProjectionReload(ctx context.Context) {
 	go s.runProjectionReload(ctx, nil)
 }
@@ -45,12 +45,11 @@ func (s *Server) reloadIfProjectionFilesChanged(last map[string]string) map[stri
 		return last
 	}
 	if _, err := s.reloadProjections(); err != nil {
-		// Advancing to the current fingerprint even on failure means a bad file
-		// warns once, not every tick; the next edit is still detected by hash.
 		s.logger.Warn("projection reload failed, keeping previous projections", "err", err)
 	} else {
 		s.logger.Info("projections reloaded", "files", changed)
 	}
+	// advance past the bad content: warn once, the next edit still changes the hash
 	return current
 }
 
@@ -63,8 +62,8 @@ func (s *Server) fingerprintOrWarn() (map[string]string, bool) {
 	return fp, true
 }
 
-// fingerprintServerFiles hashes every servers/*.yaml — which also matches
-// *.proj.yaml — covering both inline `projections:` blocks and projection files.
+// *.yaml also matches *.proj.yaml, so a single glob covers both inline
+// projections: blocks and standalone projection files.
 func fingerprintServerFiles(configDir string) (map[string]string, error) {
 	paths, err := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
 	if err != nil {
