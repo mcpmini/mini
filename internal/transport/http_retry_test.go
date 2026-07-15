@@ -16,11 +16,9 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 )
 
-// This file exercises rpc, the raw request layer, rather than the public Call.
-// Call now performs an initialize handshake before every request, which would
-// shift these fake servers' hardcoded response IDs and retry/call counts;
-// rpc is the same retry/backoff/auth-replay code Call ends up running, minus
-// that handshake, so these tests stay focused on retry mechanics.
+// These tests call rpc rather than Call because the fake servers return
+// hardcoded JSON-RPC IDs; the initialize round-trip Call prepends would shift
+// those IDs and corrupt per-server call counts.
 
 func newRateLimitedServer(t *testing.T, failUntilCall int32, calls *atomic.Int32) *httptest.Server {
 	t.Helper()
