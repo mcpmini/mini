@@ -259,7 +259,6 @@ func TestCLICall_FlagOverridesConfigFormat(t *testing.T) {
 		"get_item": `{"id":1}`,
 	})
 	writeConfig(t, cfg, "response_format: toon\n")
-	// -j should override toon default
 	stdout, _, code := runCLI(t, cfg, "call", "-j", "svc", "get_item")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)

@@ -9,11 +9,9 @@ import (
 	"github.com/mcpmini/mini/internal/toon"
 )
 
-// EncodeToon renders env as TOON, the exact same information as JSON mode
-// marshals via env's own MarshalJSON. FromAny/Encode cannot fail for a
-// response.Envelope (its wire shape is a closed set of JSON-marshalable
-// fields), but the fallback keeps a malformed envelope from ever producing a
-// broken response, mirroring mustJSON's defensive fmt.Sprintf floor in serve.go.
+// EncodeToon renders env as TOON. FromAny/Encode cannot fail for a
+// response.Envelope, but the fallback keeps a malformed envelope from ever
+// producing a broken response.
 func EncodeToon(logger *slog.Logger, env *response.Envelope) string {
 	text, err := encodeToonValue(env)
 	if err == nil {
