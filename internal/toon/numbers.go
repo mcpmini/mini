@@ -72,9 +72,8 @@ func canonicalExponent(f float64) string {
 	return mantissa + "e" + sign + exp
 }
 
-// encodeNum canonicalizes v.Num before emitting it. FromJSON/FromAny already
-// hand it a canonical lexeme so this is a no-op for them, but Values built by
-// hand (e.g. "-0", "1.0", "1e6") must still satisfy spec §2 on output.
+// FromJSON/FromAny already hand encodeNum a canonical lexeme; Values built by
+// hand (e.g. "-0", "1.0") must still satisfy spec §2 on output.
 func encodeNum(v Value) (string, error) {
 	return canonicalizeNumber(v.Num)
 }

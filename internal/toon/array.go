@@ -93,9 +93,7 @@ func writeListItem(sb *strings.Builder, item Value, depth int) error {
 	}
 }
 
-// writeObjectListItem implements §10: the first field shares the hyphen line
-// and all fields render at hyphen depth+1, which lands tabular rows and
-// nested list items of a leading array field at hyphen depth+2.
+// §10: the first field shares the hyphen line; all others render at hyphen depth+1.
 func writeObjectListItem(sb *strings.Builder, item Value, depth int) error {
 	indent := strings.Repeat(indentUnit, depth)
 	if len(item.Fields) == 0 {
@@ -121,9 +119,7 @@ func joinPrimitives(items []Value) (string, error) {
 	return strings.Join(parts, ","), nil
 }
 
-// tabularFields reports §9.3 eligibility: every element is a non-empty object
-// over one shared key set (order per object may vary) with primitive values
-// only. Header order comes from the first element.
+// §9.3 eligibility: shared primitive-value key set across all elements; header order comes from the first element.
 func tabularFields(items []Value) ([]string, bool) {
 	keys, ok := primitiveObjectKeys(items[0])
 	if !ok || len(keys) == 0 {
