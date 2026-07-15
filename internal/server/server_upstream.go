@@ -14,11 +14,9 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// ConnectUpstreams dials every enabled server concurrently and returns immediately;
-// callers must not block startup on upstream availability (#33). Each connect is
-// bounded by AddUpstream's per-server handshake deadline, and Close waits for all
-// of them before tearing down, so a still-connecting upstream cannot outlive the
-// server or leak its goroutine.
+// ConnectUpstreams dials every enabled server concurrently and returns before any
+// resolves; callers must not block startup on upstream availability (#33). Close waits
+// for all in-flight connects before tearing down.
 func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerConfig) {
 	for _, sc := range servers {
 		if !sc.IsEnabled() {

@@ -132,10 +132,6 @@ type BuildServerParams struct {
 	Servers   []config.ServerConfig
 }
 
-// buildAndStartConnecting builds the server and kicks off upstream connects in the
-// background; it returns before any upstream resolves so Serve can start answering
-// the agent's initialize immediately (#33). Late-arriving upstreams announce
-// themselves via the existing tools/list_changed notification.
 func buildAndStartConnecting(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
 	srv := server.NewWithConfigDir(p.Cfg, p.ConfigDir, p.Logger, opts...)
 	srv.ConnectUpstreams(ctx, p.Servers)

@@ -14,12 +14,6 @@ import (
 	"time"
 )
 
-// TestStartup_ServesInitializeBeforeSlowUpstreamConnects is the end-to-end proof
-// for #33: mini connect --standalone must answer initialize fast even when one
-// configured upstream's initialize hangs well past its connect deadline. The
-// healthy upstream's tools must still become callable, the hung one must never
-// appear, and the existing "upstream unavailable at startup" WARN must fire once
-// the deadline elapses.
 func TestStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
 	cfg := t.TempDir()
 

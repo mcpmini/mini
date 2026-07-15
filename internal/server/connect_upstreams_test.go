@@ -16,10 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-// TestConnectUpstreams_NotifiesLiveSessionOfLateUpstream proves the #33 monitor
-// ruling: ConnectUpstreams itself is the mechanism that announces a late-arriving
-// upstream to an already-connected agent session, via the existing
-// notifications/tools/list_changed channel — not a new notification path.
+// notifications/tools/list_changed is the sole announcement channel — no new notification path (#33).
 func TestConnectUpstreams_NotifiesLiveSessionOfLateUpstream(t *testing.T) {
 	mcp := newMCPTestServer(t, []map[string]any{
 		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
@@ -54,9 +51,6 @@ func TestConnectUpstreams_NotifiesLiveSessionOfLateUpstream(t *testing.T) {
 	}
 }
 
-// TestConnectUpstreams_CleanShutdownWithHungUpstream proves the #33 shutdown
-// ordering decision: a connect goroutine stuck dialing a hung upstream must not
-// prevent Close from returning once its context is canceled.
 func TestConnectUpstreams_CleanShutdownWithHungUpstream(t *testing.T) {
 	hung := make(chan struct{})
 	t.Cleanup(func() { close(hung) })
@@ -86,9 +80,6 @@ func TestConnectUpstreams_CleanShutdownWithHungUpstream(t *testing.T) {
 	}
 }
 
-// TestConnectUpstreams_CloseWaitsForInFlightConnect proves Close actually joins
-// the connect WaitGroup rather than tearing down concurrently with it: with no
-// ctx cancellation, Close must block for as long as the in-flight connect takes.
 func TestConnectUpstreams_CloseWaitsForInFlightConnect(t *testing.T) {
 	const connectDelay = 150 * time.Millisecond
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

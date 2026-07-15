@@ -243,10 +243,7 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 	}
 }
 
-// TestDaemon_healthyBeforeSlowUpstreamConnects proves #33's daemon readiness
-// requirement: /healthz keys on the HTTP server serving, not on every upstream
-// having connected. A configured upstream whose initialize hangs well past the
-// per-server connect deadline must not delay the daemon becoming healthy.
+// /healthz keys on HTTP server readiness, not upstream connectivity (#33).
 func TestDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 	cfg := shortConfigDir(t)
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
