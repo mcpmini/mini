@@ -65,10 +65,6 @@ func (c *capturingTokenServer) handle(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AuthURL/TokenURL are pre-set on the AuthConfig so discovery — which still
-// runs because ClientID is empty — never overwrites them; TokenURL can then
-// safely point at a loopback test server, which discovery's SSRF endpoint
-// check would otherwise reject.
 func hydrateFromSavedRegistration(t *testing.T, reg *auth.Registration, tokenURL string, clk clock.Clock) *config.AuthConfig {
 	t.Helper()
 	dir := t.TempDir()
@@ -84,6 +80,8 @@ func hydrateFromSavedRegistration(t *testing.T, reg *auth.Registration, tokenURL
 
 	sc := &config.ServerConfig{
 		URL: asSrv.URL + "/mcp",
+		// pre-set AuthURL/TokenURL so discovery never overwrites them — a loopback TokenURL
+		// from discovery metadata would fail validateEndpointURL
 		Auth: &config.AuthConfig{
 			Type:     "oauth2",
 			AuthURL:  "https://as.example.com/authorize",
@@ -97,9 +95,6 @@ func hydrateFromSavedRegistration(t *testing.T, reg *auth.Registration, tokenURL
 	return sc.Auth
 }
 
-// exchangeAndRefresh drives both requests through configFrom the same way
-// production code does, forcing the exchanged token to look expired so
-// Refresh actually hits the token endpoint instead of returning it unchanged.
 func exchangeAndRefresh(t *testing.T, ac *config.AuthConfig) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -115,6 +110,7 @@ func exchangeAndRefresh(t *testing.T, ac *config.AuthConfig) {
 	if result.Err != nil {
 		t.Fatalf("PKCE exchange: %v", result.Err)
 	}
+	// backdated so Refresh actually hits the token endpoint rather than returning the cached token
 	result.Token.Expiry = time.Now().Add(-time.Hour)
 	if _, err := auth.Refresh(context.Background(), ac, result.Token); err != nil {
 		t.Fatalf("Refresh: %v", err)

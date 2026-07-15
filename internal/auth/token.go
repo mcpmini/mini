@@ -50,8 +50,6 @@ func Save(configDir, serverName string, t *oauth2.Token) error {
 	return atomicReplaceFile(path, data)
 }
 
-// atomicReplaceFile writes data to path via a temp file + rename so readers
-// never observe a partial write.
 func atomicReplaceFile(path string, data []byte) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
 	if err != nil {

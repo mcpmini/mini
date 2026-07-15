@@ -12,10 +12,8 @@ import (
 type Registration struct {
 	ClientID string `json:"client_id"`
 
-	// ClientSecret, TokenEndpointAuthMethod, and ClientSecretExpiresAt are set
-	// only when the authorization server registered mini as a confidential
-	// client (RFC 7591 §3.2.1 lets it override the requested "none" method).
-	// Absent on older registration files from public-client registrations.
+	// Populated when the AS registered mini as confidential (RFC 7591 §3.2.1).
+	// Zero in older public-client registration files without these fields.
 	ClientSecret            string `json:"client_secret,omitempty"`
 	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method,omitempty"`
 	ClientSecretExpiresAt   int64  `json:"client_secret_expires_at,omitempty"`
