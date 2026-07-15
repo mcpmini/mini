@@ -338,20 +338,14 @@ func startServer(t *testing.T, configDir string) *mcpClient {
 	return c
 }
 
-// waitForUpstreamsSettled blocks until the compact-mode tool catalog stops
-// changing across a short run of consecutive polls, or a ceiling elapses.
-// Upstreams now connect in the background (#33): mini answers initialize
-// before any of them resolve, so tests that assert on tool presence right
-// after startup need this to observe a converged catalog instead of racing
-// the connect goroutines.
+// waitForUpstreamsSettled polls until the tool catalog stops changing. Upstreams connect
+// in the background (#33): call this before asserting tool presence to avoid racing the
+// connect goroutines.
 func waitForUpstreamsSettled(t *testing.T, c *mcpClient) {
 	t.Helper()
 	settleUntilStable(t, func() string { return c.listTools("") })
 }
 
-// waitForProxyUpstreamsSettled is waitForUpstreamsSettled for proxy-mode
-// sessions, which expose upstream tools directly under the raw MCP
-// tools/list method rather than the compact-mode "list" meta-tool.
 func waitForProxyUpstreamsSettled(t *testing.T, c *mcpClient) {
 	t.Helper()
 	settleUntilStable(t, func() string { return string(c.mustCall("tools/list", nil)) })

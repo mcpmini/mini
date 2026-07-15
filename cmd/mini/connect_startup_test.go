@@ -11,9 +11,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// TestBuildAndStartConnecting_ReturnsBeforeUpstreamResolves proves the #33 fix at
-// the cmd/mini seam: a hung upstream must not block startup, because Serve needs
-// to be answering the agent's initialize while upstreams are still connecting.
 func TestBuildAndStartConnecting_ReturnsBeforeUpstreamResolves(t *testing.T) {
 	_, url := hangingHTTPServer(t)
 	dir := shortConfigDir(t)
