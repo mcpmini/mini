@@ -6,11 +6,9 @@ import (
 	"testing"
 )
 
-// TestToonSizeComparison measures encoded size in BYTES, not tokens; the
-// numbers are indicative only. Fixtures are synthetic. TOON is only asserted
-// smaller-or-equal for the uniform tabular fixture, where the format's header
-// row provably removes per-item key repetition; the other fixtures are logged
-// for reference.
+// TestToonSizeComparison compares byte sizes (not tokens; synthetic fixtures,
+// indicative only). Only the uniform tabular fixture asserts TOON ≤ JSON —
+// the shared header row eliminates per-item key repetition.
 func TestToonSizeComparison(t *testing.T) {
 	fixtures := []struct {
 		name         string
