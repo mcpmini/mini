@@ -14,9 +14,6 @@ import (
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	if err := c.ensureInitialized(ctx); err != nil {
-		return nil, err
-	}
 	return paginateToolsList(ctx, c.callToolsPage)
 }
 
@@ -70,7 +67,7 @@ func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, 
 		Capabilities:    map[string]any{},
 		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 	})
-	raw, err := c.Call(ctx, "initialize", params)
+	raw, err := c.rpc(ctx, "initialize", params)
 	if err != nil {
 		return InitializeResult{}, err
 	}

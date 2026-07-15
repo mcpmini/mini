@@ -141,7 +141,17 @@ func applySsrfTransport(client *http.Client) {
 
 const maxRetries = 3
 
+// Call sends an MCP request, first completing the initialize handshake if this
+// connection hasn't performed one yet. The handshake itself is sent via rpc,
+// not Call, to avoid recursing back into ensureInitialized on a held initMu.
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	if err := c.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	return c.rpc(ctx, method, params)
+}
+
+func (c *HTTPConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	id := c.nextID.Add(1)
 	req := Request{JSONRPC: "2.0", ID: id, Method: method, Params: params}
 	return c.postWithAuthRetry(ctx, req)
