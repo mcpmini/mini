@@ -80,13 +80,10 @@ type HTTPConnectionConfig struct {
 	// BlockPrivateIPs attaches an SSRF-safe dialer that re-validates resolved IPs
 	// at connect time, preventing DNS rebinding attacks. Set for runtime-added servers.
 	BlockPrivateIPs bool
-	// ServerName identifies this upstream in terminal auth-failure error messages.
-	ServerName string
-	// AuthProvider supplies a dynamic Authorization-style header value, refreshed
-	// as needed. Nil means no dynamic auth; static Headers are used as-is.
+	ServerName      string
+	// Nil means static Headers are applied without dynamic refresh.
 	AuthProvider AuthorizationProvider
-	// AuthHeaderName is the header AuthProvider's value is set on. Defaults to
-	// "Authorization" when AuthProvider is set and this is empty.
+	// Empty defaults to "Authorization".
 	AuthHeaderName string
 }
 
@@ -147,10 +144,8 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 	return c.postWithAuthRetry(ctx, req)
 }
 
-// postWithAuthRetry wraps post's 429/503 retry loop with a single 401 replay:
-// on an UnauthorizedError, force a refresh and retry the whole post once more
-// (its own independent rate-limit budget), so the auth replay never multiplies
-// the 429/503 retry count.
+// Each c.post() call gets its own rate-limit retry budget so a 401 replay
+// cannot multiply 429/503 retries.
 func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
 	body, err := c.post(ctx, rpcReq)
 	if c.authProvider == nil || !isUnauthorized(err) {

@@ -146,9 +146,6 @@ func oauthServerConfig(name, mcpURL, tokenURL string, enabled bool) config.Serve
 	}
 }
 
-// Guards the refresh-ownership decision: the serve paths must not eagerly
-// refresh stored tokens at startup the way injectOAuthTokens does for the
-// one-shot CLI commands — the provider refreshes lazily, per request.
 func TestServeStartup_zeroTokenEndpointCallsBeforeFirstRequest(t *testing.T) {
 	configDir := t.TempDir()
 	tokenSrv, tokenHits := countingTokenEndpoint(t)
