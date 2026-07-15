@@ -55,10 +55,7 @@ func TestEncodeToon(t *testing.T) {
 	})
 
 	t.Run("never returns a broken response when data cannot marshal at all", func(t *testing.T) {
-		// math.NaN() fails json.Marshal outright, so both the toon path and its
-		// JSON fallback fail identically — this exercises the last-resort
-		// fmt.Sprintf floor, proving EncodeToon still returns non-empty text
-		// rather than "".
+		// NaN fails both json.Marshal and toon encoding, exercising the fmt.Sprintf last-resort floor.
 		env := &response.Envelope{Data: math.NaN()}
 		var logBuf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
