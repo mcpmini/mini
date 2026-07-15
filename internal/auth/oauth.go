@@ -33,8 +33,6 @@ func configFrom(ac *config.AuthConfig) *oauth2.Config {
 	}
 }
 
-// tokenAuthStyle's zero-value default, AutoDetect, preserves current
-// behavior for public clients (empty or "none" method).
 func tokenAuthStyle(method string) oauth2.AuthStyle {
 	switch method {
 	case "client_secret_basic":

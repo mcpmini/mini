@@ -28,12 +28,11 @@ func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 	sc.Headers[headerName] = "Bearer " + accessToken
 }
 
-// ResolveEndpointsParams.Clock drives the client_secret_expires_at comparison
-// during registration hydration.
 type ResolveEndpointsParams struct {
 	ConfigDir  string
 	ServerName string
-	Clock      clock.Clock
+	// Clock drives the client_secret_expires_at comparison during registration hydration.
+	Clock clock.Clock
 }
 
 // ResolveEndpoints fills in missing OAuth endpoints on sc.Auth via RFC 9728
@@ -163,16 +162,13 @@ func applyExistingClientReg(p clientRegParams) (bool, error) {
 	return false, nil
 }
 
-// applyRegistration rejects metadata combinations the authorization server
-// cannot have meant (secret without a confidential auth method, or vice
-// versa) rather than silently falling back to an unintended auth style, and
-// treats an expired client_secret as absent so the token exchange fails with
-// the AS's own error instead of mini silently retrying registration.
 func applyRegistration(a *config.AuthConfig, reg *Registration, now time.Time) error {
 	a.ClientID = reg.ClientID
+	// reject rather than silently use a wrong auth style
 	if err := validateRegistrationConsistency(reg); err != nil {
 		return err
 	}
+	// treat as absent — token exchange surfaces the AS's own error instead of silent re-registration
 	if !secretApplies(reg, now) {
 		return nil
 	}
