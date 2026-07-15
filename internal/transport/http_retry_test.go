@@ -16,6 +16,12 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 )
 
+// This file exercises rpc, the raw request layer, rather than the public Call.
+// Call now performs an initialize handshake before every request, which would
+// shift these fake servers' hardcoded response IDs and retry/call counts;
+// rpc is the same retry/backoff/auth-replay code Call ends up running, minus
+// that handshake, so these tests stay focused on retry mechanics.
+
 func newRateLimitedServer(t *testing.T, failUntilCall int32, calls *atomic.Int32) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +42,7 @@ func TestRetry_429WithRetryAfter_retriesAndSucceeds(t *testing.T) {
 	var calls atomic.Int32
 	srv := newRateLimitedServer(t, 3, &calls)
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	result, err := conn.Call(t.Context(), "ping", nil)
+	result, err := conn.rpc(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("expected success after retries, got: %v", err)
 	}
@@ -59,7 +65,7 @@ func TestRetry_429_exhaustsMaxRetries(t *testing.T) {
 	defer srv.Close()
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
@@ -86,7 +92,7 @@ func TestRetry_503WithRetryAfter_retries(t *testing.T) {
 	defer srv.Close()
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("expected success after 503 retry, got: %v", err)
 	}
@@ -112,7 +118,7 @@ func TestRetry_429WithoutRetryAfter_usesExponentialBackoff(t *testing.T) {
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clk})
 	done := make(chan error, 1)
 	go func() {
-		_, err := conn.Call(t.Context(), "ping", nil)
+		_, err := conn.rpc(t.Context(), "ping", nil)
 		done <- err
 	}()
 	advanceRetryTimer(t, clk)
@@ -144,7 +150,7 @@ func TestRetry_contextCancelledDuringBackoff(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := conn.Call(ctx, "ping", nil)
+	_, err := conn.rpc(ctx, "ping", nil)
 	if err == nil {
 		t.Fatal("expected error when context canceled during backoff")
 	}
@@ -160,7 +166,7 @@ func TestRetry_nonRetryable4xx_noRetry(t *testing.T) {
 	defer srv.Close()
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error for 401")
 	}
@@ -228,7 +234,7 @@ func TestAuthReplay_401RefreshedThenSucceeds(t *testing.T) {
 		}
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("expected success after 401 refresh replay, got: %v", err)
 	}
 	if calls.Load() != 2 {
@@ -245,7 +251,7 @@ func TestAuthReplay_persistent401_terminalAfterTwoAttempts(t *testing.T) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected terminal error")
 	}
@@ -267,7 +273,7 @@ func TestAuthReplay_refreshFailure_noReplay(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	provider.refreshErr = errors.New("token endpoint down")
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -292,7 +298,7 @@ func TestAuthReplay_429Then401_budgetNotMultiplied(t *testing.T) {
 			w.Write(okRPCResponse(1)) //nolint:errcheck
 		}
 	})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("expected success, got: %v", err)
 	}
 	if calls.Load() != 4 {
@@ -318,7 +324,7 @@ func TestRetry_passThroughRateLimits_returnsImmediately(t *testing.T) {
 		Clock:                   clock.NewFake(),
 		DisableRetryOnRateLimit: true,
 	})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
