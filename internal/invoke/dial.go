@@ -15,16 +15,13 @@ import (
 )
 
 type DialParams struct {
-	Logger *slog.Logger
-	Config *config.Config
-	Server config.ServerConfig
-	Clock  clock.Clock
-	// ConfigDir locates the token/registration store for auth providers.
+	Logger    *slog.Logger
+	Config    *config.Config
+	Server    config.ServerConfig
+	Clock     clock.Clock
 	ConfigDir string
-	// UseAuthProvider constructs a dynamic AuthorizationProvider for OAuth2
-	// servers instead of relying on a statically-applied bearer header. Only
-	// the serve paths (connect, daemon) set this; one-shot CLI commands dial
-	// with static headers applied ahead of time via injectOAuthTokens.
+	// Only the long-lived serve paths set this; CLI commands inject headers
+	// statically at startup.
 	UseAuthProvider bool
 }
 
