@@ -67,6 +67,8 @@ func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, 
 		Capabilities:    map[string]any{},
 		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 	})
+	// the handshake itself goes through rpc, not Call: recursing into
+	// ensureInitialized would deadlock on the held initMu
 	raw, err := c.rpc(ctx, "initialize", params)
 	if err != nil {
 		return InitializeResult{}, err
