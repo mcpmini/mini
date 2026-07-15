@@ -92,7 +92,9 @@ func (c *HTTPConnection) sendInitializedNotification(ctx context.Context) error 
 	if err != nil {
 		return fmt.Errorf("notifications/initialized: %w", err)
 	}
-	c.setRequestHeaders(httpReq)
+	if err := c.setRequestHeaders(ctx, httpReq); err != nil {
+		return fmt.Errorf("notifications/initialized: %w", err)
+	}
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("notifications/initialized: %w", err)
@@ -155,7 +157,9 @@ func (c *HTTPConnection) newNotificationStreamRequest() (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.setRequestHeaders(req)
+	if err := c.setRequestHeaders(c.listenerCtx, req); err != nil {
+		return nil, err
+	}
 	req.Header.Del("Content-Type")
 	req.Header.Set("Accept", "text/event-stream")
 	return req, nil

@@ -101,7 +101,7 @@ type ServeParams struct {
 func serveStandalone(p ServeParams, opts ...server.ServerOption) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	injectOAuthTokens(ctx, p.ConfigDir, p.Servers)
+	opts = append(opts, server.WithAuthProviders())
 	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
 	srv := buildAndStartConnecting(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
 	defer srv.Close()
