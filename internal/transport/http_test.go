@@ -305,11 +305,6 @@ func assertFastTimeout(t *testing.T, start time.Time) {
 	}
 }
 
-// These client-timeout tests use rpc directly: they test the raw HTTP client's
-// network-level deadline handling, which is identical whether or not a request
-// happens to be the initialize handshake, so routing them through Call would
-// only add an irrelevant handshake round trip ahead of the behavior under test.
-
 func TestHTTPClientTimeout_firesForHungServer(t *testing.T) {
 	srv := newHungServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 100 * time.Millisecond})
@@ -650,7 +645,6 @@ func TestListTools_HTTPPagination(t *testing.T) {
 // strictSessionServer rejects any non-initialize request that doesn't carry
 // the session ID it issued at initialize, mirroring Atlassian's MCP server
 // ("Request must be an initialize request if no session ID is provided.").
-// It records the method of every request received, in order.
 type strictSessionServer struct {
 	sessionID string
 	mu        sync.Mutex
@@ -710,10 +704,6 @@ func (s *strictSessionServer) respond(w http.ResponseWriter, method string, req 
 	}
 }
 
-// TestHTTPConnection_callCompletesHandshakeBeforeToolCall is the regression
-// test for #103: a bare Call (no prior ListTools) against a strict server
-// that requires an established session for every non-initialize request must
-// still succeed, by completing the handshake first.
 func TestHTTPConnection_callCompletesHandshakeBeforeToolCall(t *testing.T) {
 	srv, fake := newStrictSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -797,14 +787,9 @@ func TestHTTPConnection_callRetriesHandshakeAfterFailure(t *testing.T) {
 	}
 }
 
-// TestHTTPConnection_cancelledConcurrentCallerDoesNotPoisonHandshake covers the
-// accepted waiter-cancellation semantics: a caller whose ctx is already
-// cancelled cannot abort a peer's in-progress handshake attempt (sync.Mutex
-// isn't ctx-aware), and if it is itself the one that acquires initMu first,
-// its own handshake attempt simply fails on its own cancelled ctx — leaving
-// initialized == false for the next (uncancelled) caller to retry. Either way
-// exactly one caller must complete the handshake, and it must not be the
-// permanently-cancelled one.
+// sync.Mutex is not ctx-aware: a cancelled caller cannot abort a peer's in-progress
+// handshake; if it wins the lock first, its attempt fails on its cancelled ctx and
+// leaves initialized==false for the next caller to retry.
 func TestHTTPConnection_cancelledConcurrentCallerDoesNotPoisonHandshake(t *testing.T) {
 	srv, fake := newStrictSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
