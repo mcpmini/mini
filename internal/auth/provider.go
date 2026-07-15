@@ -14,8 +14,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// refreshSkew is how far ahead of expiry Authorization proactively refreshes.
-// now >= Expiry-refreshSkew triggers a refresh (equality refreshes).
 const refreshSkew = 2 * time.Minute
 
 type ProviderParams struct {
