@@ -16,8 +16,7 @@ const (
 	KindArray
 )
 
-// Value is a closed value model mirroring the JSON data model. Encoding is a
-// switch on Kind rather than an interface dispatch.
+// Value is a closed value model mirroring the JSON data model.
 type Value struct {
 	Kind Kind
 
@@ -26,8 +25,8 @@ type Value struct {
 	Num string
 	Str string
 
-	Fields []Field // KindObject; preserves document order
-	Items  []Value // KindArray
+	Fields []Field // preserves document order
+	Items  []Value
 }
 
 // Field is a single key/value pair of a KindObject Value, in document order.

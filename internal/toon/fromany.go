@@ -42,10 +42,8 @@ func isNonFiniteFloatError(err error) bool {
 
 var jsonMarshalerType = reflect.TypeFor[json.Marshaler]()
 
-// normalizeNonFinite never mutates rv; it builds a fresh value tree with
-// non-finite floats replaced by nil. Types implementing json.Marshaler are
-// returned unwalked so the retry marshal invokes them directly, same as the
-// fast path.
+// normalizeNonFinite never mutates rv. Types implementing json.Marshaler are
+// returned unwalked so the retry marshal invokes them directly.
 func normalizeNonFinite(rv reflect.Value) any {
 	if !rv.IsValid() {
 		return nil

@@ -43,10 +43,7 @@ func foldField(f Field, siblings []Field) Field {
 	return Field{Key: f.Key, Val: foldChainTail(f.Val)}
 }
 
-// foldableChain walks single-key objects from f per §13.4: the chain stops at
-// the first non-single-key object, array, or primitive. It is foldable only
-// when at least two segments exist and the leaf is a primitive, an array, or
-// an empty object.
+// §13.4: folds chains of two or more single-key segments ending at a primitive, array, or empty object.
 func foldableChain(f Field) (segs []string, leaf Value, foldable bool) {
 	segs = []string{f.Key}
 	leaf = f.Val

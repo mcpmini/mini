@@ -58,8 +58,7 @@ func writeField(sb *strings.Builder, f Field, depth int) error {
 	return writeFieldBody(sb, f, depth)
 }
 
-// writeFieldBody renders a field whose line prefix (indent or list-item
-// hyphen) has already been written; depth is the logical depth of the line.
+// The caller has already written the line prefix (indent or list-item hyphen).
 func writeFieldBody(sb *strings.Builder, f Field, depth int) error {
 	if f.Val.Kind == KindArray {
 		ctx := arrayCtx{Key: encodeKey(f.Key), ItemDepth: depth + 1, AllowTabular: true, FieldEmpty: true}
