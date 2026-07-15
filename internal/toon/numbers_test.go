@@ -46,14 +46,39 @@ func TestEncodeNumMalformed(t *testing.T) {
 		{"empty", ""},
 		{"not a number", "abc"},
 		{"double decimal point", "1.2.3"},
-		{"leading zero", "05"},
-		{"trailing decimal point", "1."},
+		{"repeated decimal point", "1..2"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			v := Value{Kind: KindNumber, Num: tc.num}
 			if _, err := Encode(v); err == nil {
 				t.Errorf("Encode(Num=%q) expected error, got nil", tc.num)
+			}
+		})
+	}
+}
+
+func TestEncodeNumCanonicalizesNonCanonicalLexemes(t *testing.T) {
+	cases := []struct {
+		name string
+		num  string
+		want string
+	}{
+		{"negative zero integer", "-0", "0"},
+		{"trailing fractional zero", "1.0", "1"},
+		{"positive exponent", "1e6", "1000000"},
+		{"leading zero", "007", "7"},
+		{"trailing fractional zeros", "1.5000", "1.5"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			v := Value{Kind: KindNumber, Num: tc.num}
+			got, err := Encode(v)
+			if err != nil {
+				t.Fatalf("Encode(Num=%q) unexpected error: %v", tc.num, err)
+			}
+			if got != tc.want {
+				t.Errorf("Encode(Num=%q) = %q, want %q", tc.num, got, tc.want)
 			}
 		})
 	}
