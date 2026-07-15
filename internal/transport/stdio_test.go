@@ -322,8 +322,7 @@ func TestListTools_viaPipe_pagination(t *testing.T) {
 
 func TestInitialize_respectsDeadlineWhenUpstreamNeverResponds(t *testing.T) {
 	conn, _, serverR := makePipeConn(t)
-	// Drain requests so sendRequest doesn't block on the pipe write; the fake
-	// upstream reads the initialize request but never sends a response.
+	// Drain requests so sendRequest doesn't block on the pipe write.
 	go io.Copy(io.Discard, serverR)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)

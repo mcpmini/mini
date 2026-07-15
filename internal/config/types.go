@@ -126,7 +126,7 @@ type ServerConfig struct {
 
 	// ConnectTimeout is the deadline for the startup handshake with this upstream —
 	// subprocess spawn (stdio) or initialize (HTTP) through the first tools/list.
-	// Default "10s", "0" = no deadline. A hung upstream is skipped, not waited on forever.
+	// Default "10s", "0" = no deadline.
 	ConnectTimeout string `yaml:"connect_timeout,omitempty"`
 
 	// MaxPendingRequests is the max number of concurrent in-flight calls to this
