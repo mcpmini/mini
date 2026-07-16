@@ -183,9 +183,12 @@ func (f *fakeAuthProvider) Authorization(context.Context) (string, error) {
 	return f.current, nil
 }
 
-func (f *fakeAuthProvider) RefreshAuthorization(context.Context) (string, error) {
+func (f *fakeAuthProvider) RefreshAuthorization(_ context.Context, stale string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.current != stale {
+		return f.current, nil
+	}
 	f.refreshes++
 	if f.refreshErr != nil {
 		return "", f.refreshErr
