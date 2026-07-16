@@ -32,6 +32,7 @@ type tokenEndpoint struct {
 	lastGrant     string
 	lastRefresh   string
 	lastBasicAuth string
+	lastClientID  string
 }
 
 func newTokenEndpoint(t *testing.T) *tokenEndpoint {
@@ -53,6 +54,7 @@ func (e *tokenEndpoint) handle(w http.ResponseWriter, r *http.Request) {
 	e.mu.Lock()
 	e.lastGrant = r.FormValue("grant_type")
 	e.lastRefresh = r.FormValue("refresh_token")
+	e.lastClientID = r.FormValue("client_id")
 	user, _, ok := r.BasicAuth()
 	if ok {
 		e.lastBasicAuth = user
@@ -135,7 +137,7 @@ func TestProviderAuthorization_expiryBoundary(t *testing.T) {
 
 func TestProviderRefresh_persistsRotatedRefreshToken(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-	got, err := f.provider.RefreshAuthorization(context.Background())
+	got, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
@@ -157,7 +159,7 @@ func TestProviderRefresh_persistsRotatedRefreshToken(t *testing.T) {
 func TestProviderRefresh_httpFailureNamesRemedy(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
 	f.endpoint.status.Store(http.StatusInternalServerError)
-	_, err := f.provider.RefreshAuthorization(context.Background())
+	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if err == nil {
 		t.Fatal("expected refresh failure")
 	}
@@ -185,7 +187,7 @@ func TestProviderRefresh_persistFailureKeepsRotatedTokenInMemory(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(internal, 0700) }) //nolint:errcheck
 
-	if _, err := f.provider.RefreshAuthorization(context.Background()); err != nil {
+	if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("refresh must succeed despite persist failure: %v", err)
 	}
 	got, err := f.provider.Authorization(context.Background())
@@ -203,7 +205,7 @@ func TestProviderRefresh_persistFailureKeepsRotatedTokenInMemory(t *testing.T) {
 	f.endpoint.accessToken, f.endpoint.refreshToken = "second-access", "second-refresh"
 	f.endpoint.mu.Unlock()
 	os.Chmod(internal, 0700) //nolint:errcheck
-	if _, err := f.provider.RefreshAuthorization(context.Background()); err != nil {
+	if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer new-access"); err != nil {
 		t.Fatalf("second refresh: %v", err)
 	}
 	if f.endpoint.lastRefresh != "rotated-refresh" {
@@ -257,7 +259,7 @@ func TestNewProvider_appliesConfidentialClientRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
-	if _, err := p.RefreshAuthorization(context.Background()); err != nil {
+	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
 	if endpoint.lastBasicAuth != "dcr-client" {
@@ -266,16 +268,28 @@ func TestNewProvider_appliesConfidentialClientRegistration(t *testing.T) {
 }
 
 func TestNewProvider_inconsistentRegistrationErrors(t *testing.T) {
-	dir := t.TempDir()
-	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
-	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-		t.Fatal(err)
-	}
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"}
-	_, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
-	if err == nil {
-		t.Fatal("expected construction error for inconsistent registration")
-	}
+	t.Run("ignored when explicit client_id set", func(t *testing.T) {
+		dir := t.TempDir()
+		reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
+		if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
+			t.Fatal(err)
+		}
+		ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"}
+		if _, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err != nil {
+			t.Fatalf("inconsistent registration must be ignored when explicit client_id is set: %v", err)
+		}
+	})
+	t.Run("errors when no explicit client_id", func(t *testing.T) {
+		dir := t.TempDir()
+		reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
+		if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
+			t.Fatal(err)
+		}
+		ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
+		if _, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err == nil {
+			t.Fatal("expected construction error for inconsistent registration when no explicit client_id")
+		}
+	})
 }
 
 func TestNewProvider_missingRegistrationIsPublicClient(t *testing.T) {
@@ -283,5 +297,97 @@ func TestNewProvider_missingRegistrationIsPublicClient(t *testing.T) {
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"}
 	if _, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err != nil {
 		t.Fatalf("missing registration must not error: %v", err)
+	}
+}
+
+func TestNewProvider_concurrentConstructionNoRace(t *testing.T) {
+	dir := t.TempDir()
+	reg := &auth.Registration{ClientID: "dcr-client", TokenEndpointAuthMethod: "none"}
+	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
+		t.Fatal(err)
+	}
+	shared := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p, err := auth.NewProvider(auth.ProviderParams{
+				AuthConfig: shared, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake(),
+			})
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if _, err := p.Authorization(context.Background()); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestNewProvider_explicitClientIDNotOverriddenByRegistration(t *testing.T) {
+	dir := t.TempDir()
+	reg := &auth.Registration{ClientID: "stale-id", ClientSecret: "stale-secret", TokenEndpointAuthMethod: "client_secret_basic"}
+	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
+		t.Fatal(err)
+	}
+	endpoint := newTokenEndpoint(t)
+	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "manual-id", TokenURL: endpoint.srv.URL}
+	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
+		t.Fatalf("RefreshAuthorization: %v", err)
+	}
+	endpoint.mu.Lock()
+	gotClientID := endpoint.lastClientID
+	gotBasicUser := endpoint.lastBasicAuth
+	endpoint.mu.Unlock()
+	// The oauth2 library sends client_id via basic-auth header or form body depending
+	// on auth style auto-detection; check both locations so the assertion is not
+	// sensitive to the internal detection order.
+	usedManualID := gotClientID == "manual-id" || gotBasicUser == "manual-id"
+	if !usedManualID {
+		t.Errorf("manual-id must be used; form client_id=%q, basic user=%q", gotClientID, gotBasicUser)
+	}
+	if gotClientID == "stale-id" || gotBasicUser == "stale-id" {
+		t.Errorf("stale DCR registration must not override explicit client_id; form client_id=%q, basic user=%q", gotClientID, gotBasicUser)
+	}
+}
+
+func TestRefreshAuthorization_singleFlightOn401(t *testing.T) {
+	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
+	var wg sync.WaitGroup
+	results := make(chan string, 2)
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			v, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			results <- v
+		}()
+	}
+	wg.Wait()
+	close(results)
+	if hits := f.endpoint.hits.Load(); hits != 1 {
+		t.Errorf("token endpoint hits = %d, want exactly 1", hits)
+	}
+	for v := range results {
+		if v != "Bearer new-access" {
+			t.Errorf("got %q, want Bearer new-access", v)
+		}
 	}
 }

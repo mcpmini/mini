@@ -26,7 +26,10 @@ import (
 // import would cycle.
 type AuthorizationProvider interface {
 	Authorization(ctx context.Context) (string, error)
-	RefreshAuthorization(ctx context.Context) (string, error)
+	// RefreshAuthorization forces a token refresh only when the current token still
+	// equals stale; if another caller already refreshed past stale, it returns the
+	// current value without hitting the token endpoint.
+	RefreshAuthorization(ctx context.Context, stale string) (string, error)
 }
 
 // HTTPConnection implements Connection for streamable HTTP / SSE MCP servers.
@@ -147,11 +150,12 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 // Each c.post() call gets its own rate-limit retry budget so a 401 replay
 // cannot multiply 429/503 retries.
 func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
+	staleAuth := c.currentAuthValue(ctx)
 	body, err := c.post(ctx, rpcReq)
 	if c.authProvider == nil || !isUnauthorized(err) {
 		return body, err
 	}
-	if _, refreshErr := c.authProvider.RefreshAuthorization(ctx); refreshErr != nil {
+	if _, refreshErr := c.authProvider.RefreshAuthorization(ctx, staleAuth); refreshErr != nil {
 		return nil, c.authRemedyError(refreshErr)
 	}
 	body, err = c.post(ctx, rpcReq)
@@ -159,6 +163,14 @@ func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) 
 		return nil, c.authRemedyError(err)
 	}
 	return body, err
+}
+
+func (c *HTTPConnection) currentAuthValue(ctx context.Context) string {
+	if c.authProvider == nil {
+		return ""
+	}
+	v, _ := c.authProvider.Authorization(ctx)
+	return v
 }
 
 func isUnauthorized(err error) bool {
