@@ -17,13 +17,19 @@ import (
 // ConnectUpstreams dials every enabled server concurrently and returns before any
 // resolves; callers must not block startup on upstream availability (#33). Close waits
 // for all in-flight connects before tearing down.
+//
+// Close cancels in-flight connect workers regardless of whether the caller's ctx is
+// still live — necessary because serveStandalone defers Close before stop(), so the
+// signal context outlives the Close call.
 func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerConfig) {
+	connectCtx, cancel := context.WithCancel(ctx)
+	s.cancelConnect = cancel
 	for _, sc := range servers {
 		if !sc.IsEnabled() {
 			continue
 		}
 		s.connectWg.Add(1)
-		go s.connectUpstreamAsync(ctx, sc)
+		go s.connectUpstreamAsync(connectCtx, sc)
 	}
 }
 
@@ -208,6 +214,9 @@ func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, 
 
 func (s *Server) Close() {
 	cancelAuthFlows(s.takeAuthFlows())
+	if s.cancelConnect != nil {
+		s.cancelConnect()
+	}
 	s.authWg.Wait()
 	s.connectWg.Wait()
 	closeUpstreams(s.snapshotUpstreams())
