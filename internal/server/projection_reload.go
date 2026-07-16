@@ -62,23 +62,43 @@ func (s *Server) fingerprintOrWarn() (map[string]string, bool) {
 	return fp, true
 }
 
-// *.yaml also matches *.proj.yaml, so a single glob covers both inline
-// projections: blocks and standalone projection files.
+// servers/*.yaml (which also matches *.proj.yaml) covers inline projection
+// blocks and standalone projection files. config.yaml is included separately
+// because it can carry inline servers: entries with their own projections:
+// blocks; without it, changes to those inline projections never trigger a reload.
 func fingerprintServerFiles(configDir string) (map[string]string, error) {
 	paths, err := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
 	if err != nil {
 		return nil, err
 	}
-	fp := make(map[string]string, len(paths))
+	fp := make(map[string]string, len(paths)+1)
 	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		if err != nil {
+		if err := addFileHash(fp, p); err != nil {
 			return nil, err
 		}
-		sum := sha256.Sum256(data)
-		fp[p] = hex.EncodeToString(sum[:])
+	}
+	if err := addFileHashIfPresent(fp, filepath.Join(configDir, "config.yaml")); err != nil {
+		return nil, err
 	}
 	return fp, nil
+}
+
+func addFileHash(fp map[string]string, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(data)
+	fp[path] = hex.EncodeToString(sum[:])
+	return nil
+}
+
+func addFileHashIfPresent(fp map[string]string, path string) error {
+	err := addFileHash(fp, path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	return err
 }
 
 func changedPaths(prev, curr map[string]string) []string {
