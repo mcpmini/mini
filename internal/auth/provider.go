@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sync"
 	"time"
 
@@ -30,6 +31,9 @@ type ProviderParams struct {
 // inconsistent one does error, since silently falling back to public-client
 // auth would send requests the authorization server never agreed to.
 func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
+	// Deep-copy so concurrent NewProvider calls over a shared *AuthConfig do not
+	// race on the writes applyRegistration performs.
+	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
 	if err := hydrateFromRegistration(p); err != nil {
 		return nil, err
 	}
@@ -41,7 +45,27 @@ func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
 	}, nil
 }
 
+func cloneAuthConfig(src *config.AuthConfig) *config.AuthConfig {
+	if src == nil {
+		return nil
+	}
+	cp := *src
+	if src.Scopes != nil {
+		cp.Scopes = append([]string{}, src.Scopes...)
+	}
+	if src.ExtraAuthParams != nil {
+		cp.ExtraAuthParams = maps.Clone(src.ExtraAuthParams)
+	}
+	return &cp
+}
+
 func hydrateFromRegistration(p ProviderParams) error {
+	// Mirror the resolve.go guard: an explicit client_id in YAML is authoritative.
+	// A stale registration file must not silently override it and send the wrong
+	// credentials to the currently configured token endpoint.
+	if p.AuthConfig.ClientID != "" {
+		return nil
+	}
 	reg, err := LoadRegistration(p.ConfigDir, p.ServerName)
 	if IsNotFound(err) {
 		return nil
@@ -76,11 +100,15 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 	return bearerValue(p.token), nil
 }
 
-func (p *tokenProvider) RefreshAuthorization(ctx context.Context) (string, error) {
+func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := p.ensureTokenLocked(); err != nil {
 		return "", err
+	}
+	// Another goroutine already refreshed past the stale value; return current.
+	if bearerValue(p.token) != stale {
+		return bearerValue(p.token), nil
 	}
 	if err := p.refreshLocked(ctx); err != nil {
 		return "", err

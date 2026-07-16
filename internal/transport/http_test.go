@@ -497,7 +497,7 @@ func TestListTools_propagatesInputSchema(t *testing.T) {
 type staticAuthProvider struct{ value string }
 
 func (s staticAuthProvider) Authorization(context.Context) (string, error) { return s.value, nil }
-func (s staticAuthProvider) RefreshAuthorization(context.Context) (string, error) {
+func (s staticAuthProvider) RefreshAuthorization(_ context.Context, _ string) (string, error) {
 	return s.value, nil
 }
 
@@ -546,7 +546,7 @@ func TestHealth_usesAuthProvider(t *testing.T) {
 type failingAuthProvider struct{ err error }
 
 func (f failingAuthProvider) Authorization(context.Context) (string, error) { return "", f.err }
-func (f failingAuthProvider) RefreshAuthorization(context.Context) (string, error) {
+func (f failingAuthProvider) RefreshAuthorization(_ context.Context, _ string) (string, error) {
 	return "", f.err
 }
 
