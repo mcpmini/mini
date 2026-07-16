@@ -47,6 +47,7 @@ func runInit(configDir string, f initFlags) {
 	if imported := importServers(configDir, f.from, prompt); imported > 0 {
 		fmt.Printf("imported %d server(s)\n", imported)
 	}
+	runInitCatalogSelection(configDir, f.yes, scanner)
 	runInitAuthPass(initAuthPassParams{
 		configDir: configDir,
 		autoYes:   f.yes,
@@ -54,6 +55,18 @@ func runInit(configDir string, f initFlags) {
 		choose:    interactiveStringPrompter(scanner),
 	})
 	printInstallInstructions()
+}
+
+func runInitCatalogSelection(configDir string, autoYes bool, scanner *bufio.Scanner) {
+	if err := runCatalogStep(catalogStepParams{
+		configDir: configDir,
+		autoYes:   autoYes,
+		choose:    interactiveStringPrompter(scanner),
+		out:       os.Stdout,
+		err:       os.Stderr,
+	}); err != nil {
+		fatalf("catalog: %v", err)
+	}
 }
 
 func importServers(configDir, from string, prompt func(string) bool) int {
