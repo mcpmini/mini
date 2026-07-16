@@ -312,6 +312,6 @@ mini auth NAME                            OAuth2 PKCE flow for a server
 mini init [--yes]                         Setup wizard
 mini cleanup                              Delete expired response files
 
-mini call [-j|-m|-r] SERVER TOOL [JSON]   Invoke a tool directly
-mini perm-call [-j|-m|-r] SERVER TOOL [JSON]  Invoke a protected tool directly
+mini call [-j|-t|-r] SERVER TOOL [JSON]   Invoke a tool directly
+mini perm-call [-j|-t|-r] SERVER TOOL [JSON]  Invoke a protected tool directly
 ```
