@@ -47,6 +47,12 @@ func runInit(configDir string, f initFlags) {
 	if imported := importServers(configDir, f.from, prompt); imported > 0 {
 		fmt.Printf("imported %d server(s)\n", imported)
 	}
+	runInitAuthPass(initAuthPassParams{
+		configDir: configDir,
+		autoYes:   f.yes,
+		confirm:   prompt,
+		choose:    interactiveStringPrompter(scanner),
+	})
 	printInstallInstructions()
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -105,10 +106,14 @@ func resolveOpenerCmd(perServerCmd, globalCmd string) string {
 }
 
 func printAuthResult(name string, expiry time.Time) {
+	printAuthResultTo(os.Stdout, name, expiry)
+}
+
+func printAuthResultTo(out io.Writer, name string, expiry time.Time) {
 	if expiry.IsZero() {
-		fmt.Printf("authorized %s (no expiry)\n", name)
+		fmt.Fprintf(out, "authorized %s (no expiry)\n", name)
 	} else {
-		fmt.Printf("authorized %s (expires %s)\n", name, expiry.Format(time.RFC3339))
+		fmt.Fprintf(out, "authorized %s (expires %s)\n", name, expiry.Format(time.RFC3339))
 	}
 }
 
