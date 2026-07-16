@@ -17,6 +17,8 @@ type catalogStepParams struct {
 	choose    func(string) string
 	out       io.Writer
 	err       io.Writer
+	// nil falls back to the embedded catalog.
+	resolve func() ([]catalog.Entry, error)
 }
 
 type catalogSelectionParams struct {
@@ -30,7 +32,7 @@ func runCatalogStep(p catalogStepParams) error {
 	if p.autoYes {
 		return nil
 	}
-	entries, err := catalog.Load()
+	entries, err := loadCatalogEntries(p.resolve)
 	if err != nil {
 		return err
 	}
@@ -143,6 +145,13 @@ func catalogSelectionRange(token string) (int, int, error) {
 	}
 	end, err := strconv.Atoi(endText)
 	return start, end, err
+}
+
+func loadCatalogEntries(resolve func() ([]catalog.Entry, error)) ([]catalog.Entry, error) {
+	if resolve != nil {
+		return resolve()
+	}
+	return catalog.Load()
 }
 
 func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []int) error {

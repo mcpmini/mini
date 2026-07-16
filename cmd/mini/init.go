@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/catalog"
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 const importFileSizeLimit = 4 * 1024 * 1024 // 4MB — sane upper bound for any agent config file
@@ -64,8 +68,21 @@ func runInitCatalogSelection(configDir string, autoYes bool, scanner *bufio.Scan
 		choose:    interactiveStringPrompter(scanner),
 		out:       os.Stdout,
 		err:       os.Stderr,
+		resolve:   catalogResolver(configDir),
 	}); err != nil {
 		fatalf("catalog: %v", err)
+	}
+}
+
+func catalogResolver(configDir string) func() ([]catalog.Entry, error) {
+	return func() ([]catalog.Entry, error) {
+		return catalog.Resolve(context.Background(), catalog.ResolveParams{
+			Clock:      clock.System(),
+			Client:     catalog.NewFetchClient(),
+			CatalogURL: catalog.CatalogURL,
+			ConfigDir:  configDir,
+			Logger:     slog.Default(),
+		})
 	}
 }
 
