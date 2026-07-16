@@ -9,14 +9,15 @@ import (
 )
 
 type ServerYAML struct {
-	Name        string            `yaml:"name"`
-	Transport   string            `yaml:"transport,omitempty"`
-	URL         string            `yaml:"url,omitempty"`
-	Command     string            `yaml:"command,omitempty"`
-	Args        []string          `yaml:"args,omitempty"`
-	Env         []string          `yaml:"env,omitempty"`
-	Headers     map[string]string `yaml:"headers,omitempty"`
-	Permissions *PermissionsYAML  `yaml:"permissions,omitempty"`
+	Name        string             `yaml:"name"`
+	Transport   string             `yaml:"transport,omitempty"`
+	URL         string             `yaml:"url,omitempty"`
+	Command     string             `yaml:"command,omitempty"`
+	Args        []string           `yaml:"args,omitempty"`
+	Env         []string           `yaml:"env,omitempty"`
+	Headers     map[string]string  `yaml:"headers,omitempty"`
+	Auth        *config.AuthConfig `yaml:"auth,omitempty"`
+	Permissions *PermissionsYAML   `yaml:"permissions,omitempty"`
 }
 
 type PermissionsYAML struct {
@@ -61,6 +62,7 @@ func toServerConfig(name string, sc ServerYAML) config.ServerConfig {
 		Args:      sc.Args,
 		Env:       sc.Env,
 		Headers:   sc.Headers,
+		Auth:      sc.Auth,
 	}
 	if sc.Permissions != nil {
 		cfg.Permissions = toPermissionsConfig(sc.Permissions)

@@ -9,6 +9,7 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/defaults"
 )
 
 type catalogStepParams struct {
@@ -28,21 +29,21 @@ type catalogSelectionParams struct {
 	count   int
 }
 
-func runCatalogStep(p catalogStepParams) error {
+func runCatalogStep(p catalogStepParams) ([]catalog.Entry, error) {
 	if p.autoYes {
-		return nil
+		return nil, nil
 	}
 	entries, err := loadCatalogEntries(p.resolve)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, servers, err := config.Load(p.configDir)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 	available := availableCatalogEntries(entries, servers)
 	if len(available) == 0 {
-		return nil
+		return nil, nil
 	}
 	printCatalogEntries(p.out, available)
 	return selectCatalogEntries(p, available)
@@ -62,6 +63,18 @@ func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerCon
 	return available
 }
 
+func authSuffix(auth string) string {
+	switch auth {
+	case "token":
+		return " (token)"
+	case "oauth2":
+		return " (oauth)"
+	case "oauth2-app":
+		return " (oauth · own app)"
+	}
+	return ""
+}
+
 func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 	fmt.Fprintln(out, "Available MCP servers:")
 	category := ""
@@ -70,11 +83,11 @@ func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 			category = entry.Category
 			fmt.Fprintf(out, "  %s:\n", category)
 		}
-		fmt.Fprintf(out, "    %d. %s - %s\n", i+1, entry.Name, entry.Description)
+		fmt.Fprintf(out, "    %d. %s - %s%s\n", i+1, entry.Name, entry.Description, authSuffix(entry.Auth))
 	}
 }
 
-func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {
+func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) ([]catalog.Entry, error) {
 	for {
 		indexes, err := parseCatalogSelection(p.choose("Select servers (numbers, ranges, a = all, empty = none)"), len(entries))
 		if err != nil {
@@ -154,13 +167,43 @@ func loadCatalogEntries(resolve func() ([]catalog.Entry, error)) ([]catalog.Entr
 	return catalog.Load()
 }
 
-func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []int) error {
+func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []int) ([]catalog.Entry, error) {
+	var guidance []catalog.Entry
 	for _, index := range indexes {
 		entry := entries[index]
-		server := importers.ServerYAML{Name: entry.Name, Transport: "http", URL: entry.URL}
-		if err := importers.WriteServerYAML(configDir, entry.Name, server); err != nil {
-			return err
+		if err := importers.WriteServerYAML(configDir, entry.Name, catalogServerYAML(entry)); err != nil {
+			return nil, err
+		}
+		if entry.Auth == "token" || entry.Auth == "oauth2-app" {
+			guidance = append(guidance, entry)
 		}
 	}
-	return nil
+	return guidance, nil
+}
+
+func catalogServerYAML(entry catalog.Entry) importers.ServerYAML {
+	s := importers.ServerYAML{Name: entry.Name, Transport: "http", URL: entry.URL}
+	if entry.Auth == "oauth2" && !hasBundledAuth(entry.URL) {
+		s.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}
+	}
+	return s
+}
+
+// hasBundledAuth reports whether a bundled auth default exists for this URL.
+// When true, mergeKnownAuth supplies the full auth config at load time, so the
+// catalog write must not write a bare oauth2 block that would shadow it.
+func hasBundledAuth(url string) bool {
+	key := defaults.DetectKey("", url)
+	return key != "" && defaults.AuthFor(key) != nil
+}
+
+func printCatalogGuidance(out io.Writer, entries []catalog.Entry) {
+	for _, e := range entries {
+		switch e.Auth {
+		case "token":
+			fmt.Fprintf(out, "%s needs an access token: create one at %s, then set auth: {type: bearer, token: $YOUR_TOKEN} in servers/%s.yaml\n", e.Name, e.SetupURL, e.Name)
+		case "oauth2-app":
+			fmt.Fprintf(out, "%s requires registering your own app at %s, then set auth.client_id in servers/%s.yaml and run mini auth %s\n", e.Name, e.SetupURL, e.Name, e.Name)
+		}
+	}
 }

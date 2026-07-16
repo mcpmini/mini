@@ -28,6 +28,8 @@ type Entry struct {
 	URL         string `yaml:"url"         json:"url"`
 	Description string `yaml:"description" json:"description"`
 	Category    string `yaml:"category"    json:"category"`
+	Auth        string `yaml:"auth"        json:"auth"`
+	SetupURL    string `yaml:"setup_url"   json:"setup_url,omitempty"`
 }
 
 func Load() ([]Entry, error) {
@@ -57,7 +59,18 @@ func validateEntries(entries []Entry) ([]Entry, error) {
 	return entries, nil
 }
 
+var validAuthValues = map[string]bool{
+	"oauth2": true, "oauth2-app": true, "token": true, "none": true,
+}
+
 func validateEntry(entry Entry) error {
+	if err := validateEntryBase(entry); err != nil {
+		return err
+	}
+	return validateAuth(entry)
+}
+
+func validateEntryBase(entry Entry) error {
 	if entry.Name == "" {
 		return fmt.Errorf("name is required")
 	}
@@ -74,6 +87,30 @@ func validateEntry(entry Entry) error {
 		return fmt.Errorf("category is required")
 	}
 	return validateHTTPSURL(entry.URL)
+}
+
+func validateAuth(entry Entry) error {
+	if entry.Auth == "" {
+		return fmt.Errorf("auth is required")
+	}
+	if !validAuthValues[entry.Auth] {
+		return fmt.Errorf("invalid auth %q", entry.Auth)
+	}
+	return validateSetupURL(entry.Auth, entry.SetupURL)
+}
+
+func validateSetupURL(auth, setupURL string) error {
+	needs := auth == "token" || auth == "oauth2-app"
+	if needs && setupURL == "" {
+		return fmt.Errorf("setup_url is required for auth %q", auth)
+	}
+	if !needs && setupURL != "" {
+		return fmt.Errorf("setup_url not allowed for auth %q", auth)
+	}
+	if setupURL != "" {
+		return validateHTTPSURL(setupURL)
+	}
+	return nil
 }
 
 func entryLabel(entry Entry, index int) string {

@@ -51,27 +51,30 @@ func runInit(configDir string, f initFlags) {
 	if imported := importServers(configDir, f.from, prompt); imported > 0 {
 		fmt.Printf("imported %d server(s)\n", imported)
 	}
-	runInitCatalogSelection(configDir, f.yes, scanner)
+	guidance := runInitCatalogSelection(configDir, f.yes, scanner)
 	runInitAuthPass(initAuthPassParams{
 		configDir: configDir,
 		autoYes:   f.yes,
 		confirm:   prompt,
 		choose:    interactiveStringPrompter(scanner),
 	})
+	printCatalogGuidance(os.Stdout, guidance)
 	printInstallInstructions()
 }
 
-func runInitCatalogSelection(configDir string, autoYes bool, scanner *bufio.Scanner) {
-	if err := runCatalogStep(catalogStepParams{
+func runInitCatalogSelection(configDir string, autoYes bool, scanner *bufio.Scanner) []catalog.Entry {
+	guidance, err := runCatalogStep(catalogStepParams{
 		configDir: configDir,
 		autoYes:   autoYes,
 		choose:    interactiveStringPrompter(scanner),
 		out:       os.Stdout,
 		err:       os.Stderr,
 		resolve:   catalogResolver(configDir),
-	}); err != nil {
+	})
+	if err != nil {
 		fatalf("catalog: %v", err)
 	}
+	return guidance
 }
 
 func catalogResolver(configDir string) func() ([]catalog.Entry, error) {
