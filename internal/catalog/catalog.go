@@ -14,16 +14,20 @@ import (
 //go:embed catalog.yaml
 var embedded []byte
 
+// Same Pages origin and /mini/ project prefix as internal/auth.ClientMetadataURL —
+// do not derive this path at runtime or move it to the site root.
+const CatalogURL = "https://mcpmini.github.io/mini/catalog/v1.json"
+
 type document struct {
 	SchemaVersion int     `yaml:"schema_version"`
 	Entries       []Entry `yaml:"entries"`
 }
 
 type Entry struct {
-	Name        string `yaml:"name"`
-	URL         string `yaml:"url"`
-	Description string `yaml:"description"`
-	Category    string `yaml:"category"`
+	Name        string `yaml:"name"        json:"name"`
+	URL         string `yaml:"url"         json:"url"`
+	Description string `yaml:"description" json:"description"`
+	Category    string `yaml:"category"    json:"category"`
 }
 
 func Load() ([]Entry, error) {
