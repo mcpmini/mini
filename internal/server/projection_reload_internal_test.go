@@ -82,6 +82,18 @@ func TestFingerprintServerFiles(t *testing.T) {
 			t.Error("expected error for unreadable file")
 		}
 	})
+
+	t.Run("includes config.yaml when present", func(t *testing.T) {
+		dir := t.TempDir()
+		cfgPath := filepath.Join(dir, "config.yaml")
+		if err := os.WriteFile(cfgPath, []byte("log_level: debug\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		fp := mustFingerprint(t, dir)
+		if _, ok := fp[cfgPath]; !ok {
+			t.Errorf("expected config.yaml in fingerprint, got %v", fp)
+		}
+	})
 }
 
 func TestChangedPaths(t *testing.T) {
