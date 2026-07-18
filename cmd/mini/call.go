@@ -252,7 +252,7 @@ func resolveCallOutput(f callFlags, cfgFormat string) callOutput {
 		return callOutputToon
 	case f.json:
 		return callOutputJSON
-	case cfgFormat == "toon":
+	case cfgFormat == config.FormatToon:
 		return callOutputToon
 	default:
 		return callOutputJSON
