@@ -1,6 +1,10 @@
 package toon
 
-import "testing"
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
 
 func TestCanonicalizeNumberBoundaryTable(t *testing.T) {
 	cases := []struct {
@@ -11,7 +15,7 @@ func TestCanonicalizeNumberBoundaryTable(t *testing.T) {
 		{"lower bound of decimal range", "1e-6", "0.000001"},
 		{"just below decimal range uses exponent", "1e-7", "1e-7"},
 		{"just below upper bound stays decimal", "1e20", "100000000000000000000"},
-		{"upper bound uses exponent", "1e21", "1e21"},
+		{"upper bound uses exponent", "1e21", "1e+21"},
 		{"trailing fractional zero drops to integer", "10.0", "10"},
 		{"negative zero integer normalizes to zero", "-0", "0"},
 		{"negative zero float normalizes to zero", "-0.0", "0"},
@@ -92,5 +96,45 @@ func TestEncodeNumValid(t *testing.T) {
 	}
 	if got != "42" {
 		t.Errorf("Encode(Num=42) = %q, want %q", got, "42")
+	}
+}
+
+func TestCanonicalizeNumberOverflowLexemesPassThrough(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"positive overflow no sign", "1e309", "1e+309"},
+		{"negative overflow uppercase E", "-1E309", "-1e+309"},
+		{"fractional mantissa with sign", "1.5e+400", "1.5e+400"},
+		{"huge decimal without exponent", strings.Repeat("9", 320) + ".5", strings.Repeat("9", 320) + ".5"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := canonicalizeNumber(tc.in)
+			if err != nil {
+				t.Fatalf("canonicalizeNumber(%q) unexpected error: %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("canonicalizeNumber(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFromJSONOverflowNumberSucceeds(t *testing.T) {
+	raw := json.RawMessage(`{"x":1e309}`)
+	v, err := FromJSON(raw)
+	if err != nil {
+		t.Fatalf("FromJSON unexpected error: %v", err)
+	}
+	got, err := Encode(v)
+	if err != nil {
+		t.Fatalf("Encode unexpected error: %v", err)
+	}
+	want := "x: 1e+309"
+	if got != want {
+		t.Errorf("Encode() = %q, want %q", got, want)
 	}
 }

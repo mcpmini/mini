@@ -46,6 +46,11 @@ func isDigits(s string) bool {
 func canonicalFloat(lexeme string) (string, error) {
 	f, err := strconv.ParseFloat(lexeme, 64)
 	if err != nil {
+		// Overflow (too large for float64) is valid JSON per RFC 8259; pass the
+		// lexeme through textually rather than erroring per spec §2 out-of-domain.
+		if math.IsInf(f, 0) {
+			return normalizeOverflowLexeme(lexeme), nil
+		}
 		return "", fmt.Errorf("toon: malformed number %q: %w", lexeme, err)
 	}
 	if f == 0 {
@@ -58,12 +63,27 @@ func canonicalFloat(lexeme string) (string, error) {
 	return canonicalExponent(f), nil
 }
 
+// normalizeOverflowLexeme converts an out-of-range lexeme to lowercase e with
+// an explicit exponent sign, preserving the mantissa digits exactly.
+func normalizeOverflowLexeme(lexeme string) string {
+	lo := strings.ToLower(lexeme)
+	mantissa, expStr, hasExp := strings.Cut(lo, "e")
+	if !hasExp {
+		return lo
+	}
+	if !strings.HasPrefix(expStr, "+") && !strings.HasPrefix(expStr, "-") {
+		expStr = "+" + expStr
+	}
+	return mantissa + "e" + expStr
+}
+
 func canonicalExponent(f float64) string {
 	mantissa, exp, _ := strings.Cut(strconv.FormatFloat(f, 'e', -1, 64), "e")
-	sign := ""
-	exp = strings.TrimPrefix(exp, "+")
+	sign := "+"
 	if strings.HasPrefix(exp, "-") {
 		sign, exp = "-", exp[1:]
+	} else {
+		exp = strings.TrimPrefix(exp, "+")
 	}
 	exp = strings.TrimLeft(exp, "0")
 	if exp == "" {

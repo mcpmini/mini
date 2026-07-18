@@ -98,6 +98,23 @@ func TestFromJSONBigIntegerSurvivesDigitExact(t *testing.T) {
 	}
 }
 
+func TestFromJSONDuplicateKeyLastWinsFirstPosition(t *testing.T) {
+	raw := json.RawMessage(`{"a":1,"b":2,"a":3}`)
+	v, err := FromJSON(raw)
+	if err != nil {
+		t.Fatalf("FromJSON unexpected error: %v", err)
+	}
+	if len(v.Fields) != 2 {
+		t.Fatalf("got %d fields, want 2 (duplicate key collapsed)", len(v.Fields))
+	}
+	if v.Fields[0].Key != "a" || v.Fields[0].Val.Num != "3" {
+		t.Errorf("fields[0] = {%q, %v}, want {a, 3}", v.Fields[0].Key, v.Fields[0].Val.Num)
+	}
+	if v.Fields[1].Key != "b" || v.Fields[1].Val.Num != "2" {
+		t.Errorf("fields[1] = {%q, %v}, want {b, 2}", v.Fields[1].Key, v.Fields[1].Val.Num)
+	}
+}
+
 func TestFromJSONMalformedInputErrors(t *testing.T) {
 	cases := []struct {
 		name string
