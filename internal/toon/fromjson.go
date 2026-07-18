@@ -9,9 +9,10 @@ import (
 )
 
 // FromJSON decodes raw JSON into a Value, preserving object key order as
-// encountered in the document. Numbers are canonicalized per spec §2 via
-// json.Decoder's UseNumber, so integers beyond float64 precision survive
-// digit-exact.
+// encountered in the document. Duplicate object keys are resolved by last
+// occurrence winning while the first occurrence's position is kept. Numbers
+// are canonicalized per spec §2 via json.Decoder's UseNumber, so integers
+// beyond float64 precision survive digit-exact.
 func FromJSON(raw json.RawMessage) (Value, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -74,6 +75,7 @@ func valueFromNumber(n json.Number) (Value, error) {
 
 func decodeObject(dec *json.Decoder) (Value, error) {
 	v := Value{Kind: KindObject}
+	keyIndex := make(map[string]int)
 	for dec.More() {
 		keyTok, err := dec.Token()
 		if err != nil {
@@ -87,7 +89,12 @@ func decodeObject(dec *json.Decoder) (Value, error) {
 		if err != nil {
 			return Value{}, err
 		}
-		v.Fields = append(v.Fields, Field{Key: key, Val: val})
+		if idx, dup := keyIndex[key]; dup {
+			v.Fields[idx].Val = val
+		} else {
+			keyIndex[key] = len(v.Fields)
+			v.Fields = append(v.Fields, Field{Key: key, Val: val})
+		}
 	}
 	if _, err := dec.Token(); err != nil { // consume closing '}'
 		return Value{}, err
