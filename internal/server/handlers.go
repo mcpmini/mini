@@ -258,7 +258,7 @@ func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelo
 	if projCfg != nil && projCfg.Format != "" {
 		format = projCfg.Format
 	}
-	if format == "toon" {
+	if format == config.FormatToon {
 		return EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
 	}
 	return env

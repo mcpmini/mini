@@ -2,11 +2,16 @@ package config
 
 import "fmt"
 
+const (
+	FormatJSON = "json"
+	FormatToon = "toon"
+)
+
 // ValidResponseFormat reports whether format is a recognized response_format /
 // projection format value. The empty string means "use the default (json)".
 func ValidResponseFormat(format string) error {
 	switch format {
-	case "", "json", "toon":
+	case "", FormatJSON, FormatToon:
 		return nil
 	case "mini":
 		return fmt.Errorf(`response format "mini" was renamed to "toon"; use "toon" instead`)

@@ -2,16 +2,16 @@ package server
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 
 	"github.com/mcpmini/mini/internal/response"
 	"github.com/mcpmini/mini/internal/toon"
 )
 
-// EncodeToon renders env as TOON. FromAny/Encode cannot fail for a
-// response.Envelope, but the fallback keeps a malformed envelope from ever
-// producing a broken response.
+// EncodeToon renders env as TOON. Encoding can fail for values that
+// encoding/json itself cannot marshal (e.g. math.NaN); on failure the
+// response degrades to JSON, and if even JSON fails, to a minimal JSON
+// error object so the caller always receives parseable output.
 func EncodeToon(logger *slog.Logger, env *response.Envelope) string {
 	text, err := encodeToonValue(env)
 	if err == nil {
@@ -21,7 +21,8 @@ func EncodeToon(logger *slog.Logger, env *response.Envelope) string {
 	b, jsonErr := json.Marshal(env)
 	if jsonErr != nil {
 		logger.Error("toon fallback JSON marshal also failed", "err", jsonErr)
-		return fmt.Sprintf("%v", env)
+		errObj, _ := json.Marshal(map[string]string{"error": "response could not be encoded: " + jsonErr.Error()})
+		return string(errObj)
 	}
 	return string(b)
 }
