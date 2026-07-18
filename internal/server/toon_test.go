@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"math"
@@ -55,18 +56,23 @@ func TestEncodeToon(t *testing.T) {
 	})
 
 	t.Run("never returns a broken response when data cannot marshal at all", func(t *testing.T) {
-		// NaN fails both json.Marshal and toon encoding, exercising the fmt.Sprintf last-resort floor.
+		// NaN fails both toon encoding and json.Marshal, so EncodeToon must
+		// degrade to the minimal JSON error object rather than a raw Go struct dump.
 		env := &response.Envelope{Data: math.NaN()}
 		var logBuf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 
 		out := EncodeToon(logger, env)
 
-		if out == "" {
-			t.Fatal("expected a non-empty fallback response, got empty string")
-		}
 		if !strings.Contains(logBuf.String(), "toon encode failed") {
-			t.Errorf("expected a WARN log on fallback, got: %s", logBuf.String())
+			t.Errorf("expected a WARN log on toon fallback, got: %s", logBuf.String())
+		}
+		var parsed map[string]string
+		if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+			t.Fatalf("expected parseable JSON error object, got: %s", out)
+		}
+		if parsed["error"] == "" {
+			t.Errorf("expected non-empty error key in JSON fallback, got: %v", parsed)
 		}
 	})
 }
