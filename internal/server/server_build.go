@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/projection"
@@ -34,17 +35,18 @@ func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger,
 
 func newServer(cfg *config.Config, configDir string, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server {
 	return &Server{
-		cfg:          cfg,
-		configDir:    configDir,
-		reg:          registry.New(),
-		upstreams:    make(map[string]*upstreamServer),
-		removeGen:    make(map[string]uint64),
-		projections:  projections,
-		projDefaults: projection.DefaultsFrom(cfg),
-		toolSchemas:  compactToolSchemas(),
-		authFlows:    make(map[string]*authFlowState),
-		logger:       logger,
-		clock:        clock.System(),
+		cfg:           cfg,
+		configDir:     configDir,
+		reg:           registry.New(),
+		upstreams:     make(map[string]*upstreamServer),
+		removeGen:     make(map[string]uint64),
+		projections:   projections,
+		projDefaults:  projection.DefaultsFrom(cfg),
+		toolSchemas:   compactToolSchemas(),
+		authFlows:     make(map[string]*authFlowState),
+		logger:        logger,
+		clock:         clock.System(),
+		providerCache: auth.NewProviderCache(),
 	}
 }
 

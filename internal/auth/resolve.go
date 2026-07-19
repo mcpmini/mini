@@ -90,11 +90,15 @@ func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
 	return nil
 }
 
+// endpointValidator is the function used to validate discovered OAuth endpoint URLs.
+// It is overrideable for tests that use loopback httptest servers.
+var endpointValidator = transport.ValidateURL
+
 func validateEndpointURL(endpoint, name string) error {
 	if endpoint == "" {
 		return nil
 	}
-	if err := transport.ValidateURL(endpoint); err != nil {
+	if err := endpointValidator(endpoint); err != nil {
 		return fmt.Errorf("oauth discovery: %s points to a disallowed host: %w", name, err)
 	}
 	return nil
@@ -164,7 +168,12 @@ func applyExistingClientReg(p clientRegParams) (bool, error) {
 
 func applyRegistration(a *config.AuthConfig, reg *Registration, now time.Time) error {
 	a.ClientID = reg.ClientID
-	// reject rather than silently use a wrong auth style
+	// RFC 7591 §3.2.1: if token_endpoint_auth_method is absent but a secret was
+	// issued, the default is client_secret_basic. Normalize so downstream code
+	// (configFrom, validateRegistrationConsistency) sees the explicit method.
+	if reg.ClientSecret != "" && reg.TokenEndpointAuthMethod == "" {
+		reg.TokenEndpointAuthMethod = "client_secret_basic"
+	}
 	if err := validateRegistrationConsistency(reg); err != nil {
 		return err
 	}

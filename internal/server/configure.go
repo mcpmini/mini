@@ -265,6 +265,9 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 }
 
 func (s *Server) detachAndCloseServer(serverName string) {
+	// Evict before taking serverOpMu; providerCache has its own lock and
+	// must not be taken under serverOpMu to preserve lock ordering.
+	s.providerCache.Evict(serverName)
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	s.removeGen[serverName]++

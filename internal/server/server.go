@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/projection"
@@ -65,6 +66,7 @@ type Server struct {
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
 	useAuthProviders     bool
+	providerCache        *auth.ProviderCache
 	// Lock ordering: persistMu → serverOpMu → stateMu → authMu.
 	// stateMu is the innermost hot-path lock (RLock on every request);
 	// the outer locks serialize cold-path admin operations.

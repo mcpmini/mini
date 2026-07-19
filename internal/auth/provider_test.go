@@ -391,3 +391,184 @@ func TestRefreshAuthorization_singleFlightOn401(t *testing.T) {
 		}
 	}
 }
+
+func TestProviderAuthorization_lazyDiscovery_success(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+
+	endpoint := newTokenEndpoint(t)
+	clk := clock.NewFake()
+
+	// Combined server: discovery at /.well-known/oauth-authorization-server
+	// points to the httptest token endpoint (loopback — requires UseLoopbackEndpoints).
+	discoverySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/oauth-authorization-server" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"authorization_endpoint":           "https://as.example.com/authorize",
+			"token_endpoint":                   endpoint.srv.URL,
+			"code_challenge_methods_supported": []string{"S256"},
+		})
+	}))
+	t.Cleanup(discoverySrv.Close)
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", storedToken(clk.Now())); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		ServerURL:  discoverySrv.URL + "/mcp",
+		Clock:      clk,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := p.Authorization(context.Background())
+	if err != nil {
+		t.Fatalf("Authorization with lazy discovery: %v", err)
+	}
+	if got != "Bearer new-access" {
+		t.Errorf("got %q, want Bearer new-access", got)
+	}
+	if hits := endpoint.hits.Load(); hits != 1 {
+		t.Errorf("token endpoint hits = %d, want 1 (discovery populated TokenURL)", hits)
+	}
+}
+
+func TestProviderAuthorization_lazyDiscovery_discoveryFailure(t *testing.T) {
+	failSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	t.Cleanup(failSrv.Close)
+
+	clk := clock.NewFake()
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", storedToken(clk.Now())); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		ServerURL:  failSrv.URL + "/mcp",
+		Clock:      clk,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = p.Authorization(context.Background())
+	if err == nil {
+		t.Fatal("expected error when endpoint discovery fails")
+	}
+	if !strings.Contains(err.Error(), "mini auth srv") {
+		t.Errorf("error must name remedy command, got: %v", err)
+	}
+}
+
+func TestProviderCache_sharedAcrossGetOrCreate(t *testing.T) {
+	endpoint := newTokenEndpoint(t)
+	clk := clock.NewFake()
+	dir := t.TempDir()
+
+	if err := auth.Save(dir, "srv", storedToken(clk.Now())); err != nil {
+		t.Fatal(err)
+	}
+
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Clock:      clk,
+	}
+	cache := auth.NewProviderCache()
+
+	providers := make([]transport.AuthorizationProvider, 2)
+	var wg sync.WaitGroup
+	for i := range 2 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			p, err := cache.GetOrCreate(params)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			providers[i] = p
+		}(i)
+	}
+	wg.Wait()
+
+	if providers[0] != providers[1] {
+		t.Error("concurrent GetOrCreate must return the same provider instance")
+	}
+
+	stale := "Bearer stored-access"
+	tokens := make([]string, 2)
+	var mu sync.Mutex
+	for i := range 2 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			v, err := providers[i].RefreshAuthorization(context.Background(), stale)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			mu.Lock()
+			tokens[i] = v
+			mu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+
+	for i, tok := range tokens {
+		if tok != "Bearer new-access" {
+			t.Errorf("providers[%d] got %q, want Bearer new-access", i, tok)
+		}
+	}
+	if hits := endpoint.hits.Load(); hits != 1 {
+		t.Errorf("token endpoint hits = %d, want exactly 1 (shared provider single-flights refresh)", hits)
+	}
+}
+
+func TestProviderCache_evictionYieldsFreshProvider(t *testing.T) {
+	clk := clock.NewFake()
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
+		t.Fatal(err)
+	}
+
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Clock:      clk,
+	}
+	cache := auth.NewProviderCache()
+
+	p1, err := cache.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cache.Evict("srv")
+
+	p2, err := cache.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if p1 == p2 {
+		t.Error("after Evict, GetOrCreate must return a fresh provider instance")
+	}
+}
