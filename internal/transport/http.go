@@ -87,6 +87,9 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	if cfg.Clock == nil {
 		return nil, fmt.Errorf("HTTPConnectionConfig.Clock is required")
 	}
+	if cfg.AuthProvider != nil && cfg.AuthHeaderName == "" {
+		cfg.AuthHeaderName = "Authorization"
+	}
 	listenerCtx, listenerCancel := context.WithCancel(context.Background())
 	return &HTTPConnection{
 		url:                     cfg.URL,
@@ -160,7 +163,7 @@ func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) 
 	}
 	result, err = c.post(ctx, rpcReq)
 	if isUnauthorized(err) {
-		return nil, c.authRemedyError(err)
+		return nil, fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", c.serverName, c.serverName, err)
 	}
 	return result.body, err
 }
@@ -168,10 +171,6 @@ func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) 
 func isUnauthorized(err error) bool {
 	var uerr *UnauthorizedError
 	return errors.As(err, &uerr)
-}
-
-func (c *HTTPConnection) authRemedyError(cause error) error {
-	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", c.serverName, c.serverName, cause)
 }
 
 type postResult struct {
@@ -382,15 +381,36 @@ func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Reques
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set(c.authHeaderNameOrDefault(), value)
+	req.Header.Set(c.authHeaderName, value)
 	return value, nil
 }
 
-func (c *HTTPConnection) authHeaderNameOrDefault() string {
-	if c.authHeaderName == "" {
-		return "Authorization"
+// errAuthRefreshFailed marks a 401 whose token refresh also failed, so retry
+// loops (the notification listener) can stop instead of hitting the token
+// endpoint once per reconnect cycle forever.
+var errAuthRefreshFailed = errors.New("auth refresh failed")
+
+// sendOneWithAuthRetry sends an HTTP request built by build; on 401 it refreshes
+// the token using the value that was actually sent and replays once. The 429/503
+// retry budget is not applied here — callers that need it use post() instead.
+func (c *HTTPConnection) sendOneWithAuthRetry(ctx context.Context, build func(context.Context) (*http.Request, string, error)) (*http.Response, error) {
+	req, sentAuth, err := build(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return c.authHeaderName
+	resp, err := c.client.Do(req)
+	if err != nil || c.authProvider == nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, err
+	}
+	resp.Body.Close()
+	if _, refreshErr := c.authProvider.RefreshAuthorization(ctx, sentAuth); refreshErr != nil {
+		return nil, fmt.Errorf("%w: %w", errAuthRefreshFailed, refreshErr)
+	}
+	req, _, err = build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.client.Do(req)
 }
 
 func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
