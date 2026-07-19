@@ -37,8 +37,21 @@ func TestCanonicalizeNumberBoundaryTable(t *testing.T) {
 }
 
 func TestCanonicalizeNumberInvalidLexemeErrors(t *testing.T) {
-	if _, err := canonicalizeNumber("1.2.3"); err == nil {
-		t.Error("canonicalizeNumber(\"1.2.3\") expected error, got nil")
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"double decimal point", "1.2.3"},
+		// strconv.ParseFloat accepts Go-syntax "1.e309" (no digit after '.')
+		// but JSON grammar requires at least one digit after the decimal point.
+		{"overflow with decimal but no fractional digits", "1.e309"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := canonicalizeNumber(tc.in); err == nil {
+				t.Errorf("canonicalizeNumber(%q) expected error, got nil", tc.in)
+			}
+		})
 	}
 }
 

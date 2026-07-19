@@ -238,3 +238,131 @@ func fieldMap(v Value) map[string]Value {
 	}
 	return m
 }
+
+// textMarshalKey is an int whose MarshalText returns "custom-key" regardless
+// of the numeric value, used to verify jsonMapKey prefers TextMarshaler over
+// fmt.Sprint (which would emit the decimal string "7").
+type textMarshalKey int
+
+func (k textMarshalKey) MarshalText() ([]byte, error) {
+	return []byte("custom-key"), nil
+}
+
+func TestFromAnyRescuePreservesNilMapSiblingAsNull(t *testing.T) {
+	m := map[string]any{
+		"a":   math.NaN(), // triggers rescue; must be lexicographically first
+		"nil": (map[string]int)(nil),
+	}
+	v, err := FromAny(m)
+	if err != nil {
+		t.Fatalf("FromAny unexpected error: %v", err)
+	}
+	got := fieldMap(v)
+	if got["nil"].Kind != KindNull {
+		t.Errorf("nil map sibling: got Kind=%v, want KindNull (old code emits KindObject {})", got["nil"].Kind)
+	}
+}
+
+func TestFromAnyRescueUsesTextMarshalerForMapKeys(t *testing.T) {
+	// textMarshalKey(7).MarshalText() → "custom-key"; fmt.Sprint would give "7".
+	m := map[textMarshalKey]any{7: math.NaN()}
+	v, err := FromAny(m)
+	if err != nil {
+		t.Fatalf("FromAny unexpected error: %v", err)
+	}
+	got := fieldMap(v)
+	if _, ok := got["custom-key"]; !ok {
+		t.Errorf("key 'custom-key' absent; got keys %v", func() []string {
+			ks := make([]string, 0, len(got))
+			for k := range got {
+				ks = append(ks, k)
+			}
+			return ks
+		}())
+	}
+	if _, ok := got["7"]; ok {
+		t.Errorf("key '7' present; expected TextMarshaler output 'custom-key', not fmt.Sprint result")
+	}
+}
+
+func TestFromAnyRescuePreservesFloat32ShortestRepr(t *testing.T) {
+	m := map[string]any{
+		"a":   math.NaN(), // triggers rescue; "a" < "f" ensures NaN is processed first
+		"f32": float32(0.1),
+	}
+	v, err := FromAny(m)
+	if err != nil {
+		t.Fatalf("FromAny unexpected error: %v", err)
+	}
+	got := fieldMap(v)
+	if got["f32"].Kind != KindNumber || got["f32"].Num != "0.1" {
+		t.Errorf("float32(0.1) sibling: got %+v, want number 0.1 (old code emits 0.10000000149011612 via float64 widening)", got["f32"])
+	}
+}
+
+func TestFromAnyRescueUnsupportedMapKeyTypeErrors(t *testing.T) {
+	// "a" < "z" so NaN (key "a") triggers rescue before json encounters the
+	// struct-keyed inner map.  During rescue, normalizeNonFinite delegates the
+	// inner map to json.Marshal which fails with UnsupportedTypeError, and
+	// normalizeMapNonFinite passes it through unchanged so the outer retry
+	// surfaces json's own error instead of silently stringifying the key.
+	type structKey struct{ x int }
+	m := map[string]any{
+		"a": math.NaN(),
+		"z": map[structKey]any{{x: 1}: "val"},
+	}
+	if _, err := FromAny(m); err == nil {
+		t.Fatal("expected error for unsupported struct map key type, got nil")
+	}
+}
+
+type stringMarshalKey string
+
+func (k stringMarshalKey) MarshalText() ([]byte, error) {
+	return []byte("from-marshal-text"), nil
+}
+
+func TestFromAnyRescueStringKindKeyBeatsTextMarshaler(t *testing.T) {
+	m := map[stringMarshalKey]any{"raw-string": math.NaN()}
+	want, err := json.Marshal(map[stringMarshalKey]any{"raw-string": 1})
+	if err != nil {
+		t.Fatalf("finite twin marshal: %v", err)
+	}
+	if wantStr := string(want); wantStr != `{"raw-string":1}` {
+		t.Fatalf("encoding/json key precedence changed: %s", wantStr)
+	}
+	v, err := FromAny(m)
+	if err != nil {
+		t.Fatalf("FromAny error: %v", err)
+	}
+	got := fieldMap(v)
+	if _, ok := got["raw-string"]; !ok {
+		t.Errorf("key %q missing; string kind must win over TextMarshaler for map keys, got %v", "raw-string", keysOf(got))
+	}
+	if _, ok := got["from-marshal-text"]; ok {
+		t.Error("MarshalText key present; json uses the raw string value for string-kinded keys")
+	}
+}
+
+// nanMarshaler is map-kinded so that, without the Marshaler guard, the rescue
+// would rebuild it as a plain map and silently bypass its custom encoding.
+type nanMarshaler map[string]float64
+
+func (nanMarshaler) MarshalJSON() ([]byte, error) {
+	return json.Marshal(math.NaN())
+}
+
+func TestFromAnyRescueCustomMarshalerFailureSurfaces(t *testing.T) {
+	m := map[string]any{"a": math.NaN(), "z": nanMarshaler{"v": 1}}
+	if _, err := FromAny(m); err == nil {
+		t.Fatal("expected error: a custom Marshaler failing non-finite must not be rebuilt as a generic value")
+	}
+}
+
+func keysOf(m map[string]Value) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
