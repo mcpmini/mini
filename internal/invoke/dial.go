@@ -2,35 +2,79 @@ package invoke
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 type DialParams struct {
-	Logger *slog.Logger
-	Config *config.Config
-	Server config.ServerConfig
-	Clock  clock.Clock
+	Logger    *slog.Logger
+	Config    *config.Config
+	Server    config.ServerConfig
+	Clock     clock.Clock
+	ConfigDir string
+	// Only the long-lived serve paths set this; CLI commands inject headers
+	// statically at startup.
+	UseAuthProvider bool
 }
 
 func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
 	if p.Server.IsHTTPTransport() {
-		return transport.NewHTTPConnection(transport.HTTPConnectionConfig{
-			URL:                     p.Server.URL,
-			Headers:                 MergedHeaders(p.Server),
-			Clock:                   p.Clock,
-			ClientTimeout:           parseClientTimeout(p.Server.HTTPClientTimeout),
-			DisableRetryOnRateLimit: p.Server.DisableRetryOnRateLimit,
-			BlockPrivateIPs:         p.Server.RuntimeAdded && !p.Config.DangerousAllowPrivateURLs,
-		})
+		return dialHTTP(p)
 	}
 	return transport.NewStdioConnection(ctx, transport.StdioCommand{Command: p.Server.Command, Args: p.Server.Args, Env: p.Server.Env, Logger: p.Logger})
+}
+
+func dialHTTP(p DialParams) (transport.Connection, error) {
+	cfg := transport.HTTPConnectionConfig{
+		URL:                     p.Server.URL,
+		Headers:                 MergedHeaders(p.Server),
+		Clock:                   p.Clock,
+		ClientTimeout:           parseClientTimeout(p.Server.HTTPClientTimeout),
+		DisableRetryOnRateLimit: p.Server.DisableRetryOnRateLimit,
+		BlockPrivateIPs:         p.Server.RuntimeAdded && !p.Config.DangerousAllowPrivateURLs,
+		ServerName:              p.Server.Name,
+	}
+	if err := attachAuthProvider(&cfg, p); err != nil {
+		return nil, err
+	}
+	return transport.NewHTTPConnection(cfg)
+}
+
+func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error {
+	if !p.UseAuthProvider || !isOAuth2Server(p.Server) {
+		return nil
+	}
+	provider, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: p.Server.Auth,
+		ConfigDir:  p.ConfigDir,
+		ServerName: p.Server.Name,
+		Clock:      p.Clock,
+	})
+	if err != nil {
+		return fmt.Errorf("build auth provider for %s: %w", p.Server.Name, err)
+	}
+	cfg.AuthProvider = provider
+	cfg.AuthHeaderName = authHeaderName(p.Server.Auth)
+	return nil
+}
+
+func isOAuth2Server(sc config.ServerConfig) bool {
+	return sc.Auth != nil && sc.Auth.Type == config.AuthTypeOAuth2
+}
+
+func authHeaderName(ac *config.AuthConfig) string {
+	if ac.Header != "" {
+		return ac.Header
+	}
+	return "Authorization"
 }
 
 // MergedHeaders returns the HTTP headers for sc, including injected auth.

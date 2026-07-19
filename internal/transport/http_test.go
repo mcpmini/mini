@@ -494,6 +494,80 @@ func TestListTools_propagatesInputSchema(t *testing.T) {
 	}
 }
 
+type staticAuthProvider struct{ value string }
+
+func (s staticAuthProvider) Authorization(context.Context) (string, error) { return s.value, nil }
+func (s staticAuthProvider) RefreshAuthorization(_ context.Context, _ string) (string, error) {
+	return s.value, nil
+}
+
+func TestHTTPConnection_authProviderHeader(t *testing.T) {
+	cases := []struct {
+		name       string
+		headerName string
+		wantHeader string
+	}{
+		{"defaults to Authorization", "", "Authorization"},
+		{"custom header name", "X-Custom-Auth", "X-Custom-Auth"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got string
+			srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+				got = r.Header.Get(tc.wantHeader)
+				w.Write(okRPCResponse(1)) //nolint:errcheck
+			})
+			conn := mustHTTPConn(t, HTTPConnectionConfig{
+				URL: srv.URL, AuthProvider: staticAuthProvider{value: "Bearer dyn"}, AuthHeaderName: tc.headerName,
+			})
+			conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+			if got != "Bearer dyn" {
+				t.Errorf("%s = %q, want %q", tc.wantHeader, got, "Bearer dyn")
+			}
+		})
+	}
+}
+
+func TestHealth_usesAuthProvider(t *testing.T) {
+	var got string
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: staticAuthProvider{value: "Bearer dyn"}})
+	if err := conn.Health(context.Background()); err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if got != "Bearer dyn" {
+		t.Errorf("Health Authorization = %q, want %q", got, "Bearer dyn")
+	}
+}
+
+type failingAuthProvider struct{ err error }
+
+func (f failingAuthProvider) Authorization(context.Context) (string, error) { return "", f.err }
+func (f failingAuthProvider) RefreshAuthorization(_ context.Context, _ string) (string, error) {
+	return "", f.err
+}
+
+func TestHTTPConnection_authProviderErrorNamesRemedy(t *testing.T) {
+	var calls int
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.Write(okRPCResponse(1)) //nolint:errcheck
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{
+		URL: srv.URL, ServerName: "myserver", AuthProvider: failingAuthProvider{err: errors.New("no token")},
+	})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil || !strings.Contains(err.Error(), "mini auth myserver") {
+		t.Errorf("expected remedy error, got: %v", err)
+	}
+	if calls != 0 {
+		t.Errorf("no request should reach upstream when auth cannot be built, got %d", calls)
+	}
+}
+
 func TestHealth_returns200(t *testing.T) {
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

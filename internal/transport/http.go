@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,12 +19,28 @@ import (
 	"github.com/mcpmini/mini/internal/version"
 )
 
+// AuthorizationProvider supplies a dynamic Authorization header value for HTTP
+// upstreams, refreshing near-expiry OAuth tokens as needed. Declared here rather
+// than in internal/auth (which owns the concrete implementation) because
+// internal/auth imports internal/transport for endpoint validation; the reverse
+// import would cycle.
+type AuthorizationProvider interface {
+	Authorization(ctx context.Context) (string, error)
+	// RefreshAuthorization forces a token refresh only when the current token still
+	// equals stale; if another caller already refreshed past stale, it returns the
+	// current value without hitting the token endpoint.
+	RefreshAuthorization(ctx context.Context, stale string) (string, error)
+}
+
 // HTTPConnection implements Connection for streamable HTTP / SSE MCP servers.
 // The GitHub MCP and similar servers use this transport: each call is a POST,
 // responses may be SSE-wrapped, and a session ID is tracked across calls.
 type HTTPConnection struct {
 	url                     string
+	serverName              string
 	headers                 map[string]string
+	authProvider            AuthorizationProvider
+	authHeaderName          string
 	disableRetryOnRateLimit bool
 	client                  *http.Client
 	clock                   clock.Clock
@@ -66,26 +83,37 @@ type HTTPConnectionConfig struct {
 	// BlockPrivateIPs attaches an SSRF-safe dialer that re-validates resolved IPs
 	// at connect time, preventing DNS rebinding attacks. Set for runtime-added servers.
 	BlockPrivateIPs bool
+	ServerName      string
+	// Nil means static Headers are applied without dynamic refresh.
+	AuthProvider AuthorizationProvider
+	// Empty defaults to "Authorization".
+	AuthHeaderName string
 }
 
 func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	if cfg.Clock == nil {
 		return nil, fmt.Errorf("HTTPConnectionConfig.Clock is required")
 	}
-	timeout := defaultHTTPClientTimeout
-	if cfg.ClientTimeout > 0 {
-		timeout = cfg.ClientTimeout
-	}
 	listenerCtx, listenerCancel := context.WithCancel(context.Background())
 	return &HTTPConnection{
 		url:                     cfg.URL,
+		serverName:              cfg.ServerName,
 		headers:                 cfg.Headers,
+		authProvider:            cfg.AuthProvider,
+		authHeaderName:          cfg.AuthHeaderName,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
-		client:                  noRedirectClient(timeout, cfg.BlockPrivateIPs),
+		client:                  noRedirectClient(resolveClientTimeout(cfg.ClientTimeout), cfg.BlockPrivateIPs),
 		clock:                   cfg.Clock,
 		listenerCtx:             listenerCtx,
 		listenerCancel:          listenerCancel,
 	}, nil
+}
+
+func resolveClientTimeout(configured time.Duration) time.Duration {
+	if configured > 0 {
+		return configured
+	}
+	return defaultHTTPClientTimeout
 }
 
 // noRedirectClient blocks redirects to prevent session token exfiltration to a different host.
@@ -116,7 +144,42 @@ const maxRetries = 3
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	id := c.nextID.Add(1)
 	req := Request{JSONRPC: "2.0", ID: id, Method: method, Params: params}
-	return c.post(ctx, req)
+	return c.postWithAuthRetry(ctx, req)
+}
+
+// Each c.post() call gets its own rate-limit retry budget so a 401 replay
+// cannot multiply 429/503 retries.
+func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
+	staleAuth := c.currentAuthValue(ctx)
+	body, err := c.post(ctx, rpcReq)
+	if c.authProvider == nil || !isUnauthorized(err) {
+		return body, err
+	}
+	if _, refreshErr := c.authProvider.RefreshAuthorization(ctx, staleAuth); refreshErr != nil {
+		return nil, c.authRemedyError(refreshErr)
+	}
+	body, err = c.post(ctx, rpcReq)
+	if isUnauthorized(err) {
+		return nil, c.authRemedyError(err)
+	}
+	return body, err
+}
+
+func (c *HTTPConnection) currentAuthValue(ctx context.Context) string {
+	if c.authProvider == nil {
+		return ""
+	}
+	v, _ := c.authProvider.Authorization(ctx)
+	return v
+}
+
+func isUnauthorized(err error) bool {
+	var uerr *UnauthorizedError
+	return errors.As(err, &uerr)
+}
+
+func (c *HTTPConnection) authRemedyError(cause error) error {
+	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", c.serverName, c.serverName, cause)
 }
 
 type postResult struct {
@@ -187,7 +250,9 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	if err != nil {
 		return nil, err
 	}
-	c.setRequestHeaders(httpReq)
+	if err := c.setRequestHeaders(ctx, httpReq); err != nil {
+		return nil, err
+	}
 	return httpReq, nil
 }
 
@@ -291,7 +356,7 @@ func parseRetryAfter(h string, now time.Time) time.Duration {
 	return -1
 }
 
-func (c *HTTPConnection) setRequestHeaders(req *http.Request) {
+func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Request) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	// Spec (Streamable HTTP): client MUST include MCP-Protocol-Version on all
@@ -301,11 +366,34 @@ func (c *HTTPConnection) setRequestHeaders(req *http.Request) {
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
+	if err := c.applyAuthProvider(ctx, req); err != nil {
+		return err
+	}
 	c.mu.Lock()
 	if c.sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", c.sessionID)
 	}
 	c.mu.Unlock()
+	return nil
+}
+
+func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Request) error {
+	if c.authProvider == nil {
+		return nil
+	}
+	value, err := c.authProvider.Authorization(ctx)
+	if err != nil {
+		return c.authRemedyError(err)
+	}
+	req.Header.Set(c.authHeaderNameOrDefault(), value)
+	return nil
+}
+
+func (c *HTTPConnection) authHeaderNameOrDefault() string {
+	if c.authHeaderName == "" {
+		return "Authorization"
+	}
+	return c.authHeaderName
 }
 
 func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
@@ -320,9 +408,12 @@ func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
 }
 
 func (c *HTTPConnection) Health(ctx context.Context) error {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
-	for k, v := range c.headers {
-		req.Header.Set(k, v)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
+	if err != nil {
+		return err
+	}
+	if err := c.setRequestHeaders(ctx, req); err != nil {
+		return err
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {

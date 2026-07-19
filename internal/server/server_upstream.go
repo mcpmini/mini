@@ -87,7 +87,10 @@ func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn
 }
 
 func (s *Server) dialUpstream(ctx context.Context, sc config.ServerConfig) (transport.Connection, error) {
-	return invoke.Dial(ctx, invoke.DialParams{Logger: s.logger, Config: s.cfg, Server: sc, Clock: s.clock})
+	return invoke.Dial(ctx, invoke.DialParams{
+		Logger: s.logger, Config: s.cfg, Server: sc, Clock: s.clock,
+		ConfigDir: s.configDir, UseAuthProvider: s.useAuthProviders,
+	})
 }
 
 // SetReconnectHook sets a callback that fires after a successful automatic reconnect
