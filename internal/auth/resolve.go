@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -26,10 +28,17 @@ func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
 	sc.Headers[headerName] = "Bearer " + accessToken
 }
 
+type ResolveEndpointsParams struct {
+	ConfigDir  string
+	ServerName string
+	// Clock drives the client_secret_expires_at comparison during registration hydration.
+	Clock clock.Clock
+}
+
 // ResolveEndpoints fills in missing OAuth endpoints on sc.Auth via RFC 9728
 // discovery and dynamic client registration, and sets sc.Auth.ResourceURL from
 // sc.URL. It is a no-op if AuthURL, TokenURL, and ClientID are all already set.
-func ResolveEndpoints(ctx context.Context, configDir, serverName string, sc *config.ServerConfig) error {
+func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) error {
 	a := sc.Auth
 	a.ResourceURL = sc.URL
 	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
@@ -40,7 +49,13 @@ func ResolveEndpoints(ctx context.Context, configDir, serverName string, sc *con
 		return err
 	}
 	if a.ClientID == "" {
-		return resolveClientID(ctx, clientRegParams{ConfigDir: configDir, ServerName: serverName, AuthConfig: a, Meta: meta})
+		return resolveClientID(ctx, clientRegParams{
+			ConfigDir:  p.ConfigDir,
+			ServerName: p.ServerName,
+			AuthConfig: a,
+			Meta:       meta,
+			Now:        p.Clock.Now(),
+		})
 	}
 	return nil
 }
@@ -90,10 +105,11 @@ type clientRegParams struct {
 	ServerName string
 	AuthConfig *config.AuthConfig
 	Meta       *ServerMeta
+	Now        time.Time
 }
 
 func resolveClientID(ctx context.Context, p clientRegParams) error {
-	found, err := applyExistingClientReg(p.ConfigDir, p.ServerName, p.AuthConfig)
+	found, err := applyExistingClientReg(p)
 	if err != nil || found {
 		return err
 	}
@@ -111,7 +127,7 @@ func resolveClientID(ctx context.Context, p clientRegParams) error {
 }
 
 func dynamicRegister(ctx context.Context, p clientRegParams) error {
-	a, configDir, serverName, meta := p.AuthConfig, p.ConfigDir, p.ServerName, p.Meta
+	a, meta := p.AuthConfig, p.Meta
 	regURL := ""
 	if meta != nil {
 		regURL = meta.RegistrationURL
@@ -119,22 +135,70 @@ func dynamicRegister(ctx context.Context, p clientRegParams) error {
 	if regURL == "" {
 		return fmt.Errorf("no client_id configured and server provides no registration endpoint")
 	}
-	clientID, err := Register(ctx, regURL, ResolvedCallbackURI(a))
+	result, err := Register(ctx, regURL, ResolvedCallbackURI(a))
 	if err != nil {
 		return err
 	}
-	a.ClientID = clientID
-	return SaveRegistration(configDir, serverName, &Registration{ClientID: clientID})
+	reg := &Registration{
+		ClientID:                result.ClientID,
+		ClientSecret:            result.ClientSecret,
+		TokenEndpointAuthMethod: result.TokenEndpointAuthMethod,
+		ClientSecretExpiresAt:   result.ClientSecretExpiresAt,
+	}
+	if err := applyRegistration(a, reg, p.Now); err != nil {
+		return err
+	}
+	return SaveRegistration(p.ConfigDir, p.ServerName, reg)
 }
 
-func applyExistingClientReg(configDir, serverName string, a *config.AuthConfig) (bool, error) {
-	reg, err := LoadRegistration(configDir, serverName)
+func applyExistingClientReg(p clientRegParams) (bool, error) {
+	reg, err := LoadRegistration(p.ConfigDir, p.ServerName)
 	if err == nil {
-		a.ClientID = reg.ClientID
-		return true, nil
+		return true, applyRegistration(p.AuthConfig, reg, p.Now)
 	}
 	if !IsNotFound(err) {
 		return false, err
 	}
 	return false, nil
+}
+
+func applyRegistration(a *config.AuthConfig, reg *Registration, now time.Time) error {
+	a.ClientID = reg.ClientID
+	// reject rather than silently use a wrong auth style
+	if err := validateRegistrationConsistency(reg); err != nil {
+		return err
+	}
+	// treat as absent — token exchange surfaces the AS's own error instead of silent re-registration
+	if !secretApplies(reg, now) {
+		return nil
+	}
+	a.ClientSecret = reg.ClientSecret
+	a.TokenEndpointAuthMethod = reg.TokenEndpointAuthMethod
+	return nil
+}
+
+func secretApplies(reg *Registration, now time.Time) bool {
+	if reg.ClientSecret == "" {
+		return false
+	}
+	if reg.ClientSecretExpiresAt == 0 {
+		return true
+	}
+	return time.Unix(reg.ClientSecretExpiresAt, 0).After(now)
+}
+
+func validateRegistrationConsistency(reg *Registration) error {
+	switch reg.TokenEndpointAuthMethod {
+	case "", "none":
+		if reg.ClientSecret != "" {
+			return fmt.Errorf("client registration: client_secret present but token_endpoint_auth_method is %q", reg.TokenEndpointAuthMethod)
+		}
+	case "client_secret_basic", "client_secret_post":
+		if reg.ClientSecret == "" {
+			return fmt.Errorf("client registration: token_endpoint_auth_method %q requires a client_secret", reg.TokenEndpointAuthMethod)
+		}
+	default:
+		return fmt.Errorf("client registration: unrecognized token_endpoint_auth_method %q", reg.TokenEndpointAuthMethod)
+	}
+	return nil
 }

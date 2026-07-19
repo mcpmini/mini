@@ -33,12 +33,12 @@ func TestRegister_success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	clientID, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
+	result, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if clientID != "test-client-id" {
-		t.Errorf("expected test-client-id, got %q", clientID)
+	if result.ClientID != "test-client-id" {
+		t.Errorf("expected test-client-id, got %q", result.ClientID)
 	}
 }
 
@@ -87,12 +87,38 @@ func TestRegister_200OK(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	clientID, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
+	result, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if clientID != "abc" {
-		t.Errorf("got %q", clientID)
+	if result.ClientID != "abc" {
+		t.Errorf("got %q", result.ClientID)
+	}
+}
+
+func TestRegister_capturesConfidentialClientOverride(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"client_id":                  "confidential-id",
+			"client_secret":              "server-issued-secret",
+			"token_endpoint_auth_method": "client_secret_basic",
+			"client_secret_expires_at":   1234567890,
+		})
+	}))
+	defer srv.Close()
+
+	result, err := auth.Register(context.Background(), srv.URL, auth.ResolvedCallbackURI(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ClientSecret != "server-issued-secret" {
+		t.Errorf("ClientSecret = %q, want server-issued-secret", result.ClientSecret)
+	}
+	if result.TokenEndpointAuthMethod != "client_secret_basic" {
+		t.Errorf("TokenEndpointAuthMethod = %q, want client_secret_basic", result.TokenEndpointAuthMethod)
+	}
+	if result.ClientSecretExpiresAt != 1234567890 {
+		t.Errorf("ClientSecretExpiresAt = %d, want 1234567890", result.ClientSecretExpiresAt)
 	}
 }
 

@@ -11,6 +11,12 @@ import (
 
 type Registration struct {
 	ClientID string `json:"client_id"`
+
+	// Populated when the AS registered mini as confidential (RFC 7591 §3.2.1).
+	// Zero in older public-client registration files without these fields.
+	ClientSecret            string `json:"client_secret,omitempty"`
+	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method,omitempty"`
+	ClientSecretExpiresAt   int64  `json:"client_secret_expires_at,omitempty"`
 }
 
 func LoadRegistration(configDir, serverName string) (*Registration, error) {
@@ -40,7 +46,7 @@ func SaveRegistration(configDir, serverName string, r *Registration) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return atomicReplaceFile(path, data)
 }
 
 func registrationPath(configDir, serverName string) string {
