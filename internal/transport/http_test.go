@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -558,7 +559,8 @@ func TestHTTPConnection_authProviderErrorNamesRemedy(t *testing.T) {
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{
-		URL: srv.URL, ServerName: "myserver", AuthProvider: failingAuthProvider{err: errors.New("no token")},
+		URL: srv.URL, ServerName: "myserver",
+		AuthProvider: failingAuthProvider{err: fmt.Errorf("myserver requires re-authorization; run `mini auth myserver`: no token")},
 	})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil || !strings.Contains(err.Error(), "mini auth myserver") {
@@ -857,5 +859,154 @@ func TestHealth_doesNotTriggerHandshake(t *testing.T) {
 	defer fake.mu.Unlock()
 	if fake.initCount != 0 {
 		t.Errorf("initCount = %d, want 0 (Health must not trigger a handshake)", fake.initCount)
+	}
+}
+
+func newHandshakeServerWithNotif(t *testing.T, notifHandler http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"protocolVersion": ProtocolVersion},
+			})
+		case "notifications/initialized":
+			notifHandler(w, r)
+		case "ping":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"ok": true},
+			})
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestHandshake_initializedNotification401_handshakeFails_and_isRetryable(t *testing.T) {
+	var notifCalls atomic.Int32
+	srv := newHandshakeServerWithNotif(t, func(w http.ResponseWriter, r *http.Request) {
+		if notifCalls.Add(1) == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+		} else {
+			w.WriteHeader(http.StatusAccepted)
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected handshake failure when notification returns 401")
+	}
+	if !strings.Contains(err.Error(), "notifications/initialized") {
+		t.Errorf("error should mention notifications/initialized, got: %v", err)
+	}
+
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Errorf("expected handshake retry to succeed, got: %v", err)
+	}
+}
+
+func TestHandshake_initializedNotification500_handshakeFails(t *testing.T) {
+	srv := newHandshakeServerWithNotif(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "server error", http.StatusInternalServerError)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected error for notification 500")
+	}
+	if !strings.Contains(err.Error(), "notifications/initialized") {
+		t.Errorf("error should mention notifications/initialized, got: %v", err)
+	}
+}
+
+func TestHandshake_initializedNotification401_withProvider_refreshAndSucceeds(t *testing.T) {
+	var notifCalls atomic.Int32
+	srv := newHandshakeServerWithNotif(t, func(w http.ResponseWriter, r *http.Request) {
+		notifCalls.Add(1)
+		if r.Header.Get("Authorization") == "Bearer old" {
+			w.WriteHeader(http.StatusUnauthorized)
+		} else {
+			w.WriteHeader(http.StatusAccepted)
+		}
+	})
+	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider})
+
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("expected success after auth refresh, got: %v", err)
+	}
+	if notifCalls.Load() != 2 {
+		t.Errorf("notification calls = %d, want 2 (401 then replay with new token)", notifCalls.Load())
+	}
+	if provider.refreshCount() != 1 {
+		t.Errorf("refreshes = %d, want 1", provider.refreshCount())
+	}
+}
+
+func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
+	streamConnected := make(chan struct{})
+	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			if r.Header.Get("Authorization") != "Bearer new" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"%s\"}\n\n", NotificationToolsChanged) //nolint:errcheck
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			close(streamConnected)
+			<-r.Context().Done()
+			return
+		}
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{
+					"protocolVersion": ProtocolVersion,
+					"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
+				},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "ping":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"ok": true},
+			})
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider})
+
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+
+	select {
+	case <-streamConnected:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for stream to connect with refreshed token")
+	}
+
+	if provider.refreshCount() != 1 {
+		t.Errorf("refreshes = %d, want 1", provider.refreshCount())
+	}
+	if got := provider.recordedStale(); got != "Bearer old" {
+		t.Errorf("stale passed to RefreshAuthorization = %q, want %q", got, "Bearer old")
 	}
 }
