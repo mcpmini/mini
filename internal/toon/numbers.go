@@ -48,7 +48,13 @@ func canonicalFloat(lexeme string) (string, error) {
 	if err != nil {
 		// Overflow (too large for float64) is valid JSON per RFC 8259; pass the
 		// lexeme through textually rather than erroring per spec §2 out-of-domain.
+		// The lexeme must still satisfy the JSON number grammar — strconv.ParseFloat
+		// accepts Go-syntax forms like "1.e309" (no digits after decimal) that
+		// JSON does not allow.
 		if math.IsInf(f, 0) {
+			if !isValidJSONNumberLexeme(lexeme) {
+				return "", fmt.Errorf("toon: malformed number %q", lexeme)
+			}
 			return normalizeOverflowLexeme(lexeme), nil
 		}
 		return "", fmt.Errorf("toon: malformed number %q: %w", lexeme, err)
@@ -90,6 +96,68 @@ func canonicalExponent(f float64) string {
 		exp = "0"
 	}
 	return mantissa + "e" + sign + exp
+}
+
+// isValidJSONNumberLexeme reports whether s is a valid JSON number per RFC 8259.
+// strconv.ParseFloat accepts Go-syntax forms (e.g. "1.e309") that JSON forbids
+// (the fractional part must have at least one digit after ".").
+func isValidJSONNumberLexeme(s string) bool {
+	i := consumeJSONInteger(s, 0)
+	if i < 0 {
+		return false
+	}
+	if i < len(s) && s[i] == '.' {
+		i = consumeDigitRun(s, i+1)
+		if i < 0 {
+			return false
+		}
+	}
+	if i < len(s) && (s[i] == 'e' || s[i] == 'E') {
+		i++
+		if i < len(s) && (s[i] == '+' || s[i] == '-') {
+			i++
+		}
+		i = consumeDigitRun(s, i)
+		if i < 0 {
+			return false
+		}
+	}
+	return i == len(s)
+}
+
+// consumeJSONInteger advances past an optional '-' and an integer part
+// (0 or [1-9][0-9]*) starting at pos. Returns the new index or -1 on failure.
+func consumeJSONInteger(s string, pos int) int {
+	i := pos
+	if i < len(s) && s[i] == '-' {
+		i++
+	}
+	if i >= len(s) {
+		return -1
+	}
+	if s[i] == '0' {
+		return i + 1
+	}
+	if s[i] < '1' || s[i] > '9' {
+		return -1
+	}
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return i
+}
+
+// consumeDigitRun advances past one or more digits starting at pos.
+// Returns the new index, or -1 if pos does not point to a digit.
+func consumeDigitRun(s string, pos int) int {
+	if pos >= len(s) || s[pos] < '0' || s[pos] > '9' {
+		return -1
+	}
+	i := pos
+	for i < len(s) && s[i] >= '0' && s[i] <= '9' {
+		i++
+	}
+	return i
 }
 
 // FromJSON/FromAny already hand encodeNum a canonical lexeme; Values built by
