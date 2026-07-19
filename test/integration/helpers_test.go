@@ -334,7 +334,44 @@ func startServer(t *testing.T, configDir string) *mcpClient {
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
+	waitForUpstreamsSettled(t, c)
 	return c
+}
+
+// waitForUpstreamsSettled polls until the tool catalog stops changing. Upstreams connect
+// in the background (#33): call this before asserting tool presence to avoid racing the
+// connect goroutines.
+func waitForUpstreamsSettled(t *testing.T, c *mcpClient) {
+	t.Helper()
+	settleUntilStable(t, func() string { return c.listTools("") })
+}
+
+func waitForProxyUpstreamsSettled(t *testing.T, c *mcpClient) {
+	t.Helper()
+	settleUntilStable(t, func() string { return string(c.mustCall("tools/list", nil)) })
+}
+
+func settleUntilStable(t *testing.T, snapshot func() string) {
+	t.Helper()
+	const stableReadsRequired = 3
+	const pollInterval = 30 * time.Millisecond
+	const ceiling = 3 * time.Second
+
+	deadline := time.Now().Add(ceiling)
+	last, stable := "", 0
+	for time.Now().Before(deadline) {
+		cur := snapshot()
+		if cur == last {
+			stable++
+			if stable >= stableReadsRequired {
+				return
+			}
+		} else {
+			stable = 1
+			last = cur
+		}
+		time.Sleep(pollInterval)
+	}
 }
 
 func newMCPClient(t *testing.T, stdin io.WriteCloser, scanner *bufio.Scanner) *mcpClient {
