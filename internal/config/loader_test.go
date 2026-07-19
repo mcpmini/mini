@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -271,6 +272,57 @@ func TestLoad_invalidServerName(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "bad name.yaml"), "name: bad name\ncommand: mcp\n")
 	expectLoadError(t, dir)
+}
+
+func TestLoadServerConfig_connectTimeoutParses(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nconnect_timeout: 3s\n")
+	sc := mustLoadOneServer(t, dir)
+	if sc.ConnectTimeout != "3s" {
+		t.Fatalf("expected connect_timeout %q, got %q", "3s", sc.ConnectTimeout)
+	}
+}
+
+func TestLoad_invalidConnectTimeout(t *testing.T) {
+	for _, spec := range []string{"-1s", "nonsense"} {
+		t.Run(spec, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nconnect_timeout: "+spec+"\n")
+			expectLoadError(t, dir)
+		})
+	}
+}
+
+func TestLoad_inlineServerConnectTimeout(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout string
+		wantErr bool
+	}{
+		{name: "nonsense rejected", timeout: "nonsense", wantErr: true},
+		{name: "negative duration rejected", timeout: "-1s", wantErr: true},
+		{name: "valid duration accepted", timeout: "3s", wantErr: false},
+		{name: "zero disables timeout", timeout: "0", wantErr: false},
+		{name: "empty uses default", timeout: "", wantErr: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, "config.yaml"),
+				"servers:\n  - name: svc\n    command: run\n    connect_timeout: "+tc.timeout+"\n")
+			_, _, err := config.Load(dir)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected load error, got nil")
+				}
+				if !strings.Contains(err.Error(), "config.yaml") {
+					t.Errorf("error %q does not name config.yaml", err.Error())
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
 }
 
 func TestLoadServerConfig_withAuth(t *testing.T) {

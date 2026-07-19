@@ -46,9 +46,22 @@ func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err := validateInlineServers(configPath, cfg.Servers); err != nil {
+		return nil, nil, err
+	}
 	combined := deduplicateServers(append(servers, cfg.Servers...))
 	mergeKnownAuth(configDir, combined)
 	return cfg, combined, nil
+}
+
+func validateInlineServers(configPath string, servers []ServerConfig) error {
+	for _, s := range servers {
+		if _, _, err := ParseTimeoutSpec(s.ConnectTimeout, 0); err != nil {
+			return fmt.Errorf("invalid connect_timeout for server %q in %s: %w", s.Name, configPath, err)
+		}
+	}
+	return nil
 }
 
 func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig, error) {
@@ -202,6 +215,9 @@ func loadServerConfig(path string) (*ServerConfig, error) {
 	}
 	if !ValidServerName.MatchString(s.Name) {
 		return nil, fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", s.Name, path)
+	}
+	if _, _, err := ParseTimeoutSpec(s.ConnectTimeout, 0); err != nil {
+		return nil, fmt.Errorf("invalid connect_timeout in %s: %w", path, err)
 	}
 	return &s, nil
 }

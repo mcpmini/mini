@@ -15,11 +15,13 @@ import (
 )
 
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
-	conn, err := s.dialUpstream(ctx, sc)
+	connectCtx, cancel := applyConnectTimeout(ctx, sc.ConnectTimeout)
+	defer cancel()
+	conn, err := s.dialUpstream(connectCtx, sc)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", sc.Name, err)
 	}
-	if err := s.registerUpstream(ctx, sc, conn); err != nil {
+	if err := s.registerUpstream(connectCtx, sc, conn); err != nil {
 		return s.markOAuthIfRequired(ctx, sc, err)
 	}
 	return nil
