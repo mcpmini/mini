@@ -90,11 +90,15 @@ func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
 	return nil
 }
 
+// endpointValidator is the function used to validate discovered OAuth endpoint URLs.
+// It is overrideable for tests that use loopback httptest servers.
+var endpointValidator = transport.ValidateURL
+
 func validateEndpointURL(endpoint, name string) error {
 	if endpoint == "" {
 		return nil
 	}
-	if err := transport.ValidateURL(endpoint); err != nil {
+	if err := endpointValidator(endpoint); err != nil {
 		return fmt.Errorf("oauth discovery: %s points to a disallowed host: %w", name, err)
 	}
 	return nil
