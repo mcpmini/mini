@@ -170,7 +170,7 @@ func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) 
 	}
 	result, err = c.post(ctx, rpcReq)
 	if isUnauthorized(err) {
-		return nil, fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", c.serverName, c.serverName, err)
+		return nil, fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w: %w", c.serverName, c.serverName, ErrReauthRequired, err)
 	}
 	return result.body, err
 }
@@ -394,6 +394,11 @@ func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Reques
 	req.Header.Set(c.authHeaderName, value)
 	return value, nil
 }
+
+// ErrReauthRequired is returned when a token refresh has failed or a replayed
+// request still receives 401, meaning the user must run `mini auth <server>`.
+// Callers (reconnect loop, maybeReconnect) check for it to stop retrying.
+var ErrReauthRequired = errors.New("re-authorization required")
 
 // errAuthRefreshFailed marks a 401 whose token refresh also failed, so retry
 // loops (the notification listener) can stop instead of hitting the token

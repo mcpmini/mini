@@ -5,6 +5,7 @@ package auth_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -571,4 +572,28 @@ func TestProviderCache_evictionYieldsFreshProvider(t *testing.T) {
 	if p1 == p2 {
 		t.Error("after Evict, GetOrCreate must return a fresh provider instance")
 	}
+}
+
+func TestRemedyError_wrapsErrReauthRequired(t *testing.T) {
+	t.Run("missing token names sentinel", func(t *testing.T) {
+		f := newProviderFixture(t, providerSetup{})
+		_, err := f.provider.Authorization(context.Background())
+		if err == nil {
+			t.Fatal("expected error for missing token")
+		}
+		if !errors.Is(err, transport.ErrReauthRequired) {
+			t.Errorf("remedyError must wrap ErrReauthRequired; got: %v", err)
+		}
+	})
+	t.Run("refresh failure names sentinel", func(t *testing.T) {
+		f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
+		f.endpoint.status.Store(http.StatusInternalServerError)
+		_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+		if err == nil {
+			t.Fatal("expected refresh failure")
+		}
+		if !errors.Is(err, transport.ErrReauthRequired) {
+			t.Errorf("remedyError must wrap ErrReauthRequired; got: %v", err)
+		}
+	})
 }

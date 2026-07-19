@@ -1010,3 +1010,41 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 		t.Errorf("stale passed to RefreshAuthorization = %q, want %q", got, "Bearer old")
 	}
 }
+
+// refreshSucceedsProvider succeeds on Authorization and RefreshAuthorization so that
+// postWithAuthRetry can replay the request; the server still returns 401 on the replay,
+// which should produce an error wrapping ErrReauthRequired.
+type refreshSucceedsProvider struct{}
+
+func (refreshSucceedsProvider) Authorization(_ context.Context) (string, error) {
+	return "Bearer initial", nil
+}
+func (refreshSucceedsProvider) RefreshAuthorization(_ context.Context, _ string) (string, error) {
+	return "Bearer refreshed", nil
+}
+
+func TestPostWithAuthRetry_replay401WrapsErrReauthRequired(t *testing.T) {
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req)
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"protocolVersion": ProtocolVersion},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{
+		URL: srv.URL, ServerName: "svc", AuthProvider: refreshSucceedsProvider{},
+	})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if !errors.Is(err, ErrReauthRequired) {
+		t.Errorf("expected ErrReauthRequired after replay 401, got: %v", err)
+	}
+}

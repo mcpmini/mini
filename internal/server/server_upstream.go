@@ -154,7 +154,9 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.attachNotificationHandler(u, conn)
 	if sc.Projections != nil {
 		s.stateMu.Lock()
-		s.projections[sc.Name] = sc.Projections
+		if s.projections[sc.Name] == nil {
+			s.projections[sc.Name] = sc.Projections
+		}
 		s.stateMu.Unlock()
 	}
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))

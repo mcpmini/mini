@@ -145,11 +145,10 @@ func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig
 		s.logger.Error("save token failed", "server", serverName, "err", err)
 		return
 	}
-	s.reconnectWithToken(serverName, sc, result.Token.AccessToken)
+	s.reconnectWithToken(serverName, sc)
 }
 
-func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig, accessToken string) {
-	auth.ApplyBearerToken(&sc, accessToken)
+func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// Do not call removeServerRuntime first: if AddUpstream fails the server

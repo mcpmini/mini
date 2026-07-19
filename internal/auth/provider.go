@@ -179,7 +179,7 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 }
 
 func (p *tokenProvider) remedyError(cause error) error {
-	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", p.serverName, p.serverName, cause)
+	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w: %w", p.serverName, p.serverName, transport.ErrReauthRequired, cause)
 }
 
 func bearerValue(t *oauth2.Token) string {
