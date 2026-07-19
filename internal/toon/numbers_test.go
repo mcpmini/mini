@@ -2,6 +2,7 @@ package toon
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -150,4 +151,54 @@ func TestFromJSONOverflowNumberSucceeds(t *testing.T) {
 	if got != want {
 		t.Errorf("Encode() = %q, want %q", got, want)
 	}
+}
+
+func TestCanonicalizeNumberUnderflow(t *testing.T) {
+	t.Run("underflow passes through textually not zero", func(t *testing.T) {
+		cases := []struct {
+			name string
+			in   string
+			want string
+		}{
+			{"positive underflow", "1e-324", "1e-324"},
+			{"negative underflow", "-1e-324", "-1e-324"},
+			{"uppercase E normalizes to lowercase", "1E-324", "1e-324"},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				got, err := canonicalizeNumber(tc.in)
+				if err != nil {
+					t.Fatalf("canonicalizeNumber(%q) unexpected error: %v", tc.in, err)
+				}
+				if got != tc.want {
+					t.Errorf("canonicalizeNumber(%q) = %q, want %q", tc.in, got, tc.want)
+				}
+			})
+		}
+	})
+
+	t.Run("smallest surviving subnormal uses normal path", func(t *testing.T) {
+		f, _ := strconv.ParseFloat("5e-324", 64)
+		want := canonicalExponent(f)
+		got, err := canonicalizeNumber("5e-324")
+		if err != nil {
+			t.Fatalf("canonicalizeNumber(%q) unexpected error: %v", "5e-324", err)
+		}
+		if got != want {
+			t.Errorf("canonicalizeNumber(%q) = %q, want %q", "5e-324", got, want)
+		}
+	})
+
+	t.Run("genuine zero spellings canonicalize to zero", func(t *testing.T) {
+		zeros := []string{"0", "-0", "0.0", "0e5", "0.00e-10"}
+		for _, z := range zeros {
+			got, err := canonicalizeNumber(z)
+			if err != nil {
+				t.Fatalf("canonicalizeNumber(%q) unexpected error: %v", z, err)
+			}
+			if got != "0" {
+				t.Errorf("canonicalizeNumber(%q) = %q, want %q", z, got, "0")
+			}
+		}
+	})
 }

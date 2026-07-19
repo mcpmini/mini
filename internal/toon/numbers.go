@@ -43,23 +43,21 @@ func isDigits(s string) bool {
 	return true
 }
 
+// canonicalFloat parses decimal/exponent lexemes. Values outside float64's
+// finite range — overflow (too large) and underflow (too small) — pass through
+// textually per spec §2 out-of-domain policy.
 func canonicalFloat(lexeme string) (string, error) {
 	f, err := strconv.ParseFloat(lexeme, 64)
 	if err != nil {
-		// Overflow (too large for float64) is valid JSON per RFC 8259; pass the
-		// lexeme through textually rather than erroring per spec §2 out-of-domain.
-		// The lexeme must still satisfy the JSON number grammar — strconv.ParseFloat
-		// accepts Go-syntax forms like "1.e309" (no digits after decimal) that
-		// JSON does not allow.
 		if math.IsInf(f, 0) {
-			if !isValidJSONNumberLexeme(lexeme) {
-				return "", fmt.Errorf("toon: malformed number %q", lexeme)
-			}
-			return normalizeOverflowLexeme(lexeme), nil
+			return passThroughOutOfRange(lexeme)
 		}
 		return "", fmt.Errorf("toon: malformed number %q: %w", lexeme, err)
 	}
 	if f == 0 {
+		if hasMantissaNonZeroDigit(lexeme) {
+			return passThroughOutOfRange(lexeme)
+		}
 		return "0", nil
 	}
 	abs := math.Abs(f)
@@ -69,9 +67,33 @@ func canonicalFloat(lexeme string) (string, error) {
 	return canonicalExponent(f), nil
 }
 
-// normalizeOverflowLexeme converts an out-of-range lexeme to lowercase e with
-// an explicit exponent sign, preserving the mantissa digits exactly.
-func normalizeOverflowLexeme(lexeme string) string {
+// passThroughOutOfRange validates s as JSON-grammar-legal and returns it
+// normalized (lowercase e, explicit exponent sign). Grammar validation is
+// required even when ParseFloat succeeded, because ParseFloat accepts Go forms
+// like "1.e-324" (no digits after decimal) that JSON forbids.
+func passThroughOutOfRange(lexeme string) (string, error) {
+	if !isValidJSONNumberLexeme(lexeme) {
+		return "", fmt.Errorf("toon: malformed number %q", lexeme)
+	}
+	return normalizeOutOfRangeLexeme(lexeme), nil
+}
+
+func hasMantissaNonZeroDigit(lexeme string) bool {
+	for _, c := range lexeme {
+		if c == 'e' || c == 'E' {
+			break
+		}
+		if c >= '1' && c <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeOutOfRangeLexeme converts an out-of-range lexeme (overflow or
+// underflow) to lowercase e with an explicit exponent sign, preserving the
+// mantissa digits exactly.
+func normalizeOutOfRangeLexeme(lexeme string) string {
 	lo := strings.ToLower(lexeme)
 	mantissa, expStr, hasExp := strings.Cut(lo, "e")
 	if !hasExp {
