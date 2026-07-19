@@ -43,7 +43,8 @@ func TestStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
 		t.Fatalf("initialize took %v; want a fast response despite a 5s-slow-init upstream", elapsed)
 	}
 
-	waitForUpstreamsSettled(t, c)
+	settleUntil(t, func() string { return c.listTools("") },
+		func(s string) bool { return strings.Contains(s, "get_item") })
 
 	healthyTools := c.listTools("healthy")
 	if !strings.Contains(healthyTools, "get_item") {

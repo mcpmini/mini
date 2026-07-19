@@ -338,20 +338,26 @@ func startServer(t *testing.T, configDir string) *mcpClient {
 	return c
 }
 
-// waitForUpstreamsSettled polls until the tool catalog stops changing. Upstreams connect
-// in the background (#33): call this before asserting tool presence to avoid racing the
-// connect goroutines.
+// waitForUpstreamsSettled polls until the tool catalog reading is stable.
+// Upstreams connect asynchronously (#33); call this before asserting tool presence
+// to avoid racing the connect goroutines.
 func waitForUpstreamsSettled(t *testing.T, c *mcpClient) {
 	t.Helper()
-	settleUntilStable(t, func() string { return c.listTools("") })
+	settleUntil(t, func() string { return c.listTools("") }, nil)
 }
 
+// waitForProxyUpstreamsSettled polls until at least one upstream tool (identified
+// by the "__" naming convention) is stable in the proxy tools list.
 func waitForProxyUpstreamsSettled(t *testing.T, c *mcpClient) {
 	t.Helper()
-	settleUntilStable(t, func() string { return string(c.mustCall("tools/list", nil)) })
+	settleUntil(t, func() string { return string(c.mustCall("tools/list", nil)) },
+		func(s string) bool { return strings.Contains(s, "__") })
 }
 
-func settleUntilStable(t *testing.T, snapshot func() string) {
+// settleUntil polls snapshot() until ready(cur) is true for stableReadsRequired
+// consecutive reads. When ready is nil any stable reading counts.
+// Calls t.Fatalf on ceiling expiry only when ready is non-nil.
+func settleUntil(t *testing.T, snapshot func() string, ready func(string) bool) {
 	t.Helper()
 	const stableReadsRequired = 3
 	const pollInterval = 30 * time.Millisecond
@@ -361,16 +367,23 @@ func settleUntilStable(t *testing.T, snapshot func() string) {
 	last, stable := "", 0
 	for time.Now().Before(deadline) {
 		cur := snapshot()
-		if cur == last {
-			stable++
-			if stable >= stableReadsRequired {
-				return
+		if ready == nil || ready(cur) {
+			if cur == last {
+				stable++
+				if stable >= stableReadsRequired {
+					return
+				}
+			} else {
+				stable = 1
+				last = cur
 			}
 		} else {
-			stable = 1
-			last = cur
+			last, stable = cur, 0
 		}
 		time.Sleep(pollInterval)
+	}
+	if ready != nil {
+		t.Fatalf("catalog did not settle within %s; last snapshot: %s", ceiling, last)
 	}
 }
 

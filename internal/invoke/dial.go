@@ -23,6 +23,10 @@ type DialParams struct {
 	// Only the long-lived serve paths set this; CLI commands inject headers
 	// statically at startup.
 	UseAuthProvider bool
+	// ProviderCache, when non-nil, shares one AuthorizationProvider per server
+	// across all dials (startup, reconnect, runtime-add). CLI one-shot paths
+	// leave this nil and get a fresh provider per invocation.
+	ProviderCache *auth.ProviderCache
 }
 
 func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
@@ -52,18 +56,27 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 	if !p.UseAuthProvider || !isOAuth2Server(p.Server) {
 		return nil
 	}
-	provider, err := auth.NewProvider(auth.ProviderParams{
+	params := auth.ProviderParams{
 		AuthConfig: p.Server.Auth,
 		ConfigDir:  p.ConfigDir,
 		ServerName: p.Server.Name,
+		ServerURL:  p.Server.URL,
 		Clock:      p.Clock,
-	})
+	}
+	provider, err := resolveProvider(params, p.ProviderCache)
 	if err != nil {
 		return fmt.Errorf("build auth provider for %s: %w", p.Server.Name, err)
 	}
 	cfg.AuthProvider = provider
 	cfg.AuthHeaderName = authHeaderName(p.Server.Auth)
 	return nil
+}
+
+func resolveProvider(params auth.ProviderParams, cache *auth.ProviderCache) (transport.AuthorizationProvider, error) {
+	if cache != nil {
+		return cache.GetOrCreate(params)
+	}
+	return auth.NewProvider(params)
 }
 
 func isOAuth2Server(sc config.ServerConfig) bool {

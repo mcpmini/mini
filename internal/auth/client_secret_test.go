@@ -147,6 +147,27 @@ func assertPostAuth(t *testing.T, label string, obs authObservation, clientID, c
 	}
 }
 
+func TestRegistrationOmittedMethod_normalizedToClientSecretBasic(t *testing.T) {
+	tokenSrv := newCapturingTokenServer(t)
+	reg := &auth.Registration{
+		ClientID:     "omitted-method-client",
+		ClientSecret: "sk-test-usurp-omitted",
+		// TokenEndpointAuthMethod intentionally absent — RFC 7591 §3.2.1 default
+	}
+	ac := hydrateFromSavedRegistration(t, reg, tokenSrv.srv.URL, clock.System())
+	if ac.TokenEndpointAuthMethod != "client_secret_basic" {
+		t.Fatalf("omitted token_endpoint_auth_method must normalize to client_secret_basic, got %q", ac.TokenEndpointAuthMethod)
+	}
+	if ac.ClientSecret != reg.ClientSecret {
+		t.Fatalf("client_secret not applied: got %q", ac.ClientSecret)
+	}
+
+	exchangeAndRefresh(t, ac)
+
+	assertBasicAuth(t, "exchange", tokenSrv.exchange, reg.ClientID, reg.ClientSecret)
+	assertBasicAuth(t, "refresh", tokenSrv.refresh, reg.ClientID, reg.ClientSecret)
+}
+
 func TestHydratedRegistration_clientSecretBasicAuthenticatesExchangeAndRefresh(t *testing.T) {
 	tokenSrv := newCapturingTokenServer(t)
 	reg := &auth.Registration{
@@ -259,11 +280,6 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 			name:   "client_secret_post with no secret",
 			reg:    &auth.Registration{ClientID: "c2", TokenEndpointAuthMethod: "client_secret_post"},
 			wantIn: "client_secret",
-		},
-		{
-			name:   "secret with method absent",
-			reg:    &auth.Registration{ClientID: "c3", ClientSecret: "sk-test-usurp-inconsistent"},
-			wantIn: "token_endpoint_auth_method",
 		},
 		{
 			name:   "secret with method none",

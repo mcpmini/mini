@@ -4,7 +4,7 @@ package transport
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +15,10 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 )
+
+// These tests call rpc rather than Call because the fake servers return
+// hardcoded JSON-RPC IDs; the initialize round-trip Call prepends would shift
+// those IDs and corrupt per-server call counts.
 
 func newRateLimitedServer(t *testing.T, failUntilCall int32, calls *atomic.Int32) *httptest.Server {
 	t.Helper()
@@ -36,7 +40,7 @@ func TestRetry_429WithRetryAfter_retriesAndSucceeds(t *testing.T) {
 	var calls atomic.Int32
 	srv := newRateLimitedServer(t, 3, &calls)
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	result, err := conn.Call(t.Context(), "ping", nil)
+	result, err := conn.rpc(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("expected success after retries, got: %v", err)
 	}
@@ -59,7 +63,7 @@ func TestRetry_429_exhaustsMaxRetries(t *testing.T) {
 	defer srv.Close()
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
@@ -86,7 +90,7 @@ func TestRetry_503WithRetryAfter_retries(t *testing.T) {
 	defer srv.Close()
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("expected success after 503 retry, got: %v", err)
 	}
@@ -112,7 +116,7 @@ func TestRetry_429WithoutRetryAfter_usesExponentialBackoff(t *testing.T) {
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clk})
 	done := make(chan error, 1)
 	go func() {
-		_, err := conn.Call(t.Context(), "ping", nil)
+		_, err := conn.rpc(t.Context(), "ping", nil)
 		done <- err
 	}()
 	advanceRetryTimer(t, clk)
@@ -144,7 +148,7 @@ func TestRetry_contextCancelledDuringBackoff(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := conn.Call(ctx, "ping", nil)
+	_, err := conn.rpc(ctx, "ping", nil)
 	if err == nil {
 		t.Fatal("expected error when context canceled during backoff")
 	}
@@ -160,7 +164,7 @@ func TestRetry_nonRetryable4xx_noRetry(t *testing.T) {
 	defer srv.Close()
 
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: srv.URL, Clock: clock.NewFake()})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error for 401")
 	}
@@ -175,6 +179,7 @@ type fakeAuthProvider struct {
 	next       string
 	refreshes  int
 	refreshErr error
+	lastStale  string
 }
 
 func (f *fakeAuthProvider) Authorization(context.Context) (string, error) {
@@ -186,6 +191,7 @@ func (f *fakeAuthProvider) Authorization(context.Context) (string, error) {
 func (f *fakeAuthProvider) RefreshAuthorization(_ context.Context, stale string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastStale = stale
 	if f.current != stale {
 		return f.current, nil
 	}
@@ -201,6 +207,12 @@ func (f *fakeAuthProvider) refreshCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.refreshes
+}
+
+func (f *fakeAuthProvider) recordedStale() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastStale
 }
 
 func newAuthReplayConn(t *testing.T, handler http.HandlerFunc) (*HTTPConnection, *fakeAuthProvider) {
@@ -228,7 +240,7 @@ func TestAuthReplay_401RefreshedThenSucceeds(t *testing.T) {
 		}
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("expected success after 401 refresh replay, got: %v", err)
 	}
 	if calls.Load() != 2 {
@@ -245,7 +257,7 @@ func TestAuthReplay_persistent401_terminalAfterTwoAttempts(t *testing.T) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected terminal error")
 	}
@@ -266,8 +278,8 @@ func TestAuthReplay_refreshFailure_noReplay(t *testing.T) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	})
-	provider.refreshErr = errors.New("token endpoint down")
-	_, err := conn.Call(t.Context(), "ping", nil)
+	provider.refreshErr = fmt.Errorf("myserver requires re-authorization; run `mini auth myserver`: token endpoint down")
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -292,7 +304,7 @@ func TestAuthReplay_429Then401_budgetNotMultiplied(t *testing.T) {
 			w.Write(okRPCResponse(1)) //nolint:errcheck
 		}
 	})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("expected success, got: %v", err)
 	}
 	if calls.Load() != 4 {
@@ -318,11 +330,31 @@ func TestRetry_passThroughRateLimits_returnsImmediately(t *testing.T) {
 		Clock:                   clock.NewFake(),
 		DisableRetryOnRateLimit: true,
 	})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if calls.Load() != 1 {
 		t.Errorf("pass-through mode should not retry, got %d calls", calls.Load())
+	}
+}
+
+func TestAuthReplay_staleMatchesSentHeader(t *testing.T) {
+	var capturedAuth string
+	var captureOnce sync.Once
+	conn, provider := newAuthReplayConn(t, func(w http.ResponseWriter, r *http.Request) {
+		captureOnce.Do(func() { capturedAuth = r.Header.Get("Authorization") })
+		if r.Header.Get("Authorization") == "Bearer old" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Write(okRPCResponse(1)) //nolint:errcheck
+	})
+	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("expected success after replay, got: %v", err)
+	}
+	stale := provider.recordedStale()
+	if capturedAuth != stale {
+		t.Errorf("stale passed to RefreshAuthorization = %q, want %q (header server received on 401)", stale, capturedAuth)
 	}
 }

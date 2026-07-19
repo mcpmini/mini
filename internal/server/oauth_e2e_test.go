@@ -96,7 +96,7 @@ func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.DisableAuthBrowserOpen = true
-	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithAuthProviders())
 }
 
 func waitForServerConnected(t *testing.T, srv *server.Server, svcName string) {
