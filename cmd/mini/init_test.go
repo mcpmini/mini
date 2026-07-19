@@ -1,10 +1,69 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func captureStderr(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stderr
+	os.Stderr = w
+	fn()
+	w.Close()
+	os.Stderr = old
+	var buf bytes.Buffer
+	io.Copy(&buf, r) //nolint:errcheck
+	return buf.String()
+}
+
+func TestImportClaudeFormat_OversizedFile(t *testing.T) {
+	configDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "huge.json")
+	f, err := os.Create(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(11 << 20); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+
+	var count int
+	errOut := captureStderr(t, func() { count = importClaudeFormat(configDir, src) })
+	if count != 0 {
+		t.Errorf("imported %d servers, want 0", count)
+	}
+	if !strings.Contains(errOut, src) {
+		t.Errorf("stderr %q missing path %s", errOut, src)
+	}
+}
+
+func TestImportClaudeFormat_NoMCPServersKey(t *testing.T) {
+	configDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "empty.json")
+	if err := os.WriteFile(src, []byte(`{"other": "data"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	var count int
+	errOut := captureStderr(t, func() { count = importClaudeFormat(configDir, src) })
+	if count != 0 {
+		t.Errorf("imported %d servers, want 0", count)
+	}
+	if !strings.Contains(errOut, "no MCP servers found") || !strings.Contains(errOut, src) {
+		t.Errorf("stderr %q missing expected warning for path %s", errOut, src)
+	}
+}
 
 func TestIsSelfEntry(t *testing.T) {
 	self, err := os.Executable()

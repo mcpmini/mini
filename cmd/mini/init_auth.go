@@ -61,7 +61,7 @@ func runAuthPass(p authPassParams) error {
 	printAuthPassServers(p.out, needs)
 	chosen := chooseAuthPassServers(p, needs)
 	failed := authorizeAuthPassServers(p, cfg, chosen)
-	printAuthReminders(p.out, unchosenAuthPassServers(needs, chosen, failed))
+	printAuthReminders(p.out, authReminderServers(needs, chosen, failed))
 	return nil
 }
 
@@ -133,7 +133,7 @@ func authorizeAuthPassServers(p authPassParams, cfg *config.Config, servers []co
 	return failed
 }
 
-func unchosenAuthPassServers(servers []authPassServer, chosen []config.ServerConfig, failed []string) []string {
+func authReminderServers(servers []authPassServer, chosen []config.ServerConfig, failed []string) []string {
 	chosenNames := map[string]bool{}
 	for _, sc := range chosen {
 		chosenNames[sc.Name] = true

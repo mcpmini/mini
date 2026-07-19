@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -17,8 +16,6 @@ import (
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/clock"
 )
-
-const importFileSizeLimit = 4 * 1024 * 1024 // 4MB — sane upper bound for any agent config file
 
 type initFlags struct {
 	yes  bool
@@ -151,37 +148,27 @@ func resolveFromPath(from string) string {
 }
 
 func importClaudeFormat(configDir, path string) int {
-	data, ok := readImportFile(path)
-	if !ok {
+	data, err := importers.ReadConfigFile(path)
+	if err != nil {
+		warnImportRead(path, err)
+		return 0
+	}
+	servers := importers.ExtractClaudeMCPServers(data)
+	if len(servers) == 0 {
+		fmt.Fprintf(os.Stderr, "warning: no MCP servers found in %s\n", path)
 		return 0
 	}
 	selfPath, _ := os.Executable()
-	return importClaudeServers(configDir, data, selfPath)
-}
-
-func readImportFile(path string) ([]byte, bool) {
-	f, err := os.Open(path)
-	if err != nil {
-		warnImportRead(path, err)
-		return nil, false
-	}
-	defer f.Close() //nolint:errcheck
-
-	data, err := io.ReadAll(io.LimitReader(f, importFileSizeLimit))
-	if err != nil {
-		warnImportRead(path, err)
-		return nil, false
-	}
-	return data, true
+	return importClaudeServers(configDir, servers, selfPath)
 }
 
 func warnImportRead(path string, err error) {
 	fmt.Fprintf(os.Stderr, "  warning: read %s: %v\n", path, err)
 }
 
-func importClaudeServers(configDir string, data []byte, selfPath string) int {
+func importClaudeServers(configDir string, servers map[string]importers.ClaudeMCPEntry, selfPath string) int {
 	imported := 0
-	for name, entry := range importers.ExtractClaudeMCPServers(data) {
+	for name, entry := range servers {
 		if shouldImportClaudeEntry(configDir, name, entry, selfPath) {
 			imported++
 		}
