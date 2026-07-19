@@ -30,6 +30,12 @@ func EncodeToon(logger *slog.Logger, env *response.Envelope) string {
 func encodeToonValue(env *response.Envelope) (string, error) {
 	v, err := toon.FromAny(env)
 	if err != nil {
+		// Retry with non-finite floats normalized to null (spec §3) only when
+		// plain encoding failed: the normalizer rebuilds structs as generic maps,
+		// losing omitempty/embedding nuances, so it must never touch finite data.
+		v, err = toon.FromAny(normalizeEnvelopeNonFinite(env))
+	}
+	if err != nil {
 		return "", err
 	}
 	return toon.Encode(v)
