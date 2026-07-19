@@ -3,12 +3,15 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/defaults"
 )
 
 type catalogStepParams struct {
@@ -28,21 +31,21 @@ type catalogSelectionParams struct {
 	count   int
 }
 
-func runCatalogStep(p catalogStepParams) error {
+func runCatalogStep(p catalogStepParams) ([]catalog.Entry, error) {
 	if p.autoYes {
-		return nil
+		return nil, nil
 	}
 	entries, err := loadCatalogEntries(p.resolve)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	_, servers, err := config.Load(p.configDir)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 	available := availableCatalogEntries(entries, servers)
 	if len(available) == 0 {
-		return nil
+		return nil, nil
 	}
 	printCatalogEntries(p.out, available)
 	return selectCatalogEntries(p, available)
@@ -62,6 +65,18 @@ func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerCon
 	return available
 }
 
+func authSuffix(auth string) string {
+	switch auth {
+	case catalog.AuthToken:
+		return " (token)"
+	case catalog.AuthOAuth2:
+		return " (oauth)"
+	case catalog.AuthOAuth2App:
+		return " (oauth · own app)"
+	}
+	return ""
+}
+
 func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 	fmt.Fprintln(out, "Available MCP servers:")
 	category := ""
@@ -70,18 +85,22 @@ func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 			category = entry.Category
 			fmt.Fprintf(out, "  %s:\n", category)
 		}
-		fmt.Fprintf(out, "    %d. %s - %s\n", i+1, entry.Name, entry.Description)
+		fmt.Fprintf(out, "    %d. %s - %s%s\n", i+1, entry.Name, entry.Description, authSuffix(entry.Auth))
 	}
 }
 
-func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {
+func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) ([]catalog.Entry, error) {
 	for {
 		indexes, err := parseCatalogSelection(p.choose("Select servers (numbers, ranges, a = all, empty = none)"), len(entries))
 		if err != nil {
 			fmt.Fprintln(p.err, "invalid selection:", err)
 			continue
 		}
-		return writeCatalogEntries(p.configDir, entries, indexes)
+		guidance, skipped, err := writeCatalogEntries(p.configDir, entries, indexes)
+		for _, name := range skipped {
+			fmt.Fprintf(p.err, "skipping %s: server config appeared while the wizard was open\n", name)
+		}
+		return guidance, err
 	}
 }
 
@@ -154,13 +173,43 @@ func loadCatalogEntries(resolve func() ([]catalog.Entry, error)) ([]catalog.Entr
 	return catalog.Load()
 }
 
-func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []int) error {
+func serverYAMLExists(configDir, name string) bool {
+	info, err := os.Stat(filepath.Join(configDir, "servers", name+".yaml"))
+	return err == nil && info.Mode().IsRegular()
+}
+
+func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []int) (guidance []catalog.Entry, skipped []string, err error) {
 	for _, index := range indexes {
 		entry := entries[index]
-		server := importers.ServerYAML{Name: entry.Name, Transport: "http", URL: entry.URL}
-		if err := importers.WriteServerYAML(configDir, entry.Name, server); err != nil {
-			return err
+		if serverYAMLExists(configDir, entry.Name) {
+			skipped = append(skipped, entry.Name)
+			continue
+		}
+		if err = importers.WriteServerYAML(configDir, entry.Name, catalogServerYAML(entry)); err != nil {
+			return guidance, skipped, err
+		}
+		if entry.NeedsManualSetup() {
+			guidance = append(guidance, entry)
 		}
 	}
-	return nil
+	return guidance, skipped, nil
+}
+
+func catalogServerYAML(entry catalog.Entry) importers.ServerYAML {
+	s := importers.ServerYAML{Name: entry.Name, Transport: "http", URL: entry.URL}
+	if entry.IsOAuth2() && !defaults.HasBundledAuth(entry.URL) {
+		s.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}
+	}
+	return s
+}
+
+func printCatalogGuidance(out io.Writer, entries []catalog.Entry) {
+	for _, e := range entries {
+		switch e.Auth {
+		case catalog.AuthToken:
+			fmt.Fprintf(out, "%s needs an access token: create one at %s, then set auth: {type: bearer, token: $YOUR_TOKEN} in servers/%s.yaml\n", e.Name, e.SetupURL, e.Name)
+		case catalog.AuthOAuth2App:
+			fmt.Fprintf(out, "%s: create an OAuth app at %s, then add to servers/%s.yaml:\n  auth:\n    type: oauth2\n    client_id: <your app client id>\nthen run: mini auth %s\n", e.Name, e.SetupURL, e.Name, e.Name)
+		}
+	}
 }

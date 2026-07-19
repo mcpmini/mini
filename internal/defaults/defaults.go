@@ -1,6 +1,8 @@
 package defaults
 
-import "embed"
+import (
+	"embed"
+)
 
 //go:embed projections/*.yaml permissions/*.yaml auth/*.yaml
 var FS embed.FS
@@ -33,4 +35,13 @@ func AuthFor(serverName string) []byte {
 		return nil
 	}
 	return data
+}
+
+// HasBundledAuth reports whether a bundled auth default exists for the given
+// server URL. When true, writing an explicit auth block in the server YAML
+// would shadow the bundled config: config.mergeKnownAuth only applies bundled
+// auth when no Auth block is present.
+func HasBundledAuth(url string) bool {
+	key := DetectKey("", url)
+	return key != "" && AuthFor(key) != nil
 }

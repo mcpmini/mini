@@ -4,151 +4,189 @@ entries:
     url: https://api.githubcopilot.com/mcp/
     description: GitHub repositories and pull requests
     category: dev
+    auth: token
+    setup_url: https://github.com/settings/personal-access-tokens
   - name: cloudflare
     url: https://mcp.cloudflare.com/mcp
     description: Cloudflare platform services
     category: dev
+    auth: oauth2
   - name: vercel
     url: https://mcp.vercel.com
     description: Vercel deployments and projects
     category: dev
+    auth: oauth2
   - name: netlify
     url: https://netlify-mcp.netlify.app/mcp
     description: Netlify sites and deployments
     category: dev
+    auth: oauth2
   - name: buildkite
     url: https://mcp.buildkite.com/mcp
     description: Buildkite pipelines and builds
     category: dev
+    auth: oauth2
   - name: semgrep
     url: https://mcp.semgrep.ai/sse
     description: Semgrep code analysis
     category: dev
+    auth: oauth2
   - name: huggingface
     url: https://hf.co/mcp
     description: Hugging Face models and datasets
     category: dev
-  - name: stackoverflow
-    url: https://mcp.stackoverflow.com
-    description: Stack Overflow knowledge base
-    category: dev
+    auth: oauth2
   - name: aws-knowledge
     url: https://knowledge-mcp.global.api.aws
     description: AWS documentation and knowledge
     category: cloud
+    auth: none
   - name: neon
     url: https://mcp.neon.tech/mcp
     description: Neon Postgres databases
     category: data
+    auth: oauth2
   - name: supabase
     url: https://mcp.supabase.com/mcp
     description: Supabase projects and databases
     category: data
+    auth: oauth2
   - name: airtable
     url: https://mcp.airtable.com/mcp
     description: Airtable bases and records
     category: data
+    auth: oauth2
   - name: prisma
     url: https://mcp.prisma.io/mcp
     description: Prisma data platform
     category: data
+    auth: oauth2
   - name: box
     url: https://mcp.box.com
     description: Box content management
     category: data
+    auth: oauth2-app
+    setup_url: https://support.box.com/hc/en-us/articles/43847256139923-Managing-Box-MCP-Servers
   - name: datadog
     url: https://mcp.datadoghq.com/api/unstable/mcp-server/mcp
     description: Datadog observability (US1)
     category: observability
+    auth: oauth2
   - name: newrelic
     url: https://mcp.newrelic.com/mcp/
     description: New Relic observability
     category: observability
+    auth: oauth2
   - name: grafana
     url: https://mcp.grafana.com/mcp
     description: Grafana observability
     category: observability
+    auth: oauth2
   - name: sentry
     url: https://mcp.sentry.dev/mcp
     description: Sentry error tracking
     category: observability
+    auth: oauth2
   - name: pagerduty
     url: https://mcp.pagerduty.com/mcp
     description: PagerDuty incident response
     category: observability
+    auth: token
+    setup_url: https://support.pagerduty.com/main/docs/api-access-keys
   - name: linear
     url: https://mcp.linear.app/mcp
     description: Linear issues and projects
     category: project
+    auth: oauth2
   - name: atlassian
     url: https://mcp.atlassian.com/v1/mcp
     description: Atlassian project management
     category: project
+    auth: oauth2
   - name: asana
     url: https://mcp.asana.com/v2/mcp
     description: Asana projects and tasks
     category: project
+    auth: oauth2-app
+    setup_url: https://app.asana.com/0/my-apps
   - name: monday
     url: https://mcp.monday.com/sse
     description: monday.com work management
     category: project
+    auth: oauth2
   - name: slack
     url: https://mcp.slack.com/mcp
     description: Slack conversations and channels
     category: comms
+    auth: oauth2
   - name: intercom
     url: https://mcp.intercom.com/mcp
     description: Intercom customer conversations
     category: comms
+    auth: oauth2
   - name: statsig
     url: https://api.statsig.com/v1/mcp
     description: Statsig feature flags
     category: flags
+    auth: oauth2
   - name: figma
     url: https://mcp.figma.com/mcp
     description: Figma design files
     category: design
+    auth: oauth2
   - name: canva
     url: https://mcp.canva.com/mcp
     description: Canva designs
     category: design
+    auth: oauth2
   - name: webflow
     url: https://mcp.webflow.com/mcp
     description: Webflow sites
     category: design
+    auth: oauth2
   - name: stripe
     url: https://mcp.stripe.com
     description: Stripe payments
     category: payments
+    auth: oauth2
   - name: paypal
     url: https://mcp.paypal.com/sse
     description: PayPal payments
     category: payments
+    auth: oauth2
   - name: square
     url: https://mcp.squareup.com/sse
     description: Square payments
     category: payments
+    auth: oauth2
   - name: ramp
     url: https://mcp.ramp.com/mcp
     description: Ramp spend management
     category: payments
+    auth: oauth2
   - name: hubspot
     url: https://mcp.hubspot.com
     description: HubSpot customer relationship management
     category: crm
+    auth: oauth2-app
+    setup_url: https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server
   - name: notion
     url: https://mcp.notion.com/mcp
     description: Notion workspace content
     category: crm
+    auth: oauth2
   - name: attio
     url: https://mcp.attio.com/mcp
     description: Attio customer relationship management
     category: crm
+    auth: oauth2
   - name: zapier
     url: https://mcp.zapier.com/api/mcp/mcp
     description: Zapier automation
     category: automation
+    auth: oauth2
   - name: apify
     url: https://mcp.apify.com
     description: Apify automation platform
     category: automation
+    auth: oauth2

@@ -24,21 +24,30 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 38 {
-		t.Errorf("entries = %d, want 38", len(entries))
+	if len(entries) != 37 {
+		t.Errorf("entries = %d, want 37", len(entries))
 	}
 }
 
 func TestParseRejectsInvalidEntries(t *testing.T) {
+	valid := "schema_version: 1\nentries:\n  - name: example\n    url: https://example.com\n    description: test\n    category: test\n"
 	tests := []struct {
 		name string
 		yaml string
 		want string
 	}{
-		{"bad name", "schema_version: 1\nentries:\n  - name: bad name\n    url: https://example.com\n    description: test\n    category: test\n", "bad name"},
-		{"http url", "schema_version: 1\nentries:\n  - name: example\n    url: http://example.com\n    description: test\n    category: test\n", "example"},
-		{"missing description", "schema_version: 1\nentries:\n  - name: example\n    url: https://example.com\n    category: test\n", "example"},
-		{"blank category", "schema_version: 1\nentries:\n  - name: example\n    url: https://example.com\n    description: test\n    category: ' '\n", "example"},
+		{"bad name", "schema_version: 1\nentries:\n  - name: bad name\n    url: https://example.com\n    description: test\n    category: test\n    auth: oauth2\n", "bad name"},
+		{"http url", "schema_version: 1\nentries:\n  - name: example\n    url: http://example.com\n    description: test\n    category: test\n    auth: oauth2\n", "example"},
+		{"missing description", "schema_version: 1\nentries:\n  - name: example\n    url: https://example.com\n    category: test\n    auth: oauth2\n", "example"},
+		{"blank category", "schema_version: 1\nentries:\n  - name: example\n    url: https://example.com\n    description: test\n    category: ' '\n    auth: oauth2\n", "example"},
+		{"missing auth", valid, "example"},
+		{"bad auth value", valid + "    auth: unknown\n", "example"},
+		{"token missing setup_url", valid + "    auth: token\n", "example"},
+		{"oauth2-app missing setup_url", valid + "    auth: oauth2-app\n", "example"},
+		{"non-https setup_url", valid + "    auth: token\n    setup_url: http://example.com\n", "example"},
+		{"setup_url rejected for oauth2", valid + "    auth: oauth2\n    setup_url: https://example.com\n", "example"},
+		{"setup_url rejected for none", valid + "    auth: none\n    setup_url: https://example.com\n", "example"},
+		{"duplicate name", "schema_version: 1\nentries:\n  - name: github\n    url: https://example.com\n    description: first\n    category: test\n    auth: oauth2\n  - name: github\n    url: https://example.com\n    description: second\n    category: test\n    auth: oauth2\n", "github"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -72,7 +81,7 @@ func bufLogger() (*bytes.Buffer, *slog.Logger) {
 func singleEntryJSON() []byte {
 	data, _ := json.Marshal(jsonDocument{
 		SchemaVersion: 1,
-		Entries:       []Entry{{Name: "test-server", URL: "https://example.com", Description: "test server", Category: "test"}},
+		Entries:       []Entry{{Name: "test-server", URL: "https://example.com", Description: "test server", Category: "test", Auth: "oauth2"}},
 	})
 	return data
 }
@@ -132,8 +141,8 @@ func TestResolveOversizedBodyRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 38 {
-		t.Errorf("entries = %d, want 38 (embedded fallback)", len(entries))
+	if len(entries) != 37 {
+		t.Errorf("entries = %d, want 37 (embedded fallback)", len(entries))
 	}
 	if !strings.Contains(logBuf.String(), "catalog fetch failed") {
 		t.Errorf("expected WARN in log, got %q", logBuf.String())
@@ -152,8 +161,8 @@ func TestResolveRedirectRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 38 {
-		t.Errorf("entries = %d, want 38 (embedded fallback)", len(entries))
+	if len(entries) != 37 {
+		t.Errorf("entries = %d, want 37 (embedded fallback)", len(entries))
 	}
 	if !strings.Contains(logBuf.String(), "catalog fetch failed") {
 		t.Errorf("expected WARN in log, got %q", logBuf.String())
@@ -181,8 +190,8 @@ func TestResolveNonHTTPSURLFallsBackToEmbedded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 38 {
-		t.Errorf("entries = %d, want 38 (embedded fallback)", len(entries))
+	if len(entries) != 37 {
+		t.Errorf("entries = %d, want 37 (embedded fallback)", len(entries))
 	}
 	if n := requests.Load(); n != 0 {
 		t.Errorf("requests = %d, want 0 (https check must prevent request)", n)
@@ -205,8 +214,8 @@ func TestResolveSchemaVersion2RejectedFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 38 {
-		t.Errorf("entries = %d, want 38 (embedded fallback)", len(entries))
+	if len(entries) != 37 {
+		t.Errorf("entries = %d, want 37 (embedded fallback)", len(entries))
 	}
 	if !strings.Contains(logBuf.String(), "catalog fetch failed") {
 		t.Errorf("expected WARN in log, got %q", logBuf.String())
@@ -217,8 +226,8 @@ func TestResolveInvalidEntryRejectsWholeDoc(t *testing.T) {
 	dir := testConfigDir(t)
 	logBuf, logger := bufLogger()
 	doc, _ := json.Marshal(jsonDocument{SchemaVersion: 1, Entries: []Entry{
-		{Name: "good", URL: "https://good.com", Description: "good", Category: "test"},
-		{Name: "bad", URL: "http://insecure.com", Description: "bad", Category: "test"},
+		{Name: "good", URL: "https://good.com", Description: "good", Category: "test", Auth: "oauth2"},
+		{Name: "bad", URL: "http://insecure.com", Description: "bad", Category: "test", Auth: "oauth2"},
 	}})
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write(doc) //nolint:errcheck
@@ -229,8 +238,8 @@ func TestResolveInvalidEntryRejectsWholeDoc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 38 {
-		t.Errorf("entries = %d, want 38 (embedded fallback)", len(entries))
+	if len(entries) != 37 {
+		t.Errorf("entries = %d, want 37 (embedded fallback)", len(entries))
 	}
 	if !strings.Contains(logBuf.String(), "catalog fetch failed") {
 		t.Errorf("expected WARN in log, got %q", logBuf.String())
@@ -249,7 +258,6 @@ func TestResolveCacheHitWithinTTLZeroRequests(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Fake clock exactly at epoch: cache age = 0 < 24h.
 	entries, err := Resolve(context.Background(), tlsResolveParams(ts, dir, clock.NewFakeAt(epoch), logger))
 	if err != nil {
 		t.Fatal(err)
@@ -264,10 +272,9 @@ func TestResolveCacheHitWithinTTLZeroRequests(t *testing.T) {
 
 func TestResolveExpiredCacheRefetches(t *testing.T) {
 	dir := testConfigDir(t)
-	// Cache contains one entry; server returns two entries; expired cache should be bypassed.
 	twoEntryDoc, _ := json.Marshal(jsonDocument{SchemaVersion: 1, Entries: []Entry{
-		{Name: "a", URL: "https://a.com", Description: "a", Category: "test"},
-		{Name: "b", URL: "https://b.com", Description: "b", Category: "test"},
+		{Name: "a", URL: "https://a.com", Description: "a", Category: "test", Auth: "oauth2"},
+		{Name: "b", URL: "https://b.com", Description: "b", Category: "test", Auth: "oauth2"},
 	}})
 	writeCacheFile(t, dir, singleEntryJSON(), epoch)
 	_, logger := bufLogger()
@@ -277,7 +284,6 @@ func TestResolveExpiredCacheRefetches(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Clock is 25h after epoch: cache is expired.
 	clk := clock.NewFakeAt(epoch.Add(25 * time.Hour))
 	entries, err := Resolve(context.Background(), tlsResolveParams(ts, dir, clk, logger))
 	if err != nil {
@@ -298,7 +304,6 @@ func TestResolveFetchFailureWithStaleCacheUsesStalecache(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Clock is 25h after epoch: cache is expired, but fetch fails → stale cache wins.
 	clk := clock.NewFakeAt(epoch.Add(25 * time.Hour))
 	entries, err := Resolve(context.Background(), tlsResolveParams(ts, dir, clk, logger))
 	if err != nil {
@@ -324,8 +329,8 @@ func TestResolveFetchFailureWithCorruptCacheUsesEmbeddedAndWarns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 38 {
-		t.Errorf("entries = %d, want 38 (embedded fallback)", len(entries))
+	if len(entries) != 37 {
+		t.Errorf("entries = %d, want 37 (embedded fallback)", len(entries))
 	}
 	if !strings.Contains(logBuf.String(), "catalog fetch failed") {
 		t.Errorf("expected WARN in log, got %q", logBuf.String())
@@ -351,5 +356,48 @@ func TestResolveCacheWrittenWith0600(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm != 0600 {
 		t.Errorf("cache mode = %04o, want 0600", perm)
+	}
+}
+
+func TestValidateEntriesRejectsControlCharacters(t *testing.T) {
+	base := Entry{Name: "x", URL: "https://x.com", Description: "desc", Category: "test", Auth: "oauth2"}
+	tests := []struct {
+		name  string
+		entry Entry
+		want  string
+	}{
+		{
+			"description with ESC",
+			func() Entry { e := base; e.Description = "\x1b[31mred"; return e }(),
+			"description",
+		},
+		{
+			"category with BEL",
+			func() Entry { e := base; e.Category = "dev\x07"; return e }(),
+			"category",
+		},
+		{
+			"url with control byte",
+			func() Entry { e := base; e.URL = "https://x.com/\x01path"; return e }(),
+			"url",
+		},
+		{
+			"setup_url with control byte",
+			func() Entry {
+				e := base
+				e.Auth = "token"
+				e.SetupURL = "https://setup.com/\x01"
+				return e
+			}(),
+			"setup_url",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateEntries([]Entry{tt.entry})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("validateEntries error = %v, want to contain %q", err, tt.want)
+			}
+		})
 	}
 }
