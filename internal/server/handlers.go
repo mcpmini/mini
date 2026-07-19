@@ -95,7 +95,7 @@ func (s *Server) listDetail(fullName string) (any, error) {
 func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
 	p, entry, err := s.resolveExecute(raw)
 	if err != nil {
-		return toolErrorIfNotFound(err)
+		return s.toolNotFoundError(err, p.Server, p.Tool)
 	}
 	if entry.Permission == config.PermProtected {
 		return nil, fmt.Errorf("tool %q is protected — use perm_call instead", entry.FullName)
@@ -116,7 +116,8 @@ func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.T
 	}
 	entry, err := s.reg.Lookup(toolFullName(p.Server, p.Tool))
 	if err != nil {
-		return executeParams{}, nil, errLookup{err}
+		// Return p so callers can use server/tool for error formatting.
+		return p, nil, errLookup{err}
 	}
 	p.Tool = entry.ToolName.UpstreamName
 	return p, entry, nil
@@ -131,10 +132,13 @@ type errLookup struct{ cause error }
 func (e errLookup) Error() string { return e.cause.Error() }
 func (e errLookup) Unwrap() error { return e.cause }
 
-func toolErrorIfNotFound(err error) (any, error) {
+// nil projCfg → global ResponseFormat only; no projection to consult when
+// the tool wasn't found in the registry.
+func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) {
 	var le errLookup
 	if errors.As(err, &le) {
-		return response.BuildError("not_found", err.Error(), false, ""), nil
+		env := response.BuildError("not_found", err.Error(), false, "")
+		return s.formatEnvelope(server, tool, env, nil), nil
 	}
 	return nil, err
 }
@@ -142,7 +146,7 @@ func toolErrorIfNotFound(err error) (any, error) {
 func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
 	p, entry, err := s.resolveExecute(raw)
 	if err != nil {
-		return toolErrorIfNotFound(err)
+		return s.toolNotFoundError(err, p.Server, p.Tool)
 	}
 	// Open tools with no projection coverage can also use perm_call to opt into raw responses.
 	if entry.Permission != config.PermProtected && s.hasProjectionCoverage(p.Server, p.Tool, session) {
@@ -189,7 +193,9 @@ type toolErrParams struct {
 func (s *Server) handleToolErr(p toolErrParams) (any, error) {
 	p.Session.recordCall(p.LatencyMs, 0, true)
 	s.logToolError(p.Server, p.Tool, p.LatencyMs, p.Err)
-	return response.BuildError("tool_error", p.Err.Error(), false, ""), nil
+	env := response.BuildError("tool_error", p.Err.Error(), false, "")
+	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
+	return s.formatEnvelope(p.Server, p.Tool, env, projCfg), nil
 }
 
 func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool string, params map[string]any) {
@@ -254,11 +260,11 @@ func (s *Server) buildProjectedEnvelope(p projectedEnvelopeParams) (*response.En
 }
 
 func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
-	format := s.cfg.ResponseFormat
-	if projCfg != nil && projCfg.Format != "" {
-		format = projCfg.Format
+	projFormat := ""
+	if projCfg != nil {
+		projFormat = projCfg.Format
 	}
-	if format == config.FormatToon {
+	if config.EffectiveFormat("", projFormat, s.cfg.ResponseFormat) == config.FormatToon {
 		return EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
 	}
 	return env
