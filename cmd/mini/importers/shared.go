@@ -2,6 +2,7 @@ package importers
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -32,12 +33,23 @@ func ReadConfigFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stat %s: %w", path, err)
 	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s: not a regular file", path)
+	}
 	if info.Size() > maxImportConfigBytes {
 		return nil, fmt.Errorf("%s is too large (%d bytes)", path, info.Size())
 	}
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, maxImportConfigBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if int64(len(data)) > maxImportConfigBytes {
+		return nil, fmt.Errorf("%s is too large", path)
 	}
 	return data, nil
 }

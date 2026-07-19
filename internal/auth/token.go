@@ -80,13 +80,11 @@ func IsNotFound(err error) bool {
 	return errors.Is(err, fs.ErrNotExist)
 }
 
-// AuthorizationNeed describes whether a server needs an interactive OAuth flow.
 type AuthorizationNeed struct {
 	Needed bool
 	Note   string
 }
 
-// NeedsAuthorization reports whether the OAuth token for sc needs replacement.
 func NeedsAuthorization(configDir string, sc config.ServerConfig) AuthorizationNeed {
 	if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 {
 		return AuthorizationNeed{}
@@ -98,6 +96,7 @@ func NeedsAuthorization(configDir string, sc config.ServerConfig) AuthorizationN
 	if err != nil {
 		return AuthorizationNeed{Needed: true, Note: fmt.Sprintf("token unreadable: %v", err)}
 	}
+	// An expired token with a refresh token is not flagged; the HTTP transport handles silent refresh.
 	if token.Valid() || token.RefreshToken != "" {
 		return AuthorizationNeed{}
 	}

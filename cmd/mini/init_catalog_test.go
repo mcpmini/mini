@@ -14,6 +14,54 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
+func TestWriteCatalogEntriesSkipsExistingServer(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "servers"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	originalContent := []byte("original: content\n")
+	svcYAML := filepath.Join(dir, "servers", "svc.yaml")
+	if err := os.WriteFile(svcYAML, originalContent, 0600); err != nil {
+		t.Fatal(err)
+	}
+	entries := []catalog.Entry{
+		{Name: "svc", URL: "https://svc.example.com/mcp", Description: "svc", Category: "test", Auth: "none"},
+		{Name: "other-svc", URL: "https://other.example.com/mcp", Description: "other", Category: "test", Auth: "none"},
+	}
+	_, skipped, err := writeCatalogEntries(dir, entries, []int{0, 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, readErr := os.ReadFile(svcYAML)
+	if readErr != nil || string(got) != string(originalContent) {
+		t.Errorf("svc.yaml = %q, want original content", got)
+	}
+	if len(skipped) != 1 || skipped[0] != "svc" {
+		t.Errorf("skipped = %v, want [svc]", skipped)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "servers", "other-svc.yaml")); statErr != nil {
+		t.Errorf("other-svc.yaml not written: %v", statErr)
+	}
+}
+
+func TestWriteCatalogEntriesReturnsPartialGuidanceOnError(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "servers", "broken.yaml"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	entries := []catalog.Entry{
+		{Name: "ok-svc", URL: "https://ok.example.com/mcp", Description: "ok", Category: "test", Auth: "token", SetupURL: "https://ok.example.com/tokens"},
+		{Name: "broken", URL: "https://broken.example.com/mcp", Description: "broken", Category: "test", Auth: "none"},
+	}
+	guidance, _, err := writeCatalogEntries(dir, entries, []int{0, 1})
+	if err == nil {
+		t.Fatal("expected error from broken write")
+	}
+	if len(guidance) != 1 || guidance[0].Name != "ok-svc" {
+		t.Errorf("guidance = %v, want [ok-svc]", guidance)
+	}
+}
+
 func TestParseCatalogSelection(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -81,7 +129,7 @@ func TestCatalogSentryInstallsBundledProjection(t *testing.T) {
 		t.Fatalf("sentry URL = %q", entry.URL)
 	}
 	dir := t.TempDir()
-	if _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
+	if _, _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "servers", "sentry.proj.yaml")); err != nil {
@@ -131,7 +179,7 @@ func nextCatalogAnswer(answers *[]string) func(string) string {
 func TestCatalogOAuthServerReachesAuthPass(t *testing.T) {
 	dir := t.TempDir()
 	entry := catalog.Entry{Name: "linear", URL: "https://mcp.linear.app/mcp"}
-	if _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
+	if _, _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
 		t.Fatal(err)
 	}
 	var authorized []string
@@ -183,7 +231,7 @@ func TestCatalogSentryReachesAuthPassWithoutBundledDefault(t *testing.T) {
 	}
 	entry := catalogEntry(t, entries, "sentry")
 	dir := t.TempDir()
-	if _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
+	if _, _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
 		t.Fatal(err)
 	}
 	var authorized []string
@@ -208,7 +256,7 @@ func TestCatalogSlackPreservesBundledClient(t *testing.T) {
 	}
 	entry := catalogEntry(t, entries, "slack")
 	dir := t.TempDir()
-	if _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
+	if _, _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
 		t.Fatal(err)
 	}
 	var written importers.ServerYAML
@@ -238,7 +286,7 @@ func TestCatalogSlackPreservesBundledClient(t *testing.T) {
 func TestWriteCatalogEntriesOAuth2SetsAuthBlock(t *testing.T) {
 	entry := catalog.Entry{Name: "test-oauth", URL: "https://example.com/mcp", Description: "test", Category: "test", Auth: "oauth2"}
 	dir := t.TempDir()
-	if _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
+	if _, _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0}); err != nil {
 		t.Fatal(err)
 	}
 	var server importers.ServerYAML
@@ -251,7 +299,7 @@ func TestWriteCatalogEntriesOAuth2SetsAuthBlock(t *testing.T) {
 func TestWriteCatalogEntriesTokenNoAuthBlock(t *testing.T) {
 	entry := catalog.Entry{Name: "test-token", URL: "https://example.com/mcp", Description: "test", Category: "test", Auth: "token", SetupURL: "https://example.com/tokens"}
 	dir := t.TempDir()
-	guidance, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0})
+	guidance, _, err := writeCatalogEntries(dir, []catalog.Entry{entry}, []int{0})
 	if err != nil {
 		t.Fatal(err)
 	}

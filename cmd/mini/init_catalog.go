@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -94,7 +96,11 @@ func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) ([]catal
 			fmt.Fprintln(p.err, "invalid selection:", err)
 			continue
 		}
-		return writeCatalogEntries(p.configDir, entries, indexes)
+		guidance, skipped, err := writeCatalogEntries(p.configDir, entries, indexes)
+		for _, name := range skipped {
+			fmt.Fprintf(p.err, "skipping %s: server config appeared while the wizard was open\n", name)
+		}
+		return guidance, err
 	}
 }
 
@@ -167,18 +173,26 @@ func loadCatalogEntries(resolve func() ([]catalog.Entry, error)) ([]catalog.Entr
 	return catalog.Load()
 }
 
-func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []int) ([]catalog.Entry, error) {
-	var guidance []catalog.Entry
+func serverYAMLExists(configDir, name string) bool {
+	info, err := os.Stat(filepath.Join(configDir, "servers", name+".yaml"))
+	return err == nil && info.Mode().IsRegular()
+}
+
+func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []int) (guidance []catalog.Entry, skipped []string, err error) {
 	for _, index := range indexes {
 		entry := entries[index]
-		if err := importers.WriteServerYAML(configDir, entry.Name, catalogServerYAML(entry)); err != nil {
-			return nil, err
+		if serverYAMLExists(configDir, entry.Name) {
+			skipped = append(skipped, entry.Name)
+			continue
+		}
+		if err = importers.WriteServerYAML(configDir, entry.Name, catalogServerYAML(entry)); err != nil {
+			return guidance, skipped, err
 		}
 		if entry.NeedsManualSetup() {
 			guidance = append(guidance, entry)
 		}
 	}
-	return guidance, nil
+	return guidance, skipped, nil
 }
 
 func catalogServerYAML(entry catalog.Entry) importers.ServerYAML {

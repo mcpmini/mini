@@ -258,7 +258,6 @@ func TestResolveCacheHitWithinTTLZeroRequests(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Fake clock exactly at epoch: cache age = 0 < 24h.
 	entries, err := Resolve(context.Background(), tlsResolveParams(ts, dir, clock.NewFakeAt(epoch), logger))
 	if err != nil {
 		t.Fatal(err)
@@ -273,7 +272,6 @@ func TestResolveCacheHitWithinTTLZeroRequests(t *testing.T) {
 
 func TestResolveExpiredCacheRefetches(t *testing.T) {
 	dir := testConfigDir(t)
-	// Cache contains one entry; server returns two entries; expired cache should be bypassed.
 	twoEntryDoc, _ := json.Marshal(jsonDocument{SchemaVersion: 1, Entries: []Entry{
 		{Name: "a", URL: "https://a.com", Description: "a", Category: "test", Auth: "oauth2"},
 		{Name: "b", URL: "https://b.com", Description: "b", Category: "test", Auth: "oauth2"},
@@ -286,7 +284,6 @@ func TestResolveExpiredCacheRefetches(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Clock is 25h after epoch: cache is expired.
 	clk := clock.NewFakeAt(epoch.Add(25 * time.Hour))
 	entries, err := Resolve(context.Background(), tlsResolveParams(ts, dir, clk, logger))
 	if err != nil {
@@ -307,7 +304,6 @@ func TestResolveFetchFailureWithStaleCacheUsesStalecache(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Clock is 25h after epoch: cache is expired, but fetch fails → stale cache wins.
 	clk := clock.NewFakeAt(epoch.Add(25 * time.Hour))
 	entries, err := Resolve(context.Background(), tlsResolveParams(ts, dir, clk, logger))
 	if err != nil {
