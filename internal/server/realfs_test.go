@@ -30,9 +30,13 @@ func newNpxServer(t *testing.T) *server.Server {
 	return srv
 }
 
+// npx -y downloads the package on a cold cache, which can exceed the 10s
+// default connect_timeout on slow CI runners.
+const npxConnectTimeout = "60s"
+
 func addFSUpstream(t *testing.T, srv *server.Server, name, dir string) {
 	t.Helper()
-	sc := config.ServerConfig{Name: name, Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}}
+	sc := config.ServerConfig{Name: name, Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}, ConnectTimeout: npxConnectTimeout}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("connect %s: %v", name, err)
 	}
@@ -43,8 +47,9 @@ func fsServer(t *testing.T, dir string) *server.Server {
 	srv := newNpxServer(t)
 	sc := config.ServerConfig{
 		Name: "fs", Command: "npx",
-		Args:        []string{"-y", "@modelcontextprotocol/server-filesystem", dir},
-		Permissions: &config.PermissionsConfig{Protected: []string{"write_file", "create_directory", "move_file", "delete_file", "edit_file"}},
+		Args:           []string{"-y", "@modelcontextprotocol/server-filesystem", dir},
+		Permissions:    &config.PermissionsConfig{Protected: []string{"write_file", "create_directory", "move_file", "delete_file", "edit_file"}},
+		ConnectTimeout: npxConnectTimeout,
 	}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("connect: %v", err)
@@ -105,7 +110,7 @@ func TestReadFileTruncation(t *testing.T) {
 	if _, err := exec.LookPath("npx"); err != nil {
 		t.Skip("npx not available")
 	}
-	sc := config.ServerConfig{Name: "fs", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}}
+	sc := config.ServerConfig{Name: "fs", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}, ConnectTimeout: npxConnectTimeout}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -159,7 +164,8 @@ func assertAddServer(t *testing.T, srv *server.Server, dir string) {
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "add_server",
 		"config": map[string]any{"name": "dynamic_fs", "command": "npx",
-			"args": []string{"-y", "@modelcontextprotocol/server-filesystem", dir}},
+			"args":            []string{"-y", "@modelcontextprotocol/server-filesystem", dir},
+			"connect_timeout": npxConnectTimeout},
 	}))
 	text := toolResultText(t, resp)
 	var result map[string]any
