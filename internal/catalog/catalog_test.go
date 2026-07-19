@@ -47,6 +47,7 @@ func TestParseRejectsInvalidEntries(t *testing.T) {
 		{"non-https setup_url", valid + "    auth: token\n    setup_url: http://example.com\n", "example"},
 		{"setup_url rejected for oauth2", valid + "    auth: oauth2\n    setup_url: https://example.com\n", "example"},
 		{"setup_url rejected for none", valid + "    auth: none\n    setup_url: https://example.com\n", "example"},
+		{"duplicate name", "schema_version: 1\nentries:\n  - name: github\n    url: https://example.com\n    description: first\n    category: test\n    auth: oauth2\n  - name: github\n    url: https://example.com\n    description: second\n    category: test\n    auth: oauth2\n", "github"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -359,5 +360,48 @@ func TestResolveCacheWrittenWith0600(t *testing.T) {
 	}
 	if perm := info.Mode().Perm(); perm != 0600 {
 		t.Errorf("cache mode = %04o, want 0600", perm)
+	}
+}
+
+func TestValidateEntriesRejectsControlCharacters(t *testing.T) {
+	base := Entry{Name: "x", URL: "https://x.com", Description: "desc", Category: "test", Auth: "oauth2"}
+	tests := []struct {
+		name  string
+		entry Entry
+		want  string
+	}{
+		{
+			"description with ESC",
+			func() Entry { e := base; e.Description = "\x1b[31mred"; return e }(),
+			"description",
+		},
+		{
+			"category with BEL",
+			func() Entry { e := base; e.Category = "dev\x07"; return e }(),
+			"category",
+		},
+		{
+			"url with control byte",
+			func() Entry { e := base; e.URL = "https://x.com/\x01path"; return e }(),
+			"url",
+		},
+		{
+			"setup_url with control byte",
+			func() Entry {
+				e := base
+				e.Auth = "token"
+				e.SetupURL = "https://setup.com/\x01"
+				return e
+			}(),
+			"setup_url",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateEntries([]Entry{tt.entry})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("validateEntries error = %v, want to contain %q", err, tt.want)
+			}
+		})
 	}
 }

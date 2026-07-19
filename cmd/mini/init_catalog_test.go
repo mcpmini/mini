@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -281,6 +282,21 @@ func TestCatalogGuidanceLines(t *testing.T) {
 		got := out.String()
 		if !strings.Contains(got, "asana") || !strings.Contains(got, "https://app.asana.com/0/my-apps") {
 			t.Errorf("guidance = %q", got)
+		}
+		if !strings.Contains(got, "type: oauth2") {
+			t.Errorf("guidance missing 'type: oauth2': %q", got)
+		}
+		if !strings.Contains(got, "client_id") {
+			t.Errorf("guidance missing 'client_id': %q", got)
+		}
+	})
+	t.Run("oauth2-app guidance followed literally yields valid oauth2 config", func(t *testing.T) {
+		sc := config.ServerConfig{
+			Name: "asana",
+			Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "x"},
+		}
+		if err := auth.ValidateOAuthServer("asana", sc); err != nil {
+			t.Errorf("ValidateOAuthServer = %v, want nil", err)
 		}
 	})
 	t.Run("oauth2 prints nothing", func(t *testing.T) {

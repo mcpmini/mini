@@ -65,11 +65,11 @@ func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerCon
 
 func authSuffix(auth string) string {
 	switch auth {
-	case "token":
+	case catalog.AuthToken:
 		return " (token)"
-	case "oauth2":
+	case catalog.AuthOAuth2:
 		return " (oauth)"
-	case "oauth2-app":
+	case catalog.AuthOAuth2App:
 		return " (oauth · own app)"
 	}
 	return ""
@@ -174,7 +174,7 @@ func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []in
 		if err := importers.WriteServerYAML(configDir, entry.Name, catalogServerYAML(entry)); err != nil {
 			return nil, err
 		}
-		if entry.Auth == "token" || entry.Auth == "oauth2-app" {
+		if entry.NeedsManualSetup() {
 			guidance = append(guidance, entry)
 		}
 	}
@@ -183,27 +183,19 @@ func writeCatalogEntries(configDir string, entries []catalog.Entry, indexes []in
 
 func catalogServerYAML(entry catalog.Entry) importers.ServerYAML {
 	s := importers.ServerYAML{Name: entry.Name, Transport: "http", URL: entry.URL}
-	if entry.Auth == "oauth2" && !hasBundledAuth(entry.URL) {
+	if entry.IsOAuth2() && !defaults.HasBundledAuth(entry.URL) {
 		s.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}
 	}
 	return s
 }
 
-// hasBundledAuth reports whether a bundled auth default exists for this URL.
-// When true, mergeKnownAuth supplies the full auth config at load time, so the
-// catalog write must not write a bare oauth2 block that would shadow it.
-func hasBundledAuth(url string) bool {
-	key := defaults.DetectKey("", url)
-	return key != "" && defaults.AuthFor(key) != nil
-}
-
 func printCatalogGuidance(out io.Writer, entries []catalog.Entry) {
 	for _, e := range entries {
 		switch e.Auth {
-		case "token":
+		case catalog.AuthToken:
 			fmt.Fprintf(out, "%s needs an access token: create one at %s, then set auth: {type: bearer, token: $YOUR_TOKEN} in servers/%s.yaml\n", e.Name, e.SetupURL, e.Name)
-		case "oauth2-app":
-			fmt.Fprintf(out, "%s requires registering your own app at %s, then set auth.client_id in servers/%s.yaml and run mini auth %s\n", e.Name, e.SetupURL, e.Name, e.Name)
+		case catalog.AuthOAuth2App:
+			fmt.Fprintf(out, "%s: create an OAuth app at %s, then add to servers/%s.yaml:\n  auth:\n    type: oauth2\n    client_id: <your app client id>\nthen run: mini auth %s\n", e.Name, e.SetupURL, e.Name, e.Name)
 		}
 	}
 }
