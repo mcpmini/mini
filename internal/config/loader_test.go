@@ -567,6 +567,26 @@ func TestValidResponseFormat(t *testing.T) {
 	}
 }
 
+func TestEffectiveFormat(t *testing.T) {
+	cases := []struct {
+		name, explicit, projection, global, want string
+	}{
+		{"explicit wins over all", config.FormatToon, config.FormatJSON, "", config.FormatToon},
+		{"projection when no explicit", "", config.FormatToon, config.FormatJSON, config.FormatToon},
+		{"global when no explicit or projection", "", "", config.FormatToon, config.FormatToon},
+		{"json default when all empty", "", "", "", config.FormatJSON},
+		{"explicit json beats toon projection", config.FormatJSON, config.FormatToon, config.FormatToon, config.FormatJSON},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := config.EffectiveFormat(tc.explicit, tc.projection, tc.global)
+			if got != tc.want {
+				t.Errorf("EffectiveFormat(%q, %q, %q) = %q, want %q", tc.explicit, tc.projection, tc.global, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestLoadProjection_malformedYAML_returnsError(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "srv.proj.yaml"), `not: valid: yaml: [`)
