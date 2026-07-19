@@ -174,8 +174,16 @@ func (s *Server) reloadProjections() (any, error) {
 
 func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig) {
 	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	// Carry over live projections for runtime-added servers; they have no disk
+	// YAML so loadServerProjections never returns entries for them.
+	for name, live := range s.projections {
+		u := s.upstreams[name]
+		if u != nil && u.cfg.RuntimeAdded {
+			projections[name] = live
+		}
+	}
 	s.projections = projections
-	s.stateMu.Unlock()
 }
 
 func (s *Server) reapplyAliases() {
