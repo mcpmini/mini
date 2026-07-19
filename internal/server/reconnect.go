@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/mcpmini/mini/internal/registry"
@@ -10,6 +11,9 @@ import (
 
 func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
 	if err == nil || !isConnError(err) {
+		return
+	}
+	if errors.Is(err, transport.ErrReauthRequired) {
 		return
 	}
 	// Skip if upstream is already shutting down. callConn releases u.mu.RLock
@@ -42,7 +46,12 @@ func (s *Server) reconnectLoop(u *upstreamServer) {
 			return
 		}
 		s.logger.Info("reconnecting upstream", "server", u.cfg.Name, "backoff", backoff)
-		if s.tryReconnect(u) {
+		err := s.tryReconnect(u)
+		if err == nil {
+			return
+		}
+		if errors.Is(err, transport.ErrReauthRequired) {
+			s.logger.Warn("upstream requires re-authorization; run `mini auth <server>`", "server", u.cfg.Name)
 			return
 		}
 		backoff = nextBackoff(backoff)
@@ -68,12 +77,13 @@ func nextBackoff(d time.Duration) time.Duration {
 	return d
 }
 
-func (s *Server) tryReconnect(u *upstreamServer) bool {
+func (s *Server) tryReconnect(u *upstreamServer) error {
 	conn, tools, err := s.dialAndList(u)
 	if err != nil {
-		return false
+		return err
 	}
-	return s.swapConn(u, conn, tools)
+	s.swapConn(u, conn, tools)
+	return nil
 }
 
 func (s *Server) dialAndList(u *upstreamServer) (transport.Connection, []transport.ToolDefinition, error) {

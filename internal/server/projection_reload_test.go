@@ -355,3 +355,104 @@ func TestProjectionReload_tickRacingSetProjectionKeepsFinalState(t *testing.T) {
 		t.Errorf("expected persisted projection to keep last set value, got:\n%s", persisted)
 	}
 }
+
+func TestProjectionReload_runtimeServerProjectionSurvivesReload(t *testing.T) {
+	e := newReloadEnv(t, reloadEnvParams{})
+	e.startPoller()
+
+	// Add a runtime server with inline projections (RuntimeAdded=true, no disk YAML).
+	runtimeFake := fakeConn("getData")
+	runtimeFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`)
+	proj := map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"a"}}}
+	e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "rt", RuntimeAdded: true, Projections: proj}, runtimeFake)
+
+	// Trigger a reload (simulated by editing the disk server's proj file).
+	e.writeProjFile("getData:\n  include_only: [b]\n")
+	e.advanceTick()
+
+	// "svc" projection changed on disk (now shows b, not a).
+	e.assertDataKeys([]string{"b"}, []string{"a", "secret"})
+
+	// Runtime server's projection must survive the reload.
+	rtResp := serve(t, e.srv, callTool("call", map[string]any{
+		"server": "rt", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, rtResp)).Data
+	if data["a"] == nil {
+		t.Errorf("runtime server's projection was wiped by reload: got %v", data)
+	}
+	if data["secret"] != nil {
+		t.Errorf("runtime server's projection was applied: secret should be absent, got %v", data)
+	}
+}
+
+func TestInstallUpstreamLocked_addUpstreamPreservesLiveProjection(t *testing.T) {
+	srv := newConfigServer(t)
+	fake := fakeConn("getData")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fake)
+
+	// Set a live projection (as reconnectWithToken would see after a set_projection edit).
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "getData",
+		"projection": map[string]any{"include_only": []string{"a"}},
+	}))
+
+	// Simulate reconnectWithToken: re-add with stale snapshot projections;
+	// the live projection from set_projection must not be reverted.
+	newFake := fakeConn("getData")
+	newFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"b"}},
+		},
+	}, newFake)
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	if data["a"] == nil {
+		t.Errorf("live projection was reverted by re-AddUpstream: got %v", data)
+	}
+	if data["b"] != nil {
+		t.Errorf("stale snapshot projection was applied: b should be absent, got %v", data)
+	}
+}
+
+func TestInstallUpstreamLocked_removeAndReAddGetsNewProjections(t *testing.T) {
+	srv := newConfigServer(t)
+	fake := fakeConn("getData")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"a"}},
+		},
+	}, fake)
+
+	// Remove the server (clears live projections).
+	assertRemoveOk(t, srv, "svc")
+
+	// Re-add with different projections — the new config must take effect.
+	newFake := fakeConn("getData")
+	newFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"b"}},
+		},
+	}, newFake)
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	if data["b"] == nil {
+		t.Errorf("expected new projection after remove+add, got %v", data)
+	}
+	if data["a"] != nil {
+		t.Errorf("old projection still active after remove+add, got %v", data)
+	}
+}
