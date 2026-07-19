@@ -10,22 +10,28 @@ import (
 
 func TestResolveCallOutput(t *testing.T) {
 	cases := []struct {
-		name      string
-		f         callFlags
-		cfgFormat string
-		want      callOutput
+		name       string
+		f          callFlags
+		projFormat string
+		cfgFormat  string
+		want       callOutput
 	}{
-		{"raw flag", callFlags{raw: true}, "", callOutputRaw},
-		{"toon flag", callFlags{toon: true}, "", callOutputToon},
-		{"json flag", callFlags{json: true}, "", callOutputJSON},
-		{"cfg toon", callFlags{}, "toon", callOutputToon},
-		{"default", callFlags{}, "", callOutputJSON},
-		{"raw wins over toon", callFlags{raw: true, toon: true}, "", callOutputRaw},
-		{"cfg overridden by json flag", callFlags{json: true}, "toon", callOutputJSON},
+		{"raw flag", callFlags{raw: true}, "", "", callOutputRaw},
+		{"toon flag", callFlags{toon: true}, "", "", callOutputToon},
+		{"json flag", callFlags{json: true}, "", "", callOutputJSON},
+		{"cfg toon", callFlags{}, "", "toon", callOutputToon},
+		{"default", callFlags{}, "", "", callOutputJSON},
+		{"raw wins over toon", callFlags{raw: true, toon: true}, "", "", callOutputRaw},
+		{"cfg overridden by json flag", callFlags{json: true}, "", "toon", callOutputJSON},
+		{"projection toon applies without -t flag", callFlags{}, "toon", "", callOutputToon},
+		{"wildcard projection toon applies", callFlags{}, "toon", "", callOutputToon},
+		{"global toon overridden by exact-tool json projection", callFlags{}, "json", "toon", callOutputJSON},
+		{"-j flag beats toon projection", callFlags{json: true}, "toon", "", callOutputJSON},
+		{"-t flag beats json projection", callFlags{toon: true}, "json", "toon", callOutputToon},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := resolveCallOutput(tc.f, tc.cfgFormat)
+			got := resolveCallOutput(tc.f, tc.projFormat, tc.cfgFormat)
 			if got != tc.want {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}

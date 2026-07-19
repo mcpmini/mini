@@ -101,7 +101,12 @@ func runCallCmd(configDir string, args []string, f callFlags, protected bool) {
 	conn := mustDialCall(ctx, configDir, cc)
 	defer conn.Close()
 
-	mode := resolveCallOutput(f, cc.cfg.ResponseFormat)
+	projCfg := resolveCallProjection(cc.sc, cc.toolName)
+	projFormat := ""
+	if projCfg != nil {
+		projFormat = projCfg.Format
+	}
+	mode := resolveCallOutput(f, projFormat, cc.cfg.ResponseFormat)
 	if mode == callOutputRaw {
 		executeRaw(ctx, conn, cc)
 		return
@@ -244,19 +249,20 @@ func readParamBytes(arg string) ([]byte, error) {
 	return io.ReadAll(os.Stdin)
 }
 
-func resolveCallOutput(f callFlags, cfgFormat string) callOutput {
-	switch {
-	case f.raw:
+func resolveCallOutput(f callFlags, projFormat, cfgFormat string) callOutput {
+	if f.raw {
 		return callOutputRaw
-	case f.toon:
-		return callOutputToon
-	case f.json:
-		return callOutputJSON
-	case cfgFormat == config.FormatToon:
-		return callOutputToon
-	default:
-		return callOutputJSON
 	}
+	explicit := ""
+	if f.toon {
+		explicit = config.FormatToon
+	} else if f.json {
+		explicit = config.FormatJSON
+	}
+	if config.EffectiveFormat(explicit, projFormat, cfgFormat) == config.FormatToon {
+		return callOutputToon
+	}
+	return callOutputJSON
 }
 
 func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.ProjectionConfig {
