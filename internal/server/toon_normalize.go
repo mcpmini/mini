@@ -10,55 +10,52 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
-var jsonMarshalerTypeNF = reflect.TypeFor[json.Marshaler]()
+var jsonMarshalerType = reflect.TypeFor[json.Marshaler]()
 
-// normalizeEnvelopeNonFinite returns a copy of env with non-finite
-// float32/float64 values in Data and Passthrough replaced by nil, recursively
-// through maps, slices, arrays, pointers, interfaces, and exported struct
-// fields — without calling MarshalJSON. Types implementing json.Marshaler are
-// left as-is; if their MarshalJSON independently produces a non-finite float,
-// the EncodeToon fallback path handles it. Structs are rebuilt as generic maps
-// (omitempty and embedded-field flattening are lost), so callers must invoke
-// this only after plain encoding has already failed.
+// normalizeEnvelopeNonFinite replaces non-finite float32/64 values in Data and
+// Passthrough with nil, recursively through containers and exported struct
+// fields, without invoking MarshalJSON (json.Marshaler values are left as-is).
+// Structs are rebuilt as generic maps, losing omitempty/embedding semantics —
+// callers must invoke this only after plain encoding has already failed.
 func normalizeEnvelopeNonFinite(env *response.Envelope) *response.Envelope {
 	cp := *env
-	cp.Data = normalizeAnyNF(env.Data)
-	cp.Passthrough = normalizeMapNF(env.Passthrough)
+	cp.Data = scrubNonFinite(env.Data)
+	cp.Passthrough = scrubStringMap(env.Passthrough)
 	return &cp
 }
 
-func normalizeMapNF(m map[string]any) map[string]any {
+func scrubStringMap(m map[string]any) map[string]any {
 	if m == nil {
 		return nil
 	}
 	out := make(map[string]any, len(m))
 	for k, v := range m {
-		out[k] = normalizeAnyNF(v)
+		out[k] = scrubNonFinite(v)
 	}
 	return out
 }
 
-func normalizeSliceAnyNF(s []any) []any {
+func scrubAnySlice(s []any) []any {
 	out := make([]any, len(s))
 	for i, elem := range s {
-		out[i] = normalizeAnyNF(elem)
+		out[i] = scrubNonFinite(elem)
 	}
 	return out
 }
 
-func normalizeAnyNF(v any) any {
+func scrubNonFinite(v any) any {
 	switch val := v.(type) {
 	case nil:
 		return nil
 	case map[string]any:
-		return normalizeMapNF(val)
+		return scrubStringMap(val)
 	case []any:
-		return normalizeSliceAnyNF(val)
+		return scrubAnySlice(val)
 	}
-	return normalizeRV(reflect.ValueOf(v))
+	return scrubValue(reflect.ValueOf(v))
 }
 
-func normalizeRVPre(rv reflect.Value) (any, bool) {
+func passthroughForMarshaler(rv reflect.Value) (any, bool) {
 	if !rv.IsValid() {
 		return nil, true
 	}
@@ -68,21 +65,21 @@ func normalizeRVPre(rv reflect.Value) (any, bool) {
 	return nil, false
 }
 
-func normalizeRV(rv reflect.Value) any {
-	if pre, ok := normalizeRVPre(rv); ok {
+func scrubValue(rv reflect.Value) any {
+	if pre, ok := passthroughForMarshaler(rv); ok {
 		return pre
 	}
 	switch rv.Kind() {
 	case reflect.Float32, reflect.Float64:
-		return normalizeFloatRV(rv)
+		return scrubFloat(rv)
 	case reflect.Ptr, reflect.Interface:
-		return normalizePtrRV(rv)
+		return scrubPointer(rv)
 	case reflect.Slice, reflect.Array:
-		return normalizeSliceOrArray(rv)
+		return scrubSequence(rv)
 	case reflect.Map:
-		return normalizeGenMapRV(rv)
+		return scrubGenericMap(rv)
 	case reflect.Struct:
-		return normalizeStructRV(rv)
+		return scrubStruct(rv)
 	}
 	if rv.CanInterface() {
 		return rv.Interface()
@@ -90,7 +87,7 @@ func normalizeRV(rv reflect.Value) any {
 	return nil
 }
 
-func normalizeFloatRV(rv reflect.Value) any {
+func scrubFloat(rv reflect.Value) any {
 	f := rv.Float()
 	if math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil
@@ -98,29 +95,25 @@ func normalizeFloatRV(rv reflect.Value) any {
 	return rv.Interface()
 }
 
-func normalizePtrRV(rv reflect.Value) any {
+func scrubPointer(rv reflect.Value) any {
 	if rv.IsNil() {
 		return nil
 	}
-	return normalizeAnyNF(rv.Elem().Interface())
+	return scrubNonFinite(rv.Elem().Interface())
 }
 
-func normalizeSliceOrArray(rv reflect.Value) any {
+func scrubSequence(rv reflect.Value) any {
 	if rv.Kind() == reflect.Slice && rv.IsNil() {
 		return nil
 	}
-	return normalizeSliceRV(rv)
-}
-
-func normalizeSliceRV(rv reflect.Value) any {
 	out := make([]any, rv.Len())
 	for i := range out {
-		out[i] = normalizeAnyNF(rv.Index(i).Interface())
+		out[i] = scrubNonFinite(rv.Index(i).Interface())
 	}
 	return out
 }
 
-func normalizeGenMapRV(rv reflect.Value) any {
+func scrubGenericMap(rv reflect.Value) any {
 	if rv.IsNil() {
 		return nil
 	}
@@ -134,12 +127,12 @@ func normalizeGenMapRV(rv reflect.Value) any {
 		} else {
 			key = fmt.Sprint(k.Interface())
 		}
-		out[key] = normalizeAnyNF(iter.Value().Interface())
+		out[key] = scrubNonFinite(iter.Value().Interface())
 	}
 	return out
 }
 
-func normalizeStructRV(rv reflect.Value) any {
+func scrubStruct(rv reflect.Value) any {
 	t := rv.Type()
 	out := make(map[string]any, t.NumField())
 	for i := 0; i < t.NumField(); i++ {
@@ -151,7 +144,7 @@ func normalizeStructRV(rv reflect.Value) any {
 		if name == "-" {
 			continue
 		}
-		out[name] = normalizeAnyNF(rv.Field(i).Interface())
+		out[name] = scrubNonFinite(rv.Field(i).Interface())
 	}
 	return out
 }
@@ -171,5 +164,5 @@ func jsonTagName(f reflect.StructField) string {
 }
 
 func isJSONMarshaler(t reflect.Type) bool {
-	return t.Implements(jsonMarshalerTypeNF) || reflect.PointerTo(t).Implements(jsonMarshalerTypeNF)
+	return t.Implements(jsonMarshalerType) || reflect.PointerTo(t).Implements(jsonMarshalerType)
 }

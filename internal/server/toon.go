@@ -33,6 +33,7 @@ func encodeToonValue(env *response.Envelope) (string, error) {
 		// Retry with non-finite floats normalized to null (spec §3) only when
 		// plain encoding failed: the normalizer rebuilds structs as generic maps,
 		// losing omitempty/embedding nuances, so it must never touch finite data.
+		// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#3-encoding-normalization-reference-encoder
 		v, err = toon.FromAny(normalizeEnvelopeNonFinite(env))
 	}
 	if err != nil {
