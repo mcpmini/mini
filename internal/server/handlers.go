@@ -132,12 +132,12 @@ type errLookup struct{ cause error }
 func (e errLookup) Error() string { return e.cause.Error() }
 func (e errLookup) Unwrap() error { return e.cause }
 
-// nil projCfg → global ResponseFormat only; no projection to consult when
-// the tool wasn't found in the registry.
 func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) {
 	var le errLookup
 	if errors.As(err, &le) {
 		env := response.BuildError("not_found", err.Error(), false, "")
+		// nil projCfg: the tool wasn't found, so there's no per-tool projection
+		// to consult — formatEnvelope falls back to the global ResponseFormat.
 		return s.formatEnvelope(server, tool, env, nil), nil
 	}
 	return nil, err

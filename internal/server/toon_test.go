@@ -79,9 +79,8 @@ func TestEncodeToon(t *testing.T) {
 	})
 
 	t.Run("nested non-finite values are normalized, siblings preserved", func(t *testing.T) {
-		// JSON-sourced upstream data never contains non-finite floats (JSON does
-		// not represent them); this normalization covers Go-constructed envelopes
-		// such as config, status, and action responses.
+		// JSON has no NaN/Inf, so this covers Go-constructed envelopes (config,
+		// status, action responses), not upstream JSON data.
 		data := map[string]any{
 			"a":    1.5,
 			"bad":  math.Inf(1),
