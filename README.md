@@ -45,13 +45,12 @@ MCP servers are verbose — a GitHub `list_pull_requests` returns PR bodies, ava
 }
 ```
 
-Or the **mini format** (`-m`) — field names once on a header row, values one line per item, no per-item key repetition. Most token-efficient for long lists:
+Or **TOON** (`-t`) — field names once in a tabular header, values one line per item, no per-item key repetition. Most token-efficient for long lists:
 
 ```
-[github.list_pull_requests]
-draft html_url number state title
-- https://github.com/golang/go/pull/79998 79998 open internal/bytealg: optimize memequal
-- https://github.com/golang/go/pull/79997 79997 open internal/bytealg: optimize indexbyte_riscv64.s
+data[2]{draft,html_url,number,state,title}:
+  false,"https://github.com/golang/go/pull/79998",79998,open,"internal/bytealg: optimize memequal"
+  false,"https://github.com/golang/go/pull/79997",79997,open,"internal/bytealg: optimize indexbyte_riscv64.s"
 ```
 
 You control exactly which fields survive — see [Projection config](#projection-config). `mini call -r` always returns the untouched upstream response when you need it.
@@ -229,10 +228,10 @@ Config directory layout:
 
 ```yaml
 log_level: info       # debug | info | warn | error
-response_format: json # json (default) | mini (see above)
+response_format: json # json (default) | toon
 ```
 
-**`response_format: mini`** switches projected responses to the compact header:values format shown above — useful if your agent handles plain text better than structured data.
+**`response_format: toon`** switches projected responses to [TOON](https://github.com/toon-format/spec) — a token-efficient text encoding of the same JSON envelope, using tabular blocks for uniform arrays — useful if your agent handles plain text better than structured data.
 
 By default, mini caps strings at 2000 chars to keep responses manageable. You can raise, lower, or disable this with `default_string_limit` in `~/.mini/config.yaml` (set to `0` to disable). Projection configs can override the limit per field with `string_limits`.
 
@@ -272,7 +271,7 @@ You don't have to connect mini to an agent via MCP. `mini call` works as a stand
 
 ```bash
 mini call github list_pull_requests '{"owner":"golang","repo":"go","perPage":3}'
-mini call -m github list_issues '{"owner":"golang","repo":"go","state":"open","perPage":10}'
+mini call -t github list_issues '{"owner":"golang","repo":"go","state":"open","perPage":10}'
 mini call -r github get_file_contents '{"owner":"golang","repo":"go","path":"README.md"}'
 mini perm-call github create_pull_request '{"owner":"...","repo":"...","title":"..."}'
 ```
@@ -313,6 +312,6 @@ mini auth NAME                            OAuth2 PKCE flow for a server
 mini init [--yes]                         Setup wizard
 mini cleanup                              Delete expired response files
 
-mini call [-j|-m|-r] SERVER TOOL [JSON]   Invoke a tool directly
-mini perm-call [-j|-m|-r] SERVER TOOL [JSON]  Invoke a protected tool directly
+mini call [-j|-t|-r] SERVER TOOL [JSON]   Invoke a tool directly
+mini perm-call [-j|-t|-r] SERVER TOOL [JSON]  Invoke a protected tool directly
 ```

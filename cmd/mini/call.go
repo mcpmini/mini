@@ -34,7 +34,7 @@ func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 		Args:  usageArgs(cobra.RangeArgs(2, 3)),
 		PreRunE: func(*cobra.Command, []string) error {
 			if f.enabledCount() > 1 {
-				return usageErrf("choose only one output mode: --json, --mini, or --raw")
+				return usageErrf("choose only one output mode: --json, --toon, or --raw")
 			}
 			return nil
 		},
@@ -44,7 +44,7 @@ func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&f.json, "json", "j", false, "JSON output (projected envelope, default)")
-	cmd.Flags().BoolVarP(&f.mini, "mini", "m", false, "mini format (compact key:value)")
+	cmd.Flags().BoolVarP(&f.toon, "toon", "t", false, "TOON format (token-oriented object notation)")
 	cmd.Flags().BoolVarP(&f.raw, "raw", "r", false, "raw upstream response, no projection")
 	return cmd
 }
@@ -60,19 +60,19 @@ type callOutput int
 
 const (
 	callOutputJSON callOutput = iota
-	callOutputMini
+	callOutputToon
 	callOutputRaw
 )
 
 type callFlags struct {
 	json bool
-	mini bool
+	toon bool
 	raw  bool
 }
 
 func (f callFlags) enabledCount() int {
 	count := 0
-	for _, enabled := range []bool{f.json, f.mini, f.raw} {
+	for _, enabled := range []bool{f.json, f.toon, f.raw} {
 		if enabled {
 			count++
 		}
@@ -101,7 +101,12 @@ func runCallCmd(configDir string, args []string, f callFlags, protected bool) {
 	conn := mustDialCall(ctx, configDir, cc)
 	defer conn.Close()
 
-	mode := resolveCallOutput(f, cc.cfg.ResponseFormat)
+	projCfg := resolveCallProjection(cc.sc, cc.toolName)
+	projFormat := ""
+	if projCfg != nil {
+		projFormat = projCfg.Format
+	}
+	mode := resolveCallOutput(f, projFormat, cc.cfg.ResponseFormat)
 	if mode == callOutputRaw {
 		executeRaw(ctx, conn, cc)
 		return
@@ -244,19 +249,20 @@ func readParamBytes(arg string) ([]byte, error) {
 	return io.ReadAll(os.Stdin)
 }
 
-func resolveCallOutput(f callFlags, cfgFormat string) callOutput {
-	switch {
-	case f.raw:
+func resolveCallOutput(f callFlags, projFormat, cfgFormat string) callOutput {
+	if f.raw {
 		return callOutputRaw
-	case f.mini:
-		return callOutputMini
-	case f.json:
-		return callOutputJSON
-	case cfgFormat == "mini":
-		return callOutputMini
-	default:
-		return callOutputJSON
 	}
+	explicit := ""
+	if f.toon {
+		explicit = config.FormatToon
+	} else if f.json {
+		explicit = config.FormatJSON
+	}
+	if config.EffectiveFormat(explicit, projFormat, cfgFormat) == config.FormatToon {
+		return callOutputToon
+	}
+	return callOutputJSON
 }
 
 func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.ProjectionConfig {
@@ -282,8 +288,9 @@ func mustCallStore(cfg *config.Config, configDir string, logger *slog.Logger, cl
 }
 
 func printCallOutput(serverName, toolName string, env *response.Envelope, mode callOutput) {
-	if mode == callOutputMini {
-		fmt.Print(server.RenderLines(serverName, toolName, env))
+	if mode == callOutputToon {
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})).With("server", serverName, "tool", toolName)
+		fmt.Println(server.EncodeToon(logger, env))
 		return
 	}
 	b, _ := json.MarshalIndent(env, "", "  ")

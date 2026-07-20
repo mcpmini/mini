@@ -147,7 +147,7 @@ command: my-mcp`)
 	writeFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), `
 list_issues:
   include_only: [number, title]
-  format: "${UNSET_PROJ_VAR_XXXX}"
+  alias: "${UNSET_PROJ_VAR_XXXX}"
 `)
 	sc := mustLoadOneServer(t, dir)
 	proj := sc.Projections["list_issues"]
@@ -155,7 +155,7 @@ list_issues:
 		t.Fatal("expected list_issues projection to be loaded")
 		return
 	}
-	if proj.Format != "${UNSET_PROJ_VAR_XXXX}" {
-		t.Errorf("expected projection format to be literal, got %q", proj.Format)
+	if proj.Alias != "${UNSET_PROJ_VAR_XXXX}" {
+		t.Errorf("expected projection alias to be literal, got %q", proj.Alias)
 	}
 }
