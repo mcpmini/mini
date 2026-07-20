@@ -168,6 +168,7 @@ func extractToonFileKey(t *testing.T, text string) string {
 	}
 	// Recovery keys are all-digit unix_ms timestamps, so TOON's numeric-like
 	// quoting rule (spec §7.2) always wraps them in double quotes.
+	// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#72-quoting-rules-for-string-values
 	return strings.Trim(m[1], `"`)
 }
 
@@ -228,9 +229,9 @@ func newSrvConfigDirAndToolErr(t *testing.T, globalFormat string) *server.Server
 	return srv
 }
 
-// TOON objects never start with "{" — the leading character is always a field name.
 func assertToonFormat(t *testing.T, text string) {
 	t.Helper()
+	// A TOON document never starts with "{" — only JSON objects do.
 	if strings.HasPrefix(text, "{") {
 		t.Fatalf("expected TOON format, got JSON: %.200s", text)
 	}
@@ -239,7 +240,6 @@ func assertToonFormat(t *testing.T, text string) {
 	}
 }
 
-// Notifications and non-result messages are skipped; the last tool content wins.
 func lastToolResult(t *testing.T, msgs []map[string]any) string {
 	t.Helper()
 	for i := len(msgs) - 1; i >= 0; i-- {

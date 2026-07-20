@@ -7,9 +7,8 @@ const (
 	FormatToon = "toon"
 )
 
-// EffectiveFormat applies the format-selection hierarchy:
-// explicit CLI flag > per-projection format > global config > JSON default.
-// Each argument is a format constant (FormatJSON, FormatToon) or "" to skip that tier.
+// EffectiveFormat returns the first non-empty of explicit, projection, and
+// global, in that priority order, defaulting to FormatJSON.
 func EffectiveFormat(explicit, projection, global string) string {
 	switch {
 	case explicit != "":
@@ -23,8 +22,8 @@ func EffectiveFormat(explicit, projection, global string) string {
 	}
 }
 
-// ValidResponseFormat reports whether format is a recognized response_format /
-// projection format value. The empty string means "use the default (json)".
+// ValidResponseFormat reports whether format is a recognized response_format
+// or projection format value.
 func ValidResponseFormat(format string) error {
 	switch format {
 	case "", FormatJSON, FormatToon:
