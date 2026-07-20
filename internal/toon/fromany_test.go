@@ -3,7 +3,6 @@ package toon
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"math"
 	"testing"
 )
@@ -140,18 +139,21 @@ func TestFromAnyNormalizesNestedNonFiniteFloats(t *testing.T) {
 	})
 }
 
-func TestFromAnyStructWithNaNErrors(t *testing.T) {
+func TestFromAnyStructWithNaNSucceedsViaTier3(t *testing.T) {
 	type withFloat struct {
 		A float64 `json:"a"`
 		B float64 `json:"b"`
 	}
-	_, err := FromAny(withFloat{A: math.NaN(), B: 3})
-	if err == nil {
-		t.Fatal("FromAny expected error for struct containing NaN, got nil")
+	v, err := FromAny(withFloat{A: math.NaN(), B: 3})
+	if err != nil {
+		t.Fatalf("FromAny unexpected error (struct NaN now handled by tier 3): %v", err)
 	}
-	var uve *json.UnsupportedValueError
-	if !errors.As(err, &uve) {
-		t.Errorf("expected json.UnsupportedValueError, got %T: %v", err, err)
+	got := fieldMap(v)
+	if got["a"].Kind != KindNull {
+		t.Errorf("a = %+v, want KindNull", got["a"])
+	}
+	if got["b"].Kind != KindNumber || got["b"].Num != "3" {
+		t.Errorf("b = %+v, want number 3", got["b"])
 	}
 }
 
@@ -299,9 +301,10 @@ func TestFromAnyRescuePreservesFloat32ShortestRepr(t *testing.T) {
 }
 
 func TestFromAnyRescueUnsupportedMapKeyTypeErrors(t *testing.T) {
-	// "a" < "z": NaN triggers rescue before the struct-keyed map at "z", whose
-	// delegated json.Marshal fails and is passed through unchanged so the outer
-	// retry surfaces json's own unsupported-key error.
+	// "a" < "z": NaN triggers the tier-2 rescue before the struct-keyed map at
+	// "z", whose subtree marshal fails with UnsupportedTypeError (not NaN) and is
+	// passed through unchanged — the tier-2 marshal surfaces that error, which is
+	// non-NaN and returns immediately without reaching tier 3.
 	type structKey struct{ x int }
 	m := map[string]any{
 		"a": math.NaN(),
@@ -361,4 +364,65 @@ func keysOf(m map[string]Value) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestFromAnyTier3StructCarriedNaN(t *testing.T) {
+	v, err := FromAny(map[string]any{"s": struct{ F float64 }{math.NaN()}})
+	if err != nil {
+		t.Fatalf("FromAny unexpected error: %v", err)
+	}
+	got := fieldMap(v)
+	s := got["s"]
+	if s.Kind != KindObject {
+		t.Fatalf("s Kind = %v, want KindObject", s.Kind)
+	}
+	f := fieldMap(s)["F"]
+	if f.Kind != KindNull {
+		t.Errorf("F = %+v, want KindNull", f)
+	}
+}
+
+func TestFromAnyTier2PreservesOmitemptyWhenSiblingHasNaN(t *testing.T) {
+	type record struct {
+		X int    `json:"x"`
+		Y string `json:"y,omitempty"`
+	}
+	m := map[string]any{
+		"nan": math.NaN(),
+		"s":   record{X: 1, Y: ""},
+	}
+	v, err := FromAny(m)
+	if err != nil {
+		t.Fatalf("FromAny unexpected error: %v", err)
+	}
+	got := fieldMap(v)
+	s := got["s"]
+	if s.Kind != KindObject {
+		t.Fatalf("s Kind = %v, want KindObject", s.Kind)
+	}
+	fields := fieldMap(s)
+	if _, ok := fields["y"]; ok {
+		t.Error("omitempty field y present; tier 2 must splice struct verbatim via encoding/json")
+	}
+	if fields["x"].Kind != KindNumber {
+		t.Errorf("x = %+v, want KindNumber", fields["x"])
+	}
+}
+
+func TestFromAnyTier3OmitemptyLoss(t *testing.T) {
+	type record struct {
+		F   float64 `json:"f"`
+		Tag string  `json:"tag,omitempty"`
+	}
+	v, err := FromAny(record{F: math.NaN(), Tag: ""})
+	if err != nil {
+		t.Fatalf("FromAny unexpected error: %v", err)
+	}
+	got := fieldMap(v)
+	if got["f"].Kind != KindNull {
+		t.Errorf("f = %+v, want KindNull", got["f"])
+	}
+	if _, ok := got["tag"]; !ok {
+		t.Error("tag absent; tier 3 does not honor omitempty (expected present)")
+	}
 }

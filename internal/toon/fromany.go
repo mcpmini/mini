@@ -12,12 +12,15 @@ import (
 // FromAny converts an arbitrary Go value to a Value via json.Marshal then
 // FromJSON, inheriting FromJSON's ordering and canonicalization. Spec §3
 // requires NaN and +/-Infinity to normalize to null rather than fail the
-// encode, so a non-finite-float marshal error triggers one retry against a
-// null-substituted copy of v. The rescue applies to JSON-shaped data — bare
-// floats, pointers, interfaces, maps, and slices. Structs are not walked; a
-// non-finite float inside a struct surfaces encoding/json's UnsupportedValueError.
-// Every other unsupported value (chan, func, unsupported map key types) still
-// fails as before.
+// encode. Three tiers, each strictly a fallback for the previous:
+//  1. Exact: json.Marshal succeeds.
+//  2. Surgical (normalizeNonFinite): replaces non-finite floats while
+//     preserving encoding/json semantics for all clean subtrees.
+//  3. Lossy (scrubNonFinite): rebuilds structs as generic maps, sacrificing
+//     omitempty and embedded-field fidelity to honor Spec §3 rather than fail.
+//
+// Non-non-finite errors (chan, func, unsupported map key types) surface from
+// whichever tier first encounters them.
 func FromAny(v any) (Value, error) {
 	raw, err := json.Marshal(v)
 	if err == nil {
@@ -27,6 +30,13 @@ func FromAny(v any) (Value, error) {
 		return Value{}, err
 	}
 	raw, err = json.Marshal(normalizeNonFinite(reflect.ValueOf(v)))
+	if err == nil {
+		return FromJSON(raw)
+	}
+	if !isNonFiniteFloatError(err) {
+		return Value{}, err
+	}
+	raw, err = json.Marshal(scrubNonFinite(v))
 	if err != nil {
 		return Value{}, err
 	}
