@@ -341,6 +341,12 @@ func normalizeToolCallResult(result any) any {
 	if env, ok := result.(*response.Envelope); ok && env.Error != "" {
 		return toolErrorResult(mustJSON(env))
 	}
+	if fe, ok := result.(formattedEnvelope); ok {
+		if fe.isError {
+			return toolErrorResult(fe.text)
+		}
+		return toolOKResult(fe.text)
+	}
 	return toolOKResult(result)
 }
 
