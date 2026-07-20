@@ -157,3 +157,53 @@ func TestNewProxyResult_MarshalsOnceForAllFields(t *testing.T) {
 		}
 	}
 }
+
+func TestEnvelopeWireMapMatchesMarshalJSON(t *testing.T) {
+	key := "12345"
+	cases := []struct {
+		name string
+		env  response.Envelope
+	}{
+		{"success minimal", response.Envelope{Data: "hello"}},
+		{"success full", response.Envelope{
+			Data:        map[string]any{"id": 1},
+			Excluded:    []string{".secret"},
+			Truncated:   []projection.Truncation{{JQPath: ".body", Chars: 42}},
+			File:        &key,
+			Passthrough: map[string]any{"cursor": "abc"},
+		}},
+		{"error minimal", response.Envelope{Error: "not_found"}},
+		{"error full", response.Envelope{
+			Error: "rate_limited", Message: "try later",
+			Retryable: true, Action: "retry_after_30s",
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			jsonBytes, err := json.Marshal(tc.env)
+			if err != nil {
+				t.Fatalf("MarshalJSON: %v", err)
+			}
+			wireBytes, err := json.Marshal(tc.env.WireMap())
+			if err != nil {
+				t.Fatalf("Marshal(WireMap): %v", err)
+			}
+			var fromJSON, fromWire map[string]any
+			if err := json.Unmarshal(jsonBytes, &fromJSON); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(wireBytes, &fromWire); err != nil {
+				t.Fatal(err)
+			}
+			if !jsonEqual(fromJSON, fromWire) {
+				t.Errorf("MarshalJSON and WireMap diverge:\n  JSON: %s\n  Wire: %s", jsonBytes, wireBytes)
+			}
+		})
+	}
+}
+
+func jsonEqual(a, b any) bool {
+	ab, _ := json.Marshal(a)
+	bb, _ := json.Marshal(b)
+	return string(ab) == string(bb)
+}
