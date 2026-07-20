@@ -24,7 +24,6 @@ func TestResolveCallOutput(t *testing.T) {
 		{"raw wins over toon", callFlags{raw: true, toon: true}, "", "", callOutputRaw},
 		{"cfg overridden by json flag", callFlags{json: true}, "", "toon", callOutputJSON},
 		{"projection toon applies without -t flag", callFlags{}, "toon", "", callOutputToon},
-		{"wildcard projection toon applies", callFlags{}, "toon", "", callOutputToon},
 		{"global toon overridden by exact-tool json projection", callFlags{}, "json", "toon", callOutputJSON},
 		{"-j flag beats toon projection", callFlags{json: true}, "toon", "", callOutputJSON},
 		{"-t flag beats json projection", callFlags{toon: true}, "json", "toon", callOutputToon},
