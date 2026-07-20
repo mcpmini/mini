@@ -43,6 +43,39 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// WireMap returns the envelope's wire shape as a plain map for encoders that
+// need to walk the value (TOON). It mirrors MarshalJSON's field set and
+// omitempty behavior; TestEnvelopeWireMapMatchesMarshalJSON enforces parity.
+func (e Envelope) WireMap() map[string]any {
+	if e.Error != "" {
+		out := map[string]any{"error": e.Error}
+		if e.Message != "" {
+			out["message"] = e.Message
+		}
+		if e.Retryable {
+			out["retryable"] = true
+		}
+		if e.Action != "" {
+			out["action"] = e.Action
+		}
+		return out
+	}
+	out := map[string]any{"data": e.Data}
+	if len(e.Excluded) > 0 {
+		out["excluded"] = e.Excluded
+	}
+	if len(e.Truncated) > 0 {
+		out["truncated"] = e.Truncated
+	}
+	if e.File != nil {
+		out["file"] = *e.File
+	}
+	if len(e.Passthrough) > 0 {
+		out["passthrough"] = e.Passthrough
+	}
+	return out
+}
+
 type envelopeSuccessJSON struct {
 	Data        any                     `json:"data"`
 	Excluded    []string                `json:"excluded,omitempty"`
