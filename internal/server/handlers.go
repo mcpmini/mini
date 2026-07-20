@@ -259,13 +259,21 @@ func (s *Server) buildProjectedEnvelope(p projectedEnvelopeParams) (*response.En
 	})
 }
 
+// formattedEnvelope carries the envelope's error state past formatting so
+// normalizeToolCallResult can still set isError once the envelope is a string.
+type formattedEnvelope struct {
+	text    string
+	isError bool
+}
+
 func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
 	projFormat := ""
 	if projCfg != nil {
 		projFormat = projCfg.Format
 	}
 	if config.EffectiveFormat("", projFormat, s.cfg.ResponseFormat) == config.FormatToon {
-		return EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
+		text := EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
+		return formattedEnvelope{text: text, isError: env.Error != ""}
 	}
 	return env
 }
