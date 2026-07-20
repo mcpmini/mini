@@ -151,3 +151,38 @@ func TestEncodeObjectFieldWithUnknownKindErrors(t *testing.T) {
 		t.Error("Encode(object field with unknown kind) expected error, got nil")
 	}
 }
+
+// Two fields per level so §13.4 safe folding cannot collapse the chain.
+func nestedObj(depth int) Value {
+	v := objVal(Field{Key: "leaf", Val: numVal("1")}, Field{Key: "z", Val: numVal("2")})
+	for range depth {
+		v = objVal(Field{Key: "n", Val: v}, Field{Key: "x", Val: numVal("2")})
+	}
+	return v
+}
+
+func nestedListArray(depth int) Value {
+	v := Value{Kind: KindArray, Items: []Value{objVal(Field{Key: "a", Val: numVal("1")}, Field{Key: "b", Val: objVal()})}}
+	for range depth {
+		v = Value{Kind: KindArray, Items: []Value{v, numVal("1")}}
+	}
+	return v
+}
+
+func TestEncodeDepthCap(t *testing.T) {
+	t.Run("object nesting beyond cap errors", func(t *testing.T) {
+		if _, err := Encode(nestedObj(maxEncodeDepth + 1)); err == nil {
+			t.Error("expected depth error, got nil")
+		}
+	})
+	t.Run("object nesting at cap encodes", func(t *testing.T) {
+		if _, err := Encode(nestedObj(maxEncodeDepth - 1)); err != nil {
+			t.Errorf("expected success at cap, got: %v", err)
+		}
+	})
+	t.Run("array-of-array nesting beyond cap errors", func(t *testing.T) {
+		if _, err := Encode(nestedListArray(maxEncodeDepth + 1)); err == nil {
+			t.Error("expected depth error, got nil")
+		}
+	})
+}
