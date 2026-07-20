@@ -7,6 +7,18 @@ import (
 
 const indentUnit = "  "
 
+// maxEncodeDepth bounds nesting because every line costs 2×depth indent bytes,
+// so unbounded depth lets a small hostile upstream response amplify into a
+// multi-GB encode. 64 is far beyond any real API payload.
+const maxEncodeDepth = 64
+
+func checkDepth(depth int) error {
+	if depth > maxEncodeDepth {
+		return fmt.Errorf("toon: nesting depth exceeds %d", maxEncodeDepth)
+	}
+	return nil
+}
+
 // Encode renders v as a TOON document per spec §5's root-form rules: a root
 // object emits its fields at indent 0, a root array emits under a bare [N]
 // header, a root scalar emits as a bare value. Key folding (§13.4 safe mode)
@@ -46,6 +58,9 @@ func encodeRootObject(fields []Field) (string, error) {
 }
 
 func writeFields(sb *strings.Builder, fields []Field, depth int) error {
+	if err := checkDepth(depth); err != nil {
+		return err
+	}
 	for _, f := range fields {
 		if err := writeField(sb, f, depth); err != nil {
 			return err

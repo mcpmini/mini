@@ -69,6 +69,9 @@ func writeTabularArray(sb *strings.Builder, items []Value, fields []string, ctx 
 }
 
 func writeListItems(sb *strings.Builder, items []Value, depth int) error {
+	if err := checkDepth(depth); err != nil {
+		return err
+	}
 	for _, it := range items {
 		if err := writeListItem(sb, it, depth); err != nil {
 			return err
