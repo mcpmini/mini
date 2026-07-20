@@ -1,6 +1,7 @@
 // Package toon encodes values into TOON (Token-Oriented Object Notation),
 // spec v3.3, pinned to commit f55b93ac489f297ff597d95e4c19ae84675eaeb7 of
 // https://github.com/toon-format/spec.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md
 package toon
 
 // Kind is the discriminant for Value.Kind. The zero value is intentionally
@@ -21,7 +22,7 @@ type Value struct {
 	Kind Kind
 
 	Bool bool
-	// Num holds a canonicalized number lexeme, set by FromJSON/FromAny.
+	// Num holds a canonicalized number lexeme (text, not a parsed value).
 	Num string
 	Str string
 

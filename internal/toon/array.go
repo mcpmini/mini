@@ -11,6 +11,7 @@ import (
 // (§9.4), 1 at the root. AllowTabular is false in keyless list-item position
 // where §9.4 forbids tabular form. FieldEmpty selects §9.1's `key: []` over
 // §9.2's `[0]:` for empty arrays.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#94-mixed--non-uniform-arrays--expanded-list
 type arrayCtx struct {
 	Key          string
 	ItemDepth    int
@@ -94,6 +95,7 @@ func writeListItem(sb *strings.Builder, item Value, depth int) error {
 }
 
 // §10: the first field shares the hyphen line; all others render at hyphen depth+1.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#10-objects-as-list-items
 func writeObjectListItem(sb *strings.Builder, item Value, depth int) error {
 	indent := strings.Repeat(indentUnit, depth)
 	if len(item.Fields) == 0 {
@@ -120,6 +122,7 @@ func joinPrimitives(items []Value) (string, error) {
 }
 
 // §9.3 eligibility: shared primitive-value key set across all elements; header order comes from the first element.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#93-arrays-of-objects--tabular-form
 func tabularFields(items []Value) ([]string, bool) {
 	keys, ok := primitiveObjectKeys(items[0])
 	if !ok || len(keys) == 0 {

@@ -43,6 +43,7 @@ func FuzzEncodeFromJSON(f *testing.F) {
 
 // assertLineInvariants enforces spec §12: no trailing newline, no trailing
 // whitespace on any line, no blank lines.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#12-indentation-and-whitespace
 func assertLineInvariants(t *testing.T, out string) {
 	t.Helper()
 	if out == "" {

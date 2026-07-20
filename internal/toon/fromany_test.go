@@ -239,9 +239,8 @@ func fieldMap(v Value) map[string]Value {
 	return m
 }
 
-// textMarshalKey is an int whose MarshalText returns "custom-key" regardless
-// of the numeric value, used to verify jsonMapKey prefers TextMarshaler over
-// fmt.Sprint (which would emit the decimal string "7").
+// textMarshalKey verifies jsonMapKey prefers TextMarshaler over fmt.Sprint
+// (which would emit the decimal string "7") for map keys.
 type textMarshalKey int
 
 func (k textMarshalKey) MarshalText() ([]byte, error) {
@@ -264,7 +263,6 @@ func TestFromAnyRescuePreservesNilMapSiblingAsNull(t *testing.T) {
 }
 
 func TestFromAnyRescueUsesTextMarshalerForMapKeys(t *testing.T) {
-	// textMarshalKey(7).MarshalText() → "custom-key"; fmt.Sprint would give "7".
 	m := map[textMarshalKey]any{7: math.NaN()}
 	v, err := FromAny(m)
 	if err != nil {
@@ -301,11 +299,9 @@ func TestFromAnyRescuePreservesFloat32ShortestRepr(t *testing.T) {
 }
 
 func TestFromAnyRescueUnsupportedMapKeyTypeErrors(t *testing.T) {
-	// "a" < "z" so NaN (key "a") triggers rescue before json encounters the
-	// struct-keyed inner map.  During rescue, normalizeNonFinite delegates the
-	// inner map to json.Marshal which fails with UnsupportedTypeError, and
-	// normalizeMapNonFinite passes it through unchanged so the outer retry
-	// surfaces json's own error instead of silently stringifying the key.
+	// "a" < "z": NaN triggers rescue before the struct-keyed map at "z", whose
+	// delegated json.Marshal fails and is passed through unchanged so the outer
+	// retry surfaces json's own unsupported-key error.
 	type structKey struct{ x int }
 	m := map[string]any{
 		"a": math.NaN(),

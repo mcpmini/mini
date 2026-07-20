@@ -7,11 +7,13 @@ import (
 
 // identifierSegmentRE is spec §1.9's IdentifierSegment: stricter than
 // unquotedKeyRE (no dots), used only for folding eligibility.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#19-key-folding-and-path-expansion-terms
 var identifierSegmentRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 // foldValue applies §13.4 key folding in safe mode with unlimited depth,
 // mini's locked configuration. It rewrites the Value tree before rendering
 // so folded chains participate in tabular detection.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#134-key-folding-and-path-expansion
 func foldValue(v Value) Value {
 	switch v.Kind {
 	case KindObject:
@@ -43,7 +45,6 @@ func foldField(f Field, siblings []Field) Field {
 	return Field{Key: f.Key, Val: foldChainTail(f.Val)}
 }
 
-// §13.4: folds chains of two or more single-key segments ending at a primitive, array, or empty object.
 func foldableChain(f Field) (segs []string, leaf Value, foldable bool) {
 	segs = []string{f.Key}
 	leaf = f.Val

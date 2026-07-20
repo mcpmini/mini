@@ -9,14 +9,17 @@ import (
 )
 
 // numericLikeRE mirrors spec §7.2's /^-?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#72-quoting-rules-for-string-values
 var numericLikeRE = regexp.MustCompile(`(?i)^-?\d+(\.\d+)?(e[+-]?\d+)?$`)
 
 // unquotedKeyRE mirrors spec §7.3's ^[A-Za-z_][A-Za-z0-9_.]*$.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#73-key-encoding
 var unquotedKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
 
 // structuralChars is spec §7.2's always-quote set (colon, quote, backslash,
 // brackets/braces) plus the document delimiter, hardcoded to comma per 1a's
 // locked options (no delimiter option plumbing yet).
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#72-quoting-rules-for-string-values
 const structuralChars = ":\"\\[]{},"
 
 func encodeString(s string) string {
@@ -80,7 +83,6 @@ func quoteString(s string) string {
 	return sb.String()
 }
 
-// writeEscaped implements spec §7.1's encoder column.
 func writeEscaped(sb *strings.Builder, r rune) {
 	switch r {
 	case '\\':
