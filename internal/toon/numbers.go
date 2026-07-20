@@ -10,6 +10,7 @@ import (
 // canonicalizeNumber applies spec §2: integer lexemes (no '.', no e/E) keep
 // their digits verbatim so values beyond 2^53 survive exactly; everything
 // else goes through float64 formatting.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#2-data-model
 func canonicalizeNumber(lexeme string) (string, error) {
 	if !strings.ContainsAny(lexeme, ".eE") {
 		return canonicalInteger(lexeme)
@@ -46,6 +47,7 @@ func isDigits(s string) bool {
 // canonicalFloat parses decimal/exponent lexemes. Values outside float64's
 // finite range — overflow (too large) and underflow (too small) — pass through
 // textually per spec §2 out-of-domain policy.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#2-data-model
 func canonicalFloat(lexeme string) (string, error) {
 	f, err := strconv.ParseFloat(lexeme, 64)
 	if err != nil {
@@ -90,9 +92,6 @@ func hasMantissaNonZeroDigit(lexeme string) bool {
 	return false
 }
 
-// normalizeOutOfRangeLexeme converts an out-of-range lexeme (overflow or
-// underflow) to lowercase e with an explicit exponent sign, preserving the
-// mantissa digits exactly.
 func normalizeOutOfRangeLexeme(lexeme string) string {
 	lo := strings.ToLower(lexeme)
 	mantissa, expStr, hasExp := strings.Cut(lo, "e")
@@ -120,9 +119,8 @@ func canonicalExponent(f float64) string {
 	return mantissa + "e" + sign + exp
 }
 
-// isValidJSONNumberLexeme reports whether s is a valid JSON number per RFC 8259.
-// strconv.ParseFloat accepts Go-syntax forms (e.g. "1.e309") that JSON forbids
-// (the fractional part must have at least one digit after ".").
+// isValidJSONNumberLexeme rejects Go-only number syntax like "1.e309" that
+// strconv.ParseFloat accepts but RFC 8259 forbids (no digit after ".").
 func isValidJSONNumberLexeme(s string) bool {
 	i := consumeJSONInteger(s, 0)
 	if i < 0 {
@@ -147,8 +145,6 @@ func isValidJSONNumberLexeme(s string) bool {
 	return i == len(s)
 }
 
-// consumeJSONInteger advances past an optional '-' and an integer part
-// (0 or [1-9][0-9]*) starting at pos. Returns the new index or -1 on failure.
 func consumeJSONInteger(s string, pos int) int {
 	i := pos
 	if i < len(s) && s[i] == '-' {
@@ -169,8 +165,6 @@ func consumeJSONInteger(s string, pos int) int {
 	return i
 }
 
-// consumeDigitRun advances past one or more digits starting at pos.
-// Returns the new index, or -1 if pos does not point to a digit.
 func consumeDigitRun(s string, pos int) int {
 	if pos >= len(s) || s[pos] < '0' || s[pos] > '9' {
 		return -1
@@ -184,6 +178,7 @@ func consumeDigitRun(s string, pos int) int {
 
 // FromJSON/FromAny already hand encodeNum a canonical lexeme; Values built by
 // hand (e.g. "-0", "1.0") must still satisfy spec §2 on output.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#2-data-model
 func encodeNum(v Value) (string, error) {
 	return canonicalizeNumber(v.Num)
 }

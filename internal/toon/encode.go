@@ -11,6 +11,7 @@ const indentUnit = "  "
 // object emits its fields at indent 0, a root array emits under a bare [N]
 // header, a root scalar emits as a bare value. Key folding (§13.4 safe mode)
 // is always applied first.
+// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#5-concrete-syntax-and-root-form
 func Encode(v Value) (string, error) {
 	v = foldValue(v)
 	switch v.Kind {
