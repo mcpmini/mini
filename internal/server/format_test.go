@@ -244,10 +244,11 @@ func assertToonFormat(t *testing.T, text string) {
 func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 	t.Run("global toon renders tool_error as TOON", func(t *testing.T) {
 		srv := newSrvConfigDirAndToolErr(t, "toon")
-		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
+		resp := serve(t, srv, callTool("call", map[string]any{
 			"server": "gh", "tool": "list_issues", "params": map[string]any{},
-		})))
-		assertToonFormat(t, text)
+		}))
+		assertIsErrorResult(t, resp)
+		assertToonFormat(t, toolResultText(t, resp))
 	})
 
 	t.Run("exact-tool toon projection renders tool_error as TOON", func(t *testing.T) {
@@ -296,9 +297,11 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 
 	t.Run("not_found under global toon renders as TOON", func(t *testing.T) {
 		srv := newSrvConfigDirAndToolErr(t, "toon")
-		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
+		resp := serve(t, srv, callTool("call", map[string]any{
 			"server": "gh", "tool": "nonexistent_tool", "params": map[string]any{},
-		})))
+		}))
+		assertIsErrorResult(t, resp)
+		text := toolResultText(t, resp)
 		if strings.HasPrefix(text, "{") {
 			t.Fatalf("expected TOON for not_found under global toon, got JSON: %.200s", text)
 		}
@@ -313,10 +316,11 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 			"action": "set_projection", "server": "gh", "tool": "list_issues",
 			"projection": map[string]any{"format": "json"},
 		}))
-		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
+		resp := serve(t, srv, callTool("call", map[string]any{
 			"server": "gh", "tool": "list_issues", "params": map[string]any{},
-		})))
-		if !strings.HasPrefix(text, "{") {
+		}))
+		assertIsErrorResult(t, resp)
+		if text := toolResultText(t, resp); !strings.HasPrefix(text, "{") {
 			t.Fatalf("expected JSON for tool_error when per-tool json overrides global toon, got: %.200s", text)
 		}
 	})
