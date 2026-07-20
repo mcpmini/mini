@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -240,27 +241,6 @@ func assertToonFormat(t *testing.T, text string) {
 	}
 }
 
-func lastToolResult(t *testing.T, msgs []map[string]any) string {
-	t.Helper()
-	for i := len(msgs) - 1; i >= 0; i-- {
-		result, ok := msgs[i]["result"].(map[string]any)
-		if !ok {
-			continue
-		}
-		content, ok := result["content"].([]any)
-		if !ok || len(content) == 0 {
-			continue
-		}
-		text, ok := content[0].(map[string]any)["text"].(string)
-		if !ok {
-			continue
-		}
-		return text
-	}
-	t.Fatal("no tool result text found in messages")
-	return ""
-}
-
 func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 	t.Run("global toon renders tool_error as TOON", func(t *testing.T) {
 		srv := newSrvConfigDirAndToolErr(t, "toon")
@@ -301,17 +281,17 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 	})
 
 	t.Run("session-override toon projection renders tool_error as TOON", func(t *testing.T) {
+		// Serve handles stdio requests concurrently, so a single-stream config
+		// then call has no ordering guarantee; HTTP POSTs are synchronous.
 		srv := newSrvConfigDirAndToolErr(t, "")
-		msgs := serveAll(t, srv,
-			callTool("config", map[string]any{
-				"action": "set_projection", "server": "gh", "tool": "list_issues",
-				"projection": map[string]any{"format": "toon"}, "session_only": true,
-			}),
-			callTool("call", map[string]any{
-				"server": "gh", "tool": "list_issues", "params": map[string]any{},
-			}),
-		)
-		assertToonFormat(t, lastToolResult(t, msgs))
+		ts := httptest.NewServer(srv)
+		t.Cleanup(ts.Close)
+		sessionID := initCompactSession(t, ts)
+		setSessionProjection(t, sessionProjectionParams{
+			TS: ts, SessionID: sessionID, SrvName: "gh", Tool: "list_issues",
+			Proj: map[string]any{"format": "toon"},
+		})
+		assertToonFormat(t, httpExecToolText(t, ts, sessionID, "gh", "list_issues"))
 	})
 
 	t.Run("not_found under global toon renders as TOON", func(t *testing.T) {
