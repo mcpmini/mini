@@ -335,6 +335,31 @@ func TestCLI_daemon_status_noDaemon(t *testing.T) {
 	}
 }
 
+func TestCLI_status_withProjectionFile(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cfg, "servers"), 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "servers", "ci.yaml"), []byte("name: ci\nenabled: false\ncommand: mcp-ci\n"), 0644); err != nil {
+		t.Fatalf("WriteFile ci.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cfg, "servers", "ci.proj.yaml"), []byte("getBuild:\n  include_only:\n    - build_number\n    - status\n    - branch\n"), 0644); err != nil {
+		t.Fatalf("WriteFile ci.proj.yaml: %v", err)
+	}
+
+	stdout, stderr, code := run(t, bin, cfg, "status")
+	if code != 0 {
+		t.Fatalf("status should exit 0, got %d, stderr=%q stdout=%q", code, stderr, stdout)
+	}
+	if !strings.Contains(stdout, "ci") {
+		t.Fatalf("expected ci in status output, got %q", stdout)
+	}
+	if !strings.Contains(stdout, "disabled") {
+		t.Fatalf("expected disabled in status output, got %q", stdout)
+	}
+}
+
 func TestCLI_add_withHeader(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
