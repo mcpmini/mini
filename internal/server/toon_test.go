@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log/slog"
 	"math"
@@ -170,4 +171,46 @@ func TestEncodeToon(t *testing.T) {
 			t.Errorf("original map was mutated: m[\"bad\"] = %v", m["bad"])
 		}
 	})
+}
+
+func TestEncodeToonFallbackIncludesMarker(t *testing.T) {
+	t.Run("depth cap fallback", func(t *testing.T) {
+		nested := map[string]any{"leaf": "value"}
+		for i := 0; i < 70; i++ {
+			// A second sibling key per level defeats key folding (fold.go
+			// only chains through single-field objects), so the nesting
+			// actually reaches the writer's depth check.
+			nested = map[string]any{"level": nested, "other": i}
+		}
+		out := EncodeToon(discardLogger(), &response.Envelope{Data: nested})
+		if !strings.HasPrefix(out, "{") {
+			t.Fatalf("expected JSON fallback, got: %s", out)
+		}
+		if !strings.Contains(out, `"_toon_fallback"`) {
+			t.Errorf("expected _toon_fallback marker, got: %s", out)
+		}
+		if !strings.Contains(out, "nesting depth exceeds") {
+			t.Errorf("expected depth error message, got: %s", out)
+		}
+	})
+}
+
+func TestEncodeToonSizeCapFallbackIncludesMarker(t *testing.T) {
+	const entryCount = 110000 // clears the 4MB cap; 100K lands just under it
+	entries := make(map[string]any, entryCount)
+	for i := 0; i < entryCount; i++ {
+		entries[fmt.Sprintf("k%d", i)] = map[string]any{"a": i, "b": "value"}
+	}
+	data := map[string]any{"entries": entries}
+
+	out := EncodeToon(discardLogger(), &response.Envelope{Data: data})
+	if !strings.HasPrefix(out, "{") {
+		t.Fatalf("expected JSON fallback, got prefix: %s", out[:min(len(out), 50)])
+	}
+	if !strings.Contains(out, `"_toon_fallback"`) {
+		t.Errorf("expected _toon_fallback marker")
+	}
+	if !strings.Contains(out, "encoded output exceeds") {
+		t.Errorf("expected size cap error message")
+	}
 }
