@@ -1,6 +1,10 @@
 package toon
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func strVal(s string) Value   { return Value{Kind: KindString, Str: s} }
 func numVal(n string) Value   { return Value{Kind: KindNumber, Num: n} }
@@ -185,4 +189,54 @@ func TestEncodeDepthCap(t *testing.T) {
 			t.Error("expected depth error, got nil")
 		}
 	})
+}
+
+// manyNonUniformFillers alternates keys so the array can't take tabular
+// form, forcing the expanded writeListItems path per line.
+func manyNonUniformFillers(n int) []Value {
+	items := make([]Value, n)
+	for i := range items {
+		key := "a"
+		if i%2 == 1 {
+			key = "b"
+		}
+		items[i] = objVal(Field{Key: key, Val: numVal("1")})
+	}
+	return items
+}
+
+// amplifyingArray nests a non-uniform array within a non-uniform array,
+// depth levels deep, each level padded with itemsPerLevel filler items so
+// per-line indentation cost compounds across levels, mirroring the
+// depth×width amplification the byte cap defends against.
+func amplifyingArray(depth, itemsPerLevel int) Value {
+	items := manyNonUniformFillers(itemsPerLevel)
+	if depth > 0 {
+		items = append(items, amplifyingArray(depth-1, itemsPerLevel))
+	}
+	return Value{Kind: KindArray, Items: items}
+}
+
+func TestEncodeOutputSizeCap(t *testing.T) {
+	_, err := Encode(amplifyingArray(maxEncodeDepth-4, 3000))
+	if err == nil {
+		t.Fatal("expected size-cap error, got nil")
+	}
+	if !strings.Contains(err.Error(), "encoded output exceeds") {
+		t.Errorf("error = %q, want it to mention %q", err.Error(), "encoded output exceeds")
+	}
+}
+
+func TestEncodeOutputUnderCapSucceeds(t *testing.T) {
+	fields := make([]Field, 5000)
+	for i := range fields {
+		fields[i] = Field{Key: fmt.Sprintf("k%d", i), Val: numVal("1")}
+	}
+	got, err := Encode(objVal(fields...))
+	if err != nil {
+		t.Fatalf("Encode unexpected error: %v", err)
+	}
+	if len(got) == 0 {
+		t.Error("expected non-empty output")
+	}
 }
