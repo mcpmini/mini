@@ -267,10 +267,7 @@ type formattedEnvelope struct {
 }
 
 func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
-	projFormat := ""
-	if projCfg != nil {
-		projFormat = projCfg.Format
-	}
+	projFormat := config.ProjectionFormat(projCfg)
 	if config.EffectiveFormat("", projFormat, s.cfg.ResponseFormat) == config.FormatToon {
 		text := EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
 		return formattedEnvelope{text: text, isError: env.Error != ""}

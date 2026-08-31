@@ -102,10 +102,7 @@ func runCallCmd(configDir string, args []string, f callFlags, protected bool) {
 	defer conn.Close()
 
 	projCfg := resolveCallProjection(cc.sc, cc.toolName)
-	projFormat := ""
-	if projCfg != nil {
-		projFormat = projCfg.Format
-	}
+	projFormat := config.ProjectionFormat(projCfg)
 	mode := resolveCallOutput(f, projFormat, cc.cfg.ResponseFormat)
 	if mode == callOutputRaw {
 		executeRaw(ctx, conn, cc)
