@@ -18,7 +18,9 @@ func EncodeToon(logger *slog.Logger, env *response.Envelope) string {
 		return text
 	}
 	logger.Warn("toon encode failed, falling back to JSON", "err", err)
-	b, jsonErr := json.Marshal(env)
+	m := env.WireMap()
+	m["_toon_fallback"] = err.Error()
+	b, jsonErr := json.Marshal(m)
 	if jsonErr != nil {
 		logger.Error("toon fallback JSON marshal also failed", "err", jsonErr)
 		errObj, _ := json.Marshal(map[string]string{"error": "response could not be encoded: " + jsonErr.Error()})
