@@ -22,6 +22,14 @@ func EffectiveFormat(explicit, projection, global string) string {
 	}
 }
 
+// ProjectionFormat returns p.Format, or "" if p is nil.
+func ProjectionFormat(p *ProjectionConfig) string {
+	if p == nil {
+		return ""
+	}
+	return p.Format
+}
+
 // ValidResponseFormat reports whether format is a recognized response_format
 // or projection format value.
 func ValidResponseFormat(format string) error {
