@@ -7,9 +7,9 @@ import (
 )
 
 // scrubNonFinite is the lossy tier of FromAny's three-tier chain. Structs are
-// rebuilt as generic maps (omitempty and embedded-field flattening are lost) and
-// json.Marshaler values pass through untouched. FromAny invokes this only after
-// the surgical rescue (normalizeNonFinite) failed.
+// rebuilt as generic maps (embedded-field flattening is lost, see scrubStruct)
+// and json.Marshaler values pass through untouched. FromAny invokes this only
+// after the surgical rescue (normalizeNonFinite) failed.
 func scrubNonFinite(v any) any {
 	switch val := v.(type) {
 	case nil:
@@ -115,6 +115,9 @@ func scrubGenericMap(rv reflect.Value) any {
 	return out
 }
 
+// scrubStruct honors the json tag's name and omitempty option per field, but
+// does not promote embedded struct fields the way encoding/json does — an
+// embedded field is emitted under its own field name rather than flattened.
 func scrubStruct(rv reflect.Value) any {
 	t := rv.Type()
 	out := make(map[string]any, t.NumField())
@@ -123,27 +126,39 @@ func scrubStruct(rv reflect.Value) any {
 		if !f.IsExported() {
 			continue
 		}
-		name := jsonTagName(f)
+		name, omit := jsonTagNameOpts(f)
 		if name == "-" {
 			continue
 		}
-		out[name] = scrubNonFinite(rv.Field(i).Interface())
+		val := scrubNonFinite(rv.Field(i).Interface())
+		if omit && isJSONZero(val) {
+			continue
+		}
+		out[name] = val
 	}
 	return out
 }
 
-func jsonTagName(f reflect.StructField) string {
+func isJSONZero(v any) bool {
+	if v == nil {
+		return true
+	}
+	return reflect.ValueOf(v).IsZero()
+}
+
+func jsonTagNameOpts(f reflect.StructField) (string, bool) {
 	tag := f.Tag.Get("json")
 	if tag == "" {
-		return f.Name
+		return f.Name, false
 	}
+	name, opts := tag, ""
 	if idx := strings.Index(tag, ","); idx >= 0 {
-		tag = tag[:idx]
+		name, opts = tag[:idx], tag[idx+1:]
 	}
-	if tag == "" {
-		return f.Name
+	if name == "" {
+		name = f.Name
 	}
-	return tag
+	return name, strings.Contains(opts, "omitempty")
 }
 
 func isJSONMarshaler(t reflect.Type) bool {

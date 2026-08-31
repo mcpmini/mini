@@ -409,7 +409,7 @@ func TestFromAnyTier2PreservesOmitemptyWhenSiblingHasNaN(t *testing.T) {
 	}
 }
 
-func TestFromAnyTier3OmitemptyLoss(t *testing.T) {
+func TestFromAnyTier3OmitemptyPreserved(t *testing.T) {
 	type record struct {
 		F   float64 `json:"f"`
 		Tag string  `json:"tag,omitempty"`
@@ -422,7 +422,7 @@ func TestFromAnyTier3OmitemptyLoss(t *testing.T) {
 	if got["f"].Kind != KindNull {
 		t.Errorf("f = %+v, want KindNull", got["f"])
 	}
-	if _, ok := got["tag"]; !ok {
-		t.Error("tag absent; tier 3 does not honor omitempty (expected present)")
+	if _, ok := got["tag"]; ok {
+		t.Error("tag present; tier 3 must honor omitempty for zero-value fields")
 	}
 }
