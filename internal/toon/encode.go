@@ -12,6 +12,13 @@ const indentUnit = "  "
 // multi-GB encode. 64 is far beyond any real API payload.
 const maxEncodeDepth = 64
 
+// maxEncodeBytes bounds total output because deep non-uniform arrays amplify
+// indent bytes per line, so an unbounded builder lets a small hostile
+// upstream response balloon toward the 64MB upstream cap's worst case.
+const maxEncodeBytes = 4 * 1024 * 1024
+
+var errEncodeTooLarge = fmt.Errorf("toon: encoded output exceeds %d bytes", maxEncodeBytes)
+
 func checkDepth(depth int) error {
 	if depth > maxEncodeDepth {
 		return fmt.Errorf("toon: nesting depth exceeds %d", maxEncodeDepth)
@@ -60,6 +67,9 @@ func encodeRootObject(fields []Field) (string, error) {
 func writeFields(sb *strings.Builder, fields []Field, depth int) error {
 	if err := checkDepth(depth); err != nil {
 		return err
+	}
+	if sb.Len() > maxEncodeBytes {
+		return errEncodeTooLarge
 	}
 	for _, f := range fields {
 		if err := writeField(sb, f, depth); err != nil {
