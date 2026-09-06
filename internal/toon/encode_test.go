@@ -227,6 +227,57 @@ func TestEncodeOutputSizeCap(t *testing.T) {
 	}
 }
 
+func nestedTabularArray(depth, rows int) Value {
+	leaf := objVal(Field{Key: "leaf", Val: numVal("1")}, Field{Key: "sibling", Val: numVal("2")})
+	for i := 0; i < depth; i++ {
+		items := make([]Value, rows)
+		for j := range items {
+			items[j] = objVal(
+				Field{Key: "id", Val: numVal(fmt.Sprintf("%d", j))},
+				Field{Key: "payload", Val: strVal(strings.Repeat("x", 64))},
+			)
+		}
+		leaf = objVal(Field{Key: "items", Val: arrVal(items...)}, Field{Key: "next", Val: leaf})
+	}
+	return leaf
+}
+
+func TestEncodeNestedTabularArrayOutputSizeCap(t *testing.T) {
+	_, err := Encode(nestedTabularArray(50, 1000))
+	if err == nil {
+		t.Fatal("expected size-cap error for deeply nested tabular arrays")
+	}
+	if !strings.Contains(err.Error(), "encoded output exceeds") {
+		t.Errorf("error = %q, want size-cap error", err)
+	}
+}
+
+func TestEncodeRootInlineArrayOutputSizeCap(t *testing.T) {
+	_, err := Encode(arrVal(strVal(strings.Repeat("x", maxEncodeBytes))))
+	if err == nil {
+		t.Fatal("expected size-cap error for oversized root inline array")
+	}
+	if !strings.Contains(err.Error(), "encoded output exceeds") {
+		t.Errorf("error = %q, want size-cap error", err)
+	}
+}
+
+func TestAppendStringEnforcesExactOutputCap(t *testing.T) {
+	var sb strings.Builder
+	if err := appendString(&sb, strings.Repeat("x", maxEncodeBytes)); err != nil {
+		t.Fatalf("appendString at cap returned error: %v", err)
+	}
+	if sb.Len() != maxEncodeBytes {
+		t.Fatalf("builder length = %d, want %d", sb.Len(), maxEncodeBytes)
+	}
+	if err := appendString(&sb, "x"); err == nil {
+		t.Fatal("appendString past cap returned nil")
+	}
+	if sb.Len() != maxEncodeBytes {
+		t.Fatalf("builder length after rejected append = %d, want %d", sb.Len(), maxEncodeBytes)
+	}
+}
+
 func TestEncodeOutputUnderCapSucceeds(t *testing.T) {
 	fields := make([]Field, 5000)
 	for i := range fields {

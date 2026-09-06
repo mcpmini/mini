@@ -80,7 +80,9 @@ func writeFields(sb *strings.Builder, fields []Field, depth int) error {
 }
 
 func writeField(sb *strings.Builder, f Field, depth int) error {
-	sb.WriteString(strings.Repeat(indentUnit, depth))
+	if err := appendString(sb, strings.Repeat(indentUnit, depth)); err != nil {
+		return err
+	}
 	return writeFieldBody(sb, f, depth)
 }
 
@@ -90,23 +92,43 @@ func writeFieldBody(sb *strings.Builder, f Field, depth int) error {
 		ctx := arrayCtx{Key: encodeKey(f.Key), ItemDepth: depth + 1, AllowTabular: true, FieldEmpty: true}
 		return writeArray(sb, f.Val.Items, ctx)
 	}
-	sb.WriteString(encodeKey(f.Key))
-	sb.WriteString(":")
+	if err := appendString(sb, encodeKey(f.Key)); err != nil {
+		return err
+	}
+	if err := appendString(sb, ":"); err != nil {
+		return err
+	}
 	return writeFieldValue(sb, f.Val, depth)
 }
 
 func writeFieldValue(sb *strings.Builder, v Value, depth int) error {
 	if v.Kind == KindObject {
-		sb.WriteString("\n")
+		if err := appendString(sb, "\n"); err != nil {
+			return err
+		}
 		return writeFields(sb, v.Fields, depth+1)
 	}
 	s, err := encodePrimitive(v)
 	if err != nil {
 		return err
 	}
-	sb.WriteString(" ")
+	if err := appendString(sb, " "); err != nil {
+		return err
+	}
+	if err := appendString(sb, s); err != nil {
+		return err
+	}
+	if err := appendString(sb, "\n"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func appendString(sb *strings.Builder, s string) error {
+	if len(s) > maxEncodeBytes-sb.Len() {
+		return errEncodeTooLarge
+	}
 	sb.WriteString(s)
-	sb.WriteString("\n")
 	return nil
 }
 
@@ -119,7 +141,11 @@ func encodePrimitive(v Value) (string, error) {
 	case KindNumber:
 		return encodeNum(v)
 	case KindString:
-		return encodeString(v.Str), nil
+		s := encodeString(v.Str)
+		if len(s) > maxEncodeBytes {
+			return "", errEncodeTooLarge
+		}
+		return s, nil
 	default:
 		return "", fmt.Errorf("toon: unknown kind %d", v.Kind)
 	}
