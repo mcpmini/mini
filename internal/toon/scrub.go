@@ -3,71 +3,92 @@ package toon
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"reflect"
 )
 
-func scrubNonFinite(v any) any {
-	switch val := v.(type) {
-	case nil:
-		return nil
-	case map[string]any:
-		return scrubStringMap(val)
-	case []any:
-		return scrubAnySlice(val)
-	}
-	return scrubValue(reflect.ValueOf(v))
+type scrubVisit struct {
+	kind reflect.Kind
+	typ  reflect.Type
+	ptr  uintptr
+	len  int
+	cap  int
 }
 
-func scrubStringMap(m map[string]any) map[string]any {
-	if m == nil {
-		return nil
-	}
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = scrubNonFinite(v)
-	}
-	return out
+type scrubState struct {
+	active map[scrubVisit]bool
 }
 
-func scrubAnySlice(s []any) []any {
-	out := make([]any, len(s))
-	for i, elem := range s {
-		out[i] = scrubNonFinite(elem)
-	}
-	return out
+func scrubNonFinite(v any) (any, error) {
+	return scrubValue(reflect.ValueOf(v), &scrubState{active: make(map[scrubVisit]bool)})
 }
 
-func passthroughForMarshaler(rv reflect.Value) (any, bool) {
+func scrubValue(rv reflect.Value, state *scrubState) (any, error) {
+	if raw, err, done := marshalSubtree(rv); done {
+		return raw, err
+	}
 	if !rv.IsValid() {
-		return nil, true
+		return nil, nil
 	}
-	if rv.CanInterface() && isJSONMarshaler(rv.Type()) {
-		return rv.Interface(), true
-	}
-	return nil, false
+	return scrubKind(rv, state)
 }
 
-func scrubValue(rv reflect.Value) any {
-	if pre, ok := passthroughForMarshaler(rv); ok {
-		return pre
-	}
+func scrubKind(rv reflect.Value, state *scrubState) (any, error) {
 	switch rv.Kind() {
 	case reflect.Float32, reflect.Float64:
-		return scrubFloat(rv)
-	case reflect.Ptr, reflect.Interface:
-		return scrubPointer(rv)
+		return scrubFloat(rv), nil
+	case reflect.Ptr:
+		return scrubPointer(rv, state)
+	case reflect.Interface:
+		if rv.IsNil() {
+			return nil, nil
+		}
+		return scrubValue(rv.Elem(), state)
 	case reflect.Slice, reflect.Array:
-		return scrubSequence(rv)
+		return scrubSequence(rv, state)
 	case reflect.Map:
-		return scrubGenericMap(rv)
+		return scrubGenericMap(rv, state)
 	case reflect.Struct:
-		return scrubStruct(rv)
+		return scrubStruct(rv, state)
 	}
-	if rv.CanInterface() {
-		return rv.Interface()
+	return nil, fmt.Errorf("encoding/json: unable to normalize %s", rv.Type())
+}
+
+func marshalSubtree(rv reflect.Value) (any, error, bool) {
+	if !rv.IsValid() {
+		return nil, nil, true
 	}
-	return nil
+	input, ok := marshalInput(rv)
+	if !ok {
+		return nil, nil, false
+	}
+	raw, err := json.Marshal(input)
+	if err == nil {
+		return json.RawMessage(raw), nil, true
+	}
+	if isNonFiniteFloatError(err) {
+		if usesCustomMarshaler(rv) {
+			return nil, err, true
+		}
+		return nil, nil, false
+	}
+	return nil, err, true
+}
+
+func marshalInput(rv reflect.Value) (any, bool) {
+	if !rv.CanInterface() {
+		return nil, false
+	}
+	if rv.Kind() != reflect.Pointer && rv.CanAddr() && pointerMarshaler(rv.Type()) {
+		return rv.Addr().Interface(), true
+	}
+	return rv.Interface(), true
+}
+
+func pointerMarshaler(t reflect.Type) bool {
+	p := reflect.PointerTo(t)
+	return p.Implements(jsonMarshalerType) || p.Implements(textMarshalerType)
 }
 
 func scrubFloat(rv reflect.Value) any {
@@ -78,38 +99,58 @@ func scrubFloat(rv reflect.Value) any {
 	return rv.Interface()
 }
 
-func scrubPointer(rv reflect.Value) any {
+func scrubPointer(rv reflect.Value, state *scrubState) (any, error) {
 	if rv.IsNil() {
-		return nil
+		return nil, nil
 	}
-	return scrubValue(rv.Elem())
+	if err := state.enter(rv); err != nil {
+		return nil, err
+	}
+	defer state.leave(rv)
+	return scrubValue(rv.Elem(), state)
 }
 
-func scrubSequence(rv reflect.Value) any {
+func scrubSequence(rv reflect.Value, state *scrubState) (any, error) {
 	if rv.Kind() == reflect.Slice && rv.IsNil() {
-		return nil
+		return nil, nil
 	}
+	if err := state.enter(rv); err != nil {
+		return nil, err
+	}
+	defer state.leave(rv)
 	out := make([]any, rv.Len())
 	for i := range out {
-		out[i] = scrubValue(rv.Index(i))
+		value, err := scrubValue(rv.Index(i), state)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = value
 	}
-	return out
+	return out, nil
 }
 
-func scrubGenericMap(rv reflect.Value) any {
+func scrubGenericMap(rv reflect.Value, state *scrubState) (any, error) {
 	if rv.IsNil() {
-		return nil
+		return nil, nil
 	}
+	if err := state.enter(rv); err != nil {
+		return nil, err
+	}
+	defer state.leave(rv)
 	out := make(map[string]any, rv.Len())
 	iter := rv.MapRange()
 	for iter.Next() {
 		k, ok := jsonMapKey(iter.Key())
 		if !ok {
-			return rv.Interface()
+			return nil, fmt.Errorf("encoding/json: unsupported map key type %s", rv.Type().Key())
 		}
-		out[k] = scrubValue(iter.Value())
+		value, err := scrubValue(iter.Value(), state)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = value
 	}
-	return out
+	return out, nil
 }
 
 type orderedEntry struct {
@@ -153,19 +194,92 @@ func writeOrderedEntry(buf *bytes.Buffer, e orderedEntry) error {
 	return nil
 }
 
-func scrubStruct(rv reflect.Value) any {
+func scrubStruct(rv reflect.Value, state *scrubState) (any, error) {
 	fields := scrubFields(rv.Type())
 	out := make(orderedObject, 0, len(fields))
 	for _, f := range fields {
 		fv, ok := fieldByIndex(rv, f.index)
-		if !ok || f.omitEmpty && isJSONEmptyValue(fv) {
+		if !ok || f.omitEmpty && isJSONEmptyValue(fv) || f.omitZero && isJSONZeroValue(fv) {
 			continue
 		}
-		out = append(out, orderedEntry{key: f.name, val: scrubValue(fv)})
+		value, err := scrubFieldValue(fv, f, state)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, orderedEntry{key: f.name, val: value})
 	}
-	return out
+	return out, nil
 }
 
-func isJSONMarshaler(t reflect.Type) bool {
-	return t.Implements(jsonMarshalerType) || reflect.PointerTo(t).Implements(jsonMarshalerType)
+func scrubFieldValue(rv reflect.Value, field scrubField, state *scrubState) (any, error) {
+	value, err := scrubValue(rv, state)
+	if err != nil || !field.quoted || usesCustomMarshaler(rv) || isJSONNull(value) {
+		return value, err
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	quoted, err := json.Marshal(string(raw))
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(quoted), nil
+}
+
+func usesCustomMarshaler(rv reflect.Value) bool {
+	if !rv.IsValid() {
+		return false
+	}
+	t := rv.Type()
+	if t.Implements(jsonMarshalerType) || t.Implements(textMarshalerType) {
+		return true
+	}
+	return rv.Kind() != reflect.Pointer && rv.CanAddr() && pointerMarshaler(t)
+}
+
+func isJSONNull(v any) bool {
+	if v == nil {
+		return true
+	}
+	raw, ok := v.(json.RawMessage)
+	return ok && string(raw) == "null"
+}
+
+func (s *scrubState) enter(rv reflect.Value) error {
+	visit, ok := makeScrubVisit(rv)
+	if !ok {
+		return nil
+	}
+	if s.active[visit] {
+		return fmt.Errorf("encoding/json: unsupported value: encountered a cycle via %s", rv.Type())
+	}
+	s.active[visit] = true
+	return nil
+}
+
+func (s *scrubState) leave(rv reflect.Value) {
+	if visit, ok := makeScrubVisit(rv); ok {
+		delete(s.active, visit)
+	}
+}
+
+func makeScrubVisit(rv reflect.Value) (scrubVisit, bool) {
+	if !rv.IsValid() {
+		return scrubVisit{}, false
+	}
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Map:
+		if rv.IsNil() {
+			return scrubVisit{}, false
+		}
+		return scrubVisit{kind: rv.Kind(), typ: rv.Type(), ptr: rv.Pointer()}, true
+	case reflect.Slice:
+		if rv.IsNil() || rv.Len() == 0 {
+			return scrubVisit{}, false
+		}
+		return scrubVisit{kind: rv.Kind(), typ: rv.Type(), ptr: rv.Pointer(), len: rv.Len(), cap: rv.Cap()}, true
+	default:
+		return scrubVisit{}, false
+	}
 }

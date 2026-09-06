@@ -60,8 +60,8 @@ func TestFromAnyTier3KeepsNonOmitJSONOption(t *testing.T) {
 		t.Fatalf("FromAny unexpected error: %v", err)
 	}
 	got := fieldMap(v)
-	if got["value"].Kind != KindString || got["value"].Str != "" {
-		t.Errorf("value = %+v, want empty string field retained", got["value"])
+	if got["value"].Kind != KindString || got["value"].Str != `""` {
+		t.Errorf("value = %+v, want JSON string literal retained", got["value"])
 	}
 }
 
