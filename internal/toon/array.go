@@ -63,8 +63,14 @@ func writeInlineArray(sb *strings.Builder, items []Value, encodedKey string) err
 }
 
 func writeTabularArray(sb *strings.Builder, items []Value, fields []string, ctx arrayCtx) error {
+	if err := checkDepth(ctx.ItemDepth); err != nil {
+		return err
+	}
 	names := make([]string, len(fields))
 	for i, f := range fields {
+		if err := validateUTF8(f); err != nil {
+			return err
+		}
 		names[i] = encodeKey(f)
 	}
 	if err := writeTabularHeader(sb, ctx.Key, len(items), names); err != nil {

@@ -29,6 +29,13 @@ func encodeString(s string) string {
 	return s
 }
 
+func validateUTF8(s string) error {
+	if !utf8.ValidString(s) {
+		return fmt.Errorf("toon: string contains invalid UTF-8")
+	}
+	return nil
+}
+
 func encodeKey(key string) string {
 	if unquotedKeyRE.MatchString(key) {
 		return key
