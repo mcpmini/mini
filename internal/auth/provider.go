@@ -233,7 +233,7 @@ func (p *tokenProvider) nextRefreshAction(ctx context.Context, err error, a *ref
 		return true, err
 	}
 	delay := nextRefreshDelay(err, &a.backoff, p.clock.Now())
-	return !p.sleepCtx(ctx, delay), ctx.Err()
+	return !clock.SleepCtx(ctx, p.clock, delay), ctx.Err()
 }
 
 func (p *tokenProvider) attemptRefreshLocked(ctx context.Context) error {
@@ -254,17 +254,6 @@ func (p *tokenProvider) attemptRefreshLocked(ctx context.Context) error {
 		p.persistedToken = cloneToken(refreshed)
 	}
 	return nil
-}
-
-func (p *tokenProvider) sleepCtx(ctx context.Context, d time.Duration) bool {
-	t := p.clock.NewTimer(d)
-	select {
-	case <-ctx.Done():
-		t.Stop()
-		return false
-	case <-t.Chan():
-		return true
-	}
 }
 
 func (p *tokenProvider) remedyError(cause error) error {
