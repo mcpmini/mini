@@ -321,7 +321,7 @@ func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string) (po
 	if isRetryableStatus(resp.StatusCode) {
 		return postResult{
 			retryable: true,
-			delay:     parseRetryAfter(resp.Header.Get("Retry-After"), c.clock.Now()),
+			delay:     ParseRetryAfter(resp.Header.Get("Retry-After"), c.clock.Now()),
 		}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
 	}
 	return postResult{}, nonRetryableHTTPError(resp, method, errBody)
@@ -339,9 +339,10 @@ func isRetryableStatus(statusCode int) bool {
 	return statusCode == http.StatusTooManyRequests || statusCode == http.StatusServiceUnavailable
 }
 
-// parseRetryAfter returns the delay from a Retry-After header value (seconds).
-// Returns -1 if header is absent or unparseable (signal: retry with backoff).
-func parseRetryAfter(h string, now time.Time) time.Duration {
+// ParseRetryAfter returns the delay from a Retry-After header value.
+// Returns -1 when absent or unparseable (caller should use backoff instead).
+// Capped at 60s to prevent a misbehaving server from stalling indefinitely.
+func ParseRetryAfter(h string, now time.Time) time.Duration {
 	h = strings.TrimSpace(h)
 	if h == "" {
 		return -1
@@ -429,14 +430,7 @@ func (c *HTTPConnection) sendOneWithAuthRetry(ctx context.Context, build func(co
 }
 
 func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
-	t := c.clock.NewTimer(d)
-	select {
-	case <-ctx.Done():
-		t.Stop()
-		return false
-	case <-t.Chan():
-		return true
-	}
+	return clock.SleepCtx(ctx, c.clock, d)
 }
 
 func (c *HTTPConnection) Health(ctx context.Context) error {

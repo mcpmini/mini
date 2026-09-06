@@ -158,9 +158,47 @@ func (p *tokenProvider) discoverEndpointsLocked(ctx context.Context) error {
 }
 
 func (p *tokenProvider) refreshLocked(ctx context.Context) error {
-	if err := p.discoverEndpointsLocked(ctx); err != nil {
-		return p.remedyError(err)
+	if p.token.RefreshToken == "" {
+		return p.remedyError(fmt.Errorf("refresh token is not set"))
 	}
+	return p.refreshWithRetryLocked(ctx)
+}
+
+func (p *tokenProvider) refreshWithRetryLocked(ctx context.Context) error {
+	a := refreshAttempt{backoff: time.Second}
+	for a.attempt < 3 {
+		err := p.discoverEndpointsLocked(ctx)
+		if err == nil {
+			err = p.attemptRefreshLocked(ctx)
+		}
+		if err == nil {
+			return nil
+		}
+		stop, stopErr := p.nextRefreshAction(ctx, err, &a)
+		if stop {
+			return stopErr
+		}
+	}
+	panic("unreachable")
+}
+
+func (p *tokenProvider) nextRefreshAction(ctx context.Context, err error, a *refreshAttempt) (bool, error) {
+	if ctx.Err() != nil {
+		return true, ctx.Err()
+	}
+	class := classifyRefreshErr(err)
+	if class == refreshReauth {
+		return true, p.remedyError(err)
+	}
+	a.attempt++
+	if class == refreshTerminal || a.attempt == 3 {
+		return true, err
+	}
+	delay := nextRefreshDelay(err, &a.backoff, p.clock.Now())
+	return !clock.SleepCtx(ctx, p.clock, delay), ctx.Err()
+}
+
+func (p *tokenProvider) attemptRefreshLocked(ctx context.Context) error {
 	// Clearing AccessToken on a copy forces oauth2's reuseTokenSource to hit the
 	// token endpoint: it judges validity by the system clock with only a 10s
 	// delta, so a token inside our 2m skew (or one the upstream just 401'd)
@@ -169,7 +207,7 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 	stale.AccessToken = ""
 	refreshed, err := Refresh(ctx, p.ac, &stale)
 	if err != nil {
-		return p.remedyError(fmt.Errorf("refresh token: %w", err))
+		return err
 	}
 	p.token = refreshed
 	if err := Save(p.configDir, p.serverName, refreshed); err != nil {

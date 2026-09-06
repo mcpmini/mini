@@ -2,7 +2,10 @@
 // Production code uses the zero value or clock.System(); tests pass clock.NewFake().
 package clock
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Clock abstracts the time operations used by this codebase.
 type Clock interface {
@@ -55,3 +58,14 @@ type systemTicker struct{ t *time.Ticker }
 
 func (r *systemTicker) Chan() <-chan time.Time { return r.t.C }
 func (r *systemTicker) Stop()                  { r.t.Stop() }
+
+func SleepCtx(ctx context.Context, clk Clock, d time.Duration) bool {
+	t := clk.NewTimer(d)
+	select {
+	case <-ctx.Done():
+		t.Stop()
+		return false
+	case <-t.Chan():
+		return true
+	}
+}
