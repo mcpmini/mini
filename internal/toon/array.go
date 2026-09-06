@@ -1,7 +1,7 @@
 package toon
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -21,8 +21,7 @@ type arrayCtx struct {
 
 func writeArray(sb *strings.Builder, items []Value, ctx arrayCtx) error {
 	if len(items) == 0 {
-		writeEmptyArray(sb, ctx)
-		return nil
+		return writeEmptyArray(sb, ctx)
 	}
 	if allPrimitive(items) {
 		return writeInlineArray(sb, items, ctx.Key)
@@ -30,16 +29,20 @@ func writeArray(sb *strings.Builder, items []Value, ctx arrayCtx) error {
 	if fields, ok := tabularFields(items); ok && ctx.AllowTabular {
 		return writeTabularArray(sb, items, fields, ctx)
 	}
-	fmt.Fprintf(sb, "%s[%d]:\n", ctx.Key, len(items))
+	if err := appendString(sb, ctx.Key); err != nil {
+		return err
+	}
+	if err := appendString(sb, "["+strconv.Itoa(len(items))+"]:\n"); err != nil {
+		return err
+	}
 	return writeListItems(sb, items, ctx.ItemDepth)
 }
 
-func writeEmptyArray(sb *strings.Builder, ctx arrayCtx) {
+func writeEmptyArray(sb *strings.Builder, ctx arrayCtx) error {
 	if ctx.FieldEmpty {
-		sb.WriteString(ctx.Key + ": []\n")
-		return
+		return appendString(sb, ctx.Key+": []\n")
 	}
-	sb.WriteString("[0]:\n")
+	return appendString(sb, "[0]:\n")
 }
 
 func writeInlineArray(sb *strings.Builder, items []Value, encodedKey string) error {
@@ -47,8 +50,16 @@ func writeInlineArray(sb *strings.Builder, items []Value, encodedKey string) err
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(sb, "%s[%d]: %s\n", encodedKey, len(items), row)
-	return nil
+	if err := appendString(sb, encodedKey); err != nil {
+		return err
+	}
+	if err := appendString(sb, "["+strconv.Itoa(len(items))+"]: "); err != nil {
+		return err
+	}
+	if err := appendString(sb, row); err != nil {
+		return err
+	}
+	return appendString(sb, "\n")
 }
 
 func writeTabularArray(sb *strings.Builder, items []Value, fields []string, ctx arrayCtx) error {
@@ -56,14 +67,54 @@ func writeTabularArray(sb *strings.Builder, items []Value, fields []string, ctx 
 	for i, f := range fields {
 		names[i] = encodeKey(f)
 	}
-	fmt.Fprintf(sb, "%s[%d]{%s}:\n", ctx.Key, len(items), strings.Join(names, ","))
+	if err := writeTabularHeader(sb, ctx.Key, len(items), names); err != nil {
+		return err
+	}
 	indent := strings.Repeat(indentUnit, ctx.ItemDepth)
 	for _, it := range items {
-		row, err := joinPrimitives(fieldValuesByKey(it, fields))
-		if err != nil {
+		if err := writeTabularRow(sb, indent, fieldValuesByKey(it, fields)); err != nil {
 			return err
 		}
-		sb.WriteString(indent + row + "\n")
+	}
+	return nil
+}
+
+func writeTabularHeader(sb *strings.Builder, key string, count int, names []string) error {
+	if err := appendString(sb, key); err != nil {
+		return err
+	}
+	if err := appendString(sb, "["+strconv.Itoa(count)+"]{"); err != nil {
+		return err
+	}
+	for i, name := range names {
+		if i > 0 {
+			if err := appendString(sb, ","); err != nil {
+				return err
+			}
+		}
+		if err := appendString(sb, name); err != nil {
+			return err
+		}
+	}
+	if err := appendString(sb, "}:\n"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeTabularRow(sb *strings.Builder, indent string, values []Value) error {
+	row, err := joinPrimitives(values)
+	if err != nil {
+		return err
+	}
+	if err := appendString(sb, indent); err != nil {
+		return err
+	}
+	if err := appendString(sb, row); err != nil {
+		return err
+	}
+	if err := appendString(sb, "\n"); err != nil {
+		return err
 	}
 	return nil
 }
@@ -88,15 +139,16 @@ func writeListItem(sb *strings.Builder, item Value, depth int) error {
 	case KindObject:
 		return writeObjectListItem(sb, item, depth)
 	case KindArray:
-		sb.WriteString(strings.Repeat(indentUnit, depth) + "- ")
+		if err := appendString(sb, strings.Repeat(indentUnit, depth)+"- "); err != nil {
+			return err
+		}
 		return writeArray(sb, item.Items, arrayCtx{ItemDepth: depth + 1})
 	default:
 		s, err := encodePrimitive(item)
 		if err != nil {
 			return err
 		}
-		sb.WriteString(strings.Repeat(indentUnit, depth) + "- " + s + "\n")
-		return nil
+		return appendString(sb, strings.Repeat(indentUnit, depth)+"- "+s+"\n")
 	}
 }
 
@@ -105,10 +157,11 @@ func writeListItem(sb *strings.Builder, item Value, depth int) error {
 func writeObjectListItem(sb *strings.Builder, item Value, depth int) error {
 	indent := strings.Repeat(indentUnit, depth)
 	if len(item.Fields) == 0 {
-		sb.WriteString(indent + "-\n")
-		return nil
+		return appendString(sb, indent+"-\n")
 	}
-	sb.WriteString(indent + "- ")
+	if err := appendString(sb, indent+"- "); err != nil {
+		return err
+	}
 	if err := writeFieldBody(sb, item.Fields[0], depth+1); err != nil {
 		return err
 	}
@@ -116,15 +169,22 @@ func writeObjectListItem(sb *strings.Builder, item Value, depth int) error {
 }
 
 func joinPrimitives(items []Value) (string, error) {
-	parts := make([]string, len(items))
+	var sb strings.Builder
 	for i, it := range items {
 		s, err := encodePrimitive(it)
 		if err != nil {
 			return "", err
 		}
-		parts[i] = s
+		if i > 0 {
+			if err := appendString(&sb, ","); err != nil {
+				return "", err
+			}
+		}
+		if err := appendString(&sb, s); err != nil {
+			return "", err
+		}
 	}
-	return strings.Join(parts, ","), nil
+	return sb.String(), nil
 }
 
 // §9.3 eligibility: shared primitive-value key set across all elements; header order comes from the first element.
