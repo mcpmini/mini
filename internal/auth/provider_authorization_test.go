@@ -5,6 +5,7 @@ package auth_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestProviderAuthorization_expiryBoundary(t *testing.T) {
@@ -97,6 +99,40 @@ func TestProviderAuthorization_discoversMissingTokenEndpoint(t *testing.T) {
 	defer endpoint.mu.Unlock()
 	if endpoint.lastResource != discovery.URL+"/mcp" {
 		t.Errorf("resource = %q, want %q", endpoint.lastResource, discovery.URL+"/mcp")
+	}
+}
+
+func TestProviderAuthorization_discoveryFailureIsTransient(t *testing.T) {
+	failServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	t.Cleanup(failServer.Close)
+
+	clk := clock.NewFake()
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", storedToken(clk.Now())); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		ServerURL:  failServer.URL + "/mcp",
+		Clock:      clk,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := p.Authorization(context.Background())
+		errCh <- err
+	}()
+	advanceForBackoffs(t, clk, []time.Duration{time.Second, 2 * time.Second})
+	if err := <-errCh; err == nil {
+		t.Fatal("expected discovery failure")
+	} else if errors.Is(err, transport.ErrReauthRequired) {
+		t.Errorf("transient discovery failure must not require reauthorization: %v", err)
 	}
 }
 

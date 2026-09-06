@@ -35,6 +35,19 @@ type ServerMeta struct {
 	Scopes          []string // from WWW-Authenticate scope param or PRM scopes_supported (spec priority)
 }
 
+type discoveryStatusError struct {
+	status int
+	url    string
+}
+
+func (e *discoveryStatusError) Error() string {
+	return fmt.Sprintf("oauth discovery: status %d from %s", e.status, e.url)
+}
+
+func (e *discoveryStatusError) transient() bool {
+	return e.status == http.StatusTooManyRequests || e.status >= http.StatusInternalServerError
+}
+
 // asRef is the result of authorization-server discovery: which AS to use and what scopes it suggests.
 type asRef struct {
 	URL    string
@@ -245,7 +258,7 @@ func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
 		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("oauth discovery: status %d from %s", resp.StatusCode, metaURL)
+		return nil, &discoveryStatusError{status: resp.StatusCode, url: metaURL}
 	}
 	return decodeASMeta(resp.Body, metaURL)
 }

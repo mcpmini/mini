@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -30,7 +32,19 @@ func classifyRefreshErr(err error) refreshClass {
 	}
 	var re *oauth2.RetrieveError
 	if !errors.As(err, &re) {
-		return refreshTransient
+		var urlErr *url.Error
+		if errors.As(err, &urlErr) {
+			return refreshTransient
+		}
+		var netErr net.Error
+		if errors.As(err, &netErr) {
+			return refreshTransient
+		}
+		var discoveryErr *discoveryStatusError
+		if errors.As(err, &discoveryErr) && discoveryErr.transient() {
+			return refreshTransient
+		}
+		return refreshTerminal
 	}
 	return classifyRetrieveError(re)
 }

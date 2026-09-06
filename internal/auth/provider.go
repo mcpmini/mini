@@ -194,21 +194,32 @@ func (p *tokenProvider) shouldRefreshLocked() bool {
 }
 
 func (p *tokenProvider) refreshLocked(ctx context.Context) error {
-	if p.ac.TokenURL == "" {
-		if p.serverURL == "" {
-			return p.remedyError(fmt.Errorf("no token endpoint configured and no server URL available for discovery"))
-		}
-		if _, err := discoverAndApply(ctx, p.serverURL, p.ac); err != nil {
-			return p.remedyError(fmt.Errorf("discover token endpoint: %w", err))
-		}
+	if p.token.RefreshToken == "" {
+		return p.remedyError(fmt.Errorf("refresh token is not set"))
 	}
 	return p.refreshWithRetryLocked(ctx)
+}
+
+func (p *tokenProvider) discoverEndpointsLocked(ctx context.Context) error {
+	if p.ac.TokenURL != "" {
+		return nil
+	}
+	if p.serverURL == "" {
+		return fmt.Errorf("no token endpoint configured and no server URL available for discovery")
+	}
+	if _, err := discoverAndApply(ctx, p.serverURL, p.ac); err != nil {
+		return fmt.Errorf("discover token endpoint: %w", err)
+	}
+	return nil
 }
 
 func (p *tokenProvider) refreshWithRetryLocked(ctx context.Context) error {
 	a := refreshAttempt{backoff: time.Second}
 	for a.attempt < 3 {
-		err := p.attemptRefreshLocked(ctx)
+		err := p.discoverEndpointsLocked(ctx)
+		if err == nil {
+			err = p.attemptRefreshLocked(ctx)
+		}
 		if err == nil {
 			return nil
 		}

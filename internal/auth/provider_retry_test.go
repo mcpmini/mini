@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -19,6 +20,46 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
+
+func TestProviderRefresh_missingRefreshTokenRequiresReauthWithoutRetry(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	p, _ := newProviderAt(t, srv.URL, &oauth2.Token{AccessToken: "stored-access"})
+	_, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if !errors.Is(err, transport.ErrReauthRequired) {
+		t.Fatalf("missing refresh token must require reauthorization, got: %v", err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("token endpoint hits = %d, want 0", n)
+	}
+}
+
+func TestProviderRefresh_malformedSuccessIsTerminalWithoutRetry(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"token_type":"Bearer"}`) //nolint:errcheck
+	}))
+	t.Cleanup(srv.Close)
+
+	p, _ := newProviderAt(t, srv.URL, refreshToken())
+	_, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if err == nil {
+		t.Fatal("expected malformed token response to fail")
+	}
+	if errors.Is(err, transport.ErrReauthRequired) {
+		t.Fatalf("malformed token response must be terminal, not reauthorization: %v", err)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("token endpoint hits = %d, want 1 (terminal errors are not retried)", n)
+	}
+}
 
 func newProviderAt(t *testing.T, tokenURL string, tok *oauth2.Token) (transport.AuthorizationProvider, *clock.Fake) {
 	t.Helper()
