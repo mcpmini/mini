@@ -1023,6 +1023,103 @@ func (refreshSucceedsProvider) RefreshAuthorization(_ context.Context, _ string)
 	return "Bearer refreshed", nil
 }
 
+func newListChangedServer(t *testing.T, getHandler http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			getHandler(w, r)
+			return
+		}
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{
+					"protocolVersion": ProtocolVersion,
+					"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
+				},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		default:
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"], "result": map[string]any{},
+			})
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestNotificationStream_transientRefreshFailureRetries(t *testing.T) {
+	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
+	provider.refreshErr = errors.New("connection reset by peer")
+
+	streamConnected := make(chan struct{})
+	var getHits atomic.Int32
+	srv := newListChangedServer(t, func(w http.ResponseWriter, r *http.Request) {
+		getHits.Add(1)
+		if r.Header.Get("Authorization") != "Bearer new" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		close(streamConnected)
+		<-r.Context().Done()
+	})
+
+	clk := clock.NewFake()
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider, Clock: clk})
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+
+	// Listener is sleeping after the transient refresh failure. Let it wake and retry
+	// with a cleared refreshErr so the second refresh succeeds.
+	if err := clk.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	provider.mu.Lock()
+	provider.refreshErr = nil
+	provider.mu.Unlock()
+	clk.Advance(time.Second)
+
+	select {
+	case <-streamConnected:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream did not reconnect after transient refresh failure")
+	}
+}
+
+func TestNotificationStream_invalidGrantStops(t *testing.T) {
+	provider := &fakeAuthProvider{
+		current:    "Bearer tok",
+		refreshErr: fmt.Errorf("invalid_grant: %w", ErrReauthRequired),
+	}
+	srv := newListChangedServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider})
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		conn.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close() blocked; listener did not exit after ErrReauthRequired")
+	}
+}
+
 func TestPostWithAuthRetry_replay401WrapsErrReauthRequired(t *testing.T) {
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any

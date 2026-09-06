@@ -161,6 +161,41 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 	if err := p.discoverEndpointsLocked(ctx); err != nil {
 		return p.remedyError(err)
 	}
+	return p.refreshWithRetryLocked(ctx)
+}
+
+func (p *tokenProvider) refreshWithRetryLocked(ctx context.Context) error {
+	a := refreshAttempt{backoff: time.Second}
+	for a.attempt < 3 {
+		err := p.attemptRefreshLocked(ctx)
+		if err == nil {
+			return nil
+		}
+		stop, stopErr := p.nextRefreshAction(ctx, err, &a)
+		if stop {
+			return stopErr
+		}
+	}
+	panic("unreachable")
+}
+
+func (p *tokenProvider) nextRefreshAction(ctx context.Context, err error, a *refreshAttempt) (bool, error) {
+	if ctx.Err() != nil {
+		return true, ctx.Err()
+	}
+	class := classifyRefreshErr(err)
+	if class == refreshReauth {
+		return true, p.remedyError(err)
+	}
+	a.attempt++
+	if class == refreshTerminal || a.attempt == 3 {
+		return true, err
+	}
+	delay := nextRefreshDelay(err, &a.backoff, p.clock.Now())
+	return !p.sleepCtx(ctx, delay), ctx.Err()
+}
+
+func (p *tokenProvider) attemptRefreshLocked(ctx context.Context) error {
 	// Clearing AccessToken on a copy forces oauth2's reuseTokenSource to hit the
 	// token endpoint: it judges validity by the system clock with only a 10s
 	// delta, so a token inside our 2m skew (or one the upstream just 401'd)
@@ -169,13 +204,24 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 	stale.AccessToken = ""
 	refreshed, err := Refresh(ctx, p.ac, &stale)
 	if err != nil {
-		return p.remedyError(fmt.Errorf("refresh token: %w", err))
+		return err
 	}
 	p.token = refreshed
 	if err := Save(p.configDir, p.serverName, refreshed); err != nil {
 		slog.Warn("persist refreshed oauth token failed; using refreshed token in memory", "server", p.serverName, "err", err)
 	}
 	return nil
+}
+
+func (p *tokenProvider) sleepCtx(ctx context.Context, d time.Duration) bool {
+	t := p.clock.NewTimer(d)
+	select {
+	case <-ctx.Done():
+		t.Stop()
+		return false
+	case <-t.Chan():
+		return true
+	}
 }
 
 func (p *tokenProvider) remedyError(cause error) error {

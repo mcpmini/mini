@@ -5,12 +5,16 @@ package server_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
@@ -109,6 +113,80 @@ func TestConnectUpstreams_CloseCancelsInFlightConnect(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Close did not return promptly; in-flight connect worker was not canceled")
 	}
+}
+
+func TestConnectUpstreams_transientOAuthRefreshRecovers(t *testing.T) {
+	var tokenHits atomic.Int32
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if tokenHits.Add(1) == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"access_token": "valid-token", "refresh_token": "r2",
+			"token_type": "Bearer", "expires_in": 3600,
+		})
+	}))
+	t.Cleanup(tokenSrv.Close)
+
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer valid-token" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{
+					"protocolVersion": "2024-11-05",
+					"capabilities":    map[string]any{"tools": map[string]any{}},
+				},
+			})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"tools": []map[string]any{
+					{"name": "do_thing", "description": "d", "inputSchema": map[string]any{"type": "object"}},
+				}},
+			})
+		}
+	}))
+	t.Cleanup(mcpSrv.Close)
+
+	dir := t.TempDir()
+	saveToken(t, dir, "oauth-svc", &oauth2.Token{
+		AccessToken:  "old-token",
+		RefreshToken: "stored-refresh",
+		TokenType:    "Bearer",
+		Expiry:       time.Now().Add(time.Hour),
+	})
+	writeServerYAML(t, dir, "oauth-svc", "name: oauth-svc\ntransport: http\nurl: "+mcpSrv.URL+
+		"\nauth:\n  type: oauth2\n  client_id: cid\n  token_endpoint_auth_method: client_secret_post\n  token_url: "+tokenSrv.URL+"\n")
+
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.DangerousAllowPrivateURLs = true
+	srv := server.NewWithConfigDir(cfg, dir,
+		slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithAuthProviders())
+	defer srv.Close()
+
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{
+		Name: "oauth-svc", Transport: "http", URL: mcpSrv.URL,
+		Auth: &config.AuthConfig{
+			Type:                    config.AuthTypeOAuth2,
+			ClientID:                "cid",
+			TokenEndpointAuthMethod: "client_secret_post",
+			TokenURL:                tokenSrv.URL,
+		},
+	}})
+	eventually(t, func() bool { return srv.ToolCount("oauth-svc") > 0 })
 }
 
 // Repro for the ConnectTimeout:"0" + context.Background() hang: Close must unblock
