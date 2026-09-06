@@ -139,7 +139,14 @@ func encodePrimitive(v Value) (string, error) {
 	case KindBool:
 		return encodeBool(v.Bool), nil
 	case KindNumber:
-		return encodeNum(v)
+		s, err := encodeNum(v)
+		if err != nil {
+			return "", err
+		}
+		if len(s) > maxEncodeBytes {
+			return "", errEncodeTooLarge
+		}
+		return s, nil
 	case KindString:
 		s := encodeString(v.Str)
 		if len(s) > maxEncodeBytes {
