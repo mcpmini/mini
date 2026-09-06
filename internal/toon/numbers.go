@@ -21,7 +21,6 @@ func canonicalizeNumber(lexeme string) (string, error) {
 func canonicalInteger(lexeme string) (string, error) {
 	neg := strings.HasPrefix(lexeme, "-")
 	digits := strings.TrimPrefix(lexeme, "-")
-	digits = strings.TrimPrefix(digits, "+")
 	if digits == "" || !isDigits(digits) {
 		return "", fmt.Errorf("toon: malformed number %q", lexeme)
 	}
@@ -49,6 +48,9 @@ func isDigits(s string) bool {
 // textually per spec §2 out-of-domain policy.
 // See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#2-data-model
 func canonicalFloat(lexeme string) (string, error) {
+	if !isValidJSONNumberLexeme(lexeme) {
+		return "", fmt.Errorf("toon: malformed number %q", lexeme)
+	}
 	f, err := strconv.ParseFloat(lexeme, 64)
 	if err != nil {
 		if math.IsInf(f, 0) {

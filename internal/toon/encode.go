@@ -88,6 +88,9 @@ func writeField(sb *strings.Builder, f Field, depth int) error {
 
 // The caller has already written the line prefix (indent or list-item hyphen).
 func writeFieldBody(sb *strings.Builder, f Field, depth int) error {
+	if err := validateUTF8(f.Key); err != nil {
+		return err
+	}
 	if f.Val.Kind == KindArray {
 		ctx := arrayCtx{Key: encodeKey(f.Key), ItemDepth: depth + 1, AllowTabular: true, FieldEmpty: true}
 		return writeArray(sb, f.Val.Items, ctx)
@@ -148,6 +151,9 @@ func encodePrimitive(v Value) (string, error) {
 		}
 		return s, nil
 	case KindString:
+		if err := validateUTF8(v.Str); err != nil {
+			return "", err
+		}
 		s := encodeString(v.Str)
 		if len(s) > maxEncodeBytes {
 			return "", errEncodeTooLarge

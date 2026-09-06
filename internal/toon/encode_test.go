@@ -38,6 +38,22 @@ func TestEncodeRootScalars(t *testing.T) {
 	}
 }
 
+func TestEncodeRejectsInvalidUTF8(t *testing.T) {
+	invalid := string([]byte{0xff})
+	for name, value := range map[string]Value{
+		"root string":  strVal(invalid),
+		"field string": objVal(Field{Key: "value", Val: strVal(invalid)}),
+		"field key":    objVal(Field{Key: invalid, Val: strVal("value")}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Encode(value)
+			if err == nil || !strings.Contains(err.Error(), "invalid UTF-8") {
+				t.Fatalf("Encode() error = %v, want invalid UTF-8 error", err)
+			}
+		})
+	}
+}
+
 func TestEncodeEmptyRootObjectYieldsEmptyDocument(t *testing.T) {
 	got, err := Encode(objVal())
 	if err != nil {

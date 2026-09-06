@@ -43,6 +43,10 @@ func TestCanonicalizeNumberInvalidLexemeErrors(t *testing.T) {
 		in   string
 	}{
 		{"double decimal point", "1.2.3"},
+		{"leading plus sign", "+1"},
+		{"mixed signs", "-+1"},
+		{"leading plus sign on float", "+1.0"},
+		{"mixed signs on float", "-+1.0"},
 		// Go's ParseFloat accepts "1.e309" but JSON requires a digit after ".".
 		{"overflow with decimal but no fractional digits", "1.e309"},
 	}

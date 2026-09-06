@@ -1,6 +1,9 @@
 package toon
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func arrVal(items ...Value) Value { return Value{Kind: KindArray, Items: items} }
 
@@ -248,6 +251,37 @@ func TestListItemLeadingTabularArrayDepth(t *testing.T) {
 	want := "items[1]:\n  - users[2]{id,name}:\n      1,Ada\n      2,Bob\n    status: active"
 	if got := encodeOK(t, v); got != want {
 		t.Errorf("Encode() = %q, want %q", got, want)
+	}
+}
+
+func nestedTabularAtDepth(depth int) Value {
+	rows := arrVal(
+		objVal(Field{Key: "id", Val: numVal("1")}),
+		objVal(Field{Key: "id", Val: numVal("2")}),
+	)
+	for range depth {
+		rows = objVal(Field{Key: "nested", Val: rows}, Field{Key: "sibling", Val: numVal("1")})
+	}
+	return rows
+}
+
+func TestTabularArrayDepthCap(t *testing.T) {
+	if _, err := Encode(nestedTabularAtDepth(maxEncodeDepth)); err != nil {
+		t.Fatalf("tabular rows at depth cap returned error: %v", err)
+	}
+	if _, err := Encode(nestedTabularAtDepth(maxEncodeDepth + 1)); err == nil {
+		t.Fatal("tabular rows beyond depth cap returned nil")
+	}
+}
+
+func TestRootTabularArrayRejectsInvalidUTF8FieldKey(t *testing.T) {
+	invalid := string([]byte{0xff})
+	v := arrVal(
+		objVal(Field{Key: invalid, Val: numVal("1")}),
+		objVal(Field{Key: invalid, Val: numVal("2")}),
+	)
+	if _, err := Encode(v); err == nil || !strings.Contains(err.Error(), "invalid UTF-8") {
+		t.Fatalf("Encode() error = %v, want invalid UTF-8 error", err)
 	}
 }
 
