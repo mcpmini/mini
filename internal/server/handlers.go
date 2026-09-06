@@ -138,7 +138,7 @@ func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) 
 		env := response.BuildError("not_found", err.Error(), false, "")
 		// nil projCfg: the tool wasn't found, so there's no per-tool projection
 		// to consult — formatEnvelope falls back to the global ResponseFormat.
-		return s.formatEnvelope(server, tool, env, nil), nil
+		return s.formatEnvelope(server, tool, env, nil)
 	}
 	return nil, err
 }
@@ -195,7 +195,7 @@ func (s *Server) handleToolErr(p toolErrParams) (any, error) {
 	s.logToolError(p.Server, p.Tool, p.LatencyMs, p.Err)
 	env := response.BuildError("tool_error", p.Err.Error(), false, "")
 	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
-	return s.formatEnvelope(p.Server, p.Tool, env, projCfg), nil
+	return s.formatEnvelope(p.Server, p.Tool, env, projCfg)
 }
 
 func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool string, params map[string]any) {
@@ -236,7 +236,7 @@ func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
 	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", s.clock.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
-	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg), nil
+	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg)
 }
 
 type projectedEnvelopeParams struct {
@@ -266,13 +266,16 @@ type formattedEnvelope struct {
 	isError bool
 }
 
-func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
+func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) (any, error) {
 	projFormat := config.ProjectionFormat(projCfg)
 	if config.EffectiveFormat("", projFormat, s.cfg.ResponseFormat) == config.FormatToon {
-		text := EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
-		return formattedEnvelope{text: text, isError: env.Error != ""}
+		text, err := EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
+		if err != nil {
+			return nil, fmt.Errorf("encode TOON response: %w", err)
+		}
+		return formattedEnvelope{text: text, isError: env.Error != ""}, nil
 	}
-	return env
+	return env, nil
 }
 
 func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {

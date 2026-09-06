@@ -185,7 +185,7 @@ func executeProjected(ctx context.Context, conn transport.Connection, cc callCon
 	result, err := invoke.Invoke(ctx, buildInvokeParams(conn, cc, store))
 	exitOnCallError(err)
 	exitOnEnvelopeError(result.Envelope)
-	printCallOutput(cc.serverName, cc.toolName, result.Envelope, mode)
+	exitOnCallError(printCallOutput(cc.serverName, cc.toolName, result.Envelope, mode))
 }
 
 func openCallStore(cfg *config.Config, configDir string, clock clock.Clock) *response.Store {
@@ -284,12 +284,17 @@ func mustCallStore(cfg *config.Config, configDir string, logger *slog.Logger, cl
 	return store
 }
 
-func printCallOutput(serverName, toolName string, env *response.Envelope, mode callOutput) {
+func printCallOutput(serverName, toolName string, env *response.Envelope, mode callOutput) error {
 	if mode == callOutputToon {
 		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})).With("server", serverName, "tool", toolName)
-		fmt.Println(server.EncodeToon(logger, env))
-		return
+		text, err := server.EncodeToon(logger, env)
+		if err != nil {
+			return fmt.Errorf("encode TOON response: %w", err)
+		}
+		fmt.Println(text)
+		return nil
 	}
 	b, _ := json.MarshalIndent(env, "", "  ")
 	fmt.Println(string(b))
+	return nil
 }
