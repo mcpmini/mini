@@ -204,3 +204,112 @@ func TestFromAnyTier3OmitsAmbiguousEmbeddedConflict(t *testing.T) {
 		t.Error("ambiguous same-depth fields should both be omitted")
 	}
 }
+
+func TestFromAnyTier3FieldOrder(t *testing.T) {
+	t.Run("top-level struct preserves declaration order", func(t *testing.T) {
+		type record struct {
+			Z   int     `json:"z"`
+			Bad float64 `json:"bad"`
+			A   int     `json:"a"`
+		}
+		v, err := FromAny(record{Z: 1, Bad: math.NaN(), A: 2})
+		if err != nil {
+			t.Fatalf("FromAny unexpected error: %v", err)
+		}
+		wantOrder := []string{"z", "bad", "a"}
+		if len(v.Fields) != len(wantOrder) {
+			t.Fatalf("got %d fields, want %d", len(v.Fields), len(wantOrder))
+		}
+		for i, want := range wantOrder {
+			if v.Fields[i].Key != want {
+				t.Errorf("field[%d] = %q, want %q (declaration order z,bad,a; broken code sorts a,bad,z)", i, v.Fields[i].Key, want)
+			}
+		}
+	})
+
+	t.Run("struct inside slice preserves declaration order", func(t *testing.T) {
+		type item struct {
+			Z   int     `json:"z"`
+			Bad float64 `json:"bad"`
+			A   int     `json:"a"`
+		}
+		v, err := FromAny(map[string]any{"items": []item{{Z: 1, Bad: math.NaN(), A: 2}}})
+		if err != nil {
+			t.Fatalf("FromAny unexpected error: %v", err)
+		}
+		elem := fieldMap(v)["items"].Items[0]
+		wantOrder := []string{"z", "bad", "a"}
+		for i, want := range wantOrder {
+			if elem.Fields[i].Key != want {
+				t.Errorf("slice elem field[%d] = %q, want %q", i, elem.Fields[i].Key, want)
+			}
+		}
+	})
+
+	t.Run("struct inside struct preserves declaration order", func(t *testing.T) {
+		type inner struct {
+			Z   int     `json:"z"`
+			Bad float64 `json:"bad"`
+			A   int     `json:"a"`
+		}
+		type outer struct {
+			B     string `json:"b"`
+			Inner inner  `json:"inner"`
+		}
+		v, err := FromAny(outer{B: "x", Inner: inner{Z: 1, Bad: math.NaN(), A: 2}})
+		if err != nil {
+			t.Fatalf("FromAny unexpected error: %v", err)
+		}
+		nested := fieldMap(v)["inner"]
+		wantOrder := []string{"z", "bad", "a"}
+		for i, want := range wantOrder {
+			if nested.Fields[i].Key != want {
+				t.Errorf("nested field[%d] = %q, want %q", i, nested.Fields[i].Key, want)
+			}
+		}
+	})
+
+	t.Run("struct inside map value preserves declaration order", func(t *testing.T) {
+		type item struct {
+			Z   int     `json:"z"`
+			Bad float64 `json:"bad"`
+			A   int     `json:"a"`
+		}
+		v, err := FromAny(map[string]any{"key": item{Z: 1, Bad: math.NaN(), A: 2}})
+		if err != nil {
+			t.Fatalf("FromAny unexpected error: %v", err)
+		}
+		nested := fieldMap(v)["key"]
+		wantOrder := []string{"z", "bad", "a"}
+		for i, want := range wantOrder {
+			if nested.Fields[i].Key != want {
+				t.Errorf("map value field[%d] = %q, want %q", i, nested.Fields[i].Key, want)
+			}
+		}
+	})
+
+	t.Run("deeply nested struct preserves declaration order", func(t *testing.T) {
+		type leaf struct {
+			Z   int     `json:"z"`
+			Bad float64 `json:"bad"`
+			A   int     `json:"a"`
+		}
+		type mid struct {
+			Items []leaf `json:"items"`
+		}
+		type root struct {
+			Mid mid `json:"mid"`
+		}
+		v, err := FromAny(root{Mid: mid{Items: []leaf{{Z: 1, Bad: math.NaN(), A: 2}}}})
+		if err != nil {
+			t.Fatalf("FromAny unexpected error: %v", err)
+		}
+		leafVal := fieldMap(v)["mid"].Fields[0].Val.Items[0]
+		wantOrder := []string{"z", "bad", "a"}
+		for i, want := range wantOrder {
+			if leafVal.Fields[i].Key != want {
+				t.Errorf("deep field[%d] = %q, want %q", i, leafVal.Fields[i].Key, want)
+			}
+		}
+	})
+}
