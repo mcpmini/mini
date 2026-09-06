@@ -3,13 +3,8 @@ package toon
 import (
 	"math"
 	"reflect"
-	"strings"
 )
 
-// scrubNonFinite is the lossy tier of FromAny's three-tier chain. Structs are
-// rebuilt as generic maps (embedded-field flattening is lost, see scrubStruct)
-// and json.Marshaler values pass through untouched. FromAny invokes this only
-// after the surgical rescue (normalizeNonFinite) failed.
 func scrubNonFinite(v any) any {
 	switch val := v.(type) {
 	case nil:
@@ -85,7 +80,7 @@ func scrubPointer(rv reflect.Value) any {
 	if rv.IsNil() {
 		return nil
 	}
-	return scrubNonFinite(rv.Elem().Interface())
+	return scrubValue(rv.Elem())
 }
 
 func scrubSequence(rv reflect.Value) any {
@@ -94,7 +89,7 @@ func scrubSequence(rv reflect.Value) any {
 	}
 	out := make([]any, rv.Len())
 	for i := range out {
-		out[i] = scrubNonFinite(rv.Index(i).Interface())
+		out[i] = scrubValue(rv.Index(i))
 	}
 	return out
 }
@@ -110,55 +105,22 @@ func scrubGenericMap(rv reflect.Value) any {
 		if !ok {
 			return rv.Interface()
 		}
-		out[k] = scrubNonFinite(iter.Value().Interface())
+		out[k] = scrubValue(iter.Value())
 	}
 	return out
 }
 
-// scrubStruct honors the json tag's name and omitempty option per field, but
-// does not promote embedded struct fields the way encoding/json does — an
-// embedded field is emitted under its own field name rather than flattened.
 func scrubStruct(rv reflect.Value) any {
-	t := rv.Type()
-	out := make(map[string]any, t.NumField())
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !f.IsExported() {
+	fields := scrubFields(rv.Type())
+	out := make(map[string]any, len(fields))
+	for _, f := range fields {
+		fv, ok := fieldByIndex(rv, f.index)
+		if !ok || f.omitEmpty && isJSONEmptyValue(fv) {
 			continue
 		}
-		name, omit := jsonTagNameOpts(f)
-		if name == "-" {
-			continue
-		}
-		val := scrubNonFinite(rv.Field(i).Interface())
-		if omit && isJSONZero(val) {
-			continue
-		}
-		out[name] = val
+		out[f.name] = scrubValue(fv)
 	}
 	return out
-}
-
-func isJSONZero(v any) bool {
-	if v == nil {
-		return true
-	}
-	return reflect.ValueOf(v).IsZero()
-}
-
-func jsonTagNameOpts(f reflect.StructField) (string, bool) {
-	tag := f.Tag.Get("json")
-	if tag == "" {
-		return f.Name, false
-	}
-	name, opts := tag, ""
-	if idx := strings.Index(tag, ","); idx >= 0 {
-		name, opts = tag[:idx], tag[idx+1:]
-	}
-	if name == "" {
-		name = f.Name
-	}
-	return name, strings.Contains(opts, "omitempty")
 }
 
 func isJSONMarshaler(t reflect.Type) bool {

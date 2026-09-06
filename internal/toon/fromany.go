@@ -16,8 +16,8 @@ import (
 //  1. Exact: json.Marshal succeeds.
 //  2. Surgical (normalizeNonFinite): replaces non-finite floats while
 //     preserving encoding/json semantics for all clean subtrees.
-//  3. Lossy (scrubNonFinite): rebuilds structs as generic maps, sacrificing
-//     omitempty and embedded-field fidelity to honor Spec §3 rather than fail.
+//  3. Fallback (scrubNonFinite): rebuilds generic values while preserving
+//     encoding/json field selection and omitempty semantics.
 //
 // Non-non-finite errors (chan, func, unsupported map key types) surface from
 // whichever tier first encounters them.
