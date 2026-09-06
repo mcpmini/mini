@@ -141,11 +141,21 @@ func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig
 		s.logger.Error("oauth flow failed", "server", serverName, "err", result.Err)
 		return
 	}
-	if err := auth.Save(s.configDir, serverName, result.Token); err != nil {
-		s.logger.Error("save token failed", "server", serverName, "err", err)
+	if err := s.providerCache.CommitAuthorizedToken(s.providerParamsFor(sc), result.Token); err != nil {
+		s.logger.Error("commit oauth token failed", "server", serverName, "err", err)
 		return
 	}
 	s.reconnectWithToken(serverName, sc)
+}
+
+func (s *Server) providerParamsFor(sc config.ServerConfig) auth.ProviderParams {
+	return auth.ProviderParams{
+		AuthConfig: sc.Auth,
+		ConfigDir:  s.configDir,
+		ServerName: sc.Name,
+		ServerURL:  sc.URL,
+		Clock:      s.clock,
+	}
 }
 
 func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig) {
