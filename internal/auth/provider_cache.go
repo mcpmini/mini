@@ -40,19 +40,20 @@ func NewProviderCache() *ProviderCache {
 // effective identity matches the incoming params. Returns an error if the same
 // server name has an active provider with incompatible parameters.
 func (c *ProviderCache) GetOrCreate(params ProviderParams) (transport.AuthorizationProvider, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if e, ok := c.m[params.ServerName]; ok {
-		if !e.identity.matches(params) {
-			return nil, fmt.Errorf("server %q OAuth configuration changed; restart mini to reconfigure", params.ServerName)
-		}
-		return e.provider, nil
-	}
-	tp, err := buildTokenProvider(params)
+	normalized, err := normalizeProviderParams(params)
 	if err != nil {
 		return nil, err
 	}
-	c.m[params.ServerName] = &cacheEntry{provider: tp, identity: identityFrom(params)}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.m[normalized.ServerName]; ok {
+		if !e.identity.matches(normalized) {
+			return nil, fmt.Errorf("server %q OAuth configuration changed; restart mini to reconfigure", normalized.ServerName)
+		}
+		return e.provider, nil
+	}
+	tp := newTokenProvider(normalized)
+	c.m[normalized.ServerName] = &cacheEntry{provider: tp, identity: identityFrom(normalized)}
 	return tp, nil
 }
 
@@ -60,13 +61,26 @@ func (c *ProviderCache) GetOrCreate(params ProviderParams) (transport.Authorizat
 // OAuth configuration atomically. If no provider is cached yet, it saves the token
 // so the next GetOrCreate constructs a hydrated provider from it.
 func (c *ProviderCache) CommitAuthorizedToken(params ProviderParams, tok *oauth2.Token) error {
-	c.mu.Lock()
-	e := c.m[params.ServerName]
-	c.mu.Unlock()
-	if e == nil {
-		return Save(params.ConfigDir, params.ServerName, tok)
+	normalized, err := normalizeProviderParams(params)
+	if err != nil {
+		return err
 	}
-	return e.provider.commitBrowserToken(params, tok)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e := c.m[normalized.ServerName]
+	if e == nil {
+		return Save(normalized.ConfigDir, normalized.ServerName, tok)
+	}
+	if e.identity.serverName != normalized.ServerName ||
+		e.identity.configDir != normalized.ConfigDir ||
+		e.identity.serverURL != normalized.ServerURL {
+		return fmt.Errorf("server %q OAuth identity changed; refusing trusted commit", normalized.ServerName)
+	}
+	if err := e.provider.commitBrowserToken(normalized, tok); err != nil {
+		return err
+	}
+	e.identity = identityFrom(normalized)
+	return nil
 }
 
 func identityFrom(p ProviderParams) providerIdentity {
