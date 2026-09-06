@@ -136,7 +136,7 @@ func (c *HTTPConnection) listenForNotifications() {
 			return
 		}
 		if err != nil {
-			if errors.Is(err, errAuthRefreshFailed) {
+			if errors.Is(err, ErrReauthRequired) {
 				slog.Warn("notification stream stopped: token refresh failed; re-auth creates a fresh listener", "url", c.url, "err", err)
 				return
 			}

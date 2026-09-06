@@ -4,15 +4,16 @@ package auth_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestProviderRefresh_persistsRotatedRefreshToken(t *testing.T) {
@@ -45,12 +46,18 @@ func TestProviderRefresh_persistsRotatedRefreshToken(t *testing.T) {
 func TestProviderRefresh_httpFailureNamesRemedy(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
 	f.endpoint.status.Store(http.StatusInternalServerError)
-	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+		errCh <- err
+	}()
+	advanceForBackoffs(t, f.clock, []time.Duration{time.Second, 2 * time.Second})
+	err := <-errCh
 	if err == nil {
-		t.Fatal("expected refresh failure")
+		t.Fatal("expected refresh failure after budget exhaustion")
 	}
-	if !strings.Contains(err.Error(), "mini auth srv") || !strings.Contains(err.Error(), "srv requires re-authorization") {
-		t.Errorf("error should name server and remedy, got: %v", err)
+	if errors.Is(err, transport.ErrReauthRequired) {
+		t.Errorf("HTTP 500 is transient; must not produce ErrReauthRequired: %v", err)
 	}
 }
 

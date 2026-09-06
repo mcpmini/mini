@@ -22,7 +22,7 @@ func TestRemedyError_wrapsErrReauthRequired(t *testing.T) {
 	})
 	t.Run("refresh failure", func(t *testing.T) {
 		f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-		f.endpoint.status.Store(http.StatusInternalServerError)
+		f.endpoint.status.Store(http.StatusUnauthorized)
 		_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 		if !errors.Is(err, transport.ErrReauthRequired) {
 			t.Errorf("error = %v, want ErrReauthRequired", err)
