@@ -12,6 +12,15 @@ import (
 	"github.com/mcpmini/mini/internal/response"
 )
 
+func mustEncodeToon(t *testing.T, env *response.Envelope) string {
+	t.Helper()
+	out, err := EncodeToon(discardLogger(), env)
+	if err != nil {
+		t.Fatalf("EncodeToon failed: %v", err)
+	}
+	return out
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -22,14 +31,14 @@ func TestEncodeToon(t *testing.T) {
 			map[string]any{"id": float64(1), "name": "alice"},
 			map[string]any{"id": float64(2), "name": "bob"},
 		}}
-		out := EncodeToon(discardLogger(), env)
+		out := mustEncodeToon(t, env)
 		if !strings.HasPrefix(out, "data[2]{id,name}:") {
 			t.Fatalf("expected tabular block, got: %s", out)
 		}
 	})
 
 	t.Run("scalar data renders inline", func(t *testing.T) {
-		out := EncodeToon(discardLogger(), &response.Envelope{Data: "hello"})
+		out := mustEncodeToon(t, &response.Envelope{Data: "hello"})
 		if out != "data: hello" {
 			t.Errorf("got %q", out)
 		}
@@ -37,7 +46,7 @@ func TestEncodeToon(t *testing.T) {
 
 	t.Run("error envelope renders through the same toon path, no special ERROR format", func(t *testing.T) {
 		env := &response.Envelope{Error: "tool_error", Message: "boom"}
-		out := EncodeToon(discardLogger(), env)
+		out := mustEncodeToon(t, env)
 		if !strings.Contains(out, "error: tool_error") || !strings.Contains(out, "message: boom") {
 			t.Errorf("expected error fields rendered as ordinary toon fields, got: %s", out)
 		}
@@ -46,7 +55,7 @@ func TestEncodeToon(t *testing.T) {
 	t.Run("file field carries the recovery key, no header line", func(t *testing.T) {
 		key := "1750830563123"
 		env := &response.Envelope{Data: "ok", File: &key}
-		out := EncodeToon(discardLogger(), env)
+		out := mustEncodeToon(t, env)
 		if strings.HasPrefix(out, "[") {
 			t.Errorf("expected no [server.tool] header, got: %s", out)
 		}
@@ -68,7 +77,10 @@ func TestEncodeToon(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				var logBuf bytes.Buffer
 				logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-				out := EncodeToon(logger, &response.Envelope{Data: tc.data})
+				out, err := EncodeToon(logger, &response.Envelope{Data: tc.data})
+				if err != nil {
+					t.Fatalf("EncodeToon(%s) failed: %v", tc.name, err)
+				}
 				if logBuf.Len() > 0 {
 					t.Errorf("expected no warning log for normalized float, got: %s", logBuf.String())
 				}
@@ -87,7 +99,7 @@ func TestEncodeToon(t *testing.T) {
 			"bad":  math.Inf(1),
 			"list": []any{1.0, math.NaN()},
 		}
-		out := EncodeToon(discardLogger(), &response.Envelope{Data: data})
+		out := mustEncodeToon(t, &response.Envelope{Data: data})
 		if strings.HasPrefix(out, "{") {
 			t.Fatalf("expected TOON output, got JSON: %s", out)
 		}
@@ -104,7 +116,7 @@ func TestEncodeToon(t *testing.T) {
 			Name  string  `json:"name"`
 			Score float64 `json:"score"`
 		}
-		out := EncodeToon(discardLogger(), &response.Envelope{Data: payload{Name: "ok", Score: math.NaN()}})
+		out := mustEncodeToon(t, &response.Envelope{Data: payload{Name: "ok", Score: math.NaN()}})
 		if strings.HasPrefix(out, "{") {
 			t.Fatalf("expected TOON output, got JSON: %s", out)
 		}
@@ -121,7 +133,7 @@ func TestEncodeToon(t *testing.T) {
 			Data:        "ok",
 			Passthrough: map[string]any{"score": math.NaN(), "label": "good"},
 		}
-		out := EncodeToon(discardLogger(), env)
+		out := mustEncodeToon(t, env)
 		if !strings.Contains(out, "data: ok") {
 			t.Errorf("data field must be preserved: %s", out)
 		}
@@ -138,8 +150,8 @@ func TestEncodeToon(t *testing.T) {
 			map[string]any{"id": float64(1), "name": "alice"},
 			map[string]any{"id": float64(2), "name": "bob"},
 		}}
-		want := EncodeToon(discardLogger(), env)
-		got := EncodeToon(discardLogger(), env)
+		want := mustEncodeToon(t, env)
+		got := mustEncodeToon(t, env)
 		if got != want {
 			t.Errorf("repeated EncodeToon on finite data differs: want %q got %q", want, got)
 		}
@@ -153,7 +165,7 @@ func TestEncodeToon(t *testing.T) {
 			A float64 `json:"a"`
 			B string  `json:"b,omitempty"`
 		}
-		got := EncodeToon(discardLogger(), &response.Envelope{Data: item{A: 1}})
+		got := mustEncodeToon(t, &response.Envelope{Data: item{A: 1}})
 		if strings.Contains(got, "b") {
 			t.Errorf("omitempty was lost — normalizer must not run on finite data: %s", got)
 		}
@@ -165,7 +177,7 @@ func TestEncodeToon(t *testing.T) {
 	t.Run("caller envelope map is not mutated by EncodeToon", func(t *testing.T) {
 		m := map[string]any{"bad": math.NaN(), "ok": 1.0}
 		env := &response.Envelope{Data: m}
-		EncodeToon(discardLogger(), env)
+		mustEncodeToon(t, env)
 		v, isFloat := m["bad"].(float64)
 		if !isFloat || !math.IsNaN(v) {
 			t.Errorf("original map was mutated: m[\"bad\"] = %v", m["bad"])
@@ -173,8 +185,8 @@ func TestEncodeToon(t *testing.T) {
 	})
 }
 
-func TestEncodeToonFallbackIncludesMarker(t *testing.T) {
-	t.Run("depth cap fallback", func(t *testing.T) {
+func TestEncodeToonRejectsDepthLimit(t *testing.T) {
+	t.Run("depth cap is returned to the caller", func(t *testing.T) {
 		nested := map[string]any{"leaf": "value"}
 		for i := 0; i < 70; i++ {
 			// A second sibling key per level defeats key folding (fold.go
@@ -182,20 +194,17 @@ func TestEncodeToonFallbackIncludesMarker(t *testing.T) {
 			// actually reaches the writer's depth check.
 			nested = map[string]any{"level": nested, "other": i}
 		}
-		out := EncodeToon(discardLogger(), &response.Envelope{Data: nested})
-		if !strings.HasPrefix(out, "{") {
-			t.Fatalf("expected JSON fallback, got: %s", out)
+		out, err := EncodeToon(discardLogger(), &response.Envelope{Data: nested})
+		if out != "" {
+			t.Errorf("failed TOON encode must not return partial output: %q", out)
 		}
-		if !strings.Contains(out, `"_toon_fallback"`) {
-			t.Errorf("expected _toon_fallback marker, got: %s", out)
-		}
-		if !strings.Contains(out, "nesting depth exceeds") {
-			t.Errorf("expected depth error message, got: %s", out)
+		if err == nil || !strings.Contains(err.Error(), "nesting depth exceeds") {
+			t.Errorf("expected depth error, got: %v", err)
 		}
 	})
 }
 
-func TestEncodeToonSizeCapFallbackIncludesMarker(t *testing.T) {
+func TestEncodeToonRejectsSizeLimit(t *testing.T) {
 	const entryCount = 110000 // clears the 4MB cap; 100K lands just under it
 	entries := make(map[string]any, entryCount)
 	for i := 0; i < entryCount; i++ {
@@ -203,14 +212,11 @@ func TestEncodeToonSizeCapFallbackIncludesMarker(t *testing.T) {
 	}
 	data := map[string]any{"entries": entries}
 
-	out := EncodeToon(discardLogger(), &response.Envelope{Data: data})
-	if !strings.HasPrefix(out, "{") {
-		t.Fatalf("expected JSON fallback, got prefix: %s", out[:min(len(out), 50)])
+	out, err := EncodeToon(discardLogger(), &response.Envelope{Data: data})
+	if out != "" {
+		t.Errorf("failed TOON encode must not return partial output: %q", out[:min(len(out), 50)])
 	}
-	if !strings.Contains(out, `"_toon_fallback"`) {
-		t.Errorf("expected _toon_fallback marker")
-	}
-	if !strings.Contains(out, "encoded output exceeds") {
-		t.Errorf("expected size cap error message")
+	if err == nil || !strings.Contains(err.Error(), "encoded output exceeds") {
+		t.Errorf("expected size cap error, got: %v", err)
 	}
 }

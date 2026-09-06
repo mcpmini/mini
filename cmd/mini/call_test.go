@@ -3,9 +3,13 @@
 package main
 
 import (
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/response"
 )
 
 func TestResolveCallOutput(t *testing.T) {
@@ -35,6 +39,35 @@ func TestResolveCallOutput(t *testing.T) {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPrintCallOutputToonReturnsEncodingError(t *testing.T) {
+	nested := map[string]any{"leaf": "value"}
+	for i := 0; i < 70; i++ {
+		nested = map[string]any{"level": nested, "other": i}
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStdout := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = originalStdout })
+
+	gotErr := printCallOutput("gh", "list_issues", &response.Envelope{Data: nested}, callOutputToon)
+	w.Close()
+	output, readErr := io.ReadAll(r)
+	r.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if gotErr == nil || !strings.Contains(gotErr.Error(), "nesting depth exceeds") {
+		t.Fatalf("expected TOON encoding error, got: %v", gotErr)
+	}
+	if len(output) != 0 {
+		t.Fatalf("failed TOON encoding printed output instead of returning an error: %q", output)
 	}
 }
 
