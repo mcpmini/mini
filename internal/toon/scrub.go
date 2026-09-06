@@ -1,6 +1,8 @@
 package toon
 
 import (
+	"bytes"
+	"encoding/json"
 	"math"
 	"reflect"
 )
@@ -110,15 +112,56 @@ func scrubGenericMap(rv reflect.Value) any {
 	return out
 }
 
+type orderedEntry struct {
+	key string
+	val any
+}
+
+// orderedObject serializes its entries in insertion order, satisfying TOON
+// §2 and §8 which require object key order to be preserved as encountered
+// by the encoder. map[string]any cannot be used here because json.Marshal
+// sorts map keys alphabetically.
+type orderedObject []orderedEntry
+
+func (o orderedObject) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, e := range o {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		if err := writeOrderedEntry(&buf, e); err != nil {
+			return nil, err
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+func writeOrderedEntry(buf *bytes.Buffer, e orderedEntry) error {
+	key, err := json.Marshal(e.key)
+	if err != nil {
+		return err
+	}
+	val, err := json.Marshal(e.val)
+	if err != nil {
+		return err
+	}
+	buf.Write(key)
+	buf.WriteByte(':')
+	buf.Write(val)
+	return nil
+}
+
 func scrubStruct(rv reflect.Value) any {
 	fields := scrubFields(rv.Type())
-	out := make(map[string]any, len(fields))
+	out := make(orderedObject, 0, len(fields))
 	for _, f := range fields {
 		fv, ok := fieldByIndex(rv, f.index)
 		if !ok || f.omitEmpty && isJSONEmptyValue(fv) {
 			continue
 		}
-		out[f.name] = scrubValue(fv)
+		out = append(out, orderedEntry{key: f.name, val: scrubValue(fv)})
 	}
 	return out
 }
