@@ -262,6 +262,16 @@ func TestEncodeRootInlineArrayOutputSizeCap(t *testing.T) {
 	}
 }
 
+func TestEncodeRootNumberOutputSizeCap(t *testing.T) {
+	_, err := Encode(numVal(strings.Repeat("1", maxEncodeBytes+1)))
+	if err == nil {
+		t.Fatal("expected size-cap error for oversized root number")
+	}
+	if !strings.Contains(err.Error(), "encoded output exceeds") {
+		t.Errorf("error = %q, want size-cap error", err)
+	}
+}
+
 func TestAppendStringEnforcesExactOutputCap(t *testing.T) {
 	var sb strings.Builder
 	if err := appendString(&sb, strings.Repeat("x", maxEncodeBytes)); err != nil {
