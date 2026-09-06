@@ -266,6 +266,8 @@ auth:
   token: "${GITHUB_TOKEN}"
 ```
 
+**Limitation:** Token refresh is synchronized within one process. If you run multiple independent `mini connect --standalone` processes against the same config directory, their in-memory token caches do not coordinate — one process may write a refreshed token while another's stale cache causes a retry. Use `mini daemon` so all sessions share one provider and one refresh owner.
+
 ## Using mini from the CLI
 
 You don't have to connect mini to an agent via MCP. `mini call` works as a standalone command — pipe it from scripts, use it in CI, or have your agent invoke it as a subprocess rather than connecting via MCP at all:

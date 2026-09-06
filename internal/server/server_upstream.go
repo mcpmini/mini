@@ -41,7 +41,6 @@ func (s *Server) connectUpstreamAsync(ctx context.Context, sc config.ServerConfi
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
 	connectCtx, cancel := applyHandshakeTimeout(ctx, sc.HandshakeTimeout)
 	defer cancel()
-	s.providerCache.Evict(sc.Name)
 	conn, err := s.dialUpstream(connectCtx, sc)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", sc.Name, err)

@@ -26,7 +26,14 @@ type ProviderParams struct {
 }
 
 func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
-	// applyRegistration mutates AuthConfig; without a copy, concurrent callers race.
+	return buildTokenProvider(p)
+}
+
+// buildTokenProvider clones, hydrates, and constructs the concrete provider.
+// Callers that need the concrete type (e.g. ProviderCache) call this directly.
+func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
+	// Deep-copy so concurrent calls over a shared *AuthConfig do not race on
+	// the writes applyRegistration performs.
 	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
 	if p.AuthConfig.ResourceURL == "" {
 		p.AuthConfig.ResourceURL = p.ServerURL
@@ -162,6 +169,25 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 
 func (p *tokenProvider) remedyError(cause error) error {
 	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", p.serverName, p.serverName, cause)
+}
+
+// commitBrowserToken atomically installs a browser-authorized token and a freshly
+// registration-hydrated OAuth configuration under the provider mutex. Hydration
+// runs before the lock so slow disk I/O does not block concurrent token reads.
+// A save or hydration failure leaves existing provider state unchanged.
+func (p *tokenProvider) commitBrowserToken(params ProviderParams, tok *oauth2.Token) error {
+	params.AuthConfig = cloneAuthConfig(params.AuthConfig)
+	if err := hydrateFromRegistration(params); err != nil {
+		return err
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := Save(p.configDir, p.serverName, tok); err != nil {
+		return fmt.Errorf("persist oauth token: %w", err)
+	}
+	p.ac = params.AuthConfig
+	p.token = tok
+	return nil
 }
 
 func bearerValue(t *oauth2.Token) string {
