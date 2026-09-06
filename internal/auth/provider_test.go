@@ -633,19 +633,6 @@ func refreshToken() *oauth2.Token {
 	return &oauth2.Token{AccessToken: "stored-access", RefreshToken: "stored-refresh"}
 }
 
-func newSuccessEndpoint(t *testing.T) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"access_token": "new-access", "refresh_token": "rotated-refresh",
-			"token_type": "Bearer", "expires_in": 3600,
-		})
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
 func advanceForBackoffs(t *testing.T, clk *clock.Fake, steps []time.Duration) {
 	t.Helper()
 	for _, d := range steps {
