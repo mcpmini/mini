@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -478,12 +479,18 @@ func TestProviderAuthorization_lazyDiscovery_discoveryFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = p.Authorization(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := p.Authorization(context.Background())
+		errCh <- err
+	}()
+	advanceForBackoffs(t, clk, []time.Duration{time.Second, 2 * time.Second})
+	err = <-errCh
 	if err == nil {
 		t.Fatal("expected error when endpoint discovery fails")
 	}
-	if !strings.Contains(err.Error(), "mini auth srv") {
-		t.Errorf("error must name remedy command, got: %v", err)
+	if errors.Is(err, transport.ErrReauthRequired) {
+		t.Errorf("transient discovery failure must not require reauthorization: %v", err)
 	}
 }
 
@@ -874,5 +881,45 @@ func TestProviderRefresh_retryAfterDeltaAndDate(t *testing.T) {
 				t.Errorf("hits = %d, want 2", n)
 			}
 		})
+	}
+}
+
+func TestProviderRefresh_missingRefreshTokenRequiresReauthWithoutRetry(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	p, _ := newProviderAt(t, srv.URL, &oauth2.Token{AccessToken: "stored-access"})
+	_, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if !errors.Is(err, transport.ErrReauthRequired) {
+		t.Fatalf("missing refresh token must require reauthorization, got: %v", err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Errorf("token endpoint hits = %d, want 0", n)
+	}
+}
+
+func TestProviderRefresh_malformedSuccessIsTerminalWithoutRetry(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"token_type":"Bearer"}`) //nolint:errcheck
+	}))
+	t.Cleanup(srv.Close)
+
+	p, _ := newProviderAt(t, srv.URL, refreshToken())
+	_, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if err == nil {
+		t.Fatal("expected malformed token response to fail")
+	}
+	if errors.Is(err, transport.ErrReauthRequired) {
+		t.Fatalf("malformed token response must be terminal, not reauthorization: %v", err)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("token endpoint hits = %d, want 1 (terminal errors are not retried)", n)
 	}
 }

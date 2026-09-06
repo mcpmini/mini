@@ -158,8 +158,8 @@ func (p *tokenProvider) discoverEndpointsLocked(ctx context.Context) error {
 }
 
 func (p *tokenProvider) refreshLocked(ctx context.Context) error {
-	if err := p.discoverEndpointsLocked(ctx); err != nil {
-		return p.remedyError(err)
+	if p.token.RefreshToken == "" {
+		return p.remedyError(fmt.Errorf("refresh token is not set"))
 	}
 	return p.refreshWithRetryLocked(ctx)
 }
@@ -167,7 +167,10 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 func (p *tokenProvider) refreshWithRetryLocked(ctx context.Context) error {
 	a := refreshAttempt{backoff: time.Second}
 	for a.attempt < 3 {
-		err := p.attemptRefreshLocked(ctx)
+		err := p.discoverEndpointsLocked(ctx)
+		if err == nil {
+			err = p.attemptRefreshLocked(ctx)
+		}
 		if err == nil {
 			return nil
 		}
