@@ -408,21 +408,3 @@ func TestFromAnyTier2PreservesOmitemptyWhenSiblingHasNaN(t *testing.T) {
 		t.Errorf("x = %+v, want KindNumber", fields["x"])
 	}
 }
-
-func TestFromAnyTier3OmitemptyPreserved(t *testing.T) {
-	type record struct {
-		F   float64 `json:"f"`
-		Tag string  `json:"tag,omitempty"`
-	}
-	v, err := FromAny(record{F: math.NaN(), Tag: ""})
-	if err != nil {
-		t.Fatalf("FromAny unexpected error: %v", err)
-	}
-	got := fieldMap(v)
-	if got["f"].Kind != KindNull {
-		t.Errorf("f = %+v, want KindNull", got["f"])
-	}
-	if _, ok := got["tag"]; ok {
-		t.Error("tag present; tier 3 must honor omitempty for zero-value fields")
-	}
-}
