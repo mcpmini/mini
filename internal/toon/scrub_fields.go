@@ -11,6 +11,8 @@ type scrubField struct {
 	name      string
 	index     []int
 	omitEmpty bool
+	omitZero  bool
+	quoted    bool
 	tagged    bool
 }
 
@@ -59,7 +61,10 @@ func exploreScrubFields(parent structFieldType, counts map[reflect.Type]int, nex
 			if name == "" {
 				name = sf.Name
 			}
-			field := scrubField{name: name, index: index, omitEmpty: opts.omitEmpty, tagged: opts.tagged}
+			field := scrubField{
+				name: name, index: index, omitEmpty: opts.omitEmpty,
+				omitZero: opts.omitZero, quoted: opts.quoted, tagged: opts.tagged,
+			}
 			*fields = appendScrubField(*fields, field, counts[parent.typ] > 1)
 			continue
 		}
@@ -84,6 +89,8 @@ func appendScrubField(fields []scrubField, field scrubField, duplicate bool) []s
 
 type scrubTagOptions struct {
 	omitEmpty bool
+	omitZero  bool
+	quoted    bool
 	tagged    bool
 }
 
@@ -111,7 +118,29 @@ func scrubTag(sf reflect.StructField) (string, scrubTagOptions) {
 	if !validJSONTag(name) {
 		name = ""
 	}
-	return name, scrubTagOptions{omitEmpty: hasJSONOption(opts, "omitempty"), tagged: name != ""}
+	return name, scrubTagOptions{
+		omitEmpty: hasJSONOption(opts, "omitempty"),
+		omitZero:  hasJSONOption(opts, "omitzero"),
+		quoted:    quotedJSONField(sf.Type, opts),
+		tagged:    name != "",
+	}
+}
+
+func quotedJSONField(t reflect.Type, options string) bool {
+	if !hasJSONOption(options, "string") {
+		return false
+	}
+	if t.Name() == "" && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64, reflect.String:
+		return true
+	default:
+		return false
+	}
 }
 
 func hasJSONOption(options, want string) bool {
@@ -217,4 +246,39 @@ func isJSONEmptyValue(rv reflect.Value) bool {
 	default:
 		return false
 	}
+}
+
+type jsonZeroer interface {
+	IsZero() bool
+}
+
+var jsonZeroerType = reflect.TypeFor[jsonZeroer]()
+
+func isJSONZeroValue(rv reflect.Value) bool {
+	if !rv.IsValid() {
+		return true
+	}
+	t := rv.Type()
+	switch {
+	case t.Kind() == reflect.Interface && t.Implements(jsonZeroerType):
+		return rv.IsNil() || callJSONZero(rv)
+	case t.Kind() == reflect.Pointer && t.Implements(jsonZeroerType):
+		return rv.IsNil() || callJSONZero(rv)
+	case t.Implements(jsonZeroerType):
+		return callJSONZero(rv)
+	case reflect.PointerTo(t).Implements(jsonZeroerType):
+		if !rv.CanAddr() {
+			copy := reflect.New(t).Elem()
+			copy.Set(rv)
+			rv = copy
+		}
+		return callJSONZero(rv.Addr())
+	default:
+		return rv.IsZero()
+	}
+}
+
+func callJSONZero(rv reflect.Value) bool {
+	zeroer, ok := rv.Interface().(jsonZeroer)
+	return ok && zeroer.IsZero()
 }
