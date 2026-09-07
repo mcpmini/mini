@@ -11,6 +11,6 @@ go run ./tools/params .
 go run ./tools/returns .
 go run ./tools/clocklint .
 testbin=$(mktemp -d)
-cmd/echomcp/build.sh "$testbin"
+go build -o "$testbin/echomcp" ./cmd/echomcp
 ECHOMCP_BIN="$testbin/echomcp" go test -race -tags test ./...
 go test -tags integration,test -timeout 180s ./test/integration/...
