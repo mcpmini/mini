@@ -271,8 +271,8 @@ func TestAuthReplay_refreshFailure_noReplay(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "mini auth myserver") {
-		t.Errorf("error should name remedy, got: %v", err)
+	if !strings.Contains(err.Error(), "token endpoint down") {
+		t.Errorf("error should contain cause, got: %v", err)
 	}
 	if calls.Load() != 1 {
 		t.Errorf("upstream attempts = %d, want 1 (no replay after failed refresh)", calls.Load())

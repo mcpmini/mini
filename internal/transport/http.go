@@ -156,7 +156,7 @@ func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) 
 		return body, err
 	}
 	if _, refreshErr := c.authProvider.RefreshAuthorization(ctx, staleAuth); refreshErr != nil {
-		return nil, c.authRemedyError(refreshErr)
+		return nil, refreshErr
 	}
 	body, err = c.post(ctx, rpcReq)
 	if isUnauthorized(err) {
@@ -383,7 +383,7 @@ func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Reques
 	}
 	value, err := c.authProvider.Authorization(ctx)
 	if err != nil {
-		return c.authRemedyError(err)
+		return err
 	}
 	req.Header.Set(c.authHeaderNameOrDefault(), value)
 	return nil
