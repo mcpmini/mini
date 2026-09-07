@@ -80,7 +80,7 @@ func marshalInput(rv reflect.Value) (any, bool) {
 	if !rv.CanInterface() {
 		return nil, false
 	}
-	if rv.Kind() != reflect.Pointer && rv.CanAddr() && pointerMarshaler(rv.Type()) {
+	if rv.Kind() != reflect.Pointer && rv.CanAddr() {
 		return rv.Addr().Interface(), true
 	}
 	return rv.Interface(), true

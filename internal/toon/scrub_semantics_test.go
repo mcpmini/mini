@@ -4,6 +4,7 @@ import (
 	"encoding"
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -21,6 +22,25 @@ type scrubPointerValue struct {
 
 func (*scrubPointerValue) MarshalJSON() ([]byte, error) {
 	return []byte(`"pointer"`), nil
+}
+
+type scrubPointerTextValue struct {
+	Raw string
+}
+
+func (v *scrubPointerTextValue) MarshalText() ([]byte, error) {
+	return []byte("encoded:" + v.Raw), nil
+}
+
+type scrubNestedValue struct {
+	Value scrubPointerValue     `json:"value"`
+	Text  scrubPointerTextValue `json:"text"`
+	Items [1]scrubPointerValue  `json:"items"`
+}
+
+type scrubNestedRoot struct {
+	Bad    float64          `json:"bad"`
+	Nested scrubNestedValue `json:"nested"`
 }
 
 type scrubZeroValue struct {
@@ -80,6 +100,77 @@ func TestFromAnyFallbackPreservesPointerMarshalerAddressability(t *testing.T) {
 	if got := fieldMap(pointer)["value"]; got.Kind != KindString || got.Str != "pointer" {
 		t.Fatalf("pointer field = %+v, want pointer marshaler output", got)
 	}
+}
+
+func TestFromAnyFallbackPreservesNestedPointerMarshalers(t *testing.T) {
+	newRoot := func(bad float64) scrubNestedRoot {
+		return scrubNestedRoot{
+			Bad: bad,
+			Nested: scrubNestedValue{
+				Value: scrubPointerValue{Raw: "source"},
+				Text:  scrubPointerTextValue{Raw: "source"},
+				Items: [1]scrubPointerValue{{Raw: "source"}},
+			},
+		}
+	}
+	cases := []struct {
+		name      string
+		input     func() any
+		finite    func() any
+		wantHooks bool
+	}{
+		{name: "pointer record", input: func() any { v := newRoot(math.NaN()); return &v }, finite: func() any { v := newRoot(1); return &v }, wantHooks: true},
+		{name: "record value", input: func() any { return newRoot(math.NaN()) }, finite: func() any { return newRoot(1) }},
+		{name: "map value", input: func() any { return map[string]scrubNestedRoot{"root": newRoot(math.NaN())} }, finite: func() any { return map[string]scrubNestedRoot{"root": newRoot(1)} }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			baseline, err := json.Marshal(tc.finite())
+			if err != nil {
+				t.Fatalf("json.Marshal baseline: %v", err)
+			}
+			wantHooks := string(baseline)
+			if tc.wantHooks != (len(wantHooks) > 0 && containsAll(wantHooks, `"pointer"`, `"encoded:source"`)) {
+				t.Fatalf("baseline = %s, want hooks = %t", baseline, tc.wantHooks)
+			}
+			got, err := FromAny(tc.input())
+			if err != nil {
+				t.Fatalf("FromAny unexpected error: %v", err)
+			}
+			if tc.name == "map value" {
+				got = fieldMap(got)["root"]
+			}
+			fields := fieldMap(got)
+			if fields["bad"].Kind != KindNull {
+				t.Fatalf("bad = %+v, want KindNull", fields["bad"])
+			}
+			nested := fields["nested"]
+			nestedFields := fieldMap(nested)
+			if tc.wantHooks {
+				if nestedFields["value"].Kind != KindString || nestedFields["value"].Str != "pointer" {
+					t.Fatalf("nested value = %+v, want pointer string", nestedFields["value"])
+				}
+				if nestedFields["text"].Kind != KindString || nestedFields["text"].Str != "encoded:source" {
+					t.Fatalf("nested text = %+v, want encoded text", nestedFields["text"])
+				}
+				items := nestedFields["items"]
+				if items.Items[0].Kind != KindString || items.Items[0].Str != "pointer" {
+					t.Fatalf("nested item = %+v, want pointer string", items.Items[0])
+				}
+			} else if nestedFields["value"].Kind != KindObject || nestedFields["text"].Kind != KindObject || nestedFields["items"].Items[0].Kind != KindObject {
+				t.Fatalf("unaddressable nested value retained pointer hooks: %+v", nested)
+			}
+		})
+	}
+}
+
+func containsAll(s string, parts ...string) bool {
+	for _, part := range parts {
+		if !strings.Contains(s, part) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestFromAnyFallbackPreservesJSONStringAndOmitZero(t *testing.T) {
