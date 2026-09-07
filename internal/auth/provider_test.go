@@ -108,19 +108,20 @@ func TestProviderAuthorization_expiryBoundary(t *testing.T) {
 	epoch := clock.NewFake().Now()
 	cases := []struct {
 		name        string
-		expiry      time.Time
+		token       *oauth2.Token
 		wantHeader  string
 		wantRefresh int32
 	}{
-		{"before skew window keeps stored token", epoch.Add(10 * time.Minute), "Bearer stored-access", 0},
-		{"exactly at expiry minus skew refreshes", epoch.Add(2 * time.Minute), "Bearer new-access", 1},
-		{"inside skew window refreshes", epoch.Add(time.Minute), "Bearer new-access", 1},
-		{"already expired refreshes", epoch.Add(-time.Hour), "Bearer new-access", 1},
-		{"zero expiry never refreshes proactively", time.Time{}, "Bearer stored-access", 0},
+		{"before skew window keeps stored token", storedToken(epoch.Add(10 * time.Minute)), "Bearer stored-access", 0},
+		{"exactly at expiry minus skew refreshes", storedToken(epoch.Add(2 * time.Minute)), "Bearer new-access", 1},
+		{"inside skew window refreshes", storedToken(epoch.Add(time.Minute)), "Bearer new-access", 1},
+		{"already expired refreshes", storedToken(epoch.Add(-time.Hour)), "Bearer new-access", 1},
+		{"zero expiry never refreshes proactively", storedToken(time.Time{}), "Bearer stored-access", 0},
+		{"no refresh token skips proactive refresh", &oauth2.Token{AccessToken: "stored-access", Expiry: epoch.Add(time.Minute)}, "Bearer stored-access", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			f := newProviderFixture(t, providerSetup{Token: storedToken(tc.expiry)})
+			f := newProviderFixture(t, providerSetup{Token: tc.token})
 			got, err := f.provider.Authorization(context.Background())
 			if err != nil {
 				t.Fatalf("Authorization: %v", err)
