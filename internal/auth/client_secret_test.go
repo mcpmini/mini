@@ -261,11 +261,6 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 			wantIn: "client_secret",
 		},
 		{
-			name:   "secret with method absent",
-			reg:    &auth.Registration{ClientID: "c3", ClientSecret: "sk-test-usurp-inconsistent"},
-			wantIn: "token_endpoint_auth_method",
-		},
-		{
 			name:   "secret with method none",
 			reg:    &auth.Registration{ClientID: "c4", ClientSecret: "sk-test-usurp-inconsistent", TokenEndpointAuthMethod: "none"},
 			wantIn: "token_endpoint_auth_method",
@@ -340,6 +335,83 @@ func TestResolveEndpoints_freshDCRCapturesAndPersistsConfidentialClient(t *testi
 	if persisted.ClientSecret != "sk-test-usurp-fresh" || persisted.TokenEndpointAuthMethod != "client_secret_post" {
 		t.Errorf("persisted registration missing confidential-client fields: %+v", persisted)
 	}
+}
+
+func TestRegistrationOmittedMethod_normalizedToClientSecretBasic(t *testing.T) {
+	tokenSrv := newCapturingTokenServer(t)
+	reg := &auth.Registration{
+		ClientID:     "omitted-method-client",
+		ClientSecret: "sk-test-usurp-omitted",
+	}
+	ac := hydrateFromSavedRegistration(t, reg, tokenSrv.srv.URL, clock.System())
+	if ac.TokenEndpointAuthMethod != "client_secret_basic" {
+		t.Fatalf("omitted method must normalize to client_secret_basic, got %q", ac.TokenEndpointAuthMethod)
+	}
+
+	exchangeAndRefresh(t, ac)
+
+	assertBasicAuth(t, "exchange", tokenSrv.exchange, reg.ClientID, reg.ClientSecret)
+	assertBasicAuth(t, "refresh", tokenSrv.refresh, reg.ClientID, reg.ClientSecret)
+}
+
+func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthConfig, *capturingTokenServer) {
+	t.Helper()
+	tokenSrv := newCapturingTokenServer(t)
+	dir := t.TempDir()
+
+	regSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(dcrResponse) //nolint:errcheck
+	}))
+	t.Cleanup(regSrv.Close)
+
+	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":           "https://as.example.com/authorize",
+		"token_endpoint":                   "https://as.example.com/token",
+		"registration_endpoint":            regSrv.URL + "/register",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	t.Cleanup(asSrv.Close)
+
+	sc := &config.ServerConfig{
+		URL: asSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{
+			Type:     "oauth2",
+			AuthURL:  "https://as.example.com/authorize",
+			TokenURL: tokenSrv.srv.URL,
+		},
+	}
+	params := auth.ResolveEndpointsParams{ConfigDir: dir, ServerName: "srv", Clock: clock.System()}
+	if err := auth.ResolveEndpoints(context.Background(), sc, params); err != nil {
+		t.Fatalf("ResolveEndpoints: %v", err)
+	}
+	return sc.Auth, tokenSrv
+}
+
+func TestFreshDCR_confidentialClientExchangeUsesCorrectAuthStyle(t *testing.T) {
+	ac, tokenSrv := freshDCRToExchange(t, map[string]any{
+		"client_id":                  "dcr-e2e-client",
+		"client_secret":              "sk-test-usurp-dcr-e2e",
+		"token_endpoint_auth_method": "client_secret_post",
+		"client_secret_expires_at":   0,
+	})
+
+	exchangeAndRefresh(t, ac)
+
+	assertPostAuth(t, "exchange", tokenSrv.exchange, "dcr-e2e-client", "sk-test-usurp-dcr-e2e")
+	assertPostAuth(t, "refresh", tokenSrv.refresh, "dcr-e2e-client", "sk-test-usurp-dcr-e2e")
+}
+
+func TestFreshDCR_omittedMethodDefaultsToBasicAuth(t *testing.T) {
+	ac, tokenSrv := freshDCRToExchange(t, map[string]any{
+		"client_id":                "supabase-style-client",
+		"client_secret":            "sk-test-usurp-supabase",
+		"client_secret_expires_at": 0,
+	})
+
+	exchangeAndRefresh(t, ac)
+
+	assertBasicAuth(t, "exchange", tokenSrv.exchange, "supabase-style-client", "sk-test-usurp-supabase")
+	assertBasicAuth(t, "refresh", tokenSrv.refresh, "supabase-style-client", "sk-test-usurp-supabase")
 }
 
 func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {

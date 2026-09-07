@@ -164,7 +164,10 @@ func applyExistingClientReg(p clientRegParams) (bool, error) {
 
 func applyRegistration(a *config.AuthConfig, reg *Registration, now time.Time) error {
 	a.ClientID = reg.ClientID
-	// reject rather than silently use a wrong auth style
+	// RFC 7591 §3.2.1: default when omitted is client_secret_basic
+	if reg.ClientSecret != "" && reg.TokenEndpointAuthMethod == "" {
+		reg.TokenEndpointAuthMethod = "client_secret_basic"
+	}
 	if err := validateRegistrationConsistency(reg); err != nil {
 		return err
 	}
