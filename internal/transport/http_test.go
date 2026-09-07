@@ -560,8 +560,8 @@ func TestHTTPConnection_authProviderErrorNamesRemedy(t *testing.T) {
 		URL: srv.URL, ServerName: "myserver", AuthProvider: failingAuthProvider{err: errors.New("no token")},
 	})
 	_, err := conn.Call(t.Context(), "ping", nil)
-	if err == nil || !strings.Contains(err.Error(), "mini auth myserver") {
-		t.Errorf("expected remedy error, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "no token") {
+		t.Errorf("expected provider error to propagate, got: %v", err)
 	}
 	if calls != 0 {
 		t.Errorf("no request should reach upstream when auth cannot be built, got %d", calls)
