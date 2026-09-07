@@ -146,6 +146,9 @@ func assertRemoveServer(t *testing.T, srv *server.Server) {
 }
 
 func TestAddRemoveServer(t *testing.T) {
+	if echomcpBin == "" {
+		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+	}
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowRuntimeStdio = true
