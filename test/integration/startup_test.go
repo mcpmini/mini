@@ -25,7 +25,7 @@ func TestStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
 	faultJSON, _ := json.Marshal(fault)
 	writeFaultServer(t, faultServerParams{
 		ConfigDir: cfg, ServerName: "hung", Fixtures: hungDir, FaultJSON: string(faultJSON),
-		Extra: "connect_timeout: \"1s\"\n",
+		Extra: "handshake_timeout: \"1s\"\n",
 	})
 
 	stdin, scanner, stderr := startMiniCmdCapturingStderr(t, cfg)
@@ -38,7 +38,7 @@ func TestStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
 	elapsed := time.Since(start)
-	t.Logf("initialize responded in %v (hung upstream slow_initialize delay=5s, connect_timeout=1s)", elapsed)
+	t.Logf("initialize responded in %v (hung upstream slow_initialize delay=5s, handshake_timeout=1s)", elapsed)
 	if elapsed > time.Second {
 		t.Fatalf("initialize took %v; want a fast response despite a 5s-slow-init upstream", elapsed)
 	}
@@ -51,7 +51,7 @@ func TestStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
 	}
 
 	if _, isErr := c.execToolAllowError("hung", "never", nil); !isErr {
-		t.Error("expected hung upstream's tool call to fail: it never connects within its 1s connect_timeout")
+		t.Error("expected hung upstream's tool call to fail: it never connects within its 1s handshake_timeout")
 	}
 
 	waitForStderrContains(t, stderr, "upstream unavailable at startup")

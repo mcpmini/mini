@@ -372,6 +372,7 @@ func settleUntilStable(t *testing.T, snapshot func() string) {
 		}
 		time.Sleep(pollInterval)
 	}
+	t.Fatal("upstreams did not settle within deadline")
 }
 
 func newMCPClient(t *testing.T, stdin io.WriteCloser, scanner *bufio.Scanner) *mcpClient {

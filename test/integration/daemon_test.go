@@ -251,7 +251,7 @@ func TestDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 	faultJSON, _ := json.Marshal(fault)
 	writeFaultServer(t, faultServerParams{
 		ConfigDir: cfg, ServerName: "slow", Fixtures: dir, FaultJSON: string(faultJSON),
-		Extra: "connect_timeout: \"1s\"\n",
+		Extra: "handshake_timeout: \"1s\"\n",
 	})
 
 	start := time.Now()
