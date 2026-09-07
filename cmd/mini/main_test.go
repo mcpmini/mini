@@ -3,16 +3,25 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
+	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -90,6 +99,90 @@ func TestMaybeStartSessionEviction_startsWithHTTPServer(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for session eviction to start")
+	}
+}
+
+func countingTokenEndpoint(t *testing.T) (*httptest.Server, *atomic.Int32) {
+	t.Helper()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"access_token":"refreshed","token_type":"Bearer","expires_in":3600}`) //nolint:errcheck
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &hits
+}
+
+func fakeMCPUpstream(t *testing.T, gotAuth *atomic.Value) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth.Store(r.Header.Get("Authorization"))
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"protocolVersion": transport.ProtocolVersion},
+			})
+		case "tools/list":
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"jsonrpc": "2.0", "id": req["id"],
+				"result": map[string]any{"tools": []any{map[string]any{"name": "t1", "inputSchema": map[string]any{}}}},
+			})
+		default:
+			w.WriteHeader(http.StatusAccepted)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func oauthServerConfig(name, mcpURL, tokenURL string, enabled bool) config.ServerConfig {
+	return config.ServerConfig{
+		Name: name, Transport: "http", URL: mcpURL, Enabled: &enabled,
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: tokenURL},
+	}
+}
+
+func TestServeStartup_zeroTokenEndpointCallsBeforeFirstRequest(t *testing.T) {
+	configDir := t.TempDir()
+	tokenSrv, tokenHits := countingTokenEndpoint(t)
+	var gotAuth atomic.Value
+	mcp := fakeMCPUpstream(t, &gotAuth)
+
+	validTok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: time.Now().Add(time.Hour)}
+	if err := auth.Save(configDir, "live", validTok); err != nil {
+		t.Fatal(err)
+	}
+	expiredTok := &oauth2.Token{AccessToken: "dead-access", RefreshToken: "r2", Expiry: time.Now().Add(-time.Hour)}
+	if err := auth.Save(configDir, "idle", expiredTok); err != nil {
+		t.Fatal(err)
+	}
+	servers := []config.ServerConfig{
+		oauthServerConfig("live", mcp.URL, tokenSrv.URL, true),
+		oauthServerConfig("idle", "http://localhost:1", tokenSrv.URL, false),
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := buildAndStartConnecting(context.Background(),
+		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir, Logger: logger, Servers: servers},
+		server.WithAuthProviders())
+	defer srv.Close()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.ToolCount("live") != 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if srv.ToolCount("live") != 1 {
+		t.Fatalf("expected live upstream to connect, tool count = %d", srv.ToolCount("live"))
+	}
+	if got := gotAuth.Load(); got != "Bearer stored-access" {
+		t.Errorf("upstream Authorization = %v, want stored token via provider", got)
+	}
+	if tokenHits.Load() != 0 {
+		t.Errorf("token endpoint hits at startup = %d, want 0", tokenHits.Load())
 	}
 }
 
