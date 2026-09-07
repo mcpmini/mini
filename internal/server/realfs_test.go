@@ -18,7 +18,7 @@ import (
 
 func TestListDirectoryNonEmpty(t *testing.T) {
 	fake := fakeConn("list_directory")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"entries\":[\"alpha.txt\",\"beta.go\"]}"}]}`)
+	fake.RespondWith(map[string]any{"entries": []string{"alpha.txt", "beta.go"}})
 	srv := newTestServer(t)
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
 
@@ -36,7 +36,7 @@ func TestListDirectoryNonEmpty(t *testing.T) {
 
 func TestMiniFormatWithUpstream(t *testing.T) {
 	fake := fakeConn("list_directory")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"entries\":[\"a.txt\",\"b.txt\",\"c.go\"]}"}]}`)
+	fake.RespondWith(map[string]any{"entries": []string{"a.txt", "b.txt", "c.go"}})
 	srv := newTestServer(t)
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
 
@@ -57,10 +57,8 @@ func TestMiniFormatWithUpstream(t *testing.T) {
 }
 
 func TestReadFileTruncation(t *testing.T) {
-	longText := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 50)
-	textJSON, _ := json.Marshal(longText)
 	fake := fakeConn("read_file")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(textJSON) + `}]}`)
+	fake.RespondWith(strings.Repeat("The quick brown fox jumps over the lazy dog. ", 50))
 
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
@@ -94,9 +92,9 @@ func countToolsByPrefix(tools []map[string]any, prefix string) int {
 
 func TestMultipleServers(t *testing.T) {
 	fake1 := fakeConn("list_directory")
-	fake1.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"entries\":[\"from_server1.txt\"]}"}]}`)
+	fake1.RespondWith(map[string]any{"entries": []string{"from_server1.txt"}})
 	fake2 := fakeConn("list_directory")
-	fake2.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"entries\":[\"from_server2.txt\"]}"}]}`)
+	fake2.RespondWith(map[string]any{"entries": []string{"from_server2.txt"}})
 	srv := newTestServer(t)
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs1"}, fake1)
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs2"}, fake2)
