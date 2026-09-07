@@ -25,7 +25,7 @@ type ProviderParams struct {
 }
 
 func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
-	// Deep-copy: concurrent NewProvider calls may share a single *AuthConfig.
+	// applyRegistration mutates AuthConfig; without a copy, concurrent callers race.
 	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
 	if err := hydrateFromRegistration(p); err != nil {
 		return nil, err
