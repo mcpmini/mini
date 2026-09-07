@@ -14,6 +14,30 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerConfig) {
+	if s.cancelConnect != nil {
+		s.cancelConnect()
+	}
+	connectCtx, cancel := context.WithCancel(ctx)
+	s.cancelConnect = cancel
+	for _, sc := range servers {
+		if !sc.IsEnabled() {
+			continue
+		}
+		s.connectWg.Add(1)
+		go s.connectUpstreamAsync(connectCtx, sc)
+	}
+}
+
+func (s *Server) connectUpstreamAsync(ctx context.Context, sc config.ServerConfig) {
+	defer s.connectWg.Done()
+	if err := s.AddUpstream(ctx, sc); err != nil {
+		s.logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
+		return
+	}
+	s.notifyAllSessions()
+}
+
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
 	connectCtx, cancel := applyHandshakeTimeout(ctx, sc.HandshakeTimeout)
 	defer cancel()
@@ -186,7 +210,12 @@ func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, 
 
 func (s *Server) Close() {
 	cancelAuthFlows(s.takeAuthFlows())
+	// caller's ctx may still be live (e.g. deferred Close runs before signal cancel)
+	if s.cancelConnect != nil {
+		s.cancelConnect()
+	}
 	s.authWg.Wait()
+	s.connectWg.Wait()
 	closeUpstreams(s.snapshotUpstreams())
 	s.sessions.closeAll()
 	s.refreshWg.Wait()
