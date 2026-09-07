@@ -332,11 +332,7 @@ func TestFromAnyRescuePreservesNilTextMarshalerMapKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal baseline: %v", err)
 	}
-	var baseline map[string]json.RawMessage
-	if err := json.Unmarshal(finite, &baseline); err != nil {
-		t.Fatalf("json.Unmarshal baseline: %v", err)
-	}
-	if _, ok := baseline[""]; !ok {
+	if string(finite) != `{"":1}` {
 		t.Fatalf("baseline = %s, want empty map key", finite)
 	}
 
