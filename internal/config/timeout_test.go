@@ -24,7 +24,7 @@ func TestParseTimeoutSpec(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			d, enabled, err := config.ParseTimeoutSpec(tc.spec, tc.def)
+			ts, err := config.ParseTimeoutSpec(tc.spec, tc.def)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for spec %q", tc.spec)
@@ -34,11 +34,11 @@ func TestParseTimeoutSpec(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if enabled != tc.wantEnabled {
-				t.Fatalf("enabled = %v, want %v", enabled, tc.wantEnabled)
+			if ts.Enabled != tc.wantEnabled {
+				t.Fatalf("Enabled = %v, want %v", ts.Enabled, tc.wantEnabled)
 			}
-			if tc.wantEnabled && d != tc.wantD {
-				t.Fatalf("d = %v, want %v", d, tc.wantD)
+			if tc.wantEnabled && ts.Duration != tc.wantD {
+				t.Fatalf("Duration = %v, want %v", ts.Duration, tc.wantD)
 			}
 		})
 	}

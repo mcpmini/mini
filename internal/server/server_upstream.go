@@ -15,7 +15,7 @@ import (
 )
 
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
-	connectCtx, cancel := applyConnectTimeout(ctx, sc.ConnectTimeout)
+	connectCtx, cancel := applyHandshakeTimeout(ctx, sc.HandshakeTimeout)
 	defer cancel()
 	conn, err := s.dialUpstream(connectCtx, sc)
 	if err != nil {

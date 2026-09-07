@@ -62,9 +62,9 @@ func injectAuth(headers map[string]string, auth *config.AuthConfig) {
 }
 
 func parseClientTimeout(spec string) time.Duration {
-	d, enabled, err := config.ParseTimeoutSpec(spec, 0)
-	if err != nil || !enabled {
+	ts, err := config.ParseTimeoutSpec(spec, 0)
+	if err != nil || !ts.Enabled {
 		return 0
 	}
-	return d
+	return ts.Duration
 }

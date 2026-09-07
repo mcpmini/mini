@@ -17,26 +17,26 @@ func applyToolTimeout(ctx context.Context, spec string) (context.Context, contex
 }
 
 func parseToolTimeout(spec string) (time.Duration, bool) {
-	d, enabled, err := config.ParseTimeoutSpec(spec, 30*time.Second)
+	ts, err := config.ParseTimeoutSpec(spec, 30*time.Second)
 	if err != nil {
 		slog.Warn("invalid tool_timeout spec, no timeout applied", "spec", spec)
 		return 0, false
 	}
-	return d, enabled
+	return ts.Duration, ts.Enabled
 }
 
-const defaultConnectTimeout = 10 * time.Second
+const defaultHandshakeTimeout = 30 * time.Second
 
-// Config load rejects unparseable connect_timeout specs; the fallback to the default
+// Config load rejects unparseable handshake_timeout specs; the fallback to the default
 // here only matters for runtime add_server, which bypasses that validation.
-func applyConnectTimeout(ctx context.Context, spec string) (context.Context, context.CancelFunc) {
-	d, enabled, err := config.ParseTimeoutSpec(spec, defaultConnectTimeout)
+func applyHandshakeTimeout(ctx context.Context, spec string) (context.Context, context.CancelFunc) {
+	ts, err := config.ParseTimeoutSpec(spec, defaultHandshakeTimeout)
 	if err != nil {
-		slog.Warn("invalid connect_timeout spec, using default", "spec", spec, "default", defaultConnectTimeout)
-		d, enabled = defaultConnectTimeout, true
+		slog.Warn("invalid handshake_timeout spec, using default", "spec", spec, "default", defaultHandshakeTimeout)
+		ts = config.TimeoutSpec{Duration: defaultHandshakeTimeout, Enabled: true}
 	}
-	if !enabled {
+	if !ts.Enabled {
 		return ctx, func() {}
 	}
-	return context.WithTimeout(ctx, d)
+	return context.WithTimeout(ctx, ts.Duration)
 }

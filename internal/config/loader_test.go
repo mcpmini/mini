@@ -274,26 +274,26 @@ func TestLoad_invalidServerName(t *testing.T) {
 	expectLoadError(t, dir)
 }
 
-func TestLoadServerConfig_connectTimeoutParses(t *testing.T) {
+func TestLoadServerConfig_handshakeTimeoutParses(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nconnect_timeout: 3s\n")
+	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nhandshake_timeout: 3s\n")
 	sc := mustLoadOneServer(t, dir)
-	if sc.ConnectTimeout != "3s" {
-		t.Fatalf("expected connect_timeout %q, got %q", "3s", sc.ConnectTimeout)
+	if sc.HandshakeTimeout != "3s" {
+		t.Fatalf("expected handshake_timeout %q, got %q", "3s", sc.HandshakeTimeout)
 	}
 }
 
-func TestLoad_invalidConnectTimeout(t *testing.T) {
+func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 	for _, spec := range []string{"-1s", "nonsense"} {
 		t.Run(spec, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nconnect_timeout: "+spec+"\n")
+			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nhandshake_timeout: "+spec+"\n")
 			expectLoadError(t, dir)
 		})
 	}
 }
 
-func TestLoad_inlineServerConnectTimeout(t *testing.T) {
+func TestLoad_inlineServerHandshakeTimeout(t *testing.T) {
 	tests := []struct {
 		name    string
 		timeout string
@@ -309,7 +309,7 @@ func TestLoad_inlineServerConnectTimeout(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, filepath.Join(dir, "config.yaml"),
-				"servers:\n  - name: svc\n    command: run\n    connect_timeout: "+tc.timeout+"\n")
+				"servers:\n  - name: svc\n    command: run\n    handshake_timeout: "+tc.timeout+"\n")
 			_, _, err := config.Load(dir)
 			if tc.wantErr {
 				if err == nil {

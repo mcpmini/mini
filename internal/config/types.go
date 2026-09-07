@@ -1,5 +1,36 @@
 package config
 
+import (
+	"fmt"
+	"time"
+)
+
+// TimeoutSpec is the decoded form of the three-way timeout convention.
+type TimeoutSpec struct {
+	Duration time.Duration
+	Enabled  bool
+}
+
+// ParseTimeoutSpec decodes the three-way timeout convention: "" returns def enabled,
+// "0" disables, any other value is parsed as a positive duration.
+// Duration is only meaningful when Enabled is true.
+func ParseTimeoutSpec(spec string, def time.Duration) (TimeoutSpec, error) {
+	switch spec {
+	case "":
+		return TimeoutSpec{Duration: def, Enabled: true}, nil
+	case "0":
+		return TimeoutSpec{}, nil
+	}
+	d, err := time.ParseDuration(spec)
+	if err != nil {
+		return TimeoutSpec{}, fmt.Errorf("invalid duration %q: %w", spec, err)
+	}
+	if d <= 0 {
+		return TimeoutSpec{}, fmt.Errorf("invalid duration %q: must be positive", spec)
+	}
+	return TimeoutSpec{Duration: d, Enabled: true}, nil
+}
+
 // Config is the top-level mini configuration.
 type Config struct {
 	// DefaultStringLimit is the default max chars for string fields across all
@@ -124,10 +155,10 @@ type ServerConfig struct {
 	// Set to "0" to disable (not recommended for production).
 	HTTPClientTimeout string `yaml:"http_client_timeout,omitempty"`
 
-	// ConnectTimeout is the deadline for the startup handshake with this upstream —
+	// HandshakeTimeout is the deadline for the startup handshake with this upstream —
 	// subprocess spawn (stdio) or initialize (HTTP) through the first tools/list.
-	// Default "10s", "0" = no deadline.
-	ConnectTimeout string `yaml:"connect_timeout,omitempty"`
+	// Default "30s", "0" = no deadline.
+	HandshakeTimeout string `yaml:"handshake_timeout,omitempty"`
 
 	// MaxPendingRequests is the max number of concurrent in-flight calls to this
 	// upstream. New requests beyond this limit are rejected immediately with an

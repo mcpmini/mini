@@ -30,13 +30,13 @@ func newNpxServer(t *testing.T) *server.Server {
 	return srv
 }
 
-// npx -y downloads the package on a cold cache, which can exceed the 10s
-// default connect_timeout on slow CI runners.
-const npxConnectTimeout = "60s"
+// npx -y downloads the package on a cold cache, which can exceed the 30s
+// default handshake_timeout on slow CI runners.
+const npxHandshakeTimeout = "60s"
 
 func addFSUpstream(t *testing.T, srv *server.Server, name, dir string) {
 	t.Helper()
-	sc := config.ServerConfig{Name: name, Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}, ConnectTimeout: npxConnectTimeout}
+	sc := config.ServerConfig{Name: name, Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}, HandshakeTimeout: npxHandshakeTimeout}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("connect %s: %v", name, err)
 	}
@@ -49,7 +49,7 @@ func fsServer(t *testing.T, dir string) *server.Server {
 		Name: "fs", Command: "npx",
 		Args:           []string{"-y", "@modelcontextprotocol/server-filesystem", dir},
 		Permissions:    &config.PermissionsConfig{Protected: []string{"write_file", "create_directory", "move_file", "delete_file", "edit_file"}},
-		ConnectTimeout: npxConnectTimeout,
+		HandshakeTimeout: npxHandshakeTimeout,
 	}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("connect: %v", err)
@@ -110,7 +110,7 @@ func TestReadFileTruncation(t *testing.T) {
 	if _, err := exec.LookPath("npx"); err != nil {
 		t.Skip("npx not available")
 	}
-	sc := config.ServerConfig{Name: "fs", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}, ConnectTimeout: npxConnectTimeout}
+	sc := config.ServerConfig{Name: "fs", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}, HandshakeTimeout: npxHandshakeTimeout}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -165,7 +165,7 @@ func assertAddServer(t *testing.T, srv *server.Server, dir string) {
 		"action": "add_server",
 		"config": map[string]any{"name": "dynamic_fs", "command": "npx",
 			"args":            []string{"-y", "@modelcontextprotocol/server-filesystem", dir},
-			"connect_timeout": npxConnectTimeout},
+			"handshake_timeout": npxHandshakeTimeout},
 	}))
 	text := toolResultText(t, resp)
 	var result map[string]any
@@ -213,7 +213,7 @@ func TestStdioEnvPassthrough(t *testing.T) {
 	}
 }
 
-func TestAddUpstream_connectTimeoutSkipsHungStdioSubprocess(t *testing.T) {
+func TestAddUpstream_handshakeTimeoutSkipsHungStdioSubprocess(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -223,7 +223,7 @@ func TestAddUpstream_connectTimeoutSkipsHungStdioSubprocess(t *testing.T) {
 		Name:           "hungupstream",
 		Command:        "sleep",
 		Args:           []string{"30"},
-		ConnectTimeout: "100ms",
+		HandshakeTimeout: "100ms",
 	}
 	start := time.Now()
 	err := srv.AddUpstream(context.Background(), sc)
@@ -233,7 +233,7 @@ func TestAddUpstream_connectTimeoutSkipsHungStdioSubprocess(t *testing.T) {
 		t.Fatal("expected AddUpstream to fail for an upstream that never answers initialize")
 	}
 	if elapsed >= 5*time.Second {
-		t.Fatalf("AddUpstream did not respect connect_timeout, took %v", elapsed)
+		t.Fatalf("AddUpstream did not respect handshake_timeout, took %v", elapsed)
 	}
 }
 
