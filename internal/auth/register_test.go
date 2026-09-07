@@ -28,6 +28,9 @@ func TestRegister_success(t *testing.T) {
 		if body["client_name"] != "mini" {
 			t.Errorf("expected client_name=mini, got %v", body["client_name"])
 		}
+		if body["application_type"] != "native" {
+			t.Errorf("expected application_type=native, got %v", body["application_type"])
+		}
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]string{"client_id": "test-client-id"}) //nolint:errcheck
 	}))

@@ -17,6 +17,7 @@ type registrationRequest struct {
 	GrantTypes              []string `json:"grant_types"`
 	ResponseTypes           []string `json:"response_types"`
 	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+	ApplicationType         string   `json:"application_type,omitempty"`
 }
 
 // LoopbackCallbackPath is the redirect URI path used for all OAuth callback listeners.
@@ -58,6 +59,8 @@ func Register(ctx context.Context, registrationURL, callbackURI string) (Registr
 		GrantTypes:              []string{"authorization_code", "refresh_token"},
 		ResponseTypes:           []string{"code"},
 		TokenEndpointAuthMethod: "none",
+		// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/b488c16623e5202a3961e551886044577ae0f096/docs/specification/2026-07-28/basic/authorization/client-registration.mdx?plain=1#L160-L167
+		ApplicationType: "native",
 	})
 	resp, err := postRegistration(ctx, registrationURL, body)
 	if err != nil {
