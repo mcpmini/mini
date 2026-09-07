@@ -104,30 +104,27 @@ func TestFromAnyFallbackPreservesPointerMarshalerAddressability(t *testing.T) {
 }
 
 func TestFromAnyFallbackPreservesNestedPointerMarshalers(t *testing.T) {
-	newRoot := func(bad float64) scrubNestedRoot {
-		return scrubNestedRoot{
-			Bad: bad,
-			Nested: scrubNestedValue{
-				Value: scrubPointerValue{Raw: "source"},
-				Text:  scrubPointerTextValue{Raw: "source"},
-				Items: [1]scrubPointerValue{{Raw: "source"}},
-			},
-		}
-	}
 	cases := []struct {
 		name   string
 		input  func() any
 		finite func() any
 	}{
-		{name: "pointer record", input: func() any { v := newRoot(math.NaN()); return &v }, finite: func() any { v := newRoot(1); return &v }},
-		{name: "record value", input: func() any { return newRoot(math.NaN()) }, finite: func() any { return newRoot(1) }},
-		{name: "map value", input: func() any { return map[string]scrubNestedRoot{"root": newRoot(math.NaN())} }, finite: func() any { return map[string]scrubNestedRoot{"root": newRoot(1)} }},
+		{name: "pointer record", input: func() any { v := newScrubNestedRoot(math.NaN()); return &v }, finite: func() any { v := newScrubNestedRoot(1); return &v }},
+		{name: "record value", input: func() any { return newScrubNestedRoot(math.NaN()) }, finite: func() any { return newScrubNestedRoot(1) }},
+		{name: "map value", input: func() any { return map[string]scrubNestedRoot{"root": newScrubNestedRoot(math.NaN())} }, finite: func() any { return map[string]scrubNestedRoot{"root": newScrubNestedRoot(1)} }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			assertFallbackMatchesFiniteBaseline(t, tc.input(), tc.finite())
 		})
 	}
+}
+
+func newScrubNestedRoot(bad float64) scrubNestedRoot {
+	return scrubNestedRoot{Bad: bad, Nested: scrubNestedValue{
+		Value: scrubPointerValue{Raw: "source"}, Text: scrubPointerTextValue{Raw: "source"},
+		Items: [1]scrubPointerValue{{Raw: "source"}},
+	}}
 }
 
 func assertFallbackMatchesFiniteBaseline(t *testing.T, input, finite any) {
@@ -185,29 +182,23 @@ func TestFromAnyFallbackOmitZeroHandlesNilInterfaceValues(t *testing.T) {
 		Bad   float64     `json:"bad"`
 		Value scrubZeroer `json:"value,omitzero"`
 	}
-	nilValue := (*scrubNilZeroValue)(nil)
 	cases := []struct {
 		name  string
 		value scrubZeroer
 	}{
 		{name: "nil interface"},
-		{name: "typed nil pointer", value: nilValue},
+		{name: "typed nil pointer", value: (*scrubNilZeroValue)(nil)},
 		{name: "non-nil zero", value: &scrubNilZeroValue{zero: true}},
 		{name: "non-nil nonzero", value: &scrubNilZeroValue{zero: false}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, input := range []struct {
-				name string
-				v    any
-			}{
-				{name: "record", v: record{Bad: math.NaN(), Value: tc.value}},
-				{name: "pointer", v: &record{Bad: math.NaN(), Value: tc.value}},
-			} {
-				t.Run(input.name, func(t *testing.T) {
-					assertFallbackMatchesFiniteBaseline(t, input.v, record{Bad: 1, Value: tc.value})
-				})
-			}
+			t.Run("record", func(t *testing.T) {
+				assertFallbackMatchesFiniteBaseline(t, record{Bad: math.NaN(), Value: tc.value}, record{Bad: 1, Value: tc.value})
+			})
+			t.Run("pointer", func(t *testing.T) {
+				assertFallbackMatchesFiniteBaseline(t, &record{Bad: math.NaN(), Value: tc.value}, &record{Bad: 1, Value: tc.value})
+			})
 		})
 	}
 }
