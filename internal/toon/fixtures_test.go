@@ -59,19 +59,7 @@ var fixtureSkips = map[string]string{
 	"delimiters.json/preserves ambiguity quoting regardless of delimiter":  "pipe delimiter option not implemented; delimiter fixed to comma",
 	"whitespace.json/respects custom indentSize option":                    "indent option not implemented; indent fixed to 2 spaces",
 
-	"objects-keyed.json/encodes objects of uniform objects in keyed tabular form":         "keyed tabular form not yet implemented",
-	"objects-keyed.json/encodes an eligible root object with a keyless keyed header":      "keyed tabular form not yet implemented",
-	"objects-keyed.json/collapses uniform nested object columns inside keyed headers":     "keyed tabular form not yet implemented",
-	"objects-keyed.json/orders fields by the first entry value's encounter order":         "keyed tabular form not yet implemented",
-	"objects-keyed.json/uses the active delimiter in keyed headers and entry-row cells":   "keyed tabular form not yet implemented",
-	"objects-keyed.json/quotes entry keys per key encoding":                               "keyed tabular form not yet implemented",
-	"objects-keyed.json/quotes entry-row cells containing the active delimiter":           "keyed tabular form not yet implemented",
-	"objects-keyed.json/keeps single-entry objects in nested form":                        "keyed tabular form not yet implemented",
-	"objects-keyed.json/keeps objects in nested form when entry values have differing key sets": "keyed tabular form not yet implemented",
-	"objects-keyed.json/keeps objects in nested form when a value is primitive":           "keyed tabular form not yet implemented",
-	"objects-keyed.json/keeps objects in nested form when an entry value contains an array": "keyed tabular form not yet implemented",
-	"objects-keyed.json/emits a keyed header on the hyphen line when it is the first field of a list item": "keyed tabular form not yet implemented",
-	"objects-keyed.json/never encodes an anonymous array element in keyed tabular form":   "keyed tabular form not yet implemented",
+	"objects-keyed.json/uses the active delimiter in keyed headers and entry-row cells":   "pipe delimiter option not implemented; delimiter fixed to comma",
 
 	"arrays-tabular.json/uses the active delimiter inside nested field groups": "pipe delimiter option not implemented; delimiter fixed to comma",
 }

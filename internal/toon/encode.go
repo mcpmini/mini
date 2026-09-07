@@ -53,6 +53,14 @@ func encodeRootArray(items []Value) (string, error) {
 }
 
 func encodeRootObject(fields []Field) (string, error) {
+	v := Value{Kind: KindObject, Fields: fields}
+	if cols, ok := keyedTabularCols(v); ok {
+		var sb strings.Builder
+		if err := writeKeyedTabular(&sb, "", v, cols, 1); err != nil {
+			return "", err
+		}
+		return strings.TrimSuffix(sb.String(), "\n"), nil
+	}
 	var sb strings.Builder
 	if err := writeFields(&sb, fields, 0); err != nil {
 		return "", err
@@ -90,6 +98,11 @@ func writeFieldBody(sb *strings.Builder, f Field, depth int) error {
 	if f.Val.Kind == KindArray {
 		ctx := arrayCtx{Key: encodeKey(f.Key), ItemDepth: depth + 1, AllowTabular: true, FieldEmpty: true}
 		return writeArray(sb, f.Val.Items, ctx)
+	}
+	if f.Val.Kind == KindObject {
+		if cols, ok := keyedTabularCols(f.Val); ok {
+			return writeKeyedTabular(sb, encodeKey(f.Key), f.Val, cols, depth+1)
+		}
 	}
 	if err := appendString(sb, encodeKey(f.Key)); err != nil {
 		return err
