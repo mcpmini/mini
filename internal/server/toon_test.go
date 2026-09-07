@@ -205,10 +205,11 @@ func TestEncodeToonRejectsDepthLimit(t *testing.T) {
 }
 
 func TestEncodeToonRejectsSizeLimit(t *testing.T) {
-	const entryCount = 110000 // clears the 4MB cap; 100K lands just under it
+	const entryCount = 110000
+	longVal := strings.Repeat("x", 30) // keyed tabular compresses rows; longer values ensure 4MB cap is hit
 	entries := make(map[string]any, entryCount)
 	for i := 0; i < entryCount; i++ {
-		entries[fmt.Sprintf("k%d", i)] = map[string]any{"a": i, "b": "value"}
+		entries[fmt.Sprintf("k%d", i)] = map[string]any{"a": i, "b": longVal}
 	}
 	data := map[string]any{"entries": entries}
 
