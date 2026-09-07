@@ -74,7 +74,8 @@ func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceF
 		cancel()
 		return pkceFlowResult{}, err
 	}
-	if err := auth.ResolveEndpoints(authCtx, s.configDir, serverName, &sc); err != nil {
+	resolveParams := auth.ResolveEndpointsParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
+	if err := auth.ResolveEndpoints(authCtx, &sc, resolveParams); err != nil {
 		listener.Close() //nolint:errcheck
 		cancel()
 		return pkceFlowResult{}, fmt.Errorf("resolve oauth endpoints: %w", err)

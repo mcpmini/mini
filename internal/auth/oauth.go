@@ -26,9 +26,21 @@ func configFrom(ac *config.AuthConfig) *oauth2.Config {
 		ClientSecret: ac.ClientSecret,
 		Scopes:       ac.Scopes,
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  ac.AuthURL,
-			TokenURL: ac.TokenURL,
+			AuthURL:   ac.AuthURL,
+			TokenURL:  ac.TokenURL,
+			AuthStyle: tokenAuthStyle(ac.TokenEndpointAuthMethod),
 		},
+	}
+}
+
+func tokenAuthStyle(method string) oauth2.AuthStyle {
+	switch method {
+	case "client_secret_basic":
+		return oauth2.AuthStyleInHeader
+	case "client_secret_post":
+		return oauth2.AuthStyleInParams
+	default:
+		return oauth2.AuthStyleAutoDetect
 	}
 }
 

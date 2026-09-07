@@ -11,8 +11,13 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
+
+func resolveParams(configDir, serverName string) auth.ResolveEndpointsParams {
+	return auth.ResolveEndpointsParams{ConfigDir: configDir, ServerName: serverName, Clock: clock.System()}
+}
 
 func TestApplyBearerToken(t *testing.T) {
 	tests := []struct {
@@ -47,7 +52,7 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2"},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc); err != nil {
+	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if sc.Auth.ClientID != auth.ClientMetadataURL {
@@ -78,7 +83,7 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2"},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), dir, "srv", sc); err != nil {
+	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(dir, "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if sc.Auth.ClientID != "cached-id" {
@@ -108,7 +113,7 @@ func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2"},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc); err != nil {
+	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if !dcrCalled {
@@ -155,7 +160,7 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 				URL:  asSrv.URL + "/mcp",
 				Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured"},
 			}
-			err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc)
+			err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
 			if err == nil {
 				t.Fatal("expected loopback endpoint validation error")
 			}
@@ -194,7 +199,7 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 		URL:  mcpSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured"},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc); err != nil {
+	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if len(sc.Auth.Scopes) != 2 || sc.Auth.Scopes[0] != "channels:read" {
@@ -215,7 +220,7 @@ func TestResolveEndpoints_userScopesNotOverwritten(t *testing.T) {
 		URL:  asSrv.URL + "/mcp",
 		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "pre-configured", Scopes: []string{"custom:scope"}},
 	}
-	if err := auth.ResolveEndpoints(context.Background(), t.TempDir(), "srv", sc); err != nil {
+	if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
 		t.Fatal(err)
 	}
 	if len(sc.Auth.Scopes) != 1 || sc.Auth.Scopes[0] != "custom:scope" {
