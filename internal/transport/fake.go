@@ -89,3 +89,16 @@ func (f *FakeConnection) ListToolsCallCount() int {
 	defer f.mu.Unlock()
 	return f.ListToolsCalls
 }
+
+// RespondWith sets the tools/call response to return v as MCP text content.
+// v is JSON-marshaled and placed in the content text field, which mini parses
+// and unwraps during response processing.
+func (f *FakeConnection) RespondWith(v any) {
+	text, _ := json.Marshal(v)
+	resp, _ := json.Marshal(map[string]any{
+		"content": []any{map[string]any{"type": "text", "text": string(text)}},
+	})
+	f.mu.Lock()
+	f.Responses["tools/call"] = resp
+	f.mu.Unlock()
+}
