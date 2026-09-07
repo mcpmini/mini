@@ -261,7 +261,7 @@ func isJSONZeroValue(rv reflect.Value) bool {
 	t := rv.Type()
 	switch {
 	case t.Kind() == reflect.Interface && t.Implements(jsonZeroerType):
-		return rv.IsNil() || callJSONZero(rv)
+		return rv.IsNil() || rv.Elem().Kind() == reflect.Pointer && rv.Elem().IsNil() || callJSONZero(rv)
 	case t.Kind() == reflect.Pointer && t.Implements(jsonZeroerType):
 		return rv.IsNil() || callJSONZero(rv)
 	case t.Implements(jsonZeroerType):
