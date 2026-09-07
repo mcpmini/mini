@@ -4,22 +4,21 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
-// numericLikeRE mirrors spec §7.2's /^-?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.
-// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#72-quoting-rules-for-string-values
-var numericLikeRE = regexp.MustCompile(`(?i)^-?\d+(\.\d+)?(e[+-]?\d+)?$`)
+// numericLikeRE mirrors spec §7.2's /^[+-]?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.
+// See https://github.com/toon-format/spec/blob/main/SPEC.md#72-quoting-rules-for-string-values
+var numericLikeRE = regexp.MustCompile(`(?i)^[+-]?\d+(\.\d+)?(e[+-]?\d+)?$`)
 
 // unquotedKeyRE mirrors spec §7.3's ^[A-Za-z_][A-Za-z0-9_.]*$.
-// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#73-key-encoding
+// See https://github.com/toon-format/spec/blob/main/SPEC.md#73-key-encoding
 var unquotedKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
 
 // structuralChars is spec §7.2's always-quote set (colon, quote, backslash,
 // brackets/braces) plus the document delimiter, hardcoded to comma per 1a's
 // locked options (no delimiter option plumbing yet).
-// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#72-quoting-rules-for-string-values
+// See https://github.com/toon-format/spec/blob/main/SPEC.md#72-quoting-rules-for-string-values
 const structuralChars = ":\"\\[]{},"
 
 func encodeString(s string) string {
@@ -47,7 +46,7 @@ func needsQuoting(s string) bool {
 	if s == "" {
 		return true
 	}
-	if hasLeadingOrTrailingWhitespace(s) {
+	if hasLeadingOrTrailingASCIISpace(s) {
 		return true
 	}
 	if s == "true" || s == "false" || s == "null" {
@@ -62,13 +61,22 @@ func needsQuoting(s string) bool {
 	if containsControlChar(s) {
 		return true
 	}
+	if strings.HasPrefix(s, "#") {
+		return true
+	}
 	return strings.HasPrefix(s, "-")
 }
 
-func hasLeadingOrTrailingWhitespace(s string) bool {
+// hasLeadingOrTrailingASCIISpace checks only ASCII whitespace because spec §7.2
+// requires quoting only for ASCII leading/trailing spaces, not Unicode whitespace.
+func hasLeadingOrTrailingASCIISpace(s string) bool {
 	first, _ := utf8.DecodeRuneInString(s)
 	last, _ := utf8.DecodeLastRuneInString(s)
-	return unicode.IsSpace(first) || unicode.IsSpace(last)
+	return isASCIISpace(first) || isASCIISpace(last)
+}
+
+func isASCIISpace(r rune) bool {
+	return r < 0x80 && (r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\f' || r == '\v')
 }
 
 func containsControlChar(s string) bool {

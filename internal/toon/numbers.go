@@ -10,7 +10,7 @@ import (
 // canonicalizeNumber applies spec §2: integer lexemes (no '.', no e/E) keep
 // their digits verbatim so values beyond 2^53 survive exactly; everything
 // else goes through float64 formatting.
-// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#2-data-model
+// See https://github.com/toon-format/spec/blob/main/SPEC.md#2-data-model
 func canonicalizeNumber(lexeme string) (string, error) {
 	if !strings.ContainsAny(lexeme, ".eE") {
 		return canonicalInteger(lexeme)
@@ -46,7 +46,7 @@ func isDigits(s string) bool {
 // canonicalFloat parses decimal/exponent lexemes. Values outside float64's
 // finite range — overflow (too large) and underflow (too small) — pass through
 // textually per spec §2 out-of-domain policy.
-// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#2-data-model
+// See https://github.com/toon-format/spec/blob/main/SPEC.md#2-data-model
 func canonicalFloat(lexeme string) (string, error) {
 	if !isValidJSONNumberLexeme(lexeme) {
 		return "", fmt.Errorf("toon: malformed number %q", lexeme)
@@ -180,7 +180,7 @@ func consumeDigitRun(s string, pos int) int {
 
 // FromJSON/FromAny already hand encodeNum a canonical lexeme; Values built by
 // hand (e.g. "-0", "1.0") must still satisfy spec §2 on output.
-// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#2-data-model
+// See https://github.com/toon-format/spec/blob/main/SPEC.md#2-data-model
 func encodeNum(v Value) (string, error) {
 	return canonicalizeNumber(v.Num)
 }

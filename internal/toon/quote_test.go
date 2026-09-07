@@ -31,10 +31,16 @@ func TestNeedsQuoting(t *testing.T) {
 		{"contains delimiter comma", "a,b", true},
 		{"equals hyphen", "-", true},
 		{"starts with hyphen", "-abc", true},
+		{"equals hash", "#", true},
+		{"starts with hash", "#comment", true},
+		{"plus prefix numeric-like", "+1", true},
+		{"plus prefix decimal", "+3.14", true},
 		{"plain word", "abc", false},
 		{"internal space is safe", "hello world", false},
 		{"unicode and emoji safe", "Hello 世界 👋", false},
 		{"hyphen not at position 0 is safe", "a-b", false},
+		{"non-ASCII leading space is safe", " x", false},
+		{"non-ASCII trailing space is safe", "x ", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
