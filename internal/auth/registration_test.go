@@ -114,3 +114,20 @@ func TestSaveRegistration_createsDir(t *testing.T) {
 		t.Errorf("got %q", reg.ClientID)
 	}
 }
+
+func TestLoadRegistration_olderFileWithoutNewFieldsLoadsFine(t *testing.T) {
+	dir := t.TempDir()
+	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "legacy-client"}); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := auth.LoadRegistration(dir, "srv")
+	if err != nil {
+		t.Fatalf("LoadRegistration: %v", err)
+	}
+	if loaded.ClientID != "legacy-client" {
+		t.Errorf("ClientID = %q, want legacy-client", loaded.ClientID)
+	}
+	if loaded.ClientSecret != "" || loaded.TokenEndpointAuthMethod != "" || loaded.ClientSecretExpiresAt != 0 {
+		t.Errorf("expected zero-value new fields for legacy file, got %+v", loaded)
+	}
+}

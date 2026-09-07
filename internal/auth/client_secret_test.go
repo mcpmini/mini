@@ -147,37 +147,54 @@ func assertPostAuth(t *testing.T, label string, obs authObservation, clientID, c
 	}
 }
 
-func TestHydratedRegistration_clientSecretBasicAuthenticatesExchangeAndRefresh(t *testing.T) {
-	tokenSrv := newCapturingTokenServer(t)
-	reg := &auth.Registration{
-		ClientID:                "hydrated-basic-client",
-		ClientSecret:            "sk-test-usurp-basic",
-		TokenEndpointAuthMethod: "client_secret_basic",
+func TestHydratedRegistration_authStyleOnExchangeAndRefresh(t *testing.T) {
+	cases := []struct {
+		name       string
+		reg        *auth.Registration
+		wantMethod string
+		assertFn   func(t *testing.T, label string, obs authObservation, clientID, clientSecret string)
+	}{
+		{
+			name: "client_secret_basic",
+			reg: &auth.Registration{
+				ClientID: "hydrated-basic-client", ClientSecret: "sk-test-usurp-basic",
+				TokenEndpointAuthMethod: "client_secret_basic",
+			},
+			wantMethod: "client_secret_basic",
+			assertFn:   assertBasicAuth,
+		},
+		{
+			name: "client_secret_post",
+			reg: &auth.Registration{
+				ClientID: "hydrated-post-client", ClientSecret: "sk-test-usurp-post",
+				TokenEndpointAuthMethod: "client_secret_post",
+			},
+			wantMethod: "client_secret_post",
+			assertFn:   assertPostAuth,
+		},
+		{
+			name: "omitted method defaults to client_secret_basic",
+			reg: &auth.Registration{
+				ClientID: "omitted-method-client", ClientSecret: "sk-test-usurp-omitted",
+			},
+			wantMethod: "client_secret_basic",
+			assertFn:   assertBasicAuth,
+		},
 	}
-	ac := hydrateFromSavedRegistration(t, reg, tokenSrv.srv.URL, clock.System())
-	if ac.ClientSecret != reg.ClientSecret || ac.TokenEndpointAuthMethod != reg.TokenEndpointAuthMethod {
-		t.Fatalf("hydration did not copy registration fields onto AuthConfig: %+v", ac)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tokenSrv := newCapturingTokenServer(t)
+			ac := hydrateFromSavedRegistration(t, tc.reg, tokenSrv.srv.URL, clock.System())
+			if ac.TokenEndpointAuthMethod != tc.wantMethod {
+				t.Fatalf("TokenEndpointAuthMethod = %q, want %q", ac.TokenEndpointAuthMethod, tc.wantMethod)
+			}
+
+			exchangeAndRefresh(t, ac)
+
+			tc.assertFn(t, "exchange", tokenSrv.exchange, tc.reg.ClientID, tc.reg.ClientSecret)
+			tc.assertFn(t, "refresh", tokenSrv.refresh, tc.reg.ClientID, tc.reg.ClientSecret)
+		})
 	}
-
-	exchangeAndRefresh(t, ac)
-
-	assertBasicAuth(t, "exchange", tokenSrv.exchange, reg.ClientID, reg.ClientSecret)
-	assertBasicAuth(t, "refresh", tokenSrv.refresh, reg.ClientID, reg.ClientSecret)
-}
-
-func TestHydratedRegistration_clientSecretPostAuthenticatesExchangeAndRefresh(t *testing.T) {
-	tokenSrv := newCapturingTokenServer(t)
-	reg := &auth.Registration{
-		ClientID:                "hydrated-post-client",
-		ClientSecret:            "sk-test-usurp-post",
-		TokenEndpointAuthMethod: "client_secret_post",
-	}
-	ac := hydrateFromSavedRegistration(t, reg, tokenSrv.srv.URL, clock.System())
-
-	exchangeAndRefresh(t, ac)
-
-	assertPostAuth(t, "exchange", tokenSrv.exchange, reg.ClientID, reg.ClientSecret)
-	assertPostAuth(t, "refresh", tokenSrv.refresh, reg.ClientID, reg.ClientSecret)
 }
 
 func TestHydratedRegistration_noSecretLeavesPublicClientUnchanged(t *testing.T) {
@@ -193,23 +210,6 @@ func TestHydratedRegistration_noSecretLeavesPublicClientUnchanged(t *testing.T) 
 
 	if tokenSrv.exchange.formClientSecret != "" || tokenSrv.refresh.formClientSecret != "" {
 		t.Error("client_secret sent for a public client registration")
-	}
-}
-
-func TestHydratedRegistration_olderFileWithoutNewFieldsLoadsFine(t *testing.T) {
-	dir := t.TempDir()
-	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "legacy-client"}); err != nil {
-		t.Fatal(err)
-	}
-	loaded, err := auth.LoadRegistration(dir, "srv")
-	if err != nil {
-		t.Fatalf("LoadRegistration: %v", err)
-	}
-	if loaded.ClientID != "legacy-client" {
-		t.Errorf("ClientID = %q, want legacy-client", loaded.ClientID)
-	}
-	if loaded.ClientSecret != "" || loaded.TokenEndpointAuthMethod != "" || loaded.ClientSecretExpiresAt != 0 {
-		t.Errorf("expected zero-value new fields for legacy file, got %+v", loaded)
 	}
 }
 
@@ -337,23 +337,6 @@ func TestResolveEndpoints_freshDCRCapturesAndPersistsConfidentialClient(t *testi
 	}
 }
 
-func TestRegistrationOmittedMethod_normalizedToClientSecretBasic(t *testing.T) {
-	tokenSrv := newCapturingTokenServer(t)
-	reg := &auth.Registration{
-		ClientID:     "omitted-method-client",
-		ClientSecret: "sk-test-usurp-omitted",
-	}
-	ac := hydrateFromSavedRegistration(t, reg, tokenSrv.srv.URL, clock.System())
-	if ac.TokenEndpointAuthMethod != "client_secret_basic" {
-		t.Fatalf("omitted method must normalize to client_secret_basic, got %q", ac.TokenEndpointAuthMethod)
-	}
-
-	exchangeAndRefresh(t, ac)
-
-	assertBasicAuth(t, "exchange", tokenSrv.exchange, reg.ClientID, reg.ClientSecret)
-	assertBasicAuth(t, "refresh", tokenSrv.refresh, reg.ClientID, reg.ClientSecret)
-}
-
 func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthConfig, *capturingTokenServer) {
 	t.Helper()
 	tokenSrv := newCapturingTokenServer(t)
@@ -387,31 +370,41 @@ func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthC
 	return sc.Auth, tokenSrv
 }
 
-func TestFreshDCR_confidentialClientExchangeUsesCorrectAuthStyle(t *testing.T) {
-	ac, tokenSrv := freshDCRToExchange(t, map[string]any{
-		"client_id":                  "dcr-e2e-client",
-		"client_secret":              "sk-test-usurp-dcr-e2e",
-		"token_endpoint_auth_method": "client_secret_post",
-		"client_secret_expires_at":   0,
-	})
+func TestFreshDCR_exchangeUsesCorrectAuthStyle(t *testing.T) {
+	cases := []struct {
+		name     string
+		dcr      map[string]any
+		assertFn func(t *testing.T, label string, obs authObservation, clientID, clientSecret string)
+	}{
+		{
+			name: "explicit client_secret_post",
+			dcr: map[string]any{
+				"client_id": "dcr-e2e-client", "client_secret": "sk-test-usurp-dcr-e2e",
+				"token_endpoint_auth_method": "client_secret_post", "client_secret_expires_at": 0,
+			},
+			assertFn: assertPostAuth,
+		},
+		{
+			name: "omitted method defaults to basic",
+			dcr: map[string]any{
+				"client_id": "supabase-style-client", "client_secret": "sk-test-usurp-supabase",
+				"client_secret_expires_at": 0,
+			},
+			assertFn: assertBasicAuth,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ac, tokenSrv := freshDCRToExchange(t, tc.dcr)
 
-	exchangeAndRefresh(t, ac)
+			exchangeAndRefresh(t, ac)
 
-	assertPostAuth(t, "exchange", tokenSrv.exchange, "dcr-e2e-client", "sk-test-usurp-dcr-e2e")
-	assertPostAuth(t, "refresh", tokenSrv.refresh, "dcr-e2e-client", "sk-test-usurp-dcr-e2e")
-}
-
-func TestFreshDCR_omittedMethodDefaultsToBasicAuth(t *testing.T) {
-	ac, tokenSrv := freshDCRToExchange(t, map[string]any{
-		"client_id":                "supabase-style-client",
-		"client_secret":            "sk-test-usurp-supabase",
-		"client_secret_expires_at": 0,
-	})
-
-	exchangeAndRefresh(t, ac)
-
-	assertBasicAuth(t, "exchange", tokenSrv.exchange, "supabase-style-client", "sk-test-usurp-supabase")
-	assertBasicAuth(t, "refresh", tokenSrv.refresh, "supabase-style-client", "sk-test-usurp-supabase")
+			clientID := tc.dcr["client_id"].(string)
+			clientSecret := tc.dcr["client_secret"].(string)
+			tc.assertFn(t, "exchange", tokenSrv.exchange, clientID, clientSecret)
+			tc.assertFn(t, "refresh", tokenSrv.refresh, clientID, clientSecret)
+		})
+	}
 }
 
 func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
