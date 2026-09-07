@@ -43,6 +43,12 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Build test helpers
+        run: |
+          testbin=$(mktemp -d)
+          go build -o "$testbin/echomcp" ./cmd/echomcp
+          echo "ECHOMCP_BIN=$testbin/echomcp" >> "$GITHUB_ENV"
+
       - name: Unit tests
         run: go test -race -tags test -timeout 120s ./...
 
