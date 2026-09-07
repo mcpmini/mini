@@ -73,13 +73,7 @@ var fixtureSkips = map[string]string{
 	"objects-keyed.json/emits a keyed header on the hyphen line when it is the first field of a list item": "keyed tabular form not yet implemented",
 	"objects-keyed.json/never encodes an anonymous array element in keyed tabular form":   "keyed tabular form not yet implemented",
 
-	"arrays-tabular.json/collapses a uniform nested object column into a nested field group":  "nested field groups not yet implemented",
-	"arrays-tabular.json/collapses sibling nested field groups with depth-first row layout":   "nested field groups not yet implemented",
-	"arrays-tabular.json/collapses nested field groups recursively without a depth cap":       "nested field groups not yet implemented",
-	"arrays-tabular.json/uses the active delimiter inside nested field groups":                "nested field groups not yet implemented",
-	"arrays-tabular.json/quotes subfield names inside nested field groups per key encoding":   "nested field groups not yet implemented",
-
-	"arrays-objects.json/encodes a keyed-eligible object in a tabular column as a nested field group": "nested field groups not yet implemented",
+	"arrays-tabular.json/uses the active delimiter inside nested field groups": "pipe delimiter option not implemented; delimiter fixed to comma",
 }
 
 func TestSpecEncodeFixtures(t *testing.T) {
