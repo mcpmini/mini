@@ -19,10 +19,8 @@ type fixtureCase struct {
 }
 
 type fixtureOptions struct {
-	Delimiter    string `json:"delimiter"`
-	Indent       *int   `json:"indent"`
-	KeyFolding   string `json:"keyFolding"`
-	FlattenDepth *int   `json:"flattenDepth"`
+	Delimiter string `json:"delimiter"`
+	Indent    *int   `json:"indent"`
 }
 
 func (o fixtureOptions) matchesLockedConfig() bool {
@@ -32,15 +30,12 @@ func (o fixtureOptions) matchesLockedConfig() bool {
 	if o.Indent != nil && *o.Indent != 2 {
 		return false
 	}
-	if o.KeyFolding != "" && o.KeyFolding != "safe" {
-		return false
-	}
-	return o.FlattenDepth == nil
+	return true
 }
 
 // fixtureSkips lists vendored spec fixtures that exercise behavior outside
-// mini's locked encoder configuration (comma delimiter, 2-space indent, key
-// folding always on with unlimited depth). Keys are "<file>/<test name>".
+// mini's locked encoder configuration (comma delimiter, 2-space indent).
+// Keys are "<file>/<test name>".
 var fixtureSkips = map[string]string{
 	"delimiters.json/encodes primitive arrays with tab delimiter":          "tab delimiter option not implemented; delimiter fixed to comma",
 	"delimiters.json/encodes primitive arrays with pipe delimiter":         "pipe delimiter option not implemented; delimiter fixed to comma",
@@ -62,13 +57,29 @@ var fixtureSkips = map[string]string{
 	"delimiters.json/quotes nested array values containing pipe delimiter": "pipe delimiter option not implemented; delimiter fixed to comma",
 	"delimiters.json/quotes nested array values containing tab delimiter":  "tab delimiter option not implemented; delimiter fixed to comma",
 	"delimiters.json/preserves ambiguity quoting regardless of delimiter":  "pipe delimiter option not implemented; delimiter fixed to comma",
-	"whitespace.json/respects custom indent size option":                   "indent option not implemented; indent fixed to 2 spaces",
-	"key-folding.json/encodes partial folding with flattenDepth=2":         "flattenDepth option not implemented; folding depth fixed to unlimited",
-	"key-folding.json/encodes standard nesting with flattenDepth=0 (no folding)": "flattenDepth option not implemented; folding depth fixed to unlimited",
-	"key-folding.json/encodes standard nesting with keyFolding=off (baseline)":   "keyFolding=off not implemented; folding is always on",
-	"objects.json/encodes deeply nested objects":                           "fixture expects keyFolding=off default; folding is always on and folds a.b.c",
-	"arrays-objects.json/uses list format for objects with nested values":  "fixture expects keyFolding=off default; folding is always on and folds nested.x",
-	"arrays-objects.json/uses list format when one object has nested field": "fixture expects keyFolding=off default; folding is always on and folds data.nested",
+	"whitespace.json/respects custom indentSize option":                    "indent option not implemented; indent fixed to 2 spaces",
+
+	"objects-keyed.json/encodes objects of uniform objects in keyed tabular form":         "keyed tabular form not yet implemented",
+	"objects-keyed.json/encodes an eligible root object with a keyless keyed header":      "keyed tabular form not yet implemented",
+	"objects-keyed.json/collapses uniform nested object columns inside keyed headers":     "keyed tabular form not yet implemented",
+	"objects-keyed.json/orders fields by the first entry value's encounter order":         "keyed tabular form not yet implemented",
+	"objects-keyed.json/uses the active delimiter in keyed headers and entry-row cells":   "keyed tabular form not yet implemented",
+	"objects-keyed.json/quotes entry keys per key encoding":                               "keyed tabular form not yet implemented",
+	"objects-keyed.json/quotes entry-row cells containing the active delimiter":           "keyed tabular form not yet implemented",
+	"objects-keyed.json/keeps single-entry objects in nested form":                        "keyed tabular form not yet implemented",
+	"objects-keyed.json/keeps objects in nested form when entry values have differing key sets": "keyed tabular form not yet implemented",
+	"objects-keyed.json/keeps objects in nested form when a value is primitive":           "keyed tabular form not yet implemented",
+	"objects-keyed.json/keeps objects in nested form when an entry value contains an array": "keyed tabular form not yet implemented",
+	"objects-keyed.json/emits a keyed header on the hyphen line when it is the first field of a list item": "keyed tabular form not yet implemented",
+	"objects-keyed.json/never encodes an anonymous array element in keyed tabular form":   "keyed tabular form not yet implemented",
+
+	"arrays-tabular.json/collapses a uniform nested object column into a nested field group":  "nested field groups not yet implemented",
+	"arrays-tabular.json/collapses sibling nested field groups with depth-first row layout":   "nested field groups not yet implemented",
+	"arrays-tabular.json/collapses nested field groups recursively without a depth cap":       "nested field groups not yet implemented",
+	"arrays-tabular.json/uses the active delimiter inside nested field groups":                "nested field groups not yet implemented",
+	"arrays-tabular.json/quotes subfield names inside nested field groups per key encoding":   "nested field groups not yet implemented",
+
+	"arrays-objects.json/encodes a keyed-eligible object in a tabular column as a nested field group": "nested field groups not yet implemented",
 }
 
 func TestSpecEncodeFixtures(t *testing.T) {

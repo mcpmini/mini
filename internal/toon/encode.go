@@ -26,13 +26,9 @@ func checkDepth(depth int) error {
 	return nil
 }
 
-// Encode renders v as a TOON document per spec §5's root-form rules: a root
-// object emits its fields at indent 0, a root array emits under a bare [N]
-// header, a root scalar emits as a bare value. Key folding (§13.4 safe mode)
-// is always applied first.
-// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#5-concrete-syntax-and-root-form
+// Encode renders v as a TOON document per spec §5 root-form rules.
+// See https://github.com/toon-format/spec/blob/main/SPEC.md#5-concrete-syntax-and-root-form
 func Encode(v Value) (string, error) {
-	v = foldValue(v)
 	switch v.Kind {
 	case KindNull, KindBool, KindNumber, KindString:
 		return encodePrimitive(v)

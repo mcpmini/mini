@@ -172,7 +172,6 @@ func TestEncodeObjectFieldWithUnknownKindErrors(t *testing.T) {
 	}
 }
 
-// Two fields per level so §13.4 safe folding cannot collapse the chain.
 func nestedObj(depth int) Value {
 	v := objVal(Field{Key: "leaf", Val: numVal("1")}, Field{Key: "z", Val: numVal("2")})
 	for range depth {
