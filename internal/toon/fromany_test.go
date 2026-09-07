@@ -321,6 +321,37 @@ func (k stringMarshalKey) MarshalText() ([]byte, error) {
 	return []byte("from-marshal-text"), nil
 }
 
+type nilTextMarshalKey struct{}
+
+func (*nilTextMarshalKey) MarshalText() ([]byte, error) {
+	panic("nil map key MarshalText called")
+}
+
+func TestFromAnyRescuePreservesNilTextMarshalerMapKey(t *testing.T) {
+	finite, err := json.Marshal(map[*nilTextMarshalKey]float64{nil: 1})
+	if err != nil {
+		t.Fatalf("json.Marshal baseline: %v", err)
+	}
+	var baseline map[string]json.RawMessage
+	if err := json.Unmarshal(finite, &baseline); err != nil {
+		t.Fatalf("json.Unmarshal baseline: %v", err)
+	}
+	if _, ok := baseline[""]; !ok {
+		t.Fatalf("baseline = %s, want empty map key", finite)
+	}
+
+	got, err := FromAny(map[*nilTextMarshalKey]float64{nil: math.NaN()})
+	if err != nil {
+		t.Fatalf("FromAny unexpected error: %v", err)
+	}
+	if len(got.Fields) != 1 || got.Fields[0].Key != "" {
+		t.Fatalf("fields = %+v, want one empty-key field", got.Fields)
+	}
+	if got.Fields[0].Val.Kind != KindNull {
+		t.Fatalf("empty-key value = %+v, want KindNull", got.Fields[0].Val)
+	}
+}
+
 func TestFromAnyRescueStringKindKeyBeatsTextMarshaler(t *testing.T) {
 	m := map[stringMarshalKey]any{"raw-string": math.NaN()}
 	want, err := json.Marshal(map[stringMarshalKey]any{"raw-string": 1})

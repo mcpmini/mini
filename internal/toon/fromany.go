@@ -57,7 +57,7 @@ func jsonMapKey(k reflect.Value) (string, bool) {
 	}
 	if tm, ok := k.Interface().(encoding.TextMarshaler); ok {
 		if k.Kind() == reflect.Pointer && k.IsNil() {
-			return "", false
+			return "", true
 		}
 		return invokeMarshalText(tm)
 	}
