@@ -2,6 +2,7 @@ package toon
 
 import (
 	"encoding"
+	"encoding/json"
 	"math"
 	"testing"
 )
@@ -30,11 +31,23 @@ func (v scrubZeroValue) IsZero() bool {
 	return v.zero
 }
 
+type scrubNilZeroValue struct {
+	zero bool
+}
+
+func (v *scrubNilZeroValue) IsZero() bool {
+	return v.zero
+}
+
+type scrubZeroer interface {
+	IsZero() bool
+}
+
 var _ encoding.TextMarshaler = scrubTextValue{}
 
 func TestFromAnyFallbackPreservesTextMarshaler(t *testing.T) {
 	type record struct {
-		Bad float64        `json:"bad"`
+		Bad  float64        `json:"bad"`
 		Text scrubTextValue `json:"text"`
 	}
 	v, err := FromAny(record{Bad: math.NaN(), Text: scrubTextValue{Raw: "source"}})
@@ -49,7 +62,7 @@ func TestFromAnyFallbackPreservesTextMarshaler(t *testing.T) {
 
 func TestFromAnyFallbackPreservesPointerMarshalerAddressability(t *testing.T) {
 	type record struct {
-		Bad float64           `json:"bad"`
+		Bad   float64           `json:"bad"`
 		Value scrubPointerValue `json:"value"`
 	}
 	value, err := FromAny(record{Bad: math.NaN(), Value: scrubPointerValue{Raw: "source"}})
@@ -71,11 +84,11 @@ func TestFromAnyFallbackPreservesPointerMarshalerAddressability(t *testing.T) {
 
 func TestFromAnyFallbackPreservesJSONStringAndOmitZero(t *testing.T) {
 	type record struct {
-		Bad         float64        `json:"bad"`
-		BadString   float64        `json:"bad_string,string"`
-		Count       int            `json:"count,string"`
-		Zero        int            `json:"zero,omitzero"`
-		Nonzero     int            `json:"nonzero,omitzero"`
+		Bad        float64        `json:"bad"`
+		BadString  float64        `json:"bad_string,string"`
+		Count      int            `json:"count,string"`
+		Zero       int            `json:"zero,omitzero"`
+		Nonzero    int            `json:"nonzero,omitzero"`
 		CustomZero scrubZeroValue `json:"custom,omitzero"`
 	}
 	v, err := FromAny(record{Bad: math.NaN(), BadString: math.NaN(), Count: 42, Nonzero: 3, CustomZero: scrubZeroValue{zero: true}})
@@ -97,6 +110,64 @@ func TestFromAnyFallbackPreservesJSONStringAndOmitZero(t *testing.T) {
 	}
 	if _, ok := fields["custom"]; ok {
 		t.Fatal("custom zero field was emitted")
+	}
+}
+
+func TestFromAnyFallbackOmitZeroHandlesNilInterfaceValues(t *testing.T) {
+	type record struct {
+		Bad   float64     `json:"bad"`
+		Value scrubZeroer `json:"value,omitzero"`
+	}
+	nilValue := (*scrubNilZeroValue)(nil)
+	cases := []struct {
+		name  string
+		value scrubZeroer
+		omit  bool
+	}{
+		{name: "nil interface", omit: true},
+		{name: "typed nil pointer", value: nilValue, omit: true},
+		{name: "non-nil zero", value: &scrubNilZeroValue{zero: true}, omit: true},
+		{name: "non-nil nonzero", value: &scrubNilZeroValue{zero: false}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, input := range []struct {
+				name string
+				v    any
+			}{
+				{name: "record", v: record{Bad: math.NaN(), Value: tc.value}},
+				{name: "pointer", v: &record{Bad: math.NaN(), Value: tc.value}},
+			} {
+				t.Run(input.name, func(t *testing.T) {
+					finite := record{Bad: 1, Value: tc.value}
+					baseline, err := json.Marshal(finite)
+					if err != nil {
+						t.Fatalf("json.Marshal baseline: %v", err)
+					}
+					var want map[string]json.RawMessage
+					if err := json.Unmarshal(baseline, &want); err != nil {
+						t.Fatalf("json.Unmarshal baseline: %v", err)
+					}
+					_, wantValue := want["value"]
+					if wantValue == tc.omit {
+						t.Fatalf("baseline value presence = %t, want omit %t", wantValue, tc.omit)
+					}
+
+					got, err := FromAny(input.v)
+					if err != nil {
+						t.Fatalf("FromAny unexpected error: %v", err)
+					}
+					fields := fieldMap(got)
+					if fields["bad"].Kind != KindNull {
+						t.Fatalf("bad = %+v, want KindNull", fields["bad"])
+					}
+					_, gotValue := fields["value"]
+					if gotValue != wantValue {
+						t.Fatalf("value presence = %t, want baseline %t", gotValue, wantValue)
+					}
+				})
+			}
+		})
 	}
 }
 
