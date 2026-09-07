@@ -174,8 +174,16 @@ func (s *Server) reloadProjections() (any, error) {
 
 func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig) {
 	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	// Carry over live projections for runtime-added servers; they have no disk
+	// YAML so loadServerProjections never returns entries for them.
+	for name, live := range s.projections {
+		u := s.upstreams[name]
+		if u != nil && u.cfg.RuntimeAdded {
+			projections[name] = live
+		}
+	}
 	s.projections = projections
-	s.stateMu.Unlock()
 }
 
 func (s *Server) reapplyAliases() {
@@ -265,6 +273,9 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 }
 
 func (s *Server) detachAndCloseServer(serverName string) {
+	// Evict before taking serverOpMu; providerCache has its own lock and
+	// must not be taken under serverOpMu to preserve lock ordering.
+	s.providerCache.Evict(serverName)
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	s.removeGen[serverName]++

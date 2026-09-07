@@ -41,6 +41,8 @@ func (s *Server) connectUpstreamAsync(ctx context.Context, sc config.ServerConfi
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
 	connectCtx, cancel := applyHandshakeTimeout(ctx, sc.HandshakeTimeout)
 	defer cancel()
+	// Evict before dialing so a config change gets a fresh provider via GetOrCreate.
+	s.providerCache.Evict(sc.Name)
 	conn, err := s.dialUpstream(connectCtx, sc)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", sc.Name, err)
@@ -86,6 +88,7 @@ func (s *Server) dialUpstream(ctx context.Context, sc config.ServerConfig) (tran
 	return invoke.Dial(ctx, invoke.DialParams{
 		Logger: s.logger, Config: s.cfg, Server: sc, Clock: s.clock,
 		ConfigDir: s.configDir, UseAuthProvider: s.useAuthProviders,
+		ProviderCache: s.providerCache,
 	})
 }
 
@@ -147,7 +150,9 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.attachNotificationHandler(u, conn)
 	if sc.Projections != nil {
 		s.stateMu.Lock()
-		s.projections[sc.Name] = sc.Projections
+		if s.projections[sc.Name] == nil {
+			s.projections[sc.Name] = sc.Projections
+		}
 		s.stateMu.Unlock()
 	}
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))

@@ -407,3 +407,63 @@ func (c *slowErrConn) ListTools(_ context.Context) ([]transport.ToolDefinition, 
 }
 func (c *slowErrConn) Health(_ context.Context) error { return nil }
 func (c *slowErrConn) Close() error                   { return nil }
+
+func TestReconnect_reauthErrorDoesNotStartReconnect(t *testing.T) {
+	srv := newTestServer(t)
+	reauthErr := fmt.Errorf("svc requires re-authorization: %w", transport.ErrReauthRequired)
+	errConn := &errAfterRegisterConn{
+		tools: []transport.ToolDefinition{
+			{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)},
+		},
+		errFn: func() error { return reauthErr },
+	}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, errConn)
+	serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "ping", "params": map[string]any{},
+	}))
+	if srv.IsReconnecting("svc") {
+		t.Error("ErrReauthRequired should not trigger reconnect")
+	}
+}
+
+func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
+	// HTTP server that always 401s (no valid token will ever satisfy it).
+	authSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer authSrv.Close()
+
+	configDir := t.TempDir()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	fakeClock := clock.NewFake()
+	srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)),
+		server.WithClock(fakeClock), server.WithAuthProviders())
+	defer srv.Close()
+
+	// Initial conn errors on call (non-sentinel) to trigger reconnect loop.
+	var errOnCall bool
+	srv.AddConnection(context.Background(), config.ServerConfig{
+		Name: "svc", Transport: "http", URL: authSrv.URL,
+		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "c", TokenURL: authSrv.URL + "/token"},
+	}, makeErrConn(&errOnCall))
+
+	errOnCall = true
+	assertEnvelopeOK(t, srv, "svc", "ping", false)
+
+	// Advance clock so reconnect loop attempts a redial.
+	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatalf("waiting for reconnect timer: %v", err)
+	}
+	fakeClock.Advance(time.Second)
+
+	// Wait until the loop has run (it will encounter ErrReauthRequired and stop).
+	deadline := time.Now().Add(5 * time.Second)
+	for srv.IsReconnecting("svc") {
+		if time.Now().After(deadline) {
+			t.Fatal("reconnect loop did not stop after ErrReauthRequired")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

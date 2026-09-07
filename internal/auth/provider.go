@@ -21,7 +21,11 @@ type ProviderParams struct {
 	AuthConfig *config.AuthConfig
 	ConfigDir  string
 	ServerName string
-	Clock      clock.Clock
+	// ServerURL is the MCP server's base URL. Required for lazy endpoint
+	// discovery when TokenURL is absent (e.g. after daemon restart with
+	// a bundled/discovered server whose config carries no endpoints).
+	ServerURL string
+	Clock     clock.Clock
 }
 
 func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
@@ -34,6 +38,7 @@ func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
 		ac:         p.AuthConfig,
 		configDir:  p.ConfigDir,
 		serverName: p.ServerName,
+		serverURL:  p.ServerURL,
 		clock:      p.Clock,
 	}, nil
 }
@@ -71,6 +76,7 @@ type tokenProvider struct {
 	ac         *config.AuthConfig
 	configDir  string
 	serverName string
+	serverURL  string
 	clock      clock.Clock
 
 	mu    sync.Mutex
@@ -125,7 +131,26 @@ func (p *tokenProvider) shouldRefreshLocked() bool {
 	return !p.clock.Now().Before(p.token.Expiry.Add(-refreshSkew))
 }
 
+// discoverEndpointsLocked populates missing OAuth endpoints exactly once by
+// running the same discovery chain used during `mini auth`. Called under p.mu
+// so concurrent refreshes share one discovery result without double-fetching.
+func (p *tokenProvider) discoverEndpointsLocked(ctx context.Context) error {
+	if p.ac.TokenURL != "" {
+		return nil
+	}
+	if p.serverURL == "" {
+		return fmt.Errorf("no token endpoint configured and no server URL available for discovery")
+	}
+	if _, err := discoverAndApply(ctx, p.serverURL, p.ac); err != nil {
+		return fmt.Errorf("discover token endpoint: %w", err)
+	}
+	return nil
+}
+
 func (p *tokenProvider) refreshLocked(ctx context.Context) error {
+	if err := p.discoverEndpointsLocked(ctx); err != nil {
+		return p.remedyError(err)
+	}
 	// Clear AccessToken on a copy: oauth2's reuseTokenSource uses the system clock
 	// with a 10s delta, so without this it silently returns the stale token.
 	stale := *p.token
@@ -142,7 +167,7 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 }
 
 func (p *tokenProvider) remedyError(cause error) error {
-	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", p.serverName, p.serverName, cause)
+	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w: %w", p.serverName, p.serverName, transport.ErrReauthRequired, cause)
 }
 
 func bearerValue(t *oauth2.Token) string {
