@@ -13,7 +13,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -24,13 +26,37 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+var echomcpBin string
+
 func TestMain(m *testing.M) {
 	if os.Getenv("MINI_HELPER_PROCESS") == "1" {
 		runEnvEchoServer()
 		os.Exit(0)
 	}
+	var err error
+	echomcpBin, err = buildEchoMCP()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "build echomcp: %v\n", err)
+		os.Exit(1)
+	}
 	auth.UseLoopbackHTTPClient()
 	os.Exit(m.Run())
+}
+
+func buildEchoMCP() (string, error) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(thisFile), "..", "..")
+	tmp, err := os.MkdirTemp("", "mini-test-*")
+	if err != nil {
+		return "", err
+	}
+	out := filepath.Join(tmp, "echomcp")
+	cmd := exec.Command("go", "build", "-o", out, "./cmd/echomcp")
+	cmd.Dir = root
+	if b, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("%v\n%s", err, b)
+	}
+	return out, nil
 }
 
 func runEnvEchoServer() {

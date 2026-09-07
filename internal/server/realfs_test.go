@@ -8,8 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,105 +16,61 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func newNpxServer(t *testing.T) *server.Server {
-	t.Helper()
-	if _, err := exec.LookPath("npx"); err != nil {
-		t.Skip("npx not available")
-	}
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-// npx -y downloads the package on a cold cache, which can exceed the 30s
-// default handshake_timeout on slow CI runners.
-const npxHandshakeTimeout = "60s"
-
-func addFSUpstream(t *testing.T, srv *server.Server, name, dir string) {
-	t.Helper()
-	sc := config.ServerConfig{Name: name, Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}, HandshakeTimeout: npxHandshakeTimeout}
-	if err := srv.AddUpstream(context.Background(), sc); err != nil {
-		t.Fatalf("connect %s: %v", name, err)
-	}
-}
-
-func fsServer(t *testing.T, dir string) *server.Server {
-	t.Helper()
-	srv := newNpxServer(t)
-	sc := config.ServerConfig{
-		Name: "fs", Command: "npx",
-		Args:           []string{"-y", "@modelcontextprotocol/server-filesystem", dir},
-		Permissions:    &config.PermissionsConfig{Protected: []string{"write_file", "create_directory", "move_file", "delete_file", "edit_file"}},
-		HandshakeTimeout: npxHandshakeTimeout,
-	}
-	if err := srv.AddUpstream(context.Background(), sc); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	return srv
-}
-
 func TestListDirectoryNonEmpty(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	os.WriteFile(filepath.Join(dir, "alpha.txt"), []byte("hello"), 0644)
-	os.WriteFile(filepath.Join(dir, "beta.go"), []byte("package main"), 0644)
-	srv := fsServer(t, dir)
+	fake := fakeConn("list_directory")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"entries\":[\"alpha.txt\",\"beta.go\"]}"}]}`)
+	srv := newTestServer(t)
+	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
+
 	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": dir},
+		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
 	}))
 	env := parseEnvelope(t, toolResultText(t, resp))
 	if env["error"] != nil {
 		t.Fatalf("list_directory failed: %v", env)
 	}
-	if env["data"] == nil || env["data"] == "" {
+	if env["data"] == nil {
 		t.Errorf("expected non-empty data, got: %v", env["data"])
 	}
 }
 
-func TestMiniFormatWithRealFS(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	for _, name := range []string{"a.txt", "b.txt", "c.go"} {
-		os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644)
-	}
-	srv := fsServer(t, dir)
+func TestMiniFormatWithUpstream(t *testing.T) {
+	fake := fakeConn("list_directory")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"entries\":[\"a.txt\",\"b.txt\",\"c.go\"]}"}]}`)
+	srv := newTestServer(t)
+	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
+
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "list_directory",
 		"projection": map[string]any{"format": "mini"},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": dir},
+		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
 	}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
 		t.Fatalf("expected mini format, got JSON: %s", text)
 	}
 	if !strings.Contains(text, "[fs.list_directory]") {
-		t.Errorf("missing header line: %s", text)
+		t.Errorf("missing header line in mini format output: %s", text)
 	}
 }
 
 func TestReadFileTruncation(t *testing.T) {
-	dir := realPath(t, t.TempDir())
-	content := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 50)
-	os.WriteFile(filepath.Join(dir, "big.txt"), []byte(content), 0644)
+	longText := strings.Repeat("The quick brown fox jumps over the lazy dog. ", 50)
+	textJSON, _ := json.Marshal(longText)
+	fake := fakeConn("read_file")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + string(textJSON) + `}]}`)
 
-	// Use a global string limit to verify truncation is applied to plain-string responses.
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.DefaultStringLimit = 100
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	t.Cleanup(srv.Close)
-	if _, err := exec.LookPath("npx"); err != nil {
-		t.Skip("npx not available")
-	}
-	sc := config.ServerConfig{Name: "fs", Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", dir}, HandshakeTimeout: npxHandshakeTimeout}
-	if err := srv.AddUpstream(context.Background(), sc); err != nil {
-		t.Fatalf("connect: %v", err)
-	}
+	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
 
 	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "read_file", "params": map[string]any{"path": filepath.Join(dir, "big.txt")},
+		"server": "fs", "tool": "read_file", "params": map[string]any{"path": "/big.txt"},
 	}))
 	env := parseEnvelope(t, toolResultText(t, resp))
 	if env["error"] != nil {
@@ -139,56 +93,66 @@ func countToolsByPrefix(tools []map[string]any, prefix string) int {
 }
 
 func TestMultipleServers(t *testing.T) {
-	srv := newNpxServer(t)
-	dir1, dir2 := realPath(t, t.TempDir()), realPath(t, t.TempDir())
-	os.WriteFile(filepath.Join(dir1, "from_server1.txt"), []byte("s1"), 0644)
-	os.WriteFile(filepath.Join(dir2, "from_server2.txt"), []byte("s2"), 0644)
-	addFSUpstream(t, srv, "fs1", dir1)
-	addFSUpstream(t, srv, "fs2", dir2)
+	fake1 := fakeConn("list_directory")
+	fake1.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"entries\":[\"from_server1.txt\"]}"}]}`)
+	fake2 := fakeConn("list_directory")
+	fake2.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"entries\":[\"from_server2.txt\"]}"}]}`)
+	srv := newTestServer(t)
+	addTestConnection(t, srv, config.ServerConfig{Name: "fs1"}, fake1)
+	addTestConnection(t, srv, config.ServerConfig{Name: "fs2"}, fake2)
+
 	var tools []map[string]any
-	json.Unmarshal([]byte(toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))), &tools)
+	json.Unmarshal([]byte(toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))), &tools) //nolint:errcheck
 	if countToolsByPrefix(tools, "fs1.") == 0 || countToolsByPrefix(tools, "fs2.") == 0 {
 		t.Errorf("expected tools from both servers, got fs1=%d fs2=%d",
 			countToolsByPrefix(tools, "fs1."), countToolsByPrefix(tools, "fs2."))
 	}
 	resp1 := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs1", "tool": "list_directory", "params": map[string]any{"path": dir1},
+		"server": "fs1", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
 	}))
 	if env1 := parseEnvelope(t, toolResultText(t, resp1)); env1["error"] != nil {
 		t.Errorf("expected ok=true from fs1: %v", env1)
 	}
 }
 
-func assertAddServer(t *testing.T, srv *server.Server, dir string) {
+func assertAddServer(t *testing.T, srv *server.Server) {
 	t.Helper()
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "add_server",
-		"config": map[string]any{"name": "dynamic_fs", "command": "npx",
-			"args":            []string{"-y", "@modelcontextprotocol/server-filesystem", dir},
-			"handshake_timeout": npxHandshakeTimeout},
+		"config": map[string]any{"name": "dynamic_echo", "command": echomcpBin},
 	}))
 	text := toolResultText(t, resp)
 	var result map[string]any
-	json.Unmarshal([]byte(text), &result)
+	json.Unmarshal([]byte(text), &result) //nolint:errcheck
 	if result["error"] != nil {
 		t.Fatalf("add_server failed: %s", text)
 	}
-	if text2 := toolResultText(t, serve(t, srv, callTool("list", map[string]any{}))); !strings.Contains(text2, "dynamic_fs") {
-		t.Errorf("expected dynamic_fs tools after add_server: %s", text2)
+	if text2 := toolResultText(t, serve(t, srv, callTool("list", map[string]any{}))); !strings.Contains(text2, "dynamic_echo") {
+		t.Errorf("expected dynamic_echo tools after add_server: %s", text2)
 	}
 }
 
 func assertRemoveServer(t *testing.T, srv *server.Server) {
 	t.Helper()
-	resp := serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "dynamic_fs"}))
+	resp := serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "dynamic_echo"}))
 	var result map[string]any
-	json.Unmarshal([]byte(toolResultText(t, resp)), &result)
+	json.Unmarshal([]byte(toolResultText(t, resp)), &result) //nolint:errcheck
 	if result["error"] != nil {
 		t.Fatalf("remove_server failed: %v", result)
 	}
-	if text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{}))); strings.Contains(text, "dynamic_fs") {
-		t.Errorf("dynamic_fs still present after remove: %s", text)
+	if text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{}))); strings.Contains(text, "dynamic_echo") {
+		t.Errorf("dynamic_echo still present after remove: %s", text)
 	}
+}
+
+func TestAddRemoveServer(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.DangerousAllowRuntimeStdio = true
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+	assertAddServer(t, srv)
+	assertRemoveServer(t, srv)
 }
 
 func TestStdioEnvPassthrough(t *testing.T) {
@@ -220,9 +184,9 @@ func TestAddUpstream_handshakeTimeoutSkipsHungStdioSubprocess(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	sc := config.ServerConfig{
-		Name:           "hungupstream",
-		Command:        "sleep",
-		Args:           []string{"30"},
+		Name:             "hungupstream",
+		Command:          "sleep",
+		Args:             []string{"30"},
 		HandshakeTimeout: "100ms",
 	}
 	start := time.Now()
@@ -235,18 +199,4 @@ func TestAddUpstream_handshakeTimeoutSkipsHungStdioSubprocess(t *testing.T) {
 	if elapsed >= 5*time.Second {
 		t.Fatalf("AddUpstream did not respect handshake_timeout, took %v", elapsed)
 	}
-}
-
-func TestAddRemoveServer(t *testing.T) {
-	if _, err := exec.LookPath("npx"); err != nil {
-		t.Skip("npx not available")
-	}
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	cfg.DangerousAllowRuntimeStdio = true
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	t.Cleanup(srv.Close)
-	dir := realPath(t, t.TempDir())
-	assertAddServer(t, srv, dir)
-	assertRemoveServer(t, srv)
 }
