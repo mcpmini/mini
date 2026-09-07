@@ -379,6 +379,19 @@ func TestListTools_successfulHandshakeAndList(t *testing.T) {
 	}
 }
 
+func TestListTools_deadlineErrorsWhenInitializeHangs(t *testing.T) {
+	srv := newHungServer(t)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := conn.ListTools(ctx)
+	if err == nil {
+		t.Fatal("expected deadline error for hung initialize")
+	}
+	assertFastTimeout(t, start)
+}
+
 func TestListTools_retriesInitializeAfterFailure(t *testing.T) {
 	var initializeCalls int
 	var listCalls int

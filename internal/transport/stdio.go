@@ -36,7 +36,7 @@ type StdioCommand struct {
 }
 
 func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
-	c, err := startSubprocess(ctx, p)
+	c, err := startSubprocess(p)
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +47,9 @@ func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, 
 	return c, nil
 }
 
-func startSubprocess(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
-	cmd := exec.CommandContext(ctx, p.Command, p.Args...)
+func startSubprocess(p StdioCommand) (*StdioConnection, error) {
+	// background context: stdio MCP connections are long-running
+	cmd := exec.CommandContext(context.Background(), p.Command, p.Args...)
 	if len(p.Env) > 0 {
 		cmd.Env = p.Env
 	}
