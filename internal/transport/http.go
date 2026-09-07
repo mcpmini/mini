@@ -19,16 +19,11 @@ import (
 	"github.com/mcpmini/mini/internal/version"
 )
 
-// AuthorizationProvider supplies a dynamic Authorization header value for HTTP
-// upstreams, refreshing near-expiry OAuth tokens as needed. Declared here rather
-// than in internal/auth (which owns the concrete implementation) because
-// internal/auth imports internal/transport for endpoint validation; the reverse
-// import would cycle.
+// AuthorizationProvider supplies a dynamic Authorization header value.
+// Lives in transport (not auth) to avoid an import cycle.
 type AuthorizationProvider interface {
 	Authorization(ctx context.Context) (string, error)
-	// RefreshAuthorization forces a token refresh only when the current token still
-	// equals stale; if another caller already refreshed past stale, it returns the
-	// current value without hitting the token endpoint.
+	// RefreshAuthorization refreshes only if the current value still equals stale.
 	RefreshAuthorization(ctx context.Context, stale string) (string, error)
 }
 
@@ -84,10 +79,8 @@ type HTTPConnectionConfig struct {
 	// at connect time, preventing DNS rebinding attacks. Set for runtime-added servers.
 	BlockPrivateIPs bool
 	ServerName      string
-	// Nil means static Headers are applied without dynamic refresh.
-	AuthProvider AuthorizationProvider
-	// Empty defaults to "Authorization".
-	AuthHeaderName string
+	AuthProvider   AuthorizationProvider // nil: use static Headers only
+	AuthHeaderName string                // empty: "Authorization"
 }
 
 func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {

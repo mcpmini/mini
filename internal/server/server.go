@@ -39,11 +39,7 @@ func WithAllowNonLoopbackHost() ServerOption {
 	return func(s *Server) { s.allowNonLoopbackHost = true }
 }
 
-// WithAuthProviders makes OAuth2 upstreams dial with a dynamic AuthorizationProvider
-// (proactive expiry-based refresh, 401 replay) instead of a statically-applied bearer
-// header. Set only by the long-lived serve paths (connect, daemon); one-shot CLI
-// commands (status, test) keep the static inject-and-refresh behavior so there is
-// exactly one process-wide refresh owner per long-lived server.
+// WithAuthProviders enables dynamic OAuth token refresh on upstream connections.
 func WithAuthProviders() ServerOption {
 	return func(s *Server) { s.useAuthProviders = true }
 }

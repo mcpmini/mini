@@ -20,8 +20,6 @@ type DialParams struct {
 	Server    config.ServerConfig
 	Clock     clock.Clock
 	ConfigDir string
-	// Only the long-lived serve paths set this; CLI commands inject headers
-	// statically at startup.
 	UseAuthProvider bool
 }
 
