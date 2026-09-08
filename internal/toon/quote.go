@@ -67,8 +67,8 @@ func needsQuoting(s string) bool {
 	return strings.HasPrefix(s, "-")
 }
 
-// hasLeadingOrTrailingASCIISpace checks only ASCII whitespace because spec §7.2
-// requires quoting only for ASCII leading/trailing spaces, not Unicode whitespace.
+// Spec §12 trims exactly U+0020; the broader ASCII check is harmless since
+// control chars (tab, newline, etc.) are already caught by containsControlChar.
 func hasLeadingOrTrailingASCIISpace(s string) bool {
 	first, _ := utf8.DecodeRuneInString(s)
 	last, _ := utf8.DecodeLastRuneInString(s)

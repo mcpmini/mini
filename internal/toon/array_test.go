@@ -312,6 +312,39 @@ func TestEncodeRootArrayForms(t *testing.T) {
 	}
 }
 
+func TestEncodeNestedFieldGroups(t *testing.T) {
+	t.Run("single nesting level", func(t *testing.T) {
+		v := objVal(Field{Key: "rows", Val: arrVal(
+			objVal(Field{Key: "loc", Val: objVal(Field{Key: "x", Val: numVal("1")}, Field{Key: "y", Val: numVal("2")})}, Field{Key: "name", Val: strVal("A")}),
+			objVal(Field{Key: "loc", Val: objVal(Field{Key: "x", Val: numVal("3")}, Field{Key: "y", Val: numVal("4")})}, Field{Key: "name", Val: strVal("B")}),
+		)})
+		want := "rows[2]{loc{x,y},name}:\n  1,2,A\n  3,4,B"
+		if got := encodeOK(t, v); got != want {
+			t.Errorf("Encode() = %q, want %q", got, want)
+		}
+	})
+	t.Run("mixed primitive and nested column", func(t *testing.T) {
+		v := objVal(Field{Key: "rows", Val: arrVal(
+			objVal(Field{Key: "id", Val: numVal("1")}, Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("10")}, Field{Key: "y", Val: numVal("20")})}),
+			objVal(Field{Key: "id", Val: numVal("2")}, Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("30")}, Field{Key: "y", Val: numVal("40")})}),
+		)})
+		want := "rows[2]{id,pt{x,y}}:\n  1,10,20\n  2,30,40"
+		if got := encodeOK(t, v); got != want {
+			t.Errorf("Encode() = %q, want %q", got, want)
+		}
+	})
+	t.Run("falls to list when nested column sub-keys differ", func(t *testing.T) {
+		v := objVal(Field{Key: "rows", Val: arrVal(
+			objVal(Field{Key: "id", Val: numVal("1")}, Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("1")}, Field{Key: "y", Val: numVal("2")})}),
+			objVal(Field{Key: "id", Val: numVal("2")}, Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("3")}, Field{Key: "z", Val: numVal("4")})}),
+		)})
+		want := "rows[2]:\n  - id: 1\n    pt:\n      x: 1\n      y: 2\n  - id: 2\n    pt:\n      x: 3\n      z: 4"
+		if got := encodeOK(t, v); got != want {
+			t.Errorf("Encode() = %q, want %q", got, want)
+		}
+	})
+}
+
 func TestEncodeArrayItemWithUnknownKindErrors(t *testing.T) {
 	cases := []struct {
 		name string
