@@ -90,8 +90,8 @@ func (r *Runner) buildMiniConfigDir(env *Env, servers map[string]string, callLog
 
 func miniConfigYAML(format int) string {
 	switch format {
-	case fmtLines:
-		return "response_format: mini\n"
+	case fmtToon:
+		return "response_format: toon\n"
 	case fmtPassthrough, fmtProjected:
 		return "response_format: json\n"
 	default:

@@ -32,30 +32,40 @@ type Envelope struct {
 // "data":null would blur the isError signal agents rely on to skip past a
 // failed call without inspecting its payload.
 func (e Envelope) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.WireMap())
+}
+
+// WireMap returns the envelope's wire shape as a plain map for encoders that
+// need to walk the value (TOON) or marshal to JSON. It is the canonical wire
+// representation; TestEnvelopeWireMapMatchesMarshalJSON guards against drift.
+func (e Envelope) WireMap() map[string]any {
 	if e.Error != "" {
-		return json.Marshal(envelopeErrorJSON{
-			Error: e.Error, Message: e.Message, Retryable: e.Retryable, Action: e.Action,
-		})
+		out := map[string]any{"error": e.Error}
+		if e.Message != "" {
+			out["message"] = e.Message
+		}
+		if e.Retryable {
+			out["retryable"] = true
+		}
+		if e.Action != "" {
+			out["action"] = e.Action
+		}
+		return out
 	}
-	return json.Marshal(envelopeSuccessJSON{
-		Data: e.Data, Excluded: e.Excluded, Truncated: e.Truncated,
-		File: e.File, Passthrough: e.Passthrough,
-	})
-}
-
-type envelopeSuccessJSON struct {
-	Data        any                     `json:"data"`
-	Excluded    []string                `json:"excluded,omitempty"`
-	Truncated   []projection.Truncation `json:"truncated,omitempty"`
-	File        *string                 `json:"file,omitempty"`
-	Passthrough map[string]any          `json:"passthrough,omitempty"`
-}
-
-type envelopeErrorJSON struct {
-	Error     string `json:"error,omitempty"`
-	Message   string `json:"message,omitempty"`
-	Retryable bool   `json:"retryable,omitempty"`
-	Action    string `json:"action,omitempty"`
+	out := map[string]any{"data": e.Data}
+	if len(e.Excluded) > 0 {
+		out["excluded"] = e.Excluded
+	}
+	if len(e.Truncated) > 0 {
+		out["truncated"] = e.Truncated
+	}
+	if e.File != nil {
+		out["file"] = *e.File
+	}
+	if len(e.Passthrough) > 0 {
+		out["passthrough"] = e.Passthrough
+	}
+	return out
 }
 
 // CallStats tracks per-call size info internally — never sent to agents.

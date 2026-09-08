@@ -68,7 +68,7 @@ func TestListDirectoryNonEmpty(t *testing.T) {
 	}
 }
 
-func TestMiniFormatWithRealFS(t *testing.T) {
+func TestToonFormatWithRealFS(t *testing.T) {
 	dir := realPath(t, t.TempDir())
 	for _, name := range []string{"a.txt", "b.txt", "c.go"} {
 		os.WriteFile(filepath.Join(dir, name), []byte("x"), 0644)
@@ -76,17 +76,17 @@ func TestMiniFormatWithRealFS(t *testing.T) {
 	srv := fsServer(t, dir)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "list_directory",
-		"projection": map[string]any{"format": "mini"},
+		"projection": map[string]any{"format": "toon"},
 	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": dir},
 	}))
 	text := toolResultText(t, resp)
 	if strings.HasPrefix(text, "{") {
-		t.Fatalf("expected mini format, got JSON: %s", text)
+		t.Fatalf("expected TOON format, got JSON: %s", text)
 	}
-	if !strings.Contains(text, "[fs.list_directory]") {
-		t.Errorf("missing header line: %s", text)
+	if !strings.HasPrefix(text, "data") {
+		t.Errorf("expected TOON output to start with the data field, got: %s", text)
 	}
 }
 

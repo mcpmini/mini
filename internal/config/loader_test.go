@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -515,6 +516,74 @@ func TestLoad_deduplicatesDuplicateServerNames(t *testing.T) {
 	}
 	if servers[0].Command != "my-mcp" {
 		t.Errorf("expected dir server to win (command=my-mcp), got %q", servers[0].Command)
+	}
+}
+
+func TestLoadResponseFormat(t *testing.T) {
+	t.Run("toon accepted", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "config.yaml"), "response_format: toon\n")
+		cfg, _ := mustLoadConfig(t, dir)
+		if cfg.ResponseFormat != "toon" {
+			t.Errorf("expected toon, got %q", cfg.ResponseFormat)
+		}
+	})
+	t.Run("mini rejected naming toon as the replacement", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "config.yaml"), "response_format: mini\n")
+		_, _, err := config.Load(dir)
+		if err == nil || !strings.Contains(err.Error(), "toon") {
+			t.Fatalf("expected error naming toon as the replacement, got %v", err)
+		}
+	})
+	t.Run("unknown format rejected", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFile(t, filepath.Join(dir, "config.yaml"), "response_format: xml\n")
+		expectLoadError(t, dir)
+	})
+}
+
+func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\ncommand: gh-mcp\n")
+	writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
+	_, _, err := config.Load(dir)
+	if err == nil || !strings.Contains(err.Error(), "toon") {
+		t.Fatalf("expected projection format error naming toon, got %v", err)
+	}
+}
+
+func TestValidResponseFormat(t *testing.T) {
+	for _, format := range []string{"", "json", "toon"} {
+		if err := config.ValidResponseFormat(format); err != nil {
+			t.Errorf("ValidResponseFormat(%q) = %v, want nil", format, err)
+		}
+	}
+	if err := config.ValidResponseFormat("mini"); err == nil || !strings.Contains(err.Error(), "toon") {
+		t.Errorf("ValidResponseFormat(\"mini\") = %v, want error naming toon", err)
+	}
+	if err := config.ValidResponseFormat("xml"); err == nil {
+		t.Error("ValidResponseFormat(\"xml\") = nil, want error")
+	}
+}
+
+func TestEffectiveFormat(t *testing.T) {
+	cases := []struct {
+		name, explicit, projection, global, want string
+	}{
+		{"explicit wins over all", config.FormatToon, config.FormatJSON, "", config.FormatToon},
+		{"projection when no explicit", "", config.FormatToon, config.FormatJSON, config.FormatToon},
+		{"global when no explicit or projection", "", "", config.FormatToon, config.FormatToon},
+		{"json default when all empty", "", "", "", config.FormatJSON},
+		{"explicit json beats toon projection", config.FormatJSON, config.FormatToon, config.FormatToon, config.FormatJSON},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := config.EffectiveFormat(tc.explicit, tc.projection, tc.global)
+			if got != tc.want {
+				t.Errorf("EffectiveFormat(%q, %q, %q) = %q, want %q", tc.explicit, tc.projection, tc.global, got, tc.want)
+			}
+		})
 	}
 }
 

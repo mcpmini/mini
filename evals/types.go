@@ -10,11 +10,11 @@ import (
 const (
 	fmtPassthrough = iota
 	fmtProjected
-	fmtLines
+	fmtToon
 	numFormats = 3
 )
 
-var fmtLabel = [numFormats]string{"passthrough", "projected", "lines"}
+var fmtLabel = [numFormats]string{"passthrough", "projected", "toon"}
 
 // ClaudeResult holds outcome and token usage for a single Claude run.
 type ClaudeResult struct {
@@ -103,7 +103,6 @@ func (s RunStats) AvgTurns() float64 {
 }
 
 // EvalResult holds results for all modes, each across one or more reps.
-// Proxy only has passthrough and projected variants (no lines format yet).
 type EvalResult struct {
 	Direct RunStats
 	MCP    [numFormats]RunStats

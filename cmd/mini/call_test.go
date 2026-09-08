@@ -3,33 +3,71 @@
 package main
 
 import (
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/response"
 )
 
 func TestResolveCallOutput(t *testing.T) {
 	cases := []struct {
-		name      string
-		f         callFlags
-		cfgFormat string
-		want      callOutput
+		name       string
+		f          callFlags
+		projFormat string
+		cfgFormat  string
+		want       callOutput
 	}{
-		{"raw flag", callFlags{raw: true}, "", callOutputRaw},
-		{"mini flag", callFlags{mini: true}, "", callOutputMini},
-		{"json flag", callFlags{json: true}, "", callOutputJSON},
-		{"cfg mini", callFlags{}, "mini", callOutputMini},
-		{"default", callFlags{}, "", callOutputJSON},
-		{"raw wins over mini", callFlags{raw: true, mini: true}, "", callOutputRaw},
-		{"cfg overridden by json flag", callFlags{json: true}, "mini", callOutputJSON},
+		{"raw flag", callFlags{raw: true}, "", "", callOutputRaw},
+		{"toon flag", callFlags{toon: true}, "", "", callOutputToon},
+		{"json flag", callFlags{json: true}, "", "", callOutputJSON},
+		{"cfg toon", callFlags{}, "", "toon", callOutputToon},
+		{"default", callFlags{}, "", "", callOutputJSON},
+		{"raw wins over toon", callFlags{raw: true, toon: true}, "", "", callOutputRaw},
+		{"cfg overridden by json flag", callFlags{json: true}, "", "toon", callOutputJSON},
+		{"projection toon applies without -t flag", callFlags{}, "toon", "", callOutputToon},
+		{"global toon overridden by exact-tool json projection", callFlags{}, "json", "toon", callOutputJSON},
+		{"-j flag beats toon projection", callFlags{json: true}, "toon", "", callOutputJSON},
+		{"-t flag beats json projection", callFlags{toon: true}, "json", "toon", callOutputToon},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := resolveCallOutput(tc.f, tc.cfgFormat)
+			got := resolveCallOutput(tc.f, tc.projFormat, tc.cfgFormat)
 			if got != tc.want {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPrintCallOutputToonReturnsEncodingError(t *testing.T) {
+	nested := map[string]any{"leaf": "value"}
+	for i := 0; i < 70; i++ {
+		nested = map[string]any{"level": nested, "other": i}
+	}
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalStdout := os.Stdout
+	os.Stdout = w
+	t.Cleanup(func() { os.Stdout = originalStdout })
+
+	gotErr := printCallOutput("gh", "list_issues", &response.Envelope{Data: nested}, callOutputToon)
+	w.Close()
+	output, readErr := io.ReadAll(r)
+	r.Close()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if gotErr == nil || !strings.Contains(gotErr.Error(), "nesting depth exceeds") {
+		t.Fatalf("expected TOON encoding error, got: %v", gotErr)
+	}
+	if len(output) != 0 {
+		t.Fatalf("failed TOON encoding printed output instead of returning an error: %q", output)
 	}
 }
 

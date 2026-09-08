@@ -95,7 +95,7 @@ func (s *Server) listDetail(fullName string) (any, error) {
 func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
 	p, entry, err := s.resolveExecute(raw)
 	if err != nil {
-		return toolErrorIfNotFound(err)
+		return s.toolNotFoundError(err, p.Server, p.Tool)
 	}
 	if entry.Permission == config.PermProtected {
 		return nil, fmt.Errorf("tool %q is protected — use perm_call instead", entry.FullName)
@@ -116,7 +116,8 @@ func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.T
 	}
 	entry, err := s.reg.Lookup(toolFullName(p.Server, p.Tool))
 	if err != nil {
-		return executeParams{}, nil, errLookup{err}
+		// Return p so callers can use server/tool for error formatting.
+		return p, nil, errLookup{err}
 	}
 	p.Tool = entry.ToolName.UpstreamName
 	return p, entry, nil
@@ -131,10 +132,13 @@ type errLookup struct{ cause error }
 func (e errLookup) Error() string { return e.cause.Error() }
 func (e errLookup) Unwrap() error { return e.cause }
 
-func toolErrorIfNotFound(err error) (any, error) {
+func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) {
 	var le errLookup
 	if errors.As(err, &le) {
-		return response.BuildError("not_found", err.Error(), false, ""), nil
+		env := response.BuildError("not_found", err.Error(), false, "")
+		// nil projCfg: the tool wasn't found, so there's no per-tool projection
+		// to consult — formatEnvelope falls back to the global ResponseFormat.
+		return s.formatEnvelope(server, tool, env, nil)
 	}
 	return nil, err
 }
@@ -142,7 +146,7 @@ func toolErrorIfNotFound(err error) (any, error) {
 func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
 	p, entry, err := s.resolveExecute(raw)
 	if err != nil {
-		return toolErrorIfNotFound(err)
+		return s.toolNotFoundError(err, p.Server, p.Tool)
 	}
 	// Open tools with no projection coverage can also use perm_call to opt into raw responses.
 	if entry.Permission != config.PermProtected && s.hasProjectionCoverage(p.Server, p.Tool, session) {
@@ -189,7 +193,9 @@ type toolErrParams struct {
 func (s *Server) handleToolErr(p toolErrParams) (any, error) {
 	p.Session.recordCall(p.LatencyMs, 0, true)
 	s.logToolError(p.Server, p.Tool, p.LatencyMs, p.Err)
-	return response.BuildError("tool_error", p.Err.Error(), false, ""), nil
+	env := response.BuildError("tool_error", p.Err.Error(), false, "")
+	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
+	return s.formatEnvelope(p.Server, p.Tool, env, projCfg)
 }
 
 func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool string, params map[string]any) {
@@ -230,7 +236,7 @@ func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
 	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", s.clock.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
-	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg), nil
+	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg)
 }
 
 type projectedEnvelopeParams struct {
@@ -253,15 +259,23 @@ func (s *Server) buildProjectedEnvelope(p projectedEnvelopeParams) (*response.En
 	})
 }
 
-func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) any {
-	format := s.cfg.ResponseFormat
-	if projCfg != nil && projCfg.Format != "" {
-		format = projCfg.Format
+// formattedEnvelope carries the envelope's error state past formatting so
+// normalizeToolCallResult can still set isError once the envelope is a string.
+type formattedEnvelope struct {
+	text    string
+	isError bool
+}
+
+func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) (any, error) {
+	projFormat := config.ProjectionFormat(projCfg)
+	if config.EffectiveFormat("", projFormat, s.cfg.ResponseFormat) == config.FormatToon {
+		text, err := EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
+		if err != nil {
+			return nil, fmt.Errorf("encode TOON response: %w", err)
+		}
+		return formattedEnvelope{text: text, isError: env.Error != ""}, nil
 	}
-	if format == "mini" {
-		return RenderLines(server, displayTool, env)
-	}
-	return env
+	return env, nil
 }
 
 func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {

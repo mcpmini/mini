@@ -97,6 +97,11 @@ func validateProjectionTarget(p configureParams) error {
 	if !config.ValidToolName.MatchString(p.Tool) {
 		return fmt.Errorf("invalid tool name: %q", p.Tool)
 	}
+	if p.Projection != nil {
+		if err := config.ValidResponseFormat(p.Projection.Format); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

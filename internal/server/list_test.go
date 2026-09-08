@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -76,7 +77,7 @@ func TestList_detail_returnsSchema(t *testing.T) {
 	}
 }
 
-func TestBuildEnvelope_linesFormat(t *testing.T) {
+func TestBuildEnvelope_toonFormat(t *testing.T) {
 	srv := newTestServer(t)
 	fake := fakeConn("list")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"foo\"},{\"id\":2,\"name\":\"bar\"}]"}]}`)
@@ -84,13 +85,13 @@ func TestBuildEnvelope_linesFormat(t *testing.T) {
 
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "list",
-		"session_only": true, "projection": map[string]any{"format": "mini"},
+		"projection": map[string]any{"format": "toon"},
 	}))
 
 	text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
 		"server": "svc", "tool": "list", "params": map[string]any{},
 	})))
-	if len(text) == 0 {
-		t.Error("expected non-empty lines output")
+	if !strings.Contains(text, "data[2]{id,name}:") {
+		t.Errorf("expected TOON tabular block, got: %s", text)
 	}
 }
