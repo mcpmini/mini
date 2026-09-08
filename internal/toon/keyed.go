@@ -71,8 +71,11 @@ func writeKeyedEntry(sb *strings.Builder, indent string, f Field, cols []tabular
 	if err != nil {
 		return err
 	}
-	if err := appendString(sb, indent+encodeKey(f.Key)+": "+cells+"\n"); err != nil {
+	if err := appendString(sb, indent); err != nil {
 		return err
 	}
-	return nil
+	if err := appendString(sb, encodeKey(f.Key)+": "); err != nil {
+		return err
+	}
+	return appendString(sb, cells+"\n")
 }
