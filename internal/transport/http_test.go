@@ -1077,8 +1077,6 @@ func TestNotificationStream_transientRefreshFailureRetries(t *testing.T) {
 		t.Fatalf("Call: %v", err)
 	}
 
-	// Listener is sleeping after the transient refresh failure. Let it wake and retry
-	// with a cleared refreshErr so the second refresh succeeds.
 	if err := clk.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
@@ -1117,6 +1115,37 @@ func TestNotificationStream_invalidGrantStops(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close() blocked; listener did not exit after ErrReauthRequired")
+	}
+}
+
+func TestNotificationStream_terminalRefreshFailureStopsWithoutReconnect(t *testing.T) {
+	var getHits atomic.Int32
+	provider := &fakeAuthProvider{
+		current:    "Bearer tok",
+		refreshErr: fmt.Errorf("malformed token response: %w", ErrAuthRefreshTerminal),
+	}
+	srv := newListChangedServer(t, func(w http.ResponseWriter, r *http.Request) {
+		getHits.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider, Clock: clock.NewFake()})
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("Call: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		conn.listenerWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("listener did not stop after terminal refresh failure")
+	}
+	if n := getHits.Load(); n != 1 {
+		t.Errorf("notification stream attempts = %d, want 1", n)
 	}
 }
 

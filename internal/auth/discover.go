@@ -48,6 +48,13 @@ func (e *discoveryStatusError) transient() bool {
 	return e.status == http.StatusTooManyRequests || e.status >= http.StatusInternalServerError
 }
 
+func transientDiscoveryError(status int, url string) error {
+	if status == http.StatusTooManyRequests || status >= http.StatusInternalServerError {
+		return &discoveryStatusError{status: status, url: url}
+	}
+	return nil
+}
+
 // asRef is the result of authorization-server discovery: which AS to use and what scopes it suggests.
 type asRef struct {
 	URL    string
@@ -186,8 +193,15 @@ func fetchASURLFromPRM(ctx context.Context, prmURL string) (asRef, error) {
 		}
 		return asRef{}, nil
 	}
+	return decodePRMResponse(resp, prmURL)
+}
+
+func decodePRMResponse(resp *http.Response, prmURL string) (asRef, error) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if err := transientDiscoveryError(resp.StatusCode, prmURL); err != nil {
+			return asRef{}, err
+		}
 		return asRef{}, nil
 	}
 	var meta protectedResourceMeta

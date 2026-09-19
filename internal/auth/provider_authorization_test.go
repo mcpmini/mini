@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -168,5 +169,69 @@ func TestProviderAuthorization_concurrentCallsSingleRefresh(t *testing.T) {
 	}
 	if hits := f.endpoint.hits.Load(); hits != 1 {
 		t.Errorf("token endpoint hits = %d, want exactly 1", hits)
+	}
+}
+
+type prmDiscoveryFixture struct {
+	srv     *httptest.Server
+	prmHits atomic.Int32
+}
+
+func newPRMDiscoveryFixture(t *testing.T, tokenURL string) *prmDiscoveryFixture {
+	t.Helper()
+	f := &prmDiscoveryFixture{}
+	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/mcp":
+			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+f.srv.URL+`/prm"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		case "/prm":
+			if f.prmHits.Add(1) == 1 {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"authorization_servers": []string{f.srv.URL}}) //nolint:errcheck
+		case "/.well-known/oauth-authorization-server":
+			json.NewEncoder(w).Encode(map[string]any{
+				"authorization_endpoint":           "https://as.example.com/authorize",
+				"token_endpoint":                   tokenURL,
+				"code_challenge_methods_supported": []string{"S256"},
+			}) //nolint:errcheck
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(f.srv.Close)
+	return f
+}
+
+func TestProviderAuthorization_lazyDiscoveryRetriesTransientPRM(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+	endpoint := newTokenEndpoint(t)
+	discovery := newPRMDiscoveryFixture(t, endpoint.srv.URL)
+	clk := clock.NewFake()
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", storedToken(clk.Now())); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
+		ConfigDir:  dir, ServerName: "srv", ServerURL: discovery.srv.URL + "/mcp", Clock: clk,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errCh := make(chan error, 1)
+	go func() { _, err := p.Authorization(context.Background()); errCh <- err }()
+	advanceForBackoffs(t, clk, []time.Duration{time.Second})
+	if err := <-errCh; err != nil {
+		t.Fatalf("Authorization with transient PRM failure: %v", err)
+	}
+	if got := discovery.prmHits.Load(); got != 2 {
+		t.Errorf("PRM hits = %d, want 2", got)
+	}
+	if got := endpoint.hits.Load(); got != 1 {
+		t.Errorf("token endpoint hits = %d, want 1", got)
 	}
 }

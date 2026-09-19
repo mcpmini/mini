@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
@@ -426,6 +428,20 @@ func TestReconnect_reauthErrorDoesNotStartReconnect(t *testing.T) {
 	}
 }
 
+func TestReconnect_terminalRefreshErrorDoesNotStartReconnect(t *testing.T) {
+	srv := newTestServer(t)
+	terminalErr := fmt.Errorf("malformed token response: %w", transport.ErrAuthRefreshTerminal)
+	errConn := &errAfterRegisterConn{
+		tools: []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
+		errFn: func() error { return terminalErr },
+	}
+	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, errConn)
+	serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "ping", "params": map[string]any{}}))
+	if srv.IsReconnecting("svc") {
+		t.Error("ErrAuthRefreshTerminal should not trigger reconnect")
+	}
+}
+
 func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
 	// HTTP server that always 401s (no valid token will ever satisfy it).
 	authSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -465,5 +481,54 @@ func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
 			t.Fatal("reconnect loop did not stop after ErrReauthRequired")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestReconnect_terminalRefreshDialFailureStopsLoop(t *testing.T) {
+	tokenHits := atomic.Int32{}
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tokenHits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"token_type":"Bearer"}`)) //nolint:errcheck
+	}))
+	t.Cleanup(tokenSrv.Close)
+	upstreamSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(upstreamSrv.Close)
+
+	configDir := t.TempDir()
+	saveToken(t, configDir, "svc", &oauth2.Token{AccessToken: "old", RefreshToken: "refresh"})
+	fakeClock := clock.NewFake()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)),
+		server.WithClock(fakeClock), server.WithAuthProviders())
+	t.Cleanup(srv.Close)
+	var errOnCall bool
+	srv.AddConnection(context.Background(), config.ServerConfig{
+		Name: "svc", Transport: "http", URL: upstreamSrv.URL,
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: tokenSrv.URL},
+	}, makeErrConn(&errOnCall))
+	errOnCall = true
+	assertEnvelopeOK(t, srv, "svc", "ping", false)
+	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatalf("waiting for reconnect timer: %v", err)
+	}
+	fakeClock.Advance(time.Second)
+	waitForReconnectStop(t, srv, fakeClock, &tokenHits)
+}
+
+func waitForReconnectStop(t *testing.T, srv *server.Server, fakeClock *clock.Fake, tokenHits *atomic.Int32) {
+	t.Helper()
+	eventually(t, func() bool { return !srv.IsReconnecting("svc") })
+	if before := tokenHits.Load(); before == 0 {
+		t.Fatal("terminal reconnect attempt did not reach the token endpoint")
+	} else {
+		fakeClock.Advance(2 * time.Second)
+		if after := tokenHits.Load(); after != before {
+			t.Fatalf("terminal refresh failure scheduled another reconnect retry: token hits %d -> %d", before, after)
+		}
 	}
 }

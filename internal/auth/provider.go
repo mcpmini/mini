@@ -240,7 +240,10 @@ func (p *tokenProvider) nextRefreshAction(ctx context.Context, err error, a *ref
 		return true, p.remedyError(err)
 	}
 	a.attempt++
-	if class == refreshTerminal || a.attempt == 3 {
+	if class == refreshTerminal {
+		return true, fmt.Errorf("%w: %w", transport.ErrAuthRefreshTerminal, err)
+	}
+	if a.attempt == 3 {
 		return true, err
 	}
 	delay := nextRefreshDelay(err, &a.backoff, p.clock.Now())
@@ -248,10 +251,8 @@ func (p *tokenProvider) nextRefreshAction(ctx context.Context, err error, a *ref
 }
 
 func (p *tokenProvider) attemptRefreshLocked(ctx context.Context) error {
-	// Clearing AccessToken on a copy forces oauth2's reuseTokenSource to hit the
-	// token endpoint: it judges validity by the system clock with only a 10s
-	// delta, so a token inside our 2m skew (or one the upstream just 401'd)
-	// would otherwise be returned unchanged without a refresh.
+	// oauth2 uses the system clock with a 10s delta, so force refreshes inside
+	// our 2m skew and after an upstream 401 by clearing the copied access token.
 	stale := *p.token
 	stale.AccessToken = ""
 	refreshed, err := Refresh(ctx, p.ac, &stale)

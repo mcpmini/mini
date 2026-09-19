@@ -56,8 +56,37 @@ func TestProviderRefresh_malformedSuccessIsTerminalWithoutRetry(t *testing.T) {
 	if errors.Is(err, transport.ErrReauthRequired) {
 		t.Fatalf("malformed token response must be terminal, not reauthorization: %v", err)
 	}
+	if !errors.Is(err, transport.ErrAuthRefreshTerminal) {
+		t.Fatalf("malformed token response must wrap terminal refresh error: %v", err)
+	}
 	if n := hits.Load(); n != 1 {
 		t.Errorf("token endpoint hits = %d, want 1 (terminal errors are not retried)", n)
+	}
+}
+
+func TestProviderRefresh_permanentHTTP4xxIsTerminalWithoutRetry(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"error":"access_denied"}`) //nolint:errcheck
+	}))
+	t.Cleanup(srv.Close)
+
+	p, _ := newProviderAt(t, srv.URL, refreshToken())
+	_, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if err == nil {
+		t.Fatal("expected permanent HTTP 4xx to fail")
+	}
+	if !errors.Is(err, transport.ErrAuthRefreshTerminal) {
+		t.Fatalf("permanent HTTP 4xx must wrap terminal refresh error: %v", err)
+	}
+	if errors.Is(err, transport.ErrReauthRequired) {
+		t.Fatalf("permanent HTTP 4xx must not require reauthorization: %v", err)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Errorf("token endpoint hits = %d, want 1", n)
 	}
 }
 

@@ -4,6 +4,7 @@ package transport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -311,10 +312,13 @@ func TestAuthReplay_refreshFailure_noReplay(t *testing.T) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	})
-	provider.refreshErr = fmt.Errorf("myserver requires re-authorization; run `mini auth myserver`: token endpoint down")
+	provider.refreshErr = fmt.Errorf("token endpoint down: %w", ErrAuthRefreshTerminal)
 	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrAuthRefreshTerminal) {
+		t.Errorf("refresh failure must preserve terminal sentinel: %v", err)
 	}
 	if !strings.Contains(err.Error(), "token endpoint down") {
 		t.Errorf("error should contain cause, got: %v", err)

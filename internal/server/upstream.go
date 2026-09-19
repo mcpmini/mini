@@ -28,6 +28,10 @@ func isConnError(err error) bool {
 	return errors.As(err, &ce)
 }
 
+func isAuthReconnectStop(err error) bool {
+	return errors.Is(err, transport.ErrReauthRequired) || errors.Is(err, transport.ErrAuthRefreshTerminal)
+}
+
 type upstreamServer struct {
 	cfg      config.ServerConfig
 	mu       sync.RWMutex // protects conn during reconnect

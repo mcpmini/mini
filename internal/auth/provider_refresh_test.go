@@ -43,7 +43,7 @@ func TestProviderRefresh_persistsRotatedRefreshToken(t *testing.T) {
 	}
 }
 
-func TestProviderRefresh_httpFailureNamesRemedy(t *testing.T) {
+func TestProviderRefresh_transientBudgetExhaustedDoesNotRequireReauth(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
 	f.endpoint.status.Store(http.StatusInternalServerError)
 	errCh := make(chan error, 1)

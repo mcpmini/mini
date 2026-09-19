@@ -13,7 +13,7 @@ func (s *Server) maybeReconnect(upstream *upstreamServer, err error) {
 	if err == nil || !isConnError(err) {
 		return
 	}
-	if errors.Is(err, transport.ErrReauthRequired) {
+	if isAuthReconnectStop(err) {
 		return
 	}
 	// Skip if upstream is already shutting down. callConn releases u.mu.RLock
@@ -52,6 +52,10 @@ func (s *Server) reconnectLoop(u *upstreamServer) {
 		}
 		if errors.Is(err, transport.ErrReauthRequired) {
 			s.logger.Warn("upstream requires re-authorization; run `mini auth <server>`", "server", u.cfg.Name)
+			return
+		}
+		if errors.Is(err, transport.ErrAuthRefreshTerminal) {
+			s.logger.Warn("upstream reconnect stopped after terminal auth refresh failure", "server", u.cfg.Name, "err", err)
 			return
 		}
 		backoff = nextBackoff(backoff)

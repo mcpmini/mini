@@ -140,6 +140,10 @@ func (c *HTTPConnection) listenForNotifications() {
 				slog.Warn("notification stream stopped: token refresh failed; re-auth creates a fresh listener", "url", c.url, "err", err)
 				return
 			}
+			if errors.Is(err, ErrAuthRefreshTerminal) {
+				slog.Warn("notification stream stopped: terminal token refresh failure", "url", c.url, "err", err)
+				return
+			}
 			slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 		}
 		if !c.sleepCtx(c.listenerCtx, time.Second) {

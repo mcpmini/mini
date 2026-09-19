@@ -391,10 +391,8 @@ func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Reques
 // Callers (reconnect loop, maybeReconnect) check for it to stop retrying.
 var ErrReauthRequired = errors.New("re-authorization required")
 
-// errAuthRefreshFailed marks a 401 whose token refresh also failed, so retry
-// loops (the notification listener) can stop instead of hitting the token
-// endpoint once per reconnect cycle forever.
-var errAuthRefreshFailed = errors.New("auth refresh failed")
+// ErrAuthRefreshTerminal marks a permanent refresh failure that does not require re-authorization.
+var ErrAuthRefreshTerminal = errors.New("terminal auth refresh failure")
 
 // sendOneWithAuthRetry sends an HTTP request built by build; on 401 it refreshes
 // the token using the value that was actually sent and replays once. The 429/503
@@ -410,7 +408,7 @@ func (c *HTTPConnection) sendOneWithAuthRetry(ctx context.Context, build func(co
 	}
 	resp.Body.Close()
 	if _, refreshErr := c.authProvider.RefreshAuthorization(ctx, sentAuth); refreshErr != nil {
-		return nil, fmt.Errorf("%w: %w", errAuthRefreshFailed, refreshErr)
+		return nil, fmt.Errorf("refresh authorization: %w", refreshErr)
 	}
 	req, _, err = build(ctx)
 	if err != nil {
