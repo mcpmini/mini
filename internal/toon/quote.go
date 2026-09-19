@@ -8,17 +8,17 @@ import (
 )
 
 // numericLikeRE mirrors spec §7.2's /^[+-]?\d+(?:\.\d+)?(?:e[+-]?\d+)?$/i.
-// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#72-quoting-rules-for-string-values
+// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#72-quoting-rules-for-string-values
 var numericLikeRE = regexp.MustCompile(`(?i)^[+-]?\d+(\.\d+)?(e[+-]?\d+)?$`)
 
 // unquotedKeyRE mirrors spec §7.3's ^[A-Za-z_][A-Za-z0-9_.]*$.
-// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#73-key-encoding
+// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#73-key-encoding
 var unquotedKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]*$`)
 
 // structuralChars is spec §7.2's always-quote set (colon, quote, backslash,
 // brackets/braces) plus the document delimiter, hardcoded to comma per 1a's
 // locked options (no delimiter option plumbing yet).
-// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#72-quoting-rules-for-string-values
+// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#72-quoting-rules-for-string-values
 const structuralChars = ":\"\\[]{},"
 
 func encodeString(s string) string {

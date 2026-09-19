@@ -56,7 +56,7 @@ func validateItemsDepth(items []Value, depth int) error {
 }
 
 // Encode renders v as a TOON document per spec §5 root-form rules.
-// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#5-concrete-syntax-and-root-form
+// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#5-concrete-syntax-and-root-form
 func Encode(v Value) (string, error) {
 	if err := validateDepth(v, 0); err != nil {
 		return "", err
