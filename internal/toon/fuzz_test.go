@@ -21,6 +21,8 @@ func FuzzEncodeFromJSON(f *testing.F) {
 		`"42"`,
 		`null`,
 	}
+	deepJSON := strings.Repeat("[", maxEncodeDepth+2) + "0" + strings.Repeat("]", maxEncodeDepth+2)
+	seeds = append(seeds, deepJSON)
 	for _, s := range seeds {
 		f.Add([]byte(s))
 	}
@@ -31,6 +33,9 @@ func FuzzEncodeFromJSON(f *testing.F) {
 		}
 		out, err := Encode(v)
 		if err != nil {
+			if strings.Contains(err.Error(), "nesting depth exceeds") {
+				return
+			}
 			t.Fatalf("Encode failed on FromJSON-accepted input %q: %v", data, err)
 		}
 		emptyRootObject := v.Kind == KindObject && len(v.Fields) == 0
@@ -43,7 +48,7 @@ func FuzzEncodeFromJSON(f *testing.F) {
 
 // assertLineInvariants enforces spec §12: no trailing newline, no trailing
 // whitespace on any line, no blank lines.
-// See https://github.com/toon-format/spec/blob/main/SPEC.md#12-indentation-and-whitespace
+// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#12-indentation-and-whitespace
 func assertLineInvariants(t *testing.T, out string) {
 	t.Helper()
 	if out == "" {

@@ -11,7 +11,7 @@ import (
 // (§9.4), 1 at the root. AllowTabular is false in keyless list-item position
 // where §9.4 forbids tabular form. FieldEmpty selects §9.1's `key: []` over
 // §9.2's `[0]:` for empty arrays.
-// See https://github.com/toon-format/spec/blob/main/SPEC.md#94-mixed--non-uniform-arrays--expanded-list
+// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#94-mixed--non-uniform-arrays--expanded-list
 type arrayCtx struct {
 	Key          string
 	ItemDepth    int
@@ -182,7 +182,7 @@ func writeListItem(sb *strings.Builder, item Value, depth int) error {
 }
 
 // §10: the first field shares the hyphen line; all others render at hyphen depth+1.
-// See https://github.com/toon-format/spec/blob/main/SPEC.md#10-objects-as-list-items
+// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#10-objects-as-list-items
 func writeObjectListItem(sb *strings.Builder, item Value, depth int) error {
 	indent := strings.Repeat(indentUnit, depth)
 	if len(item.Fields) == 0 {
@@ -218,7 +218,7 @@ func joinPrimitives(items []Value) (string, error) {
 
 // §9.3 eligibility: shared key set across all elements, every column is
 // uniform-primitive or nested-uniform (recursive). Header order follows the first element.
-// See https://github.com/toon-format/spec/blob/main/SPEC.md#93-arrays-of-objects--tabular-form
+// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#93-arrays-of-objects--tabular-form
 func tabularFields(items []Value) ([]tabularCol, bool) {
 	if items[0].Kind != KindObject || len(items[0].Fields) == 0 {
 		return nil, false

@@ -1,7 +1,6 @@
 // Package toon encodes values into TOON (Token-Oriented Object Notation),
-// spec v4.1, tracking main of
-// https://github.com/toon-format/spec.
-// See https://github.com/toon-format/spec/blob/main/SPEC.md
+// spec v4.1, pinned to release v4.1.1 of https://github.com/toon-format/spec.
+// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md
 package toon
 
 // Kind is the discriminant for Value.Kind. The zero value is intentionally

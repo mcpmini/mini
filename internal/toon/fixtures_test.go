@@ -19,15 +19,15 @@ type fixtureCase struct {
 }
 
 type fixtureOptions struct {
-	Delimiter string `json:"delimiter"`
-	Indent    *int   `json:"indent"`
+	Delimiter  string `json:"delimiter"`
+	IndentSize *int   `json:"indentSize"`
 }
 
 func (o fixtureOptions) matchesLockedConfig() bool {
 	if o.Delimiter != "" && o.Delimiter != "," {
 		return false
 	}
-	if o.Indent != nil && *o.Indent != 2 {
+	if o.IndentSize != nil && *o.IndentSize != 2 {
 		return false
 	}
 	return true
@@ -37,29 +37,29 @@ func (o fixtureOptions) matchesLockedConfig() bool {
 // mini's locked encoder configuration (comma delimiter, 2-space indent).
 // Keys are "<file>/<test name>".
 var fixtureSkips = map[string]string{
-	"delimiters.json/encodes primitive arrays with tab delimiter":          "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes primitive arrays with pipe delimiter":         "pipe delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes tabular arrays with tab delimiter":            "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes tabular arrays with pipe delimiter":           "pipe delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes nested arrays with tab delimiter":             "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes nested arrays with pipe delimiter":            "pipe delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes root-level array with tab delimiter":          "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes root-level array with pipe delimiter":         "pipe delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes root-level array of objects with tab delimiter":  "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/encodes root-level array of objects with pipe delimiter": "pipe delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/quotes strings containing tab delimiter":              "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/quotes strings containing pipe delimiter":             "pipe delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/does not quote commas with tab delimiter":             "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/does not quote commas with pipe delimiter":            "pipe delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes primitive arrays with tab delimiter":                "tab delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes primitive arrays with pipe delimiter":               "pipe delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes tabular arrays with tab delimiter":                  "tab delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes tabular arrays with pipe delimiter":                 "pipe delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes nested arrays with tab delimiter":                   "tab delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes nested arrays with pipe delimiter":                  "pipe delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes root-level array with tab delimiter":                "tab delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes root-level array with pipe delimiter":               "pipe delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes root-level array of objects with tab delimiter":     "tab delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/encodes root-level array of objects with pipe delimiter":    "pipe delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/quotes strings containing tab delimiter":                    "tab delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/quotes strings containing pipe delimiter":                   "pipe delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/does not quote commas with tab delimiter":                   "tab delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/does not quote commas with pipe delimiter":                  "pipe delimiter option not implemented; delimiter fixed to comma",
 	"delimiters.json/does not quote commas in tabular values with tab delimiter": "tab delimiter option not implemented; delimiter fixed to comma",
 	"delimiters.json/does not quote commas in object values with pipe delimiter": "pipe delimiter option not implemented; delimiter fixed to comma",
 	"delimiters.json/does not quote commas in object values with tab delimiter":  "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/quotes nested array values containing pipe delimiter": "pipe delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/quotes nested array values containing tab delimiter":  "tab delimiter option not implemented; delimiter fixed to comma",
-	"delimiters.json/preserves ambiguity quoting regardless of delimiter":  "pipe delimiter option not implemented; delimiter fixed to comma",
-	"whitespace.json/respects custom indentSize option":                    "indent option not implemented; indent fixed to 2 spaces",
+	"delimiters.json/quotes nested array values containing pipe delimiter":       "pipe delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/quotes nested array values containing tab delimiter":        "tab delimiter option not implemented; delimiter fixed to comma",
+	"delimiters.json/preserves ambiguity quoting regardless of delimiter":        "pipe delimiter option not implemented; delimiter fixed to comma",
+	"whitespace.json/respects custom indentSize option":                          "indentSize option not implemented; indent fixed to 2 spaces",
 
-	"objects-keyed.json/uses the active delimiter in keyed headers and entry-row cells":   "pipe delimiter option not implemented; delimiter fixed to comma",
+	"objects-keyed.json/uses the active delimiter in keyed headers and entry-row cells": "pipe delimiter option not implemented; delimiter fixed to comma",
 
 	"arrays-tabular.json/uses the active delimiter inside nested field groups": "pipe delimiter option not implemented; delimiter fixed to comma",
 }

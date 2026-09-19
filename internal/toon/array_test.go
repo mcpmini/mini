@@ -1,6 +1,7 @@
 package toon
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -259,19 +260,26 @@ func nestedTabularAtDepth(depth int) Value {
 		objVal(Field{Key: "id", Val: numVal("1")}),
 		objVal(Field{Key: "id", Val: numVal("2")}),
 	)
-	for range depth {
+	for i := 1; i < depth; i++ {
 		rows = objVal(Field{Key: "nested", Val: rows}, Field{Key: "sibling", Val: numVal("1")})
 	}
 	return rows
 }
 
 func TestTabularArrayDepthCap(t *testing.T) {
-	if _, err := Encode(nestedTabularAtDepth(maxEncodeDepth)); err != nil {
-		t.Fatalf("tabular rows at depth cap returned error: %v", err)
+	if got, err := Encode(nestedTabularAtDepth(maxEncodeDepth)); err != nil || got == "" {
+		t.Fatalf("tabular rows at depth cap returned (%q, %v), want non-empty output without error", got, err)
 	}
-	if _, err := Encode(nestedTabularAtDepth(maxEncodeDepth + 1)); err == nil {
-		t.Fatal("tabular rows beyond depth cap returned nil")
-	}
+	assertDepthError(t, nestedTabularAtDepth(maxEncodeDepth+1))
+
+	t.Run("pre-render validation bounds nested column recursion", func(t *testing.T) {
+		v := nestedTabularAtDepth(maxEncodeDepth + 2)
+		want := fmt.Sprintf("toon: nesting depth exceeds %d", maxEncodeDepth)
+		if err := validateDepth(v, 0); err == nil || err.Error() != want {
+			t.Errorf("validateDepth() error = %v, want %q", err, want)
+		}
+		assertDepthError(t, v)
+	})
 }
 
 func TestRootTabularArrayRejectsInvalidUTF8FieldKey(t *testing.T) {

@@ -7,10 +7,8 @@ import (
 
 const indentUnit = "  "
 
-// maxEncodeDepth bounds nesting because every line costs 2×depth indent bytes,
-// so unbounded depth lets a small hostile upstream response amplify into a
-// multi-GB encode. 64 is far beyond any real API payload.
-const maxEncodeDepth = 64
+// maxEncodeDepth bounds recursive validation and encoding to protect the host stack.
+const maxEncodeDepth = 1024
 
 // maxEncodeBytes bounds total output because deep non-uniform arrays amplify
 // indent bytes per line, so an unbounded builder lets a small hostile
@@ -26,9 +24,43 @@ func checkDepth(depth int) error {
 	return nil
 }
 
+func validateDepth(v Value, depth int) error {
+	if v.Kind != KindObject && v.Kind != KindArray {
+		return nil
+	}
+	if err := checkDepth(depth); err != nil {
+		return err
+	}
+	if v.Kind == KindObject {
+		return validateFieldsDepth(v.Fields, depth+1)
+	}
+	return validateItemsDepth(v.Items, depth+1)
+}
+
+func validateFieldsDepth(fields []Field, depth int) error {
+	for _, f := range fields {
+		if err := validateDepth(f.Val, depth); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateItemsDepth(items []Value, depth int) error {
+	for _, item := range items {
+		if err := validateDepth(item, depth); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Encode renders v as a TOON document per spec §5 root-form rules.
-// See https://github.com/toon-format/spec/blob/main/SPEC.md#5-concrete-syntax-and-root-form
+// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#5-concrete-syntax-and-root-form
 func Encode(v Value) (string, error) {
+	if err := validateDepth(v, 0); err != nil {
+		return "", err
+	}
 	switch v.Kind {
 	case KindNull, KindBool, KindNumber, KindString:
 		return encodePrimitive(v)

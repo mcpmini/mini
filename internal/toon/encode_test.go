@@ -181,28 +181,41 @@ func nestedObj(depth int) Value {
 }
 
 func nestedListArray(depth int) Value {
-	v := Value{Kind: KindArray, Items: []Value{objVal(Field{Key: "a", Val: numVal("1")}, Field{Key: "b", Val: objVal()})}}
+	v := arrVal(numVal("1"))
 	for range depth {
 		v = Value{Kind: KindArray, Items: []Value{v, numVal("1")}}
 	}
 	return v
 }
 
+func assertDepthError(t *testing.T, v Value) {
+	t.Helper()
+	got, err := Encode(v)
+	if got != "" {
+		t.Errorf("Encode() output = %q, want empty output", got)
+	}
+	want := fmt.Sprintf("toon: nesting depth exceeds %d", maxEncodeDepth)
+	if err == nil || err.Error() != want {
+		t.Errorf("Encode() error = %v, want %q", err, want)
+	}
+}
+
 func TestEncodeDepthCap(t *testing.T) {
+	t.Run("object nesting at cap succeeds", func(t *testing.T) {
+		if got, err := Encode(nestedObj(maxEncodeDepth)); err != nil || got == "" {
+			t.Errorf("Encode() = (%q, %v), want non-empty output without error", got, err)
+		}
+	})
 	t.Run("object nesting beyond cap errors", func(t *testing.T) {
-		if _, err := Encode(nestedObj(maxEncodeDepth + 1)); err == nil {
-			t.Error("expected depth error, got nil")
+		assertDepthError(t, nestedObj(maxEncodeDepth+1))
+	})
+	t.Run("mixed list-array nesting at cap succeeds", func(t *testing.T) {
+		if got, err := Encode(nestedListArray(maxEncodeDepth)); err != nil || got == "" {
+			t.Errorf("Encode() = (%q, %v), want non-empty output without error", got, err)
 		}
 	})
-	t.Run("object nesting at cap encodes", func(t *testing.T) {
-		if _, err := Encode(nestedObj(maxEncodeDepth - 1)); err != nil {
-			t.Errorf("expected success at cap, got: %v", err)
-		}
-	})
-	t.Run("array-of-array nesting beyond cap errors", func(t *testing.T) {
-		if _, err := Encode(nestedListArray(maxEncodeDepth + 1)); err == nil {
-			t.Error("expected depth error, got nil")
-		}
+	t.Run("mixed list-array nesting beyond cap errors", func(t *testing.T) {
+		assertDepthError(t, nestedListArray(maxEncodeDepth+1))
 	})
 }
 

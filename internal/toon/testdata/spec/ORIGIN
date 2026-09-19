@@ -1,5 +1,6 @@
 Source: https://github.com/toon-format/spec
-Commit: f55b93ac489f297ff597d95e4c19ae84675eaeb7
+Release: v4.1.1
+Commit: 62f16b369408180f1faf1cba7da1b46d1f336f12
 Files:  tests/fixtures/encode/*.json -> encode/, LICENSE -> LICENSE
 
 Decode fixtures (tests/fixtures/decode/) are intentionally not vendored:
