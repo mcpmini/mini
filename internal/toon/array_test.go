@@ -2,6 +2,7 @@ package toon
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -371,5 +372,20 @@ func TestEncodeArrayItemWithUnknownKindErrors(t *testing.T) {
 				t.Error("Encode expected error for unknown kind, got nil")
 			}
 		})
+	}
+}
+
+func BenchmarkTabularClassification(b *testing.B) {
+	items := make([]Value, 100)
+	for i := range items {
+		fields := make([]Field, 200)
+		for j := range fields {
+			fields[j] = Field{Key: "f" + strconv.Itoa(j), Val: Value{Kind: KindNumber, Num: "1"}}
+		}
+		items[i] = Value{Kind: KindObject, Fields: fields}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		tabularFields(items)
 	}
 }

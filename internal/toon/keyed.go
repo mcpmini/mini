@@ -23,7 +23,11 @@ func keyedTabularCols(v Value) ([]tabularCol, bool) {
 			return nil, false
 		}
 	}
-	return classifyColumns(entries, keys)
+	indexes := make([]map[string]Value, len(entries))
+	for i, e := range entries {
+		indexes[i] = fieldIndex(e)
+	}
+	return classifyColumns(indexes, keys)
 }
 
 func entryValues(v Value) []Value {
@@ -67,7 +71,7 @@ func writeKeyedEntry(sb *strings.Builder, indent string, f Field, cols []tabular
 	if err := validateUTF8(f.Key); err != nil {
 		return err
 	}
-	cells, err := joinPrimitives(leafValues(f.Val, cols))
+	cells, err := joinPrimitives(leafValues(fieldIndex(f.Val), cols))
 	if err != nil {
 		return err
 	}

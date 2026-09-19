@@ -82,7 +82,7 @@ func writeTabularArray(sb *strings.Builder, items []Value, cols []tabularCol, ct
 	}
 	indent := strings.Repeat(indentUnit, ctx.ItemDepth)
 	for _, it := range items {
-		if err := writeTabularRow(sb, indent, leafValues(it, cols)); err != nil {
+		if err := writeTabularRow(sb, indent, leafValues(fieldIndex(it), cols)); err != nil {
 			return err
 		}
 	}
@@ -237,13 +237,17 @@ func tabularFields(items []Value) ([]tabularCol, bool) {
 			return nil, false
 		}
 	}
-	return classifyColumns(items, keys)
+	indexes := make([]map[string]Value, len(items))
+	for i, it := range items {
+		indexes[i] = fieldIndex(it)
+	}
+	return classifyColumns(indexes, keys)
 }
 
-func classifyColumns(items []Value, keys []string) ([]tabularCol, bool) {
+func classifyColumns(indexes []map[string]Value, keys []string) ([]tabularCol, bool) {
 	cols := make([]tabularCol, len(keys))
 	for i, key := range keys {
-		col, ok := classifyColumn(items, key)
+		col, ok := classifyColumn(indexes, key)
 		if !ok {
 			return nil, false
 		}
@@ -252,8 +256,8 @@ func classifyColumns(items []Value, keys []string) ([]tabularCol, bool) {
 	return cols, true
 }
 
-func classifyColumn(items []Value, key string) (tabularCol, bool) {
-	vals := columnValues(items, key)
+func classifyColumn(indexes []map[string]Value, key string) (tabularCol, bool) {
+	vals := columnValues(indexes, key)
 	if allPrimitive(vals) {
 		return tabularCol{key: key}, true
 	}
@@ -274,24 +278,31 @@ func classifyNestedColumn(key string, vals []Value) (tabularCol, bool) {
 			return tabularCol{}, false
 		}
 	}
-	children, ok := classifyColumns(vals, subKeys)
+	indexes := make([]map[string]Value, len(vals))
+	for i, v := range vals {
+		indexes[i] = fieldIndex(v)
+	}
+	children, ok := classifyColumns(indexes, subKeys)
 	if !ok {
 		return tabularCol{}, false
 	}
 	return tabularCol{key: key, children: children}, true
 }
 
-func columnValues(items []Value, key string) []Value {
-	vals := make([]Value, len(items))
-	for i, it := range items {
-		for _, f := range it.Fields {
-			if f.Key == key {
-				vals[i] = f.Val
-				break
-			}
-		}
+func columnValues(indexes []map[string]Value, key string) []Value {
+	vals := make([]Value, len(indexes))
+	for i, idx := range indexes {
+		vals[i] = idx[key]
 	}
 	return vals
+}
+
+func fieldIndex(v Value) map[string]Value {
+	idx := make(map[string]Value, len(v.Fields))
+	for _, f := range v.Fields {
+		idx[f.Key] = f.Val
+	}
+	return idx
 }
 
 func allNonEmptyObjects(vals []Value) bool {
@@ -322,27 +333,14 @@ func noDupKeySet(keys []string) (map[string]bool, bool) {
 	return set, true
 }
 
-func leafValues(obj Value, cols []tabularCol) []Value {
+func leafValues(idx map[string]Value, cols []tabularCol) []Value {
 	var vals []Value
 	for _, col := range cols {
-		v := fieldValuesByKey(obj, []string{col.key})[0]
+		v := idx[col.key]
 		if len(col.children) == 0 {
 			vals = append(vals, v)
 		} else {
-			vals = append(vals, leafValues(v, col.children)...)
-		}
-	}
-	return vals
-}
-
-func fieldValuesByKey(obj Value, keys []string) []Value {
-	vals := make([]Value, len(keys))
-	for i, k := range keys {
-		for _, f := range obj.Fields {
-			if f.Key == k {
-				vals[i] = f.Val
-				break
-			}
+			vals = append(vals, leafValues(fieldIndex(v), col.children)...)
 		}
 	}
 	return vals
