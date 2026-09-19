@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -64,7 +63,7 @@ func TestEncodeToon(t *testing.T) {
 		}
 	})
 
-	t.Run("non-finite float data normalizes to null, not a JSON fallback", func(t *testing.T) {
+	t.Run("non-finite float data returns an error", func(t *testing.T) {
 		cases := []struct {
 			name string
 			data any
@@ -75,112 +74,28 @@ func TestEncodeToon(t *testing.T) {
 		}
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
-				var logBuf bytes.Buffer
-				logger := slog.New(slog.NewTextHandler(&logBuf, nil))
-				out, err := EncodeToon(logger, &response.Envelope{Data: tc.data})
-				if err != nil {
-					t.Fatalf("EncodeToon(%s) failed: %v", tc.name, err)
+				out, err := EncodeToon(discardLogger(), &response.Envelope{Data: tc.data})
+				if err == nil {
+					t.Fatalf("EncodeToon(%s) succeeded, want error", tc.name)
 				}
-				if logBuf.Len() > 0 {
-					t.Errorf("expected no warning log for normalized float, got: %s", logBuf.String())
-				}
-				if out != "data: null" {
-					t.Errorf("EncodeToon(%s) = %q, want \"data: null\"", tc.name, out)
+				if out != "" {
+					t.Errorf("EncodeToon(%s) returned output on error: %q", tc.name, out)
 				}
 			})
 		}
 	})
 
-	t.Run("nested non-finite values are normalized, siblings preserved", func(t *testing.T) {
-		// JSON has no NaN/Inf, so this covers Go-constructed envelopes (config,
-		// status, action responses), not upstream JSON data.
-		data := map[string]any{
-			"a":    1.5,
-			"bad":  math.Inf(1),
-			"list": []any{1.0, math.NaN()},
-		}
-		out := mustEncodeToon(t, &response.Envelope{Data: data})
-		if strings.HasPrefix(out, "{") {
-			t.Fatalf("expected TOON output, got JSON: %s", out)
-		}
-		if strings.Contains(out, "Inf") || strings.Contains(out, "NaN") {
-			t.Errorf("non-finite values must not appear in TOON output: %s", out)
-		}
-		if !strings.Contains(out, "a: 1.5") {
-			t.Errorf("finite sibling 'a' must be preserved: %s", out)
-		}
-	})
-
-	t.Run("non-finite in plain struct exported field is normalized", func(t *testing.T) {
-		type payload struct {
-			Name  string  `json:"name"`
-			Score float64 `json:"score"`
-		}
-		out := mustEncodeToon(t, &response.Envelope{Data: payload{Name: "ok", Score: math.NaN()}})
-		if strings.HasPrefix(out, "{") {
-			t.Fatalf("expected TOON output, got JSON: %s", out)
-		}
-		if !strings.Contains(out, "score: null") {
-			t.Errorf("non-finite struct field must be null: %s", out)
-		}
-		if !strings.Contains(out, "name: ok") {
-			t.Errorf("finite struct field must be preserved: %s", out)
-		}
-	})
-
-	t.Run("non-finite in passthrough is normalized", func(t *testing.T) {
-		env := &response.Envelope{
-			Data:        "ok",
-			Passthrough: map[string]any{"score": math.NaN(), "label": "good"},
-		}
-		out := mustEncodeToon(t, env)
-		if !strings.Contains(out, "data: ok") {
-			t.Errorf("data field must be preserved: %s", out)
-		}
-		if !strings.Contains(out, "score: null") {
-			t.Errorf("non-finite passthrough value must be null: %s", out)
-		}
-		if !strings.Contains(out, "label: good") {
-			t.Errorf("finite passthrough value must be preserved: %s", out)
-		}
-	})
-
-	t.Run("normalization is a no-op on finite data", func(t *testing.T) {
-		env := &response.Envelope{Data: []any{
-			map[string]any{"id": float64(1), "name": "alice"},
-			map[string]any{"id": float64(2), "name": "bob"},
-		}}
-		want := mustEncodeToon(t, env)
-		got := mustEncodeToon(t, env)
-		if got != want {
-			t.Errorf("repeated EncodeToon on finite data differs: want %q got %q", want, got)
-		}
-		if !strings.HasPrefix(got, "data[2]{id,name}:") {
-			t.Errorf("finite data must still produce tabular TOON: %s", got)
-		}
-	})
-
-	t.Run("finite struct data keeps encoding/json semantics untouched", func(t *testing.T) {
+	t.Run("finite struct data keeps encoding/json semantics", func(t *testing.T) {
 		type item struct {
 			A float64 `json:"a"`
 			B string  `json:"b,omitempty"`
 		}
 		got := mustEncodeToon(t, &response.Envelope{Data: item{A: 1}})
 		if strings.Contains(got, "b") {
-			t.Errorf("omitempty was lost — normalizer must not run on finite data: %s", got)
+			t.Errorf("omitempty was lost: %s", got)
 		}
 		if !strings.Contains(got, "a: 1") {
 			t.Errorf("expected finite struct field encoded, got: %s", got)
-		}
-	})
-
-	t.Run("caller envelope map is not mutated by EncodeToon", func(t *testing.T) {
-		m := map[string]any{"bad": math.NaN(), "ok": 1.0}
-		env := &response.Envelope{Data: m}
-		mustEncodeToon(t, env)
-		v, isFloat := m["bad"].(float64)
-		if !isFloat || !math.IsNaN(v) {
-			t.Errorf("original map was mutated: m[\"bad\"] = %v", m["bad"])
 		}
 	})
 }
