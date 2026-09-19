@@ -8,10 +8,13 @@ import (
 // arrayCtx positions an array whose header-line prefix (indent or "- ") the
 // caller has already written. ItemDepth is where rows/list items go: field
 // depth+1 for keyed fields, hyphen depth+1 for keyless list-item arrays
-// (§9.4), 1 at the root. AllowTabular is false in keyless list-item position
-// where §9.4 forbids tabular form. FieldEmpty selects §9.1's `key: []` over
-// §9.2's `[0]:` for empty arrays.
-// See https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#94-mixed--non-uniform-arrays--expanded-list
+// (§9.4: https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#94-mixed-and-non-uniform-arrays--list-form),
+// 1 at the root. AllowTabular is false in keyless list-item position
+// where §9.4 forbids tabular form. FieldEmpty selects §9.1
+// (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#91-primitive-arrays--inline-form)
+// `key: []` over §9.2
+// (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#92-arrays-of-primitive-arrays--list-form)
+// `[0]:` for empty arrays.
 type arrayCtx struct {
 	Key          string
 	ItemDepth    int
@@ -20,7 +23,8 @@ type arrayCtx struct {
 }
 
 // tabularCol describes one column in a tabular header. Children is nil for
-// primitive leaf columns and non-nil for nested-uniform object columns (§9.3).
+// primitive leaf columns and non-nil for nested-uniform object columns
+// (§9.3: https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#93-arrays-of-objects--tabular-form).
 type tabularCol struct {
 	key      string
 	children []tabularCol

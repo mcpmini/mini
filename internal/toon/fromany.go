@@ -10,6 +10,7 @@ import (
 
 // FromAny converts an arbitrary Go value to a Value via json.Marshal then
 // FromJSON, inheriting FromJSON's ordering and canonicalization. Spec §3
+// (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#3-encoding-normalization-reference-encoder)
 // requires NaN and +/-Infinity to normalize to null rather than fail the
 // encode. The fallback strictly delegates clean subtrees to encoding/json:
 //  1. Exact: json.Marshal succeeds.

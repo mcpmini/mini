@@ -67,8 +67,9 @@ func needsQuoting(s string) bool {
 	return strings.HasPrefix(s, "-")
 }
 
-// Spec §12 trims exactly U+0020; the broader ASCII check is harmless since
-// control chars (tab, newline, etc.) are already caught by containsControlChar.
+// Spec §12 (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#12-indentation-and-whitespace)
+// trims exactly U+0020; the broader ASCII check is harmless since control
+// chars (tab, newline, etc.) are already caught by containsControlChar.
 func hasLeadingOrTrailingASCIISpace(s string) bool {
 	first, _ := utf8.DecodeRuneInString(s)
 	last, _ := utf8.DecodeLastRuneInString(s)

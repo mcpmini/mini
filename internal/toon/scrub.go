@@ -159,9 +159,11 @@ type orderedEntry struct {
 }
 
 // orderedObject serializes its entries in insertion order, satisfying TOON
-// §2 and §8 which require object key order to be preserved as encountered
-// by the encoder. map[string]any cannot be used here because json.Marshal
-// sorts map keys alphabetically.
+// §2 (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#2-data-model)
+// and §8 (https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#8-objects)
+// which require object key order to be preserved as encountered by the
+// encoder. map[string]any cannot be used here because json.Marshal sorts
+// map keys alphabetically.
 type orderedObject []orderedEntry
 
 func (o orderedObject) MarshalJSON() ([]byte, error) {
