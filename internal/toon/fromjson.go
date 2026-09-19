@@ -13,7 +13,7 @@ import (
 // occurrence winning while the first occurrence's position is kept. Numbers
 // are canonicalized per spec §2 via json.Decoder's UseNumber, so integers
 // beyond float64 precision survive digit-exact.
-// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md#2-data-model
+// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L192
 func FromJSON(raw json.RawMessage) (Value, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
