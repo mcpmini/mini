@@ -188,10 +188,7 @@ func TestEncodeToon(t *testing.T) {
 func TestEncodeToonRejectsDepthLimit(t *testing.T) {
 	t.Run("depth cap is returned to the caller", func(t *testing.T) {
 		nested := map[string]any{"leaf": "value"}
-		for i := 0; i < 70; i++ {
-			// A second sibling key per level defeats key folding (fold.go
-			// only chains through single-field objects), so the nesting
-			// actually reaches the writer's depth check.
+		for i := 0; i < 1025; i++ {
 			nested = map[string]any{"level": nested, "other": i}
 		}
 		out, err := EncodeToon(discardLogger(), &response.Envelope{Data: nested})

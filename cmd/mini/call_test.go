@@ -44,7 +44,7 @@ func TestResolveCallOutput(t *testing.T) {
 
 func TestPrintCallOutputToonReturnsEncodingError(t *testing.T) {
 	nested := map[string]any{"leaf": "value"}
-	for i := 0; i < 70; i++ {
+	for i := 0; i < 1025; i++ {
 		nested = map[string]any{"level": nested, "other": i}
 	}
 

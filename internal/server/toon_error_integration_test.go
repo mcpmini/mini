@@ -52,7 +52,7 @@ func newDeepToonServer(t *testing.T, perm *config.PermissionsConfig) *server.Ser
 func deepPayload(t *testing.T) string {
 	t.Helper()
 	value := map[string]any{"depth-sentinel": "must-not-be-serialized"}
-	for i := 0; i < 70; i++ {
+	for i := 0; i < 1025; i++ {
 		value = map[string]any{"nested": value, "sibling": i}
 	}
 	data, err := json.Marshal(value)
