@@ -90,8 +90,8 @@ func (r *Runner) buildMiniConfigDir(env *Env, servers map[string]string, callLog
 
 func miniConfigYAML(format int) string {
 	switch format {
-	case fmtLines:
-		return "response_format: mini\n"
+	case fmtToon:
+		return "response_format: toon\n"
 	case fmtPassthrough, fmtProjected:
 		return "response_format: json\n"
 	default:
@@ -156,7 +156,7 @@ func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir 
 
 func (r *Runner) writeMiniProxyConfig(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {
 	configDir := env.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), nil, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0600); err != nil {
 		return "", err
 	}
 	if err := writeServersYAML(configDir, r.FakemcpBin, servers, callLogDir); err != nil {

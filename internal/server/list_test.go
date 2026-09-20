@@ -76,21 +76,3 @@ func TestList_detail_returnsSchema(t *testing.T) {
 	}
 }
 
-func TestBuildEnvelope_linesFormat(t *testing.T) {
-	srv := newTestServer(t)
-	fake := fakeConn("list")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"foo\"},{\"id\":2,\"name\":\"bar\"}]"}]}`)
-	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fake)
-
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "list",
-		"session_only": true, "projection": map[string]any{"format": "mini"},
-	}))
-
-	text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "list", "params": map[string]any{},
-	})))
-	if len(text) == 0 {
-		t.Error("expected non-empty lines output")
-	}
-}

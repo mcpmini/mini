@@ -157,3 +157,4 @@ func TestNewProxyResult_MarshalsOnceForAllFields(t *testing.T) {
 		}
 	}
 }
+

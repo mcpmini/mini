@@ -358,7 +358,7 @@ func TestProxy_Call_WithExclusionAndTruncation(t *testing.T) {
 	}
 }
 
-func TestProxy_Call_ToolFormatMini_Ignored(t *testing.T) {
+func TestProxy_Call_ToolFormatToon_RendersToon(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -372,26 +372,23 @@ func TestProxy_Call_ToolFormatMini_Ignored(t *testing.T) {
 		"action":     "set_projection",
 		"server":     "svc",
 		"tool":       "get_user",
-		"projection": map[string]any{"format": "mini"},
+		"projection": map[string]any{"format": "toon"},
 	}))
 
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("response: %s", text)
-
-	if !strings.HasPrefix(text, "{") {
-		t.Errorf("proxy mode must ignore format:mini and return JSON: %s", text)
+	if strings.HasPrefix(text, "{") {
+		t.Errorf("per-tool format:toon should produce TOON, got JSON: %s", text)
 	}
-	env := parseProxyEnvelope(t, text)
-	if name, _ := env.Data["name"].(string); name != "alice" {
-		t.Errorf("expected data.name=alice, got: %s", text)
+	if !strings.Contains(text, "name: alice") {
+		t.Errorf("expected name field in TOON output, got: %s", text)
 	}
 }
 
-func TestProxy_Call_GlobalFormatMini_Ignored(t *testing.T) {
+func TestProxy_Call_GlobalFormatToon_RendersToon(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	cfg.ResponseFormat = "mini"
+	cfg.ResponseFormat = "toon"
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	defer srv.Close()
 
@@ -401,14 +398,12 @@ func TestProxy_Call_GlobalFormatMini_Ignored(t *testing.T) {
 
 	resp := serveProxy(t, srv, callTool("svc__get_user", map[string]any{}))
 	text := toolResultText(t, resp)
-	t.Logf("response: %s", text)
-
-	if !strings.HasPrefix(text, "{") {
-		t.Errorf("proxy mode must ignore response_format:mini and return JSON: %s", text)
+	if strings.HasPrefix(text, "{") {
+		t.Errorf("global response_format:toon should produce TOON in proxy mode, got JSON: %s", text)
 	}
 }
 
-func TestProxy_Call_SessionFormatMini_Ignored(t *testing.T) {
+func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -419,7 +414,7 @@ func TestProxy_Call_SessionFormatMini_Ignored(t *testing.T) {
 	addProxyConn(t, srv, "svc", conn)
 
 	const sessionID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
-	postMCP(t, srv, sessionID, initMsg(false)) // no signal → proxy
+	postMCP(t, srv, sessionID, initMsg(false))
 
 	postMCP(t, srv, sessionID, map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -427,7 +422,7 @@ func TestProxy_Call_SessionFormatMini_Ignored(t *testing.T) {
 			"name": "config",
 			"arguments": map[string]any{
 				"action": "set_projection", "server": "svc", "tool": "list_items",
-				"projection": map[string]any{"format": "mini"}, "session_only": true,
+				"projection": map[string]any{"format": "toon"}, "session_only": true,
 			},
 		},
 	})
@@ -443,10 +438,8 @@ func TestProxy_Call_SessionFormatMini_Ignored(t *testing.T) {
 		t.Fatal("no content in response")
 	}
 	text, _ := content[0].(map[string]any)["text"].(string)
-	t.Logf("response: %q", text)
-
-	if !strings.HasPrefix(text, "{") {
-		t.Errorf("proxy mode must ignore session format:mini and return JSON: %s", text)
+	if strings.HasPrefix(text, "{") {
+		t.Errorf("session format:toon should produce TOON in proxy mode, got JSON: %s", text)
 	}
 }
 

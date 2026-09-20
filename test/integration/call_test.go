@@ -74,17 +74,19 @@ func TestCLICall_RawMode(t *testing.T) {
 	}
 }
 
-func TestCLICall_MiniFormat(t *testing.T) {
+func TestCLICall_ToonFormat(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":42,"name":"widget"}`,
 	})
-	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item", "-m")
+	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item", "-t")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
-	// Mini format is not JSON envelope — starts with [svc.get_item]
-	if !strings.Contains(stdout, "[svc.get_item]") {
-		t.Errorf("expected mini header [svc.get_item], got: %s", stdout)
+	if strings.HasPrefix(strings.TrimSpace(stdout), "{") {
+		t.Errorf("expected toon format, got JSON: %s", stdout)
+	}
+	if !strings.Contains(stdout, "name: widget") {
+		t.Errorf("expected toon field rendering, got: %s", stdout)
 	}
 }
 
@@ -235,18 +237,20 @@ func TestCLIPermCall_RawMode(t *testing.T) {
 	}
 }
 
-func TestCLICall_ConfigFormatMini(t *testing.T) {
+func TestCLICall_ConfigFormatToon(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1,"name":"thing"}`,
 	})
-	// Set response_format: mini in config — call should default to mini without -m
-	writeConfig(t, cfg, "response_format: mini\n")
+	writeConfig(t, cfg, "response_format: toon\n")
 	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
-	if !strings.Contains(stdout, "[svc.get_item]") {
-		t.Errorf("expected mini format from config default, got: %s", stdout)
+	if !strings.Contains(stdout, "name: thing") {
+		t.Errorf("expected toon format from config default, got: %s", stdout)
+	}
+	if strings.HasPrefix(strings.TrimSpace(stdout), "{") {
+		t.Errorf("expected toon format, got JSON: %s", stdout)
 	}
 }
 
@@ -254,8 +258,7 @@ func TestCLICall_FlagOverridesConfigFormat(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1}`,
 	})
-	writeConfig(t, cfg, "response_format: mini\n")
-	// -j should override mini default
+	writeConfig(t, cfg, "response_format: toon\n")
 	stdout, _, code := runCLI(t, cfg, "call", "-j", "svc", "get_item")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
@@ -265,6 +268,20 @@ func TestCLICall_FlagOverridesConfigFormat(t *testing.T) {
 	}
 	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
 		t.Errorf("-j flag should produce JSON envelope: %v\nstdout: %s", err, stdout)
+	}
+}
+
+func TestCLICall_RejectsMiniFormatInConfig(t *testing.T) {
+	cfg := callSetup(t, map[string]string{
+		"get_item": `{"id":1}`,
+	})
+	writeConfig(t, cfg, "response_format: mini\n")
+	_, stderr, code := runCLI(t, cfg, "call", "svc", "get_item")
+	if code == 0 {
+		t.Fatal("expected non-zero exit for removed format name \"mini\"")
+	}
+	if !strings.Contains(stderr, "toon") {
+		t.Errorf("expected error naming toon as the replacement, got: %s", stderr)
 	}
 }
 
@@ -337,19 +354,19 @@ func TestCLICall_NullResult_PreservesDataKey(t *testing.T) {
 	}
 }
 
-func TestCLICall_MiniFormat_ZeroValueSuppressed(t *testing.T) {
+func TestCLICall_ToonFormat_ZeroValuesPreserved(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"list_items": `[{"count":0,"title":"Bug"},{"count":9,"title":"Feat"}]`,
 	})
-	stdout, _, code := runCLI(t, cfg, "call", "-m", "svc", "list_items")
+	stdout, _, code := runCLI(t, cfg, "call", "-t", "svc", "list_items")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
 	}
-	if strings.Contains(stdout, "0 Bug") {
-		t.Errorf("expected zero-value 'count' suppressed to '-', got literal 0: %s", stdout)
+	if !strings.Contains(stdout, "0,Bug") {
+		t.Errorf("toon must preserve zero values verbatim, got: %s", stdout)
 	}
-	if !strings.Contains(stdout, "- Bug") {
-		t.Errorf("expected zero-value row rendered as '- Bug', got: %s", stdout)
+	if !strings.Contains(stdout, "9,Feat") {
+		t.Errorf("expected tabular row for second item, got: %s", stdout)
 	}
 }
 

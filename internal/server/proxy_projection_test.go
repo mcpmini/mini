@@ -141,6 +141,26 @@ func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) 
 	wg.Wait()
 }
 
+func TestProxy_ToonFormat_RendersToonOutput(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.ResponseFormat = "toon"
+	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer srv.Close()
+	conn := fakeConn("list_items")
+	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"alice\"},{\"id\":2,\"name\":\"bob\"}]"}]}`)
+	addProxyConn(t, srv, "svc", conn)
+
+	resp := serveProxy(t, srv, callTool("svc__list_items", map[string]any{}))
+	text := toolResultText(t, resp)
+	if strings.HasPrefix(text, "{") {
+		t.Fatalf("expected TOON format in proxy mode, got JSON: %s", text)
+	}
+	if !strings.Contains(text, "data[2]{id,name}:") {
+		t.Errorf("expected tabular TOON block, got: %s", text)
+	}
+}
+
 func TestProxy_DefaultProjection_PreservesLargeIntegers(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
