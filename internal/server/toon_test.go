@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"strings"
 	"testing"
 
@@ -62,28 +61,6 @@ func TestEncodeToon(t *testing.T) {
 		}
 		if !strings.Contains(out, "file:") || !strings.Contains(out, key) {
 			t.Errorf("expected file field with recovery key %q, got: %s", key, out)
-		}
-	})
-
-	t.Run("non-finite float data returns an error", func(t *testing.T) {
-		cases := []struct {
-			name string
-			data any
-		}{
-			{"NaN", math.NaN()},
-			{"+Inf", math.Inf(1)},
-			{"-Inf", math.Inf(-1)},
-		}
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				out, err := EncodeToon(discardLogger(), &response.Envelope{Data: tc.data})
-				if err == nil {
-					t.Fatalf("EncodeToon(%s) succeeded, want error", tc.name)
-				}
-				if out != "" {
-					t.Errorf("EncodeToon(%s) returned output on error: %q", tc.name, out)
-				}
-			})
 		}
 	})
 

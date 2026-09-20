@@ -183,6 +183,9 @@ func (s *Server) proxyProject(p envelopeParams) (any, error) {
 		return nil, err
 	}
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, int64(stats.RawTokens-stats.SummaryTokens))
+	if config.EffectiveFormat("", config.ProjectionFormat(projCfg), s.cfg.ResponseFormat) == config.FormatToon {
+		return s.formatEnvelope(p.Entry.Server, p.Tool, env, projCfg)
+	}
 	return response.NewProxyResult(env), nil
 }
 
