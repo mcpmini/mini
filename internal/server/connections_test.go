@@ -34,27 +34,6 @@ func TestListDirectoryNonEmpty(t *testing.T) {
 	}
 }
 
-func TestToonFormatWithUpstream(t *testing.T) {
-	fake := fakeConn("list_directory")
-	fake.RespondWith(map[string]any{"entries": []string{"a.txt", "b.txt", "c.go"}})
-	srv := newTestServer(t)
-	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
-
-	serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "fs", "tool": "list_directory",
-		"projection": map[string]any{"format": "toon"},
-	}))
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
-	}))
-	text := toolResultText(t, resp)
-	if strings.HasPrefix(text, "{") {
-		t.Fatalf("expected TOON format, got JSON: %s", text)
-	}
-	if !strings.HasPrefix(text, "data") {
-		t.Errorf("expected TOON output to start with the data field, got: %s", text)
-	}
-}
 
 func TestReadFileTruncation(t *testing.T) {
 	fake := fakeConn("read_file")

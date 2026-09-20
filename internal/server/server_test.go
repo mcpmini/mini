@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -492,15 +491,6 @@ func TestConfigureStatus(t *testing.T) {
 	if status["servers"] == nil {
 		t.Error("expected servers in status")
 	}
-}
-
-func realPath(t *testing.T, path string) string {
-	t.Helper()
-	real, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return path
-	}
-	return real
 }
 
 // TestPing_ReturnsEmptyResult verifies the ping response is exactly {}.

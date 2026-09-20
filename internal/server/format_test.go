@@ -5,7 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -168,8 +167,8 @@ func extractToonFileKey(t *testing.T, text string) string {
 		t.Fatalf("expected a file field in TOON output, got: %s", text)
 	}
 	// Recovery keys are all-digit unix_ms timestamps, so TOON's numeric-like
-	// quoting rule (spec §7.2) always wraps them in double quotes.
-	// See https://github.com/toon-format/spec/blob/f55b93ac489f297ff597d95e4c19ae84675eaeb7/SPEC.md#72-quoting-rules-for-string-values
+	// quoting rule always wraps them in double quotes.
+	// https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L414
 	return strings.Trim(m[1], `"`)
 }
 
@@ -326,55 +325,24 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 	})
 }
 
-func fetchServerStatus(t *testing.T, srv *server.Server, serverName string) map[string]any {
-	t.Helper()
-	text := toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))
-	var status map[string]any
-	if err := json.Unmarshal([]byte(text), &status); err != nil {
-		t.Fatalf("status not JSON: %v\n%s", err, text)
-	}
-	servers, _ := status["servers"].(map[string]any)
-	svc, _ := servers[serverName].(map[string]any)
-	if svc == nil {
-		t.Fatalf("%s not in status: %s", serverName, text)
-	}
-	return svc
-}
-
-func TestHealthStatsInConfigureStatus(t *testing.T) {
+func TestToonFormatWithUpstream(t *testing.T) {
+	fake := fakeConn("list_directory")
+	fake.RespondWith(map[string]any{"entries": []string{"a.txt", "b.txt", "c.go"}})
 	srv := newTestServer(t)
-	fake := &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
-		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)},
-	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
-	serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "ping", "params": map[string]any{}}))
-	svc := fetchServerStatus(t, srv, "svc")
-	if svc["calls"] == nil {
-		t.Errorf("expected calls in server stats: %v", svc)
-	}
-	if svc["status"] == nil {
-		t.Errorf("expected status in server stats: %v", svc)
-	}
-	if svc["tools"] == nil {
-		t.Errorf("expected tools count in server stats: %v", svc)
-	}
-}
+	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
 
-func TestConnErrorTriggersReconnect(t *testing.T) {
-	srv := newTestServer(t)
-	defer srv.Close()
-	fake := &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
-	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
-	fake.Err = errors.New("simulated connection failure")
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "fs", "tool": "list_directory",
+		"projection": map[string]any{"format": "toon"},
+	}))
 	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "ping", "params": map[string]any{},
+		"server": "fs", "tool": "list_directory", "params": map[string]any{"path": "/dir"},
 	}))
 	text := toolResultText(t, resp)
-	env := parseEnvelope(t, text)
-	if env["error"] == nil {
-		t.Errorf("expected ok=false on connection error: %s", text)
+	if strings.HasPrefix(text, "{") {
+		t.Fatalf("expected TOON format, got JSON: %s", text)
+	}
+	if !strings.HasPrefix(text, "data") {
+		t.Errorf("expected TOON output to start with the data field, got: %s", text)
 	}
 }

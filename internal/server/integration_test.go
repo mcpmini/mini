@@ -17,6 +17,15 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
+func realPath(t *testing.T, path string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return path
+	}
+	return real
+}
+
 func setupFSServer(t *testing.T, allowedDir string) (*server.Server, context.CancelFunc) {
 	t.Helper()
 	if _, err := exec.LookPath("npx"); err != nil {

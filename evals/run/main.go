@@ -49,7 +49,7 @@ var validModes = map[string]bool{
 	"direct":          true,
 	"mcp-passthrough": true, "mcp-projected": true, "mcp-toon": true,
 	"cli-passthrough": true, "cli-projected": true, "cli-toon": true,
-	"proxy-passthrough": true, "proxy-projected": true, "proxy-toon": true,
+	"proxy-passthrough": true, "proxy-projected": true,
 }
 
 func main() {
@@ -280,5 +280,5 @@ func usage() string {
 Evals:  bugfix | review-prs | incident-triage | sprint | baseline
 Modes:  direct | mcp-passthrough | mcp-projected | mcp-toon
         cli-passthrough | cli-projected | cli-toon
-        proxy-passthrough | proxy-projected | proxy-toon`
+        proxy-passthrough | proxy-projected`
 }
