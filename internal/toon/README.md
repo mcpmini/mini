@@ -1,0 +1,3 @@
+Encode-only [TOON](https://github.com/toon-format/spec) (Token-Oriented Object Notation) encoder for mini. Implements [spec v4.1](https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md), pinned to release [v4.1.1](https://github.com/toon-format/spec/tree/62f16b369408180f1faf1cba7da1b46d1f336f12).
+
+Test fixtures in `testdata/spec/` are vendored from [toon-format/spec](https://github.com/toon-format/spec) at commit [`62f16b3`](https://github.com/toon-format/spec/tree/62f16b369408180f1faf1cba7da1b46d1f336f12), licensed under the [MIT License](testdata/spec/LICENSE).
