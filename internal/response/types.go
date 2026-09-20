@@ -36,8 +36,7 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 }
 
 // WireMap returns the envelope's wire shape as a plain map for encoders that
-// need to walk the value (TOON) or marshal to JSON. It is the canonical wire
-// representation; TestEnvelopeWireMapMatchesMarshalJSON guards against drift.
+// need to walk the value (TOON) or marshal to JSON.
 func (e Envelope) WireMap() map[string]any {
 	if e.Error != "" {
 		out := map[string]any{"error": e.Error}

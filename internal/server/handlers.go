@@ -136,8 +136,6 @@ func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) 
 	var le errLookup
 	if errors.As(err, &le) {
 		env := response.BuildError("not_found", err.Error(), false, "")
-		// nil projCfg: the tool wasn't found, so there's no per-tool projection
-		// to consult — formatEnvelope falls back to the global ResponseFormat.
 		return s.formatEnvelope(server, tool, env, nil)
 	}
 	return nil, err
@@ -259,8 +257,6 @@ func (s *Server) buildProjectedEnvelope(p projectedEnvelopeParams) (*response.En
 	})
 }
 
-// formattedEnvelope carries the envelope's error state past formatting so
-// normalizeToolCallResult can still set isError once the envelope is a string.
 type formattedEnvelope struct {
 	text    string
 	isError bool

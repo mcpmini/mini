@@ -231,7 +231,6 @@ func newSrvConfigDirAndToolErr(t *testing.T, globalFormat string) *server.Server
 
 func assertToonFormat(t *testing.T, text string) {
 	t.Helper()
-	// A TOON document never starts with "{" — only JSON objects do.
 	if strings.HasPrefix(text, "{") {
 		t.Fatalf("expected TOON format, got JSON: %.200s", text)
 	}
@@ -264,7 +263,7 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 
 	t.Run("wildcard toon projection renders tool_error as TOON", func(t *testing.T) {
 		configDir := t.TempDir()
-		// loadServerProjections only merges projections for servers with a .yaml config file.
+		// Wildcard projections require a server config file to be present.
 		os.MkdirAll(filepath.Join(configDir, "servers"), 0755) //nolint:errcheck
 		os.WriteFile(filepath.Join(configDir, "servers", "gh.yaml"), //nolint:errcheck
 			[]byte("name: gh\ncommand: unused\n"), 0644)
@@ -281,8 +280,7 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 	})
 
 	t.Run("session-override toon projection renders tool_error as TOON", func(t *testing.T) {
-		// Serve handles stdio requests concurrently, so a single-stream config
-		// then call has no ordering guarantee; HTTP POSTs are synchronous.
+		// HTTP gives request ordering that stdio doesn't guarantee.
 		srv := newSrvConfigDirAndToolErr(t, "")
 		ts := httptest.NewServer(srv)
 		t.Cleanup(ts.Close)
