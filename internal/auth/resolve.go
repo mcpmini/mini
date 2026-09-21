@@ -40,7 +40,11 @@ type ResolveEndpointsParams struct {
 // sc.URL. It is a no-op if AuthURL, TokenURL, and ClientID are all already set.
 func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) error {
 	a := sc.Auth
-	a.ResourceURL = sc.URL
+	resourceURL, err := canonicalResourceURI(sc.URL)
+	if err != nil {
+		return err
+	}
+	a.ResourceURL = resourceURL
 	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
 		return nil
 	}

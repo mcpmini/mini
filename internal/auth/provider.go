@@ -39,8 +39,16 @@ func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
 
 func normalizeProviderParams(p ProviderParams) (ProviderParams, error) {
 	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
-	if p.AuthConfig.ResourceURL == "" {
-		p.AuthConfig.ResourceURL = p.ServerURL
+	resourceURL := p.AuthConfig.ResourceURL
+	if resourceURL == "" {
+		resourceURL = p.ServerURL
+	}
+	if resourceURL != "" {
+		canonical, err := canonicalResourceURI(resourceURL)
+		if err != nil {
+			return ProviderParams{}, err
+		}
+		p.AuthConfig.ResourceURL = canonical
 	}
 	if err := hydrateFromRegistration(p); err != nil {
 		return ProviderParams{}, err
@@ -94,8 +102,9 @@ type tokenProvider struct {
 	serverURL  string
 	clock      clock.Clock
 
-	mu    sync.Mutex
-	token *oauth2.Token
+	mu             sync.Mutex
+	token          *oauth2.Token
+	persistedToken *oauth2.Token
 }
 
 func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
@@ -103,6 +112,9 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 	defer p.mu.Unlock()
 	if err := p.ensureTokenLocked(); err != nil {
 		return "", err
+	}
+	if p.shouldRefreshLocked() {
+		p.reloadPersistedTokenLocked()
 	}
 	if p.shouldRefreshLocked() {
 		if err := p.refreshLocked(ctx); err != nil {
@@ -121,6 +133,10 @@ func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) 
 	if bearerValue(p.token) != stale {
 		return bearerValue(p.token), nil
 	}
+	p.reloadPersistedTokenLocked()
+	if bearerValue(p.token) != stale {
+		return bearerValue(p.token), nil
+	}
 	if err := p.refreshLocked(ctx); err != nil {
 		return "", err
 	}
@@ -136,7 +152,33 @@ func (p *tokenProvider) ensureTokenLocked() error {
 		return p.remedyError(fmt.Errorf("load token: %w", err))
 	}
 	p.token = t
+	p.persistedToken = cloneToken(t)
 	return nil
+}
+
+func (p *tokenProvider) reloadPersistedTokenLocked() {
+	t, err := Load(p.configDir, p.serverName)
+	if err != nil || samePersistedToken(t, p.persistedToken) {
+		return
+	}
+	p.token = t
+	p.persistedToken = cloneToken(t)
+}
+
+func samePersistedToken(a, b *oauth2.Token) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.AccessToken == b.AccessToken && a.TokenType == b.TokenType &&
+		a.RefreshToken == b.RefreshToken && a.Expiry.Equal(b.Expiry) && a.ExpiresIn == b.ExpiresIn
+}
+
+func cloneToken(t *oauth2.Token) *oauth2.Token {
+	if t == nil {
+		return nil
+	}
+	clone := *t
+	return &clone
 }
 
 func (p *tokenProvider) shouldRefreshLocked() bool {
@@ -171,6 +213,8 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 	p.token = refreshed
 	if err := Save(p.configDir, p.serverName, refreshed); err != nil {
 		slog.Warn("persist refreshed oauth token failed; using refreshed token in memory", "server", p.serverName, "err", err)
+	} else {
+		p.persistedToken = cloneToken(refreshed)
 	}
 	return nil
 }
@@ -187,6 +231,7 @@ func (p *tokenProvider) commitBrowserToken(normalized ProviderParams, tok *oauth
 	}
 	p.ac = normalized.AuthConfig
 	p.token = tok
+	p.persistedToken = cloneToken(tok)
 	return nil
 }
 
