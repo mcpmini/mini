@@ -175,17 +175,27 @@ type fakeAuthProvider struct {
 	next       string
 	refreshes  int
 	refreshErr error
+	authValues []string
+	lastStale  string
+	authCalls  int
 }
 
 func (f *fakeAuthProvider) Authorization(context.Context) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.authCalls++
+	if len(f.authValues) > 0 {
+		value := f.authValues[0]
+		f.authValues = f.authValues[1:]
+		return value, nil
+	}
 	return f.current, nil
 }
 
 func (f *fakeAuthProvider) RefreshAuthorization(_ context.Context, stale string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastStale = stale
 	if f.current != stale {
 		return f.current, nil
 	}
@@ -201,6 +211,18 @@ func (f *fakeAuthProvider) refreshCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.refreshes
+}
+
+func (f *fakeAuthProvider) staleValue() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastStale
+}
+
+func (f *fakeAuthProvider) authorizationCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.authCalls
 }
 
 func newAuthReplayConn(t *testing.T, handler http.HandlerFunc) (*HTTPConnection, *fakeAuthProvider) {
@@ -236,6 +258,26 @@ func TestAuthReplay_401RefreshedThenSucceeds(t *testing.T) {
 	}
 	if provider.refreshCount() != 1 {
 		t.Errorf("refreshes = %d, want 1", provider.refreshCount())
+	}
+}
+
+func TestAuthReplay_refreshUsesAuthorizationActuallySent(t *testing.T) {
+	conn, provider := newAuthReplayConn(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer new" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Write(okRPCResponse(1)) //nolint:errcheck
+	})
+	provider.current = "Bearer sent"
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("expected success after replay, got: %v", err)
+	}
+	if got := provider.staleValue(); got != "Bearer sent" {
+		t.Errorf("stale = %q, want sent authorization", got)
+	}
+	if got := provider.authorizationCalls(); got != 2 {
+		t.Errorf("Authorization calls = %d, want 2 (one per request)", got)
 	}
 }
 

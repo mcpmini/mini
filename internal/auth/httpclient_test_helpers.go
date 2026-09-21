@@ -5,6 +5,8 @@ package auth
 import (
 	"net/http"
 	"time"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func UseLoopbackHTTPClient() {
@@ -14,4 +16,12 @@ func UseLoopbackHTTPClient() {
 			return http.ErrUseLastResponse
 		},
 	}
+}
+
+func UseLoopbackEndpoints() {
+	endpointValidator = func(string) error { return nil }
+}
+
+func ResetEndpointValidation() {
+	endpointValidator = transport.ValidateURL
 }

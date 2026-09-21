@@ -21,12 +21,16 @@ type ProviderParams struct {
 	AuthConfig *config.AuthConfig
 	ConfigDir  string
 	ServerName string
+	ServerURL  string
 	Clock      clock.Clock
 }
 
 func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
 	// applyRegistration mutates AuthConfig; without a copy, concurrent callers race.
 	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
+	if p.AuthConfig.ResourceURL == "" {
+		p.AuthConfig.ResourceURL = p.ServerURL
+	}
 	if err := hydrateFromRegistration(p); err != nil {
 		return nil, err
 	}
@@ -34,6 +38,7 @@ func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
 		ac:         p.AuthConfig,
 		configDir:  p.ConfigDir,
 		serverName: p.ServerName,
+		serverURL:  p.ServerURL,
 		clock:      p.Clock,
 	}, nil
 }
@@ -71,6 +76,7 @@ type tokenProvider struct {
 	ac         *config.AuthConfig
 	configDir  string
 	serverName string
+	serverURL  string
 	clock      clock.Clock
 
 	mu    sync.Mutex
@@ -122,10 +128,23 @@ func (p *tokenProvider) shouldRefreshLocked() bool {
 	if p.token.Expiry.IsZero() || p.token.RefreshToken == "" {
 		return false
 	}
-	return !p.clock.Now().Before(p.token.Expiry.Add(-refreshSkew))
+	skew := refreshSkew
+	const maxBoundedLifetime = int64(refreshSkew/time.Second) * 10
+	if p.token.ExpiresIn > 0 && p.token.ExpiresIn <= maxBoundedLifetime {
+		skew = time.Duration(p.token.ExpiresIn) * time.Second / 10
+	}
+	return !p.clock.Now().Before(p.token.Expiry.Add(-skew))
 }
 
 func (p *tokenProvider) refreshLocked(ctx context.Context) error {
+	if p.ac.TokenURL == "" {
+		if p.serverURL == "" {
+			return p.remedyError(fmt.Errorf("no token endpoint configured and no server URL available for discovery"))
+		}
+		if _, err := discoverAndApply(ctx, p.serverURL, p.ac); err != nil {
+			return p.remedyError(fmt.Errorf("discover token endpoint: %w", err))
+		}
+	}
 	// Clear AccessToken on a copy: oauth2's reuseTokenSource uses the system clock
 	// with a 10s delta, so without this it silently returns the stale token.
 	stale := *p.token

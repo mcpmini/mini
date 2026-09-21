@@ -270,6 +270,7 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 }
 
 func (s *Server) detachAndCloseServer(serverName string) {
+	s.providerCache.Evict(serverName)
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	s.removeGen[serverName]++

@@ -22,6 +22,7 @@ type mockAuthServer struct {
 	accessToken  string
 	refreshToken string
 	refreshed    bool
+	resourceURL  string
 }
 
 func newMockAuthServer(t *testing.T) *mockAuthServer {
@@ -44,6 +45,7 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.FormValue("grant_type") == "refresh_token" {
 		m.refreshed = true
+		m.resourceURL = r.FormValue("resource")
 		m.accessToken = "refreshed-access-token"
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -117,7 +119,9 @@ func TestRefresh(t *testing.T) {
 	loaded, _ := auth.Load(dir, "srv")
 	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	mock.accessToken = "refreshed-access-token"
-	newTok, err := auth.Refresh(context.Background(), mock.authConfig(), loaded)
+	ac := mock.authConfig()
+	ac.ResourceURL = "https://resource.example.com/mcp"
+	newTok, err := auth.Refresh(context.Background(), ac, loaded)
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
@@ -126,6 +130,9 @@ func TestRefresh(t *testing.T) {
 	}
 	if newTok.AccessToken != "refreshed-access-token" {
 		t.Errorf("access token = %q, want %q", newTok.AccessToken, "refreshed-access-token")
+	}
+	if mock.resourceURL != ac.ResourceURL {
+		t.Errorf("resource = %q, want %q", mock.resourceURL, ac.ResourceURL)
 	}
 }
 

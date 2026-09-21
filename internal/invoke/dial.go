@@ -15,12 +15,13 @@ import (
 )
 
 type DialParams struct {
-	Logger    *slog.Logger
-	Config    *config.Config
-	Server    config.ServerConfig
-	Clock     clock.Clock
-	ConfigDir string
+	Logger          *slog.Logger
+	Config          *config.Config
+	Server          config.ServerConfig
+	Clock           clock.Clock
+	ConfigDir       string
 	UseAuthProvider bool
+	ProviderCache   *auth.ProviderCache
 }
 
 func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
@@ -50,18 +51,27 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 	if !p.UseAuthProvider || !isOAuth2Server(p.Server) {
 		return nil
 	}
-	provider, err := auth.NewProvider(auth.ProviderParams{
+	params := auth.ProviderParams{
 		AuthConfig: p.Server.Auth,
 		ConfigDir:  p.ConfigDir,
 		ServerName: p.Server.Name,
+		ServerURL:  p.Server.URL,
 		Clock:      p.Clock,
-	})
+	}
+	provider, err := resolveProvider(params, p.ProviderCache)
 	if err != nil {
 		return fmt.Errorf("build auth provider for %s: %w", p.Server.Name, err)
 	}
 	cfg.AuthProvider = provider
 	cfg.AuthHeaderName = authHeaderName(p.Server.Auth)
 	return nil
+}
+
+func resolveProvider(params auth.ProviderParams, cache *auth.ProviderCache) (transport.AuthorizationProvider, error) {
+	if cache != nil {
+		return cache.GetOrCreate(params)
+	}
+	return auth.NewProvider(params)
 }
 
 func isOAuth2Server(sc config.ServerConfig) bool {

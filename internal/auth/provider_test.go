@@ -33,6 +33,7 @@ type tokenEndpoint struct {
 	lastRefresh   string
 	lastBasicAuth string
 	lastClientID  string
+	lastResource  string
 }
 
 func newTokenEndpoint(t *testing.T) *tokenEndpoint {
@@ -55,6 +56,7 @@ func (e *tokenEndpoint) handle(w http.ResponseWriter, r *http.Request) {
 	e.lastGrant = r.FormValue("grant_type")
 	e.lastRefresh = r.FormValue("refresh_token")
 	e.lastClientID = r.FormValue("client_id")
+	e.lastResource = r.FormValue("resource")
 	user, _, ok := r.BasicAuth()
 	if ok {
 		e.lastBasicAuth = user
@@ -106,6 +108,8 @@ func storedToken(expiry time.Time) *oauth2.Token {
 
 func TestProviderAuthorization_expiryBoundary(t *testing.T) {
 	epoch := clock.NewFake().Now()
+	shortLived := storedToken(epoch.Add(30 * time.Second))
+	shortLived.ExpiresIn = 30
 	cases := []struct {
 		name        string
 		token       *oauth2.Token
@@ -116,6 +120,7 @@ func TestProviderAuthorization_expiryBoundary(t *testing.T) {
 		{"exactly at expiry minus skew refreshes", storedToken(epoch.Add(2 * time.Minute)), "Bearer new-access", 1},
 		{"inside skew window refreshes", storedToken(epoch.Add(time.Minute)), "Bearer new-access", 1},
 		{"already expired refreshes", storedToken(epoch.Add(-time.Hour)), "Bearer new-access", 1},
+		{"short-lived token uses bounded skew", shortLived, "Bearer stored-access", 0},
 		{"zero expiry never refreshes proactively", storedToken(time.Time{}), "Bearer stored-access", 0},
 		{"no refresh token skips proactive refresh", &oauth2.Token{AccessToken: "stored-access", Expiry: epoch.Add(time.Minute)}, "Bearer stored-access", 0},
 	}
@@ -136,8 +141,86 @@ func TestProviderAuthorization_expiryBoundary(t *testing.T) {
 	}
 }
 
+func TestProviderAuthorization_discoversMissingTokenEndpoint(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+	endpoint := newTokenEndpoint(t)
+	discovery := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/.well-known/oauth-authorization-server" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"authorization_endpoint":           "https://as.example/authorize",
+			"token_endpoint":                   endpoint.srv.URL,
+			"code_challenge_methods_supported": []string{"S256"},
+		}) //nolint:errcheck
+	}))
+	t.Cleanup(discovery.Close)
+
+	dir := t.TempDir()
+	clk := clock.NewFake()
+	if err := auth.Save(dir, "srv", storedToken(clk.Now())); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		ServerURL:  discovery.URL + "/mcp",
+		Clock:      clk,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Authorization(context.Background()); err != nil {
+		t.Fatalf("Authorization: %v", err)
+	}
+	if endpoint.hits.Load() != 1 {
+		t.Fatalf("token endpoint hits = %d, want 1", endpoint.hits.Load())
+	}
+	endpoint.mu.Lock()
+	defer endpoint.mu.Unlock()
+	if endpoint.lastResource != discovery.URL+"/mcp" {
+		t.Errorf("resource = %q, want %q", endpoint.lastResource, discovery.URL+"/mcp")
+	}
+}
+
+func TestProviderCache_reusesProviderPerServer(t *testing.T) {
+	cache := auth.NewProviderCache()
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
+		ConfigDir:  t.TempDir(),
+		ServerName: "srv",
+		Clock:      clock.NewFake(),
+	}
+	first, err := cache.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := cache.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second {
+		t.Fatal("cache returned different providers for the same server")
+	}
+	cache.Evict("srv")
+	third, err := cache.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == third {
+		t.Fatal("cache eviction did not create a fresh provider")
+	}
+}
+
 func TestProviderRefresh_persistsRotatedRefreshToken(t *testing.T) {
-	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
+	f := newProviderFixture(t, providerSetup{
+		Token: storedToken(time.Time{}),
+		Auth:  &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", ResourceURL: "https://resource.example/mcp"},
+	})
 	got, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
@@ -147,6 +230,9 @@ func TestProviderRefresh_persistsRotatedRefreshToken(t *testing.T) {
 	}
 	if f.endpoint.lastGrant != "refresh_token" || f.endpoint.lastRefresh != "stored-refresh" {
 		t.Errorf("refresh used grant=%q token=%q", f.endpoint.lastGrant, f.endpoint.lastRefresh)
+	}
+	if f.endpoint.lastResource != "https://resource.example/mcp" {
+		t.Errorf("refresh resource = %q", f.endpoint.lastResource)
 	}
 	saved, err := auth.Load(f.dir, "srv")
 	if err != nil {
