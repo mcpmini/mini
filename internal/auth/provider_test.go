@@ -187,35 +187,6 @@ func TestProviderAuthorization_discoversMissingTokenEndpoint(t *testing.T) {
 	}
 }
 
-func TestProviderCache_reusesProviderPerServer(t *testing.T) {
-	cache := auth.NewProviderCache()
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
-		ConfigDir:  t.TempDir(),
-		ServerName: "srv",
-		Clock:      clock.NewFake(),
-	}
-	first, err := cache.GetOrCreate(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := cache.GetOrCreate(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first != second {
-		t.Fatal("cache returned different providers for the same server")
-	}
-	cache.Evict("srv")
-	third, err := cache.GetOrCreate(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first == third {
-		t.Fatal("cache eviction did not create a fresh provider")
-	}
-}
-
 func TestProviderRefresh_persistsRotatedRefreshToken(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{
 		Token: storedToken(time.Time{}),

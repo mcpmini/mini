@@ -29,25 +29,33 @@ func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
 	return buildTokenProvider(p)
 }
 
-// buildTokenProvider clones, hydrates, and constructs the concrete provider.
-// Callers that need the concrete type (e.g. ProviderCache) call this directly.
 func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
-	// Deep-copy so concurrent calls over a shared *AuthConfig do not race on
-	// the writes applyRegistration performs.
+	var err error
+	if p, err = normalizeProviderParams(p); err != nil {
+		return nil, err
+	}
+	return newTokenProvider(p), nil
+}
+
+func normalizeProviderParams(p ProviderParams) (ProviderParams, error) {
 	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
 	if p.AuthConfig.ResourceURL == "" {
 		p.AuthConfig.ResourceURL = p.ServerURL
 	}
 	if err := hydrateFromRegistration(p); err != nil {
-		return nil, err
+		return ProviderParams{}, err
 	}
+	return p, nil
+}
+
+func newTokenProvider(p ProviderParams) *tokenProvider {
 	return &tokenProvider{
 		ac:         p.AuthConfig,
 		configDir:  p.ConfigDir,
 		serverName: p.ServerName,
 		serverURL:  p.ServerURL,
 		clock:      p.Clock,
-	}, nil
+	}
 }
 
 func cloneAuthConfig(src *config.AuthConfig) *config.AuthConfig {
@@ -171,21 +179,13 @@ func (p *tokenProvider) remedyError(cause error) error {
 	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", p.serverName, p.serverName, cause)
 }
 
-// commitBrowserToken atomically installs a browser-authorized token and a freshly
-// registration-hydrated OAuth configuration under the provider mutex. Hydration
-// runs before the lock so slow disk I/O does not block concurrent token reads.
-// A save or hydration failure leaves existing provider state unchanged.
-func (p *tokenProvider) commitBrowserToken(params ProviderParams, tok *oauth2.Token) error {
-	params.AuthConfig = cloneAuthConfig(params.AuthConfig)
-	if err := hydrateFromRegistration(params); err != nil {
-		return err
-	}
+func (p *tokenProvider) commitBrowserToken(normalized ProviderParams, tok *oauth2.Token) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := Save(p.configDir, p.serverName, tok); err != nil {
 		return fmt.Errorf("persist oauth token: %w", err)
 	}
-	p.ac = params.AuthConfig
+	p.ac = normalized.AuthConfig
 	p.token = tok
 	return nil
 }
