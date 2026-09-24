@@ -46,7 +46,7 @@ func newServer(cfg *config.Config, configDir string, projections map[string]map[
 		authFlows:     make(map[string]*authFlowState),
 		logger:        logger,
 		clock:         clock.System(),
-		providerCache: auth.NewProviderCache(),
+		providerRegistry: auth.NewProviderRegistry(),
 	}
 }
 

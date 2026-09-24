@@ -86,7 +86,7 @@ func (s *Server) dialUpstream(ctx context.Context, sc config.ServerConfig) (tran
 	return invoke.Dial(ctx, invoke.DialParams{
 		Logger: s.logger, Config: s.cfg, Server: sc, Clock: s.clock,
 		ConfigDir: s.configDir, UseAuthProvider: s.useAuthProviders,
-		ProviderCache: s.providerCache,
+		ProviderRegistry: s.providerRegistry,
 	})
 }
 

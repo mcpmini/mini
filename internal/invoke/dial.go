@@ -21,7 +21,7 @@ type DialParams struct {
 	Clock           clock.Clock
 	ConfigDir       string
 	UseAuthProvider bool
-	ProviderCache   *auth.ProviderCache
+	ProviderRegistry *auth.ProviderRegistry
 }
 
 func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
@@ -58,7 +58,7 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 		ServerURL:  p.Server.URL,
 		Clock:      p.Clock,
 	}
-	provider, err := resolveProvider(params, p.ProviderCache)
+	provider, err := resolveProvider(params, p.ProviderRegistry)
 	if err != nil {
 		return fmt.Errorf("build auth provider for %s: %w", p.Server.Name, err)
 	}
@@ -67,9 +67,9 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 	return nil
 }
 
-func resolveProvider(params auth.ProviderParams, cache *auth.ProviderCache) (transport.AuthorizationProvider, error) {
-	if cache != nil {
-		return cache.GetOrCreate(params)
+func resolveProvider(params auth.ProviderParams, registry *auth.ProviderRegistry) (transport.AuthorizationProvider, error) {
+	if registry != nil {
+		return registry.GetOrCreate(params)
 	}
 	return auth.NewProvider(params)
 }

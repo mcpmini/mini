@@ -4,6 +4,9 @@ package auth_test
 
 import (
 	"context"
+	"maps"
+	"reflect"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -63,22 +66,42 @@ func TestNewProvider_inconsistentRegistrationErrors(t *testing.T) {
 
 func TestNewProvider_missingRegistrationIsPublicClient(t *testing.T) {
 	dir := t.TempDir()
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"}
-	if _, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err != nil {
+	endpoint := newTokenEndpoint(t)
+	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
+		t.Fatal(err)
+	}
+	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL}
+	p, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
+	if err != nil {
 		t.Fatalf("missing registration must not error: %v", err)
+	}
+	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
+		t.Fatalf("RefreshAuthorization: %v", err)
+	}
+	endpoint.mu.Lock()
+	basicUser, clientID := endpoint.lastBasicAuth, endpoint.lastClientID
+	endpoint.mu.Unlock()
+	if basicUser != "" || clientID != "" {
+		t.Errorf("public client must not send credentials: basic=%q client_id=%q", basicUser, clientID)
 	}
 }
 
-func TestNewProvider_concurrentConstructionNoRace(t *testing.T) {
+func TestNewProvider_concurrentConstructionDoesNotMutateSharedConfig(t *testing.T) {
 	dir := t.TempDir()
-	reg := &auth.Registration{ClientID: "dcr-client", TokenEndpointAuthMethod: "none"}
+	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "dcr-secret", TokenEndpointAuthMethod: "client_secret_basic"}
 	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
 		t.Fatal(err)
 	}
 	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	shared := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
+	shared := &config.AuthConfig{
+		Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token",
+		Scopes: []string{"read"}, ExtraAuthParams: map[string]string{"prompt": "consent"},
+	}
+	want := *shared
+	want.Scopes = slices.Clone(shared.Scopes)
+	want.ExtraAuthParams = maps.Clone(shared.ExtraAuthParams)
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Add(1)
@@ -97,6 +120,9 @@ func TestNewProvider_concurrentConstructionNoRace(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	if !reflect.DeepEqual(*shared, want) {
+		t.Errorf("shared AuthConfig was mutated by concurrent construction: got %+v, want %+v", *shared, want)
+	}
 }
 
 func TestNewProvider_explicitClientIDNotOverriddenByRegistration(t *testing.T) {

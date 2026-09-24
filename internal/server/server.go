@@ -62,7 +62,7 @@ type Server struct {
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
 	useAuthProviders     bool
-	providerCache        *auth.ProviderCache
+	providerRegistry     *auth.ProviderRegistry
 	// Lock ordering: persistMu → serverOpMu → stateMu → authMu.
 	// stateMu is the innermost hot-path lock (RLock on every request);
 	// the outer locks serialize cold-path admin operations.

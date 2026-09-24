@@ -12,12 +12,12 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-type ProviderCache struct {
+type ProviderRegistry struct {
 	mu sync.Mutex
-	m  map[string]*cacheEntry
+	m  map[string]*registryEntry
 }
 
-type cacheEntry struct {
+type registryEntry struct {
 	provider *tokenProvider
 	identity providerIdentity
 }
@@ -29,14 +29,14 @@ type providerIdentity struct {
 	ac         config.AuthConfig
 }
 
-func NewProviderCache() *ProviderCache {
-	return &ProviderCache{m: make(map[string]*cacheEntry)}
+func NewProviderRegistry() *ProviderRegistry {
+	return &ProviderRegistry{m: make(map[string]*registryEntry)}
 }
 
-// GetOrCreate returns the cached provider for params.ServerName when its stored
+// GetOrCreate returns the registered provider for params.ServerName when its stored
 // effective identity matches the incoming params. Returns an error if the same
 // server name has an active provider with incompatible parameters.
-func (c *ProviderCache) GetOrCreate(params ProviderParams) (transport.AuthorizationProvider, error) {
+func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.AuthorizationProvider, error) {
 	normalized, err := normalizeProviderParams(params)
 	if err != nil {
 		return nil, err
@@ -50,14 +50,14 @@ func (c *ProviderCache) GetOrCreate(params ProviderParams) (transport.Authorizat
 		return e.provider, nil
 	}
 	tp := newTokenProvider(normalized)
-	c.m[normalized.ServerName] = &cacheEntry{provider: tp, identity: identityFrom(normalized)}
+	c.m[normalized.ServerName] = &registryEntry{provider: tp, identity: identityFrom(normalized)}
 	return tp, nil
 }
 
 // CommitAuthorizedToken installs a browser-authorized token and a freshly hydrated
-// OAuth configuration atomically. If no provider is cached yet, it saves the token
+// OAuth configuration atomically. If no provider is registered yet, it saves the token
 // so the next GetOrCreate constructs a hydrated provider from it.
-func (c *ProviderCache) CommitAuthorizedToken(params ProviderParams, tok *oauth2.Token) error {
+func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oauth2.Token) error {
 	normalized, err := normalizeProviderParams(params)
 	if err != nil {
 		return err

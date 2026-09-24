@@ -11,7 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -92,6 +95,39 @@ func TestProviderRefresh_persistFailureKeepsRotatedTokenInMemory(t *testing.T) {
 	}
 	if saved.AccessToken != "second-access" || saved.RefreshToken != "second-refresh" {
 		t.Errorf("persist must be retried on next refresh, got access=%q refresh=%q", saved.AccessToken, saved.RefreshToken)
+	}
+}
+
+func TestProvider_reloadExternalAuthorizationBefore401Refresh(t *testing.T) {
+	dir := t.TempDir()
+	oldToken := storedToken(time.Time{})
+	if err := auth.Save(dir, "srv", oldToken); err != nil {
+		t.Fatal(err)
+	}
+	endpoint := newTokenEndpoint(t)
+	provider, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL},
+		ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com/mcp", Clock: clock.NewFake(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.Authorization(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	external := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}
+	if err := auth.Save(dir, "srv", external); err != nil {
+		t.Fatal(err)
+	}
+	got, err := provider.RefreshAuthorization(context.Background(), "Bearer "+oldToken.AccessToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "Bearer external-access" {
+		t.Fatalf("Authorization = %q, want external token", got)
+	}
+	if endpoint.hits.Load() != 0 {
+		t.Fatalf("token endpoint hits = %d, want disk handoff without refresh", endpoint.hits.Load())
 	}
 }
 

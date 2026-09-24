@@ -11,18 +11,32 @@ import (
 )
 
 func TestTokenSaveLoad(t *testing.T) {
-	mock := newMockAuthServer(t)
 	dir := t.TempDir()
-	token := pkceToken(t, mock)
-	if err := auth.Save(dir, "myserver", token); err != nil {
+	expiry := time.Now().Add(time.Hour).Truncate(time.Second)
+	original := &oauth2.Token{
+		AccessToken:  "access-tok",
+		RefreshToken: "refresh-tok",
+		TokenType:    "Bearer",
+		Expiry:       expiry,
+	}
+	if err := auth.Save(dir, "myserver", original); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	loaded, err := auth.Load(dir, "myserver")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if loaded.AccessToken != token.AccessToken {
-		t.Errorf("loaded token = %q, want %q", loaded.AccessToken, token.AccessToken)
+	if loaded.AccessToken != original.AccessToken {
+		t.Errorf("AccessToken = %q, want %q", loaded.AccessToken, original.AccessToken)
+	}
+	if loaded.RefreshToken != original.RefreshToken {
+		t.Errorf("RefreshToken = %q, want %q", loaded.RefreshToken, original.RefreshToken)
+	}
+	if loaded.TokenType != original.TokenType {
+		t.Errorf("TokenType = %q, want %q", loaded.TokenType, original.TokenType)
+	}
+	if !loaded.Expiry.Equal(original.Expiry) {
+		t.Errorf("Expiry = %v, want %v", loaded.Expiry, original.Expiry)
 	}
 	if !loaded.Valid() {
 		t.Error("loaded token should be valid")

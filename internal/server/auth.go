@@ -141,7 +141,7 @@ func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig
 		s.logger.Error("oauth flow failed", "server", serverName, "err", result.Err)
 		return
 	}
-	if err := s.providerCache.CommitAuthorizedToken(s.providerParamsFor(sc), result.Token); err != nil {
+	if err := s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(sc), result.Token); err != nil {
 		s.logger.Error("commit oauth token failed", "server", serverName, "err", err)
 		return
 	}
