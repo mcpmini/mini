@@ -21,12 +21,17 @@ const refreshSkew = 2 * time.Minute
 // context cannot silently drop a rotated refresh token the AS already issued.
 const refreshTimeout = 30 * time.Second
 
+// proactiveRefreshBackoff stops every queued caller from re-running a failing refresh
+// against a slow or down AS while the current token still works.
+const proactiveRefreshBackoff = 30 * time.Second
+
 type ProviderParams struct {
 	AuthConfig *config.AuthConfig
 	ConfigDir  string
 	ServerName string
 	ServerURL  string
 	Clock      clock.Clock
+	Lifetime   context.Context // nil: context.Background(); registry sets its own lifetime
 }
 
 func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
@@ -75,12 +80,17 @@ func normalizeProviderParams(p ProviderParams) (ProviderParams, error) {
 }
 
 func newTokenProvider(p ProviderParams) *tokenProvider {
+	lifetime := p.Lifetime
+	if lifetime == nil {
+		lifetime = context.Background()
+	}
 	return &tokenProvider{
 		ac:         p.AuthConfig,
 		configDir:  p.ConfigDir,
 		serverName: p.ServerName,
 		serverURL:  p.ServerURL,
 		clock:      p.Clock,
+		lifetime:   lifetime,
 	}
 }
 
@@ -120,10 +130,12 @@ type tokenProvider struct {
 	serverName string
 	serverURL  string
 	clock      clock.Clock
+	lifetime   context.Context
 
-	mu             sync.Mutex
-	token          *oauth2.Token
-	persistedToken *oauth2.Token
+	mu               sync.Mutex
+	token            *oauth2.Token
+	persistedToken   *oauth2.Token
+	proactiveRetryAt time.Time
 }
 
 func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
@@ -135,12 +147,33 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 	if p.shouldRefreshLocked() {
 		p.reloadPersistedTokenLocked()
 	}
-	if p.shouldRefreshLocked() {
-		if err := p.refreshLocked(ctx); err != nil {
+	if p.shouldRefreshLocked() && !p.inProactiveBackoffLocked() {
+		if err := p.proactiveRefreshLocked(); err != nil {
 			return "", err
 		}
 	}
 	return bearerValue(p.token), nil
+}
+
+func (p *tokenProvider) inProactiveBackoffLocked() bool {
+	return !p.tokenExpiredLocked() && p.clock.Now().Before(p.proactiveRetryAt)
+}
+
+func (p *tokenProvider) proactiveRefreshLocked() error {
+	err := p.refreshLocked()
+	if err == nil {
+		return nil
+	}
+	if p.tokenExpiredLocked() {
+		return err
+	}
+	p.proactiveRetryAt = p.clock.Now().Add(proactiveRefreshBackoff)
+	slog.Warn("proactive refresh failed; serving expiring token", "server", p.serverName, "err", err)
+	return nil
+}
+
+func (p *tokenProvider) tokenExpiredLocked() bool {
+	return !p.token.Expiry.IsZero() && !p.clock.Now().Before(p.token.Expiry)
 }
 
 func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) (string, error) {
@@ -156,7 +189,7 @@ func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) 
 	if bearerValue(p.token) != stale {
 		return bearerValue(p.token), nil
 	}
-	if err := p.refreshLocked(ctx); err != nil {
+	if err := p.refreshLocked(); err != nil {
 		return "", err
 	}
 	return bearerValue(p.token), nil
@@ -181,6 +214,7 @@ func (p *tokenProvider) reloadPersistedTokenLocked() {
 		return
 	}
 	p.token = t
+	p.proactiveRetryAt = time.Time{}
 	p.persistedToken = cloneToken(t)
 	p.rehydrateAuthConfigLocked()
 }
@@ -243,20 +277,11 @@ func (p *tokenProvider) shouldRefreshLocked() bool {
 	return !p.clock.Now().Before(p.token.Expiry.Add(-skew))
 }
 
-func (p *tokenProvider) refreshLocked(ctx context.Context) error {
-	refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+func (p *tokenProvider) refreshLocked() error {
+	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
-	if p.ac.TokenURL == "" {
-		if p.serverURL == "" {
-			return p.remedyError(fmt.Errorf("no token endpoint configured and no server URL available for discovery"))
-		}
-		meta, err := discoverAndApply(refreshCtx, p.serverURL, p.ac)
-		if err != nil {
-			return p.remedyError(fmt.Errorf("discover token endpoint: %w", err))
-		}
-		if p.ac.ClientID == "" && meta != nil && meta.CIMDSupported {
-			p.ac.ClientID = ClientMetadataURL
-		}
+	if err := p.maybeDiscoverAndApplyLocked(refreshCtx); err != nil {
+		return err
 	}
 	// Clear AccessToken on a copy: oauth2's reuseTokenSource uses the system clock
 	// with a 10s delta, so without this it silently returns the stale token.
@@ -267,12 +292,34 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 		return p.remedyError(fmt.Errorf("refresh token: %w", err))
 	}
 	p.token = refreshed
-	if err := Save(p.configDir, p.serverName, refreshed); err != nil {
-		slog.Warn("persist refreshed oauth token failed; using refreshed token in memory", "server", p.serverName, "err", err)
-	} else {
-		p.persistedToken = cloneToken(refreshed)
+	p.proactiveRetryAt = time.Time{}
+	p.persistRefreshedToken(refreshed)
+	return nil
+}
+
+func (p *tokenProvider) maybeDiscoverAndApplyLocked(ctx context.Context) error {
+	if p.ac.TokenURL != "" {
+		return nil
+	}
+	if p.serverURL == "" {
+		return p.remedyError(fmt.Errorf("no token endpoint configured and no server URL available for discovery"))
+	}
+	meta, err := discoverAndApply(ctx, p.serverURL, p.ac)
+	if err != nil {
+		return p.remedyError(fmt.Errorf("discover token endpoint: %w", err))
+	}
+	if p.ac.ClientID == "" && meta != nil && meta.CIMDSupported {
+		p.ac.ClientID = ClientMetadataURL
 	}
 	return nil
+}
+
+func (p *tokenProvider) persistRefreshedToken(refreshed *oauth2.Token) {
+	if err := Save(p.configDir, p.serverName, refreshed); err != nil {
+		slog.Warn("persist refreshed oauth token failed; using refreshed token in memory", "server", p.serverName, "err", err)
+		return
+	}
+	p.persistedToken = cloneToken(refreshed)
 }
 
 func (p *tokenProvider) remedyError(cause error) error {
@@ -287,6 +334,7 @@ func (p *tokenProvider) commitBrowserToken(normalized ProviderParams, tok *oauth
 	}
 	p.ac = normalized.AuthConfig
 	p.token = tok
+	p.proactiveRetryAt = time.Time{}
 	p.persistedToken = cloneToken(tok)
 	return nil
 }

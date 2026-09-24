@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -10,8 +11,10 @@ import (
 )
 
 type ProviderRegistry struct {
-	mu sync.Mutex
-	m  map[string]*registryEntry
+	mu     sync.Mutex
+	m      map[string]*registryEntry
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 type registryEntry struct {
@@ -28,7 +31,12 @@ type providerIdentity struct {
 }
 
 func NewProviderRegistry() *ProviderRegistry {
-	return &ProviderRegistry{m: make(map[string]*registryEntry)}
+	ctx, cancel := context.WithCancel(context.Background())
+	return &ProviderRegistry{m: make(map[string]*registryEntry), ctx: ctx, cancel: cancel}
+}
+
+func (c *ProviderRegistry) Close() {
+	c.cancel()
 }
 
 // GetOrCreate returns the registered provider for params.ServerName when its stored
@@ -43,6 +51,7 @@ func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.Authori
 		}
 		return e.provider, nil
 	}
+	params.Lifetime = c.ctx
 	tp, err := buildTokenProvider(params)
 	if err != nil {
 		return nil, err
@@ -65,15 +74,12 @@ func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oau
 	if e == nil {
 		return Save(normalized.ConfigDir, normalized.ServerName, tok)
 	}
-	if e.identity.serverName != normalized.ServerName ||
-		e.identity.configDir != normalized.ConfigDir ||
-		e.identity.serverURL != normalized.ServerURL {
+	if !e.identity.matches(normalized) {
 		return fmt.Errorf("server %q OAuth identity changed; refusing trusted commit", normalized.ServerName)
 	}
 	if err := e.provider.commitBrowserToken(normalized, tok); err != nil {
 		return err
 	}
-	e.identity = identityFrom(normalized)
 	return nil
 }
 

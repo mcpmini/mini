@@ -323,23 +323,27 @@ func TestAuthReplay_refreshFailure_noReplay(t *testing.T) {
 }
 
 func TestAuthReplay_429Then401_budgetNotMultiplied(t *testing.T) {
+	// The replay after a 401 gets one fresh retry budget, so the bound is 2*maxRetries, not maxRetries per attempt.
 	var calls atomic.Int32
 	conn, provider := newAuthReplayConn(t, func(w http.ResponseWriter, r *http.Request) {
-		switch calls.Add(1) {
-		case 1, 3:
+		n := int(calls.Add(1))
+		if n < maxRetries {
 			w.Header().Set("Retry-After", "0")
 			w.WriteHeader(http.StatusTooManyRequests)
-		case 2:
+		} else if n == maxRetries {
 			w.WriteHeader(http.StatusUnauthorized)
-		default:
-			w.Write(okRPCResponse(1)) //nolint:errcheck
+		} else {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
 		}
 	})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("expected success, got: %v", err)
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected error when second post exhausts 429 budget")
 	}
-	if calls.Load() != 4 {
-		t.Errorf("upstream attempts = %d, want 4 (429,401 then 429,200)", calls.Load())
+	want := 2 * maxRetries
+	if int(calls.Load()) != want {
+		t.Errorf("upstream attempts = %d, want %d (2*maxRetries)", calls.Load(), want)
 	}
 	if provider.refreshCount() != 1 {
 		t.Errorf("refreshes = %d, want exactly 1", provider.refreshCount())

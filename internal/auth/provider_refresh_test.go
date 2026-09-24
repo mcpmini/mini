@@ -361,3 +361,60 @@ func TestProvider_reloadAdoptsRegistrationForCredentials(t *testing.T) {
 		t.Errorf("token endpoint client_id = form:%q basic:%q, want dcr-client", clientIDForm, clientIDBasic)
 	}
 }
+
+func TestProviderRefresh_failedProactiveRefreshBacksOffWhileTokenValid(t *testing.T) {
+	epoch := clock.NewFake().Now()
+	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(time.Minute))})
+	f.endpoint.status.Store(http.StatusServiceUnavailable)
+
+	authorize := func() {
+		t.Helper()
+		got, err := f.provider.Authorization(context.Background())
+		if err != nil || got != "Bearer stored-access" {
+			t.Fatalf("Authorization = %q, %v; want current token served", got, err)
+		}
+	}
+	authorize()
+	hitsPerAttempt := f.endpoint.hits.Load()
+	authorize()
+	authorize()
+	if hits := f.endpoint.hits.Load(); hits != hitsPerAttempt {
+		t.Errorf("endpoint hits = %d, want %d: calls inside the backoff must not refresh", hits, hitsPerAttempt)
+	}
+
+	f.clock.Advance(auth.ProactiveRefreshBackoff + time.Second)
+	authorize()
+	if hits := f.endpoint.hits.Load(); hits != 2*hitsPerAttempt {
+		t.Errorf("endpoint hits = %d, want %d once the backoff elapses", hits, 2*hitsPerAttempt)
+	}
+}
+
+func TestProviderRefresh_proactiveRefreshFailureServesExpiringToken(t *testing.T) {
+	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t.Run("still_valid_returns_current_token", func(t *testing.T) {
+		f := newProviderFixture(t, providerSetup{
+			Token: storedToken(epoch.Add(60 * time.Second)),
+		})
+		f.endpoint.status.Store(http.StatusServiceUnavailable)
+
+		got, err := f.provider.Authorization(context.Background())
+		if err != nil {
+			t.Fatalf("proactive refresh error must not fail when token still valid: %v", err)
+		}
+		if got != "Bearer stored-access" {
+			t.Errorf("Authorization = %q, want Bearer stored-access", got)
+		}
+	})
+
+	t.Run("expired_propagates_error", func(t *testing.T) {
+		f := newProviderFixture(t, providerSetup{
+			Token: storedToken(epoch.Add(-time.Second)),
+		})
+		f.endpoint.status.Store(http.StatusServiceUnavailable)
+
+		_, err := f.provider.Authorization(context.Background())
+		if err == nil {
+			t.Fatal("expired token must propagate refresh error")
+		}
+	})
+}

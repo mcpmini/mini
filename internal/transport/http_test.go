@@ -550,7 +550,7 @@ func (f failingAuthProvider) RefreshAuthorization(_ context.Context, _ string) (
 	return "", f.err
 }
 
-func TestHTTPConnection_authProviderErrorNamesRemedy(t *testing.T) {
+func TestHTTPConnection_propagatesProviderError(t *testing.T) {
 	var calls int
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		calls++

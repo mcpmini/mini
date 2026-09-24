@@ -25,3 +25,5 @@ func UseLoopbackEndpoints() {
 func ResetEndpointValidation() {
 	endpointValidator = transport.ValidateURL
 }
+
+const ProactiveRefreshBackoff = proactiveRefreshBackoff

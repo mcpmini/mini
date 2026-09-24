@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,64 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
+
+func TestProviderRegistry_closeAbortsRefresh(t *testing.T) {
+	reached := make(chan struct{}, 1)
+	released := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(released) }) }
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case reached <- struct{}{}:
+		default:
+		}
+		select {
+		case <-released:
+		case <-r.Context().Done():
+		}
+		http.Error(w, "aborted", http.StatusInternalServerError)
+	}))
+	t.Cleanup(func() { release(); srv.Close() })
+
+	dir := t.TempDir()
+	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	expired := &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)}
+	if err := auth.Save(dir, "srv", expired); err != nil {
+		t.Fatal(err)
+	}
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: srv.URL},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Clock:      clock.NewFakeAt(epoch),
+	}
+	registry := auth.NewProviderRegistry()
+	provider, err := registry.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	authDone := make(chan struct{})
+	go func() {
+		defer close(authDone)
+		provider.Authorization(context.Background())
+	}()
+	select {
+	case <-reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("token endpoint not reached within 5s")
+	}
+
+	registry.Close()
+	release() // unblock the handler so srv.Close in cleanup does not hang
+
+	select {
+	case <-authDone:
+	case <-time.After(5 * time.Second):
+		t.Error("registry.Close() did not abort in-flight refresh within 5s")
+	}
+}
 
 func TestProviderRegistry_staleDriftDoesNotBlockRedial(t *testing.T) {
 	cases := []struct {
@@ -147,7 +206,7 @@ func TestProviderRegistry_reusesProviderPerServer(t *testing.T) {
 	}
 }
 
-func TestProviderRegistry_commitUpdatesEffectiveIdentity(t *testing.T) {
+func TestProviderRegistry_commitReusesProviderAndInstallsToken(t *testing.T) {
 	params := auth.ProviderParams{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  t.TempDir(),
@@ -370,5 +429,84 @@ func TestProviderRegistry_commitSaveFailureLeavesProviderUnchanged(t *testing.T)
 	}
 	if got == "Bearer browser-access" {
 		t.Error("failed commit must not update in-memory token")
+	}
+}
+
+func TestProviderRegistry_commitServesTokenFromMemory(t *testing.T) {
+	dir := t.TempDir()
+	endpoint := newTokenEndpoint(t)
+	clk := clock.NewFake()
+	initial := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r", Expiry: clk.Now().Add(time.Hour)}
+	if err := auth.Save(dir, "srv", initial); err != nil {
+		t.Fatal(err)
+	}
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Clock:      clk,
+	}
+	registry := auth.NewProviderRegistry()
+	p, err := registry.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Authorization(context.Background()); err != nil {
+		t.Fatalf("initial Authorization: %v", err)
+	}
+
+	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-r", Expiry: clk.Now().Add(time.Hour)}
+	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
+		t.Fatalf("CommitAuthorizedToken: %v", err)
+	}
+
+	// Remove token file: provider must serve browser token from in-memory state only.
+	os.RemoveAll(dir + "/internal")
+
+	got, err := p.Authorization(context.Background())
+	if err != nil {
+		t.Fatalf("Authorization after commit (no disk): %v", err)
+	}
+	if got != "Bearer browser-access" {
+		t.Errorf("Authorization = %q, want Bearer browser-access", got)
+	}
+	if endpoint.hits.Load() != 0 {
+		t.Errorf("token endpoint hit = %d, want 0", endpoint.hits.Load())
+	}
+}
+
+func TestProviderRegistry_commitForDifferentServerURLRejected(t *testing.T) {
+	dir := t.TempDir()
+	clk := clock.NewFake()
+	stored := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r", Expiry: clk.Now().Add(time.Hour)}
+	if err := auth.Save(dir, "srv", stored); err != nil {
+		t.Fatal(err)
+	}
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
+		ConfigDir:  dir, ServerName: "srv", ServerURL: "https://a.example.com/mcp", Clock: clk,
+	}
+	registry := auth.NewProviderRegistry()
+	p, err := registry.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	moved := params
+	moved.ServerURL = "https://b.example.com/mcp"
+	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-r", Expiry: clk.Now().Add(time.Hour)}
+	if err := registry.CommitAuthorizedToken(moved, browserTok); err == nil {
+		t.Fatal("commit for a different server URL must be rejected")
+	}
+
+	if got, _ := p.Authorization(context.Background()); got != "Bearer stored-access" {
+		t.Errorf("provider serves %q, want the original token", got)
+	}
+	onDisk, err := auth.Load(dir, "srv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if onDisk.AccessToken != "stored-access" {
+		t.Errorf("disk token = %q, want the original token", onDisk.AccessToken)
 	}
 }
