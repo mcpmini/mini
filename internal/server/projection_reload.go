@@ -49,24 +49,19 @@ func (s *Server) reloadIfProjectionFilesChanged(last map[string]string) map[stri
 	} else {
 		s.logger.Info("projections reloaded", "files", changed)
 	}
-	// advance past the bad content: warn once, the next edit still changes the hash
 	return current
 }
 
 func (s *Server) fingerprintOrWarn() (map[string]string, bool) {
-	fp, err := fingerprintServerFiles(s.configDir)
+	fp, err := fingerprintProjectionSources(s.configDir)
 	if err != nil {
-		s.logger.Warn("projection reload: fingerprint server files", "err", err)
+		s.logger.Warn("projection reload: fingerprint projection sources", "err", err)
 		return nil, false
 	}
 	return fp, true
 }
 
-// servers/*.yaml (which also matches *.proj.yaml) covers inline projection
-// blocks and standalone projection files. config.yaml is included separately
-// because it can carry inline servers: entries with their own projections:
-// blocks; without it, changes to those inline projections never trigger a reload.
-func fingerprintServerFiles(configDir string) (map[string]string, error) {
+func fingerprintProjectionSources(configDir string) (map[string]string, error) {
 	paths, err := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
 	if err != nil {
 		return nil, err

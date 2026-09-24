@@ -207,7 +207,7 @@ func TestProjectionReload_sameSizeEditDetected(t *testing.T) {
 	e.assertDataKeys([]string{"b"}, []string{"a"})
 }
 
-func TestProjectionReload_malformedYAMLKeepsPreviousUntilValidWrite(t *testing.T) {
+func TestProjectionReload_malformedYAMLWarnsOnceAndKeepsPreviousUntilValidWrite(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a]\n"})
 	e.startPoller()
 	e.assertDataKeys([]string{"a"}, []string{"b"})
@@ -381,7 +381,7 @@ func TestProjectionReload_runtimeServerProjectionSurvivesReload(t *testing.T) {
 	}
 }
 
-func TestProjectionReload_runtimeSetProjectionSurvivesOwnWriteTick(t *testing.T) {
+func TestProjectionReload_runtimeSetProjectionSurvivesReloadTriggeredByItsOwnProjFile(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{})
 	e.startPoller()
 
@@ -391,7 +391,6 @@ func TestProjectionReload_runtimeSetProjectionSurvivesOwnWriteTick(t *testing.T)
 		t.Fatal(err)
 	}
 
-	// set_projection writes rt.proj.yaml, which changes the fingerprint.
 	serve(t, e.srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "rt", "tool": "getData",
 		"projection": map[string]any{"include_only": []string{"a"}},
@@ -435,7 +434,7 @@ func TestProjectionReload_actionSurvivesReload(t *testing.T) {
 	}
 }
 
-func TestInstallUpstreamLocked_addUpstreamPreservesLiveProjection(t *testing.T) {
+func TestAddConnection_reAddWithStaleProjections_keepsLiveSetProjection(t *testing.T) {
 	srv := newConfigServer(t)
 	fake := fakeConn("getData")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
@@ -448,7 +447,6 @@ func TestInstallUpstreamLocked_addUpstreamPreservesLiveProjection(t *testing.T) 
 		"projection": map[string]any{"include_only": []string{"a"}},
 	}))
 
-	// live projection from set_projection must survive a reconnect re-add with a stale snapshot
 	newFake := fakeConn("getData")
 	newFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
 	if err := srv.AddConnection(t.Context(), config.ServerConfig{
@@ -472,7 +470,7 @@ func TestInstallUpstreamLocked_addUpstreamPreservesLiveProjection(t *testing.T) 
 	}
 }
 
-func TestInstallUpstreamLocked_removeAndReAddGetsNewProjections(t *testing.T) {
+func TestAddConnection_removeThenReAdd_usesNewProjections(t *testing.T) {
 	srv := newConfigServer(t)
 	fake := fakeConn("getData")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)

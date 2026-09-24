@@ -24,14 +24,14 @@ func writeServerFile(t *testing.T, dir, name, content string) string {
 
 func mustFingerprint(t *testing.T, dir string) map[string]string {
 	t.Helper()
-	fp, err := fingerprintServerFiles(dir)
+	fp, err := fingerprintProjectionSources(dir)
 	if err != nil {
-		t.Fatalf("fingerprintServerFiles: %v", err)
+		t.Fatalf("fingerprintProjectionSources: %v", err)
 	}
 	return fp
 }
 
-func TestFingerprintServerFiles(t *testing.T) {
+func TestFingerprintProjectionSources(t *testing.T) {
 	t.Run("missing servers dir yields empty fingerprint", func(t *testing.T) {
 		fp := mustFingerprint(t, t.TempDir())
 		if len(fp) != 0 {
@@ -78,7 +78,7 @@ func TestFingerprintServerFiles(t *testing.T) {
 			t.Skip("cannot make file unreadable:", err)
 		}
 		t.Cleanup(func() { os.Chmod(p, 0600) }) //nolint:errcheck
-		if _, err := fingerprintServerFiles(dir); err == nil {
+		if _, err := fingerprintProjectionSources(dir); err == nil {
 			t.Error("expected error for unreadable file")
 		}
 	})
