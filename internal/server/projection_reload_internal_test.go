@@ -83,6 +83,16 @@ func TestFingerprintServerFiles(t *testing.T) {
 		}
 	})
 
+	t.Run("file absent at hash time is silently skipped", func(t *testing.T) {
+		fp := make(map[string]string)
+		if err := addFileHashIfPresent(fp, filepath.Join(t.TempDir(), "gone.yaml")); err != nil {
+			t.Errorf("unexpected error for absent file: %v", err)
+		}
+		if len(fp) != 0 {
+			t.Errorf("expected empty map for absent file, got %v", fp)
+		}
+	})
+
 	t.Run("includes config.yaml when present", func(t *testing.T) {
 		dir := t.TempDir()
 		cfgPath := filepath.Join(dir, "config.yaml")

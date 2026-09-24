@@ -73,7 +73,7 @@ func fingerprintServerFiles(configDir string) (map[string]string, error) {
 	}
 	fp := make(map[string]string, len(paths)+1)
 	for _, p := range paths {
-		if err := addFileHash(fp, p); err != nil {
+		if err := addFileHashIfPresent(fp, p); err != nil {
 			return nil, err
 		}
 	}

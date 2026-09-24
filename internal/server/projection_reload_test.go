@@ -12,14 +12,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
-
-const reloadPollInterval = 5 * time.Second
 
 type syncBuffer struct {
 	mu sync.Mutex
@@ -112,7 +109,7 @@ func (e *reloadEnv) startPoller() {
 
 func (e *reloadEnv) advanceTick() {
 	e.t.Helper()
-	e.clock.Advance(reloadPollInterval)
+	e.clock.Advance(server.ProjectionPollInterval)
 	select {
 	case <-e.ticked:
 	case <-e.t.Context().Done():
@@ -325,7 +322,7 @@ func TestProjectionReload_ctxCancelStopsPoller(t *testing.T) {
 	}
 }
 
-func TestProjectionReload_tickRacingSetProjectionKeepsFinalState(t *testing.T) {
+func TestProjectionReload_setProjectionFinalValuePersistedAndSurvivesReload(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{})
 	e.startPoller()
 
@@ -353,5 +350,162 @@ func TestProjectionReload_tickRacingSetProjectionKeepsFinalState(t *testing.T) {
 	}
 	if !strings.Contains(string(persisted), "- a") {
 		t.Errorf("expected persisted projection to keep last set value, got:\n%s", persisted)
+	}
+}
+
+func TestProjectionReload_runtimeServerProjectionSurvivesReload(t *testing.T) {
+	e := newReloadEnv(t, reloadEnvParams{})
+	e.startPoller()
+
+	runtimeFake := fakeConn("getData")
+	runtimeFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`)
+	proj := map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"a"}}}
+	if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "rt", RuntimeAdded: true, Projections: proj}, runtimeFake); err != nil {
+		t.Fatal(err)
+	}
+
+	e.writeProjFile("getData:\n  include_only: [b]\n")
+	e.advanceTick()
+
+	e.assertDataKeys([]string{"b"}, []string{"a", "secret"})
+
+	rtResp := serve(t, e.srv, callTool("call", map[string]any{
+		"server": "rt", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, rtResp)).Data
+	if data["a"] == nil {
+		t.Errorf("runtime server projection wiped by reload: got %v", data)
+	}
+	if data["secret"] != nil {
+		t.Errorf("runtime server projection not applied: secret should be absent, got %v", data)
+	}
+}
+
+func TestProjectionReload_runtimeSetProjectionSurvivesOwnWriteTick(t *testing.T) {
+	e := newReloadEnv(t, reloadEnvParams{})
+	e.startPoller()
+
+	runtimeFake := fakeConn("getData")
+	runtimeFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`)
+	if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "rt", RuntimeAdded: true}, runtimeFake); err != nil {
+		t.Fatal(err)
+	}
+
+	// set_projection writes rt.proj.yaml, which changes the fingerprint.
+	serve(t, e.srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "rt", "tool": "getData",
+		"projection": map[string]any{"include_only": []string{"a"}},
+	}))
+	e.advanceTick()
+
+	rtResp := serve(t, e.srv, callTool("call", map[string]any{
+		"server": "rt", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, rtResp)).Data
+	if data["a"] == nil {
+		t.Errorf("runtime set_projection dropped on own-write tick: got %v", data)
+	}
+	if data["secret"] != nil {
+		t.Errorf("runtime set_projection not applied after own-write tick: secret should be absent, got %v", data)
+	}
+}
+
+func TestProjectionReload_actionSurvivesReload(t *testing.T) {
+	e := newReloadEnv(t, reloadEnvParams{})
+	e.startPoller()
+
+	e.srv.RegisterAction(config.ActionConfig{
+		Name:        "getA",
+		Server:      "svc",
+		Tool:        "getData",
+		Description: "Get field a with defaults",
+	})
+
+	e.writeProjFile("getData:\n  include_only: [b]\n")
+	e.advanceTick()
+
+	listResp := serve(t, e.srv, callTool("list", map[string]any{"query": "getA"}))
+	text := toolResultText(t, listResp)
+	var results []map[string]any
+	if err := json.Unmarshal([]byte(text), &results); err != nil {
+		t.Fatalf("list response not JSON: %s", text)
+	}
+	if len(results) == 0 {
+		t.Errorf("action getA not found after projection reload: %s", text)
+	}
+}
+
+func TestInstallUpstreamLocked_addUpstreamPreservesLiveProjection(t *testing.T) {
+	srv := newConfigServer(t)
+	fake := fakeConn("getData")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fake); err != nil {
+		t.Fatal(err)
+	}
+
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "getData",
+		"projection": map[string]any{"include_only": []string{"a"}},
+	}))
+
+	// live projection from set_projection must survive a reconnect re-add with a stale snapshot
+	newFake := fakeConn("getData")
+	newFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"b"}},
+		},
+	}, newFake); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	if data["a"] == nil {
+		t.Errorf("live projection reverted by re-AddConnection: got %v", data)
+	}
+	if data["b"] != nil {
+		t.Errorf("stale snapshot projection applied: b should be absent, got %v", data)
+	}
+}
+
+func TestInstallUpstreamLocked_removeAndReAddGetsNewProjections(t *testing.T) {
+	srv := newConfigServer(t)
+	fake := fakeConn("getData")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"a"}},
+		},
+	}, fake); err != nil {
+		t.Fatal(err)
+	}
+
+	assertRemoveOk(t, srv, "svc")
+
+	newFake := fakeConn("getData")
+	newFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"b"}},
+		},
+	}, newFake); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	if data["b"] == nil {
+		t.Errorf("expected new projection after remove+add, got %v", data)
+	}
+	if data["a"] != nil {
+		t.Errorf("old projection still active after remove+add, got %v", data)
 	}
 }
