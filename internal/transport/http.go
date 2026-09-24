@@ -20,7 +20,6 @@ import (
 )
 
 // AuthorizationProvider supplies a dynamic Authorization header value.
-// Lives in transport (not auth) to avoid an import cycle.
 type AuthorizationProvider interface {
 	Authorization(ctx context.Context) (string, error)
 	// RefreshAuthorization refreshes only if the current value still equals stale.
@@ -79,8 +78,8 @@ type HTTPConnectionConfig struct {
 	// at connect time, preventing DNS rebinding attacks. Set for runtime-added servers.
 	BlockPrivateIPs bool
 	ServerName      string
-	AuthProvider    AuthorizationProvider // nil: use static Headers only
-	AuthHeaderName  string                // empty: "Authorization"
+	AuthProvider    AuthorizationProvider
+	AuthHeaderName  string
 }
 
 func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
@@ -140,8 +139,6 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 	return c.postWithAuthRetry(ctx, req)
 }
 
-// Each c.post() call gets its own rate-limit retry budget so a 401 replay
-// cannot multiply 429/503 retries.
 func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
 	result, err := c.post(ctx, rpcReq)
 	if c.authProvider == nil || !isUnauthorized(err) {

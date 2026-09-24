@@ -22,8 +22,6 @@ type registryEntry struct {
 	identity providerIdentity
 }
 
-// Auth config is excluded because hydration and browser commits legitimately change it;
-// serverURL stays so a token is never sent to a different MCP server.
 type providerIdentity struct {
 	serverName string
 	configDir  string
@@ -39,9 +37,8 @@ func (c *ProviderRegistry) Close() {
 	c.cancel()
 }
 
-// GetOrCreate returns the registered provider for params.ServerName when its stored
-// effective identity matches the incoming params. Returns an error if the same
-// server name has an active provider with incompatible parameters.
+// GetOrCreate returns the provider registered for params.ServerName, creating it on first use.
+// It errors if that provider was created with a different ConfigDir or ServerURL.
 func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.AuthorizationProvider, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

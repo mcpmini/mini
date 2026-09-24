@@ -335,7 +335,6 @@ func TestProvider_reloadAdoptsRegistrationForCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Trigger adoption via 401-style stale check; must not hit the token endpoint.
 	got, err := p.RefreshAuthorization(context.Background(), "Bearer initial-access")
 	if err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
@@ -347,7 +346,6 @@ func TestProvider_reloadAdoptsRegistrationForCredentials(t *testing.T) {
 		t.Fatalf("token endpoint hit during adoption, want 0 hits")
 	}
 
-	// Advance clock past the adopted token's expiry; refresh must use the adopted registration.
 	clk.Advance(2 * time.Hour)
 	if _, err := p.Authorization(context.Background()); err != nil {
 		t.Fatalf("Authorization after expiry: %v", err)

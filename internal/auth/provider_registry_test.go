@@ -68,7 +68,6 @@ func TestProviderRegistry_closeAbortsRefresh(t *testing.T) {
 	}
 
 	registry.Close()
-	release() // unblock the handler so srv.Close in cleanup does not hang
 
 	select {
 	case <-authDone:
@@ -460,7 +459,6 @@ func TestProviderRegistry_commitServesTokenFromMemory(t *testing.T) {
 		t.Fatalf("CommitAuthorizedToken: %v", err)
 	}
 
-	// Remove token file: provider must serve browser token from in-memory state only.
 	os.RemoveAll(dir + "/internal")
 
 	got, err := p.Authorization(context.Background())

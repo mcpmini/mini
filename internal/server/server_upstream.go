@@ -218,7 +218,6 @@ func (s *Server) Close() {
 		s.cancelConnect()
 	}
 	s.authWg.Wait()
-	// Abort in-flight token refreshes so connectWg.Wait does not stall for refreshTimeout.
 	s.providerRegistry.Close()
 	s.connectWg.Wait()
 	closeUpstreams(s.snapshotUpstreams())

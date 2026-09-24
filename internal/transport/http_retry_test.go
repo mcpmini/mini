@@ -323,7 +323,6 @@ func TestAuthReplay_refreshFailure_noReplay(t *testing.T) {
 }
 
 func TestAuthReplay_429Then401_budgetNotMultiplied(t *testing.T) {
-	// The replay after a 401 gets one fresh retry budget, so the bound is 2*maxRetries, not maxRetries per attempt.
 	var calls atomic.Int32
 	conn, provider := newAuthReplayConn(t, func(w http.ResponseWriter, r *http.Request) {
 		n := int(calls.Add(1))

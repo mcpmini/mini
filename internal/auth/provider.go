@@ -20,8 +20,6 @@ const refreshSkew = 2 * time.Minute
 // refreshTimeout is short because callers queued on a hung token endpoint each wait it out in turn.
 const refreshTimeout = 10 * time.Second
 
-// proactiveRefreshBackoff stops every queued caller from re-running a failing refresh
-// against a slow or down AS while the current token still works.
 const proactiveRefreshBackoff = 30 * time.Second
 
 type ProviderParams struct {
@@ -30,7 +28,7 @@ type ProviderParams struct {
 	ServerName string
 	ServerURL  string
 	Clock      clock.Clock
-	Lifetime   context.Context // nil: context.Background(); registry sets its own lifetime
+	Lifetime   context.Context
 }
 
 func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
@@ -47,7 +45,7 @@ func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
 		return nil, err
 	}
 	tp := newTokenProvider(canonical)
-	tp.configured = configured
+	tp.preHydrationAuthConfig = configured
 	return tp, nil
 }
 
@@ -108,7 +106,6 @@ func cloneAuthConfig(src *config.AuthConfig) *config.AuthConfig {
 }
 
 func hydrateFromRegistration(p ProviderParams) error {
-	// Explicit client_id in config takes precedence over DCR registration.
 	if p.AuthConfig.ClientID != "" {
 		return nil
 	}
@@ -123,13 +120,13 @@ func hydrateFromRegistration(p ProviderParams) error {
 }
 
 type tokenProvider struct {
-	ac         *config.AuthConfig
-	configured *config.AuthConfig // pre-hydration clone; used to rebuild ac when a new token is adopted from disk
-	configDir  string
-	serverName string
-	serverURL  string
-	clock      clock.Clock
-	lifetime   context.Context
+	ac                     *config.AuthConfig
+	preHydrationAuthConfig *config.AuthConfig
+	configDir              string
+	serverName             string
+	serverURL              string
+	clock                  clock.Clock
+	lifetime               context.Context
 
 	mu               sync.Mutex
 	token            *oauth2.Token
@@ -220,7 +217,7 @@ func (p *tokenProvider) reloadPersistedTokenLocked() {
 
 func (p *tokenProvider) rehydrateAuthConfigLocked() {
 	params := ProviderParams{
-		AuthConfig: cloneAuthConfig(p.configured),
+		AuthConfig: cloneAuthConfig(p.preHydrationAuthConfig),
 		ConfigDir:  p.configDir,
 		ServerName: p.serverName,
 		Clock:      p.clock,
@@ -230,7 +227,7 @@ func (p *tokenProvider) rehydrateAuthConfigLocked() {
 			"server", p.serverName, "err", err)
 		return
 	}
-	keepDiscovered(params.AuthConfig, p.ac)
+	carryOverLazyDiscovery(params.AuthConfig, p.ac)
 	p.ac = params.AuthConfig
 }
 
@@ -250,9 +247,7 @@ func cloneToken(t *oauth2.Token) *oauth2.Token {
 	return &clone
 }
 
-// keepDiscovered carries over values found by lazy discovery (endpoints, CIMD client_id),
-// which are neither configured nor registered and would not be rediscovered once TokenURL is set.
-func keepDiscovered(rebuilt, current *config.AuthConfig) {
+func carryOverLazyDiscovery(rebuilt, current *config.AuthConfig) {
 	if rebuilt.TokenURL == "" {
 		rebuilt.TokenURL = current.TokenURL
 	}
@@ -282,8 +277,7 @@ func (p *tokenProvider) refreshLocked() error {
 	if err := p.maybeDiscoverAndApplyLocked(refreshCtx); err != nil {
 		return err
 	}
-	// Clear AccessToken on a copy: oauth2's reuseTokenSource uses the system clock
-	// with a 10s delta, so without this it silently returns the stale token.
+	// oauth2's reuseTokenSource returns any token still valid by the system clock without refreshing it.
 	stale := *p.token
 	stale.AccessToken = ""
 	refreshed, err := Refresh(refreshCtx, p.ac, &stale)
