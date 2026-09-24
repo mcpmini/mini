@@ -120,13 +120,12 @@ func serveUntilCanceled(p serveWatchParams) error {
 	}
 }
 
-// io.PipeReader.Close is required: closing an *os.File from another goroutine
-// does not unblock a blocked read in Go's runtime poller.
+// Blocking stdin isn't in Go's runtime poller, so closing os.Stdin can't interrupt a pending Read; a pipe reader can.
 func stdinPipe(src io.Reader) io.ReadCloser {
 	pr, pw := io.Pipe()
 	go func() {
-		defer pw.Close()
-		io.Copy(pw, src) //nolint:errcheck
+		_, err := io.Copy(pw, src)
+		pw.CloseWithError(err)
 	}()
 	return pr
 }
@@ -143,7 +142,10 @@ func serveStandalone(p ServeParams, opts ...server.ServerOption) error {
 	p.Logger.Info("mini ready")
 	err := serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: stdinPipe(os.Stdin), Out: os.Stdout})
 	shutdownHTTP(httpSrv)
-	return err
+	if err != nil {
+		return fmt.Errorf("serve stdio: %w", err)
+	}
+	return nil
 }
 
 func shutdownHTTP(httpSrv *http.Server) {
