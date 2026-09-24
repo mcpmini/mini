@@ -40,11 +40,6 @@ func WithAllowNonLoopbackHost() ServerOption {
 	return func(s *Server) { s.allowNonLoopbackHost = true }
 }
 
-// WithAuthProviders enables dynamic OAuth token refresh on upstream connections.
-func WithAuthProviders() ServerOption {
-	return func(s *Server) { s.useAuthProviders = true }
-}
-
 type Server struct {
 	cfg                  *config.Config
 	configDir            string
@@ -61,7 +56,6 @@ type Server struct {
 	toolMode             transport.ToolMode
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
-	useAuthProviders     bool
 	providerRegistry     *auth.ProviderRegistry
 	// Lock ordering: persistMu → serverOpMu → stateMu → authMu.
 	// stateMu is the innermost hot-path lock (RLock on every request);

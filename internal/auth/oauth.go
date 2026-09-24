@@ -77,12 +77,13 @@ func (t resourceTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 	values.Set("resource", t.resourceURL)
 	body = []byte(values.Encode())
-	req.Body = io.NopCloser(bytes.NewReader(body))
-	req.ContentLength = int64(len(body))
-	req.GetBody = func() (io.ReadCloser, error) {
+	clone := req.Clone(req.Context())
+	clone.Body = io.NopCloser(bytes.NewReader(body))
+	clone.ContentLength = int64(len(body))
+	clone.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
-	return base.RoundTrip(req)
+	return base.RoundTrip(clone)
 }
 
 // PKCEFlow performs OAuth2 Authorization Code + PKCE.

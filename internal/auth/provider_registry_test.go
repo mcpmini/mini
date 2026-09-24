@@ -16,8 +16,115 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/transport"
 )
+
+func TestProviderRegistry_staleDriftDoesNotBlockRedial(t *testing.T) {
+	cases := []struct {
+		name    string
+		initial func(t *testing.T, dir string) auth.ProviderParams
+		between func(t *testing.T, dir string, reg *auth.ProviderRegistry)
+		redial  func(t *testing.T, dir string) auth.ProviderParams
+	}{
+		{
+			name: "expired_client_secret",
+			initial: func(t *testing.T, dir string) auth.ProviderParams {
+				if err := auth.SaveRegistration(dir, "srv", &auth.Registration{
+					ClientID: "dcr-client", ClientSecret: "secret",
+					TokenEndpointAuthMethod: "client_secret_basic",
+					ClientSecretExpiresAt:   100,
+				}); err != nil {
+					t.Fatal(err)
+				}
+				return auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
+					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFakeAt(time.Unix(0, 0)),
+				}
+			},
+			redial: func(t *testing.T, dir string) auth.ProviderParams {
+				return auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
+					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFakeAt(time.Unix(200, 0)),
+				}
+			},
+		},
+		{
+			name: "external_auth_updates_registration",
+			initial: func(t *testing.T, dir string) auth.ProviderParams {
+				return auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
+					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFake(),
+				}
+			},
+			between: func(t *testing.T, dir string, reg *auth.ProviderRegistry) {
+				if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-new"}); err != nil {
+					t.Fatal(err)
+				}
+			},
+			redial: func(t *testing.T, dir string) auth.ProviderParams {
+				return auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
+					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFake(),
+				}
+			},
+		},
+		{
+			name: "stale_token_url_after_commit",
+			initial: func(t *testing.T, dir string) auth.ProviderParams {
+				return auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFake(),
+				}
+			},
+			between: func(t *testing.T, dir string, reg *auth.ProviderRegistry) {
+				committed := auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{
+						Type: config.AuthTypeOAuth2, ClientID: "discovered",
+						AuthURL: "https://as.example.com/auth", TokenURL: "https://as.example.com/token",
+					},
+					ConfigDir: dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFake(),
+				}
+				tok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
+				if err := reg.CommitAuthorizedToken(committed, tok); err != nil {
+					t.Fatalf("CommitAuthorizedToken: %v", err)
+				}
+			},
+			redial: func(t *testing.T, dir string) auth.ProviderParams {
+				return auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFake(),
+				}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			reg := auth.NewProviderRegistry()
+			first, err := reg.GetOrCreate(tc.initial(t, dir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.between != nil {
+				tc.between(t, dir, reg)
+			}
+			second, err := reg.GetOrCreate(tc.redial(t, dir))
+			if err != nil {
+				t.Fatalf("re-dial rejected: %v", err)
+			}
+			if first != second {
+				t.Fatal("re-dial returned a different provider")
+			}
+		})
+	}
+}
 
 func TestProviderRegistry_reusesProviderPerServer(t *testing.T) {
 	registry := auth.NewProviderRegistry()
@@ -263,45 +370,5 @@ func TestProviderRegistry_commitSaveFailureLeavesProviderUnchanged(t *testing.T)
 	}
 	if got == "Bearer browser-access" {
 		t.Error("failed commit must not update in-memory token")
-	}
-}
-
-func TestOAuthReconnect_perSessionProviderSeesAuthorizedToken(t *testing.T) {
-	dir := t.TempDir()
-	endpoint := newTokenEndpoint(t)
-	clk := clock.NewFake()
-	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
-		t.Fatal(err)
-	}
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL},
-		ConfigDir:  dir,
-		ServerName: "srv",
-		Clock:      clk,
-	}
-	registry := auth.NewProviderRegistry()
-	primary, err := registry.GetOrCreate(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	perSession, err := registry.GetOrCreate(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if primary != perSession {
-		t.Fatal("GetOrCreate must return the same provider for equivalent params")
-	}
-	browserTok := &oauth2.Token{AccessToken: "authorized-access", RefreshToken: "authorized-refresh"}
-	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
-		t.Fatalf("CommitAuthorizedToken: %v", err)
-	}
-	for name, p := range map[string]transport.AuthorizationProvider{"primary": primary, "perSession": perSession} {
-		got, err := p.Authorization(context.Background())
-		if err != nil {
-			t.Fatalf("%s Authorization: %v", name, err)
-		}
-		if got != "Bearer authorized-access" {
-			t.Errorf("%s got %q, want Bearer authorized-access", name, got)
-		}
 	}
 }

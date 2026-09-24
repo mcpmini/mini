@@ -111,7 +111,6 @@ func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, opts ...server.ServerOpt
 		t.Fatal(err)
 	}
 	sc := oauthServerConfig("live", upstream.srv.URL, token.srv.URL, true)
-	opts = append([]server.ServerOption{server.WithAuthProviders()}, opts...)
 	srv := buildAndStartConnecting(context.Background(),
 		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
 			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}},
@@ -191,7 +190,7 @@ func assertToolCallOK(t *testing.T, resp map[string]any) {
 	}
 }
 
-func TestServeStartup_zeroTokenEndpointCallsBeforeFirstRequest(t *testing.T) {
+func TestServeStartup_validAndDisabledOAuthServers_noTokenEndpointCalls(t *testing.T) {
 	configDir := t.TempDir()
 	tokenEp := newTestTokenEndpoint(t)
 	mcp := newTestMCPUpstream(t)
@@ -210,7 +209,7 @@ func TestServeStartup_zeroTokenEndpointCallsBeforeFirstRequest(t *testing.T) {
 	srv := buildAndStartConnecting(context.Background(),
 		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
 			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: servers},
-		server.WithAuthProviders())
+	)
 	defer srv.Close()
 	awaitConnected(t, srv, "live")
 	if got := mcp.lastAuthFor("tools/list"); got != "Bearer stored-access" {

@@ -17,6 +17,10 @@ import (
 
 const refreshSkew = 2 * time.Minute
 
+// refreshTimeout bounds the detached refresh context so a cancelled tool-call
+// context cannot silently drop a rotated refresh token the AS already issued.
+const refreshTimeout = 30 * time.Second
+
 type ProviderParams struct {
 	AuthConfig *config.AuthConfig
 	ConfigDir  string
@@ -30,14 +34,20 @@ func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
 }
 
 func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
-	var err error
-	if p, err = normalizeProviderParams(p); err != nil {
+	canonical, err := canonicalizeProviderParams(p)
+	if err != nil {
 		return nil, err
 	}
-	return newTokenProvider(p), nil
+	configured := cloneAuthConfig(canonical.AuthConfig)
+	if err := hydrateFromRegistration(canonical); err != nil {
+		return nil, err
+	}
+	tp := newTokenProvider(canonical)
+	tp.configured = configured
+	return tp, nil
 }
 
-func normalizeProviderParams(p ProviderParams) (ProviderParams, error) {
+func canonicalizeProviderParams(p ProviderParams) (ProviderParams, error) {
 	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
 	resourceURL := p.AuthConfig.ResourceURL
 	if resourceURL == "" {
@@ -49,6 +59,14 @@ func normalizeProviderParams(p ProviderParams) (ProviderParams, error) {
 			return ProviderParams{}, err
 		}
 		p.AuthConfig.ResourceURL = canonical
+	}
+	return p, nil
+}
+
+func normalizeProviderParams(p ProviderParams) (ProviderParams, error) {
+	p, err := canonicalizeProviderParams(p)
+	if err != nil {
+		return ProviderParams{}, err
 	}
 	if err := hydrateFromRegistration(p); err != nil {
 		return ProviderParams{}, err
@@ -97,6 +115,7 @@ func hydrateFromRegistration(p ProviderParams) error {
 
 type tokenProvider struct {
 	ac         *config.AuthConfig
+	configured *config.AuthConfig // pre-hydration clone; used to rebuild ac when a new token is adopted from disk
 	configDir  string
 	serverName string
 	serverURL  string
@@ -163,6 +182,23 @@ func (p *tokenProvider) reloadPersistedTokenLocked() {
 	}
 	p.token = t
 	p.persistedToken = cloneToken(t)
+	p.rehydrateAuthConfigLocked()
+}
+
+func (p *tokenProvider) rehydrateAuthConfigLocked() {
+	params := ProviderParams{
+		AuthConfig: cloneAuthConfig(p.configured),
+		ConfigDir:  p.configDir,
+		ServerName: p.serverName,
+		Clock:      p.clock,
+	}
+	if err := hydrateFromRegistration(params); err != nil {
+		slog.Warn("rehydrate OAuth config after token adoption failed; keeping existing config",
+			"server", p.serverName, "err", err)
+		return
+	}
+	keepDiscovered(params.AuthConfig, p.ac)
+	p.ac = params.AuthConfig
 }
 
 func samePersistedToken(a, b *oauth2.Token) bool {
@@ -181,6 +217,20 @@ func cloneToken(t *oauth2.Token) *oauth2.Token {
 	return &clone
 }
 
+// keepDiscovered carries over values found by lazy discovery (endpoints, CIMD client_id),
+// which are neither configured nor registered and would not be rediscovered once TokenURL is set.
+func keepDiscovered(rebuilt, current *config.AuthConfig) {
+	if rebuilt.TokenURL == "" {
+		rebuilt.TokenURL = current.TokenURL
+	}
+	if rebuilt.AuthURL == "" {
+		rebuilt.AuthURL = current.AuthURL
+	}
+	if rebuilt.ClientID == "" && current.ClientID == ClientMetadataURL {
+		rebuilt.ClientID = ClientMetadataURL
+	}
+}
+
 func (p *tokenProvider) shouldRefreshLocked() bool {
 	if p.token.Expiry.IsZero() || p.token.RefreshToken == "" {
 		return false
@@ -194,19 +244,25 @@ func (p *tokenProvider) shouldRefreshLocked() bool {
 }
 
 func (p *tokenProvider) refreshLocked(ctx context.Context) error {
+	refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), refreshTimeout)
+	defer cancel()
 	if p.ac.TokenURL == "" {
 		if p.serverURL == "" {
 			return p.remedyError(fmt.Errorf("no token endpoint configured and no server URL available for discovery"))
 		}
-		if _, err := discoverAndApply(ctx, p.serverURL, p.ac); err != nil {
+		meta, err := discoverAndApply(refreshCtx, p.serverURL, p.ac)
+		if err != nil {
 			return p.remedyError(fmt.Errorf("discover token endpoint: %w", err))
+		}
+		if p.ac.ClientID == "" && meta != nil && meta.CIMDSupported {
+			p.ac.ClientID = ClientMetadataURL
 		}
 	}
 	// Clear AccessToken on a copy: oauth2's reuseTokenSource uses the system clock
 	// with a 10s delta, so without this it silently returns the stale token.
 	stale := *p.token
 	stale.AccessToken = ""
-	refreshed, err := Refresh(ctx, p.ac, &stale)
+	refreshed, err := Refresh(refreshCtx, p.ac, &stale)
 	if err != nil {
 		return p.remedyError(fmt.Errorf("refresh token: %w", err))
 	}
@@ -220,7 +276,7 @@ func (p *tokenProvider) refreshLocked(ctx context.Context) error {
 }
 
 func (p *tokenProvider) remedyError(cause error) error {
-	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", p.serverName, p.serverName, cause)
+	return transport.ReauthorizationError(p.serverName, cause)
 }
 
 func (p *tokenProvider) commitBrowserToken(normalized ProviderParams, tok *oauth2.Token) error {

@@ -15,12 +15,11 @@ import (
 )
 
 type DialParams struct {
-	Logger          *slog.Logger
-	Config          *config.Config
-	Server          config.ServerConfig
-	Clock           clock.Clock
-	ConfigDir       string
-	UseAuthProvider bool
+	Logger           *slog.Logger
+	Config           *config.Config
+	Server           config.ServerConfig
+	Clock            clock.Clock
+	ConfigDir        string
 	ProviderRegistry *auth.ProviderRegistry
 }
 
@@ -48,7 +47,7 @@ func dialHTTP(p DialParams) (transport.Connection, error) {
 }
 
 func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error {
-	if !p.UseAuthProvider || !isOAuth2Server(p.Server) {
+	if p.ProviderRegistry == nil || !isOAuth2Server(p.Server) {
 		return nil
 	}
 	params := auth.ProviderParams{
@@ -58,20 +57,13 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 		ServerURL:  p.Server.URL,
 		Clock:      p.Clock,
 	}
-	provider, err := resolveProvider(params, p.ProviderRegistry)
+	provider, err := p.ProviderRegistry.GetOrCreate(params)
 	if err != nil {
 		return fmt.Errorf("build auth provider for %s: %w", p.Server.Name, err)
 	}
 	cfg.AuthProvider = provider
 	cfg.AuthHeaderName = authHeaderName(p.Server.Auth)
 	return nil
-}
-
-func resolveProvider(params auth.ProviderParams, registry *auth.ProviderRegistry) (transport.AuthorizationProvider, error) {
-	if registry != nil {
-		return registry.GetOrCreate(params)
-	}
-	return auth.NewProvider(params)
 }
 
 func isOAuth2Server(sc config.ServerConfig) bool {

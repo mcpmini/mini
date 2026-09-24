@@ -4,10 +4,14 @@ package auth_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -156,5 +160,204 @@ func TestRefreshAuthorization_singleFlightOn401(t *testing.T) {
 		if v != "Bearer new-access" {
 			t.Errorf("got %q, want Bearer new-access", v)
 		}
+	}
+}
+
+func TestProviderRefresh_cimdClientIDSurvivesLazyDiscoveryAndTokenAdoption(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+	var lastClientID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/oauth-authorization-server":
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"authorization_endpoint":                "https://as.example.com/authorize",
+				"token_endpoint":                        "http://" + r.Host + "/token",
+				"code_challenge_methods_supported":      []string{"S256"},
+				"client_id_metadata_document_supported": true,
+			})
+		case "/token":
+			r.ParseForm() //nolint:errcheck
+			cid := r.FormValue("client_id")
+			if cid == "" {
+				// oauth2 AuthStyleInHeader sends url.QueryEscape(client_id) as Basic Auth user.
+				if user, _, ok := r.BasicAuth(); ok {
+					if decoded, err := url.QueryUnescape(user); err == nil {
+						cid = decoded
+					}
+				}
+			}
+			lastClientID = cid
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"access_token": "new-access", "refresh_token": "new-refresh",
+				"token_type": "Bearer", "expires_in": 3600,
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", &oauth2.Token{
+		AccessToken: "old-access", RefreshToken: "old-refresh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+		ConfigDir:  dir, ServerName: "srv",
+		ServerURL: srv.URL + "/mcp",
+		Clock:     clock.NewFake(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.RefreshAuthorization(context.Background(), "Bearer old-access"); err != nil {
+		t.Fatalf("RefreshAuthorization: %v", err)
+	}
+	if lastClientID != auth.ClientMetadataURL {
+		t.Errorf("client_id = %q, want %q", lastClientID, auth.ClientMetadataURL)
+	}
+
+	if err := auth.Save(dir, "srv", &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}); err != nil {
+		t.Fatal(err)
+	}
+	lastClientID = ""
+	for _, stale := range []string{"Bearer new-access", "Bearer external-access"} {
+		if _, err := p.RefreshAuthorization(context.Background(), stale); err != nil {
+			t.Fatalf("RefreshAuthorization(%s): %v", stale, err)
+		}
+	}
+	if lastClientID != auth.ClientMetadataURL {
+		t.Errorf("after adopting an external token: client_id = %q, want %q", lastClientID, auth.ClientMetadataURL)
+	}
+}
+
+func TestProviderRefresh_cancelledCallerPreservesRotatedToken(t *testing.T) {
+	endpointReceived := make(chan struct{})
+	releaseEndpoint := make(chan struct{})
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		close(endpointReceived)
+		<-releaseEndpoint
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"access_token": "rotated-access", "refresh_token": "rotated-refresh",
+			"token_type": "Bearer", "expires_in": 3600,
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", &oauth2.Token{
+		AccessToken: "old-access", RefreshToken: "old-refresh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: srv.URL},
+		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFake(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	refreshDone := make(chan error, 1)
+	go func() {
+		_, err := p.RefreshAuthorization(ctx, "Bearer old-access")
+		refreshDone <- err
+	}()
+	<-endpointReceived
+	cancel()
+	close(releaseEndpoint)
+
+	if err := <-refreshDone; err != nil {
+		t.Fatalf("RefreshAuthorization: %v", err)
+	}
+	got, err := p.Authorization(context.Background())
+	if err != nil {
+		t.Fatalf("Authorization: %v", err)
+	}
+	if got != "Bearer rotated-access" {
+		t.Errorf("Authorization = %q, want rotated token", got)
+	}
+	saved, err := auth.Load(dir, "srv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.RefreshToken != "rotated-refresh" {
+		t.Errorf("persisted refresh = %q, want rotated-refresh", saved.RefreshToken)
+	}
+	if hits.Load() != 1 {
+		t.Errorf("token endpoint hits = %d, want 1 (rotated token reused)", hits.Load())
+	}
+}
+
+func TestProvider_reloadAdoptsRegistrationForCredentials(t *testing.T) {
+	dir := t.TempDir()
+	endpoint := newTokenEndpoint(t)
+	clk := clock.NewFake()
+
+	initialTok := &oauth2.Token{
+		AccessToken: "initial-access", RefreshToken: "initial-refresh",
+		Expiry: clk.Now().Add(time.Hour),
+	}
+	if err := auth.Save(dir, "srv", initialTok); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL},
+		ConfigDir:  dir, ServerName: "srv", Clock: clk,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Authorization(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-client"}); err != nil {
+		t.Fatal(err)
+	}
+	freshTok := &oauth2.Token{
+		AccessToken: "auth-access", RefreshToken: "auth-refresh",
+		Expiry: clk.Now().Add(time.Hour),
+	}
+	if err := auth.Save(dir, "srv", freshTok); err != nil {
+		t.Fatal(err)
+	}
+
+	// Trigger adoption via 401-style stale check; must not hit the token endpoint.
+	got, err := p.RefreshAuthorization(context.Background(), "Bearer initial-access")
+	if err != nil {
+		t.Fatalf("RefreshAuthorization: %v", err)
+	}
+	if got != "Bearer auth-access" {
+		t.Fatalf("expected adopted token, got %q", got)
+	}
+	if endpoint.hits.Load() != 0 {
+		t.Fatalf("token endpoint hit during adoption, want 0 hits")
+	}
+
+	// Advance clock past the adopted token's expiry; refresh must use the adopted registration.
+	clk.Advance(2 * time.Hour)
+	if _, err := p.Authorization(context.Background()); err != nil {
+		t.Fatalf("Authorization after expiry: %v", err)
+	}
+
+	endpoint.mu.Lock()
+	clientIDForm, clientIDBasic := endpoint.lastClientID, endpoint.lastBasicAuth
+	endpoint.mu.Unlock()
+
+	if clientIDForm != "dcr-client" && clientIDBasic != "dcr-client" {
+		t.Errorf("token endpoint client_id = form:%q basic:%q, want dcr-client", clientIDForm, clientIDBasic)
 	}
 }

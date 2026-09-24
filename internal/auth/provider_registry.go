@@ -2,13 +2,10 @@ package auth
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 	"sync"
 
 	"golang.org/x/oauth2"
 
-	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -22,11 +19,12 @@ type registryEntry struct {
 	identity providerIdentity
 }
 
+// Auth config is excluded because hydration and browser commits legitimately change it;
+// serverURL stays so a token is never sent to a different MCP server.
 type providerIdentity struct {
 	serverName string
 	configDir  string
 	serverURL  string
-	ac         config.AuthConfig
 }
 
 func NewProviderRegistry() *ProviderRegistry {
@@ -37,20 +35,19 @@ func NewProviderRegistry() *ProviderRegistry {
 // effective identity matches the incoming params. Returns an error if the same
 // server name has an active provider with incompatible parameters.
 func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.AuthorizationProvider, error) {
-	normalized, err := normalizeProviderParams(params)
-	if err != nil {
-		return nil, err
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if e, ok := c.m[normalized.ServerName]; ok {
-		if !e.identity.matches(normalized) {
-			return nil, fmt.Errorf("server %q OAuth configuration changed; restart mini to reconfigure", normalized.ServerName)
+	if e, ok := c.m[params.ServerName]; ok {
+		if !e.identity.matches(params) {
+			return nil, fmt.Errorf("server %q OAuth configuration changed; restart mini to reconfigure", params.ServerName)
 		}
 		return e.provider, nil
 	}
-	tp := newTokenProvider(normalized)
-	c.m[normalized.ServerName] = &registryEntry{provider: tp, identity: identityFrom(normalized)}
+	tp, err := buildTokenProvider(params)
+	if err != nil {
+		return nil, err
+	}
+	c.m[params.ServerName] = &registryEntry{provider: tp, identity: identityFrom(params)}
 	return tp, nil
 }
 
@@ -81,37 +78,9 @@ func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oau
 }
 
 func identityFrom(p ProviderParams) providerIdentity {
-	ac := config.AuthConfig{}
-	if p.AuthConfig != nil {
-		ac = *p.AuthConfig
-		if p.AuthConfig.Scopes != nil {
-			ac.Scopes = append([]string{}, p.AuthConfig.Scopes...)
-		}
-		if p.AuthConfig.ExtraAuthParams != nil {
-			ac.ExtraAuthParams = maps.Clone(p.AuthConfig.ExtraAuthParams)
-		}
-	}
-	return providerIdentity{serverName: p.ServerName, configDir: p.ConfigDir, serverURL: p.ServerURL, ac: ac}
+	return providerIdentity{serverName: p.ServerName, configDir: p.ConfigDir, serverURL: p.ServerURL}
 }
 
 func (a providerIdentity) matches(p ProviderParams) bool {
-	if a.serverName != p.ServerName || a.configDir != p.ConfigDir || a.serverURL != p.ServerURL {
-		return false
-	}
-	var ac config.AuthConfig
-	if p.AuthConfig != nil {
-		ac = *p.AuthConfig
-	}
-	return authConfigEqual(a.ac, ac)
-}
-
-func authConfigEqual(a, b config.AuthConfig) bool {
-	return a.Type == b.Type && a.Token == b.Token && a.Header == b.Header &&
-		a.ClientID == b.ClientID && a.ClientSecret == b.ClientSecret &&
-		a.AuthURL == b.AuthURL && a.TokenURL == b.TokenURL &&
-		slices.Equal(a.Scopes, b.Scopes) &&
-		a.TokenEndpointAuthMethod == b.TokenEndpointAuthMethod &&
-		a.ResourceURL == b.ResourceURL && a.CallbackPort == b.CallbackPort &&
-		maps.Equal(a.ExtraAuthParams, b.ExtraAuthParams) &&
-		a.BrowserCmd == b.BrowserCmd
+	return a.serverName == p.ServerName && a.configDir == p.ConfigDir && a.serverURL == p.ServerURL
 }

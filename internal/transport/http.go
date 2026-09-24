@@ -162,8 +162,13 @@ func isUnauthorized(err error) bool {
 	return errors.As(err, &uerr)
 }
 
+// ReauthorizationError wraps cause with the remedy users should run.
+func ReauthorizationError(serverName string, cause error) error {
+	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", serverName, serverName, cause)
+}
+
 func (c *HTTPConnection) authRemedyError(cause error) error {
-	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", c.serverName, c.serverName, cause)
+	return ReauthorizationError(c.serverName, cause)
 }
 
 type postResult struct {

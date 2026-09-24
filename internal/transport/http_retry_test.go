@@ -269,12 +269,13 @@ func TestAuthReplay_refreshUsesAuthorizationActuallySent(t *testing.T) {
 		}
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
-	provider.current = "Bearer sent"
+	provider.current = "Bearer new"
+	provider.authValues = []string{"Bearer old-sent"}
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("expected success after replay, got: %v", err)
 	}
-	if got := provider.staleValue(); got != "Bearer sent" {
-		t.Errorf("stale = %q, want sent authorization", got)
+	if got := provider.staleValue(); got != "Bearer old-sent" {
+		t.Errorf("stale = %q, want the value actually sent in the first request", got)
 	}
 	if got := provider.authorizationCalls(); got != 2 {
 		t.Errorf("Authorization calls = %d, want 2 (one per request)", got)

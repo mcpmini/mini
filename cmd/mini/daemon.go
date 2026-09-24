@@ -82,7 +82,7 @@ type DaemonServeParams struct {
 func serveDaemon(ctx context.Context, p DaemonServeParams) {
 	token := mintDaemonToken(p.ConfigDir)
 	srv := buildAndStartConnecting(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers},
-		server.WithDaemonAuthToken(token), server.WithAuthProviders())
+		server.WithDaemonAuthToken(token))
 	defer srv.Close()
 	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: p.Listener})
 }
