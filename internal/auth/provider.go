@@ -17,9 +17,8 @@ import (
 
 const refreshSkew = 2 * time.Minute
 
-// refreshTimeout bounds the detached refresh context so a cancelled tool-call
-// context cannot silently drop a rotated refresh token the AS already issued.
-const refreshTimeout = 30 * time.Second
+// refreshTimeout is short because callers queued on a hung token endpoint each wait it out in turn.
+const refreshTimeout = 10 * time.Second
 
 // proactiveRefreshBackoff stops every queued caller from re-running a failing refresh
 // against a slow or down AS while the current token still works.
