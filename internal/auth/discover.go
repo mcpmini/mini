@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -134,14 +135,19 @@ func prmCandidateURLs(base, path string) []string {
 }
 
 func probePRMCandidates(ctx context.Context, base, path string) (asRef, error) {
+	var transientErr error
 	for _, c := range prmCandidateURLs(base, path) {
 		ref, err := fetchASURLFromPRM(ctx, c)
 		if err != nil {
-			return asRef{}, err
+			transientErr = err
+			continue
 		}
 		if ref.URL != "" {
 			return ref, nil
 		}
+	}
+	if transientErr != nil {
+		return asRef{}, transientErr
 	}
 	return asRef{URL: base}, nil // fall back to treating the MCP server host as the AS
 }
@@ -171,15 +177,29 @@ func fetchASURLFromPRM(ctx context.Context, prmURL string) (asRef, error) {
 		if ctx.Err() != nil {
 			return asRef{}, ctx.Err()
 		}
-		return asRef{}, nil
+		return asRef{}, fmt.Errorf("fetch protected resource metadata from %s: %w", prmURL, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return asRef{}, nil
+	}
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return asRef{}, fmt.Errorf("fetch protected resource metadata: status %d from %s", resp.StatusCode, prmURL)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return asRef{}, nil
 	}
+	return decodePRM(resp, prmURL)
+}
+
+func decodePRM(resp *http.Response, prmURL string) (asRef, error) {
 	var meta protectedResourceMeta
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxAuthBodyBytes)).Decode(&meta); err != nil {
-		return asRef{}, nil
+		// Catch-all hosts answer every path with a 200 HTML page; only a body labeled JSON is a broken PRM.
+		if !isJSONContentType(resp.Header.Get("Content-Type")) {
+			return asRef{}, nil
+		}
+		return asRef{}, fmt.Errorf("decode protected resource metadata from %s: %w", prmURL, err)
 	}
 	if len(meta.AuthorizationServers) == 0 {
 		return asRef{}, nil
@@ -238,7 +258,7 @@ func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, nil
+		return nil, fmt.Errorf("fetch AS metadata from %s: %w", metaURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
@@ -283,6 +303,14 @@ func fallbackMeta(base string) *ServerMeta {
 		AuthURL:  base + "/authorize",
 		TokenURL: base + "/token",
 	}
+}
+
+func isJSONContentType(ct string) bool {
+	mediaType, _, err := mime.ParseMediaType(ct)
+	if err != nil {
+		return false
+	}
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
 }
 
 func doDiscoveryRequest(ctx context.Context, metaURL string) (*http.Response, error) {

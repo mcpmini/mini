@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -46,8 +45,8 @@ func (p *tokenProvider) proactiveRefreshLocked() error {
 func (p *tokenProvider) refreshLocked() error {
 	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
-	if p.ac.TokenURL == "" {
-		return p.remedyError(errors.New("no token endpoint configured"))
+	if err := p.maybeDiscoverAndApplyLocked(refreshCtx); err != nil {
+		return err
 	}
 	// oauth2's reuseTokenSource returns any token still valid by the system clock without refreshing it.
 	stale := *p.token

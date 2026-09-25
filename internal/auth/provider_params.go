@@ -75,6 +75,7 @@ func newTokenProvider(p ProviderParams, configured *config.AuthConfig) *tokenPro
 		preHydrationAuthConfig: configured,
 		configDir:              p.ConfigDir,
 		serverName:             p.ServerName,
+		serverURL:              p.ServerURL,
 		clock:                  p.Clock,
 		lifetime:               lifetime,
 	}

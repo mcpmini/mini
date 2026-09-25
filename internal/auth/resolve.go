@@ -89,11 +89,13 @@ func applyDiscoveredEndpoints(a *config.AuthConfig, meta *ServerMeta) error {
 	return nil
 }
 
+var endpointValidator = transport.ValidateURL
+
 func validateEndpointURL(endpoint, name string) error {
 	if endpoint == "" {
 		return nil
 	}
-	if err := transport.ValidateURL(endpoint); err != nil {
+	if err := endpointValidator(endpoint); err != nil {
 		return fmt.Errorf("oauth discovery: %s points to a disallowed host: %w", name, err)
 	}
 	return nil
