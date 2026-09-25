@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,13 +17,6 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/version"
 )
-
-// AuthorizationProvider supplies a dynamic Authorization header value.
-type AuthorizationProvider interface {
-	Authorization(ctx context.Context) (string, error)
-	// RefreshAuthorization refreshes only if the current value still equals stale.
-	RefreshAuthorization(ctx context.Context, stale string) (string, error)
-}
 
 // HTTPConnection implements Connection for streamable HTTP / SSE MCP servers.
 // The GitHub MCP and similar servers use this transport: each call is a POST,
@@ -86,6 +78,9 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	if cfg.Clock == nil {
 		return nil, fmt.Errorf("HTTPConnectionConfig.Clock is required")
 	}
+	if cfg.AuthProvider != nil && cfg.AuthHeaderName == "" {
+		return nil, fmt.Errorf("HTTPConnectionConfig.AuthHeaderName is required when AuthProvider is set")
+	}
 	listenerCtx, listenerCancel := context.WithCancel(context.Background())
 	return &HTTPConnection{
 		url:                     cfg.URL,
@@ -137,35 +132,6 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 	id := c.nextID.Add(1)
 	req := Request{JSONRPC: "2.0", ID: id, Method: method, Params: params}
 	return c.postWithAuthRetry(ctx, req)
-}
-
-func (c *HTTPConnection) postWithAuthRetry(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
-	result, err := c.post(ctx, rpcReq)
-	if c.authProvider == nil || !isUnauthorized(err) {
-		return result.body, err
-	}
-	if _, refreshErr := c.authProvider.RefreshAuthorization(ctx, result.sentAuth); refreshErr != nil {
-		return nil, refreshErr
-	}
-	result, err = c.post(ctx, rpcReq)
-	if isUnauthorized(err) {
-		return nil, c.authRemedyError(err)
-	}
-	return result.body, err
-}
-
-func isUnauthorized(err error) bool {
-	var uerr *UnauthorizedError
-	return errors.As(err, &uerr)
-}
-
-// ReauthorizationError wraps cause with the remedy users should run.
-func ReauthorizationError(serverName string, cause error) error {
-	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", serverName, serverName, cause)
-}
-
-func (c *HTTPConnection) authRemedyError(cause error) error {
-	return ReauthorizationError(c.serverName, cause)
 }
 
 type postResult struct {
@@ -368,25 +334,6 @@ func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Reques
 	return sentAuth, nil
 }
 
-func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Request) (string, error) {
-	if c.authProvider == nil {
-		return "", nil
-	}
-	value, err := c.authProvider.Authorization(ctx)
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set(c.authHeaderNameOrDefault(), value)
-	return value, nil
-}
-
-func (c *HTTPConnection) authHeaderNameOrDefault() string {
-	if c.authHeaderName == "" {
-		return "Authorization"
-	}
-	return c.authHeaderName
-}
-
 func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
 	t := c.clock.NewTimer(d)
 	select {
@@ -403,7 +350,10 @@ func (c *HTTPConnection) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if _, err := c.setRequestHeaders(ctx, req); err != nil {
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
+	if _, err := c.applyAuthProvider(ctx, req); err != nil {
 		return err
 	}
 	resp, err := c.client.Do(req)

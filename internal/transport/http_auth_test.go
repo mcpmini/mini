@@ -82,7 +82,8 @@ func newAuthReplayConn(t *testing.T, handler http.HandlerFunc) (*HTTPConnection,
 	t.Cleanup(srv.Close)
 	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
 	conn, err := NewHTTPConnection(HTTPConnectionConfig{
-		URL: srv.URL, Clock: clock.NewFake(), ServerName: "myserver", AuthProvider: provider,
+		URL: srv.URL, Clock: clock.NewFake(), ServerName: "myserver",
+		AuthProvider: provider, AuthHeaderName: "Authorization",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,50 +92,62 @@ func newAuthReplayConn(t *testing.T, handler http.HandlerFunc) (*HTTPConnection,
 	return conn, provider
 }
 
-func TestCall_authProvider_setsDefaultOrConfiguredHeader(t *testing.T) {
-	cases := []struct {
-		name       string
-		headerName string
-		wantHeader string
-	}{
-		{"defaults to Authorization", "", "Authorization"},
-		{"custom header name", "X-Custom-Auth", "X-Custom-Auth"},
+func TestNewHTTPConnection_authProviderWithoutHeaderName_isError(t *testing.T) {
+	_, err := NewHTTPConnection(HTTPConnectionConfig{
+		URL:          "http://localhost:1",
+		Clock:        clock.NewFake(),
+		AuthProvider: &fakeAuthProvider{current: "Bearer x"},
+	})
+	if err == nil {
+		t.Fatal("expected error when AuthProvider set without AuthHeaderName")
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			var got string
-			srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-				got = r.Header.Get(tc.wantHeader)
-				w.Write(okRPCResponse(1)) //nolint:errcheck
-			})
-			conn := mustHTTPConn(t, HTTPConnectionConfig{
-				URL:            srv.URL,
-				AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},
-				AuthHeaderName: tc.headerName,
-			})
-			conn.Call(t.Context(), "ping", nil) //nolint:errcheck
-			if got != "Bearer dyn" {
-				t.Errorf("%s = %q, want %q", tc.wantHeader, got, "Bearer dyn")
-			}
-		})
+}
+
+func TestCall_authProvider_setsConfiguredHeader(t *testing.T) {
+	var got string
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Custom-Auth")
+		w.Write(okRPCResponse(1)) //nolint:errcheck
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{
+		URL:            srv.URL,
+		AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},
+		AuthHeaderName: "X-Custom-Auth",
+	})
+	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+	if got != "Bearer dyn" {
+		t.Errorf("X-Custom-Auth = %q, want %q", got, "Bearer dyn")
 	}
 }
 
 func TestHealth_authProvider_sendsProviderValue(t *testing.T) {
-	var got string
+	var gotAuth, gotContentType, gotAccept, gotSession string
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		got = r.Header.Get("Authorization")
+		gotAuth = r.Header.Get("Authorization")
+		gotContentType = r.Header.Get("Content-Type")
+		gotAccept = r.Header.Get("Accept")
+		gotSession = r.Header.Get("Mcp-Session-Id")
 		w.WriteHeader(http.StatusOK)
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{
-		URL:          srv.URL,
-		AuthProvider: &fakeAuthProvider{current: "Bearer dyn"},
+		URL:            srv.URL,
+		AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},
+		AuthHeaderName: "Authorization",
 	})
 	if err := conn.Health(context.Background()); err != nil {
 		t.Fatalf("Health: %v", err)
 	}
-	if got != "Bearer dyn" {
-		t.Errorf("Health Authorization = %q, want %q", got, "Bearer dyn")
+	if gotAuth != "Bearer dyn" {
+		t.Errorf("Health Authorization = %q, want %q", gotAuth, "Bearer dyn")
+	}
+	if gotContentType != "" {
+		t.Errorf("Health must not send Content-Type, got %q", gotContentType)
+	}
+	if strings.Contains(gotAccept, "text/event-stream") {
+		t.Errorf("Health must not send Accept: text/event-stream, got %q", gotAccept)
+	}
+	if gotSession != "" {
+		t.Errorf("Health must not send Mcp-Session-Id, got %q", gotSession)
 	}
 }
 
@@ -145,9 +158,10 @@ func TestCall_authProviderError_failsWithoutContactingUpstream(t *testing.T) {
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{
-		URL:          srv.URL,
-		ServerName:   "myserver",
-		AuthProvider: &fakeAuthProvider{authErr: errors.New("no token")},
+		URL:            srv.URL,
+		ServerName:     "myserver",
+		AuthProvider:   &fakeAuthProvider{authErr: errors.New("no token")},
+		AuthHeaderName: "Authorization",
 	})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	if err == nil || !strings.Contains(err.Error(), "no token") {
@@ -212,6 +226,10 @@ func TestCall_401AfterReplay_returnsReauthError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "myserver requires re-authorization") || !strings.Contains(err.Error(), "mini auth myserver") {
 		t.Errorf("terminal error should name server and remedy, got: %v", err)
+	}
+	var uerr *UnauthorizedError
+	if !errors.As(err, &uerr) {
+		t.Errorf("terminal error must unwrap to *UnauthorizedError, got: %T %v", err, err)
 	}
 	if calls.Load() != 2 {
 		t.Errorf("upstream attempts = %d, want exactly 2", calls.Load())
@@ -302,10 +320,11 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	conn, err := NewHTTPConnection(HTTPConnectionConfig{
-		URL:          srv.URL,
-		Clock:        clock.NewFake(),
-		AuthProvider: provider,
-		ServerName:   "testserver",
+		URL:            srv.URL,
+		Clock:          clock.NewFake(),
+		AuthProvider:   provider,
+		ServerName:     "testserver",
+		AuthHeaderName: "Authorization",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -324,5 +343,42 @@ func TestNotificationRequests_authProvider_sendHeader(t *testing.T) {
 	}
 	if streamAuth != "Bearer notif-token" {
 		t.Errorf("notification stream GET Authorization = %q, want %q", streamAuth, "Bearer notif-token")
+	}
+}
+
+func TestCall_staticAndProviderHeader_providerValueWins(t *testing.T) {
+	var got string
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("Authorization")
+		w.Write(okRPCResponse(1)) //nolint:errcheck
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{
+		URL:            srv.URL,
+		Headers:        map[string]string{"Authorization": "Bearer static"},
+		AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},
+		AuthHeaderName: "Authorization",
+	})
+	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+	if got != "Bearer dyn" {
+		t.Errorf("Authorization = %q, want provider value %q", got, "Bearer dyn")
+	}
+}
+
+func TestCall_replayFailsWithServerError_notReportedAsReauth(t *testing.T) {
+	var calls atomic.Int32
+	conn, _ := newAuthReplayConn(t, func(w http.ResponseWriter, r *http.Request) {
+		n := calls.Add(1)
+		if n == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Contains(err.Error(), "re-authorization") {
+		t.Errorf("500 replay error must not report re-authorization, got: %v", err)
 	}
 }
