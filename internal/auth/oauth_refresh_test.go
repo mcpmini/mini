@@ -32,14 +32,17 @@ func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	if !mock.refreshed {
+	mock.mu.Lock()
+	refreshed, resourceValues := mock.refreshed, mock.resourceValues
+	mock.mu.Unlock()
+	if !refreshed {
 		t.Error("expected /token to be called with grant_type=refresh_token")
 	}
 	if newTok.AccessToken != "refreshed-access-token" {
 		t.Errorf("access token = %q, want %q", newTok.AccessToken, "refreshed-access-token")
 	}
-	if len(mock.resourceValues) != 1 || mock.resourceValues[0] != ac.ResourceURL {
-		t.Errorf("resource values = %q, want [%q]", mock.resourceValues, ac.ResourceURL)
+	if len(resourceValues) != 1 || resourceValues[0] != ac.ResourceURL {
+		t.Errorf("resource values = %q, want [%q]", resourceValues, ac.ResourceURL)
 	}
 }
 
