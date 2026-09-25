@@ -4,9 +4,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -17,20 +14,7 @@ import (
 )
 
 func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
-	var capturedResourceValues []string
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		capturedResourceValues = r.Form["resource"]
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"access_token": "refreshed", "refresh_token": "new-refresh",
-			"token_type": "Bearer", "expires_in": 3600,
-		})
-	}))
-	t.Cleanup(tokenSrv.Close)
+	tokenEp := newTestTokenEndpoint(t)
 
 	dir := t.TempDir()
 	sc := &config.ServerConfig{
@@ -38,7 +22,7 @@ func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
 		Auth: &config.AuthConfig{
 			Type:     config.AuthTypeOAuth2,
 			ClientID: "client",
-			TokenURL: tokenSrv.URL,
+			TokenURL: tokenEp.srv.URL,
 		},
 		URL: "HTTPS://Example.COM:443/mcp",
 	}
@@ -54,8 +38,8 @@ func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
 	injectToken(context.Background(), dir, sc)
 
 	const wantResource = "https://example.com/mcp"
-	if len(capturedResourceValues) != 1 || capturedResourceValues[0] != wantResource {
-		t.Errorf("resource values = %q, want [%q]", capturedResourceValues, wantResource)
+	if got, _ := tokenEp.resourceValue.Load().(string); got != wantResource {
+		t.Errorf("resource = %q, want %q", got, wantResource)
 	}
 	if sc.Headers["Authorization"] == "" {
 		t.Error("expected Authorization header to be set after refresh")
