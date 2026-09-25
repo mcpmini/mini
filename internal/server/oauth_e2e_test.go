@@ -14,11 +14,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -348,5 +352,103 @@ func TestAddUpstream_runtimeAddedNeverPersistsToDisk(t *testing.T) {
 	}
 	if got.URL != "https://real-server.example.com/mcp" {
 		t.Errorf("URL = %q, real server config was overwritten", got.URL)
+	}
+}
+
+func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.T) {
+	const staleToken = "stale-token"
+	const browserToken = "browser-token"
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", &oauth2.Token{
+		AccessToken: staleToken,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	acceptedToken := ""
+	var unauthorizedAfterAuth atomic.Int32
+
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		vt := acceptedToken
+		mu.Unlock()
+		if vt == "" || r.Header.Get("Authorization") != "Bearer "+vt {
+			unauthorizedAfterAuth.Add(1)
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		var req map[string]any
+		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
+		id := req["id"]
+		switch req["method"] {
+		case "initialize":
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+				"result": map[string]any{"protocolVersion": "2024-11-05",
+					"capabilities": map[string]any{"tools": map[string]any{}},
+					"serverInfo":   map[string]any{"name": "srv", "version": "0"}}})
+		case "tools/list":
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
+				"result": map[string]any{"tools": []map[string]any{
+					{"name": "getData", "description": "get data", "inputSchema": map[string]any{"type": "object"}},
+				}}})
+		default:
+			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil}) //nolint:errcheck
+		}
+	}))
+	defer mcpSrv.Close()
+
+	var tokenEndpointOpen atomic.Bool
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !tokenEndpointOpen.Load() {
+			http.Error(w, "not ready", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"access_token": browserToken, "token_type": "Bearer",
+			"expires_in": 3600, "refresh_token": "refresh-" + browserToken,
+		})
+	}))
+	defer tokenSrv.Close()
+
+	writeServerYAML(t, dir, "srv", fmt.Sprintf(
+		"name: srv\ntransport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
+		mcpSrv.URL, tokenSrv.URL, tokenSrv.URL))
+
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.DisableAuthBrowserOpen = true
+	mini := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer mini.Close()
+
+	sc := loadServerConfig(t, dir, "srv")
+	if err := mini.AddUpstream(context.Background(), sc); err == nil {
+		t.Fatal("initial dial with the stale token should fail, leaving a provider registered")
+	}
+
+	tokenEndpointOpen.Store(true)
+	mu.Lock()
+	acceptedToken = browserToken
+	mu.Unlock()
+	unauthorizedAfterAuth.Store(0)
+
+	authText := toolResultText(t, serve(t, mini, callTool("config", map[string]any{"action": "start_auth", "server": "srv"})))
+	var authResult map[string]any
+	if err := json.Unmarshal([]byte(authText), &authResult); err != nil {
+		t.Fatalf("parse start_auth response: %v", err)
+	}
+	if err := visitCallback(authResult["url"].(string)); err != nil {
+		t.Fatalf("simulate browser: %v", err)
+	}
+
+	waitForServerConnected(t, mini, "srv")
+
+	serve(t, mini, callTool("list", map[string]any{}))
+
+	if n := unauthorizedAfterAuth.Load(); n > 0 {
+		t.Errorf("browser token caused %d unexpected 401 responses after auth, want 0", n)
 	}
 }

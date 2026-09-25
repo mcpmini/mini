@@ -319,3 +319,65 @@ func TestRefreshAuthorization_saveFailsAfterEarlierSave_keepsNewestTokenOnReload
 		t.Errorf("persisted = %q, want t4-access", saved.AccessToken)
 	}
 }
+
+func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCredentials(t *testing.T) {
+	dir := t.TempDir()
+	endpoint := newMockAuthServer(t)
+	clk := clock.NewFake()
+
+	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-v1"}); err != nil {
+		t.Fatal(err)
+	}
+	initialTok := &oauth2.Token{
+		AccessToken: "initial-access", RefreshToken: "initial-refresh",
+		Expiry: clk.Now().Add(time.Hour),
+	}
+	if err := auth.Save(dir, "srv", initialTok); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL + "/token"},
+		ConfigDir:  dir, ServerName: "srv", Clock: clk,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Authorization(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-v2"}); err != nil {
+		t.Fatal(err)
+	}
+	freshTok := &oauth2.Token{
+		AccessToken: "auth-access", RefreshToken: "auth-refresh",
+		Expiry: clk.Now().Add(time.Hour),
+	}
+	if err := auth.Save(dir, "srv", freshTok); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := p.RefreshAuthorization(context.Background(), "Bearer initial-access")
+	if err != nil {
+		t.Fatalf("RefreshAuthorization: %v", err)
+	}
+	if got != "Bearer auth-access" {
+		t.Fatalf("expected adopted token, got %q", got)
+	}
+	if endpoint.hits.Load() != 0 {
+		t.Fatalf("token endpoint hit during adoption, want 0 hits")
+	}
+
+	clk.Advance(2 * time.Hour)
+	if _, err := p.Authorization(context.Background()); err != nil {
+		t.Fatalf("Authorization after expiry: %v", err)
+	}
+
+	endpoint.mu.Lock()
+	clientIDForm, clientIDBasic := endpoint.lastClientID, endpoint.lastBasicAuth
+	endpoint.mu.Unlock()
+
+	if clientIDForm != "dcr-v2" && clientIDBasic != "dcr-v2" {
+		t.Errorf("token endpoint client_id = form:%q basic:%q, want dcr-v2 (rehydrate must use new registration)", clientIDForm, clientIDBasic)
+	}
+}

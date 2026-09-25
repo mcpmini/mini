@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -53,6 +55,25 @@ func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.Authori
 	}
 	c.m[params.ServerName] = &registryEntry{provider: tp, identity: identityFrom(params)}
 	return tp, nil
+}
+
+// CommitAuthorizedToken saves tok and, if the server already has a provider, installs it there.
+func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oauth2.Token) error {
+	_, hydrated, err := resolveAuthConfigs(params)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	e := c.m[params.ServerName]
+	if e != nil && !e.identity.matches(params) {
+		c.mu.Unlock()
+		return fmt.Errorf("server %q OAuth identity changed; refusing trusted commit", params.ServerName)
+	}
+	c.mu.Unlock()
+	if e == nil {
+		return Save(params.ConfigDir, params.ServerName, tok)
+	}
+	return e.provider.commitBrowserToken(hydrated, tok)
 }
 
 func identityFrom(p ProviderParams) providerIdentity {
