@@ -14,9 +14,6 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 )
 
-// serveASMeta returns an httptest.Server that serves OAuth AS metadata JSON at
-// the given path and 404 for everything else.
-
 func goodASMeta(host string) map[string]any {
 	return map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",

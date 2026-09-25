@@ -21,15 +21,13 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// resolvedClientID returns the client_id sent to the token endpoint, checking
-// both the form body (InParams) and Basic auth header (InHeader), since oauth2
-// AuthStyleAutoDetect tries Basic auth first.
-func resolvedClientID(endpoint *mockAuthServer) string {
+func clientIDSentToTokenEndpoint(endpoint *mockAuthServer) string {
 	endpoint.mu.Lock()
 	defer endpoint.mu.Unlock()
 	if endpoint.lastClientID != "" {
 		return endpoint.lastClientID
 	}
+	// oauth2's AuthStyleAutoDetect sends client_id via Basic auth first.
 	decoded, err := url.QueryUnescape(endpoint.lastBasicAuth)
 	if err != nil {
 		return ""
@@ -115,7 +113,7 @@ func TestRefreshAuthorization_cimdServerAfterRestart_keepsCIMDClientIDAcrossToke
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer old-access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
-	if got := resolvedClientID(endpoint); got != auth.ClientMetadataURL {
+	if got := clientIDSentToTokenEndpoint(endpoint); got != auth.ClientMetadataURL {
 		t.Errorf("first refresh client_id = %q, want %q", got, auth.ClientMetadataURL)
 	}
 
@@ -129,7 +127,7 @@ func TestRefreshAuthorization_cimdServerAfterRestart_keepsCIMDClientIDAcrossToke
 			t.Fatalf("RefreshAuthorization(%s): %v", stale, err)
 		}
 	}
-	if got := resolvedClientID(endpoint); got != auth.ClientMetadataURL {
+	if got := clientIDSentToTokenEndpoint(endpoint); got != auth.ClientMetadataURL {
 		t.Errorf("after token adoption client_id = %q, want %q", got, auth.ClientMetadataURL)
 	}
 }
@@ -176,7 +174,7 @@ func TestRefreshAuthorization_externalLoginWithoutRegistration_dropsStaleDCRClie
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer external-access"); err != nil {
 		t.Fatalf("second RefreshAuthorization: %v", err)
 	}
-	if got := resolvedClientID(endpoint); got == "old-dcr-client" {
+	if got := clientIDSentToTokenEndpoint(endpoint); got == "old-dcr-client" {
 		t.Errorf("stale DCR client_id must not survive token adoption, got %q", got)
 	}
 }
@@ -295,10 +293,10 @@ func TestRefreshAuthorization_configuredClientIDOnCIMDServer_keepsConfiguredClie
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
-	if got := resolvedClientID(endpoint); got == auth.ClientMetadataURL {
+	if got := clientIDSentToTokenEndpoint(endpoint); got == auth.ClientMetadataURL {
 		t.Errorf("CIMD URL must not override configured client_id, got %q", got)
 	}
-	if got := resolvedClientID(endpoint); got != "my-configured-client" {
+	if got := clientIDSentToTokenEndpoint(endpoint); got != "my-configured-client" {
 		t.Errorf("client_id = %q, want %q", got, "my-configured-client")
 	}
 }
@@ -336,7 +334,7 @@ func TestRefreshAuthorization_noCIMDAdvert_doesNotUseCIMDClientID(t *testing.T) 
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
-	if got := resolvedClientID(endpoint); got == auth.ClientMetadataURL {
+	if got := clientIDSentToTokenEndpoint(endpoint); got == auth.ClientMetadataURL {
 		t.Errorf("CIMD URL must not be set when server does not advertise CIMD, got %q", got)
 	}
 }
