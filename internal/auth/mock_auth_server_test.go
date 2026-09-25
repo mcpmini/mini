@@ -11,27 +11,24 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// mockAuthServer is a minimal OAuth2 token endpoint for tests.
-// Fields not protected by mu (accessToken, refreshToken, refreshed,
-// resourceValues) must only be written before concurrent access begins.
 type mockAuthServer struct {
-	srv            *httptest.Server
-	accessToken    string
-	refreshToken   string
-	refreshed      bool
-	resourceValues []string
+	srv          *httptest.Server
+	accessToken  string
+	refreshToken string
 
 	hits   atomic.Int32
 	status atomic.Int32
 
-	mu            sync.Mutex
-	lastGrant     string
-	lastRefresh   string
-	lastClientID  string
-	lastBasicAuth string
-	lastResource  string
-	holdReady     chan struct{}
-	holdGate      chan struct{}
+	mu             sync.Mutex
+	refreshed      bool
+	resourceValues []string
+	lastGrant      string
+	lastRefresh    string
+	lastClientID   string
+	lastBasicAuth  string
+	lastResource   string
+	holdReady      chan struct{}
+	holdGate       chan struct{}
 }
 
 func newMockAuthServer(t *testing.T) *mockAuthServer {
@@ -66,11 +63,11 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	m.mu.Lock()
 	if r.FormValue("grant_type") == "refresh_token" {
 		m.refreshed = true
 		m.resourceValues = r.Form["resource"]
 	}
-	m.mu.Lock()
 	m.lastGrant = r.FormValue("grant_type")
 	m.lastRefresh = r.FormValue("refresh_token")
 	m.lastClientID = r.FormValue("client_id")

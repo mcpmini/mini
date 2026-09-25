@@ -43,28 +43,15 @@ func TestNewProvider_storedRegistration_usesConfidentialClientCredentials(t *tes
 }
 
 func TestNewProvider_inconsistentRegistration_returnsError(t *testing.T) {
-	t.Run("ignored when explicit client_id set", func(t *testing.T) {
-		dir := t.TempDir()
-		reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
-		if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-			t.Fatal(err)
-		}
-		ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"}
-		if _, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err != nil {
-			t.Fatalf("inconsistent registration must be ignored when explicit client_id is set: %v", err)
-		}
-	})
-	t.Run("errors when no explicit client_id", func(t *testing.T) {
-		dir := t.TempDir()
-		reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
-		if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-			t.Fatal(err)
-		}
-		ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
-		if _, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err == nil {
-			t.Fatal("expected construction error for inconsistent registration when no explicit client_id")
-		}
-	})
+	dir := t.TempDir()
+	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
+	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
+		t.Fatal(err)
+	}
+	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
+	if _, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err == nil {
+		t.Fatal("expected construction error for inconsistent registration when no explicit client_id")
+	}
 }
 
 func TestNewProvider_noRegistration_actsAsPublicClient(t *testing.T) {

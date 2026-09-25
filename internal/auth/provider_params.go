@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 
@@ -30,6 +31,12 @@ func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
 }
 
 func canonicalizeProviderParams(p ProviderParams) (ProviderParams, error) {
+	if p.AuthConfig == nil {
+		return ProviderParams{}, errors.New("AuthConfig is required")
+	}
+	if p.Clock == nil {
+		p.Clock = clock.System()
+	}
 	p.AuthConfig = cloneAuthConfig(p.AuthConfig)
 	resourceURL := p.AuthConfig.ResourceURL
 	if resourceURL == "" {
@@ -77,12 +84,14 @@ func hydrateFromRegistration(p ProviderParams) error {
 	if p.AuthConfig.ClientID != "" {
 		return nil
 	}
-	reg, err := LoadRegistration(p.ConfigDir, p.ServerName)
-	if IsNotFound(err) {
-		return nil
-	}
+	_, err := applyExistingClientReg(clientRegParams{
+		ConfigDir:  p.ConfigDir,
+		ServerName: p.ServerName,
+		AuthConfig: p.AuthConfig,
+		Now:        p.Clock.Now(),
+	})
 	if err != nil {
 		return fmt.Errorf("load client registration for %s: %w", p.ServerName, err)
 	}
-	return applyRegistration(p.AuthConfig, reg, p.Clock.Now())
+	return nil
 }

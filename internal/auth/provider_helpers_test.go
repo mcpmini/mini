@@ -54,9 +54,7 @@ func storedToken(expiry time.Time) *oauth2.Token {
 	return &oauth2.Token{AccessToken: "stored-access", RefreshToken: "stored-refresh", Expiry: expiry}
 }
 
-// holdMockServer installs a one-shot gate on m: handleToken blocks after
-// receiving the request until the returned release function is called.
-func holdMockServer(m *mockAuthServer) (received <-chan struct{}, release func()) {
+func gateNextTokenRequest(m *mockAuthServer) (received <-chan struct{}, release func()) {
 	ready := make(chan struct{})
 	gate := make(chan struct{})
 	m.mu.Lock()
