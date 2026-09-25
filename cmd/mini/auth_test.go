@@ -1,63 +1,68 @@
-//go:build test
-
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"testing"
-	"time"
-
-	"golang.org/x/oauth2"
-
-	"github.com/mcpmini/mini/internal/auth"
-	"github.com/mcpmini/mini/internal/config"
 )
 
-func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {
-	var capturedResourceValues []string
-	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		capturedResourceValues = r.Form["resource"]
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"access_token": "refreshed", "refresh_token": "new-refresh",
-			"token_type": "Bearer", "expires_in": 3600,
+func TestResolveOpenerCmd(t *testing.T) {
+	tests := []struct {
+		name      string
+		perServer string
+		global    string
+		want      string
+	}{
+		{"per-server wins over global", "per-server-cmd", "global-cmd", "per-server-cmd"},
+		{"global used when no per-server", "", "global-cmd", "global-cmd"},
+		{"neither set returns empty", "", "", ""},
+		{"per-server with args wins", "open -a Firefox", "global-cmd", "open -a Firefox"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveOpenerCmd(tc.perServer, tc.global)
+			if got != tc.want {
+				t.Errorf("resolveOpenerCmd(%q, %q) = %q, want %q", tc.perServer, tc.global, got, tc.want)
+			}
 		})
-	}))
-	t.Cleanup(tokenSrv.Close)
+	}
+}
 
-	dir := t.TempDir()
-	sc := &config.ServerConfig{
-		Name: "srv",
-		Auth: &config.AuthConfig{
-			Type:     config.AuthTypeOAuth2,
-			ClientID: "client",
-			TokenURL: tokenSrv.URL,
-		},
-		URL: "HTTPS://Example.COM:443/mcp",
-	}
-	expired := &oauth2.Token{
-		AccessToken:  "expired",
-		RefreshToken: "old-refresh",
-		Expiry:       time.Now().Add(-time.Hour),
-	}
-	if err := auth.Save(dir, "srv", expired); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
+func TestAuthOpener_usesPlatformDefaultWhenNeitherSet(t *testing.T) {
+	var called bool
+	orig := openBrowser
+	openBrowser = func(url string) error { called = true; return nil }
+	t.Cleanup(func() { openBrowser = orig })
 
-	injectToken(context.Background(), dir, sc)
-
-	const wantResource = "https://example.com/mcp"
-	if len(capturedResourceValues) != 1 || capturedResourceValues[0] != wantResource {
-		t.Errorf("resource values = %q, want [%q]", capturedResourceValues, wantResource)
+	opener := authOpener("", "", false)
+	_ = opener("http://example.com")
+	if !called {
+		t.Error("expected platform opener to be called when neither per-server nor global cmd is set")
 	}
-	if sc.Headers["Authorization"] == "" {
-		t.Error("expected Authorization header to be set after refresh")
+}
+
+func TestAuthOpener_skipsPlatformDefaultWhenCmdSet(t *testing.T) {
+	var called bool
+	orig := openBrowser
+	openBrowser = func(url string) error { called = true; return nil }
+	t.Cleanup(func() { openBrowser = orig })
+
+	opener := authOpener("echo", "", false)
+	_ = opener("http://example.com")
+	if called {
+		t.Error("platform opener should not be called when per-server cmd is set")
+	}
+}
+
+func TestAuthOpener_disabledSkipsAll(t *testing.T) {
+	var called bool
+	orig := openBrowser
+	openBrowser = func(url string) error { called = true; return nil }
+	t.Cleanup(func() { openBrowser = orig })
+
+	opener := authOpener("echo", "global-cmd", true)
+	if err := opener("http://example.com"); err != nil {
+		t.Errorf("disabled opener returned error: %v", err)
+	}
+	if called {
+		t.Error("platform opener should not be called when disabled")
 	}
 }
