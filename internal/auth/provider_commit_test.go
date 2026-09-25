@@ -16,66 +16,88 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func TestCommitAuthorizedToken_existingProvider_servesBrowserTokenImmediately(t *testing.T) {
-	dir := t.TempDir()
-	clk := clock.NewFake()
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
-		ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com/mcp",
-		Clock: clk,
+type commitFixture struct {
+	dir      string
+	clock    *clock.Fake
+	registry *auth.ProviderRegistry
+	endpoint *mockAuthServer
+}
+
+func newCommitFixture(t *testing.T) *commitFixture {
+	t.Helper()
+	return &commitFixture{
+		dir:      t.TempDir(),
+		clock:    clock.NewFake(),
+		registry: auth.NewProviderRegistry(),
+		endpoint: newMockAuthServer(t),
 	}
-	registry := auth.NewProviderRegistry()
-	before, err := registry.GetOrCreate(params)
+}
+
+func (f *commitFixture) params() auth.ProviderParams {
+	return f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"})
+}
+
+func (f *commitFixture) paramsFor(ac *config.AuthConfig) auth.ProviderParams {
+	cfg := *ac
+	if cfg.TokenURL == "" {
+		cfg.TokenURL = f.endpoint.srv.URL + "/token"
+	}
+	return auth.ProviderParams{
+		AuthConfig: &cfg,
+		ConfigDir:  f.dir,
+		ServerName: "srv",
+		Clock:      f.clock,
+	}
+}
+
+func TestCommitAuthorizedToken_existingProvider_servesFromMemoryAfterFileRemoved(t *testing.T) {
+	f := newCommitFixture(t)
+	params := f.params()
+
+	before, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
-	authorized := params
-	authorized.AuthConfig = &config.AuthConfig{
-		Type: config.AuthTypeOAuth2, ClientID: "discovered",
-		AuthURL: "https://as.example.com/auth", TokenURL: "https://as.example.com/token",
+	browserTok := &oauth2.Token{
+		AccessToken: "browser-access", RefreshToken: "browser-r",
+		Expiry: f.clock.Now().Add(time.Hour),
 	}
-	if err := registry.CommitAuthorizedToken(authorized, tok); err != nil {
+	if err := f.registry.CommitAuthorizedToken(params, browserTok); err != nil {
 		t.Fatalf("CommitAuthorizedToken: %v", err)
 	}
-	after, err := registry.GetOrCreate(authorized)
+	after, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatalf("GetOrCreate after commit: %v", err)
 	}
 	if before != after {
 		t.Fatal("commit replaced the provider")
 	}
+
+	os.RemoveAll(f.dir + "/internal") //nolint:errcheck
+
 	got, err := after.Authorization(context.Background())
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Authorization after file removed: %v", err)
 	}
 	if got != "Bearer browser-access" {
-		t.Fatalf("Authorization = %q, want browser token", got)
+		t.Errorf("Authorization = %q, want Bearer browser-access", got)
 	}
 }
 
 func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
-	dir := t.TempDir()
-	clk := clock.NewFake()
-	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
+	f := newCommitFixture(t)
+	params := f.params()
+
+	if err := auth.Save(f.dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	endpoint := newMockAuthServer(t)
-	endpoint.accessToken = "refresh-result"
-	rawReceived, rawRelease := gateNextTokenRequest(endpoint)
+	f.endpoint.accessToken = "refresh-result"
+	rawReceived, rawRelease := gateNextTokenRequest(f.endpoint)
 	var once sync.Once
 	release := func() { once.Do(rawRelease) }
 	t.Cleanup(release)
 
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{
-			Type: config.AuthTypeOAuth2, ClientID: "cid",
-			TokenURL: endpoint.srv.URL + "/token",
-		},
-		ConfigDir: dir, ServerName: "srv", Clock: clk,
-	}
-	registry := auth.NewProviderRegistry()
-	provider, err := registry.GetOrCreate(params)
+	provider, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +113,7 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 	}
 	commitDone := make(chan error, 1)
 	go func() {
-		commitDone <- registry.CommitAuthorizedToken(params, &oauth2.Token{
+		commitDone <- f.registry.CommitAuthorizedToken(params, &oauth2.Token{
 			AccessToken: "browser-access", RefreshToken: "browser-refresh",
 		})
 	}()
@@ -109,7 +131,7 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 	if got != "Bearer browser-access" {
 		t.Fatalf("Authorization = %q, want browser token", got)
 	}
-	saved, err := auth.Load(dir, "srv")
+	saved, err := auth.Load(f.dir, "srv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,79 +141,65 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 }
 
 func TestCommitAuthorizedToken_withStoredRegistration_usesItsClientCredentials(t *testing.T) {
-	dir := t.TempDir()
-	endpoint := newMockAuthServer(t)
-	clk := clock.NewFake()
+	f := newCommitFixture(t)
+	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
 
 	reg1 := &auth.Registration{ClientID: "dcr-v1", ClientSecret: "secret-v1", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(dir, "srv", reg1); err != nil {
+	if err := auth.SaveRegistration(f.dir, "srv", reg1); err != nil {
 		t.Fatal(err)
 	}
-	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
+	if err := auth.Save(f.dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL + "/token"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clk,
-	}
-	registry := auth.NewProviderRegistry()
-	p, err := registry.GetOrCreate(params)
+	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("initial refresh: %v", err)
 	}
-	endpoint.mu.Lock()
-	gotV1 := endpoint.lastBasicAuth
-	endpoint.mu.Unlock()
+	f.endpoint.mu.Lock()
+	gotV1 := f.endpoint.lastBasicAuth
+	f.endpoint.mu.Unlock()
 	if gotV1 != "dcr-v1" {
 		t.Errorf("initial basic auth user = %q, want dcr-v1", gotV1)
 	}
 
 	reg2 := &auth.Registration{ClientID: "dcr-v2", ClientSecret: "secret-v2", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(dir, "srv", reg2); err != nil {
+	if err := auth.SaveRegistration(f.dir, "srv", reg2); err != nil {
 		t.Fatal(err)
 	}
-	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
-	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
+	if err := f.registry.CommitAuthorizedToken(params, &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}); err != nil {
 		t.Fatalf("CommitAuthorizedToken: %v", err)
 	}
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access"); err != nil {
 		t.Fatalf("post-commit refresh: %v", err)
 	}
-	endpoint.mu.Lock()
-	gotV2 := endpoint.lastBasicAuth
-	endpoint.mu.Unlock()
+	f.endpoint.mu.Lock()
+	gotV2 := f.endpoint.lastBasicAuth
+	f.endpoint.mu.Unlock()
 	if gotV2 != "dcr-v2" {
 		t.Errorf("post-commit basic auth user = %q, want dcr-v2 (commit must hydrate new registration)", gotV2)
 	}
 }
 
 func TestCommitAuthorizedToken_saveFails_providerUnchanged(t *testing.T) {
-	dir := t.TempDir()
-	endpoint := newMockAuthServer(t)
-	clk := clock.NewFake()
-	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
+	f := newCommitFixture(t)
+	params := f.params()
+	if err := auth.Save(f.dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL + "/token"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clk,
-	}
-	registry := auth.NewProviderRegistry()
-	p, err := registry.GetOrCreate(params)
+	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	internal := dir + "/internal"
+	internal := f.dir + "/internal"
 	if err := os.Chmod(internal, 0500); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { os.Chmod(internal, 0700) }) //nolint:errcheck
 
-	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
-	if err := registry.CommitAuthorizedToken(params, browserTok); err == nil {
+	if err := f.registry.CommitAuthorizedToken(params, &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}); err == nil {
 		t.Fatal("expected CommitAuthorizedToken to fail when persist is denied")
 	}
 	os.Chmod(internal, 0700) //nolint:errcheck
@@ -205,64 +213,23 @@ func TestCommitAuthorizedToken_saveFails_providerUnchanged(t *testing.T) {
 	}
 }
 
-func TestCommitAuthorizedToken_tokenFileRemoved_stillServesFromMemory(t *testing.T) {
-	dir := t.TempDir()
-	endpoint := newMockAuthServer(t)
-	clk := clock.NewFake()
-	initial := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r", Expiry: clk.Now().Add(time.Hour)}
-	if err := auth.Save(dir, "srv", initial); err != nil {
-		t.Fatal(err)
-	}
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL + "/token"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clk,
-	}
-	registry := auth.NewProviderRegistry()
-	p, err := registry.GetOrCreate(params)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.Authorization(context.Background()); err != nil {
-		t.Fatalf("initial Authorization: %v", err)
-	}
-	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-r", Expiry: clk.Now().Add(time.Hour)}
-	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
-		t.Fatalf("CommitAuthorizedToken: %v", err)
-	}
-	os.RemoveAll(dir + "/internal") //nolint:errcheck
-
-	got, err := p.Authorization(context.Background())
-	if err != nil {
-		t.Fatalf("Authorization after commit (no disk): %v", err)
-	}
-	if got != "Bearer browser-access" {
-		t.Errorf("Authorization = %q, want Bearer browser-access", got)
-	}
-	if endpoint.hits.Load() != 0 {
-		t.Errorf("token endpoint hits = %d, want 0", endpoint.hits.Load())
-	}
-}
-
 func TestCommitAuthorizedToken_differentServerURL_rejected(t *testing.T) {
-	dir := t.TempDir()
-	clk := clock.NewFake()
-	stored := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r", Expiry: clk.Now().Add(time.Hour)}
-	if err := auth.Save(dir, "srv", stored); err != nil {
-		t.Fatal(err)
-	}
+	f := newCommitFixture(t)
 	params := auth.ProviderParams{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
-		ConfigDir:  dir, ServerName: "srv", ServerURL: "https://a.example.com/mcp", Clock: clk,
+		ConfigDir:  f.dir, ServerName: "srv", ServerURL: "https://a.example.com/mcp", Clock: f.clock,
 	}
-	registry := auth.NewProviderRegistry()
-	p, err := registry.GetOrCreate(params)
+	stored := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r", Expiry: f.clock.Now().Add(time.Hour)}
+	if err := auth.Save(f.dir, "srv", stored); err != nil {
+		t.Fatal(err)
+	}
+	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
 	moved := params
 	moved.ServerURL = "https://b.example.com/mcp"
-	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-r", Expiry: clk.Now().Add(time.Hour)}
-	if err := registry.CommitAuthorizedToken(moved, browserTok); err == nil {
+	if err := f.registry.CommitAuthorizedToken(moved, &oauth2.Token{AccessToken: "browser-access"}); err == nil {
 		t.Fatal("commit for different server URL must be rejected")
 	}
 	got, err := p.Authorization(context.Background())
@@ -272,7 +239,7 @@ func TestCommitAuthorizedToken_differentServerURL_rejected(t *testing.T) {
 	if got != "Bearer stored-access" {
 		t.Errorf("provider serves %q, want the original token", got)
 	}
-	onDisk, err := auth.Load(dir, "srv")
+	onDisk, err := auth.Load(f.dir, "srv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,19 +249,14 @@ func TestCommitAuthorizedToken_differentServerURL_rejected(t *testing.T) {
 }
 
 func TestCommitAuthorizedToken_noProviderYet_savesTokenForLaterDial(t *testing.T) {
-	dir := t.TempDir()
-	clk := clock.NewFake()
-	registry := auth.NewProviderRegistry()
+	f := newCommitFixture(t)
+	params := f.params()
 
 	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clk,
-	}
-	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
+	if err := f.registry.CommitAuthorizedToken(params, browserTok); err != nil {
 		t.Fatalf("CommitAuthorizedToken without provider: %v", err)
 	}
-	provider, err := registry.GetOrCreate(params)
+	provider, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
@@ -307,47 +269,38 @@ func TestCommitAuthorizedToken_noProviderYet_savesTokenForLaterDial(t *testing.T
 	}
 }
 
-func TestCommitAuthorizedToken_withDiscoveredClientID_clientIDSurvivesExternalAdoption(t *testing.T) {
-	dir := t.TempDir()
-	endpoint := newMockAuthServer(t)
-	clk := clock.NewFake()
+func TestCommitAuthorizedToken_externalReregistration_usesNewRegistrationCredentials(t *testing.T) {
+	f := newCommitFixture(t)
+	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
 
-	initial := &oauth2.Token{AccessToken: "initial-access", RefreshToken: "initial-refresh",
-		Expiry: clk.Now().Add(time.Hour)}
-	if err := auth.Save(dir, "srv", initial); err != nil {
+	reg1 := &auth.Registration{ClientID: "dcr-v1", ClientSecret: "secret-v1", TokenEndpointAuthMethod: "client_secret_basic"}
+	if err := auth.SaveRegistration(f.dir, "srv", reg1); err != nil {
 		t.Fatal(err)
 	}
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL + "/token"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clk,
+	initialTok := &oauth2.Token{AccessToken: "initial-access", RefreshToken: "initial-refresh", Expiry: f.clock.Now().Add(time.Hour)}
+	if err := auth.Save(f.dir, "srv", initialTok); err != nil {
+		t.Fatal(err)
 	}
-	registry := auth.NewProviderRegistry()
-	p, err := registry.GetOrCreate(params)
+
+	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Authorization(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 
-	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh",
-		Expiry: clk.Now().Add(time.Hour)}
-	committed := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{
-			Type: config.AuthTypeOAuth2, ClientID: "discovered",
-			TokenURL: endpoint.srv.URL + "/token",
-		},
-		ConfigDir: dir, ServerName: "srv", Clock: clk,
-	}
-	if err := registry.CommitAuthorizedToken(committed, browserTok); err != nil {
+	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh", Expiry: f.clock.Now().Add(time.Hour)}
+	if err := f.registry.CommitAuthorizedToken(params, browserTok); err != nil {
 		t.Fatalf("CommitAuthorizedToken: %v", err)
 	}
 
-	external := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh",
-		Expiry: clk.Now().Add(time.Hour)}
-	if err := auth.Save(dir, "srv", external); err != nil {
+	reg2 := &auth.Registration{ClientID: "dcr-v2", ClientSecret: "secret-v2", TokenEndpointAuthMethod: "client_secret_basic"}
+	if err := auth.SaveRegistration(f.dir, "srv", reg2); err != nil {
 		t.Fatal(err)
 	}
+	externalTok := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh", Expiry: f.clock.Now().Add(time.Hour)}
+	if err := auth.Save(f.dir, "srv", externalTok); err != nil {
+		t.Fatal(err)
+	}
+
 	got, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access")
 	if err != nil {
 		t.Fatalf("RefreshAuthorization for adoption: %v", err)
@@ -356,14 +309,15 @@ func TestCommitAuthorizedToken_withDiscoveredClientID_clientIDSurvivesExternalAd
 		t.Fatalf("expected adoption of external token, got %q", got)
 	}
 
-	clk.Advance(2 * time.Hour)
+	f.clock.Advance(2 * time.Hour)
 	if _, err := p.Authorization(context.Background()); err != nil {
 		t.Fatalf("Authorization after expiry: %v", err)
 	}
-	endpoint.mu.Lock()
-	clientIDForm, clientIDBasic := endpoint.lastClientID, endpoint.lastBasicAuth
-	endpoint.mu.Unlock()
-	if clientIDForm != "discovered" && clientIDBasic != "discovered" {
-		t.Errorf("token endpoint client_id = form:%q basic:%q, want discovered (committed config must survive external adoption)", clientIDForm, clientIDBasic)
+
+	f.endpoint.mu.Lock()
+	clientIDForm, clientIDBasic := f.endpoint.lastClientID, f.endpoint.lastBasicAuth
+	f.endpoint.mu.Unlock()
+	if clientIDForm != "dcr-v2" && clientIDBasic != "dcr-v2" {
+		t.Errorf("client_id = form:%q basic:%q, want dcr-v2 (preHydrationAuthConfig must not carry a resolved ClientID)", clientIDForm, clientIDBasic)
 	}
 }

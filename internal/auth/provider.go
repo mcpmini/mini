@@ -82,14 +82,13 @@ func (p *tokenProvider) remedyError(cause error) error {
 	return transport.ReauthorizationError(p.serverName, cause)
 }
 
-func (p *tokenProvider) commitBrowserToken(hydrated, configured *config.AuthConfig, tok *oauth2.Token) error {
+func (p *tokenProvider) commitBrowserToken(hydrated *config.AuthConfig, tok *oauth2.Token) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := Save(p.configDir, p.serverName, tok); err != nil {
 		return fmt.Errorf("persist oauth token: %w", err)
 	}
 	p.ac = hydrated
-	p.preHydrationAuthConfig = configured
 	p.token = tok
 	p.persistedToken = cloneToken(tok)
 	return nil
