@@ -4,6 +4,7 @@ package auth_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestRefreshAuthorization_rotatedRefreshToken_isPersisted(t *testing.T) {
@@ -380,4 +382,22 @@ func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCred
 	if clientIDForm != "dcr-v2" && clientIDBasic != "dcr-v2" {
 		t.Errorf("token endpoint client_id = form:%q basic:%q, want dcr-v2 (rehydrate must use new registration)", clientIDForm, clientIDBasic)
 	}
+}
+
+func TestRemedyError_wrapsErrReauthRequired(t *testing.T) {
+	t.Run("missing token", func(t *testing.T) {
+		f := newProviderFixture(t, providerSetup{})
+		_, err := f.provider.Authorization(context.Background())
+		if !errors.Is(err, transport.ErrReauthRequired) {
+			t.Errorf("error = %v, want ErrReauthRequired", err)
+		}
+	})
+	t.Run("refresh failure", func(t *testing.T) {
+		f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
+		f.endpoint.status.Store(http.StatusInternalServerError)
+		_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+		if !errors.Is(err, transport.ErrReauthRequired) {
+			t.Errorf("error = %v, want ErrReauthRequired", err)
+		}
+	})
 }

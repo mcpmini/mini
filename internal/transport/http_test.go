@@ -308,7 +308,7 @@ func TestHTTPClientTimeout_firesForHungServer(t *testing.T) {
 	srv := newHungServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, ClientTimeout: 100 * time.Millisecond})
 	start := time.Now()
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected timeout error for hung server")
 	}
@@ -321,7 +321,7 @@ func TestHTTPClientTimeout_defaultAllowsLongRunning(t *testing.T) {
 		w.Write(okRPCResponse(1))
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: slow.URL})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err != nil {
 		t.Fatalf("unexpected error for slow-but-valid server: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestHTTPClientTimeout_contextFiresBeforeClientTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
-	_, err := conn.Call(ctx, "ping", nil)
+	_, err := conn.rpc(ctx, "ping", nil)
 	if err == nil {
 		t.Fatal("expected context deadline error")
 	}

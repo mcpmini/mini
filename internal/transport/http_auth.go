@@ -35,9 +35,12 @@ func isUnauthorized(err error) bool {
 	return errors.As(err, &uerr)
 }
 
+// ErrReauthRequired marks failures that only `mini auth <server>` can fix.
+var ErrReauthRequired = errors.New("re-authorization required")
+
 // ReauthorizationError wraps cause with the remedy users should run.
 func ReauthorizationError(serverName string, cause error) error {
-	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w", serverName, serverName, cause)
+	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w: %w", serverName, serverName, ErrReauthRequired, cause)
 }
 
 func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Request) (string, error) {
@@ -50,4 +53,24 @@ func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Reques
 	}
 	req.Header.Set(c.authHeaderName, value)
 	return value, nil
+}
+
+func (c *HTTPConnection) sendOneWithAuthRetry(ctx context.Context, build func(context.Context) (*http.Request, string, error)) (*http.Response, error) {
+	req, sentAuth, err := build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.client.Do(req)
+	if err != nil || c.authProvider == nil || resp.StatusCode != http.StatusUnauthorized {
+		return resp, err
+	}
+	resp.Body.Close()
+	if _, refreshErr := c.authProvider.RefreshAuthorization(ctx, sentAuth); refreshErr != nil {
+		return nil, refreshErr
+	}
+	req, _, err = build(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.client.Do(req)
 }

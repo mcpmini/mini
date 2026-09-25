@@ -114,7 +114,7 @@ func TestCall_authProvider_setsConfiguredHeader(t *testing.T) {
 		AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},
 		AuthHeaderName: "X-Custom-Auth",
 	})
-	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+	conn.rpc(t.Context(), "ping", nil) //nolint:errcheck
 	if got != "Bearer dyn" {
 		t.Errorf("X-Custom-Auth = %q, want %q", got, "Bearer dyn")
 	}
@@ -163,7 +163,7 @@ func TestCall_authProviderError_failsWithoutContactingUpstream(t *testing.T) {
 		AuthProvider:   &fakeAuthProvider{authErr: errors.New("no token")},
 		AuthHeaderName: "Authorization",
 	})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil || !strings.Contains(err.Error(), "no token") {
 		t.Errorf("expected provider error to propagate, got: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestCall_401_refreshesAndReplaysOnce(t *testing.T) {
 		}
 		w.Write(okRPCResponse(1)) //nolint:errcheck
 	})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("expected success after 401 refresh replay, got: %v", err)
 	}
 	if calls.Load() != 2 {
@@ -203,7 +203,7 @@ func TestCall_401_refreshesWithTheValueActuallySent(t *testing.T) {
 	})
 	provider.current = "Bearer new"
 	provider.authValues = []string{"Bearer old-sent"}
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+	if _, err := conn.rpc(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("expected success after replay, got: %v", err)
 	}
 	if got := provider.staleValue(); got != "Bearer old-sent" {
@@ -220,7 +220,7 @@ func TestCall_401AfterReplay_returnsReauthError(t *testing.T) {
 		calls.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected terminal error")
 	}
@@ -246,7 +246,7 @@ func TestCall_refreshFails_returnsErrorWithoutReplay(t *testing.T) {
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	provider.refreshErr = errors.New("token endpoint down")
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -272,7 +272,7 @@ func TestCall_429Then401_retryBudgetNotMultiplied(t *testing.T) {
 			w.WriteHeader(http.StatusTooManyRequests)
 		}
 	})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error when second post exhausts 429 budget")
 	}
@@ -358,7 +358,7 @@ func TestCall_staticAndProviderHeader_providerValueWins(t *testing.T) {
 		AuthProvider:   &fakeAuthProvider{current: "Bearer dyn"},
 		AuthHeaderName: "Authorization",
 	})
-	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+	conn.rpc(t.Context(), "ping", nil) //nolint:errcheck
 	if got != "Bearer dyn" {
 		t.Errorf("Authorization = %q, want provider value %q", got, "Bearer dyn")
 	}
@@ -374,7 +374,7 @@ func TestCall_replayFailsWithServerError_notReportedAsReauth(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
 	})
-	_, err := conn.Call(t.Context(), "ping", nil)
+	_, err := conn.rpc(t.Context(), "ping", nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
