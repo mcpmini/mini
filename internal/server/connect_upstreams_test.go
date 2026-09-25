@@ -9,8 +9,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
@@ -184,4 +187,55 @@ func TestConnectUpstreams_SecondCallCancelsPriorWorkers(t *testing.T) {
 
 	// Close should not hang — the first call's hung worker should have been canceled
 	mustCloseWithin(t, srv, 3*time.Second)
+}
+
+func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
+	reached := make(chan struct{}, 1)
+	released := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(released) }) }
+
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case reached <- struct{}{}:
+		default:
+		}
+		select {
+		case <-released:
+		case <-r.Context().Done():
+		}
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(func() { release(); tokenSrv.Close() })
+
+	dir := t.TempDir()
+	saveToken(t, dir, "oauth-svc", &oauth2.Token{
+		AccessToken:  "expired-access",
+		RefreshToken: "old-refresh",
+		Expiry:       time.Now().Add(-time.Hour),
+	})
+
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.DangerousAllowPrivateURLs = true
+	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{
+		Name:      "oauth-svc",
+		Transport: "http",
+		URL:       tokenSrv.URL,
+		Auth: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			ClientID: "test-client",
+			TokenURL: tokenSrv.URL,
+		},
+	}})
+
+	select {
+	case <-reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("token endpoint not reached within 5s")
+	}
+
+	mustCloseWithin(t, srv, 5*time.Second)
 }
