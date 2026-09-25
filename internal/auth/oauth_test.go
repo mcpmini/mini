@@ -2,9 +2,7 @@ package auth_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
 	"testing"
@@ -13,58 +11,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
-	"github.com/mcpmini/mini/internal/config"
 )
-
-// mockAuthServer is a minimal OAuth2 server for testing.
-type mockAuthServer struct {
-	srv            *httptest.Server
-	accessToken    string
-	refreshToken   string
-	refreshed      bool
-	resourceValues []string
-}
-
-func newMockAuthServer(t *testing.T) *mockAuthServer {
-	t.Helper()
-	m := &mockAuthServer{
-		accessToken:  "test-access-token",
-		refreshToken: "test-refresh-token",
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/token", m.handleToken)
-	m.srv = httptest.NewServer(mux)
-	t.Cleanup(m.srv.Close)
-	return m
-}
-
-func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad form", http.StatusBadRequest)
-		return
-	}
-	if r.FormValue("grant_type") == "refresh_token" {
-		m.refreshed = true
-		m.resourceValues = r.Form["resource"]
-		m.accessToken = "refreshed-access-token"
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"access_token":  m.accessToken,
-		"refresh_token": m.refreshToken,
-		"token_type":    "Bearer",
-		"expires_in":    3600,
-	})
-}
-
-func (m *mockAuthServer) authConfig() *config.AuthConfig {
-	return &config.AuthConfig{
-		Type:     "oauth2",
-		ClientID: "test-client-id",
-		AuthURL:  m.srv.URL + "/authorize", // doesn't need to exist; we skip it
-		TokenURL: m.srv.URL + "/token",
-	}
-}
 
 // simulateBrowser parses the auth URL that PKCEFlow generates, then fires the
 // callback asynchronously so PKCEFlow's select can receive the code.
