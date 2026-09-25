@@ -17,6 +17,7 @@ type tokenProvider struct {
 	preHydrationAuthConfig *config.AuthConfig
 	configDir              string
 	serverName             string
+	serverURL              string
 	clock                  clock.Clock
 	lifetime               context.Context
 
