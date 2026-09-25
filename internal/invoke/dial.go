@@ -50,6 +50,10 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 	if p.ProviderRegistry == nil || !isOAuth2Server(p.Server) {
 		return nil
 	}
+	// A hand-set header or auth.token means the user chose static auth; the provider would override it.
+	if hasHeader(cfg.Headers, p.Server.Auth.HeaderName()) {
+		return nil
+	}
 	params := auth.ProviderParams{
 		AuthConfig: p.Server.Auth,
 		ConfigDir:  p.ConfigDir,
@@ -64,6 +68,15 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 	cfg.AuthProvider = provider
 	cfg.AuthHeaderName = p.Server.Auth.HeaderName()
 	return nil
+}
+
+func hasHeader(headers map[string]string, name string) bool {
+	for k, v := range headers {
+		if strings.EqualFold(k, name) && v != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func isOAuth2Server(sc config.ServerConfig) bool {

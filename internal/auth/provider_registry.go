@@ -36,7 +36,7 @@ func (c *ProviderRegistry) Close() {
 }
 
 // GetOrCreate returns the provider registered for params.ServerName, creating it on first use.
-// It errors if that provider was created with a different ConfigDir or ServerURL.
+// It errors if ConfigDir or ServerURL changed; AuthConfig drift is ignored because the provider owns it.
 func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.AuthorizationProvider, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -17,7 +17,7 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func TestServeStartup_validAndDisabledOAuthServers_makeNoTokenRequests(t *testing.T) {
+func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequests(t *testing.T) {
 	configDir := t.TempDir()
 	tokenEp := newTestTokenEndpoint(t)
 	mcp := newTestMCPUpstream(t)
@@ -44,6 +44,21 @@ func TestServeStartup_validAndDisabledOAuthServers_makeNoTokenRequests(t *testin
 	}
 	if tokenEp.hits.Load() != 0 {
 		t.Errorf("token endpoint hits at startup = %d, want 0", tokenEp.hits.Load())
+	}
+}
+
+func TestBuildAndStartConnecting_oauthServerWithHandSetHeaderAndNoToken_usesHandSetHeader(t *testing.T) {
+	mcp := newTestMCPUpstream(t)
+	sc := oauthServerConfig("pat", mcp.srv.URL, "http://localhost:1/token", true)
+	sc.Headers = map[string]string{"Authorization": "Bearer pat-123"}
+	srv := buildAndStartConnecting(context.Background(),
+		BuildServerParams{Cfg: &config.Config{}, ConfigDir: t.TempDir(),
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}},
+	)
+	defer srv.Close()
+	awaitConnected(t, srv, "pat")
+	if got := mcp.lastAuthFor("tools/list"); got != "Bearer pat-123" {
+		t.Errorf("upstream Authorization = %v, want the hand-set header", got)
 	}
 }
 

@@ -51,3 +51,32 @@ func TestAttachAuthProvider_customHeader_setsHeaderName(t *testing.T) {
 		t.Errorf("AuthHeaderName = %q, want X-Custom-Auth", cfg.AuthHeaderName)
 	}
 }
+
+func TestAttachAuthProvider_staticAuthConfigured_leavesStaticHeader(t *testing.T) {
+	cases := []struct {
+		name    string
+		headers map[string]string
+		token   string
+		want    bool
+	}{
+		{name: "hand-set header", headers: map[string]string{"authorization": "Bearer pat"}},
+		{name: "auth token", token: "pat"},
+		{name: "no static auth", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := config.ServerConfig{
+				Name: "srv", URL: "https://mcp.example.com", Headers: tc.headers,
+				Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: tc.token},
+			}
+			p := DialParams{Server: sc, ConfigDir: t.TempDir(), Clock: clock.NewFake(), ProviderRegistry: auth.NewProviderRegistry()}
+			cfg := transport.HTTPConnectionConfig{Headers: MergedHeaders(sc)}
+			if err := attachAuthProvider(&cfg, p); err != nil {
+				t.Fatal(err)
+			}
+			if got := cfg.AuthProvider != nil; got != tc.want {
+				t.Errorf("provider attached = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
