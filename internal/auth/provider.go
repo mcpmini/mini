@@ -38,7 +38,7 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 		p.reloadPersistedTokenLocked()
 	}
 	if p.shouldRefreshLocked() {
-		if err := p.proactiveRefreshLocked(ctx); err != nil {
+		if err := p.proactiveRefreshLocked(); err != nil {
 			return "", err
 		}
 	}
@@ -58,7 +58,7 @@ func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) 
 	if bearerValue(p.token) != stale {
 		return bearerValue(p.token), nil
 	}
-	if err := p.refreshLocked(ctx); err != nil {
+	if err := p.refreshLocked(); err != nil {
 		return "", err
 	}
 	return bearerValue(p.token), nil

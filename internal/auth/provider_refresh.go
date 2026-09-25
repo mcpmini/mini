@@ -30,8 +30,8 @@ func (p *tokenProvider) tokenExpiredLocked() bool {
 	return !p.token.Expiry.IsZero() && !p.clock.Now().Before(p.token.Expiry)
 }
 
-func (p *tokenProvider) proactiveRefreshLocked(ctx context.Context) error {
-	err := p.refreshLocked(ctx)
+func (p *tokenProvider) proactiveRefreshLocked() error {
+	err := p.refreshLocked()
 	if err == nil {
 		return nil
 	}
@@ -42,7 +42,7 @@ func (p *tokenProvider) proactiveRefreshLocked(ctx context.Context) error {
 	return nil
 }
 
-func (p *tokenProvider) refreshLocked(ctx context.Context) error {
+func (p *tokenProvider) refreshLocked() error {
 	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
 	if p.ac.TokenURL == "" {
