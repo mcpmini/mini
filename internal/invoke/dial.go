@@ -50,15 +50,11 @@ func injectAuth(headers map[string]string, auth *config.AuthConfig) {
 	if token == "" {
 		return
 	}
-	name := auth.Header
-	if name == "" {
-		name = "Authorization"
-	}
 	if auth.Type == config.AuthTypeAPIKey {
-		headers[name] = token
+		headers[auth.HeaderName()] = token
 		return
 	}
-	headers[name] = "Bearer " + token
+	headers[auth.HeaderName()] = "Bearer " + token
 }
 
 func parseClientTimeout(spec string) time.Duration {

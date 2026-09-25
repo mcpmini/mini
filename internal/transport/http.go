@@ -23,7 +23,10 @@ import (
 // responses may be SSE-wrapped, and a session ID is tracked across calls.
 type HTTPConnection struct {
 	url                     string
+	serverName              string
 	headers                 map[string]string
+	authProvider            AuthorizationProvider
+	authHeaderName          string
 	disableRetryOnRateLimit bool
 	client                  *http.Client
 	clock                   clock.Clock
@@ -66,26 +69,38 @@ type HTTPConnectionConfig struct {
 	// BlockPrivateIPs attaches an SSRF-safe dialer that re-validates resolved IPs
 	// at connect time, preventing DNS rebinding attacks. Set for runtime-added servers.
 	BlockPrivateIPs bool
+	ServerName      string
+	AuthProvider    AuthorizationProvider
+	AuthHeaderName  string
 }
 
 func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 	if cfg.Clock == nil {
 		return nil, fmt.Errorf("HTTPConnectionConfig.Clock is required")
 	}
-	timeout := defaultHTTPClientTimeout
-	if cfg.ClientTimeout > 0 {
-		timeout = cfg.ClientTimeout
+	if cfg.AuthProvider != nil && cfg.AuthHeaderName == "" {
+		return nil, fmt.Errorf("HTTPConnectionConfig.AuthHeaderName is required when AuthProvider is set")
 	}
 	listenerCtx, listenerCancel := context.WithCancel(context.Background())
 	return &HTTPConnection{
 		url:                     cfg.URL,
+		serverName:              cfg.ServerName,
 		headers:                 cfg.Headers,
+		authProvider:            cfg.AuthProvider,
+		authHeaderName:          cfg.AuthHeaderName,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
-		client:                  noRedirectClient(timeout, cfg.BlockPrivateIPs),
+		client:                  noRedirectClient(resolveClientTimeout(cfg.ClientTimeout), cfg.BlockPrivateIPs),
 		clock:                   cfg.Clock,
 		listenerCtx:             listenerCtx,
 		listenerCancel:          listenerCancel,
 	}, nil
+}
+
+func resolveClientTimeout(configured time.Duration) time.Duration {
+	if configured > 0 {
+		return configured
+	}
+	return defaultHTTPClientTimeout
 }
 
 // noRedirectClient blocks redirects to prevent session token exfiltration to a different host.
@@ -116,40 +131,41 @@ const maxRetries = 3
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	id := c.nextID.Add(1)
 	req := Request{JSONRPC: "2.0", ID: id, Method: method, Params: params}
-	return c.post(ctx, req)
+	return c.postWithAuthRetry(ctx, req)
 }
 
 type postResult struct {
 	body      json.RawMessage
 	retryable bool
 	delay     time.Duration // -1 = no Retry-After header; caller uses backoff
+	sentAuth  string
 }
 
-func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (json.RawMessage, error) {
+func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (postResult, error) {
 	backoff := time.Second
 	for i := range maxRetries {
-		body, done, err := c.postWithRetryDelay(ctx, rpcReq, i, &backoff)
+		result, done, err := c.postWithRetryDelay(ctx, rpcReq, i, &backoff)
 		if done {
-			return body, err
+			return result, err
 		}
 	}
-	return nil, fmt.Errorf("exceeded max retries for %s", rpcReq.Method)
+	return postResult{}, fmt.Errorf("exceeded max retries for %s", rpcReq.Method)
 }
 
-func (c *HTTPConnection) postWithRetryDelay(ctx context.Context, rpcReq Request, i int, backoff *time.Duration) (json.RawMessage, bool, error) {
+func (c *HTTPConnection) postWithRetryDelay(ctx context.Context, rpcReq Request, i int, backoff *time.Duration) (postResult, bool, error) {
 	r, err := c.doPost(ctx, rpcReq)
 	if err == nil {
-		return r.body, true, nil
+		return r, true, nil
 	}
 	if shouldStopRetrying(r, i, c.disableRetryOnRateLimit) {
-		return nil, true, err
+		return r, true, err
 	}
 	delay := nextRetryDelay(r.delay, backoff)
 	slog.Warn("upstream http request retrying", "method", rpcReq.Method, "attempt", i+1, "delay", delay)
 	if !c.sleepCtx(ctx, delay) {
-		return nil, true, ctx.Err()
+		return postResult{}, true, ctx.Err()
 	}
-	return nil, false, nil
+	return postResult{}, false, nil
 }
 
 func shouldStopRetrying(r postResult, attempt int, retriesDisabled bool) bool {
@@ -166,29 +182,34 @@ func nextRetryDelay(delay time.Duration, backoff *time.Duration) time.Duration {
 }
 
 func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult, error) {
-	httpReq, err := c.buildHTTPRequest(ctx, rpcReq)
+	httpReq, sentAuth, err := c.buildHTTPRequest(ctx, rpcReq)
 	if err != nil {
 		return postResult{}, err
 	}
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return postResult{}, &ConnectionError{Err: fmt.Errorf("http %s: %w", rpcReq.Method, err)}
+		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", rpcReq.Method, err)}
 	}
 	defer resp.Body.Close()
-	return c.processResponse(resp, rpcReq)
+	result, err := c.processResponse(resp, rpcReq)
+	result.sentAuth = sentAuth
+	return result, err
 }
 
-func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (*http.Request, error) {
+func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (*http.Request, string, error) {
 	reqBody, err := json.Marshal(rpcReq)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(reqBody))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	c.setRequestHeaders(httpReq)
-	return httpReq, nil
+	sentAuth, err := c.setRequestHeaders(ctx, httpReq)
+	if err != nil {
+		return nil, "", err
+	}
+	return httpReq, sentAuth, nil
 }
 
 func (c *HTTPConnection) processResponse(resp *http.Response, request Request) (postResult, error) {
@@ -291,7 +312,7 @@ func parseRetryAfter(h string, now time.Time) time.Duration {
 	return -1
 }
 
-func (c *HTTPConnection) setRequestHeaders(req *http.Request) {
+func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Request) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	// Spec (Streamable HTTP): client MUST include MCP-Protocol-Version on all
@@ -301,11 +322,16 @@ func (c *HTTPConnection) setRequestHeaders(req *http.Request) {
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
+	sentAuth, err := c.applyAuthProvider(ctx, req)
+	if err != nil {
+		return "", err
+	}
 	c.mu.Lock()
 	if c.sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", c.sessionID)
 	}
 	c.mu.Unlock()
+	return sentAuth, nil
 }
 
 func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
@@ -320,9 +346,15 @@ func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {
 }
 
 func (c *HTTPConnection) Health(ctx context.Context) error {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
+	if err != nil {
+		return err
+	}
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
+	}
+	if _, err := c.applyAuthProvider(ctx, req); err != nil {
+		return err
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {

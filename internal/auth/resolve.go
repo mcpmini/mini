@@ -18,14 +18,10 @@ func ValidateOAuthServer(serverName string, sc config.ServerConfig) error {
 }
 
 func ApplyBearerToken(sc *config.ServerConfig, accessToken string) {
-	headerName := sc.Auth.Header
-	if headerName == "" {
-		headerName = "Authorization"
-	}
 	if sc.Headers == nil {
 		sc.Headers = make(map[string]string)
 	}
-	sc.Headers[headerName] = "Bearer " + accessToken
+	sc.Headers[sc.Auth.HeaderName()] = "Bearer " + accessToken
 }
 
 type ResolveEndpointsParams struct {

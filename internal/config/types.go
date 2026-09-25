@@ -288,6 +288,13 @@ type AuthConfig struct {
 	BrowserCmd string `yaml:"browser_cmd,omitempty"`
 }
 
+func (a *AuthConfig) HeaderName() string {
+	if a.Header == "" {
+		return "Authorization"
+	}
+	return a.Header
+}
+
 // PermissionsConfig defines tool access tiers for a server.
 type PermissionsConfig struct {
 	// Default tier for tools not explicitly listed: "open" (default) or "protected"

@@ -514,6 +514,25 @@ servers:
 	}
 }
 
+func TestAuthConfig_HeaderName(t *testing.T) {
+	cases := []struct {
+		name   string
+		header string
+		want   string
+	}{
+		{"empty defaults to Authorization", "", "Authorization"},
+		{"custom header preserved", "X-Api-Key", "X-Api-Key"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ac := config.AuthConfig{Header: tc.header}
+			if got := ac.HeaderName(); got != tc.want {
+				t.Errorf("HeaderName() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType, wantClientID string) {
 	t.Helper()
 	if sc.Auth == nil {
