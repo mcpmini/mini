@@ -367,12 +367,12 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	}
 
 	var mu sync.Mutex
-	validToken := "" // empty means all tokens rejected; set to browserToken after dial failure
+	acceptedToken := ""
 	var unauthorizedAfterAuth atomic.Int32
 
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		vt := validToken
+		vt := acceptedToken
 		mu.Unlock()
 		if vt == "" || r.Header.Get("Authorization") != "Bearer "+vt {
 			unauthorizedAfterAuth.Add(1)
@@ -400,11 +400,9 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	}))
 	defer mcpSrv.Close()
 
-	// Token server is initially closed to callers; opened after the first dial fails so
-	// the PKCE flow can obtain browser-token while the provider still holds stale-token.
-	var tokenPhase atomic.Int32
+	var tokenEndpointOpen atomic.Bool
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if tokenPhase.Load() == 0 {
+		if !tokenEndpointOpen.Load() {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
 		}
@@ -427,16 +425,13 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	defer mini.Close()
 
 	sc := loadServerConfig(t, dir, "srv")
-	// Initial dial: stale token → 401 → RefreshAuthorization → token server rejects → error.
-	// Provider is registered in the registry holding the stale token.
 	if err := mini.AddUpstream(context.Background(), sc); err == nil {
-		t.Fatal("expected initial dial to fail")
+		t.Fatal("initial dial with the stale token should fail, leaving a provider registered")
 	}
 
-	// Open token server and MCP server for browser token; reset the 401 counter.
-	tokenPhase.Store(1)
+	tokenEndpointOpen.Store(true)
 	mu.Lock()
-	validToken = browserToken
+	acceptedToken = browserToken
 	mu.Unlock()
 	unauthorizedAfterAuth.Store(0)
 

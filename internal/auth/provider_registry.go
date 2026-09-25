@@ -57,8 +57,7 @@ func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.Authori
 	return tp, nil
 }
 
-// CommitAuthorizedToken persists tok and installs it, with params' hydrated config, into the
-// server's provider if one exists. It refuses a provider whose server URL or config dir differs.
+// CommitAuthorizedToken saves tok and, if the server already has a provider, installs it there.
 func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oauth2.Token) error {
 	_, hydrated, err := resolveAuthConfigs(params)
 	if err != nil {
