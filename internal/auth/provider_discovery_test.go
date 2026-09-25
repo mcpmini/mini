@@ -12,13 +12,13 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func clientIDSentToTokenEndpoint(endpoint *mockAuthServer) string {
@@ -35,147 +35,163 @@ func clientIDSentToTokenEndpoint(endpoint *mockAuthServer) string {
 	return decoded
 }
 
-func TestAuthorization_noTokenURLAfterRestart_discoversEndpointAndRefreshes(t *testing.T) {
-	auth.UseLoopbackEndpoints()
-	t.Cleanup(auth.ResetEndpointValidation)
-
-	endpoint := newMockAuthServer(t)
-	endpoint.accessToken = "new-access"
-
-	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint":           "https://as.example/authorize",
-		"token_endpoint":                   endpoint.srv.URL + "/token",
-		"code_challenge_methods_supported": []string{"S256"},
-	})
-	t.Cleanup(discovery.Close)
-
-	dir := t.TempDir()
-	clk := clock.NewFake()
-	if err := auth.Save(dir, "srv", storedToken(clk.Now())); err != nil {
-		t.Fatal(err)
-	}
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
-		ConfigDir:  dir,
-		ServerName: "srv",
-		ServerURL:  discovery.URL + "/mcp",
-		Clock:      clk,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.Authorization(context.Background()); err != nil {
-		t.Fatalf("Authorization: %v", err)
-	}
-	if endpoint.hits.Load() != 1 {
-		t.Fatalf("token endpoint hits = %d, want 1", endpoint.hits.Load())
-	}
-	endpoint.mu.Lock()
-	lastResource := endpoint.lastResource
-	endpoint.mu.Unlock()
-	if lastResource != discovery.URL+"/mcp" {
-		t.Errorf("resource = %q, want %q", lastResource, discovery.URL+"/mcp")
-	}
+type discoveryFixtureParams struct {
+	cimdSupported  bool
+	directTokenURL bool
+	expiredToken   bool
+	clientID       string
+	initialDCR     *auth.Registration
 }
 
-func TestRefreshAuthorization_cimdServerAfterRestart_keepsCIMDClientIDAcrossTokenAdoption(t *testing.T) {
-	auth.UseLoopbackEndpoints()
-	t.Cleanup(auth.ResetEndpointValidation)
+type discoveryFixture struct {
+	dir       string
+	serverURL string
+	endpoint  *mockAuthServer
+	clock     *clock.Fake
+	provider  transport.AuthorizationProvider
+}
 
-	endpoint := newMockAuthServer(t)
-	endpoint.accessToken = "new-access"
-	endpoint.refreshToken = "new-refresh"
-
-	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint":                "https://as.example.com/authorize",
-		"token_endpoint":                        endpoint.srv.URL + "/token",
-		"code_challenge_methods_supported":      []string{"S256"},
-		"client_id_metadata_document_supported": true,
-	})
-	t.Cleanup(discovery.Close)
-
-	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", &oauth2.Token{
-		AccessToken: "old-access", RefreshToken: "old-refresh",
-	}); err != nil {
+func newDiscoveryFixture(t *testing.T, p discoveryFixtureParams) *discoveryFixture {
+	t.Helper()
+	if !p.directTokenURL {
+		auth.UseLoopbackEndpoints()
+		t.Cleanup(auth.ResetEndpointValidation)
+	}
+	f := &discoveryFixture{dir: t.TempDir(), clock: clock.NewFake()}
+	f.endpoint = newMockAuthServer(t)
+	f.endpoint.accessToken = "new-access"
+	f.endpoint.refreshToken = "new-refresh"
+	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: p.clientID}
+	pp := auth.ProviderParams{ConfigDir: f.dir, ServerName: "srv", Clock: f.clock, AuthConfig: ac}
+	if p.directTokenURL {
+		ac.TokenURL = f.endpoint.srv.URL + "/token"
+	} else {
+		meta := map[string]any{
+			"authorization_endpoint":           "https://as.example.com/authorize",
+			"token_endpoint":                   f.endpoint.srv.URL + "/token",
+			"code_challenge_methods_supported": []string{"S256"},
+		}
+		if p.cimdSupported {
+			meta["client_id_metadata_document_supported"] = true
+		}
+		ds := serveASMeta(t, "/.well-known/oauth-authorization-server", meta)
+		t.Cleanup(ds.Close)
+		pp.ServerURL = ds.URL + "/mcp"
+		f.serverURL = ds.URL + "/mcp"
+	}
+	tok := &oauth2.Token{AccessToken: "old-access", RefreshToken: "old-refresh"}
+	if p.expiredToken {
+		tok.Expiry = f.clock.Now()
+	}
+	if err := auth.Save(f.dir, "srv", tok); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
-		ConfigDir:  dir, ServerName: "srv",
-		ServerURL: discovery.URL + "/mcp",
-		Clock:     clock.NewFake(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := p.RefreshAuthorization(context.Background(), "Bearer old-access"); err != nil {
-		t.Fatalf("RefreshAuthorization: %v", err)
-	}
-	if got := clientIDSentToTokenEndpoint(endpoint); got != auth.ClientMetadataURL {
-		t.Errorf("first refresh client_id = %q, want %q", got, auth.ClientMetadataURL)
-	}
-
-	if err := auth.Save(dir, "srv", &oauth2.Token{
-		AccessToken: "external-access", RefreshToken: "external-refresh",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	for _, stale := range []string{"Bearer new-access", "Bearer external-access"} {
-		if _, err := p.RefreshAuthorization(context.Background(), stale); err != nil {
-			t.Fatalf("RefreshAuthorization(%s): %v", stale, err)
+	if p.initialDCR != nil {
+		if err := auth.SaveRegistration(f.dir, "srv", p.initialDCR); err != nil {
+			t.Fatal(err)
 		}
 	}
-	if got := clientIDSentToTokenEndpoint(endpoint); got != auth.ClientMetadataURL {
-		t.Errorf("after token adoption client_id = %q, want %q", got, auth.ClientMetadataURL)
+	prov, err := auth.NewProvider(pp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.provider = prov
+	return f
+}
+
+func TestAuthorization_noTokenURLAfterRestart_discoversEndpointAndRefreshes(t *testing.T) {
+	f := newDiscoveryFixture(t, discoveryFixtureParams{clientID: "cid", expiredToken: true})
+	if _, err := f.provider.Authorization(context.Background()); err != nil {
+		t.Fatalf("Authorization: %v", err)
+	}
+	if f.endpoint.hits.Load() != 1 {
+		t.Fatalf("token endpoint hits = %d, want 1", f.endpoint.hits.Load())
+	}
+	f.endpoint.mu.Lock()
+	lastResource := f.endpoint.lastResource
+	f.endpoint.mu.Unlock()
+	if lastResource != f.serverURL {
+		t.Errorf("resource = %q, want %q", lastResource, f.serverURL)
 	}
 }
 
-func TestRefreshAuthorization_externalLoginWithoutRegistration_dropsStaleDCRClientID(t *testing.T) {
-	dir := t.TempDir()
-	endpoint := newMockAuthServer(t)
-	clk := clock.NewFake()
-
-	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "old-dcr-client"}); err != nil {
-		t.Fatal(err)
+func TestRefreshAuthorization_clientIDAfterRediscovery(t *testing.T) {
+	tests := []struct {
+		name         string
+		fp           discoveryFixtureParams
+		afterSetup   func(*testing.T, *discoveryFixture)
+		moreCalls    func(*testing.T, *discoveryFixture)
+		wantClientID string
+		denyClientID string
+	}{
+		{
+			name:         "cimd_server_after_restart_keeps_cimd_client_id_across_token_adoption",
+			fp:           discoveryFixtureParams{cimdSupported: true},
+			wantClientID: auth.ClientMetadataURL,
+			moreCalls: func(t *testing.T, f *discoveryFixture) {
+				if got := clientIDSentToTokenEndpoint(f.endpoint); got != auth.ClientMetadataURL {
+					t.Errorf("first refresh client_id = %q, want %q", got, auth.ClientMetadataURL)
+				}
+				auth.Save(f.dir, "srv", &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}) //nolint:errcheck
+				for _, stale := range []string{"Bearer new-access", "Bearer external-access"} {
+					if _, err := f.provider.RefreshAuthorization(context.Background(), stale); err != nil {
+						t.Fatalf("RefreshAuthorization(%s): %v", stale, err)
+					}
+				}
+			},
+		},
+		{
+			name: "external_login_without_registration_drops_stale_dcr_client_id",
+			fp: discoveryFixtureParams{
+				directTokenURL: true,
+				initialDCR:     &auth.Registration{ClientID: "old-dcr-client"},
+			},
+			afterSetup: func(t *testing.T, f *discoveryFixture) {
+				if _, err := f.provider.Authorization(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+				os.Remove(filepath.Join(f.dir, "internal", "srv.dcr.json"))                                              //nolint:errcheck
+				auth.Save(f.dir, "srv", &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}) //nolint:errcheck
+			},
+			moreCalls: func(t *testing.T, f *discoveryFixture) {
+				if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer external-access"); err != nil {
+					t.Fatalf("second RefreshAuthorization: %v", err)
+				}
+			},
+			denyClientID: "old-dcr-client",
+		},
+		{
+			name:         "configured_client_id_on_cimd_server_keeps_configured_client_id",
+			fp:           discoveryFixtureParams{cimdSupported: true, clientID: "my-configured-client"},
+			wantClientID: "my-configured-client",
+			denyClientID: auth.ClientMetadataURL,
+		},
+		{
+			name:         "no_cimd_advert_does_not_use_cimd_client_id",
+			fp:           discoveryFixtureParams{},
+			denyClientID: auth.ClientMetadataURL,
+		},
 	}
-	initialTok := &oauth2.Token{
-		AccessToken: "initial-access", RefreshToken: "initial-refresh",
-		Expiry: clk.Now().Add(time.Hour),
-	}
-	if err := auth.Save(dir, "srv", initialTok); err != nil {
-		t.Fatal(err)
-	}
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL + "/token"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clk,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := p.Authorization(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
-	os.Remove(filepath.Join(dir, "internal", "srv.dcr.json")) //nolint:errcheck
-
-	externalTok := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}
-	if err := auth.Save(dir, "srv", externalTok); err != nil {
-		t.Fatal(err)
-	}
-	got, err := p.RefreshAuthorization(context.Background(), "Bearer initial-access")
-	if err != nil {
-		t.Fatalf("RefreshAuthorization after adoption: %v", err)
-	}
-	if got != "Bearer external-access" {
-		t.Fatalf("expected external token, got %q", got)
-	}
-	if _, err := p.RefreshAuthorization(context.Background(), "Bearer external-access"); err != nil {
-		t.Fatalf("second RefreshAuthorization: %v", err)
-	}
-	if got := clientIDSentToTokenEndpoint(endpoint); got == "old-dcr-client" {
-		t.Errorf("stale DCR client_id must not survive token adoption, got %q", got)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newDiscoveryFixture(t, tc.fp)
+			if tc.afterSetup != nil {
+				tc.afterSetup(t, f)
+			}
+			if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer old-access"); err != nil {
+				t.Fatalf("RefreshAuthorization: %v", err)
+			}
+			if tc.moreCalls != nil {
+				tc.moreCalls(t, f)
+			}
+			clientID := clientIDSentToTokenEndpoint(f.endpoint)
+			if tc.wantClientID != "" && clientID != tc.wantClientID {
+				t.Errorf("client_id = %q, want %q", clientID, tc.wantClientID)
+			}
+			if tc.denyClientID != "" && clientID == tc.denyClientID {
+				t.Errorf("client_id = %q, must not be %q", clientID, tc.denyClientID)
+			}
+		})
 	}
 }
 
@@ -256,86 +272,6 @@ func TestRefreshAuthorization_noServerURLOrTokenURL_returnsReauthRemedyWithoutNe
 	}
 	if endpoint.hits.Load() != 0 {
 		t.Errorf("token endpoint called %d times, want 0", endpoint.hits.Load())
-	}
-}
-
-func TestRefreshAuthorization_configuredClientIDOnCIMDServer_keepsConfiguredClientID(t *testing.T) {
-	auth.UseLoopbackEndpoints()
-	t.Cleanup(auth.ResetEndpointValidation)
-
-	endpoint := newMockAuthServer(t)
-	endpoint.accessToken = "new-access"
-
-	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint":                "https://as.example.com/authorize",
-		"token_endpoint":                        endpoint.srv.URL + "/token",
-		"code_challenge_methods_supported":      []string{"S256"},
-		"client_id_metadata_document_supported": true,
-	})
-	t.Cleanup(discovery.Close)
-
-	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", &oauth2.Token{
-		AccessToken: "access", RefreshToken: "refresh",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "my-configured-client"},
-		ConfigDir:  dir, ServerName: "srv",
-		ServerURL: discovery.URL + "/mcp",
-		Clock:     clock.NewFake(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := p.RefreshAuthorization(context.Background(), "Bearer access"); err != nil {
-		t.Fatalf("RefreshAuthorization: %v", err)
-	}
-	if got := clientIDSentToTokenEndpoint(endpoint); got == auth.ClientMetadataURL {
-		t.Errorf("CIMD URL must not override configured client_id, got %q", got)
-	}
-	if got := clientIDSentToTokenEndpoint(endpoint); got != "my-configured-client" {
-		t.Errorf("client_id = %q, want %q", got, "my-configured-client")
-	}
-}
-
-func TestRefreshAuthorization_noCIMDAdvert_doesNotUseCIMDClientID(t *testing.T) {
-	auth.UseLoopbackEndpoints()
-	t.Cleanup(auth.ResetEndpointValidation)
-
-	endpoint := newMockAuthServer(t)
-	endpoint.accessToken = "new-access"
-
-	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
-		"authorization_endpoint":           "https://as.example.com/authorize",
-		"token_endpoint":                   endpoint.srv.URL + "/token",
-		"code_challenge_methods_supported": []string{"S256"},
-	})
-	t.Cleanup(discovery.Close)
-
-	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", &oauth2.Token{
-		AccessToken: "access", RefreshToken: "refresh",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
-		ConfigDir:  dir, ServerName: "srv",
-		ServerURL: discovery.URL + "/mcp",
-		Clock:     clock.NewFake(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := p.RefreshAuthorization(context.Background(), "Bearer access"); err != nil {
-		t.Fatalf("RefreshAuthorization: %v", err)
-	}
-	if got := clientIDSentToTokenEndpoint(endpoint); got == auth.ClientMetadataURL {
-		t.Errorf("CIMD URL must not be set when server does not advertise CIMD, got %q", got)
 	}
 }
 
