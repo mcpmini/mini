@@ -155,8 +155,7 @@ func TestAuthorization_proactiveRefreshFails_backsOffUntilRetryTime(t *testing.T
 
 func TestAuthorization_tokenExpiresDuringBackoff_refreshesImmediately(t *testing.T) {
 	epoch := clock.NewFake().Now()
-	// Token expires in 20s — less than the 30s backoff — so we can advance past expiry while still inside the backoff.
-	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(20 * time.Second))})
+	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(auth.ProactiveRefreshBackoff / 2))})
 	f.endpoint.status.Store(http.StatusServiceUnavailable)
 
 	if _, err := f.provider.Authorization(context.Background()); err != nil {
@@ -164,8 +163,7 @@ func TestAuthorization_tokenExpiresDuringBackoff_refreshesImmediately(t *testing
 	}
 
 	f.endpoint.status.Store(http.StatusOK)
-	// At epoch+25s the token is expired but the 30s backoff has not elapsed.
-	f.clock.Advance(25 * time.Second)
+	f.clock.Advance(auth.ProactiveRefreshBackoff * 3 / 4)
 
 	got, err := f.provider.Authorization(context.Background())
 	if err != nil {
@@ -199,7 +197,7 @@ func TestRefreshAuthorization_duringBackoff_stillRefreshesOn401(t *testing.T) {
 	}
 }
 
-func TestAuthorization_adoptingNewerStoredTokenClearsBackoff(t *testing.T) {
+func TestAuthorization_newerStoredTokenDuringBackoff_refreshesWithoutWaiting(t *testing.T) {
 	epoch := clock.NewFake().Now()
 	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(time.Minute))})
 	f.endpoint.status.Store(http.StatusServiceUnavailable)
@@ -215,7 +213,6 @@ func TestAuthorization_adoptingNewerStoredTokenClearsBackoff(t *testing.T) {
 		t.Errorf("endpoint hits = %d, want %d: backoff should suppress retry", hits, hitsAfterFail)
 	}
 
-	// Saving a different token to disk simulates an external refresh clearing the backoff.
 	newer := &oauth2.Token{AccessToken: "newer-access", RefreshToken: "newer-refresh", Expiry: epoch.Add(3 * time.Minute)}
 	if err := auth.Save(f.dir, "srv", newer); err != nil {
 		t.Fatal(err)
@@ -265,5 +262,39 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 	}
 	if endpoint.hits.Load() != 0 {
 		t.Errorf("endpoint hits = %d, want 0 (disk reload avoids refresh)", endpoint.hits.Load())
+	}
+}
+
+func TestAuthorization_browserLoginDuringBackoff_refreshesWithoutWaiting(t *testing.T) {
+	epoch := clock.NewFake().Now()
+	mock := newMockAuthServer(t)
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", storedToken(epoch.Add(time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: mock.srv.URL + "/token"},
+		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFakeAt(epoch),
+	}
+	registry := auth.NewProviderRegistry()
+	provider, err := registry.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.status.Store(http.StatusServiceUnavailable)
+	if _, err := provider.Authorization(context.Background()); err != nil {
+		t.Fatalf("first call (sets backoff): %v", err)
+	}
+	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh", Expiry: epoch.Add(time.Minute)}
+	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
+		t.Fatal(err)
+	}
+	mock.status.Store(http.StatusOK)
+	hitsBefore := mock.hits.Load()
+	if _, err := provider.Authorization(context.Background()); err != nil {
+		t.Fatalf("Authorization after browser login: %v", err)
+	}
+	if mock.hits.Load() == hitsBefore {
+		t.Error("browser login must clear the backoff so an in-window token refreshes")
 	}
 }
