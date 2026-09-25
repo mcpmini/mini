@@ -280,3 +280,90 @@ func TestCommitAuthorizedToken_differentServerURL_rejected(t *testing.T) {
 		t.Errorf("disk token = %q, want the original token", onDisk.AccessToken)
 	}
 }
+
+func TestCommitAuthorizedToken_noProviderYet_savesTokenForLaterDial(t *testing.T) {
+	dir := t.TempDir()
+	clk := clock.NewFake()
+	registry := auth.NewProviderRegistry()
+
+	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
+		ConfigDir:  dir, ServerName: "srv", Clock: clk,
+	}
+	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
+		t.Fatalf("CommitAuthorizedToken without provider: %v", err)
+	}
+	provider, err := registry.GetOrCreate(params)
+	if err != nil {
+		t.Fatalf("GetOrCreate: %v", err)
+	}
+	got, err := provider.Authorization(context.Background())
+	if err != nil {
+		t.Fatalf("Authorization: %v", err)
+	}
+	if got != "Bearer browser-access" {
+		t.Errorf("Authorization = %q, want Bearer browser-access", got)
+	}
+}
+
+func TestCommitAuthorizedToken_withDiscoveredClientID_clientIDSurvivesExternalAdoption(t *testing.T) {
+	dir := t.TempDir()
+	endpoint := newMockAuthServer(t)
+	clk := clock.NewFake()
+
+	initial := &oauth2.Token{AccessToken: "initial-access", RefreshToken: "initial-refresh",
+		Expiry: clk.Now().Add(time.Hour)}
+	if err := auth.Save(dir, "srv", initial); err != nil {
+		t.Fatal(err)
+	}
+	params := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL + "/token"},
+		ConfigDir:  dir, ServerName: "srv", Clock: clk,
+	}
+	registry := auth.NewProviderRegistry()
+	p, err := registry.GetOrCreate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Authorization(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh",
+		Expiry: clk.Now().Add(time.Hour)}
+	committed := auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{
+			Type: config.AuthTypeOAuth2, ClientID: "discovered",
+			TokenURL: endpoint.srv.URL + "/token",
+		},
+		ConfigDir: dir, ServerName: "srv", Clock: clk,
+	}
+	if err := registry.CommitAuthorizedToken(committed, browserTok); err != nil {
+		t.Fatalf("CommitAuthorizedToken: %v", err)
+	}
+
+	external := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh",
+		Expiry: clk.Now().Add(time.Hour)}
+	if err := auth.Save(dir, "srv", external); err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access")
+	if err != nil {
+		t.Fatalf("RefreshAuthorization for adoption: %v", err)
+	}
+	if got != "Bearer external-access" {
+		t.Fatalf("expected adoption of external token, got %q", got)
+	}
+
+	clk.Advance(2 * time.Hour)
+	if _, err := p.Authorization(context.Background()); err != nil {
+		t.Fatalf("Authorization after expiry: %v", err)
+	}
+	endpoint.mu.Lock()
+	clientIDForm, clientIDBasic := endpoint.lastClientID, endpoint.lastBasicAuth
+	endpoint.mu.Unlock()
+	if clientIDForm != "discovered" && clientIDBasic != "discovered" {
+		t.Errorf("token endpoint client_id = form:%q basic:%q, want discovered (committed config must survive external adoption)", clientIDForm, clientIDBasic)
+	}
+}

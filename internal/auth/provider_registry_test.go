@@ -117,7 +117,7 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 			},
 		},
 		{
-			name: "stale_token_url_after_commit",
+			name: "redial with undiscovered config after commit",
 			initial: func(t *testing.T, dir string) auth.ProviderParams {
 				return auth.ProviderParams{
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},

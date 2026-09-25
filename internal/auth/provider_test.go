@@ -325,6 +325,9 @@ func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCred
 	endpoint := newMockAuthServer(t)
 	clk := clock.NewFake()
 
+	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-v1"}); err != nil {
+		t.Fatal(err)
+	}
 	initialTok := &oauth2.Token{
 		AccessToken: "initial-access", RefreshToken: "initial-refresh",
 		Expiry: clk.Now().Add(time.Hour),
@@ -343,7 +346,7 @@ func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCred
 		t.Fatal(err)
 	}
 
-	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-client"}); err != nil {
+	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-v2"}); err != nil {
 		t.Fatal(err)
 	}
 	freshTok := &oauth2.Token{
@@ -374,7 +377,7 @@ func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCred
 	clientIDForm, clientIDBasic := endpoint.lastClientID, endpoint.lastBasicAuth
 	endpoint.mu.Unlock()
 
-	if clientIDForm != "dcr-client" && clientIDBasic != "dcr-client" {
-		t.Errorf("token endpoint client_id = form:%q basic:%q, want dcr-client", clientIDForm, clientIDBasic)
+	if clientIDForm != "dcr-v2" && clientIDBasic != "dcr-v2" {
+		t.Errorf("token endpoint client_id = form:%q basic:%q, want dcr-v2 (rehydrate must use new registration)", clientIDForm, clientIDBasic)
 	}
 }

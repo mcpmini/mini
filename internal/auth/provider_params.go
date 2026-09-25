@@ -20,28 +20,27 @@ type ProviderParams struct {
 }
 
 func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
-	canonical, err := canonicalizeProviderParams(p)
+	configured, hydrated, err := resolveAuthConfigs(p)
 	if err != nil {
 		return nil, err
 	}
-	preHydration := cloneAuthConfig(canonical.AuthConfig)
-	if err := hydrateFromRegistration(canonical); err != nil {
-		return nil, err
+	if p.Clock == nil {
+		p.Clock = clock.System()
 	}
-	tp := newTokenProvider(canonical)
-	tp.preHydrationAuthConfig = preHydration
-	return tp, nil
+	p.AuthConfig = hydrated
+	return newTokenProvider(p, configured), nil
 }
 
-func normalizeProviderParams(p ProviderParams) (ProviderParams, error) {
-	p, err := canonicalizeProviderParams(p)
+func resolveAuthConfigs(p ProviderParams) (configured, hydrated *config.AuthConfig, err error) {
+	canonical, err := canonicalizeProviderParams(p)
 	if err != nil {
-		return ProviderParams{}, err
+		return nil, nil, err
 	}
-	if err := hydrateFromRegistration(p); err != nil {
-		return ProviderParams{}, err
+	configured = cloneAuthConfig(canonical.AuthConfig)
+	if err := hydrateFromRegistration(canonical); err != nil {
+		return nil, nil, err
 	}
-	return p, nil
+	return configured, canonical.AuthConfig, nil
 }
 
 func canonicalizeProviderParams(p ProviderParams) (ProviderParams, error) {
@@ -66,17 +65,18 @@ func canonicalizeProviderParams(p ProviderParams) (ProviderParams, error) {
 	return p, nil
 }
 
-func newTokenProvider(p ProviderParams) *tokenProvider {
+func newTokenProvider(p ProviderParams, configured *config.AuthConfig) *tokenProvider {
 	lifetime := p.Lifetime
 	if lifetime == nil {
 		lifetime = context.Background()
 	}
 	return &tokenProvider{
-		ac:         p.AuthConfig,
-		configDir:  p.ConfigDir,
-		serverName: p.ServerName,
-		clock:      p.Clock,
-		lifetime:   lifetime,
+		ac:                     p.AuthConfig,
+		preHydrationAuthConfig: configured,
+		configDir:              p.ConfigDir,
+		serverName:             p.ServerName,
+		clock:                  p.Clock,
+		lifetime:               lifetime,
 	}
 }
 

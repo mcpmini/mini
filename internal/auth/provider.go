@@ -82,16 +82,14 @@ func (p *tokenProvider) remedyError(cause error) error {
 	return transport.ReauthorizationError(p.serverName, cause)
 }
 
-// commitBrowserToken atomically saves the token to disk and then swaps it into
-// memory together with the newly hydrated auth config. Saving first ensures
-// that a failed disk write leaves the provider unchanged.
-func (p *tokenProvider) commitBrowserToken(normalized ProviderParams, tok *oauth2.Token) error {
+func (p *tokenProvider) commitBrowserToken(hydrated, configured *config.AuthConfig, tok *oauth2.Token) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := Save(p.configDir, p.serverName, tok); err != nil {
 		return fmt.Errorf("persist oauth token: %w", err)
 	}
-	p.ac = normalized.AuthConfig
+	p.ac = hydrated
+	p.preHydrationAuthConfig = configured
 	p.token = tok
 	p.persistedToken = cloneToken(tok)
 	return nil

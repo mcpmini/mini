@@ -57,26 +57,24 @@ func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.Authori
 	return tp, nil
 }
 
-// CommitAuthorizedToken installs a browser-authorized token and a freshly
-// hydrated OAuth configuration into the provider for params.ServerName.
-// If no provider is registered yet, it saves the token so the next GetOrCreate
-// constructs a hydrated provider from it. If the identity doesn't match the
-// registered provider, it returns an error without modifying anything.
+// CommitAuthorizedToken persists tok and installs it, with params' hydrated config, into the
+// server's provider if one exists. It refuses a provider whose server URL or config dir differs.
 func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oauth2.Token) error {
-	normalized, err := normalizeProviderParams(params)
+	configured, hydrated, err := resolveAuthConfigs(params)
 	if err != nil {
 		return err
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	e := c.m[normalized.ServerName]
+	e := c.m[params.ServerName]
+	if e != nil && !e.identity.matches(params) {
+		c.mu.Unlock()
+		return fmt.Errorf("server %q OAuth identity changed; refusing trusted commit", params.ServerName)
+	}
+	c.mu.Unlock()
 	if e == nil {
-		return Save(normalized.ConfigDir, normalized.ServerName, tok)
+		return Save(params.ConfigDir, params.ServerName, tok)
 	}
-	if !e.identity.matches(normalized) {
-		return fmt.Errorf("server %q OAuth identity changed; refusing trusted commit", normalized.ServerName)
-	}
-	return e.provider.commitBrowserToken(normalized, tok)
+	return e.provider.commitBrowserToken(hydrated, configured, tok)
 }
 
 func identityFrom(p ProviderParams) providerIdentity {
