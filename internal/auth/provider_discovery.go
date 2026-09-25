@@ -3,8 +3,6 @@ package auth
 import (
 	"context"
 	"fmt"
-
-	"github.com/mcpmini/mini/internal/config"
 )
 
 func (p *tokenProvider) maybeDiscoverAndApplyLocked(ctx context.Context) error {
@@ -22,18 +20,4 @@ func (p *tokenProvider) maybeDiscoverAndApplyLocked(ctx context.Context) error {
 		p.ac.ClientID = ClientMetadataURL
 	}
 	return nil
-}
-
-func carryOverLazyDiscovery(rebuilt, current *config.AuthConfig) {
-	if rebuilt.TokenURL == "" {
-		rebuilt.TokenURL = current.TokenURL
-	}
-	if rebuilt.AuthURL == "" {
-		rebuilt.AuthURL = current.AuthURL
-	}
-	// CIMD client ID is stable and server-issued, so it survives token adoption.
-	// DCR client IDs are not: the external token may come from a different registration.
-	if rebuilt.ClientID == "" && current.ClientID == ClientMetadataURL {
-		rebuilt.ClientID = ClientMetadataURL
-	}
 }

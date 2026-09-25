@@ -91,7 +91,6 @@ func (p *tokenProvider) rehydrateAuthConfigLocked() {
 			"server", p.serverName, "err", err)
 		return
 	}
-	carryOverLazyDiscovery(hydrated, p.ac)
 	p.ac = hydrated
 }
 

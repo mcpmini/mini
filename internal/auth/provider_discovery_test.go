@@ -4,12 +4,13 @@ package auth_test
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -43,18 +44,11 @@ func TestAuthorization_noTokenURLAfterRestart_discoversEndpointAndRefreshes(t *t
 	endpoint := newMockAuthServer(t)
 	endpoint.accessToken = "new-access"
 
-	discovery := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/oauth-authorization-server" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"authorization_endpoint":           "https://as.example/authorize",
-			"token_endpoint":                   endpoint.srv.URL + "/token",
-			"code_challenge_methods_supported": []string{"S256"},
-		})
-	}))
+	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":           "https://as.example/authorize",
+		"token_endpoint":                   endpoint.srv.URL + "/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
 	t.Cleanup(discovery.Close)
 
 	dir := t.TempDir()
@@ -94,19 +88,12 @@ func TestRefreshAuthorization_cimdServerAfterRestart_keepsCIMDClientIDAcrossToke
 	endpoint.accessToken = "new-access"
 	endpoint.refreshToken = "new-refresh"
 
-	discovery := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/oauth-authorization-server" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"authorization_endpoint":                "https://as.example.com/authorize",
-			"token_endpoint":                        endpoint.srv.URL + "/token",
-			"code_challenge_methods_supported":      []string{"S256"},
-			"client_id_metadata_document_supported": true,
-		})
-	}))
+	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                "https://as.example.com/authorize",
+		"token_endpoint":                        endpoint.srv.URL + "/token",
+		"code_challenge_methods_supported":      []string{"S256"},
+		"client_id_metadata_document_supported": true,
+	})
 	t.Cleanup(discovery.Close)
 
 	dir := t.TempDir()
@@ -132,10 +119,6 @@ func TestRefreshAuthorization_cimdServerAfterRestart_keepsCIMDClientIDAcrossToke
 		t.Errorf("first refresh client_id = %q, want %q", got, auth.ClientMetadataURL)
 	}
 
-	// Shut down the discovery server. Subsequent refreshes must not need to
-	// re-discover: carryOverLazyDiscovery must have preserved TokenURL and ClientID.
-	discovery.Close()
-
 	if err := auth.Save(dir, "srv", &oauth2.Token{
 		AccessToken: "external-access", RefreshToken: "external-refresh",
 	}); err != nil {
@@ -151,7 +134,7 @@ func TestRefreshAuthorization_cimdServerAfterRestart_keepsCIMDClientIDAcrossToke
 	}
 }
 
-func TestRefreshAuthorization_externalLoginWithNewDCRClient_dropsStaleClientID(t *testing.T) {
+func TestRefreshAuthorization_externalLoginWithoutRegistration_dropsStaleDCRClientID(t *testing.T) {
 	dir := t.TempDir()
 	endpoint := newMockAuthServer(t)
 	clk := clock.NewFake()
@@ -177,8 +160,6 @@ func TestRefreshAuthorization_externalLoginWithNewDCRClient_dropsStaleClientID(t
 		t.Fatal(err)
 	}
 
-	// Remove the stale registration to simulate a fresh login via a different client
-	// (e.g. browser PKCE flow, no DCR). The old client ID must not be carried over.
 	os.Remove(filepath.Join(dir, "internal", "srv.dcr.json")) //nolint:errcheck
 
 	externalTok := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}
@@ -197,5 +178,211 @@ func TestRefreshAuthorization_externalLoginWithNewDCRClient_dropsStaleClientID(t
 	}
 	if got := resolvedClientID(endpoint); got == "old-dcr-client" {
 		t.Errorf("stale DCR client_id must not survive token adoption, got %q", got)
+	}
+}
+
+func TestRefreshAuthorization_discovery500_returnsReauthRemedy(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+
+	endpoint := newMockAuthServer(t)
+	tokenPOSTs := endpoint.hits.Load()
+
+	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":           "https://as.example.com/authorize",
+		"token_endpoint":                   endpoint.srv.URL + "/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	t.Cleanup(discovery.Close)
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", &oauth2.Token{
+		AccessToken: "access", RefreshToken: "refresh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+		ConfigDir:  dir, ServerName: "srv",
+		ServerURL: discovery.URL + "/mcp",
+		Clock:     clock.NewFake(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	discovery.Close()
+
+	_, err = p.RefreshAuthorization(context.Background(), "Bearer access")
+	if err == nil {
+		t.Fatal("expected error when discovery returns network error, got nil")
+	}
+	if !strings.Contains(err.Error(), "mini auth") {
+		t.Errorf("expected reauth remedy in error, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "discover") {
+		t.Errorf("expected discovery error in message, got %q", err.Error())
+	}
+	if endpoint.hits.Load() != tokenPOSTs {
+		t.Errorf("token endpoint was called %d times after discovery failure, want 0", endpoint.hits.Load()-tokenPOSTs)
+	}
+}
+
+func TestRefreshAuthorization_noServerURLOrTokenURL_returnsReauthRemedyWithoutNetwork(t *testing.T) {
+	endpoint := newMockAuthServer(t)
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", &oauth2.Token{
+		AccessToken: "access", RefreshToken: "refresh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+		ConfigDir:  dir, ServerName: "srv",
+		Clock: clock.NewFake(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = p.RefreshAuthorization(context.Background(), "Bearer access")
+	if err == nil {
+		t.Fatal("expected error when no server URL and no token URL, got nil")
+	}
+	if !strings.Contains(err.Error(), "mini auth") {
+		t.Errorf("expected reauth remedy in error, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "no server URL") {
+		t.Errorf("expected no-server-URL message in error, got %q", err.Error())
+	}
+	if endpoint.hits.Load() != 0 {
+		t.Errorf("token endpoint called %d times, want 0", endpoint.hits.Load())
+	}
+}
+
+func TestRefreshAuthorization_configuredClientIDOnCIMDServer_keepsConfiguredClientID(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+
+	endpoint := newMockAuthServer(t)
+	endpoint.accessToken = "new-access"
+
+	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":                "https://as.example.com/authorize",
+		"token_endpoint":                        endpoint.srv.URL + "/token",
+		"code_challenge_methods_supported":      []string{"S256"},
+		"client_id_metadata_document_supported": true,
+	})
+	t.Cleanup(discovery.Close)
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", &oauth2.Token{
+		AccessToken: "access", RefreshToken: "refresh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "my-configured-client"},
+		ConfigDir:  dir, ServerName: "srv",
+		ServerURL: discovery.URL + "/mcp",
+		Clock:     clock.NewFake(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.RefreshAuthorization(context.Background(), "Bearer access"); err != nil {
+		t.Fatalf("RefreshAuthorization: %v", err)
+	}
+	if got := resolvedClientID(endpoint); got == auth.ClientMetadataURL {
+		t.Errorf("CIMD URL must not override configured client_id, got %q", got)
+	}
+	if got := resolvedClientID(endpoint); got != "my-configured-client" {
+		t.Errorf("client_id = %q, want %q", got, "my-configured-client")
+	}
+}
+
+func TestRefreshAuthorization_noCIMDAdvert_doesNotUseCIMDClientID(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+
+	endpoint := newMockAuthServer(t)
+	endpoint.accessToken = "new-access"
+
+	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+		"authorization_endpoint":           "https://as.example.com/authorize",
+		"token_endpoint":                   endpoint.srv.URL + "/token",
+		"code_challenge_methods_supported": []string{"S256"},
+	})
+	t.Cleanup(discovery.Close)
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", &oauth2.Token{
+		AccessToken: "access", RefreshToken: "refresh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+		ConfigDir:  dir, ServerName: "srv",
+		ServerURL: discovery.URL + "/mcp",
+		Clock:     clock.NewFake(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := p.RefreshAuthorization(context.Background(), "Bearer access"); err != nil {
+		t.Fatalf("RefreshAuthorization: %v", err)
+	}
+	if got := resolvedClientID(endpoint); got == auth.ClientMetadataURL {
+		t.Errorf("CIMD URL must not be set when server does not advertise CIMD, got %q", got)
+	}
+}
+
+func TestRefreshAuthorization_prm503_doesNotPostRefreshTokenToMCPOrigin(t *testing.T) {
+	auth.UseLoopbackEndpoints()
+	t.Cleanup(auth.ResetEndpointValidation)
+
+	var tokenHits atomic.Int32
+	mcpOriginTokenCalls := &tokenHits
+
+	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/.well-known/oauth-protected-resource"):
+			http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+		case r.URL.Path == "/token":
+			mcpOriginTokenCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"access_token":"new","token_type":"Bearer","expires_in":3600}`)) //nolint:errcheck
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(mcpSrv.Close)
+
+	dir := t.TempDir()
+	if err := auth.Save(dir, "srv", &oauth2.Token{
+		AccessToken: "access", RefreshToken: "refresh",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := auth.NewProvider(auth.ProviderParams{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+		ConfigDir:  dir, ServerName: "srv",
+		ServerURL: mcpSrv.URL + "/mcp",
+		Clock:     clock.NewFake(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = p.RefreshAuthorization(context.Background(), "Bearer access")
+	if err == nil {
+		t.Fatal("expected error when PRM returns 503, got nil")
+	}
+	if mcpOriginTokenCalls.Load() != 0 {
+		t.Errorf("refresh token was posted to MCP origin /token %d times, want 0", mcpOriginTokenCalls.Load())
 	}
 }
