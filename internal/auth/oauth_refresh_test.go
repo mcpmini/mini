@@ -38,8 +38,8 @@ func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	if newTok.AccessToken != "refreshed-access-token" {
 		t.Errorf("access token = %q, want %q", newTok.AccessToken, "refreshed-access-token")
 	}
-	if mock.resourceURL != ac.ResourceURL {
-		t.Errorf("resource = %q, want %q", mock.resourceURL, ac.ResourceURL)
+	if len(mock.resourceValues) != 1 || mock.resourceValues[0] != ac.ResourceURL {
+		t.Errorf("resource values = %q, want [%q]", mock.resourceValues, ac.ResourceURL)
 	}
 }
 
@@ -71,7 +71,7 @@ func TestRefresh_authStyleFallback_sendsResourceOnBothAttempts(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		resources = append(resources, r.FormValue("resource"))
+		resources = append(resources, r.Form["resource"]...)
 		if _, _, basic := r.BasicAuth(); basic {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -104,14 +104,14 @@ func TestRefresh_authStyleFallback_sendsResourceOnBothAttempts(t *testing.T) {
 }
 
 func TestExchangeCode_withResourceURL_sendsResourceToTokenEndpoint(t *testing.T) {
-	var capturedResource string
+	var capturedResourceValues []string
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		if r.FormValue("grant_type") == "authorization_code" {
-			capturedResource = r.FormValue("resource")
+			capturedResourceValues = r.Form["resource"]
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
@@ -137,7 +137,7 @@ func TestExchangeCode_withResourceURL_sendsResourceToTokenEndpoint(t *testing.T)
 	if token.AccessToken != "tok" {
 		t.Errorf("access token = %q, want tok", token.AccessToken)
 	}
-	if capturedResource != resourceURL {
-		t.Errorf("resource at token endpoint = %q, want %q", capturedResource, resourceURL)
+	if len(capturedResourceValues) != 1 || capturedResourceValues[0] != resourceURL {
+		t.Errorf("resource values at token endpoint = %q, want [%q]", capturedResourceValues, resourceURL)
 	}
 }

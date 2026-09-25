@@ -18,11 +18,11 @@ import (
 
 // mockAuthServer is a minimal OAuth2 server for testing.
 type mockAuthServer struct {
-	srv          *httptest.Server
-	accessToken  string
-	refreshToken string
-	refreshed    bool
-	resourceURL  string
+	srv            *httptest.Server
+	accessToken    string
+	refreshToken   string
+	refreshed      bool
+	resourceValues []string
 }
 
 func newMockAuthServer(t *testing.T) *mockAuthServer {
@@ -45,7 +45,7 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.FormValue("grant_type") == "refresh_token" {
 		m.refreshed = true
-		m.resourceURL = r.FormValue("resource")
+		m.resourceValues = r.Form["resource"]
 		m.accessToken = "refreshed-access-token"
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -36,15 +36,14 @@ type ResolveEndpointsParams struct {
 }
 
 // ResolveEndpoints fills in missing OAuth endpoints on sc.Auth via RFC 9728
-// discovery and dynamic client registration, and sets sc.Auth.ResourceURL from
-// sc.URL. It is a no-op if AuthURL, TokenURL, and ClientID are all already set.
+// discovery and dynamic client registration. It always canonicalizes sc.URL
+// into sc.Auth.ResourceURL. Endpoint discovery is skipped when AuthURL,
+// TokenURL, and ClientID are all already set.
 func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) error {
-	a := sc.Auth
-	resourceURL, err := canonicalResourceURI(sc.URL)
-	if err != nil {
+	if err := ApplyResourceURL(sc); err != nil {
 		return err
 	}
-	a.ResourceURL = resourceURL
+	a := sc.Auth
 	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
 		return nil
 	}

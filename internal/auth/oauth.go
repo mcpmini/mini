@@ -62,9 +62,8 @@ type resourceTransport struct {
 }
 
 func (t resourceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	base := t.base
-	if base == nil {
-		base = http.DefaultTransport
+	if req.Body == nil {
+		return t.base.RoundTrip(req)
 	}
 	body, err := io.ReadAll(req.Body)
 	req.Body.Close()
@@ -83,7 +82,7 @@ func (t resourceTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	clone.GetBody = func() (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
-	return base.RoundTrip(clone)
+	return t.base.RoundTrip(clone)
 }
 
 // PKCEFlow performs OAuth2 Authorization Code + PKCE.
@@ -210,9 +209,6 @@ func exchangeCode(ctx context.Context, p ExchangeCodeParams) { //nolint:funclen
 		}
 	}
 	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(p.Verifier)}
-	if p.ResourceURL != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("resource", p.ResourceURL))
-	}
 	token, err := p.Cfg.Exchange(oauthHTTPContext(ctx, p.ResourceURL), code, opts...)
 	p.ResultCh <- PKCEResult{Token: token, Err: err}
 }
