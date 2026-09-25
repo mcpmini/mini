@@ -1,12 +1,15 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -44,8 +47,42 @@ func tokenAuthStyle(method string) oauth2.AuthStyle {
 	}
 }
 
-func oauthHTTPContext(ctx context.Context) context.Context {
-	return context.WithValue(ctx, oauth2.HTTPClient, noRedirectClient)
+func oauthHTTPContext(ctx context.Context, resourceURL string) context.Context {
+	if resourceURL == "" {
+		return context.WithValue(ctx, oauth2.HTTPClient, noRedirectClient)
+	}
+	client := *noRedirectClient
+	client.Transport = resourceTransport{base: noRedirectClient.Transport, resourceURL: resourceURL}
+	return context.WithValue(ctx, oauth2.HTTPClient, &client)
+}
+
+type resourceTransport struct {
+	base        http.RoundTripper
+	resourceURL string
+}
+
+func (t resourceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Body == nil {
+		return t.base.RoundTrip(req)
+	}
+	body, err := io.ReadAll(req.Body)
+	req.Body.Close()
+	if err != nil {
+		return nil, err
+	}
+	values, err := url.ParseQuery(string(body))
+	if err != nil {
+		return nil, err
+	}
+	values.Set("resource", t.resourceURL)
+	body = []byte(values.Encode())
+	clone := req.Clone(req.Context())
+	clone.Body = io.NopCloser(bytes.NewReader(body))
+	clone.ContentLength = int64(len(body))
+	clone.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+	return t.base.RoundTrip(clone)
 }
 
 // PKCEFlow performs OAuth2 Authorization Code + PKCE.
@@ -172,16 +209,13 @@ func exchangeCode(ctx context.Context, p ExchangeCodeParams) { //nolint:funclen
 		}
 	}
 	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(p.Verifier)}
-	if p.ResourceURL != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("resource", p.ResourceURL))
-	}
-	token, err := p.Cfg.Exchange(oauthHTTPContext(ctx), code, opts...)
+	token, err := p.Cfg.Exchange(oauthHTTPContext(ctx, p.ResourceURL), code, opts...)
 	p.ResultCh <- PKCEResult{Token: token, Err: err}
 }
 
 // Refresh exchanges a refresh token for a new access token.
 func Refresh(ctx context.Context, ac *config.AuthConfig, t *oauth2.Token) (*oauth2.Token, error) {
-	src := configFrom(ac).TokenSource(oauthHTTPContext(ctx), t)
+	src := configFrom(ac).TokenSource(oauthHTTPContext(ctx, ac.ResourceURL), t)
 	return src.Token()
 }
 

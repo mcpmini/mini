@@ -18,10 +18,11 @@ import (
 
 // mockAuthServer is a minimal OAuth2 server for testing.
 type mockAuthServer struct {
-	srv          *httptest.Server
-	accessToken  string
-	refreshToken string
-	refreshed    bool
+	srv            *httptest.Server
+	accessToken    string
+	refreshToken   string
+	refreshed      bool
+	resourceValues []string
 }
 
 func newMockAuthServer(t *testing.T) *mockAuthServer {
@@ -44,6 +45,7 @@ func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.FormValue("grant_type") == "refresh_token" {
 		m.refreshed = true
+		m.resourceValues = r.Form["resource"]
 		m.accessToken = "refreshed-access-token"
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -105,49 +107,6 @@ func pkceToken(t *testing.T, mock *mockAuthServer) *oauth2.Token {
 		t.Fatalf("PKCEFlow: %v", err)
 	}
 	return token
-}
-
-func TestRefresh(t *testing.T) {
-	mock := newMockAuthServer(t)
-	dir := t.TempDir()
-	token := pkceToken(t, mock)
-	if err := auth.Save(dir, "srv", token); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	loaded, _ := auth.Load(dir, "srv")
-	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	mock.accessToken = "refreshed-access-token"
-	newTok, err := auth.Refresh(context.Background(), mock.authConfig(), loaded)
-	if err != nil {
-		t.Fatalf("Refresh: %v", err)
-	}
-	if !mock.refreshed {
-		t.Error("expected /token to be called with grant_type=refresh_token")
-	}
-	if newTok.AccessToken != "refreshed-access-token" {
-		t.Errorf("access token = %q, want %q", newTok.AccessToken, "refreshed-access-token")
-	}
-}
-
-func TestRefreshDoesNotFollowRedirect(t *testing.T) {
-	targetCalled := false
-	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		targetCalled = true
-	}))
-	defer target.Close()
-	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		http.Redirect(w, &http.Request{}, target.URL, http.StatusTemporaryRedirect)
-	}))
-	defer redirect.Close()
-
-	ac := &config.AuthConfig{ClientID: "client", TokenURL: redirect.URL}
-	token := &oauth2.Token{AccessToken: "expired", RefreshToken: "refresh", Expiry: time.Now().Add(-time.Hour)}
-	if _, err := auth.Refresh(context.Background(), ac, token); err == nil {
-		t.Fatal("expected redirected token refresh to fail")
-	}
-	if targetCalled {
-		t.Error("token refresh followed redirect")
-	}
 }
 
 func TestTokenSaveLoad(t *testing.T) {

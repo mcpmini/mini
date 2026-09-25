@@ -63,6 +63,64 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 	}
 }
 
+func TestResolveEndpoints_configuredEndpoints_canonicalizesResourceURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{"userinfo and fragment are stripped", "HTTPS://user:secret@EXAMPLE.COM:443/mcp#fragment", "https://example.com/mcp"},
+		{"default HTTP port and root slash are removed", "http://EXAMPLE.COM:80/", "http://example.com"},
+		{"path and query are preserved", "https://EXAMPLE.COM:8443/api/v1?scope=read&mode=full", "https://example.com:8443/api/v1?scope=read&mode=full"},
+		{"IPv6 host is normalized", "https://[2001:DB8::1]:443/mcp?x=1#fragment", "https://[2001:db8::1]/mcp?x=1"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := configuredOAuthServer(tc.url)
+			if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err != nil {
+				t.Fatalf("ResolveEndpoints: %v", err)
+			}
+			if sc.Auth.ResourceURL != tc.want {
+				t.Errorf("ResourceURL = %q, want %q", sc.Auth.ResourceURL, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveEndpoints_invalidServerURL_returnsError(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+	}{
+		{name: "non-http scheme", url: "ftp://example.com/mcp"},
+		{name: "relative URL", url: "/mcp"},
+		{name: "missing host", url: "https:///mcp"},
+		{name: "malformed host", url: "https://[2001:db8::1/mcp"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := configuredOAuthServer(tc.url)
+			if err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv")); err == nil {
+				t.Fatal("ResolveEndpoints succeeded for invalid resource URL")
+			}
+		})
+	}
+}
+
+func configuredOAuthServer(serverURL string) *config.ServerConfig {
+	return &config.ServerConfig{
+		URL: serverURL,
+		Auth: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			AuthURL:  "https://as.example.com/authorize",
+			TokenURL: "https://as.example.com/token",
+			ClientID: "client-id",
+		},
+	}
+}
+
 func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 	// Servers like Linear advertise CIMD but reject arbitrary metadata URLs.
 	// A cached DCR client_id must win over CIMD to avoid re-fetching and failing.
@@ -124,7 +182,6 @@ func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
 	}
 }
 
-
 func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 	tests := []struct {
 		name string
@@ -170,7 +227,6 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 		})
 	}
 }
-
 
 func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{

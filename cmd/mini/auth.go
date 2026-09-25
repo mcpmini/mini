@@ -152,6 +152,10 @@ func ensureValidToken(ctx context.Context, configDir string, sc *config.ServerCo
 }
 
 func refreshAndSaveToken(ctx context.Context, configDir string, sc *config.ServerConfig, t *oauth2.Token) (*oauth2.Token, error) {
+	if err := auth.ApplyResourceURL(sc); err != nil {
+		fmt.Fprintf(os.Stderr, "mini: resolve resource URL for %s: %v\n", sc.Name, err)
+		return nil, err
+	}
 	refreshed, err := auth.Refresh(ctx, sc.Auth, t)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", sc.Name, sc.Name)
