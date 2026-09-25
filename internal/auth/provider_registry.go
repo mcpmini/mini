@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sync"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -53,6 +55,28 @@ func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.Authori
 	}
 	c.m[params.ServerName] = &registryEntry{provider: tp, identity: identityFrom(params)}
 	return tp, nil
+}
+
+// CommitAuthorizedToken installs a browser-authorized token and a freshly
+// hydrated OAuth configuration into the provider for params.ServerName.
+// If no provider is registered yet, it saves the token so the next GetOrCreate
+// constructs a hydrated provider from it. If the identity doesn't match the
+// registered provider, it returns an error without modifying anything.
+func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oauth2.Token) error {
+	normalized, err := normalizeProviderParams(params)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e := c.m[normalized.ServerName]
+	if e == nil {
+		return Save(normalized.ConfigDir, normalized.ServerName, tok)
+	}
+	if !e.identity.matches(normalized) {
+		return fmt.Errorf("server %q OAuth identity changed; refusing trusted commit", normalized.ServerName)
+	}
+	return e.provider.commitBrowserToken(normalized, tok)
 }
 
 func identityFrom(p ProviderParams) providerIdentity {

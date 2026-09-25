@@ -24,10 +24,24 @@ func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
 	if err != nil {
 		return nil, err
 	}
+	preHydration := cloneAuthConfig(canonical.AuthConfig)
 	if err := hydrateFromRegistration(canonical); err != nil {
 		return nil, err
 	}
-	return newTokenProvider(canonical), nil
+	tp := newTokenProvider(canonical)
+	tp.preHydrationAuthConfig = preHydration
+	return tp, nil
+}
+
+func normalizeProviderParams(p ProviderParams) (ProviderParams, error) {
+	p, err := canonicalizeProviderParams(p)
+	if err != nil {
+		return ProviderParams{}, err
+	}
+	if err := hydrateFromRegistration(p); err != nil {
+		return ProviderParams{}, err
+	}
+	return p, nil
 }
 
 func canonicalizeProviderParams(p ProviderParams) (ProviderParams, error) {

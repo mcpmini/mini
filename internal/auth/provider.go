@@ -13,11 +13,12 @@ import (
 )
 
 type tokenProvider struct {
-	ac         *config.AuthConfig
-	configDir  string
-	serverName string
-	clock      clock.Clock
-	lifetime   context.Context
+	ac                     *config.AuthConfig
+	preHydrationAuthConfig *config.AuthConfig
+	configDir              string
+	serverName             string
+	clock                  clock.Clock
+	lifetime               context.Context
 
 	mu             sync.Mutex
 	token          *oauth2.Token
@@ -79,6 +80,21 @@ func (p *tokenProvider) ensureTokenLocked() error {
 
 func (p *tokenProvider) remedyError(cause error) error {
 	return transport.ReauthorizationError(p.serverName, cause)
+}
+
+// commitBrowserToken atomically saves the token to disk and then swaps it into
+// memory together with the newly hydrated auth config. Saving first ensures
+// that a failed disk write leaves the provider unchanged.
+func (p *tokenProvider) commitBrowserToken(normalized ProviderParams, tok *oauth2.Token) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err := Save(p.configDir, p.serverName, tok); err != nil {
+		return fmt.Errorf("persist oauth token: %w", err)
+	}
+	p.ac = normalized.AuthConfig
+	p.token = tok
+	p.persistedToken = cloneToken(tok)
+	return nil
 }
 
 func bearerValue(t *oauth2.Token) string {

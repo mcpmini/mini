@@ -116,6 +116,37 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "stale_token_url_after_commit",
+			initial: func(t *testing.T, dir string) auth.ProviderParams {
+				return auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFake(),
+				}
+			},
+			between: func(t *testing.T, dir string, reg *auth.ProviderRegistry) {
+				committed := auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{
+						Type: config.AuthTypeOAuth2, ClientID: "discovered",
+						AuthURL: "https://as.example.com/auth", TokenURL: "https://as.example.com/token",
+					},
+					ConfigDir: dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFake(),
+				}
+				tok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}
+				if err := reg.CommitAuthorizedToken(committed, tok); err != nil {
+					t.Fatalf("CommitAuthorizedToken: %v", err)
+				}
+			},
+			redial: func(t *testing.T, dir string) auth.ProviderParams {
+				return auth.ProviderParams{
+					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
+					Clock: clock.NewFake(),
+				}
+			},
+		},
 	}
 
 	for _, tc := range cases {

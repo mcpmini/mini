@@ -76,6 +76,22 @@ func (p *tokenProvider) reloadPersistedTokenLocked() {
 	}
 	p.token = t
 	p.persistedToken = cloneToken(t)
+	p.rehydrateAuthConfigLocked()
+}
+
+func (p *tokenProvider) rehydrateAuthConfigLocked() {
+	params := ProviderParams{
+		AuthConfig: cloneAuthConfig(p.preHydrationAuthConfig),
+		ConfigDir:  p.configDir,
+		ServerName: p.serverName,
+		Clock:      p.clock,
+	}
+	if err := hydrateFromRegistration(params); err != nil {
+		slog.Warn("rehydrate OAuth config after token adoption failed; keeping existing config",
+			"server", p.serverName, "err", err)
+		return
+	}
+	p.ac = params.AuthConfig
 }
 
 func samePersistedToken(a, b *oauth2.Token) bool {
