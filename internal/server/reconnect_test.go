@@ -33,11 +33,9 @@ func (c *errAfterRegisterConn) Call(ctx context.Context, method string, params j
 	}
 	return json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`), nil
 }
-
 func (c *errAfterRegisterConn) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
 	return c.tools, nil
 }
-
 func (c *errAfterRegisterConn) Health(_ context.Context) error { return nil }
 func (c *errAfterRegisterConn) Close() error                   { return nil }
 
@@ -252,7 +250,6 @@ func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
 // TestPerSession_transportErrorRedialsConn verifies that a transport-level
 // error (abrupt connection close, not an RPC error) evicts the per-session
 // conn so the next call re-dials instead of reusing a broken connection.
-
 func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 	var dialCount, closeOnCall, callsSeen atomic.Int32
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -314,7 +311,6 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 // request goroutine encounters a connection error and calls maybeReconnect at the
 // same time as Close() is completing its reconnectWg.Wait(). This is a regression
 // test for the WaitGroup reuse race: Add(1) called after Wait() unblocked.
-
 func TestClose_concurrentConnError(t *testing.T) {
 	// Run many iterations to expose the narrow scheduling window.
 	for i := range 50 {
@@ -358,7 +354,6 @@ func TestClose_concurrentConnError(t *testing.T) {
 
 // slowErrConn blocks on Call until its release channel is closed, then returns a
 // transport-level error (not an RPC error), which triggers maybeReconnect.
-
 type slowErrConn struct {
 	tools   []transport.ToolDefinition
 	release <-chan struct{}
@@ -372,10 +367,8 @@ func (c *slowErrConn) Call(ctx context.Context, _ string, _ json.RawMessage) (js
 	}
 	return nil, errors.New("transport: connection reset")
 }
-
 func (c *slowErrConn) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
 	return c.tools, nil
 }
-
 func (c *slowErrConn) Health(_ context.Context) error { return nil }
 func (c *slowErrConn) Close() error                   { return nil }

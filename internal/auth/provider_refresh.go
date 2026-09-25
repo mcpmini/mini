@@ -66,7 +66,7 @@ func (p *tokenProvider) refreshLocked() error {
 		if refreshNeedsReauth(err) {
 			return p.remedyError(fmt.Errorf("refresh token: %w", err))
 		}
-		return fmt.Errorf("%s: token refresh failed, will retry: %w", p.serverName, err)
+		return fmt.Errorf("%s: token refresh failed (transient): %w", p.serverName, err)
 	}
 	p.token = refreshed
 	p.proactiveRetryAt = time.Time{}

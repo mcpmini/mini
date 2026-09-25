@@ -12,10 +12,12 @@ func refreshNeedsReauth(err error) bool {
 	if !errors.As(err, &re) {
 		return false
 	}
-	if isOAuthReauthCode(re.ErrorCode) {
+	switch {
+	case isOAuthTransientCode(re.ErrorCode):
+		return false
+	case isOAuthReauthCode(re.ErrorCode):
 		return true
-	}
-	if re.Response == nil {
+	case re.Response == nil:
 		return false
 	}
 	return re.Response.StatusCode == http.StatusBadRequest ||
@@ -24,4 +26,8 @@ func refreshNeedsReauth(err error) bool {
 
 func isOAuthReauthCode(code string) bool {
 	return code == "invalid_grant" || code == "invalid_client" || code == "unauthorized_client"
+}
+
+func isOAuthTransientCode(code string) bool {
+	return code == "temporarily_unavailable" || code == "server_error"
 }

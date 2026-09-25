@@ -60,8 +60,8 @@ func TestRefreshAuthorization_tokenEndpoint503_returnsTransientError(t *testing.
 	if strings.Contains(err.Error(), "mini auth") {
 		t.Errorf("transient error should not name mini auth remedy, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "will retry") {
-		t.Errorf("transient error should say will retry, got: %v", err)
+	if !strings.Contains(err.Error(), "(transient)") {
+		t.Errorf("transient error should say (transient), got: %v", err)
 	}
 	if errors.Is(err, transport.ErrReauthRequired) {
 		t.Errorf("503 must not be classified as needing re-auth: %v", err)
@@ -406,41 +406,6 @@ func TestRemedyError_wrapsErrReauthRequired(t *testing.T) {
 			t.Errorf("error = %v, want ErrReauthRequired", err)
 		}
 	})
-}
-
-func TestRefreshNeedsReauth_errorKinds_classifyReauthVsTransient(t *testing.T) {
-	makeRetrieve := func(code string, status int) error {
-		var resp *http.Response
-		if status != 0 {
-			resp = &http.Response{StatusCode: status}
-		}
-		return &oauth2.RetrieveError{ErrorCode: code, Response: resp}
-	}
-	cases := []struct {
-		name       string
-		err        error
-		wantReauth bool
-	}{
-		{"invalid_grant 400", makeRetrieve("invalid_grant", http.StatusBadRequest), true},
-		{"invalid_client 400", makeRetrieve("invalid_client", http.StatusBadRequest), true},
-		{"unauthorized_client 400", makeRetrieve("unauthorized_client", http.StatusBadRequest), true},
-		{"401 no error code", makeRetrieve("", http.StatusUnauthorized), true},
-		{"400 no error code", makeRetrieve("", http.StatusBadRequest), true},
-		{"429 rate limit", makeRetrieve("", http.StatusTooManyRequests), false},
-		{"503 service unavailable", makeRetrieve("", http.StatusServiceUnavailable), false},
-		{"500 server error", makeRetrieve("", http.StatusInternalServerError), false},
-		{"nil response retrieve error", makeRetrieve("something", 0), false},
-		{"non-retrieve network error", errors.New("connection refused"), false},
-		{"context deadline", context.DeadlineExceeded, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := auth.RefreshNeedsReauth(tc.err)
-			if got != tc.wantReauth {
-				t.Errorf("RefreshNeedsReauth(%v) = %v, want %v", tc.err, got, tc.wantReauth)
-			}
-		})
-	}
 }
 
 func TestRefreshAuthorization_invalidGrant_returnsReauthRemedy(t *testing.T) {

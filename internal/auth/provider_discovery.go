@@ -14,7 +14,7 @@ func (p *tokenProvider) maybeDiscoverAndApplyLocked(ctx context.Context) error {
 	}
 	meta, err := discoverAndApply(ctx, p.serverURL, p.ac)
 	if err != nil {
-		return fmt.Errorf("%s: token endpoint discovery failed, will retry: %w", p.serverName, err)
+		return fmt.Errorf("%s: token endpoint discovery failed (transient): %w", p.serverName, err)
 	}
 	if p.ac.ClientID == "" && meta != nil && meta.CIMDSupported {
 		p.ac.ClientID = ClientMetadataURL
