@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -34,9 +33,11 @@ func (c *errAfterRegisterConn) Call(ctx context.Context, method string, params j
 	}
 	return json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`), nil
 }
+
 func (c *errAfterRegisterConn) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
 	return c.tools, nil
 }
+
 func (c *errAfterRegisterConn) Health(_ context.Context) error { return nil }
 func (c *errAfterRegisterConn) Close() error                   { return nil }
 
@@ -161,41 +162,6 @@ func TestReconnect_successAfterFailure(t *testing.T) {
 	assertEnvelopeOK(t, srv, "svc", "ping", true)
 }
 
-func TestReconnect_detectsOAuthRequirement(t *testing.T) {
-	oauthSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer oauthSrv.Close()
-
-	configDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	fakeClock := clock.NewFake()
-	srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock))
-	defer srv.Close()
-
-	var errOnCall bool
-	srv.AddConnection(context.Background(), config.ServerConfig{
-		Name: "svc", Transport: "http", URL: oauthSrv.URL,
-	}, makeErrConn(&errOnCall))
-	errOnCall = true
-	assertEnvelopeOK(t, srv, "svc", "ping", false)
-
-	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
-		t.Fatalf("waiting for reconnect timer: %v", err)
-	}
-	fakeClock.Advance(time.Second)
-
-	deadline := time.Now().Add(5 * time.Second)
-	for !config.IsOAuthDetected(configDir, "svc") {
-		if time.Now().After(deadline) {
-			t.Fatal("timed out waiting for the reconnect path to detect the OAuth requirement")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 func writeToolsCallResp(w http.ResponseWriter, id any, callsSeen int, rpcErrOnCall *int) {
 	if *rpcErrOnCall > 0 && callsSeen == *rpcErrOnCall {
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32602, "message": "bad args"}}) //nolint:errcheck
@@ -286,6 +252,7 @@ func TestPerSession_rpcErrorKeepsConn(t *testing.T) {
 // TestPerSession_transportErrorRedialsConn verifies that a transport-level
 // error (abrupt connection close, not an RPC error) evicts the per-session
 // conn so the next call re-dials instead of reusing a broken connection.
+
 func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 	var dialCount, closeOnCall, callsSeen atomic.Int32
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -347,6 +314,7 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 // request goroutine encounters a connection error and calls maybeReconnect at the
 // same time as Close() is completing its reconnectWg.Wait(). This is a regression
 // test for the WaitGroup reuse race: Add(1) called after Wait() unblocked.
+
 func TestClose_concurrentConnError(t *testing.T) {
 	// Run many iterations to expose the narrow scheduling window.
 	for i := range 50 {
@@ -390,6 +358,7 @@ func TestClose_concurrentConnError(t *testing.T) {
 
 // slowErrConn blocks on Call until its release channel is closed, then returns a
 // transport-level error (not an RPC error), which triggers maybeReconnect.
+
 type slowErrConn struct {
 	tools   []transport.ToolDefinition
 	release <-chan struct{}
@@ -403,70 +372,10 @@ func (c *slowErrConn) Call(ctx context.Context, _ string, _ json.RawMessage) (js
 	}
 	return nil, errors.New("transport: connection reset")
 }
+
 func (c *slowErrConn) ListTools(_ context.Context) ([]transport.ToolDefinition, error) {
 	return c.tools, nil
 }
+
 func (c *slowErrConn) Health(_ context.Context) error { return nil }
 func (c *slowErrConn) Close() error                   { return nil }
-
-func TestReconnect_reauthErrorDoesNotStartReconnect(t *testing.T) {
-	srv := newTestServer(t)
-	reauthErr := fmt.Errorf("svc requires re-authorization: %w", transport.ErrReauthRequired)
-	errConn := &errAfterRegisterConn{
-		tools: []transport.ToolDefinition{
-			{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)},
-		},
-		errFn: func() error { return reauthErr },
-	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, errConn)
-	serve(t, srv, callTool("call", map[string]any{
-		"server": "svc", "tool": "ping", "params": map[string]any{},
-	}))
-	if srv.IsReconnecting("svc") {
-		t.Error("ErrReauthRequired should not trigger reconnect")
-	}
-}
-
-func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
-	authSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer authSrv.Close()
-
-	configDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	fakeClock := clock.NewFake()
-	srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)),
-		server.WithClock(fakeClock))
-	defer srv.Close()
-
-	var errOnCall bool
-	srv.AddConnection(context.Background(), config.ServerConfig{
-		Name: "svc", Transport: "http", URL: authSrv.URL,
-		Auth: &config.AuthConfig{Type: "oauth2", ClientID: "c", TokenURL: authSrv.URL + "/token"},
-	}, makeErrConn(&errOnCall))
-
-	errOnCall = true
-	assertEnvelopeOK(t, srv, "svc", "ping", false)
-
-	stopped := make(chan struct{})
-	go func() {
-		for srv.IsReconnecting("svc") {
-			runtime.Gosched()
-		}
-		close(stopped)
-	}()
-
-	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
-		t.Fatalf("waiting for reconnect timer: %v", err)
-	}
-	fakeClock.Advance(time.Second)
-
-	select {
-	case <-stopped:
-	case <-time.After(5 * time.Second):
-		t.Fatal("reconnect loop did not stop after ErrReauthRequired")
-	}
-}

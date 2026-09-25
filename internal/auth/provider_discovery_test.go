@@ -4,6 +4,7 @@ package auth_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -195,7 +196,7 @@ func TestRefreshAuthorization_clientIDAfterRediscovery(t *testing.T) {
 	}
 }
 
-func TestRefreshAuthorization_discovery500_returnsReauthRemedy(t *testing.T) {
+func TestRefreshAuthorization_discoveryNetworkError_returnsTransientError(t *testing.T) {
 	auth.UseLoopbackEndpoints()
 	t.Cleanup(auth.ResetEndpointValidation)
 
@@ -231,11 +232,11 @@ func TestRefreshAuthorization_discovery500_returnsReauthRemedy(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when discovery returns network error, got nil")
 	}
-	if !strings.Contains(err.Error(), "mini auth") {
-		t.Errorf("expected reauth remedy in error, got %q", err.Error())
+	if strings.Contains(err.Error(), "mini auth") {
+		t.Errorf("discovery network error must not be a reauth remedy, got %q", err.Error())
 	}
-	if !strings.Contains(err.Error(), "discover") {
-		t.Errorf("expected discovery error in message, got %q", err.Error())
+	if !strings.Contains(err.Error(), "(transient)") {
+		t.Errorf("discovery network error must say (transient), got %q", err.Error())
 	}
 	if endpoint.hits.Load() != tokenPOSTs {
 		t.Errorf("token endpoint was called %d times after discovery failure, want 0", endpoint.hits.Load()-tokenPOSTs)
@@ -275,7 +276,7 @@ func TestRefreshAuthorization_noServerURLOrTokenURL_returnsReauthRemedyWithoutNe
 	}
 }
 
-func TestRefreshAuthorization_prm503_doesNotPostRefreshTokenToMCPOrigin(t *testing.T) {
+func TestRefreshAuthorization_prm503_isTransientAndSkipsMCPOrigin(t *testing.T) {
 	auth.UseLoopbackEndpoints()
 	t.Cleanup(auth.ResetEndpointValidation)
 
@@ -318,5 +319,8 @@ func TestRefreshAuthorization_prm503_doesNotPostRefreshTokenToMCPOrigin(t *testi
 	}
 	if mcpOriginTokenCalls.Load() != 0 {
 		t.Errorf("refresh token was posted to MCP origin /token %d times, want 0", mcpOriginTokenCalls.Load())
+	}
+	if errors.Is(err, transport.ErrReauthRequired) || !strings.Contains(err.Error(), "(transient)") {
+		t.Errorf("PRM 503 must be a transient error, got: %v", err)
 	}
 }
