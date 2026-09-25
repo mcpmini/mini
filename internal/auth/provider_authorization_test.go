@@ -126,6 +126,113 @@ func TestAuthorization_proactiveRefreshFails_servesStillValidToken(t *testing.T)
 	})
 }
 
+func TestAuthorization_proactiveRefreshFails_backsOffUntilRetryTime(t *testing.T) {
+	epoch := clock.NewFake().Now()
+	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(time.Minute))})
+	f.endpoint.status.Store(http.StatusServiceUnavailable)
+
+	authorize := func() {
+		t.Helper()
+		got, err := f.provider.Authorization(context.Background())
+		if err != nil || got != "Bearer stored-access" {
+			t.Fatalf("Authorization = %q, %v; want current token served", got, err)
+		}
+	}
+	authorize()
+	hitsAfterFirst := f.endpoint.hits.Load()
+	authorize()
+	authorize()
+	if hits := f.endpoint.hits.Load(); hits != hitsAfterFirst {
+		t.Errorf("endpoint hits = %d, want %d: calls inside the backoff must not retry", hits, hitsAfterFirst)
+	}
+
+	f.clock.Advance(auth.ProactiveRefreshBackoff + time.Second)
+	authorize()
+	if hits := f.endpoint.hits.Load(); hits != 2*hitsAfterFirst {
+		t.Errorf("endpoint hits = %d, want %d once the backoff elapses", hits, 2*hitsAfterFirst)
+	}
+}
+
+func TestAuthorization_tokenExpiresDuringBackoff_refreshesImmediately(t *testing.T) {
+	epoch := clock.NewFake().Now()
+	// Token expires in 20s — less than the 30s backoff — so we can advance past expiry while still inside the backoff.
+	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(20 * time.Second))})
+	f.endpoint.status.Store(http.StatusServiceUnavailable)
+
+	if _, err := f.provider.Authorization(context.Background()); err != nil {
+		t.Fatalf("first call (sets backoff): %v", err)
+	}
+
+	f.endpoint.status.Store(http.StatusOK)
+	// At epoch+25s the token is expired but the 30s backoff has not elapsed.
+	f.clock.Advance(25 * time.Second)
+
+	got, err := f.provider.Authorization(context.Background())
+	if err != nil {
+		t.Fatalf("Authorization after token expires during backoff: %v", err)
+	}
+	if got != "Bearer new-access" {
+		t.Errorf("Authorization = %q, want Bearer new-access (refreshed after expiry)", got)
+	}
+}
+
+func TestRefreshAuthorization_duringBackoff_stillRefreshesOn401(t *testing.T) {
+	epoch := clock.NewFake().Now()
+	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(time.Minute))})
+	f.endpoint.status.Store(http.StatusServiceUnavailable)
+
+	if _, err := f.provider.Authorization(context.Background()); err != nil {
+		t.Fatalf("first call (sets backoff): %v", err)
+	}
+	hitsAfterBackoffSet := f.endpoint.hits.Load()
+
+	f.endpoint.status.Store(http.StatusOK)
+	got, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if err != nil {
+		t.Fatalf("RefreshAuthorization during backoff: %v", err)
+	}
+	if got != "Bearer new-access" {
+		t.Errorf("RefreshAuthorization = %q, want Bearer new-access", got)
+	}
+	if hits := f.endpoint.hits.Load(); hits <= hitsAfterBackoffSet {
+		t.Errorf("endpoint hits = %d, want > %d: 401 path must bypass backoff", hits, hitsAfterBackoffSet)
+	}
+}
+
+func TestAuthorization_adoptingNewerStoredTokenClearsBackoff(t *testing.T) {
+	epoch := clock.NewFake().Now()
+	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(time.Minute))})
+	f.endpoint.status.Store(http.StatusServiceUnavailable)
+
+	if _, err := f.provider.Authorization(context.Background()); err != nil {
+		t.Fatalf("first call (sets backoff): %v", err)
+	}
+	hitsAfterFail := f.endpoint.hits.Load()
+	if _, err := f.provider.Authorization(context.Background()); err != nil {
+		t.Fatalf("second call (backoff active): %v", err)
+	}
+	if hits := f.endpoint.hits.Load(); hits != hitsAfterFail {
+		t.Errorf("endpoint hits = %d, want %d: backoff should suppress retry", hits, hitsAfterFail)
+	}
+
+	// Saving a different token to disk simulates an external refresh clearing the backoff.
+	newer := &oauth2.Token{AccessToken: "newer-access", RefreshToken: "newer-refresh", Expiry: epoch.Add(3 * time.Minute)}
+	if err := auth.Save(f.dir, "srv", newer); err != nil {
+		t.Fatal(err)
+	}
+	f.endpoint.status.Store(http.StatusOK)
+	got, err := f.provider.Authorization(context.Background())
+	if err != nil {
+		t.Fatalf("Authorization after token adoption: %v", err)
+	}
+	if got != "Bearer new-access" {
+		t.Errorf("Authorization = %q, want Bearer new-access (backoff cleared by adoption)", got)
+	}
+	if hits := f.endpoint.hits.Load(); hits <= hitsAfterFail {
+		t.Errorf("endpoint hits = %d, want > %d: should refresh after backoff cleared", hits, hitsAfterFail)
+	}
+}
+
 func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing.T) {
 	clk := clock.NewFake()
 	dir := t.TempDir()
