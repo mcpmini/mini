@@ -55,12 +55,12 @@ func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Reques
 	return value, nil
 }
 
-func (c *HTTPConnection) sendOneWithAuthRetry(ctx context.Context, build func(context.Context) (*http.Request, string, error)) (*http.Response, error) {
+func (c *HTTPConnection) sendOneWithAuthRetry(ctx context.Context, client *http.Client, build func(context.Context) (*http.Request, string, error)) (*http.Response, error) {
 	req, sentAuth, err := build(ctx)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil || c.authProvider == nil || resp.StatusCode != http.StatusUnauthorized {
 		return resp, err
 	}
@@ -72,5 +72,5 @@ func (c *HTTPConnection) sendOneWithAuthRetry(ctx context.Context, build func(co
 	if err != nil {
 		return nil, err
 	}
-	return c.client.Do(req)
+	return client.Do(req)
 }

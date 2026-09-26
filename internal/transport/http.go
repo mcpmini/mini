@@ -103,6 +103,11 @@ func resolveClientTimeout(configured time.Duration) time.Duration {
 	return defaultHTTPClientTimeout
 }
 
+// No Timeout: http.Client.Timeout covers body reads and would cut an idle SSE stream.
+func (c *HTTPConnection) newStreamClient() *http.Client {
+	return &http.Client{CheckRedirect: c.client.CheckRedirect, Transport: c.client.Transport}
+}
+
 // noRedirectClient blocks redirects to prevent session token exfiltration to a different host.
 func noRedirectClient(timeout time.Duration, blockPrivateIPs bool) *http.Client {
 	client := &http.Client{
