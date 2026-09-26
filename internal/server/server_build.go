@@ -50,18 +50,30 @@ func newServer(cfg *config.Config, configDir string, projections map[string]map[
 	}
 }
 
-func loadServerProjections(configDir string) (map[string]map[string]*config.ProjectionConfig, error) {
+type serverProjectionsData struct {
+	Projections     map[string]map[string]*config.ProjectionConfig
+	ConfiguredNames map[string]struct{}
+}
+
+func loadServerProjectionsData(configDir string) (serverProjectionsData, error) {
 	_, servers, err := config.Load(configDir)
 	if err != nil {
-		return make(map[string]map[string]*config.ProjectionConfig), err
+		return serverProjectionsData{Projections: make(map[string]map[string]*config.ProjectionConfig)}, err
 	}
 	out := make(map[string]map[string]*config.ProjectionConfig)
+	names := make(map[string]struct{}, len(servers))
 	for _, sc := range servers {
+		names[sc.Name] = struct{}{}
 		if sc.Projections != nil {
 			out[sc.Name] = sc.Projections
 		}
 	}
-	return out, nil
+	return serverProjectionsData{Projections: out, ConfiguredNames: names}, nil
+}
+
+func loadServerProjections(configDir string) (map[string]map[string]*config.ProjectionConfig, error) {
+	d, err := loadServerProjectionsData(configDir)
+	return d.Projections, err
 }
 
 func mustStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {

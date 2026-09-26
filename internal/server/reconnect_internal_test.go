@@ -28,7 +28,7 @@ func TestReplaceRegistryToolsLocked_usesReloadedAliases(t *testing.T) {
 
 	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{
 		"gh": {"list_pull_requests": {Alias: "new_alias"}},
-	})
+	}, map[string]struct{}{"gh": {}})
 
 	upstreams := srv.snapshotUpstreams()
 	if len(upstreams) != 1 {

@@ -168,25 +168,29 @@ func (s *Server) reloadProjections() (any, error) {
 	// in-memory update and then set_projection would persist the wiped state.
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	projections, err := loadServerProjections(s.configDir)
+	d, err := loadServerProjectionsData(s.configDir)
 	if err != nil {
 		return nil, fmt.Errorf("reload projections: %w", err)
 	}
-	s.replaceProjections(projections)
+	s.replaceProjections(d.Projections, d.ConfiguredNames)
 	s.reapplyAliases()
-	return map[string]any{"ok": true, "loaded": projectionCounts(projections)}, nil
+	return map[string]any{"ok": true, "loaded": projectionCounts(d.Projections)}, nil
 }
 
-func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig) {
+func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig, configuredNames map[string]struct{}) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.carryOverRuntimeAddedProjectionsLocked(projections)
+	s.carryOverUnconfiguredProjectionsLocked(projections, configuredNames)
 	s.projections = projections
 }
 
-func (s *Server) carryOverRuntimeAddedProjectionsLocked(projections map[string]map[string]*config.ProjectionConfig) {
+func (s *Server) carryOverUnconfiguredProjectionsLocked(projections map[string]map[string]*config.ProjectionConfig, configuredNames map[string]struct{}) {
 	for name, live := range s.projections {
-		if u := s.upstreams[name]; u != nil && u.cfg.RuntimeAdded {
+		u := s.upstreams[name]
+		if u == nil {
+			continue
+		}
+		if _, configured := configuredNames[name]; u.cfg.RuntimeAdded || !configured {
 			projections[name] = live
 		}
 	}
