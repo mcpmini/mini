@@ -4,7 +4,11 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -37,6 +41,43 @@ func (r *blockReader) Close() error {
 		close(r.closed)
 	}
 	return nil
+}
+
+func TestServeUntilCanceled_drainWaitsForServe(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := newBlockReader()
+	drainGate := make(chan struct{})
+	draining := make(chan struct{})
+	fakeServe := func(ctx context.Context, in io.Reader, out io.Writer) error {
+		<-ctx.Done()
+		close(draining)
+		<-drainGate
+		return nil
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
+	}()
+	cancel()
+	select {
+	case <-draining:
+	case <-time.After(2 * time.Second):
+		t.Fatal("serve did not reach drain phase within 2s")
+	}
+	select {
+	case <-result:
+		t.Fatal("serveUntilCanceled returned before drain gate was released")
+	default:
+	}
+	close(drainGate)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Errorf("expected nil, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serveUntilCanceled did not return within 2s after drain gate released")
+	}
 }
 
 func TestServeUntilCanceled_closesReaderAndReturns(t *testing.T) {
@@ -129,5 +170,39 @@ func TestStdinPipe_sourceError(t *testing.T) {
 	_, err := io.ReadAll(r)
 	if !errors.Is(err, errStdinSentinel) {
 		t.Errorf("expected %v, got %v", errStdinSentinel, err)
+	}
+}
+
+func TestShutdownContext_firstSignal_releasesSignalHandling(t *testing.T) {
+	var deliverSignal context.CancelFunc
+	released := make(chan struct{})
+	var once sync.Once
+	var registered []os.Signal
+	fakeNotify := func(parent context.Context, sigs ...os.Signal) (context.Context, context.CancelFunc) {
+		registered = sigs
+		ctx, cancel := context.WithCancel(parent)
+		deliverSignal = cancel
+		return ctx, func() { once.Do(func() { close(released) }); cancel() }
+	}
+	ctx, _ := shutdownContext(fakeNotify)
+	if !slices.Equal(registered, []os.Signal{syscall.SIGINT, syscall.SIGTERM}) {
+		t.Errorf("registered signals = %v, want SIGINT and SIGTERM", registered)
+	}
+	select {
+	case <-released:
+		t.Fatal("signal handling released before any signal")
+	default:
+	}
+	if ctx.Err() != nil {
+		t.Fatal("serve context cancelled before any signal")
+	}
+	deliverSignal()
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first signal did not release signal handling, so a second signal would be swallowed")
+	}
+	if ctx.Err() == nil {
+		t.Error("first signal must cancel the serve context")
 	}
 }
