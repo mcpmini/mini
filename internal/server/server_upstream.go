@@ -25,39 +25,78 @@ func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerCo
 			continue
 		}
 		s.connectWg.Add(1)
-		go s.connectUpstreamAsync(connectCtx, sc)
+		go s.connectUpstreamAsync(connectCtx, s.startupInstall(sc))
 	}
 }
 
-func (s *Server) connectUpstreamAsync(ctx context.Context, sc config.ServerConfig) {
+var (
+	errServerRemoved     = errors.New("removed during connection setup")
+	errAlreadyRegistered = errors.New("already registered")
+)
+
+type upstreamInstall struct {
+	cfg          config.ServerConfig
+	removeGen    uint64
+	keepExisting bool
+}
+
+func (s *Server) startupInstall(sc config.ServerConfig) upstreamInstall {
+	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), keepExisting: true}
+}
+
+func (s *Server) replacingInstall(sc config.ServerConfig) upstreamInstall {
+	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name)}
+}
+
+func (s *Server) connectUpstreamAsync(ctx context.Context, in upstreamInstall) {
 	defer s.connectWg.Done()
 	backoff := time.Second
 	for {
-		err := s.AddUpstream(ctx, sc)
+		err := s.connectAtStartup(ctx, in)
 		if err == nil {
 			s.notifyAllSessions()
 			return
 		}
-		s.logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
-		if errors.Is(err, transport.ErrReauthRequired) {
-			return
-		}
-		if !s.sleepBackoffCtx(ctx, backoff) {
+		if !s.retryStartupAfter(in.cfg.Name, err, backoff) || !s.sleepBackoff(ctx, backoff) {
 			return
 		}
 		backoff = nextBackoff(backoff)
 	}
 }
 
-func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
-	connectCtx, cancel := applyHandshakeTimeout(ctx, sc.HandshakeTimeout)
-	defer cancel()
-	conn, err := s.dialUpstream(connectCtx, sc)
-	if err != nil {
-		return fmt.Errorf("connect to %s: %w", sc.Name, err)
+func (s *Server) connectAtStartup(ctx context.Context, in upstreamInstall) error {
+	if err := s.checkInstall(in); err != nil {
+		return err
 	}
-	if err := s.registerUpstream(connectCtx, sc, conn); err != nil {
-		return s.markOAuthIfRequired(ctx, sc, err)
+	return s.addUpstream(ctx, in)
+}
+
+func (s *Server) retryStartupAfter(name string, err error, backoff time.Duration) bool {
+	switch {
+	case errors.Is(err, errServerRemoved), errors.Is(err, errAlreadyRegistered):
+		s.logger.Info("startup connect abandoned", "server", name, "reason", err)
+		return false
+	case errors.Is(err, transport.ErrReauthRequired):
+		s.logger.Warn("upstream needs authorization, not retrying", "server", name, "err", err)
+		return false
+	}
+	s.logger.Warn("upstream unavailable at startup, retrying", "server", name, "err", err, "backoff", backoff)
+	return true
+}
+
+func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
+	return s.addUpstream(ctx, s.replacingInstall(sc))
+}
+
+func (s *Server) addUpstream(ctx context.Context, in upstreamInstall) error {
+	connectCtx, cancel := applyHandshakeTimeout(ctx, in.cfg.HandshakeTimeout)
+	defer cancel()
+	conn, err := s.dialUpstream(connectCtx, in.cfg)
+	if err != nil {
+		return fmt.Errorf("connect to %s: %w", in.cfg.Name, err)
+	}
+	if err := s.registerUpstream(connectCtx, conn, in); err != nil {
+		return s.markOAuthIfRequired(ctx, in.cfg, err)
 	}
 	return nil
 }
@@ -90,7 +129,7 @@ func oauthRequiredError(serverName string, connErr error) error {
 }
 
 func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {
-	return s.registerUpstream(ctx, sc, conn)
+	return s.registerUpstream(ctx, conn, s.replacingInstall(sc))
 }
 
 func (s *Server) dialUpstream(ctx context.Context, sc config.ServerConfig) (transport.Connection, error) {
@@ -123,14 +162,13 @@ func (s *Server) IsReconnecting(serverName string) bool {
 	return u != nil && u.reconnecting.Load()
 }
 
-func (s *Server) registerUpstream(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {
-	gen := s.snapshotRemoveGen(sc.Name)
+func (s *Server) registerUpstream(ctx context.Context, conn transport.Connection, in upstreamInstall) error {
 	tools, err := conn.ListTools(ctx)
 	if err != nil {
 		conn.Close()
-		return fmt.Errorf("list tools from %s: %w", sc.Name, err)
+		return fmt.Errorf("list tools from %s: %w", in.cfg.Name, err)
 	}
-	return s.installIfNotRemoved(sc, conn, tools, gen)
+	return s.installChecked(conn, tools, in)
 }
 
 func (s *Server) snapshotRemoveGen(name string) uint64 {
@@ -139,14 +177,35 @@ func (s *Server) snapshotRemoveGen(name string) uint64 {
 	return s.removeGen[name]
 }
 
-func (s *Server) installIfNotRemoved(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition, gen uint64) error {
+func (s *Server) checkInstall(in upstreamInstall) error {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
-	if s.removeGen[sc.Name] != gen {
+	return s.checkInstallLocked(in)
+}
+
+func (s *Server) installChecked(conn transport.Connection, tools []transport.ToolDefinition, in upstreamInstall) error {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	if err := s.checkInstallLocked(in); err != nil {
 		conn.Close()
-		return fmt.Errorf("server %q was removed during connection setup", sc.Name)
+		return err
 	}
-	s.installUpstreamLocked(sc, conn, tools)
+	s.installUpstreamLocked(in.cfg, conn, tools)
+	return nil
+}
+
+func (s *Server) checkInstallLocked(in upstreamInstall) error {
+	if s.removeGen[in.cfg.Name] != in.removeGen {
+		return fmt.Errorf("server %q: %w", in.cfg.Name, errServerRemoved)
+	}
+	if !in.keepExisting {
+		return nil
+	}
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	if s.upstreams[in.cfg.Name] != nil {
+		return fmt.Errorf("server %q: %w", in.cfg.Name, errAlreadyRegistered)
+	}
 	return nil
 }
 

@@ -42,7 +42,7 @@ func (s *Server) reconnectLoop(u *upstreamServer) {
 	defer u.reconnecting.Store(false)
 	backoff := time.Second
 	for {
-		if !s.sleepBackoff(u, backoff) {
+		if !s.sleepBackoff(u.ctx, backoff) {
 			return
 		}
 		s.logger.Info("reconnecting upstream", "server", u.cfg.Name, "backoff", backoff)
@@ -58,11 +58,7 @@ func (s *Server) reconnectLoop(u *upstreamServer) {
 	}
 }
 
-func (s *Server) sleepBackoff(u *upstreamServer, d time.Duration) bool {
-	return s.sleepBackoffCtx(u.ctx, d)
-}
-
-func (s *Server) sleepBackoffCtx(ctx context.Context, d time.Duration) bool {
+func (s *Server) sleepBackoff(ctx context.Context, d time.Duration) bool {
 	t := s.clock.NewTimer(d)
 	select {
 	case <-ctx.Done():

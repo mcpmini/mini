@@ -8,4 +8,6 @@ func (s *Server) RunProjectionReload(ctx context.Context, afterCheck func()) {
 	s.runProjectionReload(ctx, afterCheck)
 }
 
+func (s *Server) WaitForStartupConnects() { s.connectWg.Wait() }
+
 const ProjectionPollInterval = projectionPollInterval
