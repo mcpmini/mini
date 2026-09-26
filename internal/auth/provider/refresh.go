@@ -55,8 +55,8 @@ func (p *tokenProvider) refreshLocked() error {
 	if p.token.RefreshToken == "" {
 		return p.remedyError(fmt.Errorf("no refresh token stored for %s", p.serverName))
 	}
-	if p.deadRefreshToken != "" && p.token.RefreshToken == p.deadRefreshToken {
-		return p.remedyError(fmt.Errorf("refresh token rejected for %s", p.serverName))
+	if p.token.RefreshToken == p.deadRefreshToken {
+		return p.deadRefreshErr
 	}
 	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
@@ -67,12 +67,13 @@ func (p *tokenProvider) refreshLocked() error {
 	if err != nil {
 		if refreshNeedsReauth(err) {
 			p.deadRefreshToken = p.token.RefreshToken
-			return p.remedyError(fmt.Errorf("refresh token: %w", err))
+			p.deadRefreshErr = p.remedyError(fmt.Errorf("refresh token: %w", err))
+			return p.deadRefreshErr
 		}
 		return fmt.Errorf("%s: token refresh failed (transient): %w", p.serverName, err)
 	}
 	p.token = refreshed
-	p.proactiveRetryAt = time.Time{}
+	p.resetRefreshStateLocked()
 	p.persistRefreshedToken(refreshed)
 	return nil
 }
@@ -98,7 +99,7 @@ func (p *tokenProvider) reloadPersistedTokenLocked() {
 		return
 	}
 	p.token = t
-	p.proactiveRetryAt = time.Time{}
+	p.resetRefreshStateLocked()
 	p.persistedToken = cloneToken(t)
 	p.rehydrateAuthConfigLocked()
 }
@@ -133,4 +134,10 @@ func cloneToken(t *oauth2.Token) *oauth2.Token {
 	}
 	clone := *t
 	return &clone
+}
+
+func (p *tokenProvider) resetRefreshStateLocked() {
+	p.proactiveRetryAt = time.Time{}
+	p.deadRefreshToken = ""
+	p.deadRefreshErr = nil
 }

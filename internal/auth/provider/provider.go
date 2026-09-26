@@ -28,6 +28,7 @@ type tokenProvider struct {
 	persistedToken   *oauth2.Token
 	proactiveRetryAt time.Time
 	deadRefreshToken string
+	deadRefreshErr   error
 }
 
 func New(p Params) (transport.AuthorizationProvider, error) {
@@ -95,7 +96,7 @@ func (p *tokenProvider) commitBrowserToken(hydrated *config.AuthConfig, tok *oau
 	}
 	p.ac = hydrated
 	p.token = tok
-	p.proactiveRetryAt = time.Time{}
+	p.resetRefreshStateLocked()
 	p.persistedToken = cloneToken(tok)
 	return nil
 }

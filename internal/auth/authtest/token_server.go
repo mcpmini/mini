@@ -124,3 +124,9 @@ func (m *TokenServer) RespondWith(status int, body string) {
 	m.OverrideBody = []byte(body)
 	m.Mu.Unlock()
 }
+
+func (m *TokenServer) ClearOverride() {
+	m.Mu.Lock()
+	m.OverrideBody = nil
+	m.Mu.Unlock()
+}
