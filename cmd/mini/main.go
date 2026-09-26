@@ -45,8 +45,7 @@ func newConnectCmd(opts *rootOptions) *cobra.Command {
 		Short: "Connect an agent to mini (stdio MCP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f.toolMode = parseToolMode(toolModeStr)
-			runConnect(opts.configDir, f)
-			return nil
+			return runConnect(opts.configDir, f)
 		},
 	}
 	fl := cmd.Flags()
@@ -69,20 +68,20 @@ func parseToolMode(m string) transport.ToolMode {
 	return transport.ToolModeProxy
 }
 
-func runConnect(configDir string, f connectFlags) {
+func runConnect(configDir string, f connectFlags) error {
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
 	logger := buildLogger(cfg, f.logLevel, os.Stderr)
 	if shouldTryDaemon(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
-		return
+		return nil
 	}
 	var opts []server.ServerOption
 	if f.toolMode == transport.ToolModeCompact {
 		opts = []server.ServerOption{server.WithToolMode(transport.ToolModeCompact)}
 	}
-	serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, opts...)
+	return serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, opts...)
 }
 
 func shouldTryDaemon(standalone bool, httpAddr string) bool {
@@ -98,7 +97,40 @@ type ServeParams struct {
 	DangerNonLoopback bool
 }
 
-func serveStandalone(p ServeParams, opts ...server.ServerOption) {
+type serveFunc func(context.Context, io.Reader, io.Writer) error
+
+type serveWatchParams struct {
+	Ctx   context.Context
+	Serve serveFunc
+	In    io.ReadCloser
+	Out   io.Writer
+}
+
+func serveUntilCanceled(p serveWatchParams) error {
+	defer p.In.Close() //nolint:errcheck
+	done := make(chan error, 1)
+	go func() { done <- p.Serve(p.Ctx, p.In, p.Out) }()
+	select {
+	case err := <-done:
+		return err
+	case <-p.Ctx.Done():
+		p.In.Close() //nolint:errcheck
+		<-done
+		return nil
+	}
+}
+
+// Blocking stdin isn't in Go's runtime poller, so closing os.Stdin can't interrupt a pending Read; a pipe reader can.
+func stdinPipe(src io.Reader) io.ReadCloser {
+	pr, pw := io.Pipe()
+	go func() {
+		_, err := io.Copy(pw, src)
+		pw.CloseWithError(err)
+	}()
+	return pr
+}
+
+func serveStandalone(p ServeParams, opts ...server.ServerOption) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
@@ -107,13 +139,13 @@ func serveStandalone(p ServeParams, opts ...server.ServerOption) {
 	srv.StartProjectionReload(ctx)
 	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
 	maybeStartSessionEviction(ctx, httpSrv, srv)
-	logger := p.Logger
-	logger.Info("mini ready")
-	if err := srv.Serve(ctx, os.Stdin, os.Stdout); err != nil {
-		logger.Error("serve error", "err", err)
-		os.Exit(1)
-	}
+	p.Logger.Info("mini ready")
+	err := serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: stdinPipe(os.Stdin), Out: os.Stdout})
 	shutdownHTTP(httpSrv)
+	if err != nil {
+		return fmt.Errorf("serve stdio: %w", err)
+	}
+	return nil
 }
 
 func shutdownHTTP(httpSrv *http.Server) {
