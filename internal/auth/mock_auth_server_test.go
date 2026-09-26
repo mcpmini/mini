@@ -29,6 +29,8 @@ type mockAuthServer struct {
 	lastResource   string
 	holdReady      chan struct{}
 	holdGate       chan struct{}
+	overrideStatus int
+	overrideBody   []byte
 }
 
 func newMockAuthServer(t *testing.T) *mockAuthServer {
@@ -47,6 +49,15 @@ func newMockAuthServer(t *testing.T) *mockAuthServer {
 
 func (m *mockAuthServer) handleToken(w http.ResponseWriter, r *http.Request) {
 	m.hits.Add(1)
+	m.mu.Lock()
+	overrideStatus, overrideBody := m.overrideStatus, m.overrideBody
+	m.mu.Unlock()
+	if overrideBody != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(overrideStatus)
+		w.Write(overrideBody) //nolint:errcheck
+		return
+	}
 	if status := int(m.status.Load()); status != http.StatusOK {
 		http.Error(w, "refresh rejected", status)
 		return

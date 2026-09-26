@@ -50,15 +50,21 @@ func TestRefreshAuthorization_rotatedRefreshToken_isPersisted(t *testing.T) {
 	}
 }
 
-func TestRefreshAuthorization_tokenEndpointError_returnsReauthRemedy(t *testing.T) {
+func TestRefreshAuthorization_tokenEndpoint503_returnsTransientError(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-	f.endpoint.status.Store(http.StatusInternalServerError)
+	f.endpoint.status.Store(http.StatusServiceUnavailable)
 	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if err == nil {
 		t.Fatal("expected refresh failure")
 	}
-	if !strings.Contains(err.Error(), "mini auth srv") || !strings.Contains(err.Error(), "srv requires re-authorization") {
-		t.Errorf("error should name server and remedy, got: %v", err)
+	if strings.Contains(err.Error(), "mini auth") {
+		t.Errorf("transient error should not name mini auth remedy, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "(transient)") {
+		t.Errorf("transient error should say (transient), got: %v", err)
+	}
+	if errors.Is(err, transport.ErrReauthRequired) {
+		t.Errorf("503 must not be classified as needing re-auth: %v", err)
 	}
 }
 
@@ -392,12 +398,45 @@ func TestRemedyError_wrapsErrReauthRequired(t *testing.T) {
 			t.Errorf("error = %v, want ErrReauthRequired", err)
 		}
 	})
-	t.Run("refresh failure", func(t *testing.T) {
+	t.Run("refresh invalid_grant", func(t *testing.T) {
 		f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-		f.endpoint.status.Store(http.StatusInternalServerError)
+		f.endpoint.respondWith(http.StatusBadRequest, `{"error":"invalid_grant"}`)
 		_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 		if !errors.Is(err, transport.ErrReauthRequired) {
 			t.Errorf("error = %v, want ErrReauthRequired", err)
 		}
 	})
+}
+
+func TestRefreshAuthorization_invalidGrant_returnsReauthRemedy(t *testing.T) {
+	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
+	f.endpoint.respondWith(http.StatusBadRequest, `{"error":"invalid_grant"}`)
+	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if !errors.Is(err, transport.ErrReauthRequired) {
+		t.Errorf("invalid_grant must be ErrReauthRequired, got: %v", err)
+	}
+}
+
+func TestRefreshAuthorization_noRefreshToken_returnsReauthWithoutNetwork(t *testing.T) {
+	tokenWithNoRefresh := &oauth2.Token{AccessToken: "stored-access"}
+	f := newProviderFixture(t, providerSetup{Token: tokenWithNoRefresh})
+	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if !errors.Is(err, transport.ErrReauthRequired) {
+		t.Errorf("no-refresh-token must be ErrReauthRequired, got: %v", err)
+	}
+	if hits := f.endpoint.hits.Load(); hits != 0 {
+		t.Errorf("token endpoint hits = %d, want 0 (must not contact endpoint)", hits)
+	}
+}
+
+func TestRefreshAuthorization_malformedSuccessResponse_isTransient(t *testing.T) {
+	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
+	f.endpoint.respondWith(http.StatusOK, `{"token_type":"Bearer"}`)
+	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+	if err == nil {
+		t.Fatal("expected error for malformed 200 response")
+	}
+	if errors.Is(err, transport.ErrReauthRequired) {
+		t.Errorf("malformed 200 must NOT be ErrReauthRequired, got: %v", err)
+	}
 }

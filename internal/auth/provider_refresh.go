@@ -50,6 +50,9 @@ func (p *tokenProvider) proactiveRefreshLocked() error {
 }
 
 func (p *tokenProvider) refreshLocked() error {
+	if p.token.RefreshToken == "" {
+		return p.remedyError(fmt.Errorf("no refresh token stored for %s", p.serverName))
+	}
 	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
 	if err := p.maybeDiscoverAndApplyLocked(refreshCtx); err != nil {
@@ -60,7 +63,10 @@ func (p *tokenProvider) refreshLocked() error {
 	stale.AccessToken = ""
 	refreshed, err := Refresh(refreshCtx, p.ac, &stale)
 	if err != nil {
-		return p.remedyError(fmt.Errorf("refresh token: %w", err))
+		if refreshNeedsReauth(err) {
+			return p.remedyError(fmt.Errorf("refresh token: %w", err))
+		}
+		return fmt.Errorf("%s: token refresh failed (transient): %w", p.serverName, err)
 	}
 	p.token = refreshed
 	p.proactiveRetryAt = time.Time{}

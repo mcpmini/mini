@@ -11,6 +11,8 @@ import (
 
 const ProactiveRefreshBackoff = proactiveRefreshBackoff
 
+var RefreshNeedsReauth = refreshNeedsReauth
+
 func UseLoopbackHTTPClient() {
 	noRedirectClient = &http.Client{
 		Timeout:   30 * time.Second,
