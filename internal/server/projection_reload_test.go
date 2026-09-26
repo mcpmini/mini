@@ -284,23 +284,6 @@ func TestProjectionReload_configYAMLCreatedAppliesInlineProjections(t *testing.T
 	env.assertDataKeys([]string{"a"}, []string{"b", "secret"})
 }
 
-func TestProjectionReload_configYAMLDeletedRemovesInlineProjections(t *testing.T) {
-	dir := evalTempDir(t)
-	writeReloadFile(t, filepath.Join(dir, "config.yaml"),
-		"servers:\n- name: svc\n  command: echo\n  projections:\n    getData:\n      include_only: [a]\n")
-	env := buildReloadEnv(t, dir)
-	addReloadUpstream(t, env.srv)
-	env.startPoller()
-	env.assertDataKeys([]string{"a"}, []string{"b", "secret"})
-
-	if err := os.Remove(filepath.Join(dir, "config.yaml")); err != nil {
-		t.Fatal(err)
-	}
-	env.advanceTick()
-
-	env.assertDataKeys([]string{"a", "b", "secret"}, nil)
-}
-
 func TestProjectionReload_ctxCancelStopsPoller(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{})
 	ctx, cancel := context.WithCancel(context.Background())

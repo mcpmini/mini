@@ -29,7 +29,7 @@ func Load(configDir string) (*Config, []ServerConfig, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	projections, err := loadProjectionConfigs(configDir)
+	projections, err := LoadProjectionFiles(configDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -84,7 +84,7 @@ func validateInlineServers(configPath string, servers []ServerConfig) error {
 	return nil
 }
 
-func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig, error) {
+func LoadProjectionFiles(dir string) (map[string]map[string]*ProjectionConfig, error) {
 	pattern := filepath.Join(dir, "servers", "*.proj.yaml")
 	paths, err := filepath.Glob(pattern)
 	if err != nil {
