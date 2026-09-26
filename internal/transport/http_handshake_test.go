@@ -463,6 +463,21 @@ func (s *strictInitServer) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func TestHandshake_initializedNotificationBothUnauthorized_isReauthRequired(t *testing.T) {
+	srv := newHandshakeServerWithNotif(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
+	conn := mustHTTPConn(t, HTTPConnectionConfig{
+		URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization",
+	})
+
+	_, err := conn.Call(t.Context(), "ping", nil)
+	if !errors.Is(err, ErrReauthRequired) {
+		t.Errorf("expected ErrReauthRequired when notifications/initialized always 401, got: %v", err)
+	}
+}
+
 func TestHandshake_sessionIDClearedAfterNotificationFailure(t *testing.T) {
 	srv, fake := newStrictInitServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})

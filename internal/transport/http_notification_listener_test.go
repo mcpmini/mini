@@ -157,8 +157,8 @@ func TestNotificationListener_survivesReauthRequired(t *testing.T) {
 		t.Fatalf("handshake failed: %v", err)
 	}
 
-	advanceListenerTimer(t, clk, time.Second)
-	advanceListenerTimer(t, clk, 2*time.Second)
+	advanceListenerTimer(t, clk, maxListenerBackoff)
+	advanceListenerTimer(t, clk, maxListenerBackoff)
 
 	select {
 	case <-streamOpened:
@@ -215,18 +215,20 @@ func TestListenerDelay_failuresDoubleToCapAndSuccessResets(t *testing.T) {
 		name    string
 		status  int
 		backoff time.Duration
+		reauth  bool
 		delay   time.Duration
 		next    time.Duration
 	}{
-		{"first failure", 503, time.Second, time.Second, 2 * time.Second},
-		{"doubling", 503, 2 * time.Second, 2 * time.Second, 4 * time.Second},
-		{"cap at 60s from 40s", 503, 40 * time.Second, 40 * time.Second, 60 * time.Second},
-		{"stays at 60s cap", 503, 60 * time.Second, 60 * time.Second, 60 * time.Second},
-		{"reset after 200", 200, 30 * time.Second, time.Second, time.Second},
+		{"first failure", 503, time.Second, false, time.Second, 2 * time.Second},
+		{"doubling", 503, 2 * time.Second, false, 2 * time.Second, 4 * time.Second},
+		{"cap at 60s from 40s", 503, 40 * time.Second, false, 40 * time.Second, 60 * time.Second},
+		{"stays at 60s cap", 503, 60 * time.Second, false, 60 * time.Second, 60 * time.Second},
+		{"reset after 200", 200, 30 * time.Second, false, time.Second, time.Second},
+		{"reauth uses max backoff", 0, time.Second, true, maxListenerBackoff, maxListenerBackoff},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			delay, next := listenerDelay(tc.status, tc.backoff)
+			delay, next := listenerDelay(tc.status, tc.backoff, tc.reauth)
 			if delay != tc.delay {
 				t.Errorf("delay = %v, want %v", delay, tc.delay)
 			}
@@ -287,6 +289,37 @@ func TestNotificationListener_survivesClientTimeout(t *testing.T) {
 	case <-notifReceived:
 	case <-time.After(5 * time.Second):
 		t.Fatal("notification not received; stream may have been killed by the regular client timeout")
+	}
+}
+
+func TestNotificationListener_reauthWaitsMaxListenerBackoff(t *testing.T) {
+	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
+	clk := clock.NewFake()
+
+	srv := newNotifListenerServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	})
+	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+		URL: srv.URL, Clock: clk, AuthProvider: provider, AuthHeaderName: "Authorization",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+
+	// First pass: 401 → refresh(1) → replay 401 → reauth, waits maxListenerBackoff.
+	// Advance half of maxListenerBackoff; timer must not have fired.
+	advanceListenerTimer(t, clk, maxListenerBackoff/2)
+	if got := provider.refreshCount(); got != 1 {
+		t.Errorf("after half maxListenerBackoff: refreshes = %d, want 1 (no retry yet)", got)
+	}
+
+	// Advance the remaining half; timer fires and second pass runs.
+	advanceListenerTimerAndAwaitNextSleep(t, clk, maxListenerBackoff/2)
+	if got := provider.refreshCount(); got != 2 {
+		t.Errorf("after full maxListenerBackoff: refreshes = %d, want 2", got)
 	}
 }
 

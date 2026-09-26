@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -140,7 +141,7 @@ func (c *HTTPConnection) listenForNotifications() {
 		if err != nil {
 			slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 		}
-		delay, next := listenerDelay(status, backoff)
+		delay, next := listenerDelay(status, backoff, errors.Is(err, ErrReauthRequired))
 		backoff = next
 		if !c.sleepCtx(c.listenerCtx, delay) {
 			return
@@ -148,9 +149,12 @@ func (c *HTTPConnection) listenForNotifications() {
 	}
 }
 
-func listenerDelay(status int, backoff time.Duration) (delay, next time.Duration) {
+func listenerDelay(status int, backoff time.Duration, reauth bool) (delay, next time.Duration) {
 	if status == http.StatusOK {
 		return time.Second, time.Second
+	}
+	if reauth {
+		return maxListenerBackoff, maxListenerBackoff
 	}
 	return backoff, min(backoff*2, maxListenerBackoff)
 }
