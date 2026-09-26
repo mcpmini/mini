@@ -55,25 +55,34 @@ func (p *tokenProvider) refreshLocked() error {
 	if p.token.RefreshToken == "" {
 		return p.remedyError(fmt.Errorf("no refresh token stored for %s", p.serverName))
 	}
+	if p.token.RefreshToken == p.deadRefreshToken {
+		return p.deadRefreshErr
+	}
 	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
 	if err := p.maybeDiscoverAndApplyLocked(refreshCtx); err != nil {
 		return err
 	}
-	// oauth2's reuseTokenSource returns any token still valid by the system clock without refreshing it.
-	stale := *p.token
-	stale.AccessToken = ""
-	refreshed, err := auth.Refresh(refreshCtx, p.ac, &stale)
+	refreshed, err := p.exchangeRefreshTokenLocked(refreshCtx)
 	if err != nil {
 		if refreshNeedsReauth(err) {
-			return p.remedyError(fmt.Errorf("refresh token: %w", err))
+			p.deadRefreshToken = p.token.RefreshToken
+			p.deadRefreshErr = p.remedyError(fmt.Errorf("refresh token: %w", err))
+			return p.deadRefreshErr
 		}
 		return fmt.Errorf("%s: token refresh failed (transient): %w", p.serverName, err)
 	}
 	p.token = refreshed
-	p.proactiveRetryAt = time.Time{}
+	p.resetRefreshStateLocked()
 	p.persistRefreshedToken(refreshed)
 	return nil
+}
+
+func (p *tokenProvider) exchangeRefreshTokenLocked(ctx context.Context) (*oauth2.Token, error) {
+	// oauth2's reuseTokenSource returns any token still valid by the system clock without refreshing it.
+	stale := *p.token
+	stale.AccessToken = ""
+	return auth.Refresh(ctx, p.ac, &stale)
 }
 
 func (p *tokenProvider) persistRefreshedToken(refreshed *oauth2.Token) {
@@ -90,7 +99,7 @@ func (p *tokenProvider) reloadPersistedTokenLocked() {
 		return
 	}
 	p.token = t
-	p.proactiveRetryAt = time.Time{}
+	p.resetRefreshStateLocked()
 	p.persistedToken = cloneToken(t)
 	p.rehydrateAuthConfigLocked()
 }
@@ -125,4 +134,10 @@ func cloneToken(t *oauth2.Token) *oauth2.Token {
 	}
 	clone := *t
 	return &clone
+}
+
+func (p *tokenProvider) resetRefreshStateLocked() {
+	p.proactiveRetryAt = time.Time{}
+	p.deadRefreshToken = ""
+	p.deadRefreshErr = nil
 }
