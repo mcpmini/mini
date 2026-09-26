@@ -2,10 +2,20 @@
 
 package server
 
-import "context"
+import (
+	"context"
+
+	"github.com/mcpmini/mini/internal/config"
+)
 
 func (s *Server) RunProjectionReload(ctx context.Context, afterCheck func()) {
 	s.runProjectionReload(ctx, afterCheck)
 }
+
+func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionConfig) {
+	s.replaceProjections(p)
+}
+
+func (s *Server) WaitForStartupConnects() { s.connectWg.Wait() }
 
 const ProjectionPollInterval = projectionPollInterval

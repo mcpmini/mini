@@ -21,10 +21,15 @@ import (
 
 func newConnectTestServer(t *testing.T) *server.Server {
 	t.Helper()
+	return newConnectTestServerLogging(t, slog.NewTextHandler(io.Discard, nil))
+}
+
+func newConnectTestServerLogging(t *testing.T, logs slog.Handler, opts ...server.ServerOption) *server.Server {
+	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowPrivateURLs = true
-	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(logs), opts...)
 }
 
 func mustCloseWithin(t *testing.T, srv *server.Server, d time.Duration) {
@@ -54,9 +59,7 @@ func hungHTTPServer(t *testing.T) *httptest.Server {
 }
 
 func TestConnectUpstreams_NotifiesLiveSessionOfLateUpstream(t *testing.T) {
-	mcp := newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
+	mcp := newMCPTestServer(t, pingTools)
 	srv := newConnectTestServer(t)
 	defer srv.Close()
 
@@ -119,9 +122,7 @@ func TestConnectUpstreams_CloseUnblocksHungConnectWithNoTimeout(t *testing.T) {
 }
 
 func TestConnectUpstreams_NormalConnectUnaffectedByFix(t *testing.T) {
-	mcp := newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
+	mcp := newMCPTestServer(t, pingTools)
 	srv := newConnectTestServer(t)
 
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: mcp.URL, HandshakeTimeout: "0"}
@@ -131,9 +132,7 @@ func TestConnectUpstreams_NormalConnectUnaffectedByFix(t *testing.T) {
 }
 
 func TestConnectUpstreams_FastUpstreamRegistersWhileHungStillConnecting(t *testing.T) {
-	fast := newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
+	fast := newMCPTestServer(t, pingTools)
 	hung := hungHTTPServer(t)
 	srv := newConnectTestServer(t)
 	defer srv.Close()
@@ -150,9 +149,7 @@ func TestConnectUpstreams_FastUpstreamRegistersWhileHungStillConnecting(t *testi
 }
 
 func TestConnectUpstreams_SkipsDisabledServer(t *testing.T) {
-	mcp := newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
+	mcp := newMCPTestServer(t, pingTools)
 	srv := newConnectTestServer(t)
 	defer srv.Close()
 
@@ -170,9 +167,7 @@ func TestConnectUpstreams_SkipsDisabledServer(t *testing.T) {
 
 func TestConnectUpstreams_SecondCallCancelsPriorWorkers(t *testing.T) {
 	hung := hungHTTPServer(t)
-	fast := newMCPTestServer(t, []map[string]any{
-		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
-	})
+	fast := newMCPTestServer(t, pingTools)
 	srv := newConnectTestServer(t)
 
 	// First call: hung upstream that will never resolve
