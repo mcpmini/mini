@@ -11,6 +11,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 )
 
 // simulateBrowser parses the auth URL that PKCEFlow generates, then fires the
@@ -32,7 +33,7 @@ func simulateBrowser(authURL string) error {
 }
 
 func TestPKCEFlowEndToEnd(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	token := pkceToken(t, mock)
 	if token.AccessToken != "test-access-token" {
 		t.Errorf("access token = %q, want %q", token.AccessToken, "test-access-token")
@@ -45,11 +46,11 @@ func TestPKCEFlowEndToEnd(t *testing.T) {
 	}
 }
 
-func pkceToken(t *testing.T, mock *mockAuthServer) *oauth2.Token {
+func pkceToken(t *testing.T, mock *authtest.TokenServer) *oauth2.Token {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	token, err := auth.PKCEFlow(ctx, mock.authConfig(), simulateBrowser)
+	token, err := auth.PKCEFlow(ctx, mock.AuthConfig(), simulateBrowser)
 	if err != nil {
 		t.Fatalf("PKCEFlow: %v", err)
 	}
@@ -57,7 +58,7 @@ func pkceToken(t *testing.T, mock *mockAuthServer) *oauth2.Token {
 }
 
 func TestTokenSaveLoad(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	token := pkceToken(t, mock)
 	if err := auth.Save(dir, "myserver", token); err != nil {
@@ -76,12 +77,12 @@ func TestTokenSaveLoad(t *testing.T) {
 }
 
 func TestStartPKCEFlow_nonBlocking(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
 	if err != nil {
 		t.Fatalf("StartPKCEFlow: %v", err)
 	}
@@ -100,11 +101,11 @@ func TestStartPKCEFlow_nonBlocking(t *testing.T) {
 }
 
 func TestStartPKCEFlow_redirectURIUsesLocalhost(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
 	if err != nil {
 		t.Fatalf("StartPKCEFlow: %v", err)
 	}
@@ -133,7 +134,7 @@ func TestIsNotFound(t *testing.T) {
 }
 
 func TestSave_tokenFilePermissions(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	if err := auth.Save(dir, "myserver", pkceToken(t, mock)); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -231,11 +232,11 @@ func TestLoad_invalidServerName(t *testing.T) {
 // returns 400 when the auth code is absent, rather than writing "Authorized"
 // and sending an empty string to the token exchange.
 func TestPKCECallback_emptyCodeRejected(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
 	if err != nil {
 		t.Fatalf("StartPKCEFlow: %v", err)
 	}
@@ -269,11 +270,11 @@ func TestPKCECallback_emptyCodeRejected(t *testing.T) {
 // TestPKCECallback_stateMismatchRejected verifies that a mismatched state
 // returns 400 and does not deliver a code.
 func TestPKCECallback_stateMismatchRejected(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
 	if err != nil {
 		t.Fatalf("StartPKCEFlow: %v", err)
 	}
@@ -304,11 +305,11 @@ func TestPKCECallback_stateMismatchRejected(t *testing.T) {
 // dynamic client registration matches the path used in the actual PKCE flow.
 // This guards against the two sides diverging (e.g. /callback vs /cb).
 func TestLoopbackCallbackPath_consistent(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.authConfig())
+	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
 	if err != nil {
 		t.Fatalf("StartPKCEFlow: %v", err)
 	}
@@ -329,8 +330,8 @@ func TestLoopbackCallbackPath_consistent(t *testing.T) {
 }
 
 func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
-	mock := newMockAuthServer(t)
-	ac := mock.authConfig()
+	mock := authtest.NewTokenServer(t)
+	ac := mock.AuthConfig()
 	ac.ResourceURL = "https://resource.example.com"
 	ac.ExtraAuthParams = map[string]string{
 		"resource": "https://evil.example.com", // must not win
@@ -360,7 +361,7 @@ func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
 }
 
 func TestTokenValidAfterForcedExpiry(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	if err := auth.Save(dir, "srv", pkceToken(t, mock)); err != nil {
 		t.Fatalf("Save: %v", err)

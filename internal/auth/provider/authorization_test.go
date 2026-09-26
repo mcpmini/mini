@@ -1,6 +1,6 @@
 //go:build test
 
-package auth_test
+package provider_test
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -55,7 +57,7 @@ func TestAuthorization_nearExpiry_refreshesBeforeTokenExpires(t *testing.T) {
 			if got != tc.wantHeader {
 				t.Errorf("header = %q, want %q", got, tc.wantHeader)
 			}
-			if hits := f.endpoint.hits.Load(); hits != tc.wantRefresh {
+			if hits := f.endpoint.Hits.Load(); hits != tc.wantRefresh {
 				t.Errorf("token endpoint hits = %d, want %d", hits, tc.wantRefresh)
 			}
 		})
@@ -92,7 +94,7 @@ func TestAuthorization_concurrentCallers_refreshOnce(t *testing.T) {
 			t.Fatalf("concurrent Authorization: %v", err)
 		}
 	}
-	if hits := f.endpoint.hits.Load(); hits != 1 {
+	if hits := f.endpoint.Hits.Load(); hits != 1 {
 		t.Errorf("token endpoint hits = %d, want exactly 1", hits)
 	}
 }
@@ -103,7 +105,7 @@ func TestAuthorization_proactiveRefreshFails_servesStillValidToken(t *testing.T)
 		f := newProviderFixture(t, providerSetup{
 			Token: storedToken(epoch.Add(60 * time.Second)),
 		})
-		f.endpoint.status.Store(http.StatusServiceUnavailable)
+		f.endpoint.Status.Store(http.StatusServiceUnavailable)
 
 		got, err := f.provider.Authorization(context.Background())
 		if err != nil {
@@ -117,7 +119,7 @@ func TestAuthorization_proactiveRefreshFails_servesStillValidToken(t *testing.T)
 		f := newProviderFixture(t, providerSetup{
 			Token: storedToken(epoch.Add(-time.Second)),
 		})
-		f.endpoint.status.Store(http.StatusServiceUnavailable)
+		f.endpoint.Status.Store(http.StatusServiceUnavailable)
 
 		_, err := f.provider.Authorization(context.Background())
 		if err == nil {
@@ -129,7 +131,7 @@ func TestAuthorization_proactiveRefreshFails_servesStillValidToken(t *testing.T)
 func TestAuthorization_proactiveRefreshFails_backsOffUntilRetryTime(t *testing.T) {
 	epoch := clock.NewFake().Now()
 	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(time.Minute))})
-	f.endpoint.status.Store(http.StatusServiceUnavailable)
+	f.endpoint.Status.Store(http.StatusServiceUnavailable)
 
 	authorize := func() {
 		t.Helper()
@@ -139,31 +141,31 @@ func TestAuthorization_proactiveRefreshFails_backsOffUntilRetryTime(t *testing.T
 		}
 	}
 	authorize()
-	hitsAfterFirst := f.endpoint.hits.Load()
+	hitsAfterFirst := f.endpoint.Hits.Load()
 	authorize()
 	authorize()
-	if hits := f.endpoint.hits.Load(); hits != hitsAfterFirst {
+	if hits := f.endpoint.Hits.Load(); hits != hitsAfterFirst {
 		t.Errorf("endpoint hits = %d, want %d: calls inside the backoff must not retry", hits, hitsAfterFirst)
 	}
 
-	f.clock.Advance(auth.ProactiveRefreshBackoff + time.Second)
+	f.clock.Advance(provider.ProactiveRefreshBackoff + time.Second)
 	authorize()
-	if hits := f.endpoint.hits.Load(); hits != 2*hitsAfterFirst {
+	if hits := f.endpoint.Hits.Load(); hits != 2*hitsAfterFirst {
 		t.Errorf("endpoint hits = %d, want %d once the backoff elapses", hits, 2*hitsAfterFirst)
 	}
 }
 
 func TestAuthorization_tokenExpiresDuringBackoff_refreshesImmediately(t *testing.T) {
 	epoch := clock.NewFake().Now()
-	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(auth.ProactiveRefreshBackoff / 2))})
-	f.endpoint.status.Store(http.StatusServiceUnavailable)
+	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(provider.ProactiveRefreshBackoff / 2))})
+	f.endpoint.Status.Store(http.StatusServiceUnavailable)
 
 	if _, err := f.provider.Authorization(context.Background()); err != nil {
 		t.Fatalf("first call (sets backoff): %v", err)
 	}
 
-	f.endpoint.status.Store(http.StatusOK)
-	f.clock.Advance(auth.ProactiveRefreshBackoff * 3 / 4)
+	f.endpoint.Status.Store(http.StatusOK)
+	f.clock.Advance(provider.ProactiveRefreshBackoff * 3 / 4)
 
 	got, err := f.provider.Authorization(context.Background())
 	if err != nil {
@@ -177,14 +179,14 @@ func TestAuthorization_tokenExpiresDuringBackoff_refreshesImmediately(t *testing
 func TestRefreshAuthorization_duringBackoff_stillRefreshesOn401(t *testing.T) {
 	epoch := clock.NewFake().Now()
 	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(time.Minute))})
-	f.endpoint.status.Store(http.StatusServiceUnavailable)
+	f.endpoint.Status.Store(http.StatusServiceUnavailable)
 
 	if _, err := f.provider.Authorization(context.Background()); err != nil {
 		t.Fatalf("first call (sets backoff): %v", err)
 	}
-	hitsAfterBackoffSet := f.endpoint.hits.Load()
+	hitsAfterBackoffSet := f.endpoint.Hits.Load()
 
-	f.endpoint.status.Store(http.StatusOK)
+	f.endpoint.Status.Store(http.StatusOK)
 	got, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if err != nil {
 		t.Fatalf("RefreshAuthorization during backoff: %v", err)
@@ -192,7 +194,7 @@ func TestRefreshAuthorization_duringBackoff_stillRefreshesOn401(t *testing.T) {
 	if got != "Bearer new-access" {
 		t.Errorf("RefreshAuthorization = %q, want Bearer new-access", got)
 	}
-	if hits := f.endpoint.hits.Load(); hits <= hitsAfterBackoffSet {
+	if hits := f.endpoint.Hits.Load(); hits <= hitsAfterBackoffSet {
 		t.Errorf("endpoint hits = %d, want > %d: 401 path must bypass backoff", hits, hitsAfterBackoffSet)
 	}
 }
@@ -200,16 +202,16 @@ func TestRefreshAuthorization_duringBackoff_stillRefreshesOn401(t *testing.T) {
 func TestAuthorization_newerStoredTokenDuringBackoff_refreshesWithoutWaiting(t *testing.T) {
 	epoch := clock.NewFake().Now()
 	f := newProviderFixture(t, providerSetup{Token: storedToken(epoch.Add(time.Minute))})
-	f.endpoint.status.Store(http.StatusServiceUnavailable)
+	f.endpoint.Status.Store(http.StatusServiceUnavailable)
 
 	if _, err := f.provider.Authorization(context.Background()); err != nil {
 		t.Fatalf("first call (sets backoff): %v", err)
 	}
-	hitsAfterFail := f.endpoint.hits.Load()
+	hitsAfterFail := f.endpoint.Hits.Load()
 	if _, err := f.provider.Authorization(context.Background()); err != nil {
 		t.Fatalf("second call (backoff active): %v", err)
 	}
-	if hits := f.endpoint.hits.Load(); hits != hitsAfterFail {
+	if hits := f.endpoint.Hits.Load(); hits != hitsAfterFail {
 		t.Errorf("endpoint hits = %d, want %d: backoff should suppress retry", hits, hitsAfterFail)
 	}
 
@@ -217,7 +219,7 @@ func TestAuthorization_newerStoredTokenDuringBackoff_refreshesWithoutWaiting(t *
 	if err := auth.Save(f.dir, "srv", newer); err != nil {
 		t.Fatal(err)
 	}
-	f.endpoint.status.Store(http.StatusOK)
+	f.endpoint.Status.Store(http.StatusOK)
 	got, err := f.provider.Authorization(context.Background())
 	if err != nil {
 		t.Fatalf("Authorization after token adoption: %v", err)
@@ -225,7 +227,7 @@ func TestAuthorization_newerStoredTokenDuringBackoff_refreshesWithoutWaiting(t *
 	if got != "Bearer new-access" {
 		t.Errorf("Authorization = %q, want Bearer new-access (backoff cleared by adoption)", got)
 	}
-	if hits := f.endpoint.hits.Load(); hits <= hitsAfterFail {
+	if hits := f.endpoint.Hits.Load(); hits <= hitsAfterFail {
 		t.Errorf("endpoint hits = %d, want > %d: should refresh after backoff cleared", hits, hitsAfterFail)
 	}
 }
@@ -237,9 +239,9 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 	if err := auth.Save(dir, "srv", t1); err != nil {
 		t.Fatal(err)
 	}
-	endpoint := newMockAuthServer(t)
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL + "/token"},
+	endpoint := authtest.NewTokenServer(t)
+	p, err := provider.New(provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.Srv.URL + "/token"},
 		ConfigDir:  dir, ServerName: "srv", Clock: clk,
 	})
 	if err != nil {
@@ -260,41 +262,41 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 	if got != "Bearer t2-access" {
 		t.Errorf("Authorization = %q, want Bearer t2-access (disk reload)", got)
 	}
-	if endpoint.hits.Load() != 0 {
-		t.Errorf("endpoint hits = %d, want 0 (disk reload avoids refresh)", endpoint.hits.Load())
+	if endpoint.Hits.Load() != 0 {
+		t.Errorf("endpoint hits = %d, want 0 (disk reload avoids refresh)", endpoint.Hits.Load())
 	}
 }
 
 func TestAuthorization_browserLoginDuringBackoff_refreshesWithoutWaiting(t *testing.T) {
 	epoch := clock.NewFake().Now()
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	if err := auth.Save(dir, "srv", storedToken(epoch.Add(time.Minute))); err != nil {
 		t.Fatal(err)
 	}
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: mock.srv.URL + "/token"},
+	params := provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: mock.Srv.URL + "/token"},
 		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFakeAt(epoch),
 	}
-	registry := auth.NewProviderRegistry()
-	provider, err := registry.GetOrCreate(params)
+	registry := provider.NewRegistry()
+	prov, err := registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mock.status.Store(http.StatusServiceUnavailable)
-	if _, err := provider.Authorization(context.Background()); err != nil {
+	mock.Status.Store(http.StatusServiceUnavailable)
+	if _, err := prov.Authorization(context.Background()); err != nil {
 		t.Fatalf("first call (sets backoff): %v", err)
 	}
 	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh", Expiry: epoch.Add(time.Minute)}
 	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
 		t.Fatal(err)
 	}
-	mock.status.Store(http.StatusOK)
-	hitsBefore := mock.hits.Load()
-	if _, err := provider.Authorization(context.Background()); err != nil {
+	mock.Status.Store(http.StatusOK)
+	hitsBefore := mock.Hits.Load()
+	if _, err := prov.Authorization(context.Background()); err != nil {
 		t.Fatalf("Authorization after browser login: %v", err)
 	}
-	if mock.hits.Load() == hitsBefore {
+	if mock.Hits.Load() == hitsBefore {
 		t.Error("browser login must clear the backoff so an in-window token refreshes")
 	}
 }

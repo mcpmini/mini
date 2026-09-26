@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 )
 
 func goodASMeta(host string) map[string]any {
@@ -160,7 +161,7 @@ func TestDiscover_asMetaNotFound(t *testing.T) {
 }
 
 func TestDiscover_prmPathSpecific503RootValid(t *testing.T) {
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},

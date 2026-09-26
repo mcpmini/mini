@@ -5,7 +5,7 @@ package invoke
 import (
 	"testing"
 
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
@@ -13,7 +13,7 @@ import (
 
 func TestAttachAuthProvider_sameServer_sharesProvider(t *testing.T) {
 	dir := t.TempDir()
-	registry := auth.NewProviderRegistry()
+	registry := provider.NewRegistry()
 	sc := config.ServerConfig{
 		Name: "srv",
 		URL:  "https://mcp.example.com",
@@ -35,7 +35,7 @@ func TestAttachAuthProvider_sameServer_sharesProvider(t *testing.T) {
 
 func TestAttachAuthProvider_customHeader_setsHeaderName(t *testing.T) {
 	dir := t.TempDir()
-	registry := auth.NewProviderRegistry()
+	registry := provider.NewRegistry()
 	sc := config.ServerConfig{
 		Name: "srv",
 		URL:  "https://mcp.example.com",
@@ -69,7 +69,7 @@ func TestAttachAuthProvider_staticAuthConfigured_leavesStaticHeader(t *testing.T
 				Name: "srv", URL: "https://mcp.example.com", Headers: tc.headers,
 				Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: tc.token},
 			}
-			p := DialParams{Server: sc, ConfigDir: t.TempDir(), Clock: clock.NewFake(), ProviderRegistry: auth.NewProviderRegistry()}
+			p := DialParams{Server: sc, ConfigDir: t.TempDir(), Clock: clock.NewFake(), ProviderRegistry: provider.NewRegistry()}
 			cfg := transport.HTTPConnectionConfig{Headers: MergedHeaders(sc)}
 			if err := attachAuthProvider(&cfg, p); err != nil {
 				t.Fatal(err)

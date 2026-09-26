@@ -1,4 +1,4 @@
-package auth
+package provider
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
+
+	"github.com/mcpmini/mini/internal/auth"
 )
 
 const refreshBeforeExpiry = 5 * time.Minute
@@ -61,7 +63,7 @@ func (p *tokenProvider) refreshLocked() error {
 	// oauth2's reuseTokenSource returns any token still valid by the system clock without refreshing it.
 	stale := *p.token
 	stale.AccessToken = ""
-	refreshed, err := Refresh(refreshCtx, p.ac, &stale)
+	refreshed, err := auth.Refresh(refreshCtx, p.ac, &stale)
 	if err != nil {
 		if refreshNeedsReauth(err) {
 			return p.remedyError(fmt.Errorf("refresh token: %w", err))
@@ -75,7 +77,7 @@ func (p *tokenProvider) refreshLocked() error {
 }
 
 func (p *tokenProvider) persistRefreshedToken(refreshed *oauth2.Token) {
-	if err := Save(p.configDir, p.serverName, refreshed); err != nil {
+	if err := auth.Save(p.configDir, p.serverName, refreshed); err != nil {
 		slog.Warn("persist refreshed oauth token failed; using refreshed token in memory", "server", p.serverName, "err", err)
 		return
 	}
@@ -83,7 +85,7 @@ func (p *tokenProvider) persistRefreshedToken(refreshed *oauth2.Token) {
 }
 
 func (p *tokenProvider) reloadPersistedTokenLocked() {
-	t, err := Load(p.configDir, p.serverName)
+	t, err := auth.Load(p.configDir, p.serverName)
 	if err != nil || samePersistedToken(t, p.persistedToken) {
 		return
 	}
@@ -94,7 +96,7 @@ func (p *tokenProvider) reloadPersistedTokenLocked() {
 }
 
 func (p *tokenProvider) rehydrateAuthConfigLocked() {
-	params := ProviderParams{
+	params := Params{
 		AuthConfig: p.preHydrationAuthConfig,
 		ConfigDir:  p.configDir,
 		ServerName: p.serverName,

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -71,7 +72,7 @@ func hydrateFromSavedRegistration(t *testing.T, reg *auth.Registration, tokenURL
 	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
 		t.Fatalf("SaveRegistration: %v", err)
 	}
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
@@ -277,7 +278,7 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 			if err := auth.SaveRegistration(dir, "srv", tc.reg); err != nil {
 				t.Fatal(err)
 			}
-			asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
 				"code_challenge_methods_supported": []string{"S256"},
@@ -311,7 +312,7 @@ func TestResolveEndpoints_freshDCRCapturesAndPersistsConfidentialClient(t *testi
 	}))
 	defer regSrv.Close()
 
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"registration_endpoint":            regSrv.URL + "/register",
@@ -347,7 +348,7 @@ func freshDCRToExchange(t *testing.T, dcrResponse map[string]any) (*config.AuthC
 	}))
 	t.Cleanup(regSrv.Close)
 
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"registration_endpoint":            regSrv.URL + "/register",

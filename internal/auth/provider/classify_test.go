@@ -1,6 +1,6 @@
 //go:build test
 
-package auth_test
+package provider_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"golang.org/x/oauth2"
 )
 
@@ -43,7 +43,7 @@ func TestRefreshNeedsReauth_errorKinds_classifyReauthVsTransient(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := auth.RefreshNeedsReauth(tc.err)
+			got := provider.RefreshNeedsReauth(tc.err)
 			if got != tc.wantReauth {
 				t.Errorf("RefreshNeedsReauth(%v) = %v, want %v", tc.err, got, tc.wantReauth)
 			}

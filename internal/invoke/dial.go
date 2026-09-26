@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
@@ -20,7 +20,7 @@ type DialParams struct {
 	Server           config.ServerConfig
 	Clock            clock.Clock
 	ConfigDir        string
-	ProviderRegistry *auth.ProviderRegistry
+	ProviderRegistry *provider.Registry
 }
 
 func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
@@ -54,7 +54,7 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 	if hasHeader(cfg.Headers, p.Server.Auth.HeaderName()) {
 		return nil
 	}
-	params := auth.ProviderParams{
+	params := provider.Params{
 		AuthConfig: p.Server.Auth,
 		ConfigDir:  p.ConfigDir,
 		ServerName: p.Server.Name,

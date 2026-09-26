@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -40,7 +41,7 @@ func TestApplyBearerToken(t *testing.T) {
 }
 
 func TestResolveEndpoints_cimd(t *testing.T) {
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                "https://as.example.com/authorize",
 		"token_endpoint":                        "https://as.example.com/token",
 		"client_id_metadata_document_supported": true,
@@ -124,7 +125,7 @@ func configuredOAuthServer(serverURL string) *config.ServerConfig {
 func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 	// Servers like Linear advertise CIMD but reject arbitrary metadata URLs.
 	// A cached DCR client_id must win over CIMD to avoid re-fetching and failing.
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                "https://as.example.com/authorize",
 		"token_endpoint":                        "https://as.example.com/token",
 		"client_id_metadata_document_supported": true,
@@ -158,7 +159,7 @@ func TestResolveEndpoints_dcrBeforeCIMD(t *testing.T) {
 	}))
 	defer regSrv.Close()
 
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                "https://as.example.com/authorize",
 		"token_endpoint":                        "https://as.example.com/token",
 		"client_id_metadata_document_supported": true,
@@ -210,7 +211,7 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", tc.meta)
+			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", tc.meta)
 			defer asSrv.Close()
 
 			sc := &config.ServerConfig{
@@ -229,7 +230,7 @@ func TestResolveEndpoints_rejectsLoopbackDiscoveredEndpoints(t *testing.T) {
 }
 
 func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
@@ -264,7 +265,7 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 }
 
 func TestResolveEndpoints_userScopesNotOverwritten(t *testing.T) {
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},

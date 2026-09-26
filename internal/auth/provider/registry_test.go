@@ -1,6 +1,6 @@
 //go:build test
 
-package auth_test
+package provider_test
 
 import (
 	"context"
@@ -11,13 +11,15 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
 
 func TestProviderRegistry_sameServer_returnsSameProvider(t *testing.T) {
-	registry := auth.NewProviderRegistry()
-	params := auth.ProviderParams{
+	registry := provider.NewRegistry()
+	params := provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
 		ConfigDir:  t.TempDir(),
 		ServerName: "srv",
@@ -37,14 +39,14 @@ func TestProviderRegistry_sameServer_returnsSameProvider(t *testing.T) {
 }
 
 func TestProviderRegistry_changedServerURL_rejectedAndOriginalKept(t *testing.T) {
-	params := auth.ProviderParams{
+	params := provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
 		ConfigDir:  t.TempDir(),
 		ServerName: "srv",
 		ServerURL:  "https://mcp.example.com/mcp",
 		Clock:      clock.NewFake(),
 	}
-	registry := auth.NewProviderRegistry()
+	registry := provider.NewRegistry()
 	original, err := registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
@@ -66,13 +68,13 @@ func TestProviderRegistry_changedServerURL_rejectedAndOriginalKept(t *testing.T)
 func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 	cases := []struct {
 		name    string
-		initial func(t *testing.T, dir string) auth.ProviderParams
-		between func(t *testing.T, dir string, reg *auth.ProviderRegistry)
-		redial  func(t *testing.T, dir string) auth.ProviderParams
+		initial func(t *testing.T, dir string) provider.Params
+		between func(t *testing.T, dir string, reg *provider.Registry)
+		redial  func(t *testing.T, dir string) provider.Params
 	}{
 		{
 			name: "expired_client_secret",
-			initial: func(t *testing.T, dir string) auth.ProviderParams {
+			initial: func(t *testing.T, dir string) provider.Params {
 				if err := auth.SaveRegistration(dir, "srv", &auth.Registration{
 					ClientID: "dcr-client", ClientSecret: "secret",
 					TokenEndpointAuthMethod: "client_secret_basic",
@@ -80,14 +82,14 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 				}); err != nil {
 					t.Fatal(err)
 				}
-				return auth.ProviderParams{
+				return provider.Params{
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
 					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
 					Clock: clock.NewFakeAt(time.Unix(0, 0)),
 				}
 			},
-			redial: func(t *testing.T, dir string) auth.ProviderParams {
-				return auth.ProviderParams{
+			redial: func(t *testing.T, dir string) provider.Params {
+				return provider.Params{
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
 					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
 					Clock: clock.NewFakeAt(time.Unix(200, 0)),
@@ -96,20 +98,20 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 		},
 		{
 			name: "external_auth_updates_registration",
-			initial: func(t *testing.T, dir string) auth.ProviderParams {
-				return auth.ProviderParams{
+			initial: func(t *testing.T, dir string) provider.Params {
+				return provider.Params{
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
 					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
 					Clock: clock.NewFake(),
 				}
 			},
-			between: func(t *testing.T, dir string, reg *auth.ProviderRegistry) {
+			between: func(t *testing.T, dir string, reg *provider.Registry) {
 				if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-new"}); err != nil {
 					t.Fatal(err)
 				}
 			},
-			redial: func(t *testing.T, dir string) auth.ProviderParams {
-				return auth.ProviderParams{
+			redial: func(t *testing.T, dir string) provider.Params {
+				return provider.Params{
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
 					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
 					Clock: clock.NewFake(),
@@ -118,15 +120,15 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 		},
 		{
 			name: "redial with undiscovered config after commit",
-			initial: func(t *testing.T, dir string) auth.ProviderParams {
-				return auth.ProviderParams{
+			initial: func(t *testing.T, dir string) provider.Params {
+				return provider.Params{
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
 					Clock: clock.NewFake(),
 				}
 			},
-			between: func(t *testing.T, dir string, reg *auth.ProviderRegistry) {
-				committed := auth.ProviderParams{
+			between: func(t *testing.T, dir string, reg *provider.Registry) {
+				committed := provider.Params{
 					AuthConfig: &config.AuthConfig{
 						Type: config.AuthTypeOAuth2, ClientID: "discovered",
 						AuthURL: "https://as.example.com/auth", TokenURL: "https://as.example.com/token",
@@ -139,8 +141,8 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 					t.Fatalf("CommitAuthorizedToken: %v", err)
 				}
 			},
-			redial: func(t *testing.T, dir string) auth.ProviderParams {
-				return auth.ProviderParams{
+			redial: func(t *testing.T, dir string) provider.Params {
+				return provider.Params{
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
 					Clock: clock.NewFake(),
@@ -152,7 +154,7 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			reg := auth.NewProviderRegistry()
+			reg := provider.NewRegistry()
 			first, err := reg.GetOrCreate(tc.initial(t, dir))
 			if err != nil {
 				t.Fatal(err)
@@ -179,18 +181,18 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	endpoint := newMockAuthServer(t)
+	endpoint := authtest.NewTokenServer(t)
 	received, release := gateNextTokenRequest(endpoint)
 	t.Cleanup(func() { release() })
 
-	params := auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: endpoint.srv.URL + "/token"},
+	params := provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: endpoint.Srv.URL + "/token"},
 		ConfigDir:  dir,
 		ServerName: "srv",
 		Clock:      clock.NewFakeAt(epoch),
 	}
-	registry := auth.NewProviderRegistry()
-	provider, err := registry.GetOrCreate(params)
+	registry := provider.NewRegistry()
+	prov, err := registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +201,7 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		provider.Authorization(context.Background()) //nolint:errcheck
+		prov.Authorization(context.Background()) //nolint:errcheck
 	}()
 	select {
 	case <-received:

@@ -1,6 +1,6 @@
 //go:build test
 
-package auth_test
+package provider_test
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"golang.org/x/oauth2"
@@ -23,21 +25,21 @@ func TestNewProvider_storedRegistration_usesConfidentialClientCredentials(t *tes
 	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
 		t.Fatal(err)
 	}
-	endpoint := newMockAuthServer(t)
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL + "/token"}
+	endpoint := authtest.NewTokenServer(t)
+	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"}
 	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
+	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
-	endpoint.mu.Lock()
-	basicUser := endpoint.lastBasicAuth
-	endpoint.mu.Unlock()
+	endpoint.Mu.Lock()
+	basicUser := endpoint.LastBasicAuth
+	endpoint.Mu.Unlock()
 	if basicUser != "dcr-client" {
 		t.Errorf("refresh must authenticate with the registered confidential client, basic user = %q", basicUser)
 	}
@@ -50,28 +52,28 @@ func TestNewProvider_inconsistentRegistration_returnsError(t *testing.T) {
 		t.Fatal(err)
 	}
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
-	if _, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err == nil {
+	if _, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err == nil {
 		t.Fatal("expected construction error for inconsistent registration when no explicit client_id")
 	}
 }
 
 func TestNewProvider_noRegistration_actsAsPublicClient(t *testing.T) {
 	dir := t.TempDir()
-	endpoint := newMockAuthServer(t)
+	endpoint := authtest.NewTokenServer(t)
 	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL + "/token"}
-	p, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
+	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"}
+	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
 	if err != nil {
 		t.Fatalf("missing registration must not error: %v", err)
 	}
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
-	endpoint.mu.Lock()
-	basicUser, clientID := endpoint.lastBasicAuth, endpoint.lastClientID
-	endpoint.mu.Unlock()
+	endpoint.Mu.Lock()
+	basicUser, clientID := endpoint.LastBasicAuth, endpoint.LastClientID
+	endpoint.Mu.Unlock()
 	if basicUser != "" || clientID != "" {
 		t.Errorf("public client must not send credentials: basic=%q client_id=%q", basicUser, clientID)
 	}
@@ -98,7 +100,7 @@ func TestNewProvider_concurrentConstruction_leavesSharedConfigUnchanged(t *testi
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			p, err := auth.NewProvider(auth.ProviderParams{
+			p, err := provider.New(provider.Params{
 				AuthConfig: shared, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake(),
 			})
 			if err != nil {
@@ -122,22 +124,22 @@ func TestNewProvider_explicitClientID_ignoresStoredRegistration(t *testing.T) {
 	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
 		t.Fatal(err)
 	}
-	endpoint := newMockAuthServer(t)
-	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "manual-id", TokenURL: endpoint.srv.URL + "/token"}
+	endpoint := authtest.NewTokenServer(t)
+	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "manual-id", TokenURL: endpoint.Srv.URL + "/token"}
 	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
+	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
 	}
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("RefreshAuthorization: %v", err)
 	}
-	endpoint.mu.Lock()
-	gotClientID := endpoint.lastClientID
-	gotBasicUser := endpoint.lastBasicAuth
-	endpoint.mu.Unlock()
+	endpoint.Mu.Lock()
+	gotClientID := endpoint.LastClientID
+	gotBasicUser := endpoint.LastBasicAuth
+	endpoint.Mu.Unlock()
 	usedManualID := gotClientID == "manual-id" || gotBasicUser == "manual-id"
 	if !usedManualID {
 		t.Errorf("manual-id must be used; form client_id=%q, basic user=%q", gotClientID, gotBasicUser)
@@ -148,7 +150,7 @@ func TestNewProvider_explicitClientID_ignoresStoredRegistration(t *testing.T) {
 }
 
 func TestNewProvider_nilAuthConfig_returnsError(t *testing.T) {
-	_, err := auth.NewProvider(auth.ProviderParams{
+	_, err := provider.New(provider.Params{
 		ConfigDir: t.TempDir(), ServerName: "srv", Clock: clock.NewFake(),
 	})
 	if err == nil {
@@ -162,7 +164,7 @@ func TestNewProvider_nilClock_worksWithStoredToken(t *testing.T) {
 	if err := auth.Save(dir, "srv", tok); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{
+	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv",
 	})

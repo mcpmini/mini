@@ -11,24 +11,11 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 )
 
-// serveASMeta returns an httptest.Server that serves OAuth AS metadata JSON at
-// the given path and 404 for everything else.
-func serveASMeta(t *testing.T, path string, meta map[string]any) *httptest.Server {
-	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != path {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(meta) //nolint:errcheck
-	}))
-}
-
 func TestDiscover_rootASMeta(t *testing.T) {
-	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	srv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"registration_endpoint":            "https://as.example.com/register",
@@ -86,7 +73,7 @@ func TestDiscover_pathInsertedASMeta(t *testing.T) {
 
 func TestDiscover_wwwAuthenticateHeader(t *testing.T) {
 	// Two-server setup: MCP server returns 401 pointing to a separate AS
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
@@ -123,7 +110,7 @@ func TestDiscover_wwwAuthenticateHeader(t *testing.T) {
 }
 
 func TestDiscover_cimdSupported(t *testing.T) {
-	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	srv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":                "https://as.example.com/authorize",
 		"token_endpoint":                        "https://as.example.com/token",
 		"client_id_metadata_document_supported": true,
@@ -161,7 +148,7 @@ func TestDiscover_404_fallsBack(t *testing.T) {
 }
 
 func TestDiscover_noPKCE_returnsError(t *testing.T) {
-	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	srv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint": "https://as.example.com/authorize",
 		"token_endpoint":         "https://as.example.com/token",
 	})
@@ -186,7 +173,7 @@ func TestDiscover_serverError_returnsError(t *testing.T) {
 }
 
 func TestDiscover_noPathURL(t *testing.T) {
-	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	srv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
@@ -260,7 +247,7 @@ func TestDiscover_cancelledContext_returnsError(t *testing.T) {
 }
 
 func TestDiscover_scopesFromPRM(t *testing.T) {
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
@@ -292,7 +279,7 @@ func TestDiscover_scopesFromPRM(t *testing.T) {
 }
 
 func TestDiscover_wwwAuthScopePreservedWhenPRMHasNoAS(t *testing.T) {
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
@@ -329,7 +316,7 @@ func TestDiscover_wwwAuthScopePreservedWhenPRMHasNoAS(t *testing.T) {
 func TestDiscover_scopesFromPRMProbePath(t *testing.T) {
 	// When the server returns no 401, discovery falls straight to the PRM probe path.
 	// Scopes from that PRM's scopes_supported must propagate to meta.Scopes.
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},
@@ -360,7 +347,7 @@ func TestDiscover_scopesFromPRMProbePath(t *testing.T) {
 }
 
 func TestDiscover_noScopesWhenASMetaOnly(t *testing.T) {
-	srv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	srv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"scopes_supported":                 []string{"openid", "profile", "email"},
@@ -378,7 +365,7 @@ func TestDiscover_noScopesWhenASMetaOnly(t *testing.T) {
 }
 
 func TestDiscover_scopeFromWWWAuthenticateBeforesPRM(t *testing.T) {
-	asSrv := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
 		"code_challenge_methods_supported": []string{"S256"},

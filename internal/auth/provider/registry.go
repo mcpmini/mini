@@ -1,4 +1,4 @@
-package auth
+package provider
 
 import (
 	"context"
@@ -7,10 +7,11 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-type ProviderRegistry struct {
+type Registry struct {
 	mu     sync.Mutex
 	m      map[string]*registryEntry
 	ctx    context.Context
@@ -28,18 +29,18 @@ type providerIdentity struct {
 	serverURL  string
 }
 
-func NewProviderRegistry() *ProviderRegistry {
+func NewRegistry() *Registry {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &ProviderRegistry{m: make(map[string]*registryEntry), ctx: ctx, cancel: cancel}
+	return &Registry{m: make(map[string]*registryEntry), ctx: ctx, cancel: cancel}
 }
 
-func (c *ProviderRegistry) Close() {
+func (c *Registry) Close() {
 	c.cancel()
 }
 
 // GetOrCreate returns the provider registered for params.ServerName, creating it on first use.
 // It errors if ConfigDir or ServerURL changed; AuthConfig drift is ignored because the provider owns it.
-func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.AuthorizationProvider, error) {
+func (c *Registry) GetOrCreate(params Params) (transport.AuthorizationProvider, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if e, ok := c.m[params.ServerName]; ok {
@@ -58,7 +59,7 @@ func (c *ProviderRegistry) GetOrCreate(params ProviderParams) (transport.Authori
 }
 
 // CommitAuthorizedToken saves tok and, if the server already has a provider, installs it there.
-func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oauth2.Token) error {
+func (c *Registry) CommitAuthorizedToken(params Params, tok *oauth2.Token) error {
 	_, hydrated, err := resolveAuthConfigs(params)
 	if err != nil {
 		return err
@@ -71,15 +72,15 @@ func (c *ProviderRegistry) CommitAuthorizedToken(params ProviderParams, tok *oau
 	}
 	c.mu.Unlock()
 	if e == nil {
-		return Save(params.ConfigDir, params.ServerName, tok)
+		return auth.Save(params.ConfigDir, params.ServerName, tok)
 	}
 	return e.provider.commitBrowserToken(hydrated, tok)
 }
 
-func identityFrom(p ProviderParams) providerIdentity {
+func identityFrom(p Params) providerIdentity {
 	return providerIdentity{serverName: p.ServerName, configDir: p.ConfigDir, serverURL: p.ServerURL}
 }
 
-func (a providerIdentity) matches(p ProviderParams) bool {
+func (a providerIdentity) matches(p Params) bool {
 	return a.serverName == p.ServerName && a.configDir == p.ConfigDir && a.serverURL == p.ServerURL
 }

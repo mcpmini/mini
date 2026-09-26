@@ -1,6 +1,6 @@
 //go:build test
 
-package auth_test
+package provider_test
 
 import (
 	"context"
@@ -12,6 +12,8 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -19,8 +21,8 @@ import (
 type commitFixture struct {
 	dir      string
 	clock    *clock.Fake
-	registry *auth.ProviderRegistry
-	endpoint *mockAuthServer
+	registry *provider.Registry
+	endpoint *authtest.TokenServer
 }
 
 func newCommitFixture(t *testing.T) *commitFixture {
@@ -28,21 +30,21 @@ func newCommitFixture(t *testing.T) *commitFixture {
 	return &commitFixture{
 		dir:      t.TempDir(),
 		clock:    clock.NewFake(),
-		registry: auth.NewProviderRegistry(),
-		endpoint: newMockAuthServer(t),
+		registry: provider.NewRegistry(),
+		endpoint: authtest.NewTokenServer(t),
 	}
 }
 
-func (f *commitFixture) params() auth.ProviderParams {
+func (f *commitFixture) params() provider.Params {
 	return f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"})
 }
 
-func (f *commitFixture) paramsFor(ac *config.AuthConfig) auth.ProviderParams {
+func (f *commitFixture) paramsFor(ac *config.AuthConfig) provider.Params {
 	cfg := *ac
 	if cfg.TokenURL == "" {
-		cfg.TokenURL = f.endpoint.srv.URL + "/token"
+		cfg.TokenURL = f.endpoint.Srv.URL + "/token"
 	}
-	return auth.ProviderParams{
+	return provider.Params{
 		AuthConfig: &cfg,
 		ConfigDir:  f.dir,
 		ServerName: "srv",
@@ -91,19 +93,19 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 	if err := auth.Save(f.dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	f.endpoint.accessToken = "refresh-result"
+	f.endpoint.AccessToken = "refresh-result"
 	rawReceived, rawRelease := gateNextTokenRequest(f.endpoint)
 	var once sync.Once
 	release := func() { once.Do(rawRelease) }
 	t.Cleanup(release)
 
-	provider, err := f.registry.GetOrCreate(params)
+	prov, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
 	}
 	refreshDone := make(chan error, 1)
 	go func() {
-		_, err := provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
+		_, err := prov.RefreshAuthorization(context.Background(), "Bearer stored-access")
 		refreshDone <- err
 	}()
 	select {
@@ -124,7 +126,7 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 	if err := <-commitDone; err != nil {
 		t.Fatalf("commit: %v", err)
 	}
-	got, err := provider.Authorization(context.Background())
+	got, err := prov.Authorization(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,9 +160,9 @@ func TestCommitAuthorizedToken_withStoredRegistration_usesItsClientCredentials(t
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("initial refresh: %v", err)
 	}
-	f.endpoint.mu.Lock()
-	gotV1 := f.endpoint.lastBasicAuth
-	f.endpoint.mu.Unlock()
+	f.endpoint.Mu.Lock()
+	gotV1 := f.endpoint.LastBasicAuth
+	f.endpoint.Mu.Unlock()
 	if gotV1 != "dcr-v1" {
 		t.Errorf("initial basic auth user = %q, want dcr-v1", gotV1)
 	}
@@ -175,9 +177,9 @@ func TestCommitAuthorizedToken_withStoredRegistration_usesItsClientCredentials(t
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access"); err != nil {
 		t.Fatalf("post-commit refresh: %v", err)
 	}
-	f.endpoint.mu.Lock()
-	gotV2 := f.endpoint.lastBasicAuth
-	f.endpoint.mu.Unlock()
+	f.endpoint.Mu.Lock()
+	gotV2 := f.endpoint.LastBasicAuth
+	f.endpoint.Mu.Unlock()
 	if gotV2 != "dcr-v2" {
 		t.Errorf("post-commit basic auth user = %q, want dcr-v2 (commit must hydrate new registration)", gotV2)
 	}
@@ -215,7 +217,7 @@ func TestCommitAuthorizedToken_saveFails_providerUnchanged(t *testing.T) {
 
 func TestCommitAuthorizedToken_differentServerURL_rejected(t *testing.T) {
 	f := newCommitFixture(t)
-	params := auth.ProviderParams{
+	params := provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
 		ConfigDir:  f.dir, ServerName: "srv", ServerURL: "https://a.example.com/mcp", Clock: f.clock,
 	}
@@ -256,11 +258,11 @@ func TestCommitAuthorizedToken_noProviderYet_savesTokenForLaterDial(t *testing.T
 	if err := f.registry.CommitAuthorizedToken(params, browserTok); err != nil {
 		t.Fatalf("CommitAuthorizedToken without provider: %v", err)
 	}
-	provider, err := f.registry.GetOrCreate(params)
+	prov, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
-	got, err := provider.Authorization(context.Background())
+	got, err := prov.Authorization(context.Background())
 	if err != nil {
 		t.Fatalf("Authorization: %v", err)
 	}
@@ -314,9 +316,9 @@ func TestCommitAuthorizedToken_externalReregistration_usesNewRegistrationCredent
 		t.Fatalf("Authorization after expiry: %v", err)
 	}
 
-	f.endpoint.mu.Lock()
-	clientIDForm, clientIDBasic := f.endpoint.lastClientID, f.endpoint.lastBasicAuth
-	f.endpoint.mu.Unlock()
+	f.endpoint.Mu.Lock()
+	clientIDForm, clientIDBasic := f.endpoint.LastClientID, f.endpoint.LastBasicAuth
+	f.endpoint.Mu.Unlock()
 	if clientIDForm != "dcr-v2" && clientIDBasic != "dcr-v2" {
 		t.Errorf("client_id = form:%q basic:%q, want dcr-v2 (preHydrationAuthConfig must not carry a resolved ClientID)", clientIDForm, clientIDBasic)
 	}

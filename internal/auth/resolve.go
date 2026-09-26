@@ -43,12 +43,12 @@ func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEnd
 	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
 		return nil
 	}
-	meta, err := discoverAndApply(ctx, sc.URL, a)
+	meta, err := DiscoverAndApply(ctx, sc.URL, a)
 	if err != nil {
 		return err
 	}
 	if a.ClientID == "" {
-		return resolveClientID(ctx, clientRegParams{
+		return resolveClientID(ctx, ClientRegParams{
 			ConfigDir:  p.ConfigDir,
 			ServerName: p.ServerName,
 			AuthConfig: a,
@@ -59,7 +59,8 @@ func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEnd
 	return nil
 }
 
-func discoverAndApply(ctx context.Context, serverURL string, a *config.AuthConfig) (*ServerMeta, error) {
+// DiscoverAndApply fills in a's missing OAuth endpoints from the server's discovery metadata.
+func DiscoverAndApply(ctx context.Context, serverURL string, a *config.AuthConfig) (*ServerMeta, error) {
 	if a.AuthURL != "" && a.TokenURL != "" && a.ClientID != "" {
 		return nil, nil
 	}
@@ -101,7 +102,7 @@ func validateEndpointURL(endpoint, name string) error {
 	return nil
 }
 
-type clientRegParams struct {
+type ClientRegParams struct {
 	ConfigDir  string
 	ServerName string
 	AuthConfig *config.AuthConfig
@@ -109,8 +110,8 @@ type clientRegParams struct {
 	Now        time.Time
 }
 
-func resolveClientID(ctx context.Context, p clientRegParams) error {
-	found, err := applyExistingClientReg(p)
+func resolveClientID(ctx context.Context, p ClientRegParams) error {
+	found, err := ApplyExistingClientReg(p)
 	if err != nil || found {
 		return err
 	}
@@ -127,7 +128,7 @@ func resolveClientID(ctx context.Context, p clientRegParams) error {
 	return dynamicRegister(ctx, p)
 }
 
-func dynamicRegister(ctx context.Context, p clientRegParams) error {
+func dynamicRegister(ctx context.Context, p ClientRegParams) error {
 	a, meta := p.AuthConfig, p.Meta
 	regURL := ""
 	if meta != nil {
@@ -152,7 +153,8 @@ func dynamicRegister(ctx context.Context, p clientRegParams) error {
 	return SaveRegistration(p.ConfigDir, p.ServerName, reg)
 }
 
-func applyExistingClientReg(p clientRegParams) (bool, error) {
+// ApplyExistingClientReg reports whether a stored client registration was found and applied to p.AuthConfig.
+func ApplyExistingClientReg(p ClientRegParams) (bool, error) {
 	reg, err := LoadRegistration(p.ConfigDir, p.ServerName)
 	if err == nil {
 		return true, applyRegistration(p.AuthConfig, reg, p.Now)
