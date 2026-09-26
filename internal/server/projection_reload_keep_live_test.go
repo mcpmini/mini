@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 func TestProjectionReload_serverYAMLDeletedByRm_connectedUpstreamStaysProjected(t *testing.T) {
@@ -42,4 +44,23 @@ func TestProjectionReload_neverConnectedServerRemoved_leavesNoProjectionEntry(t 
 	if projections, _ := status["projections"].(map[string]any); projections["svc"] != nil {
 		t.Errorf("expected no projections for a removed server that never connected, got %v", projections)
 	}
+}
+
+func TestProjectionReload_runtimeServerReusingConfiguredName_takesConfigProjections(t *testing.T) {
+	dir := evalTempDir(t)
+	writeReloadFile(t, filepath.Join(dir, "servers", "svc.yaml"), "name: svc\ncommand: echo\n")
+	e := buildReloadEnv(t, dir)
+	fake := fakeConn("getData")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`)
+	runtimeProj := map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"a"}}}
+	if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc", RuntimeAdded: true, Projections: runtimeProj}, fake); err != nil {
+		t.Fatal(err)
+	}
+	e.startPoller()
+	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
+
+	writeReloadFile(t, filepath.Join(dir, "servers", "other.yaml"), "name: other\ncommand: echo\n")
+	e.advanceTick()
+
+	e.assertDataKeys([]string{"a", "b", "secret"}, nil)
 }
