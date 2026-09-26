@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -166,5 +168,31 @@ func TestStdinPipe_sourceError(t *testing.T) {
 	_, err := io.ReadAll(r)
 	if !errors.Is(err, errStdinSentinel) {
 		t.Errorf("expected %v, got %v", errStdinSentinel, err)
+	}
+}
+
+func TestShutdownContext_firstSignal_releasesSignalHandling(t *testing.T) {
+	var deliverSignal context.CancelFunc
+	released := make(chan struct{})
+	var once sync.Once
+	fakeNotify := func(parent context.Context, _ ...os.Signal) (context.Context, context.CancelFunc) {
+		ctx, cancel := context.WithCancel(parent)
+		deliverSignal = cancel
+		return ctx, func() { once.Do(func() { close(released) }); cancel() }
+	}
+	ctx, _ := shutdownContext(fakeNotify)
+	select {
+	case <-released:
+		t.Fatal("signal handling released before any signal")
+	default:
+	}
+	deliverSignal()
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first signal did not release signal handling, so a second signal would be swallowed")
+	}
+	if ctx.Err() == nil {
+		t.Error("first signal must cancel the serve context")
 	}
 }
