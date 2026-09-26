@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -238,4 +240,124 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 	}
 
 	mustCloseWithin(t, srv, 5*time.Second)
+}
+
+func newConnectTestServerWithClock(t *testing.T, fakeClock *clock.Fake) *server.Server {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	cfg.DangerousAllowPrivateURLs = true
+	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock))
+}
+
+// responseCleanupTimer is the 1 timer the response store always registers on start.
+const responseCleanupTimer = 1
+
+func TestConnectUpstreamAsync_transientFailure_retriesAndRegisters(t *testing.T) {
+	firstDone := make(chan struct{}, 1)
+	var hits atomic.Int32
+	tools := []map[string]any{
+		{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
+	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if hits.Add(1) == 1 {
+			// 500 is not retried by the transport layer (only 429/503 are).
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			select {
+			case firstDone <- struct{}{}:
+			default:
+			}
+			return
+		}
+		fakeMCPHandle(w, r, tools)
+	}))
+	t.Cleanup(ts.Close)
+
+	fakeClock := clock.NewFake()
+	srv := newConnectTestServerWithClock(t, fakeClock)
+	defer srv.Close()
+
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
+		{Name: "svc", Transport: "http", URL: ts.URL},
+	})
+
+	// Wait for the first attempt to fail before blocking on the backoff timer.
+	// Without this, ConnectUpstreams returns immediately (goroutine not yet
+	// scheduled) and BlockUntilContext races against timer registration.
+	select {
+	case <-firstDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first attempt not made within 5s")
+	}
+
+	// Wait for the backoff sleep timer (plus the response store cleanup timer).
+	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
+		t.Fatalf("waiting for retry backoff timer: %v", err)
+	}
+	fakeClock.Advance(time.Second)
+
+	eventually(t, func() bool { return srv.ToolCount("svc") > 0 })
+}
+
+func TestConnectUpstreamAsync_reauthFailure_stopsRetrying(t *testing.T) {
+	reached := make(chan struct{}, 1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case reached <- struct{}{}:
+		default:
+		}
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(ts.Close)
+
+	fakeClock := clock.NewFake()
+	srv := newConnectTestServerWithClock(t, fakeClock)
+	defer srv.Close()
+
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
+		{Name: "svc", Transport: "http", URL: ts.URL},
+	})
+
+	// Wait for the initial dial attempt to land.
+	select {
+	case <-reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("initial dial not reached within 5s")
+	}
+
+	// Give the goroutine time to process the error. It returns without sleeping
+	// (ErrReauthRequired stops the loop), so no backoff timer should be created.
+	time.Sleep(100 * time.Millisecond)
+
+	// Assert no backoff timer was registered. If one were, this would return nil.
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	if err := fakeClock.BlockUntilContext(ctx, responseCleanupTimer+1); err == nil {
+		t.Error("backoff timer should not be registered for reauth error")
+	}
+}
+
+func TestConnectUpstreamAsync_closeDuringRetry_returnsPromptly(t *testing.T) {
+	var hits atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(ts.Close)
+
+	fakeClock := clock.NewFake()
+	srv := newConnectTestServerWithClock(t, fakeClock)
+
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
+		{Name: "svc", Transport: "http", URL: ts.URL},
+	})
+
+	// Wait for the retry backoff timer to be registered.
+	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
+		t.Fatalf("waiting for retry backoff timer: %v", err)
+	}
+
+	// Close cancels the connect context, which must unblock sleepBackoffCtx.
+	mustCloseWithin(t, srv, 3*time.Second)
 }

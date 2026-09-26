@@ -31,11 +31,22 @@ func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerCo
 
 func (s *Server) connectUpstreamAsync(ctx context.Context, sc config.ServerConfig) {
 	defer s.connectWg.Done()
-	if err := s.AddUpstream(ctx, sc); err != nil {
+	backoff := time.Second
+	for {
+		err := s.AddUpstream(ctx, sc)
+		if err == nil {
+			s.notifyAllSessions()
+			return
+		}
 		s.logger.Warn("upstream unavailable at startup", "server", sc.Name, "err", err)
-		return
+		if errors.Is(err, transport.ErrReauthRequired) {
+			return
+		}
+		if !s.sleepBackoffCtx(ctx, backoff) {
+			return
+		}
+		backoff = nextBackoff(backoff)
 	}
-	s.notifyAllSessions()
 }
 
 func (s *Server) AddUpstream(ctx context.Context, sc config.ServerConfig) error {
@@ -75,7 +86,7 @@ func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig
 }
 
 func oauthRequiredError(serverName string, connErr error) error {
-	return fmt.Errorf("%s requires OAuth authorization (discovered via 401); run `mini auth %s`: %w", serverName, serverName, connErr)
+	return fmt.Errorf("%s requires OAuth authorization; run `mini auth %s`: %w: %w", serverName, serverName, transport.ErrReauthRequired, connErr)
 }
 
 func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {
