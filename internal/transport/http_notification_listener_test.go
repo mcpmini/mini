@@ -214,21 +214,21 @@ func TestListenerDelay_failuresDoubleToCapAndSuccessResets(t *testing.T) {
 	cases := []struct {
 		name    string
 		status  int
+		err     error
 		backoff time.Duration
-		reauth  bool
 		delay   time.Duration
 		next    time.Duration
 	}{
-		{"first failure", 503, time.Second, false, time.Second, 2 * time.Second},
-		{"doubling", 503, 2 * time.Second, false, 2 * time.Second, 4 * time.Second},
-		{"cap at 60s from 40s", 503, 40 * time.Second, false, 40 * time.Second, 60 * time.Second},
-		{"stays at 60s cap", 503, 60 * time.Second, false, 60 * time.Second, 60 * time.Second},
-		{"reset after 200", 200, 30 * time.Second, false, time.Second, time.Second},
-		{"reauth uses max backoff", 0, time.Second, true, maxListenerBackoff, maxListenerBackoff},
+		{"first failure", 503, nil, time.Second, time.Second, 2 * time.Second},
+		{"doubling", 503, nil, 2 * time.Second, 2 * time.Second, 4 * time.Second},
+		{"cap at 60s from 40s", 503, nil, 40 * time.Second, 40 * time.Second, 60 * time.Second},
+		{"stays at 60s cap", 503, nil, 60 * time.Second, 60 * time.Second, 60 * time.Second},
+		{"reset after 200", 200, nil, 30 * time.Second, time.Second, time.Second},
+		{"reauth uses max backoff", 0, ErrReauthRequired, time.Second, maxListenerBackoff, maxListenerBackoff},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			delay, next := listenerDelay(tc.status, tc.backoff, tc.reauth)
+			delay, next := listenerDelay(tc.status, tc.err, tc.backoff)
 			if delay != tc.delay {
 				t.Errorf("delay = %v, want %v", delay, tc.delay)
 			}
@@ -294,9 +294,11 @@ func TestNotificationListener_survivesClientTimeout(t *testing.T) {
 
 func TestNotificationListener_reauthWaitsMaxListenerBackoff(t *testing.T) {
 	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
+	var getCount atomic.Int32
 	clk := clock.NewFake()
 
 	srv := newNotifListenerServer(t, func(w http.ResponseWriter, r *http.Request) {
+		getCount.Add(1)
 		w.WriteHeader(http.StatusUnauthorized)
 	})
 	conn, err := NewHTTPConnection(HTTPConnectionConfig{
@@ -309,17 +311,68 @@ func TestNotificationListener_reauthWaitsMaxListenerBackoff(t *testing.T) {
 
 	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
 
-	// First pass: 401 → refresh(1) → replay 401 → reauth, waits maxListenerBackoff.
-	// Advance half of maxListenerBackoff; timer must not have fired.
-	advanceListenerTimer(t, clk, maxListenerBackoff/2)
+	advanceListenerTimerAndAwaitNextSleep(t, clk, maxListenerBackoff)
 	if got := provider.refreshCount(); got != 1 {
-		t.Errorf("after half maxListenerBackoff: refreshes = %d, want 1 (no retry yet)", got)
+		t.Errorf("after 2nd timer: refreshes = %d, want 1 (token unchanged, skip pass)", got)
+	}
+	if got := getCount.Load(); got != 2 {
+		t.Errorf("after 2nd timer: upstream GETs = %d, want 2 (no new GETs on skip pass)", got)
 	}
 
-	// Advance the remaining half; timer fires and second pass runs.
-	advanceListenerTimerAndAwaitNextSleep(t, clk, maxListenerBackoff/2)
-	if got := provider.refreshCount(); got != 2 {
-		t.Errorf("after full maxListenerBackoff: refreshes = %d, want 2", got)
+	advanceListenerTimerAndAwaitNextSleep(t, clk, maxListenerBackoff)
+	if got := provider.refreshCount(); got != 1 {
+		t.Errorf("after 3rd timer: refreshes = %d, want 1 (still skipping)", got)
+	}
+	if got := getCount.Load(); got != 2 {
+		t.Errorf("after 3rd timer: upstream GETs = %d, want 2", got)
+	}
+}
+
+func TestNotificationListener_reauthRecovery_newCredentialProceedsNormally(t *testing.T) {
+	streamOpened := make(chan struct{}, 1)
+	clk := clock.NewFake()
+
+	srv := newNotifListenerServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer auth-after-mini" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		select {
+		case streamOpened <- struct{}{}:
+		default:
+		}
+		<-r.Context().Done()
+	})
+
+	provider := &fakeAuthProvider{current: "Bearer tok", next: "Bearer tok2"}
+	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+		URL: srv.URL, Clock: clk, AuthProvider: provider, AuthHeaderName: "Authorization",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+
+	conn.Call(t.Context(), "ping", nil) //nolint:errcheck
+
+	// Wait for first pass (ErrReauthRequired) to sleep; token is now "Bearer tok2".
+	advanceListenerTimerAndAwaitNextSleep(t, clk, maxListenerBackoff)
+
+	// Simulate mini auth: update the credential before the next pass fires.
+	provider.setCurrentAuth("Bearer auth-after-mini")
+
+	// Advance the skip-iteration timer; listener sees new credential, clears the
+	// guard, and issues a real GET with the updated token.
+	advanceListenerTimer(t, clk, maxListenerBackoff)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	select {
+	case <-streamOpened:
+	case <-ctx.Done():
+		t.Fatal("stream never opened after credential was renewed")
 	}
 }
 

@@ -76,6 +76,12 @@ func (f *fakeAuthProvider) authorizationCalls() int {
 	return f.authCalls
 }
 
+func (f *fakeAuthProvider) setCurrentAuth(v string) {
+	f.mu.Lock()
+	f.current = v
+	f.mu.Unlock()
+}
+
 func newAuthReplayConn(t *testing.T, handler http.HandlerFunc) (*HTTPConnection, *fakeAuthProvider) {
 	t.Helper()
 	srv := httptest.NewServer(handler)

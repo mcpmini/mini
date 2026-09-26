@@ -130,18 +130,23 @@ const maxListenerBackoff = 60 * time.Second
 func (c *HTTPConnection) listenForNotifications() {
 	defer c.listenerWG.Done()
 	backoff := time.Second
+	rejectedAuth := ""
 	for c.listenerCtx.Err() == nil {
-		status, err := c.consumeNotificationStream()
-		if status == http.StatusMethodNotAllowed || c.listenerCtx.Err() != nil {
-			if status == http.StatusMethodNotAllowed {
-				slog.Warn("upstream advertises tool changes but rejects notification stream", "url", c.url)
+		if rejectedAuth != "" && c.currentAuth(c.listenerCtx) == rejectedAuth {
+			if !c.sleepCtx(c.listenerCtx, maxListenerBackoff) {
+				return
 			}
+			continue
+		}
+		status, err := c.consumeNotificationStream()
+		if c.shouldStopListener(status) {
 			return
 		}
 		if err != nil {
 			slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 		}
-		delay, next := listenerDelay(status, backoff, errors.Is(err, ErrReauthRequired))
+		rejectedAuth = c.rejectedAuthAfter(c.listenerCtx, err)
+		delay, next := listenerDelay(status, err, backoff)
 		backoff = next
 		if !c.sleepCtx(c.listenerCtx, delay) {
 			return
@@ -149,11 +154,35 @@ func (c *HTTPConnection) listenForNotifications() {
 	}
 }
 
-func listenerDelay(status int, backoff time.Duration, reauth bool) (delay, next time.Duration) {
+func (c *HTTPConnection) currentAuth(ctx context.Context) string {
+	if c.authProvider == nil {
+		return ""
+	}
+	v, _ := c.authProvider.Authorization(ctx)
+	return v
+}
+
+func (c *HTTPConnection) shouldStopListener(status int) bool {
+	if status == http.StatusMethodNotAllowed {
+		slog.Warn("upstream advertises tool changes but rejects notification stream", "url", c.url)
+		return true
+	}
+	return c.listenerCtx.Err() != nil
+}
+
+func (c *HTTPConnection) rejectedAuthAfter(ctx context.Context, err error) string {
+	// A failed refresh never sent a credential, so only an upstream 401 marks the current one rejected.
+	if errors.Is(err, ErrReauthRequired) && isUnauthorized(err) {
+		return c.currentAuth(ctx)
+	}
+	return ""
+}
+
+func listenerDelay(status int, err error, backoff time.Duration) (delay, next time.Duration) {
 	if status == http.StatusOK {
 		return time.Second, time.Second
 	}
-	if reauth {
+	if errors.Is(err, ErrReauthRequired) {
 		return maxListenerBackoff, maxListenerBackoff
 	}
 	return backoff, min(backoff*2, maxListenerBackoff)
