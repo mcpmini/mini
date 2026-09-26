@@ -55,17 +55,18 @@ func (p *tokenProvider) refreshLocked() error {
 	if p.token.RefreshToken == "" {
 		return p.remedyError(fmt.Errorf("no refresh token stored for %s", p.serverName))
 	}
+	if p.deadRefreshToken != "" && p.token.RefreshToken == p.deadRefreshToken {
+		return p.remedyError(fmt.Errorf("refresh token rejected for %s", p.serverName))
+	}
 	refreshCtx, cancel := context.WithTimeout(p.lifetime, refreshTimeout)
 	defer cancel()
 	if err := p.maybeDiscoverAndApplyLocked(refreshCtx); err != nil {
 		return err
 	}
-	// oauth2's reuseTokenSource returns any token still valid by the system clock without refreshing it.
-	stale := *p.token
-	stale.AccessToken = ""
-	refreshed, err := auth.Refresh(refreshCtx, p.ac, &stale)
+	refreshed, err := p.exchangeRefreshTokenLocked(refreshCtx)
 	if err != nil {
 		if refreshNeedsReauth(err) {
+			p.deadRefreshToken = p.token.RefreshToken
 			return p.remedyError(fmt.Errorf("refresh token: %w", err))
 		}
 		return fmt.Errorf("%s: token refresh failed (transient): %w", p.serverName, err)
@@ -74,6 +75,13 @@ func (p *tokenProvider) refreshLocked() error {
 	p.proactiveRetryAt = time.Time{}
 	p.persistRefreshedToken(refreshed)
 	return nil
+}
+
+func (p *tokenProvider) exchangeRefreshTokenLocked(ctx context.Context) (*oauth2.Token, error) {
+	// oauth2's reuseTokenSource returns any token still valid by the system clock without refreshing it.
+	stale := *p.token
+	stale.AccessToken = ""
+	return auth.Refresh(ctx, p.ac, &stale)
 }
 
 func (p *tokenProvider) persistRefreshedToken(refreshed *oauth2.Token) {

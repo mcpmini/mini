@@ -27,6 +27,7 @@ type tokenProvider struct {
 	token            *oauth2.Token
 	persistedToken   *oauth2.Token
 	proactiveRetryAt time.Time
+	deadRefreshToken string
 }
 
 func New(p Params) (transport.AuthorizationProvider, error) {
