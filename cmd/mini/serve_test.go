@@ -5,8 +5,10 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -175,16 +177,24 @@ func TestShutdownContext_firstSignal_releasesSignalHandling(t *testing.T) {
 	var deliverSignal context.CancelFunc
 	released := make(chan struct{})
 	var once sync.Once
-	fakeNotify := func(parent context.Context, _ ...os.Signal) (context.Context, context.CancelFunc) {
+	var registered []os.Signal
+	fakeNotify := func(parent context.Context, sigs ...os.Signal) (context.Context, context.CancelFunc) {
+		registered = sigs
 		ctx, cancel := context.WithCancel(parent)
 		deliverSignal = cancel
 		return ctx, func() { once.Do(func() { close(released) }); cancel() }
 	}
 	ctx, _ := shutdownContext(fakeNotify)
+	if !slices.Equal(registered, []os.Signal{syscall.SIGINT, syscall.SIGTERM}) {
+		t.Errorf("registered signals = %v, want SIGINT and SIGTERM", registered)
+	}
 	select {
 	case <-released:
 		t.Fatal("signal handling released before any signal")
 	default:
+	}
+	if ctx.Err() != nil {
+		t.Fatal("serve context cancelled before any signal")
 	}
 	deliverSignal()
 	select {
