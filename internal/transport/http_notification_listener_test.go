@@ -209,3 +209,96 @@ func TestNotificationListener_successResetsBackoffToOne(t *testing.T) {
 		t.Error("listener did not reconnect after 1s; 200 did not reset backoff")
 	}
 }
+
+func TestListenerDelay_failuresDoubleToCapAndSuccessResets(t *testing.T) {
+	cases := []struct {
+		name    string
+		status  int
+		backoff time.Duration
+		delay   time.Duration
+		next    time.Duration
+	}{
+		{"first failure", 503, time.Second, time.Second, 2 * time.Second},
+		{"doubling", 503, 2 * time.Second, 2 * time.Second, 4 * time.Second},
+		{"cap at 60s from 40s", 503, 40 * time.Second, 40 * time.Second, 60 * time.Second},
+		{"stays at 60s cap", 503, 60 * time.Second, 60 * time.Second, 60 * time.Second},
+		{"reset after 200", 200, 30 * time.Second, time.Second, time.Second},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			delay, next := listenerDelay(tc.status, tc.backoff)
+			if delay != tc.delay {
+				t.Errorf("delay = %v, want %v", delay, tc.delay)
+			}
+			if next != tc.next {
+				t.Errorf("next = %v, want %v", next, tc.next)
+			}
+		})
+	}
+}
+
+func TestNotificationListener_survivesClientTimeout(t *testing.T) {
+	notifReceived := make(chan struct{}, 1)
+
+	srv := newNotifListenerServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		// Delay longer than ClientTimeout to verify the stream client has no timeout.
+		select {
+		case <-time.After(250 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
+		fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"%s\"}\n\n", NotificationToolsChanged) //nolint:errcheck
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	})
+
+	clk := clock.NewFake()
+	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+		URL:           srv.URL,
+		Clock:         clk,
+		ClientTimeout: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.SetNotificationHandler(func(n Notification) {
+		if n.Method == NotificationToolsChanged {
+			select {
+			case notifReceived <- struct{}{}:
+			default:
+			}
+		}
+	})
+	t.Cleanup(func() { conn.Close() })
+
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("handshake failed: %v", err)
+	}
+
+	select {
+	case <-notifReceived:
+	case <-time.After(5 * time.Second):
+		t.Fatal("notification not received; stream may have been killed by the regular client timeout")
+	}
+}
+
+func TestNewStreamClient_blockPrivateIPs_sharesSSRFTransport(t *testing.T) {
+	conn, err := NewHTTPConnection(HTTPConnectionConfig{
+		URL:             "http://example.com",
+		Clock:           clock.NewFake(),
+		BlockPrivateIPs: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn.newStreamClient().Transport != conn.client.Transport {
+		t.Error("stream client must share Transport with regular client to preserve SSRF protection")
+	}
+}

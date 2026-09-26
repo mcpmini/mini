@@ -87,7 +87,7 @@ func toolsListChanged(capabilities map[string]any) bool {
 
 func (c *HTTPConnection) sendInitializedNotification(ctx context.Context) error {
 	notif, _ := json.Marshal(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
-	resp, err := c.sendOneWithAuthRetry(ctx, c.buildInitializedNotifRequest(notif))
+	resp, err := c.sendOneWithAuthRetry(ctx, c.client, c.buildInitializedNotifRequest(notif))
 	if err != nil {
 		return fmt.Errorf("notifications/initialized: %w", err)
 	}
@@ -140,26 +140,23 @@ func (c *HTTPConnection) listenForNotifications() {
 		if err != nil {
 			slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 		}
-		if status == http.StatusOK {
-			backoff = time.Second
-		}
-		delay := backoff
-		backoff = nextListenerBackoff(status, backoff)
+		delay, next := listenerDelay(status, backoff)
+		backoff = next
 		if !c.sleepCtx(c.listenerCtx, delay) {
 			return
 		}
 	}
 }
 
-func nextListenerBackoff(status int, current time.Duration) time.Duration {
+func listenerDelay(status int, backoff time.Duration) (delay, next time.Duration) {
 	if status == http.StatusOK {
-		return time.Second
+		return time.Second, time.Second
 	}
-	return min(current*2, maxListenerBackoff)
+	return backoff, min(backoff*2, maxListenerBackoff)
 }
 
 func (c *HTTPConnection) consumeNotificationStream() (int, error) {
-	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.buildStreamRequest)
+	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.newStreamClient(), c.buildStreamRequest)
 	if err != nil {
 		return 0, err
 	}
