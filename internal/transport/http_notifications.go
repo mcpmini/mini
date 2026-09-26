@@ -14,9 +14,6 @@ import (
 )
 
 func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error) {
-	if err := c.ensureInitialized(ctx); err != nil {
-		return nil, err
-	}
 	return paginateToolsList(ctx, c.callToolsPage)
 }
 
@@ -27,6 +24,8 @@ func (c *HTTPConnection) ensureInitialized(ctx context.Context) error {
 		return nil
 	}
 	if err := c.initHandshake(ctx); err != nil {
+		// MCP spec: a new session's InitializeRequest must carry no session ID.
+		c.clearSessionID()
 		return err
 	}
 	c.initialized = true
@@ -70,7 +69,7 @@ func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, 
 		Capabilities:    map[string]any{},
 		ClientInfo:      ClientInfo{Name: "mini", Version: version.Version},
 	})
-	raw, err := c.Call(ctx, "initialize", params)
+	raw, err := c.rpc(ctx, "initialize", params)
 	if err != nil {
 		return InitializeResult{}, err
 	}
@@ -88,19 +87,27 @@ func toolsListChanged(capabilities map[string]any) bool {
 
 func (c *HTTPConnection) sendInitializedNotification(ctx context.Context) error {
 	notif, _ := json.Marshal(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(notif))
+	resp, err := c.sendOneWithAuthRetry(ctx, c.buildInitializedNotifRequest(notif))
 	if err != nil {
 		return fmt.Errorf("notifications/initialized: %w", err)
 	}
-	if _, err := c.setRequestHeaders(ctx, httpReq); err != nil {
-		return fmt.Errorf("notifications/initialized: %w", err)
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("notifications/initialized: status %d: %s", resp.StatusCode, body)
 	}
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("notifications/initialized: %w", err)
-	}
-	resp.Body.Close()
 	return nil
+}
+
+func (c *HTTPConnection) buildInitializedNotifRequest(notif []byte) func(context.Context) (*http.Request, string, error) {
+	return func(ctx context.Context) (*http.Request, string, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(notif))
+		if err != nil {
+			return nil, "", err
+		}
+		sentAuth, err := c.setRequestHeaders(ctx, req)
+		return req, sentAuth, err
+	}
 }
 
 func (c *HTTPConnection) SetNotificationHandler(handler func(Notification)) {
@@ -117,8 +124,11 @@ func (c *HTTPConnection) dispatchNotification(notification Notification) {
 	}
 }
 
+const maxListenerBackoff = 60 * time.Second
+
 func (c *HTTPConnection) listenForNotifications() {
 	defer c.listenerWG.Done()
+	backoff := time.Second
 	for c.listenerCtx.Err() == nil {
 		status, err := c.consumeNotificationStream()
 		if status == http.StatusMethodNotAllowed || c.listenerCtx.Err() != nil {
@@ -130,18 +140,26 @@ func (c *HTTPConnection) listenForNotifications() {
 		if err != nil {
 			slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 		}
-		if !c.sleepCtx(c.listenerCtx, time.Second) {
+		if status == http.StatusOK {
+			backoff = time.Second
+		}
+		delay := backoff
+		backoff = nextListenerBackoff(status, backoff)
+		if !c.sleepCtx(c.listenerCtx, delay) {
 			return
 		}
 	}
 }
 
-func (c *HTTPConnection) consumeNotificationStream() (int, error) {
-	req, err := c.newNotificationStreamRequest()
-	if err != nil {
-		return 0, err
+func nextListenerBackoff(status int, current time.Duration) time.Duration {
+	if status == http.StatusOK {
+		return time.Second
 	}
-	resp, err := c.client.Do(req)
+	return min(current*2, maxListenerBackoff)
+}
+
+func (c *HTTPConnection) consumeNotificationStream() (int, error) {
+	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.buildStreamRequest)
 	if err != nil {
 		return 0, err
 	}
@@ -152,17 +170,18 @@ func (c *HTTPConnection) consumeNotificationStream() (int, error) {
 	return resp.StatusCode, c.scanNotificationStream(resp.Body)
 }
 
-func (c *HTTPConnection) newNotificationStreamRequest() (*http.Request, error) {
-	req, err := http.NewRequestWithContext(c.listenerCtx, http.MethodGet, c.url, nil)
+func (c *HTTPConnection) buildStreamRequest(ctx context.Context) (*http.Request, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	if _, err := c.setRequestHeaders(c.listenerCtx, req); err != nil {
-		return nil, err
+	sentAuth, err := c.setRequestHeaders(ctx, req)
+	if err != nil {
+		return nil, "", err
 	}
 	req.Header.Del("Content-Type")
 	req.Header.Set("Accept", "text/event-stream")
-	return req, nil
+	return req, sentAuth, nil
 }
 
 func (c *HTTPConnection) scanNotificationStream(body io.Reader) error {

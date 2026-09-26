@@ -338,20 +338,19 @@ func startServer(t *testing.T, configDir string) *mcpClient {
 	return c
 }
 
-// waitForUpstreamsSettled polls until the tool catalog stops changing. Upstreams connect
-// in the background (#33): call this before asserting tool presence to avoid racing the
-// connect goroutines.
+// Upstreams connect asynchronously (#33); tool-presence assertions race the connect goroutines without this.
 func waitForUpstreamsSettled(t *testing.T, c *mcpClient) {
 	t.Helper()
-	settleUntilStable(t, func() string { return c.listTools("") })
+	settleUntil(t, func() string { return c.listTools("") }, nil)
 }
 
 func waitForProxyUpstreamsSettled(t *testing.T, c *mcpClient) {
 	t.Helper()
-	settleUntilStable(t, func() string { return string(c.mustCall("tools/list", nil)) })
+	settleUntil(t, func() string { return string(c.mustCall("tools/list", nil)) },
+		func(s string) bool { return strings.Contains(s, "__") })
 }
 
-func settleUntilStable(t *testing.T, snapshot func() string) {
+func settleUntil(t *testing.T, snapshot func() string, ready func(string) bool) {
 	t.Helper()
 	const stableReadsRequired = 3
 	const pollInterval = 30 * time.Millisecond
@@ -361,18 +360,22 @@ func settleUntilStable(t *testing.T, snapshot func() string) {
 	last, stable := "", 0
 	for time.Now().Before(deadline) {
 		cur := snapshot()
-		if cur == last {
-			stable++
-			if stable >= stableReadsRequired {
-				return
+		if ready == nil || ready(cur) {
+			if cur == last {
+				stable++
+				if stable >= stableReadsRequired {
+					return
+				}
+			} else {
+				stable = 1
+				last = cur
 			}
 		} else {
-			stable = 1
-			last = cur
+			last, stable = cur, 0
 		}
 		time.Sleep(pollInterval)
 	}
-	t.Fatal("upstreams did not settle within deadline")
+	t.Fatalf("catalog did not settle within %s; last snapshot: %s", ceiling, last)
 }
 
 func newMCPClient(t *testing.T, stdin io.WriteCloser, scanner *bufio.Scanner) *mcpClient {

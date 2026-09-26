@@ -128,7 +128,15 @@ func applySsrfTransport(client *http.Client) {
 
 const maxRetries = 3
 
+// Call sends an MCP request, completing the initialize handshake first if needed.
 func (c *HTTPConnection) Call(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
+	if err := c.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	return c.rpc(ctx, method, params)
+}
+
+func (c *HTTPConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
 	id := c.nextID.Add(1)
 	req := Request{JSONRPC: "2.0", ID: id, Method: method, Params: params}
 	return c.postWithAuthRetry(ctx, req)
@@ -267,6 +275,12 @@ func (c *HTTPConnection) storeSessionID(sessionID string) {
 	}
 	c.mu.Lock()
 	c.sessionID = sessionID
+	c.mu.Unlock()
+}
+
+func (c *HTTPConnection) clearSessionID() {
+	c.mu.Lock()
+	c.sessionID = ""
 	c.mu.Unlock()
 }
 
