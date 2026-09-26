@@ -39,6 +39,43 @@ func (r *blockReader) Close() error {
 	return nil
 }
 
+func TestServeUntilCanceled_drainWaitsForServe(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	r := newBlockReader()
+	drainGate := make(chan struct{})
+	draining := make(chan struct{})
+	fakeServe := func(ctx context.Context, in io.Reader, out io.Writer) error {
+		<-ctx.Done()
+		close(draining)
+		<-drainGate
+		return nil
+	}
+	result := make(chan error, 1)
+	go func() {
+		result <- serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: fakeServe, In: r, Out: io.Discard})
+	}()
+	cancel()
+	select {
+	case <-draining:
+	case <-time.After(2 * time.Second):
+		t.Fatal("serve did not reach drain phase within 2s")
+	}
+	select {
+	case <-result:
+		t.Fatal("serveUntilCanceled returned before drain gate was released")
+	default:
+	}
+	close(drainGate)
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Errorf("expected nil, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serveUntilCanceled did not return within 2s after drain gate released")
+	}
+}
+
 func TestServeUntilCanceled_closesReaderAndReturns(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	r := newBlockReader()

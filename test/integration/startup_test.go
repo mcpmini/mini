@@ -226,6 +226,32 @@ func TestStandaloneSIGINT_openStdinExitsSuccessfully(t *testing.T) {
 	}
 }
 
+func TestStandaloneShutdown_stuckStdout_secondSignalExits(t *testing.T) {
+	proc := startMiniForSignal(t, t.TempDir())
+	doMiniHandshake(t, proc)
+	// Flood requests without consuming stdout so the OS pipe buffer fills,
+	// blocking the serve goroutine's writes and preventing a clean drain.
+	for i := 0; i < 2000; i++ {
+		req := map[string]any{"jsonrpc": "2.0", "id": 100 + i, "method": "tools/list"}
+		b, _ := json.Marshal(req)
+		fmt.Fprintf(proc.Stdin, "%s\n", b) //nolint:errcheck
+	}
+	time.Sleep(300 * time.Millisecond)
+	proc.Cmd.Process.Signal(syscall.SIGTERM) //nolint:errcheck
+	select {
+	case <-proc.done:
+		t.Fatal("exited on the first signal; stdout never blocked, so the second signal wasn't exercised")
+	case <-time.After(2 * time.Second):
+	}
+	proc.Cmd.Process.Signal(syscall.SIGINT) //nolint:errcheck
+	select {
+	case <-proc.done:
+		t.Logf("exited after second signal, code=%d", proc.code)
+	case <-time.After(3 * time.Second):
+		t.Fatal("process did not exit within 3s after second signal")
+	}
+}
+
 func TestStandaloneSIGTERM_delayedConnectIsDrained(t *testing.T) {
 	cfg := t.TempDir()
 	hungDir := mockFixtureDir(t, map[string]string{"never": `{}`})

@@ -132,6 +132,8 @@ func stdinPipe(src io.Reader) io.ReadCloser {
 
 func serveStandalone(p ServeParams, opts ...server.ServerOption) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	// A second signal must still kill the process if the graceful drain hangs.
+	context.AfterFunc(ctx, stop)
 	defer stop()
 	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
 	srv := buildAndStartConnecting(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
