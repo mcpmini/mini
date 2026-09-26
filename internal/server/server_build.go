@@ -18,7 +18,7 @@ func New(cfg *config.Config, logger *slog.Logger, opts ...ServerOption) *Server 
 }
 
 func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger, opts ...ServerOption) *Server {
-	projections, err := loadServerProjections(configDir)
+	projections, _, err := loadServerProjections(configDir)
 	if err != nil {
 		logger.Warn("failed to load projections", "err", err)
 	}
@@ -50,18 +50,20 @@ func newServer(cfg *config.Config, configDir string, projections map[string]map[
 	}
 }
 
-func loadServerProjections(configDir string) (map[string]map[string]*config.ProjectionConfig, error) {
+func loadServerProjections(configDir string) (map[string]map[string]*config.ProjectionConfig, map[string]struct{}, error) {
+	projections := make(map[string]map[string]*config.ProjectionConfig)
 	_, servers, err := config.Load(configDir)
 	if err != nil {
-		return make(map[string]map[string]*config.ProjectionConfig), err
+		return projections, nil, err
 	}
-	out := make(map[string]map[string]*config.ProjectionConfig)
+	configured := make(map[string]struct{}, len(servers))
 	for _, sc := range servers {
+		configured[sc.Name] = struct{}{}
 		if sc.Projections != nil {
-			out[sc.Name] = sc.Projections
+			projections[sc.Name] = sc.Projections
 		}
 	}
-	return out, nil
+	return projections, configured, nil
 }
 
 func mustStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {

@@ -19,9 +19,9 @@ func (s *Server) StartProjectionReload(ctx context.Context) {
 }
 
 func (s *Server) runProjectionReload(ctx context.Context, afterCheck func()) {
+	last, _ := s.fingerprintOrWarn()
 	ticker := s.clock.NewTicker(projectionPollInterval)
 	defer ticker.Stop()
-	last, _ := s.fingerprintOrWarn()
 	for {
 		select {
 		case <-ticker.Chan():

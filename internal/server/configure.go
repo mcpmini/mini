@@ -168,25 +168,28 @@ func (s *Server) reloadProjections() (any, error) {
 	// in-memory update and then set_projection would persist the wiped state.
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	projections, err := loadServerProjections(s.configDir)
+	projections, configured, err := loadServerProjections(s.configDir)
 	if err != nil {
 		return nil, fmt.Errorf("reload projections: %w", err)
 	}
-	s.replaceProjections(projections)
+	s.replaceProjections(projections, configured)
 	s.reapplyAliases()
 	return map[string]any{"ok": true, "loaded": projectionCounts(projections)}, nil
 }
 
-func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig) {
+func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig, configured map[string]struct{}) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.carryOverRuntimeAddedProjectionsLocked(projections)
+	s.keepLiveProjectionsLocked(projections, configured)
 	s.projections = projections
 }
 
-func (s *Server) carryOverRuntimeAddedProjectionsLocked(projections map[string]map[string]*config.ProjectionConfig) {
+// A connected server missing from config (runtime add_server, or mini rm while
+// the daemon runs) stays connected until restart, so it keeps its live projections.
+func (s *Server) keepLiveProjectionsLocked(projections map[string]map[string]*config.ProjectionConfig, configured map[string]struct{}) {
 	for name, live := range s.projections {
-		if u := s.upstreams[name]; u != nil && u.cfg.RuntimeAdded {
+		_, connected := s.upstreams[name]
+		if _, ok := configured[name]; connected && !ok {
 			projections[name] = live
 		}
 	}

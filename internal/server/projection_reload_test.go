@@ -284,7 +284,7 @@ func TestProjectionReload_configYAMLCreatedAppliesInlineProjections(t *testing.T
 	env.assertDataKeys([]string{"a"}, []string{"b", "secret"})
 }
 
-func TestProjectionReload_configYAMLDeletedRemovesInlineProjections(t *testing.T) {
+func TestProjectionReload_configYAMLDeletedKeepsProjectionsForConnectedServer(t *testing.T) {
 	dir := evalTempDir(t)
 	writeReloadFile(t, filepath.Join(dir, "config.yaml"),
 		"servers:\n- name: svc\n  command: echo\n  projections:\n    getData:\n      include_only: [a]\n")
@@ -298,7 +298,7 @@ func TestProjectionReload_configYAMLDeletedRemovesInlineProjections(t *testing.T
 	}
 	env.advanceTick()
 
-	env.assertDataKeys([]string{"a", "b", "secret"}, nil)
+	env.assertDataKeys([]string{"a"}, []string{"b", "secret"})
 }
 
 func TestProjectionReload_ctxCancelStopsPoller(t *testing.T) {
