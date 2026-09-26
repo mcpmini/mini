@@ -42,7 +42,7 @@ func (s *Server) reconnectLoop(u *upstreamServer) {
 	defer u.reconnecting.Store(false)
 	backoff := time.Second
 	for {
-		if !s.sleepBackoff(u, backoff) {
+		if !s.sleepBackoff(u.ctx, backoff) {
 			return
 		}
 		s.logger.Info("reconnecting upstream", "server", u.cfg.Name, "backoff", backoff)
@@ -58,10 +58,10 @@ func (s *Server) reconnectLoop(u *upstreamServer) {
 	}
 }
 
-func (s *Server) sleepBackoff(u *upstreamServer, d time.Duration) bool {
+func (s *Server) sleepBackoff(ctx context.Context, d time.Duration) bool {
 	t := s.clock.NewTimer(d)
 	select {
-	case <-u.ctx.Done():
+	case <-ctx.Done():
 		t.Stop()
 		return false
 	case <-t.Chan():
@@ -143,9 +143,9 @@ func (s *Server) replaceRegistryToolsLocked(u *upstreamServer, tools []transport
 	defer s.serverOpMu.Unlock()
 	u.lastDefs = tools
 	s.reg.ReplaceServer(registry.ServerParams{
-		Name:    u.cfg.Name,
-		Defs:    tools,
-		Perm:    u.cfg.Permissions,
+		Name:            u.cfg.Name,
+		Defs:            tools,
+		Perm:            u.cfg.Permissions,
 		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 	})
 }

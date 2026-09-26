@@ -21,10 +21,15 @@ import (
 
 func newConnectTestServer(t *testing.T) *server.Server {
 	t.Helper()
+	return newConnectTestServerLogging(t, slog.NewTextHandler(io.Discard, nil))
+}
+
+func newConnectTestServerLogging(t *testing.T, logs slog.Handler, opts ...server.ServerOption) *server.Server {
+	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowPrivateURLs = true
-	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(logs), opts...)
 }
 
 func mustCloseWithin(t *testing.T, srv *server.Server, d time.Duration) {
@@ -238,4 +243,28 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 	}
 
 	mustCloseWithin(t, srv, 5*time.Second)
+}
+
+func TestAddUpstream_existingServer_replacesIt(t *testing.T) {
+	serveTools := func(names ...string) string {
+		var tools []map[string]any
+		for _, n := range names {
+			tools = append(tools, map[string]any{"name": n, "description": n, "inputSchema": map[string]any{"type": "object"}})
+		}
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fakeMCPHandle(w, r, tools) }))
+		t.Cleanup(ts.Close)
+		return ts.URL
+	}
+	srv := newConnectTestServer(t)
+	defer srv.Close()
+
+	for _, url := range []string{serveTools("a"), serveTools("a", "b")} {
+		if err := srv.AddUpstream(context.Background(), config.ServerConfig{Name: "svc", Transport: "http", URL: url}); err != nil {
+			t.Fatalf("AddUpstream: %v", err)
+		}
+	}
+
+	if got := srv.ToolCount("svc"); got != 2 {
+		t.Errorf("expected the replacement's 2 tools, got %d", got)
+	}
 }
