@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/projection"
@@ -46,7 +46,7 @@ func newServer(cfg *config.Config, configDir string, projections map[string]map[
 		authFlows:        make(map[string]*authFlowState),
 		logger:           logger,
 		clock:            clock.System(),
-		providerRegistry: auth.NewProviderRegistry(),
+		providerRegistry: provider.NewRegistry(),
 	}
 }
 

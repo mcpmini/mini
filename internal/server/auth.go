@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -148,8 +149,8 @@ func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig
 	s.reconnectWithToken(serverName, sc)
 }
 
-func (s *Server) providerParamsFor(sc config.ServerConfig) auth.ProviderParams {
-	return auth.ProviderParams{
+func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
+	return provider.Params{
 		AuthConfig: sc.Auth,
 		ConfigDir:  s.configDir,
 		ServerName: sc.Name,

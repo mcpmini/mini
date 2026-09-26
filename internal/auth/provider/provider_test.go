@@ -1,6 +1,6 @@
 //go:build test
 
-package auth_test
+package provider_test
 
 import (
 	"context"
@@ -15,6 +15,8 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
@@ -32,9 +34,9 @@ func TestRefreshAuthorization_rotatedRefreshToken_isPersisted(t *testing.T) {
 	if got != "Bearer new-access" {
 		t.Errorf("header = %q, want refreshed token", got)
 	}
-	f.endpoint.mu.Lock()
-	grant, refresh, resource := f.endpoint.lastGrant, f.endpoint.lastRefresh, f.endpoint.lastResource
-	f.endpoint.mu.Unlock()
+	f.endpoint.Mu.Lock()
+	grant, refresh, resource := f.endpoint.LastGrant, f.endpoint.LastRefresh, f.endpoint.LastResource
+	f.endpoint.Mu.Unlock()
 	if grant != "refresh_token" || refresh != "stored-refresh" {
 		t.Errorf("refresh used grant=%q token=%q", grant, refresh)
 	}
@@ -52,7 +54,7 @@ func TestRefreshAuthorization_rotatedRefreshToken_isPersisted(t *testing.T) {
 
 func TestRefreshAuthorization_tokenEndpoint503_returnsTransientError(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-	f.endpoint.status.Store(http.StatusServiceUnavailable)
+	f.endpoint.Status.Store(http.StatusServiceUnavailable)
 	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if err == nil {
 		t.Fatal("expected refresh failure")
@@ -86,18 +88,18 @@ func TestRefreshAuthorization_saveFails_keepsRotatedTokenInMemory(t *testing.T) 
 	if got != "Bearer new-access" {
 		t.Errorf("next call must use rotated in-memory token, got %q", got)
 	}
-	if hits := f.endpoint.hits.Load(); hits != 1 {
+	if hits := f.endpoint.Hits.Load(); hits != 1 {
 		t.Errorf("rotated token must be reused without another refresh, got %d hits", hits)
 	}
 
-	f.endpoint.accessToken, f.endpoint.refreshToken = "second-access", "second-refresh"
+	f.endpoint.AccessToken, f.endpoint.RefreshToken = "second-access", "second-refresh"
 	os.Chmod(internal, 0700) //nolint:errcheck
 	if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer new-access"); err != nil {
 		t.Fatalf("second refresh: %v", err)
 	}
-	f.endpoint.mu.Lock()
-	lastRefresh := f.endpoint.lastRefresh
-	f.endpoint.mu.Unlock()
+	f.endpoint.Mu.Lock()
+	lastRefresh := f.endpoint.LastRefresh
+	f.endpoint.Mu.Unlock()
 	if lastRefresh != "rotated-refresh" {
 		t.Errorf("second refresh must use the rotated refresh token, sent %q", lastRefresh)
 	}
@@ -116,30 +118,30 @@ func TestRefreshAuthorization_newerStoredToken_usedWithoutRefreshing(t *testing.
 	if err := auth.Save(dir, "srv", oldToken); err != nil {
 		t.Fatal(err)
 	}
-	endpoint := newMockAuthServer(t)
-	provider, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL + "/token"},
+	endpoint := authtest.NewTokenServer(t)
+	prov, err := provider.New(provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.Srv.URL + "/token"},
 		ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com/mcp", Clock: clock.NewFake(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.Authorization(context.Background()); err != nil {
+	if _, err := prov.Authorization(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	external := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}
 	if err := auth.Save(dir, "srv", external); err != nil {
 		t.Fatal(err)
 	}
-	got, err := provider.RefreshAuthorization(context.Background(), "Bearer "+oldToken.AccessToken)
+	got, err := prov.RefreshAuthorization(context.Background(), "Bearer "+oldToken.AccessToken)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "Bearer external-access" {
 		t.Fatalf("Authorization = %q, want external token", got)
 	}
-	if endpoint.hits.Load() != 0 {
-		t.Fatalf("token endpoint hits = %d, want disk handoff without refresh", endpoint.hits.Load())
+	if endpoint.Hits.Load() != 0 {
+		t.Fatalf("token endpoint hits = %d, want disk handoff without refresh", endpoint.Hits.Load())
 	}
 }
 
@@ -161,7 +163,7 @@ func TestRefreshAuthorization_concurrent401s_refreshOnce(t *testing.T) {
 	}
 	wg.Wait()
 	close(results)
-	if hits := f.endpoint.hits.Load(); hits != 1 {
+	if hits := f.endpoint.Hits.Load(); hits != 1 {
 		t.Errorf("token endpoint hits = %d, want exactly 1", hits)
 	}
 	for v := range results {
@@ -178,13 +180,13 @@ func TestRefreshAuthorization_callerCancelled_stillPersistsRotatedToken(t *testi
 	}); err != nil {
 		t.Fatal(err)
 	}
-	endpoint := newMockAuthServer(t)
-	endpoint.accessToken = "rotated-access"
-	endpoint.refreshToken = "rotated-refresh"
+	endpoint := authtest.NewTokenServer(t)
+	endpoint.AccessToken = "rotated-access"
+	endpoint.RefreshToken = "rotated-refresh"
 	received, release := gateNextTokenRequest(endpoint)
 
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL + "/token"},
+	p, err := provider.New(provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.Srv.URL + "/token"},
 		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFake(),
 	})
 	if err != nil {
@@ -218,8 +220,8 @@ func TestRefreshAuthorization_callerCancelled_stillPersistsRotatedToken(t *testi
 	if saved.RefreshToken != "rotated-refresh" {
 		t.Errorf("persisted refresh = %q, want rotated-refresh", saved.RefreshToken)
 	}
-	if endpoint.hits.Load() != 1 {
-		t.Errorf("token endpoint hits = %d, want 1 (rotated token reused)", endpoint.hits.Load())
+	if endpoint.Hits.Load() != 1 {
+		t.Errorf("token endpoint hits = %d, want 1 (rotated token reused)", endpoint.Hits.Load())
 	}
 }
 
@@ -228,7 +230,7 @@ func TestRefreshAuthorization_noTokenURL_returnsReauthRemedy(t *testing.T) {
 	if err := auth.Save(dir, "srv", &oauth2.Token{AccessToken: "tok", RefreshToken: "ref"}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{
+	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid"},
 		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFake(),
 	})
@@ -260,11 +262,11 @@ func TestRefreshAuthorization_resourceFallback_canonicalizesServerURL(t *testing
 			if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
 				t.Fatal(err)
 			}
-			endpoint := newMockAuthServer(t)
-			p, err := auth.NewProvider(auth.ProviderParams{
+			endpoint := authtest.NewTokenServer(t)
+			p, err := provider.New(provider.Params{
 				AuthConfig: &config.AuthConfig{
 					Type: config.AuthTypeOAuth2, ClientID: "cid",
-					TokenURL: endpoint.srv.URL + "/token", ResourceURL: tc.resourceURL,
+					TokenURL: endpoint.Srv.URL + "/token", ResourceURL: tc.resourceURL,
 				},
 				ConfigDir: dir, ServerName: "srv", ServerURL: tc.serverURL, Clock: clock.NewFake(),
 			})
@@ -274,9 +276,9 @@ func TestRefreshAuthorization_resourceFallback_canonicalizesServerURL(t *testing
 			if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 				t.Fatalf("RefreshAuthorization: %v", err)
 			}
-			endpoint.mu.Lock()
-			got := endpoint.lastResource
-			endpoint.mu.Unlock()
+			endpoint.Mu.Lock()
+			got := endpoint.LastResource
+			endpoint.Mu.Unlock()
 			if got != tc.wantResource {
 				t.Errorf("resource = %q, want %q", got, tc.wantResource)
 			}
@@ -289,10 +291,10 @@ func TestRefreshAuthorization_saveFailsAfterEarlierSave_keepsNewestTokenOnReload
 	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
 		t.Fatal(err)
 	}
-	endpoint := newMockAuthServer(t)
-	endpoint.accessToken, endpoint.refreshToken = "t2-access", "t2-refresh"
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.srv.URL + "/token"},
+	endpoint := authtest.NewTokenServer(t)
+	endpoint.AccessToken, endpoint.RefreshToken = "t2-access", "t2-refresh"
+	p, err := provider.New(provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.Srv.URL + "/token"},
 		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFake(),
 	})
 	if err != nil {
@@ -301,7 +303,7 @@ func TestRefreshAuthorization_saveFailsAfterEarlierSave_keepsNewestTokenOnReload
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("refresh 1: %v", err)
 	}
-	endpoint.accessToken, endpoint.refreshToken = "t3-access", "t3-refresh"
+	endpoint.AccessToken, endpoint.RefreshToken = "t3-access", "t3-refresh"
 	internal := dir + "/internal"
 	if err := os.Chmod(internal, 0500); err != nil {
 		t.Fatal(err)
@@ -311,7 +313,7 @@ func TestRefreshAuthorization_saveFailsAfterEarlierSave_keepsNewestTokenOnReload
 		t.Fatalf("refresh 2: %v", err)
 	}
 	os.Chmod(internal, 0700) //nolint:errcheck
-	endpoint.accessToken, endpoint.refreshToken = "t4-access", "t4-refresh"
+	endpoint.AccessToken, endpoint.RefreshToken = "t4-access", "t4-refresh"
 	got, err := p.RefreshAuthorization(context.Background(), "Bearer t3-access")
 	if err != nil {
 		t.Fatalf("refresh 3: %v", err)
@@ -330,7 +332,7 @@ func TestRefreshAuthorization_saveFailsAfterEarlierSave_keepsNewestTokenOnReload
 
 func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCredentials(t *testing.T) {
 	dir := t.TempDir()
-	endpoint := newMockAuthServer(t)
+	endpoint := authtest.NewTokenServer(t)
 	clk := clock.NewFake()
 
 	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-v1"}); err != nil {
@@ -343,8 +345,8 @@ func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCred
 	if err := auth.Save(dir, "srv", initialTok); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.srv.URL + "/token"},
+	p, err := provider.New(provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"},
 		ConfigDir:  dir, ServerName: "srv", Clock: clk,
 	})
 	if err != nil {
@@ -372,7 +374,7 @@ func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCred
 	if got != "Bearer auth-access" {
 		t.Fatalf("expected adopted token, got %q", got)
 	}
-	if endpoint.hits.Load() != 0 {
+	if endpoint.Hits.Load() != 0 {
 		t.Fatalf("token endpoint hit during adoption, want 0 hits")
 	}
 
@@ -381,9 +383,9 @@ func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCred
 		t.Fatalf("Authorization after expiry: %v", err)
 	}
 
-	endpoint.mu.Lock()
-	clientIDForm, clientIDBasic := endpoint.lastClientID, endpoint.lastBasicAuth
-	endpoint.mu.Unlock()
+	endpoint.Mu.Lock()
+	clientIDForm, clientIDBasic := endpoint.LastClientID, endpoint.LastBasicAuth
+	endpoint.Mu.Unlock()
 
 	if clientIDForm != "dcr-v2" && clientIDBasic != "dcr-v2" {
 		t.Errorf("token endpoint client_id = form:%q basic:%q, want dcr-v2 (rehydrate must use new registration)", clientIDForm, clientIDBasic)
@@ -400,7 +402,7 @@ func TestRemedyError_wrapsErrReauthRequired(t *testing.T) {
 	})
 	t.Run("refresh invalid_grant", func(t *testing.T) {
 		f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-		f.endpoint.respondWith(http.StatusBadRequest, `{"error":"invalid_grant"}`)
+		f.endpoint.RespondWith(http.StatusBadRequest, `{"error":"invalid_grant"}`)
 		_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 		if !errors.Is(err, transport.ErrReauthRequired) {
 			t.Errorf("error = %v, want ErrReauthRequired", err)
@@ -410,7 +412,7 @@ func TestRemedyError_wrapsErrReauthRequired(t *testing.T) {
 
 func TestRefreshAuthorization_invalidGrant_returnsReauthRemedy(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-	f.endpoint.respondWith(http.StatusBadRequest, `{"error":"invalid_grant"}`)
+	f.endpoint.RespondWith(http.StatusBadRequest, `{"error":"invalid_grant"}`)
 	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if !errors.Is(err, transport.ErrReauthRequired) {
 		t.Errorf("invalid_grant must be ErrReauthRequired, got: %v", err)
@@ -424,14 +426,14 @@ func TestRefreshAuthorization_noRefreshToken_returnsReauthWithoutNetwork(t *test
 	if !errors.Is(err, transport.ErrReauthRequired) {
 		t.Errorf("no-refresh-token must be ErrReauthRequired, got: %v", err)
 	}
-	if hits := f.endpoint.hits.Load(); hits != 0 {
+	if hits := f.endpoint.Hits.Load(); hits != 0 {
 		t.Errorf("token endpoint hits = %d, want 0 (must not contact endpoint)", hits)
 	}
 }
 
 func TestRefreshAuthorization_malformedSuccessResponse_isTransient(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
-	f.endpoint.respondWith(http.StatusOK, `{"token_type":"Bearer"}`)
+	f.endpoint.RespondWith(http.StatusOK, `{"token_type":"Bearer"}`)
 	_, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
 	if err == nil {
 		t.Fatal("expected error for malformed 200 response")

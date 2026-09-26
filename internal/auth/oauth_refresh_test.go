@@ -13,11 +13,12 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 )
 
 func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
-	mock := newMockAuthServer(t)
+	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	token := pkceToken(t, mock)
 	if err := auth.Save(dir, "srv", token); err != nil {
@@ -25,16 +26,16 @@ func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	}
 	loaded, _ := auth.Load(dir, "srv")
 	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	mock.accessToken = "refreshed-access-token"
-	ac := mock.authConfig()
+	mock.AccessToken = "refreshed-access-token"
+	ac := mock.AuthConfig()
 	ac.ResourceURL = "https://resource.example.com/mcp"
 	newTok, err := auth.Refresh(context.Background(), ac, loaded)
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	mock.mu.Lock()
-	refreshed, resourceValues := mock.refreshed, mock.resourceValues
-	mock.mu.Unlock()
+	mock.Mu.Lock()
+	refreshed, resourceValues := mock.Refreshed, mock.ResourceValues
+	mock.Mu.Unlock()
 	if !refreshed {
 		t.Error("expected /token to be called with grant_type=refresh_token")
 	}

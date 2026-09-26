@@ -1,4 +1,4 @@
-package auth
+package provider
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
@@ -28,7 +29,7 @@ type tokenProvider struct {
 	proactiveRetryAt time.Time
 }
 
-func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
+func New(p Params) (transport.AuthorizationProvider, error) {
 	return buildTokenProvider(p)
 }
 
@@ -72,7 +73,7 @@ func (p *tokenProvider) ensureTokenLocked() error {
 	if p.token != nil {
 		return nil
 	}
-	t, err := Load(p.configDir, p.serverName)
+	t, err := auth.Load(p.configDir, p.serverName)
 	if err != nil {
 		return p.remedyError(fmt.Errorf("load token: %w", err))
 	}
@@ -88,7 +89,7 @@ func (p *tokenProvider) remedyError(cause error) error {
 func (p *tokenProvider) commitBrowserToken(hydrated *config.AuthConfig, tok *oauth2.Token) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if err := Save(p.configDir, p.serverName, tok); err != nil {
+	if err := auth.Save(p.configDir, p.serverName, tok); err != nil {
 		return fmt.Errorf("persist oauth token: %w", err)
 	}
 	p.ac = hydrated

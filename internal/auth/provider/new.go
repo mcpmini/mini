@@ -1,4 +1,4 @@
-package auth
+package provider
 
 import (
 	"context"
@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
 
-type ProviderParams struct {
+type Params struct {
 	AuthConfig *config.AuthConfig
 	ConfigDir  string
 	ServerName string
@@ -19,7 +20,7 @@ type ProviderParams struct {
 	Lifetime   context.Context
 }
 
-func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
+func buildTokenProvider(p Params) (*tokenProvider, error) {
 	configured, hydrated, err := resolveAuthConfigs(p)
 	if err != nil {
 		return nil, err
@@ -31,8 +32,8 @@ func buildTokenProvider(p ProviderParams) (*tokenProvider, error) {
 	return newTokenProvider(p, configured), nil
 }
 
-func resolveAuthConfigs(p ProviderParams) (configured, hydrated *config.AuthConfig, err error) {
-	canonical, err := canonicalizeProviderParams(p)
+func resolveAuthConfigs(p Params) (configured, hydrated *config.AuthConfig, err error) {
+	canonical, err := canonicalizeParams(p)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -43,9 +44,9 @@ func resolveAuthConfigs(p ProviderParams) (configured, hydrated *config.AuthConf
 	return configured, canonical.AuthConfig, nil
 }
 
-func canonicalizeProviderParams(p ProviderParams) (ProviderParams, error) {
+func canonicalizeParams(p Params) (Params, error) {
 	if p.AuthConfig == nil {
-		return ProviderParams{}, errors.New("AuthConfig is required")
+		return Params{}, errors.New("AuthConfig is required")
 	}
 	if p.Clock == nil {
 		p.Clock = clock.System()
@@ -56,16 +57,16 @@ func canonicalizeProviderParams(p ProviderParams) (ProviderParams, error) {
 		resourceURL = p.ServerURL
 	}
 	if resourceURL != "" {
-		canonical, err := canonicalResourceURI(resourceURL)
+		canonical, err := auth.CanonicalResourceURI(resourceURL)
 		if err != nil {
-			return ProviderParams{}, err
+			return Params{}, err
 		}
 		p.AuthConfig.ResourceURL = canonical
 	}
 	return p, nil
 }
 
-func newTokenProvider(p ProviderParams, configured *config.AuthConfig) *tokenProvider {
+func newTokenProvider(p Params, configured *config.AuthConfig) *tokenProvider {
 	lifetime := p.Lifetime
 	if lifetime == nil {
 		lifetime = context.Background()
@@ -95,11 +96,11 @@ func cloneAuthConfig(src *config.AuthConfig) *config.AuthConfig {
 	return &cp
 }
 
-func hydrateFromRegistration(p ProviderParams) error {
+func hydrateFromRegistration(p Params) error {
 	if p.AuthConfig.ClientID != "" {
 		return nil
 	}
-	_, err := applyExistingClientReg(clientRegParams{
+	_, err := auth.ApplyExistingClientReg(auth.ClientRegParams{
 		ConfigDir:  p.ConfigDir,
 		ServerName: p.ServerName,
 		AuthConfig: p.AuthConfig,

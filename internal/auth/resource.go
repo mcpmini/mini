@@ -10,7 +10,7 @@ import (
 )
 
 func ApplyResourceURL(sc *config.ServerConfig) error {
-	resourceURL, err := canonicalResourceURI(sc.URL)
+	resourceURL, err := CanonicalResourceURI(sc.URL)
 	if err != nil {
 		return err
 	}
@@ -18,7 +18,7 @@ func ApplyResourceURL(sc *config.ServerConfig) error {
 	return nil
 }
 
-func canonicalResourceURI(raw string) (string, error) {
+func CanonicalResourceURI(raw string) (string, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("parse resource URI: %w", err)

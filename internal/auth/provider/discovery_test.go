@@ -1,6 +1,6 @@
 //go:build test
 
-package auth_test
+package provider_test
 
 import (
 	"context"
@@ -17,19 +17,21 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func clientIDSentToTokenEndpoint(endpoint *mockAuthServer) string {
-	endpoint.mu.Lock()
-	defer endpoint.mu.Unlock()
-	if endpoint.lastClientID != "" {
-		return endpoint.lastClientID
+func clientIDSentToTokenEndpoint(endpoint *authtest.TokenServer) string {
+	endpoint.Mu.Lock()
+	defer endpoint.Mu.Unlock()
+	if endpoint.LastClientID != "" {
+		return endpoint.LastClientID
 	}
 	// oauth2's AuthStyleAutoDetect sends client_id via Basic auth first.
-	decoded, err := url.QueryUnescape(endpoint.lastBasicAuth)
+	decoded, err := url.QueryUnescape(endpoint.LastBasicAuth)
 	if err != nil {
 		return ""
 	}
@@ -47,7 +49,7 @@ type discoveryFixtureParams struct {
 type discoveryFixture struct {
 	dir       string
 	serverURL string
-	endpoint  *mockAuthServer
+	endpoint  *authtest.TokenServer
 	clock     *clock.Fake
 	provider  transport.AuthorizationProvider
 }
@@ -59,23 +61,23 @@ func newDiscoveryFixture(t *testing.T, p discoveryFixtureParams) *discoveryFixtu
 		t.Cleanup(auth.ResetEndpointValidation)
 	}
 	f := &discoveryFixture{dir: t.TempDir(), clock: clock.NewFake()}
-	f.endpoint = newMockAuthServer(t)
-	f.endpoint.accessToken = "new-access"
-	f.endpoint.refreshToken = "new-refresh"
+	f.endpoint = authtest.NewTokenServer(t)
+	f.endpoint.AccessToken = "new-access"
+	f.endpoint.RefreshToken = "new-refresh"
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: p.clientID}
-	pp := auth.ProviderParams{ConfigDir: f.dir, ServerName: "srv", Clock: f.clock, AuthConfig: ac}
+	pp := provider.Params{ConfigDir: f.dir, ServerName: "srv", Clock: f.clock, AuthConfig: ac}
 	if p.directTokenURL {
-		ac.TokenURL = f.endpoint.srv.URL + "/token"
+		ac.TokenURL = f.endpoint.Srv.URL + "/token"
 	} else {
 		meta := map[string]any{
 			"authorization_endpoint":           "https://as.example.com/authorize",
-			"token_endpoint":                   f.endpoint.srv.URL + "/token",
+			"token_endpoint":                   f.endpoint.Srv.URL + "/token",
 			"code_challenge_methods_supported": []string{"S256"},
 		}
 		if p.cimdSupported {
 			meta["client_id_metadata_document_supported"] = true
 		}
-		ds := serveASMeta(t, "/.well-known/oauth-authorization-server", meta)
+		ds := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", meta)
 		t.Cleanup(ds.Close)
 		pp.ServerURL = ds.URL + "/mcp"
 		f.serverURL = ds.URL + "/mcp"
@@ -92,7 +94,7 @@ func newDiscoveryFixture(t *testing.T, p discoveryFixtureParams) *discoveryFixtu
 			t.Fatal(err)
 		}
 	}
-	prov, err := auth.NewProvider(pp)
+	prov, err := provider.New(pp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,12 +107,12 @@ func TestAuthorization_noTokenURLAfterRestart_discoversEndpointAndRefreshes(t *t
 	if _, err := f.provider.Authorization(context.Background()); err != nil {
 		t.Fatalf("Authorization: %v", err)
 	}
-	if f.endpoint.hits.Load() != 1 {
-		t.Fatalf("token endpoint hits = %d, want 1", f.endpoint.hits.Load())
+	if f.endpoint.Hits.Load() != 1 {
+		t.Fatalf("token endpoint hits = %d, want 1", f.endpoint.Hits.Load())
 	}
-	f.endpoint.mu.Lock()
-	lastResource := f.endpoint.lastResource
-	f.endpoint.mu.Unlock()
+	f.endpoint.Mu.Lock()
+	lastResource := f.endpoint.LastResource
+	f.endpoint.Mu.Unlock()
 	if lastResource != f.serverURL {
 		t.Errorf("resource = %q, want %q", lastResource, f.serverURL)
 	}
@@ -200,12 +202,12 @@ func TestRefreshAuthorization_discoveryNetworkError_returnsTransientError(t *tes
 	auth.UseLoopbackEndpoints()
 	t.Cleanup(auth.ResetEndpointValidation)
 
-	endpoint := newMockAuthServer(t)
-	tokenPOSTs := endpoint.hits.Load()
+	endpoint := authtest.NewTokenServer(t)
+	tokenPOSTs := endpoint.Hits.Load()
 
-	discovery := serveASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
+	discovery := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
-		"token_endpoint":                   endpoint.srv.URL + "/token",
+		"token_endpoint":                   endpoint.Srv.URL + "/token",
 		"code_challenge_methods_supported": []string{"S256"},
 	})
 	t.Cleanup(discovery.Close)
@@ -216,7 +218,7 @@ func TestRefreshAuthorization_discoveryNetworkError_returnsTransientError(t *tes
 	}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{
+	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv",
 		ServerURL: discovery.URL + "/mcp",
@@ -238,13 +240,13 @@ func TestRefreshAuthorization_discoveryNetworkError_returnsTransientError(t *tes
 	if !strings.Contains(err.Error(), "(transient)") {
 		t.Errorf("discovery network error must say (transient), got %q", err.Error())
 	}
-	if endpoint.hits.Load() != tokenPOSTs {
-		t.Errorf("token endpoint was called %d times after discovery failure, want 0", endpoint.hits.Load()-tokenPOSTs)
+	if endpoint.Hits.Load() != tokenPOSTs {
+		t.Errorf("token endpoint was called %d times after discovery failure, want 0", endpoint.Hits.Load()-tokenPOSTs)
 	}
 }
 
 func TestRefreshAuthorization_noServerURLOrTokenURL_returnsReauthRemedyWithoutNetwork(t *testing.T) {
-	endpoint := newMockAuthServer(t)
+	endpoint := authtest.NewTokenServer(t)
 
 	dir := t.TempDir()
 	if err := auth.Save(dir, "srv", &oauth2.Token{
@@ -252,7 +254,7 @@ func TestRefreshAuthorization_noServerURLOrTokenURL_returnsReauthRemedyWithoutNe
 	}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{
+	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv",
 		Clock: clock.NewFake(),
@@ -271,8 +273,8 @@ func TestRefreshAuthorization_noServerURLOrTokenURL_returnsReauthRemedyWithoutNe
 	if !strings.Contains(err.Error(), "no server URL") {
 		t.Errorf("expected no-server-URL message in error, got %q", err.Error())
 	}
-	if endpoint.hits.Load() != 0 {
-		t.Errorf("token endpoint called %d times, want 0", endpoint.hits.Load())
+	if endpoint.Hits.Load() != 0 {
+		t.Errorf("token endpoint called %d times, want 0", endpoint.Hits.Load())
 	}
 }
 
@@ -303,7 +305,7 @@ func TestRefreshAuthorization_prm503_isTransientAndSkipsMCPOrigin(t *testing.T) 
 	}); err != nil {
 		t.Fatal(err)
 	}
-	p, err := auth.NewProvider(auth.ProviderParams{
+	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv",
 		ServerURL: mcpSrv.URL + "/mcp",
