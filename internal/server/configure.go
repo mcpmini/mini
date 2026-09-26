@@ -168,29 +168,38 @@ func (s *Server) reloadProjections() (any, error) {
 	// in-memory update and then set_projection would persist the wiped state.
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	d, err := loadServerProjectionsData(s.configDir)
+	projections, configured, err := loadServerProjections(s.configDir)
 	if err != nil {
 		return nil, fmt.Errorf("reload projections: %w", err)
 	}
-	s.replaceProjections(d.Projections, d.ConfiguredNames)
+	s.replaceProjections(projections, projectionSources{
+		configured: configured,
+		leftovers:  leftoverProjFiles(s.configDir, configured),
+	})
 	s.reapplyAliases()
-	return map[string]any{"ok": true, "loaded": projectionCounts(d.Projections)}, nil
+	return map[string]any{"ok": true, "loaded": projectionCounts(projections)}, nil
 }
 
-func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig, configuredNames map[string]struct{}) {
+type projectionSources struct {
+	configured map[string]struct{}
+	leftovers  map[string]map[string]*config.ProjectionConfig
+}
+
+func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig, src projectionSources) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.carryOverUnconfiguredProjectionsLocked(projections, configuredNames)
+	s.keepProjectionsForUnconfiguredUpstreamsLocked(projections, src)
 	s.projections = projections
 }
 
-func (s *Server) carryOverUnconfiguredProjectionsLocked(projections map[string]map[string]*config.ProjectionConfig, configuredNames map[string]struct{}) {
-	for name, live := range s.projections {
-		u := s.upstreams[name]
-		if u == nil {
+func (s *Server) keepProjectionsForUnconfiguredUpstreamsLocked(projections map[string]map[string]*config.ProjectionConfig, src projectionSources) {
+	for name := range s.upstreams {
+		if _, ok := src.configured[name]; ok {
 			continue
 		}
-		if _, configured := configuredNames[name]; u.cfg.RuntimeAdded || !configured {
+		if leftover, ok := src.leftovers[name]; ok {
+			projections[name] = leftover
+		} else if live, ok := s.projections[name]; ok {
 			projections[name] = live
 		}
 	}

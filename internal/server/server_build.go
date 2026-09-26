@@ -18,7 +18,7 @@ func New(cfg *config.Config, logger *slog.Logger, opts ...ServerOption) *Server 
 }
 
 func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger, opts ...ServerOption) *Server {
-	projections, err := loadServerProjections(configDir)
+	projections, _, err := loadServerProjections(configDir)
 	if err != nil {
 		logger.Warn("failed to load projections", "err", err)
 	}
@@ -50,30 +50,31 @@ func newServer(cfg *config.Config, configDir string, projections map[string]map[
 	}
 }
 
-type serverProjectionsData struct {
-	Projections     map[string]map[string]*config.ProjectionConfig
-	ConfiguredNames map[string]struct{}
-}
-
-func loadServerProjectionsData(configDir string) (serverProjectionsData, error) {
+func loadServerProjections(configDir string) (map[string]map[string]*config.ProjectionConfig, map[string]struct{}, error) {
+	projections := make(map[string]map[string]*config.ProjectionConfig)
+	configured := make(map[string]struct{})
 	_, servers, err := config.Load(configDir)
 	if err != nil {
-		return serverProjectionsData{Projections: make(map[string]map[string]*config.ProjectionConfig)}, err
+		return projections, configured, err
 	}
-	out := make(map[string]map[string]*config.ProjectionConfig)
-	names := make(map[string]struct{}, len(servers))
 	for _, sc := range servers {
-		names[sc.Name] = struct{}{}
+		configured[sc.Name] = struct{}{}
 		if sc.Projections != nil {
-			out[sc.Name] = sc.Projections
+			projections[sc.Name] = sc.Projections
 		}
 	}
-	return serverProjectionsData{Projections: out, ConfiguredNames: names}, nil
+	return projections, configured, nil
 }
 
-func loadServerProjections(configDir string) (map[string]map[string]*config.ProjectionConfig, error) {
-	d, err := loadServerProjectionsData(configDir)
-	return d.Projections, err
+func leftoverProjFiles(configDir string, configured map[string]struct{}) map[string]map[string]*config.ProjectionConfig {
+	files, err := config.LoadProjectionFiles(configDir)
+	if err != nil {
+		return nil
+	}
+	for name := range configured {
+		delete(files, name)
+	}
+	return files
 }
 
 func mustStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {
