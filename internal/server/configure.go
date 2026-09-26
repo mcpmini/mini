@@ -179,8 +179,17 @@ func (s *Server) reloadProjections() (any, error) {
 
 func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig) {
 	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.carryOverRuntimeAddedProjectionsLocked(projections)
 	s.projections = projections
-	s.stateMu.Unlock()
+}
+
+func (s *Server) carryOverRuntimeAddedProjectionsLocked(projections map[string]map[string]*config.ProjectionConfig) {
+	for name, live := range s.projections {
+		if u := s.upstreams[name]; u != nil && u.cfg.RuntimeAdded {
+			projections[name] = live
+		}
+	}
 }
 
 func (s *Server) reapplyAliases() {
@@ -191,7 +200,7 @@ func (s *Server) reapplyAliases() {
 		if u.lastDefs == nil {
 			continue
 		}
-		s.reg.ReplaceServer(registry.ServerParams{
+		s.reg.ReplaceServerTools(registry.ServerParams{
 			Name:            u.cfg.Name,
 			Defs:            u.lastDefs,
 			Perm:            u.cfg.Permissions,
