@@ -35,13 +35,13 @@ var (
 )
 
 type upstreamInstall struct {
-	cfg          config.ServerConfig
-	removeGen    uint64
-	keepExisting bool
+	cfg         config.ServerConfig
+	removeGen   uint64
+	fromStartup bool
 }
 
 func (s *Server) startupInstall(sc config.ServerConfig) upstreamInstall {
-	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), keepExisting: true}
+	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), fromStartup: true}
 }
 
 func (s *Server) replacingInstall(sc config.ServerConfig) upstreamInstall {
@@ -190,15 +190,24 @@ func (s *Server) installChecked(conn transport.Connection, tools []transport.Too
 		conn.Close()
 		return err
 	}
+	if in.fromStartup {
+		in.cfg.Projections = s.liveProjections(in.cfg.Name)
+	}
 	s.installUpstreamLocked(in.cfg, conn, tools)
 	return nil
+}
+
+func (s *Server) liveProjections(name string) map[string]*config.ProjectionConfig {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return s.projections[name]
 }
 
 func (s *Server) checkInstallLocked(in upstreamInstall) error {
 	if s.removeGen[in.cfg.Name] != in.removeGen {
 		return fmt.Errorf("server %q: %w", in.cfg.Name, errServerRemoved)
 	}
-	if !in.keepExisting {
+	if !in.fromStartup {
 		return nil
 	}
 	s.stateMu.RLock()

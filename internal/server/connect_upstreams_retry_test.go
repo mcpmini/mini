@@ -3,7 +3,9 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -25,6 +27,10 @@ var pingTools = []map[string]any{
 	{"name": "ping", "description": "ping", "inputSchema": map[string]any{"type": "object"}},
 }
 
+var pingMCPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fakeMCPHandle(w, r, pingTools)
+})
+
 func upstreamFailingFirst(t *testing.T, failures int32, afterFailures http.HandlerFunc) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var attempts atomic.Int32
@@ -37,10 +43,6 @@ func upstreamFailingFirst(t *testing.T, failures int32, afterFailures http.Handl
 	}))
 	t.Cleanup(ts.Close)
 	return ts, &attempts
-}
-
-func serveMCP(tools []map[string]any) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) { fakeMCPHandle(w, r, tools) }
 }
 
 func requireBearer(w http.ResponseWriter, _ *http.Request) {
@@ -109,7 +111,7 @@ func recordAttrs(r slog.Record) map[string]slog.Value {
 }
 
 func TestConnectUpstreamAsync_transientFailure_retriesAndRegisters(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 1, serveMCP(pingTools))
+	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
 	r := startRetrying(t, ts.URL, discardLogs())
 	defer r.srv.Close()
 
@@ -120,7 +122,7 @@ func TestConnectUpstreamAsync_transientFailure_retriesAndRegisters(t *testing.T)
 }
 
 func TestConnectUpstreamAsync_repeatedFailure_backoffDoubles(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 2, serveMCP(pingTools))
+	ts, _ := upstreamFailingFirst(t, 2, pingMCPHandler)
 	logs := make(logRecorder, 64)
 	r := startRetrying(t, ts.URL, logs)
 	defer r.srv.Close()
@@ -171,7 +173,7 @@ func TestConnectUpstreamAsync_reauthAfterRetry_logsTheAuthError(t *testing.T) {
 }
 
 func TestConnectUpstreamAsync_closeDuringRetry_returnsPromptly(t *testing.T) {
-	ts, _ := upstreamFailingFirst(t, 1, serveMCP(pingTools))
+	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
 	r := startRetrying(t, ts.URL, discardLogs())
 
 	r.waitForBackoffTimer(t)
@@ -180,7 +182,7 @@ func TestConnectUpstreamAsync_closeDuringRetry_returnsPromptly(t *testing.T) {
 }
 
 func TestConnectUpstreamAsync_removedDuringRetry_isNotRedialed(t *testing.T) {
-	ts, attempts := upstreamFailingFirst(t, 1, serveMCP(pingTools))
+	ts, attempts := upstreamFailingFirst(t, 1, pingMCPHandler)
 	r := startRetrying(t, ts.URL, discardLogs())
 	defer mustCloseWithin(t, r.srv, 3*time.Second)
 
@@ -198,7 +200,7 @@ func TestConnectUpstreamAsync_removedDuringRetry_isNotRedialed(t *testing.T) {
 }
 
 func TestConnectUpstreamAsync_runtimeAddDuringRetry_isNotOverwritten(t *testing.T) {
-	ts, attempts := upstreamFailingFirst(t, 1, serveMCP(pingTools))
+	ts, attempts := upstreamFailingFirst(t, 1, pingMCPHandler)
 	r := startRetrying(t, ts.URL, discardLogs())
 	defer mustCloseWithin(t, r.srv, 3*time.Second)
 
@@ -218,8 +220,7 @@ func TestConnectUpstreamAsync_runtimeAddDuringRetry_isNotOverwritten(t *testing.
 }
 
 func TestConnectUpstreams_removedBeforeFirstAttempt_isNotInstalled(t *testing.T) {
-	ts := httptest.NewServer(serveMCP(pingTools))
-	t.Cleanup(ts.Close)
+	ts := newMCPTestServer(t, pingTools)
 	srv := newConnectTestServer(t)
 	defer srv.Close()
 
@@ -229,5 +230,92 @@ func TestConnectUpstreams_removedBeforeFirstAttempt_isNotInstalled(t *testing.T)
 
 	if srv.ToolCount("svc") != 0 {
 		t.Error("svc was installed although it was removed before its startup connect ran")
+	}
+}
+
+func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntimeConn(t *testing.T) {
+	reached := make(chan struct{}, 1)
+	release := make(chan struct{})
+	t.Cleanup(func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	})
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		json.Unmarshal(body, &req) //nolint:errcheck
+		if req["method"] == "tools/list" {
+			select {
+			case reached <- struct{}{}:
+			default:
+			}
+			<-release
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		fakeMCPHandle(w, r, pingTools)
+	}))
+	t.Cleanup(ts.Close)
+
+	srv := newConnectTestServer(t)
+	defer mustCloseWithin(t, srv, 3*time.Second)
+
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: ts.URL}})
+
+	select {
+	case <-reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler did not reach tools/list within 5s")
+	}
+
+	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConn("runtime_a", "runtime_b")); err != nil {
+		t.Fatalf("AddConnection: %v", err)
+	}
+
+	close(release)
+	srv.WaitForStartupConnects()
+
+	if got := srv.ToolCount("svc"); got != 2 {
+		t.Errorf("ToolCount = %d, want 2 (runtime tools should survive the late startup install)", got)
+	}
+}
+
+func TestConnectUpstreamAsync_projectionsReloadedDuringRetry_installUsesLiveProjections(t *testing.T) {
+	aliasPing := func(alias string) map[string]map[string]*config.ProjectionConfig {
+		return map[string]map[string]*config.ProjectionConfig{"svc": {"ping": {Alias: alias}}}
+	}
+	cases := []struct {
+		name        string
+		reloaded    map[string]map[string]*config.ProjectionConfig
+		wantListed  string
+		wantMissing string
+	}{
+		{name: "projections removed", reloaded: map[string]map[string]*config.ProjectionConfig{}, wantListed: "svc.ping", wantMissing: "svc.old_alias"},
+		{name: "alias changed", reloaded: aliasPing("new_alias"), wantListed: "svc.new_alias", wantMissing: "svc.old_alias"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+			r := startupRetry{clock: clock.NewFake()}
+			r.srv = newConnectTestServerLogging(t, discardLogs(), server.WithClock(r.clock))
+			defer r.srv.Close()
+			r.srv.ReplaceProjections(aliasPing("old_alias"))
+			r.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
+				{Name: "svc", Transport: "http", URL: ts.URL, Projections: aliasPing("old_alias")["svc"]},
+			})
+
+			r.waitForBackoffTimer(t)
+			r.srv.ReplaceProjections(tc.reloaded)
+			r.clock.Advance(time.Second)
+			r.srv.WaitForStartupConnects()
+
+			names := listNames(t, r.srv)
+			if !names[tc.wantListed] || names[tc.wantMissing] {
+				t.Errorf("listed tools = %v, want %s and not %s", names, tc.wantListed, tc.wantMissing)
+			}
+		})
 	}
 }
