@@ -14,6 +14,8 @@ const refreshBeforeExpiry = 5 * time.Minute
 // refreshTimeout is short because callers queued on a hung token endpoint each wait it out in turn.
 const refreshTimeout = 10 * time.Second
 
+const proactiveRefreshBackoff = 30 * time.Second
+
 func (p *tokenProvider) shouldRefreshLocked() bool {
 	if p.token.Expiry.IsZero() || p.token.RefreshToken == "" {
 		return false
@@ -30,6 +32,10 @@ func (p *tokenProvider) tokenExpiredLocked() bool {
 	return !p.token.Expiry.IsZero() && !p.clock.Now().Before(p.token.Expiry)
 }
 
+func (p *tokenProvider) inProactiveBackoffLocked() bool {
+	return !p.tokenExpiredLocked() && p.clock.Now().Before(p.proactiveRetryAt)
+}
+
 func (p *tokenProvider) proactiveRefreshLocked() error {
 	err := p.refreshLocked()
 	if err == nil {
@@ -38,6 +44,7 @@ func (p *tokenProvider) proactiveRefreshLocked() error {
 	if p.tokenExpiredLocked() {
 		return err
 	}
+	p.proactiveRetryAt = p.clock.Now().Add(proactiveRefreshBackoff)
 	slog.Warn("proactive refresh failed; serving expiring token", "server", p.serverName, "err", err)
 	return nil
 }
@@ -56,6 +63,7 @@ func (p *tokenProvider) refreshLocked() error {
 		return p.remedyError(fmt.Errorf("refresh token: %w", err))
 	}
 	p.token = refreshed
+	p.proactiveRetryAt = time.Time{}
 	p.persistRefreshedToken(refreshed)
 	return nil
 }
@@ -74,6 +82,7 @@ func (p *tokenProvider) reloadPersistedTokenLocked() {
 		return
 	}
 	p.token = t
+	p.proactiveRetryAt = time.Time{}
 	p.persistedToken = cloneToken(t)
 	p.rehydrateAuthConfigLocked()
 }

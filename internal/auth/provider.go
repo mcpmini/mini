@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"golang.org/x/oauth2"
 
@@ -21,9 +22,10 @@ type tokenProvider struct {
 	clock                  clock.Clock
 	lifetime               context.Context
 
-	mu             sync.Mutex
-	token          *oauth2.Token
-	persistedToken *oauth2.Token
+	mu               sync.Mutex
+	token            *oauth2.Token
+	persistedToken   *oauth2.Token
+	proactiveRetryAt time.Time
 }
 
 func NewProvider(p ProviderParams) (transport.AuthorizationProvider, error) {
@@ -39,7 +41,7 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 	if p.shouldRefreshLocked() {
 		p.reloadPersistedTokenLocked()
 	}
-	if p.shouldRefreshLocked() {
+	if p.shouldRefreshLocked() && !p.inProactiveBackoffLocked() {
 		if err := p.proactiveRefreshLocked(); err != nil {
 			return "", err
 		}
@@ -91,6 +93,7 @@ func (p *tokenProvider) commitBrowserToken(hydrated *config.AuthConfig, tok *oau
 	}
 	p.ac = hydrated
 	p.token = tok
+	p.proactiveRetryAt = time.Time{}
 	p.persistedToken = cloneToken(tok)
 	return nil
 }

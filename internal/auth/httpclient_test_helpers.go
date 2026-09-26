@@ -9,6 +9,8 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
+const ProactiveRefreshBackoff = proactiveRefreshBackoff
+
 func UseLoopbackHTTPClient() {
 	noRedirectClient = &http.Client{
 		Timeout:   30 * time.Second,
