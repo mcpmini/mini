@@ -238,6 +238,8 @@ func TestListenerDelay_failuresDoubleToCapAndSuccessResets(t *testing.T) {
 }
 
 func TestNotificationListener_survivesClientTimeout(t *testing.T) {
+	const clientTimeout = 50 * time.Millisecond
+	const delayBeyondClientTimeout = 5 * clientTimeout
 	notifReceived := make(chan struct{}, 1)
 
 	srv := newNotifListenerServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -246,9 +248,8 @@ func TestNotificationListener_survivesClientTimeout(t *testing.T) {
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
 		}
-		// Delay longer than ClientTimeout to verify the stream client has no timeout.
 		select {
-		case <-time.After(250 * time.Millisecond):
+		case <-time.After(delayBeyondClientTimeout):
 		case <-r.Context().Done():
 			return
 		}
@@ -263,7 +264,7 @@ func TestNotificationListener_survivesClientTimeout(t *testing.T) {
 	conn, err := NewHTTPConnection(HTTPConnectionConfig{
 		URL:           srv.URL,
 		Clock:         clk,
-		ClientTimeout: 50 * time.Millisecond,
+		ClientTimeout: clientTimeout,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -300,5 +301,29 @@ func TestNewStreamClient_blockPrivateIPs_sharesSSRFTransport(t *testing.T) {
 	}
 	if conn.newStreamClient().Transport != conn.client.Transport {
 		t.Error("stream client must share Transport with regular client to preserve SSRF protection")
+	}
+}
+
+func TestNewStreamClient_redirect_notFollowed(t *testing.T) {
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHits.Add(1)
+	}))
+	t.Cleanup(target.Close)
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	t.Cleanup(redirector.Close)
+	conn, err := NewHTTPConnection(HTTPConnectionConfig{URL: redirector.URL, Clock: clock.NewFake()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := conn.newStreamClient().Get(redirector.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound || targetHits.Load() != 0 {
+		t.Errorf("status = %d, redirect target hits = %d: the stream client must not follow redirects", resp.StatusCode, targetHits.Load())
 	}
 }

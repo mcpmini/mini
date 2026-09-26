@@ -104,7 +104,6 @@ func resolveClientTimeout(configured time.Duration) time.Duration {
 }
 
 // No Timeout: http.Client.Timeout covers body reads and would cut an idle SSE stream.
-// The shared Transport keeps the SSRF-safe dialer.
 func (c *HTTPConnection) newStreamClient() *http.Client {
 	return &http.Client{CheckRedirect: c.client.CheckRedirect, Transport: c.client.Transport}
 }
