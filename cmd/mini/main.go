@@ -143,9 +143,8 @@ func serveStandalone(p ServeParams, opts ...server.ServerOption) error {
 	ctx, stop := shutdownContext(signal.NotifyContext)
 	defer stop()
 	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
-	srv := buildAndStartConnecting(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
+	srv := buildAndStart(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
 	defer srv.Close()
-	srv.StartProjectionReload(ctx)
 	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
 	maybeStartSessionEviction(ctx, httpSrv, srv)
 	p.Logger.Info("mini ready")
@@ -173,9 +172,10 @@ type BuildServerParams struct {
 	Servers   []config.ServerConfig
 }
 
-func buildAndStartConnecting(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
+func buildAndStart(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
 	srv := server.NewWithConfigDir(p.Cfg, p.ConfigDir, p.Logger, opts...)
 	srv.ConnectUpstreams(ctx, p.Servers)
+	srv.StartProjectionReload(ctx)
 	return srv
 }
 

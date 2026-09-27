@@ -33,7 +33,7 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 		oauthServerConfig("live", mcp.srv.URL, tokenEp.srv.URL, true),
 		oauthServerConfig("idle", "http://localhost:1", tokenEp.srv.URL, false),
 	}
-	srv := buildAndStartConnecting(context.Background(),
+	srv := buildAndStart(context.Background(),
 		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
 			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: servers},
 	)
@@ -51,7 +51,7 @@ func TestBuildAndStartConnecting_oauthServerWithHandSetHeaderAndNoToken_usesHand
 	mcp := newTestMCPUpstream(t)
 	sc := oauthServerConfig("pat", mcp.srv.URL, "http://localhost:1/token", true)
 	sc.Headers = map[string]string{"Authorization": "Bearer pat-123"}
-	srv := buildAndStartConnecting(context.Background(),
+	srv := buildAndStart(context.Background(),
 		BuildServerParams{Cfg: &config.Config{}, ConfigDir: t.TempDir(),
 			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}},
 	)
