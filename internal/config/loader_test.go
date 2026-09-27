@@ -140,7 +140,9 @@ func TestLoadInlineServers_invalidName_rejected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n  - name: "+name+"\n    command: echo\n")
-			expectLoadError(t, dir)
+			if _, _, err := config.Load(dir); err == nil || !strings.Contains(err.Error(), "invalid server name") {
+				t.Fatalf("want an invalid server name error, got %v", err)
+			}
 		})
 	}
 }
