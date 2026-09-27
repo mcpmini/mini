@@ -135,6 +135,16 @@ servers:
 	assertOneServerName(t, dir, "fs")
 }
 
+func TestLoadInlineServers_invalidName_rejected(t *testing.T) {
+	for _, name := range []string{`""`, `"bad name!"`, `"../escape"`, `"a.b"`} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n  - name: "+name+"\n    command: echo\n")
+			expectLoadError(t, dir)
+		})
+	}
+}
+
 func TestLoadMalformedMainConfig(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "config.yaml"), `not: valid: yaml: [`)
@@ -492,25 +502,6 @@ servers:
 	}
 	if servers[0].Auth == nil || servers[0].Auth.Type != "oauth2" {
 		t.Errorf("Auth = %+v, a server declared inline in config.yaml should get the same bundled/detected merge as one in servers/", servers[0].Auth)
-	}
-}
-
-func TestLoadServerConfig_inlineServerWithUnvalidatedNameDoesNotPathTraverse(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "config.yaml"), `
-servers:
-  - name: "../escape"
-    command: run
-`)
-	_, servers, err := config.Load(dir)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if len(servers) != 1 {
-		t.Fatalf("expected 1 server, got %d", len(servers))
-	}
-	if servers[0].Auth != nil {
-		t.Errorf("Auth = %+v, an unvalidated inline server name must never be usable as a detected-marker path", servers[0].Auth)
 	}
 }
 

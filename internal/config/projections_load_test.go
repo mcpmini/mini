@@ -126,6 +126,17 @@ func TestLoadProjections(t *testing.T) {
 			},
 		},
 		{
+			name:              "undefined ${VAR} in an inline server name: config.yaml is a source error, the renamed server keeps previous",
+			files:             map[string]string{"config.yaml": "servers:\n- name: ${PROJ_UNDEFINED_INLINE_NAME_XYZ}\n  command: echo\n  projections:\n    t:\n      include_only: [a]\n"},
+			wantSourceErrors:  1,
+			wantKeepsPrevious: []string{"svc"},
+			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
+				if len(load.Projections) != 0 {
+					t.Errorf("no server should load from an invalid inline name, got %v", load.Projections)
+				}
+			},
+		},
+		{
 			name:              "invalid inline handshake_timeout: config.yaml is a source error, as in config.Load",
 			files:             map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  handshake_timeout: invalid\n  projections:\n    t:\n      include_only: [a]\n"},
 			wantAbsent:        []string{"svc"},
