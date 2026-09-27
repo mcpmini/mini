@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -95,6 +96,41 @@ func TestLoadProjections(t *testing.T) {
 			name:          "flow-sequence ${VAR}: var-unset",
 			files:         map[string]string{"servers/svc.yaml": "name: svc\ncommand: echo\nargs: [--token, ${PROJ_TEST_TOK_XYZ}]\nprojections:\n  t:\n    include_only: [a]\n"},
 			wantProjected: []string{"svc"},
+		},
+		{
+			name:        "undefined ${VAR} in an inline projection rule: server skipped, not stripped",
+			files:       map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      exclude: [${PROJ_UNDEFINED_FIELD_XYZ}]\n"},
+			wantAbsent:  []string{"svc"},
+			wantSkipped: []string{"svc"},
+			check: func(t *testing.T, _ string, load config.ProjectionsLoad) {
+				if err := load.Skipped["svc"]; err == nil || !strings.Contains(err.Error(), "PROJ_UNDEFINED_FIELD_XYZ") {
+					t.Errorf("skip reason should name the undefined variable, got %v", err)
+				}
+			},
+		},
+		{
+			name:              "undefined ${VAR} in a servers/ file projection rule: server skipped",
+			files:             map[string]string{"servers/svc.yaml": "name: svc\ncommand: echo\nprojections:\n  t:\n    include_only: [${PROJ_UNDEFINED_FIELD_XYZ}]\n"},
+			wantAbsent:        []string{"svc"},
+			wantSkipped:       []string{"svc"},
+			wantKeepsPrevious: []string{"svc"},
+		},
+		{
+			name:             "undefined ${VAR} as the server name: invalid name, not a phantom server",
+			files:            map[string]string{"servers/x.yaml": "name: ${PROJ_UNDEFINED_NAME_XYZ}\ncommand: echo\nprojections:\n  t:\n    include_only: [a]\n"},
+			wantSourceErrors: 1,
+			check: func(t *testing.T, _ string, load config.ProjectionsLoad) {
+				if len(load.Projections) != 0 {
+					t.Errorf("no server should load from an undefined name, got %v", load.Projections)
+				}
+			},
+		},
+		{
+			name:              "invalid inline handshake_timeout: config.yaml is a source error, as in config.Load",
+			files:             map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  handshake_timeout: invalid\n  projections:\n    t:\n      include_only: [a]\n"},
+			wantAbsent:        []string{"svc"},
+			wantSourceErrors:  1,
+			wantKeepsPrevious: []string{"svc"},
 		},
 		{
 			name:        "file stem differs from name: bad format → Skipped by real name",
