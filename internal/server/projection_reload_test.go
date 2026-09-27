@@ -86,7 +86,7 @@ func buildReloadEnv(t *testing.T, dir string) *reloadEnv {
 
 func addReloadUpstream(t *testing.T, srv *server.Server) {
 	t.Helper()
-	addReloadUpstreamNamed(t, &reloadEnv{t: t, srv: srv}, "svc")
+	addReloadUpstreamNamed(t, srv, "svc")
 }
 
 func (e *reloadEnv) startPoller() {
@@ -113,25 +113,24 @@ func (e *reloadEnv) advanceTick() {
 	}
 }
 
-func (e *reloadEnv) callData() map[string]any {
+func (e *reloadEnv) assertServerDataKeys(server string, present, absent []string) {
 	e.t.Helper()
-	resp := serve(e.t, e.srv, callTool("call", map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}}))
-	return parseProxyEnvelope(e.t, toolResultText(e.t, resp)).Data
-}
-
-func (e *reloadEnv) assertDataKeys(present []string, absent []string) {
-	e.t.Helper()
-	data := e.callData()
+	resp := serve(e.t, e.srv, callTool("call", map[string]any{"server": server, "tool": "getData", "params": map[string]any{}}))
+	data := parseProxyEnvelope(e.t, toolResultText(e.t, resp)).Data
 	for _, k := range present {
 		if data[k] == nil {
-			e.t.Errorf("expected field %q present, got: %v", k, data)
+			e.t.Errorf("expected field %q present on %q, got: %v", k, server, data)
 		}
 	}
 	for _, k := range absent {
 		if data[k] != nil {
-			e.t.Errorf("expected field %q absent, got: %v", k, data)
+			e.t.Errorf("expected field %q absent on %q, got: %v", k, server, data)
 		}
 	}
+}
+
+func (e *reloadEnv) assertDataKeys(present []string, absent []string) {
+	e.assertServerDataKeys("svc", present, absent)
 }
 
 func (e *reloadEnv) writeProjFile(content string) {
