@@ -26,7 +26,7 @@ func TestReplaceRegistryToolsLocked_usesReloadedAliases(t *testing.T) {
 	proj := map[string]*config.ProjectionConfig{"list_pull_requests": {Alias: "old_alias"}}
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, &transport.FakeConnection{Tools: tools})
 
-	srv.replaceProjections(config.ProjectionsLoad{
+	srv.replaceProjections(config.LoadProjectionsResult{
 		Projections: map[string]map[string]*config.ProjectionConfig{
 			"gh": {"list_pull_requests": {Alias: "new_alias"}},
 		},

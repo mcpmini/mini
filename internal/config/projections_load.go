@@ -9,37 +9,31 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SourceError records a file that could not be read, parsed or validated, whose
-// server name cannot be trusted.
+// SourceError is a config file that failed to load, so its server names cannot be trusted.
 type SourceError struct {
 	Path string
 	Err  error
 }
 
-// ProjectionsLoad is the result of a per-server-isolated projection load.
-type ProjectionsLoad struct {
-	Projections  map[string]map[string]*ProjectionConfig // servers whose sources all loaded without error
-	Skipped      map[string]error                        // name → error when .proj.yaml or format validation failed; absent from Projections
-	SourceErrors []SourceError                           // files that could not be attributed to a server name
-	freshLoaded  map[string]bool
+type LoadProjectionsResult struct {
+	Projections    map[string]map[string]*ProjectionConfig
+	SkippedServers map[string]error
+	SourceErrors   []SourceError
+	freshLoaded    map[string]bool
 }
 
-// KeepsPrevious reports whether the caller should retain the previous live
-// projection for name rather than applying the freshly loaded one.
-func (l ProjectionsLoad) KeepsPrevious(name string) bool {
-	if _, ok := l.Skipped[name]; ok {
+func (l LoadProjectionsResult) KeepsPreviousProjection(name string) bool {
+	if _, ok := l.SkippedServers[name]; ok {
 		return true
 	}
 	return len(l.SourceErrors) > 0 && !l.freshLoaded[name]
 }
 
-// LoadProjections loads projection configs from configDir with lenient env
-// interpolation so that one bad server file never blocks other servers.
-func LoadProjections(configDir string) ProjectionsLoad {
-	load := ProjectionsLoad{
-		Projections: make(map[string]map[string]*ProjectionConfig),
-		Skipped:     make(map[string]error),
-		freshLoaded: make(map[string]bool),
+func LoadProjections(configDir string) LoadProjectionsResult {
+	load := LoadProjectionsResult{
+		Projections:    make(map[string]map[string]*ProjectionConfig),
+		SkippedServers: make(map[string]error),
+		freshLoaded:    make(map[string]bool),
 	}
 	servers := loadLenientServers(configDir, &load)
 	projFiles := loadProjFilesIsolated(configDir, servers, &load)
@@ -48,7 +42,7 @@ func LoadProjections(configDir string) ProjectionsLoad {
 	return load
 }
 
-func loadLenientServers(configDir string, load *ProjectionsLoad) []ServerConfig {
+func loadLenientServers(configDir string, load *LoadProjectionsResult) []ServerConfig {
 	fileServers := loadServerDirLenient(configDir, load)
 	inlineServers := loadInlineServersLenient(configDir, load)
 	combined := deduplicateServers(append(fileServers, inlineServers...))
@@ -56,20 +50,20 @@ func loadLenientServers(configDir string, load *ProjectionsLoad) []ServerConfig 
 	return combined
 }
 
-func markFreshLoaded(combined, fileServers []ServerConfig, load *ProjectionsLoad) {
-	fileNames := make(map[string]bool, len(fileServers))
+func markFreshLoaded(combined, fileServers []ServerConfig, load *LoadProjectionsResult) {
+	fromServerFile := make(map[string]bool, len(fileServers))
 	for _, s := range fileServers {
-		fileNames[s.Name] = true
+		fromServerFile[s.Name] = true
 	}
+	shadowingFileMayHaveFailed := len(load.SourceErrors) > 0
 	for _, s := range combined {
-		// A broken servers/ file can unmask the inline twin it used to shadow.
-		if fileNames[s.Name] || len(load.SourceErrors) == 0 {
+		if fromServerFile[s.Name] || !shadowingFileMayHaveFailed {
 			load.freshLoaded[s.Name] = true
 		}
 	}
 }
 
-func loadServerDirLenient(configDir string, load *ProjectionsLoad) []ServerConfig {
+func loadServerDirLenient(configDir string, load *LoadProjectionsResult) []ServerConfig {
 	paths, _ := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
 	var out []ServerConfig
 	for _, p := range filterServerPaths(paths) {
@@ -91,7 +85,7 @@ func loadServerConfigLenient(path string) (*ServerConfig, error) {
 	return parseServerConfig(path, interpolateEnvMarkingUndefined(data))
 }
 
-func loadInlineServersLenient(configDir string, load *ProjectionsLoad) []ServerConfig {
+func loadInlineServersLenient(configDir string, load *LoadProjectionsResult) []ServerConfig {
 	configPath := filepath.Join(configDir, "config.yaml")
 	data, err := os.ReadFile(configPath)
 	if os.IsNotExist(err) {
@@ -113,7 +107,7 @@ func loadInlineServersLenient(configDir string, load *ProjectionsLoad) []ServerC
 	return cfg.Servers
 }
 
-func loadProjFilesIsolated(configDir string, servers []ServerConfig, load *ProjectionsLoad) map[string]map[string]*ProjectionConfig {
+func loadProjFilesIsolated(configDir string, servers []ServerConfig, load *LoadProjectionsResult) map[string]map[string]*ProjectionConfig {
 	configured := make(map[string]bool, len(servers))
 	for _, s := range servers {
 		configured[s.Name] = true
@@ -126,15 +120,15 @@ func loadProjFilesIsolated(configDir string, servers []ServerConfig, load *Proje
 			continue
 		}
 		if err := loadOneProjectionFile(projFiles, p); err != nil {
-			load.Skipped[name] = err
+			load.SkippedServers[name] = err
 		}
 	}
 	return projFiles
 }
 
-func extractAndValidateProjections(servers []ServerConfig, load *ProjectionsLoad) {
+func extractAndValidateProjections(servers []ServerConfig, load *LoadProjectionsResult) {
 	for _, s := range servers {
-		if _, skip := load.Skipped[s.Name]; skip {
+		if _, skip := load.SkippedServers[s.Name]; skip {
 			continue
 		}
 		if s.Projections != nil {
@@ -144,10 +138,10 @@ func extractAndValidateProjections(servers []ServerConfig, load *ProjectionsLoad
 	validateProjectionsIsolated(servers, load)
 }
 
-func validateProjectionsIsolated(servers []ServerConfig, load *ProjectionsLoad) {
+func validateProjectionsIsolated(servers []ServerConfig, load *LoadProjectionsResult) {
 	for _, s := range servers {
 		if err := validateLoadedProjections(s.Name, load.Projections[s.Name]); err != nil {
-			load.Skipped[s.Name] = err
+			load.SkippedServers[s.Name] = err
 			delete(load.Projections, s.Name)
 		}
 	}

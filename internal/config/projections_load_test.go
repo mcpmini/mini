@@ -24,10 +24,10 @@ type projLoadCase struct {
 	wantSourceErrors  int
 	wantKeepsPrevious []string
 	wantFresh         []string
-	check             func(*testing.T, string, config.ProjectionsLoad)
+	check             func(*testing.T, string, config.LoadProjectionsResult)
 }
 
-func checkProjLoad(t *testing.T, dir string, load config.ProjectionsLoad, tc projLoadCase) {
+func checkProjLoad(t *testing.T, dir string, load config.LoadProjectionsResult, tc projLoadCase) {
 	t.Helper()
 	for _, name := range tc.wantProjected {
 		if load.Projections[name] == nil {
@@ -41,25 +41,25 @@ func checkProjLoad(t *testing.T, dir string, load config.ProjectionsLoad, tc pro
 	}
 	if tc.wantSkipped != nil {
 		for _, name := range tc.wantSkipped {
-			if _, ok := load.Skipped[name]; !ok {
-				t.Errorf("expected %q in Skipped", name)
+			if _, ok := load.SkippedServers[name]; !ok {
+				t.Errorf("expected %q in SkippedServers", name)
 			}
 		}
-		if len(tc.wantSkipped) == 0 && len(load.Skipped) != 0 {
-			t.Errorf("expected Skipped empty, got %v", load.Skipped)
+		if len(tc.wantSkipped) == 0 && len(load.SkippedServers) != 0 {
+			t.Errorf("expected SkippedServers empty, got %v", load.SkippedServers)
 		}
 	}
 	if got := len(load.SourceErrors); got != tc.wantSourceErrors {
 		t.Errorf("expected %d SourceErrors, got %d: %v", tc.wantSourceErrors, got, load.SourceErrors)
 	}
 	for _, name := range tc.wantKeepsPrevious {
-		if !load.KeepsPrevious(name) {
-			t.Errorf("KeepsPrevious(%q) should be true", name)
+		if !load.KeepsPreviousProjection(name) {
+			t.Errorf("KeepsPreviousProjection(%q) should be true", name)
 		}
 	}
 	for _, name := range tc.wantFresh {
-		if load.KeepsPrevious(name) {
-			t.Errorf("KeepsPrevious(%q) should be false", name)
+		if load.KeepsPreviousProjection(name) {
+			t.Errorf("KeepsPreviousProjection(%q) should be false", name)
 		}
 	}
 	if tc.check != nil {
@@ -76,7 +76,7 @@ func TestLoadProjections(t *testing.T) {
 			wantSkipped: []string{},
 		},
 		{
-			name:        "broken orphan proj.yaml is ignored: no Skipped, no SourceError",
+			name:        "broken orphan proj.yaml is ignored: no SkippedServers, no SourceError",
 			files:       map[string]string{"servers/orphan.proj.yaml": "bad: [yaml\n"},
 			wantSkipped: []string{},
 		},
@@ -102,8 +102,8 @@ func TestLoadProjections(t *testing.T) {
 			files:       map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      exclude: [${PROJ_UNDEFINED_FIELD_XYZ}]\n"},
 			wantAbsent:  []string{"svc"},
 			wantSkipped: []string{"svc"},
-			check: func(t *testing.T, _ string, load config.ProjectionsLoad) {
-				if err := load.Skipped["svc"]; err == nil || !strings.Contains(err.Error(), "PROJ_UNDEFINED_FIELD_XYZ") {
+			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
+				if err := load.SkippedServers["svc"]; err == nil || !strings.Contains(err.Error(), "PROJ_UNDEFINED_FIELD_XYZ") {
 					t.Errorf("skip reason should name the undefined variable, got %v", err)
 				}
 			},
@@ -119,7 +119,7 @@ func TestLoadProjections(t *testing.T) {
 			name:             "undefined ${VAR} as the server name: invalid name, not a phantom server",
 			files:            map[string]string{"servers/x.yaml": "name: ${PROJ_UNDEFINED_NAME_XYZ}\ncommand: echo\nprojections:\n  t:\n    include_only: [a]\n"},
 			wantSourceErrors: 1,
-			check: func(t *testing.T, _ string, load config.ProjectionsLoad) {
+			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
 				if len(load.Projections) != 0 {
 					t.Errorf("no server should load from an undefined name, got %v", load.Projections)
 				}
@@ -133,7 +133,7 @@ func TestLoadProjections(t *testing.T) {
 			wantKeepsPrevious: []string{"svc"},
 		},
 		{
-			name:        "file stem differs from name: bad format → Skipped by real name",
+			name:        "file stem differs from name: bad format → SkippedServers by real name",
 			files:       map[string]string{"servers/github-server.yaml": "name: github\ncommand: echo\nprojections:\n  t:\n    format: bad-format\n"},
 			wantAbsent:  []string{"github"},
 			wantSkipped: []string{"github"},
@@ -189,7 +189,7 @@ func TestLoadProjections(t *testing.T) {
 			wantSourceErrors:  1,
 			wantKeepsPrevious: []string{"inline-only"},
 			wantFresh:         []string{"file-svc"},
-			check: func(t *testing.T, dir string, load config.ProjectionsLoad) {
+			check: func(t *testing.T, dir string, load config.LoadProjectionsResult) {
 				if len(load.SourceErrors) > 0 && load.SourceErrors[0].Path != filepath.Join(dir, "config.yaml") {
 					t.Errorf("expected SourceErrors to contain config.yaml path, got %v", load.SourceErrors)
 				}
@@ -286,11 +286,11 @@ func TestLoadProjections_projFilesSourceError(t *testing.T) {
 
 	load := config.LoadProjections(dir)
 
-	if _, ok := load.Skipped["svc"]; !ok {
-		t.Error("unreadable .proj.yaml should cause svc to be in Skipped")
+	if _, ok := load.SkippedServers["svc"]; !ok {
+		t.Error("unreadable .proj.yaml should cause svc to be in SkippedServers")
 	}
-	if !load.KeepsPrevious("svc") {
-		t.Error("KeepsPrevious(svc) should be true after unreadable proj file")
+	if !load.KeepsPreviousProjection("svc") {
+		t.Error("KeepsPreviousProjection(svc) should be true after unreadable proj file")
 	}
 	if _, ok := load.Projections["svc"]; ok {
 		t.Error("svc should be absent from Projections after proj file error")

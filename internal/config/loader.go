@@ -337,7 +337,6 @@ func interpolateEnv(data []byte) ([]byte, error) {
 	return []byte(result), nil
 }
 
-// The dot keeps a marked name: field an invalid server name, as an empty string would be.
 const undefinedEnvMarker = "mini.undefined-env."
 
 var undefinedEnvMarkerRef = regexp.MustCompile(regexp.QuoteMeta(undefinedEnvMarker) + `([^\s,\]}"']+)`)
