@@ -57,16 +57,16 @@ func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 		t.Fatal("projection poller not started:", err)
 	}
 
-	if !reloadDataHasField(t, srv, "b") {
-		t.Fatal("initial projection should include b before the edit")
+	if data := projectedGetData(t, srv); data["a"] == nil || data["b"] == nil {
+		t.Fatalf("initial projection should keep a and b, got %v", data)
 	}
 
 	writeServer(t, dir, "svc.proj", "getData:\n  include_only: [a]\n")
 	fc.Advance(5 * time.Second)
 	reloaded.wait(t)
 
-	if reloadDataHasField(t, srv, "b") {
-		t.Fatal("edited projection not applied after hot reload")
+	if data := projectedGetData(t, srv); data["a"] == nil || data["b"] != nil {
+		t.Fatalf("edited projection (include_only: [a]) not applied after hot reload, got %v", data)
 	}
 }
 
@@ -110,23 +110,26 @@ func (h logSignal) wait(t *testing.T) {
 	}
 }
 
-func reloadDataHasField(t *testing.T, srv *server.Server, field string) bool {
+func projectedGetData(t *testing.T, srv *server.Server) map[string]any {
 	t.Helper()
 	resp := serveSingleProxyCall(t, srv, "svc__getData")
-	result, _ := resp["result"].(map[string]any)
+	result, ok := resp["result"].(map[string]any)
+	if !ok || result["isError"] == true {
+		t.Fatalf("getData call failed: %v", resp)
+	}
 	content, _ := result["content"].([]any)
 	if len(content) == 0 {
-		t.Fatal("empty tool result content")
+		t.Fatalf("getData returned no content: %v", result)
 	}
 	text, _ := content[0].(map[string]any)["text"].(string)
 	var raw map[string]any
 	if err := json.Unmarshal([]byte(text), &raw); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
+		t.Fatalf("getData returned non-JSON content %q: %v", text, err)
 	}
 	if data, ok := raw["data"].(map[string]any); ok {
-		return data[field] != nil
+		return data
 	}
-	return raw[field] != nil
+	return raw
 }
 
 func hungUpstreamBuildParams(t *testing.T, dir, url string) BuildServerParams {
