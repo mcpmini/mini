@@ -44,11 +44,8 @@ func (s *Server) reloadIfProjectionFilesChanged(last map[string]string) map[stri
 	if len(changed) == 0 {
 		return last
 	}
-	if _, err := s.reloadProjections(); err != nil {
-		s.logger.Warn("projection reload failed, keeping previous projections", "err", err)
-	} else {
-		s.logger.Info("projections reloaded", "files", changed)
-	}
+	s.reloadProjections()
+	s.logger.Info("projections reloaded", "files", changed)
 	return current
 }
 

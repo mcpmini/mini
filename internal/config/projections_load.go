@@ -9,15 +9,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// SourceError records a file that could not be read or parsed, whose server
+// name cannot be trusted.
+type SourceError struct {
+	Path string
+	Err  error
+}
+
 // ProjectionsLoad is the result of a per-server-isolated projection load.
-// Projections contains servers whose sources all loaded successfully.
-// Skipped contains server names that had at least one failure; callers keep
-// the previous live projections for those names.
+// Projections contains servers whose sources all loaded without error.
+// Skipped[name] is set when a server's .proj.yaml or format validation failed;
+// those servers are absent from Projections.
+// SourceErrors records files that could not be attributed to a server name.
 type ProjectionsLoad struct {
-	Projections      map[string]map[string]*ProjectionConfig
-	Skipped          map[string]error
-	fromServerFiles  map[string]bool
-	mainConfigFailed bool
+	Projections  map[string]map[string]*ProjectionConfig
+	Skipped      map[string]error
+	SourceErrors []SourceError
+	freshLoaded  map[string]bool
 }
 
 // KeepsPrevious reports whether the caller should retain the previous live
@@ -26,49 +34,100 @@ func (l ProjectionsLoad) KeepsPrevious(name string) bool {
 	if _, ok := l.Skipped[name]; ok {
 		return true
 	}
-	return l.mainConfigFailed && !l.fromServerFiles[name]
+	return len(l.SourceErrors) > 0 && !l.freshLoaded[name]
 }
 
-type minimalServer struct {
-	Name        string                       `yaml:"name"`
-	Projections map[string]*ProjectionConfig `yaml:"projections,omitempty"`
-}
-
-type minimalMainConfig struct {
-	Servers []minimalServer `yaml:"servers,omitempty"`
-}
-
-// LoadProjections reads projection-relevant data only — no env interpolation,
-// no transport validation — so a ${VAR} in an unrelated field never blocks a
-// good server's projections from loading.
+// LoadProjections loads projection configs from configDir with lenient env
+// interpolation so that one bad server file never blocks other servers.
 func LoadProjections(configDir string) ProjectionsLoad {
 	load := ProjectionsLoad{
-		Projections:     make(map[string]map[string]*ProjectionConfig),
-		Skipped:         make(map[string]error),
-		fromServerFiles: make(map[string]bool),
+		Projections: make(map[string]map[string]*ProjectionConfig),
+		Skipped:     make(map[string]error),
+		freshLoaded: make(map[string]bool),
 	}
-	configured := loadProjectionSources(configDir, &load)
-	overlayProjFilesIsolated(configDir, configured, &load)
-	validateProjectionFormatsIsolated(configured, &load)
+	servers := loadLenientServers(configDir, &load)
+	projFiles := loadProjFilesIsolated(configDir, servers, &load)
+	mergeProjections(servers, projFiles)
+	extractAndValidateProjections(servers, &load)
 	return load
 }
 
-func loadProjectionSources(configDir string, load *ProjectionsLoad) []minimalServer {
-	fromFiles := loadServerDirMinimal(configDir, load)
-	inlines, failed := loadInlineMinimalServers(configDir)
-	load.mainConfigFailed = failed
-
-	fileNames := make(map[string]bool, len(fromFiles))
-	for _, s := range fromFiles {
-		fileNames[s.Name] = true
+func loadLenientServers(configDir string, load *ProjectionsLoad) []ServerConfig {
+	fileServers := loadServerDirLenient(configDir, load)
+	inlineServers := loadInlineServersLenient(configDir, load)
+	combined := deduplicateServers(append(fileServers, inlineServers...))
+	for _, s := range combined {
+		load.freshLoaded[s.Name] = true
 	}
-	combined := fromFiles
-	for _, s := range inlines {
-		if !fileNames[s.Name] {
-			combined = append(combined, s)
+	return combined
+}
+
+func loadServerDirLenient(configDir string, load *ProjectionsLoad) []ServerConfig {
+	paths, _ := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
+	var out []ServerConfig
+	for _, p := range filterServerPaths(paths) {
+		s, err := loadServerConfigLenient(p)
+		if err != nil {
+			load.SourceErrors = append(load.SourceErrors, SourceError{Path: p, Err: err})
+			continue
+		}
+		out = append(out, *s)
+	}
+	return out
+}
+
+func loadServerConfigLenient(path string) (*ServerConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return parseServerConfig(path, interpolateEnvLenient(data))
+}
+
+func loadInlineServersLenient(configDir string, load *ProjectionsLoad) []ServerConfig {
+	data, err := os.ReadFile(filepath.Join(configDir, "config.yaml"))
+	if os.IsNotExist(err) {
+		return nil
+	}
+	configPath := filepath.Join(configDir, "config.yaml")
+	if err != nil {
+		load.SourceErrors = append(load.SourceErrors, SourceError{Path: configPath, Err: fmt.Errorf("read config.yaml: %w", err)})
+		return nil
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(interpolateEnvLenient(data), &cfg); err != nil {
+		load.SourceErrors = append(load.SourceErrors, SourceError{Path: configPath, Err: fmt.Errorf("parse config.yaml: %w", err)})
+		return nil
+	}
+	return cfg.Servers
+}
+
+func loadProjFilesIsolated(configDir string, servers []ServerConfig, load *ProjectionsLoad) map[string]map[string]*ProjectionConfig {
+	configured := make(map[string]bool, len(servers))
+	for _, s := range servers {
+		configured[s.Name] = true
+	}
+	paths, _ := filepath.Glob(filepath.Join(configDir, "servers", "*.proj.yaml"))
+	projFiles := make(map[string]map[string]*ProjectionConfig)
+	for _, p := range paths {
+		name := strings.TrimSuffix(filepath.Base(p), ".proj.yaml")
+		if !configured[name] {
+			continue
+		}
+		tmp := make(map[string]map[string]*ProjectionConfig)
+		if err := loadOneProjectionFile(tmp, p); err != nil {
+			load.Skipped[name] = err
+			continue
+		}
+		if tp, ok := tmp[name]; ok {
+			projFiles[name] = tp
 		}
 	}
-	for _, s := range combined {
+	return projFiles
+}
+
+func extractAndValidateProjections(servers []ServerConfig, load *ProjectionsLoad) {
+	for _, s := range servers {
 		if _, skip := load.Skipped[s.Name]; skip {
 			continue
 		}
@@ -76,95 +135,11 @@ func loadProjectionSources(configDir string, load *ProjectionsLoad) []minimalSer
 			load.Projections[s.Name] = s.Projections
 		}
 	}
-	return combined
+	validateProjectionFormatsIsolated(servers, load)
 }
 
-func loadServerDirMinimal(configDir string, load *ProjectionsLoad) []minimalServer {
-	paths, _ := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
-	var out []minimalServer
-	for _, p := range filterServerPaths(paths) {
-		stem := strings.TrimSuffix(filepath.Base(p), ".yaml")
-		s, err := readMinimalServer(p)
-		if err != nil {
-			load.Skipped[stem] = err
-			continue
-		}
-		if !ValidServerName.MatchString(s.Name) {
-			load.Skipped[stem] = fmt.Errorf("invalid server name %q in %s", s.Name, p)
-			continue
-		}
-		load.fromServerFiles[s.Name] = true
-		out = append(out, s)
-	}
-	return out
-}
-
-func readMinimalServer(path string) (minimalServer, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return minimalServer{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	var s minimalServer
-	if err := yaml.Unmarshal(data, &s); err != nil {
-		return minimalServer{}, fmt.Errorf("parse %s: %w", path, err)
-	}
-	return s, nil
-}
-
-func loadInlineMinimalServers(configDir string) ([]minimalServer, bool) {
-	data, err := os.ReadFile(filepath.Join(configDir, "config.yaml"))
-	if os.IsNotExist(err) {
-		return nil, false
-	}
-	if err != nil {
-		return nil, true
-	}
-	var cfg minimalMainConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, true
-	}
-	return cfg.Servers, false
-}
-
-func overlayProjFilesIsolated(configDir string, configured []minimalServer, load *ProjectionsLoad) {
-	configuredSet := make(map[string]bool, len(configured))
-	for _, s := range configured {
-		configuredSet[s.Name] = true
-	}
-	paths, _ := filepath.Glob(filepath.Join(configDir, "servers", "*.proj.yaml"))
-	for _, p := range paths {
-		name := strings.TrimSuffix(filepath.Base(p), ".proj.yaml")
-		if !configuredSet[name] {
-			continue
-		}
-		if _, skip := load.Skipped[name]; skip {
-			continue
-		}
-		applyOneProjFileIsolated(p, name, load)
-	}
-}
-
-func applyOneProjFileIsolated(p, name string, load *ProjectionsLoad) {
-	tmp := make(map[string]map[string]*ProjectionConfig)
-	if err := loadOneProjectionFile(tmp, p); err != nil {
-		load.Skipped[name] = err
-		delete(load.Projections, name)
-		return
-	}
-	tp, ok := tmp[name]
-	if !ok {
-		return
-	}
-	if load.Projections[name] == nil {
-		load.Projections[name] = make(map[string]*ProjectionConfig)
-	}
-	for tool, pc := range tp {
-		load.Projections[name][tool] = pc
-	}
-}
-
-func validateProjectionFormatsIsolated(configured []minimalServer, load *ProjectionsLoad) {
-	for _, s := range configured {
+func validateProjectionFormatsIsolated(servers []ServerConfig, load *ProjectionsLoad) {
+	for _, s := range servers {
 		if _, skip := load.Skipped[s.Name]; skip {
 			continue
 		}

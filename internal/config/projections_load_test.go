@@ -3,8 +3,12 @@
 package config_test
 
 import (
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -24,7 +28,6 @@ func writeProjLoadFile(t *testing.T, dir, rel, content string) {
 func TestLoadProjections(t *testing.T) {
 	t.Run("happy path: servers/ + proj.yaml overlay + inline", func(t *testing.T) {
 		dir := t.TempDir()
-		// toolA inline, toolB only in proj.yaml — overlay must merge both tools
 		writeProjLoadFile(t, dir, "servers/a.yaml", "name: a\ncommand: echo\nprojections:\n  toolA:\n    include_only: [x]\n")
 		writeProjLoadFile(t, dir, "servers/a.proj.yaml", "toolB:\n  include_only: [y]\n")
 		writeProjLoadFile(t, dir, "config.yaml", "servers:\n- name: b\n  command: echo\n  projections:\n    toolB:\n      include_only: [z]\n")
@@ -88,28 +91,83 @@ func TestLoadProjections(t *testing.T) {
 		}
 	})
 
-	t.Run("malformed servers/b.yaml: b skipped, a loaded", func(t *testing.T) {
-		dir := t.TempDir()
-		writeProjLoadFile(t, dir, "servers/a.yaml", "name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [ok]\n")
-		writeProjLoadFile(t, dir, "servers/b.yaml", "bad: [yaml\n")
-
-		load := config.LoadProjections(dir)
-
-		if _, ok := load.Skipped["b"]; !ok {
-			t.Error("malformed b.yaml should be skipped")
+	t.Run("flow-sequence ${VAR} loads correctly with and without var set", func(t *testing.T) {
+		cases := []struct {
+			name   string
+			setVar bool
+		}{
+			{"var-unset", false},
+			{"var-set", true},
 		}
-		if load.Projections["a"]["t"] == nil {
-			t.Error("a should still load when b fails")
-		}
-		if load.KeepsPrevious("b") != true {
-			t.Error("KeepsPrevious(b) should be true")
-		}
-		if load.KeepsPrevious("a") != false {
-			t.Error("KeepsPrevious(a) should be false")
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				writeProjLoadFile(t, dir, "servers/svc.yaml",
+					"name: svc\ncommand: echo\nargs: [--token, ${PROJ_TEST_TOK_XYZ}]\nprojections:\n  t:\n    include_only: [a]\n")
+				if tc.setVar {
+					t.Setenv("PROJ_TEST_TOK_XYZ", "testtoken")
+				}
+				load := config.LoadProjections(dir)
+				if len(load.Skipped) != 0 || len(load.SourceErrors) != 0 {
+					t.Errorf("expected no errors, skipped=%v sourceErrors=%v", load.Skipped, load.SourceErrors)
+				}
+				if load.Projections["svc"]["t"] == nil {
+					t.Error("projection not loaded for flow-sequence server file")
+				}
+			})
 		}
 	})
 
-	t.Run("malformed b.proj.yaml: b skipped", func(t *testing.T) {
+	t.Run("file stem differs from name: broken file → KeepsPrevious by real name", func(t *testing.T) {
+		dir := t.TempDir()
+		writeProjLoadFile(t, dir, "servers/github-server.yaml", "bad: [yaml\n")
+		writeProjLoadFile(t, dir, "servers/other.yaml", "name: other\ncommand: echo\nprojections:\n  t:\n    include_only: [a]\n")
+
+		load := config.LoadProjections(dir)
+
+		if len(load.SourceErrors) == 0 {
+			t.Fatal("expected a source error for broken github-server.yaml")
+		}
+		if !load.KeepsPrevious("svc") {
+			t.Error("KeepsPrevious(\"svc\") should be true: unattributable failure means all unconfigured names keep previous")
+		}
+		if load.KeepsPrevious("other") {
+			t.Error("KeepsPrevious(\"other\") should be false: other loaded successfully")
+		}
+	})
+
+	t.Run("duplicate names across two servers/ files: first wins", func(t *testing.T) {
+		dir := t.TempDir()
+		writeProjLoadFile(t, dir, "servers/a-svc.yaml", "name: svc\ncommand: echo\nprojections:\n  t:\n    include_only: [first]\n")
+		writeProjLoadFile(t, dir, "servers/b-svc.yaml", "name: svc\ncommand: echo\nprojections:\n  t:\n    include_only: [second]\n")
+
+		load := config.LoadProjections(dir)
+		_, servers, err := config.Load(dir)
+		if err != nil {
+			t.Fatalf("config.Load: %v", err)
+		}
+
+		var loadProj map[string]*config.ProjectionConfig
+		for _, s := range servers {
+			if s.Name == "svc" {
+				loadProj = s.Projections
+				break
+			}
+		}
+		if loadProj == nil {
+			t.Fatal("config.Load: svc not found")
+		}
+		if len(load.Projections["svc"]) == 0 {
+			t.Fatal("LoadProjections: svc not found")
+		}
+		got := load.Projections["svc"]["t"]
+		want := loadProj["t"]
+		if got == nil || want == nil || !reflect.DeepEqual(got.IncludeOnly, want.IncludeOnly) {
+			t.Errorf("duplicate dedup mismatch: LoadProjections=%v config.Load=%v", got, want)
+		}
+	})
+
+	t.Run("bad .proj.yaml with inline twin: server absent from Projections", func(t *testing.T) {
 		dir := t.TempDir()
 		writeProjLoadFile(t, dir, "servers/b.yaml", "name: b\ncommand: echo\nprojections:\n  t:\n    include_only: [inline]\n")
 		writeProjLoadFile(t, dir, "servers/b.proj.yaml", "bad: [yaml\n")
@@ -117,9 +175,9 @@ func TestLoadProjections(t *testing.T) {
 		load := config.LoadProjections(dir)
 
 		if _, ok := load.Skipped["b"]; !ok {
-			t.Error("malformed b.proj.yaml should cause b to be skipped")
+			t.Error("malformed b.proj.yaml should cause b to be in Skipped")
 		}
-		if load.KeepsPrevious("b") != true {
+		if !load.KeepsPrevious("b") {
 			t.Error("KeepsPrevious(b) should be true after proj.yaml failure")
 		}
 		if _, ok := load.Projections["b"]; ok {
@@ -127,32 +185,165 @@ func TestLoadProjections(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid format in projection: skipped", func(t *testing.T) {
+	t.Run("bad format: server absent from Projections", func(t *testing.T) {
 		dir := t.TempDir()
 		writeProjLoadFile(t, dir, "servers/svc.yaml", "name: svc\ncommand: echo\nprojections:\n  t:\n    format: bad-format\n")
 
 		load := config.LoadProjections(dir)
 
 		if _, ok := load.Skipped["svc"]; !ok {
-			t.Error("invalid format should cause svc to be skipped")
+			t.Error("invalid format should cause svc to be in Skipped")
 		}
-		if load.KeepsPrevious("svc") != true {
+		if !load.KeepsPrevious("svc") {
 			t.Error("KeepsPrevious(svc) should be true after format failure")
+		}
+		if _, ok := load.Projections["svc"]; ok {
+			t.Error("skipped server must be absent from Projections")
 		}
 	})
 
-	t.Run("malformed config.yaml: KeepsPrevious true for inline-only, false for file servers", func(t *testing.T) {
+	t.Run("malformed servers/b.yaml: unattributable error, a still loads", func(t *testing.T) {
+		dir := t.TempDir()
+		writeProjLoadFile(t, dir, "servers/a.yaml", "name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [ok]\n")
+		writeProjLoadFile(t, dir, "servers/b.yaml", "bad: [yaml\n")
+
+		load := config.LoadProjections(dir)
+
+		if len(load.SourceErrors) == 0 {
+			t.Error("malformed b.yaml should produce a source error")
+		}
+		if load.Projections["a"]["t"] == nil {
+			t.Error("a should still load when b fails")
+		}
+		if !load.KeepsPrevious("b") {
+			t.Error("KeepsPrevious(b) should be true")
+		}
+		if load.KeepsPrevious("a") {
+			t.Error("KeepsPrevious(a) should be false")
+		}
+	})
+
+	t.Run("invalid name in servers/ file: unattributable, others load", func(t *testing.T) {
+		dir := t.TempDir()
+		writeProjLoadFile(t, dir, "servers/good.yaml", "name: good\ncommand: echo\nprojections:\n  t:\n    include_only: [a]\n")
+		writeProjLoadFile(t, dir, "servers/bad-name.yaml", "name: invalid name!\ncommand: echo\n")
+
+		load := config.LoadProjections(dir)
+
+		if len(load.SourceErrors) == 0 {
+			t.Error("invalid server name should produce a source error")
+		}
+		if load.Projections["good"]["t"] == nil {
+			t.Error("good server should still load when another has invalid name")
+		}
+		if load.KeepsPrevious("good") {
+			t.Error("KeepsPrevious(good) should be false: it loaded successfully")
+		}
+		if !load.KeepsPrevious("someother") {
+			t.Error("KeepsPrevious(someother) should be true: unattributable failure present")
+		}
+	})
+
+	t.Run("broken config.yaml: source error, inline names keep-previous, file names do not", func(t *testing.T) {
 		dir := t.TempDir()
 		writeProjLoadFile(t, dir, "servers/file-svc.yaml", "name: file-svc\ncommand: echo\n")
 		writeProjLoadFile(t, dir, "config.yaml", "bad: [yaml\n")
 
 		load := config.LoadProjections(dir)
 
-		if load.KeepsPrevious("inline-only") != true {
+		if len(load.SourceErrors) == 0 {
+			t.Error("broken config.yaml should produce a source error")
+		}
+		if !load.KeepsPrevious("inline-only") {
 			t.Error("KeepsPrevious(inline-only) should be true when config.yaml fails")
 		}
-		if load.KeepsPrevious("file-svc") != false {
-			t.Error("KeepsPrevious(file-svc) should be false: it came from servers/ file, not config.yaml")
+		if load.KeepsPrevious("file-svc") {
+			t.Error("KeepsPrevious(file-svc) should be false: it came from servers/ file")
 		}
 	})
+
+	t.Run("parity with config.Load for valid multi-server config", func(t *testing.T) {
+		dir := t.TempDir()
+		t.Setenv("PARITY_TEST_TOKEN", "tok123")
+		writeProjLoadFile(t, dir, "servers/a.yaml",
+			"name: a\nurl: https://a.example.com\nheaders:\n  Auth: Bearer ${PARITY_TEST_TOKEN}\nprojections:\n  tool1:\n    include_only: [x, y]\n  tool2:\n    exclude: [secret]\n")
+		writeProjLoadFile(t, dir, "servers/a.proj.yaml", "tool3:\n  include_only: [z]\n")
+		writeProjLoadFile(t, dir, "config.yaml",
+			"servers:\n- name: b\n  command: echo\n  projections:\n    toolB:\n      include_only: [q]\n")
+
+		load := config.LoadProjections(dir)
+		_, servers, err := config.Load(dir)
+		if err != nil {
+			t.Fatalf("config.Load: %v", err)
+		}
+
+		for _, s := range servers {
+			lp := load.Projections[s.Name]
+			if len(s.Projections) == 0 && len(lp) == 0 {
+				continue
+			}
+			if !projMapsEqual(lp, s.Projections) {
+				t.Errorf("parity mismatch for %s:\n  LoadProjections: %v\n  config.Load: %v", s.Name, projKeys(lp), projKeys(s.Projections))
+			}
+		}
+	})
+}
+
+func projMapsEqual(a, b map[string]*config.ProjectionConfig) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if _, ok := b[k]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func projKeys(m map[string]*config.ProjectionConfig) []string {
+	return slices.Sorted(maps.Keys(m))
+}
+
+func TestLoadProjections_projFilesSourceError(t *testing.T) {
+	dir := t.TempDir()
+	writeProjLoadFile(t, dir, "servers/svc.yaml", "name: svc\ncommand: echo\n")
+	p := filepath.Join(dir, "servers", "svc.proj.yaml")
+	if err := os.WriteFile(p, []byte("tool:\n  include_only: [a]\n"), 0000); err != nil {
+		t.Skip("cannot create unreadable file:", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(p, 0600) })
+	if os.Getuid() == 0 {
+		t.Skip("running as root; permission test not meaningful")
+	}
+
+	load := config.LoadProjections(dir)
+
+	if _, ok := load.Skipped["svc"]; !ok {
+		t.Error("unreadable .proj.yaml should cause svc to be in Skipped")
+	}
+	if !load.KeepsPrevious("svc") {
+		t.Error("KeepsPrevious(svc) should be true after unreadable proj file")
+	}
+	if _, ok := load.Projections["svc"]; ok {
+		t.Error("svc should be absent from Projections after proj file error")
+	}
+}
+
+// Ensure that SourceErrors contains the config.yaml path when config.yaml is broken.
+func TestLoadProjections_sourceErrorPath(t *testing.T) {
+	dir := t.TempDir()
+	writeProjLoadFile(t, dir, "config.yaml", "bad: [yaml\n")
+
+	load := config.LoadProjections(dir)
+
+	var found bool
+	for _, se := range load.SourceErrors {
+		if fmt.Sprintf("%v", se.Path) != "" && se.Path == filepath.Join(dir, "config.yaml") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected SourceErrors to contain config.yaml path, got %v", load.SourceErrors)
+	}
 }

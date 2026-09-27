@@ -131,3 +131,37 @@ func TestNewWithConfigDir_badServerFile_otherServersStillProjected(t *testing.T)
 		t.Errorf("a should be projected at startup despite b's broken file, got %v", data)
 	}
 }
+
+func TestProjectionReloadIsolation_brokenConfigYAMLLogsWarn(t *testing.T) {
+	dir := evalTempDir(t)
+	writeReloadFile(t, filepath.Join(dir, "servers", "a.yaml"), "name: a\ncommand: echo\n")
+	writeReloadFile(t, filepath.Join(dir, "servers", "a.proj.yaml"), "getData:\n  include_only: [a]\n")
+
+	e := buildReloadEnv(t, dir)
+	addReloadUpstreamNamed(t, e, "a")
+	e.startPoller()
+
+	writeReloadFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
+	e.advanceTick()
+
+	if !strings.Contains(e.logs.String(), "config.yaml") {
+		t.Errorf("expected WARN mentioning config.yaml, got logs:\n%s", e.logs.String())
+	}
+}
+
+func TestNewWithConfigDir_flowSeqVarUnset_serverStillProjected(t *testing.T) {
+	dir := evalTempDir(t)
+	writeReloadFile(t, filepath.Join(dir, "servers", "svc.yaml"),
+		"name: svc\ncommand: echo\nargs: [--token, ${FLOWSEQ_TEST_VAR_UNSET}]\n")
+	writeReloadFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"),
+		"getData:\n  include_only: [a]\n")
+
+	e := buildReloadEnv(t, dir)
+	addReloadUpstreamNamed(t, e, "svc")
+
+	resp := serve(t, e.srv, callTool("call", map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}}))
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	if data["a"] == nil || data["secret"] != nil {
+		t.Errorf("svc should be projected at startup with flow-seq ${VAR} unset, got %v", data)
+	}
+}

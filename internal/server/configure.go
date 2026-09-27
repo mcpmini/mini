@@ -54,7 +54,7 @@ func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams,
 	case "set_projection":
 		return s.setProjection(session, p)
 	case "reload":
-		return s.reloadProjections()
+		return s.reloadProjections(), nil
 	case "add_server":
 		return s.addServerRuntime(ctx, p)
 	case "remove_server":
@@ -163,7 +163,7 @@ func (s *Server) restoreServerProjection(serverName, tool string, prev *config.P
 	delete(s.projections[serverName], tool)
 }
 
-func (s *Server) reloadProjections() (any, error) {
+func (s *Server) reloadProjections() any {
 	// Hold persistMu for the entire load+replace so we don't interleave with a
 	// concurrent set_projection that has already updated the in-memory map but
 	// hasn't yet flushed to disk: without this lock, reload could wipe the
@@ -171,12 +171,15 @@ func (s *Server) reloadProjections() (any, error) {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	load := config.LoadProjections(s.configDir)
+	for _, se := range load.SourceErrors {
+		s.logger.Warn("projection reload: source error", "path", se.Path, "err", se.Err)
+	}
 	for name, err := range load.Skipped {
 		s.logger.Warn("projection reload: skipped server", "server", name, "err", err)
 	}
 	s.replaceProjections(load)
 	s.reapplyAliases()
-	return map[string]any{"ok": true, "loaded": projectionCounts(load.Projections), "skipped": skippedNames(load.Skipped)}, nil
+	return map[string]any{"ok": true, "loaded": projectionCounts(load.Projections), "skipped": skippedNames(load.Skipped)}
 }
 
 func skippedNames(skipped map[string]error) []string {

@@ -45,13 +45,8 @@ func validateResponseFormats(cfg *Config, servers []ServerConfig) error {
 		return fmt.Errorf("config.yaml: response_format: %w", err)
 	}
 	for _, s := range servers {
-		for tool, p := range s.Projections {
-			if p == nil {
-				continue
-			}
-			if err := ValidResponseFormat(p.Format); err != nil {
-				return fmt.Errorf("server %s: projection %s: format: %w", s.Name, tool, err)
-			}
+		if err := validateServerProjectionFormats(s.Name, s.Projections); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -229,6 +224,10 @@ func loadServerConfig(path string) (*ServerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseServerConfig(path, data)
+}
+
+func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	var s ServerConfig
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
@@ -336,6 +335,14 @@ func interpolateEnv(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("config references undefined environment variable(s): %s", strings.Join(missing, ", "))
 	}
 	return []byte(result), nil
+}
+
+// interpolateEnvLenient replaces ${VAR} references; undefined vars become "".
+func interpolateEnvLenient(data []byte) []byte {
+	result := envVarRef.ReplaceAllStringFunc(string(data), func(match string) string {
+		return os.Getenv(match[2 : len(match)-1])
+	})
+	return []byte(result)
 }
 
 func FindServer(servers []ServerConfig, name string) *ServerConfig {
