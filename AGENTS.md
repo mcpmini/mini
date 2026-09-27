@@ -70,20 +70,7 @@ When you feel the urge to add a comment that describes *what*, improve the name 
 
 ### Testing
 
-- Cover happy paths, argument permutations, error cases, and edge cases
-- Prefer fakes over mocks (`transport.FakeConnection` is the established pattern)
-- If something is hard to test, the abstraction is probably wrong — fix the design, not the test
-- Tests are the safety net for refactoring; they must be rock solid
-
-**Test structure — no comment separators:**
-
-Do not use `// --- section ---` style comment dividers in test files. They are brittle and go stale.
-
-Instead:
-- Use `t.Run("descriptive name", func(t *testing.T) {...})` to group related cases within one function
-- Use separate test files per component (`pending_test.go`, `prefix_writer_test.go`) — the filename is the grouping
-- Use table-driven tests with a `name` field for permutation coverage
-- Write test function names descriptively enough that no separator is needed
+Tests should protect observable behavior and give an actionable failure when a contract breaks. Read [the testing guide](docs/testing.md) when adding or changing tests; it covers test levels, assertions, helpers, failure simulation, and verification. Agents can use the `test-writer` skill for substantial test work. PR reviewers audit test quality through the `review-pr` skill.
 
 ## Review workflow
 

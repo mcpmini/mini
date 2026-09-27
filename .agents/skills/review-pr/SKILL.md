@@ -215,12 +215,7 @@ For a deeper standalone structural review, use the `structure-review` skill.
 
 ## Pass 3 — Tests
 
-Read the tests for every changed function. For each:
-
-1. Is the happy path tested?
-2. Is the main error path tested?
-3. Are the edge cases the change introduces tested? New config field → test for zero value and interaction with other fields.
-4. Do the assertions actually check the right thing, or do they pass trivially?
+Read [the testing guide](../../../docs/testing.md) for the project's test-quality standard. Map each changed behavior to new or existing tests. Check the success path, the failure or boundary that matters to this change, and the production entry point the tests actually exercise. Do not require a new test per changed function or every possible permutation.
 
 **Representative situations** — do tests reflect how real users encounter the code?
 - Do they set up pre-existing state where relevant? (e.g. a server that already has tools registered, a config that already has other projections set, a token that is already expired) A test that only runs against a clean slate will miss bugs that only surface with existing data.
@@ -229,10 +224,13 @@ Read the tests for every changed function. For each:
 
 **Regression value** — will these tests actually catch it if the behavior regresses?
 - A test that passes trivially (asserts `err == nil` when the function cannot return an error, or checks the output contains a string that would always be present) adds no regression safety.
-- If you deleted the new code, would the new tests fail? If not, they're not testing the change.
+- Does the decisive assertion protect a stable behavior, or would routine fixture edits break it? Check that the test reaches the changed path rather than only passing through setup.
+- When a test's value is uncertain, temporarily perturb the changed behavior and run the focused case. It should fail for the expected reason; an unrelated failure or compile error proves nothing. Restore the code afterward. This is a targeted review technique, not a mandatory mutation exercise.
 - Tests that only cover the happy path for a function that is primarily about error handling provide false confidence.
 
-**Write a test to prove a suspected bug** when code analysis strongly suggests an issue but a test settles it faster than further tracing. Keep it ≤ 25 lines; use the existing test infrastructure (`FakeConnection`, `serve()`, `callTool()` helpers in `server_test.go`). Name it `review_<something>_test.go` so it's easy to find and clean up.
+**Tests as code** — can a reader quickly identify setup, action, and decisive assertion? Do helpers remove repeated setup without hiding behavior? Are preconditions established for state transitions? For a forbidden side effect, does the test wait for a causal completion point before checking absence, rather than sleeping and assuming the work finished? Flag duplication or brittle setup when it creates meaningful maintenance or correctness risk.
+
+**Write a test to prove a suspected bug** when code analysis strongly suggests an issue but a test settles it faster than further tracing. Use the existing test infrastructure (`FakeConnection`, `serve()`, `callTool()` helpers in `server_test.go`). Name it `review_<something>_test.go` so it's easy to find and clean up.
 
 ```bash
 go test -race -tags test -run TestReview ./path/to/package/... -v
