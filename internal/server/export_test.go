@@ -13,7 +13,7 @@ func (s *Server) RunProjectionReload(ctx context.Context, afterCheck func()) {
 }
 
 func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionConfig) {
-	s.replaceProjections(p)
+	s.replaceProjections(config.LoadProjectionsResult{Projections: p})
 }
 
 func (s *Server) WaitForStartupConnects() { s.connectWg.Wait() }

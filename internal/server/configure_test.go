@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -422,5 +423,99 @@ func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
 	text := toolResultText(t, resp)
 	if strings.Contains(text, `"b":2`) {
 		t.Logf("note: session projection applied within same session: %s", text)
+	}
+}
+
+func reloadResult(t *testing.T, dir string, editsAfterStart map[string]string) map[string]any {
+	t.Helper()
+	cfg := config.DefaultConfig()
+	cfg.ResponseDir = t.TempDir()
+	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	t.Cleanup(srv.Close)
+	for rel, content := range editsAfterStart {
+		writeReloadFile(t, filepath.Join(dir, rel), content)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "reload"})))), &result); err != nil {
+		t.Fatalf("expected JSON from reload: %v", err)
+	}
+	return result
+}
+
+func TestConfigureReload_resultShape(t *testing.T) {
+	cases := []struct {
+		name             string
+		files            map[string]string
+		editsAfterStart  map[string]string
+		wantOK           bool
+		wantLoaded       []string
+		wantNotLoaded    []string
+		wantSkipped      []string
+		wantSourceErrors bool
+	}{
+		{
+			name:       "clean reload: ok=true, loaded counts, skipped=[], no source_errors",
+			files:      map[string]string{"servers/a.yaml": "name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [x]\n"},
+			wantOK:     true,
+			wantLoaded: []string{"a"},
+		},
+		{
+			name:             "broken config.yaml: ok=false, source_errors present",
+			files:            map[string]string{"config.yaml": "bad: [yaml\n"},
+			wantSourceErrors: true,
+		},
+		{
+			name:        "bad proj.yaml: ok=false, skipped contains server name",
+			files:       map[string]string{"servers/a.yaml": "name: a\ncommand: echo\n", "servers/a.proj.yaml": "bad: [yaml\n"},
+			wantSkipped: []string{"a"},
+		},
+		{
+			name:             "loaded excludes kept-previous server when its file broke",
+			files:            map[string]string{"servers/a.yaml": "name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [x]\n", "servers/b.yaml": "name: b\ncommand: echo\nprojections:\n  t:\n    include_only: [y]\n"},
+			editsAfterStart:  map[string]string{"servers/b.yaml": "bad: [yaml\n"},
+			wantLoaded:       []string{"a"},
+			wantNotLoaded:    []string{"b"},
+			wantSourceErrors: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := evalTempDir(t)
+			for rel, content := range tc.files {
+				writeReloadFile(t, filepath.Join(dir, rel), content)
+			}
+			result := reloadResult(t, dir, tc.editsAfterStart)
+			if result["ok"] != tc.wantOK {
+				t.Errorf("ok: got %v, want %v", result["ok"], tc.wantOK)
+			}
+			if skipped, _ := result["skipped"].([]any); skipped == nil {
+				t.Errorf("skipped must be [] not null, got %v", result["skipped"])
+			}
+			if !tc.wantSourceErrors && result["source_errors"] != nil {
+				t.Errorf("expected no source_errors, got %v", result["source_errors"])
+			}
+			if tc.wantSourceErrors {
+				if errs, _ := result["source_errors"].([]any); len(errs) == 0 {
+					t.Errorf("expected source_errors list, got %v", result)
+				}
+			}
+			loaded, _ := result["loaded"].(map[string]any)
+			for _, name := range tc.wantLoaded {
+				if loaded[name] == nil {
+					t.Errorf("loaded must include %q, got %v", name, loaded)
+				}
+			}
+			for _, name := range tc.wantNotLoaded {
+				if loaded[name] != nil {
+					t.Errorf("loaded must not include %q, got %v", name, loaded)
+				}
+			}
+			skipped, _ := result["skipped"].([]any)
+			for _, name := range tc.wantSkipped {
+				if !slices.Contains(skipped, any(name)) {
+					t.Errorf("expected %q in skipped, got %v", name, skipped)
+				}
+			}
+		})
 	}
 }

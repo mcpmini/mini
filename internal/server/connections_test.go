@@ -205,3 +205,77 @@ func TestAddUpstream_handshakeTimeoutSkipsHungStdioSubprocess(t *testing.T) {
 		t.Fatalf("AddUpstream did not respect handshake_timeout, took %v", elapsed)
 	}
 }
+
+func TestAddConnection_reAddWithStaleProjections_keepsLiveSetProjection(t *testing.T) {
+	srv := newConfigServer(t)
+	fake := fakeConn("getData")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fake); err != nil {
+		t.Fatal(err)
+	}
+
+	serve(t, srv, callTool("config", map[string]any{
+		"action": "set_projection", "server": "svc", "tool": "getData",
+		"projection": map[string]any{"include_only": []string{"a"}},
+	}))
+
+	newFake := fakeConn("getData")
+	newFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"b"}},
+		},
+	}, newFake); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	if data["a"] == nil {
+		t.Errorf("live projection reverted by re-AddConnection: got %v", data)
+	}
+	if data["b"] != nil {
+		t.Errorf("stale snapshot projection applied: b should be absent, got %v", data)
+	}
+}
+
+func TestAddConnection_removeThenReAdd_usesNewProjections(t *testing.T) {
+	srv := newConfigServer(t)
+	fake := fakeConn("getData")
+	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"a"}},
+		},
+	}, fake); err != nil {
+		t.Fatal(err)
+	}
+
+	assertRemoveOk(t, srv, "svc")
+
+	newFake := fakeConn("getData")
+	newFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{
+		Name: "svc",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"b"}},
+		},
+	}, newFake); err != nil {
+		t.Fatal(err)
+	}
+
+	resp := serve(t, srv, callTool("call", map[string]any{
+		"server": "svc", "tool": "getData", "params": map[string]any{},
+	}))
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	if data["b"] == nil {
+		t.Errorf("expected new projection after remove+add, got %v", data)
+	}
+	if data["a"] != nil {
+		t.Errorf("old projection still active after remove+add, got %v", data)
+	}
+}

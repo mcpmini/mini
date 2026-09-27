@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
+	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,4 +58,18 @@ func (s *Server) projectionForTest(serverName, tool string) *config.ProjectionCo
 		return nil
 	}
 	return s.projections[serverName][tool]
+}
+
+func TestLogProjectionLoadProblems_warnsPerSourceErrorAndSkippedServer(t *testing.T) {
+	var logs bytes.Buffer
+	logProjectionLoadProblems(slog.New(slog.NewTextHandler(&logs, nil)), config.LoadProjectionsResult{
+		SourceErrors:   []config.SourceError{{Path: "servers/a.yaml", Err: errors.New("parse failed")}},
+		SkippedServers: map[string]error{"b": errors.New("bad format")},
+	})
+
+	for _, want := range []string{"projection reload: source error", "path=servers/a.yaml", "projection reload: skipped server", "server=b"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("expected %q in logs:\n%s", want, logs.String())
+		}
+	}
 }

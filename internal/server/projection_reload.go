@@ -19,9 +19,9 @@ func (s *Server) StartProjectionReload(ctx context.Context) {
 }
 
 func (s *Server) runProjectionReload(ctx context.Context, afterCheck func()) {
+	last, _ := s.fingerprintOrWarn()
 	ticker := s.clock.NewTicker(projectionPollInterval)
 	defer ticker.Stop()
-	last, _ := s.fingerprintOrWarn()
 	for {
 		select {
 		case <-ticker.Chan():
@@ -44,9 +44,8 @@ func (s *Server) reloadIfProjectionFilesChanged(last map[string]string) map[stri
 	if len(changed) == 0 {
 		return last
 	}
-	if _, err := s.reloadProjections(); err != nil {
-		s.logger.Warn("projection reload failed, keeping previous projections", "err", err)
-	} else {
+	_, fresh := s.applyReload()
+	if len(fresh) > 0 {
 		s.logger.Info("projections reloaded", "files", changed)
 	}
 	return current
