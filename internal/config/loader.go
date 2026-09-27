@@ -70,8 +70,18 @@ func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
 	return cfg, combined, nil
 }
 
+func checkServerName(name, source string) error {
+	if !ValidServerName.MatchString(name) {
+		return fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", name, source)
+	}
+	return nil
+}
+
 func validateInlineServers(configPath string, servers []ServerConfig) error {
 	for _, s := range servers {
+		if err := checkServerName(s.Name, configPath); err != nil {
+			return err
+		}
 		if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 			return fmt.Errorf("invalid handshake_timeout for server %q in %s: %w", s.Name, configPath, err)
 		}
@@ -232,8 +242,8 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if !ValidServerName.MatchString(s.Name) {
-		return nil, fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", s.Name, path)
+	if err := checkServerName(s.Name, path); err != nil {
+		return nil, err
 	}
 	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
