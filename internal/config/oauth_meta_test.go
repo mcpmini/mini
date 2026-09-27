@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -29,7 +31,16 @@ func TestMarkOAuthDetected_invalidName(t *testing.T) {
 }
 
 func TestIsOAuthDetected_invalidName(t *testing.T) {
-	if config.IsOAuthDetected(t.TempDir(), "../escape") {
-		t.Error("an invalid server name must never report as detected")
+	dir := t.TempDir()
+	escaped := config.ServerMetaPath(dir, "../escape")
+	if err := os.MkdirAll(filepath.Dir(escaped), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(escaped, []byte(`{"oauth_detected":true}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if config.IsOAuthDetected(dir, "../escape") {
+		t.Error("an invalid server name must never report as detected, even when its traversed path holds a marker")
 	}
 }

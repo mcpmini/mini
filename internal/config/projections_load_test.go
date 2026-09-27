@@ -126,8 +126,8 @@ func TestLoadProjections(t *testing.T) {
 			},
 		},
 		{
-			name:              "undefined ${VAR} in an inline server name: config.yaml is a source error, the renamed server keeps previous",
-			files:             map[string]string{"config.yaml": "servers:\n- name: ${PROJ_UNDEFINED_INLINE_NAME_XYZ}\n  command: echo\n  projections:\n    t:\n      include_only: [a]\n"},
+			name:              "undefined ${VAR} in an inline server name: config.yaml is a source error, its valid sibling keeps previous",
+			files:             map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      include_only: [a]\n- name: ${PROJ_UNDEFINED_INLINE_NAME_XYZ}\n  command: echo\n"},
 			wantSourceErrors:  1,
 			wantKeepsPrevious: []string{"svc"},
 			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
