@@ -57,6 +57,10 @@ func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 		t.Fatal("projection poller not started:", err)
 	}
 
+	if !reloadDataHasField(t, srv, "b") {
+		t.Fatal("initial projection should include b before the edit")
+	}
+
 	writeServer(t, dir, "svc.proj", "getData:\n  include_only: [a]\n")
 	fc.Advance(5 * time.Second)
 	reloaded.wait(t)
