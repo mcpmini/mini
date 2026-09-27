@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"gopkg.in/yaml.v3"
 
@@ -168,26 +170,34 @@ func (s *Server) reloadProjections() (any, error) {
 	// in-memory update and then set_projection would persist the wiped state.
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	projections, err := loadServerProjections(s.configDir)
-	if err != nil {
-		return nil, fmt.Errorf("reload projections: %w", err)
+	load := config.LoadProjections(s.configDir)
+	for name, err := range load.Skipped {
+		s.logger.Warn("projection reload: skipped server", "server", name, "err", err)
 	}
-	s.replaceProjections(projections)
+	s.replaceProjections(load)
 	s.reapplyAliases()
-	return map[string]any{"ok": true, "loaded": projectionCounts(projections)}, nil
+	return map[string]any{"ok": true, "loaded": projectionCounts(load.Projections), "skipped": skippedNames(load.Skipped)}, nil
 }
 
-func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig) {
+func skippedNames(skipped map[string]error) []string {
+	return slices.Sorted(maps.Keys(skipped))
+}
+
+func (s *Server) replaceProjections(load config.ProjectionsLoad) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.carryOverRuntimeAddedProjectionsLocked(projections)
-	s.projections = projections
+	s.carryOverPreviousProjectionsLocked(load)
+	s.projections = load.Projections
 }
 
-func (s *Server) carryOverRuntimeAddedProjectionsLocked(projections map[string]map[string]*config.ProjectionConfig) {
+func (s *Server) carryOverPreviousProjectionsLocked(load config.ProjectionsLoad) {
 	for name, live := range s.projections {
 		if u := s.upstreams[name]; u != nil && u.cfg.RuntimeAdded {
-			projections[name] = live
+			load.Projections[name] = live
+			continue
+		}
+		if load.KeepsPrevious(name) {
+			load.Projections[name] = live
 		}
 	}
 }
