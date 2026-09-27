@@ -9,22 +9,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SourceError records a file that could not be read or parsed, whose server
-// name cannot be trusted.
+// SourceError records a file that could not be read, parsed or validated, whose
+// server name cannot be trusted.
 type SourceError struct {
 	Path string
 	Err  error
 }
 
 // ProjectionsLoad is the result of a per-server-isolated projection load.
-// Projections contains servers whose sources all loaded without error.
-// Skipped[name] is set when a server's .proj.yaml or format validation failed;
-// those servers are absent from Projections.
-// SourceErrors records files that could not be attributed to a server name.
 type ProjectionsLoad struct {
-	Projections  map[string]map[string]*ProjectionConfig
-	Skipped      map[string]error
-	SourceErrors []SourceError
+	Projections  map[string]map[string]*ProjectionConfig // servers whose sources all loaded without error
+	Skipped      map[string]error                        // name → error when .proj.yaml or format validation failed; absent from Projections
+	SourceErrors []SourceError                           // files that could not be attributed to a server name
 	freshLoaded  map[string]bool
 }
 
@@ -56,10 +52,21 @@ func loadLenientServers(configDir string, load *ProjectionsLoad) []ServerConfig 
 	fileServers := loadServerDirLenient(configDir, load)
 	inlineServers := loadInlineServersLenient(configDir, load)
 	combined := deduplicateServers(append(fileServers, inlineServers...))
-	for _, s := range combined {
-		load.freshLoaded[s.Name] = true
-	}
+	markFreshLoaded(combined, fileServers, load)
 	return combined
+}
+
+func markFreshLoaded(combined, fileServers []ServerConfig, load *ProjectionsLoad) {
+	fileNames := make(map[string]bool, len(fileServers))
+	for _, s := range fileServers {
+		fileNames[s.Name] = true
+	}
+	for _, s := range combined {
+		// A broken servers/ file can unmask the inline twin it used to shadow.
+		if fileNames[s.Name] || len(load.SourceErrors) == 0 {
+			load.freshLoaded[s.Name] = true
+		}
+	}
 }
 
 func loadServerDirLenient(configDir string, load *ProjectionsLoad) []ServerConfig {
@@ -81,21 +88,21 @@ func loadServerConfigLenient(path string) (*ServerConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return parseServerConfig(path, interpolateEnvLenient(data))
+	return parseServerConfig(path, interpolateEnvUndefinedAsEmpty(data))
 }
 
 func loadInlineServersLenient(configDir string, load *ProjectionsLoad) []ServerConfig {
-	data, err := os.ReadFile(filepath.Join(configDir, "config.yaml"))
+	configPath := filepath.Join(configDir, "config.yaml")
+	data, err := os.ReadFile(configPath)
 	if os.IsNotExist(err) {
 		return nil
 	}
-	configPath := filepath.Join(configDir, "config.yaml")
 	if err != nil {
 		load.SourceErrors = append(load.SourceErrors, SourceError{Path: configPath, Err: fmt.Errorf("read config.yaml: %w", err)})
 		return nil
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(interpolateEnvLenient(data), &cfg); err != nil {
+	if err := yaml.Unmarshal(interpolateEnvUndefinedAsEmpty(data), &cfg); err != nil {
 		load.SourceErrors = append(load.SourceErrors, SourceError{Path: configPath, Err: fmt.Errorf("parse config.yaml: %w", err)})
 		return nil
 	}
@@ -114,13 +121,8 @@ func loadProjFilesIsolated(configDir string, servers []ServerConfig, load *Proje
 		if !configured[name] {
 			continue
 		}
-		tmp := make(map[string]map[string]*ProjectionConfig)
-		if err := loadOneProjectionFile(tmp, p); err != nil {
+		if err := loadOneProjectionFile(projFiles, p); err != nil {
 			load.Skipped[name] = err
-			continue
-		}
-		if tp, ok := tmp[name]; ok {
-			projFiles[name] = tp
 		}
 	}
 	return projFiles
@@ -140,9 +142,6 @@ func extractAndValidateProjections(servers []ServerConfig, load *ProjectionsLoad
 
 func validateProjectionFormatsIsolated(servers []ServerConfig, load *ProjectionsLoad) {
 	for _, s := range servers {
-		if _, skip := load.Skipped[s.Name]; skip {
-			continue
-		}
 		if err := validateServerProjectionFormats(s.Name, load.Projections[s.Name]); err != nil {
 			load.Skipped[s.Name] = err
 			delete(load.Projections, s.Name)

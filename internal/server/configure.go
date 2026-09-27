@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -163,7 +164,7 @@ func (s *Server) restoreServerProjection(serverName, tool string, prev *config.P
 	delete(s.projections[serverName], tool)
 }
 
-func (s *Server) reloadProjections() any {
+func (s *Server) applyReload() (config.ProjectionsLoad, map[string]int) {
 	// Hold persistMu for the entire load+replace so we don't interleave with a
 	// concurrent set_projection that has already updated the in-memory map but
 	// hasn't yet flushed to disk: without this lock, reload could wipe the
@@ -171,18 +172,53 @@ func (s *Server) reloadProjections() any {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	load := config.LoadProjections(s.configDir)
-	for _, se := range load.SourceErrors {
-		s.logger.Warn("projection reload: source error", "path", se.Path, "err", se.Err)
-	}
-	for name, err := range load.Skipped {
-		s.logger.Warn("projection reload: skipped server", "server", name, "err", err)
-	}
+	logProjectionLoadProblems(s.logger, load)
+	fresh := projectionCounts(load.Projections)
 	s.replaceProjections(load)
 	s.reapplyAliases()
-	return map[string]any{"ok": true, "loaded": projectionCounts(load.Projections), "skipped": skippedNames(load.Skipped)}
+	return load, fresh
+}
+
+func (s *Server) reloadProjections() any {
+	load, fresh := s.applyReload()
+	return buildReloadResult(load, fresh)
+}
+
+func buildReloadResult(load config.ProjectionsLoad, fresh map[string]int) map[string]any {
+	ok := len(load.SourceErrors) == 0 && len(load.Skipped) == 0
+	result := map[string]any{
+		"ok":      ok,
+		"loaded":  fresh,
+		"skipped": skippedNames(load.Skipped),
+	}
+	if len(load.SourceErrors) > 0 {
+		result["source_errors"] = sourceErrorPaths(load.SourceErrors)
+	}
+	return result
+}
+
+func sourceErrorPaths(errors []config.SourceError) []string {
+	paths := make([]string, len(errors))
+	for i, se := range errors {
+		paths[i] = se.Path
+	}
+	slices.Sort(paths)
+	return paths
+}
+
+func logProjectionLoadProblems(logger *slog.Logger, load config.ProjectionsLoad) {
+	for _, se := range load.SourceErrors {
+		logger.Warn("projection reload: source error", "path", se.Path, "err", se.Err)
+	}
+	for name, err := range load.Skipped {
+		logger.Warn("projection reload: skipped server", "server", name, "err", err)
+	}
 }
 
 func skippedNames(skipped map[string]error) []string {
+	if len(skipped) == 0 {
+		return []string{}
+	}
 	return slices.Sorted(maps.Keys(skipped))
 }
 

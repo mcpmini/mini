@@ -337,8 +337,7 @@ func interpolateEnv(data []byte) ([]byte, error) {
 	return []byte(result), nil
 }
 
-// interpolateEnvLenient replaces ${VAR} references; undefined vars become "".
-func interpolateEnvLenient(data []byte) []byte {
+func interpolateEnvUndefinedAsEmpty(data []byte) []byte {
 	result := envVarRef.ReplaceAllStringFunc(string(data), func(match string) string {
 		return os.Getenv(match[2 : len(match)-1])
 	})

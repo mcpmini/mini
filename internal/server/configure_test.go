@@ -424,3 +424,102 @@ func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
 		t.Logf("note: session projection applied within same session: %s", text)
 	}
 }
+
+func TestConfigureReload_resultShape(t *testing.T) {
+	t.Run("clean reload: ok=true, loaded counts, skipped=[], no source_errors", func(t *testing.T) {
+		dir := evalTempDir(t)
+		writeReloadFile(t, filepath.Join(dir, "servers", "a.yaml"),
+			"name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [x]\n")
+		cfg := config.DefaultConfig()
+		cfg.ResponseDir = t.TempDir()
+		srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		t.Cleanup(srv.Close)
+
+		resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
+		var result map[string]any
+		if err := json.Unmarshal([]byte(toolResultText(t, resp)), &result); err != nil {
+			t.Fatalf("expected JSON, got: %s", toolResultText(t, resp))
+		}
+		if result["ok"] != true {
+			t.Errorf("expected ok=true, got %v", result)
+		}
+		if result["source_errors"] != nil {
+			t.Errorf("expected no source_errors, got %v", result["source_errors"])
+		}
+		if skipped, _ := result["skipped"].([]any); skipped == nil {
+			t.Errorf("skipped must be [] not null, got %v", result["skipped"])
+		}
+		if loaded, _ := result["loaded"].(map[string]any); loaded["a"] == nil {
+			t.Errorf("loaded must include server 'a', got %v", result["loaded"])
+		}
+	})
+
+	t.Run("broken config.yaml: ok=false, source_errors present", func(t *testing.T) {
+		dir := evalTempDir(t)
+		writeReloadFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
+		cfg := config.DefaultConfig()
+		cfg.ResponseDir = t.TempDir()
+		srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		t.Cleanup(srv.Close)
+
+		resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
+		var result map[string]any
+		if err := json.Unmarshal([]byte(toolResultText(t, resp)), &result); err != nil {
+			t.Fatalf("expected JSON, got: %s", toolResultText(t, resp))
+		}
+		if result["ok"] != false {
+			t.Errorf("expected ok=false when config.yaml is broken, got %v", result)
+		}
+		if errs, _ := result["source_errors"].([]any); len(errs) == 0 {
+			t.Errorf("expected source_errors list, got %v", result)
+		}
+	})
+
+	t.Run("bad proj.yaml: ok=false, skipped contains server name", func(t *testing.T) {
+		dir := evalTempDir(t)
+		writeReloadFile(t, filepath.Join(dir, "servers", "a.yaml"), "name: a\ncommand: echo\n")
+		writeReloadFile(t, filepath.Join(dir, "servers", "a.proj.yaml"), "bad: [yaml\n")
+		cfg := config.DefaultConfig()
+		cfg.ResponseDir = t.TempDir()
+		srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		t.Cleanup(srv.Close)
+
+		resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
+		var result map[string]any
+		if err := json.Unmarshal([]byte(toolResultText(t, resp)), &result); err != nil {
+			t.Fatalf("expected JSON, got: %s", toolResultText(t, resp))
+		}
+		if result["ok"] != false {
+			t.Errorf("expected ok=false when proj.yaml is broken, got %v", result)
+		}
+		if skipped, _ := result["skipped"].([]any); len(skipped) == 0 {
+			t.Errorf("expected skipped to contain 'a', got %v", result)
+		}
+	})
+
+	t.Run("loaded excludes kept-previous server when its file broke", func(t *testing.T) {
+		dir := evalTempDir(t)
+		writeReloadFile(t, filepath.Join(dir, "servers", "a.yaml"),
+			"name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [x]\n")
+		writeReloadFile(t, filepath.Join(dir, "servers", "b.yaml"),
+			"name: b\ncommand: echo\nprojections:\n  t:\n    include_only: [y]\n")
+		cfg := config.DefaultConfig()
+		cfg.ResponseDir = t.TempDir()
+		srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		t.Cleanup(srv.Close)
+
+		writeReloadFile(t, filepath.Join(dir, "servers", "b.yaml"), "bad: [yaml\n")
+		resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
+		var result map[string]any
+		if err := json.Unmarshal([]byte(toolResultText(t, resp)), &result); err != nil {
+			t.Fatalf("expected JSON, got: %s", toolResultText(t, resp))
+		}
+		loaded, _ := result["loaded"].(map[string]any)
+		if loaded["a"] == nil {
+			t.Errorf("freshly loaded 'a' should appear in loaded, got %v", loaded)
+		}
+		if loaded["b"] != nil {
+			t.Errorf("kept-previous 'b' must not appear in loaded, got %v", loaded)
+		}
+	})
+}

@@ -3,7 +3,6 @@
 package config_test
 
 import (
-	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
@@ -76,6 +75,20 @@ func TestLoadProjections(t *testing.T) {
 		}
 	})
 
+	t.Run("broken orphan proj.yaml is ignored: no Skipped, no SourceError", func(t *testing.T) {
+		dir := t.TempDir()
+		writeProjLoadFile(t, dir, "servers/orphan.proj.yaml", "bad: [yaml\n")
+
+		load := config.LoadProjections(dir)
+
+		if len(load.Skipped) != 0 {
+			t.Errorf("broken orphan .proj.yaml should not cause a skip, got %v", load.Skipped)
+		}
+		if len(load.SourceErrors) != 0 {
+			t.Errorf("broken orphan .proj.yaml should not cause a source error, got %v", load.SourceErrors)
+		}
+	})
+
 	t.Run("undefined ${VAR} in server file still loads projections", func(t *testing.T) {
 		dir := t.TempDir()
 		writeProjLoadFile(t, dir, "servers/svc.yaml",
@@ -89,6 +102,36 @@ func TestLoadProjections(t *testing.T) {
 		if load.Projections["svc"]["t"] == nil {
 			t.Error("projection not loaded despite undefined env var in server file")
 		}
+	})
+
+	t.Run("lenient interpolation substitutes defined vars", func(t *testing.T) {
+		t.Run("defined var in name", func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("PROJ_DEFINED_NAME_XYZ", "myserver")
+			writeProjLoadFile(t, dir, "servers/svc.yaml", "name: ${PROJ_DEFINED_NAME_XYZ}\ncommand: echo\n")
+
+			load := config.LoadProjections(dir)
+
+			if len(load.SourceErrors) != 0 {
+				t.Errorf("expected no errors, got %v", load.SourceErrors)
+			}
+			if load.KeepsPrevious("myserver") {
+				t.Error("KeepsPrevious(myserver) should be false: defined var was substituted and server loaded")
+			}
+		})
+		t.Run("defined var in inline projection field", func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("PROJ_DEFINED_FIELD_XYZ", "myfield")
+			writeProjLoadFile(t, dir, "servers/svc.yaml",
+				"name: svc\ncommand: echo\nprojections:\n  getData:\n    include_only: [${PROJ_DEFINED_FIELD_XYZ}]\n")
+
+			load := config.LoadProjections(dir)
+
+			p := load.Projections["svc"]["getData"]
+			if p == nil || len(p.IncludeOnly) == 0 || p.IncludeOnly[0] != "myfield" {
+				t.Errorf("expected projection with substituted field value, got %+v", p)
+			}
+		})
 	})
 
 	t.Run("flow-sequence ${VAR} loads correctly with and without var set", func(t *testing.T) {
@@ -118,21 +161,36 @@ func TestLoadProjections(t *testing.T) {
 		}
 	})
 
-	t.Run("file stem differs from name: broken file → KeepsPrevious by real name", func(t *testing.T) {
+	t.Run("file stem differs from name: bad format → Skipped by real name", func(t *testing.T) {
 		dir := t.TempDir()
-		writeProjLoadFile(t, dir, "servers/github-server.yaml", "bad: [yaml\n")
-		writeProjLoadFile(t, dir, "servers/other.yaml", "name: other\ncommand: echo\nprojections:\n  t:\n    include_only: [a]\n")
+		writeProjLoadFile(t, dir, "servers/github-server.yaml",
+			"name: github\ncommand: echo\nprojections:\n  t:\n    format: bad-format\n")
+
+		load := config.LoadProjections(dir)
+
+		if _, ok := load.Skipped["github"]; !ok {
+			t.Errorf("Skipped should use real name 'github', not file stem 'github-server'; Skipped=%v", load.Skipped)
+		}
+		if _, ok := load.Projections["github"]; ok {
+			t.Errorf("github should be absent from Projections after format error")
+		}
+	})
+
+	t.Run("broken servers/github.yaml: inline twin not treated as fresh", func(t *testing.T) {
+		dir := t.TempDir()
+		writeProjLoadFile(t, dir, "servers/github.yaml", "bad: [yaml\n")
+		writeProjLoadFile(t, dir, "config.yaml", "servers:\n- name: github\n  command: echo\n")
 
 		load := config.LoadProjections(dir)
 
 		if len(load.SourceErrors) == 0 {
-			t.Fatal("expected a source error for broken github-server.yaml")
+			t.Fatal("expected source error for broken servers/github.yaml")
 		}
-		if !load.KeepsPrevious("svc") {
-			t.Error("KeepsPrevious(\"svc\") should be true: unattributable failure means all unconfigured names keep previous")
+		if !load.KeepsPrevious("github") {
+			t.Error("KeepsPrevious(github) should be true: inline twin must not count as fresh when servers/ file failed")
 		}
-		if load.KeepsPrevious("other") {
-			t.Error("KeepsPrevious(\"other\") should be false: other loaded successfully")
+		if _, ok := load.Projections["github"]; ok {
+			t.Error("github should be absent from Projections (inline twin has no projections)")
 		}
 	})
 
@@ -254,6 +312,9 @@ func TestLoadProjections(t *testing.T) {
 		if len(load.SourceErrors) == 0 {
 			t.Error("broken config.yaml should produce a source error")
 		}
+		if load.SourceErrors[0].Path != filepath.Join(dir, "config.yaml") {
+			t.Errorf("expected SourceErrors to contain config.yaml path, got %v", load.SourceErrors)
+		}
 		if !load.KeepsPrevious("inline-only") {
 			t.Error("KeepsPrevious(inline-only) should be true when config.yaml fails")
 		}
@@ -282,23 +343,12 @@ func TestLoadProjections(t *testing.T) {
 			if len(s.Projections) == 0 && len(lp) == 0 {
 				continue
 			}
-			if !projMapsEqual(lp, s.Projections) {
-				t.Errorf("parity mismatch for %s:\n  LoadProjections: %v\n  config.Load: %v", s.Name, projKeys(lp), projKeys(s.Projections))
+			if !reflect.DeepEqual(lp, s.Projections) {
+				t.Errorf("parity mismatch for %s:\n  LoadProjections: %v\n  config.Load: %v",
+					s.Name, projKeys(lp), projKeys(s.Projections))
 			}
 		}
 	})
-}
-
-func projMapsEqual(a, b map[string]*config.ProjectionConfig) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k := range a {
-		if _, ok := b[k]; !ok {
-			return false
-		}
-	}
-	return true
 }
 
 func projKeys(m map[string]*config.ProjectionConfig) []string {
@@ -327,23 +377,5 @@ func TestLoadProjections_projFilesSourceError(t *testing.T) {
 	}
 	if _, ok := load.Projections["svc"]; ok {
 		t.Error("svc should be absent from Projections after proj file error")
-	}
-}
-
-// Ensure that SourceErrors contains the config.yaml path when config.yaml is broken.
-func TestLoadProjections_sourceErrorPath(t *testing.T) {
-	dir := t.TempDir()
-	writeProjLoadFile(t, dir, "config.yaml", "bad: [yaml\n")
-
-	load := config.LoadProjections(dir)
-
-	var found bool
-	for _, se := range load.SourceErrors {
-		if fmt.Sprintf("%v", se.Path) != "" && se.Path == filepath.Join(dir, "config.yaml") {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected SourceErrors to contain config.yaml path, got %v", load.SourceErrors)
 	}
 }

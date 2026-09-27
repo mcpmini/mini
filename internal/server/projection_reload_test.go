@@ -86,11 +86,7 @@ func buildReloadEnv(t *testing.T, dir string) *reloadEnv {
 
 func addReloadUpstream(t *testing.T, srv *server.Server) {
 	t.Helper()
-	fake := fakeConn("getData")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`)
-	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fake); err != nil {
-		t.Fatal(err)
-	}
+	addReloadUpstreamNamed(t, &reloadEnv{t: t, srv: srv}, "svc")
 }
 
 func (e *reloadEnv) startPoller() {

@@ -117,21 +117,6 @@ func TestProjectionReloadIsolation_brokenConfigYAMLKeepsInlineProjection(t *test
 	}
 }
 
-func TestNewWithConfigDir_badServerFile_otherServersStillProjected(t *testing.T) {
-	dir := evalTempDir(t)
-	writeReloadFile(t, filepath.Join(dir, "servers", "a.yaml"), "name: a\ncommand: echo\n")
-	writeReloadFile(t, filepath.Join(dir, "servers", "a.proj.yaml"), "getData:\n  include_only: [a]\n")
-	writeReloadFile(t, filepath.Join(dir, "servers", "b.yaml"), "name: b\nheaders: [bad yaml\n")
-
-	e := buildReloadEnv(t, dir)
-	addReloadUpstreamNamed(t, e, "a")
-
-	resp := serve(t, e.srv, callTool("call", map[string]any{"server": "a", "tool": "getData", "params": map[string]any{}}))
-	if data := parseProxyEnvelope(t, toolResultText(t, resp)).Data; data["a"] == nil || data["secret"] != nil {
-		t.Errorf("a should be projected at startup despite b's broken file, got %v", data)
-	}
-}
-
 func TestProjectionReloadIsolation_brokenConfigYAMLLogsWarn(t *testing.T) {
 	dir := evalTempDir(t)
 	writeReloadFile(t, filepath.Join(dir, "servers", "a.yaml"), "name: a\ncommand: echo\n")
@@ -144,24 +129,40 @@ func TestProjectionReloadIsolation_brokenConfigYAMLLogsWarn(t *testing.T) {
 	writeReloadFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
 	e.advanceTick()
 
-	if !strings.Contains(e.logs.String(), "config.yaml") {
-		t.Errorf("expected WARN mentioning config.yaml, got logs:\n%s", e.logs.String())
+	if !strings.Contains(e.logs.String(), "projection reload: source error") {
+		t.Errorf("expected WARN with message 'projection reload: source error', got logs:\n%s", e.logs.String())
 	}
 }
 
-func TestNewWithConfigDir_flowSeqVarUnset_serverStillProjected(t *testing.T) {
+func TestProjectionReloadIsolation_brokenServersFileKeepsLiveProjectionOverInlineTwin(t *testing.T) {
 	dir := evalTempDir(t)
 	writeReloadFile(t, filepath.Join(dir, "servers", "svc.yaml"),
-		"name: svc\ncommand: echo\nargs: [--token, ${FLOWSEQ_TEST_VAR_UNSET}]\n")
-	writeReloadFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"),
-		"getData:\n  include_only: [a]\n")
+		"name: svc\ncommand: echo\nprojections:\n  getData:\n    include_only: [a]\n")
+	writeReloadFile(t, filepath.Join(dir, "config.yaml"),
+		"servers:\n- name: svc\n  command: echo\n  projections:\n    getData:\n      include_only: [b]\n")
 
 	e := buildReloadEnv(t, dir)
 	addReloadUpstreamNamed(t, e, "svc")
+	e.startPoller()
 
 	resp := serve(t, e.srv, callTool("call", map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}}))
 	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
 	if data["a"] == nil || data["secret"] != nil {
-		t.Errorf("svc should be projected at startup with flow-seq ${VAR} unset, got %v", data)
+		t.Fatalf("initial: expected only 'a' from servers/ file projection, got %v", data)
+	}
+
+	writeReloadFile(t, filepath.Join(dir, "servers", "svc.yaml"), "bad: [yaml\n")
+	e.advanceTick()
+
+	resp = serve(t, e.srv, callTool("call", map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}}))
+	data = parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	if data["a"] == nil {
+		t.Errorf("live projection should be kept when servers/ file breaks, got %v", data)
+	}
+	if data["b"] != nil {
+		t.Errorf("inline twin projection must NOT replace live projection, got %v", data)
+	}
+	if data["secret"] != nil {
+		t.Errorf("projection lost entirely (secret exposed), got %v", data)
 	}
 }

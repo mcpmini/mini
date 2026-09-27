@@ -19,12 +19,7 @@ func New(cfg *config.Config, logger *slog.Logger, opts ...ServerOption) *Server 
 
 func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger, opts ...ServerOption) *Server {
 	load := config.LoadProjections(configDir)
-	for _, se := range load.SourceErrors {
-		logger.Warn("projection load: source error", "path", se.Path, "err", se.Err)
-	}
-	for name, err := range load.Skipped {
-		logger.Warn("projections not loaded for server", "server", name, "err", err)
-	}
+	logProjectionLoadProblems(logger, load)
 	s := newServer(cfg, configDir, load.Projections, logger)
 	for _, o := range opts {
 		o(s)
