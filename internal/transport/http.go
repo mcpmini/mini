@@ -261,9 +261,10 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	if err != nil {
 		return nil, "", err
 	}
-	// MCP spec: a new session's InitializeRequest carries no session ID.
-	if rpcReq.Method == "initialize" {
-		httpReq.Header.Del("Mcp-Session-Id")
+	// The stored ID may belong to the session being replaced, and a new session must start
+	// with an InitializeRequest that carries no session ID: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L213-L215
+	if rpcReq.Method != "initialize" {
+		c.attachSessionID(httpReq)
 	}
 	return httpReq, sentAuth, nil
 }
@@ -387,12 +388,15 @@ func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Reques
 	if err != nil {
 		return "", err
 	}
+	return sentAuth, nil
+}
+
+func (c *HTTPConnection) attachSessionID(req *http.Request) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", c.sessionID)
 	}
-	c.mu.Unlock()
-	return sentAuth, nil
 }
 
 func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {

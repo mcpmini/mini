@@ -21,8 +21,13 @@ func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error
 func (c *HTTPConnection) ensureInitialized(ctx context.Context) error {
 	renewed, err := c.initializeOnce(ctx)
 	if renewed {
-		// A replacement session can come from a redeployed server with a different
-		// catalog, and a new session owes no tools/list_changed for it.
+		// mini keeps a copy of this upstream's tool list and refreshes it when the upstream
+		// sends notifications/tools/list_changed. That message never covers a restart:
+		//  1. mini connects to the upstream in session s1 and fetches its tools.
+		//  2. The upstream is redeployed with a different set of tools, which ends s1.
+		//  3. mini's next request gets a 404, so mini starts session s2.
+		//  4. To the upstream, s2 is a brand-new client, so it has no change to announce.
+		// Without this notification, mini would keep serving the tool list from s1.
 		c.toolsChanged.NotifyToolsChanged()
 	}
 	return err
@@ -76,7 +81,11 @@ type sessionListener struct {
 }
 
 func (c *HTTPConnection) restartListener(listen bool) {
-	// A server may keep an expired session's stream open, and a listener that gave up must not silence the new session.
+	// Each session negotiates its own capabilities, including whether it sends list-changed
+	// notifications, so each session gets its own listener:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/lifecycle.mdx#L186-L187
+	// The server MAY leave the old session's stream open, so the old listener is stopped here:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L150
 	if old := c.listener; old != nil {
 		old.cancel()
 		<-old.done
@@ -134,6 +143,7 @@ func (c *HTTPConnection) buildInitializedNotifRequest(notif []byte) func(context
 			return nil, "", err
 		}
 		sentAuth, err := c.setRequestHeaders(ctx, req)
+		c.attachSessionID(req)
 		return req, sentAuth, err
 	}
 }
@@ -245,6 +255,7 @@ func (c *HTTPConnection) buildStreamRequest(ctx context.Context) (*http.Request,
 	if err != nil {
 		return nil, "", err
 	}
+	c.attachSessionID(req)
 	req.Header.Del("Content-Type")
 	req.Header.Set("Accept", "text/event-stream")
 	return req, sentAuth, nil
