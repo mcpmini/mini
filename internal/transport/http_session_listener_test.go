@@ -135,3 +135,52 @@ func TestHTTPSession_failedReinitializeKeepsTheOldSession(t *testing.T) {
 	clk.Advance(30 * time.Second)
 	awaitPing(t, reinitPing)
 }
+
+func TestHTTPSession_streamLeftOpenOnTheExpiredSessionMovesToTheNewOne(t *testing.T) {
+	m := newSessionFake()
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.Header.Get("Mcp-Session-Id") == "s1" {
+			m.gets <- "s1"
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
+		m.handle(w, r)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	mustPing(t, conn)
+	m.awaitNotificationStream(t)
+
+	m.expireSession("s1")
+	mustPing(t, conn)
+
+	if got := m.awaitNotificationStream(t); got != "s2" {
+		t.Errorf("listener stream carried session %q, want s2", got)
+	}
+}
+
+func TestHTTPSession_listenerThatGaveUpRestartsForTheNewSession(t *testing.T) {
+	m := newSessionFake()
+	var streamSupported atomic.Bool
+	rejected := make(chan struct{}, 1)
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && !streamSupported.Load() {
+			rejected <- struct{}{}
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		m.handle(w, r)
+	})
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	mustPing(t, conn)
+	<-rejected
+
+	streamSupported.Store(true)
+	m.expireSession(m.sessionID())
+	mustPing(t, conn)
+
+	if got := m.awaitNotificationStream(t); got != m.sessionID() {
+		t.Errorf("listener stream carried session %q, want %q", got, m.sessionID())
+	}
+}

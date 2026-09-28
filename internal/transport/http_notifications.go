@@ -19,16 +19,27 @@ func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error
 }
 
 func (c *HTTPConnection) ensureInitialized(ctx context.Context) error {
+	renewed, err := c.initializeOnce(ctx)
+	if renewed {
+		// A replacement session can come from a redeployed server with a different
+		// catalog, and a new session owes no tools/list_changed for it.
+		c.toolsChanged.NotifyToolsChanged()
+	}
+	return err
+}
+
+func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err error) {
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
 	if c.initialized {
-		return nil
+		return false, nil
 	}
 	if err := c.initHandshake(ctx); err != nil {
-		return err
+		return false, err
 	}
-	c.initialized = true
-	return nil
+	renewed = c.initializedBefore
+	c.initialized, c.initializedBefore = true, true
+	return renewed, nil
 }
 
 func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
@@ -55,18 +66,29 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	if err := c.sendInitializedNotification(ctx); err != nil {
 		return err
 	}
-	if c.listenerStarted {
-		select {
-		case c.sessionRenewed <- struct{}{}:
-		default:
-		}
-	}
-	if toolsListChanged(result.Capabilities) && !c.listenerStarted {
-		c.listenerStarted = true
-		c.listenerWG.Add(1)
-		go c.listenForNotifications()
-	}
+	c.restartListener(toolsListChanged(result.Capabilities))
 	return nil
+}
+
+type sessionListener struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func (c *HTTPConnection) restartListener(listen bool) {
+	// A server may keep an expired session's stream open, and a listener that gave up must not silence the new session.
+	if old := c.listener; old != nil {
+		old.cancel()
+		<-old.done
+		c.listener = nil
+	}
+	if !listen {
+		return
+	}
+	ctx, cancel := context.WithCancel(c.listenerCtx)
+	c.listener = &sessionListener{cancel: cancel, done: make(chan struct{})}
+	c.listenerWG.Add(1)
+	go c.listenForNotifications(ctx, c.listener.done)
 }
 
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
@@ -137,49 +159,35 @@ type listenerState struct {
 	rejectedAuth string
 }
 
-func (c *HTTPConnection) listenForNotifications() {
+func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}) {
 	defer c.listenerWG.Done()
+	defer close(done)
 	state := listenerState{backoff: time.Second}
-	for c.listenerCtx.Err() == nil {
-		if state.rejectedAuth != "" && c.currentAuth(c.listenerCtx) == state.rejectedAuth {
-			if !c.sleepCtx(c.listenerCtx, maxListenerBackoff) {
+	for ctx.Err() == nil {
+		if state.rejectedAuth != "" && c.currentAuth(ctx) == state.rejectedAuth {
+			if !c.sleepCtx(ctx, maxListenerBackoff) {
 				return
 			}
 			continue
 		}
-		if c.runListenerCycle(&state) {
+		if c.runListenerCycle(ctx, &state) {
 			return
 		}
 	}
 }
 
-func (c *HTTPConnection) runListenerCycle(state *listenerState) (stop bool) {
-	status, err := c.consumeNotificationStream()
-	if c.shouldStopListener(status) {
+func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerState) (stop bool) {
+	status, err := c.consumeNotificationStream(ctx)
+	if shouldStopListener(ctx, c.url, status) {
 		return true
 	}
 	if err != nil {
 		slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 	}
-	state.rejectedAuth = c.rejectedAuthAfter(c.listenerCtx, err)
+	state.rejectedAuth = c.rejectedAuthAfter(ctx, err)
 	delay, next := listenerDelay(status, err, state.backoff)
 	state.backoff = next
-	return c.listenerSleep(state, delay)
-}
-
-func (c *HTTPConnection) listenerSleep(state *listenerState, d time.Duration) (stop bool) {
-	t := c.clock.NewTimer(d)
-	select {
-	case <-t.Chan():
-		return false
-	case <-c.sessionRenewed:
-		t.Stop()
-		state.backoff = time.Second
-		return false
-	case <-c.listenerCtx.Done():
-		t.Stop()
-		return true
-	}
+	return !c.sleepCtx(ctx, delay)
 }
 
 func (c *HTTPConnection) currentAuth(ctx context.Context) string {
@@ -190,12 +198,12 @@ func (c *HTTPConnection) currentAuth(ctx context.Context) string {
 	return v
 }
 
-func (c *HTTPConnection) shouldStopListener(status int) bool {
+func shouldStopListener(ctx context.Context, url string, status int) bool {
 	if status == http.StatusMethodNotAllowed {
-		slog.Warn("upstream advertises tool changes but rejects notification stream", "url", c.url)
+		slog.Warn("upstream advertises tool changes but rejects notification stream", "url", url)
 		return true
 	}
-	return c.listenerCtx.Err() != nil
+	return ctx.Err() != nil
 }
 
 func (c *HTTPConnection) rejectedAuthAfter(ctx context.Context, err error) string {
@@ -216,8 +224,8 @@ func listenerDelay(status int, err error, backoff time.Duration) (delay, next ti
 	return backoff, min(backoff*2, maxListenerBackoff)
 }
 
-func (c *HTTPConnection) consumeNotificationStream() (int, error) {
-	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.newStreamClient(), c.buildStreamRequest)
+func (c *HTTPConnection) consumeNotificationStream(ctx context.Context) (int, error) {
+	resp, err := c.sendOneWithAuthRetry(ctx, c.newStreamClient(), c.buildStreamRequest)
 	if err != nil {
 		return 0, err
 	}

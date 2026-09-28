@@ -36,12 +36,12 @@ type HTTPConnection struct {
 	mu                      sync.Mutex
 	initMu                  sync.Mutex
 	initialized             bool
-	listenerStarted         bool
+	initializedBefore       bool
+	listener                *sessionListener
 	listenerCtx             context.Context
 	listenerCancel          context.CancelFunc
 	listenerWG              sync.WaitGroup
 	toolsChanged            toolsChangedNotifier
-	sessionRenewed          chan struct{}
 }
 
 // defaultHTTPClientTimeout is the hard network-level backstop. Set to 2× the default
@@ -105,7 +105,6 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 		clock:                   cfg.Clock,
 		listenerCtx:             listenerCtx,
 		listenerCancel:          listenerCancel,
-		sessionRenewed:          make(chan struct{}, 1),
 	}, nil
 }
 

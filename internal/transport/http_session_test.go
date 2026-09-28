@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 )
@@ -176,5 +177,28 @@ func TestHTTPSession_reinitWithoutASessionStopsSendingTheOldOne(t *testing.T) {
 		if p.sessionID != "" {
 			t.Errorf("ping after a session-less re-init carried session %q, want none", p.sessionID)
 		}
+	}
+}
+
+func TestHTTPSession_reinitAnnouncesThatToolsMayHaveChanged(t *testing.T) {
+	m, srv := newSessionServer(t)
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	var mu sync.Mutex
+	var announced []string
+	conn.SetNotificationHandler(func(n Notification) {
+		mu.Lock()
+		defer mu.Unlock()
+		announced = append(announced, n.Method)
+	})
+	mustPing(t, conn)
+	mustPing(t, conn)
+
+	m.expireSession(m.sessionID())
+	mustPing(t, conn)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(announced, []string{NotificationToolsChanged}) {
+		t.Errorf("notifications = %v, want one %s after re-init only", announced, NotificationToolsChanged)
 	}
 }
