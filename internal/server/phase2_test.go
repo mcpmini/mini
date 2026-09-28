@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestExecProtected(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	perm := &config.PermissionsConfig{Protected: []string{"sendMessage"}}
 	fake := &transport.FakeConnection{
@@ -33,7 +34,7 @@ func TestExecProtected(t *testing.T) {
 }
 
 func TestExecProtectedRejectsOpenTool(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	// default permission is open
 	srv.AddConnection(ctx, config.ServerConfig{Name: "ci"}, fakeConn("getBuild"))
@@ -51,7 +52,7 @@ func TestExecProtectedRejectsOpenTool(t *testing.T) {
 }
 
 func TestConfigureSetProjection(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection",
@@ -73,7 +74,7 @@ func TestConfigureSetProjection(t *testing.T) {
 }
 
 func TestConfigureRemoveServer(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	srv.AddConnection(ctx, config.ServerConfig{Name: "ci"}, fakeConn("getBuild"))
 
@@ -92,7 +93,7 @@ func TestConfigureRemoveServer(t *testing.T) {
 }
 
 func TestDiscoverDetail(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
 			{Name: "getBuild", Description: "Get a build by ID",

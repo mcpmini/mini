@@ -58,7 +58,7 @@ type startupRetry struct {
 func startRetrying(t *testing.T, url string, logs slog.Handler) startupRetry {
 	t.Helper()
 	fakeClock := clock.NewFake()
-	srv := newConnectTestServerLogging(t, logs, server.WithClock(fakeClock))
+	srv := newConnectTestServerLogging(t, logs, fakeClock)
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "svc", Transport: "http", URL: url}})
 	return startupRetry{srv: srv, clock: fakeClock}
 }
@@ -300,7 +300,7 @@ func TestConnectUpstreamAsync_projectionsReloadedDuringRetry_installUsesLiveProj
 		t.Run(tc.name, func(t *testing.T) {
 			ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
 			r := startupRetry{clock: clock.NewFake()}
-			r.srv = newConnectTestServerLogging(t, discardLogs(), server.WithClock(r.clock))
+			r.srv = newConnectTestServerLogging(t, discardLogs(), r.clock)
 			defer r.srv.Close()
 			r.srv.ReplaceProjections(aliasPing("old_alias"))
 			r.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{

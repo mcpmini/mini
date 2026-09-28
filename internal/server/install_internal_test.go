@@ -15,7 +15,7 @@ import (
 func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	srv := NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	t.Cleanup(srv.Close)
 
 	srv.serverOpMu.Lock()

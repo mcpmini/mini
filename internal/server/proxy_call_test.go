@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 )
 
 func TestProxy_StableOutput_AllRootShapesWrapInData(t *testing.T) {
@@ -26,7 +27,7 @@ func TestProxy_StableOutput_AllRootShapesWrapInData(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := newProxyServer(t)
+			srv := newTestServer(t, server.Params{})
 			defer srv.Close()
 			conn := fakeConn("get_value")
 			conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + jsonQuote(tc.upstream) + `}]}`)
@@ -54,7 +55,7 @@ func TestProxy_StableOutput_AllRootShapesWrapInData(t *testing.T) {
 }
 
 func TestProxy_StableOutput_TextAndStructuredContentMatch(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_value")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`)
@@ -75,7 +76,7 @@ func TestProxy_StableOutput_TextAndStructuredContentMatch(t *testing.T) {
 }
 
 func TestProxy_StableOutput_MiniOmittedWhenUnaltered(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_value")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1}"}]}`)
@@ -89,7 +90,7 @@ func TestProxy_StableOutput_MiniOmittedWhenUnaltered(t *testing.T) {
 }
 
 func TestProxy_ErrorBehavior_ToolErrorNotWrappedInData(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("failing_tool")
 	conn.Responses["tools/call"] = json.RawMessage(`{"isError":true,"content":[{"type":"text","text":"boom"}]}`)
@@ -114,7 +115,7 @@ func TestProxy_ErrorBehavior_ToolErrorNotWrappedInData(t *testing.T) {
 
 // Registry lookup fails before any envelope is built, so this surfaces as a JSON-RPC error, not an isError tool result.
 func TestProxy_ErrorBehavior_UnknownServerReturnsToolError(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	resp := serveProxy(t, srv, callTool("nosuchserver__tool", map[string]any{}))
@@ -127,7 +128,7 @@ func TestProxy_ErrorBehavior_UnknownServerReturnsToolError(t *testing.T) {
 }
 
 func TestProxy_LegacyFlatCall_RejectedWithActionableError(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_repos")
 	addProxyConn(t, srv, "gh", conn)
@@ -137,7 +138,7 @@ func TestProxy_LegacyFlatCall_RejectedWithActionableError(t *testing.T) {
 }
 
 func TestProxy_Action_DispatchesToRealUpstreamTool(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	fake := fakeConn("list_pull_requests")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)
@@ -161,7 +162,7 @@ func TestProxy_Action_DispatchesToRealUpstreamTool(t *testing.T) {
 }
 
 func TestProxy_Alias_DispatchesToRealUpstreamName(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	fake := fakeConn("list_pull_requests")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)
@@ -194,7 +195,7 @@ func bytesContainsMini(s string) bool {
 }
 
 func TestProxy_RawBypass_PreservesLargeIntegers(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_item")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":9007199254740993}"}]}`)
@@ -208,7 +209,7 @@ func TestProxy_RawBypass_PreservesLargeIntegers(t *testing.T) {
 }
 
 func TestProxy_ForwardsLargeIntegerArgs(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_item")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)

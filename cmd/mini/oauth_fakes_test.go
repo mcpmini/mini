@@ -18,6 +18,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
@@ -106,17 +107,16 @@ type oauthTestSetup struct {
 	configDir string
 }
 
-func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, opts ...server.ServerOption) *oauthTestSetup {
+func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthTestSetup {
 	t.Helper()
 	configDir, token, upstream := t.TempDir(), newTestTokenEndpoint(t), newTestMCPUpstream(t)
 	if err := auth.Save(configDir, "live", tok); err != nil {
 		t.Fatal(err)
 	}
 	sc := oauthServerConfig("live", upstream.srv.URL, token.srv.URL, true)
-	srv := buildAndStart(t.Context(),
-		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
-			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}},
-		opts...)
+	p := BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}, Clock: clk}
+	srv := buildAndStart(t.Context(), p)
 	t.Cleanup(srv.Close)
 	awaitConnected(t, srv, "live")
 	return &oauthTestSetup{srv: srv, token: token, upstream: upstream, configDir: configDir}

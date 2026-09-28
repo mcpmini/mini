@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -21,9 +19,7 @@ import (
 
 func TestConfigureReload_emptyDir(t *testing.T) {
 	dir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{ConfigDir: dir})
 
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 	text := toolResultText(t, resp)
@@ -44,9 +40,7 @@ func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 	os.WriteFile(filepath.Join(serversDir, "myserver.proj.yaml"), []byte("search:\n  string_limit: 50\n"), 0600)
 	os.WriteFile(filepath.Join(dir, "servers.yaml"), []byte("servers:\n  - name: myserver\n    command: echo\n"), 0600)
 
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{ConfigDir: dir})
 
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 	var result map[string]any
@@ -57,7 +51,7 @@ func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 }
 
 func TestConfigureAddServer_noConfig(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "add_server"}))
 	result := resp["result"].(map[string]any)
 	if result["isError"] != true {
@@ -68,9 +62,8 @@ func TestConfigureAddServer_noConfig(t *testing.T) {
 func newServerAllowPrivate(t *testing.T) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowPrivateURLs = true
-	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return newTestServer(t, server.Params{Config: cfg})
 }
 
 func TestConfigureAddServer_viaHTTP(t *testing.T) {
@@ -110,7 +103,7 @@ func fakeProtectedConn() (*transport.FakeConnection, *config.PermissionsConfig) 
 }
 
 func TestExecuteProtected_callsProtectedTool(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake, perm := fakeProtectedConn()
 	srv.AddConnection(t.Context(), config.ServerConfig{Name: "db", Permissions: perm}, fake)
 
@@ -134,9 +127,7 @@ func newReadOnlyConfigServer(t *testing.T) *server.Server {
 		t.Skip("cannot set read-only dir:", err)
 	}
 	t.Cleanup(func() { os.Chmod(dir, 0700) }) //nolint:errcheck
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return newTestServer(t, server.Params{ConfigDir: dir})
 }
 
 func TestSetProjection_persistenceFailureReturnsError(t *testing.T) {
@@ -161,7 +152,7 @@ func TestSetProjection_persistenceFailureReturnsError(t *testing.T) {
 }
 
 func TestToolsList_returnsProxySchemas(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`+"\n"))
 
 	result, ok := resp["result"].(map[string]any)
@@ -176,9 +167,7 @@ func TestToolsList_returnsProxySchemas(t *testing.T) {
 
 func newConfigServer(t *testing.T) *server.Server {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -291,7 +280,7 @@ func assertHealthStats(t *testing.T, srv *server.Server, svcName string, wantCal
 }
 
 func TestHealthStatsAfterCalls(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	t.Cleanup(srv.Close)
 	const nCalls = 3
 	fake := &transport.FakeConnection{
@@ -307,9 +296,7 @@ func TestHealthStatsAfterCalls(t *testing.T) {
 
 func newSessionServer(t *testing.T) *server.Server {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return newTestServer(t, server.Params{})
 }
 
 func fakeGetData() *transport.FakeConnection {
@@ -340,7 +327,7 @@ func assertRemoveOk(t *testing.T, srv *server.Server, serverName string) {
 }
 
 func TestConfigureUnknownAction(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "no_such_action"}))
 	assertIsErrorResult(t, resp)
 	text := toolResultText(t, resp)
@@ -350,7 +337,7 @@ func TestConfigureUnknownAction(t *testing.T) {
 }
 
 func TestConfigureSetProjectionRequiresTool(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection",
 		"server": "svc",
@@ -360,7 +347,7 @@ func TestConfigureSetProjectionRequiresTool(t *testing.T) {
 
 func TestConfigureSetProjection_rejectsMiniFormat(t *testing.T) {
 	t.Run("server scope", func(t *testing.T) {
-		srv := newEdgeServer(t)
+		srv := newTestServer(t, server.Params{})
 		resp := serve(t, srv, callTool("config", map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "tool1",
 			"projection": map[string]any{"format": "mini"},
@@ -371,7 +358,7 @@ func TestConfigureSetProjection_rejectsMiniFormat(t *testing.T) {
 		}
 	})
 	t.Run("session scope", func(t *testing.T) {
-		srv := newEdgeServer(t)
+		srv := newTestServer(t, server.Params{})
 		resp := serve(t, srv, callTool("config", map[string]any{
 			"action": "set_projection", "server": "svc", "tool": "tool1", "session_only": true,
 			"projection": map[string]any{"format": "mini"},
@@ -384,7 +371,7 @@ func TestConfigureSetProjection_rejectsMiniFormat(t *testing.T) {
 }
 
 func TestConfigureRemoveServerRequiresName(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "remove_server",
 	}))
@@ -392,7 +379,7 @@ func TestConfigureRemoveServerRequiresName(t *testing.T) {
 }
 
 func TestConfigureRemoveServer_clearsDiscover(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("ping"))
 	if srv.ToolCount("svc") != 1 {
 		t.Fatalf("expected 1 tool before remove")
@@ -428,9 +415,7 @@ func TestSessionScopedProjectionNotPersistedAcrossCalls(t *testing.T) {
 
 func reloadResult(t *testing.T, dir string, editsAfterStart map[string]string) map[string]any {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	t.Cleanup(srv.Close)
 	for rel, content := range editsAfterStart {
 		writeReloadFile(t, filepath.Join(dir, rel), content)

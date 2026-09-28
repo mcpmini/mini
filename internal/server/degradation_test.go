@@ -26,7 +26,7 @@ func newBlockingConn(blocked, release chan struct{}) *callbackConnection {
 }
 
 func TestQueueDepth_rejectsWhenFull(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	blocked, release := make(chan struct{}), make(chan struct{})
 	slow := newBlockingConn(blocked, release)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", MaxPendingRequests: 1}, slow)
@@ -47,7 +47,7 @@ func TestQueueDepth_rejectsWhenFull(t *testing.T) {
 }
 
 func TestQueueDepth_zeroMeansUnlimited(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 
 	fake := &transport.FakeConnection{
@@ -82,7 +82,7 @@ func assertQueueCallOK(t *testing.T, srv *server.Server, callN int) {
 }
 
 func TestQueueDepth_slotReleasedAfterCompletion(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	var mu sync.Mutex
 	calls := 0
 	slow := &callbackConnection{
@@ -101,7 +101,7 @@ func TestQueueDepth_slotReleasedAfterCompletion(t *testing.T) {
 }
 
 func TestQueueDepth_timeoutReleasesSlot(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	slow := &ctxAwareConnection{tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}}}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc", MaxPendingRequests: 1, ToolTimeout: "50ms"}, slow)

@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -32,10 +30,8 @@ func TestReconnect_detectsOAuthRequirement(t *testing.T) {
 	defer oauthSrv.Close()
 
 	configDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	fakeClock := clock.NewFake()
-	srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock))
+	srv := newTestServer(t, server.Params{ConfigDir: configDir, Clock: fakeClock})
 	defer srv.Close()
 
 	var errOnCall bool
@@ -60,7 +56,7 @@ func TestReconnect_detectsOAuthRequirement(t *testing.T) {
 }
 
 func TestReconnect_reauthErrorDoesNotStartReconnect(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	reauthErr := fmt.Errorf("svc requires re-authorization: %w", transport.ErrReauthRequired)
 	errConn := &errAfterRegisterConn{
 		tools: []transport.ToolDefinition{
@@ -93,11 +89,8 @@ func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 	defer mcpSrv.Close()
 
 	configDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	fakeClock := clock.NewFake()
-	srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)),
-		server.WithClock(fakeClock))
+	srv := newTestServer(t, server.Params{ConfigDir: configDir, Clock: fakeClock})
 	defer srv.Close()
 
 	tok := &oauth2.Token{AccessToken: "old-access", RefreshToken: "old-refresh"}
@@ -140,11 +133,8 @@ func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
 	defer authSrv.Close()
 
 	configDir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	fakeClock := clock.NewFake()
-	srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)),
-		server.WithClock(fakeClock))
+	srv := newTestServer(t, server.Params{ConfigDir: configDir, Clock: fakeClock})
 	defer srv.Close()
 
 	var errOnCall bool

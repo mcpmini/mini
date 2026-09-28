@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -41,8 +39,8 @@ func TestCompactToonDepthErrorIsToolError(t *testing.T) {
 func newDeepToonServer(t *testing.T, perm *config.PermissionsConfig) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir, cfg.ResponseFormat = t.TempDir(), "toon"
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cfg.ResponseFormat = "toon"
+	srv := newTestServer(t, server.Params{Config: cfg})
 	fake := fakeConn("deep_open", "deep_protected")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + deepPayload(t) + `}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", Permissions: perm}, fake)

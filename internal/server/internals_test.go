@@ -193,7 +193,7 @@ func TestRunSessionEviction_evictsIdleSessions(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewWithConfigDir(cfg, t.TempDir(), logger, WithClock(fakeClock))
+	srv := New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: logger, Clock: fakeClock})
 
 	srv.sessions.getOrCreate("old-session")
 	fakeClock.Advance(2 * time.Hour)

@@ -15,21 +15,21 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
 
 func newConnectTestServer(t *testing.T) *server.Server {
 	t.Helper()
-	return newConnectTestServerLogging(t, slog.NewTextHandler(io.Discard, nil))
+	return newConnectTestServerLogging(t, slog.NewTextHandler(io.Discard, nil), nil)
 }
 
-func newConnectTestServerLogging(t *testing.T, logs slog.Handler, opts ...server.ServerOption) *server.Server {
+func newConnectTestServerLogging(t *testing.T, logs slog.Handler, clk clock.Clock) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowPrivateURLs = true
-	return server.NewWithConfigDir(cfg, t.TempDir(), slog.New(logs), opts...)
+	return newTestServer(t, server.Params{Config: cfg, Logger: slog.New(logs), Clock: clk})
 }
 
 func mustCloseWithin(t *testing.T, srv *server.Server, d time.Duration) {
@@ -211,9 +211,8 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 	})
 
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowPrivateURLs = true
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{
 		Name:      "oauth-svc",

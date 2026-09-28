@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -40,7 +39,7 @@ func (c *errAfterRegisterConn) Health(_ context.Context) error { return nil }
 func (c *errAfterRegisterConn) Close() error                   { return nil }
 
 func TestReconnect_rpcErrorDoesNotTriggerReconnect(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	errConn := &errAfterRegisterConn{
 		tools: []transport.ToolDefinition{
 			{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)},
@@ -67,7 +66,7 @@ func fakeConnWithResp(names ...string) *transport.FakeConnection {
 }
 
 func TestReconnect_changedToolSet_noStaleEntries(t *testing.T) {
-	srv, ctx := newTestServer(t), context.Background()
+	srv, ctx := newTestServer(t, server.Params{}), context.Background()
 	fakeV1 := fakeConnWithResp("toolA", "toolB")
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fakeV1)
 	serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "svc"}))
@@ -113,10 +112,8 @@ func waitForReconnect(t *testing.T, fakeClock *clock.Fake, srv *server.Server, s
 
 func newReconnectSrv(t *testing.T) (*server.Server, *clock.Fake) {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	fakeClock := clock.NewFake()
-	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock)), fakeClock
+	return newTestServer(t, server.Params{Clock: fakeClock}), fakeClock
 }
 
 func makeErrConn(errOnCall *bool) *errAfterRegisterConn {
@@ -201,9 +198,7 @@ func perSessionHTTPServer(t *testing.T, dialCount *int, rpcErrOnCall *int) *http
 
 func newPerSessionSrv(t *testing.T, url string) *server.Server {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: url, SessionMode: config.SessionModePerSession}
 	if err := srv.AddUpstream(context.Background(), sc); err != nil {
 		t.Fatalf("AddUpstream: %v", err)
@@ -314,10 +309,8 @@ func TestPerSession_transportErrorRedialsConn(t *testing.T) {
 func TestClose_concurrentConnError(t *testing.T) {
 	// Run many iterations to expose the narrow scheduling window.
 	for i := range 50 {
-		cfg := config.DefaultConfig()
-		cfg.ResponseDir = t.TempDir()
 		fakeClock := clock.NewFake()
-		srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithClock(fakeClock))
+		srv := newTestServer(t, server.Params{Clock: fakeClock})
 
 		// slow is a connection that blocks until released, then returns a transport error.
 		// This simulates a call that errors exactly as Close() is running.

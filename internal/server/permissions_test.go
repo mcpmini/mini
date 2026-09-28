@@ -13,7 +13,7 @@ import (
 )
 
 func TestExecProtectedOnOpenTool(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("doThing"))
 
 	resp := serve(t, srv, callTool("perm_call", map[string]any{
@@ -26,7 +26,7 @@ func TestExecProtectedOnOpenTool(t *testing.T) {
 }
 
 func TestExecOnHiddenTool_notFound(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("secret", "visible"))
 
@@ -37,7 +37,7 @@ func TestExecOnHiddenTool_notFound(t *testing.T) {
 }
 
 func TestExecOnHiddenTool_notInDiscover(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Hidden: []string{"secret"}}
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("secret", "visible"))
 
@@ -53,7 +53,7 @@ func TestExecOnHiddenTool_notInDiscover(t *testing.T) {
 
 func newSvcWithPartialProjection(t *testing.T) *server.Server {
 	t.Helper()
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("coveredTool", "uncoveredTool")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
@@ -89,7 +89,7 @@ func TestPermCallAllowsUncoveredTool(t *testing.T) {
 }
 
 func TestWildcardProjectionGrantsCallCoverage(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("anyTool")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
@@ -108,7 +108,7 @@ func TestWildcardProjectionGrantsCallCoverage(t *testing.T) {
 
 func newSvcWithReadOnlyTool(t *testing.T) *server.Server {
 	t.Helper()
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
 			{Name: "covered"},
@@ -136,7 +136,7 @@ func TestReadOnlyToolRequiresProjectionCoverage(t *testing.T) {
 }
 
 func TestNoProjectionFileAllowsCallNormally(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("anyTool")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
@@ -149,7 +149,7 @@ func TestNoProjectionFileAllowsCallNormally(t *testing.T) {
 }
 
 func TestDefaultPermissionProtected(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Default: "protected"}
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("dangerousOp", "safeRead"))
 

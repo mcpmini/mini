@@ -48,7 +48,7 @@ func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 	fc := clock.NewFake()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	srv := buildAndStart(t.Context(), BuildServerParams{Cfg: cfg, ConfigDir: dir, Logger: slog.New(reloaded)}, server.WithClock(fc))
+	srv := buildAndStart(t.Context(), BuildServerParams{Cfg: cfg, ConfigDir: dir, Logger: slog.New(reloaded), Clock: fc})
 	defer srv.Close()
 	addGetDataUpstream(t, srv)
 	waitCtx, cancel := context.WithTimeout(t.Context(), 2*time.Second)

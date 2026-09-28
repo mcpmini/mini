@@ -11,8 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
-"sync"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,13 +19,6 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
-
-func newFailureServer(t *testing.T) *server.Server {
-	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-}
 
 func fakeToolConn(name string) *transport.FakeConnection {
 	return &transport.FakeConnection{
@@ -47,7 +39,7 @@ func assertEnvelopeOkFalse(t *testing.T, text string) {
 }
 
 func TestUpstream_connectionErrorReturnsEnvelope(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := fakeToolConn("ping")
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
 	fake.Err = errors.New("broken pipe")
@@ -62,7 +54,7 @@ func TestUpstream_connectionErrorReturnsEnvelope(t *testing.T) {
 }
 
 func TestUpstream_allCallsFail_discoverStillWorks(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	fake := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
@@ -88,7 +80,7 @@ func TestUpstream_allCallsFail_discoverStillWorks(t *testing.T) {
 
 func newSlowServer(t *testing.T, delay time.Duration, timeout string) *server.Server {
 	t.Helper()
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	slow := &slowConnection{
 		tools: []transport.ToolDefinition{{Name: "slowOp", InputSchema: json.RawMessage(`{}`)}},
 		delay: delay,
@@ -140,7 +132,7 @@ func fakeWorkConn() *transport.FakeConnection {
 }
 
 func TestUpstream_concurrentCalls_noPanic(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeWorkConn())
 	const n = 20
 	var wg sync.WaitGroup
@@ -165,7 +157,7 @@ func TestUpstream_concurrentCalls_noPanic(t *testing.T) {
 }
 
 func TestUpstream_toolReturnsIsError_gracefulEnvelope(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	fake := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
@@ -190,7 +182,7 @@ func TestUpstream_toolReturnsIsError_gracefulEnvelope(t *testing.T) {
 }
 
 func TestHTTPUpstream_429_returnsError(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{Name: "search", InputSchema: json.RawMessage(`{}`)}},
 	}
@@ -210,7 +202,7 @@ func TestHTTPUpstream_429_returnsError(t *testing.T) {
 }
 
 func TestUpstream_malformedJSONResponse_gracefulError(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	fake := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
@@ -232,7 +224,7 @@ func TestUpstream_malformedJSONResponse_gracefulError(t *testing.T) {
 }
 
 func TestUpstream_oneFailsOthersWork(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	goodFake := &transport.FakeConnection{
 		Tools:     []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
@@ -257,7 +249,7 @@ func TestUpstream_oneFailsOthersWork(t *testing.T) {
 }
 
 func TestServer_closeStopsServe(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx, cancel := context.WithCancel(context.Background())
 	pr, pw := io.Pipe()
 	var out bytes.Buffer
@@ -280,7 +272,7 @@ func TestServer_closeStopsServe(t *testing.T) {
 }
 
 func TestUpstream_contextCancelledDuringCall(t *testing.T) {
-	srv := newFailureServer(t)
+	srv := newTestServer(t, server.Params{})
 	slow := &slowConnection{
 		tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
 		delay: 5 * time.Second,

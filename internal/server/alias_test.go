@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +47,7 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 func TestAlias_listShowsAliasName(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 
 	fake := fakeConn("list_pull_requests", "get_issue")
 	proj := map[string]*config.ProjectionConfig{
@@ -70,7 +68,7 @@ func TestAlias_listShowsAliasName(t *testing.T) {
 }
 
 func TestAlias_callRoutesToRealTool(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 
 	fake := fakeConn("list_pull_requests")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)
@@ -94,7 +92,7 @@ func TestAlias_callRoutesToRealTool(t *testing.T) {
 }
 
 func TestAlias_callByRealNameFails(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 
 	fake := fakeConn("list_pull_requests")
 	proj := map[string]*config.ProjectionConfig{
@@ -118,7 +116,7 @@ func TestAlias_callByRealNameFails(t *testing.T) {
 }
 
 func TestAlias_permCallRoutesToRealTool(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 
 	fake := fakeConn("delete_repo")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"deleted"}]}`)
@@ -143,7 +141,7 @@ func TestAlias_permCallRoutesToRealTool(t *testing.T) {
 }
 
 func TestAlias_invalidAliasUsesRealName(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 
 	fake := fakeConn("my_tool")
 	proj := map[string]*config.ProjectionConfig{
@@ -158,7 +156,7 @@ func TestAlias_invalidAliasUsesRealName(t *testing.T) {
 }
 
 func TestAlias_noProjectionAlias(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 
 	fake := fakeConn("get_issue")
 	addTestConnection(t, srv, config.ServerConfig{Name: "gh"}, fake)
@@ -171,9 +169,7 @@ func TestAlias_noProjectionAlias(t *testing.T) {
 
 func newAliasConfigServer(t *testing.T) *server.Server {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -201,9 +197,7 @@ func TestAlias_sessionSetProjectionStoresUnderRealName(t *testing.T) {
 
 func TestAlias_serverSetProjectionTakesEffect(t *testing.T) {
 	dir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	t.Cleanup(srv.Close)
 
 	payload := `{"id":1,"secret":"hidden","name":"foo"}`
@@ -275,9 +269,7 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			cfg := config.DefaultConfig()
-			cfg.ResponseDir = t.TempDir()
-			srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			srv := newTestServer(t, server.Params{ConfigDir: dir})
 			t.Cleanup(srv.Close)
 
 			// Server stub lets loadServerProjections merge projection files for "gh".
@@ -303,9 +295,8 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 
 func TestAlias_toonFormatDoesNotExposeRealToolName(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.ResponseFormat = "toon"
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	t.Cleanup(srv.Close)
 
 	fake := fakeConnWithResp("list_pull_requests")
@@ -323,9 +314,7 @@ func TestAlias_toonFormatDoesNotExposeRealToolName(t *testing.T) {
 
 func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 	dir := t.TempDir()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	t.Cleanup(srv.Close)
 
 	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\n")

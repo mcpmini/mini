@@ -13,7 +13,6 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequests(t *testing.T) {
@@ -64,7 +63,7 @@ func TestBuildAndStartConnecting_oauthServerWithHandSetHeaderAndNoToken_usesHand
 func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T) {
 	t.Run("rejected_with_401", func(t *testing.T) {
 		tok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: time.Now().Add(time.Hour)}
-		s := newOAuthTestSetup(t, tok)
+		s := newOAuthTestSetup(t, tok, nil)
 		s.upstream.rejectWith401.Store("Bearer stored-access")
 		resp := serveSingleProxyCall(t, s.srv, "live__t1")
 		assertToolCallOK(t, resp)
@@ -92,7 +91,7 @@ func TestServe_tokenExpiresMidSession_toolCallRefreshesAndSucceeds(t *testing.T)
 	t.Run("expired_by_clock", func(t *testing.T) {
 		clk := clock.NewFake()
 		tok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: clk.Now().Add(time.Hour)}
-		s := newOAuthTestSetup(t, tok, server.WithClock(clk))
+		s := newOAuthTestSetup(t, tok, clk)
 		if s.token.hits.Load() != 0 {
 			t.Fatal("token endpoint was hit during connect with a still-valid token")
 		}

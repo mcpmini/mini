@@ -6,8 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,9 +47,7 @@ func toolsListMsg() map[string]any {
 }
 
 func TestHTTPSession_InheritsServerCompactMode(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
 	defer srv.Close()
 	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
 
@@ -89,9 +85,7 @@ func hasToolName(names []string, name string) bool {
 }
 
 func TestHTTPSession_DoubleInitialize_ModeLockedToFirst(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
 
@@ -125,9 +119,7 @@ func TestHTTPSession_DoubleInitialize_ModeLockedToFirst(t *testing.T) {
 }
 
 func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
@@ -160,9 +152,7 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 }
 
 func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
@@ -202,9 +192,7 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 }
 
 func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
@@ -240,7 +228,7 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 }
 
 func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_issues")
 	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, conn); err != nil {
@@ -281,9 +269,7 @@ func TestProxy_PerSession_ProxyAndStandardCoexist(t *testing.T) {
 // the "proxy" wire signal on a compact-configured server gets proxy mode, not
 // compact mode. The "proxy" constant must have an effect on the wire.
 func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
 	defer srv.Close()
 	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
 
@@ -309,9 +295,7 @@ func TestResolveToolMode_proxySignalOnCompactServer(t *testing.T) {
 }
 
 func TestResolveToolMode_unrecognizedSignal_fallsBackToServerDefault(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), server.WithToolMode(transport.ToolModeCompact))
+	srv := newTestServer(t, server.Params{ToolMode: transport.ToolModeCompact})
 	defer srv.Close()
 	addProxyConn(t, srv, "gh", fakeConn("list_issues"))
 
@@ -331,7 +315,7 @@ func TestResolveToolMode_unrecognizedSignal_fallsBackToServerDefault(t *testing.
 }
 
 func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	instructions := func(compact bool, sessionID string) string {

@@ -8,11 +8,12 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestInitialize(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	in := bytes.NewReader(rpc("initialize", map[string]any{
 		"protocolVersion": "2025-03-26",
@@ -35,7 +36,7 @@ func TestInitialize(t *testing.T) {
 // tools.listChanged:true — required when the server emits tools/list_changed notifications.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L28
 func TestInitialize_CapabilitiesListChanged(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	msgs := serveAll(t, srv)
 	for _, m := range msgs {
 		if m["id"] != float64(1) {
@@ -61,7 +62,7 @@ func TestInitialize_CapabilitiesListChanged(t *testing.T) {
 func TestInitialize_versionNegotiation(t *testing.T) {
 	for _, clientVer := range []string{"2024-11-05", "2025-03-26", "99.99.99", ""} {
 		t.Run("client="+clientVer, func(t *testing.T) {
-			srv := newTestServer(t)
+			srv := newTestServer(t, server.Params{})
 			resp := serve(t, srv, rpc("initialize", map[string]any{
 				"protocolVersion": clientVer,
 				"capabilities":    map[string]any{},
@@ -84,7 +85,7 @@ func TestInitialize_versionNegotiation(t *testing.T) {
 // Spec: "The server MUST respond with its own capabilities and information."
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L79
 func TestInitialize_serverInfoPresent(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, rpc("initialize", map[string]any{
 		"protocolVersion": transport.ProtocolVersion,
 		"capabilities":    map[string]any{},
@@ -103,7 +104,7 @@ func TestInitialize_serverInfoPresent(t *testing.T) {
 // TestInitialize_doubleInitialize verifies that sending initialize twice is handled
 // gracefully (idempotent). The spec does not prohibit re-initialization.
 func TestInitialize_doubleInitialize(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	secondInit := rpc("initialize", map[string]any{
 		"protocolVersion": transport.ProtocolVersion,
 		"capabilities":    map[string]any{},

@@ -5,7 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -34,7 +33,8 @@ func setupFSServer(t *testing.T, allowedDir string) (*server.Server, context.Can
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = allowedDir
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	srv := server.New(server.Params{Config: cfg, ConfigDir: t.TempDir(), Logger: logger})
 	sc := config.ServerConfig{
 		Name: "fs", Command: "npx",
 		Args:        []string{"-y", "@modelcontextprotocol/server-filesystem", allowedDir},
@@ -126,9 +126,7 @@ func newProtectedFSServer(t *testing.T) (*server.Server, string) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	t.Cleanup(srv.Close)
 	tmpDir := realPath(t, t.TempDir())
 	sc := config.ServerConfig{
@@ -157,5 +155,3 @@ func TestWithRealFilesystemMCP_WriteProtected(t *testing.T) {
 		t.Fatalf("file not written: %v", err)
 	}
 }
-
-

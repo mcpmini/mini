@@ -4,8 +4,6 @@ package server_test
 
 import (
 	"encoding/json"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -14,9 +12,7 @@ import (
 )
 
 func TestProxy_MiniRead_ReadsFile(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
@@ -61,9 +57,7 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 }
 
 func TestProxy_MiniRead_WithFilter(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_data")
@@ -94,9 +88,7 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 }
 
 func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_data2")
@@ -130,9 +122,7 @@ func TestProxy_MiniRead_InvalidFilterReturnsError(t *testing.T) {
 }
 
 func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_thing")
@@ -170,7 +160,7 @@ func TestProxy_MiniRead_FilenameOnly(t *testing.T) {
 }
 
 func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	for _, path := range []string{"../../etc/passwd", "../secrets.json", "../../etc/shadow.json"} {
@@ -188,7 +178,7 @@ func TestProxy_MiniRead_RejectsPathTraversal(t *testing.T) {
 func TestProxy_MiniRead_FileNotFound(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	resp := serveProxy(t, srv, callTool("read", map[string]any{"file": "9999999999999"}))
@@ -206,7 +196,7 @@ func TestProxy_MiniRead_FileNotFound(t *testing.T) {
 }
 
 func TestProxy_MiniRead_RequiresPath(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	resp := serveProxy(t, srv, callTool("read", map[string]any{}))
@@ -220,7 +210,7 @@ func TestProxy_MiniRead_RequiresPath(t *testing.T) {
 }
 
 func TestProxy_UnknownTool_ReturnsError(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	resp := serveProxy(t, srv, callTool("nonexistent__tool", map[string]any{}))
@@ -233,7 +223,7 @@ func TestProxy_UnknownTool_ReturnsError(t *testing.T) {
 }
 
 func TestProxy_NoDoubleUnderscore_ReturnsError(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	resp := serveProxy(t, srv, callTool("notaproxytool", map[string]any{}))

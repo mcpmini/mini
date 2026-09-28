@@ -6,8 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -16,17 +14,10 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func newSecureServer(t *testing.T) *server.Server {
-	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-}
-
 // TestDispatch_unknownMethod_returns32601 verifies that unknown JSON-RPC
 // methods return error code -32601 (MethodNotFound), not -32603 (Internal).
 func TestDispatch_unknownMethod_returns32601(t *testing.T) {
-	srv := newSecureServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	resp := serveRawMethod(t, srv, "no/such/method")
@@ -59,7 +50,7 @@ func serveRawMethod(t *testing.T, srv *server.Server, method string) map[string]
 // TestPathTraversal_setProjection_rejected verifies that server names with
 // path traversal characters are rejected before any file I/O.
 func TestPathTraversal_setProjection_rejected(t *testing.T) {
-	srv := newSecureServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	badNames := []string{"../evil", "../../etc", "bad/name", "bad name", ""}
@@ -80,7 +71,7 @@ func TestPathTraversal_setProjection_rejected(t *testing.T) {
 // TestPathTraversal_removeServer_rejected verifies invalid server names are
 // rejected in remove_server.
 func TestPathTraversal_removeServer_rejected(t *testing.T) {
-	srv := newSecureServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	resp := serve(t, srv, callTool("config", map[string]any{
@@ -96,7 +87,7 @@ func TestPathTraversal_removeServer_rejected(t *testing.T) {
 // TestAddServer_stdioRejectedByDefault verifies that stdio transports are
 // blocked by default (dangerous_allow_runtime_stdio is false).
 func TestAddServer_stdioRejectedByDefault(t *testing.T) {
-	srv := newSecureServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	resp := serve(t, srv, callTool("config", map[string]any{
@@ -117,10 +108,8 @@ func TestAddServer_stdioRejectedByDefault(t *testing.T) {
 // lets stdio servers be registered.
 func TestAddServer_stdioAllowedWithFlag(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowRuntimeStdio = true
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New(cfg, logger)
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	// Attempt add_server with invalid server name — should fail name validation,
@@ -141,7 +130,7 @@ func TestAddServer_stdioAllowedWithFlag(t *testing.T) {
 
 // TestServerClose_doubleCloseNoPanic verifies Store.Close() is idempotent.
 func TestServerClose_doubleCloseNoPanic(t *testing.T) {
-	srv := newSecureServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("second Close() panicked: %v", r)
@@ -155,9 +144,8 @@ func TestServerClose_doubleCloseNoPanic(t *testing.T) {
 // ^[a-zA-Z0-9_-]+$ for add_server.
 func TestAddServer_invalidName_rejected(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowRuntimeStdio = true
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	resp := serve(t, srv, callTool("config", map[string]any{
@@ -175,7 +163,7 @@ func TestAddServer_invalidName_rejected(t *testing.T) {
 }
 
 func TestPathTraversal_exec_rejected(t *testing.T) {
-	srv := newSecureServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	// Per spec, invalid params → -32602, not a soft tool error.
@@ -194,7 +182,7 @@ func TestPathTraversal_exec_rejected(t *testing.T) {
 // TestExec_invalidToolName_rejected verifies that tool names with invalid
 // characters are rejected before registry lookup in both call and perm_call.
 func TestExec_invalidToolName_rejected(t *testing.T) {
-	srv := newSecureServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	// Per spec, invalid params → -32602, not a soft tool error.
@@ -216,9 +204,8 @@ func TestExec_invalidToolName_rejected(t *testing.T) {
 // from the dial attempt, not from URL validation (private IP rejection).
 func TestAddServer_credentialsStrippedWithPrivateURLsAllowed(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowPrivateURLs = true
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	resp := serve(t, srv, callTool("config", map[string]any{
@@ -246,7 +233,7 @@ var ssrfBlockedURLs = []string{
 	"http://localhost/steal",
 	"http://localhost:8080/mcp",
 	"http://evil.localhost/steal", // .localhost TLD
-	"http://myapp.local/api",     // mDNS .local
+	"http://myapp.local/api",      // mDNS .local
 	"http://service.internal/mcp", // GCP internal DNS
 	"ftp://example.com/data",
 }
@@ -254,7 +241,7 @@ var ssrfBlockedURLs = []string{
 // TestAddServer_SSRFPrivateIPBlocked verifies that add_server rejects URLs
 // pointing to private/loopback IP ranges to prevent SSRF attacks.
 func TestAddServer_SSRFPrivateIPBlocked(t *testing.T) {
-	srv := newSecureServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	for _, u := range ssrfBlockedURLs {
 		resp := serve(t, srv, callTool("config", map[string]any{

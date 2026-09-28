@@ -113,7 +113,7 @@ func runStatus(configDir string) {
 
 func buildStatusServer(cfg *config.Config, configDir string) *server.Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return server.NewWithConfigDir(cfg, configDir, logger)
+	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
 }
 
 func printStatusTable(ctx context.Context, srv *server.Server, servers []config.ServerConfig) {

@@ -14,32 +14,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-type ServerOption func(*Server)
-
-// WithClock replaces the server's clock. Used in tests to inject a fake clock
-// so reconnect backoff timers fire immediately without real sleeps.
-func WithClock(clock clock.Clock) ServerOption {
-	return func(s *Server) { s.clock = clock }
-}
-
-func WithToolMode(m transport.ToolMode) ServerOption {
-	return func(s *Server) { s.toolMode = m }
-}
-
-// WithDaemonAuthToken requires Authorization: Bearer <token> on the /mcp endpoint.
-// Only the daemon sets this; the stdio and serve --http paths leave it empty so
-// their existing clients (which send no token) keep working.
-func WithDaemonAuthToken(token string) ServerOption {
-	return func(s *Server) { s.daemonAuthToken = token }
-}
-
-// WithAllowNonLoopbackHost disables the loopback-Host (DNS-rebinding) check on /mcp.
-// Set only when the operator explicitly binds the HTTP server to a non-loopback address
-// (--dangerous-nonloopback-http), where remote clients legitimately send a non-loopback Host.
-func WithAllowNonLoopbackHost() ServerOption {
-	return func(s *Server) { s.allowNonLoopbackHost = true }
-}
-
 type Server struct {
 	cfg                  *config.Config
 	configDir            string

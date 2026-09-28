@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -25,11 +23,9 @@ func newSrvWithFormat(t *testing.T, format string) *server.Server {
 
 func newSrvWithResponse(t *testing.T, format string, payload string) *server.Server {
 	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.ResponseFormat = format
-	srv := server.New(cfg, logger)
+	srv := newTestServer(t, server.Params{Config: cfg})
 
 	issuesJSON, _ := json.Marshal(payload)
 	fake := &transport.FakeConnection{
@@ -95,7 +91,6 @@ func TestJSONFormatDefault(t *testing.T) {
 func newSrvWithConfigFormat(t *testing.T, format string) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.ResponseFormat = format
 	issues := `[{"number":1,"title":"bug"},{"number":2,"title":"feat"}]`
 	issuesJSON, _ := json.Marshal(issues)
@@ -103,7 +98,7 @@ func newSrvWithConfigFormat(t *testing.T, format string) *server.Server {
 		Tools:     []transport.ToolDefinition{{Name: "list_issues", Description: "list", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(issuesJSON) + `}]}`)},
 	}
-	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, fake)
 	return srv
 }
@@ -174,11 +169,9 @@ func extractToonFileKey(t *testing.T, text string) string {
 
 func TestReadTool_ResolvesFileWrittenByCompactModeToonFormat(t *testing.T) {
 	payload := `{"items":[{"id":1,"title":"bug"}],"secret":"hidden"}`
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.ResponseFormat = "toon"
-	srv := server.New(cfg, logger)
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	conn := fakeConn("list_issues")
@@ -222,9 +215,8 @@ func toolErrFakeConn() *transport.FakeConnection {
 func newSrvConfigDirAndToolErr(t *testing.T, globalFormat string) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.ResponseFormat = globalFormat
-	srv := server.NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, toolErrFakeConn())
 	return srv
 }
@@ -264,14 +256,12 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 	t.Run("wildcard toon projection renders tool_error as TOON", func(t *testing.T) {
 		configDir := t.TempDir()
 		// Wildcard projections require a server config file to be present.
-		os.MkdirAll(filepath.Join(configDir, "servers"), 0755) //nolint:errcheck
+		os.MkdirAll(filepath.Join(configDir, "servers"), 0755)       //nolint:errcheck
 		os.WriteFile(filepath.Join(configDir, "servers", "gh.yaml"), //nolint:errcheck
 			[]byte("name: gh\ncommand: unused\n"), 0644)
 		os.WriteFile(filepath.Join(configDir, "servers", "gh.proj.yaml"), //nolint:errcheck
 			[]byte("\"*\":\n  format: toon\n"), 0644)
-		cfg := config.DefaultConfig()
-		cfg.ResponseDir = t.TempDir()
-		srv := server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		srv := newTestServer(t, server.Params{ConfigDir: configDir})
 		srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, toolErrFakeConn())
 		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
 			"server": "gh", "tool": "list_issues", "params": map[string]any{},
@@ -326,7 +316,7 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 func TestToonFormatWithUpstream(t *testing.T) {
 	fake := fakeConn("list_directory")
 	fake.RespondWith(map[string]any{"entries": []string{"a.txt", "b.txt", "c.go"}})
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
 
 	serve(t, srv, callTool("config", map[string]any{
