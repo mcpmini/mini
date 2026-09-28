@@ -55,6 +55,12 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	if err := c.sendInitializedNotification(ctx); err != nil {
 		return err
 	}
+	if c.listenerStarted {
+		select {
+		case c.sessionRenewed <- struct{}{}:
+		default:
+		}
+	}
 	if toolsListChanged(result.Capabilities) && !c.listenerStarted {
 		c.listenerStarted = true
 		c.listenerWG.Add(1)
@@ -127,15 +133,8 @@ func (c *HTTPConnection) dispatchNotification(notification Notification) {
 const maxListenerBackoff = 60 * time.Second
 
 type listenerState struct {
-	backoff       time.Duration
-	rejectedAuth  string
-	lastSessionID string
-}
-
-func (c *HTTPConnection) loadSessionID() string {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.sessionID
+	backoff      time.Duration
+	rejectedAuth string
 }
 
 func (c *HTTPConnection) listenForNotifications() {
@@ -155,7 +154,6 @@ func (c *HTTPConnection) listenForNotifications() {
 }
 
 func (c *HTTPConnection) runListenerCycle(state *listenerState) (stop bool) {
-	sidAtStart := c.loadSessionID()
 	status, err := c.consumeNotificationStream()
 	if c.shouldStopListener(status) {
 		return true
@@ -164,10 +162,24 @@ func (c *HTTPConnection) runListenerCycle(state *listenerState) (stop bool) {
 		slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 	}
 	state.rejectedAuth = c.rejectedAuthAfter(c.listenerCtx, err)
-	state.resetBackoffIfReinitialized(sidAtStart)
 	delay, next := listenerDelay(status, err, state.backoff)
 	state.backoff = next
-	return !c.sleepCtx(c.listenerCtx, delay)
+	return c.listenerSleep(state, delay)
+}
+
+func (c *HTTPConnection) listenerSleep(state *listenerState, d time.Duration) (stop bool) {
+	t := c.clock.NewTimer(d)
+	select {
+	case <-t.Chan():
+		return false
+	case <-c.sessionRenewed:
+		t.Stop()
+		state.backoff = time.Second
+		return false
+	case <-c.listenerCtx.Done():
+		t.Stop()
+		return true
+	}
 }
 
 func (c *HTTPConnection) currentAuth(ctx context.Context) string {
@@ -244,11 +256,4 @@ func (c *HTTPConnection) Close() error {
 	c.listenerCancel()
 	c.listenerWG.Wait()
 	return nil
-}
-
-func (s *listenerState) resetBackoffIfReinitialized(sessionID string) {
-	if s.lastSessionID != "" && sessionID != s.lastSessionID {
-		s.backoff = time.Second
-	}
-	s.lastSessionID = sessionID
 }

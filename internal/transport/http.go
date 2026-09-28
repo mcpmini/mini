@@ -41,6 +41,7 @@ type HTTPConnection struct {
 	listenerCancel          context.CancelFunc
 	listenerWG              sync.WaitGroup
 	toolsChanged            toolsChangedNotifier
+	sessionRenewed          chan struct{}
 }
 
 // defaultHTTPClientTimeout is the hard network-level backstop. Set to 2× the default
@@ -104,6 +105,7 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 		clock:                   cfg.Clock,
 		listenerCtx:             listenerCtx,
 		listenerCancel:          listenerCancel,
+		sessionRenewed:          make(chan struct{}, 1),
 	}, nil
 }
 
@@ -268,7 +270,9 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 }
 
 func (c *HTTPConnection) processResponse(resp *http.Response, request Request, sentSessionID string) (postResult, error) {
-	c.storeSessionID(resp.Header.Get("Mcp-Session-Id"))
+	if request.Method == "initialize" {
+		c.storeSessionID(resp.Header.Get("Mcp-Session-Id"))
+	}
 	if resp.StatusCode >= 400 {
 		return c.httpErrorResult(resp, request.Method, sentSessionID)
 	}
@@ -317,7 +321,7 @@ func sameJSONID(raw json.RawMessage, id any) bool {
 }
 
 func (c *HTTPConnection) storeSessionID(sessionID string) {
-	if sessionID == "" || len(sessionID) > 256 {
+	if len(sessionID) > 256 {
 		return
 	}
 	c.mu.Lock()

@@ -39,7 +39,7 @@ func TestHTTPSession_get404NeverTriggersReinit(t *testing.T) {
 	}
 }
 
-func TestHTTPSession_listenerBackoffResetsAfterReinit(t *testing.T) {
+func TestHTTPSession_listenerWakesOnReinit(t *testing.T) {
 	m, srv := newSessionServer(t)
 	m.mu.Lock()
 	m.alwaysNotFoundOnGET = true
@@ -62,11 +62,12 @@ func TestHTTPSession_listenerBackoffResetsAfterReinit(t *testing.T) {
 		}
 	}
 
-	drainGet() // initial GET
-
+	drainGet()
 	advanceListenerTimerAndAwaitNextSleep(t, clk, time.Second)
 	drainGet()
 	advanceListenerTimerAndAwaitNextSleep(t, clk, 2*time.Second)
+	drainGet()
+	advanceListenerTimerAndAwaitNextSleep(t, clk, 4*time.Second)
 	drainGet()
 
 	m.mu.Lock()
@@ -74,23 +75,19 @@ func TestHTTPSession_listenerBackoffResetsAfterReinit(t *testing.T) {
 	m.mu.Unlock()
 	m.expireSession(sid1)
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("re-init call failed: %v", err)
+		t.Fatalf("re-init call: %v", err)
 	}
+	m.mu.Lock()
+	sid2 := m.currentSID
+	m.mu.Unlock()
 
-	advanceListenerTimerAndAwaitNextSleep(t, clk, 4*time.Second)
-	drainGet()
-
-	clk.Advance(time.Second)
 	select {
-	case sid := <-m.getSeen:
-		m.mu.Lock()
-		currentSID := m.currentSID
-		m.mu.Unlock()
-		if sid != currentSID {
-			t.Errorf("listener reconnected with session %q, want %q", sid, currentSID)
+	case got := <-m.getSeen:
+		if got != sid2 {
+			t.Errorf("listener reconnected with session %q, want %q", got, sid2)
 		}
 	case <-time.After(3 * time.Second):
-		t.Error("listener did not reconnect after 1s advance; backoff was not reset after re-init")
+		t.Fatal("listener did not reconnect; wake signal not sent on re-init")
 	}
 }
 
@@ -106,7 +103,7 @@ func TestHTTPSession_reinitKeepsASingleNotificationListener(t *testing.T) {
 		t.Fatalf("first call: %v", err)
 	}
 
-	waitNotif := func() {
+	awaitHandshakeComplete := func() {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 		defer cancel()
@@ -116,15 +113,20 @@ func TestHTTPSession_reinitKeepsASingleNotificationListener(t *testing.T) {
 			t.Fatal("notifications/initialized not received")
 		}
 	}
-	waitNotif()
-	firstSID := <-m.getSeen
+	awaitHandshakeComplete()
+	var firstSID string
+	select {
+	case firstSID = <-m.getSeen:
+	case <-time.After(3 * time.Second):
+		t.Fatal("listener GET not seen after handshake")
+	}
 	waitUntilListenerParkedOnClock(t, clk)
 
 	m.expireSession(firstSID)
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
 		t.Fatalf("call after session expiry: %v", err)
 	}
-	waitNotif() // second notifications/initialized confirms re-init completed
+	awaitHandshakeComplete()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
