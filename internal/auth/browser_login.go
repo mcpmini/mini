@@ -23,7 +23,7 @@ type BrowserLogin struct {
 	srv         *http.Server
 	serveDone   chan struct{}
 	codeCh      chan string
-	authURL_    string
+	authURL     string
 	oauth2Cfg   *oauth2.Config
 	verifier    string
 	resourceURL string
@@ -67,7 +67,7 @@ func StartBrowserLogin(ac *config.AuthConfig, ln net.Listener) (*BrowserLogin, e
 	})
 	return &BrowserLogin{
 		srv: srv, serveDone: serveDone, codeCh: codeCh,
-		authURL_: authURL, oauth2Cfg: cfg, verifier: verifier,
+		authURL: authURL, oauth2Cfg: cfg, verifier: verifier,
 		resourceURL: ac.ResourceURL, closed: make(chan struct{}),
 	}, nil
 }
@@ -80,7 +80,7 @@ func buildPKCEConfig(ac *config.AuthConfig, callbackPort int) (*oauth2.Config, s
 	return cfg, verifier, state
 }
 
-func (l *BrowserLogin) AuthURL() string { return l.authURL_ }
+func (l *BrowserLogin) AuthURL() string { return l.authURL }
 
 // Wait blocks until a valid callback code arrives, ctx is done, or Close is called.
 // Before returning on every path, it stops the callback server and waits for the Serve
@@ -114,6 +114,13 @@ func (l *BrowserLogin) doWait(ctx context.Context) (*oauth2.Token, error) {
 		return nil, ErrLoginClosed
 	}
 	l.stopAndWait()
+	// select is non-deterministic when both codeCh and closed are ready simultaneously;
+	// re-check closed so Close always wins over a concurrently-buffered code.
+	select {
+	case <-l.closed:
+		return nil, ErrLoginClosed
+	default:
+	}
 	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(l.verifier)}
 	return l.oauth2Cfg.Exchange(oauthHTTPContext(ctx, l.resourceURL), code, opts...)
 }

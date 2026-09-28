@@ -102,7 +102,7 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 	cancel()
 
 	srv.authWg.Add(1)
-	srv.runAuthFlow("svc", config.ServerConfig{Name: "svc"}, staleFlow, authCtx)
+	srv.runAuthFlow(authCtx, config.ServerConfig{Name: "svc"}, staleFlow)
 
 	srv.authMu.Lock()
 	got := srv.authFlows["svc"]

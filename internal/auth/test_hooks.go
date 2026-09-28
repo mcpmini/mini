@@ -26,3 +26,7 @@ func UseLoopbackEndpoints() {
 func ResetEndpointValidation() {
 	endpointValidator = transport.ValidateURL
 }
+
+// LoginCodeCh returns the internal code channel so tests can deliver a code
+// directly, bypassing HTTP timing and making "Close wins after code buffered" tests deterministic.
+func LoginCodeCh(l *BrowserLogin) chan<- string { return l.codeCh }

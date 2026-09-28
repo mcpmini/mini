@@ -28,7 +28,7 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 		return nil, err
 	}
 	s.authWg.Add(1)
-	go s.runAuthFlow(serverName, sc, flow.state, flow.authCtx)
+	go s.runAuthFlow(flow.authCtx, sc, flow.state)
 	s.maybeOpenAuthBrowser(sc, flow.authURL)
 	return authStartResponse(serverName, flow.authURL), nil
 }
@@ -110,11 +110,11 @@ func (s *Server) cancelExistingAuthFlow(serverName string) {
 	old.cancel()
 }
 
-func (s *Server) runAuthFlow(serverName string, sc config.ServerConfig, flow *authFlowState, authCtx context.Context) {
+func (s *Server) runAuthFlow(ctx context.Context, sc config.ServerConfig, flow *authFlowState) {
 	defer s.authWg.Done()
 	defer flow.cancel()
-	defer s.clearAuthFlow(serverName, flow)
-	s.awaitAuthAndReconnect(serverName, sc, flow.login, authCtx)
+	defer s.clearAuthFlow(sc.Name, flow)
+	s.awaitAuthAndReconnect(ctx, sc, flow.login)
 }
 
 func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
@@ -125,17 +125,17 @@ func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
 	s.authMu.Unlock()
 }
 
-func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig, login *auth.BrowserLogin, authCtx context.Context) {
-	token, err := login.Wait(authCtx)
+func (s *Server) awaitAuthAndReconnect(ctx context.Context, sc config.ServerConfig, login *auth.BrowserLogin) {
+	token, err := login.Wait(ctx)
 	if err != nil {
-		s.logger.Error("oauth flow failed", "server", serverName, "err", err)
+		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
 		return
 	}
 	if err := s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(sc), token); err != nil {
-		s.logger.Error("commit oauth token failed", "server", serverName, "err", err)
+		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
 		return
 	}
-	s.reconnectWithToken(serverName, sc)
+	s.reconnectWithToken(sc.Name, sc)
 }
 
 func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
