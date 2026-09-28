@@ -57,7 +57,8 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	if err := c.sendInitializedNotification(ctx); err != nil {
 		return err
 	}
-	if toolsListChanged(result.Capabilities) {
+	if toolsListChanged(result.Capabilities) && !c.listenerStarted {
+		c.listenerStarted = true
 		c.listenerWG.Add(1)
 		go c.listenForNotifications()
 	}
@@ -138,19 +139,31 @@ func (c *HTTPConnection) listenForNotifications() {
 			}
 			continue
 		}
-		status, err := c.consumeNotificationStream()
-		if c.shouldStopListener(status) {
+		if c.runListenerCycle(&backoff, &rejectedAuth) {
 			return
 		}
-		if err != nil {
-			slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
-		}
-		rejectedAuth = c.rejectedAuthAfter(c.listenerCtx, err)
-		delay, next := listenerDelay(status, err, backoff)
-		backoff = next
-		if !c.sleepCtx(c.listenerCtx, delay) {
-			return
-		}
+	}
+}
+
+func (c *HTTPConnection) runListenerCycle(backoff *time.Duration, rejectedAuth *string) (stop bool) {
+	status, err := c.consumeNotificationStream()
+	c.handleStreamSessionExpiry(err)
+	if c.shouldStopListener(status) {
+		return true
+	}
+	if err != nil {
+		slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
+	}
+	*rejectedAuth = c.rejectedAuthAfter(c.listenerCtx, err)
+	delay, next := listenerDelay(status, err, *backoff)
+	*backoff = next
+	return !c.sleepCtx(c.listenerCtx, delay)
+}
+
+func (c *HTTPConnection) handleStreamSessionExpiry(err error) {
+	var expiredErr *SessionExpiredError
+	if errors.As(err, &expiredErr) {
+		c.compareAndResetSession(expiredErr.SessionID)
 	}
 }
 
@@ -189,11 +202,22 @@ func listenerDelay(status int, err error, backoff time.Duration) (delay, next ti
 }
 
 func (c *HTTPConnection) consumeNotificationStream() (int, error) {
-	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.newStreamClient(), c.buildStreamRequest)
+	var sentSessionID string
+	build := func(ctx context.Context) (*http.Request, string, error) {
+		req, auth, err := c.buildStreamRequest(ctx)
+		if err == nil {
+			sentSessionID = req.Header.Get("Mcp-Session-Id")
+		}
+		return req, auth, err
+	}
+	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.newStreamClient(), build)
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound && sentSessionID != "" {
+		return resp.StatusCode, &SessionExpiredError{SessionID: sentSessionID}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return resp.StatusCode, fmt.Errorf("notification stream status %d", resp.StatusCode)
 	}
