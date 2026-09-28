@@ -92,33 +92,52 @@ func (l *BrowserLogin) Wait(ctx context.Context) (*oauth2.Token, error) {
 }
 
 func (l *BrowserLogin) doWait(ctx context.Context) (*oauth2.Token, error) {
-	var code string
-	select {
-	case code = <-l.codeCh:
-	case <-ctx.Done():
-		select {
-		case code = <-l.codeCh:
-			// code arrived just before cancel; use a fresh context for the exchange
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-		default:
-			l.stopAndWait()
-			return nil, ctx.Err()
-		}
-	case <-l.closed:
-		l.stopAndWait()
+	code, err := l.awaitCode(ctx)
+	l.stopAndWait()
+	if err != nil {
+		return nil, err
+	}
+	// select picks randomly when a code and Close race; a closed login must never exchange.
+	if l.isClosed() {
 		return nil, ErrLoginClosed
 	}
-	l.stopAndWait()
-	// select picks randomly when a code and Close race; a closed login must never exchange.
+	return l.exchange(ctx, code)
+}
+
+func (l *BrowserLogin) awaitCode(ctx context.Context) (string, error) {
 	select {
+	case code := <-l.codeCh:
+		return code, nil
 	case <-l.closed:
-		return nil, ErrLoginClosed
-	default:
+		return "", ErrLoginClosed
+	case <-ctx.Done():
+		select {
+		case code := <-l.codeCh:
+			return code, nil
+		default:
+			return "", ctx.Err()
+		}
+	}
+}
+
+func (l *BrowserLogin) exchange(ctx context.Context, code string) (*oauth2.Token, error) {
+	if ctx.Err() != nil {
+		// the user already approved in the browser; a cancel racing the callback must not discard the code
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
 	}
 	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(l.verifier)}
 	return l.oauth2Cfg.Exchange(oauthHTTPContext(ctx, l.resourceURL), code, opts...)
+}
+
+func (l *BrowserLogin) isClosed() bool {
+	select {
+	case <-l.closed:
+		return true
+	default:
+		return false
+	}
 }
 
 // Close releases the port and makes Wait return ErrLoginClosed; safe to call repeatedly.
