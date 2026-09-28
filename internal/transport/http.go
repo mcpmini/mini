@@ -262,7 +262,8 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 		return nil, "", err
 	}
 	// The stored ID may belong to the session being replaced, and a new session must start
-	// with an InitializeRequest that carries no session ID: https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L213-L215
+	// with an InitializeRequest that carries no session ID:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L213-L215
 	if rpcReq.Method != "initialize" {
 		c.attachSessionID(httpReq)
 	}
