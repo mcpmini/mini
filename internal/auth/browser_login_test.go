@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,4 +184,46 @@ func waitInBackground(login *auth.BrowserLogin) <-chan error {
 		done <- err
 	}()
 	return done
+}
+
+func TestBrowserLogin_closeDuringExchangeDiscardsToken(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	exchangeStarted, releaseExchange := make(chan struct{}), make(chan struct{})
+	mock.HoldReady, mock.HoldGate = exchangeStarted, releaseExchange
+	login := authtest.StartLogin(t, mock.AuthConfig())
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
+	waitDone := waitInBackground(login)
+	<-exchangeStarted
+
+	login.Close() //nolint:errcheck
+	close(releaseExchange)
+
+	if err := <-waitDone; !errors.Is(err, auth.ErrLoginClosed) {
+		t.Errorf("Wait returned %v after Close, want ErrLoginClosed", err)
+	}
+}
+
+func TestPKCEFlow_opensAuthURLAndReturnsToken(t *testing.T) {
+	auth.UseEphemeralCallbackPort()
+	mock := authtest.NewTokenServer(t)
+	var opened string
+	openBrowser := func(authURL string) error {
+		opened = authURL
+		authtest.CompleteAuthorization(t, authURL, "test-auth-code")
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	token, err := auth.PKCEFlow(ctx, mock.AuthConfig(), openBrowser)
+
+	if err != nil {
+		t.Fatalf("PKCEFlow: %v", err)
+	}
+	if token.AccessToken != "test-access-token" {
+		t.Errorf("access token = %q, want test-access-token", token.AccessToken)
+	}
+	if !strings.Contains(opened, "code_challenge=") {
+		t.Errorf("browser opened %q, want the authorization URL", opened)
+	}
 }

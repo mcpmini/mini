@@ -27,7 +27,7 @@ type BrowserLogin struct {
 	verifier    string
 	resourceURL string
 	stopOnce    sync.Once
-	closeOnce   sync.Once
+	closeMu     sync.Mutex
 	closed      chan struct{}
 	resultOnce  sync.Once
 	result      loginResult
@@ -101,7 +101,17 @@ func (l *BrowserLogin) doWait(ctx context.Context) (*oauth2.Token, error) {
 	if l.isClosed() {
 		return nil, ErrLoginClosed
 	}
-	return l.exchange(ctx, code)
+	token, err := l.exchange(ctx, code)
+	return l.unlessClosed(token, err)
+}
+
+func (l *BrowserLogin) unlessClosed(token *oauth2.Token, err error) (*oauth2.Token, error) {
+	l.closeMu.Lock()
+	defer l.closeMu.Unlock()
+	if l.isClosed() {
+		return nil, ErrLoginClosed
+	}
+	return token, err
 }
 
 func (l *BrowserLogin) awaitCode(ctx context.Context) (string, error) {
@@ -140,9 +150,14 @@ func (l *BrowserLogin) isClosed() bool {
 	}
 }
 
-// Close releases the port and makes Wait return ErrLoginClosed; safe to call repeatedly.
+// Close releases the port and makes Wait return ErrLoginClosed unless Wait already has its
+// token; safe to call repeatedly.
 func (l *BrowserLogin) Close() error {
-	l.closeOnce.Do(func() { close(l.closed) })
+	l.closeMu.Lock()
+	if !l.isClosed() {
+		close(l.closed)
+	}
+	l.closeMu.Unlock()
 	l.stopAndWait()
 	return nil
 }
