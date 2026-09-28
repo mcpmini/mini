@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,6 +36,8 @@ type HTTPConnection struct {
 	mu                      sync.Mutex
 	initMu                  sync.Mutex
 	initialized             bool
+	initializedBefore       bool
+	listener                *sessionListener
 	listenerCtx             context.Context
 	listenerCancel          context.CancelFunc
 	listenerWG              sync.WaitGroup
@@ -46,6 +49,15 @@ type HTTPConnection struct {
 // only activates when context cancellation fails at the OS/network level. Users with
 // slow tools (tool_timeout > 60s) should set http_client_timeout in their server YAML.
 const defaultHTTPClientTimeout = 60 * time.Second
+
+// SessionExpiredError is a 404 to a session-bearing request; MCP Streamable HTTP §Session Management requires re-initialize.
+type SessionExpiredError struct {
+	SessionID string
+}
+
+func (e *SessionExpiredError) Error() string {
+	return fmt.Sprintf("MCP session expired (session %q)", e.SessionID)
+}
 
 // UnauthorizedError carries the WWW-Authenticate header from a 401 response so callers
 // can distinguish an OAuth challenge (RFC 9728 §5.1) from a bare auth failure.
@@ -138,7 +150,33 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 	if err := c.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
-	return c.rpc(ctx, method, params)
+	return c.withSessionRecovery(ctx, func() (json.RawMessage, error) {
+		return c.rpc(ctx, method, params)
+	})
+}
+
+func (c *HTTPConnection) withSessionRecovery(ctx context.Context, do func() (json.RawMessage, error)) (json.RawMessage, error) {
+	result, err := do()
+	var expiredErr *SessionExpiredError
+	if !errors.As(err, &expiredErr) {
+		return result, err
+	}
+	c.compareAndResetSession(expiredErr.SessionID)
+	if initErr := c.ensureInitialized(ctx); initErr != nil {
+		return nil, initErr
+	}
+	return do()
+}
+
+func (c *HTTPConnection) compareAndResetSession(expiredID string) {
+	c.initMu.Lock()
+	defer c.initMu.Unlock()
+	c.mu.Lock()
+	match := c.sessionID == expiredID
+	c.mu.Unlock()
+	if match {
+		c.initialized = false
+	}
 }
 
 func (c *HTTPConnection) rpc(ctx context.Context, method string, params json.RawMessage) (json.RawMessage, error) {
@@ -199,12 +237,13 @@ func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult
 	if err != nil {
 		return postResult{}, err
 	}
+	sentSessionID := httpReq.Header.Get("Mcp-Session-Id")
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", rpcReq.Method, err)}
 	}
 	defer resp.Body.Close()
-	result, err := c.processResponse(resp, rpcReq)
+	result, err := c.processResponse(resp, rpcReq, sentSessionID)
 	result.sentAuth = sentAuth
 	return result, err
 }
@@ -222,19 +261,27 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	if err != nil {
 		return nil, "", err
 	}
+	// The stored ID may belong to the session being replaced, and a new session must start
+	// with an InitializeRequest that carries no session ID:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L213-L215
+	if rpcReq.Method != "initialize" {
+		c.attachSessionID(httpReq)
+	}
 	return httpReq, sentAuth, nil
 }
 
-func (c *HTTPConnection) processResponse(resp *http.Response, request Request) (postResult, error) {
-	c.storeSessionID(resp.Header.Get("Mcp-Session-Id"))
+func (c *HTTPConnection) processResponse(resp *http.Response, request Request, sentSessionID string) (postResult, error) {
 	if resp.StatusCode >= 400 {
-		return c.httpErrorResult(resp, request.Method)
+		return c.httpErrorResult(resp, request.Method, sentSessionID)
 	}
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
 		return postResult{}, fmt.Errorf("read response: %w", err)
 	}
 	result, err := c.parsePostBody(respBody, request.ID)
+	if err == nil && request.Method == "initialize" {
+		c.storeSessionID(resp.Header.Get("Mcp-Session-Id"))
+	}
 	return postResult{body: result}, err
 }
 
@@ -275,7 +322,7 @@ func sameJSONID(raw json.RawMessage, id any) bool {
 }
 
 func (c *HTTPConnection) storeSessionID(sessionID string) {
-	if sessionID == "" || len(sessionID) > 256 {
+	if len(sessionID) > 256 {
 		return
 	}
 	c.mu.Lock()
@@ -283,19 +330,16 @@ func (c *HTTPConnection) storeSessionID(sessionID string) {
 	c.mu.Unlock()
 }
 
-func (c *HTTPConnection) clearSessionID() {
-	c.mu.Lock()
-	c.sessionID = ""
-	c.mu.Unlock()
-}
-
-func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string) (postResult, error) {
+func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string, sentSessionID string) (postResult, error) {
 	errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	if isRetryableStatus(resp.StatusCode) {
 		return postResult{
 			retryable: true,
 			delay:     parseRetryAfter(resp.Header.Get("Retry-After"), c.clock.Now()),
 		}, fmt.Errorf("http %s: status %d: %s", method, resp.StatusCode, errBody)
+	}
+	if resp.StatusCode == http.StatusNotFound && sentSessionID != "" {
+		return postResult{}, &SessionExpiredError{SessionID: sentSessionID}
 	}
 	return postResult{}, nonRetryableHTTPError(resp, method, errBody)
 }
@@ -345,12 +389,15 @@ func (c *HTTPConnection) setRequestHeaders(ctx context.Context, req *http.Reques
 	if err != nil {
 		return "", err
 	}
+	return sentAuth, nil
+}
+
+func (c *HTTPConnection) attachSessionID(req *http.Request) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.sessionID != "" {
 		req.Header.Set("Mcp-Session-Id", c.sessionID)
 	}
-	c.mu.Unlock()
-	return sentAuth, nil
 }
 
 func (c *HTTPConnection) sleepCtx(ctx context.Context, d time.Duration) bool {

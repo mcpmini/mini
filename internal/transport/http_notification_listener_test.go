@@ -48,27 +48,25 @@ func newNotifListenerServer(t *testing.T, getHandler http.HandlerFunc) *httptest
 	return srv
 }
 
-func advanceListenerTimer(t *testing.T, clk *clock.Fake, d time.Duration) {
+func awaitListenerTimer(t *testing.T, clk *clock.Fake) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	if err := clk.BlockUntilContext(ctx, 1); err != nil {
 		t.Fatalf("waiting for listener timer: %v", err)
 	}
+}
+
+func advanceListenerTimer(t *testing.T, clk *clock.Fake, d time.Duration) {
+	t.Helper()
+	awaitListenerTimer(t, clk)
 	clk.Advance(d)
 }
 
 func advanceListenerTimerAndAwaitNextSleep(t *testing.T, clk *clock.Fake, d time.Duration) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	if err := clk.BlockUntilContext(ctx, 1); err != nil {
-		t.Fatalf("waiting for pre-advance listener timer: %v", err)
-	}
-	clk.Advance(d)
-	if err := clk.BlockUntilContext(ctx, 1); err != nil {
-		t.Fatalf("waiting for post-advance listener timer: %v", err)
-	}
+	advanceListenerTimer(t, clk, d)
+	awaitListenerTimer(t, clk)
 }
 
 func TestNotificationListener_backoffDoublesOnPersistentFailure(t *testing.T) {

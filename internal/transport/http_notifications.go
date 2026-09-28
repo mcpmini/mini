@@ -19,18 +19,32 @@ func (c *HTTPConnection) ListTools(ctx context.Context) ([]ToolDefinition, error
 }
 
 func (c *HTTPConnection) ensureInitialized(ctx context.Context) error {
+	renewed, err := c.initializeOnce(ctx)
+	if renewed {
+		// mini keeps a copy of this upstream's tool list and refreshes it when the upstream
+		// sends notifications/tools/list_changed. That message never covers a restart:
+		//  1. mini connects to the upstream in session s1 and fetches its tools.
+		//  2. The upstream is redeployed with a different set of tools, which ends s1.
+		//  3. mini's next request gets a 404, so mini starts session s2.
+		//  4. To the upstream, s2 is a brand-new client, so it has no change to announce.
+		// Without this notification, mini would keep serving the tool list from s1.
+		c.toolsChanged.NotifyToolsChanged()
+	}
+	return err
+}
+
+func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err error) {
 	c.initMu.Lock()
 	defer c.initMu.Unlock()
 	if c.initialized {
-		return nil
+		return false, nil
 	}
 	if err := c.initHandshake(ctx); err != nil {
-		// MCP spec: a new session's InitializeRequest must carry no session ID.
-		c.clearSessionID()
-		return err
+		return false, err
 	}
-	c.initialized = true
-	return nil
+	renewed = c.initializedBefore
+	c.initialized, c.initializedBefore = true, true
+	return renewed, nil
 }
 
 func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
@@ -57,11 +71,33 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	if err := c.sendInitializedNotification(ctx); err != nil {
 		return err
 	}
-	if toolsListChanged(result.Capabilities) {
-		c.listenerWG.Add(1)
-		go c.listenForNotifications()
-	}
+	c.restartListener(toolsListChanged(result.Capabilities))
 	return nil
+}
+
+type sessionListener struct {
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+func (c *HTTPConnection) restartListener(listen bool) {
+	// Each session negotiates its own capabilities, including whether it sends list-changed
+	// notifications, so each session gets its own listener:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/lifecycle.mdx#L186-L187
+	// The server MAY leave the old session's stream open, so the old listener is stopped here:
+	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/ab3a39c13bd23be691c2760e1c6c5c15a64582e1/docs/specification/2025-11-25/basic/transports.mdx#L150
+	if old := c.listener; old != nil {
+		old.cancel()
+		<-old.done
+		c.listener = nil
+	}
+	if !listen {
+		return
+	}
+	ctx, cancel := context.WithCancel(c.listenerCtx)
+	c.listener = &sessionListener{cancel: cancel, done: make(chan struct{})}
+	c.listenerWG.Add(1)
+	go c.listenForNotifications(ctx, c.listener.done)
 }
 
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
@@ -107,6 +143,7 @@ func (c *HTTPConnection) buildInitializedNotifRequest(notif []byte) func(context
 			return nil, "", err
 		}
 		sentAuth, err := c.setRequestHeaders(ctx, req)
+		c.attachSessionID(req)
 		return req, sentAuth, err
 	}
 }
@@ -127,31 +164,40 @@ func (c *HTTPConnection) dispatchNotification(notification Notification) {
 
 const maxListenerBackoff = 60 * time.Second
 
-func (c *HTTPConnection) listenForNotifications() {
+type listenerState struct {
+	backoff      time.Duration
+	rejectedAuth string
+}
+
+func (c *HTTPConnection) listenForNotifications(ctx context.Context, done chan struct{}) {
 	defer c.listenerWG.Done()
-	backoff := time.Second
-	rejectedAuth := ""
-	for c.listenerCtx.Err() == nil {
-		if rejectedAuth != "" && c.currentAuth(c.listenerCtx) == rejectedAuth {
-			if !c.sleepCtx(c.listenerCtx, maxListenerBackoff) {
+	defer close(done)
+	state := listenerState{backoff: time.Second}
+	for ctx.Err() == nil {
+		if state.rejectedAuth != "" && c.currentAuth(ctx) == state.rejectedAuth {
+			if !c.sleepCtx(ctx, maxListenerBackoff) {
 				return
 			}
 			continue
 		}
-		status, err := c.consumeNotificationStream()
-		if c.shouldStopListener(status) {
-			return
-		}
-		if err != nil {
-			slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
-		}
-		rejectedAuth = c.rejectedAuthAfter(c.listenerCtx, err)
-		delay, next := listenerDelay(status, err, backoff)
-		backoff = next
-		if !c.sleepCtx(c.listenerCtx, delay) {
+		if c.runListenerCycle(ctx, &state) {
 			return
 		}
 	}
+}
+
+func (c *HTTPConnection) runListenerCycle(ctx context.Context, state *listenerState) (stop bool) {
+	status, err := c.consumeNotificationStream(ctx)
+	if shouldStopListener(ctx, c.url, status) {
+		return true
+	}
+	if err != nil {
+		slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
+	}
+	state.rejectedAuth = c.rejectedAuthAfter(ctx, err)
+	delay, next := listenerDelay(status, err, state.backoff)
+	state.backoff = next
+	return !c.sleepCtx(ctx, delay)
 }
 
 func (c *HTTPConnection) currentAuth(ctx context.Context) string {
@@ -162,12 +208,12 @@ func (c *HTTPConnection) currentAuth(ctx context.Context) string {
 	return v
 }
 
-func (c *HTTPConnection) shouldStopListener(status int) bool {
+func shouldStopListener(ctx context.Context, url string, status int) bool {
 	if status == http.StatusMethodNotAllowed {
-		slog.Warn("upstream advertises tool changes but rejects notification stream", "url", c.url)
+		slog.Warn("upstream advertises tool changes but rejects notification stream", "url", url)
 		return true
 	}
-	return c.listenerCtx.Err() != nil
+	return ctx.Err() != nil
 }
 
 func (c *HTTPConnection) rejectedAuthAfter(ctx context.Context, err error) string {
@@ -188,8 +234,8 @@ func listenerDelay(status int, err error, backoff time.Duration) (delay, next ti
 	return backoff, min(backoff*2, maxListenerBackoff)
 }
 
-func (c *HTTPConnection) consumeNotificationStream() (int, error) {
-	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.newStreamClient(), c.buildStreamRequest)
+func (c *HTTPConnection) consumeNotificationStream(ctx context.Context) (int, error) {
+	resp, err := c.sendOneWithAuthRetry(ctx, c.newStreamClient(), c.buildStreamRequest)
 	if err != nil {
 		return 0, err
 	}
@@ -209,6 +255,7 @@ func (c *HTTPConnection) buildStreamRequest(ctx context.Context) (*http.Request,
 	if err != nil {
 		return nil, "", err
 	}
+	c.attachSessionID(req)
 	req.Header.Del("Content-Type")
 	req.Header.Set("Accept", "text/event-stream")
 	return req, sentAuth, nil
