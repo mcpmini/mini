@@ -192,7 +192,6 @@ type ExchangeCodeParams struct {
 }
 
 func exchangeCode(ctx context.Context, p ExchangeCodeParams) { //nolint:funclen
-	defer p.Srv.Close()
 	var code string
 	select {
 	case code = <-p.CodeCh:
@@ -204,12 +203,14 @@ func exchangeCode(ctx context.Context, p ExchangeCodeParams) { //nolint:funclen
 			ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 		default:
+			p.Srv.Close()
 			p.ResultCh <- PKCEResult{Err: ctx.Err()}
 			return
 		}
 	}
 	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(p.Verifier)}
 	token, err := p.Cfg.Exchange(oauthHTTPContext(ctx, p.ResourceURL), code, opts...)
+	p.Srv.Close()
 	p.ResultCh <- PKCEResult{Token: token, Err: err}
 }
 
