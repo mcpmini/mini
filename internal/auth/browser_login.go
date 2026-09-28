@@ -15,7 +15,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// ErrLoginClosed is returned by Wait when Close has been called.
 var ErrLoginClosed = errors.New("oauth browser login closed")
 
 // BrowserLogin owns a callback listener and drives an OAuth2 PKCE exchange.
@@ -43,7 +42,6 @@ var callbackListenAddr = func(ac *config.AuthConfig) string {
 	return fmt.Sprintf("localhost:%d", ResolvedCallbackPort(ac))
 }
 
-// ListenCallback binds localhost:ResolvedCallbackPort(ac) — the only place production code binds the callback port.
 func ListenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, error) {
 	addr := callbackListenAddr(ac)
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
@@ -53,8 +51,7 @@ func ListenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, e
 	return ln, nil
 }
 
-// StartBrowserLogin takes ownership of ln: it serves the callback on it and builds the
-// authorization URL. On error, ln is closed.
+// StartBrowserLogin takes ownership of ln, closing it on error.
 func StartBrowserLogin(ac *config.AuthConfig, ln net.Listener) (*BrowserLogin, error) {
 	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
 	if !ok {
@@ -86,11 +83,7 @@ func buildPKCEConfig(ac *config.AuthConfig, callbackPort int) (*oauth2.Config, s
 
 func (l *BrowserLogin) AuthURL() string { return l.authURL }
 
-// Wait blocks until a valid callback code arrives, ctx is done, or Close is called.
-// Before returning on every path, it stops the callback server and waits for the Serve
-// goroutine to exit, so the port is released when Wait returns.
-// It stops the server BEFORE the token exchange network call.
-// Repeated calls return the same result.
+// Wait releases the callback port before it returns, so the next flow can bind it.
 func (l *BrowserLogin) Wait(ctx context.Context) (*oauth2.Token, error) {
 	l.resultOnce.Do(func() {
 		l.result.token, l.result.err = l.doWait(ctx)
@@ -118,8 +111,7 @@ func (l *BrowserLogin) doWait(ctx context.Context) (*oauth2.Token, error) {
 		return nil, ErrLoginClosed
 	}
 	l.stopAndWait()
-	// select is non-deterministic when both codeCh and closed are ready simultaneously;
-	// re-check closed so Close always wins over a concurrently-buffered code.
+	// select picks randomly when a code and Close race; a closed login must never exchange.
 	select {
 	case <-l.closed:
 		return nil, ErrLoginClosed
@@ -129,8 +121,7 @@ func (l *BrowserLogin) doWait(ctx context.Context) (*oauth2.Token, error) {
 	return l.oauth2Cfg.Exchange(oauthHTTPContext(ctx, l.resourceURL), code, opts...)
 }
 
-// Close stops the flow: releases the port and makes a pending or future Wait return
-// ErrLoginClosed. Idempotent; safe to call concurrently with Wait and after it.
+// Close releases the port and makes Wait return ErrLoginClosed; safe to call repeatedly.
 func (l *BrowserLogin) Close() error {
 	l.closeOnce.Do(func() { close(l.closed) })
 	l.stopAndWait()

@@ -7,9 +7,6 @@ import (
 	"testing"
 )
 
-// LoopbackRedirectURI returns authURL's redirect_uri with its host pinned to 127.0.0.1. Test
-// callback listeners bind IPv4 loopback on an ephemeral port, and dialing "localhost" can reach
-// an unrelated [::1] listener that happens to hold the same port number.
 func LoopbackRedirectURI(t *testing.T, authURL string) *url.URL {
 	t.Helper()
 	parsed, err := url.Parse(authURL)
@@ -20,18 +17,17 @@ func LoopbackRedirectURI(t *testing.T, authURL string) *url.URL {
 	if err != nil || redirect.Port() == "" {
 		t.Fatalf("auth URL has no usable redirect_uri: %s", authURL)
 	}
+	// "localhost" can resolve to an unrelated [::1] listener holding the same ephemeral port.
 	redirect.Host = net.JoinHostPort("127.0.0.1", redirect.Port())
 	return redirect
 }
 
-// CompleteAuthorization makes the callback request a browser makes after the user approves
-// authURL: the flow's state and the given code. The response is not checked: once the code is
-// delivered the flow may close its callback server before the response is fully written.
 func CompleteAuthorization(t *testing.T, authURL, code string) {
 	t.Helper()
 	callback := LoopbackRedirectURI(t, authURL)
 	parsed, _ := url.Parse(authURL)
 	callback.RawQuery = url.Values{"code": {code}, "state": {parsed.Query().Get("state")}}.Encode()
+	// unchecked: once it has the code, the flow may close its server mid-response
 	if resp, err := http.Get(callback.String()); err == nil {
 		resp.Body.Close()
 	}
