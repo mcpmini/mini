@@ -5,6 +5,7 @@ package transport
 import (
 	"context"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -98,5 +99,39 @@ func TestHTTPSession_requestsSentWhileReinitializingKeepTheOldSession(t *testing
 		t.Errorf("listener request during re-init carried session %q, want %q", got, oldSID)
 	}
 	reinit.release()
+	awaitPing(t, reinitPing)
+}
+
+func TestHTTPSession_failedReinitializeKeepsTheOldSession(t *testing.T) {
+	m := newSessionFake()
+	var rejectNextInitialize atomic.Bool
+	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if peekRPCMethod(r) == "initialize" && rejectNextInitialize.CompareAndSwap(true, false) {
+			w.Header().Set("Retry-After", "30")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		m.handle(w, r)
+	})
+	clk := clock.NewFake()
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
+	mustPing(t, conn)
+	oldSID := m.awaitNotificationStream(t)
+	awaitListenerTimer(t, clk)
+
+	rejectNextInitialize.Store(true)
+	m.expireSession(oldSID)
+	reinitPing := pingInBackground(t, conn)
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	if err := clk.BlockUntilContext(ctx, 2); err != nil {
+		t.Fatalf("listener and re-initialize retry did not both wait: %v", err)
+	}
+	clk.Advance(time.Second)
+
+	if got := m.awaitNotificationStream(t); got != oldSID {
+		t.Errorf("listener request after a failed re-initialize carried session %q, want %q", got, oldSID)
+	}
+	clk.Advance(30 * time.Second)
 	awaitPing(t, reinitPing)
 }

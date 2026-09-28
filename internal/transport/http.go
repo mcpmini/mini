@@ -270,9 +270,6 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 }
 
 func (c *HTTPConnection) processResponse(resp *http.Response, request Request, sentSessionID string) (postResult, error) {
-	if request.Method == "initialize" {
-		c.storeSessionID(resp.Header.Get("Mcp-Session-Id"))
-	}
 	if resp.StatusCode >= 400 {
 		return c.httpErrorResult(resp, request.Method, sentSessionID)
 	}
@@ -281,6 +278,9 @@ func (c *HTTPConnection) processResponse(resp *http.Response, request Request, s
 		return postResult{}, fmt.Errorf("read response: %w", err)
 	}
 	result, err := c.parsePostBody(respBody, request.ID)
+	if err == nil && request.Method == "initialize" {
+		c.storeSessionID(resp.Header.Get("Mcp-Session-Id"))
+	}
 	return postResult{body: result}, err
 }
 
