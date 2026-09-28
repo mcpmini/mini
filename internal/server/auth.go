@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"net"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -12,8 +11,8 @@ import (
 )
 
 type authFlowState struct {
-	cancel   context.CancelFunc
-	listener net.Listener
+	cancel context.CancelFunc
+	login  *auth.BrowserLogin
 }
 
 func (s *Server) handleStartAuth(serverName string) (any, error) {
@@ -29,7 +28,7 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 		return nil, err
 	}
 	s.authWg.Add(1)
-	go s.runAuthFlow(serverName, sc, flow.state, flow.doneCh)
+	go s.runAuthFlow(serverName, sc, flow.state, flow.authCtx)
 	s.maybeOpenAuthBrowser(sc, flow.authURL)
 	return authStartResponse(serverName, flow.authURL), nil
 }
@@ -64,41 +63,31 @@ func authStartResponse(serverName, authURL string) map[string]any {
 type pkceFlowResult struct {
 	authURL string
 	state   *authFlowState
-	doneCh  <-chan auth.PKCEResult
+	authCtx context.Context
 }
 
 func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) { //nolint:funclen
-	s.cancelExistingAuthFlow(serverName) // synchronously releases old port if any
+	s.cancelExistingAuthFlow(serverName)
 	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	listener, err := listenOnCallbackPort(authCtx, sc.Auth)
+	ln, err := auth.ListenCallback(authCtx, sc.Auth)
 	if err != nil {
 		cancel()
 		return pkceFlowResult{}, err
 	}
 	resolveParams := auth.ResolveEndpointsParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
 	if err := auth.ResolveEndpoints(authCtx, &sc, resolveParams); err != nil {
-		listener.Close() //nolint:errcheck
+		ln.Close() //nolint:errcheck
 		cancel()
 		return pkceFlowResult{}, fmt.Errorf("resolve oauth endpoints: %w", err)
 	}
-	authURL, doneCh, err := auth.StartPKCEFlowOnListener(authCtx, sc.Auth, listener)
+	login, err := auth.StartBrowserLogin(sc.Auth, ln)
 	if err != nil {
-		listener.Close() //nolint:errcheck
 		cancel()
 		return pkceFlowResult{}, fmt.Errorf("start auth flow: %w", err)
 	}
-	state := &authFlowState{cancel: cancel, listener: listener}
+	state := &authFlowState{cancel: cancel, login: login}
 	s.storeAuthFlow(serverName, state)
-	return pkceFlowResult{authURL: authURL, state: state, doneCh: doneCh}, nil
-}
-
-func listenOnCallbackPort(ctx context.Context, ac *config.AuthConfig) (net.Listener, error) {
-	addr := fmt.Sprintf("localhost:%d", auth.ResolvedCallbackPort(ac))
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("listen for oauth callback: %w", err)
-	}
-	return ln, nil
+	return pkceFlowResult{authURL: login.AuthURL(), state: state, authCtx: authCtx}, nil
 }
 
 func (s *Server) storeAuthFlow(serverName string, state *authFlowState) {
@@ -117,15 +106,15 @@ func (s *Server) cancelExistingAuthFlow(serverName string) {
 	if old == nil {
 		return
 	}
-	old.listener.Close() //nolint:errcheck
+	old.login.Close() //nolint:errcheck
 	old.cancel()
 }
 
-func (s *Server) runAuthFlow(serverName string, sc config.ServerConfig, flow *authFlowState, doneCh <-chan auth.PKCEResult) {
+func (s *Server) runAuthFlow(serverName string, sc config.ServerConfig, flow *authFlowState, authCtx context.Context) {
 	defer s.authWg.Done()
 	defer flow.cancel()
 	defer s.clearAuthFlow(serverName, flow)
-	s.awaitAuthAndReconnect(serverName, sc, doneCh)
+	s.awaitAuthAndReconnect(serverName, sc, flow.login, authCtx)
 }
 
 func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
@@ -136,13 +125,13 @@ func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
 	s.authMu.Unlock()
 }
 
-func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig, doneCh <-chan auth.PKCEResult) {
-	result := <-doneCh
-	if result.Err != nil {
-		s.logger.Error("oauth flow failed", "server", serverName, "err", result.Err)
+func (s *Server) awaitAuthAndReconnect(serverName string, sc config.ServerConfig, login *auth.BrowserLogin, authCtx context.Context) {
+	token, err := login.Wait(authCtx)
+	if err != nil {
+		s.logger.Error("oauth flow failed", "server", serverName, "err", err)
 		return
 	}
-	if err := s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(sc), result.Token); err != nil {
+	if err := s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(sc), token); err != nil {
 		s.logger.Error("commit oauth token failed", "server", serverName, "err", err)
 		return
 	}

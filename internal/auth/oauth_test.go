@@ -2,6 +2,8 @@ package auth_test
 
 import (
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,12 +14,9 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/config"
 )
 
-// simulateBrowser parses the auth URL that PKCEFlow generates, then fires the
-// callback asynchronously so PKCEFlow's select can receive the code.
-// This avoids the deadlock where openBrowser blocks waiting for the callback
-// server to respond while PKCEFlow is also inside openBrowser.
 func simulateBrowser(authURL string) error {
 	parsed, err := url.Parse(authURL)
 	if err != nil {
@@ -30,6 +29,20 @@ func simulateBrowser(authURL string) error {
 	callbackURL := redirectURI + "?code=test-auth-code&state=" + url.QueryEscape(state)
 	go http.Get(callbackURL) //nolint:errcheck
 	return nil
+}
+
+func startLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	login, err := auth.StartBrowserLogin(ac, ln)
+	if err != nil {
+		t.Fatalf("StartBrowserLogin: %v", err)
+	}
+	t.Cleanup(func() { login.Close() }) //nolint:errcheck
+	return login
 }
 
 func TestPKCEFlowEndToEnd(t *testing.T) {
@@ -76,40 +89,31 @@ func TestTokenSaveLoad(t *testing.T) {
 	}
 }
 
-func TestStartPKCEFlow_nonBlocking(t *testing.T) {
+func TestBrowserLogin_nonBlocking(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
+	login := startLogin(t, mock.AuthConfig())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
-	if err != nil {
-		t.Fatalf("StartPKCEFlow: %v", err)
-	}
-	if authURL == "" {
+	if login.AuthURL() == "" {
 		t.Fatal("expected non-empty auth URL")
 	}
-	// Simulate browser completing the flow.
-	simulateBrowser(authURL) //nolint:errcheck
-	result := <-doneCh
-	if result.Err != nil {
-		t.Fatalf("StartPKCEFlow result error: %v", result.Err)
+	ctx, ctxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer ctxCancel()
+
+	simulateBrowser(login.AuthURL()) //nolint:errcheck
+	token, err := login.Wait(ctx)
+	if err != nil {
+		t.Fatalf("Wait error: %v", err)
 	}
-	if result.Token.AccessToken != "test-access-token" {
-		t.Errorf("access token = %q, want %q", result.Token.AccessToken, "test-access-token")
+	if token.AccessToken != "test-access-token" {
+		t.Errorf("access token = %q, want %q", token.AccessToken, "test-access-token")
 	}
 }
 
-func TestStartPKCEFlow_redirectURIUsesLocalhost(t *testing.T) {
+func TestBrowserLogin_redirectURIUsesLocalhost(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	login := startLogin(t, mock.AuthConfig())
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
-	if err != nil {
-		t.Fatalf("StartPKCEFlow: %v", err)
-	}
-	parsed, err := url.Parse(authURL)
+	parsed, err := url.Parse(login.AuthURL())
 	if err != nil {
 		t.Fatalf("parse auth URL: %v", err)
 	}
@@ -121,9 +125,6 @@ func TestStartPKCEFlow_redirectURIUsesLocalhost(t *testing.T) {
 	if redirectParsed.Hostname() != "localhost" {
 		t.Errorf("redirect_uri host = %q, want localhost", redirectParsed.Hostname())
 	}
-	// Drain channel so test doesn't leak.
-	cancel()
-	<-doneCh
 }
 
 func TestIsNotFound(t *testing.T) {
@@ -228,21 +229,11 @@ func TestLoad_invalidServerName(t *testing.T) {
 	}
 }
 
-// TestPKCECallback_emptyCodeRejected verifies that the OAuth callback handler
-// returns 400 when the auth code is absent, rather than writing "Authorized"
-// and sending an empty string to the token exchange.
 func TestPKCECallback_emptyCodeRejected(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	login := startLogin(t, mock.AuthConfig())
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
-	if err != nil {
-		t.Fatalf("StartPKCEFlow: %v", err)
-	}
-
-	// Parse the callback URL, then hit it without a code param.
-	parsed, _ := url.Parse(authURL)
+	parsed, _ := url.Parse(login.AuthURL())
 	state := parsed.Query().Get("state")
 	redirectURI := parsed.Query().Get("redirect_uri")
 
@@ -256,29 +247,19 @@ func TestPKCECallback_emptyCodeRejected(t *testing.T) {
 		t.Errorf("expected 400 for empty code, got %d", resp.StatusCode)
 	}
 
-	// doneCh must not have received a result (flow is still waiting for a valid code).
-	select {
-	case result := <-doneCh:
-		t.Errorf("expected no result yet, got: %v", result)
-	default:
+	ctx, ctxCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer ctxCancel()
+	_, waitErr := login.Wait(ctx)
+	if waitErr == nil {
+		t.Error("Wait should not succeed after empty code")
 	}
-
-	cancel() // clean up the goroutine
-	<-doneCh // drain
 }
 
-// TestPKCECallback_stateMismatchRejected verifies that a mismatched state
-// returns 400 and does not deliver a code.
 func TestPKCECallback_stateMismatchRejected(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	login := startLogin(t, mock.AuthConfig())
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
-	if err != nil {
-		t.Fatalf("StartPKCEFlow: %v", err)
-	}
-	parsed, _ := url.Parse(authURL)
+	parsed, _ := url.Parse(login.AuthURL())
 	redirectURI := parsed.Query().Get("redirect_uri")
 
 	resp, err := http.Get(redirectURI + "?code=real-code&state=wrong-state")
@@ -291,30 +272,19 @@ func TestPKCECallback_stateMismatchRejected(t *testing.T) {
 		t.Errorf("expected 400 for state mismatch, got %d", resp.StatusCode)
 	}
 
-	select {
-	case result := <-doneCh:
-		t.Errorf("expected no result on state mismatch, got: %v", result)
-	default:
+	ctx, ctxCancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer ctxCancel()
+	_, waitErr := login.Wait(ctx)
+	if waitErr == nil {
+		t.Error("Wait should not succeed after state mismatch")
 	}
-
-	cancel()
-	<-doneCh
 }
 
-// TestLoopbackCallbackPath_consistent verifies that the path registered during
-// dynamic client registration matches the path used in the actual PKCE flow.
-// This guards against the two sides diverging (e.g. /callback vs /cb).
 func TestLoopbackCallbackPath_consistent(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	login := startLogin(t, mock.AuthConfig())
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, mock.AuthConfig())
-	if err != nil {
-		t.Fatalf("StartPKCEFlow: %v", err)
-	}
-
-	parsed, _ := url.Parse(authURL)
+	parsed, _ := url.Parse(login.AuthURL())
 	redirectURI := parsed.Query().Get("redirect_uri")
 	cbURL, err := url.Parse(redirectURI)
 	if err != nil {
@@ -324,9 +294,6 @@ func TestLoopbackCallbackPath_consistent(t *testing.T) {
 	if cbURL.Path != auth.LoopbackCallbackPath {
 		t.Errorf("PKCE redirect_uri path = %q, want %q (must match Register's URI)", cbURL.Path, auth.LoopbackCallbackPath)
 	}
-
-	cancel()
-	<-doneCh
 }
 
 func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
@@ -334,20 +301,13 @@ func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
 	ac := mock.AuthConfig()
 	ac.ResourceURL = "https://resource.example.com"
 	ac.ExtraAuthParams = map[string]string{
-		"resource": "https://evil.example.com", // must not win
-		"prompt":   "consent",                  // must pass through
+		"resource": "https://evil.example.com",
+		"prompt":   "consent",
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	login := startLogin(t, ac)
 
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, ac)
-	if err != nil {
-		t.Fatalf("StartPKCEFlow: %v", err)
-	}
-	defer func() { cancel(); <-doneCh }()
-
-	parsed, err := url.Parse(authURL)
+	parsed, err := url.Parse(login.AuthURL())
 	if err != nil {
 		t.Fatalf("parse auth URL: %v", err)
 	}
@@ -373,4 +333,112 @@ func TestTokenValidAfterForcedExpiry(t *testing.T) {
 	if reloaded.Valid() {
 		t.Error("token should be invalid after forced expiry")
 	}
+}
+
+func TestBrowserLogin_portReleasedAfterWait(t *testing.T) {
+	mock := authtest.NewTokenServer(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+
+	login, err := auth.StartBrowserLogin(mock.AuthConfig(), ln)
+	if err != nil {
+		t.Fatalf("StartBrowserLogin: %v", err)
+	}
+	defer login.Close() //nolint:errcheck
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	simulateBrowser(login.AuthURL()) //nolint:errcheck
+	if _, err := login.Wait(ctx); err != nil {
+		t.Fatalf("Wait: %v", err)
+	}
+
+	ln2, err := net.Listen("tcp", addr)
+	if err != nil {
+		t.Fatalf("port not released after Wait: %v", err)
+	}
+	ln2.Close()
+}
+
+func TestBrowserLogin_portReleasedAfterClose(t *testing.T) {
+	t.Run("immediate close", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := ln.Addr().String()
+		login, err := auth.StartBrowserLogin(&config.AuthConfig{}, ln)
+		if err != nil {
+			t.Fatalf("StartBrowserLogin: %v", err)
+		}
+		login.Close() //nolint:errcheck
+
+		ln2, err := net.Listen("tcp", addr)
+		if err != nil {
+			t.Fatalf("port not released after Close: %v", err)
+		}
+		ln2.Close()
+	})
+
+	t.Run("close with pending wait", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		addr := ln.Addr().String()
+		login, err := auth.StartBrowserLogin(&config.AuthConfig{}, ln)
+		if err != nil {
+			t.Fatalf("StartBrowserLogin: %v", err)
+		}
+
+		waitDone := make(chan error, 1)
+		go func() {
+			_, err := login.Wait(context.Background())
+			waitDone <- err
+		}()
+
+		login.Close() //nolint:errcheck
+		<-waitDone
+
+		ln2, err := net.Listen("tcp", addr)
+		if err != nil {
+			t.Fatalf("port not released after Close with pending Wait: %v", err)
+		}
+		ln2.Close()
+	})
+}
+
+func TestBrowserLogin_closeUnblocksWait(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := auth.StartBrowserLogin(&config.AuthConfig{}, ln)
+	if err != nil {
+		t.Fatalf("StartBrowserLogin: %v", err)
+	}
+
+	waitDone := make(chan error, 1)
+	go func() {
+		_, err := login.Wait(context.Background())
+		waitDone <- err
+	}()
+
+	login.Close() //nolint:errcheck
+	waitErr := <-waitDone
+
+	if !errors.Is(waitErr, auth.ErrLoginClosed) {
+		t.Errorf("Wait returned %v, want ErrLoginClosed", waitErr)
+	}
+
+	_, err2 := login.Wait(context.Background())
+	if !errors.Is(err2, auth.ErrLoginClosed) {
+		t.Errorf("second Wait returned %v, want ErrLoginClosed", err2)
+	}
+
+	login.Close() //nolint:errcheck
 }
