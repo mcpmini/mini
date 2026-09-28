@@ -25,8 +25,6 @@ func (c *HTTPConnection) ensureInitialized(ctx context.Context) error {
 		return nil
 	}
 	if err := c.initHandshake(ctx); err != nil {
-		// MCP spec: a new session's InitializeRequest must carry no session ID.
-		c.clearSessionID()
 		return err
 	}
 	c.initialized = true
@@ -128,43 +126,48 @@ func (c *HTTPConnection) dispatchNotification(notification Notification) {
 
 const maxListenerBackoff = 60 * time.Second
 
+type listenerState struct {
+	backoff       time.Duration
+	rejectedAuth  string
+	lastSessionID string
+}
+
+func (c *HTTPConnection) loadSessionID() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sessionID
+}
+
 func (c *HTTPConnection) listenForNotifications() {
 	defer c.listenerWG.Done()
-	backoff := time.Second
-	rejectedAuth := ""
+	state := listenerState{backoff: time.Second}
 	for c.listenerCtx.Err() == nil {
-		if rejectedAuth != "" && c.currentAuth(c.listenerCtx) == rejectedAuth {
+		if state.rejectedAuth != "" && c.currentAuth(c.listenerCtx) == state.rejectedAuth {
 			if !c.sleepCtx(c.listenerCtx, maxListenerBackoff) {
 				return
 			}
 			continue
 		}
-		if c.runListenerCycle(&backoff, &rejectedAuth) {
+		if c.runListenerCycle(&state) {
 			return
 		}
 	}
 }
 
-func (c *HTTPConnection) runListenerCycle(backoff *time.Duration, rejectedAuth *string) (stop bool) {
+func (c *HTTPConnection) runListenerCycle(state *listenerState) (stop bool) {
+	sidAtStart := c.loadSessionID()
 	status, err := c.consumeNotificationStream()
-	c.handleStreamSessionExpiry(err)
 	if c.shouldStopListener(status) {
 		return true
 	}
 	if err != nil {
 		slog.Warn("upstream notification stream interrupted", "url", c.url, "err", err)
 	}
-	*rejectedAuth = c.rejectedAuthAfter(c.listenerCtx, err)
-	delay, next := listenerDelay(status, err, *backoff)
-	*backoff = next
+	state.rejectedAuth = c.rejectedAuthAfter(c.listenerCtx, err)
+	state.resetBackoffIfReinitialized(sidAtStart)
+	delay, next := listenerDelay(status, err, state.backoff)
+	state.backoff = next
 	return !c.sleepCtx(c.listenerCtx, delay)
-}
-
-func (c *HTTPConnection) handleStreamSessionExpiry(err error) {
-	var expiredErr *SessionExpiredError
-	if errors.As(err, &expiredErr) {
-		c.compareAndResetSession(expiredErr.SessionID)
-	}
 }
 
 func (c *HTTPConnection) currentAuth(ctx context.Context) string {
@@ -202,22 +205,11 @@ func listenerDelay(status int, err error, backoff time.Duration) (delay, next ti
 }
 
 func (c *HTTPConnection) consumeNotificationStream() (int, error) {
-	var sentSessionID string
-	build := func(ctx context.Context) (*http.Request, string, error) {
-		req, auth, err := c.buildStreamRequest(ctx)
-		if err == nil {
-			sentSessionID = req.Header.Get("Mcp-Session-Id")
-		}
-		return req, auth, err
-	}
-	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.newStreamClient(), build)
+	resp, err := c.sendOneWithAuthRetry(c.listenerCtx, c.newStreamClient(), c.buildStreamRequest)
 	if err != nil {
 		return 0, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound && sentSessionID != "" {
-		return resp.StatusCode, &SessionExpiredError{SessionID: sentSessionID}
-	}
 	if resp.StatusCode != http.StatusOK {
 		return resp.StatusCode, fmt.Errorf("notification stream status %d", resp.StatusCode)
 	}
@@ -252,4 +244,11 @@ func (c *HTTPConnection) Close() error {
 	c.listenerCancel()
 	c.listenerWG.Wait()
 	return nil
+}
+
+func (s *listenerState) resetBackoffIfReinitialized(sessionID string) {
+	if s.lastSessionID != "" && sessionID != s.lastSessionID {
+		s.backoff = time.Second
+	}
+	s.lastSessionID = sessionID
 }

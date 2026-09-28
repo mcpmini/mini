@@ -172,9 +172,6 @@ func (c *HTTPConnection) compareAndResetSession(expiredID string) {
 	defer c.initMu.Unlock()
 	c.mu.Lock()
 	match := c.sessionID == expiredID
-	if match {
-		c.sessionID = ""
-	}
 	c.mu.Unlock()
 	if match {
 		c.initialized = false
@@ -263,6 +260,10 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	if err != nil {
 		return nil, "", err
 	}
+	// MCP spec: a new session's InitializeRequest carries no session ID.
+	if rpcReq.Method == "initialize" {
+		httpReq.Header.Del("Mcp-Session-Id")
+	}
 	return httpReq, sentAuth, nil
 }
 
@@ -321,12 +322,6 @@ func (c *HTTPConnection) storeSessionID(sessionID string) {
 	}
 	c.mu.Lock()
 	c.sessionID = sessionID
-	c.mu.Unlock()
-}
-
-func (c *HTTPConnection) clearSessionID() {
-	c.mu.Lock()
-	c.sessionID = ""
 	c.mu.Unlock()
 }
 

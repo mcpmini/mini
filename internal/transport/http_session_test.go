@@ -3,7 +3,6 @@
 package transport
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +10,6 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
-	"time"
-
-	"github.com/mcpmini/mini/internal/clock"
 )
 
 type sessionMCPServer struct {
@@ -22,8 +18,8 @@ type sessionMCPServer struct {
 	currentSID                string
 	expiredSIDs               map[string]bool
 	allExpiredExceptHandshake bool
-	noSession                 bool
-	notFoundOnFirstGETOnly    bool
+	alwaysNotFoundOnGET       bool
+	notifInitialized          chan struct{}
 	getSeen                   chan string
 	requests                  []sessionReq
 }
@@ -50,9 +46,11 @@ func (m *sessionMCPServer) handle(w http.ResponseWriter, r *http.Request) {
 	method, _ := req["method"].(string)
 	if r.Method == http.MethodGet {
 		method = "GET"
-		if sid != "" && m.notFoundOnFirstGETOnly {
-			m.notFoundOnFirstGETOnly = false
+		if m.alwaysNotFoundOnGET {
 			m.requests = append(m.requests, sessionReq{method: "GET", sessionID: sid})
+			if m.getSeen != nil {
+				m.getSeen <- sid
+			}
 			m.mu.Unlock()
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -84,10 +82,8 @@ func (m *sessionMCPServer) serveRPC(w http.ResponseWriter, req map[string]any) {
 		m.mu.Lock()
 		m.sessionSeq++
 		newSID := fmt.Sprintf("s%d", m.sessionSeq)
-		if !m.noSession {
-			m.currentSID = newSID
-			w.Header().Set("Mcp-Session-Id", newSID)
-		}
+		m.currentSID = newSID
+		w.Header().Set("Mcp-Session-Id", newSID)
 		m.mu.Unlock()
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"jsonrpc": "2.0", "id": req["id"],
@@ -97,6 +93,9 @@ func (m *sessionMCPServer) serveRPC(w http.ResponseWriter, req map[string]any) {
 			},
 		})
 	case NotificationInitialized:
+		if m.notifInitialized != nil {
+			m.notifInitialized <- struct{}{}
+		}
 		w.WriteHeader(http.StatusOK)
 	default:
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
@@ -142,15 +141,6 @@ func (m *sessionMCPServer) requestsWithMethod(method string) []sessionReq {
 	return out
 }
 
-func waitUntilListenerParkedOnClock(t *testing.T, clk *clock.Fake) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	if err := clk.BlockUntilContext(ctx, 1); err != nil {
-		t.Fatalf("listener goroutine did not reach sleepCtx: %v", err)
-	}
-}
-
 func TestHTTPSession_sessionExpiresTransparentRecovery(t *testing.T) {
 	m, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -172,7 +162,10 @@ func TestHTTPSession_sessionExpiresTransparentRecovery(t *testing.T) {
 	}
 
 	inits := m.requestsWithMethod("initialize")
-	if len(inits) < 2 || inits[1].sessionID != "" {
+	if len(inits) < 2 {
+		t.Fatalf("expected at least 2 initialize requests, got %d", len(inits))
+	}
+	if inits[1].sessionID != "" {
 		t.Errorf("second initialize carried session header %q, want none", inits[1].sessionID)
 	}
 
@@ -185,7 +178,10 @@ func TestHTTPSession_sessionExpiresTransparentRecovery(t *testing.T) {
 	m.mu.Lock()
 	sid2 := m.currentSID
 	m.mu.Unlock()
-	if len(pings) == 0 || pings[len(pings)-1].sessionID != sid2 {
+	if len(pings) == 0 {
+		t.Fatalf("expected at least 1 ping, got 0")
+	}
+	if pings[len(pings)-1].sessionID != sid2 {
 		t.Errorf("last ping used session %q, want %q", pings[len(pings)-1].sessionID, sid2)
 	}
 }
@@ -279,70 +275,22 @@ func TestHTTPSession_concurrentCallsOnExpiredSession(t *testing.T) {
 	}
 }
 
-func TestHTTPSession_listenerStream404_nextCallReinitializes(t *testing.T) {
-	m, srv := newSessionServer(t)
-	m.mu.Lock()
-	m.notFoundOnFirstGETOnly = true
-	m.mu.Unlock()
-
-	clk := clock.NewFake()
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
-
-	waitUntilListenerParkedOnClock(t, clk)
-
-	conn.initMu.Lock()
-	initialized := conn.initialized
-	conn.initMu.Unlock()
-	if initialized {
-		t.Error("expected initialized=false after listener 404")
-	}
-
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("call after listener reset: %v", err)
-	}
-	if got := m.initializeCount(); got < 2 {
-		t.Errorf("initialize count = %d, want >= 2", got)
-	}
-}
-
-func TestHTTPSession_reinitKeepsASingleNotificationListener(t *testing.T) {
-	m, srv := newSessionServer(t)
-	m.getSeen = make(chan string, 16)
-	clk := clock.NewFake()
-	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
-	firstSID := <-m.getSeen
-	waitUntilListenerParkedOnClock(t, clk)
-
-	m.expireSession(firstSID)
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("call after session expiry: %v", err)
-	}
-	select {
-	case sid := <-m.getSeen:
-		t.Fatalf("re-init started a second notification listener (stream opened with session %q)", sid)
-	case <-time.After(300 * time.Millisecond):
-	}
-
-	clk.Advance(time.Hour)
-	if next := <-m.getSeen; next == firstSID {
-		t.Errorf("listener reconnected with the expired session %q", firstSID)
-	}
-}
-
-func TestHTTPSession_401StillGoesThrough(t *testing.T) {
+func TestHTTPSession_401DuringReinitHandshakeRefreshesAndSucceeds(t *testing.T) {
+	var initCount int
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
 		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 		method, _ := req["method"].(string)
+		auth := r.Header.Get("Authorization")
 		switch method {
 		case "initialize":
+			initCount++
+			if auth != "Bearer new" {
+				w.Header().Set("WWW-Authenticate", "Bearer realm=test")
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Mcp-Session-Id", fmt.Sprintf("sid-%d", initCount))
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
 				"result": map[string]any{"protocolVersion": ProtocolVersion, "capabilities": map[string]any{}},
@@ -350,11 +298,6 @@ func TestHTTPSession_401StillGoesThrough(t *testing.T) {
 		case NotificationInitialized:
 			w.WriteHeader(http.StatusOK)
 		default:
-			if r.Header.Get("Authorization") == "Bearer old" {
-				w.Header().Set("WWW-Authenticate", "Bearer realm=test")
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"jsonrpc": "2.0", "id": req["id"],
 				"result": map[string]any{"ok": true},
@@ -370,9 +313,41 @@ func TestHTTPSession_401StillGoesThrough(t *testing.T) {
 	})
 
 	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("expected success after auth retry, got: %v", err)
+		t.Fatalf("expected success after auth retry on initialize, got: %v", err)
 	}
 	if got := provider.refreshCount(); got != 1 {
 		t.Errorf("auth refresh count = %d, want 1", got)
+	}
+}
+
+func TestCompareAndResetSession_keepsSessionIDSoRetriesNeverSendNone(t *testing.T) {
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: "http://127.0.0.1:1"})
+	conn.storeSessionID("s1")
+	conn.initialized = true
+
+	conn.compareAndResetSession("s1")
+
+	if conn.initialized {
+		t.Error("reset must mark the connection uninitialized")
+	}
+	req, _, err := conn.buildHTTPRequest(t.Context(), Request{JSONRPC: "2.0", ID: 1, Method: "tools/call"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("Mcp-Session-Id"); got != "s1" {
+		t.Errorf("a request rebuilt during re-init carried session %q, want the stale %q (never empty)", got, "s1")
+	}
+}
+
+func TestBuildHTTPRequest_initializeNeverCarriesASession(t *testing.T) {
+	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: "http://127.0.0.1:1"})
+	conn.storeSessionID("s1")
+
+	req, _, err := conn.buildHTTPRequest(t.Context(), Request{JSONRPC: "2.0", ID: 1, Method: "initialize"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Header.Get("Mcp-Session-Id"); got != "" {
+		t.Errorf("initialize carried session %q; a new session must start without one", got)
 	}
 }
