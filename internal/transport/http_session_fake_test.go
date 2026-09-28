@@ -3,28 +3,29 @@
 package transport
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 )
 
-type sessionMCPServer struct {
-	mu                        sync.Mutex
-	sessionSeq                int
-	currentSID                string
-	expiredSIDs               map[string]bool
-	allExpiredExceptHandshake bool
-	alwaysNotFoundOnGET       bool
-	notifInitialized          chan struct{}
-	getSeen                   chan string
-	requests                  []sessionReq
-	holdNextNonHandshake      chan struct{}
-	holdSignal                chan string
-	omitSessionOnNextInit     bool
-	rejectMissingSession      bool
+// sessionServer issues a new Mcp-Session-Id on every initialize and answers other
+// requests without a session with 400, as the spec recommends.
+type sessionServer struct {
+	gets chan string
+
+	mu          sync.Mutex
+	seq         int
+	current     string
+	expired     map[string]bool
+	expireAll   bool
+	getNotFound bool
+	requests    []sessionReq
 }
 
 type sessionReq struct {
@@ -32,50 +33,80 @@ type sessionReq struct {
 	sessionID string
 }
 
-func newSessionServer(t *testing.T) (*sessionMCPServer, *httptest.Server) {
-	t.Helper()
-	m := &sessionMCPServer{expiredSIDs: map[string]bool{}}
-	srv := httptest.NewServer(http.HandlerFunc(m.handle))
-	t.Cleanup(srv.Close)
-	return m, srv
+func newSessionFake() *sessionServer {
+	return &sessionServer{gets: make(chan string, 64), expired: map[string]bool{}}
 }
 
-func (m *sessionMCPServer) handle(w http.ResponseWriter, r *http.Request) {
+func newSessionServer(t *testing.T) (*sessionServer, *httptest.Server) {
+	t.Helper()
+	m := newSessionFake()
+	return m, newJSONRPCServer(t, m.handle)
+}
+
+func (m *sessionServer) handle(w http.ResponseWriter, r *http.Request) {
 	sid := r.Header.Get("Mcp-Session-Id")
-	m.mu.Lock()
+	if r.Method == http.MethodGet {
+		m.serveNotificationStream(w, sid)
+		return
+	}
 	var req map[string]any
 	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
 	method, _ := req["method"].(string)
-	if r.Method == http.MethodGet {
-		m.handleGET(w, sid)
+	if status := m.admit(method, sid); status != http.StatusOK {
+		w.WriteHeader(status)
 		return
 	}
-	m.requests = append(m.requests, sessionReq{method: method, sessionID: sid})
-	isHandshake := method == "initialize" || method == NotificationInitialized
-	if m.holdNextNonHandshake != nil && !isHandshake {
-		m.serveHeld(w, req, sid)
-		return
-	}
-	if m.rejectMissingSession && m.currentSID != "" && sid == "" && !isHandshake {
-		m.mu.Unlock()
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-	expired := sid != "" && (m.expiredSIDs[sid] || (m.allExpiredExceptHandshake && !isHandshake))
-	m.mu.Unlock()
-	if expired {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-	m.serveRPC(w, req)
+	m.serveRPC(w, method, req["id"])
 }
 
-func (m *sessionMCPServer) handleGET(w http.ResponseWriter, sid string) {
-	m.requests = append(m.requests, sessionReq{method: "GET", sessionID: sid})
-	notFound := m.alwaysNotFoundOnGET
-	if m.getSeen != nil {
-		m.getSeen <- sid
+func (m *sessionServer) admit(method, sid string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.requests = append(m.requests, sessionReq{method: method, sessionID: sid})
+	switch {
+	case method == "initialize":
+		return http.StatusOK
+	case sid == "":
+		return http.StatusBadRequest
+	case m.expired[sid], m.expireAll && method != NotificationInitialized:
+		return http.StatusNotFound
 	}
+	return http.StatusOK
+}
+
+func (m *sessionServer) serveRPC(w http.ResponseWriter, method string, id any) {
+	switch method {
+	case "initialize":
+		w.Header().Set("Mcp-Session-Id", m.issueSession())
+		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+			"jsonrpc": "2.0", "id": id,
+			"result": map[string]any{
+				"protocolVersion": ProtocolVersion,
+				"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
+			},
+		})
+	case NotificationInitialized:
+		w.WriteHeader(http.StatusOK)
+	default:
+		w.Write(okRPCResponse(id)) //nolint:errcheck
+	}
+}
+
+func (m *sessionServer) issueSession() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.seq++
+	m.current = fmt.Sprintf("s%d", m.seq)
+	return m.current
+}
+
+func (m *sessionServer) serveNotificationStream(w http.ResponseWriter, sid string) {
+	select {
+	case m.gets <- sid:
+	default:
+	}
+	m.mu.Lock()
+	notFound := m.getNotFound
 	m.mu.Unlock()
 	if notFound {
 		w.WriteHeader(http.StatusNotFound)
@@ -84,83 +115,56 @@ func (m *sessionMCPServer) handleGET(w http.ResponseWriter, sid string) {
 	w.WriteHeader(http.StatusOK)
 }
 
-func (m *sessionMCPServer) serveHeld(w http.ResponseWriter, req map[string]any, sid string) {
-	holdCh := m.holdNextNonHandshake
-	holdSig := m.holdSignal
-	m.holdNextNonHandshake = nil
-	m.mu.Unlock()
-	if holdSig != nil {
-		holdSig <- sid
-	}
-	<-holdCh
-	if sid != "" {
-		w.Header().Set("Mcp-Session-Id", sid)
-	}
-	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-		"jsonrpc": "2.0", "id": req["id"],
-		"result": map[string]any{"ok": true},
-	})
-}
-
-func (m *sessionMCPServer) serveRPC(w http.ResponseWriter, req map[string]any) {
-	method, _ := req["method"].(string)
-	switch method {
-	case "initialize":
-		m.mu.Lock()
-		m.sessionSeq++
-		newSID := fmt.Sprintf("s%d", m.sessionSeq)
-		m.currentSID = newSID
-		omit := m.omitSessionOnNextInit
-		m.omitSessionOnNextInit = false
-		m.mu.Unlock()
-		if !omit {
-			w.Header().Set("Mcp-Session-Id", newSID)
-		}
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": req["id"],
-			"result": map[string]any{
-				"protocolVersion": ProtocolVersion,
-				"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
-			},
-		})
-	case NotificationInitialized:
-		if m.notifInitialized != nil {
-			m.notifInitialized <- struct{}{}
-		}
-		w.WriteHeader(http.StatusOK)
-	default:
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": req["id"],
-			"result": map[string]any{"ok": true},
-		})
-	}
-}
-
-func (m *sessionMCPServer) expireSession(sid string) {
-	m.mu.Lock()
-	m.expiredSIDs[sid] = true
-	m.mu.Unlock()
-}
-
-func (m *sessionMCPServer) expireAllSessionsExceptHandshake() {
-	m.mu.Lock()
-	m.allExpiredExceptHandshake = true
-	m.mu.Unlock()
-}
-
-func (m *sessionMCPServer) initializeCount() int {
+func (m *sessionServer) sessionID() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	count := 0
-	for _, r := range m.requests {
-		if r.method == "initialize" {
-			count++
-		}
-	}
-	return count
+	return m.current
 }
 
-func (m *sessionMCPServer) requestsWithMethod(method string) []sessionReq {
+func (m *sessionServer) expireSession(sid string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.expired[sid] = true
+}
+
+func (m *sessionServer) rejectEverySessionAfterHandshake() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.expireAll = true
+}
+
+func (m *sessionServer) answerNotificationStreamWithNotFound() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.getNotFound = true
+}
+
+func (m *sessionServer) awaitNotificationStream(t *testing.T) string {
+	t.Helper()
+	select {
+	case sid := <-m.gets:
+		return sid
+	case <-time.After(3 * time.Second):
+		t.Fatal("notification stream GET not received")
+		return ""
+	}
+}
+
+func (m *sessionServer) methods() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.requests))
+	for i, r := range m.requests {
+		out[i] = r.method
+	}
+	return out
+}
+
+func (m *sessionServer) initializeCount() int {
+	return len(m.requestsWithMethod("initialize"))
+}
+
+func (m *sessionServer) requestsWithMethod(method string) []sessionReq {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []sessionReq
@@ -170,4 +174,14 @@ func (m *sessionMCPServer) requestsWithMethod(method string) []sessionReq {
 		}
 	}
 	return out
+}
+
+func peekRPCMethod(r *http.Request) string {
+	body, _ := io.ReadAll(r.Body)
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	var req struct {
+		Method string `json:"method"`
+	}
+	json.Unmarshal(body, &req) //nolint:errcheck
+	return req.Method
 }

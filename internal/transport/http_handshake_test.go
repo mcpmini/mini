@@ -17,67 +17,8 @@ import (
 	"time"
 )
 
-type strictSessionServer struct {
-	sessionID string
-	mu        sync.Mutex
-	methodLog []string
-	initCount int
-}
-
-func newStrictSessionServer(t *testing.T) (*httptest.Server, *strictSessionServer) {
-	t.Helper()
-	s := &strictSessionServer{sessionID: "sess-strict-1"}
-	srv := httptest.NewServer(http.HandlerFunc(s.handle))
-	t.Cleanup(srv.Close)
-	return srv, s
-}
-
-func (s *strictSessionServer) handle(w http.ResponseWriter, r *http.Request) {
-	var req map[string]any
-	json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-	method, _ := req["method"].(string)
-
-	s.mu.Lock()
-	s.methodLog = append(s.methodLog, method)
-	s.mu.Unlock()
-
-	if method != "initialize" && r.Header.Get("Mcp-Session-Id") != s.sessionID {
-		http.Error(w, `{"error":"Request must be an initialize request if no session ID is provided."}`, http.StatusBadRequest)
-		return
-	}
-	s.respond(w, method, req)
-}
-
-func (s *strictSessionServer) respond(w http.ResponseWriter, method string, req map[string]any) {
-	switch method {
-	case "initialize":
-		s.mu.Lock()
-		s.initCount++
-		s.mu.Unlock()
-		w.Header().Set("Mcp-Session-Id", s.sessionID)
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": req["id"],
-			"result": map[string]any{"protocolVersion": ProtocolVersion},
-		})
-	case "notifications/initialized":
-		w.WriteHeader(http.StatusOK)
-	case "tools/list":
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": req["id"],
-			"result": map[string]any{"tools": []any{}},
-		})
-	case "tools/call":
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"jsonrpc": "2.0", "id": req["id"],
-			"result": map[string]any{"content": []any{}},
-		})
-	default:
-		http.Error(w, "unknown method", http.StatusBadRequest)
-	}
-}
-
 func TestHTTPConnection_callCompletesHandshakeBeforeToolCall(t *testing.T) {
-	srv, fake := newStrictSessionServer(t)
+	fake, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 	args, _ := json.Marshal(ToolCallParams{Name: "do_thing", Arguments: map[string]any{}})
 
@@ -85,16 +26,14 @@ func TestHTTPConnection_callCompletesHandshakeBeforeToolCall(t *testing.T) {
 		t.Fatalf("Call against strict session server failed: %v", err)
 	}
 
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
 	want := []string{"initialize", "notifications/initialized", "tools/call"}
-	if !slices.Equal(fake.methodLog, want) {
-		t.Fatalf("method order = %v, want %v", fake.methodLog, want)
+	if got := fake.methods(); !slices.Equal(got, want) {
+		t.Fatalf("method order = %v, want %v", got, want)
 	}
 }
 
 func TestHTTPConnection_concurrentFirstCallsHandshakeOnce(t *testing.T) {
-	srv, fake := newStrictSessionServer(t)
+	fake, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	const n = 8
@@ -114,10 +53,8 @@ func TestHTTPConnection_concurrentFirstCallsHandshakeOnce(t *testing.T) {
 			t.Errorf("call %d failed: %v", i, err)
 		}
 	}
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if fake.initCount != 1 {
-		t.Errorf("initCount = %d, want 1", fake.initCount)
+	if got := fake.initializeCount(); got != 1 {
+		t.Errorf("initialize count = %d, want 1", got)
 	}
 }
 
@@ -160,7 +97,7 @@ func TestHTTPConnection_callRetriesHandshakeAfterFailure(t *testing.T) {
 }
 
 func TestHTTPConnection_cancelledConcurrentCallerDoesNotPoisonHandshake(t *testing.T) {
-	srv, fake := newStrictSessionServer(t)
+	fake, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	cancelledCtx, cancel := context.WithCancel(context.Background())
@@ -185,11 +122,8 @@ func TestHTTPConnection_cancelledConcurrentCallerDoesNotPoisonHandshake(t *testi
 	if survivorErr != nil {
 		t.Errorf("expected the uncancelled caller to succeed, got: %v", survivorErr)
 	}
-	fake.mu.Lock()
-	initCount := fake.initCount
-	fake.mu.Unlock()
-	if initCount != 1 {
-		t.Errorf("initCount = %d, want exactly 1 successful handshake", initCount)
+	if got := fake.initializeCount(); got != 1 {
+		t.Errorf("initialize count = %d, want exactly 1 successful handshake", got)
 	}
 	if _, err := conn.Call(context.Background(), "tools/list", nil); err != nil {
 		t.Errorf("connection left unusable after cancellation race: %v", err)
@@ -197,7 +131,7 @@ func TestHTTPConnection_cancelledConcurrentCallerDoesNotPoisonHandshake(t *testi
 }
 
 func TestHTTPConnection_listToolsThenCallSharesOneHandshake(t *testing.T) {
-	srv, fake := newStrictSessionServer(t)
+	fake, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	if _, err := conn.ListTools(context.Background()); err != nil {
@@ -208,24 +142,20 @@ func TestHTTPConnection_listToolsThenCallSharesOneHandshake(t *testing.T) {
 		t.Fatalf("Call: %v", err)
 	}
 
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if fake.initCount != 1 {
-		t.Errorf("initCount = %d, want 1", fake.initCount)
+	if got := fake.initializeCount(); got != 1 {
+		t.Errorf("initialize count = %d, want 1", got)
 	}
 }
 
 func TestHealth_doesNotTriggerHandshake(t *testing.T) {
-	srv, fake := newStrictSessionServer(t)
+	fake, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	if err := conn.Health(context.Background()); err != nil {
 		t.Fatalf("Health: %v", err)
 	}
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if fake.initCount != 0 {
-		t.Errorf("initCount = %d, want 0 (Health must not trigger a handshake)", fake.initCount)
+	if got := fake.initializeCount(); got != 0 {
+		t.Errorf("initialize count = %d, want 0 (Health must not trigger a handshake)", got)
 	}
 }
 
