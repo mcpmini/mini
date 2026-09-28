@@ -31,6 +31,7 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	auth.UseLoopbackHTTPClient()
+	auth.UseEphemeralCallbackPort()
 	os.Exit(m.Run())
 }
 

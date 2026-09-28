@@ -100,16 +100,7 @@ func hydrateFromSavedRegistration(t *testing.T, reg *auth.Registration, tokenURL
 
 func exchangeAndRefresh(t *testing.T, ac *config.AuthConfig) {
 	t.Helper()
-	login := startLogin(t, ac)
-	if err := simulateBrowser(login.AuthURL()); err != nil {
-		t.Fatalf("simulateBrowser: %v", err)
-	}
-	ctx, ctxCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer ctxCancel()
-	token, err := login.Wait(ctx)
-	if err != nil {
-		t.Fatalf("PKCE exchange: %v", err)
-	}
+	token := pkceToken(t, ac)
 	// backdated so Refresh actually hits the token endpoint rather than returning the cached token
 	token.Expiry = time.Now().Add(-time.Hour)
 	if _, err := auth.Refresh(context.Background(), ac, token); err != nil {
@@ -422,9 +413,7 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 	ac := hydrateFromSavedRegistration(t, reg, rejectingTokenSrv.URL, clock.System())
 
 	login := startLogin(t, ac)
-	if err := simulateBrowser(login.AuthURL()); err != nil {
-		t.Fatalf("simulateBrowser: %v", err)
-	}
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
 	ctx, ctxCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer ctxCancel()
 	_, exchangeErr := login.Wait(ctx)

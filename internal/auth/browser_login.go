@@ -39,9 +39,13 @@ type loginResult struct {
 	err   error
 }
 
+var callbackListenAddr = func(ac *config.AuthConfig) string {
+	return fmt.Sprintf("localhost:%d", ResolvedCallbackPort(ac))
+}
+
 // ListenCallback binds localhost:ResolvedCallbackPort(ac) — the only place production code binds the callback port.
 func ListenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, error) {
-	addr := fmt.Sprintf("localhost:%d", ResolvedCallbackPort(ac))
+	addr := callbackListenAddr(ac)
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen for oauth callback on %s: %w", addr, err)

@@ -20,7 +20,7 @@ import (
 func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	token := pkceToken(t, mock)
+	token := pkceToken(t, mock.AuthConfig())
 	if err := auth.Save(dir, "srv", token); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -132,12 +132,7 @@ func TestExchangeCode_withResourceURL_sendsResourceToTokenEndpoint(t *testing.T)
 		TokenURL:    tokenSrv.URL + "/token",
 		ResourceURL: resourceURL,
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	token, err := auth.PKCEFlow(ctx, ac, simulateBrowser)
-	if err != nil {
-		t.Fatalf("PKCEFlow: %v", err)
-	}
+	token := pkceToken(t, ac)
 	if token.AccessToken != "tok" {
 		t.Errorf("access token = %q, want tok", token.AccessToken)
 	}

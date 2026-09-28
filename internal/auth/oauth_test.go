@@ -17,20 +17,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func simulateBrowser(authURL string) error {
-	parsed, err := url.Parse(authURL)
-	if err != nil {
-		return err
-	}
-	q := parsed.Query()
-	state := q.Get("state")
-	redirectURI := q.Get("redirect_uri")
-
-	callbackURL := redirectURI + "?code=test-auth-code&state=" + url.QueryEscape(state)
-	go http.Get(callbackURL) //nolint:errcheck
-	return nil
-}
-
 func startLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -45,9 +31,9 @@ func startLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
 	return login
 }
 
-func TestPKCEFlowEndToEnd(t *testing.T) {
+func TestBrowserLogin_endToEnd(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
-	token := pkceToken(t, mock)
+	token := pkceToken(t, mock.AuthConfig())
 	if token.AccessToken != "test-access-token" {
 		t.Errorf("access token = %q, want %q", token.AccessToken, "test-access-token")
 	}
@@ -59,13 +45,15 @@ func TestPKCEFlowEndToEnd(t *testing.T) {
 	}
 }
 
-func pkceToken(t *testing.T, mock *authtest.TokenServer) *oauth2.Token {
+func pkceToken(t *testing.T, ac *config.AuthConfig) *oauth2.Token {
 	t.Helper()
+	login := startLogin(t, ac)
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	token, err := auth.PKCEFlow(ctx, mock.AuthConfig(), simulateBrowser)
+	token, err := login.Wait(ctx)
 	if err != nil {
-		t.Fatalf("PKCEFlow: %v", err)
+		t.Fatalf("browser login: %v", err)
 	}
 	return token
 }
@@ -73,7 +61,7 @@ func pkceToken(t *testing.T, mock *authtest.TokenServer) *oauth2.Token {
 func TestTokenSaveLoad(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	token := pkceToken(t, mock)
+	token := pkceToken(t, mock.AuthConfig())
 	if err := auth.Save(dir, "myserver", token); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -99,7 +87,7 @@ func TestBrowserLogin_nonBlocking(t *testing.T) {
 	ctx, ctxCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer ctxCancel()
 
-	simulateBrowser(login.AuthURL()) //nolint:errcheck
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
 	token, err := login.Wait(ctx)
 	if err != nil {
 		t.Fatalf("Wait error: %v", err)
@@ -137,7 +125,7 @@ func TestIsNotFound(t *testing.T) {
 func TestSave_tokenFilePermissions(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	if err := auth.Save(dir, "myserver", pkceToken(t, mock)); err != nil {
+	if err := auth.Save(dir, "myserver", pkceToken(t, mock.AuthConfig())); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	assertTokenFilesPrivate(t, dir+"/internal")
@@ -234,10 +222,10 @@ func TestPKCECallback_emptyCodeRejected(t *testing.T) {
 	login := startLogin(t, mock.AuthConfig())
 
 	parsed, _ := url.Parse(login.AuthURL())
-	state := parsed.Query().Get("state")
-	redirectURI := parsed.Query().Get("redirect_uri")
+	callback := authtest.LoopbackRedirectURI(t, login.AuthURL())
+	callback.RawQuery = url.Values{"state": {parsed.Query().Get("state")}}.Encode()
 
-	resp, err := http.Get(redirectURI + "?state=" + url.QueryEscape(state))
+	resp, err := http.Get(callback.String())
 	if err != nil {
 		t.Fatalf("GET callback: %v", err)
 	}
@@ -259,10 +247,10 @@ func TestPKCECallback_stateMismatchRejected(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	login := startLogin(t, mock.AuthConfig())
 
-	parsed, _ := url.Parse(login.AuthURL())
-	redirectURI := parsed.Query().Get("redirect_uri")
+	callback := authtest.LoopbackRedirectURI(t, login.AuthURL())
+	callback.RawQuery = url.Values{"code": {"real-code"}, "state": {"wrong-state"}}.Encode()
 
-	resp, err := http.Get(redirectURI + "?code=real-code&state=wrong-state")
+	resp, err := http.Get(callback.String())
 	if err != nil {
 		t.Fatalf("GET callback: %v", err)
 	}
@@ -323,7 +311,7 @@ func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
 func TestTokenValidAfterForcedExpiry(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", pkceToken(t, mock)); err != nil {
+	if err := auth.Save(dir, "srv", pkceToken(t, mock.AuthConfig())); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	loaded, _ := auth.Load(dir, "srv")
@@ -352,7 +340,7 @@ func TestBrowserLogin_portReleasedAfterWait(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	simulateBrowser(login.AuthURL()) //nolint:errcheck
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
 	if _, err := login.Wait(ctx); err != nil {
 		t.Fatalf("Wait: %v", err)
 	}
