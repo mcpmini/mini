@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,9 +32,7 @@ func writeActionYAML(t *testing.T, dir string) {
 
 func serverWithActionsDir(t *testing.T, dir string) *server.Server {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return newTestServer(t, server.Params{ConfigDir: dir})
 }
 
 func fakeGHConn() *transport.FakeConnection {

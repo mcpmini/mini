@@ -11,24 +11,52 @@ import (
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
-func New(cfg *config.Config, logger *slog.Logger, opts ...ServerOption) *Server {
-	return NewWithConfigDir(cfg, config.DefaultConfigDir(), logger, opts...)
+// Params configures a new Server. Config, ConfigDir, and Logger are required.
+type Params struct {
+	Config               *config.Config
+	ConfigDir            string
+	Logger               *slog.Logger
+	Clock                clock.Clock
+	ToolMode             transport.ToolMode
+	DaemonAuthToken      string
+	AllowNonLoopbackHost bool
 }
 
-func NewWithConfigDir(cfg *config.Config, configDir string, logger *slog.Logger, opts ...ServerOption) *Server {
-	load := config.LoadProjections(configDir)
-	logProjectionLoadProblems(logger, load)
-	s := newServer(cfg, configDir, load.Projections, logger)
-	for _, o := range opts {
-		o(s)
-	}
-	store := mustStore(cfg, configDir, logger, s.clock)
+func New(p Params) *Server {
+	requireParams(p)
+	load := config.LoadProjections(p.ConfigDir)
+	logProjectionLoadProblems(p.Logger, load)
+	s := newServer(p.Config, p.ConfigDir, load.Projections, p.Logger)
+	applyParams(s, p)
+	store := mustStore(p.Config, p.ConfigDir, p.Logger, s.clock)
 	s.store = store
 	s.envelope = response.NewBuilder(store)
 	s.sessions = newSessionStore(s.clock)
 	return s
+}
+
+func requireParams(p Params) {
+	if p.Config == nil {
+		panic("server.Params.Config must not be nil")
+	}
+	if p.ConfigDir == "" {
+		panic("server.Params.ConfigDir must not be empty")
+	}
+	if p.Logger == nil {
+		panic("server.Params.Logger must not be nil")
+	}
+}
+
+func applyParams(s *Server, p Params) {
+	if p.Clock != nil {
+		s.clock = p.Clock
+	}
+	s.toolMode = p.ToolMode
+	s.daemonAuthToken = p.DaemonAuthToken
+	s.allowNonLoopbackHost = p.AllowNonLoopbackHost
 }
 
 func newServer(cfg *config.Config, configDir string, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server {

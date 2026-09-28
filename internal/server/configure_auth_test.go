@@ -4,8 +4,6 @@ package server_test
 
 import (
 	"encoding/json"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,9 +19,8 @@ import (
 func newServerWithDir(t *testing.T, configDir string) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DisableAuthBrowserOpen = true
-	return server.NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return newTestServer(t, server.Params{Config: cfg, ConfigDir: configDir})
 }
 
 func writeServerYAML(t *testing.T, dir, name, content string) {

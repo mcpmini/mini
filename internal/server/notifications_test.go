@@ -4,8 +4,6 @@ package server_test
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -18,9 +16,8 @@ func TestNotification_toolsChangedAfterAddServer(t *testing.T) {
 	})
 
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowPrivateURLs = true
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 
 	msgs := serveAll(t, srv,
 		notification("notifications/initialized", nil),
@@ -36,7 +33,7 @@ func TestNotification_toolsChangedAfterAddServer(t *testing.T) {
 }
 
 func TestNotification_toolsChangedAfterRemoveServer(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConn("aTool")) //nolint:errcheck
 
 	msgs := serveAll(t, srv,
@@ -50,7 +47,7 @@ func TestNotification_toolsChangedAfterRemoveServer(t *testing.T) {
 }
 
 func TestNotification_noNotificationForOtherConfigureActions(t *testing.T) {
-	msgs := serveAll(t, newTestServer(t),
+	msgs := serveAll(t, newTestServer(t, server.Params{}),
 		callTool("config", map[string]any{"action": "status"}),
 	)
 

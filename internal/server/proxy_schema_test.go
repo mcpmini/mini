@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestProxySchema_ArgsRequiredWhenUpstreamHasRequiredFields(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
@@ -36,7 +37,7 @@ func TestProxySchema_ArgsRequiredWhenUpstreamHasRequiredFields(t *testing.T) {
 }
 
 func TestProxySchema_ArgsOptionalWhenNoRequiredFields(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
@@ -59,7 +60,7 @@ func TestProxySchema_ArgsOptionalWhenNoRequiredFields(t *testing.T) {
 }
 
 func TestProxySchema_ArgsRequiredWhenRootHasRef(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
@@ -79,7 +80,7 @@ func TestProxySchema_ArgsRequiredWhenRootHasRef(t *testing.T) {
 }
 
 func TestProxySchema_ArgsRequiredWhenMinPropertiesPositive(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
@@ -96,7 +97,7 @@ func TestProxySchema_ArgsRequiredWhenMinPropertiesPositive(t *testing.T) {
 }
 
 func TestProxySchema_InputControlEnumOffersDefaultAndRaw(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	addProxyConn(t, srv, "svc", fakeConn("noop"))
 
@@ -116,7 +117,7 @@ func TestProxySchema_InputControlEnumOffersDefaultAndRaw(t *testing.T) {
 }
 
 func TestProxySchema_OutputSchemaSynthesizedWhenAbsent(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	addProxyConn(t, srv, "svc", fakeConn("no_output_schema"))
 
@@ -130,7 +131,7 @@ func TestProxySchema_OutputSchemaSynthesizedWhenAbsent(t *testing.T) {
 }
 
 func TestProxySchema_OutputSchemaWrapsUpstreamSchema(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
@@ -157,7 +158,7 @@ func TestProxySchema_OutputSchemaWrapsUpstreamSchema(t *testing.T) {
 }
 
 func TestProxySchema_SyntheticSchemaIDScopedToServerAndTool(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
@@ -177,7 +178,7 @@ func TestProxySchema_SyntheticSchemaIDScopedToServerAndTool(t *testing.T) {
 }
 
 func TestProxySchema_UpstreamAbsoluteSchemaIDPreserved(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
@@ -197,7 +198,7 @@ func TestProxySchema_UpstreamAbsoluteSchemaIDPreserved(t *testing.T) {
 }
 
 func TestProxySchema_NullUpstreamSchemaDoesNotPanic(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
@@ -218,7 +219,7 @@ func TestProxySchema_NullUpstreamSchemaDoesNotPanic(t *testing.T) {
 }
 
 func TestProxySchema_RefsWithinArgsStayUnrewritten(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{

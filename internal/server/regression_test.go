@@ -7,8 +7,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +44,7 @@ func TestRead_RejectsSymlinkEscape(t *testing.T) {
 	storeDir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	// Create a symlink INSIDE the store dir that points OUTSIDE it.
@@ -95,7 +93,7 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 	storeDir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	// Create a real file inside the store and a symlink to it, also inside.
@@ -135,7 +133,7 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 // registry is in a consistent state: either the server is present with tools,
 // or it is fully absent — never partially corrupted.
 func TestConcurrentAddRemove_RegistryConsistency(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	ctx := context.Background()
 
@@ -179,7 +177,7 @@ func TestConcurrentAddRemove_RegistryConsistency(t *testing.T) {
 // TestAddRemoveSameServer_ToolsDoNotLeak verifies that after add then remove,
 // the server's tools are fully gone from the list.
 func TestAddRemoveSameServer_ToolsDoNotLeak(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	ctx := context.Background()
 
@@ -228,7 +226,7 @@ func TestAddRemoveSameServer_ToolsDoNotLeak(t *testing.T) {
 // server are deleted when the server is removed, so a re-added server with the
 // same name doesn't inherit stale projection config.
 func TestRemoveServer_ClearsProjections(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	ctx := context.Background()
 
@@ -293,7 +291,7 @@ func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
 	storeDir := t.TempDir()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = storeDir
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	// Craft a relative path that tries to escape via ".." without using a symlink.
@@ -314,7 +312,7 @@ func TestRead_DotDotTraversalStillBlocked(t *testing.T) {
 // re-registered. The generation counter in removeGen makes add_server
 // detect the concurrent remove and abort.
 func TestGenerationCounter_RemoveWinsRace(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	ctx := context.Background()
 
@@ -366,7 +364,7 @@ func (c *slowFakeConn) ListTools(ctx context.Context) ([]transport.ToolDefinitio
 // s.projections when the server is registered. This is the installUpstreamLocked
 // branch that handles projections embedded in server YAML under projections:.
 func TestInlineProjections_AppliedOnAddConnection(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_item")

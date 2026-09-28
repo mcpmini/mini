@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -26,9 +24,7 @@ func verifyEnvelope(t *testing.T, text string) map[string]any {
 
 func newPipelineServer(t *testing.T, toolName string, response string) (*server.Server, *transport.FakeConnection) {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	fake := &transport.FakeConnection{
 		Tools:     []transport.ToolDefinition{{Name: toolName, Description: toolName, InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(response)},

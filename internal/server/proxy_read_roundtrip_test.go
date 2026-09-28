@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,7 +52,7 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := config.DefaultConfig()
 			cfg.ResponseDir = t.TempDir()
-			srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			srv := newTestServer(t, server.Params{Config: cfg})
 			defer srv.Close()
 
 			conn := fakeConn("get_data")

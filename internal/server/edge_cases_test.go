@@ -6,8 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -15,13 +13,6 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
-
-func newEdgeServer(t *testing.T) *server.Server {
-	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-}
 
 func rawServe(t *testing.T, srv *server.Server, input []byte) [][]byte {
 	t.Helper()
@@ -62,7 +53,7 @@ func assertIsErrorResult(t *testing.T, resp map[string]any) {
 }
 
 func TestMalformedJSONLine(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	lines := rawServe(t, srv, []byte("not json at all\n"))
 	if len(lines) == 0 {
 		t.Fatal("expected at least one response line")
@@ -78,7 +69,7 @@ func TestMalformedJSONLine(t *testing.T) {
 }
 
 func TestEmptyLines_skipped(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	// Empty lines should be silently skipped, not produce error responses
 	input := "\n\n" + string(rpc("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
@@ -92,7 +83,7 @@ func TestEmptyLines_skipped(t *testing.T) {
 }
 
 func TestUnknownMethod(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, rpc("no_such_method", nil))
 	if resp["error"] == nil {
 		t.Errorf("expected RPC error for unknown method, got: %v", resp)
@@ -105,7 +96,7 @@ func TestUnknownMethod(t *testing.T) {
 // Notifications are fire-and-forget — the server MUST NOT send a response.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L109
 func TestInitializedNotification_noResponse(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	initMsg := rpc("initialize", map[string]any{
 		"protocolVersion": transport.ProtocolVersion,
 		"capabilities":    map[string]any{},
@@ -151,7 +142,7 @@ func assertOkFalse(t *testing.T, text string) {
 }
 
 func TestExecWithFakeConnectionError(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConnWithError("ping"))
 
 	resp := serve(t, srv, callTool("call", map[string]any{
@@ -161,7 +152,7 @@ func TestExecWithFakeConnectionError(t *testing.T) {
 }
 
 func TestDiscoverDetail_edgeCases(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fakeConn("myTool"))
 
 	resp := serve(t, srv, callTool("list", map[string]any{
@@ -182,7 +173,7 @@ func TestDiscoverDetail_edgeCases(t *testing.T) {
 }
 
 func TestDiscoverDetailNotFound(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("list", map[string]any{
 		"tool":   "nonexistent.tool",
 		"detail": true,
@@ -210,7 +201,7 @@ func invalidParamsInput() []byte {
 }
 
 func TestExecWithInvalidParams(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	lines := rawServe(t, srv, invalidParamsInput())
 	if len(lines) < 2 {
 		t.Fatalf("expected 2 responses, got %d", len(lines))
@@ -235,7 +226,7 @@ func TestExecWithInvalidParams(t *testing.T) {
 func TestRequestBeforeInitialize_rejected(t *testing.T) {
 	for _, method := range []string{"tools/list", "tools/call"} {
 		t.Run(method, func(t *testing.T) {
-			srv := newEdgeServer(t)
+			srv := newTestServer(t, server.Params{})
 			// Send request WITHOUT preceding initialize.
 			lines := rawServe(t, srv, rpc(method, nil))
 			if len(lines) == 0 {
@@ -257,7 +248,7 @@ func TestRequestBeforeInitialize_rejected(t *testing.T) {
 // The spec explicitly permits ping before initialization as a liveness check.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L118
 func TestPingBeforeInitialize_allowed(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	lines := rawServe(t, srv, rpc("ping", nil))
 	if len(lines) == 0 {
 		t.Fatal("expected a response to ping")
@@ -277,7 +268,7 @@ func TestPingBeforeInitialize_allowed(t *testing.T) {
 // initialize MUST NOT be in a batch, and other batches are valid but optional to support.
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/transports.mdx#L25
 func TestBatchRequest_returnsParseError(t *testing.T) {
-	srv := newEdgeServer(t)
+	srv := newTestServer(t, server.Params{})
 	batch := []byte(`[{"jsonrpc":"2.0","id":1,"method":"ping"}]` + "\n")
 	lines := rawServe(t, srv, batch)
 	if len(lines) == 0 {
@@ -311,7 +302,7 @@ func TestRPCEnvelope_jsonrpc20(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := rawServe(t, newTestServer(t), tc.input)
+			lines := rawServe(t, newTestServer(t, server.Params{}), tc.input)
 			if len(lines) == 0 {
 				t.Fatal("no response")
 			}
@@ -360,7 +351,7 @@ func TestErrorCodes_standardValues(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			lines := rawServe(t, newTestServer(t), tc.input)
+			lines := rawServe(t, newTestServer(t, server.Params{}), tc.input)
 			if len(lines) == 0 {
 				t.Fatal("expected a response")
 			}
@@ -388,7 +379,7 @@ func TestResponseID_echoesRequest(t *testing.T) {
 				"jsonrpc": "2.0", "id": json.RawMessage(rawID), "method": "ping",
 			})
 			reqBytes = append(reqBytes, '\n')
-			lines := rawServe(t, newTestServer(t), buildServeInput(true, [][]byte{reqBytes}))
+			lines := rawServe(t, newTestServer(t, server.Params{}), buildServeInput(true, [][]byte{reqBytes}))
 			for _, line := range lines {
 				var msg map[string]any
 				json.Unmarshal(line, &msg) //nolint:errcheck

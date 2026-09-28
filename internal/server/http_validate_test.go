@@ -5,25 +5,17 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
-	"io"
-	"log/slog"
+	"github.com/mcpmini/mini/internal/server"
 	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 const testDaemonToken = "0123456789abcdef0123456789abcdef"
 
 func newAuthHTTPTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, logger, server.WithDaemonAuthToken(testDaemonToken))
-	ts := httptest.NewServer(srv)
+	ts := httptest.NewServer(newTestServer(t, server.Params{DaemonAuthToken: testDaemonToken}))
 	t.Cleanup(ts.Close)
 	return ts
 }
@@ -84,7 +76,7 @@ func TestDaemonAuth_MCPRequiresBearerToken(t *testing.T) {
 }
 
 func TestHTTPServer_HostLoopbackCheck(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	cases := []struct {
 		name string
 		host string
@@ -108,7 +100,7 @@ func TestHTTPServer_HostLoopbackCheck(t *testing.T) {
 }
 
 func TestHTTPServer_SessionID(t *testing.T) {
-	ts := httptest.NewServer(newTestServer(t))
+	ts := httptest.NewServer(newTestServer(t, server.Params{}))
 	defer ts.Close()
 
 	check := func(t *testing.T, id string, want int) {
@@ -128,7 +120,7 @@ func TestHTTPServer_SessionID(t *testing.T) {
 }
 
 func TestHTTPServer_BodyLimitRejected(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	oversized := make([]byte, 1<<20+1)
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(oversized))
 	req.Header.Set("Content-Type", "application/json")

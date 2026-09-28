@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -38,13 +36,6 @@ func fakeMCPServer(t *testing.T, onRequest func(w http.ResponseWriter, r *http.R
 	}))
 }
 
-func newServerForAuth(t *testing.T) *server.Server {
-	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
-}
-
 func TestAuthHeader_bearer(t *testing.T) {
 	var gotAuth string
 	httpSrv := fakeMCPServer(t, func(w http.ResponseWriter, r *http.Request, req map[string]any) {
@@ -52,7 +43,7 @@ func TestAuthHeader_bearer(t *testing.T) {
 	})
 	defer httpSrv.Close()
 
-	srv := newServerForAuth(t)
+	srv := newTestServer(t, server.Params{})
 	sc := config.ServerConfig{
 		Name:      "secured",
 		Transport: "http",
@@ -74,7 +65,7 @@ func TestAuthHeader_apikey(t *testing.T) {
 	})
 	defer httpSrv.Close()
 
-	srv := newServerForAuth(t)
+	srv := newTestServer(t, server.Params{})
 	sc := config.ServerConfig{
 		Name:      "api",
 		Transport: "http",
@@ -96,7 +87,7 @@ func TestAuthHeader_emptyToken_noHeader(t *testing.T) {
 	})
 	defer httpSrv.Close()
 
-	srv := newServerForAuth(t)
+	srv := newTestServer(t, server.Params{})
 	sc := config.ServerConfig{
 		Name:      "noauth",
 		Transport: "http",

@@ -57,7 +57,7 @@ func buildTestServer(ctx context.Context, configDir string) (*server.Server, []c
 		os.Exit(0)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return server.NewWithConfigDir(cfg, configDir, logger), enabled
+	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), enabled
 }
 
 func enabledServers(servers []config.ServerConfig) []config.ServerConfig {

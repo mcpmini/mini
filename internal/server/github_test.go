@@ -16,10 +16,8 @@ import (
 
 func setupGitHubMCP(t *testing.T, ctx context.Context, token string) *server.Server {
 	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
-	srv := server.New(cfg, logger)
+	srv := newTestServer(t, server.Params{Logger: logger})
 	t.Cleanup(srv.Close)
 	sc := config.ServerConfig{
 		Name: "github", Transport: "http",

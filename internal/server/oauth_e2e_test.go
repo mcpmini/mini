@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -98,9 +96,8 @@ func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server
 	writeServerYAML(t, dir, svcName, fmt.Sprintf("name: %s\ntransport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
 		svcName, mcpURL, tokenURL, tokenURL))
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DisableAuthBrowserOpen = true
-	return server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 }
 
 func waitForServerConnected(t *testing.T, srv *server.Server, svcName string) {
@@ -332,10 +329,9 @@ func TestAddUpstream_runtimeAddedNeverPersistsToDisk(t *testing.T) {
 	dir := t.TempDir()
 	writeServerYAML(t, dir, "collide", "name: collide\ntransport: http\nurl: https://real-server.example.com/mcp\n")
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DisableAuthBrowserOpen = true
 	cfg.DangerousAllowPrivateURLs = true // let the dial reach the loopback server; exercise the RuntimeAdded guard, not SSRF validation
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 	defer srv.Close()
 
 	runtimeSC := config.ServerConfig{Name: "collide", Transport: "http", URL: mcpSrv.URL, RuntimeAdded: true}
@@ -419,9 +415,8 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 		mcpSrv.URL, tokenSrv.URL, tokenSrv.URL))
 
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DisableAuthBrowserOpen = true
-	mini := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	mini := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 	defer mini.Close()
 
 	sc := loadServerConfig(t, dir, "srv")

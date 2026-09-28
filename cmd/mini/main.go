@@ -77,11 +77,10 @@ func runConnect(configDir string, f connectFlags) error {
 	if shouldTryDaemon(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
 		return nil
 	}
-	var opts []server.ServerOption
-	if f.toolMode == transport.ToolModeCompact {
-		opts = []server.ServerOption{server.WithToolMode(transport.ToolModeCompact)}
-	}
-	return serveStandalone(ServeParams{ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback}, opts...)
+	return serveStandalone(ServeParams{
+		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger,
+		HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback, ToolMode: f.toolMode,
+	})
 }
 
 func shouldTryDaemon(standalone bool, httpAddr string) bool {
@@ -95,6 +94,7 @@ type ServeParams struct {
 	Logger            *slog.Logger
 	HTTPAddr          string
 	DangerNonLoopback bool
+	ToolMode          transport.ToolMode
 }
 
 type serveFunc func(context.Context, io.Reader, io.Writer) error
@@ -139,11 +139,13 @@ func shutdownContext(notify notifyFunc) (context.Context, context.CancelFunc) {
 	return ctx, stop
 }
 
-func serveStandalone(p ServeParams, opts ...server.ServerOption) error {
+func serveStandalone(p ServeParams) error {
 	ctx, stop := shutdownContext(signal.NotifyContext)
 	defer stop()
-	opts = appendNonLoopbackHostOpt(opts, p.HTTPAddr)
-	srv := buildAndStart(ctx, BuildServerParams{Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers}, opts...)
+	srv := buildAndStart(ctx, BuildServerParams{
+		Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers,
+		ToolMode: p.ToolMode, AllowNonLoopbackHost: resolveAllowNonLoopbackHost(p.HTTPAddr),
+	})
 	defer srv.Close()
 	httpSrv := maybeStartHTTP(p.HTTPAddr, srv, p.Logger, p.DangerNonLoopback)
 	maybeStartSessionEviction(ctx, httpSrv, srv)
@@ -166,28 +168,35 @@ func shutdownHTTP(httpSrv *http.Server) {
 }
 
 type BuildServerParams struct {
-	Cfg       *config.Config
-	ConfigDir string
-	Logger    *slog.Logger
-	Servers   []config.ServerConfig
+	Cfg                  *config.Config
+	ConfigDir            string
+	Logger               *slog.Logger
+	Servers              []config.ServerConfig
+	Clock                clock.Clock
+	ToolMode             transport.ToolMode
+	DaemonAuthToken      string
+	AllowNonLoopbackHost bool
 }
 
-func buildAndStart(ctx context.Context, p BuildServerParams, opts ...server.ServerOption) *server.Server {
-	srv := server.NewWithConfigDir(p.Cfg, p.ConfigDir, p.Logger, opts...)
+func buildAndStart(ctx context.Context, p BuildServerParams) *server.Server {
+	srv := server.New(server.Params{
+		Config: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger,
+		Clock: p.Clock, ToolMode: p.ToolMode,
+		DaemonAuthToken: p.DaemonAuthToken, AllowNonLoopbackHost: p.AllowNonLoopbackHost,
+	})
 	srv.ConnectUpstreams(ctx, p.Servers)
 	srv.StartProjectionReload(ctx)
 	return srv
 }
 
-// Without this, the DNS-rebinding Host check rejects legitimate remote clients.
-func appendNonLoopbackHostOpt(opts []server.ServerOption, httpAddr string) []server.ServerOption {
+// resolveAllowNonLoopbackHost reports whether the HTTP server will bind to a non-loopback address.
+// Without this check, the DNS-rebinding Host header guard would reject legitimate remote clients.
+func resolveAllowNonLoopbackHost(httpAddr string) bool {
 	if httpAddr == "" {
-		return opts
+		return false
 	}
-	if _, nonLoopback := resolveHTTPAddr(httpAddr); nonLoopback {
-		return append(opts, server.WithAllowNonLoopbackHost())
-	}
-	return opts
+	_, nonLoopback := resolveHTTPAddr(httpAddr)
+	return nonLoopback
 }
 
 func maybeStartHTTP(addr string, handler http.Handler, logger *slog.Logger, dangerNonLoopback bool) *http.Server {

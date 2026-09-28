@@ -4,8 +4,6 @@ package server_test
 
 import (
 	"encoding/json"
-	"io"
-	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -17,11 +15,10 @@ import (
 func newProxyServerWithSecretTool(t *testing.T, stringLimit int) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	if stringLimit > 0 {
 		cfg.DefaultStringLimit = stringLimit
 	}
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	conn := fakeConn("get_item")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"body\":\"` + strings.Repeat("x", 80) + `\"}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
@@ -143,9 +140,8 @@ func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) 
 
 func TestProxy_ToonFormat_RendersToonOutput(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.ResponseFormat = "toon"
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 	conn := fakeConn("list_items")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"alice\"},{\"id\":2,\"name\":\"bob\"}]"}]}`)
@@ -162,9 +158,7 @@ func TestProxy_ToonFormat_RendersToonOutput(t *testing.T) {
 }
 
 func TestProxy_DefaultProjection_PreservesLargeIntegers(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_item")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":9007199254740993,\"secret\":\"hidden\"}"}]}`)

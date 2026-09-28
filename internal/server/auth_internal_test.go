@@ -15,7 +15,7 @@ func newInternalAuthTestServer(t *testing.T) *Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	return NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 }
 
 func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {

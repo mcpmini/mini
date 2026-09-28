@@ -19,7 +19,7 @@ import (
 func TestReplaceRegistryToolsLocked_usesReloadedAliases(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	srv := NewWithConfigDir(cfg, t.TempDir(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	t.Cleanup(srv.Close)
 
 	tools := []transport.ToolDefinition{{Name: "list_pull_requests", InputSchema: json.RawMessage(`{}`)}}
@@ -54,7 +54,7 @@ func TestMarkOAuthIfRequired_secondCallSkipsRewrite(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	configDir := t.TempDir()
-	srv := NewWithConfigDir(cfg, configDir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := New(Params{Config: cfg, ConfigDir: configDir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	t.Cleanup(srv.Close)
 
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com/mcp"}

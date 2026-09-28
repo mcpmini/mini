@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,7 +19,7 @@ import (
 func TestListDirectoryNonEmpty(t *testing.T) {
 	fake := fakeConn("list_directory")
 	fake.RespondWith(map[string]any{"entries": []string{"alpha.txt", "beta.go"}})
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
 
 	resp := serve(t, srv, callTool("call", map[string]any{
@@ -41,9 +39,8 @@ func TestReadFileTruncation(t *testing.T) {
 	fake.RespondWith(strings.Repeat("The quick brown fox jumps over the lazy dog. ", 50))
 
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DefaultStringLimit = 100
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	t.Cleanup(srv.Close)
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
 
@@ -75,7 +72,7 @@ func TestMultipleServers(t *testing.T) {
 	fake1.RespondWith(map[string]any{"entries": []string{"from_server1.txt"}})
 	fake2 := fakeConn("list_directory")
 	fake2.RespondWith(map[string]any{"entries": []string{"from_server2.txt"}})
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs1"}, fake1)
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs2"}, fake2)
 
@@ -128,18 +125,15 @@ func TestAddRemoveServer(t *testing.T) {
 		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
 	}
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DangerousAllowRuntimeStdio = true
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	t.Cleanup(srv.Close)
 	assertAddServer(t, srv)
 	assertRemoveServer(t, srv)
 }
 
 func TestStdioEnvPassthrough(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	t.Cleanup(srv.Close)
 
 	sc := config.ServerConfig{
@@ -183,9 +177,7 @@ func TestAddUpstream_existingServer_replacesIt(t *testing.T) {
 }
 
 func TestAddUpstream_handshakeTimeoutSkipsHungStdioSubprocess(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	t.Cleanup(srv.Close)
 
 	sc := config.ServerConfig{

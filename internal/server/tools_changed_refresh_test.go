@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestToolsChangedRefreshesOnlyNotifyingUpstream(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	one, two := fakeConn("old"), fakeConn("still")
 	addProxyConn(t, srv, "one", one)
@@ -31,7 +32,7 @@ func TestToolsChangedRefreshesOnlyNotifyingUpstream(t *testing.T) {
 }
 
 func TestToolsChangedRefreshFailureKeepsOldCatalog(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("old")
 	addProxyConn(t, srv, "svc", conn)

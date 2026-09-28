@@ -73,12 +73,21 @@ func envEchoWrite(id any, result any) {
 	fmt.Fprintf(os.Stdout, "%s\n", b)
 }
 
-func newTestServer(t *testing.T, opts ...server.ServerOption) *server.Server {
+func newTestServer(t *testing.T, p server.Params) *server.Server {
 	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.New(cfg, logger, opts...)
+	if p.Config == nil {
+		p.Config = config.DefaultConfig()
+	}
+	if p.Config.ResponseDir == "" {
+		p.Config.ResponseDir = t.TempDir()
+	}
+	if p.ConfigDir == "" {
+		p.ConfigDir = t.TempDir()
+	}
+	if p.Logger == nil {
+		p.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	return server.New(p)
 }
 
 // newMCPTestServer starts a minimal HTTP MCP server advertising the given tools.
@@ -363,7 +372,7 @@ func mustDiscoverResults(t *testing.T, srv *server.Server, args map[string]any) 
 }
 
 func TestDiscoverEmpty(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	results := mustDiscoverResults(t, srv, map[string]any{})
 	if len(results) != 0 {
 		t.Errorf("expected empty discover, got %d tools", len(results))
@@ -371,7 +380,7 @@ func TestDiscoverEmpty(t *testing.T) {
 }
 
 func TestDiscoverListsTools(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	addTestConnection(t, srv, config.ServerConfig{Name: "ci"}, fakeConn("getBuild", "listPipelines"))
 	results := mustDiscoverResults(t, srv, map[string]any{})
 	if len(results) != 2 {
@@ -380,7 +389,7 @@ func TestDiscoverListsTools(t *testing.T) {
 }
 
 func TestDiscoverSearch(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	addTestConnection(t, srv, config.ServerConfig{Name: "ci"}, fakeConn("getBuild", "listPipelines"))
 	results := mustDiscoverResults(t, srv, map[string]any{"query": "build"})
 	if len(results) != 1 || results[0]["name"] != "ci.getBuild" {
@@ -389,7 +398,7 @@ func TestDiscoverSearch(t *testing.T) {
 }
 
 func TestExecuteRoutesToUpstream(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("getBuild")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"build ok"}]}`)
 	addTestConnection(t, srv, config.ServerConfig{Name: "ci"}, fake)
@@ -406,7 +415,7 @@ func TestExecuteRoutesToUpstream(t *testing.T) {
 }
 
 func TestExecuteRejectsProtectedTools(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Protected: []string{"deleteProject"}}
 	addTestConnection(t, srv, config.ServerConfig{Name: "ci", Permissions: perm}, fakeConn("deleteProject"))
 
@@ -430,7 +439,7 @@ func TestExecuteUnknownServer(t *testing.T) {
 	// Unknown server/tool → tool result with isError:true, not an MCP protocol error.
 	// The agent called mini's "call" tool successfully; the tool itself failed to
 	// find the upstream tool. Surfacing as isError lets the agent recover gracefully.
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("call", map[string]any{
 		"server": "nobody",
 		"tool":   "doThing",
@@ -440,7 +449,7 @@ func TestExecuteUnknownServer(t *testing.T) {
 }
 
 func TestActionDispatchMergesDefaultArgs(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("list_pull_requests")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)
 	addTestConnection(t, srv, config.ServerConfig{Name: "gh"}, fake)
@@ -477,7 +486,7 @@ func assertUpstreamArgs(t *testing.T, fake *transport.FakeConnection, want map[s
 }
 
 func TestConfigureStatus(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	srv.AddConnection(ctx, config.ServerConfig{Name: "ci"}, fakeConn("getBuild", "listBuilds"))
 
@@ -497,7 +506,7 @@ func TestConfigureStatus(t *testing.T) {
 // "The receiver MUST respond promptly with an empty response."
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/ping.mdx#L24
 func TestPing_ReturnsEmptyResult(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, rpc("ping", nil))
 	if resp["error"] != nil {
 		t.Fatalf("ping returned error: %v", resp["error"])

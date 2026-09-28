@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -24,7 +25,7 @@ import (
 // is unknown or processing has already completed."
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx#L33
 func TestCancellation_NotificationAccepted(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	msgs := serveAll(t, srv,
 		notification("notifications/cancelled", map[string]any{
 			"requestId": 999,
@@ -46,7 +47,7 @@ func TestCancellation_NotificationAccepted(t *testing.T) {
 // "Receivers SHOULD stop processing the cancelled request and free associated resources."
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/utilities/cancellation.mdx#L23
 func TestCancellation_CancelsInFlightCall(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 
 	var callStarted sync.WaitGroup
 	callStarted.Add(1)
@@ -81,7 +82,7 @@ func TestCancellation_CancelsInFlightCall(t *testing.T) {
 // over HTTP: all POSTs for one session share a *Session, so a later cancel
 // notification reaches the running request's context.
 func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
-	srv, ts := newHTTPTestServer(t)
+	srv, ts := newHTTPTestServer(t, server.Params{})
 
 	var callStarted sync.WaitGroup
 	callStarted.Add(1)
@@ -103,7 +104,7 @@ func TestCancellation_CancelsInFlightCall_OverHTTP(t *testing.T) {
 // TestCancellation_UnknownMethodReturnsError verifies that a completely unknown
 // method (not a cancellation notification) still returns method-not-found.
 func TestCancellation_UnknownMethodReturnsError(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, rpc("unknown/method", nil))
 	if resp["error"] == nil {
 		t.Error("unknown method should return JSON-RPC error, got none")

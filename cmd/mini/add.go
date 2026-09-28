@@ -286,7 +286,7 @@ func probeConnection(configDir string, sc config.ServerConfig) error {
 		return err
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.NewWithConfigDir(cfg, configDir, logger)
+	srv := server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), addProbeTimeout)
 	defer cancel()

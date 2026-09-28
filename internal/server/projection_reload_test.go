@@ -77,9 +77,7 @@ func buildReloadEnv(t *testing.T, dir string) *reloadEnv {
 	t.Helper()
 	fc := clock.NewFake()
 	logs := &syncBuffer{}
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.NewWithConfigDir(cfg, dir, slog.New(slog.NewTextHandler(logs, nil)), server.WithClock(fc))
+	srv := newTestServer(t, server.Params{ConfigDir: dir, Logger: slog.New(slog.NewTextHandler(logs, nil)), Clock: fc})
 	t.Cleanup(srv.Close)
 	return &reloadEnv{t: t, srv: srv, clock: fc, dir: dir, logs: logs, ticked: make(chan struct{}, 64)}
 }

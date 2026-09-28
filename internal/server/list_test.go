@@ -4,8 +4,6 @@ package server_test
 
 import (
 	"encoding/json"
-	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -14,7 +12,7 @@ import (
 )
 
 func TestList_hidden_includesHiddenTools(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Hidden: []string{"secretTool"}}
 	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("openTool", "secretTool"))
 
@@ -31,8 +29,7 @@ func TestList_hidden_includesHiddenTools(t *testing.T) {
 func TestList_hidden_disabledByConfig_returnsError(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DisableListHidden = true
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 
 	resp := serve(t, srv, callTool("list", map[string]any{"hidden": true}))
 	result := resp["result"].(map[string]any)
@@ -42,7 +39,7 @@ func TestList_hidden_disabledByConfig_returnsError(t *testing.T) {
 }
 
 func TestList_detail_returnsSchema(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{
 			Name:         "myTool",
@@ -75,4 +72,3 @@ func TestList_detail_returnsSchema(t *testing.T) {
 		}
 	}
 }
-

@@ -8,11 +8,12 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestUnknownTool_Returns32602(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, callTool("nonexistent", map[string]any{}))
 	if resp["error"] == nil {
 		t.Fatalf("expected JSON-RPC error, got: %v", resp)
@@ -24,7 +25,7 @@ func TestUnknownTool_Returns32602(t *testing.T) {
 }
 
 func TestKnownToolBadArgs_ReturnsIsError(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := fakeConn("ping")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"pong"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
@@ -47,7 +48,7 @@ func TestKnownToolBadArgs_ReturnsIsError(t *testing.T) {
 // "Tool errors SHOULD be reported in tool results with isError:true"
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L244
 func TestToolsCall_executionErrorIsIsError(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	fake := fakeConnWithError("errTool")
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
 
@@ -71,7 +72,7 @@ func TestToolsCall_executionErrorIsIsError(t *testing.T) {
 // "Servers that declared listChanged SHOULD send a notification when tool set changes."
 // https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/server/tools.mdx#L139
 func TestToolsListChanged_notificationShape(t *testing.T) {
-	srv := newTestServer(t)
+	srv := newTestServer(t, server.Params{})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "pre"}, fakeConn("existing"))
 	msgs := serveAll(t, srv,
 		notification(transport.NotificationInitialized, nil),

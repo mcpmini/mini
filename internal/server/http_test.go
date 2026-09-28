@@ -50,7 +50,7 @@ func initRequest() []byte {
 }
 
 func TestHTTPServer_initializeCreatesSession(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	resp := mcpPost(t, ts, initRequest(), "")
 	defer resp.Body.Close()
 	mustStatus(t, resp, http.StatusOK)
@@ -140,9 +140,9 @@ func httpExecToolText(t *testing.T, ts *httptest.Server, sessionID, srvName, too
 	return rpc.Result.Content[0].Text
 }
 
-func newHTTPTestServer(t *testing.T, opts ...server.ServerOption) (*server.Server, *httptest.Server) {
+func newHTTPTestServer(t *testing.T, p server.Params) (*server.Server, *httptest.Server) {
 	t.Helper()
-	srv := newTestServer(t, opts...)
+	srv := newTestServer(t, p)
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	return srv, ts
@@ -193,7 +193,7 @@ func assertAllowMethods(t *testing.T, resp *http.Response) {
 }
 
 func TestHTTPServer_sessionPersistsProjection(t *testing.T) {
-	srv, ts := newHTTPTestServer(t)
+	srv, ts := newHTTPTestServer(t, server.Params{})
 	fake := fakeConn("get_item")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"x\"}"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake) //nolint:errcheck
@@ -212,7 +212,7 @@ func TestHTTPServer_sessionPersistsProjection(t *testing.T) {
 }
 
 func TestHTTPServer_deleteReturns405(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	resp := requestMCPMethod(t, ts, http.MethodDelete)
 	defer resp.Body.Close()
 	mustStatus(t, resp, http.StatusMethodNotAllowed)
@@ -220,14 +220,14 @@ func TestHTTPServer_deleteReturns405(t *testing.T) {
 }
 
 func TestHTTPServer_getWithoutSSEAcceptReturns406(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	resp := requestMCPMethod(t, ts, http.MethodGet)
 	defer resp.Body.Close()
 	mustStatus(t, resp, http.StatusNotAcceptable)
 }
 
 func TestHTTPServer_healthz(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	resp, err := ts.Client().Get(ts.URL + "/healthz")
 	if err != nil {
 		t.Fatal(err)
@@ -278,7 +278,7 @@ func assertConcurrentExecs(t *testing.T, ts *httptest.Server, n int) {
 }
 
 func TestHTTPServer_concurrentRequests(t *testing.T) {
-	srv, ts := newHTTPTestServer(t)
+	srv, ts := newHTTPTestServer(t, server.Params{})
 	fake := &transport.FakeConnection{
 		Tools:     []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{"type":"object"}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"pong"}]}`)},
@@ -288,7 +288,7 @@ func TestHTTPServer_concurrentRequests(t *testing.T) {
 }
 
 func TestHTTPServer_notFound(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	resp, err := ts.Client().Get(ts.URL + "/unknown")
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func sseProxyToolCall(t *testing.T, ts *httptest.Server, sessionID, toolName str
 }
 
 func TestHTTPServer_SSEResponse(t *testing.T) {
-	srv, ts := newHTTPTestServer(t)
+	srv, ts := newHTTPTestServer(t, server.Params{})
 	fake := fakeConn("myTool")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"ok"}]}`)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake) //nolint:errcheck
@@ -337,7 +337,7 @@ func TestHTTPServer_SSEResponse(t *testing.T) {
 }
 
 func TestHTTPServer_JSONResponseWhenNoSSEAccept(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	resp := requestToolsList(t, ts, "application/json")
 	defer resp.Body.Close()
 	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
@@ -346,7 +346,7 @@ func TestHTTPServer_JSONResponseWhenNoSSEAccept(t *testing.T) {
 }
 
 func TestHTTPServer_SSEWithBothAcceptTypes(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	resp := requestToolsList(t, ts, "application/json, text/event-stream")
 	defer resp.Body.Close()
 	if ct := resp.Header.Get("Content-Type"); ct != "text/event-stream" {
@@ -355,7 +355,7 @@ func TestHTTPServer_SSEWithBothAcceptTypes(t *testing.T) {
 }
 
 func TestHTTPServer_GetAllowHeader(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	for _, method := range []string{http.MethodPut, http.MethodDelete} {
 		t.Run(method, func(t *testing.T) {
 			resp := requestMCPMethod(t, ts, method)
@@ -367,7 +367,7 @@ func TestHTTPServer_GetAllowHeader(t *testing.T) {
 }
 
 func TestHTTPServer_SSEXAccelBuffering(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	resp := requestToolsList(t, ts, "text/event-stream")
 	defer resp.Body.Close()
 	if v := resp.Header.Get("X-Accel-Buffering"); v != "no" {
@@ -378,11 +378,11 @@ func TestHTTPServer_SSEXAccelBuffering(t *testing.T) {
 // TestHTTPServer_staleSessionFails proves that a session ID from a dead daemon instance
 // gets a prompt error rather than blocking indefinitely on the new daemon.
 func TestHTTPServer_staleSessionFails(t *testing.T) {
-	_, ts1 := newHTTPTestServer(t)
+	_, ts1 := newHTTPTestServer(t, server.Params{})
 	sessionID := initSession(t, ts1)
 	ts1.Close() // simulate daemon restart
 
-	_, ts2 := newHTTPTestServer(t)
+	_, ts2 := newHTTPTestServer(t, server.Params{})
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "list", "arguments": map[string]any{}},
@@ -409,7 +409,7 @@ func TestHTTPServer_staleSessionFails(t *testing.T) {
 }
 
 func TestHTTPServer_CrossOriginRejected(t *testing.T) {
-	_, ts := newHTTPTestServer(t)
+	_, ts := newHTTPTestServer(t, server.Params{})
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", bytes.NewReader(initRequest()))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Origin", "http://evil.example.com")
@@ -432,7 +432,7 @@ func TestDaemonAuth_HealthzUnauthenticated(t *testing.T) {
 }
 
 func TestHTTPServer_AllowNonLoopbackHostSkipsHostCheck(t *testing.T) {
-	_, ts := newHTTPTestServer(t, server.WithAllowNonLoopbackHost())
+	_, ts := newHTTPTestServer(t, server.Params{AllowNonLoopbackHost: true})
 	resp := postWithHost(t, ts.URL, "203.0.113.5:4857")
 	resp.Body.Close()
 	if resp.StatusCode == http.StatusForbidden {

@@ -5,8 +5,6 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"reflect"
 	"strings"
 	"testing"
@@ -15,14 +13,6 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
-
-func newProxyServer(t *testing.T) *server.Server {
-	t.Helper()
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	return server.New(cfg, logger)
-}
 
 func addProxyConn(t *testing.T, srv *server.Server, name string, conn *transport.FakeConnection) {
 	t.Helper()
@@ -67,7 +57,7 @@ func containsName(tools []map[string]any, name string) bool {
 }
 
 func TestProxy_ToolsList_ContainsMiniTools(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_issues", "create_issue")
 	addProxyConn(t, srv, "github", conn)
@@ -91,7 +81,7 @@ func TestProxy_ToolsList_ContainsMiniTools(t *testing.T) {
 }
 
 func TestProxy_ToolsList_MiniToolsNoMeta(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	tools := toolsList(t, srv)
@@ -106,7 +96,7 @@ func TestProxy_ToolsList_MiniToolsNoMeta(t *testing.T) {
 }
 
 func TestProxy_Initialize_Instructions(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	msgs := serveAllProxy(t, srv)
@@ -131,7 +121,7 @@ func TestProxy_Initialize_Instructions(t *testing.T) {
 }
 
 func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_user")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`)
@@ -151,10 +141,8 @@ func TestProxy_Call_NoProjection_PassesRawJSON(t *testing.T) {
 
 func TestProxy_Call_NoProjection_DefaultStringLimitApplies(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.DefaultStringLimit = 10
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New(cfg, logger)
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
@@ -171,7 +159,7 @@ func TestProxy_Call_NoProjection_DefaultStringLimitApplies(t *testing.T) {
 }
 
 func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_repos")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`)
@@ -215,7 +203,7 @@ func TestProxy_Call_WithProjection_ElisionInlinesPlusFile(t *testing.T) {
 }
 
 func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_prs")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"items\":[{\"id\":1,\"body\":\"long body text here\"}]}"}]}`)
@@ -245,7 +233,7 @@ func TestProxy_NestedExclusion_ReportsElidedPath(t *testing.T) {
 }
 
 func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_data")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"value\":\"data\"}"}]}`)
@@ -275,7 +263,7 @@ func TestProxy_IncludeFilter_PassthroughWhenAllFieldsIncluded(t *testing.T) {
 }
 
 func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_issue")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"body\":\"this is a very long body that will be truncated\"}"}]}`)
@@ -319,7 +307,7 @@ func TestProxy_Call_WithTruncation_ProjectionNote(t *testing.T) {
 }
 
 func TestProxy_Call_WithExclusionAndTruncation(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_issue")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"body\":\"this is a very long body that will be truncated by the limit\"}"}]}`)
@@ -359,9 +347,7 @@ func TestProxy_Call_WithExclusionAndTruncation(t *testing.T) {
 }
 
 func TestProxy_Call_ToolFormatToon_RendersToon(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("get_user")
@@ -387,9 +373,8 @@ func TestProxy_Call_ToolFormatToon_RendersToon(t *testing.T) {
 
 func TestProxy_Call_GlobalFormatToon_RendersToon(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
 	cfg.ResponseFormat = "toon"
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 
 	conn := fakeConn("get_user")
@@ -404,9 +389,7 @@ func TestProxy_Call_GlobalFormatToon_RendersToon(t *testing.T) {
 }
 
 func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.ResponseDir = t.TempDir()
-	srv := server.New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	conn := fakeConn("list_items")
@@ -444,7 +427,7 @@ func TestProxy_Call_SessionFormatToon_RendersToon(t *testing.T) {
 }
 
 func TestProxy_StandaloneServe_InheritsServerMode(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
 	msgs := serveAllProxy(t, srv, rpc("tools/list", nil))
@@ -465,7 +448,7 @@ func TestProxy_StandaloneServe_InheritsServerMode(t *testing.T) {
 }
 
 func TestProxy_MiniConfig_Status_Works(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_issues")
 	addProxyConn(t, srv, "github", conn)
@@ -484,7 +467,7 @@ func TestProxy_MiniConfig_Status_Works(t *testing.T) {
 }
 
 func TestProxy_NotifyAll_OnRemoveServer(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("list_issues")
 	addProxyConn(t, srv, "removeme", conn)
@@ -544,7 +527,7 @@ func assertAnnotationsEqual(t *testing.T, got any, want json.RawMessage) {
 }
 
 func TestProxy_ToolsList_AnnotationsPassthrough(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	raw := json.RawMessage(`{"readOnlyHint":true}`)
 	conn := &transport.FakeConnection{
@@ -577,7 +560,7 @@ func TestProxy_ToolsList_AnnotationsPassthrough(t *testing.T) {
 }
 
 func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	raw := json.RawMessage(`{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false,"title":"Get File","fakeHint":true}`)
 	conn := fakeConnWithAnnotations("get_file", raw)
@@ -592,7 +575,7 @@ func TestProxy_ToolsList_MultiKeyAnnotationsPassthrough(t *testing.T) {
 }
 
 func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("write_file")
 	addProxyConn(t, srv, "fs", conn)
@@ -611,7 +594,7 @@ func TestProxy_ToolsList_AbsentAnnotationsOmitted(t *testing.T) {
 }
 
 func TestProxy_ToolsList_OutputSchemaAlwaysSynthesized(t *testing.T) {
-	srv := newProxyServer(t)
+	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("write_file")
 	addProxyConn(t, srv, "fs", conn)
