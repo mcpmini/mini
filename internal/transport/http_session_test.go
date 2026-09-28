@@ -7,22 +7,16 @@ import (
 	"errors"
 	"net/http"
 	"sync"
-	"sync/atomic"
 	"testing"
-	"time"
 )
 
 func TestHTTPSession_sessionExpiresTransparentRecovery(t *testing.T) {
 	m, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
+	mustPing(t, conn)
 
 	m.expireSession(m.sessionID())
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("call after session expiry: %v", err)
-	}
+	mustPing(t, conn)
 
 	inits := m.requestsWithMethod("initialize")
 	if len(inits) != 2 {
@@ -43,9 +37,7 @@ func TestHTTPSession_sessionExpiresTransparentRecovery(t *testing.T) {
 func TestHTTPSession_newSessionRejectedReturnsTypedError(t *testing.T) {
 	m, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
+	mustPing(t, conn)
 
 	m.rejectEverySessionAfterHandshake()
 	_, err := conn.Call(t.Context(), "ping", nil)
@@ -60,17 +52,14 @@ func TestHTTPSession_newSessionRejectedReturnsTypedError(t *testing.T) {
 }
 
 func TestHTTPSession_404WithoutSessionIsPlainError(t *testing.T) {
+	m := newSessionFake()
+	m.stopIssuingSessions()
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-		switch req["method"] {
-		case "initialize":
-			writeInitializeResult(w, req["id"])
-		case NotificationInitialized:
-			w.WriteHeader(http.StatusOK)
-		default:
+		if peekRPCMethod(r) == "ping" {
 			w.WriteHeader(http.StatusNotFound)
+			return
 		}
+		m.handle(w, r)
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
@@ -88,9 +77,7 @@ func TestHTTPSession_404WithoutSessionIsPlainError(t *testing.T) {
 func TestHTTPSession_concurrentCallsOnExpiredSessionShareOneReinit(t *testing.T) {
 	m, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
+	mustPing(t, conn)
 
 	m.expireSession(m.sessionID())
 	const goroutines = 8
@@ -124,14 +111,10 @@ func TestHTTPSession_401DuringReinitHandshakeRefreshesAndSucceeds(t *testing.T) 
 	})
 	provider := &fakeAuthProvider{current: "Bearer old", next: "Bearer new"}
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, AuthProvider: provider, AuthHeaderName: "Authorization"})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
+	mustPing(t, conn)
 
 	m.expireSession(m.sessionID())
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("call after re-init: %v", err)
-	}
+	mustPing(t, conn)
 
 	if got := provider.refreshCount(); got != 1 {
 		t.Errorf("auth refresh count = %d, want 1", got)
@@ -143,47 +126,25 @@ func TestHTTPSession_401DuringReinitHandshakeRefreshesAndSucceeds(t *testing.T) 
 
 func TestHTTPSession_slowResponseEchoingTheOldSessionDoesNotReplaceTheNewOne(t *testing.T) {
 	m := newSessionFake()
-	var holdNextCall atomic.Bool
-	held := make(chan struct{})
-	release := make(chan struct{})
+	slow := newRequestHold(t)
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && holdNextCall.CompareAndSwap(true, false) {
-			close(held)
-			<-release
+		if r.Method == http.MethodPost && slow.blockIfArmed() {
 			echoSessionWithOK(w, r)
 			return
 		}
 		m.handle(w, r)
 	})
-	releaseHeldCall := sync.OnceFunc(func() { close(release) })
-	t.Cleanup(releaseHeldCall)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
-	holdNextCall.Store(true)
-	slowDone := make(chan error, 1)
-	go func() {
-		_, err := conn.Call(t.Context(), "ping", nil)
-		slowDone <- err
-	}()
-	select {
-	case <-held:
-	case <-time.After(3 * time.Second):
-		t.Fatal("server did not hold the slow call")
-	}
+	mustPing(t, conn)
+	slow.arm()
+	slowPing := pingInBackground(t, conn)
+	slow.awaitHeld(t)
 
 	m.expireSession(m.sessionID())
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("re-init call: %v", err)
-	}
-	releaseHeldCall()
-	if err := <-slowDone; err != nil {
-		t.Fatalf("slow call: %v", err)
-	}
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("call after the stale echo: %v", err)
-	}
+	mustPing(t, conn)
+	slow.release()
+	awaitPing(t, slowPing)
+	mustPing(t, conn)
 
 	if got := m.initializeCount(); got != 2 {
 		t.Errorf("initialize count = %d, want 2 (a stored stale session forces another re-init)", got)
@@ -198,56 +159,22 @@ func echoSessionWithOK(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestHTTPSession_reinitWithoutASessionStopsSendingTheOldOne(t *testing.T) {
-	var mu sync.Mutex
-	var initializes int
-	var pingSessions []string
-	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var req map[string]any
-		json.NewDecoder(r.Body).Decode(&req) //nolint:errcheck
-		sid := r.Header.Get("Mcp-Session-Id")
-		mu.Lock()
-		defer mu.Unlock()
-		switch req["method"] {
-		case "initialize":
-			initializes++
-			if initializes == 1 {
-				w.Header().Set("Mcp-Session-Id", "s1")
-			}
-			writeInitializeResult(w, req["id"])
-		case NotificationInitialized:
-			w.WriteHeader(http.StatusOK)
-		default:
-			pingSessions = append(pingSessions, sid)
-			if sid == "s1" && len(pingSessions) > 1 {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			w.Write(okRPCResponse(req["id"])) //nolint:errcheck
-		}
-	})
+	m, srv := newSessionServer(t)
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
+	mustPing(t, conn)
 
-	for range 3 {
-		if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-			t.Fatalf("call: %v", err)
+	m.stopIssuingSessions()
+	m.expireSession(m.sessionID())
+	mustPing(t, conn)
+	mustPing(t, conn)
+
+	if got := m.initializeCount(); got != 2 {
+		t.Fatalf("initialize count = %d, want 2", got)
+	}
+	pings := m.requestsWithMethod("ping")
+	for _, p := range pings[len(pings)-2:] {
+		if p.sessionID != "" {
+			t.Errorf("ping after a session-less re-init carried session %q, want none", p.sessionID)
 		}
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
-	if initializes != 2 {
-		t.Fatalf("initialize count = %d, want 2", initializes)
-	}
-	for _, sid := range pingSessions[2:] {
-		if sid != "" {
-			t.Errorf("ping after a session-less re-init carried session %q, want none", sid)
-		}
-	}
-}
-
-func writeInitializeResult(w http.ResponseWriter, id any) {
-	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-		"jsonrpc": "2.0", "id": id,
-		"result": map[string]any{"protocolVersion": ProtocolVersion, "capabilities": map[string]any{}},
-	})
 }

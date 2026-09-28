@@ -5,8 +5,6 @@ package transport
 import (
 	"context"
 	"net/http"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,9 +17,7 @@ func TestHTTPSession_get404NeverTriggersReinit(t *testing.T) {
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
 
 	for range 5 {
-		if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-			t.Fatalf("call failed: %v", err)
-		}
+		mustPing(t, conn)
 	}
 
 	if got := m.initializeCount(); got != 1 {
@@ -39,9 +35,7 @@ func TestHTTPSession_listenerReconnectsImmediatelyAfterReinit(t *testing.T) {
 	m.answerNotificationStreamWithNotFound()
 	clk := clock.NewFake()
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
+	mustPing(t, conn)
 	m.awaitNotificationStream(t)
 	for _, backoff := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {
 		advanceListenerTimerAndAwaitNextSleep(t, clk, backoff)
@@ -49,9 +43,7 @@ func TestHTTPSession_listenerReconnectsImmediatelyAfterReinit(t *testing.T) {
 	}
 
 	m.expireSession(m.sessionID())
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("re-init call: %v", err)
-	}
+	mustPing(t, conn)
 
 	if got := m.awaitNotificationStream(t); got != m.sessionID() {
 		t.Errorf("listener reconnected with session %q, want %q", got, m.sessionID())
@@ -62,16 +54,12 @@ func TestHTTPSession_reinitKeepsASingleNotificationListener(t *testing.T) {
 	m, srv := newSessionServer(t)
 	clk := clock.NewFake()
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
+	mustPing(t, conn)
 	m.awaitNotificationStream(t)
 	awaitListenerTimer(t, clk)
 
 	m.expireSession(m.sessionID())
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("call after session expiry: %v", err)
-	}
+	mustPing(t, conn)
 	if got := m.awaitNotificationStream(t); got != m.sessionID() {
 		t.Fatalf("listener reconnected with session %q, want %q", got, m.sessionID())
 	}
@@ -87,45 +75,28 @@ func TestHTTPSession_reinitKeepsASingleNotificationListener(t *testing.T) {
 
 func TestHTTPSession_requestsSentWhileReinitializingKeepTheOldSession(t *testing.T) {
 	m := newSessionFake()
-	var holdNextInitialize atomic.Bool
-	initializeHeld := make(chan struct{})
-	release := make(chan struct{})
+	reinit := newRequestHold(t)
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		if peekRPCMethod(r) == "initialize" && holdNextInitialize.CompareAndSwap(true, false) {
-			close(initializeHeld)
-			<-release
+		if peekRPCMethod(r) == "initialize" {
+			reinit.blockIfArmed()
 		}
 		m.handle(w, r)
 	})
-	releaseInitialize := sync.OnceFunc(func() { close(release) })
-	t.Cleanup(releaseInitialize)
 	clk := clock.NewFake()
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL, Clock: clk})
-	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
-		t.Fatalf("first call: %v", err)
-	}
+	mustPing(t, conn)
 	oldSID := m.awaitNotificationStream(t)
 	awaitListenerTimer(t, clk)
 
-	holdNextInitialize.Store(true)
+	reinit.arm()
 	m.expireSession(oldSID)
-	callDone := make(chan error, 1)
-	go func() {
-		_, err := conn.Call(t.Context(), "ping", nil)
-		callDone <- err
-	}()
-	select {
-	case <-initializeHeld:
-	case <-time.After(3 * time.Second):
-		t.Fatal("re-initialize not received")
-	}
+	reinitPing := pingInBackground(t, conn)
+	reinit.awaitHeld(t)
 	clk.Advance(time.Second)
 
 	if got := m.awaitNotificationStream(t); got != oldSID {
 		t.Errorf("listener request during re-init carried session %q, want %q", got, oldSID)
 	}
-	releaseInitialize()
-	if err := <-callDone; err != nil {
-		t.Fatalf("call that triggered re-init: %v", err)
-	}
+	reinit.release()
+	awaitPing(t, reinitPing)
 }

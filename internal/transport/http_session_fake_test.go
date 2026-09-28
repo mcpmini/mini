@@ -10,12 +10,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// sessionServer issues a new Mcp-Session-Id on every initialize and answers other
-// requests without a session with 400, as the spec recommends.
+// sessionServer issues a new Mcp-Session-Id on every initialize and, while it
+// issues sessions, answers other requests without one with 400, as the spec recommends.
 type sessionServer struct {
 	gets chan string
 
@@ -25,6 +26,7 @@ type sessionServer struct {
 	expired     map[string]bool
 	expireAll   bool
 	getNotFound bool
+	sessionless bool
 	requests    []sessionReq
 }
 
@@ -66,8 +68,10 @@ func (m *sessionServer) admit(method, sid string) int {
 	switch {
 	case method == "initialize":
 		return http.StatusOK
-	case sid == "":
+	case sid == "" && m.current != "":
 		return http.StatusBadRequest
+	case sid == "":
+		return http.StatusOK
 	case m.expired[sid], m.expireAll && method != NotificationInitialized:
 		return http.StatusNotFound
 	}
@@ -77,7 +81,9 @@ func (m *sessionServer) admit(method, sid string) int {
 func (m *sessionServer) serveRPC(w http.ResponseWriter, method string, id any) {
 	switch method {
 	case "initialize":
-		w.Header().Set("Mcp-Session-Id", m.issueSession())
+		if sid := m.issueSession(); sid != "" {
+			w.Header().Set("Mcp-Session-Id", sid)
+		}
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"jsonrpc": "2.0", "id": id,
 			"result": map[string]any{
@@ -95,6 +101,10 @@ func (m *sessionServer) serveRPC(w http.ResponseWriter, method string, id any) {
 func (m *sessionServer) issueSession() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.sessionless {
+		m.current = ""
+		return ""
+	}
 	m.seq++
 	m.current = fmt.Sprintf("s%d", m.seq)
 	return m.current
@@ -131,6 +141,12 @@ func (m *sessionServer) rejectEverySessionAfterHandshake() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.expireAll = true
+}
+
+func (m *sessionServer) stopIssuingSessions() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionless = true
 }
 
 func (m *sessionServer) answerNotificationStreamWithNotFound() {
@@ -185,3 +201,69 @@ func peekRPCMethod(r *http.Request) string {
 	json.Unmarshal(body, &req) //nolint:errcheck
 	return req.Method
 }
+
+func mustPing(t *testing.T, conn *HTTPConnection) {
+	t.Helper()
+	if _, err := conn.Call(t.Context(), "ping", nil); err != nil {
+		t.Fatalf("ping: %v", err)
+	}
+}
+
+func pingInBackground(t *testing.T, conn *HTTPConnection) <-chan error {
+	done := make(chan error, 1)
+	go func() {
+		_, err := conn.Call(t.Context(), "ping", nil)
+		done <- err
+	}()
+	return done
+}
+
+func awaitPing(t *testing.T, done <-chan error) {
+	t.Helper()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("background ping: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("background ping did not finish")
+	}
+}
+
+// requestHold parks the first request that arrives after arm until release,
+// or until the test ends so a failing test cannot leave the server blocked.
+type requestHold struct {
+	testDone <-chan struct{}
+	armed    atomic.Bool
+	held     chan struct{}
+	released chan struct{}
+}
+
+func newRequestHold(t *testing.T) *requestHold {
+	return &requestHold{testDone: t.Context().Done(), held: make(chan struct{}), released: make(chan struct{})}
+}
+
+func (h *requestHold) arm() { h.armed.Store(true) }
+
+func (h *requestHold) blockIfArmed() bool {
+	if !h.armed.CompareAndSwap(true, false) {
+		return false
+	}
+	close(h.held)
+	select {
+	case <-h.released:
+	case <-h.testDone:
+	}
+	return true
+}
+
+func (h *requestHold) awaitHeld(t *testing.T) {
+	t.Helper()
+	select {
+	case <-h.held:
+	case <-time.After(3 * time.Second):
+		t.Fatal("server did not hold the request")
+	}
+}
+
+func (h *requestHold) release() { close(h.released) }
