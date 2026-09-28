@@ -78,11 +78,11 @@ func (t resourceTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 // PKCEFlow performs OAuth2 Authorization Code + PKCE.
 // Always prints the auth URL, then also attempts to open it in the browser.
 func PKCEFlow(ctx context.Context, ac *config.AuthConfig, openBrowser func(string) error) (*oauth2.Token, error) {
-	ln, err := ListenCallback(ctx, ac)
+	listener, err := ListenCallback(ctx, ac)
 	if err != nil {
 		return nil, err
 	}
-	login, err := StartBrowserLogin(ac, ln)
+	login, err := StartBrowserLogin(ac, listener)
 	if err != nil {
 		return nil, err
 	}

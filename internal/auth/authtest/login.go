@@ -11,11 +11,11 @@ import (
 // StartLogin starts a BrowserLogin on a free IPv4 loopback port and closes it at test cleanup.
 func StartLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	login, err := auth.StartBrowserLogin(ac, ln)
+	login, err := auth.StartBrowserLogin(ac, listener)
 	if err != nil {
 		t.Fatalf("StartBrowserLogin: %v", err)
 	}
@@ -25,9 +25,9 @@ func StartLogin(t *testing.T, ac *config.AuthConfig) *auth.BrowserLogin {
 
 func RequireCallbackPortReleased(t *testing.T, login *auth.BrowserLogin) {
 	t.Helper()
-	ln, err := net.Listen("tcp", LoopbackRedirectURI(t, login.AuthURL()).Host)
+	listener, err := net.Listen("tcp", LoopbackRedirectURI(t, login.AuthURL()).Host)
 	if err != nil {
 		t.Fatalf("callback port still bound: %v", err)
 	}
-	ln.Close()
+	listener.Close()
 }

@@ -19,23 +19,15 @@ var ErrLoginClosed = errors.New("oauth browser login closed")
 
 // BrowserLogin owns a callback listener and drives an OAuth2 PKCE exchange.
 type BrowserLogin struct {
-	srv         *http.Server
-	serveDone   chan struct{}
-	codeCh      chan string
+	server      *http.Server
+	serving     sync.WaitGroup
+	codes       chan string
+	closed      chan struct{}
+	closeOnce   sync.Once
 	authURL     string
 	oauth2Cfg   *oauth2.Config
 	verifier    string
 	resourceURL string
-	stopOnce    sync.Once
-	closeMu     sync.Mutex
-	closed      chan struct{}
-	resultOnce  sync.Once
-	result      loginResult
-}
-
-type loginResult struct {
-	token *oauth2.Token
-	err   error
 }
 
 var callbackListenAddr = func(ac *config.AuthConfig) string {
@@ -44,33 +36,31 @@ var callbackListenAddr = func(ac *config.AuthConfig) string {
 
 func ListenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, error) {
 	addr := callbackListenAddr(ac)
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen for oauth callback on %s: %w", addr, err)
 	}
-	return ln, nil
+	return listener, nil
 }
 
-// StartBrowserLogin takes ownership of ln, closing it on error.
-func StartBrowserLogin(ac *config.AuthConfig, ln net.Listener) (*BrowserLogin, error) {
-	tcpAddr, ok := ln.Addr().(*net.TCPAddr)
+// StartBrowserLogin takes ownership of listener, closing it on error.
+func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener) (*BrowserLogin, error) {
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
-		ln.Close() //nolint:errcheck
-		return nil, fmt.Errorf("oauth callback listener has unexpected address type %T", ln.Addr())
+		listener.Close() //nolint:errcheck
+		return nil, fmt.Errorf("oauth callback listener has unexpected address type %T", listener.Addr())
 	}
 	cfg, verifier, state := buildPKCEConfig(ac, tcpAddr.Port)
-	codeCh := make(chan string, 1)
-	serveDone := make(chan struct{})
-	srv := startCallbackServer(ln, callbackHandler(state, codeCh), serveDone)
-	authURL := buildAuthURL(cfg, buildAuthURLParams{
-		state: state, verifier: verifier,
-		resourceURL: ac.ResourceURL, extraAuthParams: ac.ExtraAuthParams,
-	})
-	return &BrowserLogin{
-		srv: srv, serveDone: serveDone, codeCh: codeCh,
-		authURL: authURL, oauth2Cfg: cfg, verifier: verifier,
-		resourceURL: ac.ResourceURL, closed: make(chan struct{}),
-	}, nil
+	login := &BrowserLogin{
+		codes: make(chan string, 1), closed: make(chan struct{}),
+		oauth2Cfg: cfg, verifier: verifier, resourceURL: ac.ResourceURL,
+		authURL: buildAuthURL(cfg, buildAuthURLParams{
+			state: state, verifier: verifier,
+			resourceURL: ac.ResourceURL, extraAuthParams: ac.ExtraAuthParams,
+		}),
+	}
+	login.serve(listener, callbackHandler(state, login.codes))
+	return login, nil
 }
 
 func buildPKCEConfig(ac *config.AuthConfig, callbackPort int) (*oauth2.Config, string, string) {
@@ -85,29 +75,13 @@ func (l *BrowserLogin) AuthURL() string { return l.authURL }
 
 // Wait releases the callback port before it returns, so the next flow can bind it.
 func (l *BrowserLogin) Wait(ctx context.Context) (*oauth2.Token, error) {
-	l.resultOnce.Do(func() {
-		l.result.token, l.result.err = l.doWait(ctx)
-	})
-	return l.result.token, l.result.err
-}
-
-func (l *BrowserLogin) doWait(ctx context.Context) (*oauth2.Token, error) {
 	code, err := l.awaitCode(ctx)
-	l.stopAndWait()
+	l.stopServing()
 	if err != nil {
 		return nil, err
 	}
-	// select picks randomly when a code and Close race; a closed login must never exchange.
-	if l.isClosed() {
-		return nil, ErrLoginClosed
-	}
-	token, err := l.exchange(ctx, code)
-	return l.unlessClosed(token, err)
-}
-
-func (l *BrowserLogin) unlessClosed(token *oauth2.Token, err error) (*oauth2.Token, error) {
-	l.closeMu.Lock()
-	defer l.closeMu.Unlock()
+	token, err := l.oauth2Cfg.Exchange(oauthHTTPContext(ctx, l.resourceURL), code, oauth2.VerifierOption(l.verifier))
+	// Close can land while the exchange is in flight; a closed login must not hand out a token.
 	if l.isClosed() {
 		return nil, ErrLoginClosed
 	}
@@ -116,29 +90,13 @@ func (l *BrowserLogin) unlessClosed(token *oauth2.Token, err error) (*oauth2.Tok
 
 func (l *BrowserLogin) awaitCode(ctx context.Context) (string, error) {
 	select {
-	case code := <-l.codeCh:
+	case code := <-l.codes:
 		return code, nil
 	case <-l.closed:
 		return "", ErrLoginClosed
 	case <-ctx.Done():
-		select {
-		case code := <-l.codeCh:
-			return code, nil
-		default:
-			return "", ctx.Err()
-		}
+		return "", ctx.Err()
 	}
-}
-
-func (l *BrowserLogin) exchange(ctx context.Context, code string) (*oauth2.Token, error) {
-	if ctx.Err() != nil {
-		// the user already approved in the browser; a cancel racing the callback must not discard the code
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-	}
-	opts := []oauth2.AuthCodeOption{oauth2.VerifierOption(l.verifier)}
-	return l.oauth2Cfg.Exchange(oauthHTTPContext(ctx, l.resourceURL), code, opts...)
 }
 
 func (l *BrowserLogin) isClosed() bool {
@@ -153,37 +111,33 @@ func (l *BrowserLogin) isClosed() bool {
 // Close releases the port and makes Wait return ErrLoginClosed unless Wait already has its
 // token; safe to call repeatedly.
 func (l *BrowserLogin) Close() error {
-	l.closeMu.Lock()
-	if !l.isClosed() {
-		close(l.closed)
-	}
-	l.closeMu.Unlock()
-	l.stopAndWait()
+	l.closeOnce.Do(func() { close(l.closed) })
+	l.stopServing()
 	return nil
 }
 
-func (l *BrowserLogin) stopAndWait() {
-	l.stopOnce.Do(func() { l.srv.Close() }) //nolint:errcheck
-	<-l.serveDone
-}
-
-func startCallbackServer(ln net.Listener, handler http.Handler, done chan<- struct{}) *http.Server {
-	srv := &http.Server{
+func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {
+	l.server = &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 	}
-	go func() {
-		defer close(done)
-		err := srv.Serve(ln)
+	l.serving.Go(func() {
+		err := l.server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			log.Printf("oauth callback server: %v", err)
 		}
-	}()
-	return srv
+	})
 }
 
-func callbackHandler(state string, codeCh chan<- string) http.Handler {
+// http.Server.Close only flags a Serve goroutine that has not started yet; that goroutine closes the
+// listener when it runs, so the port is free only once it has exited.
+func (l *BrowserLogin) stopServing() {
+	l.server.Close() //nolint:errcheck
+	l.serving.Wait()
+}
+
+func callbackHandler(state string, codes chan<- string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("state") != state {
@@ -196,7 +150,7 @@ func callbackHandler(state string, codeCh chan<- string) http.Handler {
 			return
 		}
 		writeAuthorizedResponse(w)
-		sendAuthCode(codeCh, code)
+		sendAuthCode(codes, code)
 	})
 }
 
@@ -208,9 +162,9 @@ func writeAuthorizedResponse(w http.ResponseWriter) {
 	}
 }
 
-func sendAuthCode(codeCh chan<- string, code string) {
+func sendAuthCode(codes chan<- string, code string) {
 	select {
-	case codeCh <- code:
+	case codes <- code:
 	default:
 	}
 }

@@ -69,18 +69,18 @@ type pkceFlowResult struct {
 func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) { //nolint:funclen
 	s.cancelExistingAuthFlow(serverName)
 	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	ln, err := auth.ListenCallback(authCtx, sc.Auth)
+	listener, err := auth.ListenCallback(authCtx, sc.Auth)
 	if err != nil {
 		cancel()
 		return pkceFlowResult{}, err
 	}
 	resolveParams := auth.ResolveEndpointsParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
 	if err := auth.ResolveEndpoints(authCtx, &sc, resolveParams); err != nil {
-		ln.Close() //nolint:errcheck
+		listener.Close() //nolint:errcheck
 		cancel()
 		return pkceFlowResult{}, fmt.Errorf("resolve oauth endpoints: %w", err)
 	}
-	login, err := auth.StartBrowserLogin(sc.Auth, ln)
+	login, err := auth.StartBrowserLogin(sc.Auth, listener)
 	if err != nil {
 		cancel()
 		return pkceFlowResult{}, fmt.Errorf("start auth flow: %w", err)
