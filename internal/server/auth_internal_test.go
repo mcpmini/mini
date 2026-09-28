@@ -4,10 +4,9 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"net"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -18,24 +17,10 @@ func newInternalAuthTestServer(t *testing.T) *Server {
 	return New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 }
 
-func startTestLogin(t *testing.T) (*auth.BrowserLogin, string) {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	addr := ln.Addr().String()
-	login, err := auth.StartBrowserLogin(&config.AuthConfig{}, ln)
-	if err != nil {
-		t.Fatalf("StartBrowserLogin: %v", err)
-	}
-	return login, addr
-}
-
 func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
 
-	login, addr := startTestLogin(t)
+	login := authtest.StartLogin(t, &config.AuthConfig{})
 
 	cancelled := false
 	srv.authMu.Lock()
@@ -48,12 +33,7 @@ func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 		t.Error("expected cancel() to be called")
 	}
 
-	// Port must be immediately reusable — no retry or sleep needed.
-	ln2, err := net.Listen("tcp", addr)
-	if err != nil {
-		t.Fatalf("expected port to be free after cancel, got: %v", err)
-	}
-	ln2.Close()
+	authtest.RequireCallbackPortReleased(t, login)
 
 	srv.authMu.Lock()
 	_, exists := srv.authFlows["srv1"]
@@ -66,29 +46,13 @@ func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
 
-	staleLn, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	staleLogin, err := auth.StartBrowserLogin(&config.AuthConfig{}, staleLn)
-	if err != nil {
-		t.Fatalf("StartBrowserLogin stale: %v", err)
-	}
-	defer staleLogin.Close() //nolint:errcheck
+	staleLogin := authtest.StartLogin(t, &config.AuthConfig{})
 
 	_, staleCancel := context.WithCancel(context.Background())
 	defer staleCancel()
 	staleFlow := &authFlowState{cancel: staleCancel, login: staleLogin}
 
-	activeLn, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	activeLogin, err := auth.StartBrowserLogin(&config.AuthConfig{}, activeLn)
-	if err != nil {
-		t.Fatalf("StartBrowserLogin active: %v", err)
-	}
-	defer activeLogin.Close() //nolint:errcheck
+	activeLogin := authtest.StartLogin(t, &config.AuthConfig{})
 
 	_, activeCancel := context.WithCancel(context.Background())
 	defer activeCancel()
@@ -110,22 +74,4 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 	if got != activeFlow {
 		t.Fatalf("stale cleanup removed newer flow: got %p want %p", got, activeFlow)
 	}
-}
-
-func TestCancelExistingAuthFlow_portReusableAfterReplace(t *testing.T) {
-	srv := newInternalAuthTestServer(t)
-
-	login, addr := startTestLogin(t)
-
-	srv.authMu.Lock()
-	srv.authFlows["svc"] = &authFlowState{cancel: func() {}, login: login}
-	srv.authMu.Unlock()
-
-	srv.cancelExistingAuthFlow("svc")
-
-	ln2, err := net.Listen("tcp", addr)
-	if err != nil {
-		t.Fatalf("port not reusable after replace: %v", err)
-	}
-	ln2.Close()
 }

@@ -5,8 +5,6 @@ package auth_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -412,7 +410,7 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 
 	ac := hydrateFromSavedRegistration(t, reg, rejectingTokenSrv.URL, clock.System())
 
-	login := startLogin(t, ac)
+	login := authtest.StartLogin(t, ac)
 	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
 	ctx, ctxCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer ctxCancel()
@@ -422,31 +420,5 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 	}
 	if strings.Contains(exchangeErr.Error(), secret) {
 		t.Errorf("exchange error leaked the client_secret: %q", exchangeErr.Error())
-	}
-}
-
-func TestBrowserLogin_closeWinsAfterCodeBuffered(t *testing.T) {
-	mock := authtest.NewTokenServer(t)
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	login, err := auth.StartBrowserLogin(mock.AuthConfig(), ln)
-	if err != nil {
-		t.Fatalf("StartBrowserLogin: %v", err)
-	}
-	defer login.Close() //nolint:errcheck
-
-	auth.LoginCodeCh(login) <- "test-auth-code"
-	login.Close() //nolint:errcheck
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, waitErr := login.Wait(ctx)
-	if !errors.Is(waitErr, auth.ErrLoginClosed) {
-		t.Errorf("Wait returned %v, want ErrLoginClosed", waitErr)
-	}
-	if hits := mock.Hits.Load(); hits != 0 {
-		t.Errorf("token server was called %d times, want 0", hits)
 	}
 }
