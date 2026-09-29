@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode"
 
 	catalogdata "github.com/mcpmini/mini/catalog"
 )
@@ -44,6 +45,18 @@ func TestParseAcceptsAValidEntry(t *testing.T) {
 	}
 }
 
+// Validation errors are printed to the terminal, so they must never carry a raw control character.
+func assertParseError(t *testing.T, data []byte, want string) {
+	t.Helper()
+	_, err := parse(data)
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("parse error = %v, want %q", err, want)
+	}
+	if strings.ContainsFunc(err.Error(), unicode.IsControl) {
+		t.Errorf("parse error %q carries raw control characters to the terminal", err)
+	}
+}
+
 func TestParseRejectsInvalidEntries(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -52,18 +65,20 @@ func TestParseRejectsInvalidEntries(t *testing.T) {
 	}{
 		{"bad name", func(e map[string]any) { e["name"] = "bad name" }, `invalid name "bad name"`},
 		{"missing name", func(e map[string]any) { delete(e, "name") }, "catalog entry 1: name is required"},
-		{"missing url", func(e map[string]any) { delete(e, "url") }, "catalog entry example: url is required"},
-		{"http url", func(e map[string]any) { e["url"] = "http://example.com/mcp" }, "catalog entry example: url must be an https URL"},
-		{"missing description", func(e map[string]any) { delete(e, "description") }, "catalog entry example: description and category are required"},
-		{"blank category", func(e map[string]any) { e["category"] = " " }, "catalog entry example: description and category are required"},
-		{"unknown auth", func(e map[string]any) { e["auth"] = "magic" }, `catalog entry example: invalid auth "magic"`},
+		{"missing url", func(e map[string]any) { delete(e, "url") }, `catalog entry "example": url is required`},
+		{"http url", func(e map[string]any) { e["url"] = "http://example.com/mcp" }, `catalog entry "example": url must be an https URL`},
+		{"non-ASCII host", func(e map[string]any) { e["url"] = "https://g\u0456thub.com/mcp" }, `catalog entry "example": url host must be ASCII`},
+		{"missing description", func(e map[string]any) { delete(e, "description") }, `catalog entry "example": description is required`},
+		{"blank category", func(e map[string]any) { e["category"] = " " }, `catalog entry "example": category is required`},
+		{"control character", func(e map[string]any) { e["description"] = "hi\x1b[2J" }, `catalog entry "example": description contains control characters`},
+		{"text direction override", func(e map[string]any) { e["description"] = "safe\u202etxt.exe" }, `catalog entry "example": description contains control characters`},
+		{"escape sequence in name", func(e map[string]any) { e["name"] = "\x1b[2J" }, "invalid name"},
+		{"unknown auth", func(e map[string]any) { e["auth"] = "magic" }, `catalog entry "example": invalid auth "magic"`},
+		{"escape sequence in auth", func(e map[string]any) { e["auth"] = "bad\x1b" }, "invalid auth"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := parse(catalogJSON(t, 1, validEntry(tt.change)))
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("parse error = %v, want %q", err, tt.want)
-			}
+			assertParseError(t, catalogJSON(t, 1, validEntry(tt.change)), tt.want)
 		})
 	}
 }
@@ -78,14 +93,11 @@ func TestParseRejectsInvalidDocuments(t *testing.T) {
 		{"malformed JSON", []byte(`{"schema_version":1,"entries":[`), "parse catalog"},
 		{"unknown schema version", catalogJSON(t, 2, same), "schema_version must be 1"},
 		{"no entries", catalogJSON(t, 1), "catalog entries are required"},
-		{"duplicate name", catalogJSON(t, 1, same, same), "catalog entry example: duplicate name"},
+		{"duplicate name", catalogJSON(t, 1, same, same), `catalog entry "example": duplicate name`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := parse(tt.data)
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("parse error = %v, want %q", err, tt.want)
-			}
+			assertParseError(t, tt.data, tt.want)
 		})
 	}
 }

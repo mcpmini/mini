@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mcpmini/mini/internal/clock"
 	"github.com/spf13/cobra"
+
+	"github.com/mcpmini/mini/internal/catalog"
+	"github.com/mcpmini/mini/internal/clock"
 )
 
 type initFlags struct {
@@ -60,7 +62,8 @@ func newLoginStepParams(configDir string, autoYes bool, p prompter) loginStepPar
 }
 
 func runInitCatalogSelection(p catalogStepParams) {
-	p.out, p.errOut = os.Stdout, os.Stderr
+	source := catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL, warn: os.Stderr}
+	p.loadCatalog, p.out, p.errOut = source.entries, os.Stdout, os.Stderr
 	if err := runCatalogStep(p); err != nil {
 		fatalf("catalog: %v", err)
 	}

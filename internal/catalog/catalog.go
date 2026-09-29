@@ -1,11 +1,14 @@
 package catalog
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
+	"unicode"
 
 	catalogdata "github.com/mcpmini/mini/catalog"
 	"github.com/mcpmini/mini/internal/config"
@@ -56,7 +59,7 @@ func validateEntries(entries []Entry) ([]Entry, error) {
 			return nil, fmt.Errorf("catalog entry %s: %w", entryLabel(entry, i), err)
 		}
 		if seen[entry.Name] {
-			return nil, fmt.Errorf("catalog entry %s: duplicate name", entry.Name)
+			return nil, fmt.Errorf("catalog entry %q: duplicate name", entry.Name)
 		}
 		seen[entry.Name] = true
 	}
@@ -70,8 +73,8 @@ func validateEntry(entry Entry) error {
 	if entry.URL == "" {
 		return fmt.Errorf("url is required")
 	}
-	if strings.TrimSpace(entry.Description) == "" || strings.TrimSpace(entry.Category) == "" {
-		return fmt.Errorf("description and category are required")
+	if err := cmp.Or(validateText("description", entry.Description), validateText("category", entry.Category)); err != nil {
+		return err
 	}
 	if !slices.Contains([]string{AuthOAuth2, AuthOAuth2App, AuthToken, AuthNone}, entry.Auth) {
 		return fmt.Errorf("invalid auth %q", entry.Auth)
@@ -89,17 +92,40 @@ func validateName(name string) error {
 	return nil
 }
 
+// Catalog text is printed straight to the user's terminal; a fetched catalog must not
+// be able to smuggle in escape sequences (Cc) or reorder or hide text (Cf: bidi
+// overrides, zero-width characters) around the host shown for each entry.
+func validateText(field, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return fmt.Errorf("%s is required", field)
+	}
+	if strings.ContainsFunc(value, isHiddenOrControl) {
+		return fmt.Errorf("%s contains control characters", field)
+	}
+	return nil
+}
+
+// Quoted: errors reach the terminal, and an invalid name may hold escape sequences.
 func entryLabel(entry Entry, index int) string {
 	if entry.Name != "" {
-		return entry.Name
+		return strconv.Quote(entry.Name)
 	}
 	return fmt.Sprintf("%d", index+1)
+}
+
+func isHiddenOrControl(r rune) bool {
+	return unicode.In(r, unicode.Cc, unicode.Cf)
 }
 
 func validateHTTPSURL(rawURL string) error {
 	u, err := url.ParseRequestURI(rawURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return fmt.Errorf("url must be an https URL")
+	}
+	// The listing shows each entry's host as the user's check on where it points, and a
+	// non-ASCII host can pass for a familiar one (a Cyrillic і in github.com).
+	if strings.ContainsFunc(u.Host, func(r rune) bool { return r > unicode.MaxASCII }) {
+		return fmt.Errorf("url host must be ASCII")
 	}
 	return nil
 }
