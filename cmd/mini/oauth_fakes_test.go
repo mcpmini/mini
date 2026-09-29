@@ -10,12 +10,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
@@ -116,10 +119,30 @@ func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthT
 	sc := oauthServerConfig("live", upstream.srv.URL, token.srv.URL, true)
 	p := BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}, Clock: clk}
-	srv := buildAndStart(t.Context(), p)
+	srv := startFromConfigDir(t, p)
 	t.Cleanup(srv.Close)
 	awaitConnected(t, srv, "live")
 	return &oauthTestSetup{srv: srv, token: token, upstream: upstream, configDir: configDir}
+}
+
+// startFromConfigDir writes p.Servers to disk first, the way a real startup
+// finds them: the config reload removes any server missing from there.
+func startFromConfigDir(t *testing.T, p BuildServerParams) *server.Server {
+	t.Helper()
+	for _, sc := range p.Servers {
+		data, err := yaml.Marshal(sc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(p.ConfigDir, "servers", sc.Name+".yaml")
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return buildAndStart(t.Context(), p)
 }
 
 func awaitConnected(t *testing.T, srv *server.Server, name string) {

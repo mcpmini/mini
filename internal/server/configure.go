@@ -345,6 +345,7 @@ func (s *Server) detachUpstream(serverName string) *upstreamServer {
 	u := s.upstreams[serverName]
 	delete(s.upstreams, serverName)
 	delete(s.projections, serverName)
+	delete(s.configServers, serverName)
 	return u
 }
 

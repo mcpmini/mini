@@ -102,22 +102,25 @@ func (e *reloadEnv) startPoller() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		e.srv.RunProjectionReload(ctx, func() { e.ticked <- struct{}{} })
+		e.srv.RunConfigReload(ctx, func() { e.ticked <- struct{}{} })
 	}()
 	e.t.Cleanup(func() { cancel(); <-done })
-	if err := e.clock.BlockUntilContext(e.t.Context(), 2); err != nil {
-		e.t.Fatal("poll ticker not registered:", err)
+	e.awaitCheck()
+}
+
+func (e *reloadEnv) awaitCheck() {
+	e.t.Helper()
+	select {
+	case <-e.ticked:
+	case <-e.t.Context().Done():
+		e.t.Fatal("timed out waiting for poll check")
 	}
 }
 
 func (e *reloadEnv) advanceTick() {
 	e.t.Helper()
-	e.clock.Advance(server.ProjectionPollInterval)
-	select {
-	case <-e.ticked:
-	case <-e.t.Context().Done():
-		e.t.Fatal("timed out waiting for poll tick")
-	}
+	e.clock.Advance(server.ConfigPollInterval)
+	e.awaitCheck()
 }
 
 func (e *reloadEnv) assertServerDataKeys(server string, present, absent []string) {
@@ -313,7 +316,7 @@ func TestProjectionReload_ctxCancelStopsPoller(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		e.srv.RunProjectionReload(ctx, nil)
+		e.srv.RunConfigReload(ctx, nil)
 	}()
 	if err := e.clock.BlockUntilContext(t.Context(), 2); err != nil {
 		t.Fatal("poll ticker not registered:", err)

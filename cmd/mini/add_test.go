@@ -281,6 +281,20 @@ func TestRunRemove(t *testing.T) {
 		}
 	})
 
+	t.Run("says when a running daemon will drop the server", func(t *testing.T) {
+		dir := shortConfigDir(t)
+		runAdd(dir, []string{"myserver", "--", "run"}, &bytes.Buffer{}) //nolint:errcheck
+		socketHealthServer(t, dir, `{"ok":true}`)
+		var out bytes.Buffer
+
+		if err := runRemove(dir, []string{"myserver"}, &out); err != nil {
+			t.Fatalf("runRemove: %v", err)
+		}
+		if !strings.Contains(out.String(), "the running daemon drops it within a few seconds") {
+			t.Errorf("output = %q, want the running-daemon note", out.String())
+		}
+	})
+
 	t.Run("no args returns error", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := runRemove(dir, []string{}, &bytes.Buffer{}); err == nil {

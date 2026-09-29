@@ -12,6 +12,7 @@ import (
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/daemon"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -219,6 +220,9 @@ func runRemove(configDir string, args []string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "removed %s\n", name)
+	if daemon.Running(configDir) {
+		fmt.Fprintln(out, "the running daemon drops it within a few seconds")
+	}
 	return nil
 }
 

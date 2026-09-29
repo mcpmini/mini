@@ -20,6 +20,7 @@ func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerCo
 	}
 	connectCtx, cancel := context.WithCancel(ctx)
 	s.cancelConnect = cancel
+	s.recordConfigServers(servers)
 	for _, sc := range servers {
 		if !sc.IsEnabled() {
 			continue

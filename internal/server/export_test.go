@@ -8,8 +8,8 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func (s *Server) RunProjectionReload(ctx context.Context, afterCheck func()) {
-	s.runProjectionReload(ctx, afterCheck)
+func (s *Server) RunConfigReload(ctx context.Context, afterCheck func()) {
+	s.runConfigReload(ctx, afterCheck)
 }
 
 func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionConfig) {
@@ -18,4 +18,4 @@ func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionCo
 
 func (s *Server) WaitForStartupConnects() { s.connectWg.Wait() }
 
-const ProjectionPollInterval = projectionPollInterval
+const ConfigPollInterval = configPollInterval
