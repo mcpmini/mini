@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -138,7 +139,8 @@ func waitExitCode(p *standaloneMini) {
 	go func() {
 		defer close(p.done)
 		if err := p.Cmd.Wait(); err != nil {
-			if exit, ok := err.(*exec.ExitError); ok {
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
 				p.code = exit.ExitCode()
 			} else {
 				p.code = -1

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -15,7 +16,7 @@ type controlServer struct {
 }
 
 func startControlServer(addr string, faults *FaultRegistry, tools *ToolRegistry, notify func()) (string, error) {
-	ln, err := net.Listen("tcp", addr)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return "", err
 	}

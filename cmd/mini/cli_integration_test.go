@@ -4,6 +4,7 @@ package main_test
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,8 @@ func run(t *testing.T, bin, configDir string, args ...string) (stdout, stderr st
 	stderr = errBuf.String()
 	code = 0
 	if err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
 			code = exit.ExitCode()
 		} else {
 			t.Fatalf("run %v: %v", args, err)
@@ -83,8 +85,11 @@ func TestIntegrationCLI_add_preservesChildFlags(t *testing.T) {
 	cmd := exec.Command(bin, "add", "svc", "--config", cfg, "--", "/usr/bin/printf", "-h", "--config", "child-value")
 	output, err := cmd.CombinedOutput()
 	code := 0
-	if err != nil {
-		code = err.(*exec.ExitError).ExitCode()
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		code = exit.ExitCode()
+	} else if err != nil {
+		t.Fatalf("run add: %v", err)
 	}
 	if code != 0 {
 		t.Fatalf("add exited %d: %s", code, output)
