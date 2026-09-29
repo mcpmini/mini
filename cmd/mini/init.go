@@ -10,11 +10,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"github.com/mcpmini/mini/cmd/mini/importers"
 )
-
-const importFileSizeLimit = 4 * 1024 * 1024 // 4MB — sane upper bound for any agent config file
 
 type initFlags struct {
 	yes  bool
@@ -83,7 +79,7 @@ func importClientIfConfirmed(configDir string, c agentClient, prompt func(string
 	if !prompt(q) {
 		return 0
 	}
-	n := importClaudeFormat(configDir, c.ConfigPath)
+	n := importClaudeFormat(configDir, c.Name, c.ConfigPath)
 	fmt.Printf("  imported %d server(s) from %s\n", n, c.Name)
 	return n
 }
@@ -97,7 +93,7 @@ func importFrom(configDir, from string, prompt func(string) bool) int {
 	if !prompt(q) {
 		return 0
 	}
-	n := importClaudeFormat(configDir, path)
+	n := importClaudeFormat(configDir, path, path)
 	fmt.Printf("imported %d server(s) from %s\n", n, path)
 	return n
 }
@@ -117,56 +113,6 @@ func resolveFromPath(from string) string {
 		return aliasPath
 	}
 	return from
-}
-
-func importClaudeFormat(configDir, path string) int {
-	data, ok := readImportFile(path)
-	if !ok {
-		return 0
-	}
-	selfPath, _ := os.Executable()
-	return importClaudeServers(configDir, data, selfPath)
-}
-
-func readImportFile(path string) ([]byte, bool) {
-	f, err := os.Open(path)
-	if err != nil {
-		warnImportRead(path, err)
-		return nil, false
-	}
-	defer f.Close() //nolint:errcheck
-
-	data, err := io.ReadAll(io.LimitReader(f, importFileSizeLimit))
-	if err != nil {
-		warnImportRead(path, err)
-		return nil, false
-	}
-	return data, true
-}
-
-func warnImportRead(path string, err error) {
-	fmt.Fprintf(os.Stderr, "  warning: read %s: %v\n", path, err)
-}
-
-func importClaudeServers(configDir string, data []byte, selfPath string) int {
-	imported := 0
-	for name, entry := range importers.ExtractClaudeMCPServers(data) {
-		if shouldImportClaudeEntry(configDir, name, entry, selfPath) {
-			imported++
-		}
-	}
-	return imported
-}
-
-func shouldImportClaudeEntry(configDir, name string, entry importers.ClaudeMCPEntry, selfPath string) bool {
-	if isSelfEntry(entry.Command, selfPath) {
-		return false
-	}
-	if err := importers.WriteServerYAML(configDir, name, importers.ClaudeEntryToServer(name, entry)); err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
-		return false
-	}
-	return true
 }
 
 func findClientPath(name string) string {

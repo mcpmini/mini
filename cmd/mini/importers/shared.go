@@ -2,6 +2,7 @@ package importers
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -24,19 +25,23 @@ type PermissionsYAML struct {
 	Hidden    []string `yaml:"hidden,omitempty"`
 }
 
-const maxImportConfigBytes = 10 << 20
+// A sanity cap, not an expected size: past it the file is almost certainly not an agent config.
+const maxImportConfigBytes = 64 << 20
 
+// Reads whatever path it is given, including a pipe (--from <(...)), like other CLIs do.
+// os errors already name the path, so they are returned unwrapped.
 func ReadConfigFile(path string) ([]byte, error) {
-	info, err := os.Stat(path)
+	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("stat %s: %w", path, err)
+		return nil, err
 	}
-	if info.Size() > maxImportConfigBytes {
-		return nil, fmt.Errorf("%s is too large (%d bytes)", path, info.Size())
-	}
-	data, err := os.ReadFile(path)
+	defer f.Close() //nolint:errcheck
+	data, err := io.ReadAll(io.LimitReader(f, maxImportConfigBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, err
+	}
+	if len(data) > maxImportConfigBytes {
+		return nil, fmt.Errorf("%s: too large (over %d MiB)", path, maxImportConfigBytes>>20)
 	}
 	return data, nil
 }
@@ -45,6 +50,12 @@ func ReadConfigFile(path string) ([]byte, error) {
 // if one is known for this server.
 func WriteServerYAML(configDir, name string, sc ServerYAML) error {
 	return ops.WriteServer(configDir, toServerConfig(name, sc))
+}
+
+// CreateServerYAML is WriteServerYAML that leaves an existing server file
+// untouched and returns an error wrapping fs.ErrExist instead.
+func CreateServerYAML(configDir, name string, sc ServerYAML) error {
+	return ops.CreateServer(configDir, toServerConfig(name, sc))
 }
 
 // InstallBundledProjection installs a projection for a known server if one exists.

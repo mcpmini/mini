@@ -341,5 +341,18 @@ func TestReadConfigFile(t *testing.T) {
 			t.Errorf("error = %q, want 'too large'", err.Error())
 		}
 	})
+
+	t.Run("file at the limit is returned whole", func(t *testing.T) {
+		f := filepath.Join(tempDir(t), "limit.json")
+		os.WriteFile(f, make([]byte, maxImportConfigBytes), 0600)
+
+		got, err := ReadConfigFile(f)
+		if err != nil {
+			t.Fatalf("ReadConfigFile: %v", err)
+		}
+		if len(got) != maxImportConfigBytes {
+			t.Errorf("read %d bytes, want %d", len(got), maxImportConfigBytes)
+		}
+	})
 }
 

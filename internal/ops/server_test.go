@@ -1,6 +1,8 @@
 package ops_test
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,6 +157,73 @@ func TestWriteServer(t *testing.T) {
 		}
 		if len(got.Permissions.Hidden) != 0 {
 			t.Errorf("bundled hidden applied despite explicit permissions: %v", got.Permissions.Hidden)
+		}
+	})
+}
+
+func TestCreateServer(t *testing.T) {
+	t.Run("creates a missing server file", func(t *testing.T) {
+		dir := tempDir(t)
+		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
+		if err := ops.CreateServer(dir, sc); err != nil {
+			t.Fatalf("CreateServer: %v", err)
+		}
+		var got config.ServerConfig
+		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
+		if got.URL != sc.URL {
+			t.Errorf("URL = %q, want %q", got.URL, sc.URL)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "servers", "gh.proj.yaml")); err != nil {
+			t.Errorf("bundled projection not installed: %v", err)
+		}
+	})
+
+	t.Run("drops OAuth state left by a hand-deleted server of the same name", func(t *testing.T) {
+		dir := tempDir(t)
+		if err := config.MarkOAuthDetected(dir, "gh"); err != nil {
+			t.Fatal(err)
+		}
+		if err := ops.CreateServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}); err != nil {
+			t.Fatalf("CreateServer: %v", err)
+		}
+		if config.IsOAuthDetected(dir, "gh") {
+			t.Error("new server inherited the old server's OAuth marker")
+		}
+	})
+
+	t.Run("existing file is left untouched and nothing is installed", func(t *testing.T) {
+		dir := tempDir(t)
+		path := filepath.Join(dir, "servers", "gh.yaml")
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		edited := []byte("name: gh\nurl: https://edited.example/mcp\n")
+		if err := os.WriteFile(path, edited, 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := config.MarkOAuthDetected(dir, "gh"); err != nil {
+			t.Fatal(err)
+		}
+		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
+		err := ops.CreateServer(dir, sc)
+		if !errors.Is(err, fs.ErrExist) {
+			t.Fatalf("err = %v, want fs.ErrExist", err)
+		}
+		got, _ := os.ReadFile(path)
+		if string(got) != string(edited) {
+			t.Errorf("file changed: got %q, want %q", got, edited)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "servers", "gh.proj.yaml")); err == nil {
+			t.Error("bundled projection installed despite existing server")
+		}
+		if !config.IsOAuthDetected(dir, "gh") {
+			t.Error("existing server lost its OAuth marker")
+		}
+	})
+
+	t.Run("invalid name returns error", func(t *testing.T) {
+		if err := ops.CreateServer(tempDir(t), config.ServerConfig{Name: "bad name!"}); err == nil {
+			t.Fatal("expected error for invalid server name")
 		}
 	})
 }

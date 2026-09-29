@@ -61,7 +61,7 @@ func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
 	if err := os.WriteFile(src, []byte(claudeJSON), 0600); err != nil {
 		t.Fatal(err)
 	}
-	count := importClaudeFormat(configDir, src)
+	count := importClaudeFormat(configDir, "Claude Code", src)
 	if count != 1 {
 		t.Errorf("imported %d servers, want 1 (mini should be skipped)", count)
 	}
@@ -116,5 +116,99 @@ func TestPrompterConfirm(t *testing.T) {
 func TestAutoConfirmAccepts(t *testing.T) {
 	if !autoConfirm("Q") {
 		t.Error("autoConfirm = false, want true")
+	}
+}
+
+func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
+	tests := []struct {
+		name      string
+		reimport  string
+		edit      func(path string) []byte
+		wantLine  string
+		forbidden string
+	}{
+		{
+			name:     "same settings",
+			reimport: `{"foo": {"type": "http", "url": "https://foo.example/mcp"}}`,
+			wantLine: "Claude Code: foo already configured in mini",
+		},
+		{
+			name:     "different settings",
+			reimport: `{"foo": {"type": "http", "url": "https://other.example/mcp", "headers": {"Authorization": "Bearer secret-token"}}}`,
+			wantLine: "Claude Code: foo not imported, mini's config has a different url, headers",
+			// Header values are usually tokens.
+			forbidden: "secret-token",
+		},
+		{
+			name:     "env in another order, stdio written out",
+			reimport: `{"foo": {"command": "foo-server", "env": {"B": "2", "A": "1"}}}`,
+			edit: func(path string) []byte {
+				return []byte("name: foo\ntransport: stdio\ncommand: foo-server\nenv:\n  - A=1\n  - B=2\n")
+			},
+			wantLine: "Claude Code: foo already configured in mini",
+		},
+		{
+			name:     "configured file does not parse",
+			reimport: `{"foo": {"type": "http", "url": "https://foo.example/mcp"}}`,
+			edit: func(path string) []byte {
+				return []byte("name: foo\nheaders:\n  Authorization: !!int secret-token\n")
+			},
+			wantLine:  "Claude Code: foo not imported, could not compare it with ",
+			forbidden: "secret-token",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configDir := t.TempDir()
+			src := filepath.Join(t.TempDir(), "claude.json")
+			writeImportSource(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
+			captureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
+			serverFile := filepath.Join(configDir, "servers", "foo.yaml")
+			if tt.edit != nil {
+				writeImportSource(t, serverFile, string(tt.edit(serverFile)))
+			}
+			before, _ := os.ReadFile(serverFile) //nolint:errcheck // compared below
+			writeImportSource(t, src, `{"mcpServers": `+tt.reimport+`}`)
+
+			var n int
+			out := captureStdout(t, func() { n = importClaudeFormat(configDir, "Claude Code", src) })
+
+			if after, _ := os.ReadFile(serverFile); n != 0 || string(after) != string(before) { //nolint:errcheck // a missing file fails the comparison
+				t.Errorf("imported %d, foo.yaml %q -> %q; want nothing imported and the file unchanged", n, before, after)
+			}
+			if !strings.Contains(out, tt.wantLine) {
+				t.Errorf("stdout %q missing %q", out, tt.wantLine)
+			}
+			if tt.forbidden != "" && strings.Contains(out, tt.forbidden) {
+				t.Errorf("stdout %q shows %q", out, tt.forbidden)
+			}
+		})
+	}
+}
+
+func TestImportClaudeFormat_ImportsOnlyNewServers(t *testing.T) {
+	configDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "claude.json")
+	writeImportSource(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
+	captureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
+	writeImportSource(t, src, `{"mcpServers": {
+		"foo": {"type": "http", "url": "https://foo.example/mcp"},
+		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`)
+
+	var n int
+	captureStdout(t, func() { n = importClaudeFormat(configDir, "Claude Code", src) })
+
+	if n != 1 {
+		t.Errorf("second import = %d, want 1 (only bar is new)", n)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "servers", "bar.yaml")); err != nil {
+		t.Errorf("bar.yaml not written: %v", err)
+	}
+}
+
+func writeImportSource(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
 	}
 }

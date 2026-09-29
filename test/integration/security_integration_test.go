@@ -29,7 +29,7 @@ func TestIntegrationSecurity_SSRFBlocksIPv6Mapped(t *testing.T) {
 }
 
 func TestIntegrationSecurity_oversizedClaudeConfig(t *testing.T) {
-	_, _, code := runCLI(t, t.TempDir(), "add", "--from-claude", writeOversizedFile(t, 10<<20))
+	_, _, code := runCLI(t, t.TempDir(), "add", "--from-claude", writeOversizedFile(t, 64<<20))
 	if code == 0 {
 		t.Error("add --from-claude with oversized file should exit non-zero")
 	}
