@@ -36,14 +36,9 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 }
 
 func (s *Server) maybeOpenAuthBrowser(sc config.ServerConfig, authURL string) {
-	if s.cfg.DisableAuthBrowserOpen {
-		return
+	if browserCmd, open := s.cfg.BrowserCommandFor(sc); open {
+		_ = auth.OpenBrowser(browserCmd, authURL)
 	}
-	browserCmd := sc.Auth.BrowserCmd
-	if browserCmd == "" {
-		browserCmd = s.cfg.BrowserCommand
-	}
-	_ = auth.OpenBrowser(browserCmd, authURL)
 }
 
 func (s *Server) loadOAuthServerConfig(serverName string) (config.ServerConfig, error) {

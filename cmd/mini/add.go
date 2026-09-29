@@ -246,9 +246,9 @@ func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 	if sc.Auth == nil {
 		sc = probeAndReload(configDir, sc, out)
 	}
-	// A hand-set header means the user already chose their own auth — never override it
-	// with an interactive OAuth flow, even for a known vendor's bundled default.
-	if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 || len(sc.Headers) > 0 {
+	// Static auth (the auth header or auth.token) means the user chose their own credentials;
+	// never override it with a browser login.
+	if !sc.UsesOAuthLogin() {
 		return
 	}
 	authorizeServer(authorizeParams{configDir: configDir, name: name, sc: sc, out: out})
@@ -307,15 +307,7 @@ func authorizeServer(p authorizeParams) {
 		return
 	}
 	fmt.Fprintf(p.out, "%s requires OAuth authorization\n", p.name)
-	token, err := doPKCEFlow(pkceFlowParams{
-		configDir:  p.configDir,
-		serverName: p.name,
-		opener:     authOpener(p.sc.Auth.BrowserCmd, cfg.BrowserCommand, cfg.DisableAuthBrowserOpen),
-		sc:         &p.sc,
-	})
-	if err != nil {
+	if _, err := logIn(logInParams{configDir: p.configDir, cfg: cfg, sc: &p.sc, out: p.out}); err != nil {
 		fmt.Fprintf(p.out, "note: automatic authorization failed (%v); run `mini auth %s` to retry\n", err, p.name)
-		return
 	}
-	printAuthResult(p.name, token.Expiry)
 }

@@ -119,6 +119,39 @@ func TestStartAuth_e2e_connectsAfterOAuthFlow(t *testing.T) {
 	waitForServerConnected(t, srv, "protected")
 }
 
+func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
+	dir := t.TempDir()
+	openedPath := filepath.Join(dir, "opened-url")
+	tokenSrv := fakeTokenServer(t, "unused-token")
+	writeServerYAML(t, dir, "protected", fmt.Sprintf("name: protected\ntransport: http\nurl: %s/mcp\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n  browser_cmd: printf %%s > %s\n",
+		tokenSrv.URL, tokenSrv.URL, tokenSrv.URL, openedPath))
+	cfg := config.DefaultConfig()
+	cfg.BrowserCommand = "false"
+	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
+
+	authResult := parseEnvelope(t, toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "protected"}))))
+
+	authURL, _ := authResult["url"].(string)
+	if authURL == "" {
+		t.Fatalf("start_auth = %v, want an auth URL", authResult)
+	}
+	if opened := waitForFileContent(t, openedPath); opened != authURL {
+		t.Errorf("browser opened %q, want the start_auth URL %q", opened, authURL)
+	}
+}
+
+func waitForFileContent(t *testing.T, path string) string {
+	t.Helper()
+	for range 100 {
+		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
+			return string(data)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", path)
+	return ""
+}
+
 func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 	const accessToken = "e2e-tools-token"
 	tokenSrv := fakeTokenServer(t, accessToken)

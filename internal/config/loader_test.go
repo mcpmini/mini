@@ -526,6 +526,65 @@ func TestAuthConfig_HeaderName(t *testing.T) {
 	}
 }
 
+func TestServerConfig_HasStaticAuthHeader(t *testing.T) {
+	t.Setenv("MINI_TEST_STATIC_AUTH_SET", "secret")
+	t.Setenv("MINI_TEST_STATIC_AUTH_EMPTY", "")
+	oauth := &config.AuthConfig{Type: config.AuthTypeOAuth2}
+	custom := &config.AuthConfig{Type: config.AuthTypeOAuth2, Header: "X-Api-Key"}
+	cases := []struct {
+		name    string
+		auth    *config.AuthConfig
+		headers map[string]string
+		want    bool
+	}{
+		{"exact key", oauth, map[string]string{"Authorization": "Bearer x"}, true},
+		{"lowercase key", oauth, map[string]string{"authorization": "Bearer x"}, true},
+		{"empty value", oauth, map[string]string{"Authorization": ""}, false},
+		{"whitespace value", oauth, map[string]string{"Authorization": "  "}, false},
+		{"env var expanding to empty", oauth, map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_EMPTY}"}, false},
+		{"env var set", oauth, map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_SET}"}, true},
+		{"auth token set", &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: "tok"}, nil, true},
+		{"auth token expanding to empty", &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: "${MINI_TEST_STATIC_AUTH_EMPTY}"}, nil, false},
+		{"custom auth header", custom, map[string]string{"X-Api-Key": "k"}, true},
+		{"custom auth header configured but Authorization set", custom, map[string]string{"Authorization": "x"}, false},
+		{"unrelated header only", oauth, map[string]string{"X-Tenant": "acme"}, false},
+		{"nil auth", nil, map[string]string{"Authorization": "Bearer x"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sc := config.ServerConfig{Auth: tc.auth, Headers: tc.headers}
+			if got := sc.HasStaticAuthHeader(); got != tc.want {
+				t.Errorf("HasStaticAuthHeader() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestServerConfig_UsesOAuthLogin(t *testing.T) {
+	oauth := &config.AuthConfig{Type: config.AuthTypeOAuth2}
+	cases := []struct {
+		name string
+		sc   config.ServerConfig
+		want bool
+	}{
+		{"http oauth2", config.ServerConfig{Transport: "http", Auth: oauth}, true},
+		{"sse oauth2", config.ServerConfig{Transport: "sse", Auth: oauth}, true},
+		{"streamable oauth2", config.ServerConfig{Transport: "streamable", Auth: oauth}, true},
+		{"stdio oauth2", config.ServerConfig{Transport: "stdio", Auth: oauth}, false},
+		{"nil auth", config.ServerConfig{Transport: "http"}, false},
+		{"api_key type", config.ServerConfig{Transport: "http", Auth: &config.AuthConfig{Type: config.AuthTypeAPIKey}}, false},
+		{"oauth2 with Authorization header", config.ServerConfig{Transport: "http", Auth: oauth, Headers: map[string]string{"Authorization": "Bearer x"}}, false},
+		{"oauth2 with unrelated header only", config.ServerConfig{Transport: "http", Auth: oauth, Headers: map[string]string{"X-Tenant": "acme"}}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.sc.UsesOAuthLogin(); got != tc.want {
+				t.Errorf("UsesOAuthLogin() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType, wantClientID string) {
 	t.Helper()
 	if sc.Auth == nil {
@@ -750,4 +809,89 @@ func TestFindServer(t *testing.T) {
 			t.Fatal("FindServer should return pointer into slice")
 		}
 	})
+}
+
+func TestMergedHeaders_PlainHeader(t *testing.T) {
+	sc := config.ServerConfig{Headers: map[string]string{"X-Foo": "bar"}}
+	h := sc.MergedHeaders()
+	if h["X-Foo"] != "bar" {
+		t.Errorf("got %q", h["X-Foo"])
+	}
+}
+
+func TestMergedHeaders_EnvExpansion(t *testing.T) {
+	t.Setenv("MY_TOKEN", "secret")
+	sc := config.ServerConfig{Headers: map[string]string{"Authorization": "Bearer ${MY_TOKEN}"}}
+	h := sc.MergedHeaders()
+	if h["Authorization"] != "Bearer secret" {
+		t.Errorf("got %q", h["Authorization"])
+	}
+}
+
+func TestMergedHeaders_TrimsWhitespace(t *testing.T) {
+	t.Setenv("API_KEY", "  tok  ")
+	sc := config.ServerConfig{Headers: map[string]string{"X-Key": "  ${API_KEY}  "}}
+	h := sc.MergedHeaders()
+	if h["X-Key"] != "tok" {
+		t.Errorf("got %q", h["X-Key"])
+	}
+}
+
+func TestMergedHeaders_BearerAuth(t *testing.T) {
+	t.Setenv("MY_TOKEN", "abc123")
+	sc := config.ServerConfig{
+		Auth: &config.AuthConfig{Type: "bearer", Token: "${MY_TOKEN}"},
+	}
+	h := sc.MergedHeaders()
+	if h["Authorization"] != "Bearer abc123" {
+		t.Errorf("got %q", h["Authorization"])
+	}
+}
+
+func TestMergedHeaders_APIKeyAuth(t *testing.T) {
+	sc := config.ServerConfig{
+		Auth: &config.AuthConfig{Type: "apikey", Token: "rawkey", Header: "X-Api-Key"},
+	}
+	h := sc.MergedHeaders()
+	if h["X-Api-Key"] != "rawkey" {
+		t.Errorf("got %q", h["X-Api-Key"])
+	}
+}
+
+func TestMergedHeaders_EmptyToken(t *testing.T) {
+	sc := config.ServerConfig{
+		Auth: &config.AuthConfig{Type: "bearer", Token: ""},
+	}
+	h := sc.MergedHeaders()
+	if _, ok := h["Authorization"]; ok {
+		t.Error("expected no Authorization header when token is empty")
+	}
+}
+
+func TestConfig_BrowserCommandFor(t *testing.T) {
+	withBrowser := func(cmd string) config.ServerConfig {
+		return config.ServerConfig{Auth: &config.AuthConfig{BrowserCmd: cmd}}
+	}
+	tests := []struct {
+		name        string
+		cfg         config.Config
+		sc          config.ServerConfig
+		wantCommand string
+		wantOpen    bool
+	}{
+		{"per-server wins over global", config.Config{BrowserCommand: "global-cmd"}, withBrowser("per-server-cmd"), "per-server-cmd", true},
+		{"global used when no per-server", config.Config{BrowserCommand: "global-cmd"}, withBrowser(""), "global-cmd", true},
+		{"global used when server has no auth", config.Config{BrowserCommand: "global-cmd"}, config.ServerConfig{}, "global-cmd", true},
+		{"neither set returns empty and still opens", config.Config{}, withBrowser(""), "", true},
+		{"per-server with args wins", config.Config{BrowserCommand: "global-cmd"}, withBrowser("open -a Firefox"), "open -a Firefox", true},
+		{"disabled overrides every command", config.Config{BrowserCommand: "global-cmd", DisableAuthBrowserOpen: true}, withBrowser("per-server-cmd"), "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			command, open := tc.cfg.BrowserCommandFor(tc.sc)
+			if command != tc.wantCommand || open != tc.wantOpen {
+				t.Errorf("BrowserCommandFor() = (%q, %v), want (%q, %v)", command, open, tc.wantCommand, tc.wantOpen)
+			}
+		})
+	}
 }

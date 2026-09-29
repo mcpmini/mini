@@ -263,6 +263,38 @@ func TestRunAdd(t *testing.T) {
 	})
 }
 
+func TestConnectAndAuthorizeIfNeeded_onlyStaticAuthSkipsLogin(t *testing.T) {
+	// A loopback URL fails SSRF validation during OAuth endpoint discovery, so an attempted
+	// login stops before any browser opens.
+	loopback := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(loopback.Close)
+	tests := []struct {
+		name      string
+		header    string
+		wantLogin bool
+	}{
+		{"unrelated header still logs in", "X-Tenant: acme", true},
+		{"static auth header skips login", "Authorization: Bearer static-token", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			yaml := "name: svc\ntransport: http\nurl: " + loopback.URL + "\nheaders:\n  " + tt.header + "\nauth:\n  type: oauth2\n"
+			if err := os.MkdirAll(filepath.Join(dir, "servers"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "servers", "svc.yaml"), []byte(yaml), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var out bytes.Buffer
+			connectAndAuthorizeIfNeeded(dir, "svc", &out)
+			if got := strings.Contains(out.String(), "requires OAuth authorization"); got != tt.wantLogin {
+				t.Errorf("login attempted = %v, want %v; output = %q", got, tt.wantLogin, out.String())
+			}
+		})
+	}
+}
+
 func TestRunRemove(t *testing.T) {
 	t.Run("removes existing server", func(t *testing.T) {
 		dir := t.TempDir()
