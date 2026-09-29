@@ -23,12 +23,14 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Taken before the login starts, so a remove_server at any point during the login wins.
+	install := s.replacingInstall(sc)
 	flow, err := s.startPKCEFlow(serverName, sc)
 	if err != nil {
 		return nil, err
 	}
 	s.authWg.Add(1)
-	go s.runAuthFlow(flow.authCtx, sc, flow.state)
+	go s.runAuthFlow(flow.authCtx, install, flow.state)
 	s.maybeOpenAuthBrowser(sc, flow.authURL)
 	return authStartResponse(serverName, flow.authURL), nil
 }
@@ -110,11 +112,11 @@ func (s *Server) cancelExistingAuthFlow(serverName string) {
 	old.cancel()
 }
 
-func (s *Server) runAuthFlow(ctx context.Context, sc config.ServerConfig, flow *authFlowState) {
+func (s *Server) runAuthFlow(ctx context.Context, install upstreamInstall, flow *authFlowState) {
 	defer s.authWg.Done()
 	defer flow.cancel()
-	defer s.clearAuthFlow(sc.Name, flow)
-	s.awaitAuthAndReconnect(ctx, sc, flow.login)
+	defer s.clearAuthFlow(install.cfg.Name, flow)
+	s.awaitAuthAndReconnect(ctx, install, flow.login)
 }
 
 func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
@@ -125,7 +127,8 @@ func (s *Server) clearAuthFlow(serverName string, flow *authFlowState) {
 	s.authMu.Unlock()
 }
 
-func (s *Server) awaitAuthAndReconnect(ctx context.Context, sc config.ServerConfig, login *auth.BrowserLogin) {
+func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInstall, login *auth.BrowserLogin) {
+	sc := install.cfg
 	token, err := login.Wait(ctx)
 	if err != nil {
 		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
@@ -135,7 +138,7 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, sc config.ServerConf
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
 		return
 	}
-	s.reconnectWithToken(sc.Name, sc)
+	s.reconnectWithToken(install)
 }
 
 func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
@@ -148,13 +151,14 @@ func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
 	}
 }
 
-func (s *Server) reconnectWithToken(serverName string, sc config.ServerConfig) {
+func (s *Server) reconnectWithToken(install upstreamInstall) {
+	serverName := install.cfg.Name
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	// Do not call removeServerRuntime first: if AddUpstream fails the server
 	// would be permanently gone. registerUpstream → swapUpstream replaces the
 	// old upstream in-place; on failure the old upstream is untouched.
-	if err := s.AddUpstream(ctx, sc); err != nil {
+	if err := s.addUpstream(ctx, install); err != nil {
 		s.logger.Error("reconnect after auth failed", "server", serverName, "err", err)
 	} else {
 		s.notifyAllSessions()
