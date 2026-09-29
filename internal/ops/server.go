@@ -36,17 +36,6 @@ func (s SavedServer) Print(w io.Writer, name string) {
 	}
 }
 
-// WriteServer validates name, writes servers/<name>.yaml, and installs a
-// bundled projection if the server is a known upstream.
-func WriteServer(configDir string, sc config.ServerConfig) error {
-	saved, err := writeServer(configDir, sc)
-	if err != nil {
-		return err
-	}
-	saved.Print(os.Stdout, sc.Name)
-	return nil
-}
-
 // AddServer writes a new server. It refuses a configured name so replacing a
 // working server always takes an explicit remove first.
 func AddServer(configDir string, sc config.ServerConfig) (SavedServer, error) {
@@ -68,9 +57,6 @@ func IsConfigured(configDir, name string) bool {
 }
 
 func writeServer(configDir string, sc config.ServerConfig) (SavedServer, error) {
-	if err := validServerName(sc.Name); err != nil {
-		return SavedServer{}, err
-	}
 	withDefaults := WithBundledPermissions(sc)
 	path, err := writeServerYAML(configDir, withDefaults)
 	if err != nil {

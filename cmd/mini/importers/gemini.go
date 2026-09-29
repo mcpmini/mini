@@ -29,7 +29,7 @@ func ImportFromGemini(configDir, path string) error {
 
 func writeGeminiServers(configDir string, servers map[string]geminiMCPEntry) error {
 	for name, entry := range servers {
-		if err := WriteServerYAML(configDir, name, geminiEntryToServer(name, entry)); err != nil {
+		if _, err := ImportServer(configDir, name, geminiEntryToServer(name, entry)); err != nil {
 			return err
 		}
 	}

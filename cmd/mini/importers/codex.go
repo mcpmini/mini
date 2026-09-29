@@ -31,7 +31,7 @@ func ImportFromCodex(configDir, path string) error {
 
 func writeCodexServers(configDir string, servers map[string]codexMCPEntry) error {
 	for name, entry := range servers {
-		if err := WriteServerYAML(configDir, name, codexEntryToServer(name, entry)); err != nil {
+		if _, err := ImportServer(configDir, name, codexEntryToServer(name, entry)); err != nil {
 			return err
 		}
 	}

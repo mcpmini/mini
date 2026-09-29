@@ -58,7 +58,7 @@ func TestRunLoginStepAutoYesSkipsPrompts(t *testing.T) {
 
 func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 	dir := t.TempDir()
-	if err := importers.WriteServerYAML(dir, "slack", importers.ServerYAML{
+	if err := importers.AddServerYAML(dir, "slack", importers.ServerYAML{
 		Command: "npx",
 		Args:    []string{"server-slack"},
 	}); err != nil {
@@ -173,7 +173,7 @@ func TestRunLoginStepOmitsDisabledServers(t *testing.T) {
 	dir := loginStepConfig(t, "on")
 	disabled := false
 	off := config.ServerConfig{Name: "off", Transport: "http", Enabled: &disabled, Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}
-	if err := ops.WriteServer(dir, off); err != nil {
+	if _, err := ops.AddServer(dir, off); err != nil {
 		t.Fatal(err)
 	}
 	out := &bytes.Buffer{}
@@ -245,7 +245,7 @@ func loginStepConfig(t *testing.T, names ...string) string {
 	dir := t.TempDir()
 	for _, name := range names {
 		sc := config.ServerConfig{Name: name, Transport: "http", Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}
-		if err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.AddServer(dir, sc); err != nil {
 			t.Fatal(err)
 		}
 	}

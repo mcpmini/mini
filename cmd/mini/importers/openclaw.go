@@ -29,7 +29,7 @@ func ImportFromOpenClaw(configDir, path string) error {
 
 func writeOpenClawServers(configDir string, servers map[string]openClawMCPEntry) error {
 	for name, entry := range servers {
-		if err := WriteServerYAML(configDir, name, openClawEntryToServer(name, entry)); err != nil {
+		if _, err := ImportServer(configDir, name, openClawEntryToServer(name, entry)); err != nil {
 			return err
 		}
 	}

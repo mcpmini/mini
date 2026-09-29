@@ -1,6 +1,7 @@
 package importers
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -41,14 +42,8 @@ func ReadConfigFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-// WriteServerYAML writes servers/<name>.yaml and installs a bundled projection
-// if one is known for this server.
-func WriteServerYAML(configDir, name string, sc ServerYAML) error {
-	return ops.WriteServer(configDir, toServerConfig(name, sc))
-}
-
-// AddServerYAML adds one new server; unlike WriteServerYAML it refuses a name
-// that's already configured.
+// AddServerYAML adds one new server, refusing a configured name with
+// ops.ErrAlreadyConfigured.
 func AddServerYAML(configDir, name string, sc ServerYAML) error {
 	saved, err := ops.AddServer(configDir, toServerConfig(name, sc))
 	if err != nil {
@@ -56,6 +51,17 @@ func AddServerYAML(configDir, name string, sc ServerYAML) error {
 	}
 	saved.Print(os.Stdout, name)
 	return nil
+}
+
+// ImportServer adds one server of a batch import. A configured name is skipped
+// rather than failing the batch, so re-running an import adds only what's new.
+func ImportServer(configDir, name string, sc ServerYAML) (added bool, err error) {
+	err = AddServerYAML(configDir, name, sc)
+	if errors.Is(err, ops.ErrAlreadyConfigured) {
+		fmt.Printf("skipped %s: already configured\n", name)
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // InstallBundledProjection installs a projection for a known server if one exists.

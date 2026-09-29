@@ -162,11 +162,11 @@ func shouldImportClaudeEntry(configDir, name string, entry importers.ClaudeMCPEn
 	if isSelfEntry(entry.Command, selfPath) {
 		return false
 	}
-	if err := importers.WriteServerYAML(configDir, name, importers.ClaudeEntryToServer(name, entry)); err != nil {
+	added, err := importers.ImportServer(configDir, name, importers.ClaudeEntryToServer(name, entry))
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
-		return false
 	}
-	return true
+	return added
 }
 
 func findClientPath(name string) string {

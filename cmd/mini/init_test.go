@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/cmd/mini/importers"
 )
 
 func TestIsSelfEntry(t *testing.T) {
@@ -116,5 +118,26 @@ func TestPrompterConfirm(t *testing.T) {
 func TestAutoConfirmAccepts(t *testing.T) {
 	if !autoConfirm("Q") {
 		t.Error("autoConfirm = false, want true")
+	}
+}
+
+func TestImportClaudeFormat_configuredServerIsNotCountedOrOverwritten(t *testing.T) {
+	configDir := t.TempDir()
+	if err := importers.AddServerYAML(configDir, "github", importers.ServerYAML{Command: "original"}); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(t.TempDir(), "claude.json")
+	claudeJSON := `{"mcpServers":{"github":{"type":"http","url":"https://api.githubcopilot.com/mcp"}}}`
+	if err := os.WriteFile(src, []byte(claudeJSON), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	if count := importClaudeFormat(configDir, src); count != 0 {
+		t.Errorf("imported %d servers, want 0: github was already configured", count)
+	}
+	var sc importers.ServerYAML
+	readServerYAML(t, configDir, "github", &sc)
+	if sc.Command != "original" {
+		t.Errorf("Command = %q, init overwrote the configured server", sc.Command)
 	}
 }

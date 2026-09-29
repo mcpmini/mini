@@ -152,6 +152,28 @@ func TestImportFromClaude(t *testing.T) {
 		}
 	})
 
+	t.Run("configured name is skipped and the rest are imported", func(t *testing.T) {
+		dir := tempDir(t)
+		if err := AddServerYAML(dir, "gh", ServerYAML{Command: "original"}); err != nil {
+			t.Fatal(err)
+		}
+		f := filepath.Join(dir, "claude.json")
+		os.WriteFile(f, []byte(`{"mcpServers":{"gh":{"command":"npx"},"other":{"command":"run"}}}`), 0600)
+
+		if err := ImportFromClaude(dir, f); err != nil {
+			t.Fatalf("ImportFromClaude: %v", err)
+		}
+
+		var gh ServerYAML
+		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &gh)
+		if gh.Command != "original" {
+			t.Errorf("gh Command = %q, the import overwrote the configured server", gh.Command)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "servers", "other.yaml")); err != nil {
+			t.Errorf("other wasn't imported after gh was skipped: %v", err)
+		}
+	})
+
 	t.Run("empty servers prints message", func(t *testing.T) {
 		dir := tempDir(t)
 		f := filepath.Join(dir, "empty.json")
@@ -259,13 +281,13 @@ func TestImportFromCodex(t *testing.T) {
 	})
 }
 
-func TestWriteServerYAML(t *testing.T) {
+func TestAddServerYAML(t *testing.T) {
 	t.Run("valid name creates file with correct content", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := ServerYAML{Name: "myserver", Command: "npx", Args: []string{"server-github"}}
 
-		if err := WriteServerYAML(dir, "myserver", sc); err != nil {
-			t.Fatalf("WriteServerYAML: %v", err)
+		if err := AddServerYAML(dir, "myserver", sc); err != nil {
+			t.Fatalf("AddServerYAML: %v", err)
 		}
 		path := filepath.Join(dir, "servers", "myserver.yaml")
 		var got ServerYAML
@@ -280,7 +302,7 @@ func TestWriteServerYAML(t *testing.T) {
 
 	t.Run("invalid name returns error", func(t *testing.T) {
 		dir := tempDir(t)
-		err := WriteServerYAML(dir, "bad name!", ServerYAML{})
+		err := AddServerYAML(dir, "bad name!", ServerYAML{})
 		if err == nil {
 			t.Fatal("expected error for invalid server name")
 		}
@@ -291,8 +313,8 @@ func TestWriteServerYAML(t *testing.T) {
 
 	t.Run("file permissions are 0600", func(t *testing.T) {
 		dir := tempDir(t)
-		if err := WriteServerYAML(dir, "sec", ServerYAML{Name: "sec"}); err != nil {
-			t.Fatalf("WriteServerYAML: %v", err)
+		if err := AddServerYAML(dir, "sec", ServerYAML{Name: "sec"}); err != nil {
+			t.Fatalf("AddServerYAML: %v", err)
 		}
 		info, err := os.Stat(filepath.Join(dir, "servers", "sec.yaml"))
 		if err != nil {

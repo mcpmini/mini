@@ -41,7 +41,7 @@ func importClaudeServers(configDir string, servers map[string]ClaudeMCPEntry, em
 		return nil
 	}
 	for name, entry := range servers {
-		if err := WriteServerYAML(configDir, name, ClaudeEntryToServer(name, entry)); err != nil {
+		if _, err := ImportServer(configDir, name, ClaudeEntryToServer(name, entry)); err != nil {
 			return err
 		}
 	}

@@ -15,12 +15,12 @@ import (
 	"github.com/mcpmini/mini/internal/ops"
 )
 
-func TestWriteServer(t *testing.T) {
+func TestAddServer(t *testing.T) {
 	t.Run("roundtrips command and args", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Command: "npx", Args: []string{"-y", "server-github"}}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
@@ -35,8 +35,8 @@ func TestWriteServer(t *testing.T) {
 	t.Run("roundtrips url and transport", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "remote", Transport: "http", URL: "https://example.com/mcp"}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "remote.yaml"), &got)
@@ -58,8 +58,8 @@ func TestWriteServer(t *testing.T) {
 				Hidden:    []string{"internal_tool"},
 			},
 		}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "guarded.yaml"), &got)
@@ -74,8 +74,8 @@ func TestWriteServer(t *testing.T) {
 	t.Run("empty stdio fields absent from yaml for http server", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "http-only", Transport: "http", URL: "https://example.com"}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		data, _ := os.ReadFile(filepath.Join(dir, "servers", "http-only.yaml"))
 		for _, unwanted := range []string{"command:", "args:", "env:"} {
@@ -87,8 +87,8 @@ func TestWriteServer(t *testing.T) {
 
 	t.Run("file has 0600 permissions", func(t *testing.T) {
 		dir := tempDir(t)
-		if err := ops.WriteServer(dir, config.ServerConfig{Name: "sec", Command: "run"}); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "sec", Command: "run"}); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		info, _ := os.Stat(filepath.Join(dir, "servers", "sec.yaml"))
 		if perm := info.Mode().Perm(); perm != 0600 {
@@ -98,7 +98,7 @@ func TestWriteServer(t *testing.T) {
 
 	t.Run("invalid name returns error", func(t *testing.T) {
 		dir := tempDir(t)
-		if err := ops.WriteServer(dir, config.ServerConfig{Name: "bad name!"}); err == nil {
+		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "bad name!"}); err == nil {
 			t.Fatal("expected error for invalid server name")
 		}
 	})
@@ -106,8 +106,8 @@ func TestWriteServer(t *testing.T) {
 	t.Run("known server installs bundled projection", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		dest := filepath.Join(dir, "servers", "gh.proj.yaml")
 		data, err := os.ReadFile(dest)
@@ -122,8 +122,8 @@ func TestWriteServer(t *testing.T) {
 	t.Run("known server installs bundled permissions when none specified", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
@@ -145,8 +145,8 @@ func TestWriteServer(t *testing.T) {
 				Protected: []string{"my_tool"},
 			},
 		}
-		if err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
@@ -160,69 +160,7 @@ func TestWriteServer(t *testing.T) {
 			t.Errorf("bundled hidden applied despite explicit permissions: %v", got.Permissions.Hidden)
 		}
 	})
-}
 
-func TestDeleteServer(t *testing.T) {
-	t.Run("removes the server file", func(t *testing.T) {
-		dir := tempDir(t)
-		ops.WriteServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
-		if err := ops.DeleteServer(dir, "toremove"); err != nil {
-			t.Fatalf("DeleteServer: %v", err)
-		}
-		if _, err := os.Stat(filepath.Join(dir, "servers", "toremove.yaml")); err == nil {
-			t.Fatal("server file still exists after delete")
-		}
-	})
-
-	t.Run("returns ErrNotExist for a server that isn't configured", func(t *testing.T) {
-		dir := tempDir(t)
-		if err := ops.DeleteServer(dir, "ghost"); !errors.Is(err, fs.ErrNotExist) {
-			t.Fatalf("err = %v, want fs.ErrNotExist", err)
-		}
-	})
-
-	t.Run("refuses a server defined inline in config.yaml", func(t *testing.T) {
-		dir := tempDir(t)
-		writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n- name: inline\n  command: run\n")
-		if err := ops.DeleteServer(dir, "inline"); !errors.Is(err, ops.ErrDefinedInline) {
-			t.Fatalf("err = %v, want ErrDefinedInline", err)
-		}
-	})
-
-	t.Run("returns error for invalid name", func(t *testing.T) {
-		dir := tempDir(t)
-		if err := ops.DeleteServer(dir, "bad name!"); err == nil {
-			t.Fatal("expected error for invalid server name")
-		}
-	})
-
-	t.Run("also clears the oauth-detected marker", func(t *testing.T) {
-		dir := tempDir(t)
-		ops.WriteServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
-		if err := config.MarkOAuthDetected(dir, "toremove"); err != nil {
-			t.Fatalf("MarkOAuthDetected: %v", err)
-		}
-		if err := ops.DeleteServer(dir, "toremove"); err != nil {
-			t.Fatalf("DeleteServer: %v", err)
-		}
-		if config.IsOAuthDetected(dir, "toremove") {
-			t.Error("a server reusing this name would inherit a stale oauth-detected marker")
-		}
-	})
-}
-
-func readYAML(t *testing.T, path string, out any) {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile %s: %v", path, err)
-	}
-	if err := yaml.Unmarshal(data, out); err != nil {
-		t.Fatalf("yaml.Unmarshal %s: %v", path, err)
-	}
-}
-
-func TestAddServer(t *testing.T) {
 	t.Run("writes a new server and returns its path", func(t *testing.T) {
 		dir := tempDir(t)
 
@@ -261,7 +199,7 @@ func TestAddServer(t *testing.T) {
 		configure func(dir string)
 	}{
 		{"a server file", func(dir string) {
-			ops.WriteServer(dir, config.ServerConfig{Name: "taken", Command: "original"}) //nolint:errcheck
+			ops.AddServer(dir, config.ServerConfig{Name: "taken", Command: "original"}) //nolint:errcheck
 		}},
 		{"an inline config.yaml entry", func(dir string) {
 			writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n- name: taken\n  command: original\n")
@@ -284,6 +222,66 @@ func TestAddServer(t *testing.T) {
 				t.Errorf("servers = %+v, want only the original", servers)
 			}
 		})
+	}
+}
+
+func TestDeleteServer(t *testing.T) {
+	t.Run("removes the server file", func(t *testing.T) {
+		dir := tempDir(t)
+		ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
+		if err := ops.DeleteServer(dir, "toremove"); err != nil {
+			t.Fatalf("DeleteServer: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "servers", "toremove.yaml")); err == nil {
+			t.Fatal("server file still exists after delete")
+		}
+	})
+
+	t.Run("returns ErrNotExist for a server that isn't configured", func(t *testing.T) {
+		dir := tempDir(t)
+		if err := ops.DeleteServer(dir, "ghost"); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("err = %v, want fs.ErrNotExist", err)
+		}
+	})
+
+	t.Run("refuses a server defined inline in config.yaml", func(t *testing.T) {
+		dir := tempDir(t)
+		writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n- name: inline\n  command: run\n")
+		if err := ops.DeleteServer(dir, "inline"); !errors.Is(err, ops.ErrDefinedInline) {
+			t.Fatalf("err = %v, want ErrDefinedInline", err)
+		}
+	})
+
+	t.Run("returns error for invalid name", func(t *testing.T) {
+		dir := tempDir(t)
+		if err := ops.DeleteServer(dir, "bad name!"); err == nil {
+			t.Fatal("expected error for invalid server name")
+		}
+	})
+
+	t.Run("also clears the oauth-detected marker", func(t *testing.T) {
+		dir := tempDir(t)
+		ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
+		if err := config.MarkOAuthDetected(dir, "toremove"); err != nil {
+			t.Fatalf("MarkOAuthDetected: %v", err)
+		}
+		if err := ops.DeleteServer(dir, "toremove"); err != nil {
+			t.Fatalf("DeleteServer: %v", err)
+		}
+		if config.IsOAuthDetected(dir, "toremove") {
+			t.Error("a server reusing this name would inherit a stale oauth-detected marker")
+		}
+	})
+}
+
+func readYAML(t *testing.T, path string, out any) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile %s: %v", path, err)
+	}
+	if err := yaml.Unmarshal(data, out); err != nil {
+		t.Fatalf("yaml.Unmarshal %s: %v", path, err)
 	}
 }
 
