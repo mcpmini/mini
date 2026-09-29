@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,11 +17,59 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func TestReplaceRegistryToolsLocked_usesReloadedAliases(t *testing.T) {
+func newInternalTestServer(t *testing.T) *Server {
+	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
 	srv := New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	t.Cleanup(srv.Close)
+	return srv
+}
+
+func registeredToolNames(srv *Server) []string {
+	var names []string
+	for _, e := range srv.reg.All() {
+		names = append(names, e.Name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.T) {
+	oldTools := []transport.ToolDefinition{{Name: "old_tool", InputSchema: json.RawMessage(`{}`)}}
+	newTools := []transport.ToolDefinition{{Name: "new_tool", InputSchema: json.RawMessage(`{}`)}}
+
+	t.Run("server removed after the reconnect swapped in its connection", func(t *testing.T) {
+		srv := newInternalTestServer(t)
+		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: oldTools})
+		reconnecting := srv.snapshotUpstreams()[0]
+
+		if _, err := srv.removeServerRuntime("svc"); err != nil {
+			t.Fatal(err)
+		}
+		srv.publishReconnectedTools(reconnecting, reconnecting.conn, newTools)
+
+		if got := registeredToolNames(srv); len(got) != 0 {
+			t.Errorf("registry after removal = %v, want empty", got)
+		}
+	})
+
+	t.Run("server replaced by a newer install", func(t *testing.T) {
+		srv := newInternalTestServer(t)
+		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: oldTools})
+		reconnecting := srv.snapshotUpstreams()[0]
+
+		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: newTools})
+		srv.publishReconnectedTools(reconnecting, reconnecting.conn, oldTools)
+
+		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.new_tool"}) {
+			t.Errorf("registry = %v, want only the newer install's svc.new_tool", got)
+		}
+	})
+}
+
+func TestPublishReconnectedTools_usesReloadedAliases(t *testing.T) {
+	srv := newInternalTestServer(t)
 
 	tools := []transport.ToolDefinition{{Name: "list_pull_requests", InputSchema: json.RawMessage(`{}`)}}
 	proj := map[string]*config.ProjectionConfig{"list_pull_requests": {Alias: "old_alias"}}
@@ -36,7 +85,7 @@ func TestReplaceRegistryToolsLocked_usesReloadedAliases(t *testing.T) {
 	if len(upstreams) != 1 {
 		t.Fatalf("expected 1 upstream, got %d", len(upstreams))
 	}
-	srv.replaceRegistryToolsLocked(upstreams[0], tools)
+	srv.publishReconnectedTools(upstreams[0], upstreams[0].conn, tools)
 
 	names := map[string]bool{}
 	for _, e := range srv.reg.All() {

@@ -129,7 +129,9 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	if old != nil {
 		old.Close()
 	}
-	s.replaceRegistryToolsLocked(u, tools)
+	if !s.publishReconnectedTools(u, conn, tools) {
+		return false
+	}
 	s.notifyAllSessions()
 	s.logger.Info("upstream reconnected", "server", u.cfg.Name)
 	if hook != nil {
@@ -138,9 +140,12 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	return true
 }
 
-func (s *Server) replaceRegistryToolsLocked(u *upstreamServer, tools []transport.ToolDefinition) {
+func (s *Server) publishReconnectedTools(u *upstreamServer, conn transport.Connection, tools []transport.ToolDefinition) bool {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
+	if !s.isCurrentUpstreamConn(u, conn) {
+		return false
+	}
 	u.lastDefs = tools
 	s.reg.ReplaceServer(registry.ServerParams{
 		Name:            u.cfg.Name,
@@ -148,6 +153,7 @@ func (s *Server) replaceRegistryToolsLocked(u *upstreamServer, tools []transport
 		Perm:            u.cfg.Permissions,
 		AliasByToolName: s.currentAliasesFor(u.cfg.Name),
 	})
+	return true
 }
 
 func swapReconnectConn(u *upstreamServer, conn transport.Connection) (transport.Connection, func(), bool) {
