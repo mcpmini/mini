@@ -354,7 +354,7 @@ func TestCLI_add_withHeader(t *testing.T) {
 func TestCLI_add_stdioCommand(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "add", "localserver", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+	_, _, code := run(t, bin, cfg, "add", "localserver", "--no-connect", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
 	if code != 0 {
 		t.Fatalf("add stdio command should exit 0, got %d", code)
 	}
@@ -395,12 +395,12 @@ func TestCLI_init_importFromGemini(t *testing.T) {
 	}
 }
 
-// versionPattern matches valid outputs from internal/version.computeVersion
-// when built from a git checkout (the only context miniBin ever uses):
+// versionPattern matches valid outputs from internal/version.computeVersion:
 //   - "a1b2c3d"            — 7-char hex hash, clean tree
 //   - "a1b2c3d+dirty"      — hash, dirty tree
 //   - "v1.2.3 (a1b2c3d)"  — release tag with hash
-var versionPattern = regexp.MustCompile(`^([0-9a-f]{7}(\+dirty)?|v[0-9]+\.[0-9]+\.[0-9]+[^ ]* \([0-9a-f]{7}\))$`)
+//   - "dev"                — no VCS info, which is what builds from a git worktree get
+var versionPattern = regexp.MustCompile(`^(dev|[0-9a-f]{7}(\+dirty)?|v[0-9]+\.[0-9]+\.[0-9]+[^ ]* \([0-9a-f]{7}\))$`)
 
 func TestCLI_version(t *testing.T) {
 	bin := miniBin(t)
