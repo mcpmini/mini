@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth/authtest"
@@ -43,6 +44,26 @@ func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 	}
 }
 
+func TestRemoveServer_closesPendingLogin(t *testing.T) {
+	srv := newInternalAuthTestServer(t)
+	login := authtest.StartLogin(t, &config.AuthConfig{})
+	_, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv.storeAuthFlow("svc", &authFlowState{cancel: cancel, login: login})
+
+	if _, err := srv.removeServerRuntime("svc"); err != nil {
+		t.Fatal(err)
+	}
+
+	authtest.RequireCallbackPortReleased(t, login)
+	srv.authMu.Lock()
+	_, pending := srv.authFlows["svc"]
+	srv.authMu.Unlock()
+	if pending {
+		t.Error("login still pending after remove_server")
+	}
+}
+
 func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
 
@@ -66,12 +87,31 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 	cancel()
 
 	srv.authWg.Add(1)
-	srv.runAuthFlow(authCtx, config.ServerConfig{Name: "svc"}, staleFlow)
+	srv.runAuthFlow(authCtx, srv.replacingInstall(config.ServerConfig{Name: "svc"}), staleFlow)
 
 	srv.authMu.Lock()
 	got := srv.authFlows["svc"]
 	srv.authMu.Unlock()
 	if got != activeFlow {
 		t.Fatalf("stale cleanup removed newer flow: got %p want %p", got, activeFlow)
+	}
+}
+
+func TestReconnectWithToken_removedSinceStartAuthStaysRemoved(t *testing.T) {
+	echomcp := os.Getenv("ECHOMCP_BIN")
+	if echomcp == "" {
+		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+	}
+	srv := newInternalAuthTestServer(t)
+	t.Cleanup(srv.Close)
+	installAtStartAuth := srv.replacingInstall(config.ServerConfig{Name: "svc", Command: echomcp})
+
+	if _, err := srv.removeServerRuntime("svc"); err != nil {
+		t.Fatal(err)
+	}
+	srv.reconnectWithToken(installAtStartAuth)
+
+	if entries := srv.reg.All(); len(entries) != 0 {
+		t.Errorf("login completing after remove_server registered %d tools, want 0", len(entries))
 	}
 }
