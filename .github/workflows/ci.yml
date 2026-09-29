@@ -22,8 +22,13 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Test kind convention
-        run: go run ./tools/testkind .
+      - name: Repo convention checks
+        run: |
+          go run ./tools/funclen .
+          go run ./tools/params .
+          go run ./tools/returns .
+          go run ./tools/clocklint .
+          go run ./tools/testkind .
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
@@ -44,7 +49,7 @@ jobs:
         run: go build ./...
 
       - name: Vet
-        run: go vet ./...
+        run: go vet -tags integration,test ./...
 
       - name: Build test helpers
         run: |
