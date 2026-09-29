@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -120,6 +121,9 @@ func TestStartAuth_e2e_connectsAfterOAuthFlow(t *testing.T) {
 }
 
 func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix-only: the browser command uses shell redirection")
+	}
 	dir := t.TempDir()
 	openedPath := filepath.Join(dir, "opened-url")
 	tokenSrv := fakeTokenServer(t, "unused-token")
