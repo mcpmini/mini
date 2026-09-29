@@ -5,6 +5,7 @@ package integration_test
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -105,7 +106,7 @@ func buildBin(p buildBinParams) (string, error) {
 	cmd := exec.Command("go", args...)
 	cmd.Dir = p.root
 	if b, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("%v\n%s", err, b)
+		return "", fmt.Errorf("%w\n%s", err, b)
 	}
 	return out, nil
 }
@@ -158,7 +159,8 @@ func runCLI(t *testing.T, configDir string, args ...string) (stdout, stderr stri
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
 			exitCode = exit.ExitCode()
 		} else {
 			t.Fatalf("run %v: %v", args, err)
@@ -175,7 +177,8 @@ func runCLIWithStdin(t *testing.T, stdin string, configDir string, args ...strin
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		if exit, ok := err.(*exec.ExitError); ok {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
 			exitCode = exit.ExitCode()
 		} else {
 			t.Fatalf("run %v: %v", args, err)

@@ -21,11 +21,8 @@ func serve(handler *mcpHandler, sink *outputSink) {
 }
 
 func serveRequest(handler *mcpHandler, sink *outputSink, line []byte) error {
-	var req transport.Request
-	if err := json.Unmarshal(line, &req); err != nil {
-		return nil
-	}
-	if req.ID == nil {
+	req, ok := parseRequest(line)
+	if !ok {
 		return nil
 	}
 	result := handler.dispatch(req)
@@ -33,4 +30,12 @@ func serveRequest(handler *mcpHandler, sink *outputSink, line []byte) error {
 		os.Exit(1)
 	}
 	return sink.writeResult(result)
+}
+
+func parseRequest(line []byte) (transport.Request, bool) {
+	var req transport.Request
+	if err := json.Unmarshal(line, &req); err != nil {
+		return req, false
+	}
+	return req, req.ID != nil
 }
