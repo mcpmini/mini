@@ -4,10 +4,9 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"net"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -21,15 +20,11 @@ func newInternalAuthTestServer(t *testing.T) *Server {
 func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	addr := ln.Addr().String()
+	login := authtest.StartLogin(t, &config.AuthConfig{})
 
 	cancelled := false
 	srv.authMu.Lock()
-	srv.authFlows["srv1"] = &authFlowState{cancel: func() { cancelled = true }, listener: ln}
+	srv.authFlows["srv1"] = &authFlowState{cancel: func() { cancelled = true }, login: login}
 	srv.authMu.Unlock()
 
 	srv.cancelExistingAuthFlow("srv1")
@@ -38,12 +33,7 @@ func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 		t.Error("expected cancel() to be called")
 	}
 
-	// Port must be immediately reusable — no retry or sleep needed.
-	ln2, err := net.Listen("tcp", addr)
-	if err != nil {
-		t.Fatalf("expected port to be free after cancel, got: %v", err)
-	}
-	ln2.Close()
+	authtest.RequireCallbackPortReleased(t, login)
 
 	srv.authMu.Lock()
 	_, exists := srv.authFlows["srv1"]
@@ -55,21 +45,29 @@ func TestCancelExistingAuthFlow_closesListenerSynchronously(t *testing.T) {
 
 func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 	srv := newInternalAuthTestServer(t)
+
+	staleLogin := authtest.StartLogin(t, &config.AuthConfig{})
+
 	_, staleCancel := context.WithCancel(context.Background())
 	defer staleCancel()
+	staleFlow := &authFlowState{cancel: staleCancel, login: staleLogin}
 
-	staleFlow := &authFlowState{cancel: staleCancel}
+	activeLogin := authtest.StartLogin(t, &config.AuthConfig{})
+
 	_, activeCancel := context.WithCancel(context.Background())
 	defer activeCancel()
-	activeFlow := &authFlowState{cancel: activeCancel}
+	activeFlow := &authFlowState{cancel: activeCancel, login: activeLogin}
 
 	srv.authMu.Lock()
 	srv.authFlows["svc"] = activeFlow
 	srv.authMu.Unlock()
-	doneCh := make(chan auth.PKCEResult, 1)
-	doneCh <- auth.PKCEResult{Err: context.Canceled}
+
+	authCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
 	srv.authWg.Add(1)
-	srv.runAuthFlow("svc", config.ServerConfig{Name: "svc"}, staleFlow, doneCh)
+	srv.runAuthFlow(authCtx, config.ServerConfig{Name: "svc"}, staleFlow)
+
 	srv.authMu.Lock()
 	got := srv.authFlows["svc"]
 	srv.authMu.Unlock()

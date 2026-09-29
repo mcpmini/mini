@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -73,24 +73,6 @@ func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 	return srv
 }
 
-// visitCallback simulates a browser completing the OAuth flow by hitting
-// the local callback URL with the code and state from the auth URL.
-func visitCallback(authURL string) error {
-	parsed, err := url.Parse(authURL)
-	if err != nil {
-		return fmt.Errorf("parse auth URL: %w", err)
-	}
-	q := parsed.Query()
-	state := q.Get("state")
-	redirectURI := q.Get("redirect_uri")
-	if redirectURI == "" {
-		return fmt.Errorf("missing redirect_uri in auth URL: %s", authURL)
-	}
-	callbackURL := redirectURI + "?code=test-code&state=" + url.QueryEscape(state)
-	go http.Get(callbackURL) //nolint:errcheck
-	return nil
-}
-
 func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server.Server {
 	t.Helper()
 	writeServerYAML(t, dir, svcName, fmt.Sprintf("name: %s\ntransport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
@@ -133,9 +115,7 @@ func TestStartAuth_e2e_connectsAfterOAuthFlow(t *testing.T) {
 	if authURL == "" {
 		t.Fatal("expected non-empty auth URL from start_auth")
 	}
-	if err := visitCallback(authURL); err != nil {
-		t.Fatalf("simulate browser: %v", err)
-	}
+	authtest.CompleteAuthorization(t, authURL, "test-code")
 	waitForServerConnected(t, srv, "protected")
 }
 
@@ -150,7 +130,7 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 	authText := toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "mysvc"})))
 	var authResult map[string]any
 	json.Unmarshal([]byte(authText), &authResult)
-	visitCallback(authResult["url"].(string)) //nolint:errcheck
+	authtest.CompleteAuthorization(t, authResult["url"].(string), "test-code")
 	for range 100 {
 		listText := toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))
 		var tools []any
@@ -435,9 +415,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	if err := json.Unmarshal([]byte(authText), &authResult); err != nil {
 		t.Fatalf("parse start_auth response: %v", err)
 	}
-	if err := visitCallback(authResult["url"].(string)); err != nil {
-		t.Fatalf("simulate browser: %v", err)
-	}
+	authtest.CompleteAuthorization(t, authResult["url"].(string), "test-code")
 
 	waitForServerConnected(t, mini, "srv")
 

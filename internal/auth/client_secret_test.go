@@ -98,22 +98,10 @@ func hydrateFromSavedRegistration(t *testing.T, reg *auth.Registration, tokenURL
 
 func exchangeAndRefresh(t *testing.T, ac *config.AuthConfig) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, ac)
-	if err != nil {
-		t.Fatalf("StartPKCEFlow: %v", err)
-	}
-	if err := simulateBrowser(authURL); err != nil {
-		t.Fatalf("simulateBrowser: %v", err)
-	}
-	result := <-doneCh
-	if result.Err != nil {
-		t.Fatalf("PKCE exchange: %v", result.Err)
-	}
+	token := pkceToken(t, ac)
 	// backdated so Refresh actually hits the token endpoint rather than returning the cached token
-	result.Token.Expiry = time.Now().Add(-time.Hour)
-	if _, err := auth.Refresh(context.Background(), ac, result.Token); err != nil {
+	token.Expiry = time.Now().Add(-time.Hour)
+	if _, err := auth.Refresh(context.Background(), ac, token); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
 }
@@ -422,20 +410,15 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 
 	ac := hydrateFromSavedRegistration(t, reg, rejectingTokenSrv.URL, clock.System())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	authURL, doneCh, err := auth.StartPKCEFlow(ctx, ac)
-	if err != nil {
-		t.Fatalf("StartPKCEFlow: %v", err)
-	}
-	if err := simulateBrowser(authURL); err != nil {
-		t.Fatalf("simulateBrowser: %v", err)
-	}
-	result := <-doneCh
-	if result.Err == nil {
+	login := authtest.StartLogin(t, ac)
+	authtest.CompleteAuthorization(t, login.AuthURL(), "test-auth-code")
+	ctx, ctxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer ctxCancel()
+	_, exchangeErr := login.Wait(ctx)
+	if exchangeErr == nil {
 		t.Fatal("expected exchange against a rejecting token endpoint to fail")
 	}
-	if strings.Contains(result.Err.Error(), secret) {
-		t.Errorf("exchange error leaked the client_secret: %q", result.Err.Error())
+	if strings.Contains(exchangeErr.Error(), secret) {
+		t.Errorf("exchange error leaked the client_secret: %q", exchangeErr.Error())
 	}
 }
