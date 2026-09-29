@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
-	"strings"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth/provider"
@@ -33,7 +31,7 @@ func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
 func dialHTTP(p DialParams) (transport.Connection, error) {
 	cfg := transport.HTTPConnectionConfig{
 		URL:                     p.Server.URL,
-		Headers:                 MergedHeaders(p.Server),
+		Headers:                 p.Server.MergedHeaders(),
 		Clock:                   p.Clock,
 		ClientTimeout:           parseClientTimeout(p.Server.HTTPClientTimeout),
 		DisableRetryOnRateLimit: p.Server.DisableRetryOnRateLimit,
@@ -47,11 +45,8 @@ func dialHTTP(p DialParams) (transport.Connection, error) {
 }
 
 func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error {
-	if p.ProviderRegistry == nil || !isOAuth2Server(p.Server) {
-		return nil
-	}
 	// A hand-set header or auth.token means the user chose static auth; the provider would override it.
-	if hasHeader(cfg.Headers, p.Server.Auth.HeaderName()) {
+	if p.ProviderRegistry == nil || !p.Server.UsesOAuthLogin() {
 		return nil
 	}
 	params := provider.Params{
@@ -68,43 +63,6 @@ func attachAuthProvider(cfg *transport.HTTPConnectionConfig, p DialParams) error
 	cfg.AuthProvider = provider
 	cfg.AuthHeaderName = p.Server.Auth.HeaderName()
 	return nil
-}
-
-func hasHeader(headers map[string]string, name string) bool {
-	for k, v := range headers {
-		if strings.EqualFold(k, name) && v != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func isOAuth2Server(sc config.ServerConfig) bool {
-	return sc.Auth != nil && sc.Auth.Type == config.AuthTypeOAuth2
-}
-
-// MergedHeaders returns the HTTP headers for sc, including injected auth.
-func MergedHeaders(sc config.ServerConfig) map[string]string {
-	headers := make(map[string]string)
-	for k, v := range sc.Headers {
-		headers[k] = strings.TrimSpace(os.Expand(v, os.Getenv))
-	}
-	if sc.Auth != nil {
-		injectAuth(headers, sc.Auth)
-	}
-	return headers
-}
-
-func injectAuth(headers map[string]string, auth *config.AuthConfig) {
-	token := strings.TrimSpace(os.Expand(auth.Token, os.Getenv))
-	if token == "" {
-		return
-	}
-	if auth.Type == config.AuthTypeAPIKey {
-		headers[auth.HeaderName()] = token
-		return
-	}
-	headers[auth.HeaderName()] = "Bearer " + token
 }
 
 func parseClientTimeout(spec string) time.Duration {
