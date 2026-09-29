@@ -307,15 +307,7 @@ func authorizeServer(p authorizeParams) {
 		return
 	}
 	fmt.Fprintf(p.out, "%s requires OAuth authorization\n", p.name)
-	token, err := doPKCEFlow(pkceFlowParams{
-		configDir:  p.configDir,
-		serverName: p.name,
-		opener:     authOpener(cfg, p.sc),
-		sc:         &p.sc,
-	})
-	if err != nil {
+	if _, err := logIn(logInParams{configDir: p.configDir, cfg: cfg, sc: &p.sc, out: p.out}); err != nil {
 		fmt.Fprintf(p.out, "note: automatic authorization failed (%v); run `mini auth %s` to retry\n", err, p.name)
-		return
 	}
-	printAuthResult(p.name, token.Expiry)
 }

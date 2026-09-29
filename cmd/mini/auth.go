@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -32,12 +33,9 @@ func runAuth(configDir, serverName string) {
 	if err != nil {
 		fatalf("%v", err)
 	}
-	runPKCEFlow(pkceFlowParams{
-		configDir:  configDir,
-		serverName: serverName,
-		opener:     authOpener(cfg, *sc),
-		sc:         sc,
-	})
+	if _, err := logIn(logInParams{configDir: configDir, cfg: cfg, sc: sc, out: os.Stdout}); err != nil {
+		fatalf("%v", err)
+	}
 }
 
 func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *config.ServerConfig, error) {
@@ -62,12 +60,24 @@ type pkceFlowParams struct {
 	sc         *config.ServerConfig
 }
 
-func runPKCEFlow(p pkceFlowParams) {
-	token, err := doPKCEFlow(p)
+type logInParams struct {
+	configDir string
+	cfg       *config.Config
+	sc        *config.ServerConfig
+	out       io.Writer
+}
+
+func logIn(p logInParams) (*oauth2.Token, error) {
+	token, err := doPKCEFlow(pkceFlowParamsFor(p.configDir, p.cfg, p.sc))
 	if err != nil {
-		fatalf("%v", err)
+		return nil, err
 	}
-	printAuthResult(p.serverName, token.Expiry)
+	printAuthResult(p.out, p.sc.Name, token.Expiry)
+	return token, nil
+}
+
+func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerConfig) pkceFlowParams {
+	return pkceFlowParams{configDir: configDir, serverName: sc.Name, opener: authOpener(cfg, *sc), sc: sc}
 }
 
 func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
@@ -99,11 +109,11 @@ func authOpener(cfg *config.Config, sc config.ServerConfig) func(string) error {
 	return openBrowser
 }
 
-func printAuthResult(name string, expiry time.Time) {
+func printAuthResult(out io.Writer, name string, expiry time.Time) {
 	if expiry.IsZero() {
-		fmt.Printf("authorized %s (no expiry)\n", name)
+		fmt.Fprintf(out, "authorized %s (no expiry)\n", name)
 	} else {
-		fmt.Printf("authorized %s (expires %s)\n", name, expiry.Format(time.RFC3339))
+		fmt.Fprintf(out, "authorized %s (expires %s)\n", name, expiry.Format(time.RFC3339))
 	}
 }
 
