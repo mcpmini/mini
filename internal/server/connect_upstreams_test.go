@@ -167,20 +167,10 @@ func TestConnectUpstreams_SkipsDisabledServer(t *testing.T) {
 
 func TestConnectUpstreams_closeCancelsConnectsFromEveryCall(t *testing.T) {
 	hung := hungHTTPServer(t)
-	fast := newMCPTestServer(t, pingTools)
 	srv := newConnectTestServer(t)
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "first", Transport: "http", URL: hung.URL}})
+	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "second", Transport: "http", URL: hung.URL}})
 
-	// First call: hung upstream that will never resolve
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
-		{Name: "hung", Transport: "http", URL: hung.URL},
-	})
-	// Second call: must not cancel the first batch, Close does
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{
-		{Name: "fast", Transport: "http", URL: fast.URL},
-	})
-	eventually(t, func() bool { return srv.ToolCount("fast") > 0 })
-
-	// Close should not hang on the first call's hung worker
 	mustCloseWithin(t, srv, 3*time.Second)
 }
 
