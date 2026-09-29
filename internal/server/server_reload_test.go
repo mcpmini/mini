@@ -23,7 +23,9 @@ type serverReloadEnv struct {
 
 func newServerReloadEnv(t *testing.T) *serverReloadEnv {
 	t.Helper()
-	return &serverReloadEnv{reloadEnv: buildReloadEnv(t, evalTempDir(t)), upstream: newMCPTestServer(t, pingTools)}
+	cfg := config.DefaultConfig()
+	cfg.DangerousAllowPrivateURLs = true
+	return &serverReloadEnv{reloadEnv: buildReloadEnvWithConfig(t, evalTempDir(t), cfg), upstream: newMCPTestServer(t, pingTools)}
 }
 
 func (e *serverReloadEnv) serverPath(name string) string {
@@ -156,35 +158,42 @@ func TestServerReload_removalDuringStartupRetry_staysRemoved(t *testing.T) {
 	e.assertRemoved("flaky")
 }
 
-func TestServerReload_runtimeAddedServer_isLeftAlone(t *testing.T) {
-	t.Run("its own name", func(t *testing.T) {
-		e := newServerReloadEnv(t)
-		e.startWithServers("svc")
-		addRuntimeServer(t, e.srv, "rt")
+func TestServerReload_serverAddedByConfigTool_followsItsFile(t *testing.T) {
+	e := newServerReloadEnv(t)
+	e.startWithServers("svc")
+	addViaConfigTool(t, e.srv, "added", e.upstream.URL)
 
-		e.removeServerFile("svc")
-		e.advanceTick()
+	e.writeServer("svc", "# touched\n")
+	e.advanceTick()
+	e.assertConnected("added")
 
-		e.assertRemoved("svc")
-		e.assertConnected("rt")
-	})
-	t.Run("replacing a config server of the same name", func(t *testing.T) {
-		e := newServerReloadEnv(t)
-		e.startWithServers("svc")
-		addRuntimeServer(t, e.srv, "svc")
-
-		e.removeServerFile("svc")
-		e.advanceTick()
-
-		e.assertConnected("svc")
-	})
+	e.removeServerFile("added")
+	e.advanceTick()
+	e.assertRemoved("added")
 }
 
-func addRuntimeServer(t *testing.T, srv *server.Server, name string) {
+func addViaConfigTool(t *testing.T, srv *server.Server, name, url string) {
 	t.Helper()
-	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: name, RuntimeAdded: true}, fakeConn("getData")); err != nil {
+	resp := serve(t, srv, callTool("config", map[string]any{
+		"action": "add_server", "config": map[string]any{"name": name, "transport": "http", "url": url},
+	}))
+	if result, _ := resp["result"].(map[string]any); result["isError"] == true {
+		t.Fatalf("add_server: %s", toolResultText(t, resp))
+	}
+}
+
+func TestServerReload_serverNotStartedFromConfig_isLeftAlone(t *testing.T) {
+	e := newServerReloadEnv(t)
+	e.startWithServers("svc")
+	if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "other"}, fakeConn("getData")); err != nil {
 		t.Fatal(err)
 	}
+
+	e.removeServerFile("svc")
+	e.advanceTick()
+
+	e.assertRemoved("svc")
+	e.assertConnected("other")
 }
 
 func (e *serverReloadEnv) waitForRetryBackoff() {

@@ -255,3 +255,31 @@ func TestAddServer_SSRFPrivateIPBlocked(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockPrivateIPs_savedInServerFile_isEnforcedAfterRestart(t *testing.T) {
+	upstream := newMCPTestServer(t, pingTools)
+	for _, tc := range []struct {
+		name        string
+		extraYAML   string
+		wantConnect bool
+	}{
+		{name: "saved by add_server", extraYAML: "block_private_ips: true\n", wantConnect: false},
+		{name: "written by the user", wantConnect: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeServerYAML(t, dir, "svc", "name: svc\ntransport: http\nurl: "+upstream.URL+"\n"+tc.extraYAML)
+			_, servers, err := config.Load(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			srv := newTestServer(t, server.Params{ConfigDir: dir})
+
+			err = srv.AddUpstream(t.Context(), servers[0])
+
+			if connected := err == nil; connected != tc.wantConnect {
+				t.Errorf("connected to a loopback upstream = %v, want %v (err: %v)", connected, tc.wantConnect, err)
+			}
+		})
+	}
+}

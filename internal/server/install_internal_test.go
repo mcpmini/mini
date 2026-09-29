@@ -21,18 +21,19 @@ func newInstallTestServer(t *testing.T) *Server {
 	return srv
 }
 
-func TestRemoveConfigServer_afterRuntimeTakeoverOfTheName_keepsTheRuntimeServer(t *testing.T) {
+func TestRemoveConfigServer_afterRemoveServerAndReAdd_keepsTheNewServer(t *testing.T) {
 	srv := newInstallTestServer(t)
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
-	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc", RuntimeAdded: true}, &transport.FakeConnection{}); err != nil {
+	srv.detachAndCloseServer("svc")
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{}); err != nil {
 		t.Fatal(err)
 	}
 
 	if srv.removeConfigServer("svc") {
-		t.Error("removeConfigServer removed a server an agent had taken over")
+		t.Error("a pending config removal removed the server added after remove_server")
 	}
 	if !srv.isUpstreamRegistered("svc") {
-		t.Error("runtime server svc is gone")
+		t.Error("re-added server svc is gone")
 	}
 }
 

@@ -115,9 +115,9 @@ type Config struct {
 	// hidden tools. When false (default), agents and admins can audit hidden tools.
 	DisableListHidden bool `yaml:"disable_list_hidden"`
 
-	// DangerousAllowRuntimeStdio permits add_server to launch arbitrary stdio
-	// subprocesses at runtime. Off by default — stdio transports exec commands
-	// and should only be registered at startup from trusted config files.
+	// DangerousAllowRuntimeStdio permits add_server to save and launch an
+	// agent-chosen stdio command, which then also runs on every start. Off by
+	// default: stdio transports exec commands.
 	DangerousAllowRuntimeStdio bool `yaml:"dangerous_allow_runtime_stdio"`
 
 	// DangerousAllowPrivateURLs disables SSRF protection on add_server, allowing
@@ -219,11 +219,8 @@ type ServerConfig struct {
 	// Enabled defaults to true.
 	Enabled *bool `yaml:"enabled,omitempty"`
 
-	// RuntimeAdded marks servers registered at runtime via the MCP config tool
-	// (not from a config file). Runtime-added servers are untrusted — they may
-	// have been injected by an agent — so their connections get SSRF dial-time
-	// validation in addition to the add_server URL check.
-	RuntimeAdded bool `yaml:"-" json:"-"`
+	// Set by add_server: an agent picked the URL, so it stays barred from the local network after a restart.
+	BlockPrivateIPs bool `yaml:"block_private_ips,omitempty" json:"-"`
 }
 
 func (sc ServerConfig) IsEnabled() bool {

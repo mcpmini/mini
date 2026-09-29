@@ -5,6 +5,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -71,5 +73,24 @@ func TestLogProjectionLoadProblems_warnsPerSourceErrorAndSkippedServer(t *testin
 		if !strings.Contains(logs.String(), want) {
 			t.Errorf("expected %q in logs:\n%s", want, logs.String())
 		}
+	}
+}
+
+func TestAddServerRuntime_knownServer_runsWithBundledPermissions(t *testing.T) {
+	t.Setenv("MINI_HELPER_PROCESS", "1")
+	srv := newInternalConfigTestServer(t)
+	t.Cleanup(srv.Close)
+	srv.cfg.DangerousAllowRuntimeStdio = true
+	github := config.ServerConfig{Name: "gh", Command: os.Args[0], Args: []string{"server-github"}}
+
+	if _, err := srv.addServerRuntime(t.Context(), configureParams{ServerCfg: &github}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv.stateMu.RLock()
+	live := srv.upstreams["gh"].cfg.Permissions
+	srv.stateMu.RUnlock()
+	if live == nil || !slices.Contains(live.Protected, "merge_pull_request") {
+		t.Errorf("running gh permissions = %+v, want the bundled github defaults before any reload", live)
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -170,7 +171,7 @@ func handleImportFlags(configDir string, f importFlags) (handled bool, err error
 
 func addNamedServer(configDir string, sf serverFlags, out io.Writer) error {
 	if sf.url != "" {
-		if err := importers.WriteServerYAML(configDir, sf.name, httpServerYAML(sf.name, sf.url, sf.headers, sf.protected)); err != nil {
+		if err := addServerFile(configDir, httpServerYAML(sf.name, sf.url, sf.headers, sf.protected)); err != nil {
 			return err
 		}
 		if !sf.noConnect {
@@ -181,7 +182,15 @@ func addNamedServer(configDir string, sf serverFlags, out io.Writer) error {
 	if len(sf.cmdArgs) == 0 {
 		return usageErrf("provide --url or a command after NAME")
 	}
-	return importers.WriteServerYAML(configDir, sf.name, stdioServerYAML(sf.name, sf.cmdArgs, sf.protected))
+	return addServerFile(configDir, stdioServerYAML(sf.name, sf.cmdArgs, sf.protected))
+}
+
+func addServerFile(configDir string, sc importers.ServerYAML) error {
+	err := importers.AddServerYAML(configDir, sc.Name, sc)
+	if errors.Is(err, ops.ErrAlreadyConfigured) {
+		return fmt.Errorf("%w; run `mini rm %s` first to replace it", err, sc.Name)
+	}
+	return err
 }
 
 func httpServerYAML(name, url string, headers, protected stringSlice) importers.ServerYAML {

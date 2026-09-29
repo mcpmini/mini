@@ -64,6 +64,24 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
+	t.Run("existing name is refused and its file left unchanged", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := runAdd(dir, []string{"gh", "--", "original"}, &bytes.Buffer{}); err != nil {
+			t.Fatalf("first add: %v", err)
+		}
+
+		err := runAdd(dir, []string{"gh", "--", "replacement"}, &bytes.Buffer{})
+
+		if err == nil || !strings.Contains(err.Error(), "mini rm gh") {
+			t.Fatalf("err = %v, want an already-configured error pointing at `mini rm gh`", err)
+		}
+		var sc importers.ServerYAML
+		readServerYAML(t, dir, "gh", &sc)
+		if sc.Command != "original" {
+			t.Errorf("Command = %q, the refused add overwrote the server", sc.Command)
+		}
+	})
+
 	t.Run("stdio child flags are stored unchanged", func(t *testing.T) {
 		dir := t.TempDir()
 		args := []string{"svc", "--", "/usr/bin/printf", "-h", "--config", "child-value"}

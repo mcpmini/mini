@@ -38,8 +38,7 @@ func DetectOAuth(ctx context.Context, p DetectOAuthParams) (bool, error) {
 }
 
 func eligibleForOAuthDetection(sc config.ServerConfig) bool {
-	// RuntimeAdded servers could collide by name with an existing server — never write for them.
 	// Before auth is configured any header may hold a credential under a custom name (e.g. X-Api-Key),
 	// and an expired static key answers with the same 401 as OAuth.
-	return !sc.RuntimeAdded && sc.Auth == nil && sc.IsHTTPTransport() && len(sc.Headers) == 0
+	return sc.Auth == nil && sc.IsHTTPTransport() && len(sc.Headers) == 0
 }

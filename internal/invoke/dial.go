@@ -35,7 +35,7 @@ func dialHTTP(p DialParams) (transport.Connection, error) {
 		Clock:                   p.Clock,
 		ClientTimeout:           parseClientTimeout(p.Server.HTTPClientTimeout),
 		DisableRetryOnRateLimit: p.Server.DisableRetryOnRateLimit,
-		BlockPrivateIPs:         p.Server.RuntimeAdded && !p.Config.DangerousAllowPrivateURLs,
+		BlockPrivateIPs:         p.Server.BlockPrivateIPs && !p.Config.DangerousAllowPrivateURLs,
 		ServerName:              p.Server.Name,
 	}
 	if err := attachAuthProvider(&cfg, p); err != nil {

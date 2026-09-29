@@ -47,6 +47,17 @@ func WriteServerYAML(configDir, name string, sc ServerYAML) error {
 	return ops.WriteServer(configDir, toServerConfig(name, sc))
 }
 
+// AddServerYAML adds one new server; unlike WriteServerYAML it refuses a name
+// that's already configured.
+func AddServerYAML(configDir, name string, sc ServerYAML) error {
+	saved, err := ops.AddServer(configDir, toServerConfig(name, sc))
+	if err != nil {
+		return err
+	}
+	saved.Print(os.Stdout, name)
+	return nil
+}
+
 // InstallBundledProjection installs a projection for a known server if one exists.
 func InstallBundledProjection(configDir string, sc ServerYAML) {
 	ops.InstallBundledProjection(configDir, toServerConfig(sc.Name, sc))

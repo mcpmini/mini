@@ -229,9 +229,6 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 	s.stateMu.Lock()
 	old := s.upstreams[name]
 	s.upstreams[name] = u
-	if u.cfg.RuntimeAdded {
-		delete(s.configServers, name)
-	}
 	s.stateMu.Unlock()
 	return old
 }

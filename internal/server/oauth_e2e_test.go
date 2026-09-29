@@ -332,38 +332,6 @@ func TestAddUpstream_customAuthHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 	}
 }
 
-func TestAddUpstream_runtimeAddedNeverPersistsToDisk(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-
-	dir := t.TempDir()
-	writeServerYAML(t, dir, "collide", "name: collide\ntransport: http\nurl: https://real-server.example.com/mcp\n")
-	cfg := config.DefaultConfig()
-	cfg.DisableAuthBrowserOpen = true
-	cfg.DangerousAllowPrivateURLs = true // let the dial reach the loopback server; exercise the RuntimeAdded guard, not SSRF validation
-	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
-	defer srv.Close()
-
-	runtimeSC := config.ServerConfig{Name: "collide", Transport: "http", URL: mcpSrv.URL, RuntimeAdded: true}
-	if err := srv.AddUpstream(context.Background(), runtimeSC); err == nil {
-		t.Fatal("expected AddUpstream to return an error")
-	}
-
-	if config.IsOAuthDetected(dir, "collide") {
-		t.Error("a runtime-added server must never write the oauth-detected marker for a colliding name")
-	}
-	got := readServerYAML(t, dir, "collide")
-	if got.Auth != nil {
-		t.Errorf("Auth = %+v, runtime-added server must never rewrite an existing server's config", got.Auth)
-	}
-	if got.URL != "https://real-server.example.com/mcp" {
-		t.Errorf("URL = %q, real server config was overwritten", got.URL)
-	}
-}
-
 func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.T) {
 	const staleToken = "stale-token"
 	const browserToken = "browser-token"

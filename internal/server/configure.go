@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -231,10 +234,6 @@ func (s *Server) replaceProjections(load config.LoadProjectionsResult) {
 
 func (s *Server) carryOverPreviousProjectionsLocked(load config.LoadProjectionsResult) {
 	for name, live := range s.projections {
-		if u := s.upstreams[name]; u != nil && u.cfg.RuntimeAdded {
-			load.Projections[name] = live
-			continue
-		}
 		if load.KeepsPreviousProjection(name) {
 			load.Projections[name] = live
 		}
@@ -270,12 +269,27 @@ func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, 
 	if err := s.validateAddServerParams(p); err != nil {
 		return nil, err
 	}
-	p.ServerCfg.RuntimeAdded = true
-	if err := s.AddUpstream(ctx, *p.ServerCfg); err != nil {
+	sc := ops.WithBundledPermissions(*p.ServerCfg)
+	sc.BlockPrivateIPs = true
+	// Connect before saving so a bad URL leaves nothing on disk.
+	if err := s.AddUpstream(ctx, sc); err != nil {
+		os.Remove(config.ServerMetaPath(s.configDir, sc.Name)) //nolint:errcheck // a failed add may have recorded an OAuth requirement
 		return nil, err
 	}
-	s.logger.Info("server added at runtime", "server", p.ServerCfg.Name)
-	return map[string]any{"ok": true, "server": p.ServerCfg.Name}, nil
+	if err := s.saveAddedServer(sc); err != nil {
+		return nil, err
+	}
+	s.logger.Info("server added by the config tool", "server", sc.Name)
+	return map[string]any{"ok": true, "server": sc.Name}, nil
+}
+
+func (s *Server) saveAddedServer(sc config.ServerConfig) error {
+	if _, err := ops.AddServer(s.configDir, sc); err != nil {
+		s.detachAndCloseServer(sc.Name)
+		return fmt.Errorf("add_server: %w", err)
+	}
+	s.recordConfigServers([]config.ServerConfig{sc})
+	return nil
 }
 
 func (s *Server) validateAddServerParams(p configureParams) error {
@@ -285,7 +299,16 @@ func (s *Server) validateAddServerParams(p configureParams) error {
 	if err := validateServerName(p.ServerCfg.Name); err != nil {
 		return err
 	}
-	return s.validateRuntimeTransport(p.ServerCfg)
+	if ops.IsConfigured(s.configDir, p.ServerCfg.Name) {
+		return fmt.Errorf("add_server: %s is already configured; remove it with remove_server first", p.ServerCfg.Name)
+	}
+	if err := s.validateRuntimeTransport(p.ServerCfg); err != nil {
+		return err
+	}
+	if err := config.ValidateAgentServer(*p.ServerCfg); err != nil {
+		return fmt.Errorf("add_server: %w", err)
+	}
+	return nil
 }
 
 func (s *Server) validateRuntimeTransport(sc *config.ServerConfig) error {
@@ -322,8 +345,11 @@ func (s *Server) removeServerRuntime(serverName string) (any, error) {
 	if err := validateServerName(serverName); err != nil {
 		return nil, err
 	}
+	if err := ops.DeleteServer(s.configDir, serverName); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("remove_server: %w", err)
+	}
 	s.detachAndCloseServer(serverName)
-	s.logger.Info("server removed at runtime", "server", serverName)
+	s.logger.Info("server removed by the config tool", "server", serverName)
 	return map[string]any{"ok": true, "server": serverName}, nil
 }
 

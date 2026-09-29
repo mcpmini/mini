@@ -79,7 +79,7 @@ type HTTPConnectionConfig struct {
 	// rate-limit errors are returned immediately so the caller can decide.
 	DisableRetryOnRateLimit bool
 	// BlockPrivateIPs attaches an SSRF-safe dialer that re-validates resolved IPs
-	// at connect time, preventing DNS rebinding attacks. Set for runtime-added servers.
+	// at connect time, preventing DNS rebinding attacks. Set for servers saved by add_server.
 	BlockPrivateIPs bool
 	ServerName      string
 	AuthProvider    AuthorizationProvider

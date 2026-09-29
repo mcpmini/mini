@@ -154,7 +154,7 @@ Projections can be embedded inline in a server's YAML under `projections:`. A `"
 ### Security defaults
 
 - Server names validated against `^[a-zA-Z0-9_-]+$` at all input boundaries (CLI, MCP protocol, config load)
-- Runtime `add_server` via MCP only allows HTTP transports; stdio opt-in via `dangerous_allow_runtime_stdio: true`
+- `add_server` via MCP saves the server like `mini add`, but only allows HTTP transports (stdio opt-in via `dangerous_allow_runtime_stdio: true`), strips headers/auth/env, refuses `${VAR}` references, and saves `block_private_ips: true`
 - HTTP upstreams block redirects (session token exfiltration prevention)
 - Response bodies capped at 64MB; error bodies at 4KB
 

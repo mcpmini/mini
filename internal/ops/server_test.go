@@ -1,6 +1,9 @@
 package ops_test
 
 import (
+	"errors"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,10 +174,18 @@ func TestDeleteServer(t *testing.T) {
 		}
 	})
 
-	t.Run("returns error for non-existent server", func(t *testing.T) {
+	t.Run("returns ErrNotExist for a server that isn't configured", func(t *testing.T) {
 		dir := tempDir(t)
-		if err := ops.DeleteServer(dir, "ghost"); err == nil {
-			t.Fatal("expected error deleting non-existent server")
+		if err := ops.DeleteServer(dir, "ghost"); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("err = %v, want fs.ErrNotExist", err)
+		}
+	})
+
+	t.Run("refuses a server defined inline in config.yaml", func(t *testing.T) {
+		dir := tempDir(t)
+		writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n- name: inline\n  command: run\n")
+		if err := ops.DeleteServer(dir, "inline"); !errors.Is(err, ops.ErrDefinedInline) {
+			t.Fatalf("err = %v, want ErrDefinedInline", err)
 		}
 	})
 
@@ -209,4 +220,84 @@ func readYAML(t *testing.T, path string, out any) {
 	if err := yaml.Unmarshal(data, out); err != nil {
 		t.Fatalf("yaml.Unmarshal %s: %v", path, err)
 	}
+}
+
+func TestAddServer(t *testing.T) {
+	t.Run("writes a new server and returns its path", func(t *testing.T) {
+		dir := tempDir(t)
+
+		saved, err := ops.AddServer(dir, config.ServerConfig{Name: "fresh", Command: "run"})
+
+		if err != nil {
+			t.Fatalf("AddServer: %v", err)
+		}
+		if want := filepath.Join(dir, "servers", "fresh.yaml"); saved.Path != want {
+			t.Errorf("path = %q, want %q", saved.Path, want)
+		}
+		var got config.ServerConfig
+		readYAML(t, saved.Path, &got)
+		if got.Command != "run" {
+			t.Errorf("Command = %q, want run", got.Command)
+		}
+	})
+
+	t.Run("prints nothing, since the config tool calls it where stdout is the MCP stream", func(t *testing.T) {
+		dir := tempDir(t)
+		github := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
+
+		printed := captureStdout(t, func() {
+			if _, err := ops.AddServer(dir, github); err != nil {
+				t.Fatal(err)
+			}
+		})
+
+		if printed != "" {
+			t.Errorf("AddServer printed %q", printed)
+		}
+	})
+
+	for _, tc := range []struct {
+		name      string
+		configure func(dir string)
+	}{
+		{"a server file", func(dir string) {
+			ops.WriteServer(dir, config.ServerConfig{Name: "taken", Command: "original"}) //nolint:errcheck
+		}},
+		{"an inline config.yaml entry", func(dir string) {
+			writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n- name: taken\n  command: original\n")
+		}},
+	} {
+		t.Run("refuses a name already configured in "+tc.name, func(t *testing.T) {
+			dir := tempDir(t)
+			tc.configure(dir)
+
+			_, err := ops.AddServer(dir, config.ServerConfig{Name: "taken", Command: "replacement"})
+
+			if !errors.Is(err, ops.ErrAlreadyConfigured) {
+				t.Fatalf("err = %v, want ErrAlreadyConfigured", err)
+			}
+			_, servers, loadErr := config.Load(dir)
+			if loadErr != nil {
+				t.Fatalf("config no longer loads after the refused add: %v", loadErr)
+			}
+			if len(servers) != 1 || servers[0].Command != "original" {
+				t.Errorf("servers = %+v, want only the original", servers)
+			}
+		})
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = stdout }()
+	fn()
+	w.Close()
+	out, _ := io.ReadAll(r)
+	return string(out)
 }
