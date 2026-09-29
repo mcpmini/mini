@@ -24,9 +24,9 @@ func writeServerFile(t *testing.T, dir, name, content string) string {
 
 func mustFingerprint(t *testing.T, dir string) map[string]string {
 	t.Helper()
-	fp, err := fingerprintProjectionSources(dir)
+	fp, err := fingerprintConfigSources(dir)
 	if err != nil {
-		t.Fatalf("fingerprintProjectionSources: %v", err)
+		t.Fatalf("fingerprintConfigSources: %v", err)
 	}
 	return fp
 }
@@ -78,7 +78,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 			t.Skip("cannot make file unreadable:", err)
 		}
 		t.Cleanup(func() { os.Chmod(p, 0600) }) //nolint:errcheck
-		if _, err := fingerprintProjectionSources(dir); err == nil {
+		if _, err := fingerprintConfigSources(dir); err == nil {
 			t.Error("expected error for unreadable file")
 		}
 	})

@@ -69,6 +69,7 @@ func parseToolMode(m string) transport.ToolMode {
 }
 
 func runConnect(configDir string, f connectFlags) error {
+	baseline := server.CaptureConfigBaseline(configDir)
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
 		fatalf("load config: %v", err)
@@ -78,7 +79,7 @@ func runConnect(configDir string, f connectFlags) error {
 		return nil
 	}
 	return serveStandalone(ServeParams{
-		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger,
+		ConfigDir: configDir, Cfg: cfg, Servers: servers, ConfigBaseline: baseline, Logger: logger,
 		HTTPAddr: f.httpAddr, DangerNonLoopback: f.dangerNonLoopback, ToolMode: f.toolMode,
 	})
 }
@@ -91,6 +92,7 @@ type ServeParams struct {
 	ConfigDir         string
 	Cfg               *config.Config
 	Servers           []config.ServerConfig
+	ConfigBaseline    server.ConfigBaseline
 	Logger            *slog.Logger
 	HTTPAddr          string
 	DangerNonLoopback bool
@@ -143,7 +145,7 @@ func serveStandalone(p ServeParams) error {
 	ctx, stop := shutdownContext(signal.NotifyContext)
 	defer stop()
 	srv := buildAndStart(ctx, BuildServerParams{
-		Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers,
+		Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers, ConfigBaseline: p.ConfigBaseline,
 		ToolMode: p.ToolMode, AllowNonLoopbackHost: resolveAllowNonLoopbackHost(p.HTTPAddr),
 	})
 	defer srv.Close()
@@ -176,6 +178,7 @@ type BuildServerParams struct {
 	ToolMode             transport.ToolMode
 	DaemonAuthToken      string
 	AllowNonLoopbackHost bool
+	ConfigBaseline       server.ConfigBaseline
 }
 
 func buildAndStart(ctx context.Context, p BuildServerParams) *server.Server {
@@ -185,7 +188,7 @@ func buildAndStart(ctx context.Context, p BuildServerParams) *server.Server {
 		DaemonAuthToken: p.DaemonAuthToken, AllowNonLoopbackHost: p.AllowNonLoopbackHost,
 	})
 	srv.ConnectUpstreams(ctx, p.Servers)
-	srv.StartProjectionReload(ctx)
+	srv.StartConfigReload(ctx, p.ConfigBaseline)
 	return srv
 }
 

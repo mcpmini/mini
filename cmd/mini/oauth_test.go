@@ -13,6 +13,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 )
 
 func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequests(t *testing.T) {
@@ -32,7 +33,7 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 		oauthServerConfig("idle", "http://localhost:1", tokenEp.srv.URL, false),
 	}
 	srv := buildAndStart(t.Context(),
-		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
+		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir, ConfigBaseline: server.CaptureConfigBaseline(configDir),
 			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: servers},
 	)
 	defer srv.Close()
@@ -49,8 +50,9 @@ func TestBuildAndStartConnecting_oauthServerWithHandSetHeaderAndNoToken_usesHand
 	mcp := newTestMCPUpstream(t)
 	sc := oauthServerConfig("pat", mcp.srv.URL, "http://localhost:1/token", true)
 	sc.Headers = map[string]string{"Authorization": "Bearer pat-123"}
+	configDir := t.TempDir()
 	srv := buildAndStart(t.Context(),
-		BuildServerParams{Cfg: &config.Config{}, ConfigDir: t.TempDir(),
+		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir, ConfigBaseline: server.CaptureConfigBaseline(configDir),
 			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}},
 	)
 	defer srv.Close()

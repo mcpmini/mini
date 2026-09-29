@@ -154,6 +154,78 @@ func TestReconcile_changedConnectionSetting_reconnects(t *testing.T) {
 	}
 }
 
+func TestReconcile_editBetweenStartupLoadAndPollerStart_isApplied(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		editInGap func(e *reconcileEnv)
+		server    string
+		wantTools bool
+	}{
+		{name: "removed file", editInGap: func(e *reconcileEnv) { e.removeServerFile("gap") }, server: "gap", wantTools: false},
+		{name: "added file", editInGap: func(e *reconcileEnv) { e.writeEchoServer("late", "") }, server: "late", wantTools: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newReconcileEnv(t)
+			e.writeEchoServer("gap", "")
+			baseline := server.CaptureConfigBaseline(e.dir)
+			_, servers, err := config.Load(e.dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.editInGap(e)
+			e.srv.ConnectUpstreams(t.Context(), servers)
+			e.settle()
+			e.startPollerFrom(baseline)
+
+			e.advanceTick()
+
+			if tc.wantTools {
+				e.waitForTools(tc.server)
+			} else {
+				e.waitForNoTools(tc.server)
+			}
+		})
+	}
+}
+
+func TestReconcile_inlineConfigServers_followConfigYAML(t *testing.T) {
+	e := newReconcileEnv(t)
+	configYAML := filepath.Join(e.dir, "config.yaml")
+	writeReloadFile(t, configYAML, fmt.Sprintf("servers:\n- name: old\n  command: %s\n", echomcpBin))
+	e.connectConfigured()
+	e.startPoller()
+
+	writeReloadFile(t, configYAML, fmt.Sprintf("servers:\n- name: new\n  command: %s\n", echomcpBin))
+	e.advanceTick()
+
+	e.waitForNoTools("old")
+	e.waitForTools("new")
+}
+
+func TestReconcile_changedSettingsWithInvalidProjection_keepsPreviousProjections(t *testing.T) {
+	e := newReconcileEnv(t)
+	e.startWithEchoServers("svc")
+	e.writeEchoServer("svc", "projections:\n  echo:\n    alias: shout\n")
+	e.advanceTick()
+	if listing := e.listTools("svc"); !strings.Contains(listing, "shout") {
+		t.Fatalf("alias not applied before the edit, list:\n%s", listing)
+	}
+
+	e.writeEchoServer("svc", "args: [--changed]\nprojections:\n  echo:\n    alias: shout\n    format: bogus\n")
+	e.advanceTick()
+
+	waitUntil(t, "second registration", func() bool { return e.registrations("svc") == 2 })
+	e.waitForTools("svc")
+	if listing := e.listTools("svc"); !strings.Contains(listing, "shout") {
+		t.Errorf("reconnected svc lost its previous projections, list:\n%s", listing)
+	}
+}
+
+func (e *reconcileEnv) listTools(query string) string {
+	e.t.Helper()
+	return toolResultText(e.t, serve(e.t, e.srv, callTool("list", map[string]any{"query": query})))
+}
+
 func TestReconcile_unchangedSettings_neverReconnect(t *testing.T) {
 	t.Run("projections only", func(t *testing.T) {
 		e := newReconcileEnv(t)

@@ -50,6 +50,7 @@ func runDaemon(configDir string, logLevel string) {
 	if err := daemon.CheckSocketPath(configDir); err != nil {
 		fatalf("%v", err)
 	}
+	baseline := server.CaptureConfigBaseline(configDir)
 	cfg, servers := loadDaemonConfig(configDir)
 	socket := ensureDaemonNotRunning(configDir)
 	logW := daemon.OpenCappedLog(filepath.Join(configDir, "internal", "daemon", "daemon.log"))
@@ -59,7 +60,7 @@ func runDaemon(configDir string, logLevel string) {
 	defer stop()
 	ln := bindSocket(socket)
 	serveDaemon(ctx, DaemonServeParams{
-		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, Listener: ln,
+		ConfigDir: configDir, Cfg: cfg, Servers: servers, ConfigBaseline: baseline, Logger: logger, Listener: ln,
 	})
 }
 
@@ -72,18 +73,19 @@ func loadDaemonConfig(configDir string) (*config.Config, []config.ServerConfig) 
 }
 
 type DaemonServeParams struct {
-	ConfigDir string
-	Cfg       *config.Config
-	Servers   []config.ServerConfig
-	Logger    *slog.Logger
-	Listener  net.Listener
+	ConfigDir      string
+	Cfg            *config.Config
+	Servers        []config.ServerConfig
+	ConfigBaseline server.ConfigBaseline
+	Logger         *slog.Logger
+	Listener       net.Listener
 }
 
 func serveDaemon(ctx context.Context, p DaemonServeParams) {
 	token := mintDaemonToken(p.ConfigDir)
 	srv := buildAndStart(ctx, BuildServerParams{
 		Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers,
-		DaemonAuthToken: token,
+		ConfigBaseline: p.ConfigBaseline, DaemonAuthToken: token,
 	})
 	defer srv.Close()
 	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: p.Listener})

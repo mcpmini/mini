@@ -10,6 +10,7 @@ import (
 
 type reconcilePlan struct {
 	remove  []string
+	replace []config.ServerConfig
 	connect []config.ServerConfig
 }
 
@@ -30,9 +31,12 @@ func planReconcile(prev map[string]config.ServerConfig, set config.ServerSet) (r
 		}
 	}
 	slices.Sort(plan.remove)
-	slices.SortFunc(plan.connect, func(a, b config.ServerConfig) int { return cmp.Compare(a.Name, b.Name) })
+	slices.SortFunc(plan.replace, byName)
+	slices.SortFunc(plan.connect, byName)
 	return plan, next
 }
+
+func byName(a, b config.ServerConfig) int { return cmp.Compare(a.Name, b.Name) }
 
 func planExisting(plan *reconcilePlan, next map[string]config.ServerConfig, set config.ServerSet, old config.ServerConfig) {
 	name := old.Name
@@ -45,14 +49,8 @@ func planExisting(plan *reconcilePlan, next map[string]config.ServerConfig, set 
 	case !wanted:
 		plan.remove = append(plan.remove, name)
 	case !config.SameServerSettings(old, current):
-		plan.remove = append(plan.remove, name)
-		plan.connect = append(plan.connect, current)
+		plan.replace = append(plan.replace, current)
 	}
-}
-
-func (s *Server) loadReconcileBaseline() map[string]config.ServerConfig {
-	_, baseline := planReconcile(nil, config.LoadServerSet(s.configDir))
-	return baseline
 }
 
 func (s *Server) planFromDisk(prev map[string]config.ServerConfig) (reconcilePlan, map[string]config.ServerConfig) {
@@ -70,20 +68,55 @@ func (s *Server) logServerSetProblems(set config.ServerSet) {
 	}
 }
 
-func (s *Server) removeReconciled(names []string) {
-	removed := false
-	for _, name := range names {
-		if s.isRuntimeAdded(name) {
-			s.logger.Warn("server reconcile: leaving runtime-added server", "server", name)
-			continue
-		}
-		s.detachAndCloseServer(name)
-		s.logger.Info("server removed by config change", "server", name)
-		removed = true
+func (s *Server) detachReconciled(plan reconcilePlan) {
+	detached := false
+	for _, name := range plan.remove {
+		detached = s.removeForConfigChange(name) || detached
 	}
-	if removed {
+	for _, sc := range plan.replace {
+		detached = s.detachForSettingsChange(sc.Name) || detached
+	}
+	if detached {
 		s.notifyAllSessions()
 	}
+}
+
+func (s *Server) removeForConfigChange(name string) bool {
+	if s.leaveRuntimeAdded(name) {
+		return false
+	}
+	s.detachAndCloseServer(name)
+	s.logger.Info("server removed by config change", "server", name)
+	return true
+}
+
+func (s *Server) detachForSettingsChange(name string) bool {
+	if s.leaveRuntimeAdded(name) {
+		return false
+	}
+	kept := s.liveProjections(name)
+	s.detachAndCloseServer(name)
+	// The projection reload that follows keeps these when the same edit made them invalid.
+	s.restoreProjections(name, kept)
+	s.logger.Info("server settings changed, reconnecting", "server", name)
+	return true
+}
+
+func (s *Server) restoreProjections(name string, projections map[string]*config.ProjectionConfig) {
+	if projections == nil {
+		return
+	}
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	s.projections[name] = projections
+}
+
+func (s *Server) leaveRuntimeAdded(name string) bool {
+	if !s.isRuntimeAdded(name) {
+		return false
+	}
+	s.logger.Warn("server reconcile: leaving runtime-added server", "server", name)
+	return true
 }
 
 func (s *Server) isRuntimeAdded(name string) bool {

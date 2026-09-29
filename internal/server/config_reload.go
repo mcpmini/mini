@@ -12,28 +12,35 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-const projectionPollInterval = 5 * time.Second
+const configPollInterval = 5 * time.Second
 
-// StartProjectionReload applies projection YAML edits to a live server without
-// restart. Stops when ctx is canceled.
-func (s *Server) StartProjectionReload(ctx context.Context) {
-	go s.runProjectionReload(ctx, nil)
-}
-
-type reloadState struct {
+// ConfigBaseline is the config on disk that a running server was started from.
+type ConfigBaseline struct {
 	fingerprint map[string]string
 	servers     map[string]config.ServerConfig
 }
 
-func (s *Server) runProjectionReload(ctx context.Context, afterCheck func()) {
-	fingerprint, _ := s.fingerprintOrWarn()
-	state := reloadState{fingerprint: fingerprint, servers: s.loadReconcileBaseline()}
-	ticker := s.clock.NewTicker(projectionPollInterval)
+// CaptureConfigBaseline must run before the startup config.Load: an edit made after
+// it then reaches the server as a change instead of being absorbed into the baseline.
+func CaptureConfigBaseline(configDir string) ConfigBaseline {
+	fingerprint, _ := fingerprintConfigSources(configDir)
+	_, servers := planReconcile(nil, config.LoadServerSet(configDir))
+	return ConfigBaseline{fingerprint: fingerprint, servers: servers}
+}
+
+// StartConfigReload applies server and projection edits on disk to a live server
+// without restart. Stops when ctx is canceled.
+func (s *Server) StartConfigReload(ctx context.Context, baseline ConfigBaseline) {
+	go s.runConfigReload(ctx, baseline, nil)
+}
+
+func (s *Server) runConfigReload(ctx context.Context, state ConfigBaseline, afterCheck func()) {
+	ticker := s.clock.NewTicker(configPollInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.Chan():
-			state = s.reloadIfProjectionFilesChanged(ctx, state)
+			state = s.reloadIfConfigChanged(ctx, state)
 			if afterCheck != nil {
 				afterCheck()
 			}
@@ -43,7 +50,7 @@ func (s *Server) runProjectionReload(ctx context.Context, afterCheck func()) {
 	}
 }
 
-func (s *Server) reloadIfProjectionFilesChanged(ctx context.Context, state reloadState) reloadState {
+func (s *Server) reloadIfConfigChanged(ctx context.Context, state ConfigBaseline) ConfigBaseline {
 	current, ok := s.fingerprintOrWarn()
 	if !ok {
 		return state
@@ -53,25 +60,25 @@ func (s *Server) reloadIfProjectionFilesChanged(ctx context.Context, state reloa
 		return state
 	}
 	plan, servers := s.planFromDisk(state.servers)
-	s.removeReconciled(plan.remove)
+	s.detachReconciled(plan)
 	_, fresh := s.applyReload()
-	s.connectReconciled(ctx, plan.connect)
+	s.connectReconciled(ctx, append(plan.replace, plan.connect...))
 	if len(fresh) > 0 {
 		s.logger.Info("projections reloaded", "files", changed)
 	}
-	return reloadState{fingerprint: current, servers: servers}
+	return ConfigBaseline{fingerprint: current, servers: servers}
 }
 
 func (s *Server) fingerprintOrWarn() (map[string]string, bool) {
-	fp, err := fingerprintProjectionSources(s.configDir)
+	fp, err := fingerprintConfigSources(s.configDir)
 	if err != nil {
-		s.logger.Warn("projection reload: fingerprint projection sources", "err", err)
+		s.logger.Warn("config reload: fingerprint config sources", "err", err)
 		return nil, false
 	}
 	return fp, true
 }
 
-func fingerprintProjectionSources(configDir string) (map[string]string, error) {
+func fingerprintConfigSources(configDir string) (map[string]string, error) {
 	paths, err := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
 	if err != nil {
 		return nil, err

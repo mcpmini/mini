@@ -114,7 +114,7 @@ func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthT
 		t.Fatal(err)
 	}
 	sc := oauthServerConfig("live", upstream.srv.URL, token.srv.URL, true)
-	p := BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
+	p := BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir, ConfigBaseline: server.CaptureConfigBaseline(configDir),
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}, Clock: clk}
 	srv := buildAndStart(t.Context(), p)
 	t.Cleanup(srv.Close)

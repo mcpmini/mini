@@ -48,7 +48,7 @@ func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 	fc := clock.NewFake()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	srv := buildAndStart(t.Context(), BuildServerParams{Cfg: cfg, ConfigDir: dir, Logger: slog.New(reloaded), Clock: fc})
+	srv := buildAndStart(t.Context(), BuildServerParams{Cfg: cfg, ConfigDir: dir, ConfigBaseline: server.CaptureConfigBaseline(dir), Logger: slog.New(reloaded), Clock: fc})
 	defer srv.Close()
 	addGetDataUpstream(t, srv)
 	waitCtx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
@@ -139,7 +139,7 @@ func hungUpstreamBuildParams(t *testing.T, dir, url string) BuildServerParams {
 	cfg.ResponseDir = filepath.Join(dir, "responses")
 	sc := config.ServerConfig{Name: "hung", Transport: "http", URL: url}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	return BuildServerParams{Cfg: cfg, ConfigDir: dir, Logger: logger, Servers: []config.ServerConfig{sc}}
+	return BuildServerParams{Cfg: cfg, ConfigDir: dir, ConfigBaseline: server.CaptureConfigBaseline(dir), Logger: logger, Servers: []config.ServerConfig{sc}}
 }
 
 func waitForClose(t *testing.T, srv closer) {
