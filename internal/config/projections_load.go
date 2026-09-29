@@ -29,12 +29,16 @@ func (l LoadProjectionsResult) KeepsPreviousProjection(name string) bool {
 	return len(l.SourceErrors) > 0 && !l.freshLoaded[name]
 }
 
-func LoadProjections(configDir string) LoadProjectionsResult {
-	load := LoadProjectionsResult{
+func newLoadProjectionsResult() LoadProjectionsResult {
+	return LoadProjectionsResult{
 		Projections:    make(map[string]map[string]*ProjectionConfig),
 		SkippedServers: make(map[string]error),
 		freshLoaded:    make(map[string]bool),
 	}
+}
+
+func LoadProjections(configDir string) LoadProjectionsResult {
+	load := newLoadProjectionsResult()
 	servers := loadLenientServers(configDir, &load)
 	projFiles := loadProjFilesIsolated(configDir, servers, &load)
 	mergeProjections(servers, projFiles)

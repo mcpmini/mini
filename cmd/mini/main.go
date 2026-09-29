@@ -185,7 +185,7 @@ func buildAndStart(ctx context.Context, p BuildServerParams) *server.Server {
 		DaemonAuthToken: p.DaemonAuthToken, AllowNonLoopbackHost: p.AllowNonLoopbackHost,
 	})
 	srv.ConnectUpstreams(ctx, p.Servers)
-	srv.StartProjectionReload(ctx)
+	srv.StartConfigReload(ctx)
 	return srv
 }
 

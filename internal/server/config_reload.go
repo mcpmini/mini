@@ -10,32 +10,37 @@ import (
 	"time"
 )
 
-const projectionPollInterval = 5 * time.Second
+const configPollInterval = 5 * time.Second
 
-// StartProjectionReload applies projection YAML edits to a live server without
-// restart. Stops when ctx is canceled.
-func (s *Server) StartProjectionReload(ctx context.Context) {
-	go s.runProjectionReload(ctx, nil)
+// StartConfigReload applies server and projection edits on disk to a live
+// server without restart. Stops when ctx is canceled.
+func (s *Server) StartConfigReload(ctx context.Context) {
+	go s.runConfigReload(ctx, nil)
 }
 
-func (s *Server) runProjectionReload(ctx context.Context, afterCheck func()) {
+func (s *Server) runConfigReload(ctx context.Context, afterCheck func()) {
+	if afterCheck == nil {
+		afterCheck = func() {}
+	}
 	last, _ := s.fingerprintOrWarn()
-	ticker := s.clock.NewTicker(projectionPollInterval)
+	// Startup read the config before this poller existed; an edit made in
+	// between is only caught by applying the config once now.
+	s.applyConfig()
+	ticker := s.clock.NewTicker(configPollInterval)
 	defer ticker.Stop()
+	afterCheck()
 	for {
 		select {
 		case <-ticker.Chan():
-			last = s.reloadIfProjectionFilesChanged(last)
-			if afterCheck != nil {
-				afterCheck()
-			}
+			last = s.reloadIfConfigChanged(last)
+			afterCheck()
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func (s *Server) reloadIfProjectionFilesChanged(last map[string]string) map[string]string {
+func (s *Server) reloadIfConfigChanged(last map[string]string) map[string]string {
 	current, ok := s.fingerprintOrWarn()
 	if !ok {
 		return last
@@ -44,23 +49,28 @@ func (s *Server) reloadIfProjectionFilesChanged(last map[string]string) map[stri
 	if len(changed) == 0 {
 		return last
 	}
-	_, fresh := s.applyReload()
-	if len(fresh) > 0 {
+	if fresh := s.applyConfig(); len(fresh) > 0 {
 		s.logger.Info("projections reloaded", "files", changed)
 	}
 	return current
 }
 
+func (s *Server) applyConfig() map[string]int {
+	s.removeServersGoneFromConfig()
+	_, fresh := s.applyReload()
+	return fresh
+}
+
 func (s *Server) fingerprintOrWarn() (map[string]string, bool) {
-	fp, err := fingerprintProjectionSources(s.configDir)
+	fp, err := fingerprintConfigSources(s.configDir)
 	if err != nil {
-		s.logger.Warn("projection reload: fingerprint projection sources", "err", err)
+		s.logger.Warn("config reload: fingerprint config sources", "err", err)
 		return nil, false
 	}
 	return fp, true
 }
 
-func fingerprintProjectionSources(configDir string) (map[string]string, error) {
+func fingerprintConfigSources(configDir string) (map[string]string, error) {
 	paths, err := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
 	if err != nil {
 		return nil, err

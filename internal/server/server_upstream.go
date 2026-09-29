@@ -20,6 +20,7 @@ func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerCo
 	}
 	connectCtx, cancel := context.WithCancel(ctx)
 	s.cancelConnect = cancel
+	s.recordConfigServers(servers)
 	for _, sc := range servers {
 		if !sc.IsEnabled() {
 			continue
@@ -235,6 +236,9 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 	s.stateMu.Lock()
 	old := s.upstreams[name]
 	s.upstreams[name] = u
+	if u.cfg.RuntimeAdded {
+		delete(s.configServers, name)
+	}
 	s.stateMu.Unlock()
 	return old
 }

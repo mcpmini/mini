@@ -19,6 +19,7 @@ type Server struct {
 	configDir            string
 	reg                  *registry.Registry
 	upstreams            map[string]*upstreamServer
+	configServers        map[string]bool // servers started from the config files, the only ones a config edit removes
 	projections          map[string]map[string]*config.ProjectionConfig
 	envelope             *response.Builder
 	store                *response.Store
