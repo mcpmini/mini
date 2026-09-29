@@ -17,7 +17,7 @@ func LoadServerSet(configDir string) ServerSet {
 	return set
 }
 
-func (set ServerSet) Wants(name string) bool {
+func (set ServerSet) IsEnabled(name string) bool {
 	sc, ok := set.Servers[name]
 	return ok && sc.IsEnabled()
 }

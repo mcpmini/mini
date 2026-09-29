@@ -35,7 +35,7 @@ func (s *Server) removeServersGoneFromConfig() {
 	}
 	removed := false
 	for _, name := range s.configServerNames() {
-		if !set.Wants(name) && s.removeConfigServer(name) {
+		if !set.IsEnabled(name) && s.removeConfigServer(name) {
 			s.logger.Info("server removed by config change", "server", name)
 			removed = true
 		}
