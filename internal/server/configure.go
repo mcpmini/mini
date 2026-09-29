@@ -331,6 +331,10 @@ func (s *Server) detachAndCloseServer(serverName string) {
 	s.cancelExistingAuthFlow(serverName)
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
+	s.detachAndCloseLocked(serverName)
+}
+
+func (s *Server) detachAndCloseLocked(serverName string) {
 	s.removeGen[serverName]++
 	if u := s.detachUpstream(serverName); u != nil {
 		u.shutdownAndClose()
