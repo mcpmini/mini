@@ -867,3 +867,31 @@ func TestMergedHeaders_EmptyToken(t *testing.T) {
 		t.Error("expected no Authorization header when token is empty")
 	}
 }
+
+func TestConfig_BrowserCommandFor(t *testing.T) {
+	withBrowser := func(cmd string) config.ServerConfig {
+		return config.ServerConfig{Auth: &config.AuthConfig{BrowserCmd: cmd}}
+	}
+	tests := []struct {
+		name        string
+		cfg         config.Config
+		sc          config.ServerConfig
+		wantCommand string
+		wantOpen    bool
+	}{
+		{"per-server wins over global", config.Config{BrowserCommand: "global-cmd"}, withBrowser("per-server-cmd"), "per-server-cmd", true},
+		{"global used when no per-server", config.Config{BrowserCommand: "global-cmd"}, withBrowser(""), "global-cmd", true},
+		{"global used when server has no auth", config.Config{BrowserCommand: "global-cmd"}, config.ServerConfig{}, "global-cmd", true},
+		{"neither set returns empty and still opens", config.Config{}, withBrowser(""), "", true},
+		{"per-server with args wins", config.Config{BrowserCommand: "global-cmd"}, withBrowser("open -a Firefox"), "open -a Firefox", true},
+		{"disabled overrides every command", config.Config{BrowserCommand: "global-cmd", DisableAuthBrowserOpen: true}, withBrowser("per-server-cmd"), "", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			command, open := tc.cfg.BrowserCommandFor(tc.sc)
+			if command != tc.wantCommand || open != tc.wantOpen {
+				t.Errorf("BrowserCommandFor() = (%q, %v), want (%q, %v)", command, open, tc.wantCommand, tc.wantOpen)
+			}
+		})
+	}
+}

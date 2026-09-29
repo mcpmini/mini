@@ -310,7 +310,7 @@ func authorizeServer(p authorizeParams) {
 	token, err := doPKCEFlow(pkceFlowParams{
 		configDir:  p.configDir,
 		serverName: p.name,
-		opener:     authOpener(p.sc.Auth.BrowserCmd, cfg.BrowserCommand, cfg.DisableAuthBrowserOpen),
+		opener:     authOpener(cfg, p.sc),
 		sc:         &p.sc,
 	})
 	if err != nil {
