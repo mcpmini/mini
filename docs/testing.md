@@ -10,25 +10,23 @@ Start with the observable contract, its realistic entry point, and a plausible w
 
 | Level | Use it for | Example in mini |
 | --- | --- | --- |
-| Unit or component | Exercise a rule or one component through its API. Cover meaningful input and error permutations here, even if the test uses a temporary file or a small fake. | `projection.Apply` with constructed values; config parsing. |
-| In-process integration | Run several real components together while controlling external dependencies. Check their wiring, state transitions, and protocol handling. | Server request handling through registry and projection with `transport.FakeConnection`; HTTP handling with `httptest.Server`. |
-| In-process CLI | Run a command or the root command in-process without launching `mini`. Check flag parsing, validation, command wiring, and output streams quickly. | `newRootCmd()` in `cmd/mini/root_test.go`; `newAddCmd()` in `cmd/mini/add_test.go`. |
-| Black-box CLI | Launch the built `mini` binary and observe exit status, stdout, stderr, files, and environment-sensitive behavior. | `test/integration/cli_test.go` invoking `mini --config DIR ...`. |
-| Black-box MCP journey | Launch `mini` and exchange MCP messages across its process boundary, with a controlled upstream. Check startup, framing, routing, persistence, shutdown, and critical user flows. | `test/integration/server_test.go` or `proxy_mode_test.go` with the fake MCP process. |
+| Unit | Exercise one rule or cohesive piece of logic with controlled inputs and collaborators. Cover meaningful input, boundary, and error permutations here. | `projection.Apply` with constructed values; config parsing. |
+| Integration | Run multiple real components together and control only the external boundaries. Check their wiring, state transitions, and protocol handling. An in-memory server or command tree belongs here. | Server request handling through registry and projection with `transport.FakeConnection`; HTTP handling with `httptest.Server`; `newRootCmd()` in `cmd/mini/root_test.go`. |
+| End-to-end | Launch the built `mini` binary and interact through its public CLI or MCP interface. Check behavior across the process boundary as a black box. | `test/integration/cli_test.go` for CLI behavior; `test/integration/server_test.go` and `proxy_mode_test.go` for MCP journeys with the fake upstream. |
 
-In-process CLI is a specialized integration test. The last two rows are end-to-end tests **for mini** because they enter through its public process interface. A fake upstream keeps them repeatable; they do not prove compatibility with every live MCP server. In-process CLI tests can cover most argument permutations, while a few binary tests protect process-only behavior. Check the actual build tags and `check.sh` command before claiming that a test runs in the standard gate.
+New rules should normally have unit tests. Mini can also have many integration tests: they prove that real components work together and are often fast enough to cover meaningful boundary and state combinations. End-to-end tests should cover critical journeys and process-specific behavior without repeating every unit permutation. A fake upstream keeps mini's end-to-end tests repeatable; it does not make them integration tests or prove compatibility with every external MCP server.
 
 ### Decide what to add
 
-Choose tests for the failure a change could cause, not a quota at each level:
+Choose tests for the failure a change could cause, not a quota at each level. Behavior that exists only at an integration or process seam does not need a manufactured unit test.
 
 | Change | Start here | Add a wider test when |
 | --- | --- | --- |
-| Rule, parser, or transformation | Focused component cases for distinct inputs, boundaries, and errors. | Config-to-server wiring or another component interaction is part of the change. |
-| Server routing, permissions, or projection | An in-process request through the relevant handler, with component cases for rule permutations. | The public MCP wire path or process setup could change the outcome. |
-| CLI command or flag | An in-process command test for parsing, output streams, and behavior. | The outcome depends on `main` or the OS process: actual exit status, direct writes to process streams, startup environment, or child-process behavior. |
-| Transport, retry, auth, or lifecycle | A controlled test at the affected HTTP, state, or timing boundary, including failure and cleanup when relevant. | Stdio framing, daemon wiring, subprocess exit, or a critical journey needs proof. |
-| Edited catalog or fixture | Existing load and validation tests, plus a behavioral case if the edit changes a promised outcome. | A user journey or stable external contract changes; routine content edits need no new full-flow test. |
+| Rule, parser, or transformation | Unit cases for distinct inputs, boundaries, and errors. | Config-to-server wiring or another component interaction needs an integration test; process behavior needs end-to-end coverage. |
+| Server routing, permissions, or projection | Unit cases for the rule plus integration requests through the relevant handler. | The public MCP wire path or process setup could change the outcome. |
+| CLI command or flag | Unit cases for separable logic plus an integration test of the command tree, parsing, and streams. | The outcome depends on `main` or the OS process: actual exit status, direct writes to process streams, startup environment, or child-process behavior. |
+| Transport, retry, auth, or lifecycle | Unit cases for the rule plus integration tests at the affected HTTP, state, or timing boundary, including failure and cleanup when relevant. | Stdio framing, daemon wiring, subprocess exit, or a critical journey needs proof. |
+| Edited catalog or fixture | Existing load and validation tests, plus a behavioral case if the edit changes a promised outcome. | A user journey or stable external contract changes; routine content edits need no new end-to-end test. |
 
 A bug fix usually deserves a regression that reaches the old failure through a production path. A pure refactor may need only the existing suite. If an existing test already reaches the behavior and would catch the regression, strengthen it when needed instead of adding a duplicate. Higher-level tests may repeat a little behavior to prove a boundary works, but should not replay every component permutation or pin incidental upstream data.
 
@@ -36,30 +34,29 @@ Coverage is a way to find surprising unexercised code, not a score to optimize. 
 
 ## Other kinds of tests
 
-The level says **where** a test runs. These terms describe **why or how** it tests; one test can have several of them:
+The level says **what runs together and where the test enters**. These terms describe **why or how** it tests; one test can have several of them:
 
 - A **regression test** protects a previously broken behavior. Put it at the narrowest production-reachable boundary that catches the bug.
 - A **contract or conformance test** checks a stable external promise, such as MCP message shape, CLI exit behavior, or a specified encoding. Use external fixtures when a standard defines the expected result.
-- A **failure, lifecycle, or concurrency test** controls a timeout, disconnect, retry, cancellation, ordering, or cleanup transition. It may be component, in-process, or black-box depending on where the risk lives.
+- A **failure, lifecycle, or concurrency test** controls a timeout, disconnect, retry, cancellation, ordering, or cleanup transition. It can run at any of the three levels, depending on where the risk lives.
 - A **property or fuzz test** explores many inputs against an invariant, especially for parsers and transformations. It complements examples with decisive expected outcomes.
 - A **golden or snapshot test** stores an expected result for a large, stable output. It is an assertion technique; review updates to the expected file as carefully as code changes.
 - A **smoke test** checks that a critical journey works at all. Keep it small; focused tests should explain individual rule failures. Benchmarks measure performance and need separate interpretation from correctness tests.
-- An **opt-in live interoperability check** exercises mini against a real external MCP server or client. It can reveal ecosystem behavior absent from fakes, but its network, credentials, and remote state make it different evidence from a repeatable CI regression.
 
 None of these names is a checklist to exhaust for each change. Choose the risks and boundaries that matter, then make the assertions strong enough to catch them.
 
 ## Placement and build tags
 
-Keep component, in-process integration, and in-process CLI tests near the package they exercise. Put new black-box mini journeys in `test/integration`, where the shared harness builds and launches the binaries. Separate tests by the boundary and setup they share, not by labels such as “regression” or “golden.”
+Keep unit and integration tests near the package they exercise. Put new black-box end-to-end tests in the existing `test/integration` suite, where the shared harness builds and launches the binaries. That directory and its `integration` tag have historical names; the tests are end-to-end when they enter through the built mini binary. Separate tests by the boundary and setup they share, not by labels such as “regression” or “golden.”
 
 | Build tag | What it means here | Standard `check.sh` |
 | --- | --- | --- |
 | None | Ordinary package test. | Included in the race-enabled `go test -tags test ./...`. |
 | `test` | Package tests or test-only helpers that need this tag. It does not mean “unit.” | Included in the same race-enabled run. |
-| `integration` | Real-binary tests and the fake MCP binary. | Runs tests under `test/integration` only; child binaries are not built with `-race`. |
-| `live` | Tests using real external MCP servers or credentials. | Not included; run deliberately with both `live` and `test` tags for the current server tests. |
+| `integration` | Historical tag for real-binary end-to-end tests and the fake MCP binary. | Runs tests under `test/integration` only; child binaries are not built with `-race`. |
+| `live` | Two existing opt-in server test files using real external MCPs. It is an environment selector, not another test level. | Not included; running these server tests currently requires both `live` and `test` tags. |
 
-The repository also uses `evals` to build evaluation tooling and platform selectors such as `!windows`; neither is a test level. Do not add a build tag just to label a test “unit,” “contract,” or “smoke.” A tag alone does not prove the standard gate selects a file: `check.sh` runs the `integration` suite only under `test/integration`. Check the command and the selected tests before claiming coverage.
+The repository also uses `evals` to build evaluation tooling and platform selectors such as `!windows`; neither is a test level. Do not add a build tag just to label a test “unit,” “contract,” or “smoke.” A tag alone does not prove the standard gate selects a file: `check.sh` runs the `integration` suite only under `test/integration`, so the tagged tests in `cmd/mini/cli_test.go` are outside that gate. Check the command and the selected tests before claiming coverage.
 
 ## Assert behavior that should remain true
 
