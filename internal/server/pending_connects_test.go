@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-func startBlockingConnect(b *pendingConnects, ctx context.Context) <-chan struct{} {
+func startBlockingConnect(p *pendingConnects, ctx context.Context) <-chan struct{} {
 	started := make(chan struct{})
-	b.start(ctx, func(ctx context.Context) {
+	p.start(ctx, func(ctx context.Context) {
 		close(started)
 		<-ctx.Done()
 	})
@@ -26,10 +26,10 @@ func awaitConnectStarted(t *testing.T, started <-chan struct{}) {
 	}
 }
 
-func waitWithin(t *testing.T, b *pendingConnects) {
+func waitWithin(t *testing.T, p *pendingConnects) {
 	t.Helper()
 	done := make(chan struct{})
-	go func() { b.wait(); close(done) }()
+	go func() { p.wait(); close(done) }()
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
@@ -38,31 +38,31 @@ func waitWithin(t *testing.T, b *pendingConnects) {
 }
 
 func TestPendingConnects_stop_cancelsRunningConnects(t *testing.T) {
-	b := newPendingConnects()
-	awaitConnectStarted(t, startBlockingConnect(b, context.Background()))
+	p := newPendingConnects()
+	awaitConnectStarted(t, startBlockingConnect(p, context.Background()))
 
-	b.stop()
+	p.stop()
 
-	waitWithin(t, b)
+	waitWithin(t, p)
 }
 
 func TestPendingConnects_callerCancel_stopsItsConnect(t *testing.T) {
-	b := newPendingConnects()
+	p := newPendingConnects()
 	ctx, cancel := context.WithCancel(context.Background())
-	awaitConnectStarted(t, startBlockingConnect(b, ctx))
+	awaitConnectStarted(t, startBlockingConnect(p, ctx))
 
 	cancel()
 
-	waitWithin(t, b)
+	waitWithin(t, p)
 }
 
 func TestPendingConnects_startAfterStop_neverRuns(t *testing.T) {
-	b := newPendingConnects()
-	b.stop()
+	p := newPendingConnects()
+	p.stop()
 	ran := false
 
-	b.start(context.Background(), func(context.Context) { ran = true })
-	b.wait()
+	p.start(context.Background(), func(context.Context) { ran = true })
+	p.wait()
 
 	if ran {
 		t.Error("a connect started after stop")
