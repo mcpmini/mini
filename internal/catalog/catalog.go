@@ -22,10 +22,12 @@ type document struct {
 
 type Entry struct {
 	Name        string `json:"name"`
+	Title       string `json:"title"`
 	URL         string `json:"url"`
 	Description string `json:"description"`
 	Category    string `json:"category"`
 	Auth        string `json:"auth"`
+	SetupURL    string `json:"setup_url,omitempty"`
 }
 
 const (
@@ -35,9 +37,18 @@ const (
 	AuthNone      = "none"
 )
 
-const maxTextRunes = 120
+const (
+	maxTextRunes  = 120
+	maxTitleRunes = 40
+)
 
 var knownAuthValues = []string{AuthOAuth2, AuthOAuth2App, AuthToken, AuthNone}
+
+// NeedsSetup reports whether the user must create credentials at SetupURL (an access
+// token or their own OAuth app) before mini can connect.
+func (e Entry) NeedsSetup() bool {
+	return e.Auth == AuthToken || e.Auth == AuthOAuth2App
+}
 
 func Load() ([]Entry, error) {
 	return parse(catalogdata.V1())
@@ -86,13 +97,29 @@ func validateEntry(entry Entry) error {
 	if entry.URL == "" {
 		return fmt.Errorf("url is required")
 	}
-	if err := cmp.Or(validateText("description", entry.Description), validateText("category", entry.Category)); err != nil {
+	if err := cmp.Or(validateTitle(entry.Title), validateText("description", entry.Description), validateText("category", entry.Category)); err != nil {
 		return err
 	}
 	if !slices.Contains(knownAuthValues, entry.Auth) {
 		return fmt.Errorf("invalid auth %q", entry.Auth)
 	}
-	return validateHTTPSURL(entry.URL)
+	if err := validateHTTPSURL(entry.URL); err != nil {
+		return err
+	}
+	return validateSetupURL(entry)
+}
+
+func validateSetupURL(entry Entry) error {
+	if !entry.NeedsSetup() {
+		if entry.SetupURL != "" {
+			return fmt.Errorf("setup_url is only for %s and %s entries", AuthToken, AuthOAuth2App)
+		}
+		return nil
+	}
+	if err := validateHTTPSURL(entry.SetupURL); err != nil {
+		return fmt.Errorf("setup_url: %w", err)
+	}
+	return nil
 }
 
 func validateName(name string) error {
@@ -118,6 +145,18 @@ func validateText(field, value string) error {
 	}
 	if strings.ContainsFunc(value, isHiddenOrControl) {
 		return fmt.Errorf("%s contains control characters", field)
+	}
+	return nil
+}
+
+// The title is printed just before the entry's host; brackets could fake a host in front
+// of the real one, and a long title could push it out of view.
+func validateTitle(title string) error {
+	if err := validateText("title", title); err != nil {
+		return err
+	}
+	if utf8.RuneCountInString(title) > maxTitleRunes || strings.ContainsAny(title, "[]") {
+		return fmt.Errorf("title must be at most %d characters without brackets", maxTitleRunes)
 	}
 	return nil
 }

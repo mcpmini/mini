@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -106,8 +107,20 @@ func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 			category = entry.Category
 			fmt.Fprintf(out, "  %s:\n", category)
 		}
-		fmt.Fprintf(out, "    %d. %s [%s] - %s\n", i+1, entry.Name, entryHost(entry.URL), entry.Description)
+		fmt.Fprintf(out, "    %d. %s [%s] - %s%s\n", i+1, entry.Title, entryHost(entry.URL), entry.Description, authLabel(entry.Auth))
 	}
+}
+
+func authLabel(auth string) string {
+	switch auth {
+	case catalog.AuthOAuth2:
+		return " (OAuth login)"
+	case catalog.AuthOAuth2App:
+		return " (OAuth, needs your own app)"
+	case catalog.AuthToken:
+		return " (needs an access token)"
+	}
+	return ""
 }
 
 func entryHost(rawURL string) string {
@@ -125,8 +138,42 @@ func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {
 			fmt.Fprintln(p.errOut, "invalid selection:", err)
 			continue
 		}
-		return writeCatalogEntries(p, entries, indexes)
+		written, err := writeCatalogEntries(p, entries, indexes)
+		if err != nil {
+			return err
+		}
+		printSetupNotes(p.out, entries, written)
+		return nil
 	}
+}
+
+const tokenSetupNote = `%s needs an access token: create one at %s, then add it to servers/%s.yaml, for example:
+  auth:
+    type: bearer
+    token: ${%s}
+`
+
+const appSetupNote = `%s needs your own OAuth app: register one at %s with redirect URI %s, then add to servers/%s.yaml:
+  auth:
+    type: oauth2
+    client_id: <your app's client ID>
+and run: mini auth %s
+`
+
+func printSetupNotes(out io.Writer, entries []catalog.Entry, indexes []int) {
+	for _, index := range indexes {
+		switch e := entries[index]; e.Auth {
+		case catalog.AuthToken:
+			fmt.Fprintf(out, tokenSetupNote, e.Name, e.SetupURL, e.Name, tokenEnvVar(e.Name))
+		case catalog.AuthOAuth2App:
+			fmt.Fprintf(out, appSetupNote, e.Name, e.SetupURL, auth.ResolvedCallbackURI(nil), e.Name, e.Name)
+		}
+	}
+}
+
+// Server names may contain '-', which isn't valid in an environment variable name.
+func tokenEnvVar(serverName string) string {
+	return strings.ToUpper(strings.ReplaceAll(serverName, "-", "_")) + "_TOKEN"
 }
 
 func parseCatalogSelection(input string, count int) ([]int, error) {
@@ -181,7 +228,8 @@ func parseSelectionRange(token string) (int, int, error) {
 	return start, end, err
 }
 
-func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes []int) error {
+func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes []int) ([]int, error) {
+	var written []int
 	for _, index := range indexes {
 		err := ops.CreateServer(p.configDir, catalogServerConfig(entries[index]))
 		if errors.Is(err, fs.ErrExist) {
@@ -189,10 +237,11 @@ func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes [
 			continue
 		}
 		if err != nil {
-			return err
+			return written, err
 		}
+		written = append(written, index)
 	}
-	return nil
+	return written, nil
 }
 
 func catalogServerConfig(entry catalog.Entry) config.ServerConfig {

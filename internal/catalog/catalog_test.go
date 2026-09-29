@@ -33,7 +33,7 @@ func catalogJSON(t *testing.T, schemaVersion int, entries ...map[string]any) []b
 }
 
 func validEntry(change func(map[string]any)) map[string]any {
-	entry := map[string]any{"name": "example", "url": "https://example.com/mcp", "description": "d", "category": "c", "auth": "none"}
+	entry := map[string]any{"name": "example", "title": "Example", "url": "https://example.com/mcp", "description": "d", "category": "c", "auth": "none"}
 	change(entry)
 	return entry
 }
@@ -89,6 +89,12 @@ func TestParseRejectsInvalidEntries(t *testing.T) {
 		{"escape sequence in name", func(e map[string]any) { e["name"] = "\x1b[2J" }, "invalid name"},
 		{"unknown auth", func(e map[string]any) { e["auth"] = "magic" }, `catalog entry "example": invalid auth "magic"`},
 		{"escape sequence in auth", func(e map[string]any) { e["auth"] = "bad\x1b" }, "invalid auth"},
+		{"missing title", func(e map[string]any) { delete(e, "title") }, `catalog entry "example": title is required`},
+		{"host-like brackets in title", func(e map[string]any) { e["title"] = "Linear [mcp.linear.app]" }, `catalog entry "example": title must be at most 40 characters without brackets`},
+		{"title too long", func(e map[string]any) { e["title"] = strings.Repeat("é", maxTitleRunes+1) }, `catalog entry "example": title must be at most 40 characters without brackets`},
+		{"token without setup_url", func(e map[string]any) { e["auth"] = "token" }, `catalog entry "example": setup_url: url must be an https URL`},
+		{"http setup_url", func(e map[string]any) { e["auth"], e["setup_url"] = "oauth2-app", "http://example.com/apps" }, `catalog entry "example": setup_url: url must be an https URL`},
+		{"setup_url on an oauth2 entry", func(e map[string]any) { e["auth"], e["setup_url"] = "oauth2", "https://example.com/apps" }, `catalog entry "example": setup_url is only for token and oauth2-app entries`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
