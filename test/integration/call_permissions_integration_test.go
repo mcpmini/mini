@@ -17,7 +17,7 @@ func callSetupWithPerms(t *testing.T, fixtures map[string]string, serverExtra st
 	return cfg
 }
 
-func TestCLICall_ProtectedTool_RequiresPermCall(t *testing.T) {
+func TestIntegrationCLICall_ProtectedTool_RequiresPermCall(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"create_item": `{"id":1}`},
 		"permissions:\n  protected:\n    - create_item\n")
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "create_item")
@@ -29,7 +29,7 @@ func TestCLICall_ProtectedTool_RequiresPermCall(t *testing.T) {
 	}
 }
 
-func TestCLICall_PermCallBypassesProtection(t *testing.T) {
+func TestIntegrationCLICall_PermCallBypassesProtection(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"create_item": `{"id":1}`},
 		"permissions:\n  protected:\n    - create_item\n")
 	stdout, _, code := runCLI(t, cfg, "perm-call", "svc", "create_item")
@@ -45,7 +45,7 @@ func TestCLICall_PermCallBypassesProtection(t *testing.T) {
 	}
 }
 
-func TestCLICall_HiddenTool_NotFound(t *testing.T) {
+func TestIntegrationCLICall_HiddenTool_NotFound(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"secret_tool": `{"id":1}`},
 		"permissions:\n  hidden:\n    - secret_tool\n")
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "secret_tool")
@@ -57,7 +57,7 @@ func TestCLICall_HiddenTool_NotFound(t *testing.T) {
 	}
 }
 
-func TestCLICall_DefaultProtected_RequiresPermCall(t *testing.T) {
+func TestIntegrationCLICall_DefaultProtected_RequiresPermCall(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"any_tool": `{"id":1}`},
 		"permissions:\n  default: protected\n")
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "any_tool")
@@ -73,7 +73,7 @@ func TestCLICall_DefaultProtected_RequiresPermCall(t *testing.T) {
 	}
 }
 
-func TestCLICall_DefaultHidden_NotFound(t *testing.T) {
+func TestIntegrationCLICall_DefaultHidden_NotFound(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"any_tool": `{"id":1}`},
 		"permissions:\n  default: hidden\n")
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "any_tool")

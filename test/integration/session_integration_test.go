@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestSession_configureIndependentTools(t *testing.T) {
+func TestIntegrationSession_configureIndependentTools(t *testing.T) {
 	client := quickServer(t, map[string]string{
 		"tool_a": `{"id":1,"secret":"hidden","title":"a"}`,
 		"tool_b": `{"id":2,"secret":"visible","title":"b"}`,
@@ -26,7 +26,7 @@ func TestSession_configureIndependentTools(t *testing.T) {
 	}
 }
 
-func TestSession_multipleExecCallsShareProjection(t *testing.T) {
+func TestIntegrationSession_multipleExecCallsShareProjection(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"title":"hello","noise":"strip this"}`})
 	client.setProjection("svc", "get_item", map[string]any{"include_only": []string{"id", "title"}}, true)
 

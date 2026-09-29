@@ -50,7 +50,7 @@ func run(t *testing.T, bin, configDir string, args ...string) (stdout, stderr st
 	return
 }
 
-func TestCLI_ls_empty(t *testing.T) {
+func TestIntegrationCLI_ls_empty(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, _, code := run(t, bin, cfg, "ls")
@@ -62,7 +62,7 @@ func TestCLI_ls_empty(t *testing.T) {
 	}
 }
 
-func TestCLI_add_and_ls(t *testing.T) {
+func TestIntegrationCLI_add_and_ls(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -77,7 +77,7 @@ func TestCLI_add_and_ls(t *testing.T) {
 	checkLsContains(t, bin, cfg, "myserver", "http")
 }
 
-func TestCLI_add_preservesChildFlags(t *testing.T) {
+func TestIntegrationCLI_add_preservesChildFlags(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	cmd := exec.Command(bin, "add", "svc", "--config", cfg, "--", "/usr/bin/printf", "-h", "--config", "child-value")
@@ -100,7 +100,7 @@ func TestCLI_add_preservesChildFlags(t *testing.T) {
 	}
 }
 
-func TestCLI_configAfterSubcommandIsAccepted(t *testing.T) {
+func TestIntegrationCLI_configAfterSubcommandIsAccepted(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, stderr, code := run(t, bin, t.TempDir(), "ls", "--config", cfg)
@@ -109,7 +109,7 @@ func TestCLI_configAfterSubcommandIsAccepted(t *testing.T) {
 	}
 }
 
-func TestCLI_addRequiresDashBeforeStdioCommand(t *testing.T) {
+func TestIntegrationCLI_addRequiresDashBeforeStdioCommand(t *testing.T) {
 	bin := miniBin(t)
 	_, stderr, code := run(t, bin, t.TempDir(), "add", "svc", "printf", "hello")
 	if code != 2 || !strings.Contains(stderr, "require NAME -- CMD") {
@@ -130,7 +130,7 @@ func checkLsContains(t *testing.T, bin, cfg string, want ...string) {
 	}
 }
 
-func TestCLI_rm(t *testing.T) {
+func TestIntegrationCLI_rm(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -147,7 +147,7 @@ func TestCLI_rm(t *testing.T) {
 	}
 }
 
-func TestCLI_rm_nonexistent(t *testing.T) {
+func TestIntegrationCLI_rm_nonexistent(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "rm", "ghost")
@@ -156,7 +156,7 @@ func TestCLI_rm_nonexistent(t *testing.T) {
 	}
 }
 
-func TestCLI_add_invalidName(t *testing.T) {
+func TestIntegrationCLI_add_invalidName(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, stderr, code := run(t, bin, cfg, "add", "bad/name", "--url", "http://localhost:9999")
@@ -168,7 +168,7 @@ func TestCLI_add_invalidName(t *testing.T) {
 	}
 }
 
-func TestCLI_unknownCommand(t *testing.T) {
+func TestIntegrationCLI_unknownCommand(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "boguscommand")
@@ -177,7 +177,7 @@ func TestCLI_unknownCommand(t *testing.T) {
 	}
 }
 
-func TestCLI_rm_missingName_exitsTwo(t *testing.T) {
+func TestIntegrationCLI_rm_missingName_exitsTwo(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "rm")
@@ -186,7 +186,7 @@ func TestCLI_rm_missingName_exitsTwo(t *testing.T) {
 	}
 }
 
-func TestCLI_auth_missingName_exitsTwo(t *testing.T) {
+func TestIntegrationCLI_auth_missingName_exitsTwo(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "auth")
@@ -195,7 +195,7 @@ func TestCLI_auth_missingName_exitsTwo(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_tooManyArgs_exitsTwo(t *testing.T) {
+func TestIntegrationCLI_ls_tooManyArgs_exitsTwo(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "ls", "a", "b", "c")
@@ -204,7 +204,7 @@ func TestCLI_ls_tooManyArgs_exitsTwo(t *testing.T) {
 	}
 }
 
-func TestCLI_test_noServers(t *testing.T) {
+func TestIntegrationCLI_test_noServers(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "test")
@@ -213,7 +213,7 @@ func TestCLI_test_noServers(t *testing.T) {
 	}
 }
 
-func TestCLI_test_unreachableServer(t *testing.T) {
+func TestIntegrationCLI_test_unreachableServer(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -228,7 +228,7 @@ func TestCLI_test_unreachableServer(t *testing.T) {
 	}
 }
 
-func TestCLI_init_createsStructure(t *testing.T) {
+func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -264,7 +264,7 @@ func writeClaudeConfigFile(t *testing.T) string {
 	return claudeConfig
 }
 
-func TestCLI_init_importFromClaude(t *testing.T) {
+func TestIntegrationCLI_init_importFromClaude(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	claudeConfig := writeClaudeConfigFile(t)
@@ -278,7 +278,7 @@ func TestCLI_init_importFromClaude(t *testing.T) {
 	}
 }
 
-func TestCLI_connect_badConfig(t *testing.T) {
+func TestIntegrationCLI_connect_badConfig(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -290,7 +290,7 @@ func TestCLI_connect_badConfig(t *testing.T) {
 	}
 }
 
-func TestCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
+func TestIntegrationCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, _, code := run(t, bin, cfg)
@@ -302,7 +302,7 @@ func TestCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
 	}
 }
 
-func TestCLI_connect_invalidToolMode(t *testing.T) {
+func TestIntegrationCLI_connect_invalidToolMode(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, stderr, code := run(t, bin, cfg, "connect", "--tool-mode", "bogus")
@@ -314,7 +314,7 @@ func TestCLI_connect_invalidToolMode(t *testing.T) {
 	}
 }
 
-func TestCLI_cleanup_empty(t *testing.T) {
+func TestIntegrationCLI_cleanup_empty(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "cleanup")
@@ -323,7 +323,7 @@ func TestCLI_cleanup_empty(t *testing.T) {
 	}
 }
 
-func TestCLI_daemon_status_noDaemon(t *testing.T) {
+func TestIntegrationCLI_daemon_status_noDaemon(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, _, code := run(t, bin, cfg, "daemon", "status")
@@ -335,7 +335,7 @@ func TestCLI_daemon_status_noDaemon(t *testing.T) {
 	}
 }
 
-func TestCLI_add_withHeader(t *testing.T) {
+func TestIntegrationCLI_add_withHeader(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--header", "Authorization=Bearer tok123")
@@ -351,10 +351,10 @@ func TestCLI_add_withHeader(t *testing.T) {
 	}
 }
 
-func TestCLI_add_stdioCommand(t *testing.T) {
+func TestIntegrationCLI_add_stdioCommand(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "add", "localserver", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+	_, _, code := run(t, bin, cfg, "add", "localserver", "--no-connect", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
 	if code != 0 {
 		t.Fatalf("add stdio command should exit 0, got %d", code)
 	}
@@ -382,7 +382,7 @@ func writeGeminiConfigFile(t *testing.T) string {
 	return path
 }
 
-func TestCLI_init_importFromGemini(t *testing.T) {
+func TestIntegrationCLI_init_importFromGemini(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	geminiConfig := writeGeminiConfigFile(t)
@@ -395,14 +395,14 @@ func TestCLI_init_importFromGemini(t *testing.T) {
 	}
 }
 
-// versionPattern matches valid outputs from internal/version.computeVersion
-// when built from a git checkout (the only context miniBin ever uses):
+// versionPattern matches valid outputs from internal/version.computeVersion:
 //   - "a1b2c3d"            — 7-char hex hash, clean tree
 //   - "a1b2c3d+dirty"      — hash, dirty tree
 //   - "v1.2.3 (a1b2c3d)"  — release tag with hash
-var versionPattern = regexp.MustCompile(`^([0-9a-f]{7}(\+dirty)?|v[0-9]+\.[0-9]+\.[0-9]+[^ ]* \([0-9a-f]{7}\))$`)
+//   - "dev"                — no VCS info, which is what builds from a git worktree get
+var versionPattern = regexp.MustCompile(`^(dev|[0-9a-f]{7}(\+dirty)?|v[0-9]+\.[0-9]+\.[0-9]+[^ ]* \([0-9a-f]{7}\))$`)
 
-func TestCLI_version(t *testing.T) {
+func TestIntegrationCLI_version(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, _, code := run(t, bin, cfg, "version")
@@ -414,7 +414,7 @@ func TestCLI_version(t *testing.T) {
 	}
 }
 
-func TestCLI_version_flag(t *testing.T) {
+func TestIntegrationCLI_version_flag(t *testing.T) {
 	bin := miniBin(t)
 	// --version is a global flag, not a subcommand — run without --config
 	cmd := exec.Command(bin, "--version")
@@ -428,7 +428,7 @@ func TestCLI_version_flag(t *testing.T) {
 	}
 }
 
-func TestCLI_add_protectedTool(t *testing.T) {
+func TestIntegrationCLI_add_protectedTool(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "add", "svc", "--url", "http://example.com/mcp", "--protected", "delete_item", "--protected", "create_item")

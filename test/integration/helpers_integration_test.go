@@ -53,7 +53,7 @@ func TestMain(m *testing.M) {
 }
 
 // gitVersion computes the revision string injected into the mini binary via
-// -ldflags, so TestCLI_version can assert on it exactly.
+// -ldflags, so TestIntegrationCLI_version can assert on it exactly.
 func gitVersion(root string) (string, error) {
 	rev, err := gitOutput(root, "rev-parse", "--short=7", "HEAD")
 	if err != nil {

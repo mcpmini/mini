@@ -6,14 +6,13 @@
 #
 # What it does (in order):
 #   1.  Verify working tree is clean
-#   2.  Build + lint + race tests (check.sh)
-#   3.  Integration tests
-#   4.  Build release binary with version injected via -ldflags; verify output
-#   5.  CLI smoke tests against the release binary
-#   6.  Benchmarks (projection savings — eyeball for regressions)
-#   7.  Manual checklist prompt
-#   8.  Evals (optional — costs ~$2-5 in API tokens)
-#   9.  Create git tag and print push instructions
+#   2.  Build + lint + unit and integration race tests (check.sh)
+#   3.  Build release binary with version injected via -ldflags; verify output
+#   4.  CLI smoke tests against the release binary
+#   5.  Benchmarks (projection savings — eyeball for regressions)
+#   6.  Manual checklist prompt
+#   7.  Evals (optional — costs ~$2-5 in API tokens)
+#   8.  Create git tag and print push instructions
 
 set -euo pipefail
 
@@ -50,12 +49,7 @@ step "build + lint + race tests (check.sh)"
 ./check.sh
 ok "check.sh passed"
 
-# ── 3. Integration tests ──────────────────────────────────────────────────────
-step "integration tests"
-go test -tags integration,test ./test/integration/... -timeout 180s
-ok "integration tests passed"
-
-# ── 4. Release binary ─────────────────────────────────────────────────────────
+# ── 3. Release binary ─────────────────────────────────────────────────────────
 step "building release binary (version ${SEMVER})"
 go build -ldflags "$LDFLAGS" -o "$BIN" ./cmd/mini
 GOT=$("$BIN" --version)
@@ -64,7 +58,7 @@ if [[ "$GOT" != "$SEMVER" ]]; then
 fi
 ok "binary version verified: ${GOT}  →  ${BIN}"
 
-# ── 5. CLI smoke tests ────────────────────────────────────────────────────────
+# ── 4. CLI smoke tests ────────────────────────────────────────────────────────
 step "CLI smoke tests"
 CFG=$(mktemp -d)
 "$BIN" --config "$CFG" ls | grep -q "no servers" || fail "empty ls failed"
@@ -78,13 +72,13 @@ CFG=$(mktemp -d)
 "$BIN" --config "$CFG" add "bad/name" --url https://x.com 2>&1 | grep -qi "invalid" || fail "bad server name not rejected"
 ok "smoke tests passed"
 
-# ── 6. Benchmarks ─────────────────────────────────────────────────────────────
+# ── 5. Benchmarks ─────────────────────────────────────────────────────────────
 step "benchmarks (review for regressions — target ≥40% savings on GitHub fixtures)"
 go test -tags test -bench=. -benchtime=3s ./internal/projection/... ./internal/server/... 2>&1 \
   | grep -E "^Benchmark"
 ok "benchmarks done"
 
-# ── 7. Manual checklist ───────────────────────────────────────────────────────
+# ── 6. Manual checklist ───────────────────────────────────────────────────────
 step "manual checklist"
 cat <<'EOF'
 
@@ -119,7 +113,7 @@ EOF
 ask "All manual checks passed?" || { echo "  Aborted — re-run after completing checks."; exit 1; }
 ok "manual checks confirmed"
 
-# ── 8. Evals (optional) ───────────────────────────────────────────────────────
+# ── 7. Evals (optional) ───────────────────────────────────────────────────────
 echo
 if ask "Run evals? (~\$2–5 in API tokens, ~10 min)"; then
   step "running evals"
@@ -129,7 +123,7 @@ else
   echo "  (evals skipped)"
 fi
 
-# ── 9. Tag ────────────────────────────────────────────────────────────────────
+# ── 8. Tag ────────────────────────────────────────────────────────────────────
 step "tagging ${TAG}"
 echo
 if ask "Create tag ${TAG}?"; then

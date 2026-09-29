@@ -21,7 +21,7 @@ func projectedResponseClient(t *testing.T, extraConfig string) (*mcpClient, stri
 	return startServer(t, cfg), respDir, cfg
 }
 
-func TestStorage_rawFileExists(t *testing.T) {
+func TestIntegrationStorage_rawFileExists(t *testing.T) {
 	client, respDir, _ := projectedResponseClient(t, "")
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
@@ -32,7 +32,7 @@ func TestStorage_rawFileExists(t *testing.T) {
 	}
 }
 
-func TestStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
+func TestIntegrationStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
@@ -45,7 +45,7 @@ func TestStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 	}
 }
 
-func TestStorage_rawFileIsPrettyPrinted(t *testing.T) {
+func TestIntegrationStorage_rawFileIsPrettyPrinted(t *testing.T) {
 	client, respDir, _ := projectedResponseClient(t, "")
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
@@ -63,7 +63,7 @@ func TestStorage_rawFileIsPrettyPrinted(t *testing.T) {
 	}
 }
 
-func TestStorage_responseDirAutoCreated(t *testing.T) {
+func TestIntegrationStorage_responseDirAutoCreated(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := filepath.Join(t.TempDir(), "auto_created_responses")
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
@@ -80,7 +80,7 @@ func TestStorage_responseDirAutoCreated(t *testing.T) {
 	}
 }
 
-func TestStorage_diskBudgetEvictsOldest(t *testing.T) {
+func TestIntegrationStorage_diskBudgetEvictsOldest(t *testing.T) {
 	client, respDir, _ := projectedResponseClient(t, "response_disk_budget_mb: 0\n")
 
 	for range 3 {
@@ -99,7 +99,7 @@ func TestStorage_diskBudgetEvictsOldest(t *testing.T) {
 	}
 }
 
-func TestStorage_cleanupDeletesExpired(t *testing.T) {
+func TestIntegrationStorage_cleanupDeletesExpired(t *testing.T) {
 	client, respDir, cfg := projectedResponseClient(t, "")
 
 	e := client.execEnvelope("svc", "get_item", nil)
@@ -115,7 +115,7 @@ func TestStorage_cleanupDeletesExpired(t *testing.T) {
 	}
 }
 
-func TestStorage_cleanupRetainsNonExpired(t *testing.T) {
+func TestIntegrationStorage_cleanupRetainsNonExpired(t *testing.T) {
 	client, respDir, cfg := projectedResponseClient(t, "")
 
 	e := client.execEnvelope("svc", "get_item", nil)
@@ -129,7 +129,7 @@ func TestStorage_cleanupRetainsNonExpired(t *testing.T) {
 	}
 }
 
-func TestStorage_unprojectedLargeResponseInlines(t *testing.T) {
+func TestIntegrationStorage_unprojectedLargeResponseInlines(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", fixturesDir+"/github")
 	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
@@ -144,7 +144,7 @@ func TestStorage_unprojectedLargeResponseInlines(t *testing.T) {
 	}
 }
 
-func TestStorage_nonJSONResponseFromUpstreamPassedThrough(t *testing.T) {
+func TestIntegrationStorage_nonJSONResponseFromUpstreamPassedThrough(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_status": `plain text response`}))
 	client := startServer(t, cfg)

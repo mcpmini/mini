@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-func TestStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
+func TestIntegrationStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
 	cfg := t.TempDir()
 
 	healthyDir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
@@ -208,7 +208,7 @@ func doMiniHandshake(t *testing.T, p *standaloneMini) {
 	fmt.Fprintf(p.Stdin, "%s\n", b) //nolint:errcheck
 }
 
-func TestStandaloneSIGTERM_openStdinExitsSuccessfully(t *testing.T) {
+func TestIntegrationStandaloneSIGTERM_openStdinExitsSuccessfully(t *testing.T) {
 	proc := startMiniForSignal(t, t.TempDir())
 	doMiniHandshake(t, proc)
 	proc.Cmd.Process.Signal(syscall.SIGTERM) //nolint:errcheck
@@ -217,7 +217,7 @@ func TestStandaloneSIGTERM_openStdinExitsSuccessfully(t *testing.T) {
 	}
 }
 
-func TestStandaloneSIGINT_openStdinExitsSuccessfully(t *testing.T) {
+func TestIntegrationStandaloneSIGINT_openStdinExitsSuccessfully(t *testing.T) {
 	proc := startMiniForSignal(t, t.TempDir())
 	doMiniHandshake(t, proc)
 	proc.Cmd.Process.Signal(syscall.SIGINT) //nolint:errcheck
@@ -226,7 +226,7 @@ func TestStandaloneSIGINT_openStdinExitsSuccessfully(t *testing.T) {
 	}
 }
 
-func TestStandaloneSIGTERM_delayedConnectIsDrained(t *testing.T) {
+func TestIntegrationStandaloneSIGTERM_delayedConnectIsDrained(t *testing.T) {
 	cfg := t.TempDir()
 	hungDir := mockFixtureDir(t, map[string]string{"never": `{}`})
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 30000}

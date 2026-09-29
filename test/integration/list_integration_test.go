@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestListTools_paginatesAcrossPages(t *testing.T) {
+func TestIntegrationListTools_paginatesAcrossPages(t *testing.T) {
 	fixtures := map[string]string{
 		"tool_a": `{"result":"a"}`,
 		"tool_b": `{"result":"b"}`,

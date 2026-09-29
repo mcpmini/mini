@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestAuth_bearerTokenSentToUpstream(t *testing.T) {
+func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
@@ -21,7 +21,7 @@ func TestAuth_bearerTokenSentToUpstream(t *testing.T) {
 	}
 }
 
-func TestAuth_apiKeySentToUpstream(t *testing.T) {
+func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
 	f, gotKey := authCapturingMCP(t, "X-Api-Key")
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
@@ -35,7 +35,7 @@ func TestAuth_apiKeySentToUpstream(t *testing.T) {
 	}
 }
 
-func TestAuth_staticHeaderForwarded(t *testing.T) {
+func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 	f, gotHeader := authCapturingMCP(t, "X-Custom-Key")
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
@@ -49,7 +49,7 @@ func TestAuth_staticHeaderForwarded(t *testing.T) {
 	}
 }
 
-func TestAuth_noTokenNoAuthHeader(t *testing.T) {
+func TestIntegrationAuth_noTokenNoAuthHeader(t *testing.T) {
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
 	writeHTTPServerYAML(t, cfg, "svc", f.srv.URL)

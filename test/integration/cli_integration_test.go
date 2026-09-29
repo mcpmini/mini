@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-func TestCLIVersion(t *testing.T) {
+func TestIntegrationCLIVersion(t *testing.T) {
 	for _, args := range [][]string{{"version"}, {"--version"}} {
 		stdout, _, code := runCLI(t, t.TempDir(), args...)
 		if code != 0 {
@@ -26,35 +26,35 @@ func TestCLIVersion(t *testing.T) {
 	}
 }
 
-func TestCLIUnknownCommand(t *testing.T) {
+func TestIntegrationCLIUnknownCommand(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "boguscommand")
 	if code != 2 {
 		t.Errorf("unknown command should exit 2, got %d", code)
 	}
 }
 
-func TestCLIRmMissingName_ExitsTwo(t *testing.T) {
+func TestIntegrationCLIRmMissingName_ExitsTwo(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "rm")
 	if code != 2 {
 		t.Errorf("rm with no NAME should exit 2, got %d", code)
 	}
 }
 
-func TestCLIAuthMissingName_ExitsTwo(t *testing.T) {
+func TestIntegrationCLIAuthMissingName_ExitsTwo(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "auth")
 	if code != 2 {
 		t.Errorf("auth with no server name should exit 2, got %d", code)
 	}
 }
 
-func TestCLILsTooManyArgs_ExitsTwo(t *testing.T) {
+func TestIntegrationCLILsTooManyArgs_ExitsTwo(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "ls", "a", "b", "c")
 	if code != 2 {
 		t.Errorf("ls with 3 args should exit 2, got %d", code)
 	}
 }
 
-func TestCLIConnectInvalidConfig(t *testing.T) {
+func TestIntegrationCLIConnectInvalidConfig(t *testing.T) {
 	cfg := t.TempDir()
 	os.WriteFile(filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"), 0644)
 	_, _, code := runCLI(t, cfg, "status")
@@ -63,7 +63,7 @@ func TestCLIConnectInvalidConfig(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_Empty(t *testing.T) {
+func TestIntegrationCLI_ls_Empty(t *testing.T) {
 	stdout, _, code := runCLI(t, t.TempDir(), "ls")
 	if code != 0 {
 		t.Errorf("ls with empty config should exit 0, got %d", code)
@@ -73,7 +73,7 @@ func TestCLI_ls_Empty(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_ServerListsTools(t *testing.T) {
+func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -93,7 +93,7 @@ func TestCLI_ls_ServerListsTools(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_ToolDetail(t *testing.T) {
+func TestIntegrationCLI_ls_ToolDetail(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -110,7 +110,7 @@ func TestCLI_ls_ToolDetail(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_UnknownServer(t *testing.T) {
+func TestIntegrationCLI_ls_UnknownServer(t *testing.T) {
 	_, stderr, code := runCLI(t, t.TempDir(), "ls", "ghost")
 	if code == 0 {
 		t.Error("ls with unknown server should exit non-zero")
@@ -120,7 +120,7 @@ func TestCLI_ls_UnknownServer(t *testing.T) {
 	}
 }
 
-func TestCLI_ls_UnknownTool(t *testing.T) {
+func TestIntegrationCLI_ls_UnknownTool(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeServerYAML(t, cfg, "svc", dir, "")
@@ -134,7 +134,7 @@ func TestCLI_ls_UnknownTool(t *testing.T) {
 	}
 }
 
-func TestCLI_add_ThenLs(t *testing.T) {
+func TestIntegrationCLI_add_ThenLs(t *testing.T) {
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	stdout, _, code := runCLI(t, cfg, "ls")
@@ -143,7 +143,7 @@ func TestCLI_add_ThenLs(t *testing.T) {
 	}
 }
 
-func TestCLI_add_UrlCreatesFile(t *testing.T) {
+func TestIntegrationCLI_add_UrlCreatesFile(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	if code != 0 {
@@ -154,7 +154,7 @@ func TestCLI_add_UrlCreatesFile(t *testing.T) {
 	}
 }
 
-func TestCLI_add_CommandCreatesFile(t *testing.T) {
+func TestIntegrationCLI_add_CommandCreatesFile(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
 	if code != 0 {
@@ -165,21 +165,21 @@ func TestCLI_add_CommandCreatesFile(t *testing.T) {
 	}
 }
 
-func TestCLI_add_InvalidName(t *testing.T) {
+func TestIntegrationCLI_add_InvalidName(t *testing.T) {
 	_, stderr, code := runCLI(t, t.TempDir(), "add", "bad/name", "--url", "http://example.com", "--no-connect")
 	if code == 0 || !strings.Contains(stderr, "invalid server name") {
 		t.Errorf("expected non-zero exit + 'invalid server name', got code=%d stderr=%q", code, stderr)
 	}
 }
 
-func TestCLI_add_NoURLOrCommand(t *testing.T) {
+func TestIntegrationCLI_add_NoURLOrCommand(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "add", "myserver")
 	if code == 0 {
 		t.Error("add with no URL or command should exit non-zero")
 	}
 }
 
-func TestCLI_add_Protected(t *testing.T) {
+func TestIntegrationCLI_add_Protected(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--protected", "list_items", "--no-connect")
 	if code != 0 {
@@ -194,7 +194,7 @@ func TestCLI_add_Protected(t *testing.T) {
 	}
 }
 
-func TestCLI_add_Header(t *testing.T) {
+func TestIntegrationCLI_add_Header(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp",
 		"--header", "Authorization=Bearer tok", "--header", "X-Custom=val", "--no-connect")
@@ -210,7 +210,7 @@ func TestCLI_add_Header(t *testing.T) {
 	}
 }
 
-func TestCLI_add_FromClaude(t *testing.T) {
+func TestIntegrationCLI_add_FromClaude(t *testing.T) {
 	cfg := t.TempDir()
 	claudeConfig := writeClaudeConfig(t, map[string]any{
 		"command": "npx",
@@ -225,7 +225,7 @@ func TestCLI_add_FromClaude(t *testing.T) {
 	}
 }
 
-func TestCLI_add_FromClaudeCode(t *testing.T) {
+func TestIntegrationCLI_add_FromClaudeCode(t *testing.T) {
 	cfg := t.TempDir()
 	path := writeClaudeCodeConfig(t, map[string]any{
 		"code-server": map[string]any{
@@ -242,7 +242,7 @@ func TestCLI_add_FromClaudeCode(t *testing.T) {
 	}
 }
 
-func TestCLI_configFlagMayFollowSubcommand(t *testing.T) {
+func TestIntegrationCLI_configFlagMayFollowSubcommand(t *testing.T) {
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 
@@ -258,7 +258,7 @@ func TestCLI_configFlagMayFollowSubcommand(t *testing.T) {
 	}
 }
 
-func TestCLI_addHelp_ShowsFlags(t *testing.T) {
+func TestIntegrationCLI_addHelp_ShowsFlags(t *testing.T) {
 	cmd := exec.Command(miniBin, "add", "--help")
 	var out strings.Builder
 	cmd.Stdout = &out
@@ -270,7 +270,7 @@ func TestCLI_addHelp_ShowsFlags(t *testing.T) {
 	}
 }
 
-func TestCLI_rm_Server(t *testing.T) {
+func TestIntegrationCLI_rm_Server(t *testing.T) {
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	_, _, code := runCLI(t, cfg, "rm", "myserver")
@@ -283,21 +283,21 @@ func TestCLI_rm_Server(t *testing.T) {
 	}
 }
 
-func TestCLI_rm_Nonexistent(t *testing.T) {
+func TestIntegrationCLI_rm_Nonexistent(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "rm", "ghost")
 	if code == 0 {
 		t.Error("rm of nonexistent server should exit non-zero")
 	}
 }
 
-func TestCLI_status_Empty(t *testing.T) {
+func TestIntegrationCLI_status_Empty(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "status")
 	if code != 0 {
 		t.Errorf("status with no servers should exit 0, got %d", code)
 	}
 }
 
-func TestCLI_status_LiveServer(t *testing.T) {
+func TestIntegrationCLI_status_LiveServer(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -317,7 +317,7 @@ func TestCLI_status_LiveServer(t *testing.T) {
 	}
 }
 
-func TestCLI_status_Unreachable(t *testing.T) {
+func TestIntegrationCLI_status_Unreachable(t *testing.T) {
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "bad", "name: bad\ncommand: /nonexistent_binary_xyz\n")
 	_, _, code := runCLI(t, cfg, "status")
@@ -326,7 +326,7 @@ func TestCLI_status_Unreachable(t *testing.T) {
 	}
 }
 
-func TestCLI_init_CreatesDirectories(t *testing.T) {
+func TestIntegrationCLI_init_CreatesDirectories(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "init", "--yes")
 	if code != 0 {
@@ -339,7 +339,7 @@ func TestCLI_init_CreatesDirectories(t *testing.T) {
 	}
 }
 
-func TestCLI_init_FromPath(t *testing.T) {
+func TestIntegrationCLI_init_FromPath(t *testing.T) {
 	claudePath := writeClaudeConfig(t, map[string]any{
 		"command": "npx",
 		"args":    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
@@ -354,7 +354,7 @@ func TestCLI_init_FromPath(t *testing.T) {
 	}
 }
 
-func TestCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
+func TestIntegrationCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
@@ -373,7 +373,7 @@ func TestCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
 	}
 }
 
-func TestCLI_cleanup_RetainsNonExpiredFiles(t *testing.T) {
+func TestIntegrationCLI_cleanup_RetainsNonExpiredFiles(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
@@ -387,21 +387,21 @@ func TestCLI_cleanup_RetainsNonExpiredFiles(t *testing.T) {
 	}
 }
 
-func TestCLI_cleanup_Exits0(t *testing.T) {
+func TestIntegrationCLI_cleanup_Exits0(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "cleanup")
 	if code != 0 {
 		t.Errorf("cleanup with no responses dir should exit 0, got %d", code)
 	}
 }
 
-func TestCLI_auth_ServerNotFound(t *testing.T) {
+func TestIntegrationCLI_auth_ServerNotFound(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "auth", "nonexistent")
 	if code == 0 {
 		t.Error("auth for nonexistent server should exit non-zero")
 	}
 }
 
-func TestCLI_auth_NoOAuth2Config(t *testing.T) {
+func TestIntegrationCLI_auth_NoOAuth2Config(t *testing.T) {
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	_, stderr, code := runCLI(t, cfg, "auth", "myserver")
@@ -413,7 +413,7 @@ func TestCLI_auth_NoOAuth2Config(t *testing.T) {
 	}
 }
 
-func TestCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
+func TestIntegrationCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
 	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
