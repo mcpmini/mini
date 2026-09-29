@@ -39,7 +39,7 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 	oldTools := []transport.ToolDefinition{{Name: "old_tool", InputSchema: json.RawMessage(`{}`)}}
 	newTools := []transport.ToolDefinition{{Name: "new_tool", InputSchema: json.RawMessage(`{}`)}}
 
-	t.Run("server removed after the reconnect swapped in its connection", func(t *testing.T) {
+	t.Run("server removed before the reconnect publishes its tools", func(t *testing.T) {
 		srv := newInternalTestServer(t)
 		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: oldTools})
 		reconnecting := srv.snapshotUpstreams()[0]
@@ -47,8 +47,9 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 		if _, err := srv.removeServerRuntime("svc"); err != nil {
 			t.Fatal(err)
 		}
-		srv.publishReconnectedTools(reconnecting, reconnecting.conn, newTools)
-
+		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, newTools) {
+			t.Error("publish reported success for a removed upstream")
+		}
 		if got := registeredToolNames(srv); len(got) != 0 {
 			t.Errorf("registry after removal = %v, want empty", got)
 		}
@@ -60,8 +61,9 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 		reconnecting := srv.snapshotUpstreams()[0]
 
 		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: newTools})
-		srv.publishReconnectedTools(reconnecting, reconnecting.conn, oldTools)
-
+		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, oldTools) {
+			t.Error("publish reported success for a replaced upstream")
+		}
 		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.new_tool"}) {
 			t.Errorf("registry = %v, want only the newer install's svc.new_tool", got)
 		}
