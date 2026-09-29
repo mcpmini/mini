@@ -5,10 +5,7 @@ import (
 	"sync"
 )
 
-// backgroundConnects runs upstream connects that keep retrying after their
-// caller returns. Close must cancel them all and wait for them, and none may
-// start once Close has begun waiting.
-type backgroundConnects struct {
+type pendingConnects struct {
 	mu        sync.Mutex
 	stopped   bool
 	lifetime  context.Context
@@ -16,12 +13,12 @@ type backgroundConnects struct {
 	wg        sync.WaitGroup
 }
 
-func newBackgroundConnects() *backgroundConnects {
+func newPendingConnects() *pendingConnects {
 	lifetime, cancel := context.WithCancel(context.Background())
-	return &backgroundConnects{lifetime: lifetime, cancelAll: cancel}
+	return &pendingConnects{lifetime: lifetime, cancelAll: cancel}
 }
 
-func (b *backgroundConnects) start(ctx context.Context, connect func(context.Context)) {
+func (b *pendingConnects) start(ctx context.Context, connect func(context.Context)) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.stopped {
@@ -38,13 +35,13 @@ func (b *backgroundConnects) start(ctx context.Context, connect func(context.Con
 	}()
 }
 
-func (b *backgroundConnects) stop() {
+func (b *pendingConnects) stop() {
 	b.mu.Lock()
 	b.stopped = true
 	b.mu.Unlock()
 	b.cancelAll()
 }
 
-func (b *backgroundConnects) wait() {
+func (b *pendingConnects) wait() {
 	b.wg.Wait()
 }

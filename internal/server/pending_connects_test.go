@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func startBlockingConnect(b *backgroundConnects, ctx context.Context) <-chan struct{} {
+func startBlockingConnect(b *pendingConnects, ctx context.Context) <-chan struct{} {
 	started := make(chan struct{})
 	b.start(ctx, func(ctx context.Context) {
 		close(started)
@@ -26,7 +26,7 @@ func awaitConnectStarted(t *testing.T, started <-chan struct{}) {
 	}
 }
 
-func waitWithin(t *testing.T, b *backgroundConnects) {
+func waitWithin(t *testing.T, b *pendingConnects) {
 	t.Helper()
 	done := make(chan struct{})
 	go func() { b.wait(); close(done) }()
@@ -37,8 +37,8 @@ func waitWithin(t *testing.T, b *backgroundConnects) {
 	}
 }
 
-func TestBackgroundConnects_stop_cancelsRunningConnects(t *testing.T) {
-	b := newBackgroundConnects()
+func TestPendingConnects_stop_cancelsRunningConnects(t *testing.T) {
+	b := newPendingConnects()
 	awaitConnectStarted(t, startBlockingConnect(b, context.Background()))
 
 	b.stop()
@@ -46,8 +46,8 @@ func TestBackgroundConnects_stop_cancelsRunningConnects(t *testing.T) {
 	waitWithin(t, b)
 }
 
-func TestBackgroundConnects_callerCancel_stopsItsConnect(t *testing.T) {
-	b := newBackgroundConnects()
+func TestPendingConnects_callerCancel_stopsItsConnect(t *testing.T) {
+	b := newPendingConnects()
 	ctx, cancel := context.WithCancel(context.Background())
 	awaitConnectStarted(t, startBlockingConnect(b, ctx))
 
@@ -56,8 +56,8 @@ func TestBackgroundConnects_callerCancel_stopsItsConnect(t *testing.T) {
 	waitWithin(t, b)
 }
 
-func TestBackgroundConnects_startAfterStop_neverRuns(t *testing.T) {
-	b := newBackgroundConnects()
+func TestPendingConnects_startAfterStop_neverRuns(t *testing.T) {
+	b := newPendingConnects()
 	b.stop()
 	ran := false
 

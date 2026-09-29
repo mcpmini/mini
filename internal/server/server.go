@@ -34,16 +34,16 @@ type Server struct {
 	// Lock ordering: persistMu → serverOpMu → stateMu → authMu.
 	// stateMu is the innermost hot-path lock (RLock on every request);
 	// the outer locks serialize cold-path admin operations.
-	stateMu     sync.RWMutex
-	persistMu   sync.Mutex
-	serverOpMu  sync.Mutex        // serializes concurrent add_server / remove_server for the same name
-	removeGen   map[string]uint64 // protected by serverOpMu; incremented on each remove_server
-	authMu      sync.Mutex
-	authFlows   map[string]*authFlowState
-	authWg      sync.WaitGroup
-	reconnectWg sync.WaitGroup // tracks all active reconnectLoop goroutines
-	refreshWg   sync.WaitGroup
-	connects    *backgroundConnects
+	stateMu         sync.RWMutex
+	persistMu       sync.Mutex
+	serverOpMu      sync.Mutex        // serializes concurrent add_server / remove_server for the same name
+	removeGen       map[string]uint64 // protected by serverOpMu; incremented on each remove_server
+	authMu          sync.Mutex
+	authFlows       map[string]*authFlowState
+	authWg          sync.WaitGroup
+	reconnectWg     sync.WaitGroup // tracks all active reconnectLoop goroutines
+	refreshWg       sync.WaitGroup
+	pendingConnects *pendingConnects
 }
 
 func (s *Server) notifyAllSessions() {
