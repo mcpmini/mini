@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -97,21 +98,38 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 	}
 }
 
-func TestReconnectWithToken_removedSinceStartAuthStaysRemoved(t *testing.T) {
+func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing.T) {
 	echomcp := os.Getenv("ECHOMCP_BIN")
 	if echomcp == "" {
 		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
 	}
-	srv := newInternalAuthTestServer(t)
-	t.Cleanup(srv.Close)
-	installAtStartAuth := srv.replacingInstall(config.ServerConfig{Name: "svc", Command: echomcp})
+	for _, tc := range []struct {
+		name      string
+		remove    bool
+		wantTools bool
+	}{
+		{name: "not removed: the login installs the server", remove: false, wantTools: true},
+		{name: "removed after start_auth: the login does not", remove: true, wantTools: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newInternalAuthTestServer(t)
+			t.Cleanup(srv.Close)
+			ac := authtest.NewTokenServer(t).AuthConfig()
+			installAtStartAuth := srv.replacingInstall(config.ServerConfig{Name: "svc", Command: echomcp, Auth: ac})
+			login := authtest.StartLogin(t, ac)
 
-	if _, err := srv.removeServerRuntime("svc"); err != nil {
-		t.Fatal(err)
-	}
-	srv.reconnectWithToken(installAtStartAuth)
+			if tc.remove {
+				if _, err := srv.removeServerRuntime("svc"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			auth.BufferCallbackCode(login, "test-auth-code")
+			srv.authWg.Add(1)
+			srv.runAuthFlow(t.Context(), installAtStartAuth, &authFlowState{cancel: func() {}, login: login})
 
-	if entries := srv.reg.All(); len(entries) != 0 {
-		t.Errorf("login completing after remove_server registered %d tools, want 0", len(entries))
+			if got := len(srv.reg.All()) > 0; got != tc.wantTools {
+				t.Errorf("tools registered = %v, want %v", got, tc.wantTools)
+			}
+		})
 	}
 }
