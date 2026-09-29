@@ -18,7 +18,19 @@ Start with the observable contract, its realistic entry point, and a plausible w
 
 In-process CLI is a specialized integration test. The last two rows are end-to-end tests **for mini** because they enter through its public process interface. A fake upstream keeps them repeatable; they do not prove compatibility with every live MCP server. In-process CLI tests can cover most argument permutations, while a few binary tests protect process-only behavior. Check the actual build tags and `check.sh` command before claiming that a test runs in the standard gate.
 
-A bug fix usually deserves a regression that reaches the old failure through a production path. A pure refactor may need only the existing suite; add a test if it exposes an unprotected contract. For auth, permissions, persistence, concurrency, retries, and shutdown, consider the relevant failure and cleanup state as well as success. Do not build a Cartesian product of cases without a distinct risk. Higher-level tests may repeat a little behavior to prove a boundary works, but should not replay every component permutation.
+### Decide what to add
+
+Choose tests for the failure a change could cause, not a quota at each level:
+
+| Change | Start here | Add a wider test when |
+| --- | --- | --- |
+| Rule, parser, or transformation | Focused component cases for distinct inputs, boundaries, and errors. | Config-to-server wiring or another component interaction is part of the change. |
+| Server routing, permissions, or projection | An in-process request through the relevant handler, with component cases for rule permutations. | The public MCP wire path or process setup could change the outcome. |
+| CLI command or flag | An in-process command test for parsing, output streams, and behavior. | The outcome depends on `main` or the OS process: actual exit status, direct writes to process streams, startup environment, or child-process behavior. |
+| Transport, retry, auth, or lifecycle | A controlled test at the affected HTTP, state, or timing boundary, including failure and cleanup when relevant. | Stdio framing, daemon wiring, subprocess exit, or a critical journey needs proof. |
+| Edited catalog or fixture | Existing load and validation tests, plus a behavioral case if the edit changes a promised outcome. | A user journey or stable external contract changes; routine content edits need no new full-flow test. |
+
+A bug fix usually deserves a regression that reaches the old failure through a production path. A pure refactor may need only the existing suite. If an existing test already reaches the behavior and would catch the regression, strengthen it when needed instead of adding a duplicate. Higher-level tests may repeat a little behavior to prove a boundary works, but should not replay every component permutation or pin incidental upstream data.
 
 Coverage is a way to find surprising unexercised code, not a score to optimize. There is no global percentage target or routine mutation-testing requirement. A race-detector pass covers only paths and processes actually run with race instrumentation.
 
@@ -35,6 +47,19 @@ The level says **where** a test runs. These terms describe **why or how** it tes
 - An **opt-in live interoperability check** exercises mini against a real external MCP server or client. It can reveal ecosystem behavior absent from fakes, but its network, credentials, and remote state make it different evidence from a repeatable CI regression.
 
 None of these names is a checklist to exhaust for each change. Choose the risks and boundaries that matter, then make the assertions strong enough to catch them.
+
+## Placement and build tags
+
+Keep component, in-process integration, and in-process CLI tests near the package they exercise. Put new black-box mini journeys in `test/integration`, where the shared harness builds and launches the binaries. Separate tests by the boundary and setup they share, not by labels such as “regression” or “golden.”
+
+| Build tag | What it means here | Standard `check.sh` |
+| --- | --- | --- |
+| None | Ordinary package test. | Included in the race-enabled `go test -tags test ./...`. |
+| `test` | Package tests or test-only helpers that need this tag. It does not mean “unit.” | Included in the same race-enabled run. |
+| `integration` | Real-binary tests and the fake MCP binary. | Runs tests under `test/integration` only; child binaries are not built with `-race`. |
+| `live` | Tests using real external MCP servers or credentials. | Not included; run deliberately with both `live` and `test` tags for the current server tests. |
+
+The repository also uses `evals` to build evaluation tooling and platform selectors such as `!windows`; neither is a test level. Do not add a build tag just to label a test “unit,” “contract,” or “smoke.” A tag alone does not prove the standard gate selects a file: `check.sh` runs the `integration` suite only under `test/integration`. Check the command and the selected tests before claiming coverage.
 
 ## Assert behavior that should remain true
 
