@@ -89,7 +89,7 @@ func (s *Server) refreshTools(u *upstreamServer) error {
 func (s *Server) publishRefreshedTools(u *upstreamServer, conn transport.Connection, tools []transport.ToolDefinition) bool {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
-	if !s.refreshConnStillCurrent(u, conn) {
+	if !s.isCurrentUpstreamConn(u, conn) {
 		return false
 	}
 	changed := !reflect.DeepEqual(u.lastDefs, tools)
@@ -104,12 +104,6 @@ func (s *Server) publishRefreshedTools(u *upstreamServer, conn transport.Connect
 		s.notifyAllSessions()
 	}
 	return true
-}
-
-func (s *Server) refreshConnStillCurrent(u *upstreamServer, conn transport.Connection) bool {
-	u.mu.RLock()
-	defer u.mu.RUnlock()
-	return s.isCurrentUpstreamConnLocked(u, conn)
 }
 
 func (s *Server) currentUpstreamConn(u *upstreamServer) transport.Connection {
