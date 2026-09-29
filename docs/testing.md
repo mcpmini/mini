@@ -12,7 +12,9 @@ Start with the observable contract, its realistic entry point, and a plausible w
 | --- | --- | --- |
 | Component | Rules, transformations, input classes, and error handling. Cover meaningful permutations here. | Config loading, projection, registry, response building. |
 | In-process integration | Composition, state transitions, lifecycle, and protocol handling with controlled dependencies. | Server handlers with `transport.FakeConnection`; HTTP transport with `httptest.Server`. |
-| Real-binary integration | CLI exit behavior, stdio framing, subprocesses, config paths, daemon wiring, and critical journeys whose process boundary matters. | `test/integration` with the fake MCP process. |
+| Real-binary integration | CLI exit behavior, stdio framing, subprocesses, config paths, daemon wiring, and critical journeys whose process boundary matters. | Tests in `*_integration_test.go` files, e.g. the `test/integration` suite with the fake MCP process. |
+
+In-process integration tests (fakes, `httptest`) are fast and stay in the unit run in ordinary `_test.go` files. Real-binary tests live next to the code they test in `*_integration_test.go`, start with `//go:build integration`, and are named `TestIntegration…`; they run in the separate integration job. `tools/testkind` enforces the convention. Run them with `go test -race -tags integration,test -run '^TestIntegration' ./...` after building `cmd/echomcp` and setting `ECHOMCP_BIN`.
 
 A bug fix usually deserves a regression that reaches the old failure through a production path. A pure refactor may need only the existing suite; add a test if it exposes an unprotected contract. For auth, permissions, persistence, concurrency, retries, and shutdown, consider the relevant failure and cleanup state as well as success. Do not build a Cartesian product of cases without a distinct risk. Higher-level tests may repeat a little behavior to prove a boundary works, but should not replay every component permutation.
 

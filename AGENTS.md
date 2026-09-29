@@ -8,10 +8,11 @@ This file provides guidance to coding agents and contributors working in this re
 export PATH="/opt/homebrew/bin:$(go env GOPATH)/bin:$PATH"   # Go 1.26.1 + staticcheck
 
 go build ./...
+# Unit tests
 go test -race -tags test ./...
 
-# Integration tests (build real binaries, spawn subprocesses)
-go test -tags integration,test ./test/integration/...
+# Integration tests (real binaries, subprocesses); build echomcp and set ECHOMCP_BIN first
+go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...
 
 # Run a single test
 go test -tags test ./internal/server/... -run TestExecuteRoutesToUpstream -v
@@ -22,6 +23,8 @@ go build -o mini ./cmd/mini
 # Run all checks (build + lint + race tests) — same as CI
 ./check.sh
 ```
+
+Integration test files are named `*_integration_test.go`, start with `//go:build integration`, and name every test `TestIntegration…`; `tools/testkind` enforces this and `check.sh` runs it.
 
 ## Philosophy
 
