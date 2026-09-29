@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -67,5 +70,51 @@ func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(configDir, "servers", "github.yaml")); err != nil {
 		t.Error("github.yaml should have been written")
+	}
+}
+
+func newTestPrompter(input string) (prompter, *bytes.Buffer) {
+	out := &bytes.Buffer{}
+	return prompter{in: bufio.NewScanner(strings.NewReader(input)), out: out}, out
+}
+
+func TestPrompterAsk(t *testing.T) {
+	t.Run("trims the answer", func(t *testing.T) {
+		p, out := newTestPrompter("  hello \n")
+		if got := p.ask("Q"); got != "hello" {
+			t.Errorf("ask = %q, want hello", got)
+		}
+		if out.String() != "Q: " {
+			t.Errorf("prompt = %q, want %q", out.String(), "Q: ")
+		}
+	})
+	t.Run("empty on EOF", func(t *testing.T) {
+		p, _ := newTestPrompter("")
+		if got := p.ask("Q"); got != "" {
+			t.Errorf("ask at EOF = %q, want empty", got)
+		}
+	})
+}
+
+func TestPrompterConfirm(t *testing.T) {
+	for input, want := range map[string]bool{
+		"y\n": true, "yes\n": true, "Y\n": true, "YES\n": true, " yes \n": true,
+		"n\n": false, "\n": false, "": false, "yep\n": false,
+	} {
+		p, _ := newTestPrompter(input)
+		if got := p.confirm("Q"); got != want {
+			t.Errorf("confirm(%q) = %v, want %v", input, got, want)
+		}
+	}
+	p, out := newTestPrompter("y\n")
+	p.confirm("Import?")
+	if out.String() != "Import? [y/N]: " {
+		t.Errorf("confirm prompt = %q, want %q", out.String(), "Import? [y/N]: ")
+	}
+}
+
+func TestAutoConfirmAccepts(t *testing.T) {
+	if !autoConfirm("Q") {
+		t.Error("autoConfirm = false, want true")
 	}
 }

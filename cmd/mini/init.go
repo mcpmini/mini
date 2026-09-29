@@ -38,15 +38,23 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 }
 
 func runInit(configDir string, f initFlags) {
-	scanner := bufio.NewScanner(os.Stdin)
-	prompt := interactivePrompter(scanner, f.yes)
+	p := prompter{in: bufio.NewScanner(os.Stdin), out: os.Stderr}
 	if err := createConfigDirs(configDir); err != nil {
 		fatalf("create config dirs: %v", err)
 	}
 	fmt.Printf("config directory: %s\n", configDir)
-	if imported := importServers(configDir, f.from, prompt); imported > 0 {
+	if imported := importServers(configDir, f.from, importConfirmer(p, f.yes)); imported > 0 {
 		fmt.Printf("imported %d server(s)\n", imported)
 	}
+	runLoginStep(loginStepParams{
+		configDir: configDir,
+		autoYes:   f.yes,
+		confirm:   p.confirm,
+		ask:       p.ask,
+		logIn:     logIn,
+		out:       os.Stdout,
+		errOut:    os.Stderr,
+	})
 	printInstallInstructions()
 }
 
@@ -224,19 +232,34 @@ func indent(s, prefix string) string {
 	return strings.Join(lines, "\n")
 }
 
-func interactivePrompter(scanner *bufio.Scanner, autoYes bool) func(string) bool {
-	return func(question string) bool {
-		if autoYes {
-			fmt.Println(question + " [auto: yes]")
-			return true
-		}
-		fmt.Fprintf(os.Stderr, "%s [y/N]: ", question)
-		if !scanner.Scan() {
-			return false
-		}
-		ans := strings.ToLower(strings.TrimSpace(scanner.Text()))
-		return ans == "y" || ans == "yes"
+type prompter struct {
+	in  *bufio.Scanner
+	out io.Writer
+}
+
+func (p prompter) ask(question string) string {
+	fmt.Fprintf(p.out, "%s: ", question)
+	if !p.in.Scan() {
+		return ""
 	}
+	return strings.TrimSpace(p.in.Text())
+}
+
+func (p prompter) confirm(question string) bool {
+	answer := strings.ToLower(p.ask(question + " [y/N]"))
+	return answer == "y" || answer == "yes"
+}
+
+func importConfirmer(p prompter, autoYes bool) func(string) bool {
+	if autoYes {
+		return autoConfirm
+	}
+	return p.confirm
+}
+
+func autoConfirm(question string) bool {
+	fmt.Println(question + " [auto: yes]")
+	return true
 }
 
 // isSelfEntry returns true if cmd resolves to the same binary as selfPath,

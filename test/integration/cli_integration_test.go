@@ -354,6 +354,27 @@ func TestIntegrationCLI_init_FromPath(t *testing.T) {
 	}
 }
 
+func TestIntegrationCLI_init_yesWithOAuthServer_listsLoginReminderBeforeInstallInstructions(t *testing.T) {
+	claudePath := writeClaudeConfig(t, map[string]any{"type": "http", "url": "https://slack.com/mcp"})
+	cfg := t.TempDir()
+	stdout, _, code := runCLI(t, cfg, "init", "--yes", "--from", claudePath)
+	if code != 0 {
+		t.Fatalf("init exit = %d, stdout:\n%s", code, stdout)
+	}
+	markers := []string{"imported 1 server(s)", "OAuth login needed:", "imported-server (no token)", "  mini auth imported-server\n", "To connect mini to your agent"}
+	last := -1
+	for _, marker := range markers {
+		i := strings.Index(stdout, marker)
+		if i < 0 {
+			t.Fatalf("stdout missing %q:\n%s", marker, stdout)
+		}
+		if i < last {
+			t.Errorf("%q appears before the previous marker:\n%s", marker, stdout)
+		}
+		last = i
+	}
+}
+
 func TestIntegrationCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()

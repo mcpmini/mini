@@ -80,6 +80,57 @@ func IsNotFound(err error) bool {
 	return errors.Is(err, fs.ErrNotExist)
 }
 
+type TokenState int
+
+const (
+	TokenMissing TokenState = iota + 1
+	TokenUnreadable
+	// TokenExpired means expired with no refresh token.
+	TokenExpired
+	// TokenRefreshable means expired, but the runtime refreshes it silently.
+	TokenRefreshable
+	TokenValid
+)
+
+func (s TokenState) String() string {
+	switch s {
+	case TokenMissing:
+		return "no token"
+	case TokenUnreadable:
+		return "token unreadable"
+	case TokenExpired:
+		return "token expired"
+	case TokenRefreshable:
+		return "token expired, refreshable"
+	case TokenValid:
+		return "token valid"
+	}
+	return "unknown token state"
+}
+
+func (s TokenState) NeedsLogin() bool {
+	return s != TokenValid && s != TokenRefreshable
+}
+
+// ReadTokenState reads the stored token only; it never contacts the server.
+// err is non-nil only with TokenUnreadable and says why.
+func ReadTokenState(configDir, serverName string) (TokenState, error) {
+	token, err := Load(configDir, serverName)
+	if IsNotFound(err) {
+		return TokenMissing, nil
+	}
+	if err != nil {
+		return TokenUnreadable, err
+	}
+	if token.Valid() {
+		return TokenValid, nil
+	}
+	if token.RefreshToken != "" {
+		return TokenRefreshable, nil
+	}
+	return TokenExpired, nil
+}
+
 func tokenPath(configDir, serverName string) string {
 	return filepath.Join(configDir, "internal", serverName+".token.json")
 }
