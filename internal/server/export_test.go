@@ -16,6 +16,6 @@ func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionCo
 	s.replaceProjections(config.LoadProjectionsResult{Projections: p})
 }
 
-func (s *Server) WaitForStartupConnects() { s.connectWg.Wait() }
+func (s *Server) WaitForStartupConnects() { s.connector.wait() }
 
 const ConfigPollInterval = configPollInterval

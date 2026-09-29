@@ -121,6 +121,22 @@ func TestConnectUpstreamAsync_transientFailure_retriesAndRegisters(t *testing.T)
 	eventually(t, func() bool { return r.srv.ToolCount("svc") > 0 })
 }
 
+func TestConnectUpstreams_laterCall_leavesEarlierRetriesRunning(t *testing.T) {
+	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
+	r := startRetrying(t, ts.URL, discardLogs())
+	defer r.srv.Close()
+	r.waitForBackoffTimer(t)
+
+	other := newMCPTestServer(t, pingTools)
+	r.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "other", Transport: "http", URL: other.URL}})
+	r.clock.Advance(time.Second)
+	r.srv.WaitForStartupConnects()
+
+	if r.srv.ToolCount("svc") == 0 {
+		t.Error("svc's startup retry was canceled by a later ConnectUpstreams call")
+	}
+}
+
 func TestConnectUpstreamAsync_repeatedFailure_backoffDoubles(t *testing.T) {
 	ts, _ := upstreamFailingFirst(t, 2, pingMCPHandler)
 	logs := make(logRecorder, 64)

@@ -60,7 +60,7 @@ func applyParams(s *Server, p Params) {
 }
 
 func newServer(cfg *config.Config, configDir string, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server {
-	return &Server{
+	s := &Server{
 		cfg:              cfg,
 		configDir:        configDir,
 		reg:              registry.New(),
@@ -75,6 +75,8 @@ func newServer(cfg *config.Config, configDir string, projections map[string]map[
 		clock:            clock.System(),
 		providerRegistry: provider.NewRegistry(),
 	}
+	s.connector = newUpstreamConnector(s.connectUntilRegistered)
+	return s
 }
 
 func mustStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {
