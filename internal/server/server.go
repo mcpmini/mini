@@ -45,6 +45,11 @@ type Server struct {
 	refreshWg     sync.WaitGroup
 	connectWg     sync.WaitGroup
 	cancelConnect context.CancelFunc
+
+	connectMu              sync.Mutex
+	connectsClosed         bool
+	reconcileConnectCtx    context.Context
+	cancelReconcileConnect context.CancelFunc
 }
 
 func (s *Server) notifyAllSessions() {

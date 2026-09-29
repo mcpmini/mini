@@ -169,3 +169,9 @@ func runDaemonStatus(configDir string) {
 	}
 	fmt.Printf("daemon: running — %s\n", body)
 }
+
+func noteRunningDaemonApplies(configDir string, out io.Writer) {
+	if daemon.Running(configDir) {
+		fmt.Fprintln(out, "the running daemon applies this within a few seconds")
+	}
+}

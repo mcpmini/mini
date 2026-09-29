@@ -64,6 +64,19 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
+	t.Run("mentions the running daemon", func(t *testing.T) {
+		dir := shortConfigDir(t)
+		socketHealthServer(t, dir, `{"ok":true}`)
+		var out bytes.Buffer
+
+		if err := runAdd(dir, []string{"gh", "--", "npx", "server-github"}, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+		if !strings.Contains(out.String(), "the running daemon applies this within a few seconds") {
+			t.Errorf("output = %q, want the running-daemon note", out.String())
+		}
+	})
+
 	t.Run("stdio child flags are stored unchanged", func(t *testing.T) {
 		dir := t.TempDir()
 		args := []string{"svc", "--", "/usr/bin/printf", "-h", "--config", "child-value"}
@@ -278,6 +291,20 @@ func TestRunRemove(t *testing.T) {
 		}
 		if !strings.Contains(out.String(), "removed myserver") {
 			t.Errorf("output = %q, want 'removed myserver'", out.String())
+		}
+	})
+
+	t.Run("mentions the running daemon", func(t *testing.T) {
+		dir := shortConfigDir(t)
+		runAdd(dir, []string{"myserver", "--", "run"}, &bytes.Buffer{}) //nolint:errcheck
+		socketHealthServer(t, dir, `{"ok":true}`)
+		var out bytes.Buffer
+
+		if err := runRemove(dir, []string{"myserver"}, &out); err != nil {
+			t.Fatalf("runRemove: %v", err)
+		}
+		if !strings.Contains(out.String(), "the running daemon applies this within a few seconds") {
+			t.Errorf("output = %q, want the running-daemon note", out.String())
 		}
 	})
 

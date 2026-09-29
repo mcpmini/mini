@@ -90,10 +90,14 @@ type addParams struct {
 }
 
 func runAddParsed(p addParams) error {
-	if handled, err := runAddImport(p); handled {
-		return err
+	handled, err := runAddImport(p)
+	if !handled {
+		err = runAddServer(p)
 	}
-	return runAddServer(p)
+	if err == nil {
+		noteRunningDaemonApplies(p.configDir, p.out)
+	}
+	return err
 }
 
 func runAddImport(p addParams) (bool, error) {
@@ -219,6 +223,7 @@ func runRemove(configDir string, args []string, out io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(out, "removed %s\n", name)
+	noteRunningDaemonApplies(configDir, out)
 	return nil
 }
 

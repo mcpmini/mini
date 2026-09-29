@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 const projectionPollInterval = 5 * time.Second
@@ -18,14 +20,20 @@ func (s *Server) StartProjectionReload(ctx context.Context) {
 	go s.runProjectionReload(ctx, nil)
 }
 
+type reloadState struct {
+	fingerprint map[string]string
+	servers     map[string]config.ServerConfig
+}
+
 func (s *Server) runProjectionReload(ctx context.Context, afterCheck func()) {
-	last, _ := s.fingerprintOrWarn()
+	fingerprint, _ := s.fingerprintOrWarn()
+	state := reloadState{fingerprint: fingerprint, servers: s.loadReconcileBaseline()}
 	ticker := s.clock.NewTicker(projectionPollInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.Chan():
-			last = s.reloadIfProjectionFilesChanged(last)
+			state = s.reloadIfProjectionFilesChanged(ctx, state)
 			if afterCheck != nil {
 				afterCheck()
 			}
@@ -35,20 +43,23 @@ func (s *Server) runProjectionReload(ctx context.Context, afterCheck func()) {
 	}
 }
 
-func (s *Server) reloadIfProjectionFilesChanged(last map[string]string) map[string]string {
+func (s *Server) reloadIfProjectionFilesChanged(ctx context.Context, state reloadState) reloadState {
 	current, ok := s.fingerprintOrWarn()
 	if !ok {
-		return last
+		return state
 	}
-	changed := changedPaths(last, current)
+	changed := changedPaths(state.fingerprint, current)
 	if len(changed) == 0 {
-		return last
+		return state
 	}
+	plan, servers := s.planFromDisk(state.servers)
+	s.removeReconciled(plan.remove)
 	_, fresh := s.applyReload()
+	s.connectReconciled(ctx, plan.connect)
 	if len(fresh) > 0 {
 		s.logger.Info("projections reloaded", "files", changed)
 	}
-	return current
+	return reloadState{fingerprint: current, servers: servers}
 }
 
 func (s *Server) fingerprintOrWarn() (map[string]string, bool) {

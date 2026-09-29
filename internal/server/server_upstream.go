@@ -294,6 +294,7 @@ func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, 
 
 func (s *Server) Close() {
 	cancelAuthFlows(s.takeAuthFlows())
+	s.stopReconciledConnects()
 	// caller's ctx may still be live (e.g. deferred Close runs before signal cancel)
 	if s.cancelConnect != nil {
 		s.cancelConnect()

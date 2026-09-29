@@ -302,6 +302,7 @@ func TestProjectionReload_configYAMLDeletedRemovesInlineProjections(t *testing.T
 	if err := os.Remove(filepath.Join(dir, "config.yaml")); err != nil {
 		t.Fatal(err)
 	}
+	writeReloadFile(t, filepath.Join(dir, "servers", "svc.yaml"), "name: svc\ncommand: echo\n")
 	env.advanceTick()
 
 	env.assertDataKeys([]string{"a", "b", "secret"}, nil)
