@@ -20,8 +20,7 @@ func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerCo
 		if !sc.IsEnabled() {
 			continue
 		}
-		in := s.startupInstall(sc)
-		s.pendingConnects.start(ctx, func(ctx context.Context) { s.connectUntilRegistered(ctx, in) })
+		s.connector.connect(ctx, s.startupInstall(sc))
 	}
 }
 
@@ -280,10 +279,10 @@ func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, 
 
 func (s *Server) Close() {
 	cancelAuthFlows(s.takeAuthFlows())
-	s.pendingConnects.stop()
+	s.connector.stop()
 	s.authWg.Wait()
 	s.providerRegistry.Close()
-	s.pendingConnects.wait()
+	s.connector.wait()
 	closeUpstreams(s.snapshotUpstreams())
 	s.sessions.closeAll()
 	s.refreshWg.Wait()
