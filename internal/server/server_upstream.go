@@ -15,18 +15,13 @@ import (
 )
 
 func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerConfig) {
-	if s.cancelConnect != nil {
-		s.cancelConnect()
-	}
-	connectCtx, cancel := context.WithCancel(ctx)
-	s.cancelConnect = cancel
 	s.recordConfigServers(servers)
 	for _, sc := range servers {
 		if !sc.IsEnabled() {
 			continue
 		}
-		s.connectWg.Add(1)
-		go s.connectUpstreamAsync(connectCtx, s.startupInstall(sc))
+		in := s.startupInstall(sc)
+		s.connects.start(ctx, func(ctx context.Context) { s.connectUntilRegistered(ctx, in) })
 	}
 }
 
@@ -49,8 +44,7 @@ func (s *Server) replacingInstall(sc config.ServerConfig) upstreamInstall {
 	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name)}
 }
 
-func (s *Server) connectUpstreamAsync(ctx context.Context, in upstreamInstall) {
-	defer s.connectWg.Done()
+func (s *Server) connectUntilRegistered(ctx context.Context, in upstreamInstall) {
 	backoff := time.Second
 	for {
 		err := s.connectAtStartup(ctx, in)
@@ -286,13 +280,10 @@ func (s *Server) runSessionEviction(ctx context.Context, maxIdle time.Duration, 
 
 func (s *Server) Close() {
 	cancelAuthFlows(s.takeAuthFlows())
-	// caller's ctx may still be live (e.g. deferred Close runs before signal cancel)
-	if s.cancelConnect != nil {
-		s.cancelConnect()
-	}
+	s.connects.stop()
 	s.authWg.Wait()
 	s.providerRegistry.Close()
-	s.connectWg.Wait()
+	s.connects.wait()
 	closeUpstreams(s.snapshotUpstreams())
 	s.sessions.closeAll()
 	s.refreshWg.Wait()

@@ -66,6 +66,7 @@ func newServer(cfg *config.Config, configDir string, projections map[string]map[
 		reg:              registry.New(),
 		upstreams:        make(map[string]*upstreamServer),
 		configServers:    make(map[string]bool),
+		connects:         newBackgroundConnects(),
 		removeGen:        make(map[string]uint64),
 		projections:      projections,
 		projDefaults:     projection.DefaultsFrom(cfg),
