@@ -246,9 +246,9 @@ func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 	if sc.Auth == nil {
 		sc = probeAndReload(configDir, sc, out)
 	}
-	// A hand-set header means the user already chose their own auth — never override it
-	// with an interactive OAuth flow, even for a known vendor's bundled default.
-	if sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 || len(sc.Headers) > 0 {
+	// Static auth (the auth header or auth.token) means the user chose their own credentials;
+	// never override it with a browser login.
+	if !sc.UsesOAuthLogin() {
 		return
 	}
 	authorizeServer(authorizeParams{configDir: configDir, name: name, sc: sc, out: out})
