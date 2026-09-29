@@ -157,15 +157,34 @@ func TestServerReload_removalDuringStartupRetry_staysRemoved(t *testing.T) {
 }
 
 func TestServerReload_runtimeAddedServer_isLeftAlone(t *testing.T) {
-	e := newServerReloadEnv(t)
-	e.startWithServers("svc")
-	addReloadUpstreamNamed(t, e.srv, "rt")
+	t.Run("its own name", func(t *testing.T) {
+		e := newServerReloadEnv(t)
+		e.startWithServers("svc")
+		addRuntimeServer(t, e.srv, "rt")
 
-	e.removeServerFile("svc")
-	e.advanceTick()
+		e.removeServerFile("svc")
+		e.advanceTick()
 
-	e.assertRemoved("svc")
-	e.assertConnected("rt")
+		e.assertRemoved("svc")
+		e.assertConnected("rt")
+	})
+	t.Run("replacing a config server of the same name", func(t *testing.T) {
+		e := newServerReloadEnv(t)
+		e.startWithServers("svc")
+		addRuntimeServer(t, e.srv, "svc")
+
+		e.removeServerFile("svc")
+		e.advanceTick()
+
+		e.assertConnected("svc")
+	})
+}
+
+func addRuntimeServer(t *testing.T, srv *server.Server, name string) {
+	t.Helper()
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: name, RuntimeAdded: true}, fakeConn("getData")); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (e *serverReloadEnv) waitForRetryBackoff() {
