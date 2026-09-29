@@ -241,9 +241,7 @@ func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 		return
 	}
 	sc := *scp
-	// Only probe if Auth is still unknown — config.Load already merges in bundled/detected
-	// auth, so a non-nil Auth here means there's nothing left to discover.
-	if sc.Auth == nil {
+	if authUndiscovered(sc) {
 		sc = probeAndReload(configDir, sc, out)
 	}
 	// Static auth (the auth header or auth.token) means the user chose their own credentials;
@@ -263,7 +261,9 @@ func loadServerConfigForAdd(configDir, name string) (*config.ServerConfig, error
 }
 
 func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) config.ServerConfig {
-	connectErr := probeConnection(configDir, sc)
+	ctx, cancel := context.WithTimeout(context.Background(), addProbeTimeout)
+	defer cancel()
+	connectErr := probeConnection(ctx, configDir, sc)
 	// Connecting may have triggered OAuth detection (markOAuthIfRequired) — reload to see it merged in.
 	reloaded, err := loadServerConfigForAdd(configDir, sc.Name)
 	if err != nil || reloaded == nil {
@@ -280,7 +280,13 @@ func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) con
 	return *reloaded
 }
 
-func probeConnection(configDir string, sc config.ServerConfig) error {
+// config.Load already merges bundled and detected auth, so a non-nil Auth leaves nothing to discover.
+func authUndiscovered(sc config.ServerConfig) bool {
+	return sc.IsHTTPTransport() && sc.Auth == nil
+}
+
+// Connecting through server.AddUpstream records a detected OAuth requirement, same as the proxy.
+func probeConnection(ctx context.Context, configDir string, sc config.ServerConfig) error {
 	cfg, _, err := config.Load(configDir)
 	if err != nil {
 		return err
@@ -288,8 +294,6 @@ func probeConnection(configDir string, sc config.ServerConfig) error {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
 	defer srv.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), addProbeTimeout)
-	defer cancel()
 	return srv.AddUpstream(ctx, sc)
 }
 
