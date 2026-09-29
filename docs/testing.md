@@ -6,17 +6,35 @@ Early automated unit-test frameworks made small checks cheap to rerun after each
 
 ## Choose the evidence a change needs
 
-Start with the observable contract, its realistic entry point, and a plausible way it could fail. Look for existing tests before adding one. Choose the smallest level that can fail for the right reason, then add a wider test when wiring or process behavior is itself the risk.
+Start with the observable contract, its realistic entry point, and a plausible way it could fail. Look for existing tests before adding one. Choose the smallest level that can fail for the right reason, then add a wider test when wiring or process behavior is itself the risk. These levels describe what runs together and where the test enters the system; a file's name or directory alone does not establish its level.
 
-| Level | Use it for | Typical mini boundary |
+| Level | Use it for | Example in mini |
 | --- | --- | --- |
-| Component | Rules, transformations, input classes, and error handling. Cover meaningful permutations here. | Config loading, projection, registry, response building. |
-| In-process integration | Composition, state transitions, lifecycle, and protocol handling with controlled dependencies. | Server handlers with `transport.FakeConnection`; HTTP transport with `httptest.Server`. |
-| Real-binary integration | CLI exit behavior, stdio framing, subprocesses, config paths, daemon wiring, and critical journeys whose process boundary matters. | `test/integration` with the fake MCP process. |
+| Unit or component | Exercise a rule or one component through its API. Cover meaningful input and error permutations here, even if the test uses a temporary file or a small fake. | `projection.Apply` with constructed values; config parsing. |
+| In-process integration | Run several real components together while controlling external dependencies. Check their wiring, state transitions, and protocol handling. | Server request handling through registry and projection with `transport.FakeConnection`; HTTP handling with `httptest.Server`. |
+| In-process CLI | Run a command or the root command in-process without launching `mini`. Check flag parsing, validation, command wiring, and output streams quickly. | `newRootCmd()` in `cmd/mini/root_test.go`; `newAddCmd()` in `cmd/mini/add_test.go`. |
+| Black-box CLI | Launch the built `mini` binary and observe exit status, stdout, stderr, files, and environment-sensitive behavior. | `test/integration/cli_test.go` invoking `mini --config DIR ...`. |
+| Black-box MCP journey | Launch `mini` and exchange MCP messages across its process boundary, with a controlled upstream. Check startup, framing, routing, persistence, shutdown, and critical user flows. | `test/integration/server_test.go` or `proxy_mode_test.go` with the fake MCP process. |
+
+In-process CLI is a specialized integration test. The last two rows are end-to-end tests **for mini** because they enter through its public process interface. A fake upstream keeps them repeatable; they do not prove compatibility with every live MCP server. In-process CLI tests can cover most argument permutations, while a few binary tests protect process-only behavior. Check the actual build tags and `check.sh` command before claiming that a test runs in the standard gate.
 
 A bug fix usually deserves a regression that reaches the old failure through a production path. A pure refactor may need only the existing suite; add a test if it exposes an unprotected contract. For auth, permissions, persistence, concurrency, retries, and shutdown, consider the relevant failure and cleanup state as well as success. Do not build a Cartesian product of cases without a distinct risk. Higher-level tests may repeat a little behavior to prove a boundary works, but should not replay every component permutation.
 
 Coverage is a way to find surprising unexercised code, not a score to optimize. There is no global percentage target or routine mutation-testing requirement. A race-detector pass covers only paths and processes actually run with race instrumentation.
+
+## Other kinds of tests
+
+The level says **where** a test runs. These terms describe **why or how** it tests; one test can have several of them:
+
+- A **regression test** protects a previously broken behavior. Put it at the narrowest production-reachable boundary that catches the bug.
+- A **contract or conformance test** checks a stable external promise, such as MCP message shape, CLI exit behavior, or a specified encoding. Use external fixtures when a standard defines the expected result.
+- A **failure, lifecycle, or concurrency test** controls a timeout, disconnect, retry, cancellation, ordering, or cleanup transition. It may be component, in-process, or black-box depending on where the risk lives.
+- A **property or fuzz test** explores many inputs against an invariant, especially for parsers and transformations. It complements examples with decisive expected outcomes.
+- A **golden or snapshot test** stores an expected result for a large, stable output. It is an assertion technique; review updates to the expected file as carefully as code changes.
+- A **smoke test** checks that a critical journey works at all. Keep it small; focused tests should explain individual rule failures. Benchmarks measure performance and need separate interpretation from correctness tests.
+- An **opt-in live interoperability check** exercises mini against a real external MCP server or client. It can reveal ecosystem behavior absent from fakes, but its network, credentials, and remote state make it different evidence from a repeatable CI regression.
+
+None of these names is a checklist to exhaust for each change. Choose the risks and boundaries that matter, then make the assertions strong enough to catch them.
 
 ## Assert behavior that should remain true
 
