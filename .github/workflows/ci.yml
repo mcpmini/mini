@@ -30,6 +30,11 @@ jobs:
           go run ./tools/clocklint .
           go run ./tools/testkind .
 
+      - name: Vet
+        # go vet ./... doesn't run against all tags by default
+        # specifying the tags here runs it over all the prod code AND the tests
+        run: go vet -tags integration,test ./...
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -47,11 +52,6 @@ jobs:
 
       - name: Build
         run: go build ./...
-
-      - name: Vet
-        # go vet ./... doesn't run against all tags by default
-        # specifying the tags here runs it over all the prod code AND the tests
-        run: go vet -tags integration,test ./...
 
       - name: Build test helpers
         run: |
