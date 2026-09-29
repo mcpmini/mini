@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
+	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/registry"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -102,26 +102,14 @@ func (s *Server) addUpstream(ctx context.Context, in upstreamInstall) error {
 }
 
 func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig, connErr error) error {
-	// RuntimeAdded servers could collide by name with an existing server — never write for them.
-	// A manually-configured header is decisive too: RFC 6750 gives an expired static token the
-	// same 401 challenge as real OAuth, so a hand-set header means the user already chose.
-	if sc.RuntimeAdded || sc.Auth != nil || !sc.IsHTTPTransport() || len(sc.Headers) > 0 {
-		return connErr
+	required, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: s.configDir, Server: sc, ConnErr: connErr})
+	if err != nil {
+		s.logger.Warn("persist discovered oauth requirement", "server", sc.Name, "err", err)
 	}
-	// Already marked: skip re-running the PRM probe and rewriting the marker on every
-	// reconnect backoff cycle against a persistently-401 upstream.
-	if config.IsOAuthDetected(s.configDir, sc.Name) {
+	if required {
 		return oauthRequiredError(sc.Name, connErr)
 	}
-	var uerr *transport.UnauthorizedError
-	if !errors.As(connErr, &uerr) || !auth.RequiresOAuth(ctx, sc.URL, uerr.WWWAuthenticate) {
-		return connErr
-	}
-	if err := config.MarkOAuthDetected(s.configDir, sc.Name); err != nil {
-		s.logger.Warn("persist discovered oauth requirement", "server", sc.Name, "err", err)
-		return connErr
-	}
-	return oauthRequiredError(sc.Name, connErr)
+	return connErr
 }
 
 func oauthRequiredError(serverName string, connErr error) error {
