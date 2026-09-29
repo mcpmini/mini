@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestConcurrency_20SequentialCalls(t *testing.T) {
+func TestIntegrationConcurrency_20SequentialCalls(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"name":"ok"}`})
 
 	for i := range 20 {
@@ -20,7 +20,7 @@ func TestConcurrency_20SequentialCalls(t *testing.T) {
 	}
 }
 
-func TestConcurrency_100RapidSequential(t *testing.T) {
+func TestIntegrationConcurrency_100RapidSequential(t *testing.T) {
 	client := quickServer(t, map[string]string{"get_item": `{"id":1}`})
 	for i := range 100 {
 		if client.execEnvelope("svc", "get_item", nil).Error != "" {
@@ -29,7 +29,7 @@ func TestConcurrency_100RapidSequential(t *testing.T) {
 	}
 }
 
-func TestConcurrency_20ParallelClients(t *testing.T) {
+func TestIntegrationConcurrency_20ParallelClients(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
@@ -52,7 +52,7 @@ func TestConcurrency_20ParallelClients(t *testing.T) {
 	}
 }
 
-func TestConcurrency_parallelHTTPUpstream(t *testing.T) {
+func TestIntegrationConcurrency_parallelHTTPUpstream(t *testing.T) {
 	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	writeHTTPServerYAML(t, cfg, "svc", f.srv.URL)
@@ -98,7 +98,7 @@ func countRejected(client *mcpClient, n int) int {
 	return count
 }
 
-func TestConcurrency_MaxPendingRequests(t *testing.T) {
+func TestIntegrationConcurrency_MaxPendingRequests(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	faultJSON := `{"tool":"get_item","method":"tools/call","type":"delay","delay_ms":2000}`
@@ -109,7 +109,7 @@ func TestConcurrency_MaxPendingRequests(t *testing.T) {
 	}
 }
 
-func TestConcurrency_parallel(t *testing.T) {
+func TestIntegrationConcurrency_parallel(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
@@ -145,7 +145,7 @@ func runNParallelExecs(client *mcpClient, n int) ([]bool, time.Duration) {
 	return oks, time.Since(start)
 }
 
-func TestConcurrency_pipelinedRequests(t *testing.T) {
+func TestIntegrationConcurrency_pipelinedRequests(t *testing.T) {
 	const delay = 300 * time.Millisecond
 	f := newFakeHTTPMCP(t, func(int) (int, []byte) {
 		time.Sleep(delay)
@@ -177,7 +177,7 @@ func assertSessionIsolation(t *testing.T, cfg string, existing *mcpClient) {
 	}
 }
 
-func TestConcurrency_twoClientsSessionIsolation(t *testing.T) {
+func TestIntegrationConcurrency_twoClientsSessionIsolation(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)

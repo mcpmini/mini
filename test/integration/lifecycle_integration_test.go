@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestLifecycle_addServerAtRuntime(t *testing.T) {
+func TestIntegrationLifecycle_addServerAtRuntime(t *testing.T) {
 	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	writeConfig(t, cfg, "dangerous_allow_private_urls: true\n")
@@ -33,7 +33,7 @@ func TestLifecycle_addServerAtRuntime(t *testing.T) {
 	}
 }
 
-func TestLifecycle_removeServerAtRuntime(t *testing.T) {
+func TestIntegrationLifecycle_removeServerAtRuntime(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "svc", dir)
@@ -54,7 +54,7 @@ func TestLifecycle_removeServerAtRuntime(t *testing.T) {
 	}
 }
 
-func TestLifecycle_addServerBadURL(t *testing.T) {
+func TestIntegrationLifecycle_addServerBadURL(t *testing.T) {
 	cfg := t.TempDir()
 	writeConfig(t, cfg, "dangerous_allow_private_urls: true\n")
 	client := startServer(t, cfg)
@@ -73,7 +73,7 @@ func TestLifecycle_addServerBadURL(t *testing.T) {
 	}
 }
 
-func TestLifecycle_disabledServerNotLoaded(t *testing.T) {
+func TestIntegrationLifecycle_disabledServerNotLoaded(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "disabled", fmt.Sprintf(
@@ -90,7 +90,7 @@ func TestLifecycle_disabledServerNotLoaded(t *testing.T) {
 	}
 }
 
-func TestLifecycle_tenServersSimultaneously(t *testing.T) {
+func TestIntegrationLifecycle_tenServersSimultaneously(t *testing.T) {
 	cfg := t.TempDir()
 	for i := range 10 {
 		dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})

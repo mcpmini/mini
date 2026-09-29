@@ -16,7 +16,7 @@ func actionServer(t *testing.T, fixtures map[string]string, actionYAML, actionNa
 	return startServer(t, cfg)
 }
 
-func TestActions_defaultArgsMergedWithCallArgs(t *testing.T) {
+func TestIntegrationActions_defaultArgsMergedWithCallArgs(t *testing.T) {
 	t.Skip("actions not user-visible in v0.1")
 	client := actionServer(t,
 		map[string]string{"get_item": `{"id":42,"name":"fetched"}`},
@@ -29,7 +29,7 @@ func TestActions_defaultArgsMergedWithCallArgs(t *testing.T) {
 	}
 }
 
-func TestActions_protectedActionRequiresExecProtected(t *testing.T) {
+func TestIntegrationActions_protectedActionRequiresExecProtected(t *testing.T) {
 	t.Skip("actions not user-visible in v0.1")
 	client := actionServer(t,
 		map[string]string{"get_item": `{"id":1}`},
@@ -46,7 +46,7 @@ func TestActions_protectedActionRequiresExecProtected(t *testing.T) {
 	}
 }
 
-func TestActions_badServerReference(t *testing.T) {
+func TestIntegrationActions_badServerReference(t *testing.T) {
 	client := actionServer(t,
 		map[string]string{"get_item": `{"id":1}`},
 		"name: broken\ndescription: Bad server\nserver: nonexistent\ntool: get_item\n",
@@ -58,7 +58,7 @@ func TestActions_badServerReference(t *testing.T) {
 	}
 }
 
-func TestActions_execAction(t *testing.T) {
+func TestIntegrationActions_execAction(t *testing.T) {
 	t.Skip("actions not user-visible in v0.1")
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":42,"name":"fetched"}`})

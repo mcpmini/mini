@@ -15,7 +15,7 @@ func proxySetup(t *testing.T, fixtures map[string]string) *mcpClient {
 	return startProxyServer(t, cfg)
 }
 
-func TestProxyMode_BasicCall_WrapsInData(t *testing.T) {
+func TestIntegrationProxyMode_BasicCall_WrapsInData(t *testing.T) {
 	c := proxySetup(t, map[string]string{"get_item": `{"id":1,"name":"widget"}`})
 	pr := c.execProxyTool("svc__get_item", map[string]any{}, nil)
 	if pr.Mini != nil {
@@ -27,7 +27,7 @@ func TestProxyMode_BasicCall_WrapsInData(t *testing.T) {
 	}
 }
 
-func TestProxyMode_ArrayRoot_WrapsInData(t *testing.T) {
+func TestIntegrationProxyMode_ArrayRoot_WrapsInData(t *testing.T) {
 	c := proxySetup(t, map[string]string{"list_items": `[{"id":1},{"id":2},{"id":3}]`})
 	pr := c.execProxyTool("svc__list_items", map[string]any{}, nil)
 	items, ok := pr.Data.([]any)
@@ -36,7 +36,7 @@ func TestProxyMode_ArrayRoot_WrapsInData(t *testing.T) {
 	}
 }
 
-func TestProxyMode_NullResult_WrapsAsDataNull(t *testing.T) {
+func TestIntegrationProxyMode_NullResult_WrapsAsDataNull(t *testing.T) {
 	c := proxySetup(t, map[string]string{"get_nothing": `null`})
 	raw, isErr := c.execProxyToolAllowError("svc__get_nothing", map[string]any{}, nil)
 	if isErr {
@@ -47,7 +47,7 @@ func TestProxyMode_NullResult_WrapsAsDataNull(t *testing.T) {
 	}
 }
 
-func TestProxyMode_ArgsReachUpstream(t *testing.T) {
+func TestIntegrationProxyMode_ArgsReachUpstream(t *testing.T) {
 	c := proxySetup(t, map[string]string{"echo": `{"echo":"default","other":"unchanged"}`})
 	pr := c.execProxyTool("svc__echo", map[string]any{"echo": "from-agent"}, nil)
 	m, ok := pr.Data.(map[string]any)
@@ -57,10 +57,10 @@ func TestProxyMode_ArgsReachUpstream(t *testing.T) {
 }
 
 // Exclusion → __mini population and read() recovery for proxy mode are already
-// covered by TestProjection_readRecoversProjectedData (projection_test.go).
+// covered by TestIntegrationProjection_readRecoversProjectedData (projection_integration_test.go).
 // This test covers the one thing that table doesn't: __mini.projection:"raw"
 // bypassing exclusion entirely.
-func TestProxyMode_RawProjectionBypassesExclusion(t *testing.T) {
+func TestIntegrationProxyMode_RawProjectionBypassesExclusion(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`})
 	writeFakeServer(t, cfg, "svc", dir)
@@ -77,7 +77,7 @@ func TestProxyMode_RawProjectionBypassesExclusion(t *testing.T) {
 	}
 }
 
-func TestProxyMode_LegacyFlatCall_Rejected(t *testing.T) {
+func TestIntegrationProxyMode_LegacyFlatCall_Rejected(t *testing.T) {
 	c := proxySetup(t, map[string]string{"get_item": `{"id":1}`})
 	text, isErr := c.execProxyToolRaw("svc__get_item", map[string]any{"id": 1})
 	if !isErr {

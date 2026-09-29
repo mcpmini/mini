@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-func TestDaemonProxyRelaysToolsListChangedAfterUpstreamMutation(t *testing.T) {
+func TestIntegrationDaemonProxyRelaysToolsListChangedAfterUpstreamMutation(t *testing.T) {
 	cfg := shortConfigDir(t)
 	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"before"}`})
 	controlFile := filepath.Join(cfg, "actual-upstream-control")

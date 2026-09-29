@@ -185,7 +185,7 @@ func connect(t *testing.T, cfg, toolMode string) *mcpClient {
 func connectProxy(t *testing.T, cfg string) *mcpClient   { return connect(t, cfg, "") }
 func connectCompact(t *testing.T, cfg string) *mcpClient { return connect(t, cfg, "compact") }
 
-func TestDaemon_basicToolCall(t *testing.T) {
+func TestIntegrationDaemon_basicToolCall(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	client := connectCompact(t, cfg)
@@ -194,7 +194,7 @@ func TestDaemon_basicToolCall(t *testing.T) {
 	}
 }
 
-func TestDaemon_spawnsOnDemandAndReuses(t *testing.T) {
+func TestIntegrationDaemon_spawnsOnDemandAndReuses(t *testing.T) {
 	cfg := daemonForTest(t)
 	t.Cleanup(func() { reapDaemons(cfg) })
 
@@ -210,7 +210,7 @@ func TestDaemon_spawnsOnDemandAndReuses(t *testing.T) {
 	}
 }
 
-func TestDaemon_sessionIsolation(t *testing.T) {
+func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"x","name":"test"}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
@@ -231,7 +231,7 @@ func TestDaemon_sessionIsolation(t *testing.T) {
 	}
 }
 
-func TestDaemon_standaloneFlag(t *testing.T) {
+func TestIntegrationDaemon_standaloneFlag(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"ping": `{"ok":true}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, "svc", dir)
@@ -244,7 +244,7 @@ func TestDaemon_standaloneFlag(t *testing.T) {
 }
 
 // /healthz keys on HTTP server readiness, not upstream connectivity (#33).
-func TestDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
+func TestIntegrationDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 	cfg := shortConfigDir(t)
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 5000}
@@ -261,7 +261,7 @@ func TestDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 	}
 }
 
-func TestDaemon_healthzEndpoint(t *testing.T) {
+func TestIntegrationDaemon_healthzEndpoint(t *testing.T) {
 	cfg := shortConfigDir(t)
 	startDaemon(t, cfg)
 
@@ -280,7 +280,7 @@ func TestDaemon_healthzEndpoint(t *testing.T) {
 	}
 }
 
-func TestDaemon_proxyModeToolCall(t *testing.T) {
+func TestIntegrationDaemon_proxyModeToolCall(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	client := connectProxy(t, cfg)
@@ -297,7 +297,7 @@ func TestDaemon_proxyModeToolCall(t *testing.T) {
 	}
 }
 
-func TestDaemon_recoversAfterGracefulKill(t *testing.T) {
+func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
@@ -316,7 +316,7 @@ func TestDaemon_recoversAfterGracefulKill(t *testing.T) {
 	}
 }
 
-func TestDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
+func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
@@ -339,7 +339,7 @@ func TestDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
 	}
 }
 
-func TestDaemon_manyClientsRecoverSingleWinner(t *testing.T) {
+func TestIntegrationDaemon_manyClientsRecoverSingleWinner(t *testing.T) {
 	const n = 20
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
@@ -399,7 +399,7 @@ func initHTTPSession(t *testing.T, cfg, token string) string {
 	return sessionID
 }
 
-func TestDaemon_HTTPClientDirect(t *testing.T) {
+func TestIntegrationDaemon_HTTPClientDirect(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	token := readDaemonToken(t, cfg)
@@ -408,7 +408,7 @@ func TestDaemon_HTTPClientDirect(t *testing.T) {
 	assertInlineGetItem(t, decodeDaemonEnvelope(t, resp))
 }
 
-func TestDaemon_HTTPRejectsMissingToken(t *testing.T) {
+func TestIntegrationDaemon_HTTPRejectsMissingToken(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{})
@@ -418,7 +418,7 @@ func TestDaemon_HTTPRejectsMissingToken(t *testing.T) {
 	}
 }
 
-func TestDaemon_HTTPRejectsWrongToken(t *testing.T) {
+func TestIntegrationDaemon_HTTPRejectsWrongToken(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: "wrong-token-value"})
@@ -428,7 +428,7 @@ func TestDaemon_HTTPRejectsWrongToken(t *testing.T) {
 	}
 }
 
-func TestDaemon_HostHeaderRejection(t *testing.T) {
+func TestIntegrationDaemon_HostHeaderRejection(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: readDaemonToken(t, cfg), Host: "evil.com"})
@@ -438,7 +438,7 @@ func TestDaemon_HostHeaderRejection(t *testing.T) {
 	}
 }
 
-func TestDaemon_CrossOriginRejection(t *testing.T) {
+func TestIntegrationDaemon_CrossOriginRejection(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: readDaemonToken(t, cfg), Origin: "http://evil.com"})
@@ -448,7 +448,7 @@ func TestDaemon_CrossOriginRejection(t *testing.T) {
 	}
 }
 
-func TestDaemon_socketAndDirArePrivate(t *testing.T) {
+func TestIntegrationDaemon_socketAndDirArePrivate(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 
@@ -473,7 +473,7 @@ func TestDaemon_socketAndDirArePrivate(t *testing.T) {
 	}
 }
 
-func TestDaemon_TokenFilePermissions(t *testing.T) {
+func TestIntegrationDaemon_TokenFilePermissions(t *testing.T) {
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	fi, err := os.Stat(filepath.Join(cfg, "internal", "daemon", "daemon.token"))

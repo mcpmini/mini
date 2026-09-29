@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestPermissions_defaultProtected(t *testing.T) {
+func TestIntegrationPermissions_defaultProtected(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeServerYAML(t, cfg, "svc", dir, "permissions:\n  default: protected\n")
@@ -29,7 +29,7 @@ func TestPermissions_defaultProtected(t *testing.T) {
 	}
 }
 
-func TestPermissions_defaultHidden(t *testing.T) {
+func TestIntegrationPermissions_defaultHidden(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeServerYAML(t, cfg, "svc", dir, "permissions:\n  default: hidden\n")
@@ -46,7 +46,7 @@ func TestPermissions_defaultHidden(t *testing.T) {
 	}
 }
 
-func TestPermissions_hiddenBeatsDefaultProtected(t *testing.T) {
+func TestIntegrationPermissions_hiddenBeatsDefaultProtected(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"protected_tool": `{"id":1}`, "hidden_tool": `{"id":2}`})
 	writeServerYAML(t, cfg, "svc", dir,
@@ -62,7 +62,7 @@ func TestPermissions_hiddenBeatsDefaultProtected(t *testing.T) {
 	}
 }
 
-func TestPermissions_listHiddenShowsHiddenTools(t *testing.T) {
+func TestIntegrationPermissions_listHiddenShowsHiddenTools(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"open_tool": `{"id":1}`, "secret_tool": `{"id":2}`})
 	writeServerYAML(t, cfg, "svc", dir, "permissions:\n  hidden:\n    - secret_tool\n")
@@ -87,7 +87,7 @@ func TestPermissions_listHiddenShowsHiddenTools(t *testing.T) {
 	}
 }
 
-func TestPermissions_disableListHidden(t *testing.T) {
+func TestIntegrationPermissions_disableListHidden(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"secret_tool": `{"id":2}`})
 	writeServerYAML(t, cfg, "svc", dir, "permissions:\n  hidden:\n    - secret_tool\n")

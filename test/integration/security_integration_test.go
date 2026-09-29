@@ -14,28 +14,28 @@ func noSSRFClient(t *testing.T) *mcpClient {
 	return startServer(t, cfg)
 }
 
-func TestSecurity_SSRFBlocks0000(t *testing.T) {
+func TestIntegrationSecurity_SSRFBlocks0000(t *testing.T) {
 	isErr, _ := addServerViaRPC(t, noSSRFClient(t), "x", "http://0.0.0.0/mcp")
 	if !isErr {
 		t.Error("expected SSRF error for 0.0.0.0")
 	}
 }
 
-func TestSecurity_SSRFBlocksIPv6Mapped(t *testing.T) {
+func TestIntegrationSecurity_SSRFBlocksIPv6Mapped(t *testing.T) {
 	isErr, _ := addServerViaRPC(t, noSSRFClient(t), "x", "http://[::ffff:127.0.0.1]/mcp")
 	if !isErr {
 		t.Error("expected SSRF error for IPv4-mapped IPv6")
 	}
 }
 
-func TestSecurity_oversizedClaudeConfig(t *testing.T) {
+func TestIntegrationSecurity_oversizedClaudeConfig(t *testing.T) {
 	_, _, code := runCLI(t, t.TempDir(), "add", "--from-claude", writeOversizedFile(t, 10<<20))
 	if code == 0 {
 		t.Error("add --from-claude with oversized file should exit non-zero")
 	}
 }
 
-func TestSecurity_timeoutNoReconnect(t *testing.T) {
+func TestIntegrationSecurity_timeoutNoReconnect(t *testing.T) {
 	// A tool_timeout that fires should return an error but NOT trigger a reconnect
 	// (reconnect is only for connection errors, not context cancellations)
 	client := faultServer(t,
@@ -57,7 +57,7 @@ func TestSecurity_timeoutNoReconnect(t *testing.T) {
 	}
 }
 
-func TestSecurity_PermissionCaseMismatch(t *testing.T) {
+func TestIntegrationSecurity_PermissionCaseMismatch(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"MyTool": `{"id":1}`})
 	writeServerConfig(t, cfg, "svc", "name: svc\ncommand: "+fakemcpBin+"\nargs:\n  - --fixtures\n  - "+dir+

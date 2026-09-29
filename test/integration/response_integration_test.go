@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestResponse_inlineSmallResponse(t *testing.T) {
+func TestIntegrationResponse_inlineSmallResponse(t *testing.T) {
 	e := quickServer(t, map[string]string{"get_item": `{"id":1,"name":"small"}`}).execEnvelope("svc", "get_item", nil)
 	if e.Error != "" {
 		t.Fatalf("expected ok=true, got: %+v", e)
@@ -19,7 +19,7 @@ func TestResponse_inlineSmallResponse(t *testing.T) {
 	}
 }
 
-func TestResponse_projectedResponseWrittenToRawFile(t *testing.T) {
+func TestIntegrationResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
@@ -35,7 +35,7 @@ func TestResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 	}
 }
 
-func TestResponse_responseFileIsValidJSON(t *testing.T) {
+func TestIntegrationResponse_responseFileIsValidJSON(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
@@ -56,7 +56,7 @@ func TestResponse_responseFileIsValidJSON(t *testing.T) {
 	}
 }
 
-func TestResponse_okFalseOnUpstreamError(t *testing.T) {
+func TestIntegrationResponse_okFalseOnUpstreamError(t *testing.T) {
 	e := quickServer(t, map[string]string{
 		"failing_tool": `{"__mcp_error": "service unavailable"}`,
 	}).execEnvelope("svc", "failing_tool", nil)
@@ -66,7 +66,7 @@ func TestResponse_okFalseOnUpstreamError(t *testing.T) {
 	}
 }
 
-func TestResponse_execOkField(t *testing.T) {
+func TestIntegrationResponse_execOkField(t *testing.T) {
 	e := quickServer(t, map[string]string{"get_item": `{"id":1}`}).execEnvelope("svc", "get_item", nil)
 	if e.Error != "" {
 		t.Errorf("expected ok=true on successful call, got: %+v", e)

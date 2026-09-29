@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestServer_initialize(t *testing.T) {
+func TestIntegrationServer_initialize(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	raw := startServer(t, cfg).mustCall("initialize", map[string]any{
@@ -33,7 +33,7 @@ func TestServer_initialize(t *testing.T) {
 	}
 }
 
-func TestServer_toolsList(t *testing.T) {
+func TestIntegrationServer_toolsList(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	raw := startServer(t, cfg).mustCall("tools/list", nil)
@@ -56,7 +56,7 @@ func TestServer_toolsList(t *testing.T) {
 	}
 }
 
-func TestServer_listUpstreamTools(t *testing.T) {
+func TestIntegrationServer_listUpstreamTools(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	text := startServer(t, cfg).listTools("github")
@@ -67,7 +67,7 @@ func TestServer_listUpstreamTools(t *testing.T) {
 	}
 }
 
-func TestServer_execReturnsResponse(t *testing.T) {
+func TestIntegrationServer_execReturnsResponse(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	text := startServer(t, cfg).execTool("github", "list_pull_requests", nil)
@@ -76,7 +76,7 @@ func TestServer_execReturnsResponse(t *testing.T) {
 	}
 }
 
-func TestServer_execWithProjection(t *testing.T) {
+func TestIntegrationServer_execWithProjection(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeProjection(t, cfg, "github", "list_pull_requests:\n  include_only: [number, title]\n")
@@ -94,7 +94,7 @@ func TestServer_execWithProjection(t *testing.T) {
 	}
 }
 
-func TestServer_execUnknownTool(t *testing.T) {
+func TestIntegrationServer_execUnknownTool(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
@@ -110,7 +110,7 @@ func TestServer_execUnknownTool(t *testing.T) {
 	}
 }
 
-func TestServer_execUnknownServer(t *testing.T) {
+func TestIntegrationServer_execUnknownServer(t *testing.T) {
 	cfg := t.TempDir()
 	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
 		"name":      "call",
@@ -157,9 +157,9 @@ func startProxyServer(t *testing.T, configDir string) *mcpClient {
 	return c
 }
 
-// TestProxy_initialize verifies that proxy mode responds to initialize and
+// TestIntegrationProxy_initialize verifies that proxy mode responds to initialize and
 // returns config and read in tools/list.
-func TestProxy_initialize(t *testing.T) {
+func TestIntegrationProxy_initialize(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	raw := startProxyServer(t, cfg).mustCall("tools/list", nil)
@@ -187,9 +187,9 @@ func TestProxy_initialize(t *testing.T) {
 	}
 }
 
-// TestProxy_callUpstreamTool verifies that a proxy-mode tool call routes
+// TestIntegrationProxy_callUpstreamTool verifies that a proxy-mode tool call routes
 // correctly to the upstream and returns a result.
-func TestProxy_callUpstreamTool(t *testing.T) {
+func TestIntegrationProxy_callUpstreamTool(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	client := startProxyServer(t, cfg)
@@ -206,7 +206,7 @@ func TestProxy_callUpstreamTool(t *testing.T) {
 	}
 }
 
-func TestProxy_toolsListAnnotationsPassthrough(t *testing.T) {
+func TestIntegrationProxy_toolsListAnnotationsPassthrough(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"do_thing":        `{"ok":true}`,
@@ -244,10 +244,10 @@ func TestProxy_toolsListAnnotationsPassthrough(t *testing.T) {
 	t.Error("svc__do_thing not found in proxy tools/list")
 }
 
-// TestServe_unreachableUpstreamDoesNotExit verifies that mini connect continues
+// TestIntegrationServe_unreachableUpstreamDoesNotExit verifies that mini connect continues
 // running when an upstream fails to connect at startup. Previously os.Exit(1)
 // was called, which prevented startup when any server was unavailable.
-func TestServe_unreachableUpstreamDoesNotExit(t *testing.T) {
+func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 	cfg := t.TempDir()
 	// Valid upstream (will connect) + unreachable HTTP upstream
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
@@ -261,8 +261,8 @@ func TestServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 	}
 }
 
-// TestProxy_unreachableUpstreamDoesNotExit is the proxy-mode equivalent.
-func TestProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
+// TestIntegrationProxy_unreachableUpstreamDoesNotExit is the proxy-mode equivalent.
+func TestIntegrationProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeServerConfig(t, cfg, "dead",
@@ -311,7 +311,7 @@ func execGitHubToolIsError(t *testing.T, client *mcpClient, execName, tool strin
 	return r.IsError
 }
 
-func TestServer_protectedToolRequiresExecProtected(t *testing.T) {
+func TestIntegrationServer_protectedToolRequiresExecProtected(t *testing.T) {
 	cfg := t.TempDir()
 	writeGitHubServerYAML(t, cfg, "protected", "list_pull_requests")
 	client := startServer(t, cfg)
@@ -323,7 +323,7 @@ func TestServer_protectedToolRequiresExecProtected(t *testing.T) {
 	}
 }
 
-func TestServer_hiddenToolNotListed(t *testing.T) {
+func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
 	cfg := t.TempDir()
 	serversDir := filepath.Join(cfg, "servers")
 	os.MkdirAll(serversDir, 0700)
@@ -339,7 +339,7 @@ func TestServer_hiddenToolNotListed(t *testing.T) {
 	}
 }
 
-func TestServer_configureProjectionOverride(t *testing.T) {
+func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	client := startServer(t, cfg)
@@ -352,7 +352,7 @@ func TestServer_configureProjectionOverride(t *testing.T) {
 	}
 }
 
-func TestServer_listAllTools(t *testing.T) {
+func TestIntegrationServer_listAllTools(t *testing.T) {
 	cfg := t.TempDir()
 	serversDir := filepath.Join(cfg, "servers")
 	os.MkdirAll(serversDir, 0700)
@@ -374,7 +374,7 @@ func TestServer_listAllTools(t *testing.T) {
 	}
 }
 
-func TestServer_multipleUpstreams(t *testing.T) {
+func TestIntegrationServer_multipleUpstreams(t *testing.T) {
 	cfg := t.TempDir()
 	serversDir := filepath.Join(cfg, "servers")
 	os.MkdirAll(serversDir, 0700)
