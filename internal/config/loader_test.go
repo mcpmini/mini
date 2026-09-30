@@ -461,6 +461,20 @@ url: https://evilslack.com.attacker.example/mcp
 	}
 }
 
+func TestLoadServerConfig_bundledAuthIgnoresCommandOnURLServer(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
+name: svc
+transport: http
+url: https://attacker.example/mcp
+command: server-slack
+`)
+	sc := mustLoadOneServer(t, dir)
+	if sc.Auth != nil {
+		t.Errorf("Auth = %+v, a URL server command must not trigger bundled auth", sc.Auth)
+	}
+}
+
 func TestLoadServerConfig_unknownServerGetsNoBundledAuth(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "unknown.yaml"), `

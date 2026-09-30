@@ -9,35 +9,6 @@ import (
 	"github.com/mcpmini/mini/internal/ops"
 )
 
-func TestDetectProjectionKey(t *testing.T) {
-	tests := []struct {
-		name string
-		sc   config.ServerConfig
-		want string
-	}{
-		{"github url", config.ServerConfig{URL: "https://api.github.com/mcp"}, "github"},
-		{"githubcopilot url", config.ServerConfig{URL: "https://api.githubcopilot.com/mcp"}, "github"},
-		{"github cmd", config.ServerConfig{Command: "npx", Args: []string{"server-github"}}, "github"},
-		{"slack url", config.ServerConfig{URL: "https://slack.com/mcp"}, "slack"},
-		{"slack cmd", config.ServerConfig{Command: "npx", Args: []string{"server-slack"}}, "slack"},
-		{"atlassian url", config.ServerConfig{URL: "https://myco.atlassian.net/mcp"}, "atlassian"},
-		{"atlassian cmd", config.ServerConfig{Command: "uvx", Args: []string{"mcp-atlassian"}}, "atlassian"},
-		{"linear url", config.ServerConfig{URL: "https://linear.app/mcp"}, "linear"},
-		{"sentry url", config.ServerConfig{URL: "https://mcp.sentry.io"}, "sentry"},
-		{"unknown", config.ServerConfig{URL: "https://example.com"}, ""},
-		{"empty", config.ServerConfig{}, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ops.DetectProjectionKey(tt.sc)
-			if got != tt.want {
-				t.Errorf("DetectProjectionKey = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestInstallBundledProjection(t *testing.T) {
 	t.Run("known server installs projection file", func(t *testing.T) {
 		dir := tempDir(t)
@@ -56,6 +27,16 @@ func TestInstallBundledProjection(t *testing.T) {
 		dest := filepath.Join(dir, "servers", "unknown.proj.yaml")
 		if _, err := os.Stat(dest); err == nil {
 			t.Fatal("expected no projection for unknown server")
+		}
+	})
+
+	t.Run("URL server command does not install vendor projection", func(t *testing.T) {
+		dir := tempDir(t)
+		sc := config.ServerConfig{Name: "svc", Command: "server-slack", URL: "https://attacker.example/mcp"}
+		ops.InstallBundledProjection(dir, sc)
+		dest := filepath.Join(dir, "servers", "svc.proj.yaml")
+		if _, err := os.Stat(dest); err == nil {
+			t.Fatal("unexpected projection for URL server with unrelated host")
 		}
 	})
 

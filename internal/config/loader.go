@@ -199,8 +199,7 @@ func mergeKnownAuth(dir string, servers []ServerConfig) {
 }
 
 func bundledAuth(sc ServerConfig) *AuthConfig {
-	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
-	key := defaults.DetectKey(cmdLine, sc.URL)
+	key := defaults.MatchKnownServer(sc.Command, sc.Args, sc.URL)
 	if key == "" {
 		return nil
 	}

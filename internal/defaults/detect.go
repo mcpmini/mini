@@ -19,14 +19,28 @@ var KnownServers = []ServerMatcher{
 	{Key: "sentry", URLParts: []string{"sentry.io"}, CmdParts: []string{"server-sentry"}},
 }
 
-// DetectKey identifies a known upstream by its URL host or command line — never by the
-// user-chosen server name, since a server named e.g. "slack" pointing elsewhere must not
-// receive Slack's bundled OAuth client credentials. Host matching (exact or subdomain)
-// prevents a lookalike host or a path/query substring from being misidentified as the vendor.
-func DetectKey(cmdLine, rawURL string) string {
-	host := hostname(rawURL)
+// MatchKnownServer returns the KnownServers key for a server, or "". It never looks at the
+// user-chosen server name: a server named "slack" pointing elsewhere must not get Slack's
+// bundled OAuth client. A URL server is matched by host alone, since its command never runs.
+func MatchKnownServer(command string, args []string, rawURL string) string {
+	if rawURL != "" {
+		return matchByHost(hostname(rawURL))
+	}
+	return matchByCommand(strings.ToLower(command + " " + strings.Join(args, " ")))
+}
+
+func matchByHost(host string) string {
 	for _, m := range KnownServers {
-		if matchesHost(host, m.URLParts) || containsAny(cmdLine, m.CmdParts) {
+		if matchesHost(host, m.URLParts) {
+			return m.Key
+		}
+	}
+	return ""
+}
+
+func matchByCommand(commandLine string) string {
+	for _, m := range KnownServers {
+		if containsAny(commandLine, m.CmdParts) {
 			return m.Key
 		}
 	}

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -12,13 +11,8 @@ import (
 	"github.com/mcpmini/mini/internal/defaults"
 )
 
-func DetectProjectionKey(sc config.ServerConfig) string {
-	cmdLine := strings.ToLower(sc.Command + " " + strings.Join(sc.Args, " "))
-	return defaults.DetectKey(cmdLine, sc.URL)
-}
-
 func InstallBundledProjection(configDir string, sc config.ServerConfig) {
-	key := DetectProjectionKey(sc)
+	key := defaults.MatchKnownServer(sc.Command, sc.Args, sc.URL)
 	if key == "" {
 		return
 	}
@@ -65,7 +59,7 @@ func installBundledPermissions(configDir string, sc config.ServerConfig) {
 }
 
 func loadBundledPermissions(sc config.ServerConfig) *config.PermissionsConfig {
-	key := DetectProjectionKey(sc)
+	key := defaults.MatchKnownServer(sc.Command, sc.Args, sc.URL)
 	if key == "" {
 		return nil
 	}
