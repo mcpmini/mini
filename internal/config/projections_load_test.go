@@ -281,6 +281,60 @@ func TestLoadProjections_parity(t *testing.T) {
 	}
 }
 
+func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "name: good\ncommand: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
+	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "name: unset\ncommand: echo\nargs: [${LOAD_LENIENT_UNSET}]\n")
+	_, servers, sourceErrors := config.LoadLenient(dir)
+	var names []string
+	for _, server := range servers {
+		names = append(names, server.Name)
+	}
+	if slices.Sort(names); !slices.Equal(names, []string{"good", "unset"}) {
+		t.Errorf("servers = %v, want [good unset]", names)
+	}
+	if len(sourceErrors) != 1 || sourceErrors[0].Path != filepath.Join(dir, "servers", "broken.yaml") {
+		t.Errorf("source errors = %+v, want only broken.yaml", sourceErrors)
+	}
+}
+
+func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), "name: detected\ncommand: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "custom.yaml"), "name: custom\ncommand: echo\nauth:\n  type: bearer\n")
+	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
+		t.Fatal(err)
+	}
+	_, servers, _ := config.LoadLenient(dir)
+	byName := map[string]config.ServerConfig{}
+	for _, server := range servers {
+		byName[server.Name] = server
+	}
+	if byName["detected"].Auth == nil || byName["detected"].Auth.Type != config.AuthTypeOAuth2 {
+		t.Errorf("detected auth = %+v, want oauth2", byName["detected"].Auth)
+	}
+	if byName["custom"].Auth == nil || byName["custom"].Auth.Type != config.AuthTypeBearer {
+		t.Errorf("custom auth = %+v, want bearer", byName["custom"].Auth)
+	}
+}
+
+func TestLoadLenientBrokenMainConfigDefaultsAndReportsOneSourceError(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "name: good\ncommand: echo\n")
+	writeFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
+	cfg, servers, sourceErrors := config.LoadLenient(dir)
+	if cfg == nil || !reflect.DeepEqual(cfg, config.DefaultConfig()) {
+		t.Errorf("config = %#v, want DefaultConfig", cfg)
+	}
+	if len(servers) != 1 || servers[0].Name != "good" {
+		t.Errorf("servers = %+v, want good", servers)
+	}
+	if len(sourceErrors) != 1 || sourceErrors[0].Path != filepath.Join(dir, "config.yaml") {
+		t.Errorf("source errors = %+v, want one config.yaml error", sourceErrors)
+	}
+}
+
 func projKeys(m map[string]*config.ProjectionConfig) []string {
 	return slices.Sorted(maps.Keys(m))
 }

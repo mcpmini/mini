@@ -24,11 +24,7 @@ type oauthDetectParams struct {
 // detectImportedOAuth probes only the servers this run imported: the login step
 // can't list an OAuth server until something has recorded that it needs OAuth.
 func detectImportedOAuth(p oauthDetectParams) {
-	_, servers, err := config.Load(p.configDir)
-	if err != nil {
-		fmt.Fprintf(p.errOut, "skipping OAuth detection: load config: %v\n", err)
-		return
-	}
+	_, servers, _ := config.LoadLenient(p.configDir)
 	targets := oauthDetectionTargets(servers, p.names)
 	if len(targets) == 0 {
 		return

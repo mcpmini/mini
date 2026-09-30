@@ -78,19 +78,18 @@ func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 	}
 }
 
-func TestRunLoginStepWarnsAndSkipsWhenConfigFailsToLoad(t *testing.T) {
-	const unsetVar = "MINI_TEST_UNSET_AUTH_PASS_VAR"
-	t.Setenv(unsetVar, "")
-	os.Unsetenv(unsetVar) //nolint:errcheck
+func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 	dir := t.TempDir()
-	writeLoginStepFile(t, filepath.Join(dir, "servers", "broken.yaml"), "command: npx\nenv: [\"K=${"+unsetVar+"}\"]\n")
+	writeLoginStepFile(t, filepath.Join(dir, "servers", "oauth.yaml"), "name: oauth\ntransport: http\nurl: https://api.example.com\nauth:\n  type: oauth2\n")
+	brokenPath := filepath.Join(dir, "servers", "broken.yaml")
+	writeLoginStepFile(t, brokenPath, "bad: [yaml\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
-	runLoginStep(loginStepParams{configDir: dir, out: out, errOut: errOut})
-	if !strings.Contains(errOut.String(), "skipping OAuth login") {
-		t.Errorf("stderr = %q, want skip warning", errOut.String())
+	runLoginStep(loginStepParams{configDir: dir, ask: func(string) string { return "s" }, out: out, errOut: errOut})
+	if strings.Count(errOut.String(), brokenPath) != 1 {
+		t.Errorf("stderr = %q, want one warning naming %s", errOut.String(), brokenPath)
 	}
-	if out.Len() != 0 {
-		t.Errorf("stdout = %q, want empty", out.String())
+	if !strings.Contains(out.String(), "oauth (no token)") {
+		t.Errorf("stdout = %q, want OAuth server listed", out.String())
 	}
 }
 
