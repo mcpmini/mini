@@ -86,7 +86,7 @@ func loadServerConfigLenient(path string) (*ServerConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return parseServerConfig(path, interpolateEnvMarkingUndefined(data))
+	return parseServerConfig(path, data, lenientEnvExpansion)
 }
 
 func loadInlineServersLenient(configDir string, load *LoadProjectionsResult) []ServerConfig {
@@ -100,11 +100,11 @@ func loadInlineServersLenient(configDir string, load *LoadProjectionsResult) []S
 		return nil
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(interpolateEnvMarkingUndefined(data), &cfg); err != nil {
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		load.SourceErrors = append(load.SourceErrors, SourceError{Path: configPath, Err: fmt.Errorf("parse config.yaml: %w", err)})
 		return nil
 	}
-	if err := validateInlineServers(configPath, cfg.Servers); err != nil {
+	if err := validateInlineServers(configPath, cfg.Servers, lenientEnvExpansion); err != nil {
 		load.SourceErrors = append(load.SourceErrors, SourceError{Path: configPath, Err: err})
 		return nil
 	}
@@ -154,17 +154,6 @@ func validateProjectionsIsolated(servers []ServerConfig, load *LoadProjectionsRe
 func validateLoadedProjections(name string, projections map[string]*ProjectionConfig) error {
 	if err := validateServerProjectionFormats(name, projections); err != nil {
 		return err
-	}
-	return rejectUndefinedEnvInProjections(name, projections)
-}
-
-func rejectUndefinedEnvInProjections(name string, projections map[string]*ProjectionConfig) error {
-	data, err := yaml.Marshal(projections)
-	if err != nil {
-		return fmt.Errorf("server %s: projections: %w", name, err)
-	}
-	if m := undefinedEnvMarkerRef.FindSubmatch(data); m != nil {
-		return fmt.Errorf("server %s: projections reference undefined environment variable %s", name, m[1])
 	}
 	return nil
 }

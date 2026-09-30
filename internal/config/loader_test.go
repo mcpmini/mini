@@ -541,10 +541,10 @@ func TestServerConfig_HasStaticAuthHeader(t *testing.T) {
 		{"lowercase key", oauth, map[string]string{"authorization": "Bearer x"}, true},
 		{"empty value", oauth, map[string]string{"Authorization": ""}, false},
 		{"whitespace value", oauth, map[string]string{"Authorization": "  "}, false},
-		{"env var expanding to empty", oauth, map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_EMPTY}"}, false},
-		{"env var set", oauth, map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_SET}"}, true},
+		{"env var reference stays literal", oauth, map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_EMPTY}"}, true},
+		{"literal env reference is a static header", oauth, map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_SET}"}, true},
 		{"auth token set", &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: "tok"}, nil, true},
-		{"auth token expanding to empty", &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: "${MINI_TEST_STATIC_AUTH_EMPTY}"}, nil, false},
+		{"auth token reference stays literal", &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: "${MINI_TEST_STATIC_AUTH_EMPTY}"}, nil, true},
 		{"custom auth header", custom, map[string]string{"X-Api-Key": "k"}, true},
 		{"custom auth header configured but Authorization set", custom, map[string]string{"Authorization": "x"}, false},
 		{"unrelated header only", oauth, map[string]string{"X-Tenant": "acme"}, false},
@@ -819,31 +819,30 @@ func TestMergedHeaders_PlainHeader(t *testing.T) {
 	}
 }
 
-func TestMergedHeaders_EnvExpansion(t *testing.T) {
+func TestMergedHeaders_EnvReferenceStaysLiteral(t *testing.T) {
 	t.Setenv("MY_TOKEN", "secret")
 	sc := config.ServerConfig{Headers: map[string]string{"Authorization": "Bearer ${MY_TOKEN}"}}
 	h := sc.MergedHeaders()
-	if h["Authorization"] != "Bearer secret" {
+	if h["Authorization"] != "Bearer ${MY_TOKEN}" {
 		t.Errorf("got %q", h["Authorization"])
 	}
 }
 
 func TestMergedHeaders_TrimsWhitespace(t *testing.T) {
-	t.Setenv("API_KEY", "  tok  ")
 	sc := config.ServerConfig{Headers: map[string]string{"X-Key": "  ${API_KEY}  "}}
 	h := sc.MergedHeaders()
-	if h["X-Key"] != "tok" {
+	if h["X-Key"] != "${API_KEY}" {
 		t.Errorf("got %q", h["X-Key"])
 	}
 }
 
-func TestMergedHeaders_BearerAuth(t *testing.T) {
+func TestMergedHeaders_BearerAuthKeepsEnvReferenceLiteral(t *testing.T) {
 	t.Setenv("MY_TOKEN", "abc123")
 	sc := config.ServerConfig{
 		Auth: &config.AuthConfig{Type: "bearer", Token: "${MY_TOKEN}"},
 	}
 	h := sc.MergedHeaders()
-	if h["Authorization"] != "Bearer abc123" {
+	if h["Authorization"] != "Bearer ${MY_TOKEN}" {
 		t.Errorf("got %q", h["Authorization"])
 	}
 }

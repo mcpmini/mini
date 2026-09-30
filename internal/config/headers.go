@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"strings"
 )
 
@@ -9,7 +8,7 @@ import (
 func (sc ServerConfig) MergedHeaders() map[string]string {
 	headers := make(map[string]string)
 	for k, v := range sc.Headers {
-		headers[k] = strings.TrimSpace(os.Expand(v, os.Getenv))
+		headers[k] = strings.TrimSpace(v)
 	}
 	if sc.Auth != nil {
 		injectAuth(headers, sc.Auth)
@@ -18,7 +17,7 @@ func (sc ServerConfig) MergedHeaders() map[string]string {
 }
 
 func injectAuth(headers map[string]string, auth *AuthConfig) {
-	token := strings.TrimSpace(os.Expand(auth.Token, os.Getenv))
+	token := strings.TrimSpace(auth.Token)
 	if token == "" {
 		return
 	}
