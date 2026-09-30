@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -69,6 +70,113 @@ func TestAvailableCatalogEntriesGroupsCategoriesInFirstSeenOrder(t *testing.T) {
 	names := catalogNames(availableCatalogEntries(entries, nil))
 	if !reflect.DeepEqual(names, []string{"a", "c", "b"}) {
 		t.Errorf("order = %v, want [a c b]", names)
+	}
+}
+
+func TestResolveCatalogNames(t *testing.T) {
+	entries := []catalog.Entry{{Name: "linear"}, {Name: "notion"}}
+	t.Run("case insensitive and input order", func(t *testing.T) {
+		got, err := resolveCatalogNames(entries, []string{"Notion", "LINEAR"})
+		if err != nil || !reflect.DeepEqual(catalogNames(got), []string{"notion", "linear"}) {
+			t.Fatalf("resolve = %v, %v", catalogNames(got), err)
+		}
+	})
+	t.Run("duplicates collapse", func(t *testing.T) {
+		got, err := resolveCatalogNames(entries, []string{"linear", "LINEAR"})
+		if err != nil || !reflect.DeepEqual(catalogNames(got), []string{"linear"}) {
+			t.Fatalf("resolve = %v, %v", catalogNames(got), err)
+		}
+	})
+	t.Run("unknown names reject all", func(t *testing.T) {
+		got, err := resolveCatalogNames(entries, []string{"nope", "linear", "zzz"})
+		if err == nil || err.Error() != "not in the server catalog: nope, zzz" || got != nil {
+			t.Fatalf("resolve = %v, %v", got, err)
+		}
+	})
+}
+
+func TestRunCatalogStepAddsRequestedEntriesWithoutPicker(t *testing.T) {
+	entries := []catalog.Entry{
+		{Name: "first", URL: "https://first.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://first.example/token"},
+		{Name: "second", URL: "https://second.example/mcp"},
+	}
+	for _, autoYes := range []bool{false, true} {
+		t.Run(fmt.Sprintf("autoYes_%v", autoYes), func(t *testing.T) {
+			dir := t.TempDir()
+			out := &bytes.Buffer{}
+			if err := runCatalogStep(catalogStepParams{configDir: dir, autoYes: autoYes, requested: entries, loadCatalog: func() ([]catalog.Entry, error) { return entries, nil }, ask: func(string) string { t.Fatal("picker called"); return "" }, out: out, errOut: &bytes.Buffer{}}); err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if _, err := os.Stat(filepath.Join(dir, "servers", entry.Name+".yaml")); err != nil {
+					t.Fatalf("server file %s: %v", entry.Name, err)
+				}
+			}
+			if strings.Contains(out.String(), "Available MCP servers:") || !strings.Contains(out.String(), "first needs an access token") {
+				t.Fatalf("unexpected output: %s", out.String())
+			}
+		})
+	}
+	t.Run("requested entries keep order across categories", func(t *testing.T) {
+		dir := t.TempDir()
+		entries := []catalog.Entry{
+			{Name: "b", Category: "Y", URL: "https://b.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://b.example/token"},
+			{Name: "a", Category: "X", URL: "https://a.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://a.example/token"},
+			{Name: "c", Category: "Y", URL: "https://c.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://c.example/token"},
+		}
+		out := &bytes.Buffer{}
+		if err := runCatalogStep(catalogStepParams{configDir: dir, requested: entries, out: out, errOut: &bytes.Buffer{}}); err != nil {
+			t.Fatal(err)
+		}
+		got := out.String()
+		if b, a, c := strings.Index(got, "b needs an access token"), strings.Index(got, "a needs an access token"), strings.Index(got, "c needs an access token"); b < 0 || a < 0 || c < 0 || b >= a || a >= c {
+			t.Errorf("setup notes do not follow requested order b, a, c:\n%s", got)
+		}
+	})
+}
+
+func TestRunCatalogStepRequestedConfiguredEntriesArePreserved(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "servers"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	existing := []byte("preserve this file\n")
+	path := filepath.Join(dir, "servers", "already.yaml")
+	if err := os.WriteFile(path, existing, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	configured := "name: configured\ntransport: http\nurl: https://configured.example/mcp\n"
+	if err := os.WriteFile(filepath.Join(dir, "servers", "configured.yaml"), []byte(configured), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	entries := []catalog.Entry{
+		{Name: "same-url", URL: "https://configured.example/mcp"},
+		{Name: "already", URL: "https://already.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://already.example/token"},
+	}
+	out := &bytes.Buffer{}
+	if err := runCatalogStep(catalogStepParams{configDir: dir, requested: entries, ask: func(string) string { t.Fatal("picker called"); return "" }, out: out, errOut: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "servers", "same-url.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("same URL created second file: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(got, existing) {
+		t.Fatalf("existing file = %q, %v", got, err)
+	}
+	if !strings.Contains(out.String(), "same-url already configured") || !strings.Contains(out.String(), "already already configured") || strings.Contains(out.String(), "already needs an access token") {
+		t.Fatalf("unexpected existing-entry output: %s", out.String())
+	}
+}
+
+func TestInitAddFlagAppendsValues(t *testing.T) {
+	cmd := newInitCmd(&rootOptions{})
+	if err := cmd.ParseFlags([]string{"--add", "a,b", "--add", "c"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := cmd.Flags().GetStringSlice("add")
+	if err != nil || !reflect.DeepEqual(got, []string{"a", "b", "c"}) {
+		t.Fatalf("add flag = %v, %v", got, err)
 	}
 }
 

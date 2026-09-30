@@ -26,6 +26,7 @@ type catalogStepParams struct {
 	ask         func(string) string
 	out         io.Writer
 	errOut      io.Writer
+	requested   []catalog.Entry
 }
 
 type catalogSource struct {
@@ -44,6 +45,9 @@ func (s catalogSource) entries() ([]catalog.Entry, error) {
 }
 
 func runCatalogStep(p catalogStepParams) error {
+	if len(p.requested) > 0 {
+		return addRequestedCatalogEntries(p)
+	}
 	if p.autoYes {
 		return nil
 	}
@@ -65,6 +69,14 @@ func configuredServers(configDir string) []config.ServerConfig {
 }
 
 func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
+	configured := configuredKeys(servers)
+	available := slices.DeleteFunc(slices.Clone(entries), func(entry catalog.Entry) bool {
+		return isConfigured(configured, entry)
+	})
+	return groupByCategory(available)
+}
+
+func configuredKeys(servers []config.ServerConfig) map[string]bool {
 	configured := make(map[string]bool, 2*len(servers))
 	for _, server := range servers {
 		configured[strings.ToLower(server.Name)] = true
@@ -72,10 +84,11 @@ func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerCon
 			configured[serverURLKey(server.URL)] = true
 		}
 	}
-	available := slices.DeleteFunc(slices.Clone(entries), func(entry catalog.Entry) bool {
-		return configured[strings.ToLower(entry.Name)] || configured[serverURLKey(entry.URL)]
-	})
-	return groupByCategory(available)
+	return configured
+}
+
+func isConfigured(keys map[string]bool, entry catalog.Entry) bool {
+	return keys[strings.ToLower(entry.Name)] || keys[serverURLKey(entry.URL)]
 }
 
 func serverURLKey(rawURL string) string {
