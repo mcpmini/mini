@@ -95,7 +95,7 @@ func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 
 func TestRunLoginStepBrokenMainConfigSkipsOAuthLogin(t *testing.T) {
 	dir := loginStepConfig(t, "oauth")
-	writeLoginStepFile(t, filepath.Join(dir, "config.yaml"), "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  args: [${LOGIN_STEP_UNSET}]\n")
+	writeLoginStepFile(t, filepath.Join(dir, "config.yaml"), "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  headers:\n    X-Token: \"${LOGIN_STEP_UNSET}\"\n")
 	errOut := &bytes.Buffer{}
 	called := false
 	runLoginStep(loginStepParams{

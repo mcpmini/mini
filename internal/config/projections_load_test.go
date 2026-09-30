@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -285,7 +286,7 @@ func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "name: good\ncommand: echo\n")
 	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
-	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "name: unset\ncommand: echo\nargs: [${LOAD_LENIENT_UNSET}]\n")
+	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "name: unset\ncommand: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n")
 	servers, sourceErrors := config.LoadLenient(dir)
 	var names []string
 	for _, server := range servers {
@@ -323,20 +324,20 @@ func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
 	tests := []struct {
 		name    string
 		yaml    string
-		wantErr bool
+		wantErr string
 	}{
-		{"valid settings load", "disable_auth_browser_open: true\n", false},
-		{"invalid YAML", "bad: [yaml\n", true},
-		{"unset env var in an inline server", "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  args: [${LOAD_MAIN_UNSET}]\n", true},
+		{"valid settings load", "disable_auth_browser_open: true\n", ""},
+		{"invalid YAML", "bad: [yaml\n", "parse config"},
+		{"unset env var in an inline server", "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  headers:\n    X-Token: \"${LOAD_MAIN_UNSET}\"\n", "LOAD_MAIN_UNSET"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, filepath.Join(dir, "config.yaml"), tt.yaml)
 			cfg, err := config.LoadMain(dir)
-			if tt.wantErr {
-				if err == nil || cfg != nil {
-					t.Errorf("LoadMain = (%#v, %v), want (nil, error) rather than defaults", cfg, err)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || cfg != nil {
+					t.Errorf("LoadMain = (%#v, %v), want (nil, error containing %q) rather than defaults", cfg, err, tt.wantErr)
 				}
 				return
 			}
