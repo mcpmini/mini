@@ -36,7 +36,12 @@ func (c loginCandidate) reason() string {
 }
 
 func runLoginStep(p loginStepParams) {
-	cfg, servers, sourceErrors := config.LoadLenient(p.configDir)
+	cfg, err := config.LoadMain(p.configDir)
+	if err != nil {
+		fmt.Fprintf(p.errOut, "skipping OAuth login: %v\n", err)
+		return
+	}
+	servers, sourceErrors := config.LoadLenient(p.configDir)
 	for _, sourceErr := range sourceErrors {
 		fmt.Fprintf(p.errOut, "warning: %v\n", sourceErr.Err)
 	}

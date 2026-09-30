@@ -286,7 +286,7 @@ func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "name: good\ncommand: echo\n")
 	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
 	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "name: unset\ncommand: echo\nargs: [${LOAD_LENIENT_UNSET}]\n")
-	_, servers, sourceErrors := config.LoadLenient(dir)
+	servers, sourceErrors := config.LoadLenient(dir)
 	var names []string
 	for _, server := range servers {
 		names = append(names, server.Name)
@@ -306,7 +306,7 @@ func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
 		t.Fatal(err)
 	}
-	_, servers, _ := config.LoadLenient(dir)
+	servers, _ := config.LoadLenient(dir)
 	byName := map[string]config.ServerConfig{}
 	for _, server := range servers {
 		byName[server.Name] = server
@@ -319,19 +319,31 @@ func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	}
 }
 
-func TestLoadLenientBrokenMainConfigDefaultsAndReportsOneSourceError(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "name: good\ncommand: echo\n")
-	writeFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
-	cfg, servers, sourceErrors := config.LoadLenient(dir)
-	if cfg == nil || !reflect.DeepEqual(cfg, config.DefaultConfig()) {
-		t.Errorf("config = %#v, want DefaultConfig", cfg)
+func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr bool
+	}{
+		{"valid settings load", "disable_auth_browser_open: true\n", false},
+		{"invalid YAML", "bad: [yaml\n", true},
+		{"unset env var in an inline server", "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  args: [${LOAD_MAIN_UNSET}]\n", true},
 	}
-	if len(servers) != 1 || servers[0].Name != "good" {
-		t.Errorf("servers = %+v, want good", servers)
-	}
-	if len(sourceErrors) != 1 || sourceErrors[0].Path != filepath.Join(dir, "config.yaml") {
-		t.Errorf("source errors = %+v, want one config.yaml error", sourceErrors)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, "config.yaml"), tt.yaml)
+			cfg, err := config.LoadMain(dir)
+			if tt.wantErr {
+				if err == nil || cfg != nil {
+					t.Errorf("LoadMain = (%#v, %v), want (nil, error) rather than defaults", cfg, err)
+				}
+				return
+			}
+			if err != nil || cfg == nil || !cfg.DisableAuthBrowserOpen {
+				t.Errorf("LoadMain = (%#v, %v), want disable_auth_browser_open", cfg, err)
+			}
+		})
 	}
 }
 

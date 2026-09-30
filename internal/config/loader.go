@@ -138,6 +138,11 @@ func mergeProjections(servers []ServerConfig, projections map[string]map[string]
 	}
 }
 
+// LoadMain loads global settings and returns config.yaml parse and interpolation errors.
+func LoadMain(configDir string) (*Config, error) {
+	return loadMainConfig(configDir)
+}
+
 func loadMainConfig(dir string) (*Config, error) {
 	cfg := DefaultConfig()
 	data, err := readMainConfigFile(dir)

@@ -93,6 +93,22 @@ func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 	}
 }
 
+func TestRunLoginStepBrokenMainConfigSkipsOAuthLogin(t *testing.T) {
+	dir := loginStepConfig(t, "oauth")
+	writeLoginStepFile(t, filepath.Join(dir, "config.yaml"), "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  args: [${LOGIN_STEP_UNSET}]\n")
+	errOut := &bytes.Buffer{}
+	called := false
+	runLoginStep(loginStepParams{
+		configDir: dir,
+		logIn:     func(logInParams) (*oauth2.Token, error) { called = true; return nil, nil },
+		out:       &bytes.Buffer{},
+		errOut:    errOut,
+	})
+	if called || !strings.Contains(errOut.String(), "skipping OAuth login:") {
+		t.Errorf("login called=%v stderr=%q, want login skipped for broken config", called, errOut.String())
+	}
+}
+
 func TestRunLoginStepListingShowsReasonNextToServerName(t *testing.T) {
 	dir := loginStepConfig(t, "fresh", "expired", "corrupt")
 	expired := &oauth2.Token{AccessToken: "t", Expiry: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}

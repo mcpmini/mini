@@ -287,7 +287,10 @@ func authUndiscovered(sc config.ServerConfig) bool {
 
 // Connecting through server.AddUpstream records a detected OAuth requirement, same as the proxy.
 func probeConnection(ctx context.Context, configDir string, sc config.ServerConfig) error {
-	cfg, _, _ := config.LoadLenient(configDir)
+	cfg, err := config.LoadMain(configDir)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
 	defer srv.Close()
