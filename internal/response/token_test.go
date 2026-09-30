@@ -14,7 +14,7 @@ func TestEstimateTokensFromValue(t *testing.T) {
 }
 
 func TestEstimateTokensReturnsZeroOnMarshalError(t *testing.T) {
-	tokens := response.EstimateTokens(map[any]any{"message": "hello"})
+	tokens := response.EstimateTokens(map[chan int]any{make(chan int): "hello"})
 	if tokens != 0 {
 		t.Fatalf("EstimateTokens() = %d, want 0", tokens)
 	}

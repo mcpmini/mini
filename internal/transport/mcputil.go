@@ -1,15 +1,10 @@
 package transport
 
-import (
-	"fmt"
-
-	"github.com/mcpmini/mini/internal/randutil"
-)
+import "uuid"
 
 // NewSessionID generates a random UUID v4 for session identification.
 func NewSessionID() string {
-	b := randutil.Bytes(16)
-	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+	return uuid.NewV4().String()
 }
 
 // normalizeID converts JSON-decoded float64 IDs to int64.
@@ -21,4 +16,3 @@ func normalizeID(id any) any {
 	}
 	return id
 }
-

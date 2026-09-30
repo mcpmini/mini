@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -156,6 +157,12 @@ func TestNewSessionID_unique(t *testing.T) {
 	}
 	if a == b {
 		t.Errorf("expected unique session IDs, got %q twice", a)
+	}
+	for _, id := range []string{a, b} {
+		parsed, err := uuid.Parse(id)
+		if err != nil || parsed.String() != id || parsed[6]>>4 != 4 {
+			t.Errorf("session ID = %q, want canonical UUID v4", id)
+		}
 	}
 }
 
