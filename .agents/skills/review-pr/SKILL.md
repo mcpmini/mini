@@ -16,6 +16,7 @@ Do not explain away suspicious patterns — investigate until you have proof or 
 2. **Re-verify before reporting.** For every finding, re-open the cited file at the cited line and confirm the code exists and says what you claim. A finding with a wrong line number or misquoted code is worse than no finding.
 3. **Pick up check.sh results.** Do not write the report until the background check suite from Step 0 has finished and you have read its log.
 4. **Verdict is mechanical.** Derive the verdict from the findings table using the rules at the end — never from overall impression.
+5. **The request's framing is a claim, not a fact.** Statements in the review request or PR description about the design ("built on X", "reuses Y", "no duplication") are things to verify. Angles the requester lists add to the passes; they never narrow them.
 
 ## Step 0 — Gather the diff and check out the PR branch
 
@@ -50,6 +51,11 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
    d. Carry any call site whose correctness is unclear into Pass 2c.
 
    A function correct for the call site the author had in mind can be wrong for a call site that existed before the change, or for a sibling call site added in the same diff.
+
+7. **Existing implementations** — for each new multi-step flow (calls that together do one job, e.g. dial → list tools → record OAuth), look for code that already does that job:
+   a. Grep for other callers of the functions the flow calls.
+   b. Check sibling entry points that do similar work (other `cmd/mini` commands, other handlers).
+   c. A match does the same job with the same side effects, even if it shares no text with the new code. Carry each match to Pass 4.
 
 Produce a brief triage note to drive Passes 2–4. Do not write it into the final report.
 
@@ -245,7 +251,7 @@ go test -race -tags test -run TestReview ./path/to/package/... -v
 
 ## Pass 4 — Conventions (diff-level only)
 
-This pass works only from the diff — no deep exploration. Flag quickly, one line each.
+This pass works only from the diff, plus the search already done in triage step 7 — no further exploration. Flag quickly, one line each.
 
 Convention findings default to **MEDIUM** — the project has strict, explicit rules about comments, naming, and structure (AGENTS.md). Violating them is not cosmetic; it degrades maintainability and readability, which are priority #2 in the project's principles. Reserve LOW only for findings so trivial they border on preference (e.g. a mildly verbose variable name that still communicates correctly).
 
@@ -263,7 +269,7 @@ Convention findings default to **MEDIUM** — the project has strict, explicit r
 - Defensive nil/error checks for values the framework guarantees non-nil/non-error
 - Unnecessary intermediate variables whose only purpose is naming an already-clear expression
 
-**Duplication (MEDIUM):** does the new code replicate logic that already exists elsewhere in the codebase? Grep for the pattern before flagging. Identical or near-identical functions/blocks copied across 2+ packages are MEDIUM — extract to a shared helper. Even 2 copies is worth flagging if the logic is non-trivial (> 3 lines); 3+ copies is always MEDIUM. Duplication is not a style nit — it's a correctness risk (one copy gets fixed, the others don't).
+**Duplication (MEDIUM):** does the new code replicate logic that already exists elsewhere in the codebase? Grep for the pattern before flagging, and flag every triage step 7 match: a new flow that does an existing flow's job is duplication even when no line is copied. Proof: cite the existing flow's file:line, show it produces the same effect, and say whether the new code can call it as is or after a small signature change. Identical or near-identical functions/blocks copied across 2+ packages are MEDIUM — extract to a shared helper. Even 2 copies is worth flagging if the logic is non-trivial (> 3 lines); 3+ copies is always MEDIUM. Duplication is not a style nit — it's a correctness risk (one copy gets fixed, the others don't).
 
 ## Pre-report gate
 
