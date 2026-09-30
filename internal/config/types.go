@@ -249,7 +249,7 @@ type AuthConfig struct {
 	// Type: AuthTypeAPIKey, AuthTypeBearer, or AuthTypeOAuth2
 	Type string `yaml:"type"`
 
-	// For apikey/bearer: the token value or env var reference ($MY_TOKEN)
+	// For apikey/bearer: the token value or env var reference (${MY_TOKEN})
 	Token string `yaml:"token,omitempty"`
 
 	// Header name for injection. Default: "Authorization"

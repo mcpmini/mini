@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -87,36 +86,39 @@ func TestLoadProjections(t *testing.T) {
 			wantSkipped:   []string{},
 		},
 		{
-			name:      "lenient interpolation: defined var in name",
-			files:     map[string]string{"servers/svc.yaml": "name: ${PROJ_DEFINED_NAME_XYZ}\ncommand: echo\n"},
-			env:       map[string]string{"PROJ_DEFINED_NAME_XYZ": "myserver"},
-			wantFresh: []string{"myserver"},
+			name:             "server name stays literal and invalid name is a source error",
+			files:            map[string]string{"servers/svc.yaml": "name: ${PROJ_DEFINED_NAME_XYZ}\ncommand: echo\n"},
+			wantSourceErrors: 1,
 		},
 		{
-			name:          "flow-sequence ${VAR}: var-unset",
-			files:         map[string]string{"servers/svc.yaml": "name: svc\ncommand: echo\nargs: [--token, ${PROJ_TEST_TOK_XYZ}]\nprojections:\n  t:\n    include_only: [a]\n"},
+			name:             "args ${VAR} is an unexpanded connection field source error",
+			files:            map[string]string{"servers/svc.yaml": "name: svc\ncommand: echo\nargs: [--token, \"${PROJ_TEST_TOK_XYZ}\"]\nprojections:\n  t:\n    include_only: [a]\n"},
+			wantSourceErrors: 1,
+		},
+		{
+			name:          "undefined ${VAR} in inline projection rule stays literal",
+			files:         map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      exclude: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n"},
 			wantProjected: []string{"svc"},
-		},
-		{
-			name:        "undefined ${VAR} in an inline projection rule: server skipped, not stripped",
-			files:       map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      exclude: [${PROJ_UNDEFINED_FIELD_XYZ}]\n"},
-			wantAbsent:  []string{"svc"},
-			wantSkipped: []string{"svc"},
+			wantSkipped:   []string{},
 			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
-				if err := load.SkippedServers["svc"]; err == nil || !strings.Contains(err.Error(), "PROJ_UNDEFINED_FIELD_XYZ") {
-					t.Errorf("skip reason should name the undefined variable, got %v", err)
+				if got := load.Projections["svc"]["t"].Exclude[0]; got != "${PROJ_UNDEFINED_FIELD_XYZ}" {
+					t.Errorf("exclude = %q, want literal reference", got)
 				}
 			},
 		},
 		{
-			name:              "undefined ${VAR} in a servers/ file projection rule: server skipped",
-			files:             map[string]string{"servers/svc.yaml": "name: svc\ncommand: echo\nprojections:\n  t:\n    include_only: [${PROJ_UNDEFINED_FIELD_XYZ}]\n"},
-			wantAbsent:        []string{"svc"},
-			wantSkipped:       []string{"svc"},
-			wantKeepsPrevious: []string{"svc"},
+			name:          "undefined ${VAR} in server file projection rule stays literal",
+			files:         map[string]string{"servers/svc.yaml": "name: svc\ncommand: echo\nprojections:\n  t:\n    include_only: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n"},
+			wantProjected: []string{"svc"},
+			wantSkipped:   []string{},
+			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
+				if got := load.Projections["svc"]["t"].IncludeOnly[0]; got != "${PROJ_UNDEFINED_FIELD_XYZ}" {
+					t.Errorf("include_only = %q, want literal reference", got)
+				}
+			},
 		},
 		{
-			name:             "undefined ${VAR} as the server name: invalid name, not a phantom server",
+			name:             "server name stays literal and invalid name is a source error",
 			files:            map[string]string{"servers/x.yaml": "name: ${PROJ_UNDEFINED_NAME_XYZ}\ncommand: echo\nprojections:\n  t:\n    include_only: [a]\n"},
 			wantSourceErrors: 1,
 			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
@@ -126,7 +128,7 @@ func TestLoadProjections(t *testing.T) {
 			},
 		},
 		{
-			name:              "undefined ${VAR} in an inline server name: config.yaml is a source error, its valid sibling keeps previous",
+			name:              "inline server name stays literal and invalid name is a config.yaml source error",
 			files:             map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      include_only: [a]\n- name: ${PROJ_UNDEFINED_INLINE_NAME_XYZ}\n  command: echo\n"},
 			wantSourceErrors:  1,
 			wantKeepsPrevious: []string{"svc"},
@@ -238,9 +240,9 @@ func TestLoadProjections_parity(t *testing.T) {
 			env: map[string]string{"PARITY_TOKEN": "tok123"},
 		},
 		{
-			name:  "defined ${VAR} in headers, name and projection field",
-			files: map[string]string{"servers/svc.yaml": "name: ${PARITY_SVC_NAME}\nurl: https://x.example.com\nheaders:\n  Auth: Bearer ${PARITY_SVC_TOKEN}\nprojections:\n  t:\n    include_only: [${PARITY_SVC_FIELD}]\n"},
-			env:   map[string]string{"PARITY_SVC_NAME": "svc", "PARITY_SVC_TOKEN": "tok", "PARITY_SVC_FIELD": "a"},
+			name:  "defined ${VAR} in headers expands while projection reference stays literal",
+			files: map[string]string{"servers/svc.yaml": "name: svc\nurl: https://x.example.com\nheaders:\n  Auth: Bearer ${PARITY_SVC_TOKEN}\nprojections:\n  t:\n    include_only: [\"${PARITY_SVC_FIELD}\"]\n"},
+			env:   map[string]string{"PARITY_SVC_TOKEN": "tok", "PARITY_SVC_FIELD": "a"},
 		},
 		{
 			name: "duplicate names: first wins; servers/ beats inline",

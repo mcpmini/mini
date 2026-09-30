@@ -61,10 +61,6 @@ func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	configPath := filepath.Join(configDir, "config.yaml")
-	if err := validateInlineServers(configPath, cfg.Servers); err != nil {
-		return nil, nil, err
-	}
 	combined := deduplicateServers(append(servers, cfg.Servers...))
 	mergeKnownAuth(configDir, combined)
 	return cfg, combined, nil
@@ -77,13 +73,17 @@ func checkServerName(name, source string) error {
 	return nil
 }
 
-func validateInlineServers(configPath string, servers []ServerConfig) error {
-	for _, s := range servers {
+func validateInlineServers(configPath string, servers []ServerConfig, mode envExpansionMode) error {
+	for i := range servers {
+		s := &servers[i]
 		if err := checkServerName(s.Name, configPath); err != nil {
 			return err
 		}
 		if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 			return fmt.Errorf("invalid handshake_timeout for server %q in %s: %w", s.Name, configPath, err)
+		}
+		if err := validateServerFields(configPath, s, mode); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -150,6 +150,14 @@ func loadMainConfig(dir string) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+	responseDir, err := expandEnvValue(cfg.ResponseDir, strictEnvExpansion)
+	if err != nil {
+		return nil, fmt.Errorf("config.yaml: response_dir: %w", err)
+	}
+	cfg.ResponseDir = responseDir
+	if err := validateInlineServers("config.yaml", cfg.Servers, strictEnvExpansion); err != nil {
+		return nil, err
+	}
 	return cfg, nil
 }
 
@@ -162,7 +170,7 @@ func readMainConfigFile(dir string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
-	return interpolateEnv(data)
+	return data, nil
 }
 
 func loadServerConfigs(dir string) ([]ServerConfig, error) {
@@ -230,14 +238,14 @@ func loadServerFiles(paths []string) ([]ServerConfig, error) {
 }
 
 func loadServerConfig(path string) (*ServerConfig, error) {
-	data, err := readAndInterpolate(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return parseServerConfig(path, data)
+	return parseServerConfig(path, data, strictEnvExpansion)
 }
 
-func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
+func parseServerConfig(path string, data []byte, mode envExpansionMode) (*ServerConfig, error) {
 	var s ServerConfig
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
@@ -248,7 +256,28 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
 	}
+	if err := validateServerFields(path, &s, mode); err != nil {
+		return nil, err
+	}
 	return &s, nil
+}
+
+func validateServerFields(source string, sc *ServerConfig, mode envExpansionMode) error {
+	if err := checkUnexpandedFields(*sc); err != nil {
+		return fmt.Errorf("%s: %w", source, err)
+	}
+	if err := expandServerSecrets(sc, mode); err != nil {
+		return fmt.Errorf("%s: server %s: %w", source, sc.Name, err)
+	}
+	return nil
+}
+
+func ValidateServerFile(source string, data []byte) error {
+	sc, err := parseServerConfig(source, data, lenientEnvExpansion)
+	if err != nil {
+		return err
+	}
+	return validateServerProjectionFormats(sc.Name, sc.Projections)
 }
 
 func readAndInterpolate(path string) ([]byte, error) {
@@ -345,21 +374,6 @@ func interpolateEnv(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("config references undefined environment variable(s): %s", strings.Join(missing, ", "))
 	}
 	return []byte(result), nil
-}
-
-const undefinedEnvMarker = "mini.undefined-env."
-
-var undefinedEnvMarkerRef = regexp.MustCompile(regexp.QuoteMeta(undefinedEnvMarker) + `([^\s,\]}"']+)`)
-
-func interpolateEnvMarkingUndefined(data []byte) []byte {
-	result := envVarRef.ReplaceAllStringFunc(string(data), func(match string) string {
-		key := match[2 : len(match)-1]
-		if val, ok := os.LookupEnv(key); ok {
-			return val
-		}
-		return undefinedEnvMarker + key
-	})
-	return []byte(result)
 }
 
 func FindServer(servers []ServerConfig, name string) *ServerConfig {
