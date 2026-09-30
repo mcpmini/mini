@@ -139,7 +139,7 @@ func TestPrintCatalogEntriesNumbersEntriesUnderCategoryHeaders(t *testing.T) {
 	}
 	var out bytes.Buffer
 	printCatalogEntries(&out, entries)
-	want := "Available MCP servers:\n  Dev:\n    1. a - first [a.example]\n    2. c - third [c.example]\n  Data:\n    3. b - second [b.example]\n"
+	want := "Available MCP servers:\n  Dev:\n    1. a [a.example] - first\n    2. c [c.example] - third\n  Data:\n    3. b [b.example] - second\n"
 	if out.String() != want {
 		t.Errorf("output =\n%s\nwant\n%s", out.String(), want)
 	}
@@ -191,7 +191,7 @@ func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	if errOut.Len() != 0 {
 		t.Errorf("stderr = %q, want nothing: the login step reports broken files", errOut.String())
 	}
-	if !strings.Contains(out.String(), "Available MCP servers:") || strings.Contains(out.String(), " linear - ") {
+	if !strings.Contains(out.String(), "Available MCP servers:") || strings.Contains(out.String(), " linear [") {
 		t.Errorf("catalog should be offered without linear, configured as my-linear:\n%s", out.String())
 	}
 }
@@ -275,7 +275,7 @@ func catalogNumberOf(t *testing.T, listing, name string) string {
 	t.Helper()
 	for _, line := range strings.Split(listing, "\n") {
 		number, rest, ok := strings.Cut(strings.TrimSpace(line), ". ")
-		if ok && strings.HasPrefix(rest, name+" - ") {
+		if ok && strings.HasPrefix(rest, name+" [") {
 			return number
 		}
 	}

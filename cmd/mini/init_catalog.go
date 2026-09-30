@@ -106,7 +106,7 @@ func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 			category = entry.Category
 			fmt.Fprintf(out, "  %s:\n", category)
 		}
-		fmt.Fprintf(out, "    %d. %s - %s [%s]\n", i+1, entry.Name, entry.Description, entryHost(entry.URL))
+		fmt.Fprintf(out, "    %d. %s [%s] - %s\n", i+1, entry.Name, entryHost(entry.URL), entry.Description)
 	}
 }
 

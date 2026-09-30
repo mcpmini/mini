@@ -45,6 +45,16 @@ func TestParseAcceptsAValidEntry(t *testing.T) {
 	}
 }
 
+func TestParseAcceptsTextAtTheRunesLimit(t *testing.T) {
+	description := strings.Repeat("é", maxTextRunes)
+	entries, err := parse(catalogJSON(t, 1, validEntry(func(entry map[string]any) {
+		entry["description"] = description
+	})))
+	if err != nil || len(entries) != 1 || entries[0].Description != description {
+		t.Fatalf("parse = %v, %v; want the entry with %d-rune description", entries, err, maxTextRunes)
+	}
+}
+
 // Validation errors are printed to the terminal, so they must never carry a raw control character.
 func assertParseError(t *testing.T, data []byte, want string) {
 	t.Helper()
@@ -72,6 +82,11 @@ func TestParseRejectsInvalidEntries(t *testing.T) {
 		{"blank category", func(e map[string]any) { e["category"] = " " }, `catalog entry "example": category is required`},
 		{"control character", func(e map[string]any) { e["description"] = "hi\x1b[2J" }, `catalog entry "example": description contains control characters`},
 		{"text direction override", func(e map[string]any) { e["description"] = "safe\u202etxt.exe" }, `catalog entry "example": description contains control characters`},
+		{"description too long in runes", func(e map[string]any) { e["description"] = strings.Repeat("é", maxTextRunes+1) }, `catalog entry "example": description is longer than 120 characters`},
+		{"consecutive spaces", func(e map[string]any) { e["description"] = "a  b" }, `catalog entry "example": description has irregular spacing`},
+		{"tab spacing", func(e map[string]any) { e["description"] = "a\tb" }, `catalog entry "example": description has irregular spacing`},
+		{"trailing category space", func(e map[string]any) { e["category"] = "category " }, `catalog entry "example": category has irregular spacing`},
+		{"ideographic space", func(e map[string]any) { e["description"] = "a\u3000b" }, `catalog entry "example": description has irregular spacing`},
 		{"escape sequence in name", func(e map[string]any) { e["name"] = "\x1b[2J" }, "invalid name"},
 		{"unknown auth", func(e map[string]any) { e["auth"] = "magic" }, `catalog entry "example": invalid auth "magic"`},
 		{"escape sequence in auth", func(e map[string]any) { e["auth"] = "bad\x1b" }, "invalid auth"},

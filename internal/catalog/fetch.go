@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"time"
 )
 
-// GitHub Pages serves the repo root under /mini/ (as for auth.ClientMetadataURL),
-// so this is catalog/v1.json as merged to main.
+// GitHub Pages serves the repo root under /mini/, so this is catalog/v1.json as merged to
+// main, and every released binary reads it: v1 changes must stay additive. Binaries skip
+// entries whose auth they don't know, but an oauth2 entry that needs a bundled client
+// registration must wait for the release that bundles it, or older binaries write it without one.
 const PublishedURL = "https://mcpmini.github.io/mini/catalog/v1.json"
 
 const (
@@ -27,8 +30,8 @@ func NewFetchClient() *http.Client {
 	}
 }
 
-// Fetch downloads the catalog at url and validates it the same way as the
-// embedded one; any invalid entry rejects the whole document.
+// Fetch skips entries whose auth this binary doesn't know, so newer auth kinds can be
+// published; any other invalid entry rejects the whole document.
 func Fetch(ctx context.Context, client *http.Client, url string) ([]Entry, error) {
 	if err := validateHTTPSURL(url); err != nil {
 		return nil, err
@@ -37,7 +40,14 @@ func Fetch(ctx context.Context, client *http.Client, url string) ([]Entry, error
 	if err != nil {
 		return nil, err
 	}
-	return parse(data)
+	doc, err := decode(data)
+	if err != nil {
+		return nil, err
+	}
+	doc.Entries = slices.DeleteFunc(doc.Entries, func(entry Entry) bool {
+		return !slices.Contains(knownAuthValues, entry.Auth)
+	})
+	return validateEntries(doc.Entries)
 }
 
 func download(ctx context.Context, client *http.Client, url string) ([]byte, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -31,6 +32,42 @@ func TestFetchReturnsPublishedEntries(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0].Name != "remote" {
 		t.Errorf("entries = %+v, want the single remote entry", entries)
+	}
+}
+
+// Released binaries read the catalog merged to main, so a newer auth kind must not
+// disable the whole published catalog for them.
+func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
+	future := strings.Replace(oneEntryCatalog, `"auth":"none"`, `"auth":"future-kind"`, 1)
+	withEntry := func(entry string) string {
+		return strings.Replace(future, `"entries":[`, `"entries":[`+entry+`,`, 1)
+	}
+	tests := []struct {
+		name      string
+		document  string
+		wantNames []string
+		wantErr   string
+	}{
+		{"keeps the known entries", withEntry(`{"name":"known","url":"https://known.example/mcp","description":"known server","category":"Test","auth":"none"}`), []string{"known"}, ""},
+		{"fails when nothing is left", future, nil, "catalog entries are required"},
+		{"still validates the kept entries", withEntry(`{"name":"invalid","url":"https://invalid.example/mcp","description":"bad\u001btext","category":"Test","auth":"none"}`), nil, "description contains control characters"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, client := catalogServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Write([]byte(tt.document)) //nolint:errcheck
+			})
+
+			entries, err := Fetch(context.Background(), client, srv.URL)
+
+			var names []string
+			for _, entry := range entries {
+				names = append(names, entry.Name)
+			}
+			if !slices.Equal(names, tt.wantNames) || (tt.wantErr == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Fetch = %v, %v; want %v, error containing %q", names, err, tt.wantNames, tt.wantErr)
+			}
+		})
 	}
 }
 
