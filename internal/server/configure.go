@@ -271,9 +271,13 @@ func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, 
 	}
 	sc := ops.WithBundledPermissions(*p.ServerCfg)
 	sc.BlockPrivateIPs = true
-	// Connect before saving so a bad URL leaves nothing on disk.
-	if err := s.AddUpstream(ctx, sc); err != nil {
-		os.Remove(config.ServerMetaPath(s.configDir, sc.Name)) //nolint:errcheck // a failed add may have recorded an OAuth requirement
+	// Connect before saving so a bad URL leaves nothing on disk. A new-server install
+	// never replaces a running one, so an overlapping add can't roll back the winner.
+	err := s.addUpstream(ctx, s.newServerInstall(sc))
+	if errors.Is(err, errAlreadyRegistered) {
+		return nil, errAlreadyRunning(sc.Name)
+	}
+	if err != nil {
 		return nil, err
 	}
 	if err := s.saveAddedServer(sc); err != nil {
@@ -290,6 +294,10 @@ func (s *Server) saveAddedServer(sc config.ServerConfig) error {
 	}
 	s.recordConfigServers([]config.ServerConfig{sc})
 	return nil
+}
+
+func errAlreadyRunning(name string) error {
+	return fmt.Errorf("add_server: %s is already running; remove it with remove_server first", name)
 }
 
 func (s *Server) validateAddServerParams(p configureParams) error {

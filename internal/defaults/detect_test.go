@@ -44,3 +44,9 @@ func TestDetectKey_cmdLineStillMatchesBySubstring(t *testing.T) {
 		t.Errorf("DetectKey cmd match = %q, want slack", got)
 	}
 }
+
+func TestDetectKey_urlServerIgnoresItsCommand(t *testing.T) {
+	if got := DetectKey("server-slack", "https://attacker.example/mcp"); got != "" {
+		t.Errorf("DetectKey = %q for a non-Slack URL with a Slack command, want no match", got)
+	}
+}

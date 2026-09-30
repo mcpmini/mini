@@ -23,10 +23,12 @@ var KnownServers = []ServerMatcher{
 // user-chosen server name, since a server named e.g. "slack" pointing elsewhere must not
 // receive Slack's bundled OAuth client credentials. Host matching (exact or subdomain)
 // prevents a lookalike host or a path/query substring from being misidentified as the vendor.
+// A URL server is identified by its host alone: its command never runs, so it can't vouch
+// for the vendor, and bundled auth would send the vendor's token to that URL.
 func DetectKey(cmdLine, rawURL string) string {
 	host := hostname(rawURL)
 	for _, m := range KnownServers {
-		if matchesHost(host, m.URLParts) || containsAny(cmdLine, m.CmdParts) {
+		if matchesHost(host, m.URLParts) || (rawURL == "" && containsAny(cmdLine, m.CmdParts)) {
 			return m.Key
 		}
 	}

@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -44,6 +45,9 @@ func AddServer(configDir string, sc config.ServerConfig) (SavedServer, error) {
 	}
 	if IsConfigured(configDir, sc.Name) {
 		return SavedServer{}, fmt.Errorf("%s is %w", sc.Name, ErrAlreadyConfigured)
+	}
+	if err := forgetServer(configDir, sc.Name); err != nil {
+		return SavedServer{}, err
 	}
 	return writeServer(configDir, sc)
 }
@@ -81,8 +85,6 @@ func writeServerYAML(configDir string, sc config.ServerConfig) (string, error) {
 	return path, nil
 }
 
-// DeleteServer removes servers/<name>.yaml and any oauth-detected marker for it —
-// otherwise a later server reusing the same name would inherit stale auth state.
 func DeleteServer(configDir, name string) error {
 	if err := validServerName(name); err != nil {
 		return err
@@ -91,7 +93,18 @@ func DeleteServer(configDir, name string) error {
 	if err := os.Remove(path); err != nil {
 		return deleteError(configDir, name, err)
 	}
-	os.Remove(config.ServerMetaPath(configDir, name)) //nolint:errcheck
+	return forgetServer(configDir, name)
+}
+
+// Tokens are stored by server name alone, so a later server reusing the name
+// would otherwise be sent the old server's credentials.
+func forgetServer(configDir, name string) error {
+	if err := os.Remove(config.ServerMetaPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := auth.Forget(configDir, name); err != nil {
+		return fmt.Errorf("forget %s credentials: %w", name, err)
+	}
 	return nil
 }
 

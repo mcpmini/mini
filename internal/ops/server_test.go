@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
 )
@@ -179,6 +181,23 @@ func TestAddServer(t *testing.T) {
 		}
 	})
 
+	t.Run("drops credentials a server deleted by hand left behind", func(t *testing.T) {
+		dir := tempDir(t)
+		saveCredentials(t, dir, "reused")
+		if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
+			t.Fatal(err)
+		}
+
+		assertNoCredentials(t, dir, "reused")
+		if config.IsOAuthDetected(dir, "reused") {
+			t.Error("the new server inherited the old server's oauth-detected marker")
+		}
+	})
+
 	t.Run("prints nothing, since the config tool calls it where stdout is the MCP stream", func(t *testing.T) {
 		dir := tempDir(t)
 		github := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
@@ -259,6 +278,18 @@ func TestDeleteServer(t *testing.T) {
 		}
 	})
 
+	t.Run("also forgets the token and client registration", func(t *testing.T) {
+		dir := tempDir(t)
+		ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
+		saveCredentials(t, dir, "toremove")
+
+		if err := ops.DeleteServer(dir, "toremove"); err != nil {
+			t.Fatalf("DeleteServer: %v", err)
+		}
+
+		assertNoCredentials(t, dir, "toremove")
+	})
+
 	t.Run("also clears the oauth-detected marker", func(t *testing.T) {
 		dir := tempDir(t)
 		ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
@@ -298,4 +329,24 @@ func captureStdout(t *testing.T, fn func()) string {
 	w.Close()
 	out, _ := io.ReadAll(r)
 	return string(out)
+}
+
+func saveCredentials(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := auth.Save(dir, name, &oauth2.Token{AccessToken: "old-server-token"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.SaveRegistration(dir, name, &auth.Registration{ClientID: "old-client"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertNoCredentials(t *testing.T, dir, name string) {
+	t.Helper()
+	if _, err := auth.Load(dir, name); !auth.IsNotFound(err) {
+		t.Errorf("token for %s still stored (err = %v); a server reusing the name would be sent it", name, err)
+	}
+	if _, err := auth.LoadRegistration(dir, name); !auth.IsNotFound(err) {
+		t.Errorf("client registration for %s still stored (err = %v)", name, err)
+	}
 }
