@@ -1,7 +1,7 @@
 ---
 name: review-pr
-description: Adversarial multi-pass PR review — concurrency, security, correctness, tests, then conventions. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict.
-argument-hint: <PR-number, PR-URL, or blank for current branch diff>
+description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, tests, then conventions. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
+argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [paths to limit the review to]
 ---
 
 Adversarial review of $ARGUMENTS (or the current branch diff if blank).
@@ -16,10 +16,11 @@ Do not explain away suspicious patterns — investigate until you have proof or 
 2. **Re-verify before reporting.** For every finding, re-open the cited file at the cited line and confirm the code exists and says what you claim. A finding with a wrong line number or misquoted code is worse than no finding.
 3. **Pick up check.sh results.** Do not write the report until the background check suite from Step 0 has finished and you have read its log.
 4. **Verdict is mechanical.** Derive the verdict from the findings table using the rules at the end — never from overall impression.
+5. **The request's framing is a claim, not a fact.** Statements in the review request or PR description about the design ("built on X", "reuses Y", "no duplication") are things to verify. Angles the requester lists add to the passes; they never narrow them.
 
 ## Step 0 — Gather the diff and check out the PR branch
 
-1. Resolve the PR number from the arguments (`1` from `https://github.com/mcpmini/mini/pull/1`, from `#1`, or bare `1`). If the arguments are blank, review the current branch's diff against main in the current checkout and skip to step 5.
+1. Resolve the PR number from the arguments (`1` from `https://github.com/mcpmini/mini/pull/1`, from `#1`, or bare `1`). If the arguments are blank, review the current branch's diff against main in the current checkout and skip to step 5. If they name a branch instead, review that branch's diff against main: skip step 2 and use the branch as `<head-branch>` in step 3. Paths after the target limit which changed files the passes cover; still read the code those files interact with.
 2. Get the PR description, diff, and full file list. Use GitHub through mini's MCP integration or the mini CLI when possible to dogfood this repository's tooling; otherwise fall back to the `gh` CLI.
 3. Check out the PR head in a dedicated worktree so you review the PR's actual files (not the diff against your current branch) and run the check suite against the PR's code. If `.agents/worktrees/review-pr-<number>` already exists from a prior review, reuse it; otherwise:
    ```bash
@@ -213,6 +214,23 @@ Structural findings are **MEDIUM** by default. **HIGH** only if the mismatch mak
 
 For a deeper standalone structural review, use the `structure-review` skill.
 
+## Pass 2e — Duplication
+
+This pass explores the whole codebase, not just the diff. For every function, type, predicate, and multi-step flow the diff adds or changes, ask: does something already do this job?
+
+1. **Search by behavior, not text.** Duplicates rarely share lines. Grep for other callers of the functions and APIs the new code calls, for the same constants, error messages, and config fields, and read sibling entry points and packages that handle similar work.
+2. **Classify each match:**
+   - Copied code: the same lines in two places.
+   - Parallel implementation: the same job done with different code.
+   - Repeated decision: the same rule or predicate evaluated in two places, which can drift apart.
+   - Reinvented helper: new code that redoes something an existing helper or the standard library already provides.
+   Also check the diff against itself for blocks repeated across files.
+3. **Default to unifying.** For each match, name the shared form: which implementation stays, and how the other callers use it (called as is, or after a small signature change). Leave duplication in place only when it is minor (a few trivial lines), or when sharing would couple unrelated concepts. Say which of the two applies.
+
+**Proof standard:** cite every location's file:line, show that they do the same job (same inputs, outputs, and side effects), and give the unification.
+
+Duplication findings are **MEDIUM** by default. **HIGH** if the copies have already drifted apart in a way that causes a bug.
+
 ## Pass 3 — Tests
 
 Read [the testing guide](../../../docs/testing.md) for the project's test-quality standard. Map each changed behavior to new or existing tests. Check the success path, the failure or boundary that matters to this change, and the production entry point the tests actually exercise. Do not require a new test per changed function or every possible permutation.
@@ -262,8 +280,6 @@ Convention findings default to **MEDIUM** — the project has strict, explicit r
 - Abstractions that don't earn their keep (helper with one call site, unnecessary indirection)
 - Defensive nil/error checks for values the framework guarantees non-nil/non-error
 - Unnecessary intermediate variables whose only purpose is naming an already-clear expression
-
-**Duplication (MEDIUM):** does the new code replicate logic that already exists elsewhere in the codebase? Grep for the pattern before flagging. Identical or near-identical functions/blocks copied across 2+ packages are MEDIUM — extract to a shared helper. Even 2 copies is worth flagging if the logic is non-trivial (> 3 lines); 3+ copies is always MEDIUM. Duplication is not a style nit — it's a correctness risk (one copy gets fixed, the others don't).
 
 ## Pre-report gate
 
