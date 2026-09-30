@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Adversarial multi-pass PR review — concurrency, security, correctness, tests, then conventions. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
+description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, tests, then conventions. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
 argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [paths to limit the review to]
 ---
 
@@ -51,11 +51,6 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
    d. Carry any call site whose correctness is unclear into Pass 2c.
 
    A function correct for the call site the author had in mind can be wrong for a call site that existed before the change, or for a sibling call site added in the same diff.
-
-7. **Existing implementations** — for each new multi-step flow (calls that together do one job, e.g. dial → list tools → record OAuth), look for code that already does that job:
-   a. Grep for other callers of the functions the flow calls.
-   b. Check sibling entry points that do similar work (other `cmd/mini` commands, other handlers).
-   c. A match does the same job with the same side effects, even if it shares no text with the new code. Carry each match to Pass 4.
 
 Produce a brief triage note to drive Passes 2–4. Do not write it into the final report.
 
@@ -219,6 +214,23 @@ Structural findings are **MEDIUM** by default. **HIGH** only if the mismatch mak
 
 For a deeper standalone structural review, use the `structure-review` skill.
 
+## Pass 2e — Duplication
+
+This pass explores the whole codebase, not just the diff. For every function, type, predicate, and multi-step flow the diff adds or changes, ask: does something already do this job?
+
+1. **Search by behavior, not text.** Duplicates rarely share lines. Grep for other callers of the functions and APIs the new code calls, for the same constants, error messages, and config fields, and read sibling entry points and packages that handle similar work.
+2. **Classify each match:**
+   - Copied code: the same lines in two places.
+   - Parallel implementation: the same job done with different code.
+   - Repeated decision: the same rule or predicate evaluated in two places, which can drift apart.
+   - Reinvented helper: new code that redoes something an existing helper or the standard library already provides.
+   Also check the diff against itself for blocks repeated across files.
+3. **Default to unifying.** For each match, name the shared form: which implementation stays, and how the other callers use it (called as is, or after a small signature change). Leave duplication in place only when it is minor (a few trivial lines), or when sharing would couple unrelated concepts. Say which of the two applies.
+
+**Proof standard:** cite every location's file:line, show that they do the same job (same inputs, outputs, and side effects), and give the unification.
+
+Duplication findings are **MEDIUM** by default. **HIGH** if the copies have already drifted apart in a way that causes a bug.
+
 ## Pass 3 — Tests
 
 Read [the testing guide](../../../docs/testing.md) for the project's test-quality standard. Map each changed behavior to new or existing tests. Check the success path, the failure or boundary that matters to this change, and the production entry point the tests actually exercise. Do not require a new test per changed function or every possible permutation.
@@ -251,7 +263,7 @@ go test -race -tags test -run TestReview ./path/to/package/... -v
 
 ## Pass 4 — Conventions (diff-level only)
 
-This pass works only from the diff, plus the search already done in triage step 7 — no further exploration. Flag quickly, one line each.
+This pass works only from the diff — no deep exploration. Flag quickly, one line each.
 
 Convention findings default to **MEDIUM** — the project has strict, explicit rules about comments, naming, and structure (AGENTS.md). Violating them is not cosmetic; it degrades maintainability and readability, which are priority #2 in the project's principles. Reserve LOW only for findings so trivial they border on preference (e.g. a mildly verbose variable name that still communicates correctly).
 
@@ -268,8 +280,6 @@ Convention findings default to **MEDIUM** — the project has strict, explicit r
 - Abstractions that don't earn their keep (helper with one call site, unnecessary indirection)
 - Defensive nil/error checks for values the framework guarantees non-nil/non-error
 - Unnecessary intermediate variables whose only purpose is naming an already-clear expression
-
-**Duplication (MEDIUM):** does the new code replicate logic that already exists elsewhere in the codebase? Grep for the pattern before flagging, and flag every triage step 7 match: a new flow that does an existing flow's job is duplication even when no line is copied. Proof: cite the existing flow's file:line, show it produces the same effect, and say whether the new code can call it as is or after a small signature change. Identical or near-identical functions/blocks copied across 2+ packages are MEDIUM — extract to a shared helper. Even 2 copies is worth flagging if the logic is non-trivial (> 3 lines); 3+ copies is always MEDIUM. Duplication is not a style nit — it's a correctness risk (one copy gets fixed, the others don't).
 
 ## Pre-report gate
 
