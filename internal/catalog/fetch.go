@@ -59,6 +59,7 @@ func download(ctx context.Context, client *http.Client, url string) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
+	// The body is read in full, or its read error returned, before this runs; a close error changes nothing.
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch catalog: status %d", resp.StatusCode)
