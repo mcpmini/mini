@@ -22,19 +22,19 @@ type claudeImport struct {
 }
 
 // source names where the servers come from in messages: the agent's name, or the --from path.
-func importClaudeFormat(configDir, source, path string) int {
+func importClaudeFormat(configDir, source, path string) []string {
 	data, err := importers.ReadConfigFile(path)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
-		return 0
+		return nil
 	}
 	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
 	imp := claudeImport{configDir: configDir, source: source, selfPath: selfPath}
 	servers := importers.ExtractClaudeMCPServers(data)
-	imported := 0
+	var imported []string
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		if imp.importEntry(name, servers[name]) {
-			imported++
+			imported = append(imported, name)
 		}
 	}
 	return imported

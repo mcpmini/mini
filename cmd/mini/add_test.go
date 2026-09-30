@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/config"
 )
 
 func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
@@ -292,6 +293,23 @@ func TestConnectAndAuthorizeIfNeeded_onlyStaticAuthSkipsLogin(t *testing.T) {
 				t.Errorf("login attempted = %v, want %v; output = %q", got, tt.wantLogin, out.String())
 			}
 		})
+	}
+}
+
+func TestAuthUndiscovered(t *testing.T) {
+	tests := []struct {
+		name string
+		sc   config.ServerConfig
+		want bool
+	}{
+		{"http without auth", config.ServerConfig{Transport: "http", URL: "https://x.example/mcp"}, true},
+		{"http with auth", config.ServerConfig{Transport: "http", URL: "https://x.example/mcp", Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}, false},
+		{"stdio", config.ServerConfig{Command: "x"}, false},
+	}
+	for _, tt := range tests {
+		if got := authUndiscovered(tt.sc); got != tt.want {
+			t.Errorf("%s: authUndiscovered = %v, want %v", tt.name, got, tt.want)
+		}
 	}
 }
 

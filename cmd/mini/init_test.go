@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -61,7 +62,7 @@ func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
 	if err := os.WriteFile(src, []byte(claudeJSON), 0600); err != nil {
 		t.Fatal(err)
 	}
-	count := importClaudeFormat(configDir, "Claude Code", src)
+	count := len(importClaudeFormat(configDir, "Claude Code", src))
 	if count != 1 {
 		t.Errorf("imported %d servers, want 1 (mini should be skipped)", count)
 	}
@@ -170,11 +171,11 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 			before, _ := os.ReadFile(serverFile) //nolint:errcheck // compared below
 			writeImportSource(t, src, `{"mcpServers": `+tt.reimport+`}`)
 
-			var n int
-			out := captureStdout(t, func() { n = importClaudeFormat(configDir, "Claude Code", src) })
+			var imported []string
+			out := captureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
 
-			if after, _ := os.ReadFile(serverFile); n != 0 || string(after) != string(before) { //nolint:errcheck // a missing file fails the comparison
-				t.Errorf("imported %d, foo.yaml %q -> %q; want nothing imported and the file unchanged", n, before, after)
+			if after, _ := os.ReadFile(serverFile); len(imported) != 0 || string(after) != string(before) { //nolint:errcheck // a missing file fails the comparison
+				t.Errorf("imported %v, foo.yaml %q -> %q; want nothing imported and the file unchanged", imported, before, after)
 			}
 			if !strings.Contains(out, tt.wantLine) {
 				t.Errorf("stdout %q missing %q", out, tt.wantLine)
@@ -195,11 +196,11 @@ func TestImportClaudeFormat_ImportsOnlyNewServers(t *testing.T) {
 		"foo": {"type": "http", "url": "https://foo.example/mcp"},
 		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`)
 
-	var n int
-	captureStdout(t, func() { n = importClaudeFormat(configDir, "Claude Code", src) })
+	var imported []string
+	captureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
 
-	if n != 1 {
-		t.Errorf("second import = %d, want 1 (only bar is new)", n)
+	if !slices.Equal(imported, []string{"bar"}) {
+		t.Errorf("second import = %v, want [bar] (only bar is new)", imported)
 	}
 	if _, err := os.Stat(filepath.Join(configDir, "servers", "bar.yaml")); err != nil {
 		t.Errorf("bar.yaml not written: %v", err)

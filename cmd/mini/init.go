@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/spf13/cobra"
 )
 
@@ -39,63 +40,69 @@ func runInit(configDir string, f initFlags) {
 		fatalf("create config dirs: %v", err)
 	}
 	fmt.Printf("config directory: %s\n", configDir)
-	if imported := importServers(configDir, f.from, importConfirmer(p, f.yes)); imported > 0 {
-		fmt.Printf("imported %d server(s)\n", imported)
+	imported := importServers(configDir, f.from, importConfirmer(p, f.yes))
+	if len(imported) > 0 {
+		fmt.Printf("imported %d server(s)\n", len(imported))
 	}
-	runLoginStep(loginStepParams{
+	detectImportedOAuth(oauthDetectParams{configDir: configDir, names: imported, clock: clock.System(), errOut: os.Stderr})
+	runLoginStep(newLoginStepParams(configDir, f.yes, p))
+	printInstallInstructions()
+}
+
+func newLoginStepParams(configDir string, autoYes bool, p prompter) loginStepParams {
+	return loginStepParams{
 		configDir: configDir,
-		autoYes:   f.yes,
+		autoYes:   autoYes,
 		confirm:   p.confirm,
 		ask:       p.ask,
 		logIn:     logIn,
 		out:       os.Stdout,
 		errOut:    os.Stderr,
-	})
-	printInstallInstructions()
+	}
 }
 
-func importServers(configDir, from string, prompt func(string) bool) int {
+func importServers(configDir, from string, prompt func(string) bool) []string {
 	if from != "" {
 		return importFrom(configDir, from, prompt)
 	}
 	return importDetected(configDir, prompt)
 }
 
-func importDetected(configDir string, prompt func(string) bool) int {
+func importDetected(configDir string, prompt func(string) bool) []string {
 	clients := detectAgentClients()
 	if len(clients) == 0 {
 		fmt.Println("no agent configs detected")
-		return 0
+		return nil
 	}
-	total := 0
+	var names []string
 	for _, c := range clients {
-		total += importClientIfConfirmed(configDir, c, prompt)
+		names = append(names, importClientIfConfirmed(configDir, c, prompt)...)
 	}
-	return total
+	return names
 }
 
-func importClientIfConfirmed(configDir string, c agentClient, prompt func(string) bool) int {
+func importClientIfConfirmed(configDir string, c agentClient, prompt func(string) bool) []string {
 	q := fmt.Sprintf("import MCP servers from %s (%s)?", c.Name, c.ConfigPath)
 	if !prompt(q) {
-		return 0
+		return nil
 	}
-	n := importClaudeFormat(configDir, c.Name, c.ConfigPath)
-	fmt.Printf("  imported %d server(s) from %s\n", n, c.Name)
-	return n
+	names := importClaudeFormat(configDir, c.Name, c.ConfigPath)
+	fmt.Printf("  imported %d server(s) from %s\n", len(names), c.Name)
+	return names
 }
 
-func importFrom(configDir, from string, prompt func(string) bool) int {
+func importFrom(configDir, from string, prompt func(string) bool) []string {
 	path := resolveFromPath(from)
 	if _, err := os.Stat(path); err != nil {
 		fatalf("config not found: %s", path)
 	}
 	q := fmt.Sprintf("import MCP servers from %s?", path)
 	if !prompt(q) {
-		return 0
+		return nil
 	}
-	n := importClaudeFormat(configDir, path, path)
-	fmt.Printf("imported %d server(s) from %s\n", n, path)
-	return n
+	names := importClaudeFormat(configDir, path, path)
+	fmt.Printf("imported %d server(s) from %s\n", len(names), path)
+	return names
 }
 
 func resolveFromPath(from string) string {
