@@ -131,8 +131,7 @@ func ReadTokenState(configDir, serverName string) (TokenState, error) {
 	return TokenExpired, nil
 }
 
-// Forget deletes the stored token and client registration for a server name.
-func Forget(configDir, serverName string) error {
+func DeleteCredentials(configDir, serverName string) error {
 	var errs []error
 	for _, path := range []string{tokenPath(configDir, serverName), registrationPath(configDir, serverName)} {
 		if err := os.Remove(path); err != nil && !IsNotFound(err) {

@@ -270,9 +270,7 @@ func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, 
 		return nil, err
 	}
 	sc := ops.WithBundledPermissions(*p.ServerCfg)
-	sc.BlockPrivateIPs = true
-	// Connect before saving so a bad URL leaves nothing on disk. A new-server install
-	// never replaces a running one, so an overlapping add can't roll back the winner.
+	sc.BlockPrivateIPs = true // an agent picked the URL; keep it off the local network after a restart too
 	err := s.addUpstream(ctx, s.newServerInstall(sc))
 	if errors.Is(err, errAlreadyRegistered) {
 		return nil, errAlreadyRunning(sc.Name)

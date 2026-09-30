@@ -42,8 +42,6 @@ func ReadConfigFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-// AddServerYAML adds one new server, refusing a configured name with
-// ops.ErrAlreadyConfigured.
 func AddServerYAML(configDir, name string, sc ServerYAML) error {
 	saved, err := ops.AddServer(configDir, toServerConfig(name, sc))
 	if err != nil {
@@ -53,8 +51,7 @@ func AddServerYAML(configDir, name string, sc ServerYAML) error {
 	return nil
 }
 
-// ImportServer adds one server of a batch import. A configured name is skipped
-// rather than failing the batch, so re-running an import adds only what's new.
+// ImportServer skips a configured name instead of failing, so re-running an import adds only what's new.
 func ImportServer(configDir, name string, sc ServerYAML) (added bool, err error) {
 	err = AddServerYAML(configDir, name, sc)
 	if errors.Is(err, ops.ErrAlreadyConfigured) {

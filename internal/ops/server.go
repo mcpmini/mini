@@ -19,8 +19,6 @@ var (
 	ErrDefinedInline     = errors.New("defined in config.yaml")
 )
 
-// SavedServer lists the files written for a server, so the CLI can report them;
-// ops never prints, since the config tool runs where stdout is the MCP stream.
 type SavedServer struct {
 	Path               string
 	ProjectionPath     string
@@ -37,8 +35,6 @@ func (s SavedServer) Print(w io.Writer, name string) {
 	}
 }
 
-// AddServer writes a new server. It refuses a configured name so replacing a
-// working server always takes an explicit remove first.
 func AddServer(configDir string, sc config.ServerConfig) (SavedServer, error) {
 	if err := validServerName(sc.Name); err != nil {
 		return SavedServer{}, err
@@ -46,7 +42,7 @@ func AddServer(configDir string, sc config.ServerConfig) (SavedServer, error) {
 	if IsConfigured(configDir, sc.Name) {
 		return SavedServer{}, fmt.Errorf("%s is %w", sc.Name, ErrAlreadyConfigured)
 	}
-	if err := forgetServer(configDir, sc.Name); err != nil {
+	if err := deleteStateStoredByName(configDir, sc.Name); err != nil {
 		return SavedServer{}, err
 	}
 	return writeServer(configDir, sc)
@@ -93,16 +89,15 @@ func DeleteServer(configDir, name string) error {
 	if err := os.Remove(path); err != nil {
 		return deleteError(configDir, name, err)
 	}
-	return forgetServer(configDir, name)
+	return deleteStateStoredByName(configDir, name)
 }
 
-// Tokens are stored by server name alone, so a later server reusing the name
-// would otherwise be sent the old server's credentials.
-func forgetServer(configDir, name string) error {
+// Credentials are stored by name alone, so a later server reusing it would be sent them.
+func deleteStateStoredByName(configDir, name string) error {
 	if err := os.Remove(config.ServerMetaPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := auth.Forget(configDir, name); err != nil {
+	if err := auth.DeleteCredentials(configDir, name); err != nil {
 		return fmt.Errorf("forget %s credentials: %w", name, err)
 	}
 	return nil

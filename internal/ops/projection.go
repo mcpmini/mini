@@ -16,8 +16,6 @@ func DetectProjectionKey(sc config.ServerConfig) string {
 	return defaults.DetectKey(cmdLine, sc.URL)
 }
 
-// InstallBundledProjection returns the path of the projection file it wrote, or
-// "" when the server isn't a known upstream or already has one.
 func InstallBundledProjection(configDir string, sc config.ServerConfig) string {
 	key := DetectProjectionKey(sc)
 	if key == "" {
@@ -49,8 +47,6 @@ func projectionExists(path string) bool {
 	return err == nil
 }
 
-// WithBundledPermissions fills in default hidden/protected tools for a known
-// server. Permissions the user set, such as `mini add --protected`, win.
 func WithBundledPermissions(sc config.ServerConfig) config.ServerConfig {
 	if sc.Permissions == nil {
 		sc.Permissions = loadBundledPermissions(sc)
