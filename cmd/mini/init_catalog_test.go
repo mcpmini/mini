@@ -200,6 +200,28 @@ func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	}
 }
 
+func TestSelectCatalogEntriesPrintsSetupNotesAfterPartialWrite(t *testing.T) {
+	entries := []catalog.Entry{
+		{Name: "first", URL: "https://first.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://first.example/tokens"},
+		{Name: "invalid/name", URL: "https://second.example/mcp"},
+	}
+	out := &bytes.Buffer{}
+
+	err := selectCatalogEntries(catalogStepParams{
+		configDir: t.TempDir(),
+		ask:       func(string) string { return "1-2" },
+		out:       out,
+		errOut:    &bytes.Buffer{},
+	}, entries)
+
+	if err == nil {
+		t.Fatal("selectCatalogEntries succeeded, want the second server write to fail")
+	}
+	if !strings.Contains(out.String(), "first needs an access token: create one at https://first.example/tokens") {
+		t.Errorf("output missing setup note for the written server:\n%s", out.String())
+	}
+}
+
 func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	dir := t.TempDir()
 	out := &bytes.Buffer{}

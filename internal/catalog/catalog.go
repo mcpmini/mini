@@ -178,6 +178,10 @@ func isHiddenOrControl(r rune) bool {
 }
 
 func validateHTTPSURL(rawURL string) error {
+	// Setup URLs are printed in credential instructions; hidden formatting could disguise where they lead.
+	if strings.ContainsFunc(rawURL, func(r rune) bool { return r < 0x21 || r > 0x7e }) {
+		return fmt.Errorf("url must be printable ASCII")
+	}
 	u, err := url.ParseRequestURI(rawURL)
 	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return fmt.Errorf("url must be an https URL")

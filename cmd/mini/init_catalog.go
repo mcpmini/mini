@@ -139,11 +139,8 @@ func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {
 			continue
 		}
 		written, err := writeCatalogEntries(p, entries, indexes)
-		if err != nil {
-			return err
-		}
 		printSetupNotes(p.out, entries, written)
-		return nil
+		return err
 	}
 }
 
