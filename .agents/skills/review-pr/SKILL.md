@@ -6,6 +6,8 @@ argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [pa
 
 Adversarial review of $ARGUMENTS (or the current branch diff if blank).
 
+Read [Go engineering in mini](../../../docs/go-guidelines.md) for shared design and correctness guidance. Treat smell checks as investigation prompts; assess findings by reachable behavior and consequences.
+
 **Assume bugs exist. Your job is to find and prove them.**
 
 Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REJECT.
@@ -60,7 +62,7 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 
 **Goroutine lifecycle**
 - What stops it? A done-channel, context cancellation, or WaitGroup? `context.Background()` passed to a long-lived goroutine is a red flag — there is no way to cancel it, and leaks compound on every call.
-- If it panics, is there a `recover`? An unrecovered panic in a goroutine kills the process.
+- Trace reachable panic paths. An unrecovered panic in a goroutine kills the process, but ordinary network or parsing errors do not require blanket recovery. Check recovery only where the contract calls for containment.
 - Does it hold resources (subprocess, listener, ticker, connection) that leak if it never exits?
 
 **Shared state access**
@@ -68,8 +70,8 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 - Watch for: partially-protected structs; closures capturing outer mutable state.
 
 **Map and slice concurrent access**
-- Concurrent map read+write is a **hard fatal crash** (`concurrent map read and map write`), not a data race the detector catches at test time. Any shared map without full lock coverage on all read paths (including `range`) is a production crash waiting to happen.
-- Slices are not crash-safe either — concurrent append on the same backing array corrupts memory.
+- Unsynchronized conflicting map access is a data race and can cause a fatal runtime error. The race detector can catch exercised races; a passing run does not prove every interleaving safe.
+- Shared slice headers and backing arrays need protection for conflicting accesses, including append. Trace actual aliasing and accessed elements rather than assuming every shared slice is unsafe.
 
 **Lock discipline**
 - If two mutexes are ever both held, is acquisition order consistent at every call site? Inconsistent order → deadlock.
@@ -79,8 +81,8 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 
 **Channel safety**
 - Sending to a closed channel panics. `select { case ch <- v: default: }` does NOT guard this — `default` fires when the channel is full, not when it is closed.
-- Closing a channel must happen exactly once — `sync.Once` if multiple goroutines could close.
-- `time.After` in a `select` loop leaks a timer goroutine on every iteration until the duration expires; prefer `time.NewTimer` with an explicit `Stop()`.
+- A channel must not be closed twice. Verify closure ownership and coordination; `sync.Once` is one option and does not prevent concurrent sends.
+- Check timer lifetime, repeated allocation, and reset semantics against the supported Go version and injected clock. Modern Go can collect unreferenced timers; `time.After` does not launch a goroutine per call. See [timer changes](https://go.dev/wiki/Go123Timer).
 
 **TOCTOU**
 - Check-then-act pairs where the check is inside a lock and the act is outside it.
@@ -93,20 +95,20 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 
 **Initialization races**
 - Package-level variables mutated after `init` are shared global state — any goroutine touching them needs synchronization.
-- Lazy initialization (`if x == nil { x = ... }`) without `sync.Once` or atomics is a data race.
+- Concurrent lazy initialization needs synchronization or exclusive ownership; `sync.Once`, a mutex, or atomics may provide it.
 - Constructors that start goroutines before returning: callers may not realize the object is "live" the moment `New()` returns.
 
 **Smell test — quick scan for red flags** (grep for these, investigate any hit):
 - `go func()` with no done-channel, no context, and no WaitGroup — orphaned goroutine
 - `context.Background()` or `context.TODO()` inside a spawned goroutine or blocking call
 - `sync.Mutex` in a struct that is passed by value
-- `close(ch)` without `sync.Once` nearby
+- `close(ch)` — verify closure ownership and whether sends can overlap it
 - `select { case ch <- v: default: }` near a `close(ch)` — `default` does not protect against send-on-closed
 - Lock acquired, I/O performed, lock released — blocking call inside a lock
 - Two mutexes acquired in the same function — verify ordering is consistent everywhere
 - `time.Sleep` in production code — usually polling instead of proper signaling
 - `atomic.Value` or `atomic.Pointer` storing a struct with pointer fields — the whole value must be swapped atomically; partial field updates still race
-- `Close()` method without `sync.Once` — double-close panics channels, corrupts state
+- `Close()` — verify its documented repeat-call behavior and synchronization
 - `http.Server.Shutdown(context.Background())` — if any handler can block indefinitely (disabled tool timeout, hanging subprocess), the process never exits; always pass a bounded context
 - RLock held across a network call — blocks reconnect from taking the write lock; snapshot the pointer under the lock, release, then call
 
@@ -197,20 +199,20 @@ Passes 2a–2c work bottom-up: read a function, evaluate it. This pass works top
 
 For each package the diff substantially changes:
 
-1. **Map the flows and name the verbs.** Before reading any function body, trace every execution flow through the package — not just the changed code, but the full flows that pass through it. Name each flow and each action within it as a domain verb phrase ("resolve daemon", "forward request", "refresh expired token"). The verbs are the exercise: as you name actions across flows, the natural methods emerge. Verbs that share state belong on the same type. Verbs that don't share state belong on different types. A verb with no name in the code (inline logic, bare callback) is a missing abstraction. If you can't name a flow without using implementation terms, note that — it's already a signal.
+1. **Map the flows and name the verbs.** Trace the full flows through the changed package before judging isolated functions. Read bodies and callers as needed. Name each flow and action using domain language ("resolve daemon", "forward request", "refresh expired token"). Compare state ownership, invariants, and lifecycle to the existing boundaries. Inline operations and callbacks are candidates only when their structure hides a meaningful contract or creates concrete friction.
 
-2. **Derive the domain model.** Given the flows and verbs, if you were writing this from scratch, what types would you create? Group verbs by shared state into types. The gap between this blank-slate design and the actual code is the finding.
+2. **Derive a candidate domain model.** Group operations by state, invariants, and lifecycle. Compare plausible boundaries against the existing design. A different hypothetical design is not a finding; show the concrete cost or defect the current boundary causes.
 
 3. **Compare to actual structure.** Map each domain concept to the types, files, and functions that implement it. Flag:
    - **Mixed concerns**: a new or modified type handles verbs from multiple unrelated domain concepts. Test: changing concept A forces touching code that implements concept B.
-   - **Missing abstractions**: bare callbacks, anonymous functions, or inline logic where the flows show a named domain concept. Especially: `func()` parameters or closure captures that represent a real domain action with no name.
+   - **Missing abstractions**: recurring policy or ownership invariants that are difficult to express or enforce. A callback or inline operation alone is insufficient evidence.
    - **Cryptic naming**: new names that don't map to any domain verb or noun — you can't predict the behavior without reading the body.
    - **Wrong boundaries**: the diff draws type/file boundaries that don't align with the domain model.
-   - **Over-abstraction**: indirection that doesn't correspond to any domain concept — an interface with one implementation and no test fake, a wrapper that adds no behavior.
+   - **Over-abstraction**: indirection with no useful contract or boundary. A single implementation does not disqualify an interface; show the cost and what would be preserved by removing it.
 
 **Proof standard:** name the domain concept(s), show where they appear in the flow list, and show the specific mismatch in the code. Not "this could be split" — "these are two independent domain concepts (X and Y) sharing a type because [specific evidence]."
 
-Structural findings are **MEDIUM** by default. **HIGH** only if the mismatch makes a critical flow untestable or forces changes across 3+ unrelated files.
+Assess structural findings by demonstrated maintenance cost, testing obstacles, or product risk. File count and disagreement with a hypothetical design do not determine severity.
 
 For a deeper standalone structural review, use the `structure-review` skill.
 
@@ -225,11 +227,11 @@ This pass explores the whole codebase, not just the diff. For every function, ty
    - Repeated decision: the same rule or predicate evaluated in two places, which can drift apart.
    - Reinvented helper: new code that redoes something an existing helper or the standard library already provides.
    Also check the diff against itself for blocks repeated across files.
-3. **Default to unifying.** For each match, name the shared form: which implementation stays, and how the other callers use it (called as is, or after a small signature change). Leave duplication in place only when it is minor (a few trivial lines), or when sharing would couple unrelated concepts. Say which of the two applies.
+3. **Compare shared and separate forms.** For matching contracts, consider which operation should own the shared rule and how callers would use it. Preserve separate implementations when sharing hides different contracts or creates more coupling than it removes. Justify a finding through observed drift or meaningful maintenance cost.
 
 **Proof standard:** cite every location's file:line, show that they do the same job (same inputs, outputs, and side effects), and give the unification.
 
-Duplication findings are **MEDIUM** by default. **HIGH** if the copies have already drifted apart in a way that causes a bug.
+Assess duplication by inconsistent behavior or concrete maintenance cost. Similar code alone does not establish a blocking defect; shared abstraction can also hide different contracts.
 
 ## Pass 3 — Tests
 
@@ -256,28 +258,30 @@ go test -race -tags test -run TestReview ./path/to/package/... -v
 
 **Transport/path symmetry** — if the fix addresses a bug in one code path (e.g. HTTP handler), confirm there is a test that exercises that specific path, not a test that only covers the other path (stdio). A stdio test passing does not prove the HTTP path is fixed.
 
-**Consider REJECT on test coverage alone** if:
+**Investigate a blocking coverage gap** if:
 - An auth, permission, or token-handling path was modified with no test coverage.
 - A goroutine launch or shared-state mutation was added and the race-detector tests don't exercise it.
 - Tests were removed or weakened for a high-risk function without justification.
+
+Name the unprotected contract, realistic failure, existing coverage, and why the missing evidence matters. Missing a new test or a race-detector run alone does not establish a defect or determine the verdict.
 
 ## Pass 4 — Conventions (diff-level only)
 
 This pass works only from the diff — no deep exploration. Flag quickly, one line each.
 
-Convention findings default to **MEDIUM** — the project has strict, explicit rules about comments, naming, and structure (AGENTS.md). Violating them is not cosmetic; it degrades maintainability and readability, which are priority #2 in the project's principles. Reserve LOW only for findings so trivial they border on preference (e.g. a mildly verbose variable name that still communicates correctly).
+Report explicit project-rule violations, but assess their severity from concrete correctness or maintenance consequences. Style preferences are optional suggestions. A redundant comment, single-use helper, or name choice is not automatically a MEDIUM or blocking finding.
 
 **Project style violations** (AGENTS.md):
 - Boolean or empty-string flags as positional args — `check.sh` catches function length and param count mechanically; this is what it misses
 
-**Comments that shouldn't exist (MEDIUM):**
+**Comments to inspect:**
 - Describes what the code does rather than why (rename instead)
 - Section dividers in test files (`// --- setup ---`, `// --- act ---`)
 - Doc-style comment on a function whose name already conveys the contract
 
-**Naming and design (MEDIUM):**
+**Naming and design to inspect:**
 - Names that don't self-document (force the reader to read the body to understand purpose)
-- Abstractions that don't earn their keep (helper with one call site, unnecessary indirection)
+- Abstractions that don't earn their keep; a single-use helper may still clarify an operation or isolate a resource lifetime
 - Defensive nil/error checks for values the framework guarantees non-nil/non-error
 - Unnecessary intermediate variables whose only purpose is naming an already-clear expression
 
@@ -328,6 +332,6 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 **Verdict:**
 - **APPROVE** — no HIGH or MEDIUM; LOWs are optional cleanup
 - **REQUEST CHANGES** — one or more MEDIUMs that must be fixed before merge
-- **REJECT** — any HIGH; or a security/auth path with no test coverage; or a proven race in code exercised by the race-detector suite
+- **REJECT** — any HIGH supported by a reachable failure and consequential impact. Assess coverage gaps by the unprotected contract and risk, and races by their behavior, rather than a categorical test-count rule.
 
 Don't pad the report. If the code is correct and well-tested, say so in two sentences and APPROVE.
