@@ -3,7 +3,6 @@
 package auth
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -11,13 +10,7 @@ import (
 )
 
 func UseLoopbackHTTPClient() {
-	noRedirectClient = &http.Client{
-		Timeout:   30 * time.Second,
-		Transport: &http.Transport{},
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	noRedirectClient = transport.NewNoRedirectClient(transport.NoRedirectClientOptions{Timeout: 30 * time.Second})
 }
 
 func UseLoopbackEndpoints() {

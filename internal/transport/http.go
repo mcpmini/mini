@@ -101,7 +101,7 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 		authProvider:            cfg.AuthProvider,
 		authHeaderName:          cfg.AuthHeaderName,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
-		client:                  noRedirectClient(resolveClientTimeout(cfg.ClientTimeout), cfg.BlockPrivateIPs),
+		client:                  NewNoRedirectClient(NoRedirectClientOptions{Timeout: resolveClientTimeout(cfg.ClientTimeout), BlockPrivateIPs: cfg.BlockPrivateIPs}),
 		clock:                   cfg.Clock,
 		listenerCtx:             listenerCtx,
 		listenerCancel:          listenerCancel,
@@ -120,15 +120,20 @@ func (c *HTTPConnection) newStreamClient() *http.Client {
 	return &http.Client{CheckRedirect: c.client.CheckRedirect, Transport: c.client.Transport}
 }
 
-// noRedirectClient blocks redirects to prevent session token exfiltration to a different host.
-func noRedirectClient(timeout time.Duration, blockPrivateIPs bool) *http.Client {
+type NoRedirectClientOptions struct {
+	Timeout         time.Duration
+	BlockPrivateIPs bool
+}
+
+// NewNoRedirectClient blocks redirects to prevent session token exfiltration to a different host.
+func NewNoRedirectClient(opts NoRedirectClientOptions) *http.Client {
 	client := &http.Client{
-		Timeout: timeout,
+		Timeout: opts.Timeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
 	}
-	if blockPrivateIPs {
+	if opts.BlockPrivateIPs {
 		applySsrfTransport(client)
 	}
 	return client
@@ -139,6 +144,7 @@ func applySsrfTransport(client *http.Client) {
 	if ok {
 		t := dt.Clone()
 		t.DialContext = SSRFSafeDialer()
+		t.Proxy = nil
 		client.Transport = t
 	}
 }

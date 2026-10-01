@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -295,6 +296,77 @@ func TestHTTPConnection_redirectBlocked(t *testing.T) {
 	conn, _ := NewHTTPConnection(HTTPConnectionConfig{URL: redirecter.URL, Clock: clock.NewFake()})
 	_, err := conn.Call(t.Context(), "ping", nil)
 	_ = err
+}
+
+func TestNewNoRedirectClient_redirectNotFollowed(t *testing.T) {
+	var targetHits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHits.Add(1)
+	}))
+	t.Cleanup(target.Close)
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	t.Cleanup(redirector.Close)
+
+	resp, err := NewNoRedirectClient(NoRedirectClientOptions{}).Get(redirector.URL)
+	if err != nil {
+		t.Fatalf("GET redirect response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound || targetHits.Load() != 0 {
+		t.Fatalf("status = %d, redirect target hits = %d", resp.StatusCode, targetHits.Load())
+	}
+}
+
+func TestNewNoRedirectClient_blockPrivateIPs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	for _, tc := range []struct {
+		name           string
+		blockPrivateIP bool
+		wantBlocked    bool
+	}{
+		{name: "blocked", blockPrivateIP: true, wantBlocked: true},
+		{name: "allowed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := NewNoRedirectClient(NoRedirectClientOptions{BlockPrivateIPs: tc.blockPrivateIP})
+			resp, err := client.Get(server.URL)
+			if tc.wantBlocked {
+				if err == nil || !strings.Contains(err.Error(), "connection blocked") {
+					t.Fatalf("GET error = %v, want SSRF dialer block", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GET loopback server: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusNoContent {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+			}
+		})
+	}
+}
+
+func TestNewNoRedirectClient_blockPrivateIPsBypassesProxies(t *testing.T) {
+	client := NewNoRedirectClient(NoRedirectClientOptions{BlockPrivateIPs: true})
+	// Checked structurally: Go reads the proxy environment once per process, so a test can't set HTTP_PROXY reliably.
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok || tr.Proxy != nil {
+		t.Fatalf("transport = %T with proxy set = %v; want *http.Transport without a proxy, so the SSRF dialer sees the destination", client.Transport, ok && tr.Proxy != nil)
+	}
+}
+
+func TestNewNoRedirectClient_timeout(t *testing.T) {
+	client := NewNoRedirectClient(NoRedirectClientOptions{Timeout: 7 * time.Second})
+	if client.Timeout != 7*time.Second {
+		t.Fatalf("timeout = %v, want %v", client.Timeout, 7*time.Second)
+	}
 }
 
 func assertFastTimeout(t *testing.T, start time.Time) {

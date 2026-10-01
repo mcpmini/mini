@@ -42,8 +42,15 @@ func oauthHTTPContext(ctx context.Context, resourceURL string) context.Context {
 		return context.WithValue(ctx, oauth2.HTTPClient, noRedirectClient)
 	}
 	client := *noRedirectClient
-	client.Transport = resourceTransport{base: noRedirectClient.Transport, resourceURL: resourceURL}
+	client.Transport = resourceTransport{base: effectiveTransport(noRedirectClient), resourceURL: resourceURL}
 	return context.WithValue(ctx, oauth2.HTTPClient, &client)
+}
+
+func effectiveTransport(c *http.Client) http.RoundTripper {
+	if c.Transport == nil {
+		return http.DefaultTransport
+	}
+	return c.Transport
 }
 
 type resourceTransport struct {

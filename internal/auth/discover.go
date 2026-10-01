@@ -17,15 +17,10 @@ import (
 // noRedirectClient is shared by discovery and registration. It blocks redirects
 // (prevents session-token exfiltration) and uses SSRFSafeDialer (prevents discovery
 // from probing internal network endpoints via attacker-controlled metadata URLs).
-var noRedirectClient = &http.Client{
-	Timeout: 30 * time.Second,
-	Transport: &http.Transport{
-		DialContext: transport.SSRFSafeDialer(),
-	},
-	CheckRedirect: func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
-	},
-}
+var noRedirectClient = transport.NewNoRedirectClient(transport.NoRedirectClientOptions{
+	Timeout:         30 * time.Second,
+	BlockPrivateIPs: true,
+})
 
 // ServerMeta contains OAuth endpoints discovered for an MCP server.
 type ServerMeta struct {
