@@ -32,9 +32,9 @@ The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`),
 
 Headers, env and auth are the only server fields where `${VAR}` expands, so stripping them also keeps an agent's server from reading the user's environment. A `${VAR}` in `url`, `command` or `args` fails to load, so `add_server` refuses it.
 
-**Names are never reused into old state**: `add_server` refuses a name that is already configured or running (remove it with `remove_server` first). Adding or removing a server deletes the OAuth token, client registration and OAuth marker stored under its name, because those are keyed by name alone: a server reusing the name would otherwise be sent the old one's token. Bundled vendor auth is picked by an HTTP server's host alone, never by a `command` on it.
+**Reusing a name**: `add_server` refuses a name that is already configured or running (remove it with `remove_server` first). Adding or removing a server deletes the OAuth token, client registration and OAuth marker stored under its name, because those are keyed by name alone: a server reusing the name would otherwise be sent the old one's token. Two paths still reach the old token, because a token isn't tied to the server it was issued for (#266): editing a server's `url` in its file, and replacing a server with `mini rm` and `mini add` while mini is running. Bundled vendor auth is picked by an HTTP server's host alone, never by a `command` on it.
 
-**`remove_server` deletes config**: like `mini rm`, it deletes `servers/<name>.yaml` for any server, including ones the user added. Block the `config` tool in the MCP client to keep agents from changing servers.
+**`remove_server` deletes config**: like `mini rm`, it deletes `servers/<name>.yaml` and `<name>.proj.yaml` for any server, including ones the user added. Block the `config` tool in the MCP client to keep agents from changing servers.
 
 **SSRF blocking** (`internal/transport/ssrf.go: ValidateURL`):
 
