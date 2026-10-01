@@ -17,6 +17,15 @@ func LoadServerSet(configDir string) ServerSet {
 	return set
 }
 
+// LoadLenient loads server files while tolerating broken sources. Callers that
+// need global settings should use LoadMain.
+func LoadLenient(configDir string) ([]ServerConfig, []SourceError) {
+	load := newLoadProjectionsResult()
+	servers := loadLenientServers(configDir, &load)
+	mergeKnownAuth(configDir, servers)
+	return servers, load.SourceErrors
+}
+
 func (set ServerSet) IsEnabled(name string) bool {
 	sc, ok := set.Servers[name]
 	return ok && sc.IsEnabled()

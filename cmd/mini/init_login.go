@@ -36,11 +36,14 @@ func (c loginCandidate) reason() string {
 }
 
 func runLoginStep(p loginStepParams) {
-	cfg, servers, err := config.Load(p.configDir)
+	cfg, err := config.LoadMain(p.configDir)
 	if err != nil {
-		// Imports are already written; an env var this shell doesn't export must not abort init.
-		fmt.Fprintf(p.errOut, "skipping OAuth login: load config: %v\n", err)
+		fmt.Fprintf(p.errOut, "skipping OAuth login: %v\n", err)
 		return
+	}
+	servers, sourceErrors := config.LoadLenient(p.configDir)
+	for _, sourceErr := range sourceErrors {
+		fmt.Fprintf(p.errOut, "warning: %v\n", sourceErr.Err)
 	}
 	candidates := findLoginCandidates(p.configDir, servers)
 	if len(candidates) == 0 {

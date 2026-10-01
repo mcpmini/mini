@@ -41,9 +41,6 @@ func runInit(configDir string, f initFlags) {
 	}
 	fmt.Printf("config directory: %s\n", configDir)
 	imported := importServers(configDir, f.from, importConfirmer(p, f.yes))
-	if len(imported) > 0 {
-		fmt.Printf("imported %d server(s)\n", len(imported))
-	}
 	detectImportedOAuth(oauthDetectParams{configDir: configDir, names: imported, clock: clock.System(), errOut: os.Stderr})
 	runLoginStep(newLoginStepParams(configDir, f.yes, p))
 	printInstallInstructions()

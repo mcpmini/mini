@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -262,6 +264,20 @@ func TestRunAdd(t *testing.T) {
 			t.Fatal("expected error for mixed HTTP and stdio modes")
 		}
 	})
+}
+
+func TestProbeConnectionInvalidConfigMakesNoRequest(t *testing.T) {
+	var hit atomic.Bool
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit.Store(true) }))
+	defer upstream.Close()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("bad: [yaml\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	err := probeConnection(context.Background(), dir, config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL})
+	if err == nil || !strings.Contains(err.Error(), "load config") || hit.Load() {
+		t.Errorf("probeConnection error=%v request hit=%v, want load-config error and no request", err, hit.Load())
+	}
 }
 
 func TestConnectAndAuthorizeIfNeeded_onlyStaticAuthSkipsLogin(t *testing.T) {

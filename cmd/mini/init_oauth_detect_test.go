@@ -168,15 +168,28 @@ func TestDetectImportedOAuthProbesOnlyHTTPServersImportedThisRun(t *testing.T) {
 	}
 }
 
-func TestDetectImportedOAuthWithNoImportsDoesNotProbe(t *testing.T) {
+func TestDetectImportedOAuthWithNoImportsStaysSilent(t *testing.T) {
 	configDir := t.TempDir()
-	url, requests := recordingUpstream(t)
-	importFromMCPJSON(t, configDir, `{"svc": {"type": "http", "url": "`+url+`/svc"}}`)
+	if err := os.MkdirAll(filepath.Join(configDir, "servers"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeImportSource(t, filepath.Join(configDir, "servers", "broken.yaml"), "bad: [yaml\n")
+	errOut := &bytes.Buffer{}
+	detectImportedOAuth(oauthDetectParams{configDir: configDir, clock: clock.System(), errOut: errOut})
 
-	detect(configDir, nil)
+	if errOut.Len() != 0 {
+		t.Errorf("stderr = %q, want empty", errOut.String())
+	}
+}
 
-	if got := requests.seen(); len(got) != 0 {
-		t.Errorf("upstream saw requests for %v with nothing imported", got)
+func TestDetectImportedOAuthProbesDespiteBrokenUnrelatedFile(t *testing.T) {
+	configDir := t.TempDir()
+	url := upstreamAnswering(t, http.StatusUnauthorized, "Bearer")
+	names := importFromMCPJSON(t, configDir, `{"svc": {"type": "http", "url": "`+url+`"}}`)
+	writeImportSource(t, filepath.Join(configDir, "servers", "broken.yaml"), "bad: [yaml\n")
+	detect(configDir, names)
+	if !config.IsOAuthDetected(configDir, "svc") {
+		t.Error("OAuth marker not written despite unrelated broken server file")
 	}
 }
 
@@ -237,5 +250,8 @@ func TestInitCommandDetectsOAuthOnImportedServer(t *testing.T) {
 
 	if !strings.Contains(out, "svc (no token)") || !strings.Contains(out, "mini auth svc") {
 		t.Errorf("init output = %q, want the login step to list svc", out)
+	}
+	if strings.Count(out, "imported") != 1 {
+		t.Errorf("init output has %d imported lines, want one: %q", strings.Count(out, "imported"), out)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -276,6 +277,72 @@ func TestLoadProjections_parity(t *testing.T) {
 					t.Errorf("parity mismatch for %s:\n  LoadProjections: %v\n  config.Load: %v",
 						s.Name, projKeys(lp), projKeys(s.Projections))
 				}
+			}
+		})
+	}
+}
+
+func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "name: good\ncommand: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
+	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "name: unset\ncommand: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n")
+	servers, sourceErrors := config.LoadLenient(dir)
+	var names []string
+	for _, server := range servers {
+		names = append(names, server.Name)
+	}
+	if slices.Sort(names); !slices.Equal(names, []string{"good", "unset"}) {
+		t.Errorf("servers = %v, want [good unset]", names)
+	}
+	if len(sourceErrors) != 1 || sourceErrors[0].Path != filepath.Join(dir, "servers", "broken.yaml") {
+		t.Errorf("source errors = %+v, want only broken.yaml", sourceErrors)
+	}
+}
+
+func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), "name: detected\ncommand: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "custom.yaml"), "name: custom\ncommand: echo\nauth:\n  type: bearer\n")
+	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
+		t.Fatal(err)
+	}
+	servers, _ := config.LoadLenient(dir)
+	byName := map[string]config.ServerConfig{}
+	for _, server := range servers {
+		byName[server.Name] = server
+	}
+	if byName["detected"].Auth == nil || byName["detected"].Auth.Type != config.AuthTypeOAuth2 {
+		t.Errorf("detected auth = %+v, want oauth2", byName["detected"].Auth)
+	}
+	if byName["custom"].Auth == nil || byName["custom"].Auth.Type != config.AuthTypeBearer {
+		t.Errorf("custom auth = %+v, want bearer", byName["custom"].Auth)
+	}
+}
+
+func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{"valid settings load", "disable_auth_browser_open: true\n", ""},
+		{"invalid YAML", "bad: [yaml\n", "parse config"},
+		{"unset env var in an inline server", "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  headers:\n    X-Token: \"${LOAD_MAIN_UNSET}\"\n", "LOAD_MAIN_UNSET"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, "config.yaml"), tt.yaml)
+			cfg, err := config.LoadMain(dir)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || cfg != nil {
+					t.Errorf("LoadMain = (%#v, %v), want (nil, error containing %q) rather than defaults", cfg, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || cfg == nil || !cfg.DisableAuthBrowserOpen {
+				t.Errorf("LoadMain = (%#v, %v), want disable_auth_browser_open", cfg, err)
 			}
 		})
 	}
