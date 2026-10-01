@@ -353,6 +353,16 @@ func TestNewNoRedirectClient_blockPrivateIPs(t *testing.T) {
 	}
 }
 
+// Go's environment proxy lookup is cached per process, so this checks the transport's
+// proxy setting rather than setting HTTP_PROXY and dialing.
+func TestNewNoRedirectClient_blockPrivateIPsBypassesProxies(t *testing.T) {
+	client := NewNoRedirectClient(NoRedirectClientOptions{BlockPrivateIPs: true})
+	tr, ok := client.Transport.(*http.Transport)
+	if !ok || tr.Proxy != nil {
+		t.Fatalf("transport = %T with proxy set = %v; want *http.Transport without a proxy, so the SSRF dialer sees the destination", client.Transport, ok && tr.Proxy != nil)
+	}
+}
+
 func TestNewNoRedirectClient_timeout(t *testing.T) {
 	client := NewNoRedirectClient(NoRedirectClientOptions{Timeout: 7 * time.Second})
 	if client.Timeout != 7*time.Second {
