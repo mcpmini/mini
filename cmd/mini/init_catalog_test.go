@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -72,7 +73,7 @@ func TestAvailableCatalogEntriesGroupsCategoriesInFirstSeenOrder(t *testing.T) {
 }
 
 func TestCatalogSourcePrefersPublishedCatalog(t *testing.T) {
-	published := `{"schema_version":1,"entries":[{"name":"remote","url":"https://remote.example/mcp","description":"remote","category":"Test","auth":"none"}]}`
+	published := `{"schema_version":1,"entries":[{"name":"remote","title":"Remote","url":"https://remote.example/mcp","description":"remote","category":"Test","auth":"none"}]}`
 	tests := []struct {
 		name      string
 		status    int
@@ -133,13 +134,13 @@ func TestEntryHostShowsWhereTheServerIs(t *testing.T) {
 
 func TestPrintCatalogEntriesNumbersEntriesUnderCategoryHeaders(t *testing.T) {
 	entries := []catalog.Entry{
-		{Name: "a", Description: "first", Category: "Dev", URL: "https://a.example/mcp"},
-		{Name: "c", Description: "third", Category: "Dev", URL: "https://c.example/mcp"},
-		{Name: "b", Description: "second", Category: "Data", URL: "https://b.example/mcp"},
+		{Name: "a", Title: "A", Description: "first", Category: "Dev", URL: "https://a.example/mcp", Auth: catalog.AuthOAuth2},
+		{Name: "c", Title: "C", Description: "third", Category: "Dev", URL: "https://c.example/mcp", Auth: catalog.AuthNone},
+		{Name: "b", Title: "B", Description: "second", Category: "Data", URL: "https://b.example/mcp", Auth: catalog.AuthToken},
 	}
 	var out bytes.Buffer
 	printCatalogEntries(&out, entries)
-	want := "Available MCP servers:\n  Dev:\n    1. a [a.example] - first\n    2. c [c.example] - third\n  Data:\n    3. b [b.example] - second\n"
+	want := "Available MCP servers:\n  Dev:\n    1. A [a.example] - first (OAuth login)\n    2. C [c.example] - third\n  Data:\n    3. B [b.example] - second (needs an access token)\n"
 	if out.String() != want {
 		t.Errorf("output =\n%s\nwant\n%s", out.String(), want)
 	}
@@ -169,6 +170,9 @@ func TestRunCatalogStepNeverReplacesAnExistingServerFile(t *testing.T) {
 	if !strings.Contains(out.String(), "  github already configured in mini") {
 		t.Errorf("output does not report the existing servers/github.yaml:\n%s", out.String())
 	}
+	if strings.Contains(out.String(), "GITHUB_TOKEN") {
+		t.Errorf("setup note printed for github, which was not written:\n%s", out.String())
+	}
 }
 
 func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
@@ -191,8 +195,30 @@ func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	if errOut.Len() != 0 {
 		t.Errorf("stderr = %q, want nothing: the login step reports broken files", errOut.String())
 	}
-	if !strings.Contains(out.String(), "Available MCP servers:") || strings.Contains(out.String(), " linear [") {
+	if !strings.Contains(out.String(), "Available MCP servers:") || strings.Contains(out.String(), " Linear [") {
 		t.Errorf("catalog should be offered without linear, configured as my-linear:\n%s", out.String())
+	}
+}
+
+func TestSelectCatalogEntriesPrintsSetupNotesAfterPartialWrite(t *testing.T) {
+	entries := []catalog.Entry{
+		{Name: "first", URL: "https://first.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://first.example/tokens"},
+		{Name: "invalid/name", URL: "https://second.example/mcp"},
+	}
+	out := &bytes.Buffer{}
+
+	err := selectCatalogEntries(catalogStepParams{
+		configDir: t.TempDir(),
+		ask:       func(string) string { return "1-2" },
+		out:       out,
+		errOut:    &bytes.Buffer{},
+	}, entries)
+
+	if err == nil {
+		t.Fatal("selectCatalogEntries succeeded, want the second server write to fail")
+	}
+	if !strings.Contains(out.String(), "first needs an access token: create one at https://first.example/tokens") {
+		t.Errorf("output missing setup note for the written server:\n%s", out.String())
 	}
 }
 
@@ -202,7 +228,7 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
 		loadCatalog: catalog.Load,
-		ask:         func(string) string { return catalogNumberOf(t, out.String(), "github") },
+		ask:         func(string) string { return catalogNumberOf(t, out.String(), "GitHub") },
 		out:         out,
 		errOut:      &bytes.Buffer{},
 	})
@@ -232,7 +258,7 @@ func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
 		loadCatalog: catalog.Load,
-		ask:         func(string) string { return catalogNumberOf(t, out.String(), "github") },
+		ask:         func(string) string { return catalogNumberOf(t, out.String(), "GitHub") },
 		out:         out,
 		errOut:      &bytes.Buffer{},
 	})
@@ -252,7 +278,7 @@ func TestCatalogSentryInstallsBundledProjection(t *testing.T) {
 		t.Fatalf("sentry URL = %q", entry.URL)
 	}
 	dir := t.TempDir()
-	if err := writeCatalogEntries(catalogStepParams{configDir: dir, out: &bytes.Buffer{}}, []catalog.Entry{entry}, []int{0}); err != nil {
+	if _, err := writeCatalogEntries(catalogStepParams{configDir: dir, out: &bytes.Buffer{}}, []catalog.Entry{entry}, []int{0}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "servers", "sentry.proj.yaml")); err != nil {
@@ -271,15 +297,15 @@ func catalogEntry(t *testing.T, entries []catalog.Entry, name string) catalog.En
 	return catalog.Entry{}
 }
 
-func catalogNumberOf(t *testing.T, listing, name string) string {
+func catalogNumberOf(t *testing.T, listing, title string) string {
 	t.Helper()
 	for _, line := range strings.Split(listing, "\n") {
 		number, rest, ok := strings.Cut(strings.TrimSpace(line), ". ")
-		if ok && strings.HasPrefix(rest, name+" [") {
+		if ok && strings.HasPrefix(rest, title+" [") {
 			return number
 		}
 	}
-	t.Fatalf("%s not listed:\n%s", name, listing)
+	t.Fatalf("%s not listed:\n%s", title, listing)
 	return ""
 }
 
@@ -303,6 +329,40 @@ func TestSelectCatalogEntriesRepromptsAfterInvalidSelection(t *testing.T) {
 	}
 }
 
+func TestSelectCatalogEntriesPrintsSetupNotesForSelectedServers(t *testing.T) {
+	entries := []catalog.Entry{
+		{Name: "my-svc", URL: "https://svc.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://svc.example/tokens"},
+		{Name: "apps", URL: "https://apps.example/mcp", Auth: catalog.AuthOAuth2App, SetupURL: "https://apps.example/new-app"},
+		{Name: "managed", URL: "https://managed.example/mcp", Auth: catalog.AuthOAuth2},
+		{Name: "unpicked", URL: "https://unpicked.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://unpicked.example/tokens"},
+	}
+	out := &bytes.Buffer{}
+
+	err := selectCatalogEntries(catalogStepParams{
+		configDir: t.TempDir(),
+		ask:       func(string) string { return "1-3" },
+		out:       out,
+		errOut:    &bytes.Buffer{},
+	}, entries)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"my-svc needs an access token: create one at https://svc.example/tokens",
+		"Authorization: Bearer ${MY_SVC_TOKEN}",
+		"apps needs your own OAuth app: register one at https://apps.example/new-app with redirect URI " + auth.ResolvedCallbackURI(nil),
+		"and run: mini auth apps",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "managed needs") || strings.Contains(out.String(), "unpicked") {
+		t.Errorf("notes for servers that need no setup or weren't selected:\n%s", out.String())
+	}
+}
+
 func nextCatalogAnswer(answers *[]string) func(string) string {
 	return func(string) string {
 		answer := (*answers)[0]
@@ -319,7 +379,7 @@ func TestCatalogOAuthEntriesReachLoginStep(t *testing.T) {
 		{Name: "deepwiki", URL: "https://mcp.deepwiki.com/mcp", Auth: catalog.AuthNone},
 		{Name: "github", URL: "https://api.githubcopilot.com/mcp/", Auth: catalog.AuthToken},
 	}
-	if err := writeCatalogEntries(catalogStepParams{configDir: dir, out: &bytes.Buffer{}}, entries, []int{0, 1, 2, 3}); err != nil {
+	if _, err := writeCatalogEntries(catalogStepParams{configDir: dir, out: &bytes.Buffer{}}, entries, []int{0, 1, 2, 3}); err != nil {
 		t.Fatal(err)
 	}
 	var authorized []string

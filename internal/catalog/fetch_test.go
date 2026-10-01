@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const oneEntryCatalog = `{"schema_version":1,"entries":[{"name":"remote","url":"https://remote.example/mcp","description":"remote server","category":"Test","auth":"none"}]}`
+const oneEntryCatalog = `{"schema_version":1,"entries":[{"name":"remote","title":"Remote","url":"https://remote.example/mcp","description":"remote server","category":"Test","auth":"none"}]}`
 
 func catalogServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *http.Client) {
 	t.Helper()
@@ -47,9 +47,9 @@ func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
 		wantNames []string
 		wantErr   string
 	}{
-		{"keeps the known entries", withEntry(`{"name":"known","url":"https://known.example/mcp","description":"known server","category":"Test","auth":"none"}`), []string{"known"}, ""},
+		{"keeps the known entries", withEntry(`{"name":"known","title":"Known","url":"https://known.example/mcp","description":"known server","category":"Test","auth":"none"}`), []string{"known"}, ""},
 		{"fails when nothing is left", future, nil, "catalog entries are required"},
-		{"still validates the kept entries", withEntry(`{"name":"invalid","url":"https://invalid.example/mcp","description":"bad\u001btext","category":"Test","auth":"none"}`), nil, "description contains control characters"},
+		{"still validates the kept entries", withEntry(`{"name":"invalid","title":"Invalid","url":"https://invalid.example/mcp","description":"bad\u001btext","category":"Test","auth":"none"}`), nil, "description contains control characters"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
