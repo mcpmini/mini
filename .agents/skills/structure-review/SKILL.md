@@ -6,6 +6,8 @@ argument-hint: [package paths, or blank for packages changed in the current bran
 
 Structural review of $ARGUMENTS (default: packages changed in the current branch diff).
 
+Read [Go engineering in mini](../../../docs/go-guidelines.md). Structural signals guide investigation; justify a finding with concrete maintenance cost, a testing obstacle, or a threatened invariant. Ordinary callbacks, one-implementation interfaces, and coordinated edits across files can be appropriate.
+
 **This review works top-down, not bottom-up.** Do not start by reading functions and evaluating them in isolation — that is exactly how structural problems stay invisible. Every function can look fine on its own while the decomposition is wrong for the domain. Start by mapping what the system *does*, then compare that to how the code is *organized*.
 
 ---
@@ -16,8 +18,8 @@ Before doing the full flow analysis, read through the target packages and watch 
 
 **Signals to watch for:**
 - **Too many parameters** — functions with 4+ params, especially bare booleans or strings. A domain concept is hiding in those parameter lists, waiting to become a type.
-- **Bare callbacks** — `func()` parameters or closure captures where the flows show a named domain action. The code is doing something meaningful but refuses to give it a name.
-- **High comment density** — if the code needs lots of comments to explain itself, the abstractions are probably wrong. Code that fits its domain is self-describing.
+- **Bare callbacks** — check whether closures hide ownership or policy that needs a clearer contract. Ordinary callback APIs can be appropriate.
+- **High comment density** — check for unclear naming or organization, while preserving useful contracts and non-obvious invariants.
 - **Painful tests** — heavy setup boilerplate, fragile assertions, or tests that break when unrelated code changes. If testing one concept requires building up lots of unrelated state, the boundaries are in the wrong place.
 - **Large files** — a file over 300 lines often means mixed concerns. Two domain concepts sharing a file because they were written at the same time, not because they belong together.
 
@@ -62,8 +64,8 @@ For each entry point, trace the complete execution flow end-to-end. Follow throu
 - The same verb appears in multiple flows → that's a reusable operation, likely a method
 - Several verbs share the same state → they belong on the same type
 - A chain of verbs always runs in sequence → that sequence is a higher-level operation
-- Two verbs never share state → they belong on different types
-- A verb has no name in the existing code (it's inline logic or a bare callback) → that's a missing abstraction
+- Two verbs never share state → check whether separate functions or owners would clarify their contracts
+- A verb has no name in the existing code → check whether naming it would expose a meaningful contract rather than fragment a readable operation
 
 Write out the numbered flow list with the verb chain for each flow. This is the primary output of the review — the types, methods, and boundaries fall out of it directly.
 
@@ -84,16 +86,16 @@ Format each flow entry like this (imitate the structure, not the content):
 
 Forget the existing code. Given the flows and verbs you just mapped, **if no code existed and you were writing this from scratch, what types would you create?**
 
-This is not a rhetorical exercise. Actually write out the types, their methods, and which flows they serve. The gap between this blank-slate design and the actual code *is* the structural finding.
+Write a candidate model and compare it with the existing design. A difference is an investigation prompt, not a finding. Show the concrete cost, testing obstacle, or invariant violation before recommending a new abstraction.
 
 ### Nouns → types
-Group the verbs by the state they share. Each group is a type. Name it after the domain entity it represents — "DaemonResolver", "Session", "Forwarder" — not after implementation mechanics.
+Group operations by state, invariants, and lifecycle. Create a type when it makes ownership or a contract clearer; pure operations may remain functions. Name types after the domain entity they represent — "DaemonResolver", "Session", "Forwarder" — not after implementation mechanics.
 - Things with a lifecycle (created, used, destroyed) are types
 - Things that hold state multiple flows read or write are types
 - Things that multiple flows reference by name are types
 
 ### Verbs → methods
-Each verb from the flow chains becomes a method on its type. Verify the grouping:
+Check which operations belong as methods or functions. Verify the grouping:
 - Verbs that share state → methods on the same type
 - Verbs that are independent (different state entirely) → methods on different types
 - Verbs with sequence dependency → the caller orchestrates the sequence, or a higher-level method encapsulates it
@@ -115,7 +117,7 @@ Now read the actual code structure. For each type, file, and function, answer:
 2. Which domain verbs do this type's methods implement?
 3. Does this file contain code for one domain concept or several?
 
-Flag every mismatch:
+Investigate mismatches that create concrete friction or risk:
 
 ### Mixed concerns
 A type or file handles verbs from multiple unrelated domain concepts. The test: if you changed how concept A works, would you touch code that implements concept B?
@@ -123,13 +125,13 @@ A type or file handles verbs from multiple unrelated domain concepts. The test: 
 **Proof:** name the two+ domain concepts, list which methods belong to each, show they share a type or file. State why they are independent (different state, different lifecycle, different failure modes).
 
 ### Missing abstractions
-A domain concept exists in the flows but has no corresponding named type. It appears as:
+A recurring invariant or ownership boundary is hard to express or enforce in the current structure. Candidate signals include:
 - A bare `func()` callback or closure where the flows show a named domain action
 - Inline logic in a larger function where the flows show a distinct step
 - Parameters always passed together where the flows show a single entity
 - A pattern repeated across flows with no shared implementation
 
-**Proof:** name the domain concept, show where it appears in the flow list, show that no type or named function represents it.
+**Proof:** name the concept and mapped flows, show the concrete cost or unenforced invariant, and explain how a named operation or type improves it. Absence of a type or helper alone is insufficient.
 
 ### Cryptic naming
 A name you cannot predict the behavior of without reading the implementation. The test: could a reader who understands the domain (but hasn't read this code) guess what this does from its name alone?
@@ -138,15 +140,15 @@ A name you cannot predict the behavior of without reading the implementation. Th
 
 ### Wrong boundaries
 Type or file boundaries that don't align with domain concept boundaries.
-- Two types always modified together → should be one
-- One type used in two independent contexts → should be two
+- Two types frequently modified together → check for misplaced responsibility or a legitimate shared contract
+- One type used in two independent contexts → check whether their invariants or lifecycles genuinely conflict
 - A function that crosses a domain boundary (starts in concept A, ends in concept B)
 
 **Proof:** name the boundary as drawn vs. as the domain model says it should be. Show a concrete scenario where the wrong boundary causes friction.
 
 ### Over-abstraction
 Indirection that doesn't correspond to any domain concept.
-- An interface with exactly one implementation and no test fake
+- An interface whose contract adds no useful boundary, substitution, or independent testing; implementation count alone is insufficient
 - A wrapper type that adds no behavior
 - An indirection layer between things the domain model shows are directly connected
 
@@ -168,8 +170,8 @@ For each finding, assess:
 3. **Test difficulty:** does the mismatch make the code harder to test in isolation?
 
 **Severity:**
-- **HIGH** — mismatch makes a critical flow untestable, or modifying one domain concept requires changes across 3+ unrelated files, or the mismatch actively masks bugs
-- **MEDIUM** — materially harder to understand or modify; 2+ files change together; cryptic names on important flows
+- **HIGH** — a structural mismatch demonstrably threatens a critical invariant or conceals a consequential bug
+- **MEDIUM** — concrete, material maintenance or testing cost, or reachable product risk
 - **LOW** — real mismatch but the code is small or stable enough that the cost is low
 
 ---

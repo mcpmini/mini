@@ -37,6 +37,8 @@ Every feature decision should serve one of these two goals.
 
 ## Code style
 
+Read [Go engineering in mini](docs/go-guidelines.md) when writing or reviewing Go. It covers design, ownership, errors, concurrency, and the evidence needed to judge a change. Consult its external references for specific questions; repository policy takes precedence over external style preferences.
+
 ### Size limits
 
 - Functions: aim for ≤ 18 lines; anything > 25 lines must be broken into smaller functions
