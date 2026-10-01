@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -188,13 +190,9 @@ func appendTokenExpiry(result map[string]any, expiry time.Time) {
 }
 
 func (s *Server) loadServerConfig(serverName string) (config.ServerConfig, error) {
-	_, servers, err := config.Load(s.configDir)
-	if err != nil {
-		return config.ServerConfig{}, err
-	}
-	sc := config.FindServer(servers, serverName)
-	if sc == nil {
+	sc, err := config.LoadServer(s.configDir, serverName)
+	if errors.Is(err, fs.ErrNotExist) {
 		return config.ServerConfig{}, fmt.Errorf("server %q not found in config", serverName)
 	}
-	return *sc, nil
+	return sc, err
 }

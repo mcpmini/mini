@@ -223,12 +223,12 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("warns instead of silently skipping when config reload fails", func(t *testing.T) {
+	t.Run("warns instead of silently skipping when the server's projection file fails to load", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(dir, "servers"), 0755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "servers", "broken.yaml"), []byte("not: valid: yaml: ["), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "servers", "svc.proj.yaml"), []byte("not: valid: yaml: ["), 0644); err != nil {
 			t.Fatal(err)
 		}
 

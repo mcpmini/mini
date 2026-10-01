@@ -36,6 +36,8 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 	if err != nil {
 		return fmt.Errorf("add_server: %w", err)
 	}
+	// A login started for an earlier server of this name would install that server over this one.
+	s.detachAndCloseServer(sc.Name)
 	saved, err := s.connectSaved(ctx, sc.Name)
 	if err != nil {
 		s.rollBackAdd(added)

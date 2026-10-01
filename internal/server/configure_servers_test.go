@@ -34,6 +34,11 @@ func newConfigToolEnv(t *testing.T) configToolEnv {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowPrivateURLs = true
+	return newConfigToolEnvWithConfig(t, cfg)
+}
+
+func newConfigToolEnvWithConfig(t *testing.T, cfg *config.Config) configToolEnv {
+	t.Helper()
 	dir := t.TempDir()
 	return configToolEnv{t: t, srv: newTestServer(t, server.Params{Config: cfg, ConfigDir: dir}), dir: dir}
 }
@@ -166,12 +171,14 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 }
 
 func TestConfigAddServer_connectFails_leavesNoFiles(t *testing.T) {
-	e := newConfigToolEnv(t)
+	cfg := config.DefaultConfig()
+	cfg.DangerousAllowRuntimeStdio = true
+	e := newConfigToolEnvWithConfig(t, cfg)
 
-	_, failed := e.addServer(map[string]any{"name": "down", "transport": "http", "url": "http://127.0.0.1.github.com:1/mcp"})
+	_, failed := e.addServer(map[string]any{"name": "down", "command": filepath.Join(t.TempDir(), "server-github")})
 
 	if !failed {
-		t.Fatal("add_server to an unreachable URL succeeded")
+		t.Fatal("add_server of a command that doesn't exist succeeded")
 	}
 	if entries, _ := os.ReadDir(filepath.Join(e.dir, "servers")); len(entries) != 0 { //nolint:errcheck // a missing dir is the empty result wanted
 		t.Errorf("servers/ holds %v after a failed add, want the server file and its bundled projection gone", entries)

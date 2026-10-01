@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"strings"
 	"time"
@@ -277,11 +278,14 @@ func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 }
 
 func loadServerConfigForAdd(configDir, name string) (*config.ServerConfig, error) {
-	_, servers, err := config.Load(configDir)
+	sc, err := config.LoadServer(configDir, name)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	return config.FindServer(servers, name), nil
+	return &sc, nil
 }
 
 func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) config.ServerConfig {

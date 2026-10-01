@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,5 +164,17 @@ command: echo hello
 	result := resp["result"].(map[string]any)
 	if result["isError"] != true {
 		t.Errorf("expected isError=true for server without oauth2, got: %v", result)
+	}
+}
+
+func TestStartAuth_loadsTheNamedServerWhenAnotherServerFileIsBroken(t *testing.T) {
+	dir := t.TempDir()
+	writeServerYAML(t, dir, "plain", "command: echo hello\n")
+	writeServerYAML(t, dir, "other", "transport: http\nurl: [unfinished\n")
+	srv := newServerWithDir(t, dir)
+
+	resp := serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "plain"}))
+	if text := toolResultText(t, resp); !strings.Contains(text, `"plain" does not have oauth2 auth configured`) {
+		t.Errorf("start_auth plain = %q, want the OAuth check on plain's own config", text)
 	}
 }

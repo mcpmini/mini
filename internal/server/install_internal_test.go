@@ -81,3 +81,21 @@ func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.
 		t.Errorf("install started during the failed add = %v, want errServerRemoved so no unsaved server runs", err)
 	}
 }
+
+func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *testing.T) {
+	echomcp := os.Getenv("ECHOMCP_BIN")
+	if echomcp == "" {
+		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+	}
+	srv := newInstallTestServer(t)
+	srv.cfg.DangerousAllowRuntimeStdio = true
+	startedForTheEarlierServer := srv.replacingInstall(config.ServerConfig{Name: "svc", Command: "earlier"})
+
+	if _, err := srv.addServerFromAgent(t.Context(), &config.ServerConfig{Name: "svc", Command: echomcp}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := srv.installChecked(&transport.FakeConnection{}, nil, startedForTheEarlierServer); !errors.Is(err, errServerRemoved) {
+		t.Errorf("install for the earlier svc = %v, want errServerRemoved so it can't replace the added one", err)
+	}
+}

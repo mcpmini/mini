@@ -34,6 +34,9 @@ func LoadLenient(configDir string) ([]ServerConfig, []SourceError) {
 
 // LoadServer loads one server as Load would, without needing every other server file to load.
 func LoadServer(configDir, name string) (ServerConfig, error) {
+	if err := checkServerName(name, "the request"); err != nil {
+		return ServerConfig{}, err
+	}
 	sc, err := loadServerConfig(filepath.Join(configDir, "servers", name+".yaml"))
 	if err != nil {
 		return ServerConfig{}, err
