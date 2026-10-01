@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -50,10 +52,14 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&f.yes, "yes", false, "run without prompts: import every detected client, skip the catalog picker, and leave logins for later")
-	cmd.Flags().StringVar(&f.from, "from", "", "import only from this client (claude-code, claude-desktop, cursor, windsurf, gemini) or config file")
-	cmd.Flags().StringSliceVar(&f.add, "add", nil, "catalog servers to add without the picker (comma-separated names)")
+	addInitFlags(cmd, &f)
 	return cmd
+}
+
+func addInitFlags(cmd *cobra.Command, f *initFlags) {
+	cmd.Flags().BoolVar(&f.yes, "yes", false, "run without prompts: import every detected client, skip the catalog picker, and leave logins for later")
+	cmd.Flags().StringVar(&f.from, "from", "", "import only from this client ("+strings.Join(slices.Sorted(maps.Keys(fromClientNames)), ", ")+") or config file")
+	cmd.Flags().StringSliceVar(&f.add, "add", nil, "catalog servers to add without the picker (comma-separated names)")
 }
 
 func runInit(configDir string, f initFlags, requested []catalog.Entry) {
@@ -132,15 +138,17 @@ func importFrom(configDir, from string, prompt func(string) bool) []string {
 	return names
 }
 
+var fromClientNames = map[string]string{
+	"claude-code":    "Claude Code",
+	"claude-desktop": "Claude Desktop",
+	"cursor":         "Cursor",
+	"windsurf":       "Windsurf",
+	"gemini":         "Gemini CLI",
+}
+
 func resolveFromPath(from string) string {
-	knownAliases := map[string]string{
-		"claude-code":    findClientPath("Claude Code"),
-		"claude-desktop": findClientPath("Claude Desktop"),
-		"cursor":         findClientPath("Cursor"),
-		"windsurf":       findClientPath("Windsurf"),
-		"gemini":         findClientPath("Gemini CLI"),
-	}
-	if aliasPath, ok := knownAliases[strings.ToLower(from)]; ok {
+	if client, ok := fromClientNames[strings.ToLower(from)]; ok {
+		aliasPath := findClientPath(client)
 		if aliasPath == "" {
 			fatalf("could not find config for %q", from)
 		}

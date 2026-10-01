@@ -54,7 +54,7 @@ func ReauthorizationError(serverName string, cause error) error {
 	return &authRemedyError{msg: msg, cause: cause}
 }
 
-// NotLoggedInError is the remedy for a server that has never been authorized.
+// NotLoggedInError reports that serverName has no stored token.
 func NotLoggedInError(serverName string) error {
 	return &authRemedyError{msg: fmt.Sprintf("%s is not logged in; run `mini auth %s`", serverName, serverName)}
 }

@@ -2,9 +2,7 @@ package provider
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io/fs"
 	"sync"
 	"time"
 
@@ -78,7 +76,7 @@ func (p *tokenProvider) ensureTokenLocked() error {
 		return nil
 	}
 	t, err := auth.Load(p.configDir, p.serverName)
-	if errors.Is(err, fs.ErrNotExist) {
+	if auth.IsNotFound(err) {
 		return transport.NotLoggedInError(p.serverName)
 	}
 	if err != nil {

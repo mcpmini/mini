@@ -51,7 +51,7 @@ func (s *Server) reconnectLoop(u *upstreamServer) {
 			return
 		}
 		if errors.Is(err, transport.ErrReauthRequired) {
-			s.logger.Warn("upstream requires re-authorization; run `mini auth <server>`", "server", u.cfg.Name)
+			s.logger.Warn("upstream needs authorization, not reconnecting", "server", u.cfg.Name, "err", err)
 			return
 		}
 		backoff = nextBackoff(backoff)

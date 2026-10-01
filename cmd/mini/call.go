@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -32,6 +31,8 @@ const callLong = "PARAMS is a JSON object of tool arguments, or - to read it fro
 const callExample = `  mini call deepwiki read_wiki_structure '{"repoName": "facebook/react"}'
   echo '{"repoName": "facebook/react"}' | mini call deepwiki read_wiki_structure -`
 
+const permCallExample = `  mini perm-call github add_issue_comment '{"owner": "me", "repo": "notes", "issue_number": 1, "body": "Done"}'`
+
 func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 	f := callFlags{}
 	cmd := &cobra.Command{
@@ -51,17 +52,21 @@ func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 			return nil
 		},
 	}
+	addCallOutputFlags(cmd, &f)
+	return cmd
+}
+
+func addCallOutputFlags(cmd *cobra.Command, f *callFlags) {
 	cmd.Flags().BoolVarP(&f.json, "json", "j", false, "JSON output (projected envelope, default)")
 	cmd.Flags().BoolVarP(&f.toon, "toon", "t", false, "TOON format (token-oriented object notation)")
 	cmd.Flags().BoolVarP(&f.raw, "raw", "r", false, "raw upstream response, no projection")
-	return cmd
 }
 
 func newPermCallCmd(opts *rootOptions) *cobra.Command {
 	cmd := newCallCommand(opts, true)
 	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
 	cmd.Short = "Invoke a protected tool directly"
-	cmd.Example = strings.ReplaceAll(cmd.Example, "mini call", "mini perm-call")
+	cmd.Example = permCallExample
 	return cmd
 }
 
