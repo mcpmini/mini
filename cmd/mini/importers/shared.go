@@ -43,12 +43,19 @@ func serverConfigs[E clientEntry](entries map[string]E) map[string]config.Server
 	return servers
 }
 
-func httpServer(name, url string, headers map[string]string) config.ServerConfig {
-	return config.ServerConfig{Name: name, Transport: "http", URL: url, Headers: headers}
+type clientEntryFields struct {
+	Command string            `json:"command" toml:"command"`
+	Args    []string          `json:"args" toml:"args"`
+	Env     map[string]string `json:"env" toml:"env"`
+	Headers map[string]string `json:"headers" toml:"headers"`
 }
 
-func stdioServer(name, command string, args []string, env map[string]string) config.ServerConfig {
-	return config.ServerConfig{Name: name, Command: command, Args: args, Env: envList(env)}
+func (f clientEntryFields) httpServer(name, url string) config.ServerConfig {
+	return config.ServerConfig{Name: name, Transport: "http", URL: url, Headers: f.Headers}
+}
+
+func (f clientEntryFields) stdioServer(name string) config.ServerConfig {
+	return config.ServerConfig{Name: name, Command: f.Command, Args: f.Args, Env: envList(f.Env)}
 }
 
 func envList(env map[string]string) []string {

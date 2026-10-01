@@ -9,12 +9,9 @@ import (
 )
 
 type codexMCPEntry struct {
-	Command   string            `toml:"command"`
-	Args      []string          `toml:"args"`
-	Env       map[string]string `toml:"env"`
-	Transport string            `toml:"transport"`
-	URL       string            `toml:"url"`
-	Headers   map[string]string `toml:"headers"`
+	clientEntryFields
+	Transport string `toml:"transport"`
+	URL       string `toml:"url"`
 }
 
 // ReadCodex reads a Codex config.toml.
@@ -43,7 +40,7 @@ func loadCodexServers(path string) (map[string]codexMCPEntry, error) {
 
 func (e codexMCPEntry) serverConfig(name string) config.ServerConfig {
 	if e.URL != "" || e.Transport == "http" {
-		return httpServer(name, e.URL, e.Headers)
+		return e.httpServer(name, e.URL)
 	}
-	return stdioServer(name, e.Command, e.Args, e.Env)
+	return e.stdioServer(name)
 }

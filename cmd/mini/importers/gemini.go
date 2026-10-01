@@ -8,11 +8,8 @@ import (
 )
 
 type geminiMCPEntry struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
-	HTTPUrl string            `json:"httpUrl"`
-	Headers map[string]string `json:"headers"`
+	clientEntryFields
+	HTTPUrl string `json:"httpUrl"`
 }
 
 // ReadGemini reads a Gemini CLI settings.json.
@@ -41,7 +38,7 @@ func loadGeminiServers(path string) (map[string]geminiMCPEntry, error) {
 
 func (e geminiMCPEntry) serverConfig(name string) config.ServerConfig {
 	if e.HTTPUrl != "" {
-		return httpServer(name, e.HTTPUrl, e.Headers)
+		return e.httpServer(name, e.HTTPUrl)
 	}
-	return stdioServer(name, e.Command, e.Args, e.Env)
+	return e.stdioServer(name)
 }

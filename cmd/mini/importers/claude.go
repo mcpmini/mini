@@ -9,12 +9,9 @@ import (
 )
 
 type claudeMCPEntry struct {
-	Type    string            `json:"type"`
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
+	clientEntryFields
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }
 
 // ReadClaude reads Claude Desktop and Claude Code configs, and Cursor's mcp.json, which shares their format.
@@ -73,7 +70,7 @@ func mergeClaudeProjectServers(dst, src map[string]claudeMCPEntry) {
 
 func (e claudeMCPEntry) serverConfig(name string) config.ServerConfig {
 	if e.URL != "" || e.Type == "http" || e.Type == "sse" {
-		return httpServer(name, e.URL, e.Headers)
+		return e.httpServer(name, e.URL)
 	}
-	return stdioServer(name, e.Command, e.Args, e.Env)
+	return e.stdioServer(name)
 }

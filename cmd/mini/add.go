@@ -190,8 +190,12 @@ func importFromFlag(p addParams) error {
 		return nil
 	}
 	imp := serverImport{configDir: p.configDir, source: src.path, out: p.out, errOut: p.errOut}
-	if len(imp.addAll(servers)) > 0 {
+	added, failed := imp.addAll(servers)
+	if len(added) > 0 {
 		fmt.Fprintln(p.out, src.tip)
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d servers in %s could not be added", failed, len(servers), src.path)
 	}
 	return nil
 }

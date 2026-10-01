@@ -30,33 +30,40 @@ func importClaudeFormat(configDir, source, path string) []string {
 		fmt.Fprintf(imp.errOut, "  warning: %v\n", err)
 		return nil
 	}
-	return imp.addAll(servers)
-}
-
-func (imp serverImport) addAll(servers map[string]config.ServerConfig) []string {
-	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
-	var added []string
-	for _, name := range slices.Sorted(maps.Keys(servers)) {
-		sc := servers[name]
-		if !isSelfEntry(sc.Command, selfPath) && imp.add(sc) {
-			added = append(added, name)
-		}
-	}
+	// Each failure was already warned about; init carries on either way.
+	added, _ := imp.addAll(servers)
 	return added
 }
 
-func (imp serverImport) add(sc config.ServerConfig) bool {
+func (imp serverImport) addAll(servers map[string]config.ServerConfig) (added []string, failed int) {
+	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
+	for _, name := range slices.Sorted(maps.Keys(servers)) {
+		sc := servers[name]
+		if isSelfEntry(sc.Command, selfPath) {
+			continue
+		}
+		switch err := imp.add(sc); {
+		case err == nil:
+			added = append(added, name)
+		case !errors.Is(err, ops.ErrAlreadyConfigured):
+			failed++
+		}
+	}
+	return added, failed
+}
+
+func (imp serverImport) add(sc config.ServerConfig) error {
 	added, err := ops.AddServer(imp.configDir, sc)
 	if errors.Is(err, ops.ErrAlreadyConfigured) {
 		imp.reportConfigured(sc)
-		return false
+		return err
 	}
 	if err != nil {
 		fmt.Fprintf(imp.errOut, "  warning: %v\n", err)
-		return false
+		return err
 	}
 	printAdded(imp.out, added)
-	return true
+	return nil
 }
 
 func printAdded(w io.Writer, added ops.AddedServer) {

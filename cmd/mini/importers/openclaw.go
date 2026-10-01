@@ -8,11 +8,8 @@ import (
 )
 
 type openClawMCPEntry struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
+	clientEntryFields
+	URL string `json:"url"`
 }
 
 // ReadOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
@@ -43,7 +40,7 @@ func parseOpenClawConfig(path string) (map[string]openClawMCPEntry, error) {
 
 func (e openClawMCPEntry) serverConfig(name string) config.ServerConfig {
 	if e.URL != "" {
-		return httpServer(name, e.URL, e.Headers)
+		return e.httpServer(name, e.URL)
 	}
-	return stdioServer(name, e.Command, e.Args, e.Env)
+	return e.stdioServer(name)
 }

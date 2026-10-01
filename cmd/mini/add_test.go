@@ -119,7 +119,7 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("connect failure unrelated to OAuth reports a plain note", func(t *testing.T) {
+	t.Run("connect failure unrelated to auth reports a plain note", func(t *testing.T) {
 		mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
@@ -134,9 +134,8 @@ func TestRunAdd(t *testing.T) {
 		if !strings.Contains(out.String(), "note: could not connect to gh yet; run `mini test` to retry") {
 			t.Errorf("output = %q, want the plain connect-failure note", out.String())
 		}
-		// The test's temp dir, printed in the "added" line, carries this subtest's name.
-		if printed := strings.ReplaceAll(out.String(), dir, "<dir>"); strings.Contains(printed, "OAuth") {
-			t.Errorf("output = %q, a non-OAuth connect failure should never mention OAuth", printed)
+		if strings.Contains(out.String(), "OAuth") {
+			t.Errorf("output = %q, a non-OAuth connect failure should never mention OAuth", out.String())
 		}
 	})
 
@@ -275,14 +274,14 @@ func TestRunAdd(t *testing.T) {
 		if err := runAdd(dir, []string{"svc", "--", "original"}, &bytes.Buffer{}); err != nil {
 			t.Fatal(err)
 		}
-		before, _ := os.ReadFile(filepath.Join(dir, "servers", "svc.yaml")) //nolint:errcheck // compared below
+		before := readFileString(t, filepath.Join(dir, "servers", "svc.yaml"))
 
 		err := runAdd(dir, []string{"svc", "--", "replacement"}, &bytes.Buffer{})
 
 		if err == nil || !strings.Contains(err.Error(), "svc is already configured; run `mini rm svc` first to replace it") {
 			t.Errorf("err = %v, want the already-configured error naming mini rm", err)
 		}
-		if after, _ := os.ReadFile(filepath.Join(dir, "servers", "svc.yaml")); string(after) != string(before) { //nolint:errcheck // a missing file fails the comparison
+		if after := readFileString(t, filepath.Join(dir, "servers", "svc.yaml")); after != before {
 			t.Errorf("svc.yaml changed from %q to %q", before, after)
 		}
 	})
@@ -369,6 +368,19 @@ func TestRunAddImport(t *testing.T) {
 
 		if want := "no MCP servers found in " + path; !strings.Contains(out.String(), want) {
 			t.Errorf("output = %q, want %q", out.String(), want)
+		}
+	})
+
+	t.Run("a server that fails to add makes the import fail", func(t *testing.T) {
+		notADir := filepath.Join(t.TempDir(), "file")
+		writeImportSource(t, notADir, "")
+		path := filepath.Join(t.TempDir(), "claude.json")
+		writeImportSource(t, path, `{"mcpServers":{"svc":{"command":"run"}}}`)
+
+		err := runAdd(notADir, []string{"--from-claude", path}, &bytes.Buffer{})
+
+		if want := "1 of 1 servers in " + path + " could not be added"; err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want %q", err, want)
 		}
 	})
 
@@ -485,4 +497,13 @@ func readServerYAML(t *testing.T, configDir, name string, out any) {
 	if err := yaml.Unmarshal(data, out); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}
+}
+
+func readFileString(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
