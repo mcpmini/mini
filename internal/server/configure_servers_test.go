@@ -165,15 +165,17 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 	})
 }
 
-func TestConfigAddServer_connectFails_savesNothing(t *testing.T) {
+func TestConfigAddServer_connectFails_leavesNoFiles(t *testing.T) {
 	e := newConfigToolEnv(t)
 
-	_, failed := e.addServer(map[string]any{"name": "down", "transport": "http", "url": "http://127.0.0.1:1/mcp"})
+	_, failed := e.addServer(map[string]any{"name": "down", "transport": "http", "url": "http://127.0.0.1.github.com:1/mcp"})
 
 	if !failed {
 		t.Fatal("add_server to an unreachable URL succeeded")
 	}
-	e.assertNotSaved("down")
+	if entries, _ := os.ReadDir(filepath.Join(e.dir, "servers")); len(entries) != 0 { //nolint:errcheck // a missing dir is the empty result wanted
+		t.Errorf("servers/ holds %v after a failed add, want the server file and its bundled projection gone", entries)
+	}
 }
 
 func TestConfigAddServer_envReferenceInURL_isRefusedSoARestartCantExpandIt(t *testing.T) {
@@ -342,8 +344,7 @@ func TestConfigAddAndRemoveServer_racingOnOneName_alwaysLeaveSavedEqualToLive(t 
 	}
 }
 
-// Returns once a second call waits on name's lock behind the one holding it, or once that
-// call finished without waiting, as it would if the lock were missing.
+// done ends the wait too, so a missing lock fails the test instead of hanging it.
 func (e configToolEnv) waitUntilQueuedOrDone(name string, done <-chan struct{}) {
 	for e.srv.NameLockCallers(name) < 2 && !isClosed(done) {
 		runtime.Gosched()

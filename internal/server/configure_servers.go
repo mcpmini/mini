@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -28,7 +29,7 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 	if s.isUpstreamRegistered(sc.Name) {
 		return errAlreadyRunning(sc.Name)
 	}
-	_, err := ops.AddServer(s.configDir, sc)
+	added, err := ops.AddServer(s.configDir, sc)
 	if errors.Is(err, ops.ErrAlreadyConfigured) {
 		return fmt.Errorf("add_server: %s is already configured; remove it with remove_server first", sc.Name)
 	}
@@ -37,7 +38,7 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 	}
 	saved, err := s.connectSaved(ctx, sc.Name)
 	if err != nil {
-		s.rollBackAdd(sc.Name)
+		s.rollBackAdd(added)
 		return err
 	}
 	s.recordConfigServers([]config.ServerConfig{saved})
@@ -56,11 +57,19 @@ func (s *Server) connectSaved(ctx context.Context, name string) (config.ServerCo
 	return saved, err
 }
 
-// Detaching first also stops a login or install for the name that started while the add ran.
-func (s *Server) rollBackAdd(name string) {
+func (s *Server) rollBackAdd(added ops.AddedServer) {
+	name := added.Config.Name
+	s.warnRollbackFailure(name, ops.RemoveServer(s.configDir, name))
+	if added.ProjectionPath != "" {
+		s.warnRollbackFailure(name, os.Remove(added.ProjectionPath))
+	}
+	// Also stops a login or install for the name that started while the add ran.
 	s.detachAndCloseServer(name)
-	if err := ops.RemoveServer(s.configDir, name); err != nil {
-		s.logger.Warn("add_server: remove the server it could not connect", "server", name, "err", err)
+}
+
+func (s *Server) warnRollbackFailure(name string, err error) {
+	if err != nil {
+		s.logger.Warn("add_server: undo a failed add", "server", name, "err", err)
 	}
 }
 

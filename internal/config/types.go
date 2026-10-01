@@ -216,9 +216,8 @@ type ServerConfig struct {
 	// Enabled defaults to true.
 	Enabled *bool `yaml:"enabled,omitempty"`
 
-	// AgentAdded marks a server the config tool saved for an agent. Until the user deletes the
-	// line, every dial re-checks for private addresses, and OAuth detection skips the server:
-	// its own metadata would choose where the user's authorization code is sent.
+	// AgentAdded marks a server the config tool saved for an agent; deleting the line trusts it.
+	// OAuth detection skips it: its own metadata would choose where the user's code is sent.
 	AgentAdded bool `yaml:"agent_added,omitempty" json:"-"`
 }
 

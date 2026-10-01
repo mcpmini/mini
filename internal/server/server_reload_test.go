@@ -80,6 +80,25 @@ func (e *serverReloadEnv) assertRemoved(names ...string) {
 	}
 }
 
+func TestServerReload_deletedFileOfAnAgentAddedServer_removesIt(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.DangerousAllowPrivateURLs = true
+	e := &serverReloadEnv{reloadEnv: buildReloadEnvWithConfig(t, evalTempDir(t), cfg), upstream: newMCPTestServer(t, pingTools)}
+	e.startPoller()
+	resp := serve(t, e.srv, callTool("config", map[string]any{
+		"action": "add_server", "config": map[string]any{"name": "ag", "transport": "http", "url": e.upstream.URL},
+	}))
+	if result, _ := resp["result"].(map[string]any); result["isError"] == true {
+		t.Fatalf("add_server: %s", toolResultText(t, resp))
+	}
+	e.advanceTick()
+
+	e.removeServerFile("ag")
+	e.advanceTick()
+
+	e.assertRemoved("ag")
+}
+
 func TestServerReload_deletedServerFile_removesServerAndNotifiesAgents(t *testing.T) {
 	e := newServerReloadEnv(t)
 	e.startWithServers("gone", "kept")

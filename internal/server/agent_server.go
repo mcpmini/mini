@@ -7,8 +7,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// add_server saves the agent's config, so it runs again on every start: drop whatever could
-// carry the user's credentials or make the running server differ from the saved one.
+// add_server saves the agent's config, so it runs again on every start.
 func (s *Server) agentServerConfig(raw *config.ServerConfig) (config.ServerConfig, error) {
 	if raw == nil {
 		return config.ServerConfig{}, errors.New("config is required")
@@ -17,8 +16,10 @@ func (s *Server) agentServerConfig(raw *config.ServerConfig) (config.ServerConfi
 		return config.ServerConfig{}, err
 	}
 	sc := *raw
-	sc.Auth, sc.Headers, sc.Env = nil, nil, nil
-	sc.Projections, sc.Enabled, sc.HandshakeTimeout = nil, nil, ""
+	sc.Auth, sc.Headers, sc.Env = nil, nil, nil // where credentials, and ${VAR} expansion, would go
+	sc.Projections = nil                        // set_projection is the one writer of projection rules
+	sc.Enabled = nil                            // add_server connects it, so the saved file must not disable it
+	sc.HandshakeTimeout = ""                    // a handshake that never ends would hold the name's lock
 	if err := s.checkAgentTransport(sc); err != nil {
 		return config.ServerConfig{}, err
 	}
