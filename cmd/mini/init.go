@@ -11,13 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/clock"
 )
 
 type initFlags struct {
-	yes  bool
-	from string
-	add  []string
+	yes      bool
+	from     string
+	add      []string
+	addGiven bool
 }
 
 func newInitCmd(opts *rootOptions) *cobra.Command {
@@ -27,7 +29,12 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 		Aliases: []string{"setup"},
 		Short:   "Interactive setup wizard",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runInit(opts.configDir, f)
+			f.addGiven = cmd.Flags().Changed("add")
+			requested, err := requestedCatalogEntries(f)
+			if err != nil {
+				return err
+			}
+			runInit(opts.configDir, f, requested)
 			return nil
 		},
 	}
@@ -37,12 +44,8 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 	return cmd
 }
 
-func runInit(configDir string, f initFlags) {
+func runInit(configDir string, f initFlags, requested []catalog.Entry) {
 	p := prompter{in: bufio.NewScanner(os.Stdin), out: os.Stderr}
-	requested, err := requestedCatalogEntries(f.add)
-	if err != nil {
-		fatalf("%v", err)
-	}
 	if err := createConfigDirs(configDir); err != nil {
 		fatalf("create config dirs: %v", err)
 	}

@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -87,20 +89,8 @@ func TestResolveCatalogNames(t *testing.T) {
 			t.Fatalf("resolve = %v, %v", catalogNames(got), err)
 		}
 	})
-	t.Run("spaces and trailing commas are ignored", func(t *testing.T) {
-		got, err := resolveCatalogNames(entries, []string{"linear", " notion", ""})
-		if err != nil || !reflect.DeepEqual(catalogNames(got), []string{"linear", "notion"}) {
-			t.Fatalf("resolve = %v, %v", catalogNames(got), err)
-		}
-	})
-	t.Run("no names at all", func(t *testing.T) {
-		got, err := resolveCatalogNames(entries, []string{"", " "})
-		if err == nil || !strings.Contains(err.Error(), "at least one server name") || got != nil {
-			t.Fatalf("resolve = %v, %v", got, err)
-		}
-	})
 	t.Run("unknown names reject all", func(t *testing.T) {
-		got, err := resolveCatalogNames(entries, []string{"nope", " linear", "zzz "})
+		got, err := resolveCatalogNames(entries, []string{"nope", "linear", "zzz"})
 		if err == nil || err.Error() != "not in the server catalog: nope, zzz" || got != nil {
 			t.Fatalf("resolve = %v, %v", got, err)
 		}
@@ -178,6 +168,32 @@ func TestRunCatalogStepRequestedConfiguredEntriesArePreserved(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "same-url already configured") || !strings.Contains(out.String(), "already already configured") || strings.Contains(out.String(), "already needs an access token") {
 		t.Fatalf("unexpected existing-entry output: %s", out.String())
+	}
+}
+
+func TestNonBlankNamesDropsSpacesAndEmptyNames(t *testing.T) {
+	if got := nonBlankNames([]string{"linear", " notion", "", " "}); !reflect.DeepEqual(got, []string{"linear", "notion"}) {
+		t.Errorf("nonBlankNames = %q, want [linear notion]", got)
+	}
+}
+
+func TestInitRejectsEmptyAddBeforeChangingAnything(t *testing.T) {
+	for _, arg := range []string{"--add=", "--add= , "} {
+		t.Run(arg, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			configDir := filepath.Join(t.TempDir(), "config")
+			cmd := newInitCmd(&rootOptions{configDir: configDir})
+			cmd.SetArgs([]string{"--yes", arg})
+
+			err := cmd.Execute()
+
+			if err == nil || !strings.Contains(err.Error(), "at least one server name") {
+				t.Fatalf("init %s: error %v, want one asking for a server name", arg, err)
+			}
+			if _, statErr := os.Stat(configDir); !errors.Is(statErr, fs.ErrNotExist) {
+				t.Errorf("config dir after a rejected --add: %v, want it not created", statErr)
+			}
+		})
 	}
 }
 

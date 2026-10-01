@@ -14,9 +14,8 @@ func resolveCatalogNames(entries []catalog.Entry, names []string) ([]catalog.Ent
 	var unknown []string
 	seen := make(map[string]bool)
 	for _, name := range names {
-		name = strings.TrimSpace(name)
 		key := strings.ToLower(name)
-		if key == "" || seen[key] {
+		if seen[key] {
 			continue
 		}
 		seen[key] = true
@@ -28,9 +27,6 @@ func resolveCatalogNames(entries []catalog.Entry, names []string) ([]catalog.Ent
 	}
 	if err := unknownCatalogNamesError(unknown); err != nil {
 		return nil, err
-	}
-	if len(resolved) == 0 {
-		return nil, errors.New("--add needs at least one server name")
 	}
 	return resolved, nil
 }
@@ -50,9 +46,13 @@ func unknownCatalogNamesError(unknown []string) error {
 	return fmt.Errorf("not in the server catalog: %s", strings.Join(unknown, ", "))
 }
 
-func requestedCatalogEntries(names []string) ([]catalog.Entry, error) {
-	if len(names) == 0 {
+func requestedCatalogEntries(f initFlags) ([]catalog.Entry, error) {
+	if !f.addGiven {
 		return nil, nil
+	}
+	names := nonBlankNames(f.add)
+	if len(names) == 0 {
+		return nil, errors.New("--add needs at least one server name")
 	}
 	entries, err := publishedCatalogSource().entries()
 	if err != nil {
@@ -74,4 +74,14 @@ func addRequestedCatalogEntries(p catalogStepParams) error {
 	written, err := writeCatalogEntries(p, toWrite, allCatalogIndexes(len(toWrite)))
 	printSetupNotes(p.out, toWrite, written)
 	return err
+}
+
+func nonBlankNames(names []string) []string {
+	var kept []string
+	for _, name := range names {
+		if name = strings.TrimSpace(name); name != "" {
+			kept = append(kept, name)
+		}
+	}
+	return kept
 }
