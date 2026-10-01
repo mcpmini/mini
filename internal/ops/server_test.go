@@ -306,11 +306,12 @@ func TestAddServer(t *testing.T) {
 }
 
 func TestRemoveServer(t *testing.T) {
-	t.Run("removes the file and forgets the token, registration and OAuth marker", func(t *testing.T) {
+	t.Run("removes the file and its projections, and forgets the token, registration and OAuth marker", func(t *testing.T) {
 		dir := tempDir(t)
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}); err != nil {
 			t.Fatal(err)
 		}
+		writeFile(t, filepath.Join(dir, "servers", "toremove.proj.yaml"), "list:\n  include_only: [id]\n")
 		saveCredentials(t, dir, "toremove")
 		if err := config.MarkOAuthDetected(dir, "toremove"); err != nil {
 			t.Fatal(err)
@@ -323,9 +324,31 @@ func TestRemoveServer(t *testing.T) {
 		if fileExists(filepath.Join(dir, "servers", "toremove.yaml")) {
 			t.Error("server file still exists after remove")
 		}
+		if fileExists(filepath.Join(dir, "servers", "toremove.proj.yaml")) {
+			t.Error("a server reusing this name would inherit the removed server's projections")
+		}
 		assertNoCredentials(t, dir, "toremove")
 		if config.IsOAuthDetected(dir, "toremove") {
 			t.Error("a server reusing this name would inherit a stale OAuth marker")
+		}
+	})
+
+	t.Run("a server added again after a remove gets the bundled projection again", func(t *testing.T) {
+		dir := tempDir(t)
+		github := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"}
+		if _, err := ops.AddServer(dir, github); err != nil {
+			t.Fatal(err)
+		}
+		if err := ops.RemoveServer(dir, "gh"); err != nil {
+			t.Fatal(err)
+		}
+
+		added, err := ops.AddServer(dir, github)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if added.ProjectionPath == "" {
+			t.Error("the re-added server kept no bundled projection; the removed server's file was left in the way")
 		}
 	})
 

@@ -59,9 +59,12 @@ func RemoveServer(configDir, name string) error {
 	if err := validServerName(name); err != nil {
 		return err
 	}
-	// State first: the reverse order strands a token when cleanup fails; this one at worst costs a new login.
+	// The server file goes last: if cleanup fails, the server stays configured and the remove can be retried.
 	if err := forgetStateStoredByName(configDir, name); err != nil {
 		return err
+	}
+	if err := os.Remove(projectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("remove %s projections: %w", name, err)
 	}
 	path := serverPath(configDir, name)
 	if err := os.Remove(path); err != nil {
@@ -117,6 +120,10 @@ func writeNewOrTruncate(path string, data []byte, openFlag int) error {
 
 func serverPath(configDir, name string) string {
 	return filepath.Join(configDir, "servers", name+".yaml")
+}
+
+func projectionPath(configDir, name string) string {
+	return filepath.Join(configDir, "servers", name+".proj.yaml")
 }
 
 func validServerName(name string) error {
