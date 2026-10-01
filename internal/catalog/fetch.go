@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"slices"
 	"time"
+
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 // GitHub Pages serves catalog/v1.json from main here, and every released binary reads it, so v1
@@ -20,12 +22,7 @@ const (
 )
 
 func NewFetchClient() *http.Client {
-	return &http.Client{
-		Timeout: fetchTimeout,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	return transport.NewNoRedirectClient(transport.NoRedirectClientOptions{Timeout: fetchTimeout})
 }
 
 // Fetch skips entries whose auth this binary doesn't know, so newer auth kinds can be
