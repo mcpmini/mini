@@ -44,9 +44,7 @@ const (
 
 var knownAuthValues = []string{AuthOAuth2, AuthOAuth2App, AuthToken, AuthNone}
 
-// NeedsSetup reports whether the user must create credentials at SetupURL (an access
-// token or their own OAuth app) before mini can connect.
-func (e Entry) NeedsSetup() bool {
+func (e Entry) needsUserCredentials() bool {
 	return e.Auth == AuthToken || e.Auth == AuthOAuth2App
 }
 
@@ -110,7 +108,7 @@ func validateEntry(entry Entry) error {
 }
 
 func validateSetupURL(entry Entry) error {
-	if !entry.NeedsSetup() {
+	if !entry.needsUserCredentials() {
 		if entry.SetupURL != "" {
 			return fmt.Errorf("setup_url is only for %s and %s entries", AuthToken, AuthOAuth2App)
 		}
