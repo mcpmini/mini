@@ -42,7 +42,7 @@ func runInit(configDir string, f initFlags) {
 	fmt.Printf("config directory: %s\n", configDir)
 	imported := importServers(configDir, f.from, importConfirmer(p, f.yes))
 	detectImportedOAuth(oauthDetectParams{configDir: configDir, names: imported, clock: clock.System(), errOut: os.Stderr})
-	runInitCatalogSelection(configDir, f.yes, p.ask)
+	runInitCatalogSelection(catalogStepParams{configDir: configDir, autoYes: f.yes, ask: p.ask})
 	runLoginStep(newLoginStepParams(configDir, f.yes, p))
 	printInstallInstructions()
 }
@@ -59,14 +59,9 @@ func newLoginStepParams(configDir string, autoYes bool, p prompter) loginStepPar
 	}
 }
 
-func runInitCatalogSelection(configDir string, autoYes bool, ask func(string) string) {
-	if err := runCatalogStep(catalogStepParams{
-		configDir: configDir,
-		autoYes:   autoYes,
-		ask:       ask,
-		out:       os.Stdout,
-		errOut:    os.Stderr,
-	}); err != nil {
+func runInitCatalogSelection(p catalogStepParams) {
+	p.out, p.errOut = os.Stdout, os.Stderr
+	if err := runCatalogStep(p); err != nil {
 		fatalf("catalog: %v", err)
 	}
 }
