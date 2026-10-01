@@ -232,6 +232,15 @@ func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
 	}
 }
 
+func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "github.yaml"), "transport: http\nurl: https://api.githubcopilot.com/mcp/\n")
+
+	if sc, err := config.LoadServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("LoadServer(GitHub) = %q, %v; want fs.ErrNotExist, not github.yaml under another name", sc.Name, err)
+	}
+}
+
 func TestLoadProjections_parity(t *testing.T) {
 	cases := []struct {
 		name  string

@@ -51,16 +51,12 @@ func Load(configDir string) (*Config, []ServerConfig, error) {
 
 // LoadServer loads one server as Load would, without needing every other server file to load.
 func LoadServer(configDir, name string) (ServerConfig, error) {
-	if err := checkServerName(name, "the request"); err != nil {
-		return ServerConfig{}, err
-	}
-	sc, err := loadServerConfig(filepath.Join(configDir, "servers", name+".yaml"))
+	sc, err := loadNamedServerFile(configDir, name)
 	if err != nil {
 		return ServerConfig{}, err
 	}
 	projections := make(map[string]map[string]*ProjectionConfig)
-	projPath := filepath.Join(configDir, "servers", name+".proj.yaml")
-	if err := loadOneProjectionFile(projections, projPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := loadOneProjectionFile(projections, ProjectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return ServerConfig{}, err
 	}
 	servers := []ServerConfig{*sc}
@@ -68,6 +64,26 @@ func LoadServer(configDir, name string) (ServerConfig, error) {
 		return ServerConfig{}, err
 	}
 	return servers[0], nil
+}
+
+func loadNamedServerFile(configDir, name string) (*ServerConfig, error) {
+	if err := checkServerName(name, "the request"); err != nil {
+		return nil, err
+	}
+	path := ServerPath(configDir, name)
+	// A case-insensitive disk opens github.yaml for "GitHub", which would then run under the wrong name.
+	if !hasExactFileName(path) {
+		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
+	}
+	return loadServerConfig(path)
+}
+
+func hasExactFileName(path string) bool {
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == filepath.Base(path) })
 }
 
 func completeServers(configDir string, servers []ServerConfig, projections map[string]map[string]*ProjectionConfig) error {

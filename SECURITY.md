@@ -22,6 +22,7 @@ The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`),
 
 **`agent_added: true`**: the saved file records that an agent supplied the server, and mini keeps treating it as untrusted until the user deletes that line:
 - every connection re-checks resolved addresses at dial time (see SSRF blocking below);
+- a command it runs starts only while `dangerous_allow_runtime_stdio` is on, so turning the setting off stops commands agents added earlier;
 - it never gets OAuth from detection. Detection would use the server's own metadata to choose the authorization and token endpoints, so an agent's server could have the user log in to a real vendor and receive the authorization code and PKCE verifier. Bundled vendor auth, picked by host, still applies.
 
 **Strip on ingest** (`agentServerConfig`):

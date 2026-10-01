@@ -25,6 +25,9 @@ func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
 	if p.Server.IsHTTPTransport() {
 		return dialHTTP(p)
 	}
+	if p.Server.AgentAdded && !p.Config.DangerousAllowRuntimeStdio {
+		return nil, fmt.Errorf("%s runs a command an agent added: set dangerous_allow_runtime_stdio to allow it, or delete agent_added from its file to trust it", p.Server.Name)
+	}
 	return transport.NewStdioConnection(ctx, transport.StdioCommand{Command: p.Server.Command, Args: p.Server.Args, Env: p.Server.Env, Logger: p.Logger})
 }
 

@@ -3,8 +3,11 @@
 package invoke
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -39,10 +42,46 @@ func TestDial_privateAddress(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { _ = conn.Close() }) // the test fails on hits, not on how the connection closes
+			t.Cleanup(func() { _ = conn.Close() })           // the test fails on hits, not on how the connection closes
 			_, _ = conn.Call(t.Context(), "tools/list", nil) // both outcomes are an error; hits tells them apart
 			if reached := hits.Load() > 0; reached != tc.wantReached {
 				t.Errorf("request reached %s = %v, want %v", upstream.URL, reached, tc.wantReached)
+			}
+		})
+	}
+}
+
+func TestDial_agentAddedCommand(t *testing.T) {
+	cases := []struct {
+		name        string
+		agentAdded  bool
+		allowStdio  bool
+		wantRefusal bool
+	}{
+		{name: "an agent's command is refused once dangerous_allow_runtime_stdio is off", agentAdded: true, wantRefusal: true},
+		{name: "dangerous_allow_runtime_stdio still runs an agent's command", agentAdded: true, allowStdio: true},
+		{name: "a command the user added runs", allowStdio: false},
+	}
+	echomcp := os.Getenv("ECHOMCP_BIN")
+	if echomcp == "" {
+		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, err := Dial(t.Context(), DialParams{
+				Config: &config.Config{DangerousAllowRuntimeStdio: tc.allowStdio},
+				Server: config.ServerConfig{Name: "svc", Command: echomcp, AgentAdded: tc.agentAdded},
+				Clock:  clock.System(),
+				Logger: slog.New(slog.DiscardHandler),
+			})
+			if err == nil {
+				t.Cleanup(func() { _ = conn.Close() }) // only whether Dial started the command is checked
+			}
+			if refused := err != nil && strings.Contains(err.Error(), "dangerous_allow_runtime_stdio"); refused != tc.wantRefusal {
+				t.Errorf("Dial = %v, refused = %v, want %v", err, refused, tc.wantRefusal)
+			}
+			if !tc.wantRefusal && err != nil {
+				t.Errorf("Dial = %v, want the command started", err)
 			}
 		})
 	}
