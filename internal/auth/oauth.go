@@ -2,7 +2,6 @@ package auth
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -43,9 +42,15 @@ func oauthHTTPContext(ctx context.Context, resourceURL string) context.Context {
 		return context.WithValue(ctx, oauth2.HTTPClient, noRedirectClient)
 	}
 	client := *noRedirectClient
-	// A nil Transport means http.DefaultTransport to http.Client; the wrapper must keep that.
-	client.Transport = resourceTransport{base: cmp.Or(noRedirectClient.Transport, http.RoundTripper(http.DefaultTransport)), resourceURL: resourceURL}
+	client.Transport = resourceTransport{base: effectiveTransport(noRedirectClient), resourceURL: resourceURL}
 	return context.WithValue(ctx, oauth2.HTTPClient, &client)
+}
+
+func effectiveTransport(c *http.Client) http.RoundTripper {
+	if c.Transport == nil {
+		return http.DefaultTransport
+	}
+	return c.Transport
 }
 
 type resourceTransport struct {

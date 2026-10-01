@@ -144,7 +144,6 @@ func applySsrfTransport(client *http.Client) {
 	if ok {
 		t := dt.Clone()
 		t.DialContext = SSRFSafeDialer()
-		// Through a proxy the dialer only sees the proxy's address, so the destination would go unchecked.
 		t.Proxy = nil
 		client.Transport = t
 	}
