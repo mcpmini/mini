@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
 )
 
@@ -60,7 +60,7 @@ func (imp claudeImport) importEntry(name string, entry importers.ClaudeMCPEntry)
 
 // Names the differing fields but never their values: headers and env usually hold tokens.
 func (imp claudeImport) reportConfigured(name string, imported importers.ServerYAML) {
-	path := filepath.Join(imp.configDir, "servers", name+".yaml")
+	path := config.ServerPath(imp.configDir, name)
 	differences, err := configuredDifferences(path, imported)
 	switch {
 	case err != nil:

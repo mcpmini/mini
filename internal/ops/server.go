@@ -68,10 +68,7 @@ func RemoveServer(configDir, name string) error {
 	if err := forgetStateStoredByName(configDir, name); err != nil {
 		return err
 	}
-	if err := os.Remove(projectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("remove %s projections: %w", name, err)
-	}
-	path := serverPath(configDir, name)
+	path := config.ServerPath(configDir, name)
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove %s: %w", path, err)
 	}
@@ -82,6 +79,9 @@ func forgetStateStoredByName(configDir, name string) error {
 	if err := os.Remove(config.ServerMetaPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("forget %s state: %w", name, err)
 	}
+	if err := os.Remove(config.ProjectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("forget %s projections: %w", name, err)
+	}
 	if err := auth.DeleteCredentials(configDir, name); err != nil {
 		return fmt.Errorf("forget %s credentials: %w", name, err)
 	}
@@ -90,7 +90,7 @@ func forgetStateStoredByName(configDir, name string) error {
 
 func writeServer(configDir string, sc config.ServerConfig, openFlag int) (AddedServer, error) {
 	written, defaultPermissions := withBundledPermissions(sc)
-	path := serverPath(configDir, sc.Name)
+	path := config.ServerPath(configDir, sc.Name)
 	data, err := yaml.Marshal(written)
 	if err != nil {
 		return AddedServer{}, err
@@ -121,14 +121,6 @@ func writeNewOrTruncate(path string, data []byte, openFlag int) error {
 		os.Remove(path) //nolint:errcheck
 	}
 	return err
-}
-
-func serverPath(configDir, name string) string {
-	return filepath.Join(configDir, "servers", name+".yaml")
-}
-
-func projectionPath(configDir, name string) string {
-	return filepath.Join(configDir, "servers", name+".proj.yaml")
 }
 
 func validServerName(name string) error {

@@ -191,12 +191,13 @@ func TestAddServer(t *testing.T) {
 		}
 	})
 
-	t.Run("a reused name never inherits the old server's token, registration or OAuth marker", func(t *testing.T) {
+	t.Run("a reused name never inherits the old server's token, registration, OAuth marker or projections", func(t *testing.T) {
 		dir := tempDir(t)
 		saveCredentials(t, dir, "reused")
 		if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
 			t.Fatal(err)
 		}
+		writeFile(t, filepath.Join(dir, "servers", "reused.proj.yaml"), "list:\n  include_only: [id]\n")
 
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
 			t.Fatal(err)
@@ -205,6 +206,24 @@ func TestAddServer(t *testing.T) {
 		assertNoCredentials(t, dir, "reused")
 		if config.IsOAuthDetected(dir, "reused") {
 			t.Error("the new server inherited the old server's OAuth marker")
+		}
+		if fileExists(filepath.Join(dir, "servers", "reused.proj.yaml")) {
+			t.Error("the new server inherited the old server's projections")
+		}
+	})
+
+	t.Run("a reused vendor name gets the bundled projection, not the old server's", func(t *testing.T) {
+		dir := tempDir(t)
+		leftover := filepath.Join(dir, "servers", "gh.proj.yaml")
+		writeFile(t, leftover, "# the old server's rules\n")
+
+		added, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got, _ := os.ReadFile(leftover); added.ProjectionPath != leftover || strings.Contains(string(got), "the old server's rules") { // an unreadable file fails the content check
+			t.Errorf("projection path %q holds %q, want the bundled projection installed in place of the leftover", added.ProjectionPath, got)
 		}
 	})
 

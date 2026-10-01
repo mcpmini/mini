@@ -24,7 +24,7 @@ func InstallBundledProjection(configDir string, sc config.ServerConfig) (string,
 	if bundled == nil {
 		return "", nil
 	}
-	dest := projectionPath(configDir, sc.Name)
+	dest := config.ProjectionPath(configDir, sc.Name)
 	err := writeNewFile(dest, bundled)
 	if errors.Is(err, fs.ErrExist) {
 		return "", nil

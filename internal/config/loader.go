@@ -264,6 +264,14 @@ func validateServerFields(source string, sc *ServerConfig, mode envExpansionMode
 	return nil
 }
 
+func ServerPath(configDir, name string) string {
+	return filepath.Join(configDir, "servers", name+".yaml")
+}
+
+func ProjectionPath(configDir, name string) string {
+	return filepath.Join(configDir, "servers", name+".proj.yaml")
+}
+
 func serverNameFromPath(path string) string {
 	return strings.TrimSuffix(filepath.Base(path), ".yaml")
 }
