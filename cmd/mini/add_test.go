@@ -50,6 +50,16 @@ func runAdd(configDir string, args []string, out *bytes.Buffer) error {
 }
 
 func TestRunAdd(t *testing.T) {
+	t.Run("a name with neither a URL nor a command is a usage error, not a crash", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := addNamedServer(dir, serverFlags{name: "svc"}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "provide --url or a command") {
+			t.Fatalf("addNamedServer = %v, want the usage error", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "servers", "svc.yaml")); err == nil {
+			t.Error("servers/svc.yaml was written for a server with no URL or command")
+		}
+	})
+
 	t.Run("stdio command creates server file", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer

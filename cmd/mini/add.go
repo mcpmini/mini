@@ -201,6 +201,9 @@ func importFromFlag(p addParams) error {
 }
 
 func addNamedServer(configDir string, sf serverFlags, out io.Writer) error {
+	if sf.url == "" && len(sf.cmdArgs) == 0 {
+		return usageErrf("provide --url or a command after NAME")
+	}
 	added, err := ops.AddServer(configDir, sf.serverConfig())
 	if errors.Is(err, ops.ErrAlreadyConfigured) {
 		return fmt.Errorf("%s is already configured; run `mini rm %s` first to replace it", sf.name, sf.name)
