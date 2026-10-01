@@ -167,7 +167,6 @@ func printSetupNotes(out io.Writer, entries []catalog.Entry, indexes []int) {
 	}
 }
 
-// Server names may contain '-', which isn't valid in an environment variable name.
 func tokenEnvVar(serverName string) string {
 	return strings.ToUpper(strings.ReplaceAll(serverName, "-", "_")) + "_TOKEN"
 }

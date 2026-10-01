@@ -149,8 +149,6 @@ func validateText(field, value string) error {
 	return nil
 }
 
-// The title is printed just before the entry's host; brackets could fake a host in front
-// of the real one, and a long title could push it out of view.
 func validateTitle(title string) error {
 	if err := validateText("title", title); err != nil {
 		return err
@@ -178,7 +176,6 @@ func isHiddenOrControl(r rune) bool {
 }
 
 func validateHTTPSURL(rawURL string) error {
-	// Setup URLs are printed in credential instructions; hidden formatting could disguise where they lead.
 	if strings.ContainsFunc(rawURL, func(r rune) bool { return r < 0x21 || r > 0x7e }) {
 		return fmt.Errorf("url must be printable ASCII")
 	}
