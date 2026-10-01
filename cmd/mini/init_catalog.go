@@ -40,16 +40,14 @@ func runCatalogStep(p catalogStepParams) error {
 	return selectCatalogEntries(p, available)
 }
 
-// Files that fail to load are left out without a warning: the login step that runs
-// next loads the same files and reports each one once.
 func configuredServers(configDir string) []config.ServerConfig {
+	// Broken files are left out silently; the login step that runs next reports each one once.
 	return slices.Collect(maps.Values(config.LoadServerSet(configDir).Servers))
 }
 
 func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
 	configured := make(map[string]bool, 2*len(servers))
 	for _, server := range servers {
-		// Case-insensitive filesystems (macOS, Windows) map GitHub.yaml and github.yaml to one file.
 		configured[strings.ToLower(server.Name)] = true
 		if server.URL != "" {
 			configured[serverURLKey(server.URL)] = true
@@ -61,7 +59,6 @@ func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerCon
 	return groupByCategory(available)
 }
 
-// URLs that differ only in scheme or host case, or a trailing slash, reach the same server.
 func serverURLKey(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -71,8 +68,6 @@ func serverURLKey(rawURL string) string {
 	return u.String()
 }
 
-// Selection numbers follow display order, and headers print only when the category
-// changes, so each category's entries must be contiguous.
 func groupByCategory(entries []catalog.Entry) []catalog.Entry {
 	firstSeen := make(map[string]int)
 	for i, entry := range entries {
@@ -160,8 +155,6 @@ func parseSelectionRange(token string) (int, int, error) {
 	return start, end, err
 }
 
-// The picker only hides servers that loaded, so a file under another name: field, or one
-// that failed to load, can still hold an entry's name; CreateServer never replaces it.
 func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes []int) error {
 	for _, index := range indexes {
 		err := ops.CreateServer(p.configDir, catalogServerConfig(entries[index]))
@@ -178,7 +171,6 @@ func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes [
 
 func catalogServerConfig(entry catalog.Entry) config.ServerConfig {
 	sc := config.ServerConfig{Name: entry.Name, Transport: "http", URL: entry.URL}
-	// An explicit auth block would shadow a vendor's bundled registration (client ID, callback port).
 	if entry.Auth == catalog.AuthOAuth2 && !sc.HasBundledAuth() {
 		sc.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}
 	}
