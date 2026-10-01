@@ -63,11 +63,17 @@ go install github.com/mcpmini/mini/cmd/mini@latest
 
 ## Connect to your agent
 
-Every client connects mini the same way — by running `mini connect`. Use `mini init` to import the MCP servers you already configured elsewhere:
+Every client connects mini the same way — by running `mini connect`. Set up your servers first with `mini init`:
 
 ```bash
-mini init   # imports servers from Claude Code, Codex, Cursor, and more
+mini init
 ```
+
+It walks through three steps, and never changes a server you've already configured:
+
+1. Imports the MCP servers you configured in Claude Code, Claude Desktop, Cursor, Windsurf, or Gemini CLI.
+2. Offers more from the [server catalog](catalog/v1.json): GitHub, Linear, Sentry, Notion, Stripe, and others, each labeled with what it needs (OAuth login, an access token, or your own OAuth app).
+3. Logs in to the servers that use OAuth.
 
 Then register mini with your client:
 
@@ -89,6 +95,16 @@ Any other client: point its MCP config at `mini connect`:
 `mini connect` re-exposes each upstream tool under a namespaced name (`github__list_pull_requests`, `sentry__list_issues`, etc.) and trims its response. mini isn't hidden — the tools are served by the `mini` MCP server, so your client lists them under `mini`, and the agent calls them through it.
 
 ## Adding servers
+
+### From the server catalog
+
+`mini init` lists the catalog and lets you pick by number. To add catalog servers by name instead, for example in a script:
+
+```bash
+mini init --yes --add linear,sentry
+```
+
+Servers that need an access token or your own OAuth app get setup instructions when they're added. Log in to OAuth servers later with `mini auth NAME`.
 
 ### Example: GitHub MCP
 
@@ -112,19 +128,20 @@ mini detects that GitHub is a known server and installs the bundled projection a
 
 ### Other servers
 
+Any MCP server with a URL works. Servers that use OAuth (Linear, Sentry, Slack, and most others in the catalog) log in through your browser when they're added:
+
 ```bash
 mini add linear --url https://mcp.linear.app/mcp
-mini add sentry --url https://mcp.sentry.io/mcp --header "Authorization=Bearer $SENTRY_TOKEN"
-mini add slack  --url https://mcp.slack.com/mcp  --header "Authorization=Bearer $SLACK_TOKEN"
+mini add internal --url https://mcp.example.com/mcp --header "Authorization=Bearer $INTERNAL_TOKEN"
 ```
 
 Import all servers from an existing agent config at once:
 
 ```bash
-mini add --from-claude   # Claude Desktop / Claude Code
-mini add --from-cursor   # Cursor mcp.json
-mini add --from-codex    # Codex config.toml
-mini add --from-gemini   # Gemini CLI settings.json
+mini add --from-claude ~/.claude.json            # Claude Code
+mini add --from-cursor ~/.cursor/mcp.json        # Cursor
+mini add --from-codex  ~/.codex/config.toml      # Codex
+mini add --from-gemini ~/.gemini/settings.json   # Gemini CLI
 ```
 
 Bundled projection and tool-visibility defaults for known servers install automatically.
@@ -309,7 +326,7 @@ mini rm NAME                              Remove a server
 mini status                               Server health and tool counts
 mini test [--timeout T]                   CI health check (exits 1 on any failure)
 mini auth NAME                            OAuth2 PKCE flow for a server
-mini init [--yes]                         Setup wizard
+mini init [--yes] [--from CLIENT] [--add NAMES]  Setup wizard: import, catalog, login
 mini cleanup                              Delete expired response files
 
 mini call [-j|-t|-r] SERVER TOOL [JSON]   Invoke a tool directly
