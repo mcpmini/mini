@@ -1,4 +1,3 @@
-
 package importers
 
 import (
@@ -75,11 +74,11 @@ func TestExtractClaudeMCPServers(t *testing.T) {
 
 func TestClaudeEntryToServer(t *testing.T) {
 	tests := []struct {
-		name      string
-		entry     ClaudeMCPEntry
-		wantHTTP  bool
-		wantURL   string
-		wantCmd   string
+		name     string
+		entry    ClaudeMCPEntry
+		wantHTTP bool
+		wantURL  string
+		wantCmd  string
 	}{
 		{
 			name:     "http by url",
@@ -355,4 +354,3 @@ func TestReadConfigFile(t *testing.T) {
 		}
 	})
 }
-

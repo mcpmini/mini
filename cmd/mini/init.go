@@ -16,8 +16,10 @@ import (
 )
 
 type initFlags struct {
-	yes  bool
-	from string
+	yes      bool
+	from     string
+	add      []string
+	addGiven bool
 }
 
 func newInitCmd(opts *rootOptions) *cobra.Command {
@@ -27,16 +29,22 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 		Aliases: []string{"setup"},
 		Short:   "Interactive setup wizard",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runInit(opts.configDir, f)
+			f.addGiven = cmd.Flags().Changed("add")
+			requested, err := requestedCatalogEntries(f)
+			if err != nil {
+				return err
+			}
+			runInit(opts.configDir, f, requested)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&f.yes, "yes", false, "accept all prompts without interaction")
 	cmd.Flags().StringVar(&f.from, "from", "", "import from specific client name or config path")
+	cmd.Flags().StringSliceVar(&f.add, "add", nil, "catalog servers to add without the picker (comma-separated names)")
 	return cmd
 }
 
-func runInit(configDir string, f initFlags) {
+func runInit(configDir string, f initFlags, requested []catalog.Entry) {
 	p := prompter{in: bufio.NewScanner(os.Stdin), out: os.Stderr}
 	if err := createConfigDirs(configDir); err != nil {
 		fatalf("create config dirs: %v", err)
@@ -44,7 +52,7 @@ func runInit(configDir string, f initFlags) {
 	fmt.Printf("config directory: %s\n", configDir)
 	imported := importServers(configDir, f.from, importConfirmer(p, f.yes))
 	detectImportedOAuth(oauthDetectParams{configDir: configDir, names: imported, clock: clock.System(), errOut: os.Stderr})
-	runInitCatalogSelection(catalogStepParams{configDir: configDir, autoYes: f.yes, ask: p.ask})
+	runInitCatalogSelection(catalogStepParams{configDir: configDir, autoYes: f.yes, ask: p.ask, requested: requested})
 	runLoginStep(newLoginStepParams(configDir, f.yes, p))
 	printInstallInstructions()
 }
@@ -62,8 +70,7 @@ func newLoginStepParams(configDir string, autoYes bool, p prompter) loginStepPar
 }
 
 func runInitCatalogSelection(p catalogStepParams) {
-	source := catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL, warn: os.Stderr}
-	p.loadCatalog, p.out, p.errOut = source.entries, os.Stdout, os.Stderr
+	p.loadCatalog, p.out, p.errOut = publishedCatalogSource().entries, os.Stdout, os.Stderr
 	if err := runCatalogStep(p); err != nil {
 		fatalf("catalog: %v", err)
 	}
