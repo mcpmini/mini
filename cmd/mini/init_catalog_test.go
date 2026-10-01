@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
@@ -371,7 +370,7 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var server importers.ServerYAML
+	var server config.ServerConfig
 	readServerYAML(t, dir, "github", &server)
 	if server.Transport != "http" || server.URL != "https://api.githubcopilot.com/mcp/" {
 		t.Errorf("server = %+v", server)
