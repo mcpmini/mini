@@ -16,7 +16,7 @@ var KnownServers = []ServerMatcher{
 	{Key: "slack", URLParts: []string{"slack.com"}, CmdParts: []string{"server-slack", "slack-mcp"}},
 	{Key: "atlassian", URLParts: []string{"atlassian.net", "atlassian.com", "jira.com"}, CmdParts: []string{"mcp-atlassian", "server-jira", "confluence-mcp"}},
 	{Key: "linear", URLParts: []string{"linear.app"}, CmdParts: []string{"server-linear", "linear-mcp"}},
-	{Key: "sentry", URLParts: []string{"sentry.io"}, CmdParts: []string{"server-sentry"}},
+	{Key: "sentry", URLParts: []string{"sentry.io", "sentry.dev"}, CmdParts: []string{"server-sentry"}},
 }
 
 // MatchKnownServer returns the KnownServers key for a server, or "". It never looks at the

@@ -203,6 +203,12 @@ func mergeKnownAuth(dir string, servers []ServerConfig) {
 	}
 }
 
+// HasBundledAuth reports whether loading sc merges in a vendor's bundled auth config,
+// which an explicit auth block in its file would shadow.
+func (sc ServerConfig) HasBundledAuth() bool {
+	return bundledAuth(sc) != nil
+}
+
 func bundledAuth(sc ServerConfig) *AuthConfig {
 	key := defaults.MatchKnownServer(sc.Command, sc.Args, sc.URL)
 	if key == "" {
