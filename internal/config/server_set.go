@@ -1,11 +1,5 @@
 package config
 
-import (
-	"errors"
-	"io/fs"
-	"path/filepath"
-)
-
 // ServerSet is the server list as written on disk, loaded leniently so one bad
 // file cannot hide the others.
 type ServerSet struct {
@@ -30,29 +24,6 @@ func LoadLenient(configDir string) ([]ServerConfig, []SourceError) {
 	servers := loadServerDirLenient(configDir, &load)
 	mergeKnownAuth(configDir, servers)
 	return servers, load.SourceErrors
-}
-
-// LoadServer loads one server as Load would, without needing every other server file to load.
-func LoadServer(configDir, name string) (ServerConfig, error) {
-	if err := checkServerName(name, "the request"); err != nil {
-		return ServerConfig{}, err
-	}
-	sc, err := loadServerConfig(filepath.Join(configDir, "servers", name+".yaml"))
-	if err != nil {
-		return ServerConfig{}, err
-	}
-	projections := make(map[string]map[string]*ProjectionConfig)
-	projPath := filepath.Join(configDir, "servers", name+".proj.yaml")
-	if err := loadOneProjectionFile(projections, projPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return ServerConfig{}, err
-	}
-	servers := []ServerConfig{*sc}
-	mergeProjections(servers, projections)
-	if err := validateServerProjectionFormats(name, servers[0].Projections); err != nil {
-		return ServerConfig{}, err
-	}
-	mergeKnownAuth(configDir, servers)
-	return servers[0], nil
 }
 
 func (set ServerSet) IsEnabled(name string) bool {
