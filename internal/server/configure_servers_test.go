@@ -5,6 +5,7 @@ package server_test
 import (
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"testing"
 
 	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
@@ -121,16 +123,44 @@ func TestConfigAddServer_savesAndConnectsTheServer(t *testing.T) {
 }
 
 func TestConfigAddServer_runsTheServerAsARestartWould(t *testing.T) {
-	e := newConfigToolEnv(t)
-	writeReloadFile(t, filepath.Join(e.dir, "servers", "added.proj.yaml"), "ping:\n  include_only: [x]\n")
+	cfg := config.DefaultConfig()
+	cfg.DangerousAllowRuntimeStdio = true
+	e := newConfigToolEnvWithConfig(t, cfg)
+	githubCommand := filepath.Join(t.TempDir(), "server-github") // a GitHub command, so the add installs GitHub's bundled projection
+	if err := os.Symlink(requireEchoMCP(t), githubCommand); err != nil {
+		t.Fatal(err)
+	}
 
-	if text, failed := e.addServer(map[string]any{"name": "added", "transport": "http", "url": newMCPTestServer(t, pingTools).URL}); failed {
+	if text, failed := e.addServer(map[string]any{"name": "added", "command": githubCommand}); failed {
 		t.Fatalf("add_server: %s", text)
 	}
 
-	if rules := e.liveProjectionRules("added"); !slices.Equal(rules, []string{"ping"}) {
-		t.Errorf("live projection rules %v, want the saved projection file's [ping]", rules)
+	saved := readProjectionRuleNames(t, filepath.Join(e.dir, "servers", "added.proj.yaml"))
+	if rules := slices.Sorted(slices.Values(e.liveProjectionRules("added"))); len(saved) == 0 || !slices.Equal(rules, saved) {
+		t.Errorf("live projection rules %v, want the saved projection file's %v", rules, saved)
 	}
+}
+
+func requireEchoMCP(t *testing.T) string {
+	t.Helper()
+	bin := os.Getenv("ECHOMCP_BIN")
+	if bin == "" {
+		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+	}
+	return bin
+}
+
+func readProjectionRuleNames(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rules map[string]any
+	if err := yaml.Unmarshal(data, &rules); err != nil {
+		t.Fatal(err)
+	}
+	return slices.Sorted(maps.Keys(rules))
 }
 
 func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testing.T) {
