@@ -35,10 +35,12 @@ func AddServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 		return AddedServer{}, err
 	}
 	if err := forgetStateStoredByName(configDir, sc.Name); err != nil {
-		os.Remove(added.Path) //nolint:errcheck
-		return AddedServer{}, err
+		return AddedServer{}, errors.Join(err, os.Remove(added.Path))
 	}
-	added.ProjectionPath = InstallBundledProjection(configDir, sc)
+	added.ProjectionPath, err = InstallBundledProjection(configDir, sc)
+	if err != nil {
+		return AddedServer{}, errors.Join(err, os.Remove(added.Path))
+	}
 	return added, nil
 }
 
@@ -51,7 +53,10 @@ func WriteServer(configDir string, sc config.ServerConfig) (AddedServer, error) 
 	if err != nil {
 		return AddedServer{}, err
 	}
-	added.ProjectionPath = InstallBundledProjection(configDir, sc)
+	added.ProjectionPath, err = InstallBundledProjection(configDir, sc)
+	if err != nil {
+		return AddedServer{}, err
+	}
 	return added, nil
 }
 

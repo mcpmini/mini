@@ -1,6 +1,9 @@
 package ops
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -11,20 +14,25 @@ import (
 )
 
 // InstallBundledProjection returns the installed path, or "" when nothing was installed.
-func InstallBundledProjection(configDir string, sc config.ServerConfig) string {
+// A projection file already there is kept, and isn't an error.
+func InstallBundledProjection(configDir string, sc config.ServerConfig) (string, error) {
 	key := defaults.MatchKnownServer(sc.Command, sc.Args, sc.URL)
 	if key == "" {
-		return ""
+		return "", nil
 	}
 	bundled := defaults.ProjectionFor(key)
 	if bundled == nil {
-		return ""
+		return "", nil
 	}
 	dest := projectionPath(configDir, sc.Name)
-	if err := writeNewFile(dest, bundled); err != nil {
-		return ""
+	err := writeNewFile(dest, bundled)
+	if errors.Is(err, fs.ErrExist) {
+		return "", nil
 	}
-	return dest
+	if err != nil {
+		return "", fmt.Errorf("install the default projection for %s: %w", sc.Name, err)
+	}
+	return dest, nil
 }
 
 func writeNewFile(path string, data []byte) error {
