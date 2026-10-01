@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 const oneEntryCatalog = `{"schema_version":1,"entries":[{"name":"remote","url":"https://remote.example/mcp","description":"remote server","category":"Test","auth":"none"}]}`
@@ -97,6 +98,60 @@ func TestFetchRejectsUnusableResponses(t *testing.T) {
 				t.Errorf("Fetch = %d entries, error %v; want error containing %q", len(entries), err, tt.want)
 			}
 		})
+	}
+}
+
+func TestFetchFailsOnNetworkErrors(t *testing.T) {
+	tests := []struct {
+		name   string
+		target func(t *testing.T) (*http.Client, string)
+		want   string
+	}{
+		{"server unreachable", func(t *testing.T) (*http.Client, string) {
+			srv := httptest.NewTLSServer(http.NotFoundHandler())
+			srv.Close()
+			return NewFetchClient(), srv.URL
+		}, "refused"},
+		{"connection dropped mid-body", func(t *testing.T) (*http.Client, string) {
+			srv, client := catalogServer(t, closeAfterPartialBody(t))
+			return client, srv.URL
+		}, "unexpected EOF"},
+		{"untrusted certificate", func(t *testing.T) (*http.Client, string) {
+			srv := httptest.NewTLSServer(http.NotFoundHandler())
+			t.Cleanup(srv.Close)
+			return NewFetchClient(), srv.URL
+		}, "certificate"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, url := tt.target(t)
+			_, err := Fetch(context.Background(), client, url)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Fetch error = %v, want one containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func closeAfterPartialBody(t *testing.T) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		conn, buf, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		defer conn.Close()                                                                        //nolint:errcheck // The client has already seen the cut-off body; a close error can't change that.
+		// A failed write surfaces in Flush below.
+		buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n" + oneEntryCatalog[:20])
+		if err := buf.Flush(); err != nil {
+			t.Errorf("write partial body: %v", err)
+		}
+	}
+}
+
+func TestNewFetchClientGivesUpAfterThreeSeconds(t *testing.T) {
+	if got := NewFetchClient().Timeout; got != 3*time.Second {
+		t.Errorf("timeout = %v, want 3s so a slow network falls back to the built-in catalog quickly", got)
 	}
 }
 

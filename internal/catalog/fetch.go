@@ -17,7 +17,7 @@ const PublishedURL = "https://mcpmini.github.io/mini/catalog/v1.json"
 
 const (
 	maxFetchBytes = 256 << 10
-	fetchTimeout  = 5 * time.Second
+	fetchTimeout  = 3 * time.Second
 )
 
 func NewFetchClient() *http.Client {
