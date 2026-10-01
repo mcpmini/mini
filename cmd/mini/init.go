@@ -22,12 +22,24 @@ type initFlags struct {
 	addGiven bool
 }
 
+const initLong = `Set up mini in three steps:
+  1. import MCP servers from Claude Code, Claude Desktop, Cursor, and other clients,
+  2. pick more from the server catalog,
+  3. log in to the servers that use OAuth.
+Servers that are already configured are never changed.`
+
+const initExample = `  mini init
+  mini init --from cursor
+  mini init --yes --add linear,sentry`
+
 func newInitCmd(opts *rootOptions) *cobra.Command {
 	f := initFlags{}
 	cmd := &cobra.Command{
 		Use:     "init",
 		Aliases: []string{"setup"},
-		Short:   "Interactive setup wizard",
+		Short:   "Set up mini: import servers, pick more from the catalog, log in",
+		Long:    initLong,
+		Example: initExample,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f.addGiven = cmd.Flags().Changed("add")
 			requested, err := requestedCatalogEntries(f)
@@ -38,8 +50,8 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&f.yes, "yes", false, "accept all prompts without interaction")
-	cmd.Flags().StringVar(&f.from, "from", "", "import from specific client name or config path")
+	cmd.Flags().BoolVar(&f.yes, "yes", false, "run without prompts: import every detected client, skip the catalog picker, and leave logins for later")
+	cmd.Flags().StringVar(&f.from, "from", "", "import only from this client (claude-code, claude-desktop, cursor, windsurf, gemini) or config file")
 	cmd.Flags().StringSliceVar(&f.add, "add", nil, "catalog servers to add without the picker (comma-separated names)")
 	return cmd
 }

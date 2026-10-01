@@ -50,8 +50,23 @@ var ErrReauthRequired = errors.New("re-authorization required")
 
 // ReauthorizationError wraps cause with the remedy users should run.
 func ReauthorizationError(serverName string, cause error) error {
-	return fmt.Errorf("%s requires re-authorization; run `mini auth %s`: %w: %w", serverName, serverName, ErrReauthRequired, cause)
+	msg := fmt.Sprintf("%s requires re-authorization; run `mini auth %s`: %v", serverName, serverName, cause)
+	return &authRemedyError{msg: msg, cause: cause}
 }
+
+// NotLoggedInError is the remedy for a server that has never been authorized.
+func NotLoggedInError(serverName string) error {
+	return &authRemedyError{msg: fmt.Sprintf("%s is not logged in; run `mini auth %s`", serverName, serverName)}
+}
+
+type authRemedyError struct {
+	msg   string
+	cause error
+}
+
+func (e *authRemedyError) Error() string        { return e.msg }
+func (e *authRemedyError) Unwrap() error        { return e.cause }
+func (e *authRemedyError) Is(target error) bool { return target == ErrReauthRequired }
 
 func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Request) (string, error) {
 	if c.authProvider == nil {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -26,12 +27,19 @@ func newCallCmd(opts *rootOptions) *cobra.Command {
 	return newCallCommand(opts, false)
 }
 
+const callLong = "PARAMS is a JSON object of tool arguments, or - to read it from stdin. `mini ls SERVER TOOL` lists a tool's arguments."
+
+const callExample = `  mini call deepwiki read_wiki_structure '{"repoName": "facebook/react"}'
+  echo '{"repoName": "facebook/react"}' | mini call deepwiki read_wiki_structure -`
+
 func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 	f := callFlags{}
 	cmd := &cobra.Command{
-		Use:   "call SERVER TOOL [PARAMS]",
-		Short: "Invoke an open tool directly (exit 1 on tool error)",
-		Args:  usageArgs(cobra.RangeArgs(2, 3)),
+		Use:     "call SERVER TOOL [PARAMS]",
+		Short:   "Invoke an open tool directly (exit 1 on tool error)",
+		Long:    callLong,
+		Example: callExample,
+		Args:    usageArgs(cobra.RangeArgs(2, 3)),
 		PreRunE: func(*cobra.Command, []string) error {
 			if f.enabledCount() > 1 {
 				return usageErrf("choose only one output mode: --json, --toon, or --raw")
@@ -53,6 +61,7 @@ func newPermCallCmd(opts *rootOptions) *cobra.Command {
 	cmd := newCallCommand(opts, true)
 	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
 	cmd.Short = "Invoke a protected tool directly"
+	cmd.Example = strings.ReplaceAll(cmd.Example, "mini call", "mini perm-call")
 	return cmd
 }
 
@@ -233,7 +242,7 @@ func parseParams(pos []string) (map[string]any, bool) {
 	}
 	var params map[string]any
 	if err := json.Unmarshal(raw, &params); err != nil {
-		fmt.Fprintf(os.Stderr, "mini: invalid params JSON: %v\n", err)
+		fmt.Fprintf(os.Stderr, "mini: PARAMS must be a JSON object such as '{\"name\": \"value\"}': %v\n", err)
 		return nil, false
 	}
 	return params, true

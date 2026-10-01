@@ -15,6 +15,8 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
+const noServersConfigured = "no servers configured; run `mini init` to choose from the server catalog, or `mini add NAME --url URL`"
+
 func newLsCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:     "ls [SERVER] [TOOL]",
@@ -57,7 +59,7 @@ func listAllServers(configDir string, out io.Writer) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 	if len(servers) == 0 {
-		fmt.Fprintln(out, "no servers configured")
+		fmt.Fprintln(out, noServersConfigured)
 		return nil
 	}
 	printServerTable(out, servers)
@@ -100,7 +102,7 @@ func runStatus(configDir string) {
 		fatalf("load config: %v", err)
 	}
 	if len(servers) == 0 {
-		fmt.Println("no servers configured")
+		fmt.Println(noServersConfigured)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

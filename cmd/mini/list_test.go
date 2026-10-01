@@ -12,14 +12,14 @@ import (
 )
 
 func TestRunList(t *testing.T) {
-	t.Run("no servers configured prints message", func(t *testing.T) {
+	t.Run("no servers configured points to init", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
 			t.Fatalf("runList: %v", err)
 		}
-		if !strings.Contains(out.String(), "no servers configured") {
-			t.Errorf("output = %q, want 'no servers configured'", out.String())
+		if !strings.Contains(out.String(), "no servers configured") || !strings.Contains(out.String(), "mini init") {
+			t.Errorf("output = %q, want the empty state and a pointer to mini init", out.String())
 		}
 	})
 
