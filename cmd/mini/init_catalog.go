@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"maps"
+	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
@@ -17,18 +19,34 @@ import (
 )
 
 type catalogStepParams struct {
-	configDir string
-	autoYes   bool
-	ask       func(string) string
-	out       io.Writer
-	errOut    io.Writer
+	configDir   string
+	autoYes     bool
+	loadCatalog func() ([]catalog.Entry, error)
+	ask         func(string) string
+	out         io.Writer
+	errOut      io.Writer
+}
+
+type catalogSource struct {
+	client *http.Client
+	url    string
+	warn   io.Writer
+}
+
+func (s catalogSource) entries() ([]catalog.Entry, error) {
+	entries, err := catalog.Fetch(context.Background(), s.client, s.url)
+	if err == nil {
+		return entries, nil
+	}
+	fmt.Fprintf(s.warn, "note: using the built-in server catalog (the published one is unavailable: %v)\n", err)
+	return catalog.Load()
 }
 
 func runCatalogStep(p catalogStepParams) error {
 	if p.autoYes {
 		return nil
 	}
-	entries, err := catalog.Load()
+	entries, err := p.loadCatalog()
 	if err != nil {
 		return err
 	}
@@ -88,8 +106,16 @@ func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 			category = entry.Category
 			fmt.Fprintf(out, "  %s:\n", category)
 		}
-		fmt.Fprintf(out, "    %d. %s - %s\n", i+1, entry.Name, entry.Description)
+		fmt.Fprintf(out, "    %d. %s [%s] - %s\n", i+1, entry.Name, entryHost(entry.URL), entry.Description)
 	}
+}
+
+func entryHost(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	return u.Host
 }
 
 func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {

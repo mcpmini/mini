@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -63,24 +65,81 @@ func TestAvailableCatalogEntriesGroupsCategoriesInFirstSeenOrder(t *testing.T) {
 		{Name: "b", Category: "Data"},
 		{Name: "c", Category: "Dev"},
 	}
-	var names []string
-	for _, entry := range availableCatalogEntries(entries, nil) {
-		names = append(names, entry.Name)
-	}
+	names := catalogNames(availableCatalogEntries(entries, nil))
 	if !reflect.DeepEqual(names, []string{"a", "c", "b"}) {
 		t.Errorf("order = %v, want [a c b]", names)
 	}
 }
 
+func TestCatalogSourcePrefersPublishedCatalog(t *testing.T) {
+	published := `{"schema_version":1,"entries":[{"name":"remote","url":"https://remote.example/mcp","description":"remote","category":"Test","auth":"none"}]}`
+	tests := []struct {
+		name      string
+		status    int
+		wantNames []string
+		wantNote  bool
+	}{
+		{"published catalog", http.StatusOK, []string{"remote"}, false},
+		{"fetch fails", http.StatusInternalServerError, embeddedCatalogNames(t), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				w.Write([]byte(published)) //nolint:errcheck
+			}))
+			t.Cleanup(srv.Close)
+			var warn bytes.Buffer
+
+			entries, err := catalogSource{client: srv.Client(), url: srv.URL, warn: &warn}.entries()
+
+			if err != nil || !reflect.DeepEqual(catalogNames(entries), tt.wantNames) {
+				t.Errorf("entries = %v, %v; want %v", catalogNames(entries), err, tt.wantNames)
+			}
+			if gotNote := strings.Contains(warn.String(), "built-in server catalog"); gotNote != tt.wantNote {
+				t.Errorf("note printed = %v, want %v (%q)", gotNote, tt.wantNote, warn.String())
+			}
+		})
+	}
+}
+
+func embeddedCatalogNames(t *testing.T) []string {
+	t.Helper()
+	entries, err := catalog.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return catalogNames(entries)
+}
+
+func catalogNames(entries []catalog.Entry) []string {
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name)
+	}
+	return names
+}
+
+func TestEntryHostShowsWhereTheServerIs(t *testing.T) {
+	for rawURL, want := range map[string]string{
+		"https://github.com:evil@x.example/mcp": "x.example",
+		"https://a.example:8443/mcp":            "a.example:8443",
+	} {
+		if got := entryHost(rawURL); got != want {
+			t.Errorf("entryHost(%q) = %q, want %q", rawURL, got, want)
+		}
+	}
+}
+
 func TestPrintCatalogEntriesNumbersEntriesUnderCategoryHeaders(t *testing.T) {
 	entries := []catalog.Entry{
-		{Name: "a", Description: "first", Category: "Dev"},
-		{Name: "c", Description: "third", Category: "Dev"},
-		{Name: "b", Description: "second", Category: "Data"},
+		{Name: "a", Description: "first", Category: "Dev", URL: "https://a.example/mcp"},
+		{Name: "c", Description: "third", Category: "Dev", URL: "https://c.example/mcp"},
+		{Name: "b", Description: "second", Category: "Data", URL: "https://b.example/mcp"},
 	}
 	var out bytes.Buffer
 	printCatalogEntries(&out, entries)
-	want := "Available MCP servers:\n  Dev:\n    1. a - first\n    2. c - third\n  Data:\n    3. b - second\n"
+	want := "Available MCP servers:\n  Dev:\n    1. a [a.example] - first\n    2. c [c.example] - third\n  Data:\n    3. b [b.example] - second\n"
 	if out.String() != want {
 		t.Errorf("output =\n%s\nwant\n%s", out.String(), want)
 	}
@@ -94,10 +153,11 @@ func TestRunCatalogStepNeverReplacesAnExistingServerFile(t *testing.T) {
 	out := &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{
-		configDir: dir,
-		ask:       func(string) string { return "a" },
-		out:       out,
-		errOut:    &bytes.Buffer{},
+		configDir:   dir,
+		loadCatalog: catalog.Load,
+		ask:         func(string) string { return "a" },
+		out:         out,
+		errOut:      &bytes.Buffer{},
 	})
 
 	if err != nil {
@@ -118,10 +178,11 @@ func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{
-		configDir: dir,
-		ask:       func(string) string { return "" },
-		out:       out,
-		errOut:    errOut,
+		configDir:   dir,
+		loadCatalog: catalog.Load,
+		ask:         func(string) string { return "" },
+		out:         out,
+		errOut:      errOut,
 	})
 
 	if err != nil {
@@ -130,7 +191,7 @@ func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	if errOut.Len() != 0 {
 		t.Errorf("stderr = %q, want nothing: the login step reports broken files", errOut.String())
 	}
-	if !strings.Contains(out.String(), "Available MCP servers:") || strings.Contains(out.String(), " linear - ") {
+	if !strings.Contains(out.String(), "Available MCP servers:") || strings.Contains(out.String(), " linear [") {
 		t.Errorf("catalog should be offered without linear, configured as my-linear:\n%s", out.String())
 	}
 }
@@ -139,10 +200,11 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	dir := t.TempDir()
 	out := &bytes.Buffer{}
 	err := runCatalogStep(catalogStepParams{
-		configDir: dir,
-		ask:       func(string) string { return catalogNumberOf(t, out.String(), "github") },
-		out:       out,
-		errOut:    &bytes.Buffer{},
+		configDir:   dir,
+		loadCatalog: catalog.Load,
+		ask:         func(string) string { return catalogNumberOf(t, out.String(), "github") },
+		out:         out,
+		errOut:      &bytes.Buffer{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -168,10 +230,11 @@ func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 	out := &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{
-		configDir: dir,
-		ask:       func(string) string { return catalogNumberOf(t, out.String(), "github") },
-		out:       out,
-		errOut:    &bytes.Buffer{},
+		configDir:   dir,
+		loadCatalog: catalog.Load,
+		ask:         func(string) string { return catalogNumberOf(t, out.String(), "github") },
+		out:         out,
+		errOut:      &bytes.Buffer{},
 	})
 
 	if err == nil || !strings.Contains(err.Error(), "servers") {
@@ -212,7 +275,7 @@ func catalogNumberOf(t *testing.T, listing, name string) string {
 	t.Helper()
 	for _, line := range strings.Split(listing, "\n") {
 		number, rest, ok := strings.Cut(strings.TrimSpace(line), ". ")
-		if ok && strings.HasPrefix(rest, name+" - ") {
+		if ok && strings.HasPrefix(rest, name+" [") {
 			return number
 		}
 	}
@@ -283,11 +346,12 @@ func TestAutoYesSkipsCatalogAndAuth(t *testing.T) {
 	dir := loginStepConfig(t, "imported")
 	called := false
 	err := runCatalogStep(catalogStepParams{
-		configDir: dir,
-		autoYes:   true,
-		ask:       func(string) string { called = true; return "a" },
-		out:       &bytes.Buffer{},
-		errOut:    &bytes.Buffer{},
+		configDir:   dir,
+		loadCatalog: func() ([]catalog.Entry, error) { called = true; return nil, nil },
+		autoYes:     true,
+		ask:         func(string) string { called = true; return "a" },
+		out:         &bytes.Buffer{},
+		errOut:      &bytes.Buffer{},
 	})
 	if err != nil || called {
 		t.Errorf("runCatalogStep error=%v called=%v", err, called)
