@@ -216,11 +216,8 @@ type ServerConfig struct {
 	// Enabled defaults to true.
 	Enabled *bool `yaml:"enabled,omitempty"`
 
-	// RuntimeAdded marks servers registered at runtime via the MCP config tool
-	// (not from a config file). Runtime-added servers are untrusted — they may
-	// have been injected by an agent — so their connections get SSRF dial-time
-	// validation in addition to the add_server URL check.
-	RuntimeAdded bool `yaml:"-" json:"-"`
+	// Checked at dial time too, so DNS can't later point an agent's server at the local network.
+	BlockPrivateIPs bool `yaml:"block_private_ips,omitempty" json:"-"`
 }
 
 func (sc ServerConfig) IsEnabled() bool {

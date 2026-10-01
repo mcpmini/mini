@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -21,18 +23,28 @@ func newInstallTestServer(t *testing.T) *Server {
 	return srv
 }
 
-func TestRemoveConfigServer_afterRuntimeTakeoverOfTheName_keepsTheRuntimeServer(t *testing.T) {
+func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *testing.T) {
 	srv := newInstallTestServer(t)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{}); err != nil {
+		t.Fatal(err)
+	}
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
-	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc", RuntimeAdded: true}, &transport.FakeConnection{}); err != nil {
+	path := filepath.Join(srv.configDir, "servers", "svc.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("command: run\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	if srv.removeConfigServer("svc") {
-		t.Error("removeConfigServer removed a server an agent had taken over")
+		t.Error("removeConfigServer removed svc while its file is saved and enabled")
 	}
-	if !srv.isUpstreamRegistered("svc") {
-		t.Error("runtime server svc is gone")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if !srv.removeConfigServer("svc") {
+		t.Error("removeConfigServer kept svc after its file was deleted")
 	}
 }
 

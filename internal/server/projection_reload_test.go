@@ -354,62 +354,6 @@ func TestProjectionReload_setProjectionFinalValuePersistedAndSurvivesReload(t *t
 	}
 }
 
-func TestProjectionReload_runtimeServerProjectionSurvivesReload(t *testing.T) {
-	e := newReloadEnv(t, reloadEnvParams{})
-	e.startPoller()
-
-	runtimeFake := fakeConn("getData")
-	runtimeFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`)
-	proj := map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"a"}}}
-	if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "rt", RuntimeAdded: true, Projections: proj}, runtimeFake); err != nil {
-		t.Fatal(err)
-	}
-
-	e.writeProjFile("getData:\n  include_only: [b]\n")
-	e.advanceTick()
-
-	e.assertDataKeys([]string{"b"}, []string{"a", "secret"})
-
-	rtResp := serve(t, e.srv, callTool("call", map[string]any{
-		"server": "rt", "tool": "getData", "params": map[string]any{},
-	}))
-	data := parseProxyEnvelope(t, toolResultText(t, rtResp)).Data
-	if data["a"] == nil {
-		t.Errorf("runtime server projection wiped by reload: got %v", data)
-	}
-	if data["secret"] != nil {
-		t.Errorf("runtime server projection not applied: secret should be absent, got %v", data)
-	}
-}
-
-func TestProjectionReload_runtimeSetProjectionSurvivesReloadTriggeredByItsOwnProjFile(t *testing.T) {
-	e := newReloadEnv(t, reloadEnvParams{})
-	e.startPoller()
-
-	runtimeFake := fakeConn("getData")
-	runtimeFake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`)
-	if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "rt", RuntimeAdded: true}, runtimeFake); err != nil {
-		t.Fatal(err)
-	}
-
-	serve(t, e.srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "rt", "tool": "getData",
-		"projection": map[string]any{"include_only": []string{"a"}},
-	}))
-	e.advanceTick()
-
-	rtResp := serve(t, e.srv, callTool("call", map[string]any{
-		"server": "rt", "tool": "getData", "params": map[string]any{},
-	}))
-	data := parseProxyEnvelope(t, toolResultText(t, rtResp)).Data
-	if data["a"] == nil {
-		t.Errorf("runtime set_projection dropped on own-write tick: got %v", data)
-	}
-	if data["secret"] != nil {
-		t.Errorf("runtime set_projection not applied after own-write tick: secret should be absent, got %v", data)
-	}
-}
-
 func TestProjectionReload_actionSurvivesReload(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{})
 	e.startPoller()

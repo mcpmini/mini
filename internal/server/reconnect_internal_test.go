@@ -44,7 +44,7 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: oldTools})
 		reconnecting := srv.snapshotUpstreams()[0]
 
-		if _, err := srv.removeServerRuntime("svc"); err != nil {
+		if _, err := srv.removeServerFromAgent("svc"); err != nil {
 			t.Fatal(err)
 		}
 		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, newTools) {

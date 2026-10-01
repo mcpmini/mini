@@ -57,9 +57,9 @@ func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams,
 	case "reload":
 		return s.reloadProjections(), nil
 	case "add_server":
-		return s.addServerRuntime(ctx, p)
+		return s.addServerFromAgent(ctx, p.ServerCfg)
 	case "remove_server":
-		return s.removeServerRuntime(p.ServerName)
+		return s.removeServerFromAgent(p.ServerName)
 	default:
 		return s.dispatchConfigureAuthAction(p)
 	}
@@ -231,10 +231,6 @@ func (s *Server) replaceProjections(load config.LoadProjectionsResult) {
 
 func (s *Server) carryOverPreviousProjectionsLocked(load config.LoadProjectionsResult) {
 	for name, live := range s.projections {
-		if u := s.upstreams[name]; u != nil && u.cfg.RuntimeAdded {
-			load.Projections[name] = live
-			continue
-		}
 		if load.KeepsPreviousProjection(name) {
 			load.Projections[name] = live
 		}
@@ -264,93 +260,6 @@ func projectionCounts(projections map[string]map[string]*config.ProjectionConfig
 		counts[serverName] = len(tools)
 	}
 	return counts
-}
-
-func (s *Server) addServerRuntime(ctx context.Context, p configureParams) (any, error) {
-	if err := s.validateAddServerParams(p); err != nil {
-		return nil, err
-	}
-	p.ServerCfg.RuntimeAdded = true
-	if err := s.AddUpstream(ctx, *p.ServerCfg); err != nil {
-		return nil, err
-	}
-	s.logger.Info("server added at runtime", "server", p.ServerCfg.Name)
-	return map[string]any{"ok": true, "server": p.ServerCfg.Name}, nil
-}
-
-func (s *Server) validateAddServerParams(p configureParams) error {
-	if p.ServerCfg == nil {
-		return fmt.Errorf("config is required for add_server")
-	}
-	if err := validateServerName(p.ServerCfg.Name); err != nil {
-		return err
-	}
-	return s.validateRuntimeTransport(p.ServerCfg)
-}
-
-func (s *Server) validateRuntimeTransport(sc *config.ServerConfig) error {
-	if sc.IsHTTPTransport() {
-		return s.validateRuntimeHTTPTransport(sc)
-	}
-	return s.validateRuntimeStdioTransport(sc)
-}
-
-func (s *Server) validateRuntimeHTTPTransport(sc *config.ServerConfig) error {
-	sc.Auth = nil
-	sc.Headers = nil
-	if s.cfg.DangerousAllowPrivateURLs {
-		return nil
-	}
-	if err := transport.ValidateURL(sc.URL); err != nil {
-		return fmt.Errorf("add_server: %w", err)
-	}
-	return nil
-}
-
-func (s *Server) validateRuntimeStdioTransport(sc *config.ServerConfig) error {
-	if !s.cfg.DangerousAllowRuntimeStdio {
-		return fmt.Errorf("add_server only supports http/sse/streamable transports at runtime; set dangerous_allow_runtime_stdio: true to enable stdio")
-	}
-	sc.Env = nil
-	return nil
-}
-
-func (s *Server) removeServerRuntime(serverName string) (any, error) {
-	if serverName == "" {
-		return nil, fmt.Errorf("server is required for remove_server")
-	}
-	if err := validateServerName(serverName); err != nil {
-		return nil, err
-	}
-	s.detachAndCloseServer(serverName)
-	s.logger.Info("server removed at runtime", "server", serverName)
-	return map[string]any{"ok": true, "server": serverName}, nil
-}
-
-func (s *Server) detachAndCloseServer(serverName string) {
-	s.cancelExistingAuthFlow(serverName)
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	s.detachAndCloseLocked(serverName)
-}
-
-func (s *Server) detachAndCloseLocked(serverName string) {
-	s.removeGen[serverName]++
-	if u := s.detachUpstream(serverName); u != nil {
-		u.shutdownAndClose()
-	}
-	s.sessions.closeServerConnections(serverName)
-	s.reg.RemoveServer(serverName)
-}
-
-func (s *Server) detachUpstream(serverName string) *upstreamServer {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	u := s.upstreams[serverName]
-	delete(s.upstreams, serverName)
-	delete(s.projections, serverName)
-	delete(s.configServers, serverName)
-	return u
 }
 
 func (s *Server) statusReport() map[string]any {

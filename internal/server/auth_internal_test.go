@@ -54,7 +54,7 @@ func TestRemoveServer_closesPendingLogin(t *testing.T) {
 	defer cancel()
 	srv.storeAuthFlow("svc", &authFlowState{cancel: cancel, login: login})
 
-	if _, err := srv.removeServerRuntime("svc"); err != nil {
+	if _, err := srv.removeServerFromAgent("svc"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,7 +121,7 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 			login := authtest.StartLogin(t, ac)
 
 			if tc.remove {
-				if _, err := srv.removeServerRuntime("svc"); err != nil {
+				if _, err := srv.removeServerFromAgent("svc"); err != nil {
 					t.Fatal(err)
 				}
 			}

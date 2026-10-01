@@ -34,7 +34,7 @@ func (s *Server) removeServersGoneFromConfig() {
 	}
 	removed := false
 	for _, name := range s.configServerNames() {
-		if set.KeepsPreviousServer(name) || set.IsEnabled(name) {
+		if !goneFromConfig(set, name) {
 			continue
 		}
 		if s.removeConfigServer(name) {
@@ -47,16 +47,17 @@ func (s *Server) removeServersGoneFromConfig() {
 	}
 }
 
+func goneFromConfig(set config.ServerSet, name string) bool {
+	return !set.KeepsPreviousServer(name) && !set.IsEnabled(name)
+}
+
 func (s *Server) removeConfigServer(name string) bool {
-	// Installs hold serverOpMu, so an agent's add_server can't take the name
-	// over between this check and the removal.
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-	if !s.isConfigServer(name) {
+	unlock := s.serverNames.lock(name)
+	defer unlock()
+	if !s.isConfigServer(name) || !goneFromConfig(config.LoadServerSet(s.configDir), name) {
 		return false
 	}
-	s.cancelExistingAuthFlow(name)
-	s.detachAndCloseLocked(name)
+	s.detachAndCloseServer(name)
 	return true
 }
 
