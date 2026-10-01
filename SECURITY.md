@@ -18,7 +18,11 @@ Out of scope: a fully compromised host OS, or an attacker who can write to `~/.m
 
 ### Prompt injection — `add_server`
 
-The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`), because it can register a new upstream server at a URL controlled by the caller. Like `mini add`, it saves the server to `servers/<name>.yaml`, so whatever it accepts also runs on every later start. All of its rules live in `internal/server/agent_server.go`.
+The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`), because it can register a new upstream server at a URL controlled by the caller. Like `mini add`, it saves the server to `servers/<name>.yaml`, so whatever it accepts also runs on every later start. What it accepts is decided in `internal/server/agent_server.go`; how it saves, connects and rolls back is in `internal/server/configure_servers.go`.
+
+**`agent_added: true`**: the saved file records that an agent supplied the server, and mini keeps treating it as untrusted until the user deletes that line:
+- every connection re-checks resolved addresses at dial time (see SSRF blocking below);
+- it never gets OAuth from detection. Detection would use the server's own metadata to choose the authorization and token endpoints, so an agent's server could have the user log in to a real vendor and receive the authorization code and PKCE verifier. Bundled vendor auth, picked by host, still applies.
 
 **Strip on ingest** (`agentServerConfig`):
 
@@ -41,7 +45,7 @@ Headers, env and auth are the only server fields where `${VAR}` expands, so stri
 - Direct IP references to private ranges are blocked: `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` (IMDS), `100.64.0.0/10`, `::1/128`, `fc00::/7`, `fe80::/10`, `0.0.0.0/8`
 - IPv4-in-IPv6 addresses (`::ffff:127.0.0.1`) are unmapped before range checks
 
-A server added by `add_server` is saved with `block_private_ips: true`, so every connection to it, including after a restart, re-checks the resolved IP at dial time. That covers DNS rebinding and a hostname that resolves to a private address.
+A server added by `add_server` is saved with `agent_added: true`, so every connection to it, including after a restart, re-checks the resolved IP at dial time. That covers DNS rebinding and a hostname that resolves to a private address.
 
 **Mitigation**: For defense in depth, deploy mini behind a network policy or firewall that blocks egress to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8) from the mini process.
 

@@ -67,3 +67,17 @@ func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
 		t.Error("expected connection to be closed on guard rejection")
 	}
 }
+
+func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.T) {
+	srv := newInstallTestServer(t)
+	srv.cfg.DangerousAllowPrivateURLs = true
+	startedDuringTheAdd := srv.replacingInstall(config.ServerConfig{Name: "svc"})
+
+	if _, err := srv.addServerFromAgent(t.Context(), &config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp"}); err == nil {
+		t.Fatal("add_server to an unreachable URL succeeded")
+	}
+
+	if err := srv.installChecked(&transport.FakeConnection{}, nil, startedDuringTheAdd); !errors.Is(err, errServerRemoved) {
+		t.Errorf("install started during the failed add = %v, want errServerRemoved so no unsaved server runs", err)
+	}
+}

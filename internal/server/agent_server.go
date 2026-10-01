@@ -7,7 +7,8 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// add_server saves an agent's config and runs it on every start, so nothing in it may carry credentials or reach the local network.
+// add_server saves the agent's config, so it runs again on every start: drop whatever could
+// carry the user's credentials or make the running server differ from the saved one.
 func (s *Server) agentServerConfig(raw *config.ServerConfig) (config.ServerConfig, error) {
 	if raw == nil {
 		return config.ServerConfig{}, errors.New("config is required")
@@ -17,11 +18,11 @@ func (s *Server) agentServerConfig(raw *config.ServerConfig) (config.ServerConfi
 	}
 	sc := *raw
 	sc.Auth, sc.Headers, sc.Env = nil, nil, nil
-	sc.Projections, sc.Enabled = nil, nil
+	sc.Projections, sc.Enabled, sc.HandshakeTimeout = nil, nil, ""
 	if err := s.checkAgentTransport(sc); err != nil {
 		return config.ServerConfig{}, err
 	}
-	sc.BlockPrivateIPs = true
+	sc.AgentAdded = true
 	return sc, nil
 }
 

@@ -126,6 +126,7 @@ func TestDetectOAuth_ineligibleServers(t *testing.T) {
 		{"stdio transport", func(sc *config.ServerConfig) { sc.Transport = "stdio" }},
 		{"static auth header", func(sc *config.ServerConfig) { sc.Headers = map[string]string{"Authorization": "Bearer tok"} }},
 		{"custom-named credential header", func(sc *config.ServerConfig) { sc.Headers = map[string]string{"X-Api-Key": "key"} }},
+		{"added by an agent", func(sc *config.ServerConfig) { sc.AgentAdded = true }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

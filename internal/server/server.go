@@ -31,7 +31,7 @@ type Server struct {
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
 	providerRegistry     *provider.Registry
-	// Held for a whole add_server or remove_server, so one name's saved and live states agree.
+	// Held across each whole change to one name, so its saved and live states agree.
 	serverNames nameLocks
 	// Lock ordering: serverNames → persistMu → serverOpMu → stateMu → authMu.
 	// stateMu is the innermost hot-path lock (RLock on every request);

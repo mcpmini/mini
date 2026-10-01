@@ -226,6 +226,10 @@ func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
 	if _, err := config.LoadServer(dir, "missing"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("LoadServer(missing) err = %v, want fs.ErrNotExist", err)
 	}
+	writeFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  format: bogus\n")
+	if _, err := config.LoadServer(dir, "linear"); err == nil {
+		t.Error("LoadServer accepted a projection format Load rejects, so the server would stop mini's next start")
+	}
 }
 
 func TestLoadProjections_parity(t *testing.T) {

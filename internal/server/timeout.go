@@ -27,8 +27,6 @@ func parseToolTimeout(spec string) (time.Duration, bool) {
 
 const defaultHandshakeTimeout = 30 * time.Second
 
-// Config load rejects unparseable handshake_timeout specs; the fallback only keeps a
-// caller that skips the loader from connecting with no timeout.
 func applyHandshakeTimeout(ctx context.Context, spec string) (context.Context, context.CancelFunc) {
 	ts, err := config.ParseTimeoutSpec(spec, defaultHandshakeTimeout)
 	if err != nil {

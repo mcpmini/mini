@@ -45,6 +45,9 @@ func LoadServer(configDir, name string) (ServerConfig, error) {
 	}
 	servers := []ServerConfig{*sc}
 	mergeProjections(servers, projections)
+	if err := validateServerProjectionFormats(name, servers[0].Projections); err != nil {
+		return ServerConfig{}, err
+	}
 	mergeKnownAuth(configDir, servers)
 	return servers[0], nil
 }

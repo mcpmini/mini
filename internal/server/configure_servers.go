@@ -25,7 +25,7 @@ func (s *Server) addServerFromAgent(ctx context.Context, raw *config.ServerConfi
 }
 
 func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) error {
-	if s.isRunning(sc.Name) {
+	if s.isUpstreamRegistered(sc.Name) {
 		return errAlreadyRunning(sc.Name)
 	}
 	_, err := ops.AddServer(s.configDir, sc)
@@ -37,9 +37,7 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 	}
 	saved, err := s.connectSaved(ctx, sc.Name)
 	if err != nil {
-		if rmErr := ops.RemoveServer(s.configDir, sc.Name); rmErr != nil {
-			s.logger.Warn("add_server: remove the server it could not connect", "server", sc.Name, "err", rmErr)
-		}
+		s.rollBackAdd(sc.Name)
 		return err
 	}
 	s.recordConfigServers([]config.ServerConfig{saved})
@@ -58,14 +56,16 @@ func (s *Server) connectSaved(ctx context.Context, name string) (config.ServerCo
 	return saved, err
 }
 
-func errAlreadyRunning(name string) error {
-	return fmt.Errorf("add_server: %s is already running; remove it with remove_server first", name)
+// Detaching first also stops a login or install for the name that started while the add ran.
+func (s *Server) rollBackAdd(name string) {
+	s.detachAndCloseServer(name)
+	if err := ops.RemoveServer(s.configDir, name); err != nil {
+		s.logger.Warn("add_server: remove the server it could not connect", "server", name, "err", err)
+	}
 }
 
-func (s *Server) isRunning(name string) bool {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	return s.upstreams[name] != nil
+func errAlreadyRunning(name string) error {
+	return fmt.Errorf("add_server: %s is already running; remove it with remove_server first", name)
 }
 
 func (s *Server) removeServerFromAgent(name string) (any, error) {

@@ -4,6 +4,7 @@ package server_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,14 +13,15 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
-	"time"
 
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 type configToolEnv struct {
@@ -83,9 +85,10 @@ func TestConfigAddServer_savesAndConnectsTheServer(t *testing.T) {
 
 	text, failed := e.addServer(map[string]any{
 		"name": "added", "transport": "http", "url": upstream.URL,
-		"headers":     map[string]any{"Authorization": "Bearer stolen"},
-		"projections": map[string]any{"ping": map[string]any{"include_only": []string{"x"}}},
-		"enabled":     false,
+		"headers":          map[string]any{"Authorization": "Bearer stolen"},
+		"projections":      map[string]any{"ping": map[string]any{"include_only": []string{"x"}}},
+		"enabled":          false,
+		"handshakeTimeout": "0",
 	})
 
 	if failed {
@@ -98,8 +101,11 @@ func TestConfigAddServer_savesAndConnectsTheServer(t *testing.T) {
 	if saved.URL != upstream.URL || !saved.IsEnabled() {
 		t.Errorf("saved url %q enabled %v, want %q and enabled", saved.URL, saved.IsEnabled(), upstream.URL)
 	}
-	if !saved.BlockPrivateIPs {
-		t.Error("saved server lacks block_private_ips, so a restart would drop the private-address check")
+	if saved.HandshakeTimeout != "" {
+		t.Errorf("saved handshake_timeout %q, want the default so a hung server can't hold the name", saved.HandshakeTimeout)
+	}
+	if !saved.AgentAdded {
+		t.Error("saved server lacks agent_added, so a restart would trust it like one the user added")
 	}
 	if len(saved.Headers) != 0 || saved.Auth != nil || len(saved.Projections) != 0 {
 		t.Errorf("saved headers %v, auth %+v, projections %v; want the agent's credentials and rules stripped", saved.Headers, saved.Auth, saved.Projections)
@@ -181,48 +187,40 @@ func TestConfigAddServer_envReferenceInURL_isRefusedSoARestartCantExpandIt(t *te
 	e.assertNotSaved("leak")
 }
 
-func TestConfigAddServer_reusingARemovedName_isNeverSentItsToken(t *testing.T) {
+func TestConfigAddServer_aSavedAgentServerNeverGetsOAuthFromItsOwnChallenge(t *testing.T) {
 	e := newConfigToolEnv(t)
-	writeServerYAML(t, e.dir, "svc", "transport: http\nurl: https://trusted.example/mcp\nauth:\n  type: oauth2\n")
-	if err := auth.Save(e.dir, "svc", &oauth2.Token{AccessToken: "user-token", Expiry: time.Now().Add(time.Hour)}); err != nil {
-		t.Fatal(err)
-	}
-	attacker, authHeaders := newRecordingMCPServer(t)
-
-	if text, failed := e.removeServer("svc"); failed {
-		t.Fatalf("remove_server: %s", text)
-	}
-	if text, failed := e.addServer(map[string]any{"name": "svc", "transport": "http", "url": attacker.URL, "command": "server-slack"}); failed {
+	upstream, demandOAuth := newMCPServerThatLaterDemandsOAuth(t)
+	if text, failed := e.addServer(map[string]any{"name": "evil", "transport": "http", "url": upstream.URL}); failed {
 		t.Fatalf("add_server: %s", text)
 	}
-	restartWithSavedServers(t, e.dir)
+	demandOAuth()
 
-	for _, header := range authHeaders() {
-		if header != "" {
-			t.Fatalf("the agent's server received Authorization %q", header)
-		}
+	restartErr := restartWithSavedServer(t, e.dir, "evil")
+
+	if errors.Is(restartErr, transport.ErrReauthRequired) || config.IsOAuthDetected(e.dir, "evil") {
+		t.Errorf("restart err = %v, OAuth marker = %v; want a plain failure and no marker", restartErr, config.IsOAuthDetected(e.dir, "evil"))
+	}
+	if text, failed := e.call(map[string]any{"action": "start_auth", "server": "evil"}); !failed {
+		t.Errorf("start_auth = %q, want it refused: the server's own metadata would pick where the code goes", text)
 	}
 }
 
-func newRecordingMCPServer(t *testing.T) (*httptest.Server, func() []string) {
+func newMCPServerThatLaterDemandsOAuth(t *testing.T) (*httptest.Server, func()) {
 	t.Helper()
-	var mu sync.Mutex
-	var headers []string
+	var demanding atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		headers = append(headers, r.Header.Get("Authorization"))
-		mu.Unlock()
+		if demanding.Load() {
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		fakeMCPHandle(w, r, pingTools)
 	}))
 	t.Cleanup(srv.Close)
-	return srv, func() []string {
-		mu.Lock()
-		defer mu.Unlock()
-		return slices.Clone(headers)
-	}
+	return srv, func() { demanding.Store(true) }
 }
 
-func restartWithSavedServers(t *testing.T, dir string) {
+func restartWithSavedServer(t *testing.T, dir, name string) error {
 	t.Helper()
 	cfg, servers, err := config.Load(dir)
 	if err != nil {
@@ -230,9 +228,8 @@ func restartWithSavedServers(t *testing.T, dir string) {
 	}
 	cfg.DangerousAllowPrivateURLs = true
 	restarted := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
-	for _, sc := range servers {
-		restarted.AddUpstream(t.Context(), sc) //nolint:errcheck // the recorded headers are what's asserted
-	}
+	t.Cleanup(restarted.Close)
+	return restarted.AddUpstream(t.Context(), *config.FindServer(servers, name))
 }
 
 func TestConfigAddServer_overlappingAddsOfOneName_theFirstWins(t *testing.T) {
@@ -245,10 +242,14 @@ func TestConfigAddServer_overlappingAddsOfOneName_theFirstWins(t *testing.T) {
 	}()
 	<-inHandshake
 	secondResult := make(chan string, 1)
+	secondDone := make(chan struct{})
+	winner := newMCPTestServer(t, pingTools)
 	go func() {
-		text, _ := e.addServer(map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL})
-		secondResult <- text
+		var text string
+		defer func() { secondResult <- text; close(secondDone) }()
+		text, _ = e.addServer(map[string]any{"name": "svc", "transport": "http", "url": winner.URL})
 	}()
+	e.waitUntilQueuedOrDone("svc", secondDone)
 
 	finishHandshake()
 	<-firstDone
@@ -278,6 +279,7 @@ func TestConfigRemoveServer_duringAnAddOfTheSameName_leavesSavedEqualToLive(t *t
 		defer close(removeDone)
 		e.removeServer("svc")
 	}()
+	e.waitUntilQueuedOrDone("svc", removeDone)
 
 	finishHandshake()
 	<-addDone
@@ -288,7 +290,7 @@ func TestConfigRemoveServer_duringAnAddOfTheSameName_leavesSavedEqualToLive(t *t
 	}
 }
 
-func TestConfigAddServer_aRolledBackAddNeverDeletesALaterAddsFile(t *testing.T) {
+func TestConfigAddServer_anAddThatSucceedsAfterARemoveStaysSavedAndLive(t *testing.T) {
 	e := newConfigToolEnv(t)
 	slow, inHandshake, finishHandshake := newGatedMCPServer(t)
 	firstDone := make(chan struct{})
@@ -297,25 +299,22 @@ func TestConfigAddServer_aRolledBackAddNeverDeletesALaterAddsFile(t *testing.T) 
 		e.addServer(map[string]any{"name": "svc", "transport": "http", "url": slow.URL})
 	}()
 	<-inHandshake
+	later := newMCPTestServer(t, pingTools)
 	removeThenAddDone := make(chan struct{})
+	var laterAddFailed bool
 	go func() {
 		defer close(removeThenAddDone)
 		e.removeServer("svc")
-		e.addServer(map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL})
+		_, laterAddFailed = e.addServer(map[string]any{"name": "svc", "transport": "http", "url": later.URL})
 	}()
-	// Serialized calls wait for the first add, so this only waits out the grace period;
-	// unserialized ones finish first and the first add then fails and rolls back.
-	select {
-	case <-removeThenAddDone:
-	case <-time.After(200 * time.Millisecond):
-	}
+	e.waitUntilQueuedOrDone("svc", removeThenAddDone)
 
 	finishHandshake()
 	<-firstDone
 	<-removeThenAddDone
 
-	if saved, live := e.isSaved("svc"), e.srv.ToolCount("svc") > 0; saved != live {
-		t.Errorf("saved=%v live=%v, want them equal once every call returned", saved, live)
+	if saved, live := e.isSaved("svc"), e.srv.ToolCount("svc") > 0; laterAddFailed || !saved || !live {
+		t.Errorf("later add failed=%v, saved=%v, live=%v; want the add that reported success kept", laterAddFailed, saved, live)
 	}
 }
 
@@ -340,6 +339,14 @@ func TestConfigAddAndRemoveServer_racingOnOneName_alwaysLeaveSavedEqualToLive(t 
 		if saved, live := e.isSaved("svc"), e.srv.ToolCount("svc") > 0; saved != live {
 			t.Fatalf("iteration %d: saved=%v live=%v after both calls returned", i, saved, live)
 		}
+	}
+}
+
+// Returns once a second call waits on name's lock behind the one holding it, or once that
+// call finished without waiting, as it would if the lock were missing.
+func (e configToolEnv) waitUntilQueuedOrDone(name string, done <-chan struct{}) {
+	for e.srv.NameLockCallers(name) < 2 && !isClosed(done) {
+		runtime.Gosched()
 	}
 }
 
