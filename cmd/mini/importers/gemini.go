@@ -3,6 +3,8 @@ package importers
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 type geminiMCPEntry struct {
@@ -13,28 +15,14 @@ type geminiMCPEntry struct {
 	Headers map[string]string `json:"headers"`
 }
 
-// ImportFromGemini reads a Gemini CLI settings.json.
+// ReadGemini reads a Gemini CLI settings.json.
 // Format: mcpServers map with httpUrl (HTTP) or command/args (stdio).
-func ImportFromGemini(configDir, path string) error {
-	servers, err := loadGeminiServers(path)
+func ReadGemini(path string) (map[string]config.ServerConfig, error) {
+	entries, err := loadGeminiServers(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(servers) == 0 {
-		fmt.Println("no mcpServers found in Gemini CLI config")
-		return nil
-	}
-	return writeGeminiServers(configDir, servers)
-}
-
-func writeGeminiServers(configDir string, servers map[string]geminiMCPEntry) error {
-	for name, entry := range servers {
-		if err := WriteServerYAML(configDir, name, geminiEntryToServer(name, entry)); err != nil {
-			return err
-		}
-	}
-	fmt.Println("tip: replace any literal tokens in headers with ${ENV_VAR} references")
-	return nil
+	return serverConfigs(entries), nil
 }
 
 func loadGeminiServers(path string) (map[string]geminiMCPEntry, error) {
@@ -51,16 +39,9 @@ func loadGeminiServers(path string) (map[string]geminiMCPEntry, error) {
 	return cfg.McpServers, nil
 }
 
-func geminiEntryToServer(name string, entry geminiMCPEntry) ServerYAML {
-	sc := ServerYAML{Name: name}
-	if entry.HTTPUrl != "" {
-		sc.Transport = "http"
-		sc.URL = entry.HTTPUrl
-		sc.Headers = entry.Headers
-		return sc
+func (e geminiMCPEntry) serverConfig(name string) config.ServerConfig {
+	if e.HTTPUrl != "" {
+		return httpServer(name, e.HTTPUrl, e.Headers)
 	}
-	sc.Command = entry.Command
-	sc.Args = entry.Args
-	sc.Env = envList(entry.Env)
-	return sc
+	return stdioServer(name, e.Command, e.Args, e.Env)
 }

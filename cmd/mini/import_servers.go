@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"slices"
@@ -15,71 +16,81 @@ import (
 	"github.com/mcpmini/mini/internal/ops"
 )
 
-type claudeImport struct {
+type serverImport struct {
 	configDir string
-	source    string
-	selfPath  string
+	source    string // the agent's name, or the config's path
+	out       io.Writer
+	errOut    io.Writer
 }
 
-// source names where the servers come from in messages: the agent's name, or the --from path.
 func importClaudeFormat(configDir, source, path string) []string {
-	data, err := importers.ReadConfigFile(path)
+	imp := serverImport{configDir: configDir, source: source, out: os.Stdout, errOut: os.Stderr}
+	servers, err := importers.ReadClaude(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
+		fmt.Fprintf(imp.errOut, "  warning: %v\n", err)
 		return nil
 	}
-	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
-	imp := claudeImport{configDir: configDir, source: source, selfPath: selfPath}
-	servers := importers.ExtractClaudeMCPServers(data)
-	var imported []string
-	for _, name := range slices.Sorted(maps.Keys(servers)) {
-		if imp.importEntry(name, servers[name]) {
-			imported = append(imported, name)
-		}
-	}
-	return imported
+	return imp.addAll(servers)
 }
 
-func (imp claudeImport) importEntry(name string, entry importers.ClaudeMCPEntry) bool {
-	if isSelfEntry(entry.Command, imp.selfPath) {
-		return false
+func (imp serverImport) addAll(servers map[string]config.ServerConfig) []string {
+	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
+	var added []string
+	for _, name := range slices.Sorted(maps.Keys(servers)) {
+		sc := servers[name]
+		if !isSelfEntry(sc.Command, selfPath) && imp.add(sc) {
+			added = append(added, name)
+		}
 	}
-	server := importers.ClaudeEntryToServer(name, entry)
-	added, err := importers.AddServerYAML(imp.configDir, name, server)
+	return added
+}
+
+func (imp serverImport) add(sc config.ServerConfig) bool {
+	added, err := ops.AddServer(imp.configDir, sc)
 	if errors.Is(err, ops.ErrAlreadyConfigured) {
-		imp.reportConfigured(name, server)
+		imp.reportConfigured(sc)
 		return false
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
+		fmt.Fprintf(imp.errOut, "  warning: %v\n", err)
 		return false
 	}
-	importers.PrintAdded(os.Stdout, added)
+	printAdded(imp.out, added)
 	return true
 }
 
+func printAdded(w io.Writer, added ops.AddedServer) {
+	fmt.Fprintf(w, "added %s → %s\n", added.Config.Name, added.Path)
+	if added.ProjectionPath != "" {
+		fmt.Fprintf(w, "installed default projection → %s\n", added.ProjectionPath)
+	}
+	if added.DefaultPermissions {
+		fmt.Fprintf(w, "applied default permissions → %s\n", added.Path)
+	}
+}
+
 // Names the differing fields but never their values: headers and env usually hold tokens.
-func (imp claudeImport) reportConfigured(name string, imported importers.ServerYAML) {
-	path := config.ServerPath(imp.configDir, name)
+func (imp serverImport) reportConfigured(imported config.ServerConfig) {
+	path := config.ServerPath(imp.configDir, imported.Name)
 	differences, err := configuredDifferences(path, imported)
 	switch {
 	case err != nil:
-		fmt.Printf("  %s: %s not imported, %v\n", imp.source, name, err)
+		fmt.Fprintf(imp.out, "  %s: %s not imported, %v\n", imp.source, imported.Name, err)
 	case len(differences) == 0:
-		fmt.Printf("  %s: %s already configured in mini\n", imp.source, name)
+		fmt.Fprintf(imp.out, "  %s: %s already configured in mini\n", imp.source, imported.Name)
 	default:
-		fmt.Printf("  %s: %s not imported, mini's config has a different %s (edit %s to change it)\n",
-			imp.source, name, strings.Join(differences, ", "), path)
+		fmt.Fprintf(imp.out, "  %s: %s not imported, mini's config has a different %s (edit %s to change it)\n",
+			imp.source, imported.Name, strings.Join(differences, ", "), path)
 	}
 }
 
 // Compares the file as written, before env expansion, since imported values are unexpanded too.
-func configuredDifferences(path string, imported importers.ServerYAML) ([]string, error) {
+func configuredDifferences(path string, imported config.ServerConfig) ([]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var configured importers.ServerYAML
+	var configured config.ServerConfig
 	// yaml errors can quote the offending value, which may be a header token.
 	if yaml.Unmarshal(data, &configured) != nil {
 		return nil, fmt.Errorf("could not compare it with %s, which does not parse", path)
@@ -87,7 +98,7 @@ func configuredDifferences(path string, imported importers.ServerYAML) ([]string
 	return connectionDifferences(configured, imported), nil
 }
 
-func connectionDifferences(configured, imported importers.ServerYAML) []string {
+func connectionDifferences(configured, imported config.ServerConfig) []string {
 	fields := []struct {
 		name string
 		same bool

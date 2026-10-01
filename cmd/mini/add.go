@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -48,6 +49,7 @@ func newAddCmd(opts *rootOptions) *cobra.Command {
 				server:    sf,
 				imports:   imports,
 				out:       cmd.OutOrStdout(),
+				errOut:    cmd.ErrOrStderr(),
 			})
 		},
 	}
@@ -87,6 +89,7 @@ type addParams struct {
 	server    serverFlags
 	imports   importFlags
 	out       io.Writer
+	errOut    io.Writer
 }
 
 func runAddParsed(p addParams) error {
@@ -101,8 +104,7 @@ func runAddImport(p addParams) (bool, error) {
 		if importCount(p.imports) != 1 || len(p.args) != 0 || p.dash >= 0 || p.server.hasServerOptions() {
 			return true, usageErrf("import mode accepts exactly one --from-* flag and no server arguments")
 		}
-		_, err := handleImportFlags(p.configDir, p.imports)
-		return true, err
+		return true, importFromFlag(p)
 	}
 	return false, nil
 }
@@ -151,63 +153,78 @@ func (f serverFlags) hasServerOptions() bool {
 	return f.url != "" || len(f.headers) > 0 || len(f.protected) > 0 || f.noConnect
 }
 
-func handleImportFlags(configDir string, f importFlags) (handled bool, err error) {
+type importSource struct {
+	path string
+	read func(path string) (map[string]config.ServerConfig, error)
+	tip  string
+}
+
+const (
+	headersTip = "tip: replace any literal tokens in headers with ${ENV_VAR} references"
+	envTip     = "tip: replace any literal tokens in env with ${ENV_VAR} references"
+)
+
+func selectedImport(f importFlags) importSource {
 	switch {
 	case f.claude != "":
-		return true, importers.ImportFromClaude(configDir, f.claude)
+		return importSource{path: f.claude, read: importers.ReadClaude, tip: headersTip}
 	case f.cursor != "":
-		return true, importers.ImportFromCursor(configDir, f.cursor)
+		return importSource{path: f.cursor, read: importers.ReadClaude, tip: headersTip}
 	case f.codex != "":
-		return true, importers.ImportFromCodex(configDir, f.codex)
+		return importSource{path: f.codex, read: importers.ReadCodex, tip: envTip}
 	case f.gemini != "":
-		return true, importers.ImportFromGemini(configDir, f.gemini)
-	case f.openclaw != "":
-		return true, importers.ImportFromOpenClaw(configDir, f.openclaw)
+		return importSource{path: f.gemini, read: importers.ReadGemini, tip: headersTip}
 	default:
-		return false, nil
+		return importSource{path: f.openclaw, read: importers.ReadOpenClaw, tip: envTip}
 	}
+}
+
+func importFromFlag(p addParams) error {
+	src := selectedImport(p.imports)
+	servers, err := src.read(src.path)
+	if err != nil {
+		return err
+	}
+	if len(servers) == 0 {
+		fmt.Fprintf(p.out, "no MCP servers found in %s\n", src.path)
+		return nil
+	}
+	imp := serverImport{configDir: p.configDir, source: src.path, out: p.out, errOut: p.errOut}
+	if len(imp.addAll(servers)) > 0 {
+		fmt.Fprintln(p.out, src.tip)
+	}
+	return nil
 }
 
 func addNamedServer(configDir string, sf serverFlags, out io.Writer) error {
-	if sf.url != "" {
-		if err := importers.WriteServerYAML(configDir, sf.name, httpServerYAML(sf.name, sf.url, sf.headers, sf.protected)); err != nil {
-			return err
-		}
-		if !sf.noConnect {
-			connectAndAuthorizeIfNeeded(configDir, sf.name, out)
-		}
-		return nil
+	added, err := ops.AddServer(configDir, sf.serverConfig())
+	if errors.Is(err, ops.ErrAlreadyConfigured) {
+		return fmt.Errorf("%s is already configured; run `mini rm %s` first to replace it", sf.name, sf.name)
 	}
-	if len(sf.cmdArgs) == 0 {
-		return usageErrf("provide --url or a command after NAME")
+	if err != nil {
+		return err
 	}
-	return importers.WriteServerYAML(configDir, sf.name, stdioServerYAML(sf.name, sf.cmdArgs, sf.protected))
+	printAdded(out, added)
+	if sf.url != "" && !sf.noConnect {
+		connectAndAuthorizeIfNeeded(configDir, sf.name, out)
+	}
+	return nil
 }
 
-func httpServerYAML(name, url string, headers, protected stringSlice) importers.ServerYAML {
-	return importers.ServerYAML{
-		Name:        name,
-		Transport:   "http",
-		URL:         url,
-		Headers:     parseHeaders(headers),
-		Permissions: permissionsYAML(protected),
+func (f serverFlags) serverConfig() config.ServerConfig {
+	sc := config.ServerConfig{Name: f.name}
+	if len(f.protected) > 0 {
+		sc.Permissions = &config.PermissionsConfig{Protected: f.protected}
 	}
-}
-
-func stdioServerYAML(name string, rest []string, protected stringSlice) importers.ServerYAML {
-	return importers.ServerYAML{
-		Name:        name,
-		Command:     rest[0],
-		Args:        rest[1:],
-		Permissions: permissionsYAML(protected),
+	if f.url != "" {
+		sc.Transport = "http"
+		sc.URL = f.url
+		sc.Headers = parseHeaders(f.headers)
+		return sc
 	}
-}
-
-func permissionsYAML(protected stringSlice) *importers.PermissionsYAML {
-	if len(protected) == 0 {
-		return nil
-	}
-	return &importers.PermissionsYAML{Protected: []string(protected)}
+	sc.Command = f.cmdArgs[0]
+	sc.Args = f.cmdArgs[1:]
+	return sc
 }
 
 func runRemove(configDir string, args []string, out io.Writer) error {

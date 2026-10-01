@@ -28,7 +28,7 @@ func AddServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 	if err := validServerName(sc.Name); err != nil {
 		return AddedServer{}, err
 	}
-	added, err := writeServer(configDir, sc, os.O_EXCL)
+	added, err := writeServer(configDir, sc)
 	if errors.Is(err, fs.ErrExist) {
 		err = fmt.Errorf("%s is %w", sc.Name, ErrAlreadyConfigured)
 	}
@@ -41,22 +41,6 @@ func AddServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 	added.ProjectionPath, err = InstallBundledProjection(configDir, sc)
 	if err != nil {
 		return AddedServer{}, errors.Join(err, os.Remove(added.Path))
-	}
-	return added, nil
-}
-
-// WriteServer replaces any existing server file and keeps the name's stored state.
-func WriteServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
-	if err := validServerName(sc.Name); err != nil {
-		return AddedServer{}, err
-	}
-	added, err := writeServer(configDir, sc, os.O_TRUNC)
-	if err != nil {
-		return AddedServer{}, err
-	}
-	added.ProjectionPath, err = InstallBundledProjection(configDir, sc)
-	if err != nil {
-		return AddedServer{}, err
 	}
 	return added, nil
 }
@@ -92,7 +76,7 @@ func forgetStateStoredByName(configDir, name string) error {
 	return nil
 }
 
-func writeServer(configDir string, sc config.ServerConfig, openFlag int) (AddedServer, error) {
+func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 	written, defaultPermissions := withBundledPermissions(sc)
 	path := config.ServerPath(configDir, sc.Name)
 	data, err := yaml.Marshal(written)
@@ -102,17 +86,17 @@ func writeServer(configDir string, sc config.ServerConfig, openFlag int) (AddedS
 	if err := config.ValidateServerFile(path, data); err != nil {
 		return AddedServer{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return AddedServer{}, fmt.Errorf("create servers dir: %w", err)
-	}
-	if err := writeNewOrTruncate(path, data, openFlag); err != nil {
+	if err := writeNewFile(path, data); err != nil {
 		return AddedServer{}, fmt.Errorf("write %s: %w", path, err)
 	}
 	return AddedServer{Config: written, Path: path, DefaultPermissions: defaultPermissions}, nil
 }
 
-func writeNewOrTruncate(path string, data []byte, openFlag int) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|openFlag, 0600)
+func writeNewFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		return err
 	}
@@ -120,8 +104,8 @@ func writeNewOrTruncate(path string, data []byte, openFlag int) error {
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
-	// A partly written file this call created would read as an existing server on every rerun.
-	if err != nil && openFlag == os.O_EXCL {
+	// Adds never replace a file, so a partly written one would block every later add.
+	if err != nil {
 		os.Remove(path) //nolint:errcheck
 	}
 	return err

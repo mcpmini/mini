@@ -19,12 +19,12 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func TestWriteServer(t *testing.T) {
+func TestAddServer_writtenFile(t *testing.T) {
 	t.Run("roundtrips command and args", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Command: "npx", Args: []string{"-y", "server-github"}}
-		if _, err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
@@ -39,8 +39,8 @@ func TestWriteServer(t *testing.T) {
 	t.Run("roundtrips url and transport", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "remote", Transport: "http", URL: "https://example.com/mcp"}
-		if _, err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "remote.yaml"), &got)
@@ -62,8 +62,8 @@ func TestWriteServer(t *testing.T) {
 				Hidden:    []string{"internal_tool"},
 			},
 		}
-		if _, err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "guarded.yaml"), &got)
@@ -78,8 +78,8 @@ func TestWriteServer(t *testing.T) {
 	t.Run("empty stdio fields absent from yaml for http server", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "http-only", Transport: "http", URL: "https://example.com"}
-		if _, err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		data, _ := os.ReadFile(filepath.Join(dir, "servers", "http-only.yaml"))
 		for _, unwanted := range []string{"command:", "args:", "env:"} {
@@ -91,8 +91,8 @@ func TestWriteServer(t *testing.T) {
 
 	t.Run("file has 0600 permissions", func(t *testing.T) {
 		dir := tempDir(t)
-		if _, err := ops.WriteServer(dir, config.ServerConfig{Name: "sec", Command: "run"}); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "sec", Command: "run"}); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		info, _ := os.Stat(filepath.Join(dir, "servers", "sec.yaml"))
 		if perm := info.Mode().Perm(); perm != 0600 {
@@ -100,18 +100,11 @@ func TestWriteServer(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid name returns error", func(t *testing.T) {
-		dir := tempDir(t)
-		if _, err := ops.WriteServer(dir, config.ServerConfig{Name: "bad name!"}); err == nil {
-			t.Fatal("expected error for invalid server name")
-		}
-	})
-
 	t.Run("known server installs bundled projection", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		if _, err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		dest := filepath.Join(dir, "servers", "gh.proj.yaml")
 		data, err := os.ReadFile(dest)
@@ -126,8 +119,8 @@ func TestWriteServer(t *testing.T) {
 	t.Run("known server installs bundled permissions when none specified", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		if _, err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
@@ -149,8 +142,8 @@ func TestWriteServer(t *testing.T) {
 				Protected: []string{"my_tool"},
 			},
 		}
-		if _, err := ops.WriteServer(dir, sc); err != nil {
-			t.Fatalf("WriteServer: %v", err)
+		if _, err := ops.AddServer(dir, sc); err != nil {
+			t.Fatalf("AddServer: %v", err)
 		}
 		var got config.ServerConfig
 		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
