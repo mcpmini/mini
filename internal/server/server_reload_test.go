@@ -32,7 +32,7 @@ func (e *serverReloadEnv) serverPath(name string) string {
 
 func (e *serverReloadEnv) writeServer(name, extra string) {
 	e.t.Helper()
-	writeReloadFile(e.t, e.serverPath(name), "name: "+name+"\ntransport: http\nurl: "+e.upstream.URL+"\n"+extra)
+	writeReloadFile(e.t, e.serverPath(name), "transport: http\nurl: "+e.upstream.URL+"\n"+extra)
 }
 
 func (e *serverReloadEnv) removeServerFile(name string) {
@@ -103,31 +103,36 @@ func TestServerReload_disabledServer_isRemoved(t *testing.T) {
 	e.assertRemoved("svc")
 }
 
-func TestServerReload_inlineServerDroppedFromConfigYAML_isRemoved(t *testing.T) {
-	e := newServerReloadEnv(t)
-	writeReloadFile(t, filepath.Join(e.dir, "config.yaml"), "servers:\n- name: inline\n  transport: http\n  url: "+e.upstream.URL+"\n")
-	e.connectConfigured()
-	e.startPoller()
-	e.assertConnected("inline")
+func TestServerReload_brokenFileHoldsOnlyItsServer(t *testing.T) {
+	breaks := map[string]func(e *serverReloadEnv){
+		"malformed": func(e *serverReloadEnv) {
+			writeReloadFile(e.t, e.serverPath("broken"), "url: [oops\n")
+		},
+		"unreadable": func(e *serverReloadEnv) {
+			e.removeServerFile("broken")
+			if err := os.Mkdir(e.serverPath("broken"), 0700); err != nil {
+				e.t.Fatal(err)
+			}
+		},
+	}
+	for name, breakFile := range breaks {
+		t.Run(name, func(t *testing.T) {
+			e := newServerReloadEnv(t)
+			e.startWithServers("gone", "broken")
 
-	writeReloadFile(t, filepath.Join(e.dir, "config.yaml"), "servers: []\n")
-	e.advanceTick()
+			breakFile(e)
+			e.removeServerFile("gone")
+			e.advanceTick()
+			e.assertRemoved("gone")
+			e.assertConnected("broken")
 
-	e.assertRemoved("inline")
-}
-
-func TestServerReload_brokenConfigFile_holdsRemovalsUntilItLoads(t *testing.T) {
-	e := newServerReloadEnv(t)
-	e.startWithServers("gone", "other")
-
-	e.removeServerFile("gone")
-	writeReloadFile(t, e.serverPath("other"), "name: other\nurl: [oops\n")
-	e.advanceTick()
-	e.assertConnected("gone")
-
-	e.writeServer("other", "")
-	e.advanceTick()
-	e.assertRemoved("gone")
+			if err := os.RemoveAll(e.serverPath("broken")); err != nil {
+				t.Fatal(err)
+			}
+			e.advanceTick()
+			e.assertRemoved("broken")
+		})
+	}
 }
 
 func TestServerReload_editBeforePollerStarts_isApplied(t *testing.T) {

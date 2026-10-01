@@ -132,9 +132,6 @@ type Config struct {
 	// DisableAuthBrowserOpen prevents mini from opening the browser automatically
 	// during config:start_auth. The auth URL is still returned to the agent.
 	DisableAuthBrowserOpen bool `yaml:"disable_auth_browser_open,omitempty"`
-
-	// Servers is a list of upstream MCP server configs (alternative to servers/ dir).
-	Servers []ServerConfig `yaml:"servers,omitempty"`
 }
 
 // SessionModePerSession is the session_mode value that gives each session its own upstream connection.
@@ -159,8 +156,8 @@ func DefaultConfig() *Config {
 
 // ServerConfig describes one upstream MCP server.
 type ServerConfig struct {
-	// Name is the server identifier used in tool namespacing.
-	Name string `yaml:"name"`
+	// Name is the server identifier used in tool namespacing. It comes from the file name, servers/<name>.yaml.
+	Name string `yaml:"-"`
 
 	// Command and Args for stdio transport.
 	Command string   `yaml:"command,omitempty"`

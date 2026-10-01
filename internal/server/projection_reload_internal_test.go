@@ -41,7 +41,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("covers server yaml and proj yaml but not other files", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServerFile(t, dir, "svc.yaml", "name: svc\n")
+		writeServerFile(t, dir, "svc.yaml", "transport: stdio\n")
 		writeServerFile(t, dir, "svc.proj.yaml", "tool:\n  include_only: [a]\n")
 		writeServerFile(t, dir, "notes.txt", "ignored")
 		fp := mustFingerprint(t, dir)
@@ -65,43 +65,48 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("identical content yields identical fingerprint", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServerFile(t, dir, "svc.yaml", "name: svc\n")
+		writeServerFile(t, dir, "svc.yaml", "transport: stdio\n")
 		if a, b := mustFingerprint(t, dir), mustFingerprint(t, dir); !reflect.DeepEqual(a, b) {
 			t.Errorf("expected stable fingerprint, got %v vs %v", a, b)
 		}
 	})
 
-	t.Run("unreadable file returns error", func(t *testing.T) {
+	t.Run("unreadable file keeps siblings and reads as changed once it recovers", func(t *testing.T) {
 		dir := t.TempDir()
-		p := writeServerFile(t, dir, "svc.yaml", "name: svc\n")
-		if err := os.Chmod(p, 0000); err != nil {
-			t.Skip("cannot make file unreadable:", err)
-		}
-		t.Cleanup(func() { os.Chmod(p, 0600) }) //nolint:errcheck
-		if _, err := fingerprintConfigSources(dir); err == nil {
-			t.Error("expected error for unreadable file")
-		}
-	})
-
-	t.Run("file absent at hash time is silently skipped", func(t *testing.T) {
-		fp := make(map[string]string)
-		if err := addFileHashIfPresent(fp, filepath.Join(t.TempDir(), "gone.yaml")); err != nil {
-			t.Errorf("unexpected error for absent file: %v", err)
-		}
-		if len(fp) != 0 {
-			t.Errorf("expected empty map for absent file, got %v", fp)
-		}
-	})
-
-	t.Run("includes config.yaml when present", func(t *testing.T) {
-		dir := t.TempDir()
-		cfgPath := filepath.Join(dir, "config.yaml")
-		if err := os.WriteFile(cfgPath, []byte("log_level: debug\n"), 0600); err != nil {
+		sibling := writeServerFile(t, dir, "other.yaml", "transport: stdio\n")
+		broken := filepath.Join(dir, "servers", "svc.yaml")
+		if err := os.Mkdir(broken, 0700); err != nil {
 			t.Fatal(err)
 		}
-		fp := mustFingerprint(t, dir)
-		if _, ok := fp[cfgPath]; !ok {
-			t.Errorf("expected config.yaml in fingerprint, got %v", fp)
+		first, second := mustFingerprint(t, dir), mustFingerprint(t, dir)
+		if _, ok := first[sibling]; !ok {
+			t.Fatalf("fingerprint %v is missing the readable sibling", first)
+		}
+		if first[broken] == "" || first[broken] != second[broken] {
+			t.Fatalf("unreadable file fingerprints %q then %q, want one stable non-empty value", first[broken], second[broken])
+		}
+		if err := os.Remove(broken); err != nil {
+			t.Fatal(err)
+		}
+		writeServerFile(t, dir, "svc.yaml", "transport: stdio\n")
+		if recovered := mustFingerprint(t, dir); recovered[broken] == first[broken] {
+			t.Error("fingerprint unchanged after the unreadable file became readable")
+		}
+	})
+
+	t.Run("file absent at hash time is skipped", func(t *testing.T) {
+		if h, ok := fileFingerprint(filepath.Join(t.TempDir(), "gone.yaml")); ok {
+			t.Errorf("fileFingerprint(absent) = %q, true; want it skipped", h)
+		}
+	})
+
+	t.Run("ignores config.yaml", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("log_level: debug\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if fp := mustFingerprint(t, dir); len(fp) != 0 {
+			t.Errorf("fingerprint = %v, want config.yaml left out", fp)
 		}
 	})
 }

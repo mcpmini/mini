@@ -282,9 +282,9 @@ func TestPrintCatalogEntriesNumbersEntriesUnderCategoryHeaders(t *testing.T) {
 	}
 }
 
-func TestRunCatalogStepNeverReplacesAnExistingServerFile(t *testing.T) {
+func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 	dir := t.TempDir()
-	original := "name: gh\ntransport: http\nurl: https://corp.example/mcp\n"
+	original := "transport: http\nurl: [unfinished\n"
 	path := filepath.Join(dir, "servers", "github.yaml")
 	writeLoginStepFile(t, path, original)
 	out := &bytes.Buffer{}

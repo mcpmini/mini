@@ -30,12 +30,14 @@ func (s *Server) configServerNames() []string {
 func (s *Server) removeServersGoneFromConfig() {
 	set := config.LoadServerSet(s.configDir)
 	if len(set.SourceErrors) > 0 {
-		s.logger.Warn("config reload: not removing servers while a config file fails to load", "files", sourceErrorPaths(set.SourceErrors))
-		return
+		s.logger.Warn("config reload: keeping servers whose config file fails to load", "files", sourceErrorPaths(set.SourceErrors))
 	}
 	removed := false
 	for _, name := range s.configServerNames() {
-		if !set.IsEnabled(name) && s.removeConfigServer(name) {
+		if set.KeepsPreviousServer(name) || set.IsEnabled(name) {
+			continue
+		}
+		if s.removeConfigServer(name) {
 			s.logger.Info("server removed by config change", "server", name)
 			removed = true
 		}
