@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/ops"
 )
 
 type claudeImport struct {
@@ -45,8 +45,8 @@ func (imp claudeImport) importEntry(name string, entry importers.ClaudeMCPEntry)
 		return false
 	}
 	server := importers.ClaudeEntryToServer(name, entry)
-	err := importers.CreateServerYAML(imp.configDir, name, server)
-	if errors.Is(err, fs.ErrExist) {
+	added, err := importers.AddServerYAML(imp.configDir, name, server)
+	if errors.Is(err, ops.ErrAlreadyConfigured) {
 		imp.reportConfigured(name, server)
 		return false
 	}
@@ -54,6 +54,7 @@ func (imp claudeImport) importEntry(name string, entry importers.ClaudeMCPEntry)
 		fmt.Fprintf(os.Stderr, "  warning: %v\n", err)
 		return false
 	}
+	importers.PrintAdded(os.Stdout, added)
 	return true
 }
 

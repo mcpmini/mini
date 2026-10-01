@@ -131,6 +131,19 @@ func ReadTokenState(configDir, serverName string) (TokenState, error) {
 	return TokenExpired, nil
 }
 
+func DeleteCredentials(configDir, serverName string) error {
+	if !config.ValidServerName.MatchString(serverName) {
+		return fmt.Errorf("invalid server name: %q", serverName)
+	}
+	var errs []error
+	for _, path := range []string{tokenPath(configDir, serverName), registrationPath(configDir, serverName)} {
+		if err := os.Remove(path); err != nil && !IsNotFound(err) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func tokenPath(configDir, serverName string) string {
 	return filepath.Join(configDir, "internal", serverName+".token.json")
 }

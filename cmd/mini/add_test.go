@@ -67,6 +67,25 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
+	t.Run("reports the server file, bundled projection and default permissions it wrote", func(t *testing.T) {
+		dir := t.TempDir()
+		printed := captureStdout(t, func() {
+			if err := runAdd(dir, []string{"gh", "--", "npx", "-y", "server-github"}, &bytes.Buffer{}); err != nil {
+				t.Fatalf("runAdd: %v", err)
+			}
+		})
+		serverPath := filepath.Join(dir, "servers", "gh.yaml")
+		for _, want := range []string{
+			"added gh → " + serverPath,
+			"installed default projection → " + filepath.Join(dir, "servers", "gh.proj.yaml"),
+			"applied default permissions → " + serverPath,
+		} {
+			if !strings.Contains(printed, want) {
+				t.Errorf("output %q is missing %q", printed, want)
+			}
+		}
+	})
+
 	t.Run("stdio child flags are stored unchanged", func(t *testing.T) {
 		dir := t.TempDir()
 		args := []string{"svc", "--", "/usr/bin/printf", "-h", "--config", "child-value"}

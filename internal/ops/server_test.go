@@ -2,14 +2,19 @@ package ops_test
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
 )
@@ -18,7 +23,7 @@ func TestWriteServer(t *testing.T) {
 	t.Run("roundtrips command and args", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Command: "npx", Args: []string{"-y", "server-github"}}
-		if err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.WriteServer(dir, sc); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
 		var got config.ServerConfig
@@ -34,7 +39,7 @@ func TestWriteServer(t *testing.T) {
 	t.Run("roundtrips url and transport", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "remote", Transport: "http", URL: "https://example.com/mcp"}
-		if err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.WriteServer(dir, sc); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
 		var got config.ServerConfig
@@ -57,7 +62,7 @@ func TestWriteServer(t *testing.T) {
 				Hidden:    []string{"internal_tool"},
 			},
 		}
-		if err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.WriteServer(dir, sc); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
 		var got config.ServerConfig
@@ -73,7 +78,7 @@ func TestWriteServer(t *testing.T) {
 	t.Run("empty stdio fields absent from yaml for http server", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "http-only", Transport: "http", URL: "https://example.com"}
-		if err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.WriteServer(dir, sc); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
 		data, _ := os.ReadFile(filepath.Join(dir, "servers", "http-only.yaml"))
@@ -86,7 +91,7 @@ func TestWriteServer(t *testing.T) {
 
 	t.Run("file has 0600 permissions", func(t *testing.T) {
 		dir := tempDir(t)
-		if err := ops.WriteServer(dir, config.ServerConfig{Name: "sec", Command: "run"}); err != nil {
+		if _, err := ops.WriteServer(dir, config.ServerConfig{Name: "sec", Command: "run"}); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
 		info, _ := os.Stat(filepath.Join(dir, "servers", "sec.yaml"))
@@ -97,7 +102,7 @@ func TestWriteServer(t *testing.T) {
 
 	t.Run("invalid name returns error", func(t *testing.T) {
 		dir := tempDir(t)
-		if err := ops.WriteServer(dir, config.ServerConfig{Name: "bad name!"}); err == nil {
+		if _, err := ops.WriteServer(dir, config.ServerConfig{Name: "bad name!"}); err == nil {
 			t.Fatal("expected error for invalid server name")
 		}
 	})
@@ -105,7 +110,7 @@ func TestWriteServer(t *testing.T) {
 	t.Run("known server installs bundled projection", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		if err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.WriteServer(dir, sc); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
 		dest := filepath.Join(dir, "servers", "gh.proj.yaml")
@@ -121,7 +126,7 @@ func TestWriteServer(t *testing.T) {
 	t.Run("known server installs bundled permissions when none specified", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		if err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.WriteServer(dir, sc); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
 		var got config.ServerConfig
@@ -144,7 +149,7 @@ func TestWriteServer(t *testing.T) {
 				Protected: []string{"my_tool"},
 			},
 		}
-		if err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.WriteServer(dir, sc); err != nil {
 			t.Fatalf("WriteServer: %v", err)
 		}
 		var got config.ServerConfig
@@ -161,121 +166,220 @@ func TestWriteServer(t *testing.T) {
 	})
 }
 
-func TestCreateServer(t *testing.T) {
-	t.Run("creates a missing server file that loads back under its name", func(t *testing.T) {
+func TestAddServer(t *testing.T) {
+	t.Run("writes a new server that loads back under its name", func(t *testing.T) {
 		dir := tempDir(t)
-		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		if err := ops.CreateServer(dir, sc); err != nil {
-			t.Fatalf("CreateServer: %v", err)
-		}
-		data, err := os.ReadFile(filepath.Join(dir, "servers", "gh.yaml"))
+		github := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
+
+		added, err := ops.AddServer(dir, github)
+
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("AddServer: %v", err)
 		}
-		if strings.Contains(string(data), "name:") {
-			t.Errorf("server file = %q, want no name key: the file name is the server name", data)
+		if added.Path != filepath.Join(dir, "servers", "gh.yaml") || added.ProjectionPath != filepath.Join(dir, "servers", "gh.proj.yaml") {
+			t.Errorf("paths = %q, %q", added.Path, added.ProjectionPath)
+		}
+		if !added.DefaultPermissions || added.Config.Permissions == nil {
+			t.Errorf("added = %+v, want github's bundled permissions applied and reported", added)
 		}
 		_, servers, err := config.Load(dir)
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if got := config.FindServer(servers, "gh"); got == nil || got.URL != sc.URL {
-			t.Errorf("loaded servers = %#v, want gh with URL %q", servers, sc.URL)
-		}
-		if _, err := os.Stat(filepath.Join(dir, "servers", "gh.proj.yaml")); err != nil {
-			t.Errorf("bundled projection not installed: %v", err)
+		if got := config.FindServer(servers, "gh"); got == nil || got.URL != github.URL {
+			t.Errorf("loaded servers = %#v, want gh with URL %q", servers, github.URL)
 		}
 	})
 
-	t.Run("drops OAuth state left by a hand-deleted server of the same name", func(t *testing.T) {
+	t.Run("a reused name never inherits the old server's token, registration or OAuth marker", func(t *testing.T) {
 		dir := tempDir(t)
-		if err := config.MarkOAuthDetected(dir, "gh"); err != nil {
+		saveCredentials(t, dir, "reused")
+		if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
 			t.Fatal(err)
 		}
-		if err := ops.CreateServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}); err != nil {
-			t.Fatalf("CreateServer: %v", err)
+
+		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
+			t.Fatal(err)
 		}
-		if config.IsOAuthDetected(dir, "gh") {
-			t.Error("new server inherited the old server's OAuth marker")
+
+		assertNoCredentials(t, dir, "reused")
+		if config.IsOAuthDetected(dir, "reused") {
+			t.Error("the new server inherited the old server's OAuth marker")
 		}
 	})
 
-	t.Run("existing file is left untouched and nothing is installed", func(t *testing.T) {
+	t.Run("a failure to forget old state leaves nothing written", func(t *testing.T) {
 		dir := tempDir(t)
-		path := filepath.Join(dir, "servers", "gh.yaml")
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			t.Fatal(err)
+		writeFile(t, filepath.Join(dir, "internal", "stuck.token.json", "pinned"), "")
+
+		_, err := ops.AddServer(dir, config.ServerConfig{Name: "stuck", Command: "run"})
+
+		if err == nil || !strings.Contains(err.Error(), "forget stuck credentials") {
+			t.Fatalf("err = %v, want the credential cleanup error", err)
 		}
-		edited := []byte("url: https://edited.example/mcp\n")
-		if err := os.WriteFile(path, edited, 0600); err != nil {
-			t.Fatal(err)
+		if fileExists(filepath.Join(dir, "servers", "stuck.yaml")) {
+			t.Error("the server file stayed while its name may still hand out the old token")
 		}
-		if err := config.MarkOAuthDetected(dir, "gh"); err != nil {
-			t.Fatal(err)
+	})
+
+	t.Run("prints nothing, since the config tool calls it where stdout is the MCP stream", func(t *testing.T) {
+		dir := tempDir(t)
+		printed := captureStdout(t, func() {
+			if _, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}); err != nil {
+				t.Fatal(err)
+			}
+		})
+		if printed != "" {
+			t.Errorf("AddServer printed %q", printed)
 		}
-		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
-		err := ops.CreateServer(dir, sc)
-		if !errors.Is(err, fs.ErrExist) {
-			t.Fatalf("err = %v, want fs.ErrExist", err)
+	})
+
+	for name, existing := range map[string]string{
+		"a configured server": "command: original\n",
+		"a file that fails to load, possibly mid-edit": "command: [unfinished\n",
+	} {
+		t.Run("refuses "+name+" and keeps its state", func(t *testing.T) {
+			dir := tempDir(t)
+			path := filepath.Join(dir, "servers", "taken.yaml")
+			writeFile(t, path, existing)
+			saveCredentials(t, dir, "taken")
+
+			_, err := ops.AddServer(dir, config.ServerConfig{Name: "taken", Command: "replacement"})
+
+			if !errors.Is(err, ops.ErrAlreadyConfigured) {
+				t.Fatalf("err = %v, want ErrAlreadyConfigured", err)
+			}
+			if got, _ := os.ReadFile(path); string(got) != existing {
+				t.Errorf("file = %q, want it untouched", got)
+			}
+			if _, err := auth.Load(dir, "taken"); err != nil {
+				t.Errorf("the configured server lost its token: %v", err)
+			}
+		})
+	}
+
+	t.Run("a config that would not load is refused with nothing written", func(t *testing.T) {
+		dir := tempDir(t)
+		_, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp?t=${GITHUB_TOKEN}"})
+		if err == nil || !strings.Contains(err.Error(), "isn't expanded") {
+			t.Fatalf("err = %v, want the load error", err)
 		}
-		got, _ := os.ReadFile(path)
-		if string(got) != string(edited) {
-			t.Errorf("file changed: got %q, want %q", got, edited)
+		if fileExists(filepath.Join(dir, "servers", "gh.yaml")) {
+			t.Error("a server file was written")
 		}
 		if _, err := os.Stat(filepath.Join(dir, "servers", "gh.proj.yaml")); err == nil {
-			t.Error("bundled projection installed despite existing server")
+			t.Error("a bundled projection was installed for a refused server")
 		}
-		if !config.IsOAuthDetected(dir, "gh") {
-			t.Error("existing server lost its OAuth marker")
+	})
+
+	t.Run("concurrent adds of one name: exactly one wins", func(t *testing.T) {
+		dir := tempDir(t)
+		errs := make(chan error, 8)
+		var wg sync.WaitGroup
+		for i := range 8 {
+			wg.Go(func() {
+				_, err := ops.AddServer(dir, config.ServerConfig{Name: "race", Command: fmt.Sprintf("run-%d", i)})
+				errs <- err
+			})
+		}
+		wg.Wait()
+		close(errs)
+		wins := 0
+		for err := range errs {
+			switch {
+			case err == nil:
+				wins++
+			case !errors.Is(err, ops.ErrAlreadyConfigured):
+				t.Errorf("err = %v, want nil or ErrAlreadyConfigured", err)
+			}
+		}
+		if wins != 1 {
+			t.Errorf("%d adds succeeded, want 1", wins)
 		}
 	})
 
 	t.Run("invalid name returns error", func(t *testing.T) {
-		if err := ops.CreateServer(tempDir(t), config.ServerConfig{Name: "bad name!"}); err == nil {
+		if _, err := ops.AddServer(tempDir(t), config.ServerConfig{Name: "bad name!"}); err == nil {
 			t.Fatal("expected error for invalid server name")
 		}
 	})
 }
 
-func TestDeleteServer(t *testing.T) {
-	t.Run("removes the server file", func(t *testing.T) {
+func TestRemoveServer(t *testing.T) {
+	t.Run("removes the file and forgets the token, registration and OAuth marker", func(t *testing.T) {
 		dir := tempDir(t)
-		ops.WriteServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
-		if err := ops.DeleteServer(dir, "toremove"); err != nil {
-			t.Fatalf("DeleteServer: %v", err)
+		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}); err != nil {
+			t.Fatal(err)
 		}
-		if _, err := os.Stat(filepath.Join(dir, "servers", "toremove.yaml")); err == nil {
-			t.Fatal("server file still exists after delete")
+		saveCredentials(t, dir, "toremove")
+		if err := config.MarkOAuthDetected(dir, "toremove"); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := ops.RemoveServer(dir, "toremove"); err != nil {
+			t.Fatalf("RemoveServer: %v", err)
+		}
+
+		if fileExists(filepath.Join(dir, "servers", "toremove.yaml")) {
+			t.Error("server file still exists after remove")
+		}
+		assertNoCredentials(t, dir, "toremove")
+		if config.IsOAuthDetected(dir, "toremove") {
+			t.Error("a server reusing this name would inherit a stale OAuth marker")
 		}
 	})
 
-	t.Run("returns error for non-existent server", func(t *testing.T) {
-		dir := tempDir(t)
-		if err := ops.DeleteServer(dir, "ghost"); err == nil {
-			t.Fatal("expected error deleting non-existent server")
+	t.Run("returns ErrNotExist for a server that isn't configured", func(t *testing.T) {
+		if err := ops.RemoveServer(tempDir(t), "ghost"); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("err = %v, want fs.ErrNotExist", err)
 		}
 	})
 
 	t.Run("returns error for invalid name", func(t *testing.T) {
-		dir := tempDir(t)
-		if err := ops.DeleteServer(dir, "bad name!"); err == nil {
+		if err := ops.RemoveServer(tempDir(t), "bad name!"); err == nil {
 			t.Fatal("expected error for invalid server name")
 		}
 	})
+}
 
-	t.Run("also clears the oauth-detected marker", func(t *testing.T) {
-		dir := tempDir(t)
-		ops.WriteServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}) //nolint:errcheck
-		if err := config.MarkOAuthDetected(dir, "toremove"); err != nil {
-			t.Fatalf("MarkOAuthDetected: %v", err)
-		}
-		if err := ops.DeleteServer(dir, "toremove"); err != nil {
-			t.Fatalf("DeleteServer: %v", err)
-		}
-		if config.IsOAuthDetected(dir, "toremove") {
-			t.Error("a server reusing this name would inherit a stale oauth-detected marker")
-		}
-	})
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout := os.Stdout
+	os.Stdout = w
+	defer func() { os.Stdout = stdout }()
+	fn()
+	w.Close() //nolint:errcheck
+	out, _ := io.ReadAll(r)
+	return string(out)
+}
+
+func saveCredentials(t *testing.T, dir, name string) {
+	t.Helper()
+	if err := auth.Save(dir, name, &oauth2.Token{AccessToken: "old-server-token"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.SaveRegistration(dir, name, &auth.Registration{ClientID: "old-client"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertNoCredentials(t *testing.T, dir, name string) {
+	t.Helper()
+	if _, err := auth.Load(dir, name); !auth.IsNotFound(err) {
+		t.Errorf("token for %s still stored (err = %v); a server reusing the name would be sent it", name, err)
+	}
+	if _, err := auth.LoadRegistration(dir, name); !auth.IsNotFound(err) {
+		t.Errorf("client registration for %s still stored (err = %v)", name, err)
+	}
 }
 
 func readYAML(t *testing.T, path string, out any) {

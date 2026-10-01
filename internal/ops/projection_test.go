@@ -13,8 +13,10 @@ func TestInstallBundledProjection(t *testing.T) {
 	t.Run("known server installs projection file", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "my-github", URL: "https://api.github.com/mcp"}
-		ops.InstallBundledProjection(dir, sc)
 		dest := filepath.Join(dir, "servers", "my-github.proj.yaml")
+		if got := ops.InstallBundledProjection(dir, sc); got != dest {
+			t.Errorf("InstallBundledProjection = %q, want %q", got, dest)
+		}
 		if _, err := os.Stat(dest); err != nil {
 			t.Fatalf("projection file not created: %v", err)
 		}
@@ -48,7 +50,9 @@ func TestInstallBundledProjection(t *testing.T) {
 		original := []byte("# custom\n")
 		os.WriteFile(dest, original, 0600)
 		sc := config.ServerConfig{Name: "my-slack", URL: "https://slack.com/mcp"}
-		ops.InstallBundledProjection(dir, sc)
+		if installed := ops.InstallBundledProjection(dir, sc); installed != "" {
+			t.Errorf("InstallBundledProjection = %q, want \"\" for an existing file", installed)
+		}
 		got, _ := os.ReadFile(dest)
 		if string(got) != string(original) {
 			t.Errorf("existing projection was overwritten; got %q", got)
