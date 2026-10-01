@@ -353,10 +353,9 @@ func TestNewNoRedirectClient_blockPrivateIPs(t *testing.T) {
 	}
 }
 
-// Go's environment proxy lookup is cached per process, so this checks the transport's
-// proxy setting rather than setting HTTP_PROXY and dialing.
 func TestNewNoRedirectClient_blockPrivateIPsBypassesProxies(t *testing.T) {
 	client := NewNoRedirectClient(NoRedirectClientOptions{BlockPrivateIPs: true})
+	// Checked structurally: Go reads the proxy environment once per process, so a test can't set HTTP_PROXY reliably.
 	tr, ok := client.Transport.(*http.Transport)
 	if !ok || tr.Proxy != nil {
 		t.Fatalf("transport = %T with proxy set = %v; want *http.Transport without a proxy, so the SSRF dialer sees the destination", client.Transport, ok && tr.Proxy != nil)
