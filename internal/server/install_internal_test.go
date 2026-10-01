@@ -5,15 +5,19 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -138,5 +142,25 @@ func TestRemoveServerFromAgent_holdsTheNameUntilTheServerIsDetached(t *testing.T
 func waitUntil(condition func() bool) {
 	for !condition() {
 		runtime.Gosched()
+	}
+}
+
+func TestRetryStartupAfter_stopsForACommandAnAgentMayNotRun(t *testing.T) {
+	srv := newInstallTestServer(t)
+	refused := fmt.Errorf("connect to svc: svc: %w", invoke.ErrAgentCommandNotAllowed)
+
+	if srv.retryStartupAfter("svc", refused, time.Second) {
+		t.Error("startup retries a command dangerous_allow_runtime_stdio doesn't allow, so it warns forever")
+	}
+	if !srv.retryStartupAfter("svc", errors.New("connection refused"), time.Second) {
+		t.Error("startup gave up on an ordinary connect failure")
+	}
+}
+
+func TestRollBackAdd_reportsAServerItCouldNotRemove(t *testing.T) {
+	srv := newInstallTestServer(t)
+
+	if err := srv.rollBackAdd("svc"); err == nil || !strings.Contains(err.Error(), "remove it with remove_server") {
+		t.Errorf("rollBackAdd = %v, want the agent told the server is still saved", err)
 	}
 }

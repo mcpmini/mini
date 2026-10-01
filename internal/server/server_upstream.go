@@ -78,6 +78,9 @@ func (s *Server) retryStartupAfter(name string, err error, backoff time.Duration
 	case errors.Is(err, transport.ErrReauthRequired):
 		s.logger.Warn("upstream needs authorization, not retrying", "server", name, "err", err)
 		return false
+	case errors.Is(err, invoke.ErrAgentCommandNotAllowed):
+		s.logger.Warn("upstream not allowed to start, not retrying", "server", name, "err", err)
+		return false
 	}
 	s.logger.Warn("upstream unavailable at startup, retrying", "server", name, "err", err, "backoff", backoff)
 	return true

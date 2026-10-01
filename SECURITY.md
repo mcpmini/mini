@@ -23,17 +23,20 @@ The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`),
 **`agent_added: true`**: the saved file records that an agent supplied the server, and mini keeps treating it as untrusted until the user deletes that line:
 - every connection re-checks resolved addresses at dial time (see SSRF blocking below);
 - a command it runs starts only while `dangerous_allow_runtime_stdio` is on, so turning the setting off stops commands agents added earlier;
-- it never gets OAuth from detection. Detection would use the server's own metadata to choose the authorization and token endpoints, so an agent's server could have the user log in to a real vendor and receive the authorization code and PKCE verifier. Bundled vendor auth, picked by host, still applies.
+- it never gets OAuth from detection. Detection would use the server's own metadata to choose the authorization and token endpoints, so an agent's server could have the user log in to a real vendor and receive the authorization code and PKCE verifier. An agent can't add an OAuth server at all: the add clears the name's token, so the first connect fails and the add is undone (#243).
 
-**Strip on ingest** (`agentServerConfig`):
+**Only the connection is taken from the agent** (`agentServerConfig`): the saved server keeps the agent's `transport`, `url`, `command` and `args`, and every other field keeps mini's default. That includes fields added to the config later. So an agent can't set:
 
-- `sc.Auth = nil` — A crafted auth config with a malicious `token_url` would receive the PKCE `code` + `code_verifier` during an OAuth exchange, enough to mint a token on behalf of the user. Auth setup must go through the CLI (`mini auth`) where endpoints are user-verified.
-- `sc.Headers = nil` — A crafted header map like `{"Authorization": "Bearer <stolen-token>"}` plus an attacker URL would silently forward the token on every subsequent call. The user would never see this happen.
-- `sc.Env = nil` (when `dangerous_allow_runtime_stdio: true`) — Prevents injecting credentials as environment variables into spawned subprocesses.
+- `auth` — a crafted auth config with a malicious `token_url` would receive the PKCE `code` + `code_verifier` during an OAuth exchange, enough to mint a token on behalf of the user. Auth setup must go through the CLI (`mini auth`) where endpoints are user-verified.
+- `headers` — a crafted header map like `{"Authorization": "Bearer <stolen-token>"}` plus an attacker URL would silently forward the token on every subsequent call.
+- `env` — credentials injected as environment variables into a spawned command.
+- `permissions` — an empty block would skip a vendor's bundled list of protected tools.
+- `projections` — `set_projection` is the one writer of projection rules.
+- timeouts — a handshake that never ends would hold the name's lock, and a zero tool timeout removes every call deadline.
 
-Headers, env and auth are the only server fields where `${VAR}` expands, so stripping them also keeps an agent's server from reading the user's environment. A `${VAR}` in `url`, `command` or `args` fails to load, so `add_server` refuses it.
+Headers, env and auth are the only server fields where `${VAR}` expands, so leaving them out also keeps an agent's server from reading the user's environment. A `${VAR}` in `url`, `command` or `args` fails to load, so `add_server` refuses it.
 
-**Reusing a name**: `add_server` refuses a name that is already configured or running (remove it with `remove_server` first). Adding or removing a server deletes the OAuth token, client registration and OAuth marker stored under its name, because those are keyed by name alone: a server reusing the name would otherwise be sent the old one's token. Two paths still reach the old token, because a token isn't tied to the server it was issued for (#266): editing a server's `url` in its file, and replacing a server with `mini rm` and `mini add` while mini is running. Bundled vendor auth is picked by an HTTP server's host alone, never by a `command` on it.
+**Reusing a name**: `add_server` refuses a name that is already configured or running (remove it with `remove_server` first). Adding or removing a server deletes the OAuth token, client registration and OAuth marker stored under its name, because those are keyed by name alone: a server reusing the name would otherwise be sent the old one's token. Three paths still reach the old token, because a token isn't tied to the server it was issued for (#266): editing a server's `url` in its file, replacing a server with `mini rm` and `mini add` while mini is running, and a login that finishes just as its server's name is removed or added again. Bundled vendor auth is picked by an HTTP server's host alone, never by a `command` on it.
 
 **`remove_server` deletes config**: like `mini rm`, it deletes `servers/<name>.yaml` and `<name>.proj.yaml` for any server, including ones the user added. This is deliberate: the config tool does what the CLI does unless an action could gain an agent something, and removing a server can only lose things. The cost is that an agent can permanently delete config the user wrote, or remove a server and add another under its name (#267). Block the `config` tool in the MCP client to keep agents from changing servers.
 

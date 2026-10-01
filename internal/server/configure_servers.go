@@ -39,8 +39,7 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 	s.detachAndCloseServer(sc.Name)
 	saved, err := s.connectSaved(ctx, sc.Name)
 	if err != nil {
-		s.rollBackAdd(sc.Name)
-		return err
+		return errors.Join(err, s.rollBackAdd(sc.Name))
 	}
 	s.recordConfigServers([]config.ServerConfig{saved})
 	return nil
@@ -58,12 +57,14 @@ func (s *Server) connectSaved(ctx context.Context, name string) (config.ServerCo
 	return saved, err
 }
 
-func (s *Server) rollBackAdd(name string) {
-	if err := ops.RemoveServer(s.configDir, name); err != nil {
-		s.logger.Warn("add_server: undo a failed add", "server", name, "err", err)
-	}
+func (s *Server) rollBackAdd(name string) error {
+	err := ops.RemoveServer(s.configDir, name)
 	// Also stops a login or install for the name that started while the add ran.
 	s.detachAndCloseServer(name)
+	if err != nil {
+		return fmt.Errorf("add_server: %s is still saved, so it will start next time; remove it with remove_server: %w", name, err)
+	}
+	return nil
 }
 
 func errAlreadyRunning(name string) error {

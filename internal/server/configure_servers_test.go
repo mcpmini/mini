@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -92,10 +93,13 @@ func TestConfigAddServer_savesAndConnectsTheServer(t *testing.T) {
 
 	text, failed := e.addServer(map[string]any{
 		"name": "added", "transport": "http", "url": upstream.URL,
-		"headers":          map[string]any{"Authorization": "Bearer stolen"},
-		"projections":      map[string]any{"ping": map[string]any{"include_only": []string{"x"}}},
-		"enabled":          false,
-		"handshakeTimeout": "0",
+		"headers":           map[string]any{"Authorization": "Bearer stolen"},
+		"projections":       map[string]any{"ping": map[string]any{"include_only": []string{"x"}}},
+		"permissions":       map[string]any{},
+		"enabled":           false,
+		"handshakeTimeout":  "0",
+		"toolTimeout":       "0",
+		"httpClientTimeout": "0",
 	})
 
 	if failed {
@@ -104,18 +108,9 @@ func TestConfigAddServer_savesAndConnectsTheServer(t *testing.T) {
 	if e.srv.ToolCount("added") == 0 {
 		t.Error("added server is not connected")
 	}
-	saved := readServerYAML(t, e.dir, "added")
-	if saved.URL != upstream.URL || !saved.IsEnabled() {
-		t.Errorf("saved url %q enabled %v, want %q and enabled", saved.URL, saved.IsEnabled(), upstream.URL)
-	}
-	if saved.HandshakeTimeout != "" {
-		t.Errorf("saved handshake_timeout %q, want the default so a hung server can't hold the name", saved.HandshakeTimeout)
-	}
-	if !saved.AgentAdded {
-		t.Error("saved server lacks agent_added, so a restart would trust it like one the user added")
-	}
-	if len(saved.Headers) != 0 || saved.Auth != nil || len(saved.Projections) != 0 {
-		t.Errorf("saved headers %v, auth %+v, projections %v; want the agent's credentials and rules stripped", saved.Headers, saved.Auth, saved.Projections)
+	want := config.ServerConfig{Transport: "http", URL: upstream.URL, AgentAdded: true}
+	if saved := readServerYAML(t, e.dir, "added"); !reflect.DeepEqual(saved, want) {
+		t.Errorf("saved %+v\nwant only the connection and agent_added: credentials, rules, permissions and timeouts keep mini's defaults", saved)
 	}
 	if rules := e.liveProjectionRules("added"); len(rules) != 0 {
 		t.Errorf("live projection rules %v, want none from the agent's config", rules)

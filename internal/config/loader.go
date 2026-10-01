@@ -71,19 +71,10 @@ func loadNamedServerFile(configDir, name string) (*ServerConfig, error) {
 		return nil, err
 	}
 	path := ServerPath(configDir, name)
-	// A case-insensitive disk opens github.yaml for "GitHub", which would then run under the wrong name.
-	if !hasExactFileName(path) {
+	if !ServerFileExists(configDir, name) {
 		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
 	}
 	return loadServerConfig(path)
-}
-
-func hasExactFileName(path string) bool {
-	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil {
-		return false
-	}
-	return slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == filepath.Base(path) })
 }
 
 func completeServers(configDir string, servers []ServerConfig, projections map[string]map[string]*ProjectionConfig) error {

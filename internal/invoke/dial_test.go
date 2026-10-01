@@ -3,11 +3,11 @@
 package invoke
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -77,7 +77,7 @@ func TestDial_agentAddedCommand(t *testing.T) {
 			if err == nil {
 				t.Cleanup(func() { _ = conn.Close() }) // only whether Dial started the command is checked
 			}
-			if refused := err != nil && strings.Contains(err.Error(), "dangerous_allow_runtime_stdio"); refused != tc.wantRefusal {
+			if refused := errors.Is(err, ErrAgentCommandNotAllowed); refused != tc.wantRefusal {
 				t.Errorf("Dial = %v, refused = %v, want %v", err, refused, tc.wantRefusal)
 			}
 			if !tc.wantRefusal && err != nil {
