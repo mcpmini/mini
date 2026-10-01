@@ -110,8 +110,6 @@ func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 	}
 }
 
-// Shown so a tampered published catalog can't quietly point a familiar name at a host
-// that would receive the user's credentials.
 func entryHost(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {

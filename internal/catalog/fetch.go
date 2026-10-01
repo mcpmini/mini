@@ -23,7 +23,6 @@ const (
 func NewFetchClient() *http.Client {
 	return &http.Client{
 		Timeout: fetchTimeout,
-		// A redirect could hand the catalog to another host; refuse it like the upstream HTTP client does.
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

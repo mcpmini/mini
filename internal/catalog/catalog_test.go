@@ -55,8 +55,7 @@ func TestParseAcceptsTextAtTheRunesLimit(t *testing.T) {
 	}
 }
 
-// Validation errors are printed to the terminal, so they must never carry a raw control character.
-func assertParseError(t *testing.T, data []byte, want string) {
+func assertTerminalSafeParseError(t *testing.T, data []byte, want string) {
 	t.Helper()
 	_, err := parse(data)
 	if err == nil || !strings.Contains(err.Error(), want) {
@@ -77,7 +76,7 @@ func TestParseRejectsInvalidEntries(t *testing.T) {
 		{"missing name", func(e map[string]any) { delete(e, "name") }, "catalog entry 1: name is required"},
 		{"missing url", func(e map[string]any) { delete(e, "url") }, `catalog entry "example": url is required`},
 		{"http url", func(e map[string]any) { e["url"] = "http://example.com/mcp" }, `catalog entry "example": url must be an https URL`},
-		{"non-ASCII host", func(e map[string]any) { e["url"] = "https://g\u0456thub.com/mcp" }, `catalog entry "example": url host must be ASCII`},
+		{"lookalike non-ASCII host", func(e map[string]any) { e["url"] = "https://g\u0456thub.com/mcp" }, `catalog entry "example": url host must be ASCII`},
 		{"missing description", func(e map[string]any) { delete(e, "description") }, `catalog entry "example": description is required`},
 		{"blank category", func(e map[string]any) { e["category"] = " " }, `catalog entry "example": category is required`},
 		{"control character", func(e map[string]any) { e["description"] = "hi\x1b[2J" }, `catalog entry "example": description contains control characters`},
@@ -93,7 +92,7 @@ func TestParseRejectsInvalidEntries(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertParseError(t, catalogJSON(t, 1, validEntry(tt.change)), tt.want)
+			assertTerminalSafeParseError(t, catalogJSON(t, 1, validEntry(tt.change)), tt.want)
 		})
 	}
 }
@@ -112,7 +111,7 @@ func TestParseRejectsInvalidDocuments(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assertParseError(t, tt.data, tt.want)
+			assertTerminalSafeParseError(t, tt.data, tt.want)
 		})
 	}
 }

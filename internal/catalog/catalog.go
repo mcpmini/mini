@@ -105,10 +105,7 @@ func validateName(name string) error {
 	return nil
 }
 
-// Catalog text is printed straight to the user's terminal; a fetched catalog must not
-// be able to smuggle in escape sequences (Cc) or reorder or hide text (Cf: bidi
-// overrides, zero-width characters) around the host shown for each entry. Length and
-// spacing limits keep free text from pushing that host out of view.
+// Fetched catalog text reaches the terminal, so it must not hide, reorder, or push aside the host shown beside it.
 func validateText(field, value string) error {
 	if strings.TrimSpace(value) == "" {
 		return fmt.Errorf("%s is required", field)
@@ -130,7 +127,6 @@ func hasIrregularSpacing(value string) bool {
 		strings.ContainsFunc(value, func(r rune) bool { return unicode.IsSpace(r) && r != ' ' })
 }
 
-// Quoted: errors reach the terminal, and an invalid name may hold escape sequences.
 func entryLabel(entry Entry, index int) string {
 	if entry.Name != "" {
 		return strconv.Quote(entry.Name)
@@ -147,8 +143,6 @@ func validateHTTPSURL(rawURL string) error {
 	if err != nil || u.Scheme != "https" || u.Host == "" {
 		return fmt.Errorf("url must be an https URL")
 	}
-	// The listing shows each entry's host as the user's check on where it points, and a
-	// non-ASCII host can pass for a familiar one (a Cyrillic і in github.com).
 	if strings.ContainsFunc(u.Host, func(r rune) bool { return r > unicode.MaxASCII }) {
 		return fmt.Errorf("url host must be ASCII")
 	}

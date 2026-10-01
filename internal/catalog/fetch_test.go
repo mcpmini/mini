@@ -35,8 +35,6 @@ func TestFetchReturnsPublishedEntries(t *testing.T) {
 	}
 }
 
-// Released binaries read the catalog merged to main, so a newer auth kind must not
-// disable the whole published catalog for them.
 func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
 	future := strings.Replace(oneEntryCatalog, `"auth":"none"`, `"auth":"future-kind"`, 1)
 	withEntry := func(entry string) string {
