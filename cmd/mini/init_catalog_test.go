@@ -350,7 +350,7 @@ func TestSelectCatalogEntriesPrintsSetupNotesForSelectedServers(t *testing.T) {
 	}
 	for _, want := range []string{
 		"my-svc needs an access token: create one at https://svc.example/tokens",
-		"token: ${MY_SVC_TOKEN}",
+		"Authorization: Bearer ${MY_SVC_TOKEN}",
 		"apps needs your own OAuth app: register one at https://apps.example/new-app with redirect URI " + auth.ResolvedCallbackURI(nil),
 		"and run: mini auth apps",
 	} {

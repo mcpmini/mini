@@ -145,9 +145,8 @@ func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {
 }
 
 const tokenSetupNote = `%s needs an access token: create one at %s, then add it to servers/%s.yaml, for example:
-  auth:
-    type: bearer
-    token: ${%s}
+  headers:
+    Authorization: Bearer ${%s}
 `
 
 const appSetupNote = `%s needs your own OAuth app: register one at %s with redirect URI %s, then add to servers/%s.yaml:
