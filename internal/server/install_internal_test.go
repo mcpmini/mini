@@ -3,11 +3,14 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -97,5 +100,43 @@ func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *tes
 
 	if err := srv.installChecked(&transport.FakeConnection{}, nil, startedForTheEarlierServer); !errors.Is(err, errServerRemoved) {
 		t.Errorf("install for the earlier svc = %v, want errServerRemoved so it can't replace the added one", err)
+	}
+}
+
+func TestRemoveServerFromAgent_holdsTheNameUntilTheServerIsDetached(t *testing.T) {
+	srv := newInstallTestServer(t)
+	srv.cfg.DangerousAllowPrivateURLs = true
+	path := filepath.Join(srv.configDir, "servers", "svc.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("transport: http\nurl: http://127.0.0.1:1/mcp\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srv.authMu.Lock() // the remove's detach starts by taking authMu, so it waits here after deleting the file
+	removed := make(chan struct{})
+	go func() { defer close(removed); _, _ = srv.removeServerFromAgent("svc") }() // the outcome checked is the add's
+	waitUntil(func() bool { _, err := os.Stat(path); return errors.Is(err, fs.ErrNotExist) })
+
+	added := make(chan struct{})
+	go func() {
+		defer close(added)
+		// The add fails to connect either way; the check is whether it saved svc mid-remove.
+		_, _ = srv.addServerFromAgent(context.Background(), &config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp"})
+	}()
+	waitUntil(func() bool { _, err := os.Stat(path); return srv.NameLockCallers("svc") == 2 || err == nil })
+	_, err := os.Stat(path)
+	srv.authMu.Unlock()
+	<-removed
+	<-added
+
+	if err == nil {
+		t.Error("add_server saved svc while remove_server of svc was still detaching it")
+	}
+}
+
+func waitUntil(condition func() bool) {
+	for !condition() {
+		runtime.Gosched()
 	}
 }
