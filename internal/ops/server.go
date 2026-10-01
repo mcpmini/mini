@@ -106,9 +106,9 @@ func writeNewFile(path string, data []byte) error {
 	}
 	// Adds never replace a file, so a partly written one would block every later add.
 	if err != nil {
-		os.Remove(path) //nolint:errcheck
+		return errors.Join(err, os.Remove(path))
 	}
-	return err
+	return nil
 }
 
 func validServerName(name string) error {
