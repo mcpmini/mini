@@ -86,6 +86,9 @@ func TestFetchRejectsUnusableResponses(t *testing.T) {
 		{"invalid entry", func(w http.ResponseWriter, _ *http.Request) {
 			w.Write([]byte(strings.Replace(oneEntryCatalog, "https://remote", "http://remote", 1))) //nolint:errcheck
 		}, "https"},
+		{"captive portal page", func(w http.ResponseWriter, _ *http.Request) {
+			w.Write([]byte("<html><body>Sign in to the network</body></html>")) //nolint:errcheck
+		}, "parse catalog"},
 		{"unknown schema version", func(w http.ResponseWriter, _ *http.Request) {
 			w.Write([]byte(strings.Replace(oneEntryCatalog, `"schema_version":1`, `"schema_version":2`, 1))) //nolint:errcheck
 		}, "schema_version"},
@@ -140,8 +143,8 @@ func closeAfterPartialBody(t *testing.T) http.HandlerFunc {
 			t.Errorf("hijack: %v", err)
 			return
 		}
-		defer conn.Close()                                                                        //nolint:errcheck // The client has already seen the cut-off body; a close error can't change that.
-		// A failed write surfaces in Flush below.
+		// Closing is what cuts the body short, and it frees the socket even when it reports an error.
+		defer conn.Close() //nolint:errcheck
 		buf.WriteString("HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n" + oneEntryCatalog[:20])
 		if err := buf.Flush(); err != nil {
 			t.Errorf("write partial body: %v", err)

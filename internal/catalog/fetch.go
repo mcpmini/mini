@@ -9,10 +9,9 @@ import (
 	"time"
 )
 
-// GitHub Pages serves the repo root under /mini/, so this is catalog/v1.json as merged to
-// main, and every released binary reads it: v1 changes must stay additive. Binaries skip
-// entries whose auth they don't know, but an oauth2 entry that needs a bundled client
-// registration must wait for the release that bundles it, or older binaries write it without one.
+// GitHub Pages serves catalog/v1.json from main here, and every released binary reads it, so v1
+// changes must stay additive. An oauth2 entry that needs a bundled client registration must wait
+// for the release that bundles it, or older binaries write it without one.
 const PublishedURL = "https://mcpmini.github.io/mini/catalog/v1.json"
 
 const (
