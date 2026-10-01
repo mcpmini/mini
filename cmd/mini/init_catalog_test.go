@@ -87,8 +87,20 @@ func TestResolveCatalogNames(t *testing.T) {
 			t.Fatalf("resolve = %v, %v", catalogNames(got), err)
 		}
 	})
+	t.Run("spaces and trailing commas are ignored", func(t *testing.T) {
+		got, err := resolveCatalogNames(entries, []string{"linear", " notion", ""})
+		if err != nil || !reflect.DeepEqual(catalogNames(got), []string{"linear", "notion"}) {
+			t.Fatalf("resolve = %v, %v", catalogNames(got), err)
+		}
+	})
+	t.Run("no names at all", func(t *testing.T) {
+		got, err := resolveCatalogNames(entries, []string{"", " "})
+		if err == nil || !strings.Contains(err.Error(), "at least one server name") || got != nil {
+			t.Fatalf("resolve = %v, %v", got, err)
+		}
+	})
 	t.Run("unknown names reject all", func(t *testing.T) {
-		got, err := resolveCatalogNames(entries, []string{"nope", "linear", "zzz"})
+		got, err := resolveCatalogNames(entries, []string{"nope", " linear", "zzz "})
 		if err == nil || err.Error() != "not in the server catalog: nope, zzz" || got != nil {
 			t.Fatalf("resolve = %v, %v", got, err)
 		}

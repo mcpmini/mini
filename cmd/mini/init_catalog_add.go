@@ -1,38 +1,46 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/mcpmini/mini/internal/catalog"
 )
 
 func resolveCatalogNames(entries []catalog.Entry, names []string) ([]catalog.Entry, error) {
-	byName := make(map[string]catalog.Entry, len(entries))
-	for _, entry := range entries {
-		byName[strings.ToLower(entry.Name)] = entry
-	}
+	byName := catalogEntriesByName(entries)
 	var resolved []catalog.Entry
 	var unknown []string
 	seen := make(map[string]bool)
 	for _, name := range names {
+		name = strings.TrimSpace(name)
 		key := strings.ToLower(name)
-		if seen[key] {
+		if key == "" || seen[key] {
 			continue
 		}
 		seen[key] = true
-		entry, ok := byName[key]
-		if !ok {
+		if entry, ok := byName[key]; ok {
+			resolved = append(resolved, entry)
+		} else {
 			unknown = append(unknown, name)
-			continue
 		}
-		resolved = append(resolved, entry)
 	}
 	if err := unknownCatalogNamesError(unknown); err != nil {
 		return nil, err
 	}
+	if len(resolved) == 0 {
+		return nil, errors.New("--add needs at least one server name")
+	}
 	return resolved, nil
+}
+
+func catalogEntriesByName(entries []catalog.Entry) map[string]catalog.Entry {
+	byName := make(map[string]catalog.Entry, len(entries))
+	for _, entry := range entries {
+		byName[strings.ToLower(entry.Name)] = entry
+	}
+	return byName
 }
 
 func unknownCatalogNamesError(unknown []string) error {
@@ -46,8 +54,7 @@ func requestedCatalogEntries(names []string) ([]catalog.Entry, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}
-	source := catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL, warn: os.Stderr}
-	entries, err := source.entries()
+	entries, err := publishedCatalogSource().entries()
 	if err != nil {
 		return nil, err
 	}

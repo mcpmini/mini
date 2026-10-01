@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,6 +34,10 @@ type catalogSource struct {
 	client *http.Client
 	url    string
 	warn   io.Writer
+}
+
+func publishedCatalogSource() catalogSource {
+	return catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL, warn: os.Stderr}
 }
 
 func (s catalogSource) entries() ([]catalog.Entry, error) {
