@@ -127,8 +127,8 @@ func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runCatalogStep: %v", err)
 	}
-	if strings.Count(errOut.String(), "broken.yaml") != 1 {
-		t.Errorf("warning = %q, want it to name broken.yaml once", errOut.String())
+	if errOut.Len() != 0 {
+		t.Errorf("stderr = %q, want nothing: the login step reports broken files", errOut.String())
 	}
 	if !strings.Contains(out.String(), "Available MCP servers:") || strings.Contains(out.String(), " linear - ") {
 		t.Errorf("catalog should be offered without linear, configured as my-linear:\n%s", out.String())

@@ -32,7 +32,7 @@ func runCatalogStep(p catalogStepParams) error {
 	if err != nil {
 		return err
 	}
-	available := availableCatalogEntries(entries, configuredServers(p))
+	available := availableCatalogEntries(entries, configuredServers(p.configDir))
 	if len(available) == 0 {
 		return nil
 	}
@@ -40,12 +40,10 @@ func runCatalogStep(p catalogStepParams) error {
 	return selectCatalogEntries(p, available)
 }
 
-func configuredServers(p catalogStepParams) []config.ServerConfig {
-	set := config.LoadServerSet(p.configDir)
-	for _, sourceErr := range set.SourceErrors {
-		fmt.Fprintf(p.errOut, "warning: %v\n", sourceErr.Err)
-	}
-	return slices.Collect(maps.Values(set.Servers))
+// Files that fail to load are left out without a warning: the login step that runs
+// next loads the same files and reports each one once.
+func configuredServers(configDir string) []config.ServerConfig {
+	return slices.Collect(maps.Values(config.LoadServerSet(configDir).Servers))
 }
 
 func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
