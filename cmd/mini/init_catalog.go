@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
 	"net/http"
 	"net/url"
@@ -14,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
@@ -244,14 +244,15 @@ func parseSelectionRange(token string) (int, int, error) {
 func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes []int) ([]int, error) {
 	var written []int
 	for _, index := range indexes {
-		err := ops.CreateServer(p.configDir, catalogServerConfig(entries[index]))
-		if errors.Is(err, fs.ErrExist) {
+		added, err := ops.AddServer(p.configDir, catalogServerConfig(entries[index]))
+		if errors.Is(err, ops.ErrAlreadyConfigured) {
 			fmt.Fprintf(p.out, "  %s already configured in mini\n", entries[index].Name)
 			continue
 		}
 		if err != nil {
 			return written, err
 		}
+		importers.PrintAdded(p.out, added)
 		written = append(written, index)
 	}
 	return written, nil

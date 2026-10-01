@@ -382,6 +382,9 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "servers", "github.proj.yaml")); err != nil {
 		t.Fatalf("github projection: %v", err)
 	}
+	if want := "added github → " + filepath.Join(dir, "servers", "github.yaml"); !strings.Contains(out.String(), want) {
+		t.Errorf("output = %q, want %q", out.String(), want)
+	}
 }
 
 func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
@@ -452,6 +455,7 @@ func TestSelectCatalogEntriesRepromptsAfterInvalidSelection(t *testing.T) {
 	err := selectCatalogEntries(catalogStepParams{
 		configDir: dir,
 		ask:       nextCatalogAnswer(&answers),
+		out:       &bytes.Buffer{},
 		errOut:    errOut,
 	}, []catalog.Entry{{Name: "github", URL: "https://api.githubcopilot.com/mcp/"}})
 	if err != nil {
