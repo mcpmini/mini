@@ -81,7 +81,7 @@ func TestIntegrationLifecycle_disabledServerNotLoaded(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "disabled", fmt.Sprintf(
-		"name: disabled\ncommand: %s\nargs:\n  - --fixtures\n  - %s\nenabled: false\n",
+		"command: %s\nargs:\n  - --fixtures\n  - %s\nenabled: false\n",
 		fakemcpBin, dir))
 
 	client := startServer(t, cfg)
@@ -100,7 +100,7 @@ func TestIntegrationLifecycle_tenServersSimultaneously(t *testing.T) {
 		dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 		name := fmt.Sprintf("svc%d", i)
 		writeServerConfig(t, cfg, name, fmt.Sprintf(
-			"name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n", name, fakemcpBin, dir))
+			"command: %s\nargs:\n  - --fixtures\n  - %s\n", fakemcpBin, dir))
 	}
 
 	client := startServer(t, cfg)

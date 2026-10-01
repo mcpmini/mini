@@ -53,7 +53,7 @@ func newReloadEnv(t *testing.T, p reloadEnvParams) *reloadEnv {
 	t.Helper()
 	dir := evalTempDir(t)
 	if p.ServerYAML == "" {
-		p.ServerYAML = "name: svc\ncommand: echo\n"
+		p.ServerYAML = "command: echo\n"
 	}
 	writeReloadFile(t, filepath.Join(dir, "servers", "svc.yaml"), p.ServerYAML)
 	if p.ProjYAML != "" {
@@ -177,7 +177,7 @@ func TestProjectionReload_editApplied(t *testing.T) {
 }
 
 func TestProjectionReload_deleteRevealsInlineProjections(t *testing.T) {
-	inline := "name: svc\ncommand: echo\nprojections:\n  getData:\n    include_only: [a]\n"
+	inline := "command: echo\nprojections:\n  getData:\n    include_only: [a]\n"
 	e := newReloadEnv(t, reloadEnvParams{ServerYAML: inline, ProjYAML: "getData:\n  include_only: [a, b]\n"})
 	e.startPoller()
 	e.assertDataKeys([]string{"a", "b"}, []string{"secret"})
@@ -214,7 +214,7 @@ func TestProjectionReload_sameSizeEditDetected(t *testing.T) {
 
 func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillReload(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a]\n"})
-	writeReloadFile(t, filepath.Join(e.dir, "servers", "other.yaml"), "name: other\ncommand: echo\n")
+	writeReloadFile(t, filepath.Join(e.dir, "servers", "other.yaml"), "command: echo\n")
 	addReloadUpstreamNamed(t, e.srv, "other")
 	e.startPoller()
 	e.assertDataKeys([]string{"a"}, []string{"b"})
@@ -257,7 +257,7 @@ func TestProjectionReload_inlineProjectionEditDetected(t *testing.T) {
 	e.assertDataKeys([]string{"a", "b", "secret"}, nil)
 
 	writeReloadFile(t, filepath.Join(e.dir, "servers", "svc.yaml"),
-		"name: svc\ncommand: echo\nprojections:\n  getData:\n    include_only: [a]\n")
+		"command: echo\nprojections:\n  getData:\n    include_only: [a]\n")
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})

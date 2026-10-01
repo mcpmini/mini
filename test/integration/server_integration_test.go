@@ -257,7 +257,7 @@ func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 	// Valid upstream (will connect) + unreachable HTTP upstream
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeServerConfig(t, cfg, "dead",
-		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n") // nothing listening
+		"transport: http\nurl: http://127.0.0.1:19998\n") // nothing listening
 	client := startServerWithUnreachable(t, cfg, []string{"dead"})
 	// Should still serve list/call for the working upstream
 	text := client.listTools("github")
@@ -271,7 +271,7 @@ func TestIntegrationProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeServerConfig(t, cfg, "dead",
-		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n")
+		"transport: http\nurl: http://127.0.0.1:19998\n")
 	client := startProxyServerWithUnreachable(t, cfg, []string{"dead"})
 	raw := client.mustCall("tools/list", nil)
 	var result struct {
@@ -298,7 +298,7 @@ func writeGitHubServerYAML(t *testing.T, cfg, permKey, tool string) {
 	t.Helper()
 	serversDir := filepath.Join(cfg, "servers")
 	os.MkdirAll(serversDir, 0700) //nolint:errcheck
-	yaml := "name: github\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " +
+	yaml := "command: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " +
 		filepath.Join(fixturesDir, "github") + "\npermissions:\n  " + permKey + ":\n    - " + tool + "\n"
 	os.WriteFile(filepath.Join(serversDir, "github.yaml"), []byte(yaml), 0600) //nolint:errcheck
 }
@@ -332,7 +332,7 @@ func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
 	cfg := t.TempDir()
 	serversDir := filepath.Join(cfg, "servers")
 	os.MkdirAll(serversDir, 0700)
-	yaml := "name: github\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " +
+	yaml := "command: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " +
 		filepath.Join(fixturesDir, "github") + "\npermissions:\n  hidden:\n    - search_code\n"
 	os.WriteFile(filepath.Join(serversDir, "github.yaml"), []byte(yaml), 0600)
 	text := startServer(t, cfg).listTools("github")
@@ -364,7 +364,7 @@ func TestIntegrationServer_listAllTools(t *testing.T) {
 	for _, srv := range []string{"alpha", "beta"} {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "do_"+srv+".json"), []byte(`{"ok":true}`), 0644)
-		yaml := "name: " + srv + "\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + dir + "\n"
+		yaml := "command: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + dir + "\n"
 		os.WriteFile(filepath.Join(serversDir, srv+".yaml"), []byte(yaml), 0600)
 	}
 	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
@@ -387,7 +387,7 @@ func TestIntegrationServer_multipleUpstreams(t *testing.T) {
 	for _, srv := range []string{"alpha", "beta"} {
 		dir := t.TempDir()
 		os.WriteFile(filepath.Join(dir, "do_thing.json"), []byte(`{"ok":true}`), 0644)
-		yaml := "name: " + srv + "\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + dir + "\n"
+		yaml := "command: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + dir + "\n"
 		os.WriteFile(filepath.Join(serversDir, srv+".yaml"), []byte(yaml), 0600)
 	}
 	client := startServer(t, cfg)

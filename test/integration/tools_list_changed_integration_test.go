@@ -59,7 +59,7 @@ func writeFakeServerWithControlFile(t *testing.T, p fakeServerControlParams) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	yaml := fmt.Sprintf("name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n  - --control-file\n  - %s\n", p.ServerName, fakemcpBin, p.Fixtures, p.ControlFile)
+	yaml := fmt.Sprintf("command: %s\nargs:\n  - --fixtures\n  - %s\n  - --control-file\n  - %s\n", fakemcpBin, p.Fixtures, p.ControlFile)
 	writeStringFile(t, filepath.Join(dir, p.ServerName+".yaml"), yaml)
 }
 

@@ -250,9 +250,9 @@ func TestLoadProjections_parity(t *testing.T) {
 
 func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "name: good\ncommand: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "command: echo\n")
 	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
-	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "name: unset\ncommand: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n")
+	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "command: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n")
 	servers, sourceErrors := config.LoadLenient(dir)
 	var names []string
 	for _, server := range servers {
@@ -268,8 +268,8 @@ func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 
 func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), "name: detected\ncommand: echo\n")
-	writeFile(t, filepath.Join(dir, "servers", "custom.yaml"), "name: custom\ncommand: echo\nauth:\n  type: bearer\n")
+	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), "command: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "custom.yaml"), "command: echo\nauth:\n  type: bearer\n")
 	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
 		t.Fatal(err)
 	}

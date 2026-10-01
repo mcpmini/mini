@@ -134,7 +134,7 @@ func TestIntegrationProjection_wildcardAppliesAllTools(t *testing.T) {
 func TestIntegrationProjection_inlineInServerYAML(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"node_id":"abc","title":"hello"}`})
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "svc", "name: svc\ncommand: "+fakemcpBin+
+	writeServerConfig(t, cfg, "svc", "command: "+fakemcpBin+
 		"\nargs:\n  - --fixtures\n  - "+dir+"\nprojections:\n  get_item:\n    exclude: [node_id]\n")
 
 	b, _ := json.Marshal(startServer(t, cfg).execEnvelope("svc", "get_item", nil).Data)

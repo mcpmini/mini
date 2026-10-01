@@ -11,7 +11,7 @@ func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
-		"name: svc\ntransport: sse\nurl: %s\nauth:\n  type: bearer\n  token: my-secret-token\n", f.srv.URL))
+		"transport: sse\nurl: %s\nauth:\n  type: bearer\n  token: my-secret-token\n", f.srv.URL))
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
@@ -25,7 +25,7 @@ func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
 	f, gotKey := authCapturingMCP(t, "X-Api-Key")
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
-		"name: svc\ntransport: sse\nurl: %s\nauth:\n  type: apikey\n  header: X-Api-Key\n  token: my-api-key\n", f.srv.URL))
+		"transport: sse\nurl: %s\nauth:\n  type: apikey\n  header: X-Api-Key\n  token: my-api-key\n", f.srv.URL))
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
@@ -39,7 +39,7 @@ func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 	f, gotHeader := authCapturingMCP(t, "X-Custom-Key")
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
-		"name: svc\ntransport: sse\nurl: %s\nheaders:\n  X-Custom-Key: custom-value\n", f.srv.URL))
+		"transport: sse\nurl: %s\nheaders:\n  X-Custom-Key: custom-value\n", f.srv.URL))
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)

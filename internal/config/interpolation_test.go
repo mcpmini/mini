@@ -148,7 +148,7 @@ func TestInterpolateActionConfig(t *testing.T) {
 func TestProjectionNotInterpolated(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("UNSET_PROJ_VAR_XXXX")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "name: svc\ncommand: my-mcp\n")
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "command: my-mcp\n")
 	writeFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "list_issues:\n  include_only: [number, title]\n  alias: \"${UNSET_PROJ_VAR_XXXX}\"\n")
 	sc := mustLoadOneServer(t, dir)
 	proj := sc.Projections["list_issues"]

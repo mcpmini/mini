@@ -440,7 +440,7 @@ func TestConfigureReload_resultShape(t *testing.T) {
 	}{
 		{
 			name:       "clean reload: ok=true, loaded counts, skipped=[], no source_errors",
-			files:      map[string]string{"servers/a.yaml": "name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [x]\n"},
+			files:      map[string]string{"servers/a.yaml": "command: echo\nprojections:\n  t:\n    include_only: [x]\n"},
 			wantOK:     true,
 			wantLoaded: []string{"a"},
 		},
@@ -451,12 +451,12 @@ func TestConfigureReload_resultShape(t *testing.T) {
 		},
 		{
 			name:        "bad proj.yaml: ok=false, skipped contains server name",
-			files:       map[string]string{"servers/a.yaml": "name: a\ncommand: echo\n", "servers/a.proj.yaml": "bad: [yaml\n"},
+			files:       map[string]string{"servers/a.yaml": "command: echo\n", "servers/a.proj.yaml": "bad: [yaml\n"},
 			wantSkipped: []string{"a"},
 		},
 		{
 			name:             "loaded excludes kept-previous server when its file broke",
-			files:            map[string]string{"servers/a.yaml": "name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [x]\n", "servers/b.yaml": "name: b\ncommand: echo\nprojections:\n  t:\n    include_only: [y]\n"},
+			files:            map[string]string{"servers/a.yaml": "command: echo\nprojections:\n  t:\n    include_only: [x]\n", "servers/b.yaml": "command: echo\nprojections:\n  t:\n    include_only: [y]\n"},
 			editsAfterStart:  map[string]string{"servers/b.yaml": "bad: [yaml\n"},
 			wantLoaded:       []string{"a"},
 			wantNotLoaded:    []string{"b"},

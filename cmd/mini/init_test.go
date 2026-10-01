@@ -144,7 +144,7 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 			name:     "env in another order, stdio written out",
 			reimport: `{"foo": {"command": "foo-server", "env": {"B": "2", "A": "1"}}}`,
 			edit: func(path string) []byte {
-				return []byte("name: foo\ntransport: stdio\ncommand: foo-server\nenv:\n  - A=1\n  - B=2\n")
+				return []byte("transport: stdio\ncommand: foo-server\nenv:\n  - A=1\n  - B=2\n")
 			},
 			wantLine: "Claude Code: foo already configured in mini",
 		},
@@ -152,7 +152,7 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 			name:     "configured file does not parse",
 			reimport: `{"foo": {"type": "http", "url": "https://foo.example/mcp"}}`,
 			edit: func(path string) []byte {
-				return []byte("name: foo\nheaders:\n  Authorization: !!int secret-token\n")
+				return []byte("headers:\n  Authorization: !!int secret-token\n")
 			},
 			wantLine:  "Claude Code: foo not imported, could not compare it with ",
 			forbidden: "secret-token",

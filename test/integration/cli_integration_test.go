@@ -319,7 +319,7 @@ func TestIntegrationCLI_status_LiveServer(t *testing.T) {
 
 func TestIntegrationCLI_status_Unreachable(t *testing.T) {
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "bad", "name: bad\ncommand: /nonexistent_binary_xyz\n")
+	writeServerConfig(t, cfg, "bad", "command: /nonexistent_binary_xyz\n")
 	_, _, code := runCLI(t, cfg, "status")
 	if code == 0 {
 		t.Error("status with unreachable server should exit non-zero")

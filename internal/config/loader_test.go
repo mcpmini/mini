@@ -269,7 +269,7 @@ func TestValidToolName(t *testing.T) {
 
 func TestLoadServerConfig_handshakeTimeoutParses(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nhandshake_timeout: 3s\n")
+	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: 3s\n")
 	sc := mustLoadOneServer(t, dir)
 	if sc.HandshakeTimeout != "3s" {
 		t.Fatalf("expected handshake_timeout %q, got %q", "3s", sc.HandshakeTimeout)
@@ -280,7 +280,7 @@ func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 	for _, spec := range []string{"-1s", "nonsense"} {
 		t.Run(spec, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nhandshake_timeout: "+spec+"\n")
+			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: "+spec+"\n")
 			expectLoadError(t, dir)
 		})
 	}
@@ -598,7 +598,7 @@ func TestLoadResponseFormat(t *testing.T) {
 
 func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\ncommand: gh-mcp\n")
+	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "command: gh-mcp\n")
 	writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
 	_, _, err := config.Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "toon") {

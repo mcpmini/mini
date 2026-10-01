@@ -114,7 +114,7 @@ func writeServersYAML(configDir, fakemcpBin string, servers map[string]string, c
 }
 
 func buildServerYAML(fakemcpBin, name, fixtureDir, callLogDir string) string {
-	y := "name: " + name + "\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + fixtureDir + "\n"
+	y := "command: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + fixtureDir + "\n"
 	if callLogDir != "" {
 		y += "  - --call-log\n  - " + filepath.Join(callLogDir, name+".log") + "\n"
 	}

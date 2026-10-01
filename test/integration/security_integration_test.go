@@ -59,7 +59,7 @@ func TestIntegrationSecurity_timeoutNoReconnect(t *testing.T) {
 func TestIntegrationSecurity_PermissionCaseMismatch(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"MyTool": `{"id":1}`})
-	writeServerConfig(t, cfg, "svc", "name: svc\ncommand: "+fakemcpBin+"\nargs:\n  - --fixtures\n  - "+dir+
+	writeServerConfig(t, cfg, "svc", "command: "+fakemcpBin+"\nargs:\n  - --fixtures\n  - "+dir+
 		"\npermissions:\n  protected:\n    - MyTool\n")
 
 	client := startServer(t, cfg)

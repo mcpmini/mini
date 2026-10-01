@@ -149,7 +149,7 @@ func TestServerReload_editBeforePollerStarts_isApplied(t *testing.T) {
 func TestServerReload_removalDuringStartupRetry_staysRemoved(t *testing.T) {
 	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
 	e := newServerReloadEnv(t)
-	writeReloadFile(t, e.serverPath("flaky"), "name: flaky\ntransport: http\nurl: "+ts.URL+"\n")
+	writeReloadFile(t, e.serverPath("flaky"), "transport: http\nurl: "+ts.URL+"\n")
 	e.srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "flaky", Transport: "http", URL: ts.URL}})
 	e.waitForRetryBackoff()
 

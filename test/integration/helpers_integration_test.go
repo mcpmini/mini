@@ -125,9 +125,8 @@ func writeStringFile(t *testing.T, path, content string) {
 	}
 }
 
-func fakeServerYAML(serverName, fixtures string) string {
-	return fmt.Sprintf("name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n",
-		serverName, fakemcpBin, fixtures)
+func fakeServerYAML(fixtures string) string {
+	return fmt.Sprintf("command: %s\nargs:\n  - --fixtures\n  - %s\n", fakemcpBin, fixtures)
 }
 
 func toolCallRaw(serverTool string, server, tool string, args map[string]any) map[string]any {
@@ -196,7 +195,7 @@ func writeFakeServer(t *testing.T, configDir, serverName, fixtures string) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	writeStringFile(t, filepath.Join(dir, serverName+".yaml"), fakeServerYAML(serverName, fixtures))
+	writeStringFile(t, filepath.Join(dir, serverName+".yaml"), fakeServerYAML(fixtures))
 }
 
 type FakeMCPControl struct {
@@ -227,7 +226,7 @@ func startFakeMCP(t *testing.T, configDir, serverName, fixtures string) *FakeMCP
 	dir := filepath.Join(configDir, "servers")
 	os.MkdirAll(dir, 0700) //nolint:errcheck
 	addr := readControlAddr(t, startFakeMCPProcess(t, fixtures))
-	os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(fakeServerYAML(serverName, fixtures)), 0600) //nolint:errcheck
+	os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(fakeServerYAML(fixtures)), 0600) //nolint:errcheck
 	return &FakeMCPControl{addr: addr, t: t}
 }
 
@@ -785,8 +784,8 @@ func writeFaultServer(t *testing.T, p faultServerParams) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	yaml := fmt.Sprintf("name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n  - --initial-fault\n  - '%s'\n",
-		p.ServerName, fakemcpBin, p.Fixtures, p.FaultJSON)
+	yaml := fmt.Sprintf("command: %s\nargs:\n  - --fixtures\n  - %s\n  - --initial-fault\n  - '%s'\n",
+		fakemcpBin, p.Fixtures, p.FaultJSON)
 	if p.ToolTimeout != "" {
 		yaml += "tool_timeout: " + p.ToolTimeout + "\n"
 	}
@@ -890,7 +889,7 @@ func writeServerYAML(t *testing.T, configDir, serverName, fixtures, extra string
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	yaml := "name: " + serverName + "\ncommand: " + fakemcpBin +
+	yaml := "command: " + fakemcpBin +
 		"\nargs:\n  - --fixtures\n  - " + fixtures + "\n" + extra
 	if err := os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(yaml), 0600); err != nil {
 		t.Fatal(err)

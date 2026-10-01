@@ -206,7 +206,7 @@ func TestCreateServer(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			t.Fatal(err)
 		}
-		edited := []byte("name: gh\nurl: https://edited.example/mcp\n")
+		edited := []byte("url: https://edited.example/mcp\n")
 		if err := os.WriteFile(path, edited, 0600); err != nil {
 			t.Fatal(err)
 		}
