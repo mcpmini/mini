@@ -235,7 +235,7 @@ func TestAddServer(t *testing.T) {
 	})
 
 	for name, existing := range map[string]string{
-		"a configured server": "command: original\n",
+		"a configured server":                          "command: original\n",
 		"a file that fails to load, possibly mid-edit": "command: [unfinished\n",
 	} {
 		t.Run("refuses "+name+" and keeps its state", func(t *testing.T) {
@@ -327,6 +327,30 @@ func TestRemoveServer(t *testing.T) {
 		if config.IsOAuthDetected(dir, "toremove") {
 			t.Error("a server reusing this name would inherit a stale OAuth marker")
 		}
+	})
+
+	t.Run("a failed cleanup keeps the server so the remove can be retried", func(t *testing.T) {
+		dir := tempDir(t)
+		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "stuck", Command: "run"}); err != nil {
+			t.Fatal(err)
+		}
+		pinned := filepath.Join(dir, "internal", "stuck.token.json", "pinned")
+		writeFile(t, pinned, "")
+
+		if err := ops.RemoveServer(dir, "stuck"); err == nil {
+			t.Fatal("RemoveServer succeeded while the token could not be deleted")
+		}
+		if !fileExists(filepath.Join(dir, "servers", "stuck.yaml")) {
+			t.Fatal("the server file went before its credentials, so a retry cannot finish the cleanup")
+		}
+
+		if err := os.Remove(pinned); err != nil {
+			t.Fatal(err)
+		}
+		if err := ops.RemoveServer(dir, "stuck"); err != nil {
+			t.Fatalf("retried RemoveServer: %v", err)
+		}
+		assertNoCredentials(t, dir, "stuck")
 	})
 
 	t.Run("returns ErrNotExist for a server that isn't configured", func(t *testing.T) {

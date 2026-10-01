@@ -28,7 +28,6 @@ func AddServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 		return AddedServer{}, err
 	}
 	added, err := writeServer(configDir, sc, os.O_EXCL)
-	// Anything at the path counts, including a file that fails to load, so an add never replaces a file mid-edit.
 	if errors.Is(err, fs.ErrExist) {
 		err = fmt.Errorf("%s is %w", sc.Name, ErrAlreadyConfigured)
 	}
@@ -36,7 +35,7 @@ func AddServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 		return AddedServer{}, err
 	}
 	if err := forgetStateStoredByName(configDir, sc.Name); err != nil {
-		os.Remove(added.Path) //nolint:errcheck // the forget error is the one to report
+		os.Remove(added.Path) //nolint:errcheck
 		return AddedServer{}, err
 	}
 	added.ProjectionPath = InstallBundledProjection(configDir, sc)
@@ -60,15 +59,17 @@ func RemoveServer(configDir, name string) error {
 	if err := validServerName(name); err != nil {
 		return err
 	}
+	// State first: the reverse order strands a token when cleanup fails; this one at worst costs a new login.
+	if err := forgetStateStoredByName(configDir, name); err != nil {
+		return err
+	}
 	path := serverPath(configDir, name)
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove %s: %w", path, err)
 	}
-	return forgetStateStoredByName(configDir, name)
+	return nil
 }
 
-// The OAuth marker, token and client registration are keyed by name alone, so a later
-// server reusing the name would inherit them.
 func forgetStateStoredByName(configDir, name string) error {
 	if err := os.Remove(config.ServerMetaPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("forget %s state: %w", name, err)
