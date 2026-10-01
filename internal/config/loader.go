@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -270,6 +271,17 @@ func ServerPath(configDir, name string) string {
 
 func ProjectionPath(configDir, name string) string {
 	return filepath.Join(configDir, "servers", name+".proj.yaml")
+}
+
+// ServerFileExists matches the name exactly: a case-insensitive disk would otherwise
+// treat "GitHub" as github.yaml, and act on that server under the wrong name.
+func ServerFileExists(configDir, name string) bool {
+	path := ServerPath(configDir, name)
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return false
+	}
+	return slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == filepath.Base(path) })
 }
 
 func serverNameFromPath(path string) string {

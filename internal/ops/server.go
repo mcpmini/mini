@@ -64,11 +64,14 @@ func RemoveServer(configDir, name string) error {
 	if err := validServerName(name); err != nil {
 		return err
 	}
+	path := config.ServerPath(configDir, name)
+	if !config.ServerFileExists(configDir, name) {
+		return fmt.Errorf("remove %s: %w", path, fs.ErrNotExist)
+	}
 	// The server file goes last: if cleanup fails, the server stays configured and the remove can be retried.
 	if err := forgetStateStoredByName(configDir, name); err != nil {
 		return err
 	}
-	path := config.ServerPath(configDir, name)
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove %s: %w", path, err)
 	}

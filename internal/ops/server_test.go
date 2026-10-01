@@ -395,6 +395,21 @@ func TestRemoveServer(t *testing.T) {
 		assertNoCredentials(t, dir, "stuck")
 	})
 
+	t.Run("a name differing only in case removes nothing", func(t *testing.T) {
+		dir := tempDir(t)
+		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "github", Command: "run"}); err != nil {
+			t.Fatal(err)
+		}
+		saveCredentials(t, dir, "github")
+
+		if err := ops.RemoveServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("RemoveServer(GitHub) = %v, want fs.ErrNotExist", err)
+		}
+		if !fileExists(filepath.Join(dir, "servers", "github.yaml")) {
+			t.Error("removing GitHub deleted github.yaml")
+		}
+	})
+
 	t.Run("returns ErrNotExist for a server that isn't configured", func(t *testing.T) {
 		if err := ops.RemoveServer(tempDir(t), "ghost"); !errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("err = %v, want fs.ErrNotExist", err)
