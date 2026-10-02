@@ -125,8 +125,15 @@ func writeStringFile(t *testing.T, path, content string) {
 	}
 }
 
-func fakeServerYAML(fixtures string) string {
-	return fmt.Sprintf("command: %s\nargs:\n  - --fixtures\n  - %s\n", fakemcpBin, fixtures)
+func fakeServerYAML(fixtures string, extraArgs ...string) string {
+	data, err := yaml.Marshal(struct {
+		Command string   `yaml:"command"`
+		Args    []string `yaml:"args"`
+	}{fakemcpBin, append([]string{"--fixtures", fixtures}, extraArgs...)})
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 func toolCallRaw(serverTool string, server, tool string, args map[string]any) map[string]any {
@@ -191,11 +198,7 @@ func runCLIWithStdin(t *testing.T, stdin string, configDir string, args ...strin
 
 func writeFakeServer(t *testing.T, configDir, serverName, fixtures string) {
 	t.Helper()
-	dir := filepath.Join(configDir, "servers")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	writeStringFile(t, filepath.Join(dir, serverName+".yaml"), fakeServerYAML(fixtures))
+	writeServerConfig(t, configDir, serverName, fakeServerYAML(fixtures))
 }
 
 type FakeMCPControl struct {
@@ -223,10 +226,8 @@ func startFakeMCPProcess(t *testing.T, fixtures string) io.Reader {
 
 func startFakeMCP(t *testing.T, configDir, serverName, fixtures string) *FakeMCPControl {
 	t.Helper()
-	dir := filepath.Join(configDir, "servers")
-	os.MkdirAll(dir, 0700) //nolint:errcheck
 	addr := readControlAddr(t, startFakeMCPProcess(t, fixtures))
-	os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(fakeServerYAML(fixtures)), 0600) //nolint:errcheck
+	writeFakeServer(t, configDir, serverName, fixtures)
 	return &FakeMCPControl{addr: addr, t: t}
 }
 
@@ -780,19 +781,11 @@ type faultServerParams struct {
 
 func writeFaultServer(t *testing.T, p faultServerParams) {
 	t.Helper()
-	dir := filepath.Join(p.ConfigDir, "servers")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	yaml := fmt.Sprintf("command: %s\nargs:\n  - --fixtures\n  - %s\n  - --initial-fault\n  - '%s'\n",
-		fakemcpBin, p.Fixtures, p.FaultJSON)
+	server := fakeServerYAML(p.Fixtures, "--initial-fault", p.FaultJSON)
 	if p.ToolTimeout != "" {
-		yaml += "tool_timeout: " + p.ToolTimeout + "\n"
+		server += "tool_timeout: " + p.ToolTimeout + "\n"
 	}
-	yaml += p.Extra
-	if err := os.WriteFile(filepath.Join(dir, p.ServerName+".yaml"), []byte(yaml), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeServerConfig(t, p.ConfigDir, p.ServerName, server+p.Extra)
 }
 
 func mockFixtureDir(t *testing.T, fixtures map[string]string) string {
@@ -883,15 +876,3 @@ func addServerViaRPC(t *testing.T, client *mcpClient, name, url string) (isErr b
 	return isErr, txt
 }
 
-func writeServerYAML(t *testing.T, configDir, serverName, fixtures, extra string) {
-	t.Helper()
-	dir := filepath.Join(configDir, "servers")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	yaml := "command: " + fakemcpBin +
-		"\nargs:\n  - --fixtures\n  - " + fixtures + "\n" + extra
-	if err := os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(yaml), 0600); err != nil {
-		t.Fatal(err)
-	}
-}

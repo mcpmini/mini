@@ -80,9 +80,7 @@ func TestIntegrationLifecycle_addServerBadURL(t *testing.T) {
 func TestIntegrationLifecycle_disabledServerNotLoaded(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "disabled", fmt.Sprintf(
-		"command: %s\nargs:\n  - --fixtures\n  - %s\nenabled: false\n",
-		fakemcpBin, dir))
+	writeServerConfig(t, cfg, "disabled", fakeServerYAML(dir)+"enabled: false\n")
 
 	client := startServer(t, cfg)
 	_, isErr := client.execToolAllowError("disabled", "get_item", nil)
@@ -99,8 +97,7 @@ func TestIntegrationLifecycle_tenServersSimultaneously(t *testing.T) {
 	for i := range 10 {
 		dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 		name := fmt.Sprintf("svc%d", i)
-		writeServerConfig(t, cfg, name, fmt.Sprintf(
-			"command: %s\nargs:\n  - --fixtures\n  - %s\n", fakemcpBin, dir))
+		writeFakeServer(t, cfg, name, dir)
 	}
 
 	client := startServer(t, cfg)

@@ -3,7 +3,6 @@
 package integration_test
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -16,10 +15,7 @@ func TestIntegrationListTools_paginatesAcrossPages(t *testing.T) {
 	}
 	dir := mockFixtureDir(t, fixtures)
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
-		"command: %s\nargs:\n  - --fixtures\n  - %s\n  - --list-page-size\n  - \"2\"\n",
-		fakemcpBin, dir,
-	))
+	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir, "--list-page-size", "2"))
 	client := startServer(t, cfg)
 
 	result := client.listTools("svc")

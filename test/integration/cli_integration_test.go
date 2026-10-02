@@ -79,7 +79,7 @@ func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
 		"get_item":   `{"id":1}`,
 		"list_items": `[]`,
 	})
-	writeServerYAML(t, cfg, "svc", dir, "")
+	writeFakeServer(t, cfg, "svc", dir)
 
 	stdout, _, code := runCLI(t, cfg, "ls", "svc")
 	if code != 0 {
@@ -99,7 +99,7 @@ func TestIntegrationCLI_ls_ToolDetail(t *testing.T) {
 		"get_item":   `{"id":1}`,
 		"list_items": `[]`,
 	})
-	writeServerYAML(t, cfg, "svc", dir, "")
+	writeFakeServer(t, cfg, "svc", dir)
 
 	stdout, _, code := runCLI(t, cfg, "ls", "svc", "get_item")
 	if code != 0 {
@@ -123,7 +123,7 @@ func TestIntegrationCLI_ls_UnknownServer(t *testing.T) {
 func TestIntegrationCLI_ls_UnknownTool(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
-	writeServerYAML(t, cfg, "svc", dir, "")
+	writeFakeServer(t, cfg, "svc", dir)
 
 	_, stderr, code := runCLI(t, cfg, "ls", "svc", "nonexistent_tool")
 	if code == 0 {
@@ -303,7 +303,7 @@ func TestIntegrationCLI_status_LiveServer(t *testing.T) {
 		"get_item":   `{"id":1}`,
 		"list_items": `[]`,
 	})
-	writeServerYAML(t, cfg, "svc", dir, "")
+	writeFakeServer(t, cfg, "svc", dir)
 
 	stdout, _, code := runCLI(t, cfg, "status")
 	if code != 0 {
