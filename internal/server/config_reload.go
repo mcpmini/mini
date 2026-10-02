@@ -75,34 +75,28 @@ func fingerprintConfigSources(configDir string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	fp := make(map[string]string, len(paths)+1)
+	fp := make(map[string]string, len(paths))
 	for _, p := range paths {
-		if err := addFileHashIfPresent(fp, p); err != nil {
-			return nil, err
+		if h, ok := fileFingerprint(p); ok {
+			fp[p] = h
 		}
-	}
-	if err := addFileHashIfPresent(fp, filepath.Join(configDir, "config.yaml")); err != nil {
-		return nil, err
 	}
 	return fp, nil
 }
 
-func addFileHash(fp map[string]string, path string) error {
+const unreadableFingerprint = "unreadable"
+
+func fileFingerprint(path string) (string, bool) {
 	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return "", false
+	}
 	if err != nil {
-		return err
+		// Not a scan failure: the loader reports it and holds back only this file's server.
+		return unreadableFingerprint, true
 	}
 	sum := sha256.Sum256(data)
-	fp[path] = hex.EncodeToString(sum[:])
-	return nil
-}
-
-func addFileHashIfPresent(fp map[string]string, path string) error {
-	err := addFileHash(fp, path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
+	return hex.EncodeToString(sum[:]), true
 }
 
 func changedPaths(prev, curr map[string]string) []string {

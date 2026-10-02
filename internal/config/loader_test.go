@@ -67,15 +67,6 @@ func expectLoadActionsError(t *testing.T, dir string) {
 	}
 }
 
-func assertOneServerName(t *testing.T, dir, want string) {
-	t.Helper()
-	cfg, servers := mustLoadConfig(t, dir)
-	_ = cfg
-	if len(servers) != 1 || servers[0].Name != want {
-		t.Fatalf("expected one server %q, got %#v", want, servers)
-	}
-}
-
 func assertDefaultLoadState(t *testing.T, cfg *config.Config, servers []config.ServerConfig) {
 	t.Helper()
 	if len(servers) != 0 {
@@ -114,32 +105,28 @@ log_level: debug
 	}
 }
 
-func TestLoadServerConfigs(t *testing.T) {
+func TestLoad_serverNameComesFromFile(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), `
-name: ci
 command: npx
 args: ["-y", "@buildkite/mcp-server"]
 `)
-	assertOneServerName(t, dir, "ci")
+	writeFile(t, filepath.Join(dir, "servers", "ci.proj.yaml"), "list_builds:\n  include_only: [id]\n")
+	_, servers := mustLoadConfig(t, dir)
+	sc := config.FindServer(servers, "ci")
+	if len(servers) != 1 || sc == nil {
+		t.Fatalf("servers = %#v, want one named ci", servers)
+	}
+	if p := sc.Projections["list_builds"]; p == nil || len(p.IncludeOnly) != 1 {
+		t.Errorf("projections = %v, want ci.proj.yaml applied to ci", sc.Projections)
+	}
 }
 
-func TestLoadInlineServers(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "config.yaml"), `
-servers:
-  - name: fs
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
-`)
-	assertOneServerName(t, dir, "fs")
-}
-
-func TestLoadInlineServers_invalidName_rejected(t *testing.T) {
-	for _, name := range []string{`""`, `"bad name!"`, `"../escape"`, `"a.b"`} {
-		t.Run(name, func(t *testing.T) {
+func TestLoad_invalidServerFileName(t *testing.T) {
+	for _, file := range []string{".yaml", "bad name!.yaml", "a.b.yaml"} {
+		t.Run(file, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n  - name: "+name+"\n    command: echo\n")
+			writeFile(t, filepath.Join(dir, "servers", file), "command: echo\n")
 			if _, _, err := config.Load(dir); err == nil || !strings.Contains(err.Error(), "invalid server name") {
 				t.Fatalf("want an invalid server name error, got %v", err)
 			}
@@ -280,15 +267,9 @@ func TestValidToolName(t *testing.T) {
 	)
 }
 
-func TestLoad_invalidServerName(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "bad name.yaml"), "name: bad name\ncommand: mcp\n")
-	expectLoadError(t, dir)
-}
-
 func TestLoadServerConfig_handshakeTimeoutParses(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nhandshake_timeout: 3s\n")
+	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: 3s\n")
 	sc := mustLoadOneServer(t, dir)
 	if sc.HandshakeTimeout != "3s" {
 		t.Fatalf("expected handshake_timeout %q, got %q", "3s", sc.HandshakeTimeout)
@@ -299,40 +280,8 @@ func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 	for _, spec := range []string{"-1s", "nonsense"} {
 		t.Run(spec, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "name: ci\ncommand: mcp\nhandshake_timeout: "+spec+"\n")
+			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: "+spec+"\n")
 			expectLoadError(t, dir)
-		})
-	}
-}
-
-func TestLoad_inlineServerHandshakeTimeout(t *testing.T) {
-	tests := []struct {
-		name    string
-		timeout string
-		wantErr bool
-	}{
-		{name: "nonsense rejected", timeout: "nonsense", wantErr: true},
-		{name: "negative duration rejected", timeout: "-1s", wantErr: true},
-		{name: "valid duration accepted", timeout: "3s", wantErr: false},
-		{name: "zero disables timeout", timeout: "0", wantErr: false},
-		{name: "empty uses default", timeout: "", wantErr: false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "config.yaml"),
-				"servers:\n  - name: svc\n    command: run\n    handshake_timeout: "+tc.timeout+"\n")
-			_, _, err := config.Load(dir)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatal("expected load error, got nil")
-				}
-				if !strings.Contains(err.Error(), "config.yaml") {
-					t.Errorf("error %q does not name config.yaml", err.Error())
-				}
-			} else if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
 		})
 	}
 }
@@ -504,23 +453,6 @@ auth:
 	}
 }
 
-func TestLoadServerConfig_mergesKnownAuthForInlineConfigYAMLServers(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "config.yaml"), `
-servers:
-  - name: slack
-    transport: http
-    url: https://mcp.slack.com/mcp
-`)
-	_, servers := mustLoadConfig(t, dir)
-	if len(servers) != 1 {
-		t.Fatalf("expected 1 server, got %d", len(servers))
-	}
-	if servers[0].Auth == nil || servers[0].Auth.Type != "oauth2" {
-		t.Errorf("Auth = %+v, a server declared inline in config.yaml should get the same bundled/detected merge as one in servers/", servers[0].Auth)
-	}
-}
-
 func TestAuthConfig_HeaderName(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -640,21 +572,6 @@ func assertPermissions(t *testing.T, sc config.ServerConfig, wantProtected int, 
 	}
 }
 
-func TestLoad_deduplicatesDuplicateServerNames(t *testing.T) {
-	dir := t.TempDir()
-	// Same server name appears in servers/ dir and in config.yaml
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "name: svc\ncommand: my-mcp\n")
-	writeFile(t, filepath.Join(dir, "config.yaml"), "servers:\n  - name: svc\n    command: other-mcp\n")
-
-	_, servers := mustLoadConfig(t, dir)
-	if len(servers) != 1 {
-		t.Errorf("expected 1 server after dedup, got %d", len(servers))
-	}
-	if servers[0].Command != "my-mcp" {
-		t.Errorf("expected dir server to win (command=my-mcp), got %q", servers[0].Command)
-	}
-}
-
 func TestLoadResponseFormat(t *testing.T) {
 	t.Run("toon accepted", func(t *testing.T) {
 		dir := t.TempDir()
@@ -681,7 +598,7 @@ func TestLoadResponseFormat(t *testing.T) {
 
 func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\ncommand: gh-mcp\n")
+	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "command: gh-mcp\n")
 	writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
 	_, _, err := config.Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "toon") {

@@ -147,7 +147,7 @@ func TestRunCatalogStepRequestedConfiguredEntriesArePreserved(t *testing.T) {
 	if err := os.WriteFile(path, existing, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	configured := "name: configured\ntransport: http\nurl: https://configured.example/mcp\n"
+	configured := "transport: http\nurl: https://configured.example/mcp\n"
 	if err := os.WriteFile(filepath.Join(dir, "servers", "configured.yaml"), []byte(configured), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -282,9 +282,9 @@ func TestPrintCatalogEntriesNumbersEntriesUnderCategoryHeaders(t *testing.T) {
 	}
 }
 
-func TestRunCatalogStepNeverReplacesAnExistingServerFile(t *testing.T) {
+func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 	dir := t.TempDir()
-	original := "name: gh\ntransport: http\nurl: https://corp.example/mcp\n"
+	original := "transport: http\nurl: [unfinished\n"
 	path := filepath.Join(dir, "servers", "github.yaml")
 	writeLoginStepFile(t, path, original)
 	out := &bytes.Buffer{}
@@ -313,8 +313,8 @@ func TestRunCatalogStepNeverReplacesAnExistingServerFile(t *testing.T) {
 
 func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	dir := t.TempDir()
-	writeLoginStepFile(t, filepath.Join(dir, "servers", "my-linear.yaml"), "name: my-linear\ntransport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\n")
-	writeLoginStepFile(t, filepath.Join(dir, "servers", "broken.yaml"), "name: [broken\n")
+	writeLoginStepFile(t, filepath.Join(dir, "servers", "my-linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\n")
+	writeLoginStepFile(t, filepath.Join(dir, "servers", "broken.yaml"), "transport: [broken\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{

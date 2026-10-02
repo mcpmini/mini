@@ -61,30 +61,13 @@ func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	combined := deduplicateServers(append(servers, cfg.Servers...))
-	mergeKnownAuth(configDir, combined)
-	return cfg, combined, nil
+	mergeKnownAuth(configDir, servers)
+	return cfg, servers, nil
 }
 
 func checkServerName(name, source string) error {
 	if !ValidServerName.MatchString(name) {
 		return fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", name, source)
-	}
-	return nil
-}
-
-func validateInlineServers(configPath string, servers []ServerConfig, mode envExpansionMode) error {
-	for i := range servers {
-		s := &servers[i]
-		if err := checkServerName(s.Name, configPath); err != nil {
-			return err
-		}
-		if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
-			return fmt.Errorf("invalid handshake_timeout for server %q in %s: %w", s.Name, configPath, err)
-		}
-		if err := validateServerFields(configPath, s, mode); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -160,9 +143,6 @@ func loadMainConfig(dir string) (*Config, error) {
 		return nil, fmt.Errorf("config.yaml: response_dir: %w", err)
 	}
 	cfg.ResponseDir = responseDir
-	if err := validateInlineServers("config.yaml", cfg.Servers, strictEnvExpansion); err != nil {
-		return nil, err
-	}
 	return cfg, nil
 }
 
@@ -256,13 +236,15 @@ func loadServerConfig(path string) (*ServerConfig, error) {
 }
 
 func parseServerConfig(path string, data []byte, mode envExpansionMode) (*ServerConfig, error) {
+	name := serverNameFromPath(path)
+	if err := checkServerName(name, path); err != nil {
+		return nil, err
+	}
 	var s ServerConfig
 	if err := yaml.Unmarshal(data, &s); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if err := checkServerName(s.Name, path); err != nil {
-		return nil, err
-	}
+	s.Name = name
 	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
 	}
@@ -282,8 +264,14 @@ func validateServerFields(source string, sc *ServerConfig, mode envExpansionMode
 	return nil
 }
 
-func ValidateServerFile(source string, data []byte) error {
-	sc, err := parseServerConfig(source, data, lenientEnvExpansion)
+func serverNameFromPath(path string) string {
+	return strings.TrimSuffix(filepath.Base(path), ".yaml")
+}
+
+// ValidateServerFile checks data as a server file at path, which names the server. An unset ${VAR}
+// in a secret field passes, since it only has to be set where mini runs.
+func ValidateServerFile(path string, data []byte) error {
+	sc, err := parseServerConfig(path, data, lenientEnvExpansion)
 	if err != nil {
 		return err
 	}
@@ -352,20 +340,6 @@ func validateActionConfig(path string, a ActionConfig) error {
 		return fmt.Errorf("action %s: invalid tool name %q", path, a.Tool)
 	}
 	return nil
-}
-
-// deduplicateServers removes later occurrences of servers with the same name.
-// Directory-loaded servers (earlier in slice) take precedence over config.yaml inline servers.
-func deduplicateServers(servers []ServerConfig) []ServerConfig {
-	seen := make(map[string]bool, len(servers))
-	var out []ServerConfig
-	for _, s := range servers {
-		if !seen[s.Name] {
-			seen[s.Name] = true
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 func interpolateEnv(data []byte) ([]byte, error) {

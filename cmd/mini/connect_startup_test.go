@@ -42,7 +42,7 @@ const cleanupTimerAndPollTicker = 2
 
 func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 	dir := shortConfigDir(t)
-	writeServer(t, dir, "svc", "name: svc\ncommand: echo\n")
+	writeServer(t, dir, "svc", "command: echo\n")
 	writeServer(t, dir, "svc.proj", "getData:\n  include_only: [a, b]\n")
 	reloaded := logSignal{msg: "projections reloaded", seen: make(chan struct{}, 1)}
 	fc := clock.NewFake()

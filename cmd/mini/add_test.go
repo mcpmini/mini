@@ -296,7 +296,7 @@ func TestConnectAndAuthorizeIfNeeded_onlyStaticAuthSkipsLogin(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			yaml := "name: svc\ntransport: http\nurl: " + loopback.URL + "\nheaders:\n  " + tt.header + "\nauth:\n  type: oauth2\n"
+			yaml := "transport: http\nurl: " + loopback.URL + "\nheaders:\n  " + tt.header + "\nauth:\n  type: oauth2\n"
 			if err := os.MkdirAll(filepath.Join(dir, "servers"), 0755); err != nil {
 				t.Fatal(err)
 			}

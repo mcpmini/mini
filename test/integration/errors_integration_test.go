@@ -52,7 +52,7 @@ func TestIntegrationError_unknownTool(t *testing.T) {
 // upstreams from working.
 func TestIntegrationError_upstreamNeverStarts(t *testing.T) {
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "bad", "name: bad\ncommand: /nonexistent_binary_xyz_does_not_exist\n")
+	writeServerConfig(t, cfg, "bad", "command: /nonexistent_binary_xyz_does_not_exist\n")
 
 	stdin, scanner := startMiniCmd(t, cfg)
 	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}

@@ -162,16 +162,25 @@ func TestWriteServer(t *testing.T) {
 }
 
 func TestCreateServer(t *testing.T) {
-	t.Run("creates a missing server file", func(t *testing.T) {
+	t.Run("creates a missing server file that loads back under its name", func(t *testing.T) {
 		dir := tempDir(t)
 		sc := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
 		if err := ops.CreateServer(dir, sc); err != nil {
 			t.Fatalf("CreateServer: %v", err)
 		}
-		var got config.ServerConfig
-		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &got)
-		if got.URL != sc.URL {
-			t.Errorf("URL = %q, want %q", got.URL, sc.URL)
+		data, err := os.ReadFile(filepath.Join(dir, "servers", "gh.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(data), "name:") {
+			t.Errorf("server file = %q, want no name key: the file name is the server name", data)
+		}
+		_, servers, err := config.Load(dir)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if got := config.FindServer(servers, "gh"); got == nil || got.URL != sc.URL {
+			t.Errorf("loaded servers = %#v, want gh with URL %q", servers, sc.URL)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "servers", "gh.proj.yaml")); err != nil {
 			t.Errorf("bundled projection not installed: %v", err)
@@ -197,7 +206,7 @@ func TestCreateServer(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 			t.Fatal(err)
 		}
-		edited := []byte("name: gh\nurl: https://edited.example/mcp\n")
+		edited := []byte("url: https://edited.example/mcp\n")
 		if err := os.WriteFile(path, edited, 0600); err != nil {
 			t.Fatal(err)
 		}

@@ -75,8 +75,8 @@ func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 
 func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server.Server {
 	t.Helper()
-	writeServerYAML(t, dir, svcName, fmt.Sprintf("name: %s\ntransport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
-		svcName, mcpURL, tokenURL, tokenURL))
+	writeServerYAML(t, dir, svcName, fmt.Sprintf("transport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
+		mcpURL, tokenURL, tokenURL))
 	cfg := config.DefaultConfig()
 	cfg.DisableAuthBrowserOpen = true
 	return newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
@@ -123,7 +123,7 @@ func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
 	dir := t.TempDir()
 	openedPath := filepath.Join(dir, "opened-url")
 	tokenSrv := fakeTokenServer(t, "unused-token")
-	writeServerYAML(t, dir, "protected", fmt.Sprintf("name: protected\ntransport: http\nurl: %s/mcp\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n  browser_cmd: printf %%s > %s\n",
+	writeServerYAML(t, dir, "protected", fmt.Sprintf("transport: http\nurl: %s/mcp\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n  browser_cmd: printf %%s > %s\n",
 		tokenSrv.URL, tokenSrv.URL, tokenSrv.URL, openedPath))
 	cfg := config.DefaultConfig()
 	cfg.BrowserCommand = "false"
@@ -214,7 +214,7 @@ func TestAddUpstream_detectsOAuthFrom401(t *testing.T) {
 	defer mcpSrv.Close()
 
 	dir := t.TempDir()
-	writeServerYAML(t, dir, "needsauth", "name: needsauth\ntransport: http\nurl: "+mcpSrv.URL+"\n")
+	writeServerYAML(t, dir, "needsauth", "transport: http\nurl: "+mcpSrv.URL+"\n")
 	srv := newServerWithDir(t, dir)
 	defer srv.Close()
 
@@ -244,7 +244,7 @@ func TestAddUpstream_doesNotOverwriteExistingAuth(t *testing.T) {
 	defer mcpSrv.Close()
 
 	dir := t.TempDir()
-	writeServerYAML(t, dir, "hasauth", "name: hasauth\ntransport: http\nurl: "+mcpSrv.URL+"\nauth:\n  type: apikey\n  token: secret\n")
+	writeServerYAML(t, dir, "hasauth", "transport: http\nurl: "+mcpSrv.URL+"\nauth:\n  type: apikey\n  token: secret\n")
 	srv := newServerWithDir(t, dir)
 	defer srv.Close()
 
@@ -270,7 +270,7 @@ func TestAddUpstream_bare401WithNoEvidenceDoesNotMarkOAuth(t *testing.T) {
 	defer mcpSrv.Close()
 
 	dir := t.TempDir()
-	writeServerYAML(t, dir, "plain401", "name: plain401\ntransport: http\nurl: "+mcpSrv.URL+"\n")
+	writeServerYAML(t, dir, "plain401", "transport: http\nurl: "+mcpSrv.URL+"\n")
 	srv := newServerWithDir(t, dir)
 	defer srv.Close()
 
@@ -296,7 +296,7 @@ func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 	defer mcpSrv.Close()
 
 	dir := t.TempDir()
-	writeServerYAML(t, dir, "statictoken", "name: statictoken\ntransport: http\nurl: "+mcpSrv.URL+"\nheaders:\n  Authorization: Bearer some-static-token\n")
+	writeServerYAML(t, dir, "statictoken", "transport: http\nurl: "+mcpSrv.URL+"\nheaders:\n  Authorization: Bearer some-static-token\n")
 	srv := newServerWithDir(t, dir)
 	defer srv.Close()
 
@@ -318,7 +318,7 @@ func TestAddUpstream_customAuthHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 	defer mcpSrv.Close()
 
 	dir := t.TempDir()
-	writeServerYAML(t, dir, "apikeyserver", "name: apikeyserver\ntransport: http\nurl: "+mcpSrv.URL+"\nheaders:\n  X-Api-Key: some-static-key\n")
+	writeServerYAML(t, dir, "apikeyserver", "transport: http\nurl: "+mcpSrv.URL+"\nheaders:\n  X-Api-Key: some-static-key\n")
 	srv := newServerWithDir(t, dir)
 	defer srv.Close()
 
@@ -340,7 +340,7 @@ func TestAddUpstream_runtimeAddedNeverPersistsToDisk(t *testing.T) {
 	defer mcpSrv.Close()
 
 	dir := t.TempDir()
-	writeServerYAML(t, dir, "collide", "name: collide\ntransport: http\nurl: https://real-server.example.com/mcp\n")
+	writeServerYAML(t, dir, "collide", "transport: http\nurl: https://real-server.example.com/mcp\n")
 	cfg := config.DefaultConfig()
 	cfg.DisableAuthBrowserOpen = true
 	cfg.DangerousAllowPrivateURLs = true // let the dial reach the loopback server; exercise the RuntimeAdded guard, not SSRF validation
@@ -424,7 +424,7 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	defer tokenSrv.Close()
 
 	writeServerYAML(t, dir, "srv", fmt.Sprintf(
-		"name: srv\ntransport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
+		"transport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
 		mcpSrv.URL, tokenSrv.URL, tokenSrv.URL))
 
 	cfg := config.DefaultConfig()

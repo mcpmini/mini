@@ -53,7 +53,7 @@ func newReloadEnv(t *testing.T, p reloadEnvParams) *reloadEnv {
 	t.Helper()
 	dir := evalTempDir(t)
 	if p.ServerYAML == "" {
-		p.ServerYAML = "name: svc\ncommand: echo\n"
+		p.ServerYAML = "command: echo\n"
 	}
 	writeReloadFile(t, filepath.Join(dir, "servers", "svc.yaml"), p.ServerYAML)
 	if p.ProjYAML != "" {
@@ -177,7 +177,7 @@ func TestProjectionReload_editApplied(t *testing.T) {
 }
 
 func TestProjectionReload_deleteRevealsInlineProjections(t *testing.T) {
-	inline := "name: svc\ncommand: echo\nprojections:\n  getData:\n    include_only: [a]\n"
+	inline := "command: echo\nprojections:\n  getData:\n    include_only: [a]\n"
 	e := newReloadEnv(t, reloadEnvParams{ServerYAML: inline, ProjYAML: "getData:\n  include_only: [a, b]\n"})
 	e.startPoller()
 	e.assertDataKeys([]string{"a", "b"}, []string{"secret"})
@@ -214,7 +214,7 @@ func TestProjectionReload_sameSizeEditDetected(t *testing.T) {
 
 func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillReload(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a]\n"})
-	writeReloadFile(t, filepath.Join(e.dir, "servers", "other.yaml"), "name: other\ncommand: echo\n")
+	writeReloadFile(t, filepath.Join(e.dir, "servers", "other.yaml"), "command: echo\n")
 	addReloadUpstreamNamed(t, e.srv, "other")
 	e.startPoller()
 	e.assertDataKeys([]string{"a"}, []string{"b"})
@@ -257,57 +257,49 @@ func TestProjectionReload_inlineProjectionEditDetected(t *testing.T) {
 	e.assertDataKeys([]string{"a", "b", "secret"}, nil)
 
 	writeReloadFile(t, filepath.Join(e.dir, "servers", "svc.yaml"),
-		"name: svc\ncommand: echo\nprojections:\n  getData:\n    include_only: [a]\n")
+		"command: echo\nprojections:\n  getData:\n    include_only: [a]\n")
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
 }
 
-func TestProjectionReload_configYAMLInlineProjectionEditApplied(t *testing.T) {
+func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	dir := evalTempDir(t)
-	writeReloadFile(t, filepath.Join(dir, "config.yaml"),
-		"servers:\n- name: svc\n  command: echo\n  projections:\n    getData:\n      include_only: [a]\n")
+	for _, name := range []string{"held", "kept", "gone"} {
+		writeReloadFile(t, filepath.Join(dir, "servers", name+".yaml"), "command: echo\n")
+		writeReloadFile(t, filepath.Join(dir, "servers", name+".proj.yaml"), "getData:\n  include_only: [a]\n")
+	}
 	env := buildReloadEnv(t, dir)
-	addReloadUpstream(t, env.srv)
+	for _, name := range []string{"held", "kept", "gone"} {
+		addReloadUpstreamNamed(t, env.srv, name)
+	}
 	env.startPoller()
-	env.assertDataKeys([]string{"a"}, []string{"b", "secret"})
 
-	writeReloadFile(t, filepath.Join(dir, "config.yaml"),
-		"servers:\n- name: svc\n  command: echo\n  projections:\n    getData:\n      include_only: [b]\n")
-	env.advanceTick()
-
-	env.assertDataKeys([]string{"b"}, []string{"a", "secret"})
-}
-
-func TestProjectionReload_configYAMLCreatedAppliesInlineProjections(t *testing.T) {
-	dir := evalTempDir(t)
-	env := buildReloadEnv(t, dir)
-	addReloadUpstream(t, env.srv)
-	env.startPoller()
-	env.assertDataKeys([]string{"a", "b", "secret"}, nil)
-
-	writeReloadFile(t, filepath.Join(dir, "config.yaml"),
-		"servers:\n- name: svc\n  command: echo\n  projections:\n    getData:\n      include_only: [a]\n")
-	env.advanceTick()
-
-	env.assertDataKeys([]string{"a"}, []string{"b", "secret"})
-}
-
-func TestProjectionReload_configYAMLDeletedRemovesInlineProjections(t *testing.T) {
-	dir := evalTempDir(t)
-	writeReloadFile(t, filepath.Join(dir, "config.yaml"),
-		"servers:\n- name: svc\n  command: echo\n  projections:\n    getData:\n      include_only: [a]\n")
-	env := buildReloadEnv(t, dir)
-	addReloadUpstream(t, env.srv)
-	env.startPoller()
-	env.assertDataKeys([]string{"a"}, []string{"b", "secret"})
-
-	if err := os.Remove(filepath.Join(dir, "config.yaml")); err != nil {
+	heldPath := filepath.Join(dir, "servers", "held.yaml")
+	if err := os.Remove(heldPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(heldPath, 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeReloadFile(t, filepath.Join(dir, "servers", "held.proj.yaml"), "getData:\n  include_only: [b]\n")
+	writeReloadFile(t, filepath.Join(dir, "servers", "kept.proj.yaml"), "getData:\n  include_only: [b]\n")
+	if err := os.Remove(filepath.Join(dir, "servers", "gone.yaml")); err != nil {
 		t.Fatal(err)
 	}
 	env.advanceTick()
 
-	env.assertDataKeys([]string{"a", "b", "secret"}, nil)
+	env.assertServerDataKeys("held", []string{"a"}, []string{"b", "secret"})
+	env.assertServerDataKeys("kept", []string{"b"}, []string{"a", "secret"})
+	env.assertServerDataKeys("gone", []string{"a", "b", "secret"}, nil)
+
+	if err := os.Remove(heldPath); err != nil {
+		t.Fatal(err)
+	}
+	writeReloadFile(t, heldPath, "command: echo\n")
+	env.advanceTick()
+
+	env.assertServerDataKeys("held", []string{"b"}, []string{"a", "secret"})
 }
 
 func TestProjectionReload_ctxCancelStopsPoller(t *testing.T) {

@@ -25,7 +25,7 @@ func TestRunList(t *testing.T) {
 
 	t.Run("stdio server appears with correct transport and command", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServer(t, dir, "gh", "name: gh\ncommand: npx\nargs: [server-github]\n")
+		writeServer(t, dir, "gh", "command: npx\nargs: [server-github]\n")
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
@@ -45,7 +45,7 @@ func TestRunList(t *testing.T) {
 
 	t.Run("http server shows url and transport", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServer(t, dir, "remote", "name: remote\ntransport: http\nurl: https://example.com/mcp\n")
+		writeServer(t, dir, "remote", "transport: http\nurl: https://example.com/mcp\n")
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
@@ -62,7 +62,7 @@ func TestRunList(t *testing.T) {
 
 	t.Run("header row is always present", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServer(t, dir, "s", "name: s\ncommand: run\n")
+		writeServer(t, dir, "s", "command: run\n")
 
 		var out bytes.Buffer
 		runList(dir, nil, &out) //nolint:errcheck

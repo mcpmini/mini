@@ -23,7 +23,7 @@ type projLoadCase struct {
 	wantSkipped       []string // nil = don't check; []string{} = assert empty
 	wantSourceErrors  int
 	wantKeepsPrevious []string
-	wantFresh         []string
+	wantDropsPrevious []string
 	check             func(*testing.T, string, config.LoadProjectionsResult)
 }
 
@@ -57,7 +57,7 @@ func checkProjLoad(t *testing.T, dir string, load config.LoadProjectionsResult, 
 			t.Errorf("KeepsPreviousProjection(%q) should be true", name)
 		}
 	}
-	for _, name := range tc.wantFresh {
+	for _, name := range tc.wantDropsPrevious {
 		if load.KeepsPreviousProjection(name) {
 			t.Errorf("KeepsPreviousProjection(%q) should be false", name)
 		}
@@ -82,34 +82,19 @@ func TestLoadProjections(t *testing.T) {
 		},
 		{
 			name:          "undefined ${VAR} in server file still loads projections",
-			files:         map[string]string{"servers/svc.yaml": "name: svc\nurl: https://api.example.com\nheaders:\n  Authorization: Bearer ${UNDEFINED_TOKEN_XYZ}\nprojections:\n  t:\n    include_only: [a]\n"},
+			files:         map[string]string{"servers/svc.yaml": "url: https://api.example.com\nheaders:\n  Authorization: Bearer ${UNDEFINED_TOKEN_XYZ}\nprojections:\n  t:\n    include_only: [a]\n"},
 			wantProjected: []string{"svc"},
 			wantSkipped:   []string{},
 		},
 		{
-			name:             "server name stays literal and invalid name is a source error",
-			files:            map[string]string{"servers/svc.yaml": "name: ${PROJ_DEFINED_NAME_XYZ}\ncommand: echo\n"},
-			wantSourceErrors: 1,
-		},
-		{
-			name:             "args ${VAR} is an unexpanded connection field source error",
-			files:            map[string]string{"servers/svc.yaml": "name: svc\ncommand: echo\nargs: [--token, \"${PROJ_TEST_TOK_XYZ}\"]\nprojections:\n  t:\n    include_only: [a]\n"},
-			wantSourceErrors: 1,
-		},
-		{
-			name:          "undefined ${VAR} in inline projection rule stays literal",
-			files:         map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      exclude: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n"},
-			wantProjected: []string{"svc"},
-			wantSkipped:   []string{},
-			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
-				if got := load.Projections["svc"]["t"].Exclude[0]; got != "${PROJ_UNDEFINED_FIELD_XYZ}" {
-					t.Errorf("exclude = %q, want literal reference", got)
-				}
-			},
+			name:              "args ${VAR} is an unexpanded connection field source error",
+			files:             map[string]string{"servers/svc.yaml": "command: echo\nargs: [--token, \"${PROJ_TEST_TOK_XYZ}\"]\nprojections:\n  t:\n    include_only: [a]\n"},
+			wantSourceErrors:  1,
+			wantKeepsPrevious: []string{"svc"},
 		},
 		{
 			name:          "undefined ${VAR} in server file projection rule stays literal",
-			files:         map[string]string{"servers/svc.yaml": "name: svc\ncommand: echo\nprojections:\n  t:\n    include_only: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n"},
+			files:         map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  t:\n    include_only: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n"},
 			wantProjected: []string{"svc"},
 			wantSkipped:   []string{},
 			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
@@ -119,53 +104,15 @@ func TestLoadProjections(t *testing.T) {
 			},
 		},
 		{
-			name:             "server name stays literal and invalid name is a source error",
-			files:            map[string]string{"servers/x.yaml": "name: ${PROJ_UNDEFINED_NAME_XYZ}\ncommand: echo\nprojections:\n  t:\n    include_only: [a]\n"},
-			wantSourceErrors: 1,
-			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
-				if len(load.Projections) != 0 {
-					t.Errorf("no server should load from an undefined name, got %v", load.Projections)
-				}
-			},
-		},
-		{
-			name:              "inline server name stays literal and invalid name is a config.yaml source error",
-			files:             map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      include_only: [a]\n- name: ${PROJ_UNDEFINED_INLINE_NAME_XYZ}\n  command: echo\n"},
-			wantSourceErrors:  1,
-			wantKeepsPrevious: []string{"svc"},
-			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
-				if len(load.Projections) != 0 {
-					t.Errorf("no server should load from an invalid inline name, got %v", load.Projections)
-				}
-			},
-		},
-		{
-			name:              "invalid inline handshake_timeout: config.yaml is a source error, as in config.Load",
-			files:             map[string]string{"config.yaml": "servers:\n- name: svc\n  command: echo\n  handshake_timeout: invalid\n  projections:\n    t:\n      include_only: [a]\n"},
-			wantAbsent:        []string{"svc"},
-			wantSourceErrors:  1,
-			wantKeepsPrevious: []string{"svc"},
-		},
-		{
-			name:        "file stem differs from name: bad format → SkippedServers by real name",
-			files:       map[string]string{"servers/github-server.yaml": "name: github\ncommand: echo\nprojections:\n  t:\n    format: bad-format\n"},
+			name:        "bad projection format skips that server",
+			files:       map[string]string{"servers/github.yaml": "command: echo\nprojections:\n  t:\n    format: bad-format\n"},
 			wantAbsent:  []string{"github"},
 			wantSkipped: []string{"github"},
 		},
 		{
-			name: "broken servers/ file: inline twin not treated as fresh",
+			name: "bad .proj.yaml with rules in the server file: server absent from Projections",
 			files: map[string]string{
-				"servers/github.yaml": "bad: [yaml\n",
-				"config.yaml":         "servers:\n- name: github\n  command: echo\n",
-			},
-			wantAbsent:        []string{"github"},
-			wantSourceErrors:  1,
-			wantKeepsPrevious: []string{"github"},
-		},
-		{
-			name: "bad .proj.yaml with inline twin: server absent from Projections",
-			files: map[string]string{
-				"servers/b.yaml":      "name: b\ncommand: echo\nprojections:\n  t:\n    include_only: [inline]\n",
+				"servers/b.yaml":      "command: echo\nprojections:\n  t:\n    include_only: [inline]\n",
 				"servers/b.proj.yaml": "bad: [yaml\n",
 			},
 			wantAbsent:        []string{"b"},
@@ -173,41 +120,36 @@ func TestLoadProjections(t *testing.T) {
 			wantKeepsPrevious: []string{"b"},
 		},
 		{
-			name: "malformed servers/b.yaml: unattributable error, a still loads",
+			name: "malformed servers/b.yaml holds only b, not a or a server whose file is gone",
 			files: map[string]string{
-				"servers/a.yaml": "name: a\ncommand: echo\nprojections:\n  t:\n    include_only: [ok]\n",
+				"servers/a.yaml": "command: echo\nprojections:\n  t:\n    include_only: [ok]\n",
 				"servers/b.yaml": "bad: [yaml\n",
 			},
 			wantProjected:     []string{"a"},
 			wantSourceErrors:  1,
 			wantKeepsPrevious: []string{"b"},
-			wantFresh:         []string{"a"},
+			wantDropsPrevious: []string{"a", "file-gone"},
+			check:             wantSourceErrorFor("b"),
 		},
 		{
-			name: "invalid name in servers/ file: unattributable, others load",
+			name: "invalid file name is a source error that holds no valid server",
 			files: map[string]string{
-				"servers/good.yaml":     "name: good\ncommand: echo\nprojections:\n  t:\n    include_only: [a]\n",
-				"servers/bad-name.yaml": "name: invalid name!\ncommand: echo\n",
+				"servers/good.yaml":     "command: echo\nprojections:\n  t:\n    include_only: [a]\n",
+				"servers/bad.name.yaml": "command: echo\n",
 			},
 			wantProjected:     []string{"good"},
 			wantSourceErrors:  1,
-			wantKeepsPrevious: []string{"someother"},
-			wantFresh:         []string{"good"},
+			wantDropsPrevious: []string{"good"},
+			check:             wantSourceErrorFor("bad.name"),
 		},
 		{
-			name: "broken config.yaml: source error, inline names keep-previous, file names do not",
+			name: "config.yaml is not a server source, even when broken",
 			files: map[string]string{
-				"servers/file-svc.yaml": "name: file-svc\ncommand: echo\n",
+				"servers/file-svc.yaml": "command: echo\n",
 				"config.yaml":           "bad: [yaml\n",
 			},
-			wantSourceErrors:  1,
-			wantKeepsPrevious: []string{"inline-only"},
-			wantFresh:         []string{"file-svc"},
-			check: func(t *testing.T, dir string, load config.LoadProjectionsResult) {
-				if len(load.SourceErrors) > 0 && load.SourceErrors[0].Path != filepath.Join(dir, "config.yaml") {
-					t.Errorf("expected SourceErrors to contain config.yaml path, got %v", load.SourceErrors)
-				}
-			},
+			wantSourceErrors:  0,
+			wantDropsPrevious: []string{"file-svc"},
 		},
 	}
 	for _, tc := range cases {
@@ -225,6 +167,38 @@ func TestLoadProjections(t *testing.T) {
 	}
 }
 
+func wantSourceErrorFor(name string) func(*testing.T, string, config.LoadProjectionsResult) {
+	return func(t *testing.T, _ string, load config.LoadProjectionsResult) {
+		t.Helper()
+		if len(load.SourceErrors) != 1 || load.SourceErrors[0].ServerName != name {
+			t.Errorf("SourceErrors = %v, want one for server %q", load.SourceErrors, name)
+		}
+	}
+}
+
+func TestLoadServerSet_brokenFileHoldsOnlyItsServer(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "command: echo\n")
+	if err := os.MkdirAll(filepath.Join(dir, "servers", "unreadable.yaml"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
+
+	set := config.LoadServerSet(dir)
+
+	if !set.IsEnabled("good") {
+		t.Errorf("Servers = %v, want good loaded", set.Servers)
+	}
+	if !set.KeepsPreviousServer("unreadable") {
+		t.Error("KeepsPreviousServer(unreadable) = false, want its running server kept")
+	}
+	for _, name := range []string{"good", "deleted"} {
+		if set.KeepsPreviousServer(name) {
+			t.Errorf("KeepsPreviousServer(%q) = true, want only the failing file's server held", name)
+		}
+	}
+}
+
 func TestLoadProjections_parity(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -232,26 +206,18 @@ func TestLoadProjections_parity(t *testing.T) {
 		env   map[string]string
 	}{
 		{
-			name: "multi-server with proj.yaml overlay and inline entries",
+			name: "multi-server with proj.yaml overlay",
 			files: map[string]string{
-				"servers/a.yaml":      "name: a\nurl: https://a.example.com\nheaders:\n  Auth: Bearer ${PARITY_TOKEN}\nprojections:\n  tool1:\n    include_only: [x, y]\n  tool2:\n    exclude: [secret]\n",
+				"servers/a.yaml":      "url: https://a.example.com\nheaders:\n  Auth: Bearer ${PARITY_TOKEN}\nprojections:\n  tool1:\n    include_only: [x, y]\n  tool2:\n    exclude: [secret]\n",
 				"servers/a.proj.yaml": "tool3:\n  include_only: [z]\n",
-				"config.yaml":         "servers:\n- name: b\n  command: echo\n  projections:\n    toolB:\n      include_only: [q]\n",
+				"servers/b.yaml":      "command: echo\nprojections:\n  toolB:\n    include_only: [q]\n",
 			},
 			env: map[string]string{"PARITY_TOKEN": "tok123"},
 		},
 		{
 			name:  "defined ${VAR} in headers expands while projection reference stays literal",
-			files: map[string]string{"servers/svc.yaml": "name: svc\nurl: https://x.example.com\nheaders:\n  Auth: Bearer ${PARITY_SVC_TOKEN}\nprojections:\n  t:\n    include_only: [\"${PARITY_SVC_FIELD}\"]\n"},
+			files: map[string]string{"servers/svc.yaml": "url: https://x.example.com\nheaders:\n  Auth: Bearer ${PARITY_SVC_TOKEN}\nprojections:\n  t:\n    include_only: [\"${PARITY_SVC_FIELD}\"]\n"},
 			env:   map[string]string{"PARITY_SVC_TOKEN": "tok", "PARITY_SVC_FIELD": "a"},
-		},
-		{
-			name: "duplicate names: first wins; servers/ beats inline",
-			files: map[string]string{
-				"servers/a-svc.yaml": "name: svc\ncommand: echo\nprojections:\n  t:\n    include_only: [first]\n",
-				"servers/b-svc.yaml": "name: svc\ncommand: echo\nprojections:\n  t:\n    include_only: [second]\n",
-				"config.yaml":        "servers:\n- name: svc\n  command: echo\n  projections:\n    t:\n      include_only: [inline]\n",
-			},
 		},
 	}
 	for _, tc := range cases {
@@ -284,9 +250,9 @@ func TestLoadProjections_parity(t *testing.T) {
 
 func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "name: good\ncommand: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "command: echo\n")
 	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
-	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "name: unset\ncommand: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n")
+	writeFile(t, filepath.Join(dir, "servers", "unset.yaml"), "command: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n")
 	servers, sourceErrors := config.LoadLenient(dir)
 	var names []string
 	for _, server := range servers {
@@ -302,8 +268,8 @@ func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 
 func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), "name: detected\ncommand: echo\n")
-	writeFile(t, filepath.Join(dir, "servers", "custom.yaml"), "name: custom\ncommand: echo\nauth:\n  type: bearer\n")
+	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), "command: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "custom.yaml"), "command: echo\nauth:\n  type: bearer\n")
 	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +294,6 @@ func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
 	}{
 		{"valid settings load", "disable_auth_browser_open: true\n", ""},
 		{"invalid YAML", "bad: [yaml\n", "parse config"},
-		{"unset env var in an inline server", "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  headers:\n    X-Token: \"${LOAD_MAIN_UNSET}\"\n", "LOAD_MAIN_UNSET"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -354,7 +319,7 @@ func projKeys(m map[string]*config.ProjectionConfig) []string {
 
 func TestLoadProjections_projFilesSourceError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "name: svc\ncommand: echo\n")
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "command: echo\n")
 	p := filepath.Join(dir, "servers", "svc.proj.yaml")
 	if err := os.WriteFile(p, []byte("tool:\n  include_only: [a]\n"), 0000); err != nil {
 		t.Skip("cannot create unreadable file:", err)

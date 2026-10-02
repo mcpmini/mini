@@ -80,7 +80,7 @@ func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 
 func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 	dir := t.TempDir()
-	writeLoginStepFile(t, filepath.Join(dir, "servers", "oauth.yaml"), "name: oauth\ntransport: http\nurl: https://api.example.com\nauth:\n  type: oauth2\n")
+	writeLoginStepFile(t, filepath.Join(dir, "servers", "oauth.yaml"), "transport: http\nurl: https://api.example.com\nauth:\n  type: oauth2\n")
 	brokenPath := filepath.Join(dir, "servers", "broken.yaml")
 	writeLoginStepFile(t, brokenPath, "bad: [yaml\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
@@ -95,7 +95,7 @@ func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 
 func TestRunLoginStepBrokenMainConfigSkipsOAuthLogin(t *testing.T) {
 	dir := loginStepConfig(t, "oauth")
-	writeLoginStepFile(t, filepath.Join(dir, "config.yaml"), "disable_auth_browser_open: true\nservers:\n- name: inline\n  command: echo\n  headers:\n    X-Token: \"${LOGIN_STEP_UNSET}\"\n")
+	writeLoginStepFile(t, filepath.Join(dir, "config.yaml"), "disable_auth_browser_open: [unclosed\n")
 	errOut := &bytes.Buffer{}
 	called := false
 	runLoginStep(loginStepParams{

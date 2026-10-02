@@ -273,7 +273,7 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			t.Cleanup(srv.Close)
 
 			// Server stub lets loadServerProjections merge projection files for "gh".
-			writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\n")
+			writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "")
 
 			fake := fakeConn("list_pull_requests")
 			srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: tt.initialProjection}, fake)
@@ -317,7 +317,7 @@ func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	t.Cleanup(srv.Close)
 
-	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "name: gh\n")
+	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "")
 
 	fake := fakeConn("get_pr")
 	proj := map[string]*config.ProjectionConfig{"get_pr": {Alias: "pr"}}

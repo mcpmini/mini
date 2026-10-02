@@ -73,7 +73,7 @@ func writeHTTPServerYAML(t *testing.T, configDir, serverName, url string) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	yaml := fmt.Sprintf("name: %s\ntransport: sse\nurl: %s\n", serverName, url)
+	yaml := fmt.Sprintf("transport: sse\nurl: %s\n", url)
 	if err := os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(yaml), 0600); err != nil {
 		t.Fatal(err)
 	}

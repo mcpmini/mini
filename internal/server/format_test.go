@@ -258,7 +258,7 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 		// Wildcard projections require a server config file to be present.
 		os.MkdirAll(filepath.Join(configDir, "servers"), 0755)       //nolint:errcheck
 		os.WriteFile(filepath.Join(configDir, "servers", "gh.yaml"), //nolint:errcheck
-			[]byte("name: gh\ncommand: unused\n"), 0644)
+			[]byte("command: unused\n"), 0644)
 		os.WriteFile(filepath.Join(configDir, "servers", "gh.proj.yaml"), //nolint:errcheck
 			[]byte("\"*\":\n  format: toon\n"), 0644)
 		srv := newTestServer(t, server.Params{ConfigDir: configDir})

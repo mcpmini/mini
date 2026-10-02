@@ -4,7 +4,6 @@ package integration_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -55,12 +54,7 @@ type fakeServerControlParams struct {
 
 func writeFakeServerWithControlFile(t *testing.T, p fakeServerControlParams) {
 	t.Helper()
-	dir := filepath.Join(p.ConfigDir, "servers")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	yaml := fmt.Sprintf("name: %s\ncommand: %s\nargs:\n  - --fixtures\n  - %s\n  - --control-file\n  - %s\n", p.ServerName, fakemcpBin, p.Fixtures, p.ControlFile)
-	writeStringFile(t, filepath.Join(dir, p.ServerName+".yaml"), yaml)
+	writeServerConfig(t, p.ConfigDir, p.ServerName, fakeServerYAML(p.Fixtures, "--control-file", p.ControlFile))
 }
 
 func waitForControlFile(t *testing.T, path string) string {

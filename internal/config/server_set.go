@@ -10,7 +10,7 @@ type ServerSet struct {
 func LoadServerSet(configDir string) ServerSet {
 	load := newLoadProjectionsResult()
 	set := ServerSet{Servers: make(map[string]ServerConfig)}
-	for _, sc := range loadLenientServers(configDir, &load) {
+	for _, sc := range loadServerDirLenient(configDir, &load) {
 		set.Servers[sc.Name] = sc
 	}
 	set.SourceErrors = load.SourceErrors
@@ -21,7 +21,7 @@ func LoadServerSet(configDir string) ServerSet {
 // need global settings should use LoadMain.
 func LoadLenient(configDir string) ([]ServerConfig, []SourceError) {
 	load := newLoadProjectionsResult()
-	servers := loadLenientServers(configDir, &load)
+	servers := loadServerDirLenient(configDir, &load)
 	mergeKnownAuth(configDir, servers)
 	return servers, load.SourceErrors
 }
@@ -29,4 +29,9 @@ func LoadLenient(configDir string) ([]ServerConfig, []SourceError) {
 func (set ServerSet) IsEnabled(name string) bool {
 	sc, ok := set.Servers[name]
 	return ok && sc.IsEnabled()
+}
+
+// KeepsPreviousServer reports whether name's server file failed to load.
+func (set ServerSet) KeepsPreviousServer(name string) bool {
+	return sourceFailed(set.SourceErrors, name)
 }

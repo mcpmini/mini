@@ -257,7 +257,7 @@ func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 	// Valid upstream (will connect) + unreachable HTTP upstream
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeServerConfig(t, cfg, "dead",
-		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n") // nothing listening
+		"transport: http\nurl: http://127.0.0.1:19998\n") // nothing listening
 	client := startServerWithUnreachable(t, cfg, []string{"dead"})
 	// Should still serve list/call for the working upstream
 	text := client.listTools("github")
@@ -271,7 +271,7 @@ func TestIntegrationProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeServerConfig(t, cfg, "dead",
-		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n")
+		"transport: http\nurl: http://127.0.0.1:19998\n")
 	client := startProxyServerWithUnreachable(t, cfg, []string{"dead"})
 	raw := client.mustCall("tools/list", nil)
 	var result struct {
@@ -296,11 +296,7 @@ func TestIntegrationProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 
 func writeGitHubServerYAML(t *testing.T, cfg, permKey, tool string) {
 	t.Helper()
-	serversDir := filepath.Join(cfg, "servers")
-	os.MkdirAll(serversDir, 0700) //nolint:errcheck
-	yaml := "name: github\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " +
-		filepath.Join(fixturesDir, "github") + "\npermissions:\n  " + permKey + ":\n    - " + tool + "\n"
-	os.WriteFile(filepath.Join(serversDir, "github.yaml"), []byte(yaml), 0600) //nolint:errcheck
+	writeServerConfig(t, cfg, "github", fakeServerYAML(filepath.Join(fixturesDir, "github"))+"permissions:\n  "+permKey+":\n    - "+tool+"\n")
 }
 
 func execGitHubToolIsError(t *testing.T, client *mcpClient, execName, tool string) bool {
@@ -330,11 +326,7 @@ func TestIntegrationServer_protectedToolRequiresExecProtected(t *testing.T) {
 
 func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
 	cfg := t.TempDir()
-	serversDir := filepath.Join(cfg, "servers")
-	os.MkdirAll(serversDir, 0700)
-	yaml := "name: github\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " +
-		filepath.Join(fixturesDir, "github") + "\npermissions:\n  hidden:\n    - search_code\n"
-	os.WriteFile(filepath.Join(serversDir, "github.yaml"), []byte(yaml), 0600)
+	writeServerConfig(t, cfg, "github", fakeServerYAML(filepath.Join(fixturesDir, "github"))+"permissions:\n  hidden:\n    - search_code\n")
 	text := startServer(t, cfg).listTools("github")
 	if strings.Contains(text, "search_code") {
 		t.Errorf("hidden tool 'search_code' should not appear in list output")
@@ -359,13 +351,8 @@ func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 
 func TestIntegrationServer_listAllTools(t *testing.T) {
 	cfg := t.TempDir()
-	serversDir := filepath.Join(cfg, "servers")
-	os.MkdirAll(serversDir, 0700)
 	for _, srv := range []string{"alpha", "beta"} {
-		dir := t.TempDir()
-		os.WriteFile(filepath.Join(dir, "do_"+srv+".json"), []byte(`{"ok":true}`), 0644)
-		yaml := "name: " + srv + "\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + dir + "\n"
-		os.WriteFile(filepath.Join(serversDir, srv+".yaml"), []byte(yaml), 0600)
+		writeFakeServer(t, cfg, srv, mockFixtureDir(t, map[string]string{"do_" + srv: `{"ok":true}`}))
 	}
 	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
 		"name":      "list",
@@ -381,14 +368,8 @@ func TestIntegrationServer_listAllTools(t *testing.T) {
 
 func TestIntegrationServer_multipleUpstreams(t *testing.T) {
 	cfg := t.TempDir()
-	serversDir := filepath.Join(cfg, "servers")
-	os.MkdirAll(serversDir, 0700)
-
 	for _, srv := range []string{"alpha", "beta"} {
-		dir := t.TempDir()
-		os.WriteFile(filepath.Join(dir, "do_thing.json"), []byte(`{"ok":true}`), 0644)
-		yaml := "name: " + srv + "\ncommand: " + fakemcpBin + "\nargs:\n  - --fixtures\n  - " + dir + "\n"
-		os.WriteFile(filepath.Join(serversDir, srv+".yaml"), []byte(yaml), 0600)
+		writeFakeServer(t, cfg, srv, mockFixtureDir(t, map[string]string{"do_thing": `{"ok":true}`}))
 	}
 	client := startServer(t, cfg)
 	for _, srv := range []string{"alpha", "beta"} {

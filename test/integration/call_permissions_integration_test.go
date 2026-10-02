@@ -13,7 +13,7 @@ func callSetupWithPerms(t *testing.T, fixtures map[string]string, serverExtra st
 	t.Helper()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, fixtures)
-	writeServerYAML(t, cfg, "svc", dir, serverExtra)
+	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+serverExtra)
 	return cfg
 }
 
