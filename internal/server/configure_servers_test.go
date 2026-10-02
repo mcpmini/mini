@@ -424,6 +424,45 @@ func TestConfigRemoveServer(t *testing.T) {
 			t.Error("svc still connected after remove_server")
 		}
 	})
+	t.Run("a server saved again under the name never gets the removed server's login", func(t *testing.T) {
+		for _, sameURL := range []bool{true, false} {
+			e := newConfigToolEnv(t)
+			var oldTokenSent atomic.Int64
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Authorization") == "Bearer old-token" {
+					oldTokenSent.Add(1)
+				}
+				fakeMCPHandle(w, r, pingTools)
+			})
+			removed := httptest.NewServer(handler)
+			t.Cleanup(removed.Close)
+			if err := auth.Save(e.dir, "svc", &oauth2.Token{AccessToken: "old-token"}); err != nil {
+				t.Fatal(err)
+			}
+			if err := e.connectUserOAuthServer("svc", removed.URL); err != nil || oldTokenSent.Load() == 0 {
+				t.Fatalf("precondition: the removed server never used its login: %v", err)
+			}
+			if text, failed := e.removeServer("svc"); failed {
+				t.Fatalf("remove_server: %s", text)
+			}
+			oldTokenSent.Store(0)
+			nextURL := removed.URL
+			if !sameURL {
+				next := httptest.NewServer(handler)
+				t.Cleanup(next.Close)
+				nextURL = next.URL
+			}
+
+			err := e.connectUserOAuthServer("svc", nextURL)
+
+			if oldTokenSent.Load() != 0 {
+				t.Errorf("same URL %v: the new server sent the removed server's token", sameURL)
+			}
+			if err != nil && strings.Contains(err.Error(), "OAuth configuration changed") {
+				t.Errorf("same URL %v: the removed server still holds the name's login: %v", sameURL, err)
+			}
+		}
+	})
 	t.Run("disconnects a server with no config file", func(t *testing.T) {
 		e := newConfigToolEnv(t)
 		addEdgeConn(t, e.srv, config.ServerConfig{Name: "svc"}, fakeConn("ping"))
@@ -436,4 +475,14 @@ func TestConfigRemoveServer(t *testing.T) {
 			t.Error("svc still connected after remove_server")
 		}
 	})
+}
+
+func (e configToolEnv) connectUserOAuthServer(name, url string) error {
+	e.t.Helper()
+	writeServerYAML(e.t, e.dir, name, "transport: http\nurl: "+url+"\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: http://auth.example/authorize\n  token_url: http://auth.example/token\n")
+	sc, err := config.LoadServer(e.dir, name)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return e.srv.AddUpstream(e.t.Context(), sc)
 }

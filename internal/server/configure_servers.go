@@ -98,6 +98,7 @@ func (s *Server) detachAndCloseLocked(serverName string) {
 		u.shutdownAndClose()
 	}
 	s.sessions.closeServerConnections(serverName)
+	s.providerRegistry.Forget(serverName)
 	s.reg.RemoveServer(serverName)
 }
 
