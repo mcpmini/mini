@@ -156,7 +156,7 @@ func DefaultConfig() *Config {
 
 // ServerConfig describes one upstream MCP server.
 type ServerConfig struct {
-	// Name is the server identifier used in tool namespacing. It comes from the file name, servers/<name>.yaml.
+	// Name is never read from a server file: on disk, the file name servers/<name>.yaml names the server.
 	Name string `yaml:"-"`
 
 	// Command and Args for stdio transport.

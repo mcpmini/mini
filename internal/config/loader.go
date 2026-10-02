@@ -268,7 +268,8 @@ func serverNameFromPath(path string) string {
 	return strings.TrimSuffix(filepath.Base(path), ".yaml")
 }
 
-// ValidateServerFile reports whether data would load from path; pass the final path, since it names the server.
+// ValidateServerFile checks data as a server file at path, which names the server. An unset ${VAR}
+// in a secret field passes, since it only has to be set where mini runs.
 func ValidateServerFile(path string, data []byte) error {
 	sc, err := parseServerConfig(path, data, lenientEnvExpansion)
 	if err != nil {
