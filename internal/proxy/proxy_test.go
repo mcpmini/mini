@@ -81,7 +81,7 @@ func TestRun_propagatesTokenThroughRunParams(t *testing.T) {
 	})
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call"}` + "\n")
 	p := RunParams{Client: client, SessionID: "sess", Token: "tok-42", In: in, Out: io.Discard, Clock: clock.NewFake()}
-	if err := Run(p); err != nil {
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if gotAuth != "Bearer tok-42" {
@@ -355,7 +355,7 @@ func TestRun_compact_injectsIntoInitialize(t *testing.T) {
 		ToolMode:  transport.ToolModeCompact,
 		Clock:     clock.NewFake(),
 	}
-	if err := Run(p); err != nil {
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -386,7 +386,7 @@ func TestRun_proxy_doesNotInjectFlag(t *testing.T) {
 		ToolMode:  transport.ToolModeProxy,
 		Clock:     clock.NewFake(),
 	}
-	if err := Run(p); err != nil {
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 
@@ -469,8 +469,8 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}` + "\n")
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", In: in, Out: &out, Clock: clock.System()}
-	if err := Run(p); err != nil {
+	p := RunParams{Client: client, SessionID: "sess", In: in, Out: &out}
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if got := initCalls.Load(); got != 1 {
@@ -494,7 +494,7 @@ func TestRun_noReinitWhenInitializeSucceeds(t *testing.T) {
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")
 	var out bytes.Buffer
 	p := RunParams{Client: client, SessionID: "sess", In: in, Out: &out}
-	if err := Run(p); err != nil {
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run error: %v", err)
 	}
 	if got := calls.Load(); got != 1 {

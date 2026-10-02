@@ -1,5 +1,6 @@
 // clocklint reports direct calls to time.Now, time.Since, time.NewTimer, time.NewTicker,
-// time.After, and time.Until in production Go code. Use clock.Clock instead.
+// time.After, and time.Until in production Go code. It also reports clock.System()
+// in unit tests. Use clock.Clock or clock.NewFake instead.
 // Annotate exemptions with //nolint:clocklint on the offending line.
 //
 // Usage: clocklint [dir ...]   (default: current directory, recursive)
@@ -52,7 +53,7 @@ func walkDir(dir string, hasError *bool) error {
 		if info.IsDir() {
 			return skipDir(info.Name())
 		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+		if !strings.HasSuffix(path, ".go") {
 			return nil
 		}
 		checkFile(path, fset, hasError)
@@ -77,17 +78,32 @@ func checkFile(path string, fset *token.FileSet, hasError *bool) {
 	if err != nil {
 		return
 	}
-	timeIdents := timeImportIdents(f)
-	if len(timeIdents) == 0 {
+	ctx := newCallContext(path, f)
+	if len(ctx.timeIdents) == 0 && len(ctx.clockIdents) == 0 {
 		return
 	}
-	srcLines := strings.Split(string(src), "\n")
+	inspectFileCalls(f, fset, strings.Split(string(src), "\n"), ctx, hasError)
+}
+
+func newCallContext(path string, f *ast.File) callContext {
+	timeIdents := timeImportIdents(f)
+	clockIdents := clockImportIdents(f)
+	return callContext{timeIdents: timeIdents, clockIdents: clockIdents, isTest: strings.HasSuffix(path, "_test.go")}
+}
+
+func inspectFileCalls(f *ast.File, fset *token.FileSet, srcLines []string, ctx callContext, hasError *bool) {
 	ast.Inspect(f, func(n ast.Node) bool {
-		return inspectTimeCalls(n, fset, srcLines, timeIdents, hasError)
+		return inspectCalls(n, fset, srcLines, ctx, hasError)
 	})
 }
 
-func inspectTimeCalls(n ast.Node, fset *token.FileSet, srcLines []string, timeIdents map[string]bool, hasError *bool) bool {
+type callContext struct {
+	timeIdents  map[string]bool
+	clockIdents map[string]bool
+	isTest      bool
+}
+
+func inspectCalls(n ast.Node, fset *token.FileSet, srcLines []string, ctx callContext, hasError *bool) bool {
 	call, ok := n.(*ast.CallExpr)
 	if !ok {
 		return true
@@ -97,16 +113,49 @@ func inspectTimeCalls(n ast.Node, fset *token.FileSet, srcLines []string, timeId
 		return true
 	}
 	id, ok := sel.X.(*ast.Ident)
-	if !ok || !timeIdents[id.Name] || !bannedFuncs[sel.Sel.Name] {
+	if !ok {
 		return true
 	}
 	pos := fset.Position(call.Pos())
 	if isNolinted(srcLines, pos.Line) {
 		return true
 	}
-	fmt.Printf("ERROR %s:%d: direct time.%s() call, use clock.Clock instead\n", pos.Filename, pos.Line, sel.Sel.Name)
-	*hasError = true
+	reportCall(pos, id.Name, sel.Sel.Name, ctx, hasError)
 	return true
+}
+
+func reportCall(pos token.Position, ident, name string, ctx callContext, hasError *bool) {
+	if shouldReportTimeCall(ident, name, ctx) {
+		fmt.Printf("ERROR %s:%d: direct time.%s() call, use clock.Clock instead\n", pos.Filename, pos.Line, name)
+		*hasError = true
+	}
+	if shouldReportClockCall(ident, name, ctx) {
+		fmt.Printf("ERROR %s:%d: clock.System() in unit test, use clock.NewFake() or a test fake instead\n", pos.Filename, pos.Line)
+		*hasError = true
+	}
+}
+
+func shouldReportTimeCall(ident, name string, ctx callContext) bool {
+	return !ctx.isTest && ctx.timeIdents[ident] && bannedFuncs[name]
+}
+
+func shouldReportClockCall(ident, name string, ctx callContext) bool {
+	return ctx.isTest && ctx.clockIdents[ident] && name == "System"
+}
+
+func clockImportIdents(f *ast.File) map[string]bool {
+	out := make(map[string]bool)
+	for _, imp := range f.Imports {
+		if strings.Trim(imp.Path.Value, `"`) != "github.com/mcpmini/mini/internal/clock" {
+			continue
+		}
+		if imp.Name != nil {
+			out[imp.Name.Name] = true
+		} else {
+			out["clock"] = true
+		}
+	}
+	return out
 }
 
 func isNolinted(srcLines []string, line int) bool {

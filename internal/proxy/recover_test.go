@@ -20,10 +20,6 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func timeoutAfter() <-chan time.Time {
-	return time.After(5 * time.Second)
-}
-
 func toolCallLine() string {
 	return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{}}` + "\n"
 }
@@ -61,8 +57,8 @@ func TestDeliver_transportDownRecoversViaReresolve(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
-	if err := Run(p); err != nil {
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if !strings.Contains(out.String(), `"result":"ok"`) {
@@ -91,8 +87,8 @@ func TestDeliver_unauthorizedRefreshesTokenAndRetries(t *testing.T) {
 	reresolve := func() (string, error) { return "fresh", nil }
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "stale", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
-	if err := Run(p); err != nil {
+	p := RunParams{Client: client, SessionID: "sess", Token: "stale", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if !strings.Contains(out.String(), `"result":"ok"`) {
@@ -138,7 +134,7 @@ func TestDeliver_midFlightErrorDoesNotRetry(t *testing.T) {
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
 	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.NewFake()}
-	if err := Run(p); err != nil {
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if resolveCalls.Load() != 0 {
@@ -165,8 +161,8 @@ func TestDeliver_singleFlightRecoversOnce(t *testing.T) {
 		fmt.Fprintf(&lines, `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{}}`+"\n", i)
 	}
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
-	if err := Run(p); err != nil {
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	if err := runWithFakeClock(t, p); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := resolveCalls.Load(); got != 1 {
@@ -185,16 +181,9 @@ func TestDeliver_boundedWhenReresolveKeepsFailing(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
-	done := make(chan error, 1)
-	go func() { done <- Run(p) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-timeoutAfter():
-		t.Fatal("Run did not return — recovery is not bounded")
+	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	if err := runWithFakeClock(t, p); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	if !strings.Contains(out.String(), `"error"`) {
 		t.Errorf("expected error response on exhaustion, got %q", out.String())
@@ -213,16 +202,9 @@ func TestDeliver_persistent401ReturnsErrorEnvelope(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "same-stale-token", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
-	done := make(chan error, 1)
-	go func() { done <- Run(p) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-timeoutAfter():
-		t.Fatal("Run did not return — persistent 401 recovery is not bounded")
+	p := RunParams{Client: client, SessionID: "sess", Token: "same-stale-token", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	if err := runWithFakeClock(t, p); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	got := out.String()
 	if !strings.Contains(got, `"error"`) {
@@ -241,16 +223,9 @@ func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
 	}
 	in := strings.NewReader(toolCallLine())
 	var out bytes.Buffer
-	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
-	done := make(chan error, 1)
-	go func() { done <- Run(p) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-timeoutAfter():
-		t.Fatal("Run did not return — recovery is not bounded when respawn stays dead")
+	p := RunParams{Client: deadClient(t), SessionID: "sess", Token: "tok", In: in, Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	if err := runWithFakeClock(t, p); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	if !strings.Contains(out.String(), `"error"`) {
 		t.Errorf("expected error response on exhaustion, got %q", out.String())
@@ -277,16 +252,9 @@ func TestDeliver_singleFlightOnResolveFailure(t *testing.T) {
 		fmt.Fprintf(&lines, `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{}}`+"\n", i)
 	}
 	var out bytes.Buffer
-	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve), Clock: clock.System()}
-	done := make(chan error, 1)
-	go func() { done <- Run(p) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run: %v", err)
-		}
-	case <-timeoutAfter():
-		t.Fatal("Run did not return — single-flight not holding on resolve failure")
+	p := RunParams{Client: client, SessionID: "sess", Token: "tok", In: strings.NewReader(lines.String()), Out: &out, Resolver: NewDaemonResolver(reresolve)}
+	if err := runWithFakeClock(t, p); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 	if got := resolveCalls.Load(); got > 3 {
 		t.Errorf("Resolve calls = %d with %d goroutines; single-flight should prevent N×timeout stacking", got, n)
