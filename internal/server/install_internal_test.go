@@ -7,15 +7,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
+	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
+	"github.com/mcpmini/mini/internal/auth/provider"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/transport"
@@ -107,40 +113,49 @@ func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *tes
 	}
 }
 
-func TestRemoveServerFromAgent_holdsTheNameUntilTheServerIsDetached(t *testing.T) {
+func TestRemoveServerFromAgent_anAddOfTheNameWaitsUntilTheRemoveFinishes(t *testing.T) {
 	srv := newInstallTestServer(t)
 	srv.cfg.DangerousAllowPrivateURLs = true
-	path := filepath.Join(srv.configDir, "servers", "svc.yaml")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("transport: http\nurl: http://127.0.0.1:1/mcp\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	srv.authMu.Lock() // the remove's detach starts by taking authMu, so it waits here after deleting the file
+	writeServerFile(t, srv.configDir, "svc.yaml", "transport: http\nurl: http://127.0.0.1:1/mcp\n")
+	srv.authMu.Lock() // pauses the remove: detaching the server starts by taking authMu
+	resume := sync.OnceFunc(srv.authMu.Unlock)
+	t.Cleanup(resume) // closing the server needs authMu, even when the test stops early
 	removed := make(chan struct{})
 	go func() { defer close(removed); _, _ = srv.removeServerFromAgent("svc") }() // the outcome checked is the add's
-	waitUntil(func() bool { _, err := os.Stat(path); return errors.Is(err, fs.ErrNotExist) })
+	waitUntil(t, "the remove holds svc", func() bool { return srv.NameLockCallers("svc") == 1 })
 
 	added := make(chan struct{})
 	go func() {
 		defer close(added)
-		// The add fails to connect either way; the check is whether it saved svc mid-remove.
-		_, _ = srv.addServerFromAgent(context.Background(), &config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp"})
+		_, _ = srv.addServerFromAgent(context.Background(), &config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp"}) // fails to connect either way
 	}()
-	waitUntil(func() bool { _, err := os.Stat(path); return srv.NameLockCallers("svc") == 2 || err == nil })
-	_, err := os.Stat(path)
-	srv.authMu.Unlock()
+	waitUntil(t, "the add waits for svc or finishes", func() bool { return srv.NameLockCallers("svc") == 2 || isClosed(added) })
+	addFinishedMidRemove := isClosed(added)
+	resume()
 	<-removed
 	<-added
 
-	if err == nil {
-		t.Error("add_server saved svc while remove_server of svc was still detaching it")
+	if addFinishedMidRemove {
+		t.Error("add_server of svc ran while remove_server of svc was still in progress")
 	}
 }
 
-func waitUntil(condition func() bool) {
+func isClosed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+func waitUntil(t *testing.T, what string, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
 	for !condition() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting until %s", what)
+		}
 		runtime.Gosched()
 	}
 }
@@ -162,5 +177,96 @@ func TestRollBackAdd_reportsAServerItCouldNotRemove(t *testing.T) {
 
 	if err := srv.rollBackAdd("svc"); err == nil || !strings.Contains(err.Error(), "remove it with remove_server") {
 		t.Errorf("rollBackAdd = %v, want the agent told the server is still saved", err)
+	}
+}
+
+func TestRemoveServerFromAgent_aTokenRefreshFinishingMidRemoveLeavesNoToken(t *testing.T) {
+	srv := newInstallTestServer(t)
+	writeServerFile(t, srv.configDir, "svc.yaml", "transport: http\nurl: http://127.0.0.1:1/mcp\n")
+	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := auth.Save(srv.configDir, "svc", &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	endpoint, refreshReached, finishRefresh := gatedTokenEndpoint(t)
+	login, err := srv.providerRegistry.GetOrCreate(provider.Params{
+		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: endpoint + "/token"},
+		ConfigDir:  srv.configDir,
+		ServerName: "svc",
+		ServerURL:  "http://127.0.0.1:1/mcp",
+		Clock:      clock.NewFakeAt(epoch),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshed := make(chan struct{})
+	go func() { defer close(refreshed); _, _ = login.Authorization(context.Background()) }() // the refresh's outcome is read from disk below
+	waitForChannel(t, "the token refresh reaches the endpoint", refreshReached)
+
+	srv.authMu.Lock() // pauses the remove: detaching the server starts by taking authMu
+	resume := sync.OnceFunc(srv.authMu.Unlock)
+	t.Cleanup(resume) // closing the server needs authMu, even when the test stops early
+	removed := make(chan struct{})
+	go func() { defer close(removed); _, _ = srv.removeServerFromAgent("svc") }()
+	waitUntil(t, "the remove holds svc", func() bool { return srv.NameLockCallers("svc") == 1 })
+	finishRefresh()
+	waitForChannel(t, "the refresh saves its token", refreshed)
+	resume()
+	<-removed
+
+	if _, err := auth.Load(srv.configDir, "svc"); !auth.IsNotFound(err) {
+		t.Errorf("token after remove_server: %v, want none: a refresh that finished mid-remove saved it back", err)
+	}
+}
+
+func TestCommitTokenUnlessRemoved(t *testing.T) {
+	login := func(srv *Server) upstreamInstall {
+		sc := config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp",
+			Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: "http://127.0.0.1:1/token"}}
+		return upstreamInstall{cfg: sc, removeGen: srv.snapshotRemoveGen("svc")}
+	}
+
+	t.Run("saves the token of a login whose server is still there", func(t *testing.T) {
+		srv := newInstallTestServer(t)
+		if err := srv.commitTokenUnlessRemoved(login(srv), &oauth2.Token{AccessToken: "fresh"}); err != nil {
+			t.Fatal(err)
+		}
+		if tok, err := auth.Load(srv.configDir, "svc"); err != nil || tok.AccessToken != "fresh" {
+			t.Errorf("saved token = %v, %v; want fresh", tok, err)
+		}
+	})
+	t.Run("refuses a login that finishes after its server was removed", func(t *testing.T) {
+		srv := newInstallTestServer(t)
+		startedBeforeTheRemove := login(srv)
+		srv.detachAndCloseServer("svc")
+
+		err := srv.commitTokenUnlessRemoved(startedBeforeTheRemove, &oauth2.Token{AccessToken: "late"})
+
+		if !errors.Is(err, errServerRemoved) {
+			t.Errorf("commit = %v, want errServerRemoved", err)
+		}
+		if _, err := auth.Load(srv.configDir, "svc"); !auth.IsNotFound(err) {
+			t.Errorf("token after a refused commit: %v, want none", err)
+		}
+	})
+}
+
+func gatedTokenEndpoint(t *testing.T) (url string, reached <-chan struct{}, finish func()) {
+	t.Helper()
+	endpoint := authtest.NewTokenServer(t)
+	ready, gate := make(chan struct{}), make(chan struct{})
+	endpoint.Mu.Lock()
+	endpoint.HoldReady, endpoint.HoldGate = ready, gate
+	endpoint.Mu.Unlock()
+	finish = sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(finish)
+	return endpoint.Srv.URL, ready, finish
+}
+
+func waitForChannel(t *testing.T, what string, ch <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timed out waiting until %s", what)
 	}
 }

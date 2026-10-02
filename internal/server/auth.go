@@ -7,6 +7,8 @@ import (
 	"io/fs"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/config"
@@ -131,11 +133,22 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
 		return
 	}
-	if err := s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(sc), token); err != nil {
+	if err := s.commitTokenUnlessRemoved(install, token); err != nil {
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
 		return
 	}
 	s.reconnectWithToken(install)
+}
+
+func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, token *oauth2.Token) error {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	// A remove bumps the generation under serverOpMu before deleting the token, so a login that
+	// finishes after it can't save the token back, or onto a new server added under the name.
+	if s.removeGen[install.cfg.Name] != install.removeGen {
+		return fmt.Errorf("server %q: %w", install.cfg.Name, errServerRemoved)
+	}
+	return s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(install.cfg), token)
 }
 
 func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
