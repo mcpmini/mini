@@ -13,11 +13,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -330,6 +333,11 @@ func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanne
 
 func startServer(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
+	return startServerWithUnreachable(t, configDir, nil)
+}
+
+func startServerWithUnreachable(t *testing.T, configDir string, unreachable []string) *mcpClient {
+	t.Helper()
 	stdin, scanner := startMiniCmd(t, configDir)
 	c := newMCPClient(t, stdin, scanner)
 	c.mustCall("initialize", map[string]any{
@@ -337,48 +345,72 @@ func startServer(t *testing.T, configDir string) *mcpClient {
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
-	waitForUpstreamsSettled(t, c)
+	waitForServersConnected(t, c, connectableServers(t, configDir, unreachable))
 	return c
 }
 
-// Upstreams connect asynchronously (#33); tool-presence assertions race the connect goroutines without this.
-func waitForUpstreamsSettled(t *testing.T, c *mcpClient) {
+// Upstreams connect after initialize returns (#33), so a call made before then finds no tools.
+func waitForServersConnected(t *testing.T, c *mcpClient, names []string) {
 	t.Helper()
-	settleUntil(t, func() string { return c.listTools("") }, nil)
-}
-
-func waitForProxyUpstreamsSettled(t *testing.T, c *mcpClient) {
-	t.Helper()
-	settleUntil(t, func() string { return string(c.mustCall("tools/list", nil)) },
-		func(s string) bool { return strings.Contains(s, "__") })
-}
-
-func settleUntil(t *testing.T, snapshot func() string, ready func(string) bool) {
-	t.Helper()
-	const stableReadsRequired = 3
-	const pollInterval = 30 * time.Millisecond
-	const ceiling = 3 * time.Second
-
+	const ceiling = 10 * time.Second
 	deadline := time.Now().Add(ceiling)
-	last, stable := "", 0
-	for time.Now().Before(deadline) {
-		cur := snapshot()
-		if ready == nil || ready(cur) {
-			if cur == last {
-				stable++
-				if stable >= stableReadsRequired {
-					return
-				}
-			} else {
-				stable = 1
-				last = cur
-			}
-		} else {
-			last, stable = cur, 0
+	for {
+		connected := c.connectedServers()
+		missing := slices.DeleteFunc(slices.Clone(names), func(name string) bool { return connected[name] })
+		if len(missing) == 0 {
+			return
 		}
-		time.Sleep(pollInterval)
+		if time.Now().After(deadline) {
+			t.Fatalf("servers %v did not connect within %s", missing, ceiling)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("catalog did not settle within %s; last snapshot: %s", ceiling, last)
+}
+
+func (c *mcpClient) connectedServers() map[string]bool {
+	c.t.Helper()
+	raw := c.mustCall("tools/call", map[string]any{"name": "config", "arguments": map[string]any{"action": "status"}})
+	var status struct {
+		Servers map[string]json.RawMessage `json:"servers"`
+	}
+	mustUnmarshal(c.t, []byte(toolCallText(c.t, raw)), &status)
+	connected := make(map[string]bool, len(status.Servers))
+	for name := range status.Servers {
+		connected[name] = true
+	}
+	return connected
+}
+
+func connectableServers(t *testing.T, configDir string, unreachable []string) []string {
+	t.Helper()
+	paths, err := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, path := range paths {
+		name := strings.TrimSuffix(filepath.Base(path), ".yaml")
+		if strings.HasSuffix(name, ".proj") || slices.Contains(unreachable, name) || !serverFileEnabled(t, path) {
+			continue
+		}
+		names = append(names, name)
+	}
+	return names
+}
+
+func serverFileEnabled(t *testing.T, path string) bool {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var server struct {
+		Enabled *bool `yaml:"enabled"`
+	}
+	if err := yaml.Unmarshal(data, &server); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return server.Enabled == nil || *server.Enabled
 }
 
 func newMCPClient(t *testing.T, stdin io.WriteCloser, scanner *bufio.Scanner) *mcpClient {

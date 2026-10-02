@@ -127,6 +127,11 @@ func TestIntegrationServer_execUnknownServer(t *testing.T) {
 
 func startProxyServer(t *testing.T, configDir string) *mcpClient {
 	t.Helper()
+	return startProxyServerWithUnreachable(t, configDir, nil)
+}
+
+func startProxyServerWithUnreachable(t *testing.T, configDir string, unreachable []string) *mcpClient {
+	t.Helper()
 	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--log-level", "error")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -153,7 +158,7 @@ func startProxyServer(t *testing.T, configDir string) *mcpClient {
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "test", "version": "0"},
 	})
-	waitForProxyUpstreamsSettled(t, c)
+	waitForServersConnected(t, c, connectableServers(t, configDir, unreachable))
 	return c
 }
 
@@ -253,7 +258,7 @@ func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeServerConfig(t, cfg, "dead",
 		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n") // nothing listening
-	client := startServer(t, cfg)
+	client := startServerWithUnreachable(t, cfg, []string{"dead"})
 	// Should still serve list/call for the working upstream
 	text := client.listTools("github")
 	if !strings.Contains(text, "list_pull_requests") {
@@ -267,7 +272,7 @@ func TestIntegrationProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeServerConfig(t, cfg, "dead",
 		"name: dead\ntransport: http\nurl: http://127.0.0.1:19998\n")
-	client := startProxyServer(t, cfg)
+	client := startProxyServerWithUnreachable(t, cfg, []string{"dead"})
 	raw := client.mustCall("tools/list", nil)
 	var result struct {
 		Tools []struct {
