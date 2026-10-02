@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ type tokenProvider struct {
 	proactiveRetryAt time.Time
 	deadRefreshToken string
 	deadRefreshErr   error
+	retired          bool
 }
 
 func New(p Params) (transport.AuthorizationProvider, error) {
@@ -71,7 +73,19 @@ func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) 
 	return bearerValue(p.token), nil
 }
 
+var errRetired = errors.New("its server was removed")
+
+func (p *tokenProvider) retire() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.retired = true
+	p.token = nil
+}
+
 func (p *tokenProvider) ensureTokenLocked() error {
+	if p.retired {
+		return fmt.Errorf("%s: %w", p.serverName, errRetired)
+	}
 	if p.token != nil {
 		return nil
 	}
@@ -91,6 +105,9 @@ func (p *tokenProvider) remedyError(cause error) error {
 func (p *tokenProvider) commitBrowserToken(hydrated *config.AuthConfig, tok *oauth2.Token) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.retired {
+		return fmt.Errorf("%s: %w", p.serverName, errRetired)
+	}
 	if err := auth.Save(p.configDir, p.serverName, tok); err != nil {
 		return fmt.Errorf("persist oauth token: %w", err)
 	}

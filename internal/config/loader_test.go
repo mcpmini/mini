@@ -320,6 +320,21 @@ url: https://example.com/mcp
 	}
 }
 
+func TestLoadServerConfig_ignoresADetectedMarkerOnAnAgentAddedServer(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
+transport: http
+url: https://example.com/mcp
+agent_added: true
+`)
+	if err := config.MarkOAuthDetected(dir, "svc"); err != nil {
+		t.Fatalf("MarkOAuthDetected: %v", err)
+	}
+	if sc := mustLoadOneServer(t, dir); sc.Auth != nil {
+		t.Errorf("Auth = %+v, want none: a marker left by an earlier svc must not let start_auth run for an agent's server", sc.Auth)
+	}
+}
+
 func TestLoadServerConfig_existingAuthTakesPrecedenceOverDetectedMarker(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "hasauth.yaml"), `

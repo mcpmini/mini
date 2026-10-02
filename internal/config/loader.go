@@ -1,7 +1,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,7 +28,14 @@ var ValidToolName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 var envVarRef = regexp.MustCompile(`\$\{([^}]+)\}`)
 
 func Load(configDir string) (*Config, []ServerConfig, error) {
-	cfg, servers, err := loadBaseConfig(configDir)
+	cfg, err := loadMainConfig(configDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
+		return nil, nil, fmt.Errorf("config.yaml: response_format: %w", err)
+	}
+	servers, err := loadServerConfigs(configDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -34,36 +43,49 @@ func Load(configDir string) (*Config, []ServerConfig, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	mergeProjections(servers, projections)
-	if err := validateResponseFormats(cfg, servers); err != nil {
+	if err := completeServers(configDir, servers, projections); err != nil {
 		return nil, nil, err
 	}
 	return cfg, servers, nil
 }
 
-func validateResponseFormats(cfg *Config, servers []ServerConfig) error {
-	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
-		return fmt.Errorf("config.yaml: response_format: %w", err)
+// LoadServer loads one server as Load would, without needing every other server file to load.
+func LoadServer(configDir, name string) (ServerConfig, error) {
+	sc, err := loadNamedServerFile(configDir, name)
+	if err != nil {
+		return ServerConfig{}, err
 	}
+	projections := make(map[string]map[string]*ProjectionConfig)
+	if err := loadOneProjectionFile(projections, ProjectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return ServerConfig{}, err
+	}
+	servers := []ServerConfig{*sc}
+	if err := completeServers(configDir, servers, projections); err != nil {
+		return ServerConfig{}, err
+	}
+	return servers[0], nil
+}
+
+func loadNamedServerFile(configDir, name string) (*ServerConfig, error) {
+	if err := checkServerName(name, "the request"); err != nil {
+		return nil, err
+	}
+	path := ServerPath(configDir, name)
+	if !ServerFileExists(configDir, name) {
+		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
+	}
+	return loadServerConfig(path)
+}
+
+func completeServers(configDir string, servers []ServerConfig, projections map[string]map[string]*ProjectionConfig) error {
+	mergeProjections(servers, projections)
 	for _, s := range servers {
 		if err := validateServerProjectionFormats(s.Name, s.Projections); err != nil {
 			return err
 		}
 	}
-	return nil
-}
-
-func loadBaseConfig(configDir string) (*Config, []ServerConfig, error) {
-	cfg, err := loadMainConfig(configDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	servers, err := loadServerConfigs(configDir)
-	if err != nil {
-		return nil, nil, err
-	}
 	mergeKnownAuth(configDir, servers)
-	return cfg, servers, nil
+	return nil
 }
 
 func checkServerName(name, source string) error {
@@ -178,7 +200,8 @@ func mergeKnownAuth(dir string, servers []ServerConfig) {
 			servers[i].Auth = ac
 			continue
 		}
-		if readServerMeta(dir, servers[i].Name).OAuthDetected {
+		// A marker can outlive the server that earned it, and an agent's server never gets OAuth.
+		if !servers[i].AgentAdded && readServerMeta(dir, servers[i].Name).OAuthDetected {
 			servers[i].Auth = &AuthConfig{Type: AuthTypeOAuth2}
 		}
 	}

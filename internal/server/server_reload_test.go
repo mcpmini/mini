@@ -80,6 +80,25 @@ func (e *serverReloadEnv) assertRemoved(names ...string) {
 	}
 }
 
+func TestServerReload_deletedFileOfAnAgentAddedServer_removesIt(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.DangerousAllowPrivateURLs = true
+	e := &serverReloadEnv{reloadEnv: buildReloadEnvWithConfig(t, evalTempDir(t), cfg), upstream: newMCPTestServer(t, pingTools)}
+	e.startPoller()
+	resp := serve(t, e.srv, callTool("config", map[string]any{
+		"action": "add_server", "config": map[string]any{"name": "ag", "transport": "http", "url": e.upstream.URL},
+	}))
+	if result, _ := resp["result"].(map[string]any); result["isError"] == true {
+		t.Fatalf("add_server: %s", toolResultText(t, resp))
+	}
+	e.advanceTick()
+
+	e.removeServerFile("ag")
+	e.advanceTick()
+
+	e.assertRemoved("ag")
+}
+
 func TestServerReload_deletedServerFile_removesServerAndNotifiesAgents(t *testing.T) {
 	e := newServerReloadEnv(t)
 	e.startWithServers("gone", "kept")
@@ -161,35 +180,18 @@ func TestServerReload_removalDuringStartupRetry_staysRemoved(t *testing.T) {
 	e.assertRemoved("flaky")
 }
 
-func TestServerReload_runtimeAddedServer_isLeftAlone(t *testing.T) {
-	t.Run("its own name", func(t *testing.T) {
-		e := newServerReloadEnv(t)
-		e.startWithServers("svc")
-		addRuntimeServer(t, e.srv, "rt")
-
-		e.removeServerFile("svc")
-		e.advanceTick()
-
-		e.assertRemoved("svc")
-		e.assertConnected("rt")
-	})
-	t.Run("replacing a config server of the same name", func(t *testing.T) {
-		e := newServerReloadEnv(t)
-		e.startWithServers("svc")
-		addRuntimeServer(t, e.srv, "svc")
-
-		e.removeServerFile("svc")
-		e.advanceTick()
-
-		e.assertConnected("svc")
-	})
-}
-
-func addRuntimeServer(t *testing.T, srv *server.Server, name string) {
-	t.Helper()
-	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: name, RuntimeAdded: true}, fakeConn("getData")); err != nil {
+func TestServerReload_leavesAServerWithNoConfigFileAlone(t *testing.T) {
+	e := newServerReloadEnv(t)
+	e.startWithServers("svc")
+	if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "unsaved"}, fakeConn("getData")); err != nil {
 		t.Fatal(err)
 	}
+
+	e.removeServerFile("svc")
+	e.advanceTick()
+
+	e.assertRemoved("svc")
+	e.assertConnected("unsaved")
 }
 
 func (e *serverReloadEnv) waitForRetryBackoff() {

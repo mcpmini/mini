@@ -21,6 +21,7 @@ type Registry struct {
 type registryEntry struct {
 	provider *tokenProvider
 	identity providerIdentity
+	cancel   context.CancelFunc
 }
 
 type providerIdentity struct {
@@ -49,13 +50,30 @@ func (c *Registry) GetOrCreate(params Params) (transport.AuthorizationProvider, 
 		}
 		return e.provider, nil
 	}
-	params.Lifetime = c.ctx
+	lifetime, cancel := context.WithCancel(c.ctx)
+	params.Lifetime = lifetime
 	tp, err := buildTokenProvider(params)
 	if err != nil {
+		cancel()
 		return nil, err
 	}
-	c.m[params.ServerName] = &registryEntry{provider: tp, identity: identityFrom(params)}
+	c.m[params.ServerName] = &registryEntry{provider: tp, identity: identityFrom(params), cancel: cancel}
 	return tp, nil
+}
+
+// Forget drops the server's provider, so the next GetOrCreate for the name starts from disk.
+// It returns once the old provider's in-flight refresh or commit has finished, and that
+// provider never authorizes or saves a token again.
+func (c *Registry) Forget(serverName string) {
+	c.mu.Lock()
+	e := c.m[serverName]
+	delete(c.m, serverName)
+	c.mu.Unlock()
+	if e == nil {
+		return
+	}
+	e.cancel()
+	e.provider.retire()
 }
 
 // CommitAuthorizedToken saves tok and, if the server already has a provider, installs it there.

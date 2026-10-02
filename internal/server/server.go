@@ -31,12 +31,14 @@ type Server struct {
 	daemonAuthToken      string
 	allowNonLoopbackHost bool
 	providerRegistry     *provider.Registry
-	// Lock ordering: persistMu → serverOpMu → stateMu → authMu.
+	// Held across each add_server, remove_server and reload removal of one name, so its saved and live states agree.
+	serverNames nameLocks
+	// Lock ordering: serverNames → persistMu → serverOpMu → stateMu → authMu.
 	// stateMu is the innermost hot-path lock (RLock on every request);
 	// the outer locks serialize cold-path admin operations.
 	stateMu     sync.RWMutex
 	persistMu   sync.Mutex
-	serverOpMu  sync.Mutex        // serializes concurrent add_server / remove_server for the same name
+	serverOpMu  sync.Mutex
 	removeGen   map[string]uint64 // protected by serverOpMu; incremented on each remove_server
 	authMu      sync.Mutex
 	authFlows   map[string]*authFlowState

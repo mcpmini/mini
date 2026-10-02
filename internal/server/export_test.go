@@ -19,3 +19,13 @@ func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionCo
 func (s *Server) WaitForStartupConnects() { s.connector.wait() }
 
 const ConfigPollInterval = configPollInterval
+
+// NameLockCallers counts the calls holding or waiting on name's lock.
+func (s *Server) NameLockCallers(name string) int {
+	s.serverNames.mu.Lock()
+	defer s.serverNames.mu.Unlock()
+	if nl := s.serverNames.locks[name]; nl != nil {
+		return nl.refs
+	}
+	return 0
+}

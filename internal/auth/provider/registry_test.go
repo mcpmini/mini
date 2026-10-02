@@ -222,3 +222,107 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 		t.Error("registry.Close() did not abort in-flight refresh within 5s")
 	}
 }
+
+func TestProviderRegistry_forget(t *testing.T) {
+	oauthParams := func(dir, serverURL string) provider.Params {
+		return provider.Params{
+			AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
+			ConfigDir:  dir,
+			ServerName: "srv",
+			ServerURL:  serverURL,
+			Clock:      clock.NewFake(),
+		}
+	}
+
+	t.Run("the next provider for the name loads its token from disk, at any URL", func(t *testing.T) {
+		for _, nextURL := range []string{"https://mcp.example.com/mcp", "https://other.example.com/mcp"} {
+			dir := t.TempDir()
+			if err := auth.Save(dir, "srv", &oauth2.Token{AccessToken: "old"}); err != nil {
+				t.Fatal(err)
+			}
+			registry := provider.NewRegistry()
+			old, err := registry.GetOrCreate(oauthParams(dir, "https://mcp.example.com/mcp"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := old.Authorization(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if err := auth.DeleteCredentials(dir, "srv"); err != nil {
+				t.Fatal(err)
+			}
+
+			registry.Forget("srv")
+			next, err := registry.GetOrCreate(oauthParams(dir, nextURL))
+			if err != nil {
+				t.Fatalf("GetOrCreate at %s after Forget: %v", nextURL, err)
+			}
+
+			if got, err := next.Authorization(context.Background()); err == nil {
+				t.Errorf("provider at %s authorized with %q, want the deleted token gone", nextURL, got)
+			}
+		}
+	})
+
+	t.Run("the forgotten provider no longer authorizes", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := auth.Save(dir, "srv", &oauth2.Token{AccessToken: "old"}); err != nil {
+			t.Fatal(err)
+		}
+		registry := provider.NewRegistry()
+		old, err := registry.GetOrCreate(oauthParams(dir, "https://mcp.example.com/mcp"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		registry.Forget("srv")
+
+		if got, err := old.Authorization(context.Background()); err == nil {
+			t.Errorf("forgotten provider authorized with %q", got)
+		}
+	})
+
+	t.Run("an in-flight refresh is aborted and does not save its token", func(t *testing.T) {
+		dir := t.TempDir()
+		epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+		if err := auth.Save(dir, "srv", &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)}); err != nil {
+			t.Fatal(err)
+		}
+		endpoint := authtest.NewTokenServer(t)
+		received, release := gateNextTokenRequest(endpoint)
+		t.Cleanup(func() { release() })
+		params := oauthParams(dir, "https://mcp.example.com/mcp")
+		params.AuthConfig.TokenURL = endpoint.Srv.URL + "/token"
+		params.Clock = clock.NewFakeAt(epoch)
+		registry := provider.NewRegistry()
+		old, err := registry.GetOrCreate(params)
+		if err != nil {
+			t.Fatal(err)
+		}
+		go old.Authorization(context.Background()) //nolint:errcheck // the refresh's outcome is read from disk below
+		select {
+		case <-received:
+		case <-time.After(5 * time.Second):
+			t.Fatal("token endpoint not reached within 5s")
+		}
+
+		forgotten := make(chan struct{})
+		go func() {
+			registry.Forget("srv")
+			close(forgotten)
+		}()
+		select {
+		case <-forgotten:
+		case <-time.After(5 * time.Second):
+			t.Fatal("Forget did not abort the in-flight refresh within 5s")
+		}
+
+		saved, err := auth.Load(dir, "srv")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved.AccessToken != "old" {
+			t.Errorf("saved token = %q after Forget, want the refresh's token never saved", saved.AccessToken)
+		}
+	})
+}

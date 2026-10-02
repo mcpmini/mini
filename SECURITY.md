@@ -18,26 +18,40 @@ Out of scope: a fully compromised host OS, or an attacker who can write to `~/.m
 
 ### Prompt injection — `add_server`
 
-The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`), because it can register a new upstream server at a URL controlled by the caller.
+The highest-risk MCP tool mini exposes to agents is `add_server` (via `config`), because it can register a new upstream server at a URL controlled by the caller. Like `mini add`, it saves the server to `servers/<name>.yaml`, so whatever it accepts also runs on every later start. What it accepts is decided in `internal/server/agent_server.go`; how it saves, connects and rolls back is in `internal/server/configure_servers.go`.
 
-**Strip on ingest** (`internal/server/configure.go: validateRuntimeTransport`):
+**`agent_added: true`**: the saved file records that an agent supplied the server, and mini keeps treating it as untrusted until the user deletes that line:
+- every connection re-checks resolved addresses at dial time (see SSRF blocking below);
+- a command it runs starts only while `dangerous_allow_runtime_stdio` is on, so turning the setting off stops commands agents added earlier;
+- it never gets OAuth from detection. Detection would use the server's own metadata to choose the authorization and token endpoints, so an agent's server could have the user log in to a real vendor and receive the authorization code and PKCE verifier. An agent can't add an OAuth server at all: the add clears the name's token, so the first connect fails and the add is undone (#243).
 
-- `sc.Auth = nil` — A crafted auth config with a malicious `token_url` would receive the PKCE `code` + `code_verifier` during an OAuth exchange, enough to mint a token on behalf of the user. Auth setup must go through the CLI (`mini auth`) where endpoints are user-verified.
-- `sc.Headers = nil` — A crafted header map like `{"Authorization": "Bearer <stolen-token>"}` plus an attacker URL would silently forward the token on every subsequent call. The user would never see this happen.
-- `sc.Env = nil` (when `dangerous_allow_runtime_stdio: true`) — Prevents injecting credentials as environment variables into spawned subprocesses.
+**Only the connection is taken from the agent** (`agentServerConfig`): the saved server keeps the agent's `transport`, `url`, `command` and `args`, and every other field keeps mini's default. That includes fields added to the config later. So an agent can't set:
+
+- `auth` — a crafted auth config with a malicious `token_url` would receive the PKCE `code` + `code_verifier` during an OAuth exchange, enough to mint a token on behalf of the user. Auth setup must go through the CLI (`mini auth`) where endpoints are user-verified.
+- `headers` — a crafted header map like `{"Authorization": "Bearer <stolen-token>"}` plus an attacker URL would silently forward the token on every subsequent call.
+- `env` — credentials injected as environment variables into a spawned command.
+- `permissions` — an empty block would skip a vendor's bundled list of protected tools.
+- `projections` — `set_projection` is the one writer of projection rules.
+- timeouts — a handshake that never ends would hold the name's lock, and a zero tool timeout removes every call deadline.
+
+Headers, env and auth are the only server fields where `${VAR}` expands, so leaving them out also keeps an agent's server from reading the user's environment. A `${VAR}` in `url`, `command` or `args` fails to load, so `add_server` refuses it.
+
+**Reusing a name**: `add_server` refuses a name that is already configured or running (remove it with `remove_server` first). Adding or removing a server deletes the OAuth token, client registration and OAuth marker stored under its name, because those are keyed by name alone: a server reusing the name would otherwise be sent the old one's token. `add_server` and `remove_server` stop a token refresh or browser login still running for the name before they delete the token, so neither can save it back, and a login that finishes after a remove or a re-add is refused. An OAuth marker never applies to an agent-added server. Two paths still reach the old token, because a token isn't tied to the server it was issued for (#266): editing a server's `url` in its file, and replacing a server with `mini rm` and `mini add` while mini is running. Bundled vendor auth is picked by an HTTP server's host alone, never by a `command` on it.
+
+**`remove_server` deletes config**: like `mini rm`, it deletes `servers/<name>.yaml` and `<name>.proj.yaml` for any server, including ones the user added. This is deliberate: the config tool does what the CLI does unless an action could gain an agent something, and removing a server can only lose things. The cost is that an agent can permanently delete config the user wrote, or remove a server and add another under its name (#267). Block the `config` tool in the MCP client to keep agents from changing servers.
 
 **SSRF blocking** (`internal/transport/ssrf.go: ValidateURL`):
 
-Runtime `add_server` URLs are validated before use (config-file URLs are admin-authored and trusted):
+`add_server` URLs are validated before use. URLs the user writes into config are trusted:
 - Scheme must be `http` or `https`
 - Loopback hostnames (`localhost`, `*.localhost`) are blocked
 - Private TLDs (`.local`, `.internal`) are blocked
 - Direct IP references to private ranges are blocked: `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16` (IMDS), `100.64.0.0/10`, `::1/128`, `fc00::/7`, `fe80::/10`, `0.0.0.0/8`
 - IPv4-in-IPv6 addresses (`::ffff:127.0.0.1`) are unmapped before range checks
 
-**Limitation**: DNS-resolution-time SSRF (where a hostname resolves to a private IP at connect time, after validation) is not blocked. A custom `DialContext` that re-checks the resolved IP is the correct fix and is tracked as a future improvement.
+A server added by `add_server` is saved with `agent_added: true`, so every connection to it, including after a restart, re-checks the resolved IP at dial time. That covers DNS rebinding and a hostname that resolves to a private address.
 
-**Mitigation**: To defend against DNS rebinding and late-resolution SSRF, deploy mini behind a network policy or firewall that blocks egress to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8) from the mini process. This is the recommended defense for production deployments.
+**Mitigation**: For defense in depth, deploy mini behind a network policy or firewall that blocks egress to private IP ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8) from the mini process.
 
 **Redirect blocking** (`internal/transport/http.go`):
 
@@ -51,9 +65,9 @@ Server names are validated against `^[a-zA-Z0-9_-]+$` at every input boundary: C
 
 Agents can only register HTTP upstreams via `add_server` by default. Stdio subprocess execution from agent-controlled commands requires `dangerous_allow_runtime_stdio: true` in global config — an explicit opt-in that surfaces the risk to the user.
 
-**Warning**: When `dangerous_allow_runtime_stdio: true` is set, agents can supply arbitrary `command` and `args` to `add_server`. Because `exec.CommandContext` does not use a shell, shell metacharacter injection is not possible, but **there is no allowlist** — any binary on the host can be executed. This flag grants the agent near-arbitrary command execution on the host. Only enable it when you fully trust every agent that connects to this mini instance.
+**Warning**: When `dangerous_allow_runtime_stdio: true` is set, agents can supply arbitrary `command` and `args` to `add_server`. Because `exec.CommandContext` does not use a shell, shell metacharacter injection is not possible, but **there is no allowlist** — any binary on the host can be executed. This flag grants the agent near-arbitrary command execution on the host, and because `add_server` saves the server, the command runs again on every later start. Only enable it when you fully trust every agent that connects to this mini instance.
 
-`dangerous_allow_private_urls: true` disables SSRF URL validation on `add_server`, allowing upstreams that resolve to private/loopback addresses. This is intended for test environments where upstream MCPs run on localhost. Do not enable in production.
+`dangerous_allow_private_urls: true` disables SSRF URL validation on `add_server` and the dial-time check, allowing upstreams that resolve to private/loopback addresses. This is intended for test environments where upstream MCPs run on localhost. Do not enable in production.
 
 ### Header injection
 

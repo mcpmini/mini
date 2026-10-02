@@ -3,6 +3,8 @@
 package config_test
 
 import (
+	"errors"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -196,6 +198,46 @@ func TestLoadServerSet_brokenFileHoldsOnlyItsServer(t *testing.T) {
 		if set.KeepsPreviousServer(name) {
 			t.Errorf("KeepsPreviousServer(%q) = true, want only the failing file's server held", name)
 		}
+	}
+}
+
+func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\n")
+	writeFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  include_only: [title]\n")
+	_, servers, err := config.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := *config.FindServer(servers, "linear")
+	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
+
+	got, err := config.LoadServer(dir, "linear")
+
+	if err != nil {
+		t.Fatalf("LoadServer: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("LoadServer = %+v\nwant what Load gives: %+v", got, want)
+	}
+	if got.Auth == nil || got.Projections["list_issues"] == nil {
+		t.Errorf("LoadServer = %+v, want bundled auth and the projection file merged", got)
+	}
+	if _, err := config.LoadServer(dir, "missing"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("LoadServer(missing) err = %v, want fs.ErrNotExist", err)
+	}
+	writeFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  format: bogus\n")
+	if _, err := config.LoadServer(dir, "linear"); err == nil {
+		t.Error("LoadServer accepted a projection format Load rejects, so the server would stop mini's next start")
+	}
+}
+
+func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "github.yaml"), "transport: http\nurl: https://api.githubcopilot.com/mcp/\n")
+
+	if sc, err := config.LoadServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("LoadServer(GitHub) = %q, %v; want fs.ErrNotExist, not github.yaml under another name", sc.Name, err)
 	}
 }
 

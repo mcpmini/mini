@@ -223,19 +223,20 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("warns instead of silently skipping when config reload fails", func(t *testing.T) {
+	t.Run("warns instead of silently skipping when the server's projection file fails to load", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(dir, "servers"), 0755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "servers", "broken.yaml"), []byte("not: valid: yaml: ["), 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "servers", "svc.yaml"), []byte("transport: http\nurl: https://example.com\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "servers", "svc.proj.yaml"), []byte("not: valid: yaml: ["), 0644); err != nil {
 			t.Fatal(err)
 		}
 
 		var out bytes.Buffer
-		if err := runAdd(dir, []string{"svc", "--url", "https://example.com"}, &out); err != nil {
-			t.Fatalf("runAdd: %v", err)
-		}
+		connectAndAuthorizeIfNeeded(dir, "svc", &out)
 		if !strings.Contains(out.String(), "warning:") {
 			t.Errorf("output = %q, want a warning when config reload fails instead of silence", out.String())
 		}

@@ -2,8 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"time"
+
+	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/provider"
@@ -19,11 +23,14 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 	if err := validateServerName(serverName); err != nil {
 		return nil, err
 	}
+	// Held until the login is registered, so a remove_server either runs first or cancels the
+	// login, and can't delete the server's files while the login is still writing them.
+	unlock := s.serverNames.lock(serverName)
+	defer unlock()
 	sc, err := s.loadOAuthServerConfig(serverName)
 	if err != nil {
 		return nil, err
 	}
-	// Taken before the login starts, so a remove_server at any point during the login wins.
 	install := s.replacingInstall(sc)
 	flow, err := s.startPKCEFlow(serverName, sc)
 	if err != nil {
@@ -129,11 +136,22 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 		s.logger.Error("oauth flow failed", "server", sc.Name, "err", err)
 		return
 	}
-	if err := s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(sc), token); err != nil {
+	if err := s.commitTokenUnlessRemoved(install, token); err != nil {
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
 		return
 	}
 	s.reconnectWithToken(install)
+}
+
+func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, token *oauth2.Token) error {
+	s.serverOpMu.Lock()
+	defer s.serverOpMu.Unlock()
+	// A remove bumps the generation under serverOpMu before deleting the token, so a login that
+	// finishes after it can't save the token back, or onto a new server added under the name.
+	if s.removeGen[install.cfg.Name] != install.removeGen {
+		return fmt.Errorf("server %q: %w", install.cfg.Name, errServerRemoved)
+	}
+	return s.providerRegistry.CommitAuthorizedToken(s.providerParamsFor(install.cfg), token)
 }
 
 func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
@@ -188,13 +206,9 @@ func appendTokenExpiry(result map[string]any, expiry time.Time) {
 }
 
 func (s *Server) loadServerConfig(serverName string) (config.ServerConfig, error) {
-	_, servers, err := config.Load(s.configDir)
-	if err != nil {
-		return config.ServerConfig{}, err
-	}
-	sc := config.FindServer(servers, serverName)
-	if sc == nil {
+	sc, err := config.LoadServer(s.configDir, serverName)
+	if errors.Is(err, fs.ErrNotExist) {
 		return config.ServerConfig{}, fmt.Errorf("server %q not found in config", serverName)
 	}
-	return *sc, nil
+	return sc, err
 }

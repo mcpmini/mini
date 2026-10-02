@@ -30,13 +30,18 @@ var (
 )
 
 type upstreamInstall struct {
-	cfg         config.ServerConfig
-	removeGen   uint64
-	fromStartup bool
+	cfg                 config.ServerConfig
+	removeGen           uint64
+	refuseIfRunning     bool
+	keepLiveProjections bool
 }
 
 func (s *Server) startupInstall(sc config.ServerConfig) upstreamInstall {
-	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), fromStartup: true}
+	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), refuseIfRunning: true, keepLiveProjections: true}
+}
+
+func (s *Server) newServerInstall(sc config.ServerConfig) upstreamInstall {
+	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), refuseIfRunning: true}
 }
 
 func (s *Server) replacingInstall(sc config.ServerConfig) upstreamInstall {
@@ -72,6 +77,9 @@ func (s *Server) retryStartupAfter(name string, err error, backoff time.Duration
 		return false
 	case errors.Is(err, transport.ErrReauthRequired):
 		s.logger.Warn("upstream needs authorization, not retrying", "server", name, "err", err)
+		return false
+	case errors.Is(err, invoke.ErrAgentCommandNotAllowed):
+		s.logger.Warn("upstream not allowed to start, not retrying", "server", name, "err", err)
 		return false
 	}
 	s.logger.Warn("upstream unavailable at startup, retrying", "server", name, "err", err, "backoff", backoff)
@@ -172,7 +180,7 @@ func (s *Server) installChecked(conn transport.Connection, tools []transport.Too
 		conn.Close()
 		return err
 	}
-	if in.fromStartup {
+	if in.keepLiveProjections {
 		in.cfg.Projections = s.liveProjections(in.cfg.Name)
 	}
 	s.installUpstreamLocked(in.cfg, conn, tools)
@@ -189,7 +197,7 @@ func (s *Server) checkInstallLocked(in upstreamInstall) error {
 	if s.removeGen[in.cfg.Name] != in.removeGen {
 		return fmt.Errorf("server %q: %w", in.cfg.Name, errServerRemoved)
 	}
-	if !in.fromStartup {
+	if !in.refuseIfRunning {
 		return nil
 	}
 	s.stateMu.RLock()
@@ -229,9 +237,6 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 	s.stateMu.Lock()
 	old := s.upstreams[name]
 	s.upstreams[name] = u
-	if u.cfg.RuntimeAdded {
-		delete(s.configServers, name)
-	}
 	s.stateMu.Unlock()
 	return old
 }
