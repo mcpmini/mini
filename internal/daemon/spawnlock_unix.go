@@ -27,6 +27,6 @@ func acquireSpawnLock(configDir string) (release func(), err error) {
 	}
 	return func() {
 		syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
-		f.Close()                                    //nolint:errcheck
+		f.Close()                                   //nolint:errcheck
 	}, nil
 }

@@ -9,7 +9,7 @@ import (
 
 // Store writes and reads cached API response files.
 type Store struct {
-	dir        string
+	dir         string
 	budgetBytes int64
 }
 

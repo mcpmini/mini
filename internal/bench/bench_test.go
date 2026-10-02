@@ -37,7 +37,7 @@ func TestMeasure_rawIsLargestTokenCount(t *testing.T) {
 	cfg := &config.ProjectionConfig{
 		IncludeOnly:  []string{"id", "title", "body"},
 		StringLimits: map[string]int{"body": 100},
-		StripMarkup: true,
+		StripMarkup:  true,
 	}
 	results := bench.Measure(bench.Case{Server: "github", Tool: "list_prs", Raw: prListRaw(t), ProjConfig: cfg}, defaults)
 	if len(results) != 3 {
@@ -64,9 +64,9 @@ func TestMeasure_projectionReducesTokens(t *testing.T) {
 		"_links": map[string]any{"self": "https://...", "html": "https://...", "commits": "https://..."},
 	})
 	cfg := &config.ProjectionConfig{
-		IncludeOnly:   []string{"number", "title", "body", "labels"},
-		StringLimits:  map[string]int{"body": 200},
-		Exclude: []string{"node_id", "url", "_links"},
+		IncludeOnly:  []string{"number", "title", "body", "labels"},
+		StringLimits: map[string]int{"body": 200},
+		Exclude:      []string{"node_id", "url", "_links"},
 	}
 	results := bench.Measure(bench.Case{Server: "test", Tool: "list_prs", Raw: raw, ProjConfig: cfg}, defaults)
 	if results[1].Tokens >= results[0].Tokens {

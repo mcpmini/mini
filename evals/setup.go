@@ -196,7 +196,6 @@ func fakemcpArgs(fixtureDir, callLogDir, serverName string) []string {
 	return args
 }
 
-
 func proxyAllowedTools(servers map[string]string, extraBuiltins string) string {
 	names := []string{"mcp__mini__config", "mcp__mini__read"}
 	for serverName, dir := range servers {

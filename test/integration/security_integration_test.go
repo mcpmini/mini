@@ -7,7 +7,6 @@ import (
 	"testing"
 )
 
-
 func noSSRFClient(t *testing.T) *mcpClient {
 	t.Helper()
 	cfg := t.TempDir()

@@ -3,6 +3,10 @@ set -euo pipefail
 
 export PATH="/opt/homebrew/bin:$(go env GOPATH)/bin:$PATH"
 
+# CI must fail on unformatted code, so only local runs fix it; golangci-lint run reports what's left.
+if [[ -z "${CI:-}" ]]; then
+  golangci-lint fmt
+fi
 go build ./...
 # go vet ./... doesn't run against all tags by default
 # specifying the tags here runs it over all the prod code AND the tests

@@ -28,6 +28,6 @@ func acquireSpawnLock(configDir string) (release func(), err error) {
 	}
 	return func() {
 		windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, ol) //nolint:errcheck
-		f.Close()                                                  //nolint:errcheck
+		f.Close()                                                 //nolint:errcheck
 	}, nil
 }

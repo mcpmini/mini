@@ -66,7 +66,6 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	}
 }
 
-
 func TestExcludedKeys(t *testing.T) {
 	store := newTestStore(t)
 	builder := response.NewBuilder(store)

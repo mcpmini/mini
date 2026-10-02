@@ -50,7 +50,7 @@ var fixtureValidations = map[string]validateCase{
 	// projection config uses "jira_search". Only wildcard "*" applies (auto_strip_threshold).
 	// 30% reflects what markup stripping alone achieves on a 35K-token Jira response.
 	// Replace with "atlassian/jira_search" once real mcp-atlassian fixtures exist.
-	"jira/search_issues": {projection: "atlassian", projTool: "search_issues", requiredKeys: []string{"issues", "total"}, minReductionPct: 25},
+	"jira/search_issues":          {projection: "atlassian", projTool: "search_issues", requiredKeys: []string{"issues", "total"}, minReductionPct: 25},
 	"linear/list_issues":          {requiredKeys: []string{"nodes"}, minReductionPct: 5},
 	"sentry/list_issues":          {requiredKeys: []string{"id", "title"}, minReductionPct: 20},
 	"slack/conversations_history": {requiredKeys: []string{"messages"}, minReductionPct: 5},
@@ -212,4 +212,3 @@ func resolveToolProjection(projMap map[string]*config.ProjectionConfig, tool str
 	}
 	return projMap["*"], false
 }
-
