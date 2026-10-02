@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -58,10 +57,7 @@ func TestRunLoginStepAutoYesSkipsPrompts(t *testing.T) {
 
 func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 	dir := t.TempDir()
-	if err := importers.WriteServerYAML(dir, "slack", importers.ServerYAML{
-		Command: "npx",
-		Args:    []string{"server-slack"},
-	}); err != nil {
+	if _, err := ops.AddServer(dir, config.ServerConfig{Name: "slack", Command: "npx", Args: []string{"server-slack"}}); err != nil {
 		t.Fatal(err)
 	}
 	called := false
@@ -188,7 +184,7 @@ func TestRunLoginStepOmitsDisabledServers(t *testing.T) {
 	dir := loginStepConfig(t, "on")
 	disabled := false
 	off := config.ServerConfig{Name: "off", Transport: "http", Enabled: &disabled, Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}
-	if _, err := ops.WriteServer(dir, off); err != nil {
+	if _, err := ops.AddServer(dir, off); err != nil {
 		t.Fatal(err)
 	}
 	out := &bytes.Buffer{}
@@ -260,7 +256,7 @@ func loginStepConfig(t *testing.T, names ...string) string {
 	dir := t.TempDir()
 	for _, name := range names {
 		sc := config.ServerConfig{Name: name, Transport: "http", Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}
-		if _, err := ops.WriteServer(dir, sc); err != nil {
+		if _, err := ops.AddServer(dir, sc); err != nil {
 			t.Fatal(err)
 		}
 	}

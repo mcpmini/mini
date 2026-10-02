@@ -3,10 +3,11 @@ package importers
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
+	"github.com/mcpmini/mini/internal/config"
 )
 
 func tempDir(t *testing.T) string {
@@ -18,289 +19,141 @@ func tempDir(t *testing.T) string {
 	return dir
 }
 
-func readYAML(t *testing.T, path string, out any) {
+func writeClientConfig(t *testing.T, name, content string) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile %s: %v", path, err)
+	path := filepath.Join(tempDir(t), name)
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
 	}
-	if err := yaml.Unmarshal(data, out); err != nil {
-		t.Fatalf("yaml.Unmarshal %s: %v", path, err)
-	}
+	return path
 }
 
-func TestExtractClaudeMCPServers(t *testing.T) {
-	t.Run("desktop format", func(t *testing.T) {
-		data := []byte(`{"mcpServers":{"gh":{"command":"npx","args":["server-github"]}}}`)
-		servers := ExtractClaudeMCPServers(data)
-		if _, ok := servers["gh"]; !ok {
-			t.Fatalf("expected server 'gh', got %v", servers)
-		}
-	})
-
-	t.Run("claude code format", func(t *testing.T) {
-		data := []byte(`{"projects":{"/home/user/proj":{"mcpServers":{"myserver":{"command":"run"}}}}}`)
-		servers := ExtractClaudeMCPServers(data)
-		if _, ok := servers["myserver"]; !ok {
-			t.Fatalf("expected server 'myserver', got %v", servers)
-		}
-	})
-
-	t.Run("empty json", func(t *testing.T) {
-		servers := ExtractClaudeMCPServers([]byte(`{}`))
-		if len(servers) != 0 {
-			t.Fatalf("expected empty, got %v", servers)
-		}
-	})
-
-	t.Run("invalid json", func(t *testing.T) {
-		servers := ExtractClaudeMCPServers([]byte(`not json`))
-		if len(servers) != 0 {
-			t.Fatalf("expected empty for invalid json, got %v", servers)
-		}
-	})
-
-	t.Run("duplicate server across projects keeps first", func(t *testing.T) {
-		data := []byte(`{"projects":{
-			"/a":{"mcpServers":{"dup":{"command":"first"}}},
-			"/b":{"mcpServers":{"dup":{"command":"second"}}}
-		}}`)
-		servers := ExtractClaudeMCPServers(data)
-		if len(servers) != 1 {
-			t.Fatalf("expected 1 server after dedup, got %d", len(servers))
-		}
-	})
-}
-
-func TestClaudeEntryToServer(t *testing.T) {
+func TestReadClientConfigs(t *testing.T) {
 	tests := []struct {
-		name     string
-		entry    ClaudeMCPEntry
-		wantHTTP bool
-		wantURL  string
-		wantCmd  string
+		name   string
+		read   func(string) (map[string]config.ServerConfig, error)
+		file   string
+		config string
+		want   map[string]config.ServerConfig
 	}{
 		{
-			name:     "http by url",
-			entry:    ClaudeMCPEntry{URL: "https://api.github.com/mcp"},
-			wantHTTP: true,
-			wantURL:  "https://api.github.com/mcp",
+			name:   "claude desktop stdio entry, env as a sorted KEY=VALUE list",
+			read:   ReadClaude,
+			file:   "claude.json",
+			config: `{"mcpServers":{"gh":{"command":"npx","args":["server-github"],"env":{"B":"2","A":"1"}}}}`,
+			want:   map[string]config.ServerConfig{"gh": {Name: "gh", Command: "npx", Args: []string{"server-github"}, Env: []string{"A=1", "B=2"}}},
 		},
 		{
-			name:     "http by type http",
-			entry:    ClaudeMCPEntry{Type: "http", URL: "https://example.com"},
-			wantHTTP: true,
-			wantURL:  "https://example.com",
+			name:   "claude code project entries",
+			read:   ReadClaude,
+			file:   "claude.json",
+			config: `{"projects":{"/home/user/proj":{"mcpServers":{"local":{"command":"run"}}}}}`,
+			want:   map[string]config.ServerConfig{"local": {Name: "local", Command: "run"}},
 		},
 		{
-			name:     "http by type sse",
-			entry:    ClaudeMCPEntry{Type: "sse", URL: "https://sse.example.com"},
-			wantHTTP: true,
-			wantURL:  "https://sse.example.com",
+			name:   "claude http entry by url keeps headers",
+			read:   ReadClaude,
+			file:   "claude.json",
+			config: `{"mcpServers":{"gh":{"url":"https://api.github.com/mcp","headers":{"Authorization":"Bearer ${GH}"}}}}`,
+			want:   map[string]config.ServerConfig{"gh": {Name: "gh", Transport: "http", URL: "https://api.github.com/mcp", Headers: map[string]string{"Authorization": "Bearer ${GH}"}}},
 		},
 		{
-			name:    "stdio with command and args",
-			entry:   ClaudeMCPEntry{Command: "npx", Args: []string{"-y", "server-github"}},
-			wantCmd: "npx",
+			name:   "claude sse type is http",
+			read:   ReadClaude,
+			file:   "claude.json",
+			config: `{"mcpServers":{"s":{"type":"sse","url":"https://sse.example.com"}}}`,
+			want:   map[string]config.ServerConfig{"s": {Name: "s", Transport: "http", URL: "https://sse.example.com"}},
+		},
+		{
+			name:   "codex stdio entry",
+			read:   ReadCodex,
+			file:   "config.toml",
+			config: "[mcp_servers.gh]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"${GH}\" }\n",
+			want:   map[string]config.ServerConfig{"gh": {Name: "gh", Command: "npx", Args: []string{"-y", "server-github"}, Env: []string{"TOKEN=${GH}"}}},
+		},
+		{
+			name:   "codex http entry via url",
+			read:   ReadCodex,
+			file:   "config.toml",
+			config: "[mcp_servers.sentry]\nurl = \"https://mcp.sentry.io\"\nheaders = { Authorization = \"Bearer ${SENTRY}\" }\n",
+			want:   map[string]config.ServerConfig{"sentry": {Name: "sentry", Transport: "http", URL: "https://mcp.sentry.io", Headers: map[string]string{"Authorization": "Bearer ${SENTRY}"}}},
+		},
+		{
+			name:   "gemini httpUrl entry",
+			read:   ReadGemini,
+			file:   "settings.json",
+			config: `{"mcpServers":{"github":{"httpUrl":"https://api.github.com/mcp"}}}`,
+			want:   map[string]config.ServerConfig{"github": {Name: "github", Transport: "http", URL: "https://api.github.com/mcp"}},
+		},
+		{
+			name:   "gemini command entry",
+			read:   ReadGemini,
+			file:   "settings.json",
+			config: `{"mcpServers":{"local":{"command":"node","args":["server.js"]}}}`,
+			want:   map[string]config.ServerConfig{"local": {Name: "local", Command: "node", Args: []string{"server.js"}}},
+		},
+		{
+			name:   "openclaw stdio entry",
+			read:   ReadOpenClaw,
+			file:   "openclaw.json",
+			config: `{"mcp":{"servers":{"fs":{"command":"npx","env":{"ROOT":"/data"}}}}}`,
+			want:   map[string]config.ServerConfig{"fs": {Name: "fs", Command: "npx", Env: []string{"ROOT=/data"}}},
+		},
+		{
+			name:   "openclaw http entry",
+			read:   ReadOpenClaw,
+			file:   "openclaw.json",
+			config: `{"mcp":{"servers":{"remote":{"url":"https://example.com/mcp"}}}}`,
+			want:   map[string]config.ServerConfig{"remote": {Name: "remote", Transport: "http", URL: "https://example.com/mcp"}},
+		},
+		{
+			name:   "no servers is an empty result, not an error",
+			read:   ReadGemini,
+			file:   "settings.json",
+			config: `{}`,
+			want:   map[string]config.ServerConfig{},
 		},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sc := ClaudeEntryToServer("myserver", tt.entry)
-			if sc.Name != "myserver" {
-				t.Errorf("Name = %q, want 'myserver'", sc.Name)
+			got, err := tt.read(writeClientConfig(t, tt.file, tt.config))
+			if err != nil {
+				t.Fatalf("read: %v", err)
 			}
-			if tt.wantHTTP {
-				if sc.Transport != "http" {
-					t.Errorf("Transport = %q, want 'http'", sc.Transport)
-				}
-				if sc.URL != tt.wantURL {
-					t.Errorf("URL = %q, want %q", sc.URL, tt.wantURL)
-				}
-			} else {
-				if sc.Command != tt.wantCmd {
-					t.Errorf("Command = %q, want %q", sc.Command, tt.wantCmd)
-				}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got  %#v\nwant %#v", got, tt.want)
 			}
 		})
 	}
-
-	t.Run("env map is converted to KEY=VALUE list", func(t *testing.T) {
-		entry := ClaudeMCPEntry{Command: "run", Env: map[string]string{"FOO": "bar"}}
-		sc := ClaudeEntryToServer("s", entry)
-		if len(sc.Env) != 1 || sc.Env[0] != "FOO=bar" {
-			t.Errorf("Env = %v, want [FOO=bar]", sc.Env)
-		}
-	})
 }
 
-func TestImportFromClaude(t *testing.T) {
-	t.Run("creates server yaml", func(t *testing.T) {
-		dir := tempDir(t)
-		f := filepath.Join(dir, "claude.json")
-		os.WriteFile(f, []byte(`{"mcpServers":{"gh":{"command":"npx","args":["server-github"]}}}`), 0600)
-
-		if err := ImportFromClaude(dir, f); err != nil {
-			t.Fatalf("ImportFromClaude: %v", err)
-		}
-		var sc ServerYAML
-		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &sc)
-		if sc.Command != "npx" {
-			t.Errorf("Command = %q, want 'npx'", sc.Command)
-		}
-	})
-
-	t.Run("empty servers prints message", func(t *testing.T) {
-		dir := tempDir(t)
-		f := filepath.Join(dir, "empty.json")
-		os.WriteFile(f, []byte(`{}`), 0600)
-		if err := ImportFromClaude(dir, f); err != nil {
-			t.Fatalf("ImportFromClaude: %v", err)
-		}
-	})
-}
-
-func TestImportFromCursor(t *testing.T) {
-	dir := tempDir(t)
-	f := filepath.Join(dir, "mcp.json")
-	os.WriteFile(f, []byte(`{"mcpServers":{"linear":{"url":"https://linear.app/mcp","type":"http"}}}`), 0600)
-
-	if err := ImportFromCursor(dir, f); err != nil {
-		t.Fatalf("ImportFromCursor: %v", err)
-	}
-	var sc ServerYAML
-	readYAML(t, filepath.Join(dir, "servers", "linear.yaml"), &sc)
-	if sc.Transport != "http" {
-		t.Errorf("Transport = %q, want 'http'", sc.Transport)
+func TestReadClientConfigs_unparsableConfigIsAnError(t *testing.T) {
+	for name, read := range map[string]func(string) (map[string]config.ServerConfig, error){
+		"codex": ReadCodex, "gemini": ReadGemini, "openclaw": ReadOpenClaw,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := read(writeClientConfig(t, "bad", "not = valid = anything {")); err == nil {
+				t.Fatal("expected a parse error")
+			}
+		})
 	}
 }
 
-func TestImportFromGemini(t *testing.T) {
-	t.Run("http entry", func(t *testing.T) {
-		dir := tempDir(t)
-		f := filepath.Join(dir, "settings.json")
-		os.WriteFile(f, []byte(`{"mcpServers":{"github":{"httpUrl":"https://api.github.com/mcp"}}}`), 0600)
-
-		if err := ImportFromGemini(dir, f); err != nil {
-			t.Fatalf("ImportFromGemini: %v", err)
-		}
-		var sc ServerYAML
-		readYAML(t, filepath.Join(dir, "servers", "github.yaml"), &sc)
-		if sc.Transport != "http" || sc.URL != "https://api.github.com/mcp" {
-			t.Errorf("got Transport=%q URL=%q", sc.Transport, sc.URL)
-		}
-	})
-
-	t.Run("command entry", func(t *testing.T) {
-		dir := tempDir(t)
-		f := filepath.Join(dir, "settings.json")
-		os.WriteFile(f, []byte(`{"mcpServers":{"local":{"command":"node","args":["server.js"]}}}`), 0600)
-
-		if err := ImportFromGemini(dir, f); err != nil {
-			t.Fatalf("ImportFromGemini: %v", err)
-		}
-		var sc ServerYAML
-		readYAML(t, filepath.Join(dir, "servers", "local.yaml"), &sc)
-		if sc.Command != "node" {
-			t.Errorf("Command = %q, want 'node'", sc.Command)
-		}
-	})
-
-	t.Run("invalid json returns error", func(t *testing.T) {
-		dir := tempDir(t)
-		f := filepath.Join(dir, "bad.json")
-		os.WriteFile(f, []byte(`not json`), 0600)
-		if err := ImportFromGemini(dir, f); err == nil {
-			t.Fatal("expected error for invalid JSON")
-		}
-	})
+func TestReadClaude_duplicateServerAcrossProjectsKeepsOne(t *testing.T) {
+	path := writeClientConfig(t, "claude.json", `{"projects":{
+		"/a":{"mcpServers":{"dup":{"command":"first"}}},
+		"/b":{"mcpServers":{"dup":{"command":"second"}}}
+	}}`)
+	got, err := ReadClaude(path)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("ReadClaude = %v, %v; want the one dup server", got, err)
+	}
 }
 
-func TestImportFromCodex(t *testing.T) {
-	t.Run("stdio entry", func(t *testing.T) {
-		dir := tempDir(t)
-		f := filepath.Join(dir, "config.toml")
-		os.WriteFile(f, []byte("[mcp_servers.gh]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\n"), 0600)
-
-		if err := ImportFromCodex(dir, f); err != nil {
-			t.Fatalf("ImportFromCodex: %v", err)
-		}
-		var sc ServerYAML
-		readYAML(t, filepath.Join(dir, "servers", "gh.yaml"), &sc)
-		if sc.Command != "npx" {
-			t.Errorf("Command = %q, want 'npx'", sc.Command)
-		}
-	})
-
-	t.Run("http entry via url", func(t *testing.T) {
-		dir := tempDir(t)
-		f := filepath.Join(dir, "config.toml")
-		os.WriteFile(f, []byte("[mcp_servers.sentry]\nurl = \"https://mcp.sentry.io\"\n"), 0600)
-
-		if err := ImportFromCodex(dir, f); err != nil {
-			t.Fatalf("ImportFromCodex: %v", err)
-		}
-		var sc ServerYAML
-		readYAML(t, filepath.Join(dir, "servers", "sentry.yaml"), &sc)
-		if sc.Transport != "http" {
-			t.Errorf("Transport = %q, want 'http'", sc.Transport)
-		}
-	})
-
-	t.Run("invalid toml returns error", func(t *testing.T) {
-		dir := tempDir(t)
-		f := filepath.Join(dir, "bad.toml")
-		os.WriteFile(f, []byte("not = toml = invalid\n"), 0600)
-		if err := ImportFromCodex(dir, f); err == nil {
-			t.Fatal("expected error for invalid TOML")
-		}
-	})
-}
-
-func TestWriteServerYAML(t *testing.T) {
-	t.Run("valid name creates file with correct content", func(t *testing.T) {
-		dir := tempDir(t)
-		sc := ServerYAML{Name: "myserver", Command: "npx", Args: []string{"server-github"}}
-
-		if err := WriteServerYAML(dir, "myserver", sc); err != nil {
-			t.Fatalf("WriteServerYAML: %v", err)
-		}
-		path := filepath.Join(dir, "servers", "myserver.yaml")
-		var got ServerYAML
-		readYAML(t, path, &got)
-		if got.Command != "npx" {
-			t.Errorf("Command = %q, want 'npx'", got.Command)
-		}
-		if len(got.Args) != 1 || got.Args[0] != "server-github" {
-			t.Errorf("Args = %v, want [server-github]", got.Args)
-		}
-	})
-
-	t.Run("invalid name returns error", func(t *testing.T) {
-		dir := tempDir(t)
-		err := WriteServerYAML(dir, "bad name!", ServerYAML{})
-		if err == nil {
-			t.Fatal("expected error for invalid server name")
-		}
-		if !strings.Contains(err.Error(), "invalid server name") {
-			t.Errorf("error message = %q, want to contain 'invalid server name'", err.Error())
-		}
-	})
-
-	t.Run("file permissions are 0600", func(t *testing.T) {
-		dir := tempDir(t)
-		if err := WriteServerYAML(dir, "sec", ServerYAML{Name: "sec"}); err != nil {
-			t.Fatalf("WriteServerYAML: %v", err)
-		}
-		info, err := os.Stat(filepath.Join(dir, "servers", "sec.yaml"))
-		if err != nil {
-			t.Fatalf("Stat: %v", err)
-		}
-		if perm := info.Mode().Perm(); perm != 0600 {
-			t.Errorf("perm = %04o, want 0600", perm)
-		}
-	})
+func TestReadClaude_missingFileIsAnError(t *testing.T) {
+	if _, err := ReadClaude(filepath.Join(tempDir(t), "missing.json")); err == nil {
+		t.Fatal("expected an error for a missing file")
+	}
 }
 
 func TestReadConfigFile(t *testing.T) {

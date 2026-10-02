@@ -4,39 +4,24 @@ import (
 	"fmt"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 type codexMCPEntry struct {
-	Command   string            `toml:"command"`
-	Args      []string          `toml:"args"`
-	Env       map[string]string `toml:"env"`
-	Transport string            `toml:"transport"`
-	URL       string            `toml:"url"`
-	Headers   map[string]string `toml:"headers"`
+	clientEntryFields
+	Transport string `toml:"transport"`
+	URL       string `toml:"url"`
 }
 
-// ImportFromCodex reads a Codex config.toml.
+// ReadCodex reads a Codex config.toml.
 // Format: [mcp_servers.NAME] sections with command/args/env or url fields.
-func ImportFromCodex(configDir, path string) error {
-	servers, err := loadCodexServers(path)
+func ReadCodex(path string) (map[string]config.ServerConfig, error) {
+	entries, err := loadCodexServers(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(servers) == 0 {
-		fmt.Println("no mcp_servers found in Codex config")
-		return nil
-	}
-	return writeCodexServers(configDir, servers)
-}
-
-func writeCodexServers(configDir string, servers map[string]codexMCPEntry) error {
-	for name, entry := range servers {
-		if err := WriteServerYAML(configDir, name, codexEntryToServer(name, entry)); err != nil {
-			return err
-		}
-	}
-	fmt.Println("tip: replace any literal tokens in env with ${ENV_VAR} references")
-	return nil
+	return serverConfigs(entries), nil
 }
 
 func loadCodexServers(path string) (map[string]codexMCPEntry, error) {
@@ -53,16 +38,9 @@ func loadCodexServers(path string) (map[string]codexMCPEntry, error) {
 	return cfg.McpServers, nil
 }
 
-func codexEntryToServer(name string, entry codexMCPEntry) ServerYAML {
-	sc := ServerYAML{Name: name}
-	if entry.URL != "" || entry.Transport == "http" {
-		sc.Transport = "http"
-		sc.URL = entry.URL
-		sc.Headers = entry.Headers
-		return sc
+func (e codexMCPEntry) serverConfig(name string) config.ServerConfig {
+	if e.URL != "" || e.Transport == "http" {
+		return e.httpServer(name, e.URL)
 	}
-	sc.Command = entry.Command
-	sc.Args = entry.Args
-	sc.Env = envList(entry.Env)
-	return sc
+	return e.stdioServer(name)
 }

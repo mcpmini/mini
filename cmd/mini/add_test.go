@@ -15,9 +15,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
@@ -52,13 +50,23 @@ func runAdd(configDir string, args []string, out *bytes.Buffer) error {
 }
 
 func TestRunAdd(t *testing.T) {
+	t.Run("a name with neither a URL nor a command is a usage error, not a crash", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := addNamedServer(dir, serverFlags{name: "svc"}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "provide --url or a command") {
+			t.Fatalf("addNamedServer = %v, want the usage error", err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "servers", "svc.yaml")); err == nil {
+			t.Error("servers/svc.yaml was written for a server with no URL or command")
+		}
+	})
+
 	t.Run("stdio command creates server file", func(t *testing.T) {
 		dir := t.TempDir()
 		var out bytes.Buffer
 		if err := runAdd(dir, []string{"gh", "--", "npx", "-y", "server-github"}, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
-		var sc importers.ServerYAML
+		var sc config.ServerConfig
 		readServerYAML(t, dir, "gh", &sc)
 		if sc.Command != "npx" {
 			t.Errorf("Command = %q, want 'npx'", sc.Command)
@@ -70,11 +78,11 @@ func TestRunAdd(t *testing.T) {
 
 	t.Run("reports the server file, bundled projection and default permissions it wrote", func(t *testing.T) {
 		dir := t.TempDir()
-		printed := testutil.CaptureStdout(t, func() {
-			if err := runAdd(dir, []string{"gh", "--", "npx", "-y", "server-github"}, &bytes.Buffer{}); err != nil {
-				t.Fatalf("runAdd: %v", err)
-			}
-		})
+		var out bytes.Buffer
+		if err := runAdd(dir, []string{"gh", "--", "npx", "-y", "server-github"}, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+		printed := out.String()
 		serverPath := filepath.Join(dir, "servers", "gh.yaml")
 		for _, want := range []string{
 			"added gh → " + serverPath,
@@ -93,7 +101,7 @@ func TestRunAdd(t *testing.T) {
 		if err := runAdd(dir, args, &bytes.Buffer{}); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
-		var sc importers.ServerYAML
+		var sc config.ServerConfig
 		readServerYAML(t, dir, "svc", &sc)
 		want := []string{"-h", "--config", "child-value"}
 		if !slices.Equal(sc.Args, want) {
@@ -108,7 +116,7 @@ func TestRunAdd(t *testing.T) {
 		if err := runAdd(dir, []string{"gh", "--url", mcpSrv.URL}, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
-		var sc importers.ServerYAML
+		var sc config.ServerConfig
 		readServerYAML(t, dir, "gh", &sc)
 		if sc.Transport != "http" {
 			t.Errorf("Transport = %q, want 'http'", sc.Transport)
@@ -121,7 +129,7 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("connect failure unrelated to OAuth reports a plain note", func(t *testing.T) {
+	t.Run("connect failure unrelated to auth reports a plain note", func(t *testing.T) {
 		mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
@@ -169,7 +177,7 @@ func TestRunAdd(t *testing.T) {
 		if err := runAdd(dir, args, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
-		var sc importers.ServerYAML
+		var sc config.ServerConfig
 		readServerYAML(t, dir, "svc", &sc)
 		if sc.Headers["Authorization"] != "Bearer tok" {
 			t.Errorf("Header Authorization = %q, want 'Bearer tok'", sc.Headers["Authorization"])
@@ -208,7 +216,7 @@ func TestRunAdd(t *testing.T) {
 		if !strings.Contains(out.String(), "run `mini auth myserver` to retry") {
 			t.Errorf("output = %q, want a graceful failure message pointing at manual retry", out.String())
 		}
-		var sc importers.ServerYAML
+		var sc config.ServerConfig
 		readServerYAML(t, dir, "myserver", &sc)
 		if sc.URL != oauthSrv.URL {
 			t.Errorf("URL = %q, server config should still have been written despite auto-authorize failing", sc.URL)
@@ -240,7 +248,7 @@ func TestRunAdd(t *testing.T) {
 		if err := runAdd(dir, args, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
-		var sc importers.ServerYAML
+		var sc config.ServerConfig
 		readServerYAML(t, dir, "svc", &sc)
 		if sc.Permissions == nil || len(sc.Permissions.Protected) != 1 || sc.Permissions.Protected[0] != "delete_everything" {
 			t.Errorf("Protected = %v, want [delete_everything]", sc.Permissions)
@@ -271,6 +279,23 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
+	t.Run("a configured name is refused with how to replace it, and its file is untouched", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := runAdd(dir, []string{"svc", "--", "original"}, &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+		before := readFileString(t, filepath.Join(dir, "servers", "svc.yaml"))
+
+		err := runAdd(dir, []string{"svc", "--", "replacement"}, &bytes.Buffer{})
+
+		if err == nil || !strings.Contains(err.Error(), "svc is already configured; run `mini rm svc` first to replace it") {
+			t.Errorf("err = %v, want the already-configured error naming mini rm", err)
+		}
+		if after := readFileString(t, filepath.Join(dir, "servers", "svc.yaml")); after != before {
+			t.Errorf("svc.yaml changed from %q to %q", before, after)
+		}
+	})
+
 	t.Run("multiple import modes return error", func(t *testing.T) {
 		err := runAdd(t.TempDir(), []string{"--from-claude", "a.json", "--from-cursor", "b.json"}, &bytes.Buffer{})
 		if err == nil {
@@ -282,6 +307,96 @@ func TestRunAdd(t *testing.T) {
 		err := runAdd(t.TempDir(), []string{"svc", "--url", "https://example.com", "--", "command"}, &bytes.Buffer{})
 		if err == nil {
 			t.Fatal("expected error for mixed HTTP and stdio modes")
+		}
+	})
+}
+
+func TestRunAddImport(t *testing.T) {
+	sources := []struct {
+		flag, file, config, tip string
+	}{
+		{"--from-claude", "claude.json", `{"mcpServers":{"svc":{"command":"run"}}}`, headersTip},
+		{"--from-cursor", "mcp.json", `{"mcpServers":{"svc":{"command":"run"}}}`, headersTip},
+		{"--from-codex", "config.toml", "[mcp_servers.svc]\ncommand = \"run\"\n", envTip},
+		{"--from-gemini", "settings.json", `{"mcpServers":{"svc":{"command":"run"}}}`, headersTip},
+		{"--from-openclaw", "openclaw.json", `{"mcp":{"servers":{"svc":{"command":"run"}}}}`, envTip},
+	}
+	for _, src := range sources {
+		t.Run(src.flag+" adds the server and prints the tip", func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(t.TempDir(), src.file)
+			writeImportSource(t, path, src.config)
+			var out bytes.Buffer
+
+			if err := runAdd(dir, []string{src.flag, path}, &out); err != nil {
+				t.Fatalf("runAdd: %v", err)
+			}
+
+			var sc config.ServerConfig
+			readServerYAML(t, dir, "svc", &sc)
+			if sc.Command != "run" || !strings.Contains(out.String(), src.tip) {
+				t.Errorf("command = %q, output = %q; want run and %q", sc.Command, out.String(), src.tip)
+			}
+		})
+	}
+
+	t.Run("a rerun keeps the configured server, reports it and still succeeds", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(t.TempDir(), "claude.json")
+		writeImportSource(t, path, `{"mcpServers":{"svc":{"command":"run"}}}`)
+		if err := runAdd(dir, []string{"--from-claude", path}, &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+		writeImportSource(t, path, `{"mcpServers":{"svc":{"command":"other"}}}`)
+		var out bytes.Buffer
+
+		if err := runAdd(dir, []string{"--from-claude", path}, &out); err != nil {
+			t.Fatalf("rerun: %v", err)
+		}
+
+		var sc config.ServerConfig
+		readServerYAML(t, dir, "svc", &sc)
+		if sc.Command != "run" {
+			t.Errorf("command = %q, want the configured run kept", sc.Command)
+		}
+		if want := path + ": svc not imported, mini's config has a different command"; !strings.Contains(out.String(), want) {
+			t.Errorf("output = %q, want %q", out.String(), want)
+		}
+		if strings.Contains(out.String(), "tip:") {
+			t.Errorf("output = %q, want no tip when nothing was added", out.String())
+		}
+	})
+
+	t.Run("a config with no servers says so", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "settings.json")
+		writeImportSource(t, path, `{}`)
+		var out bytes.Buffer
+
+		if err := runAdd(t.TempDir(), []string{"--from-gemini", path}, &out); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+
+		if want := "no MCP servers found in " + path; !strings.Contains(out.String(), want) {
+			t.Errorf("output = %q, want %q", out.String(), want)
+		}
+	})
+
+	t.Run("a server that fails to add makes the import fail", func(t *testing.T) {
+		notADir := filepath.Join(t.TempDir(), "file")
+		writeImportSource(t, notADir, "")
+		path := filepath.Join(t.TempDir(), "claude.json")
+		writeImportSource(t, path, `{"mcpServers":{"svc":{"command":"run"}}}`)
+
+		err := runAdd(notADir, []string{"--from-claude", path}, &bytes.Buffer{})
+
+		if want := "1 of 1 servers in " + path + " could not be added"; err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %v, want %q", err, want)
+		}
+	})
+
+	t.Run("an unreadable config is an error", func(t *testing.T) {
+		if err := runAdd(t.TempDir(), []string{"--from-codex", filepath.Join(t.TempDir(), "missing.toml")}, &bytes.Buffer{}); err == nil {
+			t.Fatal("expected an error for a missing config")
 		}
 	})
 }
@@ -392,4 +507,13 @@ func readServerYAML(t *testing.T, configDir, name string, out any) {
 	if err := yaml.Unmarshal(data, out); err != nil {
 		t.Fatalf("yaml.Unmarshal: %v", err)
 	}
+}
+
+func readFileString(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"os"
-	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 
@@ -33,13 +31,6 @@ func InstallBundledProjection(configDir string, sc config.ServerConfig) (string,
 		return "", fmt.Errorf("install the default projection for %s: %w", sc.Name, err)
 	}
 	return dest, nil
-}
-
-func writeNewFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	return writeNewOrTruncate(path, data, os.O_EXCL)
 }
 
 func withBundledPermissions(sc config.ServerConfig) (config.ServerConfig, bool) {

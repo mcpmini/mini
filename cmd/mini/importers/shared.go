@@ -3,27 +3,12 @@ package importers
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/ops"
 )
-
-type ServerYAML struct {
-	Name        string            `yaml:"name"`
-	Transport   string            `yaml:"transport,omitempty"`
-	URL         string            `yaml:"url,omitempty"`
-	Command     string            `yaml:"command,omitempty"`
-	Args        []string          `yaml:"args,omitempty"`
-	Env         []string          `yaml:"env,omitempty"`
-	Headers     map[string]string `yaml:"headers,omitempty"`
-	Permissions *PermissionsYAML  `yaml:"permissions,omitempty"`
-}
-
-type PermissionsYAML struct {
-	Protected []string `yaml:"protected,omitempty"`
-	Hidden    []string `yaml:"hidden,omitempty"`
-}
 
 // A sanity cap, not an expected size: past it the file is almost certainly not an agent config.
 const maxImportConfigBytes = 64 << 20
@@ -46,54 +31,37 @@ func ReadConfigFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-// WriteServerYAML writes servers/<name>.yaml, replacing an existing one.
-func WriteServerYAML(configDir, name string, sc ServerYAML) error {
-	added, err := ops.WriteServer(configDir, toServerConfig(name, sc))
-	if err != nil {
-		return err
-	}
-	PrintAdded(os.Stdout, added)
-	return nil
+type clientEntry interface {
+	serverConfig(name string) config.ServerConfig
 }
 
-func AddServerYAML(configDir, name string, sc ServerYAML) (ops.AddedServer, error) {
-	return ops.AddServer(configDir, toServerConfig(name, sc))
+func serverConfigs[E clientEntry](entries map[string]E) map[string]config.ServerConfig {
+	servers := make(map[string]config.ServerConfig, len(entries))
+	for name, entry := range entries {
+		servers[name] = entry.serverConfig(name)
+	}
+	return servers
 }
 
-func PrintAdded(w io.Writer, added ops.AddedServer) {
-	fmt.Fprintf(w, "added %s → %s\n", added.Config.Name, added.Path)
-	if added.ProjectionPath != "" {
-		fmt.Fprintf(w, "installed default projection → %s\n", added.ProjectionPath)
-	}
-	if added.DefaultPermissions {
-		fmt.Fprintf(w, "applied default permissions → %s\n", added.Path)
-	}
+type clientEntryFields struct {
+	Command string            `json:"command" toml:"command"`
+	Args    []string          `json:"args" toml:"args"`
+	Env     map[string]string `json:"env" toml:"env"`
+	Headers map[string]string `json:"headers" toml:"headers"`
 }
 
-func toServerConfig(name string, sc ServerYAML) config.ServerConfig {
-	cfg := config.ServerConfig{
-		Name:      name,
-		Transport: sc.Transport,
-		URL:       sc.URL,
-		Command:   sc.Command,
-		Args:      sc.Args,
-		Env:       sc.Env,
-		Headers:   sc.Headers,
-	}
-	if sc.Permissions != nil {
-		cfg.Permissions = toPermissionsConfig(sc.Permissions)
-	}
-	return cfg
+func (f clientEntryFields) httpServer(name, url string) config.ServerConfig {
+	return config.ServerConfig{Name: name, Transport: "http", URL: url, Headers: f.Headers}
 }
 
-func toPermissionsConfig(p *PermissionsYAML) *config.PermissionsConfig {
-	return &config.PermissionsConfig{Protected: p.Protected, Hidden: p.Hidden}
+func (f clientEntryFields) stdioServer(name string) config.ServerConfig {
+	return config.ServerConfig{Name: name, Command: f.Command, Args: f.Args, Env: envList(f.Env)}
 }
 
 func envList(env map[string]string) []string {
-	out := make([]string, 0, len(env))
-	for k, v := range env {
-		out = append(out, k+"="+v)
+	var out []string
+	for _, k := range slices.Sorted(maps.Keys(env)) {
+		out = append(out, k+"="+env[k])
 	}
 	return out
 }

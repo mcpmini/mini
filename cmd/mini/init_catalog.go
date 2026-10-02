@@ -13,7 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
@@ -252,7 +251,7 @@ func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes [
 		if err != nil {
 			return written, err
 		}
-		importers.PrintAdded(p.out, added)
+		printAdded(p.out, added)
 		written = append(written, index)
 	}
 	return written, nil

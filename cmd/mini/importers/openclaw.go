@@ -3,38 +3,23 @@ package importers
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 type openClawMCPEntry struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
+	clientEntryFields
+	URL string `json:"url"`
 }
 
-// ImportFromOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
+// ReadOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
 // Format: {"mcp": {"servers": {"name": {"command": "...", "args": [...], "env": {...}}}}}
-func ImportFromOpenClaw(configDir, path string) error {
-	servers, err := parseOpenClawConfig(path)
+func ReadOpenClaw(path string) (map[string]config.ServerConfig, error) {
+	entries, err := parseOpenClawConfig(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(servers) == 0 {
-		fmt.Println("no mcp.servers found in OpenClaw config")
-		return nil
-	}
-	return writeOpenClawServers(configDir, servers)
-}
-
-func writeOpenClawServers(configDir string, servers map[string]openClawMCPEntry) error {
-	for name, entry := range servers {
-		if err := WriteServerYAML(configDir, name, openClawEntryToServer(name, entry)); err != nil {
-			return err
-		}
-	}
-	fmt.Println("tip: replace any literal tokens in env with ${ENV_VAR} references")
-	return nil
+	return serverConfigs(entries), nil
 }
 
 func parseOpenClawConfig(path string) (map[string]openClawMCPEntry, error) {
@@ -53,16 +38,9 @@ func parseOpenClawConfig(path string) (map[string]openClawMCPEntry, error) {
 	return cfg.MCP.Servers, nil
 }
 
-func openClawEntryToServer(name string, entry openClawMCPEntry) ServerYAML {
-	sc := ServerYAML{Name: name}
-	if entry.URL != "" {
-		sc.Transport = "http"
-		sc.URL = entry.URL
-		sc.Headers = entry.Headers
-		return sc
+func (e openClawMCPEntry) serverConfig(name string) config.ServerConfig {
+	if e.URL != "" {
+		return e.httpServer(name, e.URL)
 	}
-	sc.Command = entry.Command
-	sc.Args = entry.Args
-	sc.Env = envList(entry.Env)
-	return sc
+	return e.stdioServer(name)
 }
