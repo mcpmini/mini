@@ -200,7 +200,8 @@ func mergeKnownAuth(dir string, servers []ServerConfig) {
 			servers[i].Auth = ac
 			continue
 		}
-		if readServerMeta(dir, servers[i].Name).OAuthDetected {
+		// A marker can outlive the server that earned it, and an agent's server never gets OAuth.
+		if !servers[i].AgentAdded && readServerMeta(dir, servers[i].Name).OAuthDetected {
 			servers[i].Auth = &AuthConfig{Type: AuthTypeOAuth2}
 		}
 	}

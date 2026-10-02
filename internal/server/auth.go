@@ -23,11 +23,14 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 	if err := validateServerName(serverName); err != nil {
 		return nil, err
 	}
+	// Held until the login is registered, so a remove_server either runs first or cancels the
+	// login, and can't delete the server's files while the login is still writing them.
+	unlock := s.serverNames.lock(serverName)
+	defer unlock()
 	sc, err := s.loadOAuthServerConfig(serverName)
 	if err != nil {
 		return nil, err
 	}
-	// Taken before the login starts, so a remove_server at any point during the login wins.
 	install := s.replacingInstall(sc)
 	flow, err := s.startPKCEFlow(serverName, sc)
 	if err != nil {

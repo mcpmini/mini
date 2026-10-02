@@ -28,15 +28,20 @@ func (s *Server) saveAndConnect(ctx context.Context, sc config.ServerConfig) err
 	if s.isUpstreamRegistered(sc.Name) {
 		return errAlreadyRunning(sc.Name)
 	}
-	_, err := ops.AddServer(s.configDir, sc)
+	// Checked before changeSavedServer, which would stop a configured server's login or retries.
+	if config.ServerFileExists(s.configDir, sc.Name) {
+		return errAlreadyConfigured(sc.Name)
+	}
+	err := s.changeSavedServer(sc.Name, func() error {
+		_, err := ops.AddServer(s.configDir, sc)
+		return err
+	})
 	if errors.Is(err, ops.ErrAlreadyConfigured) {
-		return fmt.Errorf("add_server: %s is already configured; remove it with remove_server first", sc.Name)
+		return errAlreadyConfigured(sc.Name)
 	}
 	if err != nil {
 		return fmt.Errorf("add_server: %w", err)
 	}
-	// A login started for an earlier server of this name would install that server over this one.
-	s.detachAndCloseServer(sc.Name)
 	saved, err := s.connectSaved(ctx, sc.Name)
 	if err != nil {
 		return errors.Join(err, s.rollBackAdd(sc.Name))
@@ -65,16 +70,28 @@ func (s *Server) rollBackAdd(name string) error {
 }
 
 func (s *Server) removeSavedServer(name string) error {
-	// A token refresh still running would save the token again after its file is deleted.
+	return s.changeSavedServer(name, func() error { return ops.RemoveServer(s.configDir, name) })
+}
+
+// changeSavedServer runs change, which adds or deletes the files saved for name, with nothing
+// still running for the name able to write them. persistMu keeps a set_projection out.
+func (s *Server) changeSavedServer(name string, change func() error) error {
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+	// A token refresh still running would save its token after change clears it.
 	s.detachAndCloseServer(name)
-	err := ops.RemoveServer(s.configDir, name)
-	// Stops a login or install that started for the name before its files were gone.
+	err := change()
+	// Stops a login or install that started for the name during change.
 	s.detachAndCloseServer(name)
 	return err
 }
 
 func errAlreadyRunning(name string) error {
 	return fmt.Errorf("add_server: %s is already running; remove it with remove_server first", name)
+}
+
+func errAlreadyConfigured(name string) error {
+	return fmt.Errorf("add_server: %s is already configured; remove it with remove_server first", name)
 }
 
 func (s *Server) removeServerFromAgent(name string) (any, error) {
