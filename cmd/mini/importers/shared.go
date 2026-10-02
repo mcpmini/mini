@@ -46,21 +46,28 @@ func ReadConfigFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-// WriteServerYAML writes servers/<name>.yaml and installs a bundled projection
-// if one is known for this server.
+// WriteServerYAML writes servers/<name>.yaml, replacing an existing one.
 func WriteServerYAML(configDir, name string, sc ServerYAML) error {
-	return ops.WriteServer(configDir, toServerConfig(name, sc))
+	added, err := ops.WriteServer(configDir, toServerConfig(name, sc))
+	if err != nil {
+		return err
+	}
+	PrintAdded(os.Stdout, added)
+	return nil
 }
 
-// CreateServerYAML is WriteServerYAML that leaves an existing server file
-// untouched and returns an error wrapping fs.ErrExist instead.
-func CreateServerYAML(configDir, name string, sc ServerYAML) error {
-	return ops.CreateServer(configDir, toServerConfig(name, sc))
+func AddServerYAML(configDir, name string, sc ServerYAML) (ops.AddedServer, error) {
+	return ops.AddServer(configDir, toServerConfig(name, sc))
 }
 
-// InstallBundledProjection installs a projection for a known server if one exists.
-func InstallBundledProjection(configDir string, sc ServerYAML) {
-	ops.InstallBundledProjection(configDir, toServerConfig(sc.Name, sc))
+func PrintAdded(w io.Writer, added ops.AddedServer) {
+	fmt.Fprintf(w, "added %s → %s\n", added.Config.Name, added.Path)
+	if added.ProjectionPath != "" {
+		fmt.Fprintf(w, "installed default projection → %s\n", added.ProjectionPath)
+	}
+	if added.DefaultPermissions {
+		fmt.Fprintf(w, "applied default permissions → %s\n", added.Path)
+	}
 }
 
 func toServerConfig(name string, sc ServerYAML) config.ServerConfig {

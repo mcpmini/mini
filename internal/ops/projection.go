@@ -1,7 +1,9 @@
 package ops
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -11,51 +13,45 @@ import (
 	"github.com/mcpmini/mini/internal/defaults"
 )
 
-func InstallBundledProjection(configDir string, sc config.ServerConfig) {
+// InstallBundledProjection returns the installed path, or "" when nothing was installed.
+// A projection file already there is kept, and isn't an error.
+func InstallBundledProjection(configDir string, sc config.ServerConfig) (string, error) {
 	key := defaults.MatchKnownServer(sc.Command, sc.Args, sc.URL)
 	if key == "" {
-		return
+		return "", nil
 	}
 	bundled := defaults.ProjectionFor(key)
 	if bundled == nil {
-		return
+		return "", nil
 	}
-	dest := filepath.Join(configDir, "servers", sc.Name+".proj.yaml")
-	writeBundledProjection(dest, bundled)
+	dest := config.ProjectionPath(configDir, sc.Name)
+	err := writeNewFile(dest, bundled)
+	if errors.Is(err, fs.ErrExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("install the default projection for %s: %w", sc.Name, err)
+	}
+	return dest, nil
 }
 
-func writeBundledProjection(dest string, data []byte) {
-	if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
-		return
+func writeNewFile(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
 	}
-	if projectionExists(dest) {
-		return
-	}
-	if err := os.WriteFile(dest, data, 0600); err != nil {
-		return
-	}
-	fmt.Printf("installed default projection → %s\n", dest)
+	return writeNewOrTruncate(path, data, os.O_EXCL)
 }
 
-func projectionExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
-
-// installBundledPermissions applies default hidden/protected tools for known
-// servers, but only when the user has not already set explicit permissions.
-// This lets users override by passing --protected/--hidden flags to mini add.
-func installBundledPermissions(configDir string, sc config.ServerConfig) {
+func withBundledPermissions(sc config.ServerConfig) (config.ServerConfig, bool) {
 	if sc.Permissions != nil {
-		return
+		return sc, false
 	}
 	perms := loadBundledPermissions(sc)
 	if perms == nil {
-		return
+		return sc, false
 	}
-	if err := patchServerPermissions(configDir, sc.Name, perms); err == nil {
-		fmt.Printf("applied default permissions → %s\n", filepath.Join(configDir, "servers", sc.Name+".yaml"))
-	}
+	sc.Permissions = perms
+	return sc, true
 }
 
 func loadBundledPermissions(sc config.ServerConfig) *config.PermissionsConfig {
@@ -79,26 +75,4 @@ func parsePermissions(raw []byte) *config.PermissionsConfig {
 		return nil
 	}
 	return &perms
-}
-
-func patchServerPermissions(configDir, name string, perms *config.PermissionsConfig) error {
-	serverPath := filepath.Join(configDir, "servers", name+".yaml")
-	data, err := os.ReadFile(serverPath)
-	if err != nil {
-		return err
-	}
-	return writeServerWithPerms(serverPath, data, perms)
-}
-
-func writeServerWithPerms(path string, data []byte, perms *config.PermissionsConfig) error {
-	var existing config.ServerConfig
-	if err := yaml.Unmarshal(data, &existing); err != nil {
-		return err
-	}
-	existing.Permissions = perms
-	updated, err := yaml.Marshal(existing)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, updated, 0600)
 }

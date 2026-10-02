@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net"
@@ -93,28 +92,6 @@ func TestMaybeStartSessionEviction_startsWithHTTPServer(t *testing.T) {
 	}
 }
 
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe: %v", err)
-	}
-	os.Stdout = w
-	t.Cleanup(func() { os.Stdout = old })
-
-	outCh := make(chan string, 1)
-	go func() {
-		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
-		outCh <- buf.String()
-	}()
-
-	fn()
-	_ = w.Close()
-	return <-outCh
-}
-
 func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 
 func socketHealthServer(t *testing.T, dir, body string) {
@@ -135,7 +112,7 @@ func socketHealthServer(t *testing.T, dir, body string) {
 }
 
 func TestRunDaemonStatusNotRunning(t *testing.T) {
-	out := captureStdout(t, func() { runDaemonStatus(shortConfigDir(t)) })
+	out := testutil.CaptureStdout(t, func() { runDaemonStatus(shortConfigDir(t)) })
 	if out != "daemon: not running\n" {
 		t.Fatalf("stdout = %q, want not running message", out)
 	}
@@ -145,7 +122,7 @@ func TestRunDaemonStatusRunning(t *testing.T) {
 	dir := shortConfigDir(t)
 	socketHealthServer(t, dir, `{"ok":true}`)
 
-	out := captureStdout(t, func() { runDaemonStatus(dir) })
+	out := testutil.CaptureStdout(t, func() { runDaemonStatus(dir) })
 	if !strings.Contains(out, "daemon: running") {
 		t.Fatalf("expected running message, got %q", out)
 	}
@@ -161,7 +138,7 @@ func TestRunDaemonStatusStaleSocket(t *testing.T) {
 	if err := os.WriteFile(sp, nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	out := captureStdout(t, func() { runDaemonStatus(dir) })
+	out := testutil.CaptureStdout(t, func() { runDaemonStatus(dir) })
 	if out != "daemon: not running\n" {
 		t.Fatalf("stale socket should read as not running, got %q", out)
 	}

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestIsSelfEntry(t *testing.T) {
@@ -163,7 +165,7 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 			configDir := t.TempDir()
 			src := filepath.Join(t.TempDir(), "claude.json")
 			writeImportSource(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
-			captureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
+			testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
 			serverFile := filepath.Join(configDir, "servers", "foo.yaml")
 			if tt.edit != nil {
 				writeImportSource(t, serverFile, string(tt.edit(serverFile)))
@@ -172,7 +174,7 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 			writeImportSource(t, src, `{"mcpServers": `+tt.reimport+`}`)
 
 			var imported []string
-			out := captureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
+			out := testutil.CaptureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
 
 			if after, _ := os.ReadFile(serverFile); len(imported) != 0 || string(after) != string(before) { //nolint:errcheck // a missing file fails the comparison
 				t.Errorf("imported %v, foo.yaml %q -> %q; want nothing imported and the file unchanged", imported, before, after)
@@ -191,13 +193,13 @@ func TestImportClaudeFormat_ImportsOnlyNewServers(t *testing.T) {
 	configDir := t.TempDir()
 	src := filepath.Join(t.TempDir(), "claude.json")
 	writeImportSource(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
-	captureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
+	testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
 	writeImportSource(t, src, `{"mcpServers": {
 		"foo": {"type": "http", "url": "https://foo.example/mcp"},
 		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`)
 
 	var imported []string
-	captureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
+	testutil.CaptureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
 
 	if !slices.Equal(imported, []string{"bar"}) {
 		t.Errorf("second import = %v, want [bar] (only bar is new)", imported)

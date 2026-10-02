@@ -17,6 +17,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func upstreamAnswering(t *testing.T, status int, challenge string) string {
@@ -86,7 +87,7 @@ func importFromMCPJSON(t *testing.T, configDir, mcpServers string) []string {
 func captureImport(t *testing.T, configDir, src string) []string {
 	t.Helper()
 	var names []string
-	captureStdout(t, func() { names = importClaudeFormat(configDir, "Claude Code", src) })
+	testutil.CaptureStdout(t, func() { names = importClaudeFormat(configDir, "Claude Code", src) })
 	return names
 }
 
@@ -242,7 +243,7 @@ func TestInitCommandDetectsOAuthOnImportedServer(t *testing.T) {
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
 	cmd.SetArgs([]string{"--yes", "--from", src})
 
-	out := captureStdout(t, func() {
+	out := testutil.CaptureStdout(t, func() {
 		if err := cmd.Execute(); err != nil {
 			t.Fatal(err)
 		}

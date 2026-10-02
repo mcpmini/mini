@@ -17,6 +17,7 @@ import (
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
@@ -64,6 +65,25 @@ func TestRunAdd(t *testing.T) {
 		}
 		if len(sc.Args) != 2 || sc.Args[0] != "-y" {
 			t.Errorf("Args = %v, want [-y server-github]", sc.Args)
+		}
+	})
+
+	t.Run("reports the server file, bundled projection and default permissions it wrote", func(t *testing.T) {
+		dir := t.TempDir()
+		printed := testutil.CaptureStdout(t, func() {
+			if err := runAdd(dir, []string{"gh", "--", "npx", "-y", "server-github"}, &bytes.Buffer{}); err != nil {
+				t.Fatalf("runAdd: %v", err)
+			}
+		})
+		serverPath := filepath.Join(dir, "servers", "gh.yaml")
+		for _, want := range []string{
+			"added gh → " + serverPath,
+			"installed default projection → " + filepath.Join(dir, "servers", "gh.proj.yaml"),
+			"applied default permissions → " + serverPath,
+		} {
+			if !strings.Contains(printed, want) {
+				t.Errorf("output %q is missing %q", printed, want)
+			}
 		}
 	})
 

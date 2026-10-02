@@ -215,7 +215,7 @@ func runRemove(configDir string, args []string, out io.Writer) error {
 		return usageErrf("usage: mini rm NAME")
 	}
 	name := args[0]
-	if err := ops.DeleteServer(configDir, name); err != nil {
+	if err := ops.RemoveServer(configDir, name); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "removed %s\n", name)
