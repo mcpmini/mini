@@ -875,4 +875,3 @@ func addServerViaRPC(t *testing.T, client *mcpClient, name, url string) (isErr b
 	txt, isErr := parseToolCallResult(raw)
 	return isErr, txt
 }
-
