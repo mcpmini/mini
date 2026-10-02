@@ -222,7 +222,11 @@ func TestAddServer(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if got, _ := os.ReadFile(leftover); added.ProjectionPath != leftover || strings.Contains(string(got), "the old server's rules") { // an unreadable file fails the content check
+		got, err := os.ReadFile(leftover)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if added.ProjectionPath != leftover || len(got) == 0 || strings.Contains(string(got), "the old server's rules") {
 			t.Errorf("projection path %q holds %q, want the bundled projection installed in place of the leftover", added.ProjectionPath, got)
 		}
 	})
