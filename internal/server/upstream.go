@@ -37,11 +37,11 @@ type upstreamServer struct {
 	cancel   context.CancelFunc
 	clock    clock.Clock
 
-	reconnecting atomic.Bool
-	sem          chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
-	onReconnect  func()        // called after successful reconnect; used in tests
-	refreshMu    sync.Mutex
-	refreshing   bool
+	reconnecting   atomic.Bool
+	sem            chan struct{} // nil when MaxPendingRequests == 0 (unlimited)
+	onReconnect    func()        // called after successful reconnect; used in tests
+	refreshMu      sync.Mutex
+	refreshing     bool
 	refreshPending bool
 
 	calls          atomic.Int64

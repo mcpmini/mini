@@ -8,10 +8,13 @@ import (
 
 type logSink struct{ msgs []string }
 
-func (s *logSink) Enabled(_ context.Context, _ slog.Level) bool  { return true }
-func (s *logSink) Handle(_ context.Context, r slog.Record) error { s.msgs = append(s.msgs, r.Message); return nil }
-func (s *logSink) WithAttrs(_ []slog.Attr) slog.Handler          { return s }
-func (s *logSink) WithGroup(_ string) slog.Handler               { return s }
+func (s *logSink) Enabled(_ context.Context, _ slog.Level) bool { return true }
+func (s *logSink) Handle(_ context.Context, r slog.Record) error {
+	s.msgs = append(s.msgs, r.Message)
+	return nil
+}
+func (s *logSink) WithAttrs(_ []slog.Attr) slog.Handler { return s }
+func (s *logSink) WithGroup(_ string) slog.Handler      { return s }
 
 func TestPrefixWriter_singleCompleteLine(t *testing.T) {
 	sink := &logSink{}

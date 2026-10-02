@@ -255,10 +255,10 @@ func TestIntegrationProjection_globalDefaultsApply(t *testing.T) {
 
 func TestIntegrationProjection_readRecoversProjectedData(t *testing.T) {
 	cases := []struct {
-		name        string
-		fixture     string
-		projection  string
-		wantByPath  map[string]string // path as reported in __mini → expected read() result
+		name       string
+		fixture    string
+		projection string
+		wantByPath map[string]string // path as reported in __mini → expected read() result
 	}{
 		{
 			name:       "excluded field",

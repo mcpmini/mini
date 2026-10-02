@@ -22,7 +22,9 @@ func TestIntegrationPermissions_defaultProtected(t *testing.T) {
 		"name":      "perm_call",
 		"arguments": map[string]any{"server": "svc", "tool": "get_item", "args": map[string]any{}},
 	})
-	var r struct{ IsError bool `json:"isError"` }
+	var r struct {
+		IsError bool `json:"isError"`
+	}
 	mustUnmarshal(t, raw, &r)
 	if r.IsError {
 		t.Error("perm_call on default-protected server should succeed")
@@ -99,8 +101,10 @@ func TestIntegrationPermissions_disableListHidden(t *testing.T) {
 		"arguments": map[string]any{"hidden": true},
 	})
 	var result struct {
-		IsError bool                              `json:"isError"`
-		Content []struct{ Text string `json:"text"` } `json:"content"`
+		IsError bool `json:"isError"`
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
 	}
 	mustUnmarshal(t, raw, &result)
 	if !result.IsError {
@@ -110,4 +114,3 @@ func TestIntegrationPermissions_disableListHidden(t *testing.T) {
 		t.Errorf("error should mention disable_list_hidden, got: %q", result.Content[0].Text)
 	}
 }
-

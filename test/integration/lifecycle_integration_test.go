@@ -22,7 +22,9 @@ func TestIntegrationLifecycle_addServerAtRuntime(t *testing.T) {
 			"config": map[string]any{"name": "svc", "transport": "sse", "url": f.srv.URL},
 		},
 	})
-	var r struct{ IsError bool `json:"isError"` }
+	var r struct {
+		IsError bool `json:"isError"`
+	}
 	json.Unmarshal(raw, &r) //nolint:errcheck
 	if r.IsError {
 		t.Fatalf("add_server failed: %s", raw)
@@ -66,7 +68,9 @@ func TestIntegrationLifecycle_addServerBadURL(t *testing.T) {
 			"config": map[string]any{"name": "bad", "transport": "sse", "url": "not-a-url"},
 		},
 	})
-	var r struct{ IsError bool `json:"isError"` }
+	var r struct {
+		IsError bool `json:"isError"`
+	}
 	json.Unmarshal(raw, &r) //nolint:errcheck
 	if !r.IsError {
 		t.Error("expected error for bad URL")
@@ -105,4 +109,3 @@ func TestIntegrationLifecycle_tenServersSimultaneously(t *testing.T) {
 		t.Errorf("expected svc0..svc9 in listing, got: %s", listing[:min(200, len(listing))])
 	}
 }
-

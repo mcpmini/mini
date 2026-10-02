@@ -36,7 +36,9 @@ func TestIntegrationCLICall_PermCallBypassesProtection(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("perm-call on protected tool should exit 0, got %d", code)
 	}
-	var env struct{ Error string `json:"error"` }
+	var env struct {
+		Error string `json:"error"`
+	}
 	if err := json.Unmarshal([]byte(stdout), &env); err != nil {
 		t.Fatalf("stdout not valid JSON: %v\nstdout: %s", err, stdout)
 	}

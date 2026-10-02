@@ -22,8 +22,8 @@ const (
 )
 
 type Fault struct {
-	Tool        string    `json:"tool"`                  // tool name or "*" for all
-	Method      string    `json:"method"`                // "tools/call", "initialize", "*"
+	Tool        string    `json:"tool"`   // tool name or "*" for all
+	Method      string    `json:"method"` // "tools/call", "initialize", "*"
 	Type        FaultType `json:"type"`
 	DelayMS     int       `json:"delay_ms,omitempty"`
 	Message     string    `json:"message,omitempty"`

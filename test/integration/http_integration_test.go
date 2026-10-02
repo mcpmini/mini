@@ -62,8 +62,10 @@ func TestIntegrationHTTP_addServerSSRFBlocked(t *testing.T) {
 		},
 	})
 	var result struct {
-		IsError bool                                   `json:"isError"`
-		Content []struct{ Text string `json:"text"` } `json:"content"`
+		IsError bool `json:"isError"`
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
 	}
 	json.Unmarshal(raw, &result) //nolint:errcheck
 	if !result.IsError {

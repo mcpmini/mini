@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	ErrMissingToken  = errors.New("missing authorization header")
-	ErrInvalidToken  = errors.New("invalid token")
+	ErrMissingToken = errors.New("missing authorization header")
+	ErrInvalidToken = errors.New("invalid token")
 )
 
 var signingKey = []byte("supersecret")

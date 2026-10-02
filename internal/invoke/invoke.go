@@ -77,12 +77,12 @@ func InvokeRaw(ctx context.Context, p InvokeRawParams) (json.RawMessage, int64, 
 }
 
 type BuildEnvelopeParams struct {
-	Server   string
-	Tool     string
-	Raw      json.RawMessage
-	ProjCfg  *config.ProjectionConfig
-	ProjDefs *projection.Defaults
-	Builder  *response.Builder
+	Server           string
+	Tool             string
+	Raw              json.RawMessage
+	ProjCfg          *config.ProjectionConfig
+	ProjDefs         *projection.Defaults
+	Builder          *response.Builder
 	BypassProjection bool
 }
 
