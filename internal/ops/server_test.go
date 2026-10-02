@@ -3,7 +3,6 @@ package ops_test
 import (
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestWriteServer(t *testing.T) {
@@ -247,7 +247,7 @@ func TestAddServer(t *testing.T) {
 
 	t.Run("prints nothing, since the config tool calls it where stdout is the MCP stream", func(t *testing.T) {
 		dir := tempDir(t)
-		printed := captureStdout(t, func() {
+		printed := testutil.CaptureStdout(t, func() {
 			if _, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}); err != nil {
 				t.Fatal(err)
 			}
@@ -430,21 +430,6 @@ func TestRemoveServer(t *testing.T) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-func captureStdout(t *testing.T, fn func()) string {
-	t.Helper()
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	stdout := os.Stdout
-	os.Stdout = w
-	defer func() { os.Stdout = stdout }()
-	fn()
-	w.Close() //nolint:errcheck
-	out, _ := io.ReadAll(r)
-	return string(out)
 }
 
 func saveCredentials(t *testing.T, dir, name string) {

@@ -17,6 +17,7 @@ import (
 
 	"github.com/mcpmini/mini/cmd/mini/importers"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
@@ -69,7 +70,7 @@ func TestRunAdd(t *testing.T) {
 
 	t.Run("reports the server file, bundled projection and default permissions it wrote", func(t *testing.T) {
 		dir := t.TempDir()
-		printed := captureStdout(t, func() {
+		printed := testutil.CaptureStdout(t, func() {
 			if err := runAdd(dir, []string{"gh", "--", "npx", "-y", "server-github"}, &bytes.Buffer{}); err != nil {
 				t.Fatalf("runAdd: %v", err)
 			}

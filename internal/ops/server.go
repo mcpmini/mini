@@ -22,7 +22,8 @@ type AddedServer struct {
 	DefaultPermissions bool
 }
 
-// AddServer never replaces a server file: a configured name returns ErrAlreadyConfigured.
+// AddServer never replaces a server file: a configured name returns ErrAlreadyConfigured, unless
+// sc itself is invalid, which is reported first.
 func AddServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 	if err := validServerName(sc.Name); err != nil {
 		return AddedServer{}, err
