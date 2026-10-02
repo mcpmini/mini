@@ -37,10 +37,7 @@ func TestLoadServerConfig_unexpandedConnectionField_isRejected(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), tc.value)
-			_, _, err := config.Load(dir)
-			if err == nil {
-				t.Fatal("Load succeeded, want unexpanded field error")
-			}
+			err := brokenServerError(t, dir)
 			for _, want := range []string{"svc", tc.field, "isn't expanded"} {
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("error %q does not contain %q", err, want)
@@ -57,10 +54,7 @@ func TestLoadServerConfig_undefinedHeader_isStrictButLenientLoadKeepsLiteral(t *
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_HEADER")
 	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n")
-	_, _, err := config.Load(dir)
-	if err == nil {
-		t.Fatal("Load succeeded, want undefined variable error")
-	}
+	err := brokenServerError(t, dir)
 	for _, want := range []string{"svc", "headers.X-Key", "MINI_TEST_UNDEFINED_HEADER"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
@@ -108,7 +102,7 @@ func TestLoadMainConfig_undefinedResponseDir_isError(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_RESPONSE_DIR")
 	writeFile(t, filepath.Join(dir, "config.yaml"), "response_dir: ${MINI_TEST_UNDEFINED_RESPONSE_DIR}\n")
-	_, _, err := config.Load(dir)
+	_, err := config.Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "MINI_TEST_UNDEFINED_RESPONSE_DIR") {
 		t.Fatalf("Load error = %v", err)
 	}

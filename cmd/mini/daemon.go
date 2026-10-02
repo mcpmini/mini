@@ -50,25 +50,26 @@ func runDaemon(configDir string, logLevel string) {
 	if err := daemon.CheckSocketPath(configDir); err != nil {
 		fatalf("%v", err)
 	}
-	cfg, servers := loadDaemonConfig(configDir)
+	loaded := loadDaemonConfig(configDir)
 	socket := ensureDaemonNotRunning(configDir)
 	logW := daemon.OpenCappedLog(filepath.Join(configDir, "internal", "daemon", "daemon.log"))
 	defer logW.Close()
-	logger := buildLogger(cfg, logLevel, logW)
+	logger := buildLogger(loaded.Config, logLevel, logW)
+	logBrokenServers(logger, loaded.Broken)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	ln := bindSocket(socket)
 	serveDaemon(ctx, DaemonServeParams{
-		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, Listener: ln,
+		ConfigDir: configDir, Cfg: loaded.Config, Servers: loaded.Servers, Logger: logger, Listener: ln,
 	})
 }
 
-func loadDaemonConfig(configDir string) (*config.Config, []config.ServerConfig) {
-	cfg, servers, err := config.Load(configDir)
+func loadDaemonConfig(configDir string) config.Loaded {
+	loaded, err := config.Load(configDir)
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
-	return cfg, servers
+	return loaded
 }
 
 type DaemonServeParams struct {

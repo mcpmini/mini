@@ -265,12 +265,30 @@ func projectionCounts(projections map[string]map[string]*config.ProjectionConfig
 func (s *Server) statusReport() map[string]any {
 	servers, projInfo := s.collectStatusData()
 	fileCount, usedBytes := s.store.Stats()
-	return map[string]any{
+	report := map[string]any{
 		"servers":     servers,
 		"store":       map[string]any{"files": fileCount, "used_mb": float64(usedBytes) / (1024 * 1024)},
 		"projections": projInfo,
 		"sessions":    s.sessions.aggregateMetrics(),
 	}
+	if broken := s.brokenServerFiles(); len(broken) > 0 {
+		report["broken_servers"] = broken
+	}
+	return report
+}
+
+// brokenServerFiles reads the files again, so the agent sees why a server it expects isn't
+// running, such as an environment variable unset where mini runs, and whether a fix has landed.
+func (s *Server) brokenServerFiles() map[string]string {
+	loaded, err := config.Load(s.configDir)
+	if err != nil {
+		return map[string]string{"config.yaml": err.Error()}
+	}
+	broken := make(map[string]string, len(loaded.Broken))
+	for _, b := range loaded.Broken {
+		broken[b.ServerName] = b.Err.Error()
+	}
+	return broken
 }
 
 func (s *Server) collectStatusData() (map[string]any, map[string][]string) {

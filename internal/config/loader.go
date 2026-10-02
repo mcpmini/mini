@@ -27,65 +27,67 @@ var ValidToolName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 // Only ${VAR} form (not bare $VAR) avoids false positives in shell args and YAML comments.
 var envVarRef = regexp.MustCompile(`\$\{([^}]+)\}`)
 
-func Load(configDir string) (*Config, []ServerConfig, error) {
+// Loaded is the config as Load found it. A server whose file, or projection file, fails to load
+// is left out of Servers and listed in Broken, so one bad file can't stop every other server.
+type Loaded struct {
+	Config  *Config
+	Servers []ServerConfig
+	Broken  []SourceError
+}
+
+// Load fails only when config.yaml does, since no server can run without it.
+func Load(configDir string) (Loaded, error) {
 	cfg, err := loadMainConfig(configDir)
 	if err != nil {
-		return nil, nil, err
+		return Loaded{}, err
 	}
-	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
-		return nil, nil, fmt.Errorf("config.yaml: response_format: %w", err)
+	servers, broken := loadServerDir(configDir)
+	return Loaded{Config: cfg, Servers: servers, Broken: broken}, nil
+}
+
+func loadServerDir(configDir string) ([]ServerConfig, []SourceError) {
+	paths, _ := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml")) // the pattern is constant, so it can't be malformed
+	var servers []ServerConfig
+	var broken []SourceError
+	for _, path := range filterServerPaths(paths) {
+		sc, err := loadCompleteServer(configDir, path)
+		if err != nil {
+			broken = append(broken, SourceError{Path: path, ServerName: serverNameFromPath(path), Err: err})
+			continue
+		}
+		servers = append(servers, sc)
 	}
-	servers, err := loadServerConfigs(configDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	projections, err := loadProjectionConfigs(configDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := completeServers(configDir, servers, projections); err != nil {
-		return nil, nil, err
-	}
-	return cfg, servers, nil
+	return servers, broken
 }
 
 // LoadServer loads one server as Load would, without needing every other server file to load.
 func LoadServer(configDir, name string) (ServerConfig, error) {
-	sc, err := loadNamedServerFile(configDir, name)
+	if err := checkServerName(name, "the request"); err != nil {
+		return ServerConfig{}, err
+	}
+	path := ServerPath(configDir, name)
+	if !ServerFileExists(configDir, name) {
+		return ServerConfig{}, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
+	}
+	return loadCompleteServer(configDir, path)
+}
+
+func loadCompleteServer(configDir, path string) (ServerConfig, error) {
+	sc, err := loadServerConfig(path)
 	if err != nil {
 		return ServerConfig{}, err
 	}
 	projections := make(map[string]map[string]*ProjectionConfig)
-	if err := loadOneProjectionFile(projections, ProjectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := loadOneProjectionFile(projections, ProjectionPath(configDir, sc.Name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return ServerConfig{}, err
 	}
 	servers := []ServerConfig{*sc}
-	if err := completeServers(configDir, servers, projections); err != nil {
+	mergeProjections(servers, projections)
+	if err := validateServerProjectionFormats(sc.Name, servers[0].Projections); err != nil {
 		return ServerConfig{}, err
 	}
-	return servers[0], nil
-}
-
-func loadNamedServerFile(configDir, name string) (*ServerConfig, error) {
-	if err := checkServerName(name, "the request"); err != nil {
-		return nil, err
-	}
-	path := ServerPath(configDir, name)
-	if !ServerFileExists(configDir, name) {
-		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
-	}
-	return loadServerConfig(path)
-}
-
-func completeServers(configDir string, servers []ServerConfig, projections map[string]map[string]*ProjectionConfig) error {
-	mergeProjections(servers, projections)
-	for _, s := range servers {
-		if err := validateServerProjectionFormats(s.Name, s.Projections); err != nil {
-			return err
-		}
-	}
 	mergeKnownAuth(configDir, servers)
-	return nil
+	return servers[0], nil
 }
 
 func checkServerName(name, source string) error {
@@ -93,21 +95,6 @@ func checkServerName(name, source string) error {
 		return fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", name, source)
 	}
 	return nil
-}
-
-func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig, error) {
-	pattern := filepath.Join(dir, "servers", "*.proj.yaml")
-	paths, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]map[string]*ProjectionConfig)
-	for _, p := range paths {
-		if err := loadOneProjectionFile(out, p); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
 }
 
 func loadOneProjectionFile(out map[string]map[string]*ProjectionConfig, p string) error {
@@ -166,6 +153,9 @@ func loadMainConfig(dir string) (*Config, error) {
 		return nil, fmt.Errorf("config.yaml: response_dir: %w", err)
 	}
 	cfg.ResponseDir = responseDir
+	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
+		return nil, fmt.Errorf("config.yaml: response_format: %w", err)
+	}
 	return cfg, nil
 }
 
@@ -179,14 +169,6 @@ func readMainConfigFile(dir string) ([]byte, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 	return data, nil
-}
-
-func loadServerConfigs(dir string) ([]ServerConfig, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "servers", "*.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	return loadServerFiles(filterServerPaths(paths))
 }
 
 // mergeKnownAuth fills in Auth from a bundled default or a prior detection marker —
@@ -237,18 +219,6 @@ func filterServerPaths(paths []string) []string {
 		}
 	}
 	return out
-}
-
-func loadServerFiles(paths []string) ([]ServerConfig, error) {
-	var servers []ServerConfig
-	for _, p := range paths {
-		s, err := loadServerConfig(p)
-		if err != nil {
-			return nil, err
-		}
-		servers = append(servers, *s)
-	}
-	return servers, nil
 }
 
 func loadServerConfig(path string) (*ServerConfig, error) {

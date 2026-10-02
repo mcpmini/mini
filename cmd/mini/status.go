@@ -52,15 +52,15 @@ func runList(configDir string, args []string, out io.Writer) error {
 }
 
 func listAllServers(configDir string, out io.Writer) error {
-	_, servers, err := config.Load(configDir)
+	loaded, err := loadConfigReportingBroken(configDir, os.Stderr)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
-	if len(servers) == 0 {
+	if len(loaded.Servers) == 0 {
 		fmt.Fprintln(out, "no servers configured")
 		return nil
 	}
-	printServerTable(out, servers)
+	printServerTable(out, loaded.Servers)
 	return nil
 }
 
@@ -95,10 +95,11 @@ func enabledStr(sc config.ServerConfig) string {
 }
 
 func runStatus(configDir string) {
-	cfg, servers, err := config.Load(configDir)
+	loaded, err := loadConfigReportingBroken(configDir, os.Stderr)
 	if err != nil {
-		fatalf("load config: %v", err)
+		fatalf("%v", err)
 	}
+	cfg, servers := loaded.Config, loaded.Servers
 	if len(servers) == 0 {
 		fmt.Println("no servers configured")
 		return

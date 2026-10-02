@@ -39,13 +39,9 @@ func runAuth(configDir, serverName string) {
 }
 
 func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *config.ServerConfig, error) {
-	cfg, servers, err := config.Load(configDir)
+	cfg, sc, err := loadOneServer(configDir, serverName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load config: %w", err)
-	}
-	sc := config.FindServer(servers, serverName)
-	if sc == nil {
-		return nil, nil, fmt.Errorf("server not found: %s", serverName)
+		return nil, nil, err
 	}
 	if err := auth.ValidateOAuthServer(serverName, *sc); err != nil {
 		return nil, nil, err

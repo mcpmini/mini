@@ -103,6 +103,26 @@ func startMiniCmdCapturingStderr(t *testing.T, configDir string) (stdin io.Write
 	return stdin, sc, errBuf
 }
 
+func TestIntegrationStartup_aServerWithAnUnsetVariableIsSkippedAndTheRestRun(t *testing.T) {
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "healthy", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
+	writeServerConfig(t, cfg, "github", "transport: http\nurl: https://example.com/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_TOKEN}\n")
+
+	c := startServerWithUnreachable(t, cfg, []string{"github"})
+
+	if !strings.Contains(c.listTools("healthy"), "get_item") {
+		t.Error("healthy's tools are missing: one server's unset variable stopped the others")
+	}
+	var status struct {
+		BrokenServers map[string]string `json:"broken_servers"`
+	}
+	raw := c.mustCall("tools/call", map[string]any{"name": "config", "arguments": map[string]any{"action": "status"}})
+	mustUnmarshal(t, []byte(toolCallText(t, raw)), &status)
+	if !strings.Contains(status.BrokenServers["github"], "MINI_TEST_UNSET_TOKEN") {
+		t.Errorf("status broken_servers = %v, want github naming the unset MINI_TEST_UNSET_TOKEN", status.BrokenServers)
+	}
+}
+
 func waitForStderrContains(t *testing.T, stderr *syncBuffer, want string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

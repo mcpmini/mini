@@ -46,10 +46,11 @@ func runTest(configDir string, timeout time.Duration) {
 }
 
 func buildTestServer(ctx context.Context, configDir string) (*server.Server, []config.ServerConfig) {
-	cfg, servers, err := config.Load(configDir)
+	loaded, err := loadConfigReportingBroken(configDir, os.Stderr)
 	if err != nil {
-		fatalf("load config: %v", err)
+		fatalf("%v", err)
 	}
+	cfg, servers := loaded.Config, loaded.Servers
 	injectOAuthTokens(ctx, configDir, servers)
 	enabled := enabledServers(servers)
 	if len(enabled) == 0 {

@@ -333,7 +333,7 @@ type authorizeParams struct {
 }
 
 func authorizeServer(p authorizeParams) {
-	cfg, _, err := config.Load(p.configDir)
+	cfg, err := config.LoadMain(p.configDir)
 	if err != nil {
 		fmt.Fprintf(p.out, "warning: reload config for auth: %v\n", err)
 		return
