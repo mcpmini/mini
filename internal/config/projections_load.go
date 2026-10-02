@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// SourceError is a server file that failed to load.
+// SourceError is a server whose file, or projection file, failed to load.
 type SourceError struct {
 	Path       string
 	ServerName string

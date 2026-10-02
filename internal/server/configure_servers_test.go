@@ -256,10 +256,11 @@ func newMCPServerThatLaterDemandsOAuth(t *testing.T) (*httptest.Server, func()) 
 
 func restartWithSavedServer(t *testing.T, dir, name string) error {
 	t.Helper()
-	cfg, servers, err := config.Load(dir)
+	loaded, err := config.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg, servers := loaded.Config, loaded.Servers
 	cfg.DangerousAllowPrivateURLs = true
 	restarted := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 	t.Cleanup(restarted.Close)

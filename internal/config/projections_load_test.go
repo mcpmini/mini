@@ -205,10 +205,11 @@ func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\n")
 	writeFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  include_only: [title]\n")
-	_, servers, err := config.Load(dir)
+	loaded, err := config.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
+	servers := loaded.Servers
 	want := *config.FindServer(servers, "linear")
 	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
 
@@ -272,10 +273,11 @@ func TestLoadProjections_parity(t *testing.T) {
 				t.Setenv(k, v)
 			}
 			load := config.LoadProjections(dir)
-			_, servers, err := config.Load(dir)
+			loaded, err := config.Load(dir)
 			if err != nil {
 				t.Fatalf("config.Load: %v", err)
 			}
+			servers := loaded.Servers
 			for _, s := range servers {
 				lp := load.Projections[s.Name]
 				if len(s.Projections) == 0 && len(lp) == 0 {

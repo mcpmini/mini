@@ -66,13 +66,9 @@ func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(
 }
 
 func dialServer(configDir, serverName string) (transport.Connection, error) {
-	cfg, servers, err := config.Load(configDir)
+	cfg, sc, err := loadOneServer(configDir, serverName)
 	if err != nil {
-		return nil, fmt.Errorf("load config: %w", err)
-	}
-	sc := config.FindServer(servers, serverName)
-	if sc == nil {
-		return nil, fmt.Errorf("server %q not found", serverName)
+		return nil, err
 	}
 	ctx := context.Background()
 	if sc.Auth != nil && sc.Auth.Type == config.AuthTypeOAuth2 {

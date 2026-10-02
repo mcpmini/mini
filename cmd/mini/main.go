@@ -69,11 +69,13 @@ func parseToolMode(m string) transport.ToolMode {
 }
 
 func runConnect(configDir string, f connectFlags) error {
-	cfg, servers, err := config.Load(configDir)
+	loaded, err := config.Load(configDir)
 	if err != nil {
 		fatalf("load config: %v", err)
 	}
+	cfg, servers := loaded.Config, loaded.Servers
 	logger := buildLogger(cfg, f.logLevel, os.Stderr)
+	logBrokenServers(logger, loaded.Broken)
 	if shouldTryDaemon(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
 		return nil
 	}

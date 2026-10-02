@@ -177,10 +177,11 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 
 func loadServerConfig(t *testing.T, dir, name string) config.ServerConfig {
 	t.Helper()
-	_, servers, err := config.Load(dir)
+	loaded, err := config.Load(dir)
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
+	servers := loaded.Servers
 	sc := config.FindServer(servers, name)
 	if sc == nil {
 		t.Fatalf("server %q not found after config.Load", name)
