@@ -147,7 +147,7 @@ func TestRunCatalogStepRequestedConfiguredEntriesArePreserved(t *testing.T) {
 	if err := os.WriteFile(path, existing, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	configured := "name: configured\ntransport: http\nurl: https://configured.example/mcp\n"
+	configured := "transport: http\nurl: https://configured.example/mcp\n"
 	if err := os.WriteFile(filepath.Join(dir, "servers", "configured.yaml"), []byte(configured), 0o600); err != nil {
 		t.Fatal(err)
 	}

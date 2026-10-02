@@ -23,7 +23,7 @@ type projLoadCase struct {
 	wantSkipped       []string // nil = don't check; []string{} = assert empty
 	wantSourceErrors  int
 	wantKeepsPrevious []string
-	wantFresh         []string
+	wantDropsPrevious []string
 	check             func(*testing.T, string, config.LoadProjectionsResult)
 }
 
@@ -57,7 +57,7 @@ func checkProjLoad(t *testing.T, dir string, load config.LoadProjectionsResult, 
 			t.Errorf("KeepsPreviousProjection(%q) should be true", name)
 		}
 	}
-	for _, name := range tc.wantFresh {
+	for _, name := range tc.wantDropsPrevious {
 		if load.KeepsPreviousProjection(name) {
 			t.Errorf("KeepsPreviousProjection(%q) should be false", name)
 		}
@@ -120,7 +120,7 @@ func TestLoadProjections(t *testing.T) {
 			wantKeepsPrevious: []string{"b"},
 		},
 		{
-			name: "malformed servers/b.yaml holds only b",
+			name: "malformed servers/b.yaml holds only b, not a or a server whose file is gone",
 			files: map[string]string{
 				"servers/a.yaml": "command: echo\nprojections:\n  t:\n    include_only: [ok]\n",
 				"servers/b.yaml": "bad: [yaml\n",
@@ -128,7 +128,7 @@ func TestLoadProjections(t *testing.T) {
 			wantProjected:     []string{"a"},
 			wantSourceErrors:  1,
 			wantKeepsPrevious: []string{"b"},
-			wantFresh:         []string{"a", "deleted"},
+			wantDropsPrevious: []string{"a", "file-gone"},
 			check:             wantSourceErrorFor("b"),
 		},
 		{
@@ -137,10 +137,10 @@ func TestLoadProjections(t *testing.T) {
 				"servers/good.yaml":     "command: echo\nprojections:\n  t:\n    include_only: [a]\n",
 				"servers/bad.name.yaml": "command: echo\n",
 			},
-			wantProjected:    []string{"good"},
-			wantSourceErrors: 1,
-			wantFresh:        []string{"good"},
-			check:            wantSourceErrorFor("bad.name"),
+			wantProjected:     []string{"good"},
+			wantSourceErrors:  1,
+			wantDropsPrevious: []string{"good"},
+			check:             wantSourceErrorFor("bad.name"),
 		},
 		{
 			name: "config.yaml is not a server source, even when broken",
@@ -148,8 +148,8 @@ func TestLoadProjections(t *testing.T) {
 				"servers/file-svc.yaml": "command: echo\n",
 				"config.yaml":           "bad: [yaml\n",
 			},
-			wantSourceErrors: 0,
-			wantFresh:        []string{"file-svc"},
+			wantSourceErrors:  0,
+			wantDropsPrevious: []string{"file-svc"},
 		},
 	}
 	for _, tc := range cases {

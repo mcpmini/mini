@@ -75,8 +75,8 @@ func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 
 func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server.Server {
 	t.Helper()
-	writeServerYAML(t, dir, svcName, fmt.Sprintf("name: %s\ntransport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
-		svcName, mcpURL, tokenURL, tokenURL))
+	writeServerYAML(t, dir, svcName, fmt.Sprintf("transport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
+		mcpURL, tokenURL, tokenURL))
 	cfg := config.DefaultConfig()
 	cfg.DisableAuthBrowserOpen = true
 	return newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
