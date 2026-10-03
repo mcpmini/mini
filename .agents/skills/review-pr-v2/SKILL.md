@@ -17,7 +17,23 @@ The general Go and testing guidance lives in `docs/go-guidelines.md` and `docs/t
 3. **Read the check.sh log** before writing the report.
 4. **The verdict is mechanical.** Derive it from the findings using the rules at the end.
 5. **The request's framing is a claim, not a fact.** Statements about the design in the request or PR description are things to verify. Listed angles add to the review; they never narrow it.
-6. **Be pragmatic.** Think through edge cases, then weigh each finding by how likely a real user, agent, or maintainer is to hit it and how bad it would be. Only a likely problem, or an unlikely one with severe impact (security, data loss, mini unusable), is MEDIUM or above; report the rest as LOW. A PR doesn't have to solve every problem: recommend the smallest fix that removes this one, not a redesign, new layers, or type machinery, unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere go under "Outside this PR".
+6. **Be pragmatic.** Rate every finding as "Weigh every finding" describes. A PR doesn't have to solve every problem: recommend the smallest fix that removes this one, not a redesign, new layers, or type machinery, unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere that are worth fixing go under "Outside this PR".
+
+## Weigh every finding
+
+Rate each finding's impact and likelihood, then decide.
+
+**Impact**, on the user, the agent, or the next developer:
+- **High:** a crash or hang, lost data or credentials, a security hole, mini or a server unusable, or an agent misled into a wrong action.
+- **Medium:** a feature misbehaves or fails confusingly, or code so hard to follow that the next change will likely break it, such as a function hundreds of lines long.
+- **Low:** cosmetic, or a little confusing but still readable.
+
+**Likelihood**, in normal use. Normal includes events that are rare but routine: slow or flaky networks, upstreams that time out or fail, a user who edits a config and gets it wrong, invalid input, several agents at once. Unlikely means it needs something outside mini's responsibility, such as an MCP server that breaks the spec, or misuse beyond the trust model.
+
+**Decide:**
+- Likelihood or impact of medium or above: worth fixing. HIGH when the impact is high and normal use reaches it; otherwise MEDIUM.
+- Both low: LOW at most, or leave it out. It isn't worth an issue.
+- When it's unclear whether something happens in practice, say so; it can wait for evidence rather than be solved speculatively.
 
 ## Step 0 — Check out the change
 
@@ -147,6 +163,7 @@ Output the report in the conversation only; never post it to GitHub.
 ## 🔴 HIGH — [title]
 **Pass:** Concurrency | Security | Correctness | Experience | Structure | Duplication | Tests | Maintainability
 **Found by:** Trace | Run | Attack | Break | Compare
+**Rating:** impact High | Medium | Low, likelihood High | Medium | Low
 **File:** path/file.go:LINE
 **Bug:** What the issue is.
 **Proof:** Execution trace, goroutine pair, command output, test output — whatever proves it.
