@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, tests, then conventions. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
+description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, experience, tests, then conventions. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
 argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [paths to limit the review to]
 ---
 
@@ -45,7 +45,7 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
 2. **Shared state**: what structs, maps, slices, channels, or package-level vars does the diff touch?
 3. **Trust boundaries**: what new inputs arrive from outside (user, config, network, MCP tool args, env vars) and where do they land?
 4. **New control paths**: what new error paths, goroutine launches, or auth checks does the change introduce?
-5. **Candidate list**: for each of Passes 2a–2c, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
+5. **Candidate list**: for each of Passes 2a–2c and 2f, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
 6. **Call-site audit** — for every function or method whose signature, parameters, return contract, or behavior changes in this diff, including new helper functions immediately wired into multiple places:
    a. Grep for *all* call sites — not just the ones visible in the diff hunks.
    b. List every call site explicitly with file:line.
@@ -53,6 +53,7 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
    d. Carry any call site whose correctness is unclear into Pass 2c.
 
    A function correct for the call site the author had in mind can be wrong for a call site that existed before the change, or for a sibling call site added in the same diff.
+7. **Audiences**: who sees what this change outputs — a CLI user, an agent over MCP, the init wizard, an operator reading logs? List each affected command or tool for Pass 2f.
 
 Produce a brief triage note to drive Passes 2–4. Do not write it into the final report.
 
@@ -233,6 +234,16 @@ This pass explores the whole codebase, not just the diff. For every function, ty
 
 Assess duplication by inconsistent behavior or concrete maintenance cost. Similar code alone does not establish a blocking defect; shared abstraction can also hide different contracts.
 
+## Pass 2f — Experience
+
+**Skip this pass** if triage found no audience.
+
+Run each command or tool from triage once, against one fixture that combines every state the diff distinguishes (healthy, each failure kind, disabled, empty). Read the whole output as that audience would; for an agent, read the raw tool result.
+- A failure says what failed, why, and what to do next, at the earliest step the audience can act, through a channel they actually see.
+- Each fact appears once, is true on every path that prints it, and agrees with the exit status and totals.
+
+**Proof standard:** quote the output, name the audience, and say what they needed to see instead.
+
 ## Pass 3 — Tests
 
 Read [the testing guide](../../../docs/testing.md) for the project's test-quality standard. Map each changed behavior to new or existing tests. Check the success path, the failure or boundary that matters to this change, and the production entry point the tests actually exercise. Do not require a new test per changed function or every possible permutation.
@@ -307,7 +318,7 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 [One paragraph. Overall quality, biggest risk area, what the verdict hinges on.]
 
 ## 🔴 HIGH — [title]
-**Pass:** Concurrency | Security | Correctness | Tests
+**Pass:** Concurrency | Security | Correctness | Experience | Tests
 **File:** path/file.go:LINE
 **Bug:** What the issue is.
 **Proof:** Execution trace, goroutine pair, test output — whatever proves it.
