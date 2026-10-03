@@ -37,6 +37,8 @@ Rate each finding's impact and likelihood, then decide.
 - Both low: LOW at most, or leave it out. It isn't worth an issue.
 - When it's unclear whether something happens in practice, say so; it can wait for evidence rather than be solved speculatively.
 
+**Breaking changes don't count while mini is v0.x.** Renamed config fields, changed CLI flags or output, removed behavior, and old files that no longer load are not findings. Mention one in a line if users will notice it, so the PR description can say so, but it never blocks the PR.
+
 ## Step 0 — Gather the diff and check out the PR branch
 
 1. Resolve the PR number from the arguments (`1` from `https://github.com/mcpmini/mini/pull/1`, from `#1`, or bare `1`). If the arguments are blank, review the current branch's diff against main in the current checkout and skip to step 5. If they name a branch instead, review that branch's diff against main: skip step 2 and use the branch as `<head-branch>` in step 3. Paths after the target limit which changed files the passes cover; still read the code those files interact with.
