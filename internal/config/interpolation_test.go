@@ -1,5 +1,7 @@
 package config_test
 
+import "github.com/mcpmini/mini/internal/config/configtest"
+
 import (
 	"errors"
 	"os"
@@ -155,7 +157,7 @@ func TestInterpolateActionConfig(t *testing.T) {
 func TestProjectionNotInterpolated(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("UNSET_PROJ_VAR_XXXX")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), "command: my-mcp\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "my-mcp"})
 	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "list_issues:\n  include_only: [number, title]\n  alias: \"${UNSET_PROJ_VAR_XXXX}\"\n")
 	sc := mustLoadOneServer(t, dir)
 	proj := sc.Projections["list_issues"]

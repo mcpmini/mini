@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -97,10 +98,11 @@ log_level: debug
 
 func TestLoad_serverNameComesFromFile(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.yaml"), `
-command: npx
-args: ["-y", "@buildkite/mcp-server"]
-`)
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "ci",
+		Command: "npx",
+		Args:    []string{"-y", "@buildkite/mcp-server"},
+	})
 	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.proj.yaml"), "list_builds:\n  include_only: [id]\n")
 	_, servers := mustLoadConfig(t, dir)
 	sc := config.FindServer(servers, "ci")
@@ -259,7 +261,7 @@ func TestValidToolName(t *testing.T) {
 
 func TestLoadServerConfig_handshakeTimeoutParses(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: 3s\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "ci", Command: "mcp", HandshakeTimeout: "3s"})
 	sc := mustLoadOneServer(t, dir)
 	if sc.HandshakeTimeout != "3s" {
 		t.Fatalf("expected handshake_timeout %q, got %q", "3s", sc.HandshakeTimeout)
@@ -270,7 +272,7 @@ func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 	for _, spec := range []string{"-1s", "nonsense"} {
 		t.Run(spec, func(t *testing.T) {
 			dir := t.TempDir()
-			testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: "+spec+"\n")
+			configtest.WriteServer(t, dir, config.ServerConfig{Name: "ci", Command: "mcp", HandshakeTimeout: spec})
 			expectLoadError(t, dir)
 		})
 	}
@@ -312,11 +314,12 @@ url: https://example.com/mcp
 
 func TestLoadServerConfig_ignoresADetectedMarkerOnAnAgentAddedServer(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
-transport: http
-url: https://example.com/mcp
-agent_added: true
-`)
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:       "svc",
+		Transport:  "http",
+		URL:        "https://example.com/mcp",
+		AgentAdded: true,
+	})
 	if err := config.MarkOAuthDetected(dir, "svc"); err != nil {
 		t.Fatalf("MarkOAuthDetected: %v", err)
 	}
@@ -551,14 +554,15 @@ func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType, wantClient
 
 func TestLoadServerConfig_withPermissions(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.yaml"), `
-name: ci
-command: mcp-ci
-permissions:
-  default: open
-  protected: [deleteProject, clearCache]
-  hidden: [internalDebug]
-`)
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "ci",
+		Command: "mcp-ci",
+		Permissions: &config.PermissionsConfig{
+			Default:   "open",
+			Protected: []string{"deleteProject", "clearCache"},
+			Hidden:    []string{"internalDebug"},
+		},
+	})
 	sc := mustLoadOneServer(t, dir)
 	assertPermissions(t, sc, 2, []string{"internalDebug"})
 }
@@ -603,7 +607,7 @@ func TestLoadResponseFormat(t *testing.T) {
 
 func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), "command: gh-mcp\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "gh-mcp"})
 	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
 	_, _, err := config.Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "toon") {

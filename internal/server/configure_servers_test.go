@@ -20,6 +20,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
@@ -158,7 +159,11 @@ func readProjectionRuleNames(t *testing.T, path string) []string {
 func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testing.T) {
 	t.Run("configured", func(t *testing.T) {
 		e := newConfigToolEnv(t)
-		writeServerYAML(t, e.dir, "svc", "transport: http\nurl: https://real.example.com/mcp\n")
+		configtest.WriteServer(t, e.dir, config.ServerConfig{
+			Name:      "svc",
+			Transport: "http",
+			URL:       "https://real.example.com/mcp",
+		})
 
 		text, failed := e.addServer(map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL})
 

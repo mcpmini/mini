@@ -3,11 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/testutil"
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -25,7 +25,7 @@ func TestRunList(t *testing.T) {
 
 	t.Run("stdio server appears with correct transport and command", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServer(t, dir, "gh", "command: npx\nargs: [server-github]\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "npx", Args: []string{"server-github"}})
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
@@ -45,7 +45,7 @@ func TestRunList(t *testing.T) {
 
 	t.Run("http server shows url and transport", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServer(t, dir, "remote", "transport: http\nurl: https://example.com/mcp\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "remote", Transport: "http", URL: "https://example.com/mcp"})
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {
@@ -62,7 +62,7 @@ func TestRunList(t *testing.T) {
 
 	t.Run("header row is always present", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServer(t, dir, "s", "command: run\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "s", Command: "run"})
 
 		var out bytes.Buffer
 		runList(dir, nil, &out) //nolint:errcheck
@@ -221,10 +221,4 @@ func mustMarshal(t *testing.T, v any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return b
-}
-
-func writeServer(t *testing.T, configDir, name, yaml string) {
-	t.Helper()
-	dir := filepath.Join(configDir, "servers")
-	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), yaml)
 }

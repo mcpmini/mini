@@ -5,12 +5,20 @@ package integration_test
 import (
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 func TestIntegrationPermissions_defaultProtected(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+"permissions:\n  default: protected\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   dir,
+		Permissions: &config.PermissionsConfig{
+			Default: "protected",
+		},
+	})
 	client := startServer(t, cfg)
 
 	_, isErr := client.execToolAllowError("svc", "get_item", nil)
@@ -34,7 +42,13 @@ func TestIntegrationPermissions_defaultProtected(t *testing.T) {
 func TestIntegrationPermissions_defaultHidden(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+"permissions:\n  default: hidden\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   dir,
+		Permissions: &config.PermissionsConfig{
+			Default: "hidden",
+		},
+	})
 	client := startServer(t, cfg)
 
 	text := client.listTools("svc")
@@ -51,8 +65,11 @@ func TestIntegrationPermissions_defaultHidden(t *testing.T) {
 func TestIntegrationPermissions_hiddenBeatsDefaultProtected(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"protected_tool": `{"id":1}`, "hidden_tool": `{"id":2}`})
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+
-		"permissions:\n  default: protected\n  hidden:\n    - hidden_tool\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName:  "svc",
+		Fixtures:    dir,
+		Permissions: &config.PermissionsConfig{Default: "protected", Hidden: []string{"hidden_tool"}},
+	})
 	client := startServer(t, cfg)
 
 	text := client.listTools("svc")
@@ -67,7 +84,13 @@ func TestIntegrationPermissions_hiddenBeatsDefaultProtected(t *testing.T) {
 func TestIntegrationPermissions_listHiddenShowsHiddenTools(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"open_tool": `{"id":1}`, "secret_tool": `{"id":2}`})
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+"permissions:\n  hidden:\n    - secret_tool\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   dir,
+		Permissions: &config.PermissionsConfig{
+			Hidden: []string{"secret_tool"},
+		},
+	})
 	client := startServer(t, cfg)
 
 	// Normal list should not include secret_tool.
@@ -92,7 +115,13 @@ func TestIntegrationPermissions_listHiddenShowsHiddenTools(t *testing.T) {
 func TestIntegrationPermissions_disableListHidden(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"secret_tool": `{"id":2}`})
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+"permissions:\n  hidden:\n    - secret_tool\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   dir,
+		Permissions: &config.PermissionsConfig{
+			Hidden: []string{"secret_tool"},
+		},
+	})
 	writeConfig(t, cfg, "disable_list_hidden: true\n")
 	client := startServer(t, cfg)
 

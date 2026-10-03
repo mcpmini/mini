@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 )
@@ -31,9 +32,9 @@ func (e *serverReloadEnv) serverPath(name string) string {
 	return filepath.Join(e.dir, "servers", name+".yaml")
 }
 
-func (e *serverReloadEnv) writeServer(name, extra string) {
+func (e *serverReloadEnv) writeServer(server config.ServerConfig) {
 	e.t.Helper()
-	testutil.WriteFile(e.t, e.serverPath(name), "transport: http\nurl: "+e.upstream.URL+"\n"+extra)
+	configtest.WriteServer(e.t, e.dir, server)
 }
 
 func (e *serverReloadEnv) removeServerFile(name string) {
@@ -56,7 +57,7 @@ func (e *serverReloadEnv) connectConfigured() {
 func (e *serverReloadEnv) startWithServers(names ...string) {
 	e.t.Helper()
 	for _, n := range names {
-		e.writeServer(n, "")
+		e.writeServer(config.ServerConfig{Name: n, Transport: "http", URL: e.upstream.URL})
 	}
 	e.connectConfigured()
 	e.startPoller()
@@ -117,7 +118,8 @@ func TestServerReload_disabledServer_isRemoved(t *testing.T) {
 	e := newServerReloadEnv(t)
 	e.startWithServers("svc")
 
-	e.writeServer("svc", "enabled: false\n")
+	disabled := false
+	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL, Enabled: &disabled})
 	e.advanceTick()
 
 	e.assertRemoved("svc")
@@ -157,7 +159,7 @@ func TestServerReload_brokenFileHoldsOnlyItsServer(t *testing.T) {
 
 func TestServerReload_editBeforePollerStarts_isApplied(t *testing.T) {
 	e := newServerReloadEnv(t)
-	e.writeServer("svc", "")
+	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL})
 	e.connectConfigured()
 
 	e.removeServerFile("svc")
@@ -169,7 +171,7 @@ func TestServerReload_editBeforePollerStarts_isApplied(t *testing.T) {
 func TestServerReload_removalDuringStartupRetry_staysRemoved(t *testing.T) {
 	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
 	e := newServerReloadEnv(t)
-	testutil.WriteFile(t, e.serverPath("flaky"), "transport: http\nurl: "+ts.URL+"\n")
+	configtest.WriteServer(t, e.dir, config.ServerConfig{Name: "flaky", Transport: "http", URL: ts.URL})
 	e.srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "flaky", Transport: "http", URL: ts.URL}})
 	e.waitForRetryBackoff()
 

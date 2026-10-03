@@ -21,8 +21,8 @@ import (
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/invoke"
-	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 	"golang.org/x/oauth2"
 )
@@ -43,7 +43,7 @@ func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *te
 	}
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 	path := filepath.Join(srv.configDir, "servers", "svc.yaml")
-	testutil.WriteFile(t, path, "command: run\n")
+	configtest.WriteServer(t, srv.configDir, config.ServerConfig{Name: "svc", Command: "run"})
 
 	if srv.removeConfigServer("svc") {
 		t.Error("removeConfigServer removed svc while its file is saved and enabled")
@@ -111,7 +111,11 @@ func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *tes
 func TestRemoveServerFromAgent_anAddOfTheNameWaitsUntilTheRemoveFinishes(t *testing.T) {
 	srv := newInstallTestServer(t)
 	srv.cfg.DangerousAllowPrivateURLs = true
-	writeServerFile(t, srv.configDir, "svc.yaml", "transport: http\nurl: http://127.0.0.1:1/mcp\n")
+	configtest.WriteServer(t, srv.configDir, config.ServerConfig{
+		Name:      "svc",
+		Transport: "http",
+		URL:       "http://127.0.0.1:1/mcp",
+	})
 	srv.authMu.Lock() // pauses the remove: detaching the server starts by taking authMu
 	resume := sync.OnceFunc(srv.authMu.Unlock)
 	t.Cleanup(resume) // closing the server needs authMu, even when the test stops early
@@ -240,7 +244,11 @@ func TestRollBackAdd_reportsAServerItCouldNotRemove(t *testing.T) {
 
 func TestRemoveServerFromAgent_aTokenRefreshFinishingMidRemoveLeavesNoToken(t *testing.T) {
 	srv := newInstallTestServer(t)
-	writeServerFile(t, srv.configDir, "svc.yaml", "transport: http\nurl: http://127.0.0.1:1/mcp\n")
+	configtest.WriteServer(t, srv.configDir, config.ServerConfig{
+		Name:      "svc",
+		Transport: "http",
+		URL:       "http://127.0.0.1:1/mcp",
+	})
 	finishRefresh, refreshed := startTokenRefresh(t, srv)
 
 	srv.authMu.Lock() // pauses the remove: detaching the server starts by taking authMu

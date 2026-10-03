@@ -4,14 +4,13 @@ package integration_test
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/testutil"
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 // fakeHTTPMCP is an in-process HTTP MCP server for tests.
@@ -68,18 +67,21 @@ func (f *fakeHTTPMCP) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": fakeMCPResult(req.Method)}) //nolint:errcheck
 }
 
-func writeHTTPServerYAML(t *testing.T, configDir, serverName, url string) {
+type httpServerParams struct {
+	ServerName string
+	URL        string
+}
+
+func writeHTTPServer(t *testing.T, configDir string, p httpServerParams) {
 	t.Helper()
-	dir := filepath.Join(configDir, "servers")
-	yaml := fmt.Sprintf("transport: sse\nurl: %s\n", url)
-	testutil.WriteFile(t, filepath.Join(dir, serverName+".yaml"), yaml)
+	configtest.WriteServer(t, configDir, config.ServerConfig{Name: p.ServerName, Transport: "sse", URL: p.URL})
 }
 
 func httpServer(t *testing.T, onCall func(int) (int, []byte)) (*fakeHTTPMCP, *mcpClient) {
 	t.Helper()
 	f := newFakeHTTPMCP(t, onCall)
 	cfg := t.TempDir()
-	writeHTTPServerYAML(t, cfg, "svc", f.srv.URL)
+	writeHTTPServer(t, cfg, httpServerParams{ServerName: "svc", URL: f.srv.URL})
 	return f, startServer(t, cfg)
 }
 

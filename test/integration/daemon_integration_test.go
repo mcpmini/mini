@@ -136,7 +136,7 @@ func daemonForTest(t *testing.T) string {
 	t.Helper()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"name":"test"}`})
 	cfg := shortConfigDir(t)
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	return cfg
 }
 
@@ -211,7 +211,7 @@ func TestIntegrationDaemon_spawnsOnDemandAndReuses(t *testing.T) {
 func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"x","name":"test"}`})
 	cfg := shortConfigDir(t)
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	startDaemon(t, cfg)
 	c1 := connectCompact(t, cfg)
@@ -232,7 +232,7 @@ func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
 func TestIntegrationDaemon_standaloneFlag(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"ping": `{"ok":true}`})
 	cfg := shortConfigDir(t)
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	// No daemon running — --standalone should work without trying to start one.
 	client := startServer(t, cfg)
@@ -248,8 +248,11 @@ func TestIntegrationDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 5000}
 	faultJSON, _ := json.Marshal(fault)
 	writeFaultServer(t, faultServerParams{
-		ConfigDir: cfg, ServerName: "slow", Fixtures: dir, FaultJSON: string(faultJSON),
-		Extra: "handshake_timeout: \"1s\"\n",
+		ConfigDir:        cfg,
+		ServerName:       "slow",
+		Fixtures:         dir,
+		FaultJSON:        string(faultJSON),
+		HandshakeTimeout: "1s",
 	})
 
 	start := time.Now()

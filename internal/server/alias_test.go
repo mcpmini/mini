@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
@@ -263,7 +264,7 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			t.Cleanup(srv.Close)
 
 			// Server stub lets loadServerProjections merge projection files for "gh".
-			testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), "")
+			configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh"})
 
 			fake := fakeConn("list_pull_requests")
 			srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: tt.initialProjection}, fake)
@@ -307,7 +308,7 @@ func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	t.Cleanup(srv.Close)
 
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), "")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh"})
 
 	fake := fakeConn("get_pr")
 	proj := map[string]*config.ProjectionConfig{"get_pr": {Alias: "pr"}}

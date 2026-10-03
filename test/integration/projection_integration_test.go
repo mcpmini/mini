@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 func TestIntegrationProjection_excludeAlways(t *testing.T) {
@@ -134,7 +136,11 @@ func TestIntegrationProjection_wildcardAppliesAllTools(t *testing.T) {
 func TestIntegrationProjection_inlineInServerYAML(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"node_id":"abc","title":"hello"}`})
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+"projections:\n  get_item:\n    exclude: [node_id]\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName:  "svc",
+		Fixtures:    dir,
+		Projections: map[string]*config.ProjectionConfig{"get_item": {Exclude: []string{"node_id"}}},
+	})
 
 	b, _ := json.Marshal(startServer(t, cfg).execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), "node_id") {
@@ -188,7 +194,7 @@ func TestIntegrationProjection_toolSpecificOverridesWildcard(t *testing.T) {
 func TestIntegrationProjection_persistToDisk(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"title":"hello","secret":"hidden"}`})
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	client1 := startServer(t, cfg)
 	client1.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, false)
@@ -288,7 +294,10 @@ func TestIntegrationProjection_readRecoversProjectedData(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := t.TempDir()
-			writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": tc.fixture}))
+			writeFakeServer(t, cfg, fakeServerParams{
+				ServerName: "svc",
+				Fixtures:   mockFixtureDir(t, map[string]string{"get_item": tc.fixture}),
+			})
 			writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
 			writeProjection(t, cfg, "svc", tc.projection)
 			client := startProxyServer(t, cfg)
@@ -348,7 +357,7 @@ func TestIntegrationProjection_persistMergesWithExistingYAML(t *testing.T) {
 		"tool_b": `{"id":2,"secret_b":"x","other":"y"}`,
 	})
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	c1 := startServer(t, cfg)
 	c1.setProjection("svc", "tool_a", map[string]any{"exclude": []string{"secret_a"}}, false)
 	c2 := startServer(t, cfg)
@@ -361,7 +370,7 @@ func TestIntegrationProjection_persistMergesWithExistingYAML(t *testing.T) {
 func TestIntegrationProjection_persistDoesNotAffectRunningSession(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`})
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	c1 := startServer(t, cfg)
 	c2 := startServer(t, cfg)
 	b2, _ := json.Marshal(c2.execEnvelope("svc", "get_item", nil).Data)

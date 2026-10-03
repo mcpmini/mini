@@ -54,7 +54,11 @@ type fakeServerControlParams struct {
 
 func writeFakeServerWithControlFile(t *testing.T, p fakeServerControlParams) {
 	t.Helper()
-	writeServerConfig(t, p.ConfigDir, p.ServerName, fakeServerYAML(p.Fixtures, "--control-file", p.ControlFile))
+	writeFakeServer(t, p.ConfigDir, fakeServerParams{
+		ServerName: p.ServerName,
+		Fixtures:   p.Fixtures,
+		ExtraArgs:  []string{"--control-file", p.ControlFile},
+	})
 }
 
 func waitForControlFile(t *testing.T, path string) string {
