@@ -54,7 +54,7 @@ func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams,
 	case "set_projection":
 		return s.setProjection(session, p)
 	case "reload":
-		return s.reloadProjections(), nil
+		return s.reloadProjections()
 	case "add_server":
 		return s.addServerFromAgent(ctx, p.ServerCfg)
 	case "remove_server":
@@ -163,25 +163,31 @@ func (s *Server) restoreServerProjection(serverName, tool string, prev *config.P
 	delete(s.projections[serverName], tool)
 }
 
-func (s *Server) applyReload() (config.Servers, map[string]int) {
+func (s *Server) applyReload() (config.Servers, map[string]int, error) {
 	// Hold persistMu for the entire load+replace so we don't interleave with a
 	// concurrent set_projection that has already updated the in-memory map but
 	// hasn't yet flushed to disk: without this lock, reload could wipe the
 	// in-memory update and then set_projection would persist the wiped state.
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
-	servers := config.LoadServers(s.configDir)
+	servers, err := config.LoadServers(s.configDir)
+	if err != nil {
+		return config.Servers{}, nil, err
+	}
 	logReloadProblems(s.logger, servers)
 	projections := serverProjections(servers.Loaded)
 	fresh := projectionCounts(projections)
 	s.replaceProjections(projections, servers)
 	s.reapplyAliases()
-	return servers, fresh
+	return servers, fresh, nil
 }
 
-func (s *Server) reloadProjections() any {
-	servers, fresh := s.applyReload()
-	return buildReloadResult(servers, fresh)
+func (s *Server) reloadProjections() (any, error) {
+	servers, fresh, err := s.applyReload()
+	if err != nil {
+		return nil, err
+	}
+	return buildReloadResult(servers, fresh), nil
 }
 
 func buildReloadResult(servers config.Servers, fresh map[string]int) map[string]any {

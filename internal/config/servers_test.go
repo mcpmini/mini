@@ -80,6 +80,19 @@ func TestLoadServers(t *testing.T) {
 			check:      wantUnprojected("b", "b.proj.yaml"),
 		},
 		{
+			name: "a bad inline rule the projection file replaces doesn't count",
+			files: map[string]string{
+				"servers/b.yaml":      "command: echo\nprojections:\n  t:\n    format: bad-format\n",
+				"servers/b.proj.yaml": "t:\n  format: json\n  exclude: [secret]\n",
+			},
+			wantLoaded: []string{"b"},
+			check: func(t *testing.T, servers config.Servers) {
+				if sc, _ := servers.Find("b"); sc.ProjectionsErr != nil || len(sc.Projections["t"].Exclude) != 1 {
+					t.Errorf("b = projections %v, error %+v; want the projection file's rule applied", sc.Projections, sc.ProjectionsErr)
+				}
+			},
+		},
+		{
 			name: "the projection file overlays inline projections",
 			files: map[string]string{
 				"servers/a.yaml":      "command: echo\nprojections:\n  t1:\n    include_only: [inline]\n  t2:\n    include_only: [kept]\n",
@@ -126,7 +139,7 @@ func TestLoadServers(t *testing.T) {
 			for rel, content := range tc.files {
 				writeFile(t, filepath.Join(dir, rel), content)
 			}
-			checkLoadServers(t, config.LoadServers(dir), tc)
+			checkLoadServers(t, mustLoadServers(t, dir), tc)
 		})
 	}
 }
@@ -180,6 +193,24 @@ func brokenNames(servers config.Servers) []string {
 	return names
 }
 
+func TestLoadServers_aConfigPathWithGlobSyntaxStillListsItsServers(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "odd[name")
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "command: echo\n")
+
+	if got := loadedNames(mustLoadServers(t, dir)); !slices.Equal(got, []string{"svc"}) {
+		t.Errorf("Loaded = %v, want [svc]", got)
+	}
+}
+
+func TestLoadServers_failsWhenItCannotListTheServerFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers"), "not a directory\n")
+
+	if _, err := config.LoadServers(dir); err == nil {
+		t.Error("LoadServers = nil error, want one: an empty result would read as every server removed")
+	}
+}
+
 func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "command: echo\n")
@@ -187,7 +218,7 @@ func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	servers := config.LoadServers(dir)
+	servers := mustLoadServers(t, dir)
 
 	if !servers.IsEnabled("good") {
 		t.Errorf("Loaded = %v, want good", loadedNames(servers))
@@ -213,7 +244,7 @@ func TestLoadServers_anUnreadableProjectionFileLeavesItsServerUnprojected(t *tes
 		t.Fatal(err)
 	}
 
-	servers := config.LoadServers(dir)
+	servers := mustLoadServers(t, dir)
 
 	wantUnprojected("svc", "svc.proj.yaml")(t, servers)
 }
@@ -226,7 +257,7 @@ func TestLoadServers_mergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	servers := config.LoadServers(dir)
+	servers := mustLoadServers(t, dir)
 
 	if sc, _ := servers.Find("detected"); sc.Auth == nil || sc.Auth.Type != config.AuthTypeOAuth2 {
 		t.Errorf("detected auth = %+v, want oauth2", sc.Auth)
@@ -240,7 +271,7 @@ func TestLoadServer_matchesLoadServersWithoutNeedingTheOtherFiles(t *testing.T) 
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\n")
 	writeFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  include_only: [title]\n")
-	want, _ := config.LoadServers(dir).Find("linear")
+	want, _ := mustLoadServers(t, dir).Find("linear")
 	writeFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
 
 	got, err := config.LoadServer(dir, "linear")

@@ -61,7 +61,7 @@ func TestLoadServerConfig_unsetVariable_leavesOnlyThatServerAsWrittenAndSaysWhy(
 	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n  X-Other: ${MINI_TEST_DEFINED_HEADER}\n")
 	writeFile(t, filepath.Join(dir, "servers", "other.yaml"), "headers:\n  X-Key: ${MINI_TEST_DEFINED_HEADER}\n")
 
-	servers := config.LoadServers(dir)
+	servers := mustLoadServers(t, dir)
 
 	if len(servers.Broken) > 0 {
 		t.Fatalf("Broken = %+v, want only svc affected, and not broken", servers.Broken)

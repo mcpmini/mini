@@ -44,7 +44,10 @@ func (e *serverReloadEnv) removeServerFile(name string) {
 
 func (e *serverReloadEnv) connectConfigured() {
 	e.t.Helper()
-	servers := config.LoadServers(e.dir)
+	servers, err := config.LoadServers(e.dir)
+	if err != nil {
+		e.t.Fatal(err)
+	}
 	if len(servers.Broken) > 0 {
 		e.t.Fatalf("broken servers: %+v", servers.Broken)
 	}

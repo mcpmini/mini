@@ -40,13 +40,22 @@ func mustLoadOneAction(t *testing.T, dir string) config.ActionConfig {
 	return actions[0]
 }
 
+func mustLoadServers(t *testing.T, dir string) config.Servers {
+	t.Helper()
+	servers, err := config.LoadServers(dir)
+	if err != nil {
+		t.Fatalf("LoadServers: %v", err)
+	}
+	return servers
+}
+
 func mustLoadConfig(t *testing.T, dir string) (*config.Config, []config.ServerConfig) {
 	t.Helper()
 	cfg, err := config.LoadMain(dir)
 	if err != nil {
 		t.Fatalf("LoadMain: %v", err)
 	}
-	servers := config.LoadServers(dir)
+	servers := mustLoadServers(t, dir)
 	if len(servers.Broken) > 0 {
 		t.Fatalf("LoadServers: broken %+v", servers.Broken)
 	}
@@ -62,7 +71,7 @@ func expectMainLoadError(t *testing.T, dir string) {
 
 func expectBrokenServer(t *testing.T, dir, name string) {
 	t.Helper()
-	servers := config.LoadServers(dir)
+	servers := mustLoadServers(t, dir)
 	if !servers.IsBroken(name) {
 		t.Fatalf("LoadServers: %s isn't broken; loaded %+v", name, servers.Loaded)
 	}
@@ -134,7 +143,7 @@ func TestLoad_invalidServerFileName(t *testing.T) {
 		t.Run(file, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, filepath.Join(dir, "servers", file), "command: echo\n")
-			servers := config.LoadServers(dir)
+			servers := mustLoadServers(t, dir)
 			if len(servers.Broken) != 1 || !strings.Contains(servers.Broken[0].Err.Error(), "invalid server name") {
 				t.Fatalf("Broken = %+v, want an invalid server name error", servers.Broken)
 			}

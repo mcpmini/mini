@@ -27,7 +27,10 @@ type Params struct {
 
 func New(p Params) *Server {
 	requireParams(p)
-	servers := config.LoadServers(p.ConfigDir)
+	servers, err := config.LoadServers(p.ConfigDir)
+	if err != nil {
+		p.Logger.Warn("starting without projections", "err", err)
+	}
 	s := newServer(p.Config, p.ConfigDir, serverProjections(servers.Loaded), p.Logger)
 	applyParams(s, p)
 	store := mustStore(p.Config, p.ConfigDir, p.Logger, s.clock)

@@ -58,7 +58,11 @@ func runCatalogStep(p catalogStepParams) error {
 	if err != nil {
 		return err
 	}
-	available := availableCatalogEntries(entries, configuredServers(p.configDir))
+	servers, err := configuredServers(p.configDir)
+	if err != nil {
+		return err
+	}
+	available := availableCatalogEntries(entries, servers)
 	if len(available) == 0 {
 		return nil
 	}
@@ -66,9 +70,10 @@ func runCatalogStep(p catalogStepParams) error {
 	return selectCatalogEntries(p, available)
 }
 
-func configuredServers(configDir string) []config.ServerConfig {
+func configuredServers(configDir string) ([]config.ServerConfig, error) {
 	// Broken files are left out silently; the login step that runs next reports each one once.
-	return config.LoadServers(configDir).Loaded
+	servers, err := config.LoadServers(configDir)
+	return servers.Loaded, err
 }
 
 func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {

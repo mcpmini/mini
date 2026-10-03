@@ -16,7 +16,11 @@ func loadConfig(configDir string) (*config.Config, config.Servers, error) {
 	if err != nil {
 		return nil, config.Servers{}, fmt.Errorf("load config: %w", err)
 	}
-	return cfg, config.LoadServers(configDir), nil
+	servers, err := config.LoadServers(configDir)
+	if err != nil {
+		return nil, config.Servers{}, fmt.Errorf("load config: %w", err)
+	}
+	return cfg, servers, nil
 }
 
 func loadOneServer(configDir, name string) (*config.Config, *config.ServerConfig, error) {

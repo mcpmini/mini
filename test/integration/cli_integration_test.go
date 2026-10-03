@@ -120,6 +120,18 @@ func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 	}
 }
 
+func TestIntegrationCLI_test_failsForBrokenProjectionsEvenWithNoServerToCheck(t *testing.T) {
+	cfg := t.TempDir()
+	writeServerConfig(t, cfg, "off", "command: echo\nenabled: false\n")
+	writeServerConfig(t, cfg, "off.proj", "tool: [broken\n")
+
+	stdout, _, code := runCLI(t, cfg, "test")
+
+	if code == 0 || !strings.Contains(stdout, "off") {
+		t.Errorf("test = exit %d, stdout %q; want non-zero with a row for off's projections", code, stdout)
+	}
+}
+
 func TestIntegrationCLI_ls_ToolDetail(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{

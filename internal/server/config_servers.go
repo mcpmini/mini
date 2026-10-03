@@ -29,7 +29,10 @@ func (s *Server) configServerNames() []string {
 
 func (s *Server) removeServersGoneFromConfig() {
 	// A broken server isn't removed; applyReload reads the same files and logs each one.
-	servers := config.LoadServers(s.configDir)
+	servers, err := config.LoadServers(s.configDir)
+	if err != nil {
+		return // applyReload, which runs next, hits the same error and logs it
+	}
 	removed := false
 	for _, name := range s.configServerNames() {
 		if !goneFromConfig(servers, name) {
@@ -52,7 +55,11 @@ func goneFromConfig(servers config.Servers, name string) bool {
 func (s *Server) removeConfigServer(name string) bool {
 	unlock := s.serverNames.lock(name)
 	defer unlock()
-	if !s.isConfigServer(name) || !goneFromConfig(config.LoadServers(s.configDir), name) {
+	if !s.isConfigServer(name) {
+		return false
+	}
+	servers, err := config.LoadServers(s.configDir)
+	if err != nil || !goneFromConfig(servers, name) {
 		return false
 	}
 	s.detachAndCloseServer(name)

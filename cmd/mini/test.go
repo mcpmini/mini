@@ -53,7 +53,7 @@ func buildTestServer(ctx context.Context, configDir string) (*server.Server, con
 		fatalf("%v", err)
 	}
 	injectOAuthTokens(ctx, configDir, servers.Loaded)
-	if len(enabledServers(servers.Loaded)) == 0 && len(servers.Broken) == 0 {
+	if len(enabledServers(servers.Loaded)) == 0 && !servers.HasProblems() {
 		fmt.Println("no servers configured")
 		os.Exit(0)
 	}

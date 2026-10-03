@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,8 +25,13 @@ type SourceError struct {
 	Err        error
 }
 
-func LoadServers(configDir string) Servers {
-	paths, _ := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml")) // the pattern is constant, so it can't be malformed
+// LoadServers fails only when it can't list the server files: an empty result must mean no servers,
+// never "couldn't look", or a reload would remove every running one.
+func LoadServers(configDir string) (Servers, error) {
+	paths, err := ServerDirFiles(configDir)
+	if err != nil {
+		return Servers{}, err
+	}
 	var servers Servers
 	for _, path := range filterServerPaths(paths) {
 		sc, err := loadServerFile(configDir, path)
@@ -35,7 +41,27 @@ func LoadServers(configDir string) Servers {
 		}
 		servers.Loaded = append(servers.Loaded, sc)
 	}
-	return servers
+	return servers, nil
+}
+
+// ServerDirFiles lists the .yaml files in the servers directory, projection files included.
+// It reads the directory rather than globbing, since the config path may contain glob syntax.
+func ServerDirFiles(configDir string) ([]string, error) {
+	dir := filepath.Join(configDir, "servers")
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list server files: %w", err)
+	}
+	var paths []string
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".yaml") {
+			paths = append(paths, filepath.Join(dir, e.Name()))
+		}
+	}
+	return paths, nil
 }
 
 func (s Servers) Find(name string) (ServerConfig, bool) {
@@ -98,12 +124,13 @@ func loadProjections(sc *ServerConfig, serverPath, projectionPath string) {
 		sc.Projections = nil
 		sc.ProjectionsErr = &SourceError{Path: path, ServerName: sc.Name, Err: err}
 	}
-	if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
-		failed(serverPath, fmt.Errorf("%s: %w", serverPath, err))
-		return
-	}
 	if err := mergeProjectionFile(sc, projectionPath); err != nil {
 		failed(projectionPath, err)
+		return
+	}
+	// The projection file's own rules passed, so whatever fails now was written inline.
+	if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
+		failed(serverPath, fmt.Errorf("%s: %w", serverPath, err))
 	}
 }
 
