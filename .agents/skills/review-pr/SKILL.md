@@ -45,7 +45,7 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
 2. **Shared state**: what structs, maps, slices, channels, or package-level vars does the diff touch?
 3. **Trust boundaries**: what new inputs arrive from outside (user, config, network, MCP tool args, env vars) and where do they land?
 4. **New control paths**: what new error paths, goroutine launches, or auth checks does the change introduce?
-5. **Candidate list**: for each of Passes 2a–2c and 2f, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
+5. **Candidate list**: for each of Passes 2a–2f and 3, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
 6. **Call-site audit** — for every function or method whose signature, parameters, return contract, or behavior changes in this diff, including new helper functions immediately wired into multiple places:
    a. Grep for *all* call sites — not just the ones visible in the diff hunks.
    b. List every call site explicitly with file:line.
