@@ -136,14 +136,9 @@ func parseCallContext(configDir string, args []string) callContext {
 }
 
 func loadCallCtx(configDir, serverName string) (*config.Config, *config.ServerConfig) {
-	cfg, servers, err := config.Load(configDir)
+	cfg, sc, err := loadOneServer(configDir, serverName, os.Stderr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mini: load config: %v\n", err)
-		os.Exit(2)
-	}
-	sc := config.FindServer(servers, serverName)
-	if sc == nil {
-		fmt.Fprintf(os.Stderr, "mini: server %q not found\n", serverName)
+		fmt.Fprintf(os.Stderr, "mini: %v\n", err)
 		os.Exit(2)
 	}
 	return cfg, sc
