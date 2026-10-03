@@ -120,6 +120,37 @@ func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 	}
 }
 
+func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testing.T) {
+	cfg := t.TempDir()
+	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
+	writeFakeServer(t, cfg, "svc", fixtures)
+	writeFakeServer(t, cfg, "unprojected", fixtures)
+	writeServerConfig(t, cfg, "unprojected.proj", "get_item: [broken\n")
+	writeServerConfig(t, cfg, "web", "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
+
+	stdout, _, code := runCLI(t, cfg, "test")
+
+	if code == 0 || !strings.Contains(stdout, "1 passed, 2 failed") {
+		t.Errorf("test = exit %d, stdout %q; want 1 passed, 2 failed", code, stdout)
+	}
+	if rows := testRowsFor(stdout, "unprojected"); len(rows) != 1 || rows[0][0] != "FAIL" {
+		t.Errorf("unprojected rows = %q; want one FAIL row, for its projections", rows)
+	}
+	if rows := testRowsFor(stdout, "web"); len(rows) != 1 || rows[0][2] == "stdio" {
+		t.Errorf("web rows = %q; its file didn't load, so its transport isn't known", rows)
+	}
+}
+
+func testRowsFor(stdout, server string) [][]string {
+	var rows [][]string
+	for line := range strings.Lines(stdout) {
+		if fields := strings.Fields(line); len(fields) > 2 && fields[1] == server {
+			rows = append(rows, fields)
+		}
+	}
+	return rows
+}
+
 func TestIntegrationCLI_test_failsForBrokenProjectionsEvenWithNoServerToCheck(t *testing.T) {
 	cfg := t.TempDir()
 	writeServerConfig(t, cfg, "off", "command: echo\nenabled: false\n")

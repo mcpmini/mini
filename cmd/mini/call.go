@@ -122,7 +122,7 @@ func parseCallContext(configDir string, args []string) callContext {
 }
 
 func loadCallCtx(configDir, serverName string) (*config.Config, *config.ServerConfig) {
-	cfg, sc, err := loadOneServer(configDir, serverName)
+	cfg, sc, err := loadOneServer(configDir, serverName, os.Stderr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: %v\n", err)
 		os.Exit(2)

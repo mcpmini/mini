@@ -66,7 +66,7 @@ func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(
 }
 
 func dialServer(configDir, serverName string) (transport.Connection, error) {
-	cfg, sc, err := loadOneServer(configDir, serverName)
+	cfg, sc, err := loadOneServer(configDir, serverName, os.Stderr)
 	if err != nil {
 		return nil, err
 	}

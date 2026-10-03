@@ -86,8 +86,13 @@ func (s Servers) BrokenProjections() []SourceError {
 	return broken
 }
 
+// Problems is every file that failed to load: the broken servers', then the broken projections'.
+func (s Servers) Problems() []SourceError {
+	return slices.Concat(s.Broken, s.BrokenProjections())
+}
+
 func (s Servers) HasProblems() bool {
-	return len(s.Broken) > 0 || len(s.BrokenProjections()) > 0
+	return len(s.Problems()) > 0
 }
 
 func (s Servers) IsEnabled(name string) bool {

@@ -227,14 +227,14 @@ func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillRel
 	e.writeProjFile("getData: [broken\n")
 	writeReloadFile(t, filepath.Join(e.dir, "servers", "other.proj.yaml"), "getData:\n  include_only: [b]\n")
 	e.advanceTick()
-	if logs := e.logs.String(); !strings.Contains(logs, "config reload: keeping the server's previous projections") {
+	if logs := e.logs.String(); !strings.Contains(logs, "projections fail to load, leaving the server's projections as they are") {
 		t.Errorf("expected WARN for malformed YAML, got logs:\n%s", logs)
 	}
 	e.assertDataKeys([]string{"a"}, []string{"b"})
 	e.assertServerDataKeys("other", []string{"b"}, []string{"a"})
 
 	e.advanceTick()
-	if warns := strings.Count(e.logs.String(), "config reload: keeping the server's previous projections"); warns != 1 {
+	if warns := strings.Count(e.logs.String(), "projections fail to load, leaving the server's projections as they are"); warns != 1 {
 		t.Errorf("expected a single WARN for an unchanged bad file, got %d", warns)
 	}
 

@@ -43,8 +43,8 @@ func runTest(configDir string, timeout time.Duration) {
 	ctx := context.Background()
 	srv, servers := buildTestServer(ctx, configDir)
 	defer srv.Close()
-	results := brokenServerResults(slices.Concat(servers.Broken, servers.BrokenProjections()))
-	printTestResults(append(results, checkUpstreams(ctx, srv, enabledServers(servers.Loaded), timeout)...))
+	results := brokenServerResults(servers.Broken)
+	printTestResults(append(results, checkServers(ctx, srv, servers.Loaded, timeout)...))
 }
 
 func buildTestServer(ctx context.Context, configDir string) (*server.Server, config.Servers) {
@@ -53,7 +53,7 @@ func buildTestServer(ctx context.Context, configDir string) (*server.Server, con
 		fatalf("%v", err)
 	}
 	injectOAuthTokens(ctx, configDir, servers.Loaded)
-	if len(enabledServers(servers.Loaded)) == 0 && !servers.HasProblems() {
+	if !slices.ContainsFunc(servers.Loaded, config.ServerConfig.IsEnabled) && !servers.HasProblems() {
 		fmt.Println("no servers configured")
 		os.Exit(0)
 	}
@@ -64,27 +64,36 @@ func buildTestServer(ctx context.Context, configDir string) (*server.Server, con
 func brokenServerResults(broken []config.SourceError) []upstreamResult {
 	results := make([]upstreamResult, len(broken))
 	for i, b := range broken {
-		results[i] = upstreamResult{name: b.ServerName, err: b.Err}
+		results[i] = upstreamResult{name: b.ServerName, transport: unknownTransport, err: b.Err}
 	}
 	return results
 }
 
-func enabledServers(servers []config.ServerConfig) []config.ServerConfig {
-	out := make([]config.ServerConfig, 0, len(servers))
+// unknownTransport stands in for a server whose file failed to load, so its transport is unknown.
+const unknownTransport = "-"
+
+func checkServers(ctx context.Context, srv *server.Server, servers []config.ServerConfig, timeout time.Duration) []upstreamResult {
+	var results []upstreamResult
 	for _, sc := range servers {
 		if sc.IsEnabled() {
-			out = append(out, sc)
+			results = append(results, checkServer(ctx, srv, sc, timeout))
+		} else if sc.ProjectionsErr != nil {
+			results = append(results, upstreamResult{name: sc.Name, transport: sc.Transport, err: projectionsError(sc)})
 		}
 	}
-	return out
+	return results
 }
 
-func checkUpstreams(ctx context.Context, srv *server.Server, servers []config.ServerConfig, timeout time.Duration) []upstreamResult {
-	results := make([]upstreamResult, len(servers))
-	for i, sc := range servers {
-		results[i] = probeUpstream(ctx, srv, sc, timeout)
+func checkServer(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {
+	r := probeUpstream(ctx, srv, sc, timeout)
+	if r.err == nil && sc.ProjectionsErr != nil {
+		r.err = projectionsError(sc)
 	}
-	return results
+	return r
+}
+
+func projectionsError(sc config.ServerConfig) error {
+	return fmt.Errorf("projections: %w", sc.ProjectionsErr.Err)
 }
 
 func probeUpstream(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {

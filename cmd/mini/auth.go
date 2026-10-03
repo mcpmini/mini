@@ -39,7 +39,7 @@ func runAuth(configDir, serverName string) {
 }
 
 func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *config.ServerConfig, error) {
-	cfg, sc, err := loadOneServer(configDir, serverName)
+	cfg, sc, err := loadOneServer(configDir, serverName, os.Stderr)
 	if err != nil {
 		return nil, nil, err
 	}

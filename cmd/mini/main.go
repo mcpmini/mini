@@ -74,7 +74,6 @@ func runConnect(configDir string, f connectFlags) error {
 		fatalf("%v", err)
 	}
 	logger := buildLogger(cfg, f.logLevel, os.Stderr)
-	logServerProblems(logger, servers)
 	if shouldTryDaemon(f.standalone, f.httpAddr) && connectViaDaemon(configDir, logger, f.toolMode) == nil {
 		return nil
 	}
