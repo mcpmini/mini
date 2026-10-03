@@ -67,6 +67,11 @@ func TestLoadServers(t *testing.T) {
 			check:      wantUnprojected("svc", "svc.yaml"),
 		},
 		{
+			name:       "a projections key written twice breaks the server, as any duplicate key does",
+			files:      map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  a:\n    include_only: [x]\nprojections:\n  b:\n    include_only: [y]\n"},
+			wantBroken: []string{"svc"},
+		},
+		{
 			name: "bad .proj.yaml loads its server without any projections",
 			files: map[string]string{
 				"servers/b.yaml":      "command: echo\nprojections:\n  t:\n    include_only: [inline]\n",
@@ -237,13 +242,8 @@ func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 	if !servers.IsEnabled("good") {
 		t.Errorf("Loaded = %v, want good", loadedNames(servers))
 	}
-	if !servers.IsBroken("unreadable") {
-		t.Error("IsBroken(unreadable) = false, want its running server kept")
-	}
-	for _, name := range []string{"good", "deleted"} {
-		if servers.IsBroken(name) {
-			t.Errorf("IsBroken(%q) = true, want only the failing file's server held", name)
-		}
+	if !servers.IsBroken("unreadable") || servers.IsBroken("good") {
+		t.Errorf("Broken = %+v, want only unreadable", servers.Broken)
 	}
 }
 

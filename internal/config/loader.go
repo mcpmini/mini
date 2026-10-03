@@ -275,23 +275,32 @@ func decodeServerFile(data []byte, s *ServerConfig) (inlineProjections *yaml.Nod
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
 	}
-	inlineProjections = detachMappingValue(&doc, "projections")
+	inlineProjections, err = detachMappingValue(&doc, "projections")
+	if err != nil {
+		return nil, err
+	}
 	return inlineProjections, doc.Decode(s)
 }
 
-func detachMappingValue(doc *yaml.Node, key string) *yaml.Node {
+// Decoding refuses a key written twice, so detaching one must too, or the other would slip through.
+func detachMappingValue(doc *yaml.Node, key string) (*yaml.Node, error) {
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return nil
+		return nil, nil
 	}
 	mapping := doc.Content[0]
-	for i := 0; i+1 < len(mapping.Content); i += 2 {
-		if mapping.Content[i].Value == key {
-			value := mapping.Content[i+1]
-			mapping.Content = slices.Delete(mapping.Content, i, i+2)
-			return value
+	var value *yaml.Node
+	for i := 0; i+1 < len(mapping.Content); {
+		if mapping.Content[i].Value != key {
+			i += 2
+			continue
 		}
+		if value != nil {
+			return nil, fmt.Errorf("line %d: mapping key %q already defined", mapping.Content[i].Line, key)
+		}
+		value = mapping.Content[i+1]
+		mapping.Content = slices.Delete(mapping.Content, i, i+2)
 	}
-	return nil
+	return value, nil
 }
 
 func decodeInlineProjections(s *ServerConfig, path string, node *yaml.Node) {
