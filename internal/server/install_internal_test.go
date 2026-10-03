@@ -63,6 +63,27 @@ func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *te
 	}
 }
 
+func TestRemoveServersGoneFromConfig_keepsEveryServerWhileTheServerFilesCantBeListed(t *testing.T) {
+	srv := newInstallTestServer(t)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{}); err != nil {
+		t.Fatal(err)
+	}
+	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+	writeServerFile(t, srv.configDir, "svc.yaml", "command: run\n")
+	serversDir := filepath.Join(srv.configDir, "servers")
+	if err := os.Chmod(serversDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(serversDir, 0700) }) // lets t.TempDir remove it; a failure there fails the test anyway
+
+	srv.removeServersGoneFromConfig()
+	removedByName := srv.removeConfigServer("svc")
+
+	if !srv.isConfigServer("svc") || removedByName {
+		t.Error("svc was removed because its servers dir couldn't be listed, as if every server file were gone")
+	}
+}
+
 func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
 	srv := newInstallTestServer(t)
 

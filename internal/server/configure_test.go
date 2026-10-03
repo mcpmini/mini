@@ -479,7 +479,7 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			if tc.wantSourceErrors {
 				errs, _ := result["source_errors"].([]any)
 				if len(errs) == 0 {
-					t.Errorf("expected source_errors list, got %v", result)
+					t.Fatalf("expected source_errors list, got %v", result)
 				}
 				if path, _ := errs[0].(string); tc.wantErrorFile != "" && filepath.Base(path) != tc.wantErrorFile {
 					t.Errorf("source_errors = %v, want it to name %s", errs, tc.wantErrorFile)

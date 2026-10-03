@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -136,10 +137,15 @@ func printTestResults(results []upstreamResult) {
 
 func writeTestRow(w *tabwriter.Writer, r upstreamResult) {
 	if r.err != nil {
-		fmt.Fprintf(w, "FAIL\t%s\t%s\t%v\n", r.name, displayTransport(r.transport), r.err)
+		fmt.Fprintf(w, "FAIL\t%s\t%s\t%s\n", r.name, displayTransport(r.transport), singleLine(r.err))
 	} else {
 		fmt.Fprintf(w, "PASS\t%s\t%s\t%d tools\t(%s)\n", r.name, displayTransport(r.transport), r.tools, r.elapsed.Round(time.Millisecond))
 	}
+}
+
+// A YAML error lists each problem on its own line, which would break a table row apart.
+func singleLine(err error) string {
+	return strings.Join(strings.Fields(err.Error()), " ")
 }
 
 func displayTransport(transport string) string {

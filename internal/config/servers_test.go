@@ -62,6 +62,15 @@ func TestLoadServers(t *testing.T) {
 			check:      wantUnprojected("github", "github.yaml"),
 		},
 		{
+			name: "inline projections of the wrong type load the server without any, even with a good projection file",
+			files: map[string]string{
+				"servers/svc.yaml":      "command: echo\nprojections:\n  t:\n    include_only: 5\n",
+				"servers/svc.proj.yaml": "t2:\n  include_only: [a]\n",
+			},
+			wantLoaded: []string{"svc"},
+			check:      wantUnprojected("svc", "svc.yaml"),
+		},
+		{
 			name: "bad .proj.yaml loads its server without any projections",
 			files: map[string]string{
 				"servers/b.yaml":      "command: echo\nprojections:\n  t:\n    include_only: [inline]\n",

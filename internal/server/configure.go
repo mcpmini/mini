@@ -212,10 +212,10 @@ func sourceErrorPaths(errors []config.SourceError) []string {
 
 func logReloadProblems(logger *slog.Logger, servers config.Servers) {
 	for _, se := range servers.Broken {
-		logger.Warn("server config fails to load, leaving the server as it is", "server", se.ServerName, "path", se.Path, "err", se.Err)
+		logger.Warn("server config fails to load, ignoring it", "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
 	for _, se := range servers.BrokenProjections() {
-		logger.Warn("projections fail to load, leaving the server's projections as they are", "server", se.ServerName, "path", se.Path, "err", se.Err)
+		logger.Warn("projections fail to load, ignoring them", "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
 }
 

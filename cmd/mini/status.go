@@ -125,7 +125,7 @@ func printStatusTable(ctx context.Context, srv *server.Server, servers config.Se
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tTRANSPORT\tSTATUS\tTOOLS")
 	for _, se := range servers.Broken {
-		fmt.Fprintf(w, "%s\t%s\terror: %v\t-\n", se.ServerName, unknownTransport, se.Err)
+		fmt.Fprintf(w, "%s\t%s\terror: %s\t-\n", se.ServerName, unknownTransport, singleLine(se.Err))
 	}
 	anyFailed := len(servers.Broken) > 0
 	for _, sc := range servers.Loaded {
@@ -141,7 +141,7 @@ func projectionsNote(sc config.ServerConfig) string {
 	if sc.ProjectionsErr == nil {
 		return ""
 	}
-	return fmt.Sprintf(", %v", projectionsError(sc))
+	return ", " + singleLine(projectionsError(sc))
 }
 
 func printStatusRow(ctx context.Context, w *tabwriter.Writer, srv *server.Server, sc config.ServerConfig) bool {
@@ -151,7 +151,7 @@ func printStatusRow(ctx context.Context, w *tabwriter.Writer, srv *server.Server
 		return sc.ProjectionsErr != nil
 	}
 	if err := srv.AddUpstream(ctx, sc); err != nil {
-		fmt.Fprintf(w, "%s\t%s\terror: %v\t-\n", sc.Name, t, err)
+		fmt.Fprintf(w, "%s\t%s\terror: %s\t-\n", sc.Name, t, singleLine(err))
 		return true
 	}
 	fmt.Fprintf(w, "%s\t%s\tok%s\t%d\n", sc.Name, t, projectionsNote(sc), srv.ToolCount(sc.Name))

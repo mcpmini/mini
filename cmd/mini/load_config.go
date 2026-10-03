@@ -49,5 +49,5 @@ func warnServerProblems(out io.Writer, servers config.Servers) {
 }
 
 func warnUnprojected(out io.Writer, se config.SourceError) {
-	fmt.Fprintf(out, "warning: server %s runs without projections: %v\n", se.ServerName, se.Err)
+	fmt.Fprintf(out, "warning: skipping the projections of server %s: %v\n", se.ServerName, se.Err)
 }

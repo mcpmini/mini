@@ -125,6 +125,9 @@ func loadServerFile(configDir, path string) (ServerConfig, error) {
 // Projections only trim responses, so a broken one leaves the server running without any
 // rather than down: the server file alone decides whether and how mini connects.
 func loadProjections(sc *ServerConfig, serverPath, projectionPath string) {
+	if sc.ProjectionsErr != nil {
+		return // the inline projections failed to decode, which already leaves the server without any
+	}
 	failed := func(path string, err error) {
 		sc.Projections = nil
 		sc.ProjectionsErr = &SourceError{Path: path, ServerName: sc.Name, Err: err}

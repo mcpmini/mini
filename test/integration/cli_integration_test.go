@@ -127,11 +127,17 @@ func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testin
 	writeFakeServer(t, cfg, "unprojected", fixtures)
 	writeServerConfig(t, cfg, "unprojected.proj", "get_item: [broken\n")
 	writeServerConfig(t, cfg, "web", "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
+	writeServerConfig(t, cfg, "typo", "command: echo\nenabled: maybe\n") // yaml lists type errors on lines of their own
 
 	stdout, _, code := runCLI(t, cfg, "test")
 
-	if code == 0 || !strings.Contains(stdout, "1 passed, 2 failed") {
-		t.Errorf("test = exit %d, stdout %q; want 1 passed, 2 failed", code, stdout)
+	if code == 0 || !strings.Contains(stdout, "1 passed, 3 failed") {
+		t.Errorf("test = exit %d, stdout %q; want 1 passed, 3 failed", code, stdout)
+	}
+	for line := range strings.Lines(strings.TrimSpace(stdout)) {
+		if !strings.HasPrefix(line, "PASS") && !strings.HasPrefix(line, "FAIL") && strings.TrimSpace(line) != "" && !strings.Contains(line, "passed") {
+			t.Errorf("test printed %q outside any row; a multi-line error broke its row apart", line)
+		}
 	}
 	if rows := testRowsFor(stdout, "unprojected"); len(rows) != 1 || rows[0][0] != "FAIL" {
 		t.Errorf("unprojected rows = %q; want one FAIL row, for its projections", rows)

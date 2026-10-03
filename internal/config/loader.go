@@ -118,10 +118,12 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 		return nil, err
 	}
 	var s ServerConfig
-	if err := yaml.Unmarshal(data, &s); err != nil {
+	inlineProjections, err := decodeServerFile(data, &s)
+	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	s.Name = name
+	decodeInlineProjections(&s, path, inlineProjections)
 	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
 	}
@@ -130,6 +132,42 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	}
 	expandServerEnv(&s)
 	return &s, nil
+}
+
+// Inline projections decode apart from the rest of the file, so a mistake in them costs the
+// server only its projections, as one in its projection file does.
+func decodeServerFile(data []byte, s *ServerConfig) (inlineProjections *yaml.Node, err error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	inlineProjections = detachMappingValue(&doc, "projections")
+	return inlineProjections, doc.Decode(s)
+}
+
+func detachMappingValue(doc *yaml.Node, key string) *yaml.Node {
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	mapping := doc.Content[0]
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if mapping.Content[i].Value == key {
+			value := mapping.Content[i+1]
+			mapping.Content = slices.Delete(mapping.Content, i, i+2)
+			return value
+		}
+	}
+	return nil
+}
+
+func decodeInlineProjections(s *ServerConfig, path string, node *yaml.Node) {
+	if node == nil {
+		return
+	}
+	if err := node.Decode(&s.Projections); err != nil {
+		s.Projections = nil
+		s.ProjectionsErr = &SourceError{Path: path, ServerName: s.Name, Err: fmt.Errorf("parse %s: %w", path, err)}
+	}
 }
 
 func ServerPath(configDir, name string) string {
@@ -161,6 +199,9 @@ func ValidateServerFile(path string, data []byte) error {
 	sc, err := parseServerConfig(path, data)
 	if err != nil {
 		return err
+	}
+	if sc.ProjectionsErr != nil {
+		return sc.ProjectionsErr.Err
 	}
 	return validateServerProjectionFormats(sc.Name, sc.Projections)
 }
