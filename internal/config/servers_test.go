@@ -317,19 +317,28 @@ func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
 }
 
 func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
+	valid := config.DefaultConfig()
+	valid.DisableAuthBrowserOpen = true
+	badFormat := config.DefaultConfig()
+	badFormat.ResponseFormat = "bogus"
 	tests := []struct {
 		name    string
-		yaml    string
+		cfg     *config.Config
+		rawYAML string
 		wantErr string
 	}{
-		{"valid settings load", "disable_auth_browser_open: true\n", ""},
-		{"invalid YAML", "bad: [yaml\n", "parse config"},
-		{"invalid response_format", "response_format: bogus\n", "response_format"},
+		{"valid settings load", valid, "", ""},
+		{"invalid YAML", nil, "bad: [yaml\n", "parse config"},
+		{"invalid response_format", badFormat, "", "response_format"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), tt.yaml)
+			if tt.cfg != nil {
+				configtest.WriteConfig(t, dir, tt.cfg)
+			} else {
+				testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), tt.rawYAML)
+			}
 			cfg, err := config.LoadMain(dir)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || cfg != nil {

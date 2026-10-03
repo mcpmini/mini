@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -193,7 +192,7 @@ func (s *Server) applyReload() (config.Servers, map[string]int, error) {
 	if err != nil {
 		return config.Servers{}, nil, err
 	}
-	logReloadProblems(s.logger, servers)
+	s.logReloadProblems(servers)
 	projections := serverProjections(servers.Loaded)
 	fresh := projectionCounts(projections)
 	s.replaceProjections(projections, servers)
@@ -229,13 +228,32 @@ func sourceErrorPaths(errors []config.SourceError) []string {
 	return paths
 }
 
-func logReloadProblems(logger *slog.Logger, servers config.Servers) {
+func (s *Server) logReloadProblems(servers config.Servers) {
 	for _, se := range servers.Broken {
-		logger.Warn("server config fails to load, ignoring it", "server", se.ServerName, "path", se.Path, "err", se.Err)
+		s.logger.Warn("server config fails to load, "+s.brokenServerOutcome(se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
 	for _, se := range servers.BrokenProjections() {
-		logger.Warn("projections fail to load, ignoring them", "server", se.ServerName, "path", se.Path, "err", se.Err)
+		s.logger.Warn("projections fail to load, "+s.brokenProjectionsOutcome(se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
+}
+
+// Startup and reload log the same problems, so each message says what happens to the server now.
+func (s *Server) brokenServerOutcome(name string) string {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	if s.upstreams[name] != nil {
+		return "keeping the running server as it is"
+	}
+	return "skipping the server"
+}
+
+func (s *Server) brokenProjectionsOutcome(name string) string {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	if s.projections[name] != nil {
+		return "keeping the server's previous projections"
+	}
+	return "the server runs without projections"
 }
 
 func serverProjections(servers []config.ServerConfig) map[string]map[string]*config.ProjectionConfig {

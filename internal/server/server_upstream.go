@@ -221,8 +221,8 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
 
-// The live projections outrank the config's: a reload may have kept them when the config's
-// own failed to load, so the config only fills in a server that has none yet.
+// The live projections outrank the config's, which may predate a reload or set_projection, so the
+// config only fills in a server that has none yet.
 func (s *Server) seedProjections(sc config.ServerConfig) {
 	if sc.Projections == nil {
 		return
@@ -261,14 +261,12 @@ func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDef
 	s.reg.AddServer(p)
 }
 
-// currentAliasesFor returns the alias map from the live, reload-updated
-// projections — unlike the install-time sc.Projections snapshot, this
-// reflects any config reload since the server was added.
+// currentAliasesFor reads the live, reload-updated projections rather than an install-time
+// snapshot, and walks them under the lock because set_projection writes into the same map.
 func (s *Server) currentAliasesFor(serverName string) map[string]string {
 	s.stateMu.RLock()
-	proj := s.projections[serverName]
-	s.stateMu.RUnlock()
-	return config.AliasesFromProjections(proj)
+	defer s.stateMu.RUnlock()
+	return config.AliasesFromProjections(s.projections[serverName])
 }
 
 // Must be called in a goroutine; blocks until ctx is canceled.

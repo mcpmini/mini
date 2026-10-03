@@ -58,12 +58,13 @@ func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *te
 	}
 }
 
-func TestRemoveServersGoneFromConfig_keepsEveryServerWhileTheServerFilesCantBeListed(t *testing.T) {
+func TestApplyConfig_keepsServersAndProjectionsWhileTheServerFilesCantBeListed(t *testing.T) {
 	srv := newInstallTestServer(t)
 	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{}); err != nil {
 		t.Fatal(err)
 	}
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": {"getData": {Alias: "fetch"}}}, config.Servers{})
 	configtest.WriteServer(t, srv.configDir, config.ServerConfig{Name: "svc", Command: "run"})
 	serversDir := filepath.Join(srv.configDir, "servers")
 	if err := os.Chmod(serversDir, 0); err != nil {
@@ -71,12 +72,33 @@ func TestRemoveServersGoneFromConfig_keepsEveryServerWhileTheServerFilesCantBeLi
 	}
 	t.Cleanup(func() { _ = os.Chmod(serversDir, 0700) }) // lets t.TempDir remove it; a failure there fails the test anyway
 
-	srv.removeServersGoneFromConfig()
+	srv.applyConfig()
 	removedByName := srv.removeConfigServer("svc")
 
 	if !srv.isConfigServer("svc") || removedByName {
 		t.Error("svc was removed because its servers dir couldn't be listed, as if every server file were gone")
 	}
+	if srv.liveProjections("svc") == nil {
+		t.Error("svc's projections were dropped because its servers dir couldn't be listed")
+	}
+}
+
+func TestInstallChecked_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.T) {
+	srv := newInstallTestServer(t)
+	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": {"getData": {Alias: "fetch"}}}, config.Servers{})
+	tools := []transport.ToolDefinition{{Name: "getData", InputSchema: json.RawMessage(`{}`)}}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for i := range 100 {
+			srv.storeServerProjection("svc", fmt.Sprintf("tool%d", i), &config.ProjectionConfig{})
+		}
+	})
+	wg.Go(func() {
+		for range 20 {
+			_ = srv.installChecked(&transport.FakeConnection{}, tools, srv.replacingInstall(config.ServerConfig{Name: "svc"})) // the race detector judges this, not the result
+		}
+	})
+	wg.Wait()
 }
 
 func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
