@@ -48,9 +48,9 @@ Rate each finding's impact and likelihood, then decide.
    git worktree add .agents/worktrees/review-pr-methods-<number> FETCH_HEAD --detach
    ```
    Work from that directory (with Claude Code, `EnterWorktree`). Record the head and base commits you review. Diff against the PR's own base: for a PR stacked on another branch, that branch, not main, or you'll blame this PR for its parent's changes.
-4. Start the check suite in the background and keep going. `CI=1` stops it from reformatting the code you're reviewing, and writing straight to the log keeps its real exit status, which a pipe through `tee` would hide:
+4. Start the check suite in the background and keep going. `CI=1` stops it from reformatting the code you're reviewing, and writing straight to the log keeps its real exit status, which a pipe through `tee` would hide. The command records that status in the log and exits with it:
    ```bash
-   log=/tmp/review-pr-methods-check-$(date +%s).log; CI=1 ./check.sh > "$log" 2>&1; echo "check.sh exit status: $?" >> "$log"
+   log=/tmp/review-pr-methods-check-$(date +%s).log; rc=0; CI=1 ./check.sh > "$log" 2>&1 || rc=$?; echo "check.sh exit status: $rc" >> "$log"; [ "$rc" -eq 0 ]
    ```
 5. Read `docs/go-guidelines.md` and `docs/testing.md` from the repository root.
 6. Read every changed file in full, not just the hunks.

@@ -81,7 +81,7 @@ Tests should protect observable behavior and give an actionable failure when a c
 
 For code reviews, use the `review-pr` skill as the detailed guide. When reviewing your own output, spin up an adversarial limited-context subagent with a red-team mindset so it can give neutral feedback without being anchored by the implementation thread.
 
-We're comparing three review skills. To review a PR, run `/review-pr`, `/review-pr-passes`, and `/review-pr-methods` in three separate subagents, each invoked with only the target and none seeing another's findings. When all three finish, write `.agents/learnings/review-<PR>-<YYYY-MM-DD>.md` (git ignores it): every finding with the skills that reported it, your assessment of each (real or not, severity right or not, worth fixing or not), and what each skill missed that another caught. Read the earlier learnings files to judge which skill catches the most.
+We're comparing three review skills. When you're the one asked to review a PR, not when you are one of the reviewers, run `/review-pr`, `/review-pr-passes`, and `/review-pr-methods` in three separate subagents on the same model and effort, each given only the target and none seeing another's findings. Note the PR's head commit first and don't push to the PR until all three finish. Then write `.agents/learnings/review-<PR>-<YYYY-MM-DD>.md` (git ignores it) with the commit and model, every finding and the skills that reported it, and your assessment of each: real or not, severity right or not, worth fixing or not. Also note what each skill missed that another caught, any false or overstated findings, and roughly what each review cost. Read the earlier learnings files to judge which skill works best.
 
 ## Architecture
 
