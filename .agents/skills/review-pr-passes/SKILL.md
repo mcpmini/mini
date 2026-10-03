@@ -44,16 +44,16 @@ Rate each finding's impact and likelihood, then decide.
 
 1. Resolve the PR number from the arguments (`1` from `https://github.com/mcpmini/mini/pull/1`, from `#1`, or bare `1`). If the arguments are blank, review the current branch's diff against main in the current checkout and skip to step 5. If they name a branch instead, review that branch's diff against main: skip step 2 and use the branch as `<head-branch>` in step 3. Paths after the target limit which changed files the passes cover; still read the code those files interact with.
 2. Get the PR description, diff, and full file list. Use GitHub through mini's MCP integration or the mini CLI when possible to dogfood this repository's tooling; otherwise fall back to the `gh` CLI.
-3. Check out the PR head in a dedicated worktree so you review the PR's actual files (not the diff against your current branch) and run the check suite against the PR's code. If `.agents/worktrees/review-pr-passes-<number>` already exists from a prior review, reuse it; otherwise:
+3. Check out the PR head in a dedicated worktree so you review the PR's actual files (not the diff against your current branch) and run the check suite against the PR's code. If `.agents/worktrees/review-pr-passes-<number>` already exists from a prior review, reuse it, but check out the fetched head there first so you don't review an older version; otherwise:
    ```bash
    git fetch origin <head-branch>
    git worktree add .agents/worktrees/review-pr-passes-<number> FETCH_HEAD --detach
    ```
-   Detached HEAD works even if another worktree already has the branch checked out.
+   Detached HEAD works even if another worktree already has the branch checked out. Record the head and base commits you review. Diff against the PR's own base: for a PR stacked on another branch, that branch, not main, or you'll blame this PR for its parent's changes.
 4. Enter the worktree — with Claude Code use `EnterWorktree(path: ".agents/worktrees/review-pr-passes-<number>")`; otherwise run all subsequent commands from that directory.
-5. Fire off the full check suite in the background (`run_in_background: true`) and note the log path, then continue immediately with Pass 1. It covers build, staticcheck, golangci-lint, function length, parameter count, return value checks, and the race-detector test suite. You will be notified when it finishes; pick up the results before writing the report — any failure introduced by the PR is a finding.
+5. Fire off the full check suite in the background (`run_in_background: true`) and note the log path, then continue immediately with Pass 1. It covers build, staticcheck, golangci-lint, function length, parameter count, return value checks, and the race-detector test suite. `CI=1` stops it from reformatting the code you're reviewing, and writing straight to the log keeps its real exit status, which a pipe through `tee` would hide. You will be notified when it finishes; pick up the results before writing the report — any failure introduced by the PR is a finding.
    ```bash
-   ./check.sh 2>&1 | tee /tmp/review-pr-passes-check-$(date +%s).log
+   log=/tmp/review-pr-passes-check-$(date +%s).log; CI=1 ./check.sh > "$log" 2>&1; echo "check.sh exit status: $?" >> "$log"
    ```
 6. Read `docs/go-guidelines.md` and `docs/testing.md` from the repository root. The passes assume their guidance and don't repeat it.
 7. Read every changed file **in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
@@ -82,7 +82,7 @@ Produce a brief triage note to drive Passes 2–4. Do not write it into the fina
 
 Check suite output from Step 0 already covers race tests, vet, and staticcheck. Work through every candidate from triage, applying the concurrency and lifecycle guidance in `docs/go-guidelines.md`. Also check what it doesn't cover:
 
-- **Shared state:** list every field of every shared struct the diff reads or writes, and confirm every access, reads included, holds the protecting mutex. "Usually protected" is not protected. Watch closures capturing outer mutable state.
+- **Shared state:** for each field of each shared struct the diff reads or writes, name what protects it (a mutex, atomic access, immutability after publication, or ownership by one goroutine), then confirm every conflicting access follows that rule. With a mutex, reads count too; "usually protected" is not protected. Watch closures capturing outer mutable state.
 - **Maps and slices:** unsynchronized conflicting map access can crash the process, and the race detector only catches interleavings that ran. Trace slice aliasing, including append, rather than assuming.
 - **Lock upgrades:** `RLock` → `Lock` on the same mutex in the same goroutine deadlocks.
 - **`sync` misuse:** `WaitGroup.Add` must run before the goroutine that calls `Done` starts. A `sync.Once` that panics stays poisoned and silently does nothing afterward.
@@ -158,6 +158,7 @@ Apply the errors, resources, and state-transition guidance in `docs/go-guideline
 **Operational correctness**
 - Retries of errors a retry can't fix (e.g. 400 Bad Request).
 - Backpressure: under sustained load, does the system queue unboundedly, or shed load and return pressure to callers?
+- Saved and live state: when the change persists state, check both after the operations finish, include a restart where it changes how state is read, and before a delete find every writer that could recreate it.
 
 **Design problems that cause bugs**
 - State duplicated in two places that can drift out of sync — one gets updated and the other doesn't.
@@ -222,6 +223,7 @@ Assess duplication by inconsistent behavior or concrete maintenance cost. Simila
 Run each command or tool from triage against one fixture combining every state the diff distinguishes that can coexist (healthy, each failure kind, disabled), plus a separate run for each state that can't, such as empty or a fatal error that stops the command. Read the whole output as that audience would; for an agent, read the raw tool result.
 - A failure says what failed, why, and what to do next, at the earliest step the audience can act, through a channel they actually see.
 - Each fact appears once, is true on every path that prints it, and agrees with the exit status and totals.
+- Then re-read everything you collected for contradictions, and check each rule you found broken in one place against its siblings: other commands or tools that show the same data, startup and reload, stdio and HTTP.
 
 **Proof standard:** quote the output, name the audience, and say what they needed to see instead.
 
@@ -253,7 +255,7 @@ Name the unprotected contract, realistic failure, existing coverage, and why the
 
 Read the changed code as an engineer new to it would, and flag where they would misread it or likely break it when changing it. `check.sh` catches function length and parameter count; this pass covers what it can't.
 
-- **Names:** functions are verb phrases that say what they do and predict their effects; types and variables are domain nouns. Flag vague names (`handle`, `process`, `data`, `util`, `manager`) and names that mislead.
+- **Readability:** a developer reading this later can tell what each function does from its name and follow the flow without hunting. Flag names that mislead or say nothing about what happens, not particular words.
 - **Shape:** each function does one job, and the normal path reads straight down with early returns. Flag deep nesting, long functions that need scrolling to follow, and boolean or empty-string flags as positional args.
 - **Explicitness:** no clever tricks or hidden side effects; steps that must happen in a certain order are obvious from the code. The code says what it means without relying on a comment.
 - **Reuse:** the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops; no layers, interfaces, or helpers that don't make the code easier to read or change.
@@ -267,10 +269,11 @@ Read the changed code as an engineer new to it would, and flag where they would 
 Complete every item before writing the report:
 
 1. Read the check.sh log from Step 0 in full. Any failure introduced by the PR is a finding.
-2. For each candidate finding, re-read the cited code and confirm all three: the file:line is right, the quoted code matches, and the trigger scenario actually reaches that code. If any of the three can't be confirmed, drop the finding.
-3. For each finding, check the diff: is the issue introduced or made worse by this PR? Anything it didn't goes under "Outside this PR" and doesn't count toward the verdict.
-4. Confirm every Pass 1 candidate and every call site from the call-site audit was investigated. Anything skipped must be listed explicitly in the report as not investigated.
-5. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
+2. Re-read the output your probes collected. Every duplicate, contradiction, or misleading value in it is either a finding or explained.
+3. For each candidate finding, re-read the cited code and confirm all three: the file:line is right, the quoted code matches, and the trigger scenario actually reaches that code. If any of the three can't be confirmed, drop the finding.
+4. For each finding, check the diff: is the issue introduced or made worse by this PR? Anything it didn't goes under "Outside this PR" and doesn't count toward the verdict.
+5. Confirm every Pass 1 candidate and every call site from the call-site audit was investigated. Anything skipped must be listed explicitly in the report as not investigated.
+6. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
 
 ## Report
 
@@ -279,13 +282,14 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 ```markdown
 # PR Review — [title or branch]
 **Date:** YYYY-MM-DD
+**Reviewed:** head `<sha>` against base `<sha>`
 **Verdict:** APPROVE | APPROVE WITH COMMENTS | REQUEST CHANGES
 
 ## Executive Summary
 [One paragraph. Overall quality, biggest risk area, and why the verdict: which findings drive it, and whether they can be fixed within the current approach or call for rethinking it.]
 
 ## 🔴 HIGH — [title]
-**Pass:** Concurrency | Security | Correctness | Experience | Tests | Maintainability
+**Pass:** Concurrency | Security | Correctness | Experience | Structure | Duplication | Tests | Maintainability
 **Rating:** impact High | Medium | Low, likelihood High | Medium | Low
 **File:** path/file.go:LINE
 **Bug:** What the issue is.
@@ -301,7 +305,7 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 [One line. What and where, and the fix only if it's trivial.]
 
 ## Outside this PR
-[Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
+[Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, its rating, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
 
 ## Test coverage verdict
 [What is tested, what is missing, whether the gap is a blocker.]
