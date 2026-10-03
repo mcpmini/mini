@@ -99,8 +99,8 @@ func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
 
 func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
-	writeServerConfig(t, cfg, "broken", "command: [unclosed\n")
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})})
+	testutil.WriteFile(t, config.ServerPath(cfg, "broken"), "command: [unclosed\n")
 
 	t.Run("ls warns about it and lists the rest", func(t *testing.T) {
 		stdout, stderr, code := runCLI(t, cfg, "ls")
@@ -127,11 +127,11 @@ func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testing.T) {
 	cfg := t.TempDir()
 	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
-	writeFakeServer(t, cfg, "svc", fixtures)
-	writeFakeServer(t, cfg, "unprojected", fixtures)
-	writeServerConfig(t, cfg, "unprojected.proj", "get_item: [broken\n")
-	writeServerConfig(t, cfg, "web", "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
-	writeServerConfig(t, cfg, "typo", "command: echo\nenabled: maybe\n") // yaml lists type errors on lines of their own
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: fixtures})
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "unprojected", Fixtures: fixtures})
+	testutil.WriteFile(t, config.ProjectionPath(cfg, "unprojected"), "get_item: [broken\n")
+	testutil.WriteFile(t, config.ServerPath(cfg, "web"), "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
+	testutil.WriteFile(t, config.ServerPath(cfg, "typo"), "command: echo\nenabled: maybe\n") // yaml lists type errors on lines of their own
 
 	stdout, _, code := runCLI(t, cfg, "test")
 
@@ -163,8 +163,9 @@ func testRowsFor(stdout, server string) [][]string {
 
 func TestIntegrationCLI_test_failsForBrokenProjectionsEvenWithNoServerToCheck(t *testing.T) {
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "off", "command: echo\nenabled: false\n")
-	writeServerConfig(t, cfg, "off.proj", "tool: [broken\n")
+	disabled := false
+	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "off", Command: "echo", Enabled: &disabled})
+	testutil.WriteFile(t, config.ProjectionPath(cfg, "off"), "tool: [broken\n")
 
 	stdout, _, code := runCLI(t, cfg, "test")
 

@@ -275,17 +275,24 @@ func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillRel
 	e.assertDataKeys([]string{"b"}, []string{"a"})
 }
 
+type savedFiles struct {
+	serverYAML string
+	projYAML   string
+}
+
 func TestSetProjection_keepsAProjectionFileThatFailsToLoad(t *testing.T) {
 	const savedRules = "getData:\n  include_only: [a]\nother:\n  alias: kept\nbroken: [oops\n"
-	cases := map[string]reloadEnvParams{
-		"broken projection file":    {ProjYAML: savedRules},
-		"broken inline projections": {ServerYAML: "command: echo\nprojections:\n  getData:\n    exclude: 3\n", ProjYAML: "getData:\n  include_only: [a]\n"},
+	cases := map[string]savedFiles{
+		"broken projection file":    {serverYAML: "command: echo\n", projYAML: savedRules},
+		"broken inline projections": {serverYAML: "command: echo\nprojections:\n  getData:\n    exclude: 3\n", projYAML: "getData:\n  include_only: [a]\n"},
+		"broken server file":        {serverYAML: "command: [unclosed\n", projYAML: "getData:\n  include_only: [a]\nother:\n  alias: kept\n"},
 	}
-	for name, params := range cases {
+	for name, saved := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := newReloadEnv(t, params)
+			e := newReloadEnv(t, reloadEnvParams{})
+			testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.yaml"), saved.serverYAML)
 			projPath := filepath.Join(e.dir, "servers", "svc.proj.yaml")
-			before := readFile(t, projPath)
+			testutil.WriteFile(t, projPath, saved.projYAML)
 
 			resp := serve(t, e.srv, callTool("config", map[string]any{
 				"action": "set_projection", "server": "svc", "tool": "getData",
@@ -295,20 +302,11 @@ func TestSetProjection_keepsAProjectionFileThatFailsToLoad(t *testing.T) {
 			if text := toolResultText(t, resp); !strings.Contains(text, "session_only") {
 				t.Errorf("set_projection = %s, want it refused with a pointer to session_only", text)
 			}
-			if after := readFile(t, projPath); after != before {
-				t.Errorf("svc.proj.yaml = %q, want the user's %q kept", after, before)
+			if after := string(testutil.ReadFile(t, projPath)); after != saved.projYAML {
+				t.Errorf("svc.proj.yaml = %q, want the user's %q kept", after, saved.projYAML)
 			}
 		})
 	}
-}
-
-func readFile(t *testing.T, path string) string {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data)
 }
 
 func TestProjectionReload_noChangeNoReload(t *testing.T) {

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"slices"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -77,9 +76,6 @@ func brokenServerResults(broken []config.SourceError) []upstreamResult {
 	return results
 }
 
-// unknownTransport stands in for a server whose file failed to load, so its transport is unknown.
-const unknownTransport = "-"
-
 func checkServers(ctx context.Context, srv *server.Server, servers []config.ServerConfig, timeout time.Duration) []upstreamResult {
 	var results []upstreamResult
 	for _, sc := range servers {
@@ -148,11 +144,6 @@ func writeTestRow(w *tabwriter.Writer, r upstreamResult) {
 	} else {
 		fmt.Fprintf(w, "PASS\t%s\t%s\t%d tools\t(%s)\n", r.name, displayTransport(r.transport), r.tools, r.elapsed.Round(time.Millisecond))
 	}
-}
-
-// A YAML error lists each problem on its own line, which would break a table row apart.
-func singleLine(err error) string {
-	return strings.Join(strings.Fields(err.Error()), " ")
 }
 
 func displayTransport(transport string) string {
