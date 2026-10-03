@@ -81,6 +81,8 @@ Tests should protect observable behavior and give an actionable failure when a c
 
 For code reviews, use the `review-pr` skill as the detailed guide. When reviewing your own output, spin up an adversarial limited-context subagent with a red-team mindset so it can give neutral feedback without being anchored by the implementation thread.
 
+We're comparing three review skills. To review a PR, run `/review-pr`, `/review-pr-passes`, and `/review-pr-methods` in three separate subagents, each invoked with only the target and none seeing another's findings. When all three finish, write `.agents/learnings/review-<PR>-<YYYY-MM-DD>.md` (git ignores it): every finding with the skills that reported it, your assessment of each (real or not, severity right or not, worth fixing or not), and what each skill missed that another caught. Read the earlier learnings files to judge which skill catches the most.
+
 ## Architecture
 
 mini is a context-optimizing MCP proxy. Agents talk to it via stdio; it routes calls to one or more upstream MCP servers (stdio or HTTP/SSE).

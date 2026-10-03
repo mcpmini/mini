@@ -1,6 +1,6 @@
 ---
-name: review-pr-v2
-description: Adversarial PR review organized by investigation method (trace, run, attack, break, compare) rather than by category. Same invocation and report format as review-pr, so the two can run side by side. Assumes bugs exist and proves findings before reporting. Emits APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
+name: review-pr-methods
+description: Adversarial PR review organized by investigation method (trace, run, attack, break, compare) rather than by category. Same invocation as review-pr and review-pr-passes, so they can run side by side. Assumes bugs exist and proves findings before reporting. Emits APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
 argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [paths to limit the review to]
 ---
 
@@ -42,15 +42,15 @@ Rate each finding's impact and likelihood, then decide.
 
 1. Resolve the target. A PR number comes from `https://github.com/mcpmini/mini/pull/1`, `#1`, or `1`. Blank arguments mean the current branch's diff against main in the current checkout: skip to step 4. A branch name means that branch's diff against main: skip step 2. Paths after the target limit which changed files you review; still read the code those files interact with.
 2. Get the PR description, diff, and file list, through mini's MCP integration or the mini CLI when possible, otherwise the `gh` CLI.
-3. Check out the head in a dedicated worktree, reusing `.agents/worktrees/review-pr-v2-<number>` if it exists:
+3. Check out the head in a dedicated worktree, reusing `.agents/worktrees/review-pr-methods-<number>` if it exists:
    ```bash
    git fetch origin <head-branch>
-   git worktree add .agents/worktrees/review-pr-v2-<number> FETCH_HEAD --detach
+   git worktree add .agents/worktrees/review-pr-methods-<number> FETCH_HEAD --detach
    ```
    Work from that directory (with Claude Code, `EnterWorktree`).
 4. Start the check suite in the background and keep going:
    ```bash
-   ./check.sh 2>&1 | tee /tmp/review-pr-v2-check-$(date +%s).log
+   ./check.sh 2>&1 | tee /tmp/review-pr-methods-check-$(date +%s).log
    ```
 5. Read `docs/go-guidelines.md` and `docs/testing.md` from the repository root.
 6. Read every changed file in full, not just the hunks.
