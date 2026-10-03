@@ -42,15 +42,15 @@ Rate each finding's impact and likelihood, then decide.
 
 1. Resolve the target. A PR number comes from `https://github.com/mcpmini/mini/pull/1`, `#1`, or `1`. Blank arguments mean the current branch's diff against main in the current checkout: skip to step 4. A branch name means that branch's diff against main: skip step 2. Paths after the target limit which changed files you review; still read the code those files interact with.
 2. Get the PR description, diff, and file list, through mini's MCP integration or the mini CLI when possible, otherwise the `gh` CLI.
-3. Check out the head in a dedicated worktree, reusing `.agents/worktrees/review-pr-methods-<number>` if it exists:
+3. Check out the head in a dedicated worktree. If `.agents/worktrees/review-pr-methods-<number>` already exists, reuse it, but check out the fetched head there first so you don't review an older version:
    ```bash
    git fetch origin <head-branch>
    git worktree add .agents/worktrees/review-pr-methods-<number> FETCH_HEAD --detach
    ```
-   Work from that directory (with Claude Code, `EnterWorktree`).
-4. Start the check suite in the background and keep going:
+   Work from that directory (with Claude Code, `EnterWorktree`). Record the head and base commits you review. Diff against the PR's own base: for a PR stacked on another branch, that branch, not main, or you'll blame this PR for its parent's changes.
+4. Start the check suite in the background and keep going. `CI=1` stops it from reformatting the code you're reviewing, and writing straight to the log keeps its real exit status, which a pipe through `tee` would hide:
    ```bash
-   ./check.sh 2>&1 | tee /tmp/review-pr-methods-check-$(date +%s).log
+   log=/tmp/review-pr-methods-check-$(date +%s).log; CI=1 ./check.sh > "$log" 2>&1; echo "check.sh exit status: $?" >> "$log"
    ```
 5. Read `docs/go-guidelines.md` and `docs/testing.md` from the repository root.
 6. Read every changed file in full, not just the hunks.
@@ -80,17 +80,19 @@ Settle every risk from Step 1 with at least one method. Use the reference checkl
 **Run.** When the change has an audience, build the binary and use each affected command or tool against one fixture combining every state the diff distinguishes that can coexist (healthy, each failure kind, disabled), plus a separate run for each state that can't, such as empty or a fatal error that stops the command. Read the whole output as that audience would; for an agent, read the raw tool result.
 - A failure says what failed, why, and what to do next, at the earliest step the audience can act, through a channel they see.
 - Each fact appears once, is true on every path that prints it, and agrees with the exit status and totals.
+- Then re-read everything you collected for contradictions, and check each rule you found broken in one place against its siblings: other commands or tools that show the same data, startup and reload, stdio and HTTP.
 
 **Attack.** Make the risky parts fail.
 - Concurrency: name two goroutines and find the window where a shared value is accessed without the lock, or where blocking has no escape.
 - Failure: make a dependency slow, stuck, or fail halfway, and check the state left behind.
+- Saved and live state: when the change persists state, check both after the operations finish, include a restart where it changes how state is read, and before a delete find every writer that could recreate it.
 - Boundaries: empty, zero, one, duplicate, and malformed inputs.
 - Write a focused test when that settles a suspicion faster than tracing. Name it `review_<something>_test.go` and use the existing helpers (`FakeConnection`, `serve()`, `callTool()` in `server_test.go`):
   ```bash
   go test -race -tags test -run TestReview ./path/to/package/... -v
   ```
 
-**Break.** For each changed behavior, perturb it and run the focused tests. One should fail for the expected reason; if none does, the behavior is unprotected. Restore the code afterward.
+**Break.** When you're unsure a test would catch a regression in a changed behavior, perturb the behavior and run the focused tests, after confirming they select the cases you expect. One should fail for the expected reason. If none does, check what else protects the behavior before calling it unprotected; one surviving perturbation doesn't prove there's no coverage. Restore the code afterward.
 
 **Compare.** Read the change against the rest of the codebase.
 - Search by behavior for existing code that does the same job: copied code, parallel implementations, the same rule decided in two places, or a reinvented helper.
@@ -102,7 +104,7 @@ Settle every risk from Step 1 with at least one method. Use the reference checkl
 What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 
 **Concurrency** (the check suite already runs `-race`, vet and staticcheck)
-- Every access to a shared field, reads included, holds its lock. No `RLock`→`Lock` upgrade; no `RLock` held across a network call.
+- For each shared field the diff touches, name what protects it (a mutex, atomic access, immutability after publication, or ownership by one goroutine), then confirm every conflicting access follows that rule; with a mutex, reads count too. No `RLock`→`Lock` upgrade; no `RLock` held across a network call.
 - `context.Background()` in a long-lived goroutine can't be cancelled; `http.Server.Shutdown` needs a bounded context.
 - `WaitGroup.Add` before the goroutine starts; a `sync.Once` that panics stays poisoned.
 - Every blocking `select` can be woken on every equivalent path (HTTP as well as stdio, after eviction and restart).
@@ -125,7 +127,7 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 - High-risk changes (auth, permissions, tokens, goroutines, shared state) with no covering test.
 
 **Maintainability** (`check.sh` catches function length and parameter count)
-- Names: functions are verb phrases that say what they do and predict their effects; types and variables are domain nouns. No vague names (`handle`, `process`, `data`, `util`, `manager`) or misleading ones.
+- Readability: a developer reading this later can tell what each function does from its name and follow the flow without hunting. Flag names that mislead or say nothing about what happens, not particular words.
 - Shape: each function does one job; the normal path reads straight down with early returns. No deep nesting, functions too long to follow, or boolean or empty-string flags as positional args.
 - Explicitness: no clever tricks or hidden side effects; steps that must happen in a certain order are obvious from the code.
 - Reuse: the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops; no layers, interfaces, or helpers that don't make the code easier to read or change.
@@ -146,10 +148,11 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 ## Pre-report gate
 
 1. Read the check.sh log in full. Any failure the PR introduced is a finding.
-2. For each finding, confirm the file:line, the quoted code, and that the trigger reaches that code. Drop any you can't confirm.
-3. For each finding, check whether this PR introduced or worsened it. Anything it didn't goes under "Outside this PR" and doesn't count toward the verdict.
-4. Confirm every risk and call site from Step 1 was settled. List anything not investigated in the report.
-5. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
+2. Re-read the output your probes collected. Every duplicate, contradiction, or misleading value in it is either a finding or explained.
+3. For each finding, confirm the file:line, the quoted code, and that the trigger reaches that code. Drop any you can't confirm.
+4. For each finding, check whether this PR introduced or worsened it. Anything it didn't goes under "Outside this PR" and doesn't count toward the verdict.
+5. Confirm every risk and call site from Step 1 was settled. List anything not investigated in the report.
+6. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
 
 ## Report
 
@@ -158,6 +161,7 @@ Output the report in the conversation only; never post it to GitHub.
 ```markdown
 # PR Review — [title or branch]
 **Date:** YYYY-MM-DD
+**Reviewed:** head `<sha>` against base `<sha>`
 **Verdict:** APPROVE | APPROVE WITH COMMENTS | REQUEST CHANGES
 
 ## Executive Summary
@@ -181,7 +185,7 @@ Output the report in the conversation only; never post it to GitHub.
 [One line. What and where, and the fix only if it's trivial.]
 
 ## Outside this PR
-[Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
+[Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, its rating, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
 
 ## Test coverage verdict
 [What is tested, what is missing, whether the gap is a blocker.]
