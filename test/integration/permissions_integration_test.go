@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 func TestIntegrationPermissions_defaultProtected(t *testing.T) {
@@ -122,7 +123,10 @@ func TestIntegrationPermissions_disableListHidden(t *testing.T) {
 			Hidden: []string{"secret_tool"},
 		},
 	})
-	writeConfig(t, cfg, "disable_list_hidden: true\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.DisableListHidden = true
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	client := startServer(t, cfg)
 
 	raw := client.mustCall("tools/call", map[string]any{

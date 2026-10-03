@@ -15,7 +15,11 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func projectedResponseClient(t *testing.T, extraConfig string) (*mcpClient, string, string) {
+type projectedResponseParams struct {
+	DiskBudgetMB *int
+}
+
+func projectedResponseClient(t *testing.T, p projectedResponseParams) (*mcpClient, string, string) {
 	t.Helper()
 	cfg := t.TempDir()
 	respDir := t.TempDir()
@@ -23,7 +27,12 @@ func projectedResponseClient(t *testing.T, extraConfig string) (*mcpClient, stri
 		ServerName: "svc",
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","body":"full text"}`}),
 	})
-	writeConfig(t, cfg, extraConfig+"response_dir: "+respDir+"\n")
+	global := config.DefaultConfig()
+	global.ResponseDir = respDir
+	if p.DiskBudgetMB != nil {
+		global.ResponseDiskBudgetMB = *p.DiskBudgetMB
+	}
+	configtest.WriteConfig(t, cfg, global)
 	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
 		ServerName: "svc",
 		Tools: map[string]*config.ProjectionConfig{
@@ -36,7 +45,7 @@ func projectedResponseClient(t *testing.T, extraConfig string) (*mcpClient, stri
 }
 
 func TestIntegrationStorage_rawFileExists(t *testing.T) {
-	client, respDir, _ := projectedResponseClient(t, "")
+	client, respDir, _ := projectedResponseClient(t, projectedResponseParams{})
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
 		t.Fatal("expected file response for projected payload")
@@ -53,7 +62,10 @@ func TestIntegrationStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 		ServerName: "svc",
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}),
 	})
-	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = respDir
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	client := startServer(t, cfg)
 
 	e := client.execEnvelope("svc", "get_item", nil)
@@ -63,7 +75,7 @@ func TestIntegrationStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 }
 
 func TestIntegrationStorage_rawFileIsPrettyPrinted(t *testing.T) {
-	client, respDir, _ := projectedResponseClient(t, "")
+	client, respDir, _ := projectedResponseClient(t, projectedResponseParams{})
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
 		t.Fatal("expected file response")
@@ -84,7 +96,10 @@ func TestIntegrationStorage_responseDirAutoCreated(t *testing.T) {
 		ServerName: "svc",
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}),
 	})
-	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = respDir
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
 		ServerName: "svc",
 		Tools: map[string]*config.ProjectionConfig{
@@ -105,7 +120,7 @@ func TestIntegrationStorage_responseDirAutoCreated(t *testing.T) {
 }
 
 func TestIntegrationStorage_diskBudgetEvictsOldest(t *testing.T) {
-	client, respDir, _ := projectedResponseClient(t, "response_disk_budget_mb: 0\n")
+	client, respDir, _ := projectedResponseClient(t, projectedResponseParams{DiskBudgetMB: new(0)})
 
 	for range 3 {
 		client.execEnvelope("svc", "get_item", nil)
@@ -124,7 +139,7 @@ func TestIntegrationStorage_diskBudgetEvictsOldest(t *testing.T) {
 }
 
 func TestIntegrationStorage_cleanupDeletesExpired(t *testing.T) {
-	client, respDir, cfg := projectedResponseClient(t, "")
+	client, respDir, cfg := projectedResponseClient(t, projectedResponseParams{})
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
@@ -140,7 +155,7 @@ func TestIntegrationStorage_cleanupDeletesExpired(t *testing.T) {
 }
 
 func TestIntegrationStorage_cleanupRetainsNonExpired(t *testing.T) {
-	client, respDir, cfg := projectedResponseClient(t, "")
+	client, respDir, cfg := projectedResponseClient(t, projectedResponseParams{})
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
@@ -156,7 +171,10 @@ func TestIntegrationStorage_cleanupRetainsNonExpired(t *testing.T) {
 func TestIntegrationStorage_unprojectedLargeResponseInlines(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: fixturesDir + "/github"})
-	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = t.TempDir()
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	client := startServer(t, cfg)
 
 	e := client.execEnvelope("github", "list_pull_requests", nil)

@@ -105,7 +105,11 @@ func TestLoadMainConfig_onlyResponseDirExpands(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", "/testhome")
 	t.Setenv("MINI_TEST_LOG_LEVEL", "debug")
-	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "response_dir: ${HOME}/x\nlog_level: ${MINI_TEST_LOG_LEVEL}\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = "${HOME}/x"
+	fixtureConfig.LogLevel = "${MINI_TEST_LOG_LEVEL}"
+	configtest.WriteConfig(t, dir, fixtureConfig)
+
 	cfg, _ := mustLoadConfig(t, dir)
 	if cfg.ResponseDir != "/testhome/x" || cfg.LogLevel != "${MINI_TEST_LOG_LEVEL}" {
 		t.Errorf("response_dir/log_level = %q / %q", cfg.ResponseDir, cfg.LogLevel)
@@ -115,7 +119,10 @@ func TestLoadMainConfig_onlyResponseDirExpands(t *testing.T) {
 func TestLoadMainConfig_undefinedResponseDir_isError(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_RESPONSE_DIR")
-	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "response_dir: ${MINI_TEST_UNDEFINED_RESPONSE_DIR}\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = "${MINI_TEST_UNDEFINED_RESPONSE_DIR}"
+	configtest.WriteConfig(t, dir, fixtureConfig)
+
 	_, _, err := config.Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "MINI_TEST_UNDEFINED_RESPONSE_DIR") {
 		t.Fatalf("Load error = %v", err)
@@ -146,7 +153,12 @@ func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *tes
 func TestInterpolateActionConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("MY_TOKEN", "secretval")
-	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "myaction.yaml"), "name: myaction\nserver: gh\ntool: list_issues\ndefault_args:\n  token: ${MY_TOKEN}\n")
+	configtest.WriteAction(t, dir, config.ActionConfig{
+		Name:        "myaction",
+		Server:      "gh",
+		Tool:        "list_issues",
+		DefaultArgs: map[string]any{"token": "${MY_TOKEN}"},
+	})
 	ac := mustLoadOneAction(t, dir)
 	if ac.DefaultArgs["token"] != "secretval" {
 		t.Errorf("expected token substituted, got %v", ac.DefaultArgs["token"])

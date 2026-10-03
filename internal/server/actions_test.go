@@ -9,25 +9,11 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
-
-const actionYAML = `name: my_search
-description: Search with defaults
-server: gh
-tool: search_code
-default_args:
-  language: go
-  per_page: 10
-`
-
-func writeActionYAML(t *testing.T, dir string) {
-	t.Helper()
-	actionsDir := filepath.Join(dir, "internal", "actions")
-	testutil.WriteFile(t, filepath.Join(actionsDir, "my_search.yaml"), actionYAML)
-}
 
 func serverWithActionsDir(t *testing.T, dir string) *server.Server {
 	t.Helper()
@@ -47,7 +33,13 @@ func fakeGHConn() *transport.FakeConnection {
 
 func TestLoadActions_loadsFromDir(t *testing.T) {
 	dir := t.TempDir()
-	writeActionYAML(t, dir)
+	configtest.WriteAction(t, dir, config.ActionConfig{
+		Name:        "my_search",
+		Description: "Search with defaults",
+		Server:      "gh",
+		Tool:        "search_code",
+		DefaultArgs: map[string]any{"language": "go", "per_page": 10},
+	})
 	srv := serverWithActionsDir(t, dir)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, fakeGHConn())
 

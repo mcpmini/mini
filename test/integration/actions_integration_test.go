@@ -5,23 +5,37 @@ package integration_test
 import (
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
-func actionServer(t *testing.T, fixtures map[string]string, actionYAML, actionName string) *mcpClient {
+type actionServerParams struct {
+	Fixtures map[string]string
+	Action   config.ActionConfig
+}
+
+func actionServer(t *testing.T, p actionServerParams) *mcpClient {
 	t.Helper()
 	cfg := t.TempDir()
-	dir := mockFixtureDir(t, fixtures)
+	dir := mockFixtureDir(t, p.Fixtures)
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
-	writeAction(t, cfg, actionYAML, actionName)
+	configtest.WriteAction(t, cfg, p.Action)
 	return startServer(t, cfg)
 }
 
 func TestIntegrationActions_defaultArgsMergedWithCallArgs(t *testing.T) {
 	t.Skip("actions not user-visible in v0.1")
-	client := actionServer(t,
-		map[string]string{"get_item": `{"id":42,"name":"fetched"}`},
-		"name: myfetch\ndescription: Fetch\nserver: svc\ntool: get_item\ndefault_args:\n  id: 42\n  extra: default\n",
-		"myfetch")
+	client := actionServer(t, actionServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":42,"name":"fetched"}`},
+		Action: config.ActionConfig{
+			Name:        "myfetch",
+			Description: "Fetch",
+			Server:      "svc",
+			Tool:        "get_item",
+			DefaultArgs: map[string]any{"id": 42, "extra": "default"},
+		},
+	})
 
 	e := client.execEnvelope("svc", "myfetch", map[string]any{"id": 99})
 	if e.Error != "" {
@@ -31,10 +45,16 @@ func TestIntegrationActions_defaultArgsMergedWithCallArgs(t *testing.T) {
 
 func TestIntegrationActions_protectedActionRequiresExecProtected(t *testing.T) {
 	t.Skip("actions not user-visible in v0.1")
-	client := actionServer(t,
-		map[string]string{"get_item": `{"id":1}`},
-		"name: protected_fetch\ndescription: Protected\nserver: svc\ntool: get_item\npermission: protected\n",
-		"protected_fetch")
+	client := actionServer(t, actionServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1}`},
+		Action: config.ActionConfig{
+			Name:        "protected_fetch",
+			Description: "Protected",
+			Server:      "svc",
+			Tool:        "get_item",
+			Permission:  "protected",
+		},
+	})
 
 	_, isErr := client.execToolAllowError("svc", "protected_fetch", nil)
 	if !isErr {
@@ -47,10 +67,10 @@ func TestIntegrationActions_protectedActionRequiresExecProtected(t *testing.T) {
 }
 
 func TestIntegrationActions_badServerReference(t *testing.T) {
-	client := actionServer(t,
-		map[string]string{"get_item": `{"id":1}`},
-		"name: broken\ndescription: Bad server\nserver: nonexistent\ntool: get_item\n",
-		"broken")
+	client := actionServer(t, actionServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1}`},
+		Action:   config.ActionConfig{Name: "broken", Description: "Bad server", Server: "nonexistent", Tool: "get_item"},
+	})
 
 	_, isErr := client.execToolAllowError("nonexistent", "broken", nil)
 	if !isErr {
@@ -63,7 +83,13 @@ func TestIntegrationActions_execAction(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":42,"name":"fetched"}`})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
-	writeAction(t, cfg, "name: myfetch\ndescription: Fetch item 42\nserver: svc\ntool: get_item\ndefault_args:\n  id: 42\n", "myfetch")
+	configtest.WriteAction(t, cfg, config.ActionConfig{
+		Name:        "myfetch",
+		Description: "Fetch item 42",
+		Server:      "svc",
+		Tool:        "get_item",
+		DefaultArgs: map[string]any{"id": 42},
+	})
 
 	client := startServer(t, cfg)
 

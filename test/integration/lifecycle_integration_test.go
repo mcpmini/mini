@@ -7,12 +7,18 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 func TestIntegrationLifecycle_addServerAtRuntime(t *testing.T) {
 	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "dangerous_allow_private_urls: true\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.DangerousAllowPrivateURLs = true
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	client := startServer(t, cfg)
 
 	raw := client.mustCall("tools/call", map[string]any{
@@ -58,7 +64,10 @@ func TestIntegrationLifecycle_removeServerAtRuntime(t *testing.T) {
 
 func TestIntegrationLifecycle_addServerBadURL(t *testing.T) {
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "dangerous_allow_private_urls: true\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.DangerousAllowPrivateURLs = true
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	client := startServer(t, cfg)
 
 	raw := client.mustCall("tools/call", map[string]any{

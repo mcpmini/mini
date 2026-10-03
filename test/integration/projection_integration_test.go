@@ -303,9 +303,11 @@ func TestIntegrationProjection_includeAndExclude(t *testing.T) {
 }
 
 func TestIntegrationProjection_globalDefaultsApply(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.DefaultStringLimit = 50
 	client := quickServerWith(t, quickServerParams{
-		Fixtures:   map[string]string{"get_item": `{"id":1,"description":"` + strings.Repeat("x", 300) + `"}`},
-		ConfigYAML: "default_string_limit: 50\n",
+		Fixtures: map[string]string{"get_item": `{"id":1,"description":"` + strings.Repeat("x", 300) + `"}`},
+		Config:   cfg,
 	})
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
@@ -370,9 +372,11 @@ func TestIntegrationProjection_toonFormat(t *testing.T) {
 }
 
 func TestIntegrationProjection_toonFormatGlobal(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.ResponseFormat = config.FormatToon
 	client := quickServerWith(t, quickServerParams{
-		Fixtures:   map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		ConfigYAML: "response_format: toon\n",
+		Fixtures: map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
+		Config:   cfg,
 	})
 
 	text := client.execTool("svc", "list_items", nil)

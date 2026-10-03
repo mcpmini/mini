@@ -104,7 +104,10 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("ignores config.yaml", func(t *testing.T) {
 		dir := t.TempDir()
-		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "log_level: debug\n")
+		fixtureConfig := config.DefaultConfig()
+		fixtureConfig.LogLevel = "debug"
+		configtest.WriteConfig(t, dir, fixtureConfig)
+
 		if fp := mustFingerprint(t, dir); len(fp) != 0 {
 			t.Errorf("fingerprint = %v, want config.yaml left out", fp)
 		}
