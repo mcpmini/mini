@@ -41,11 +41,13 @@ func runLoginStep(p loginStepParams) {
 		fmt.Fprintf(p.errOut, "skipping OAuth login: %v\n", err)
 		return
 	}
-	servers, sourceErrors := config.LoadLenient(p.configDir)
-	for _, sourceErr := range sourceErrors {
-		fmt.Fprintf(p.errOut, "warning: %v\n", sourceErr.Err)
+	servers, err := config.LoadServers(p.configDir)
+	if err != nil {
+		fmt.Fprintf(p.errOut, "skipping OAuth login: %v\n", err)
+		return
 	}
-	candidates := findLoginCandidates(p.configDir, servers)
+	warnServerProblems(p.errOut, servers)
+	candidates := findLoginCandidates(p.configDir, servers.Loaded)
 	if len(candidates) == 0 {
 		return
 	}

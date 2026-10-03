@@ -224,15 +224,15 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("warns instead of silently skipping when the server's projection file fails to load", func(t *testing.T) {
+	t.Run("warns that the server's projections are skipped when its projection file fails to load", func(t *testing.T) {
 		dir := t.TempDir()
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com"})
 		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "not: valid: yaml: [")
 
 		var out bytes.Buffer
 		connectAndAuthorizeIfNeeded(dir, "svc", &out)
-		if !strings.Contains(out.String(), "warning:") {
-			t.Errorf("output = %q, want a warning when config reload fails instead of silence", out.String())
+		if !strings.Contains(out.String(), "warning: skipping the projections of server svc") {
+			t.Errorf("output = %q, want a warning that svc's projections are skipped", out.String())
 		}
 	})
 

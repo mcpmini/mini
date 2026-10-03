@@ -97,6 +97,82 @@ func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
 	}
 }
 
+func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
+	writeServerConfig(t, cfg, "broken", "command: [unclosed\n")
+
+	t.Run("ls warns about it and lists the rest", func(t *testing.T) {
+		stdout, stderr, code := runCLI(t, cfg, "ls")
+		if code != 0 || !strings.Contains(stdout, "svc") || !strings.Contains(stderr, "skipping server broken") {
+			t.Errorf("ls = exit %d, stdout %q, stderr %q; want svc listed and broken warned about", code, stdout, stderr)
+		}
+	})
+	t.Run("another server still lists its tools", func(t *testing.T) {
+		stdout, stderr, code := runCLI(t, cfg, "ls", "svc")
+		if code != 0 || !strings.Contains(stdout, "get_item") {
+			t.Errorf("ls svc = exit %d, stdout %q, stderr %q; want svc's tools", code, stdout, stderr)
+		}
+	})
+	for _, command := range []string{"status", "test"} {
+		t.Run(command+" checks the rest and fails for it", func(t *testing.T) {
+			stdout, _, code := runCLI(t, cfg, command)
+			if code == 0 || !strings.Contains(stdout, "broken") || !strings.Contains(stdout, "svc") {
+				t.Errorf("%s = exit %d, stdout %q; want non-zero, with a row for broken and svc", command, code, stdout)
+			}
+		})
+	}
+}
+
+func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testing.T) {
+	cfg := t.TempDir()
+	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
+	writeFakeServer(t, cfg, "svc", fixtures)
+	writeFakeServer(t, cfg, "unprojected", fixtures)
+	writeServerConfig(t, cfg, "unprojected.proj", "get_item: [broken\n")
+	writeServerConfig(t, cfg, "web", "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
+	writeServerConfig(t, cfg, "typo", "command: echo\nenabled: maybe\n") // yaml lists type errors on lines of their own
+
+	stdout, _, code := runCLI(t, cfg, "test")
+
+	if code == 0 || !strings.Contains(stdout, "1 passed, 3 failed") {
+		t.Errorf("test = exit %d, stdout %q; want 1 passed, 3 failed", code, stdout)
+	}
+	for line := range strings.Lines(strings.TrimSpace(stdout)) {
+		if !strings.HasPrefix(line, "PASS") && !strings.HasPrefix(line, "FAIL") && strings.TrimSpace(line) != "" && !strings.Contains(line, "passed") {
+			t.Errorf("test printed %q outside any row; a multi-line error broke its row apart", line)
+		}
+	}
+	if rows := testRowsFor(stdout, "unprojected"); len(rows) != 1 || rows[0][0] != "FAIL" {
+		t.Errorf("unprojected rows = %q; want one FAIL row, for its projections", rows)
+	}
+	if rows := testRowsFor(stdout, "web"); len(rows) != 1 || rows[0][2] == "stdio" {
+		t.Errorf("web rows = %q; its file didn't load, so its transport isn't known", rows)
+	}
+}
+
+func testRowsFor(stdout, server string) [][]string {
+	var rows [][]string
+	for line := range strings.Lines(stdout) {
+		if fields := strings.Fields(line); len(fields) > 2 && fields[1] == server {
+			rows = append(rows, fields)
+		}
+	}
+	return rows
+}
+
+func TestIntegrationCLI_test_failsForBrokenProjectionsEvenWithNoServerToCheck(t *testing.T) {
+	cfg := t.TempDir()
+	writeServerConfig(t, cfg, "off", "command: echo\nenabled: false\n")
+	writeServerConfig(t, cfg, "off.proj", "tool: [broken\n")
+
+	stdout, _, code := runCLI(t, cfg, "test")
+
+	if code == 0 || !strings.Contains(stdout, "off") {
+		t.Errorf("test = exit %d, stdout %q; want non-zero with a row for off's projections", code, stdout)
+	}
+}
+
 func TestIntegrationCLI_ls_ToolDetail(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{

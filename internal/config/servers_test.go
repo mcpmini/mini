@@ -3,8 +3,11 @@
 package config_test
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -276,5 +279,47 @@ func TestLoadServers_mergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	}
 	if sc, _ := servers.Find("custom"); sc.Auth == nil || sc.Auth.Type != config.AuthTypeBearer {
 		t.Errorf("custom auth = %+v, want bearer", sc.Auth)
+	}
+}
+
+func TestLoadServer_matchesLoadServersWithoutNeedingTheOtherFiles(t *testing.T) {
+	dir := t.TempDir()
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "linear", Transport: "http", URL: "https://mcp.linear.app/mcp"})
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "linear",
+		Tools:      map[string]*config.ProjectionConfig{"list_issues": {IncludeOnly: []string{"title"}}},
+	})
+	want, _ := mustLoadServers(t, dir).Find("linear")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
+
+	got, err := config.LoadServer(dir, "linear")
+
+	if err != nil {
+		t.Fatalf("LoadServer: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("LoadServer = %+v\nwant what LoadServers gives: %+v", got, want)
+	}
+	if got.Auth == nil || got.Projections["list_issues"] == nil {
+		t.Errorf("LoadServer = %+v, want bundled auth and the projection file merged", got)
+	}
+	if _, err := config.LoadServer(dir, "missing"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("LoadServer(missing) err = %v, want fs.ErrNotExist", err)
+	}
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "linear",
+		Tools:      map[string]*config.ProjectionConfig{"list_issues": {Format: "bogus"}},
+	})
+	if got, _ := config.LoadServer(dir, "linear"); got.ProjectionsErr == nil {
+		t.Error("LoadServer accepted a projection format LoadServers rejects")
+	}
+}
+
+func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
+	dir := t.TempDir()
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "github", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"})
+
+	if sc, err := config.LoadServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("LoadServer(GitHub) = %q, %v; want fs.ErrNotExist, not github.yaml under another name", sc.Name, err)
 	}
 }

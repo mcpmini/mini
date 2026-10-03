@@ -54,16 +54,21 @@ func runList(configDir string, args []string, out io.Writer) error {
 }
 
 func listAllServers(configDir string, out io.Writer) error {
-	_, servers, err := config.Load(configDir)
+	_, servers, err := loadConfig(configDir)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
-	if len(servers) == 0 {
+	warnServerProblems(os.Stderr, servers)
+	if noServers(servers) {
 		fmt.Fprintln(out, noServersConfigured)
 		return nil
 	}
-	printServerTable(out, servers)
+	printServerTable(out, servers.Loaded)
 	return nil
+}
+
+func noServers(servers config.Servers) bool {
+	return len(servers.Loaded) == 0 && len(servers.Broken) == 0
 }
 
 func printServerTable(out io.Writer, servers []config.ServerConfig) {
@@ -97,17 +102,17 @@ func enabledStr(sc config.ServerConfig) string {
 }
 
 func runStatus(configDir string) {
-	cfg, servers, err := config.Load(configDir)
+	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
-		fatalf("load config: %v", err)
+		fatalf("%v", err)
 	}
-	if len(servers) == 0 {
+	if noServers(servers) {
 		fmt.Println(noServersConfigured)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	injectOAuthTokens(ctx, configDir, servers)
+	injectOAuthTokens(ctx, configDir, servers.Loaded)
 	srv := buildStatusServer(cfg, configDir)
 	defer srv.Close()
 	printStatusTable(ctx, srv, servers)
@@ -118,11 +123,14 @@ func buildStatusServer(cfg *config.Config, configDir string) *server.Server {
 	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
 }
 
-func printStatusTable(ctx context.Context, srv *server.Server, servers []config.ServerConfig) {
+func printStatusTable(ctx context.Context, srv *server.Server, servers config.Servers) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tTRANSPORT\tSTATUS\tTOOLS")
-	anyFailed := false
-	for _, sc := range servers {
+	for _, se := range servers.Broken {
+		fmt.Fprintf(w, "%s\t%s\terror: %s\t-\n", se.ServerName, unknownTransport, singleLine(se.Err))
+	}
+	anyFailed := len(servers.Broken) > 0
+	for _, sc := range servers.Loaded {
 		anyFailed = printStatusRow(ctx, w, srv, sc) || anyFailed
 	}
 	w.Flush()
@@ -131,16 +139,23 @@ func printStatusTable(ctx context.Context, srv *server.Server, servers []config.
 	}
 }
 
-func printStatusRow(ctx context.Context, w *tabwriter.Writer, srv *server.Server, sc config.ServerConfig) bool {
-	if !sc.IsEnabled() {
-		fmt.Fprintf(w, "%s\t-\tdisabled\t-\n", sc.Name)
-		return false
+func projectionsNote(sc config.ServerConfig) string {
+	if sc.ProjectionsErr == nil {
+		return ""
 	}
+	return ", " + singleLine(projectionsError(sc))
+}
+
+func printStatusRow(ctx context.Context, w *tabwriter.Writer, srv *server.Server, sc config.ServerConfig) bool {
 	t := serverTransport(sc)
+	if !sc.IsEnabled() {
+		fmt.Fprintf(w, "%s\t%s\tdisabled%s\t-\n", sc.Name, t, projectionsNote(sc))
+		return sc.ProjectionsErr != nil
+	}
 	if err := srv.AddUpstream(ctx, sc); err != nil {
-		fmt.Fprintf(w, "%s\t%s\terror: %v\t-\n", sc.Name, t, err)
+		fmt.Fprintf(w, "%s\t%s\terror: %s\t-\n", sc.Name, t, singleLine(err))
 		return true
 	}
-	fmt.Fprintf(w, "%s\t%s\tok\t%d\n", sc.Name, t, srv.ToolCount(sc.Name))
-	return false
+	fmt.Fprintf(w, "%s\t%s\tok%s\t%d\n", sc.Name, t, projectionsNote(sc), srv.ToolCount(sc.Name))
+	return sc.ProjectionsErr != nil
 }

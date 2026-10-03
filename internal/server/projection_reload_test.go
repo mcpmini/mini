@@ -275,6 +275,42 @@ func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillRel
 	e.assertDataKeys([]string{"b"}, []string{"a"})
 }
 
+func TestSetProjection_keepsAProjectionFileThatFailsToLoad(t *testing.T) {
+	const savedRules = "getData:\n  include_only: [a]\nother:\n  alias: kept\nbroken: [oops\n"
+	cases := map[string]reloadEnvParams{
+		"broken projection file":    {ProjYAML: savedRules},
+		"broken inline projections": {ServerYAML: "command: echo\nprojections:\n  getData:\n    exclude: 3\n", ProjYAML: "getData:\n  include_only: [a]\n"},
+	}
+	for name, params := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := newReloadEnv(t, params)
+			projPath := filepath.Join(e.dir, "servers", "svc.proj.yaml")
+			before := readFile(t, projPath)
+
+			resp := serve(t, e.srv, callTool("config", map[string]any{
+				"action": "set_projection", "server": "svc", "tool": "getData",
+				"projection": map[string]any{"include_only": []string{"b"}},
+			}))
+
+			if text := toolResultText(t, resp); !strings.Contains(text, "session_only") {
+				t.Errorf("set_projection = %s, want it refused with a pointer to session_only", text)
+			}
+			if after := readFile(t, projPath); after != before {
+				t.Errorf("svc.proj.yaml = %q, want the user's %q kept", after, before)
+			}
+		})
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
 func TestProjectionReload_noChangeNoReload(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{
 		Projections: map[string]*config.ProjectionConfig{"getData": {

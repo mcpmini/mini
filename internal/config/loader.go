@@ -1,9 +1,7 @@
 package config
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,34 +42,6 @@ func Load(configDir string) (*Config, []ServerConfig, error) {
 		return nil, nil, err
 	}
 	return cfg, servers, nil
-}
-
-// LoadServer loads one server as Load would, without needing every other server file to load.
-func LoadServer(configDir, name string) (ServerConfig, error) {
-	sc, err := loadNamedServerFile(configDir, name)
-	if err != nil {
-		return ServerConfig{}, err
-	}
-	projections := make(map[string]map[string]*ProjectionConfig)
-	if err := loadOneProjectionFile(projections, ProjectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return ServerConfig{}, err
-	}
-	servers := []ServerConfig{*sc}
-	if err := completeServers(configDir, servers, projections); err != nil {
-		return ServerConfig{}, err
-	}
-	return servers[0], nil
-}
-
-func loadNamedServerFile(configDir, name string) (*ServerConfig, error) {
-	if err := checkServerName(name, "the request"); err != nil {
-		return nil, err
-	}
-	path := ServerPath(configDir, name)
-	if !ServerFileExists(configDir, name) {
-		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
-	}
-	return loadServerConfig(path)
 }
 
 func completeServers(configDir string, servers []ServerConfig, projections map[string]map[string]*ProjectionConfig) error {
