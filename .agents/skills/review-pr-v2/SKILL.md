@@ -75,6 +75,7 @@ Settle every risk from Step 1 with at least one method. Use the reference checkl
 **Compare.** Read the change against the rest of the codebase.
 - Search by behavior for existing code that does the same job: copied code, parallel implementations, the same rule decided in two places, or a reinvented helper.
 - When the diff adds types, files, or multi-step flows, map the flows in domain terms and check that types and files follow the domain: no mixed concerns, missing abstractions, cryptic names, or indirection without a contract. Use `structure-review` for a deeper pass.
+- Read the changed code as an engineer new to it would, and note where they would misread it or likely break it when changing it. Use the maintainability checklist below.
 
 ## Step 3 — Reference checklist
 
@@ -103,10 +104,13 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 - A fix in one path is tested in that path, not only a sibling (HTTP fix, HTTP test).
 - High-risk changes (auth, permissions, tokens, goroutines, shared state) with no covering test.
 
-**Conventions** (diff only, one line each)
-- Boolean or empty-string flags as positional args.
-- Comments that say what instead of why; section dividers in tests; doc comments that repeat the name.
-- Names that don't predict behavior; abstractions that don't earn their keep; defensive checks for impossible values.
+**Maintainability** (`check.sh` catches function length and parameter count)
+- Names: functions are verb phrases that say what they do and predict their effects; types and variables are domain nouns. No vague names (`handle`, `process`, `data`, `util`, `manager`) or misleading ones.
+- Shape: one thing per function at one level of abstraction; the normal path reads straight down with early returns. No deep nesting, functions too long to follow, or boolean or empty-string flags as positional args.
+- Explicitness: no clever tricks, hidden side effects, or order-dependent calls the types don't enforce.
+- Reuse: the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops and wrappers; no abstraction without a contract.
+- Consistency: naming, error style, and idioms match the surrounding package.
+- Comments explain why, not what; no section dividers in tests; no doc comments that repeat the name.
 
 ## Proof standards
 
@@ -117,6 +121,7 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 - **Structure:** the domain concepts, where they appear in the flows, and the specific mismatch.
 - **Duplication:** every location with file:line, evidence they do the same job, and the unification.
 - **Tests:** the unprotected contract, a realistic regression it would let through, and the perturbation that showed no test fails.
+- **Maintainability:** the quoted code, what a reader would get wrong or what change it makes risky, and the clearer form. Assess severity by that cost or an explicit AGENTS.md rule, not preference alone.
 
 ## Pre-report gate
 
@@ -139,7 +144,7 @@ Output the report in the conversation only; never post it to GitHub.
 [One paragraph. Overall quality, biggest risk area, what the verdict hinges on.]
 
 ## 🔴 HIGH — [title]
-**Pass:** Concurrency | Security | Correctness | Experience | Structure | Duplication | Tests
+**Pass:** Concurrency | Security | Correctness | Experience | Structure | Duplication | Tests | Maintainability
 **Found by:** Trace | Run | Attack | Break | Compare
 **File:** path/file.go:LINE
 **Bug:** What the issue is.
@@ -151,7 +156,7 @@ Output the report in the conversation only; never post it to GitHub.
 [same structure]
 
 ## 🟡 LOW — [title]
-**Pass:** Conventions | Correctness
+**Pass:** Maintainability | Correctness
 [One line. What and where. Reserve LOW for truly trivial findings — borderline preference calls, not rule violations.]
 
 ## Test coverage verdict
