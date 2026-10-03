@@ -259,14 +259,14 @@ func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillRel
 		},
 	})
 	e.advanceTick()
-	if logs := e.logs.String(); !strings.Contains(logs, "projection reload: skipped server") {
+	if logs := e.logs.String(); !strings.Contains(logs, "projections fail to load, ignoring them") {
 		t.Errorf("expected WARN for malformed YAML, got logs:\n%s", logs)
 	}
 	e.assertDataKeys([]string{"a"}, []string{"b"})
 	e.assertServerDataKeys("other", []string{"b"}, []string{"a"})
 
 	e.advanceTick()
-	if warns := strings.Count(e.logs.String(), "projection reload: skipped server"); warns != 1 {
+	if warns := strings.Count(e.logs.String(), "projections fail to load, ignoring them"); warns != 1 {
 		t.Errorf("expected a single WARN for an unchanged bad file, got %d", warns)
 	}
 

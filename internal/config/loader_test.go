@@ -12,10 +12,7 @@ import (
 
 func mustLoadOneServer(t *testing.T, dir string) config.ServerConfig {
 	t.Helper()
-	_, servers, err := config.Load(dir)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
+	_, servers := mustLoadConfig(t, dir)
 	if len(servers) != 1 {
 		t.Fatalf("expected 1 server, got %d", len(servers))
 	}
@@ -34,20 +31,40 @@ func mustLoadOneAction(t *testing.T, dir string) config.ActionConfig {
 	return actions[0]
 }
 
-func mustLoadConfig(t *testing.T, dir string) (*config.Config, []config.ServerConfig) {
+func mustLoadServers(t *testing.T, dir string) config.Servers {
 	t.Helper()
-	cfg, servers, err := config.Load(dir)
+	servers, err := config.LoadServers(dir)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("LoadServers: %v", err)
 	}
-	return cfg, servers
+	return servers
 }
 
-func expectLoadError(t *testing.T, dir string) {
+func mustLoadConfig(t *testing.T, dir string) (*config.Config, []config.ServerConfig) {
 	t.Helper()
-	_, _, err := config.Load(dir)
-	if err == nil {
-		t.Fatal("expected load error")
+	cfg, err := config.LoadMain(dir)
+	if err != nil {
+		t.Fatalf("LoadMain: %v", err)
+	}
+	servers := mustLoadServers(t, dir)
+	if len(servers.Broken) > 0 {
+		t.Fatalf("LoadServers: broken %+v", servers.Broken)
+	}
+	return cfg, servers.Loaded
+}
+
+func expectMainLoadError(t *testing.T, dir string) {
+	t.Helper()
+	if _, err := config.LoadMain(dir); err == nil {
+		t.Fatal("expected LoadMain error")
+	}
+}
+
+func expectBrokenServer(t *testing.T, dir, name string) {
+	t.Helper()
+	servers := mustLoadServers(t, dir)
+	if !servers.IsBroken(name) {
+		t.Fatalf("LoadServers: %s isn't broken; loaded %+v", name, servers.Loaded)
 	}
 }
 
@@ -113,12 +130,11 @@ func TestLoad_serverNameComesFromFile(t *testing.T) {
 		},
 	})
 	_, servers := mustLoadConfig(t, dir)
-	sc := config.FindServer(servers, "ci")
-	if len(servers) != 1 || sc == nil {
+	if len(servers) != 1 || servers[0].Name != "ci" {
 		t.Fatalf("servers = %#v, want one named ci", servers)
 	}
-	if p := sc.Projections["list_builds"]; p == nil || len(p.IncludeOnly) != 1 {
-		t.Errorf("projections = %v, want ci.proj.yaml applied to ci", sc.Projections)
+	if p := servers[0].Projections["list_builds"]; p == nil || len(p.IncludeOnly) != 1 {
+		t.Errorf("projections = %v, want ci.proj.yaml applied to ci", servers[0].Projections)
 	}
 }
 
@@ -127,8 +143,9 @@ func TestLoad_invalidServerFileName(t *testing.T) {
 		t.Run(file, func(t *testing.T) {
 			dir := t.TempDir()
 			testutil.WriteFile(t, filepath.Join(dir, "servers", file), "command: echo\n")
-			if _, _, err := config.Load(dir); err == nil || !strings.Contains(err.Error(), "invalid server name") {
-				t.Fatalf("want an invalid server name error, got %v", err)
+			servers := mustLoadServers(t, dir)
+			if len(servers.Broken) != 1 || !strings.Contains(servers.Broken[0].Err.Error(), "invalid server name") {
+				t.Fatalf("Broken = %+v, want an invalid server name error", servers.Broken)
 			}
 		})
 	}
@@ -137,13 +154,13 @@ func TestLoad_invalidServerFileName(t *testing.T) {
 func TestLoadMalformedMainConfig(t *testing.T) {
 	dir := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), `not: valid: yaml: [`)
-	expectLoadError(t, dir)
+	expectMainLoadError(t, dir)
 }
 
 func TestLoadMalformedServerConfig(t *testing.T) {
 	dir := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(dir, "servers", "bad.yaml"), `not: valid: yaml: [`)
-	expectLoadError(t, dir)
+	expectBrokenServer(t, dir, "bad")
 }
 
 func TestLoadMissingConfigDir_usesDefaults(t *testing.T) {
@@ -288,7 +305,7 @@ func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 		t.Run(spec, func(t *testing.T) {
 			dir := t.TempDir()
 			configtest.WriteServer(t, dir, config.ServerConfig{Name: "ci", Command: "mcp", HandshakeTimeout: spec})
-			expectLoadError(t, dir)
+			expectBrokenServer(t, dir, "ci")
 		})
 	}
 }
@@ -340,7 +357,7 @@ func TestLoadResponseFormat(t *testing.T) {
 		fixtureConfig.ResponseFormat = "mini"
 		configtest.WriteConfig(t, dir, fixtureConfig)
 
-		_, _, err := config.Load(dir)
+		_, err := config.LoadMain(dir)
 		if err == nil || !strings.Contains(err.Error(), "toon") {
 			t.Fatalf("expected error naming toon as the replacement, got %v", err)
 		}
@@ -351,7 +368,7 @@ func TestLoadResponseFormat(t *testing.T) {
 		fixtureConfig.ResponseFormat = "xml"
 		configtest.WriteConfig(t, dir, fixtureConfig)
 
-		expectLoadError(t, dir)
+		expectMainLoadError(t, dir)
 	})
 }
 
@@ -366,9 +383,9 @@ func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 			},
 		},
 	})
-	_, _, err := config.Load(dir)
-	if err == nil || !strings.Contains(err.Error(), "toon") {
-		t.Fatalf("expected projection format error naming toon, got %v", err)
+	sc, err := config.LoadServer(dir, "gh")
+	if err != nil || sc.ProjectionsErr == nil || !strings.Contains(sc.ProjectionsErr.Err.Error(), "toon") {
+		t.Fatalf("LoadServer = %+v, %v; want a projection format error naming toon", sc.ProjectionsErr, err)
 	}
 }
 
@@ -404,12 +421,6 @@ func TestEffectiveFormat(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestLoadProjection_malformedYAML_returnsError(t *testing.T) {
-	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "srv.proj.yaml"), `not: valid: yaml: [`)
-	expectLoadError(t, dir)
 }
 
 func TestLoadActions_malformedYAML_returnsError(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestIntegrationStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
@@ -109,7 +110,7 @@ func startMiniCmdCapturingStderr(t *testing.T, configDir string) (stdin io.Write
 	return stdin, sc, errBuf
 }
 
-func TestIntegrationStartup_aServerWithAnUnsetVariableDoesNotStopTheOthers(t *testing.T) {
+func TestIntegrationStartup_aBrokenServerDoesNotStopTheOthers(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{
 		ServerName: "healthy",
@@ -121,6 +122,7 @@ func TestIntegrationStartup_aServerWithAnUnsetVariableDoesNotStopTheOthers(t *te
 		URL:       "https://example.com/mcp",
 		Headers:   map[string]string{"Authorization": "Bearer ${MINI_TEST_UNSET_TOKEN}"},
 	})
+	testutil.WriteFile(t, config.ServerPath(cfg, "malformed"), "command: [unclosed\n")
 	stdin, scanner, stderr := startMiniCmdCapturingStderr(t, cfg)
 	c := newMCPClient(t, stdin, scanner)
 	c.mustCall("initialize", map[string]any{
@@ -132,9 +134,10 @@ func TestIntegrationStartup_aServerWithAnUnsetVariableDoesNotStopTheOthers(t *te
 	waitForServersConnected(t, c, []string{"healthy"})
 
 	if !strings.Contains(c.listTools("healthy"), "get_item") {
-		t.Error("healthy's tools are missing: one server's unset variable stopped the others")
+		t.Error("healthy's tools are missing: a broken server stopped the others")
 	}
 	waitForStderrContains(t, stderr, "MINI_TEST_UNSET_TOKEN isn't set where mini runs")
+	waitForStderrContains(t, stderr, "server=malformed")
 }
 
 func waitForStderrContains(t *testing.T, stderr *syncBuffer, want string) {

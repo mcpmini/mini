@@ -46,11 +46,14 @@ func (e *serverReloadEnv) removeServerFile(name string) {
 
 func (e *serverReloadEnv) connectConfigured() {
 	e.t.Helper()
-	_, servers, err := config.Load(e.dir)
+	servers, err := config.LoadServers(e.dir)
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	e.srv.ConnectUpstreams(e.t.Context(), servers)
+	if len(servers.Broken) > 0 {
+		e.t.Fatalf("broken servers: %+v", servers.Broken)
+	}
+	e.srv.ConnectUpstreams(e.t.Context(), servers.Loaded)
 	e.srv.WaitForStartupConnects()
 }
 
@@ -115,14 +118,27 @@ func TestServerReload_deletedServerFile_removesServerAndNotifiesAgents(t *testin
 }
 
 func TestServerReload_disabledServer_isRemoved(t *testing.T) {
-	e := newServerReloadEnv(t)
-	e.startWithServers("svc")
+	t.Run("with working projections", func(t *testing.T) {
+		e := newServerReloadEnv(t)
+		e.startWithServers("svc")
 
-	disabled := false
-	e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL, Enabled: &disabled})
-	e.advanceTick()
+		disabled := false
+		e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL, Enabled: &disabled})
+		e.advanceTick()
 
-	e.assertRemoved("svc")
+		e.assertRemoved("svc")
+	})
+	t.Run("even when its projection file fails to load", func(t *testing.T) {
+		e := newServerReloadEnv(t)
+		e.startWithServers("svc")
+
+		testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), "tool: [broken\n")
+		disabled := false
+		e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL, Enabled: &disabled})
+		e.advanceTick()
+
+		e.assertRemoved("svc")
+	})
 }
 
 func TestServerReload_brokenFileHoldsOnlyItsServer(t *testing.T) {

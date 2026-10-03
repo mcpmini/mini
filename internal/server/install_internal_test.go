@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -56,6 +58,27 @@ func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *te
 	}
 }
 
+func TestRemoveServersGoneFromConfig_keepsEveryServerWhileTheServerFilesCantBeListed(t *testing.T) {
+	srv := newInstallTestServer(t)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{}); err != nil {
+		t.Fatal(err)
+	}
+	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+	configtest.WriteServer(t, srv.configDir, config.ServerConfig{Name: "svc", Command: "run"})
+	serversDir := filepath.Join(srv.configDir, "servers")
+	if err := os.Chmod(serversDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(serversDir, 0700) }) // lets t.TempDir remove it; a failure there fails the test anyway
+
+	srv.removeServersGoneFromConfig()
+	removedByName := srv.removeConfigServer("svc")
+
+	if !srv.isConfigServer("svc") || removedByName {
+		t.Error("svc was removed because its servers dir couldn't be listed, as if every server file were gone")
+	}
+}
+
 func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
 	srv := newInstallTestServer(t)
 
@@ -74,6 +97,37 @@ func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
 	if !fake.Closed {
 		t.Error("expected connection to be closed on guard rejection")
 	}
+}
+
+func TestInstallChecked_namesToolsByTheLiveProjections(t *testing.T) {
+	tools := []transport.ToolDefinition{{Name: "getData", InputSchema: json.RawMessage(`{}`)}}
+	aliased := map[string]*config.ProjectionConfig{"getData": {Alias: "fetch"}}
+
+	t.Run("a new server takes its config's projections", func(t *testing.T) {
+		srv := newInstallTestServer(t)
+
+		in := srv.newServerInstall(config.ServerConfig{Name: "svc", Projections: aliased})
+		if err := srv.installChecked(&transport.FakeConnection{}, tools, in); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.fetch"}) {
+			t.Errorf("tools = %v, want [svc.fetch]", got)
+		}
+	})
+	t.Run("a reinstall whose config's projections failed to load keeps the live ones", func(t *testing.T) {
+		srv := newInstallTestServer(t)
+		srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": aliased}, config.Servers{})
+		reloaded := config.ServerConfig{Name: "svc", ProjectionsErr: &config.SourceError{ServerName: "svc", Err: errors.New("parse failed")}}
+
+		if err := srv.installChecked(&transport.FakeConnection{}, tools, srv.replacingInstall(reloaded)); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.fetch"}) {
+			t.Errorf("tools = %v, want [svc.fetch]: a reinstall, like finishing an OAuth login, must not drop the kept alias", got)
+		}
+	})
 }
 
 func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.T) {
