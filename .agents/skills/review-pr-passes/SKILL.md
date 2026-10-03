@@ -10,7 +10,7 @@ The passes below hold review methods and mini-specific checks; the general Go an
 
 **Assume bugs exist. Your job is to find and prove them.**
 
-Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REQUEST CHANGES.
+Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, name the unprotected contract and the realistic failure it would let through; that can justify REQUEST CHANGES, a missing test on its own can't.
 
 ## Non-negotiables (apply to every pass)
 
@@ -51,9 +51,9 @@ Rate each finding's impact and likelihood, then decide.
    ```
    Detached HEAD works even if another worktree already has the branch checked out. Record the head and base commits you review. Diff against the PR's own base: for a PR stacked on another branch, that branch, not main, or you'll blame this PR for its parent's changes.
 4. Enter the worktree — with Claude Code use `EnterWorktree(path: ".agents/worktrees/review-pr-passes-<number>")`; otherwise run all subsequent commands from that directory.
-5. Fire off the full check suite in the background (`run_in_background: true`) and note the log path, then continue immediately with Pass 1. It covers build, staticcheck, golangci-lint, function length, parameter count, return value checks, and the race-detector test suite. `CI=1` stops it from reformatting the code you're reviewing, and writing straight to the log keeps its real exit status, which a pipe through `tee` would hide. You will be notified when it finishes; pick up the results before writing the report — any failure introduced by the PR is a finding.
+5. Fire off the full check suite in the background (`run_in_background: true`) and note the log path, then continue immediately with Pass 1. It covers build, staticcheck, golangci-lint, function length, parameter count, return value checks, and the race-detector test suite. `CI=1` stops it from reformatting the code you're reviewing, and writing straight to the log keeps its real exit status, which a pipe through `tee` would hide. The command records that status in the log and exits with it. You will be notified when it finishes; pick up the results before writing the report — any failure introduced by the PR is a finding.
    ```bash
-   log=/tmp/review-pr-passes-check-$(date +%s).log; CI=1 ./check.sh > "$log" 2>&1; echo "check.sh exit status: $?" >> "$log"
+   log=/tmp/review-pr-passes-check-$(date +%s).log; rc=0; CI=1 ./check.sh > "$log" 2>&1 || rc=$?; echo "check.sh exit status: $rc" >> "$log"; [ "$rc" -eq 0 ]
    ```
 6. Read `docs/go-guidelines.md` and `docs/testing.md` from the repository root. The passes assume their guidance and don't repeat it.
 7. Read every changed file **in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
