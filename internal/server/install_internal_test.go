@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -79,6 +81,37 @@ func TestInstallChecked_guardRejection_closesConn(t *testing.T) {
 	if !fake.Closed {
 		t.Error("expected connection to be closed on guard rejection")
 	}
+}
+
+func TestInstallChecked_namesToolsByTheLiveProjections(t *testing.T) {
+	tools := []transport.ToolDefinition{{Name: "getData", InputSchema: json.RawMessage(`{}`)}}
+	aliased := map[string]*config.ProjectionConfig{"getData": {Alias: "fetch"}}
+
+	t.Run("a new server takes its config's projections", func(t *testing.T) {
+		srv := newInstallTestServer(t)
+
+		in := srv.newServerInstall(config.ServerConfig{Name: "svc", Projections: aliased})
+		if err := srv.installChecked(&transport.FakeConnection{}, tools, in); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.fetch"}) {
+			t.Errorf("tools = %v, want [svc.fetch]", got)
+		}
+	})
+	t.Run("a reinstall whose config's projections failed to load keeps the live ones", func(t *testing.T) {
+		srv := newInstallTestServer(t)
+		srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": aliased}, config.Servers{})
+		reloaded := config.ServerConfig{Name: "svc", ProjectionsErr: &config.SourceError{ServerName: "svc", Err: errors.New("parse failed")}}
+
+		if err := srv.installChecked(&transport.FakeConnection{}, tools, srv.replacingInstall(reloaded)); err != nil {
+			t.Fatal(err)
+		}
+
+		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.fetch"}) {
+			t.Errorf("tools = %v, want [svc.fetch]: a reinstall, like finishing an OAuth login, must not drop the kept alias", got)
+		}
+	})
 }
 
 func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.T) {
