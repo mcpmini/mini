@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, experience, tests, then maintainability. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
+description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, experience, tests, then maintainability. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
 argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [paths to limit the review to]
 ---
 
@@ -10,7 +10,7 @@ The passes below hold review methods and mini-specific checks; the general Go an
 
 **Assume bugs exist. Your job is to find and prove them.**
 
-Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REJECT.
+Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REQUEST CHANGES.
 
 ## Non-negotiables (apply to every pass)
 
@@ -19,7 +19,8 @@ Do not explain away suspicious patterns — investigate until you have proof or 
 3. **Pick up check.sh results.** Do not write the report until the background check suite from Step 0 has finished and you have read its log.
 4. **Verdict is mechanical.** Derive the verdict from the findings table using the rules at the end — never from overall impression.
 5. **The request's framing is a claim, not a fact.** Statements in the review request or PR description about the design ("built on X", "reuses Y", "no duplication") are things to verify. Angles the requester lists add to the passes; they never narrow them.
-6. **Be pragmatic.** Rate every finding as "Weigh every finding" describes. A PR doesn't have to solve every problem: recommend the smallest fix that removes this one, not a redesign, new layers, or type machinery, unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere that are worth fixing go under "Outside this PR".
+6. **Be pragmatic.** Rate every finding as "Weigh every finding" describes. A PR doesn't have to solve every problem, and a finding doesn't call for a redesign unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere that are worth fixing go under "Outside this PR".
+7. **Describe problems, not solutions.** Say what is wrong and what it costs; the author has the context to choose the fix. Only when the fix is trivial and unambiguous (a typo, log or message wording, a small rename) state it.
 
 ## Weigh every finding
 
@@ -30,14 +31,14 @@ Rate each finding's impact and likelihood, then decide.
 - **Medium:** a feature misbehaves or fails confusingly, or code so hard to follow that the next change will likely break it, such as a function hundreds of lines long.
 - **Low:** cosmetic, or a little confusing but still readable.
 
-**Likelihood**, in normal use. Normal includes events that are rare but routine: slow or flaky networks, upstreams that time out or fail, a user who edits a config and gets it wrong, invalid input, several agents at once. Unlikely means it needs something outside mini's responsibility, such as an MCP server that breaks the spec, or misuse beyond the trust model.
+**Likelihood**, in normal use. Normal includes events that are rare but routine: slow or flaky networks, upstreams that time out or fail, a user who edits a config and gets it wrong, invalid input, several agents at once. Unlikely means it depends on something mini doesn't promise to support, such as working with an MCP server that breaks the spec, or misuse beyond the trust model. Containing malformed input is always mini's job, though: whatever an upstream server or agent sends, mini must not crash or leak a credential.
 
 **Decide:**
-- Likelihood or impact of medium or above: worth fixing. HIGH when the impact is high and normal use reaches it; otherwise MEDIUM.
-- Both low: LOW at most, or leave it out. It isn't worth an issue.
+- Severity follows impact. HIGH when the impact is high and normal use reaches it. MEDIUM for medium impact, or high impact that only an unlikely path reaches.
+- Low impact is LOW, and worth raising only when its likelihood is medium or above. When both are low, leave it out; it isn't worth an issue.
 - When it's unclear whether something happens in practice, say so; it can wait for evidence rather than be solved speculatively.
 
-**Breaking changes don't count while mini is v0.x.** Renamed config fields, changed CLI flags or output, removed behavior, and old files that no longer load are not findings. Mention one in a line if users will notice it, so the PR description can say so, but it never blocks the PR.
+**Deliberate breaking changes don't count while mini is v0.x.** When the PR means to rename a config field, change CLI flags or output, remove a behavior, or stop loading an old file format, it isn't a finding. Mention it in a line if users will notice it, so the PR description can say so. An unintended loss of behavior or data is still a finding; if you can't tell whether a break was intended, say so.
 
 ## Step 0 — Gather the diff and check out the PR branch
 
@@ -210,7 +211,7 @@ This pass explores the whole codebase, not just the diff. For every function, ty
    Also check the diff against itself for blocks repeated across files.
 3. **Compare shared and separate forms.** For matching contracts, consider which operation should own the shared rule and how callers would use it. Preserve separate implementations when sharing hides different contracts or creates more coupling than it removes. Justify a finding through observed drift or meaningful maintenance cost.
 
-**Proof standard:** cite every location's file:line, show that they do the same job (same inputs, outputs, and side effects), and give the unification.
+**Proof standard:** cite every location's file:line, show that they do the same job (same inputs, outputs, and side effects), and show where they have drifted or would drift.
 
 Assess duplication by inconsistent behavior or concrete maintenance cost. Similar code alone does not establish a blocking defect; shared abstraction can also hide different contracts.
 
@@ -218,7 +219,7 @@ Assess duplication by inconsistent behavior or concrete maintenance cost. Simila
 
 **Skip this pass** if triage found no audience.
 
-Run each command or tool from triage once, against one fixture that combines every state the diff distinguishes (healthy, each failure kind, disabled, empty). Read the whole output as that audience would; for an agent, read the raw tool result.
+Run each command or tool from triage against one fixture combining every state the diff distinguishes that can coexist (healthy, each failure kind, disabled), plus a separate run for each state that can't, such as empty or a fatal error that stops the command. Read the whole output as that audience would; for an agent, read the raw tool result.
 - A failure says what failed, why, and what to do next, at the earliest step the audience can act, through a channel they actually see.
 - Each fact appears once, is true on every path that prints it, and agrees with the exit status and totals.
 
@@ -259,7 +260,7 @@ Read the changed code as an engineer new to it would, and flag where they would 
 - **Consistency:** naming, error style, and idioms match the surrounding package.
 - **Comments:** they explain why, not what; no section dividers in tests; no doc comments that repeat the name.
 
-**Proof standard:** quote the code, say what a reader would get wrong or what change it makes risky, and give the clearer form. Assess severity by that cost or by an explicit AGENTS.md rule, not by preference alone.
+**Proof standard:** quote the code, and say what a reader would get wrong or what change it makes risky. Assess severity by that cost or by an explicit AGENTS.md rule, not by preference alone.
 
 ## Pre-report gate
 
@@ -278,10 +279,10 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 ```markdown
 # PR Review — [title or branch]
 **Date:** YYYY-MM-DD
-**Verdict:** APPROVE | REQUEST CHANGES | REJECT
+**Verdict:** APPROVE | APPROVE WITH COMMENTS | REQUEST CHANGES
 
 ## Executive Summary
-[One paragraph. Overall quality, biggest risk area, what the verdict hinges on.]
+[One paragraph. Overall quality, biggest risk area, and why the verdict: which findings drive it, and whether they can be fixed within the current approach or call for rethinking it.]
 
 ## 🔴 HIGH — [title]
 **Pass:** Concurrency | Security | Correctness | Experience | Tests | Maintainability
@@ -297,7 +298,7 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 
 ## 🟡 LOW — [title]
 **Pass:** Maintainability | Correctness
-[One line. What and where. Reserve LOW for truly trivial findings — borderline preference calls, not rule violations.]
+[One line. What and where, and the fix only if it's trivial.]
 
 ## Outside this PR
 [Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
@@ -311,8 +312,8 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 ```
 
 **Verdict:**
-- **APPROVE** — no HIGH or MEDIUM; LOWs are optional cleanup
-- **REQUEST CHANGES** — one or more MEDIUMs that must be fixed before merge
-- **REJECT** — any HIGH supported by a reachable failure and consequential impact. Assess coverage gaps by the unprotected contract and risk, and races by their behavior, rather than a categorical test-count rule.
+- **APPROVE** — nothing to raise
+- **APPROVE WITH COMMENTS** — only LOWs: tweaks the author can make now or defer
+- **REQUEST CHANGES** — one or more HIGH or MEDIUM findings. Assess coverage gaps by the unprotected contract and risk, and races by their behavior, rather than a categorical test-count rule.
 
 Don't pad the report. If the code is correct and well-tested, say so in two sentences and APPROVE.
