@@ -7,13 +7,6 @@ import (
 	"strings"
 )
 
-// SourceError is a server file that failed to load.
-type SourceError struct {
-	Path       string
-	ServerName string
-	Err        error
-}
-
 type LoadProjectionsResult struct {
 	Projections    map[string]map[string]*ProjectionConfig
 	SkippedServers map[string]error
@@ -71,7 +64,11 @@ func loadServerConfigLenient(path string) (*ServerConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return parseServerConfig(path, data)
+	sc, err := parseServerConfig(path, data)
+	if err == nil && sc.ProjectionsErr != nil {
+		return nil, sc.ProjectionsErr.Err
+	}
+	return sc, err
 }
 
 func loadProjFilesIsolated(configDir string, servers []ServerConfig, load *LoadProjectionsResult) map[string]map[string]*ProjectionConfig {
@@ -117,18 +114,6 @@ func validateProjectionsIsolated(servers []ServerConfig, load *LoadProjectionsRe
 func validateLoadedProjections(name string, projections map[string]*ProjectionConfig) error {
 	if err := validateServerProjectionFormats(name, projections); err != nil {
 		return err
-	}
-	return nil
-}
-
-func validateServerProjectionFormats(name string, projections map[string]*ProjectionConfig) error {
-	for tool, p := range projections {
-		if p == nil {
-			continue
-		}
-		if err := ValidResponseFormat(p.Format); err != nil {
-			return fmt.Errorf("server %s: projection %s: format: %w", name, tool, err)
-		}
 	}
 	return nil
 }
