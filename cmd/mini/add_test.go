@@ -415,17 +415,24 @@ func TestConnectAndAuthorizeIfNeeded_onlyStaticAuthSkipsLogin(t *testing.T) {
 	t.Cleanup(loopback.Close)
 	tests := []struct {
 		name      string
-		header    string
+		headers   map[string]string
 		wantLogin bool
 	}{
-		{"unrelated header still logs in", "X-Tenant: acme", true},
-		{"static auth header skips login", "Authorization: Bearer static-token", false},
+		{"unrelated header still logs in", map[string]string{"X-Tenant": "acme"}, true},
+		{"static auth header skips login", map[string]string{"Authorization": "Bearer static-token"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			yaml := "transport: http\nurl: " + loopback.URL + "\nheaders:\n  " + tt.header + "\nauth:\n  type: oauth2\n"
-			testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), yaml)
+			configtest.WriteServer(t, dir, config.ServerConfig{
+				Name:      "svc",
+				Transport: "http",
+				URL:       loopback.URL,
+				Headers:   tt.headers,
+				Auth: &config.AuthConfig{
+					Type: config.AuthTypeOAuth2,
+				},
+			})
 			var out bytes.Buffer
 			connectAndAuthorizeIfNeeded(dir, "svc", &out)
 			if got := strings.Contains(out.String(), "requires OAuth authorization"); got != tt.wantLogin {
@@ -442,7 +449,13 @@ func TestAuthUndiscovered(t *testing.T) {
 		want bool
 	}{
 		{"http without auth", config.ServerConfig{Transport: "http", URL: "https://x.example/mcp"}, true},
-		{"http with auth", config.ServerConfig{Transport: "http", URL: "https://x.example/mcp", Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}, false},
+		{"http with auth", config.ServerConfig{
+			Transport: "http",
+			URL:       "https://x.example/mcp",
+			Auth: &config.AuthConfig{
+				Type: config.AuthTypeOAuth2,
+			},
+		}, false},
 		{"stdio", config.ServerConfig{Command: "x"}, false},
 	}
 	for _, tt := range tests {

@@ -9,13 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"golang.org/x/oauth2"
 )
 
 type commitFixture struct {
@@ -90,9 +89,7 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 	f := newCommitFixture(t)
 	params := f.params()
 
-	if err := auth.Save(f.dir, "srv", storedToken(time.Time{})); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	f.endpoint.AccessToken = "refresh-result"
 	rawReceived, rawRelease := gateNextTokenRequest(f.endpoint)
 	var once sync.Once
@@ -147,12 +144,8 @@ func TestCommitAuthorizedToken_withStoredRegistration_usesItsClientCredentials(t
 	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
 
 	reg1 := &auth.Registration{ClientID: "dcr-v1", ClientSecret: "secret-v1", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(f.dir, "srv", reg1); err != nil {
-		t.Fatal(err)
-	}
-	if err := auth.Save(f.dir, "srv", storedToken(time.Time{})); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: f.dir, ServerName: "srv", Registration: reg1})
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
@@ -168,9 +161,7 @@ func TestCommitAuthorizedToken_withStoredRegistration_usesItsClientCredentials(t
 	}
 
 	reg2 := &auth.Registration{ClientID: "dcr-v2", ClientSecret: "secret-v2", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(f.dir, "srv", reg2); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: f.dir, ServerName: "srv", Registration: reg2})
 	if err := f.registry.CommitAuthorizedToken(params, &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}); err != nil {
 		t.Fatalf("CommitAuthorizedToken: %v", err)
 	}
@@ -188,9 +179,7 @@ func TestCommitAuthorizedToken_withStoredRegistration_usesItsClientCredentials(t
 func TestCommitAuthorizedToken_saveFails_providerUnchanged(t *testing.T) {
 	f := newCommitFixture(t)
 	params := f.params()
-	if err := auth.Save(f.dir, "srv", storedToken(time.Time{})); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
@@ -222,9 +211,7 @@ func TestCommitAuthorizedToken_differentServerURL_rejected(t *testing.T) {
 		ConfigDir:  f.dir, ServerName: "srv", ServerURL: "https://a.example.com/mcp", Clock: f.clock,
 	}
 	stored := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r", Expiry: f.clock.Now().Add(time.Hour)}
-	if err := auth.Save(f.dir, "srv", stored); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: stored})
 	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
 		t.Fatal(err)
@@ -276,13 +263,9 @@ func TestCommitAuthorizedToken_externalReregistration_usesNewRegistrationCredent
 	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
 
 	reg1 := &auth.Registration{ClientID: "dcr-v1", ClientSecret: "secret-v1", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(f.dir, "srv", reg1); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: f.dir, ServerName: "srv", Registration: reg1})
 	initialTok := &oauth2.Token{AccessToken: "initial-access", RefreshToken: "initial-refresh", Expiry: f.clock.Now().Add(time.Hour)}
-	if err := auth.Save(f.dir, "srv", initialTok); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: initialTok})
 
 	p, err := f.registry.GetOrCreate(params)
 	if err != nil {
@@ -295,13 +278,9 @@ func TestCommitAuthorizedToken_externalReregistration_usesNewRegistrationCredent
 	}
 
 	reg2 := &auth.Registration{ClientID: "dcr-v2", ClientSecret: "secret-v2", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(f.dir, "srv", reg2); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: f.dir, ServerName: "srv", Registration: reg2})
 	externalTok := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh", Expiry: f.clock.Now().Add(time.Hour)}
-	if err := auth.Save(f.dir, "srv", externalTok); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: externalTok})
 
 	got, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access")
 	if err != nil {

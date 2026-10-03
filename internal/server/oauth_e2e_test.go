@@ -5,21 +5,19 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"golang.org/x/oauth2"
@@ -76,8 +74,17 @@ func fakeTokenServer(t *testing.T, accessToken string) *httptest.Server {
 
 func newOAuthServer(t *testing.T, dir, svcName, tokenURL, mcpURL string) *server.Server {
 	t.Helper()
-	writeServerYAML(t, dir, svcName, fmt.Sprintf("transport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
-		mcpURL, tokenURL, tokenURL))
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:      svcName,
+		Transport: "http",
+		URL:       mcpURL,
+		Auth: &config.AuthConfig{
+			Type:     "oauth2",
+			ClientID: "test-client",
+			AuthURL:  tokenURL + "/authorize",
+			TokenURL: tokenURL + "/token",
+		},
+	})
 	cfg := config.DefaultConfig()
 	cfg.DisableAuthBrowserOpen = true
 	return newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
@@ -127,8 +134,18 @@ func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
 	dir := t.TempDir()
 	openedPath := filepath.Join(dir, "opened-url")
 	tokenSrv := fakeTokenServer(t, "unused-token")
-	writeServerYAML(t, dir, "protected", fmt.Sprintf("transport: http\nurl: %s/mcp\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n  browser_cmd: printf %%s > %s\n",
-		tokenSrv.URL, tokenSrv.URL, tokenSrv.URL, openedPath))
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:      "protected",
+		Transport: "http",
+		URL:       tokenSrv.URL + "/mcp",
+		Auth: &config.AuthConfig{
+			Type:       "oauth2",
+			ClientID:   "test-client",
+			AuthURL:    tokenSrv.URL + "/authorize",
+			TokenURL:   tokenSrv.URL + "/token",
+			BrowserCmd: "printf %s > " + openedPath,
+		},
+	})
 	cfg := config.DefaultConfig()
 	cfg.BrowserCommand = "false"
 	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
@@ -207,142 +224,18 @@ func readYAMLFile(t *testing.T, path string, out any) {
 	}
 }
 
-func TestAddUpstream_detectsOAuthFrom401(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-
-	dir := t.TempDir()
-	writeServerYAML(t, dir, "needsauth", "transport: http\nurl: "+mcpSrv.URL+"\n")
-	srv := newServerWithDir(t, dir)
-	defer srv.Close()
-
-	sc := loadServerConfig(t, dir, "needsauth")
-	err := srv.AddUpstream(context.Background(), sc)
-	if err == nil {
-		t.Fatal("expected AddUpstream to return an error")
-	}
-	if !strings.Contains(err.Error(), "mini auth needsauth") {
-		t.Errorf("error should mention `mini auth needsauth`, got: %v", err)
-	}
-
-	if !config.IsOAuthDetected(dir, "needsauth") {
-		t.Error("expected the oauth-detected marker to be written")
-	}
-	got := loadServerConfig(t, dir, "needsauth")
-	if got.Auth == nil || got.Auth.Type != "oauth2" {
-		t.Errorf("Auth = %+v, want type oauth2 merged in from the detected marker", got.Auth)
-	}
-}
-
-func TestAddUpstream_doesNotOverwriteExistingAuth(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-
-	dir := t.TempDir()
-	writeServerYAML(t, dir, "hasauth", "transport: http\nurl: "+mcpSrv.URL+"\nauth:\n  type: apikey\n  token: secret\n")
-	srv := newServerWithDir(t, dir)
-	defer srv.Close()
-
-	sc := loadServerConfig(t, dir, "hasauth")
-	if err := srv.AddUpstream(context.Background(), sc); err == nil {
-		t.Fatal("expected AddUpstream to return an error")
-	}
-
-	got := readServerYAML(t, dir, "hasauth")
-	if got.Auth == nil || got.Auth.Type != "apikey" {
-		t.Errorf("Auth = %+v, existing apikey config was clobbered", got.Auth)
-	}
-}
-
-func TestAddUpstream_bare401WithNoEvidenceDoesNotMarkOAuth(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/.well-known/oauth-protected-resource" {
-			http.NotFound(w, r)
-			return
-		}
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-
-	dir := t.TempDir()
-	writeServerYAML(t, dir, "plain401", "transport: http\nurl: "+mcpSrv.URL+"\n")
-	srv := newServerWithDir(t, dir)
-	defer srv.Close()
-
-	sc := loadServerConfig(t, dir, "plain401")
-	err := srv.AddUpstream(context.Background(), sc)
-	if err == nil {
-		t.Fatal("expected AddUpstream to return an error")
-	}
-	if strings.Contains(err.Error(), "requires OAuth authorization") {
-		t.Errorf("error should not claim OAuth is required, got: %v", err)
-	}
-
-	if config.IsOAuthDetected(dir, "plain401") {
-		t.Error("a bare 401 with no PRM/header evidence must not write the oauth-detected marker")
-	}
-}
-
-func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-
-	dir := t.TempDir()
-	writeServerYAML(t, dir, "statictoken", "transport: http\nurl: "+mcpSrv.URL+"\nheaders:\n  Authorization: Bearer some-static-token\n")
-	srv := newServerWithDir(t, dir)
-	defer srv.Close()
-
-	sc := loadServerConfig(t, dir, "statictoken")
-	if err := srv.AddUpstream(context.Background(), sc); err == nil {
-		t.Fatal("expected AddUpstream to return an error")
-	}
-
-	if config.IsOAuthDetected(dir, "statictoken") {
-		t.Error("a server with a manually-configured Authorization header must never be marked oauth2 — RFC 6750 mandates the same Bearer challenge for an expired static token")
-	}
-}
-
-func TestAddUpstream_customAuthHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
-	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", "Bearer")
-		w.WriteHeader(http.StatusUnauthorized)
-	}))
-	defer mcpSrv.Close()
-
-	dir := t.TempDir()
-	writeServerYAML(t, dir, "apikeyserver", "transport: http\nurl: "+mcpSrv.URL+"\nheaders:\n  X-Api-Key: some-static-key\n")
-	srv := newServerWithDir(t, dir)
-	defer srv.Close()
-
-	sc := loadServerConfig(t, dir, "apikeyserver")
-	if err := srv.AddUpstream(context.Background(), sc); err == nil {
-		t.Fatal("expected AddUpstream to return an error")
-	}
-
-	if config.IsOAuthDetected(dir, "apikeyserver") {
-		t.Error("a server with any manually-configured header must never be marked oauth2")
-	}
-}
-
 func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.T) {
 	const staleToken = "stale-token"
 	const browserToken = "browser-token"
 
 	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", &oauth2.Token{
-		AccessToken: staleToken,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Token: &oauth2.Token{
+			AccessToken: staleToken,
+		},
+	})
 
 	var mu sync.Mutex
 	acceptedToken := ""
@@ -392,9 +285,17 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	}))
 	defer tokenSrv.Close()
 
-	writeServerYAML(t, dir, "srv", fmt.Sprintf(
-		"transport: http\nurl: %s\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: %s/authorize\n  token_url: %s/token\n",
-		mcpSrv.URL, tokenSrv.URL, tokenSrv.URL))
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:      "srv",
+		Transport: "http",
+		URL:       mcpSrv.URL,
+		Auth: &config.AuthConfig{
+			Type:     "oauth2",
+			ClientID: "test-client",
+			AuthURL:  tokenSrv.URL + "/authorize",
+			TokenURL: tokenSrv.URL + "/token",
+		},
+	})
 
 	cfg := config.DefaultConfig()
 	cfg.DisableAuthBrowserOpen = true

@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
@@ -178,9 +179,13 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 		e := newConfigToolEnv(t)
 		running := fakeConn("real_tool")
 		addEdgeConn(t, e.srv, config.ServerConfig{Name: "svc"}, running)
-		if err := auth.Save(e.dir, "svc", &oauth2.Token{AccessToken: "running-token"}); err != nil {
-			t.Fatal(err)
-		}
+		authtest.SaveToken(t, authtest.TokenFile{
+			ConfigDir:  e.dir,
+			ServerName: "svc",
+			Token: &oauth2.Token{
+				AccessToken: "running-token",
+			},
+		})
 
 		text, failed := e.addServer(map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL})
 
@@ -438,9 +443,13 @@ func TestConfigRemoveServer(t *testing.T) {
 			})
 			removed := httptest.NewServer(handler)
 			t.Cleanup(removed.Close)
-			if err := auth.Save(e.dir, "svc", &oauth2.Token{AccessToken: "old-token"}); err != nil {
-				t.Fatal(err)
-			}
+			authtest.SaveToken(t, authtest.TokenFile{
+				ConfigDir:  e.dir,
+				ServerName: "svc",
+				Token: &oauth2.Token{
+					AccessToken: "old-token",
+				},
+			})
 			if err := e.connectUserOAuthServer("svc", removed.URL); err != nil || oldTokenSent.Load() == 0 {
 				t.Fatalf("precondition: the removed server never used its login: %v", err)
 			}
@@ -481,7 +490,17 @@ func TestConfigRemoveServer(t *testing.T) {
 
 func (e configToolEnv) connectUserOAuthServer(name, url string) error {
 	e.t.Helper()
-	writeServerYAML(e.t, e.dir, name, "transport: http\nurl: "+url+"\nauth:\n  type: oauth2\n  client_id: test-client\n  auth_url: http://auth.example/authorize\n  token_url: http://auth.example/token\n")
+	configtest.WriteServer(e.t, e.dir, config.ServerConfig{
+		Name:      name,
+		Transport: "http",
+		URL:       url,
+		Auth: &config.AuthConfig{
+			Type:     "oauth2",
+			ClientID: "test-client",
+			AuthURL:  "http://auth.example/authorize",
+			TokenURL: "http://auth.example/token",
+		},
+	})
 	sc, err := config.LoadServer(e.dir, name)
 	if err != nil {
 		e.t.Fatal(err)

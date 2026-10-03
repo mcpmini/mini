@@ -69,9 +69,7 @@ func (c *capturingTokenServer) handle(w http.ResponseWriter, r *http.Request) {
 func hydrateFromSavedRegistration(t *testing.T, reg *auth.Registration, tokenURL string, clk clock.Clock) *config.AuthConfig {
 	t.Helper()
 	dir := t.TempDir()
-	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-		t.Fatalf("SaveRegistration: %v", err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 		"authorization_endpoint":           "https://as.example.com/authorize",
 		"token_endpoint":                   "https://as.example.com/token",
@@ -263,9 +261,7 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := auth.SaveRegistration(dir, "srv", tc.reg); err != nil {
-				t.Fatal(err)
-			}
+			authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: tc.reg})
 			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
@@ -400,9 +396,7 @@ func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 	const secret = "sk-test-usurp-should-not-leak"
 	dir := t.TempDir()
 	reg := &auth.Registration{ClientID: "leak-check-client", ClientSecret: secret, TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	rejectingTokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_client", http.StatusUnauthorized)
 	}))

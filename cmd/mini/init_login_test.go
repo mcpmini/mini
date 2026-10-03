@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
@@ -76,7 +76,14 @@ func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 
 func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "oauth.yaml"), "transport: http\nurl: https://api.example.com\nauth:\n  type: oauth2\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:      "oauth",
+		Transport: "http",
+		URL:       "https://api.example.com",
+		Auth: &config.AuthConfig{
+			Type: "oauth2",
+		},
+	})
 	brokenPath := filepath.Join(dir, "servers", "broken.yaml")
 	testutil.WriteFile(t, brokenPath, "bad: [yaml\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
@@ -108,9 +115,7 @@ func TestRunLoginStepBrokenMainConfigSkipsOAuthLogin(t *testing.T) {
 func TestRunLoginStepListingShowsReasonNextToServerName(t *testing.T) {
 	dir := loginStepConfig(t, "fresh", "expired", "corrupt")
 	expired := &oauth2.Token{AccessToken: "t", Expiry: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}
-	if err := auth.Save(dir, "expired", expired); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "expired", Token: expired})
 	testutil.WriteFile(t, filepath.Join(dir, "internal", "corrupt.token.json"), "not json")
 	out := &bytes.Buffer{}
 	runLoginStep(loginStepParams{configDir: dir, ask: func(string) string { return "s" }, out: out, errOut: &bytes.Buffer{}})
@@ -161,8 +166,23 @@ func TestRunLoginStepAnswers(t *testing.T) {
 
 func TestRunLoginStepOmitsServersWithUsableTokens(t *testing.T) {
 	dir := loginStepConfig(t, "ok", "refresh", "need")
-	saveTestToken(t, dir, "ok", &oauth2.Token{AccessToken: "t", Expiry: time.Now().Add(time.Hour)})
-	saveTestToken(t, dir, "refresh", &oauth2.Token{AccessToken: "t", RefreshToken: "r", Expiry: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)})
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "ok",
+		Token: &oauth2.Token{
+			AccessToken: "t",
+			Expiry:      time.Now().Add(time.Hour),
+		},
+	})
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "refresh",
+		Token: &oauth2.Token{
+			AccessToken:  "t",
+			RefreshToken: "r",
+			Expiry:       time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
+	})
 	out := &bytes.Buffer{}
 	var authorized []string
 	runLoginStep(loginStepParams{
@@ -201,13 +221,6 @@ func TestRunLoginStepOmitsDisabledServers(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "off") {
 		t.Errorf("disabled server listed or reminded:\n%s", out.String())
-	}
-}
-
-func saveTestToken(t *testing.T, dir, name string, token *oauth2.Token) {
-	t.Helper()
-	if err := auth.Save(dir, name, token); err != nil {
-		t.Fatal(err)
 	}
 }
 

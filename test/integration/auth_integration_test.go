@@ -3,15 +3,24 @@
 package integration_test
 
 import (
-	"fmt"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
-		"transport: sse\nurl: %s\nauth:\n  type: bearer\n  token: my-secret-token\n", f.srv.URL))
+	configtest.WriteServer(t, cfg, config.ServerConfig{
+		Name:      "svc",
+		Transport: "sse",
+		URL:       f.srv.URL,
+		Auth: &config.AuthConfig{
+			Type:  "bearer",
+			Token: "my-secret-token",
+		},
+	})
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
@@ -24,8 +33,16 @@ func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
 func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
 	f, gotKey := authCapturingMCP(t, "X-Api-Key")
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
-		"transport: sse\nurl: %s\nauth:\n  type: apikey\n  header: X-Api-Key\n  token: my-api-key\n", f.srv.URL))
+	configtest.WriteServer(t, cfg, config.ServerConfig{
+		Name:      "svc",
+		Transport: "sse",
+		URL:       f.srv.URL,
+		Auth: &config.AuthConfig{
+			Type:   "apikey",
+			Token:  "my-api-key",
+			Header: "X-Api-Key",
+		},
+	})
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
@@ -38,8 +55,12 @@ func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
 func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 	f, gotHeader := authCapturingMCP(t, "X-Custom-Key")
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "svc", fmt.Sprintf(
-		"transport: sse\nurl: %s\nheaders:\n  X-Custom-Key: custom-value\n", f.srv.URL))
+	configtest.WriteServer(t, cfg, config.ServerConfig{
+		Name:      "svc",
+		Transport: "sse",
+		URL:       f.srv.URL,
+		Headers:   map[string]string{"X-Custom-Key": "custom-value"},
+	})
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)
@@ -52,7 +73,7 @@ func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 func TestIntegrationAuth_noTokenNoAuthHeader(t *testing.T) {
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "svc", "transport: sse\nurl: "+f.srv.URL+"\n")
+	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "svc", Transport: "sse", URL: f.srv.URL})
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)

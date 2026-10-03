@@ -126,7 +126,11 @@ func TestRemoveServerFromAgent_anAddOfTheNameWaitsUntilTheRemoveFinishes(t *test
 	added := make(chan struct{})
 	go func() {
 		defer close(added)
-		_, _ = srv.addServerFromAgent(context.Background(), &config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp"}) // fails to connect either way
+		_, _ = srv.addServerFromAgent(context.Background(), &config.ServerConfig{
+			Name:      "svc",
+			Transport: "http",
+			URL:       "http://127.0.0.1:1/mcp",
+		}) // fails to connect either way
 	}()
 	waitUntil(t, "the add waits for svc or finishes", func() bool { return srv.NameLockCallers("svc") == 2 || isClosed(added) })
 	addFinishedMidRemove := isClosed(added)
@@ -272,9 +276,15 @@ func TestRemoveServerFromAgent_aTokenRefreshFinishingMidRemoveLeavesNoToken(t *t
 func startTokenRefresh(t *testing.T, srv *Server) (finish func(), refreshed <-chan struct{}) {
 	t.Helper()
 	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := auth.Save(srv.configDir, "svc", &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)}); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  srv.configDir,
+		ServerName: "svc",
+		Token: &oauth2.Token{
+			AccessToken:  "old",
+			RefreshToken: "r",
+			Expiry:       epoch.Add(-time.Second),
+		},
+	})
 	endpoint, refreshReached, finish := gatedTokenEndpoint(t)
 	login, err := srv.providerRegistry.GetOrCreate(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: endpoint + "/token"},

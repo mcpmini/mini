@@ -8,13 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"golang.org/x/oauth2"
 )
 
 func TestProviderRegistry_sameServer_returnsSameProvider(t *testing.T) {
@@ -75,13 +74,16 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 		{
 			name: "expired_client_secret",
 			initial: func(t *testing.T, dir string) provider.Params {
-				if err := auth.SaveRegistration(dir, "srv", &auth.Registration{
-					ClientID: "dcr-client", ClientSecret: "secret",
-					TokenEndpointAuthMethod: "client_secret_basic",
-					ClientSecretExpiresAt:   100,
-				}); err != nil {
-					t.Fatal(err)
-				}
+				authtest.SaveRegistration(t, authtest.RegistrationFile{
+					ConfigDir:  dir,
+					ServerName: "srv",
+					Registration: &auth.Registration{
+						ClientID:                "dcr-client",
+						ClientSecret:            "secret",
+						TokenEndpointAuthMethod: "client_secret_basic",
+						ClientSecretExpiresAt:   100,
+					},
+				})
 				return provider.Params{
 					AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"},
 					ConfigDir:  dir, ServerName: "srv", ServerURL: "https://mcp.example.com",
@@ -106,9 +108,13 @@ func TestProviderRegistry_authConfigDrift_redialReusesProvider(t *testing.T) {
 				}
 			},
 			between: func(t *testing.T, dir string, reg *provider.Registry) {
-				if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "dcr-new"}); err != nil {
-					t.Fatal(err)
-				}
+				authtest.SaveRegistration(t, authtest.RegistrationFile{
+					ConfigDir:  dir,
+					ServerName: "srv",
+					Registration: &auth.Registration{
+						ClientID: "dcr-new",
+					},
+				})
 			},
 			redial: func(t *testing.T, dir string) provider.Params {
 				return provider.Params{
@@ -177,9 +183,7 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 	dir := t.TempDir()
 	epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	expired := &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)}
-	if err := auth.Save(dir, "srv", expired); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: expired})
 
 	endpoint := authtest.NewTokenServer(t)
 	received, release := gateNextTokenRequest(endpoint)
@@ -237,9 +241,13 @@ func TestProviderRegistry_forget(t *testing.T) {
 	t.Run("the next provider for the name loads its token from disk, at any URL", func(t *testing.T) {
 		for _, nextURL := range []string{"https://mcp.example.com/mcp", "https://other.example.com/mcp"} {
 			dir := t.TempDir()
-			if err := auth.Save(dir, "srv", &oauth2.Token{AccessToken: "old"}); err != nil {
-				t.Fatal(err)
-			}
+			authtest.SaveToken(t, authtest.TokenFile{
+				ConfigDir:  dir,
+				ServerName: "srv",
+				Token: &oauth2.Token{
+					AccessToken: "old",
+				},
+			})
 			registry := provider.NewRegistry()
 			old, err := registry.GetOrCreate(oauthParams(dir, "https://mcp.example.com/mcp"))
 			if err != nil {
@@ -266,9 +274,7 @@ func TestProviderRegistry_forget(t *testing.T) {
 
 	t.Run("the forgotten provider no longer authorizes", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := auth.Save(dir, "srv", &oauth2.Token{AccessToken: "old"}); err != nil {
-			t.Fatal(err)
-		}
+		authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: &oauth2.Token{AccessToken: "old"}})
 		registry := provider.NewRegistry()
 		old, err := registry.GetOrCreate(oauthParams(dir, "https://mcp.example.com/mcp"))
 		if err != nil {
@@ -285,9 +291,15 @@ func TestProviderRegistry_forget(t *testing.T) {
 	t.Run("an in-flight refresh is aborted and does not save its token", func(t *testing.T) {
 		dir := t.TempDir()
 		epoch := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-		if err := auth.Save(dir, "srv", &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: epoch.Add(-time.Second)}); err != nil {
-			t.Fatal(err)
-		}
+		authtest.SaveToken(t, authtest.TokenFile{
+			ConfigDir:  dir,
+			ServerName: "srv",
+			Token: &oauth2.Token{
+				AccessToken:  "old",
+				RefreshToken: "r",
+				Expiry:       epoch.Add(-time.Second),
+			},
+		})
 		endpoint := authtest.NewTokenServer(t)
 		received, release := gateNextTokenRequest(endpoint)
 		t.Cleanup(func() { release() })

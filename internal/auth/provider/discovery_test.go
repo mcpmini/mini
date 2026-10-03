@@ -14,14 +14,13 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
+	"golang.org/x/oauth2"
 )
 
 func clientIDSentToTokenEndpoint(endpoint *authtest.TokenServer) string {
@@ -86,13 +85,13 @@ func newDiscoveryFixture(t *testing.T, p discoveryFixtureParams) *discoveryFixtu
 	if p.expiredToken {
 		tok.Expiry = f.clock.Now()
 	}
-	if err := auth.Save(f.dir, "srv", tok); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: tok})
 	if p.initialDCR != nil {
-		if err := auth.SaveRegistration(f.dir, "srv", p.initialDCR); err != nil {
-			t.Fatal(err)
-		}
+		authtest.SaveRegistration(t, authtest.RegistrationFile{
+			ConfigDir:    f.dir,
+			ServerName:   "srv",
+			Registration: p.initialDCR,
+		})
 	}
 	prov, err := provider.New(pp)
 	if err != nil {
@@ -135,7 +134,14 @@ func TestRefreshAuthorization_clientIDAfterRediscovery(t *testing.T) {
 				if got := clientIDSentToTokenEndpoint(f.endpoint); got != auth.ClientMetadataURL {
 					t.Errorf("first refresh client_id = %q, want %q", got, auth.ClientMetadataURL)
 				}
-				auth.Save(f.dir, "srv", &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}) //nolint:errcheck
+				authtest.SaveToken(t, authtest.TokenFile{
+					ConfigDir:  f.dir,
+					ServerName: "srv",
+					Token: &oauth2.Token{
+						AccessToken:  "external-access",
+						RefreshToken: "external-refresh",
+					},
+				})
 				for _, stale := range []string{"Bearer new-access", "Bearer external-access"} {
 					if _, err := f.provider.RefreshAuthorization(context.Background(), stale); err != nil {
 						t.Fatalf("RefreshAuthorization(%s): %v", stale, err)
@@ -153,8 +159,15 @@ func TestRefreshAuthorization_clientIDAfterRediscovery(t *testing.T) {
 				if _, err := f.provider.Authorization(context.Background()); err != nil {
 					t.Fatal(err)
 				}
-				os.Remove(filepath.Join(f.dir, "internal", "srv.dcr.json"))                                              //nolint:errcheck
-				auth.Save(f.dir, "srv", &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}) //nolint:errcheck
+				os.Remove(filepath.Join(f.dir, "internal", "srv.dcr.json")) //nolint:errcheck
+				authtest.SaveToken(t, authtest.TokenFile{
+					ConfigDir:  f.dir,
+					ServerName: "srv",
+					Token: &oauth2.Token{
+						AccessToken:  "external-access",
+						RefreshToken: "external-refresh",
+					},
+				})
 			},
 			moreCalls: func(t *testing.T, f *discoveryFixture) {
 				if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer external-access"); err != nil {
@@ -213,11 +226,14 @@ func TestRefreshAuthorization_discoveryNetworkError_returnsTransientError(t *tes
 	t.Cleanup(discovery.Close)
 
 	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", &oauth2.Token{
-		AccessToken: "access", RefreshToken: "refresh",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Token: &oauth2.Token{
+			AccessToken:  "access",
+			RefreshToken: "refresh",
+		},
+	})
 	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv",
@@ -249,11 +265,14 @@ func TestRefreshAuthorization_noServerURLOrTokenURL_returnsReauthRemedyWithoutNe
 	endpoint := authtest.NewTokenServer(t)
 
 	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", &oauth2.Token{
-		AccessToken: "access", RefreshToken: "refresh",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Token: &oauth2.Token{
+			AccessToken:  "access",
+			RefreshToken: "refresh",
+		},
+	})
 	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv",
@@ -300,11 +319,14 @@ func TestRefreshAuthorization_prm503_isTransientAndSkipsMCPOrigin(t *testing.T) 
 	t.Cleanup(mcpSrv.Close)
 
 	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", &oauth2.Token{
-		AccessToken: "access", RefreshToken: "refresh",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Token: &oauth2.Token{
+			AccessToken:  "access",
+			RefreshToken: "refresh",
+		},
+	})
 	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv",

@@ -6,14 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
+	"golang.org/x/oauth2"
 )
 
 type providerFixture struct {
@@ -38,9 +36,7 @@ func newProviderFixture(t *testing.T, s providerSetup) *providerFixture {
 	}
 	s.Auth.TokenURL = f.endpoint.Srv.URL + "/token"
 	if s.Token != nil {
-		if err := auth.Save(f.dir, "srv", s.Token); err != nil {
-			t.Fatal(err)
-		}
+		authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: s.Token})
 	}
 	p, err := provider.New(provider.Params{
 		AuthConfig: s.Auth, ConfigDir: f.dir, ServerName: "srv", Clock: f.clock,

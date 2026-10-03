@@ -22,14 +22,10 @@ import (
 func TestNewProvider_storedRegistration_usesConfidentialClientCredentials(t *testing.T) {
 	dir := t.TempDir()
 	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "dcr-secret", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	endpoint := authtest.NewTokenServer(t)
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"}
-	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
@@ -48,9 +44,7 @@ func TestNewProvider_storedRegistration_usesConfidentialClientCredentials(t *tes
 func TestNewProvider_inconsistentRegistration_returnsError(t *testing.T) {
 	dir := t.TempDir()
 	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
-	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
 	if _, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err == nil {
 		t.Fatal("expected construction error for inconsistent registration when no explicit client_id")
@@ -60,9 +54,7 @@ func TestNewProvider_inconsistentRegistration_returnsError(t *testing.T) {
 func TestNewProvider_noRegistration_actsAsPublicClient(t *testing.T) {
 	dir := t.TempDir()
 	endpoint := authtest.NewTokenServer(t)
-	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"}
 	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
 	if err != nil {
@@ -82,12 +74,8 @@ func TestNewProvider_noRegistration_actsAsPublicClient(t *testing.T) {
 func TestNewProvider_concurrentConstruction_leavesSharedConfigUnchanged(t *testing.T) {
 	dir := t.TempDir()
 	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "dcr-secret", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-		t.Fatal(err)
-	}
-	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	shared := &config.AuthConfig{
 		Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token",
 		Scopes: []string{"read"}, ExtraAuthParams: map[string]string{"prompt": "consent"},
@@ -121,14 +109,10 @@ func TestNewProvider_concurrentConstruction_leavesSharedConfigUnchanged(t *testi
 func TestNewProvider_explicitClientID_ignoresStoredRegistration(t *testing.T) {
 	dir := t.TempDir()
 	reg := &auth.Registration{ClientID: "stale-id", ClientSecret: "stale-secret", TokenEndpointAuthMethod: "client_secret_basic"}
-	if err := auth.SaveRegistration(dir, "srv", reg); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	endpoint := authtest.NewTokenServer(t)
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "manual-id", TokenURL: endpoint.Srv.URL + "/token"}
-	if err := auth.Save(dir, "srv", storedToken(time.Time{})); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	p, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()})
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
@@ -161,9 +145,7 @@ func TestNewProvider_nilAuthConfig_returnsError(t *testing.T) {
 func TestNewProvider_nilClock_worksWithStoredToken(t *testing.T) {
 	dir := t.TempDir()
 	tok := &oauth2.Token{AccessToken: "tok", RefreshToken: "ref", Expiry: time.Now().Add(time.Hour)}
-	if err := auth.Save(dir, "srv", tok); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: tok})
 	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2},
 		ConfigDir:  dir, ServerName: "srv",

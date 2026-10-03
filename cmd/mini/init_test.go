@@ -166,7 +166,7 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 			testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
 			serverFile := filepath.Join(configDir, "servers", "foo.yaml")
 			if tt.edit != nil {
-				testutil.WriteFile(t, serverFile, string(tt.edit(serverFile)))
+				testutil.WriteFileBytes(t, serverFile, tt.edit(serverFile))
 			}
 			before := testutil.ReadFile(t, serverFile)
 			testutil.WriteFile(t, src, `{"mcpServers": `+tt.reimport+`}`)

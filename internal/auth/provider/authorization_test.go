@@ -10,14 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
+	"golang.org/x/oauth2"
 )
 
 func TestAuthorization_nearExpiry_refreshesBeforeTokenExpires(t *testing.T) {
@@ -217,9 +215,7 @@ func TestAuthorization_newerStoredTokenDuringBackoff_refreshesWithoutWaiting(t *
 	}
 
 	newer := &oauth2.Token{AccessToken: "newer-access", RefreshToken: "newer-refresh", Expiry: epoch.Add(3 * time.Minute)}
-	if err := auth.Save(f.dir, "srv", newer); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: newer})
 	f.endpoint.Status.Store(http.StatusOK)
 	got, err := f.provider.Authorization(context.Background())
 	if err != nil {
@@ -237,9 +233,7 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 	clk := clock.NewFake()
 	dir := t.TempDir()
 	t1 := &oauth2.Token{AccessToken: "t1-access", RefreshToken: "t1-refresh", Expiry: clk.Now().Add(10 * time.Minute)}
-	if err := auth.Save(dir, "srv", t1); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: t1})
 	endpoint := authtest.NewTokenServer(t)
 	p, err := provider.New(provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.Srv.URL + "/token"},
@@ -253,9 +247,7 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 	}
 	clk.Advance(6 * time.Minute)
 	t2 := &oauth2.Token{AccessToken: "t2-access", RefreshToken: "t2-refresh", Expiry: clk.Now().Add(30 * time.Minute)}
-	if err := auth.Save(dir, "srv", t2); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: t2})
 	got, err := p.Authorization(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -272,9 +264,11 @@ func TestAuthorization_browserLoginDuringBackoff_refreshesWithoutWaiting(t *test
 	epoch := clock.NewFake().Now()
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", storedToken(epoch.Add(time.Minute))); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Token:      storedToken(epoch.Add(time.Minute)),
+	})
 	params := provider.Params{
 		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: mock.Srv.URL + "/token"},
 		ConfigDir:  dir, ServerName: "srv", Clock: clock.NewFakeAt(epoch),

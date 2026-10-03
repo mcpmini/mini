@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"golang.org/x/oauth2"
 )
 
 func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequests(t *testing.T) {
@@ -20,13 +20,9 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 	tokenEp := newTestTokenEndpoint(t)
 	mcp := newTestMCPUpstream(t)
 	validTok := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r1", Expiry: time.Now().Add(time.Hour)}
-	if err := auth.Save(configDir, "live", validTok); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: validTok})
 	expiredTok := &oauth2.Token{AccessToken: "dead-access", RefreshToken: "r2", Expiry: time.Now().Add(-time.Hour)}
-	if err := auth.Save(configDir, "idle", expiredTok); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "idle", Token: expiredTok})
 	servers := []config.ServerConfig{
 		oauthServerConfig("live", mcp.srv.URL, tokenEp.srv.URL, true),
 		oauthServerConfig("idle", "http://localhost:1", tokenEp.srv.URL, false),

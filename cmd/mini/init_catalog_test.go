@@ -310,7 +310,12 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 
 func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "my-linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:      "my-linear",
+		Transport: "http",
+		URL:       "https://mcp.linear.app/mcp",
+		Headers:   map[string]string{"Authorization": "Bearer ${MINI_TEST_UNSET_CATALOG_VAR}"},
+	})
 	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "transport: [broken\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 

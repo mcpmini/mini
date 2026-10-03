@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestSaveLoadRegistration(t *testing.T) {
@@ -117,9 +118,7 @@ func TestSaveRegistration_createsDir(t *testing.T) {
 
 func TestLoadRegistration_olderFileWithoutNewFieldsLoadsFine(t *testing.T) {
 	dir := t.TempDir()
-	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "legacy-client"}); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, dir+"/internal/srv.dcr.json", `{"client_id":"legacy-client"}`)
 	loaded, err := auth.LoadRegistration(dir, "srv")
 	if err != nil {
 		t.Fatalf("LoadRegistration: %v", err)
