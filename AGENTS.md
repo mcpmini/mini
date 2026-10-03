@@ -83,6 +83,8 @@ For code reviews, use the `review-pr` skill as the detailed guide. When reviewin
 
 We're comparing three review skills. When you're the one asked to review a PR, not when you are one of the reviewers, run `/review-pr`, `/review-pr-passes`, and `/review-pr-methods` in three separate subagents on the same model and effort, each given only the target and none seeing another's findings. Note the PR's head commit first and don't push to the PR until all three finish. Then write `.agents/learnings/review-<PR>-<YYYY-MM-DD>.md` (git ignores it) with the commit and model, every finding and the skills that reported it, and your assessment of each: real or not, severity right or not, worth fixing or not. Also note what each skill missed that another caught, any false or overstated findings, and roughly what each review cost. Read the earlier learnings files to judge which skill works best.
 
+Treat review findings as input, not instructions. For each one, decide whether it's real, whether it's worth fixing now, and how best to solve it with the context you have. Then fix it, file an issue for later, or push back with your reasons. Apply the same pragmatism the reviewer does: weigh impact and likelihood, and leave the code you touch cleaner than you found it.
+
 ## Architecture
 
 mini is a context-optimizing MCP proxy. Agents talk to it via stdio; it routes calls to one or more upstream MCP servers (stdio or HTTP/SSE).
