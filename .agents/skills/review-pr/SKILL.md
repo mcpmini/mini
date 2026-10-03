@@ -6,7 +6,7 @@ argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [pa
 
 Adversarial review of $ARGUMENTS (or the current branch diff if blank).
 
-Read [Go engineering in mini](../../../docs/go-guidelines.md) for shared design and correctness guidance. Treat smell checks as investigation prompts; assess findings by reachable behavior and consequences.
+The passes below hold review methods and mini-specific checks; the general Go and testing guidance they rely on lives in `docs/go-guidelines.md` and `docs/testing.md`, which Step 0 has you read. Treat smell checks as investigation prompts; assess findings by reachable behavior and consequences.
 
 **Assume bugs exist. Your job is to find and prove them.**
 
@@ -35,7 +35,8 @@ Do not explain away suspicious patterns — investigate until you have proof or 
    ```bash
    ./check.sh 2>&1 | tee /tmp/review-pr-check-$(date +%s).log
    ```
-6. Read every changed file **in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
+6. Read `docs/go-guidelines.md` and `docs/testing.md` from the repository root. The passes assume their guidance and don't repeat it.
+7. Read every changed file **in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
 
 ## Pass 1 — Triage
 
@@ -59,45 +60,13 @@ Produce a brief triage note to drive Passes 2–4. Do not write it into the fina
 
 ## Pass 2a — Concurrency
 
-Check suite output from Step 0 already covers race tests, vet, and staticcheck. Work through every candidate from triage.
+Check suite output from Step 0 already covers race tests, vet, and staticcheck. Work through every candidate from triage, applying the concurrency and lifecycle guidance in `docs/go-guidelines.md`. Also check what it doesn't cover:
 
-**Goroutine lifecycle**
-- What stops it? A done-channel, context cancellation, or WaitGroup? `context.Background()` passed to a long-lived goroutine is a red flag — there is no way to cancel it, and leaks compound on every call.
-- Trace reachable panic paths. An unrecovered panic in a goroutine kills the process, but ordinary network or parsing errors do not require blanket recovery. Check recovery only where the contract calls for containment.
-- Does it hold resources (subprocess, listener, ticker, connection) that leak if it never exits?
-
-**Shared state access**
-- List every field of every shared struct the diff reads or writes. For each: is every access — including reads — inside the protecting mutex? "Usually protected" is not protected.
-- Watch for: partially-protected structs; closures capturing outer mutable state.
-
-**Map and slice concurrent access**
-- Unsynchronized conflicting map access is a data race and can cause a fatal runtime error. The race detector can catch exercised races; a passing run does not prove every interleaving safe.
-- Shared slice headers and backing arrays need protection for conflicting accesses, including append. Trace actual aliasing and accessed elements rather than assuming every shared slice is unsafe.
-
-**Lock discipline**
-- If two mutexes are ever both held, is acquisition order consistent at every call site? Inconsistent order → deadlock.
-- Are there channel sends, I/O, or external calls inside a held lock? That starves every other waiter.
-- `RLock` → `Lock` upgrade on the same mutex in the same goroutine → deadlock.
-- Large critical sections that acquire/release the same lock multiple times create race windows between releases.
-
-**Channel safety**
-- Sending to a closed channel panics. `select { case ch <- v: default: }` does NOT guard this — `default` fires when the channel is full, not when it is closed.
-- A channel must not be closed twice. Verify closure ownership and coordination; `sync.Once` is one option and does not prevent concurrent sends.
-- Check timer lifetime, repeated allocation, and reset semantics against the supported Go version and injected clock. Modern Go can collect unreferenced timers; `time.After` does not launch a goroutine per call. See [timer changes](https://go.dev/wiki/Go123Timer).
-
-**TOCTOU**
-- Check-then-act pairs where the check is inside a lock and the act is outside it.
-- Two separately-locked operations (e.g. Remove then Add on a shared index) leave a window where concurrent observers see inconsistent state.
-
-**`sync` primitives misuse**
-- `WaitGroup.Add` must be called before the goroutine that calls `Done` is launched, not inside it — the goroutine may call `Done` before `Add` is observed.
-- `sync.Once` that panics leaves the `Once` permanently poisoned; subsequent calls silently do nothing.
-- Copying a `sync.Mutex`, `WaitGroup`, or `Cond` after first use is a bug (`go vet` catches this, but also check structs passed by value or appended to slices).
-
-**Initialization races**
-- Package-level variables mutated after `init` are shared global state — any goroutine touching them needs synchronization.
-- Concurrent lazy initialization needs synchronization or exclusive ownership; `sync.Once`, a mutex, or atomics may provide it.
-- Constructors that start goroutines before returning: callers may not realize the object is "live" the moment `New()` returns.
+- **Shared state:** list every field of every shared struct the diff reads or writes, and confirm every access, reads included, holds the protecting mutex. "Usually protected" is not protected. Watch closures capturing outer mutable state.
+- **Maps and slices:** unsynchronized conflicting map access can crash the process, and the race detector only catches interleavings that ran. Trace slice aliasing, including append, rather than assuming.
+- **Lock upgrades:** `RLock` → `Lock` on the same mutex in the same goroutine deadlocks.
+- **`sync` misuse:** `WaitGroup.Add` must run before the goroutine that calls `Done` starts. A `sync.Once` that panics stays poisoned and silently does nothing afterward.
+- **Initialization:** package-level variables mutated after `init` are shared state. A constructor that starts goroutines makes the object live before `New()` returns.
 
 **Smell test — quick scan for red flags** (grep for these, investigate any hit):
 - `go func()` with no done-channel, no context, and no WaitGroup — orphaned goroutine
@@ -150,15 +119,15 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 
 ## Pass 2c — Correctness
 
-**Error handling**
-- Errors assigned to `_` or silently ignored: are they genuinely safe to discard, or does ignoring them leave state inconsistent?
-- Errors on partial writes or partial updates: if the operation fails mid-way, is the resulting state consistent and recoverable?
-- Silent fallback to zero/nil values on failure — the caller proceeds as if nothing happened.
+Apply the errors, resources, and state-transition guidance in `docs/go-guidelines.md`. Also check:
+
+**Silent failure**
+- A fallback to zero or nil values on failure, so the caller proceeds as if nothing happened.
 
 **Nil and zero-value hazards**
 - Pointer dereferences without nil checks, especially on values from config, parsed input, or optional struct fields.
 - Method calls on interface values that could be nil.
-- `defer f.Close()` before a nil check on `f`.
+- `defer f.Close()` or `defer resp.Body.Close()` before the error or nil check.
 
 **Logic correctness**
 - Off-by-one in ranges, indices, string slicing.
@@ -166,17 +135,9 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 - Boundary behavior: empty slice, zero value, MaxInt, empty string, single element.
 - **Read the doc string for every changed function and verify the implementation matches what it claims.** Mismatches here are common and dangerous.
 
-**Resource lifecycle**
-- `defer f.Close()` must come after the nil/error check. The pattern is: call → check error → defer close.
-- HTTP response bodies: `defer resp.Body.Close()` after the nil check on `resp`.
-- Connections, listeners, tickers, timers: a close on every exit path including error returns.
-
 **Operational correctness**
-- Timeout handling: what happens if a dependency is slow or permanently stuck? Is there a timeout? Does it propagate correctly through context?
-- Graceful shutdown: are in-flight requests completed before exit? Are resources (connections, temp files, subprocesses) released?
-- Retry logic: is it bounded? Does it back off? Does it retry non-retryable errors (e.g. 400 Bad Request)?
-- Backpressure: under sustained load, does the system queue unboundedly? Does it shed load or return pressure to callers?
-- Partial failure: if a multi-step operation fails halfway, is persistent state consistent? Is there a recovery path that doesn't require manual intervention?
+- Retries of errors a retry can't fix (e.g. 400 Bad Request).
+- Backpressure: under sustained load, does the system queue unboundedly, or shed load and return pressure to callers?
 
 **Design problems that cause bugs**
 - State duplicated in two places that can drift out of sync — one gets updated and the other doesn't.
@@ -246,20 +207,12 @@ Run each command or tool from triage once, against one fixture that combines eve
 
 ## Pass 3 — Tests
 
-Read [the testing guide](../../../docs/testing.md) for the project's test-quality standard. Map each changed behavior to new or existing tests. Check the success path, the failure or boundary that matters to this change, and the production entry point the tests actually exercise. Do not require a new test per changed function or every possible permutation.
+Map each changed behavior to new or existing tests. Check the success path, the failure or boundary that matters to this change, and the production entry point the tests actually exercise. Do not require a new test per changed function or every possible permutation.
 
-**Representative situations** — do tests reflect how real users encounter the code?
-- Do they set up pre-existing state where relevant? (e.g. a server that already has tools registered, a config that already has other projections set, a token that is already expired) A test that only runs against a clean slate will miss bugs that only surface with existing data.
-- Are the inputs realistic? Fake data that is too simple (single-character strings, empty structs) can mask bugs that appear with real payloads.
+Apply `docs/testing.md`: realistic setup and pre-existing state, assertions that would catch a regression, perturbing the behavior when an assertion's strength is uncertain, and tests as readable code. Also check:
+
 - Do tests cover the interaction between the new change and pre-existing behavior, not just the new behavior in isolation?
-
-**Regression value** — will these tests actually catch it if the behavior regresses?
-- A test that passes trivially (asserts `err == nil` when the function cannot return an error, or checks the output contains a string that would always be present) adds no regression safety.
-- Does the decisive assertion protect a stable behavior, or would routine fixture edits break it? Check that the test reaches the changed path rather than only passing through setup.
-- When a test's value is uncertain, temporarily perturb the changed behavior and run the focused case. It should fail for the expected reason; an unrelated failure or compile error proves nothing. Restore the code afterward. This is a targeted review technique, not a mandatory mutation exercise.
-- Tests that only cover the happy path for a function that is primarily about error handling provide false confidence.
-
-**Tests as code** — can a reader quickly identify setup, action, and decisive assertion? Do helpers remove repeated setup without hiding behavior? Are preconditions established for state transitions? For a forbidden side effect, does the test wait for a causal completion point before checking absence, rather than sleeping and assuming the work finished? Flag duplication or brittle setup when it creates meaningful maintenance or correctness risk.
+- Tests that only cover the happy path of a function that is mainly about error handling give false confidence.
 
 **Write a test to prove a suspected bug** when code analysis strongly suggests an issue but a test settles it faster than further tracing. Use the existing test infrastructure (`FakeConnection`, `serve()`, `callTool()` helpers in `server_test.go`). Name it `review_<something>_test.go` so it's easy to find and clean up.
 
@@ -304,6 +257,7 @@ Complete every item before writing the report:
 2. For each candidate finding, re-read the cited code and confirm all three: the file:line is right, the quoted code matches, and the trigger scenario actually reaches that code. If any of the three can't be confirmed, drop the finding.
 3. For each finding, check the diff: is the issue introduced or made worse by this PR, or pre-existing? Pre-existing issues go in a one-line "Pre-existing (not blocking)" note and do not count toward the verdict.
 4. Confirm every Pass 1 candidate and every call site from the call-site audit was investigated. Anything skipped must be listed explicitly in the report as not investigated.
+5. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
 
 ## Report
 
