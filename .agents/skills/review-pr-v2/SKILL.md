@@ -17,6 +17,7 @@ The general Go and testing guidance lives in `docs/go-guidelines.md` and `docs/t
 3. **Read the check.sh log** before writing the report.
 4. **The verdict is mechanical.** Derive it from the findings using the rules at the end.
 5. **The request's framing is a claim, not a fact.** Statements about the design in the request or PR description are things to verify. Listed angles add to the review; they never narrow it.
+6. **Be pragmatic.** Think through edge cases, then weigh each finding by how likely a real user, agent, or maintainer is to hit it and how bad it would be. Only a likely problem, or an unlikely one with severe impact (security, data loss, mini unusable), is MEDIUM or above; report the rest as LOW. A PR doesn't have to solve every problem: recommend the smallest fix that removes this one, not a redesign, new layers, or type machinery, unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere go under "Outside this PR".
 
 ## Step 0 — Check out the change
 
@@ -98,7 +99,7 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 - Nil dereferences on config, parsed input, and optional fields; `defer Close()` before the error check.
 - Off-by-one, wrong comparator, negated condition.
 - Unbounded queues; retries of errors a retry can't fix.
-- State kept in two places that can drift; "call X before Y" contracts the types don't enforce.
+- State kept in two places that can drift; "call X before Y" rules a caller in this codebase gets wrong or easily could.
 
 **Tests**
 - A fix in one path is tested in that path, not only a sibling (HTTP fix, HTTP test).
@@ -106,9 +107,9 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 
 **Maintainability** (`check.sh` catches function length and parameter count)
 - Names: functions are verb phrases that say what they do and predict their effects; types and variables are domain nouns. No vague names (`handle`, `process`, `data`, `util`, `manager`) or misleading ones.
-- Shape: one thing per function at one level of abstraction; the normal path reads straight down with early returns. No deep nesting, functions too long to follow, or boolean or empty-string flags as positional args.
-- Explicitness: no clever tricks, hidden side effects, or order-dependent calls the types don't enforce.
-- Reuse: the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops and wrappers; no abstraction without a contract.
+- Shape: each function does one job; the normal path reads straight down with early returns. No deep nesting, functions too long to follow, or boolean or empty-string flags as positional args.
+- Explicitness: no clever tricks or hidden side effects; steps that must happen in a certain order are obvious from the code.
+- Reuse: the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops; no layers, interfaces, or helpers that don't make the code easier to read or change.
 - Consistency: naming, error style, and idioms match the surrounding package.
 - Comments explain why, not what; no section dividers in tests; no doc comments that repeat the name.
 
@@ -127,7 +128,7 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 
 1. Read the check.sh log in full. Any failure the PR introduced is a finding.
 2. For each finding, confirm the file:line, the quoted code, and that the trigger reaches that code. Drop any you can't confirm.
-3. For each finding, check whether this PR introduced or worsened it. Pre-existing issues go in a one-line "Pre-existing (not blocking)" note and don't count toward the verdict.
+3. For each finding, check whether this PR introduced or worsened it. Anything it didn't goes under "Outside this PR" and doesn't count toward the verdict.
 4. Confirm every risk and call site from Step 1 was settled. List anything not investigated in the report.
 5. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
 
@@ -158,6 +159,9 @@ Output the report in the conversation only; never post it to GitHub.
 ## 🟡 LOW — [title]
 **Pass:** Maintainability | Correctness
 [One line. What and where. Reserve LOW for truly trivial findings — borderline preference calls, not rule violations.]
+
+## Outside this PR
+[Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
 
 ## Test coverage verdict
 [What is tested, what is missing, whether the gap is a blocker.]
