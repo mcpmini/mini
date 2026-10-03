@@ -1,6 +1,6 @@
 ---
 name: review-pr-v2
-description: Adversarial PR review organized by investigation method (trace, run, attack, break, compare) rather than by category. Same invocation and report format as review-pr, so the two can run side by side. Assumes bugs exist and proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
+description: Adversarial PR review organized by investigation method (trace, run, attack, break, compare) rather than by category. Same invocation and report format as review-pr, so the two can run side by side. Assumes bugs exist and proves findings before reporting. Emits APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
 argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [paths to limit the review to]
 ---
 
@@ -17,7 +17,8 @@ The general Go and testing guidance lives in `docs/go-guidelines.md` and `docs/t
 3. **Read the check.sh log** before writing the report.
 4. **The verdict is mechanical.** Derive it from the findings using the rules at the end.
 5. **The request's framing is a claim, not a fact.** Statements about the design in the request or PR description are things to verify. Listed angles add to the review; they never narrow it.
-6. **Be pragmatic.** Rate every finding as "Weigh every finding" describes. A PR doesn't have to solve every problem: recommend the smallest fix that removes this one, not a redesign, new layers, or type machinery, unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere that are worth fixing go under "Outside this PR".
+6. **Be pragmatic.** Rate every finding as "Weigh every finding" describes. A PR doesn't have to solve every problem, and a finding doesn't call for a redesign unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere that are worth fixing go under "Outside this PR".
+7. **Describe problems, not solutions.** Say what is wrong and what it costs; the author has the context to choose the fix. Only when the fix is trivial and unambiguous (a typo, log or message wording, a small rename) state it.
 
 ## Weigh every finding
 
@@ -28,14 +29,14 @@ Rate each finding's impact and likelihood, then decide.
 - **Medium:** a feature misbehaves or fails confusingly, or code so hard to follow that the next change will likely break it, such as a function hundreds of lines long.
 - **Low:** cosmetic, or a little confusing but still readable.
 
-**Likelihood**, in normal use. Normal includes events that are rare but routine: slow or flaky networks, upstreams that time out or fail, a user who edits a config and gets it wrong, invalid input, several agents at once. Unlikely means it needs something outside mini's responsibility, such as an MCP server that breaks the spec, or misuse beyond the trust model.
+**Likelihood**, in normal use. Normal includes events that are rare but routine: slow or flaky networks, upstreams that time out or fail, a user who edits a config and gets it wrong, invalid input, several agents at once. Unlikely means it depends on something mini doesn't promise to support, such as working with an MCP server that breaks the spec, or misuse beyond the trust model. Containing malformed input is always mini's job, though: whatever an upstream server or agent sends, mini must not crash or leak a credential.
 
 **Decide:**
-- Likelihood or impact of medium or above: worth fixing. HIGH when the impact is high and normal use reaches it; otherwise MEDIUM.
-- Both low: LOW at most, or leave it out. It isn't worth an issue.
+- Severity follows impact. HIGH when the impact is high and normal use reaches it. MEDIUM for medium impact, or high impact that only an unlikely path reaches.
+- Low impact is LOW, and worth raising only when its likelihood is medium or above. When both are low, leave it out; it isn't worth an issue.
 - When it's unclear whether something happens in practice, say so; it can wait for evidence rather than be solved speculatively.
 
-**Breaking changes don't count while mini is v0.x.** Renamed config fields, changed CLI flags or output, removed behavior, and old files that no longer load are not findings. Mention one in a line if users will notice it, so the PR description can say so, but it never blocks the PR.
+**Deliberate breaking changes don't count while mini is v0.x.** When the PR means to rename a config field, change CLI flags or output, remove a behavior, or stop loading an old file format, it isn't a finding. Mention it in a line if users will notice it, so the PR description can say so. An unintended loss of behavior or data is still a finding; if you can't tell whether a break was intended, say so.
 
 ## Step 0 — Check out the change
 
@@ -76,7 +77,7 @@ Settle every risk from Step 1 with at least one method. Use the reference checkl
 - Untrusted input from its source to every sink it reaches.
 - Each changed function against its doc comment.
 
-**Run.** When the change has an audience, build the binary and use each affected command or tool once against one fixture combining every state the diff distinguishes (healthy, each failure kind, disabled, empty). Read the whole output as that audience would; for an agent, read the raw tool result.
+**Run.** When the change has an audience, build the binary and use each affected command or tool against one fixture combining every state the diff distinguishes that can coexist (healthy, each failure kind, disabled), plus a separate run for each state that can't, such as empty or a fatal error that stops the command. Read the whole output as that audience would; for an agent, read the raw tool result.
 - A failure says what failed, why, and what to do next, at the earliest step the audience can act, through a channel they see.
 - Each fact appears once, is true on every path that prints it, and agrees with the exit status and totals.
 
@@ -138,9 +139,9 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 - **Correctness:** the triggering input, and the actual versus expected outcome.
 - **Experience:** the quoted output, the audience, and what they needed to see.
 - **Structure:** the domain concepts, where they appear in the flows, and the specific mismatch.
-- **Duplication:** every location with file:line, evidence they do the same job, and the unification.
+- **Duplication:** every location with file:line, evidence they do the same job, and where they have drifted or would drift.
 - **Tests:** the unprotected contract, a realistic regression it would let through, and the perturbation that showed no test fails.
-- **Maintainability:** the quoted code, what a reader would get wrong or what change it makes risky, and the clearer form. Assess severity by that cost or an explicit AGENTS.md rule, not preference alone.
+- **Maintainability:** the quoted code, and what a reader would get wrong or what change it makes risky. Assess severity by that cost or an explicit AGENTS.md rule, not preference alone.
 
 ## Pre-report gate
 
@@ -157,10 +158,10 @@ Output the report in the conversation only; never post it to GitHub.
 ```markdown
 # PR Review — [title or branch]
 **Date:** YYYY-MM-DD
-**Verdict:** APPROVE | REQUEST CHANGES | REJECT
+**Verdict:** APPROVE | APPROVE WITH COMMENTS | REQUEST CHANGES
 
 ## Executive Summary
-[One paragraph. Overall quality, biggest risk area, what the verdict hinges on.]
+[One paragraph. Overall quality, biggest risk area, and why the verdict: which findings drive it, and whether they can be fixed within the current approach or call for rethinking it.]
 
 ## 🔴 HIGH — [title]
 **Pass:** Concurrency | Security | Correctness | Experience | Structure | Duplication | Tests | Maintainability
@@ -177,7 +178,7 @@ Output the report in the conversation only; never post it to GitHub.
 
 ## 🟡 LOW — [title]
 **Pass:** Maintainability | Correctness
-[One line. What and where. Reserve LOW for truly trivial findings — borderline preference calls, not rule violations.]
+[One line. What and where, and the fix only if it's trivial.]
 
 ## Outside this PR
 [Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
@@ -191,8 +192,8 @@ Output the report in the conversation only; never post it to GitHub.
 ```
 
 **Verdict:**
-- **APPROVE** — no HIGH or MEDIUM; LOWs are optional cleanup
-- **REQUEST CHANGES** — one or more MEDIUMs that must be fixed before merge
-- **REJECT** — any HIGH supported by a reachable failure and consequential impact
+- **APPROVE** — nothing to raise
+- **APPROVE WITH COMMENTS** — only LOWs: tweaks the author can make now or defer
+- **REQUEST CHANGES** — one or more HIGH or MEDIUM findings
 
 Don't pad the report. If the code is correct and well tested, say so in two sentences and APPROVE.
