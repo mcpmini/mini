@@ -51,7 +51,7 @@ func TestRefresh_sendsTheClientSecretVerbatim(t *testing.T) {
 	t.Setenv("MINI_TEST_LOCAL_SECRET", "must-not-be-sent")
 	mock := authtest.NewTokenServer(t)
 	ac := mock.AuthConfig()
-	ac.ClientSecret = "${MINI_TEST_LOCAL_SECRET}" // as a registration endpoint could issue it
+	ac.ClientSecret = "${MINI_TEST_LOCAL_SECRET}"
 	ac.TokenEndpointAuthMethod = "client_secret_post"
 	expired := &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}
 

@@ -8,7 +8,6 @@ import (
 	"strings"
 )
 
-// UnsetEnvError is a ${VAR} whose variable isn't set where mini runs.
 type UnsetEnvError struct {
 	Field string
 	Names []string
@@ -40,10 +39,7 @@ func expandEnvValue(field, value string) (string, error) {
 	return expanded, nil
 }
 
-// expandServerEnv runs only on a config just parsed from its file: a value merged in later, such
-// as a client secret from the OAuth server, must never be expanded. A config with an unset
-// variable stays as written, so code that never connects with it, like mini init in a shell
-// without the variable, can still use it.
+// Only for a config fresh from its file: a value merged in later, like an OAuth server's client secret, must never be expanded.
 func expandServerEnv(sc *ServerConfig) {
 	expanded := *sc
 	expanded.Headers = maps.Clone(sc.Headers)
