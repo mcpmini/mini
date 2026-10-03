@@ -142,7 +142,7 @@ What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
 - **Experience:** the quoted output, the audience, and what they needed to see.
 - **Structure:** the domain concepts, where they appear in the flows, and the specific mismatch.
 - **Duplication:** every location with file:line, evidence they do the same job, and where they have drifted or would drift.
-- **Tests:** the unprotected contract, a realistic regression it would let through, and the perturbation that showed no test fails.
+- **Tests:** the unprotected contract, a realistic regression it would let through, and the evidence that no existing test protects it.
 - **Maintainability:** the quoted code, and what a reader would get wrong or what change it makes risky. Assess severity by that cost or an explicit AGENTS.md rule, not preference alone.
 
 ## Pre-report gate
