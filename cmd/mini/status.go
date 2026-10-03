@@ -52,16 +52,21 @@ func runList(configDir string, args []string, out io.Writer) error {
 }
 
 func listAllServers(configDir string, out io.Writer) error {
-	_, servers, err := config.Load(configDir)
+	_, servers, err := loadConfig(configDir)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
-	if len(servers) == 0 {
+	warnBrokenServers(os.Stderr, servers.Broken)
+	if noServers(servers) {
 		fmt.Fprintln(out, "no servers configured")
 		return nil
 	}
-	printServerTable(out, servers)
+	printServerTable(out, servers.Loaded)
 	return nil
+}
+
+func noServers(servers config.Servers) bool {
+	return len(servers.Loaded) == 0 && len(servers.Broken) == 0
 }
 
 func printServerTable(out io.Writer, servers []config.ServerConfig) {
@@ -95,17 +100,17 @@ func enabledStr(sc config.ServerConfig) string {
 }
 
 func runStatus(configDir string) {
-	cfg, servers, err := config.Load(configDir)
+	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
-		fatalf("load config: %v", err)
+		fatalf("%v", err)
 	}
-	if len(servers) == 0 {
+	if noServers(servers) {
 		fmt.Println("no servers configured")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	injectOAuthTokens(ctx, configDir, servers)
+	injectOAuthTokens(ctx, configDir, servers.Loaded)
 	srv := buildStatusServer(cfg, configDir)
 	defer srv.Close()
 	printStatusTable(ctx, srv, servers)
@@ -116,11 +121,14 @@ func buildStatusServer(cfg *config.Config, configDir string) *server.Server {
 	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
 }
 
-func printStatusTable(ctx context.Context, srv *server.Server, servers []config.ServerConfig) {
+func printStatusTable(ctx context.Context, srv *server.Server, servers config.Servers) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tTRANSPORT\tSTATUS\tTOOLS")
-	anyFailed := false
-	for _, sc := range servers {
+	for _, b := range servers.Broken {
+		fmt.Fprintf(w, "%s\t-\terror: %v\t-\n", b.ServerName, b.Err)
+	}
+	anyFailed := len(servers.Broken) > 0
+	for _, sc := range servers.Loaded {
 		anyFailed = printStatusRow(ctx, w, srv, sc) || anyFailed
 	}
 	w.Flush()

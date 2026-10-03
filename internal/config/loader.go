@@ -1,9 +1,7 @@
 package config
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,121 +25,11 @@ var ValidToolName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 // Only ${VAR} form (not bare $VAR) avoids false positives in shell args and YAML comments.
 var envVarRef = regexp.MustCompile(`\$\{([^}]+)\}`)
 
-func Load(configDir string) (*Config, []ServerConfig, error) {
-	cfg, err := loadMainConfig(configDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
-		return nil, nil, fmt.Errorf("config.yaml: response_format: %w", err)
-	}
-	servers, err := loadServerConfigs(configDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	projections, err := loadProjectionConfigs(configDir)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := completeServers(configDir, servers, projections); err != nil {
-		return nil, nil, err
-	}
-	return cfg, servers, nil
-}
-
-// LoadServer loads one server as Load would, without needing every other server file to load.
-func LoadServer(configDir, name string) (ServerConfig, error) {
-	sc, err := loadNamedServerFile(configDir, name)
-	if err != nil {
-		return ServerConfig{}, err
-	}
-	projections := make(map[string]map[string]*ProjectionConfig)
-	if err := loadOneProjectionFile(projections, ProjectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return ServerConfig{}, err
-	}
-	servers := []ServerConfig{*sc}
-	if err := completeServers(configDir, servers, projections); err != nil {
-		return ServerConfig{}, err
-	}
-	return servers[0], nil
-}
-
-func loadNamedServerFile(configDir, name string) (*ServerConfig, error) {
-	if err := checkServerName(name, "the request"); err != nil {
-		return nil, err
-	}
-	path := ServerPath(configDir, name)
-	if !ServerFileExists(configDir, name) {
-		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
-	}
-	return loadServerConfig(path)
-}
-
-func completeServers(configDir string, servers []ServerConfig, projections map[string]map[string]*ProjectionConfig) error {
-	mergeProjections(servers, projections)
-	for _, s := range servers {
-		if err := validateServerProjectionFormats(s.Name, s.Projections); err != nil {
-			return err
-		}
-	}
-	mergeKnownAuth(configDir, servers)
-	return nil
-}
-
 func checkServerName(name, source string) error {
 	if !ValidServerName.MatchString(name) {
 		return fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", name, source)
 	}
 	return nil
-}
-
-func loadProjectionConfigs(dir string) (map[string]map[string]*ProjectionConfig, error) {
-	pattern := filepath.Join(dir, "servers", "*.proj.yaml")
-	paths, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
-	}
-	out := make(map[string]map[string]*ProjectionConfig)
-	for _, p := range paths {
-		if err := loadOneProjectionFile(out, p); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
-}
-
-func loadOneProjectionFile(out map[string]map[string]*ProjectionConfig, p string) error {
-	serverName := strings.TrimSuffix(filepath.Base(p), ".proj.yaml")
-	if !ValidServerName.MatchString(serverName) {
-		return nil
-	}
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", p, err)
-	}
-	var toolProjections map[string]*ProjectionConfig
-	if err := yaml.Unmarshal(data, &toolProjections); err != nil {
-		return fmt.Errorf("parse %s: %w", p, err)
-	}
-	out[serverName] = toolProjections
-	return nil
-}
-
-// mergeProjections overlays projection dir configs onto server configs.
-// Projection dir wins over inline server config projections.
-func mergeProjections(servers []ServerConfig, projections map[string]map[string]*ProjectionConfig) {
-	for i := range servers {
-		toolProjections, ok := projections[servers[i].Name]
-		if !ok {
-			continue
-		}
-		if servers[i].Projections == nil {
-			servers[i].Projections = make(map[string]*ProjectionConfig)
-		}
-		for tool, p := range toolProjections {
-			servers[i].Projections[tool] = p
-		}
-	}
 }
 
 // LoadMain loads global settings and returns config.yaml parse and interpolation errors.
@@ -166,6 +54,9 @@ func loadMainConfig(dir string) (*Config, error) {
 		return nil, fmt.Errorf("config.yaml: %w", err)
 	}
 	cfg.ResponseDir = responseDir
+	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
+		return nil, fmt.Errorf("config.yaml: response_format: %w", err)
+	}
 	return cfg, nil
 }
 
@@ -179,32 +70,6 @@ func readMainConfigFile(dir string) ([]byte, error) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 	return data, nil
-}
-
-func loadServerConfigs(dir string) ([]ServerConfig, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "servers", "*.yaml"))
-	if err != nil {
-		return nil, err
-	}
-	return loadServerFiles(filterServerPaths(paths))
-}
-
-// mergeKnownAuth fills in Auth from a bundled default or a prior detection marker —
-// but never overrides a server's own auth: block.
-func mergeKnownAuth(dir string, servers []ServerConfig) {
-	for i := range servers {
-		if servers[i].Auth != nil {
-			continue
-		}
-		if ac := bundledAuth(servers[i]); ac != nil {
-			servers[i].Auth = ac
-			continue
-		}
-		// A marker can outlive the server that earned it, and an agent's server never gets OAuth.
-		if !servers[i].AgentAdded && readServerMeta(dir, servers[i].Name).OAuthDetected {
-			servers[i].Auth = &AuthConfig{Type: AuthTypeOAuth2}
-		}
-	}
 }
 
 // HasBundledAuth reports whether loading sc merges in a vendor's bundled auth config,
@@ -237,18 +102,6 @@ func filterServerPaths(paths []string) []string {
 		}
 	}
 	return out
-}
-
-func loadServerFiles(paths []string) ([]ServerConfig, error) {
-	var servers []ServerConfig
-	for _, p := range paths {
-		s, err := loadServerConfig(p)
-		if err != nil {
-			return nil, err
-		}
-		servers = append(servers, *s)
-	}
-	return servers, nil
 }
 
 func loadServerConfig(path string) (*ServerConfig, error) {
@@ -392,15 +245,6 @@ func interpolateEnv(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("config references undefined environment variable(s): %s", strings.Join(missing, ", "))
 	}
 	return []byte(result), nil
-}
-
-func FindServer(servers []ServerConfig, name string) *ServerConfig {
-	for i := range servers {
-		if servers[i].Name == name {
-			return &servers[i]
-		}
-	}
-	return nil
 }
 
 func DefaultConfigDir() string {

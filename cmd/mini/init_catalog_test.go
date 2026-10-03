@@ -375,8 +375,8 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	if server.Transport != "http" || server.URL != "https://api.githubcopilot.com/mcp/" {
 		t.Errorf("server = %+v", server)
 	}
-	if _, _, err := config.Load(dir); err != nil {
-		t.Fatalf("config.Load: %v", err)
+	if _, err := config.LoadServer(dir, "github"); err != nil {
+		t.Fatalf("config.LoadServer: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "servers", "github.proj.yaml")); err != nil {
 		t.Fatalf("github projection: %v", err)
@@ -532,11 +532,11 @@ func TestCatalogOAuthEntriesReachLoginStep(t *testing.T) {
 	if !reflect.DeepEqual(authorized, []string{"notion", "slack"}) {
 		t.Errorf("authorized = %v, want [notion slack]", authorized)
 	}
-	_, servers, err := config.Load(dir)
+	slack, err := config.LoadServer(dir, "slack")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slack := config.FindServer(servers, "slack"); slack == nil || slack.Auth == nil || slack.Auth.ClientID == "" {
+	if slack.Auth == nil || slack.Auth.ClientID == "" {
 		t.Errorf("slack auth = %+v, want the bundled client registration", slack)
 	}
 }

@@ -103,10 +103,11 @@ func startMiniCmdCapturingStderr(t *testing.T, configDir string) (stdin io.Write
 	return stdin, sc, errBuf
 }
 
-func TestIntegrationStartup_aServerWithAnUnsetVariableDoesNotStopTheOthers(t *testing.T) {
+func TestIntegrationStartup_aBrokenServerDoesNotStopTheOthers(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, "healthy", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
 	writeServerConfig(t, cfg, "github", "transport: http\nurl: https://example.com/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_TOKEN}\n")
+	writeServerConfig(t, cfg, "malformed", "command: [unclosed\n")
 	stdin, scanner, stderr := startMiniCmdCapturingStderr(t, cfg)
 	c := newMCPClient(t, stdin, scanner)
 	c.mustCall("initialize", map[string]any{
@@ -118,9 +119,10 @@ func TestIntegrationStartup_aServerWithAnUnsetVariableDoesNotStopTheOthers(t *te
 	waitForServersConnected(t, c, []string{"healthy"})
 
 	if !strings.Contains(c.listTools("healthy"), "get_item") {
-		t.Error("healthy's tools are missing: one server's unset variable stopped the others")
+		t.Error("healthy's tools are missing: a broken server stopped the others")
 	}
 	waitForStderrContains(t, stderr, "MINI_TEST_UNSET_TOKEN isn't set where mini runs")
+	waitForStderrContains(t, stderr, "server=malformed")
 }
 
 func waitForStderrContains(t *testing.T, stderr *syncBuffer, want string) {

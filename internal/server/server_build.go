@@ -27,9 +27,8 @@ type Params struct {
 
 func New(p Params) *Server {
 	requireParams(p)
-	load := config.LoadProjections(p.ConfigDir)
-	logProjectionLoadProblems(p.Logger, load)
-	s := newServer(p.Config, p.ConfigDir, load.Projections, p.Logger)
+	servers := config.LoadServers(p.ConfigDir)
+	s := newServer(p.Config, p.ConfigDir, serverProjections(servers.Loaded), p.Logger)
 	applyParams(s, p)
 	store := mustStore(p.Config, p.ConfigDir, p.Logger, s.clock)
 	s.store = store

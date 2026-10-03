@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -69,7 +68,7 @@ func runCatalogStep(p catalogStepParams) error {
 
 func configuredServers(configDir string) []config.ServerConfig {
 	// Broken files are left out silently; the login step that runs next reports each one once.
-	return slices.Collect(maps.Values(config.LoadServerSet(configDir).Servers))
+	return config.LoadServers(configDir).Loaded
 }
 
 func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {

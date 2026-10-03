@@ -93,6 +93,33 @@ func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
 	}
 }
 
+func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
+	writeServerConfig(t, cfg, "broken", "command: [unclosed\n")
+
+	t.Run("ls warns about it and lists the rest", func(t *testing.T) {
+		stdout, stderr, code := runCLI(t, cfg, "ls")
+		if code != 0 || !strings.Contains(stdout, "svc") || !strings.Contains(stderr, "skipping server broken") {
+			t.Errorf("ls = exit %d, stdout %q, stderr %q; want svc listed and broken warned about", code, stdout, stderr)
+		}
+	})
+	t.Run("another server still lists its tools", func(t *testing.T) {
+		stdout, stderr, code := runCLI(t, cfg, "ls", "svc")
+		if code != 0 || !strings.Contains(stdout, "get_item") {
+			t.Errorf("ls svc = exit %d, stdout %q, stderr %q; want svc's tools", code, stdout, stderr)
+		}
+	})
+	for _, command := range []string{"status", "test"} {
+		t.Run(command+" checks the rest and fails for it", func(t *testing.T) {
+			stdout, _, code := runCLI(t, cfg, command)
+			if code == 0 || !strings.Contains(stdout, "broken") || !strings.Contains(stdout, "svc") {
+				t.Errorf("%s = exit %d, stdout %q; want non-zero, with a row for broken and svc", command, code, stdout)
+			}
+		})
+	}
+}
+
 func TestIntegrationCLI_ls_ToolDetail(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{

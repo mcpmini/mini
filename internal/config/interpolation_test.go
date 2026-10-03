@@ -38,9 +38,9 @@ func TestLoadServerConfig_unexpandedConnectionField_isRejected(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), tc.value)
-			_, _, err := config.Load(dir)
+			_, err := config.LoadServer(dir, "svc")
 			if err == nil {
-				t.Fatal("Load succeeded, want unexpanded field error")
+				t.Fatal("LoadServer succeeded, want unexpanded field error")
 			}
 			for _, want := range []string{"svc", tc.field, "isn't expanded"} {
 				if !strings.Contains(err.Error(), want) {
@@ -61,20 +61,21 @@ func TestLoadServerConfig_unsetVariable_leavesOnlyThatServerAsWrittenAndSaysWhy(
 	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n  X-Other: ${MINI_TEST_DEFINED_HEADER}\n")
 	writeFile(t, filepath.Join(dir, "servers", "other.yaml"), "headers:\n  X-Key: ${MINI_TEST_DEFINED_HEADER}\n")
 
-	_, servers, err := config.Load(dir)
+	servers := config.LoadServers(dir)
 
-	if err != nil {
-		t.Fatalf("Load: %v, want only svc affected", err)
+	if len(servers.Broken) > 0 {
+		t.Fatalf("Broken = %+v, want only svc affected, and not broken", servers.Broken)
 	}
-	svc, other := config.FindServer(servers, "svc"), config.FindServer(servers, "other")
+	svc, _ := servers.Find("svc")
+	other, _ := servers.Find("other")
 	var unset *config.UnsetEnvError
-	if svc == nil || !errors.As(svc.UnsetEnv, &unset) || svc.UnsetEnv.Error() != "server svc: headers.X-Key: MINI_TEST_UNDEFINED_HEADER isn't set where mini runs" {
+	if !errors.As(svc.UnsetEnv, &unset) || svc.UnsetEnv.Error() != "server svc: headers.X-Key: MINI_TEST_UNDEFINED_HEADER isn't set where mini runs" {
 		t.Fatalf("svc = %+v, want its UnsetEnv naming the field and variable", svc)
 	}
 	if svc.Headers["X-Key"] != "${MINI_TEST_UNDEFINED_HEADER}" || svc.Headers["X-Other"] != "${MINI_TEST_DEFINED_HEADER}" {
 		t.Errorf("svc headers = %v, want them all as written", svc.Headers)
 	}
-	if other == nil || other.UnsetEnv != nil || other.Headers["X-Key"] != "set" {
+	if other.UnsetEnv != nil || other.Headers["X-Key"] != "set" {
 		t.Errorf("other = %+v, want it expanded", other)
 	}
 }
@@ -114,7 +115,7 @@ func TestLoadMainConfig_undefinedResponseDir_isError(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_RESPONSE_DIR")
 	writeFile(t, filepath.Join(dir, "config.yaml"), "response_dir: ${MINI_TEST_UNDEFINED_RESPONSE_DIR}\n")
-	_, _, err := config.Load(dir)
+	_, err := config.LoadMain(dir)
 	if err == nil || !strings.Contains(err.Error(), "MINI_TEST_UNDEFINED_RESPONSE_DIR") {
 		t.Fatalf("Load error = %v", err)
 	}

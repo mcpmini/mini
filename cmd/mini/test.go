@@ -40,24 +40,32 @@ func newTestCmd(opts *rootOptions) *cobra.Command {
 
 func runTest(configDir string, timeout time.Duration) {
 	ctx := context.Background()
-	srv, enabled := buildTestServer(ctx, configDir)
+	srv, servers := buildTestServer(ctx, configDir)
 	defer srv.Close()
-	printTestResults(checkUpstreams(ctx, srv, enabled, timeout))
+	results := brokenServerResults(servers.Broken)
+	printTestResults(append(results, checkUpstreams(ctx, srv, enabledServers(servers.Loaded), timeout)...))
 }
 
-func buildTestServer(ctx context.Context, configDir string) (*server.Server, []config.ServerConfig) {
-	cfg, servers, err := config.Load(configDir)
+func buildTestServer(ctx context.Context, configDir string) (*server.Server, config.Servers) {
+	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
-		fatalf("load config: %v", err)
+		fatalf("%v", err)
 	}
-	injectOAuthTokens(ctx, configDir, servers)
-	enabled := enabledServers(servers)
-	if len(enabled) == 0 {
+	injectOAuthTokens(ctx, configDir, servers.Loaded)
+	if len(enabledServers(servers.Loaded)) == 0 && len(servers.Broken) == 0 {
 		fmt.Println("no servers configured")
 		os.Exit(0)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), enabled
+	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), servers
+}
+
+func brokenServerResults(broken []config.SourceError) []upstreamResult {
+	results := make([]upstreamResult, len(broken))
+	for i, b := range broken {
+		results[i] = upstreamResult{name: b.ServerName, err: b.Err}
+	}
+	return results
 }
 
 func enabledServers(servers []config.ServerConfig) []config.ServerConfig {

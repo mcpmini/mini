@@ -21,10 +21,7 @@ func writeFile(t *testing.T, path, content string) {
 
 func mustLoadOneServer(t *testing.T, dir string) config.ServerConfig {
 	t.Helper()
-	_, servers, err := config.Load(dir)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
+	_, servers := mustLoadConfig(t, dir)
 	if len(servers) != 1 {
 		t.Fatalf("expected 1 server, got %d", len(servers))
 	}
@@ -45,18 +42,29 @@ func mustLoadOneAction(t *testing.T, dir string) config.ActionConfig {
 
 func mustLoadConfig(t *testing.T, dir string) (*config.Config, []config.ServerConfig) {
 	t.Helper()
-	cfg, servers, err := config.Load(dir)
+	cfg, err := config.LoadMain(dir)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatalf("LoadMain: %v", err)
 	}
-	return cfg, servers
+	servers := config.LoadServers(dir)
+	if len(servers.Broken) > 0 {
+		t.Fatalf("LoadServers: broken %+v", servers.Broken)
+	}
+	return cfg, servers.Loaded
 }
 
-func expectLoadError(t *testing.T, dir string) {
+func expectMainLoadError(t *testing.T, dir string) {
 	t.Helper()
-	_, _, err := config.Load(dir)
-	if err == nil {
-		t.Fatal("expected load error")
+	if _, err := config.LoadMain(dir); err == nil {
+		t.Fatal("expected LoadMain error")
+	}
+}
+
+func expectBrokenServer(t *testing.T, dir, name string) {
+	t.Helper()
+	servers := config.LoadServers(dir)
+	if !servers.IsBroken(name) {
+		t.Fatalf("LoadServers: %s isn't broken; loaded %+v", name, servers.Loaded)
 	}
 }
 
@@ -113,12 +121,11 @@ args: ["-y", "@buildkite/mcp-server"]
 `)
 	writeFile(t, filepath.Join(dir, "servers", "ci.proj.yaml"), "list_builds:\n  include_only: [id]\n")
 	_, servers := mustLoadConfig(t, dir)
-	sc := config.FindServer(servers, "ci")
-	if len(servers) != 1 || sc == nil {
+	if len(servers) != 1 || servers[0].Name != "ci" {
 		t.Fatalf("servers = %#v, want one named ci", servers)
 	}
-	if p := sc.Projections["list_builds"]; p == nil || len(p.IncludeOnly) != 1 {
-		t.Errorf("projections = %v, want ci.proj.yaml applied to ci", sc.Projections)
+	if p := servers[0].Projections["list_builds"]; p == nil || len(p.IncludeOnly) != 1 {
+		t.Errorf("projections = %v, want ci.proj.yaml applied to ci", servers[0].Projections)
 	}
 }
 
@@ -127,8 +134,9 @@ func TestLoad_invalidServerFileName(t *testing.T) {
 		t.Run(file, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, filepath.Join(dir, "servers", file), "command: echo\n")
-			if _, _, err := config.Load(dir); err == nil || !strings.Contains(err.Error(), "invalid server name") {
-				t.Fatalf("want an invalid server name error, got %v", err)
+			servers := config.LoadServers(dir)
+			if len(servers.Broken) != 1 || !strings.Contains(servers.Broken[0].Err.Error(), "invalid server name") {
+				t.Fatalf("Broken = %+v, want an invalid server name error", servers.Broken)
 			}
 		})
 	}
@@ -137,13 +145,13 @@ func TestLoad_invalidServerFileName(t *testing.T) {
 func TestLoadMalformedMainConfig(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "config.yaml"), `not: valid: yaml: [`)
-	expectLoadError(t, dir)
+	expectMainLoadError(t, dir)
 }
 
 func TestLoadMalformedServerConfig(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "bad.yaml"), `not: valid: yaml: [`)
-	expectLoadError(t, dir)
+	expectBrokenServer(t, dir, "bad")
 }
 
 func TestLoadMissingConfigDir_usesDefaults(t *testing.T) {
@@ -281,7 +289,7 @@ func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 		t.Run(spec, func(t *testing.T) {
 			dir := t.TempDir()
 			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: "+spec+"\n")
-			expectLoadError(t, dir)
+			expectBrokenServer(t, dir, "ci")
 		})
 	}
 }
@@ -599,7 +607,7 @@ func TestLoadResponseFormat(t *testing.T) {
 	t.Run("mini rejected naming toon as the replacement", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, filepath.Join(dir, "config.yaml"), "response_format: mini\n")
-		_, _, err := config.Load(dir)
+		_, err := config.LoadMain(dir)
 		if err == nil || !strings.Contains(err.Error(), "toon") {
 			t.Fatalf("expected error naming toon as the replacement, got %v", err)
 		}
@@ -607,7 +615,7 @@ func TestLoadResponseFormat(t *testing.T) {
 	t.Run("unknown format rejected", func(t *testing.T) {
 		dir := t.TempDir()
 		writeFile(t, filepath.Join(dir, "config.yaml"), "response_format: xml\n")
-		expectLoadError(t, dir)
+		expectMainLoadError(t, dir)
 	})
 }
 
@@ -615,7 +623,7 @@ func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "command: gh-mcp\n")
 	writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
-	_, _, err := config.Load(dir)
+	_, err := config.LoadServer(dir, "gh")
 	if err == nil || !strings.Contains(err.Error(), "toon") {
 		t.Fatalf("expected projection format error naming toon, got %v", err)
 	}
@@ -657,8 +665,9 @@ func TestEffectiveFormat(t *testing.T) {
 
 func TestLoadProjection_malformedYAML_returnsError(t *testing.T) {
 	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "servers", "srv.yaml"), "command: echo\n")
 	writeFile(t, filepath.Join(dir, "servers", "srv.proj.yaml"), `not: valid: yaml: [`)
-	expectLoadError(t, dir)
+	expectBrokenServer(t, dir, "srv")
 }
 
 func TestLoadActions_malformedYAML_returnsError(t *testing.T) {
@@ -730,31 +739,6 @@ func TestServerConfig_IsEnabled(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestFindServer(t *testing.T) {
-	servers := []config.ServerConfig{
-		{Name: "alpha"},
-		{Name: "beta"},
-	}
-	t.Run("found", func(t *testing.T) {
-		got := config.FindServer(servers, "beta")
-		if got == nil || got.Name != "beta" {
-			t.Fatalf("FindServer returned %v, want beta", got)
-		}
-	})
-	t.Run("not found", func(t *testing.T) {
-		if got := config.FindServer(servers, "gamma"); got != nil {
-			t.Fatalf("FindServer returned %v, want nil", got)
-		}
-	})
-	t.Run("returns pointer into slice", func(t *testing.T) {
-		got := config.FindServer(servers, "alpha")
-		got.Name = "modified"
-		if servers[0].Name != "modified" {
-			t.Fatal("FindServer should return pointer into slice")
-		}
-	})
 }
 
 func TestMergedHeaders_PlainHeader(t *testing.T) {

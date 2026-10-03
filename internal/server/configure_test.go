@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -435,11 +434,10 @@ func TestConfigureReload_resultShape(t *testing.T) {
 		wantOK           bool
 		wantLoaded       []string
 		wantNotLoaded    []string
-		wantSkipped      []string
 		wantSourceErrors bool
 	}{
 		{
-			name:       "clean reload: ok=true, loaded counts, skipped=[], no source_errors",
+			name:       "clean reload: ok=true, loaded counts, no source_errors",
 			files:      map[string]string{"servers/a.yaml": "command: echo\nprojections:\n  t:\n    include_only: [x]\n"},
 			wantOK:     true,
 			wantLoaded: []string{"a"},
@@ -450,9 +448,9 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			wantSourceErrors: true,
 		},
 		{
-			name:        "bad proj.yaml: ok=false, skipped contains server name",
-			files:       map[string]string{"servers/a.yaml": "command: echo\n", "servers/a.proj.yaml": "bad: [yaml\n"},
-			wantSkipped: []string{"a"},
+			name:             "bad proj.yaml: ok=false, source_errors present",
+			files:            map[string]string{"servers/a.yaml": "command: echo\n", "servers/a.proj.yaml": "bad: [yaml\n"},
+			wantSourceErrors: true,
 		},
 		{
 			name:             "loaded excludes kept-previous server when its file broke",
@@ -473,9 +471,6 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			if result["ok"] != tc.wantOK {
 				t.Errorf("ok: got %v, want %v", result["ok"], tc.wantOK)
 			}
-			if skipped, _ := result["skipped"].([]any); skipped == nil {
-				t.Errorf("skipped must be [] not null, got %v", result["skipped"])
-			}
 			if !tc.wantSourceErrors && result["source_errors"] != nil {
 				t.Errorf("expected no source_errors, got %v", result["source_errors"])
 			}
@@ -493,12 +488,6 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			for _, name := range tc.wantNotLoaded {
 				if loaded[name] != nil {
 					t.Errorf("loaded must not include %q, got %v", name, loaded)
-				}
-			}
-			skipped, _ := result["skipped"].([]any)
-			for _, name := range tc.wantSkipped {
-				if !slices.Contains(skipped, any(name)) {
-					t.Errorf("expected %q in skipped, got %v", name, skipped)
 				}
 			}
 		})

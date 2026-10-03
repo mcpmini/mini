@@ -175,12 +175,8 @@ func TestAddServer(t *testing.T) {
 		if !added.DefaultPermissions || added.Config.Permissions == nil {
 			t.Errorf("added = %+v, want github's bundled permissions applied and reported", added)
 		}
-		_, servers, err := config.Load(dir)
-		if err != nil {
-			t.Fatalf("Load: %v", err)
-		}
-		if got := config.FindServer(servers, "gh"); got == nil || got.URL != github.URL {
-			t.Errorf("loaded servers = %#v, want gh with URL %q", servers, github.URL)
+		if got, err := config.LoadServer(dir, "gh"); err != nil || got.URL != github.URL {
+			t.Errorf("LoadServer(gh) = %#v, %v; want gh with URL %q", got, err, github.URL)
 		}
 	})
 
