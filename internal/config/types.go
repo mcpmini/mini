@@ -221,6 +221,8 @@ type ServerConfig struct {
 	AgentAdded bool `yaml:"agent_added,omitempty" json:"-"`
 	// UnsetEnv leaves the fields as written, so connecting or logging in must refuse the server.
 	UnsetEnv error `yaml:"-" json:"-"`
+	// ProjectionsErr leaves Projections empty, so responses go through untrimmed.
+	ProjectionsErr *SourceError `yaml:"-" json:"-"`
 }
 
 func (sc ServerConfig) IsEnabled() bool {
