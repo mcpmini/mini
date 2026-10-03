@@ -164,7 +164,7 @@ func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
 func waitForFileContent(t *testing.T, path string) string {
 	t.Helper()
 	for range 100 {
-		if data, err := os.ReadFile(path); err == nil && len(data) > 0 {
+		if data, err := os.ReadFile(path); err == nil && len(data) > 0 { //fileiolint:allow poll for output from the browser process
 			return string(data)
 		}
 		time.Sleep(50 * time.Millisecond)

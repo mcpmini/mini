@@ -284,7 +284,7 @@ func TestLoadProjections_projFilesSourceError(t *testing.T) {
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
 	p := filepath.Join(dir, "servers", "svc.proj.yaml")
-	if err := os.WriteFile(p, []byte("tool:\n  include_only: [a]\n"), 0000); err != nil {
+	if err := os.WriteFile(p, []byte("tool:\n  include_only: [a]\n"), 0000); err != nil { //fileiolint:allow unreadable fixture exercises load isolation
 		t.Skip("cannot create unreadable file:", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(p, 0600) })

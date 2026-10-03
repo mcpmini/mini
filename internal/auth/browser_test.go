@@ -28,7 +28,7 @@ func TestOpenBrowser_urlPassedAsArg(t *testing.T) {
 	dir := t.TempDir()
 	outFile := filepath.Join(dir, "captured.txt")
 	script := filepath.Join(dir, "capture.sh")
-	os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s' \"$1\" > "+outFile+"\n"), 0700) //nolint:errcheck
+	os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s' \"$1\" > "+outFile+"\n"), 0700) //nolint:errcheck //fileiolint:allow browser command must be executable
 
 	url := "http://example.com?a=1&b=$(echo injected)&c=hello world"
 	if err := auth.OpenBrowser(script, url); err != nil {
@@ -37,7 +37,7 @@ func TestOpenBrowser_urlPassedAsArg(t *testing.T) {
 
 	const attempts = 200 // 200 × 10ms = 2s max for subprocess to write output
 	for range attempts {
-		if data, err := os.ReadFile(outFile); err == nil {
+		if data, err := os.ReadFile(outFile); err == nil { //fileiolint:allow poll for output from the browser process
 			if string(data) != url {
 				t.Errorf("captured URL = %q, want %q", string(data), url)
 			}
