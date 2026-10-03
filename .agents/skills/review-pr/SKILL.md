@@ -19,7 +19,23 @@ Do not explain away suspicious patterns — investigate until you have proof or 
 3. **Pick up check.sh results.** Do not write the report until the background check suite from Step 0 has finished and you have read its log.
 4. **Verdict is mechanical.** Derive the verdict from the findings table using the rules at the end — never from overall impression.
 5. **The request's framing is a claim, not a fact.** Statements in the review request or PR description about the design ("built on X", "reuses Y", "no duplication") are things to verify. Angles the requester lists add to the passes; they never narrow them.
-6. **Be pragmatic.** Think through edge cases, then weigh each finding by how likely a real user, agent, or maintainer is to hit it and how bad it would be. Only a likely problem, or an unlikely one with severe impact (security, data loss, mini unusable), is MEDIUM or above; report the rest as LOW. A PR doesn't have to solve every problem: recommend the smallest fix that removes this one, not a redesign, new layers, or type machinery, unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere go under "Outside this PR".
+6. **Be pragmatic.** Rate every finding as "Weigh every finding" describes. A PR doesn't have to solve every problem: recommend the smallest fix that removes this one, not a redesign, new layers, or type machinery, unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere that are worth fixing go under "Outside this PR".
+
+## Weigh every finding
+
+Rate each finding's impact and likelihood, then decide.
+
+**Impact**, on the user, the agent, or the next developer:
+- **High:** a crash or hang, lost data or credentials, a security hole, mini or a server unusable, or an agent misled into a wrong action.
+- **Medium:** a feature misbehaves or fails confusingly, or code so hard to follow that the next change will likely break it, such as a function hundreds of lines long.
+- **Low:** cosmetic, or a little confusing but still readable.
+
+**Likelihood**, in normal use. Normal includes events that are rare but routine: slow or flaky networks, upstreams that time out or fail, a user who edits a config and gets it wrong, invalid input, several agents at once. Unlikely means it needs something outside mini's responsibility, such as an MCP server that breaks the spec, or misuse beyond the trust model.
+
+**Decide:**
+- Likelihood or impact of medium or above: worth fixing. HIGH when the impact is high and normal use reaches it; otherwise MEDIUM.
+- Both low: LOW at most, or leave it out. It isn't worth an issue.
+- When it's unclear whether something happens in practice, say so; it can wait for evidence rather than be solved speculatively.
 
 ## Step 0 — Gather the diff and check out the PR branch
 
@@ -267,6 +283,7 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 
 ## 🔴 HIGH — [title]
 **Pass:** Concurrency | Security | Correctness | Experience | Tests | Maintainability
+**Rating:** impact High | Medium | Low, likelihood High | Medium | Low
 **File:** path/file.go:LINE
 **Bug:** What the issue is.
 **Proof:** Execution trace, goroutine pair, test output — whatever proves it.
