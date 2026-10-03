@@ -88,7 +88,9 @@ func newTestServer(t *testing.T, p server.Params) *server.Server {
 	if p.Logger == nil {
 		p.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
-	return server.New(p)
+	srv := server.New(p)
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 // newMCPTestServer starts a minimal HTTP MCP server advertising the given tools.
