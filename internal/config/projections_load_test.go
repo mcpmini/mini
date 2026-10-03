@@ -159,7 +159,7 @@ func TestLoadProjections(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			for rel, content := range tc.files {
-				testutil.WriteFile(t, filepath.Join(dir, rel), []byte(content))
+				testutil.WriteFile(t, filepath.Join(dir, rel), content)
 			}
 			for k, v := range tc.env {
 				t.Setenv(k, v)
@@ -181,11 +181,11 @@ func wantSourceErrorFor(name string) func(*testing.T, string, config.LoadProject
 
 func TestLoadServerSet_brokenFileHoldsOnlyItsServer(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "good.yaml"), []byte("command: echo\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "good.yaml"), "command: echo\n")
 	if err := os.MkdirAll(filepath.Join(dir, "servers", "unreadable.yaml"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte("bad: [yaml\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
 
 	set := config.LoadServerSet(dir)
 
@@ -204,14 +204,14 @@ func TestLoadServerSet_brokenFileHoldsOnlyItsServer(t *testing.T) {
 
 func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "linear.yaml"), []byte("transport: http\nurl: https://mcp.linear.app/mcp\n"))
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), []byte("list_issues:\n  include_only: [title]\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  include_only: [title]\n")
 	_, servers, err := config.Load(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := *config.FindServer(servers, "linear")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), []byte("bad: [yaml\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
 
 	got, err := config.LoadServer(dir, "linear")
 
@@ -227,7 +227,7 @@ func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
 	if _, err := config.LoadServer(dir, "missing"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("LoadServer(missing) err = %v, want fs.ErrNotExist", err)
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), []byte("list_issues:\n  format: bogus\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  format: bogus\n")
 	if _, err := config.LoadServer(dir, "linear"); err == nil {
 		t.Error("LoadServer accepted a projection format Load rejects, so the server would stop mini's next start")
 	}
@@ -235,7 +235,7 @@ func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
 
 func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "github.yaml"), []byte("transport: http\nurl: https://api.githubcopilot.com/mcp/\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "github.yaml"), "transport: http\nurl: https://api.githubcopilot.com/mcp/\n")
 
 	if sc, err := config.LoadServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("LoadServer(GitHub) = %q, %v; want fs.ErrNotExist, not github.yaml under another name", sc.Name, err)
@@ -267,7 +267,7 @@ func TestLoadProjections_parity(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			for rel, content := range tc.files {
-				testutil.WriteFile(t, filepath.Join(dir, rel), []byte(content))
+				testutil.WriteFile(t, filepath.Join(dir, rel), content)
 			}
 			for k, v := range tc.env {
 				t.Setenv(k, v)
@@ -293,9 +293,9 @@ func TestLoadProjections_parity(t *testing.T) {
 
 func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "good.yaml"), []byte("command: echo\n"))
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), []byte("bad: [yaml\n"))
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "unset.yaml"), []byte("command: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "good.yaml"), "command: echo\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "unset.yaml"), "command: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n")
 	servers, sourceErrors := config.LoadLenient(dir)
 	var names []string
 	for _, server := range servers {
@@ -311,8 +311,8 @@ func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 
 func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "detected.yaml"), []byte("command: echo\n"))
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "custom.yaml"), []byte("command: echo\nauth:\n  type: bearer\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "detected.yaml"), "command: echo\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "custom.yaml"), "command: echo\nauth:\n  type: bearer\n")
 	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +341,7 @@ func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
-			testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte(tt.yaml))
+			testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), tt.yaml)
 			cfg, err := config.LoadMain(dir)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || cfg != nil {
@@ -362,7 +362,7 @@ func projKeys(m map[string]*config.ProjectionConfig) []string {
 
 func TestLoadProjections_projFilesSourceError(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte("command: echo\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), "command: echo\n")
 	p := filepath.Join(dir, "servers", "svc.proj.yaml")
 	if err := os.WriteFile(p, []byte("tool:\n  include_only: [a]\n"), 0000); err != nil {
 		t.Skip("cannot create unreadable file:", err)

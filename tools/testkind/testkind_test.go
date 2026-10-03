@@ -100,10 +100,10 @@ func TestCheckSource_clean(t *testing.T) {
 
 func TestCheckTree(t *testing.T) {
 	root := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(root, "ok", "a_integration_test.go"), []byte(integrationHeader+"func TestIntegrationA(t *testing.T) {}\n"))
-	testutil.WriteFile(t, filepath.Join(root, "bad", "b_test.go"), []byte(plainHeader+"func TestIntegrationB(t *testing.T) {}\n"))
-	testutil.WriteFile(t, filepath.Join(root, "testdata", "c_test.go"), []byte(plainHeader+"func TestIntegrationC(t *testing.T) {}\n"))
-	testutil.WriteFile(t, filepath.Join(root, ".claude", "d_test.go"), []byte(plainHeader+"func TestIntegrationD(t *testing.T) {}\n"))
+	testutil.WriteFile(t, filepath.Join(root, "ok", "a_integration_test.go"), integrationHeader+"func TestIntegrationA(t *testing.T) {}\n")
+	testutil.WriteFile(t, filepath.Join(root, "bad", "b_test.go"), plainHeader+"func TestIntegrationB(t *testing.T) {}\n")
+	testutil.WriteFile(t, filepath.Join(root, "testdata", "c_test.go"), plainHeader+"func TestIntegrationC(t *testing.T) {}\n")
+	testutil.WriteFile(t, filepath.Join(root, ".claude", "d_test.go"), plainHeader+"func TestIntegrationD(t *testing.T) {}\n")
 
 	got, err := checkTree(root)
 	if err != nil {

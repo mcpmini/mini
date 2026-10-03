@@ -257,9 +257,9 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 		configDir := t.TempDir()
 		// Wildcard projections require a server config file to be present.
 		testutil.WriteFile(t, filepath.Join(configDir, "servers", "gh.yaml"),
-			[]byte("command: unused\n"))
+			"command: unused\n")
 		testutil.WriteFile(t, filepath.Join(configDir, "servers", "gh.proj.yaml"),
-			[]byte("\"*\":\n  format: toon\n"))
+			"\"*\":\n  format: toon\n")
 		srv := newTestServer(t, server.Params{ConfigDir: configDir})
 		srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, toolErrFakeConn())
 		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{

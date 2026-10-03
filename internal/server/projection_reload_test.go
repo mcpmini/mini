@@ -56,9 +56,9 @@ func newReloadEnv(t *testing.T, p reloadEnvParams) *reloadEnv {
 	if p.ServerYAML == "" {
 		p.ServerYAML = "command: echo\n"
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte(p.ServerYAML))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), p.ServerYAML)
 	if p.ProjYAML != "" {
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), []byte(p.ProjYAML))
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), p.ProjYAML)
 	}
 	env := buildReloadEnv(t, dir)
 	addReloadUpstream(t, env.srv)
@@ -151,7 +151,7 @@ func (e *reloadEnv) assertDataKeys(present []string, absent []string) {
 
 func (e *reloadEnv) writeProjFile(content string) {
 	e.t.Helper()
-	testutil.WriteFile(e.t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), []byte(content))
+	testutil.WriteFile(e.t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), content)
 }
 
 func reloadCount(e *reloadEnv) int {
@@ -210,13 +210,13 @@ func TestProjectionReload_sameSizeEditDetected(t *testing.T) {
 
 func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillReload(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a]\n"})
-	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "other.yaml"), []byte("command: echo\n"))
+	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "other.yaml"), "command: echo\n")
 	addReloadUpstreamNamed(t, e.srv, "other")
 	e.startPoller()
 	e.assertDataKeys([]string{"a"}, []string{"b"})
 
 	e.writeProjFile("getData: [broken\n")
-	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "other.proj.yaml"), []byte("getData:\n  include_only: [b]\n"))
+	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "other.proj.yaml"), "getData:\n  include_only: [b]\n")
 	e.advanceTick()
 	if logs := e.logs.String(); !strings.Contains(logs, "projection reload: skipped server") {
 		t.Errorf("expected WARN for malformed YAML, got logs:\n%s", logs)
@@ -252,7 +252,7 @@ func TestProjectionReload_inlineProjectionEditDetected(t *testing.T) {
 	e.startPoller()
 	e.assertDataKeys([]string{"a", "b", "secret"}, nil)
 
-	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.yaml"), []byte("command: echo\nprojections:\n  getData:\n    include_only: [a]\n"))
+	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.yaml"), "command: echo\nprojections:\n  getData:\n    include_only: [a]\n")
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
@@ -261,8 +261,8 @@ func TestProjectionReload_inlineProjectionEditDetected(t *testing.T) {
 func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	dir := evalTempDir(t)
 	for _, name := range []string{"held", "kept", "gone"} {
-		testutil.WriteFile(t, filepath.Join(dir, "servers", name+".yaml"), []byte("command: echo\n"))
-		testutil.WriteFile(t, filepath.Join(dir, "servers", name+".proj.yaml"), []byte("getData:\n  include_only: [a]\n"))
+		testutil.WriteFile(t, filepath.Join(dir, "servers", name+".yaml"), "command: echo\n")
+		testutil.WriteFile(t, filepath.Join(dir, "servers", name+".proj.yaml"), "getData:\n  include_only: [a]\n")
 	}
 	env := buildReloadEnv(t, dir)
 	for _, name := range []string{"held", "kept", "gone"} {
@@ -277,8 +277,8 @@ func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	if err := os.Mkdir(heldPath, 0700); err != nil {
 		t.Fatal(err)
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "held.proj.yaml"), []byte("getData:\n  include_only: [b]\n"))
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "kept.proj.yaml"), []byte("getData:\n  include_only: [b]\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "held.proj.yaml"), "getData:\n  include_only: [b]\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "kept.proj.yaml"), "getData:\n  include_only: [b]\n")
 	if err := os.Remove(filepath.Join(dir, "servers", "gone.yaml")); err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	if err := os.Remove(heldPath); err != nil {
 		t.Fatal(err)
 	}
-	testutil.WriteFile(t, heldPath, []byte("command: echo\n"))
+	testutil.WriteFile(t, heldPath, "command: echo\n")
 	env.advanceTick()
 
 	env.assertServerDataKeys("held", []string{"b"}, []string{"a", "secret"})

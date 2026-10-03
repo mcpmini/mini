@@ -97,7 +97,7 @@ func TestCappedLog_initializesWrittenFromExistingFile(t *testing.T) {
 
 	// Write near the cap, then close (simulates a previous daemon run).
 	existing := bytes.Repeat([]byte("x"), testCap-5)
-	testutil.WriteFile(t, logPath, existing)
+	testutil.WriteFileBytes(t, logPath, existing)
 
 	// Reopen and write enough to push past the cap — should rotate.
 	w := openCappedLog(logPath, testCap)

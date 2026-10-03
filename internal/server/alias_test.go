@@ -263,13 +263,13 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			t.Cleanup(srv.Close)
 
 			// Server stub lets loadServerProjections merge projection files for "gh".
-			testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), []byte(""))
+			testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), "")
 
 			fake := fakeConn("list_pull_requests")
 			srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: tt.initialProjection}, fake)
 
 			// Write disk projection with a new alias and reload — reapplyAliases must pick it up.
-			testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), []byte("list_pull_requests:\n  alias: list_prs\n"))
+			testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_pull_requests:\n  alias: list_prs\n")
 			serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 
 			names := listNames(t, srv)
@@ -307,7 +307,7 @@ func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	t.Cleanup(srv.Close)
 
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), []byte(""))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), "")
 
 	fake := fakeConn("get_pr")
 	proj := map[string]*config.ProjectionConfig{"get_pr": {Alias: "pr"}}

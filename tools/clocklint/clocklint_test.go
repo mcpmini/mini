@@ -13,7 +13,7 @@ func writeGoFile(t *testing.T, src string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "src.go")
-	testutil.WriteFile(t, path, []byte(src))
+	testutil.WriteFile(t, path, src)
 	return path
 }
 

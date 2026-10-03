@@ -52,7 +52,7 @@ func TestInstallBundledProjection(t *testing.T) {
 		serversDir := filepath.Join(dir, "servers")
 		dest := filepath.Join(serversDir, "my-slack.proj.yaml")
 		original := []byte("# custom\n")
-		testutil.WriteFile(t, dest, original)
+		testutil.WriteFileBytes(t, dest, original)
 		sc := config.ServerConfig{Name: "my-slack", URL: "https://slack.com/mcp"}
 		if installed, err := ops.InstallBundledProjection(dir, sc); installed != "" || err != nil {
 			t.Errorf("InstallBundledProjection = %q, %v, want \"\" and no error for an existing file", installed, err)
@@ -65,7 +65,7 @@ func TestInstallBundledProjection(t *testing.T) {
 
 	t.Run("a write that fails for another reason is reported", func(t *testing.T) {
 		dir := tempDir(t)
-		testutil.WriteFile(t, filepath.Join(dir, "servers"), []byte("not a directory\n"))
+		testutil.WriteFile(t, filepath.Join(dir, "servers"), "not a directory\n")
 		sc := config.ServerConfig{Name: "my-github", URL: "https://api.github.com/mcp"}
 		if installed, err := ops.InstallBundledProjection(dir, sc); err == nil {
 			t.Errorf("InstallBundledProjection = %q, nil, want an error when servers/ can't hold the file", installed)

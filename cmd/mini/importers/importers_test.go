@@ -22,7 +22,7 @@ func tempDir(t *testing.T) string {
 func writeClientConfig(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(tempDir(t), name)
-	testutil.WriteFile(t, path, []byte(content))
+	testutil.WriteFile(t, path, content)
 	return path
 }
 
@@ -166,7 +166,7 @@ func TestReadConfigFile(t *testing.T) {
 		dir := tempDir(t)
 		f := filepath.Join(dir, "test.json")
 		want := []byte(`{"hello":"world"}`)
-		testutil.WriteFile(t, f, want)
+		testutil.WriteFileBytes(t, f, want)
 
 		got, err := ReadConfigFile(f)
 		if err != nil {
@@ -181,7 +181,7 @@ func TestReadConfigFile(t *testing.T) {
 		dir := tempDir(t)
 		f := filepath.Join(dir, "big.json")
 		big := make([]byte, maxImportConfigBytes+1)
-		testutil.WriteFile(t, f, big)
+		testutil.WriteFileBytes(t, f, big)
 
 		_, err := ReadConfigFile(f)
 		if err == nil {
@@ -194,7 +194,7 @@ func TestReadConfigFile(t *testing.T) {
 
 	t.Run("file at the limit is returned whole", func(t *testing.T) {
 		f := filepath.Join(tempDir(t), "limit.json")
-		testutil.WriteFile(t, f, make([]byte, maxImportConfigBytes))
+		testutil.WriteFileBytes(t, f, make([]byte, maxImportConfigBytes))
 
 		got, err := ReadConfigFile(f)
 		if err != nil {

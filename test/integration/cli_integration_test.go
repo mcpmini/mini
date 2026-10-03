@@ -58,7 +58,7 @@ func TestIntegrationCLILsTooManyArgs_ExitsTwo(t *testing.T) {
 
 func TestIntegrationCLIConnectInvalidConfig(t *testing.T) {
 	cfg := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"))
+	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), "not: valid: yaml: :::")
 	_, _, code := runCLI(t, cfg, "status")
 	if code == 0 {
 		t.Error("status with invalid config.yaml should exit non-zero")
@@ -377,8 +377,8 @@ func TestIntegrationCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
 	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
 
 	expiredPath := filepath.Join(respDir, "20200101000000000.json")
-	testutil.WriteFile(t, expiredPath, []byte(`{}`))
-	testutil.WriteFile(t, filepath.Join(respDir, "20200101000000000.raw.json"), []byte(`{}`))
+	testutil.WriteFile(t, expiredPath, `{}`)
+	testutil.WriteFile(t, filepath.Join(respDir, "20200101000000000.raw.json"), `{}`)
 	backdateFile(t, expiredPath, 2*time.Hour)
 
 	stdout, _, code := runCLI(t, cfg, "cleanup")
@@ -396,7 +396,7 @@ func TestIntegrationCLI_cleanup_RetainsNonExpiredFiles(t *testing.T) {
 	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
 
 	freshPath := filepath.Join(respDir, "20990101000000000.json")
-	testutil.WriteFile(t, freshPath, []byte(`{}`))
+	testutil.WriteFile(t, freshPath, `{}`)
 
 	runCLI(t, cfg, "cleanup")
 	if _, err := os.Stat(freshPath); err != nil {
@@ -465,7 +465,7 @@ func writeClaudeConfig(t *testing.T, serverDef any) string {
 		"mcpServers": map[string]any{"imported-server": serverDef},
 	})
 	path := filepath.Join(t.TempDir(), "claude.json")
-	testutil.WriteFile(t, path, data)
+	testutil.WriteFileBytes(t, path, data)
 	return path
 }
 
@@ -477,6 +477,6 @@ func writeClaudeCodeConfig(t *testing.T, servers map[string]any) string {
 		},
 	})
 	path := filepath.Join(t.TempDir(), "claude-code.json")
-	testutil.WriteFile(t, path, data)
+	testutil.WriteFileBytes(t, path, data)
 	return path
 }

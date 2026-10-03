@@ -37,7 +37,7 @@ func TestRead_RejectsSymlinkEscape(t *testing.T) {
 	// Create a file "outside" the store that we want to protect.
 	outsideDir := t.TempDir()
 	secretFile := filepath.Join(outsideDir, "secret.txt")
-	testutil.WriteFile(t, secretFile, []byte("sensitive-data"))
+	testutil.WriteFile(t, secretFile, "sensitive-data")
 
 	// Build a proxy server whose response store is a separate temp dir.
 	storeDir := t.TempDir()
@@ -97,7 +97,7 @@ func TestRead_SymlinkWithinStore_Allowed(t *testing.T) {
 
 	// Create a real file inside the store and a symlink to it, also inside.
 	realFile := filepath.Join(storeDir, "real.json")
-	testutil.WriteFile(t, realFile, []byte(`{"ok":true}`))
+	testutil.WriteFile(t, realFile, `{"ok":true}`)
 	symlinkPath := filepath.Join(storeDir, "link.json")
 	if err := os.Symlink(realFile, symlinkPath); err != nil {
 		t.Fatalf("create symlink: %v", err)

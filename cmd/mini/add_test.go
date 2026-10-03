@@ -225,8 +225,8 @@ func TestRunAdd(t *testing.T) {
 
 	t.Run("warns instead of silently skipping when the server's projection file fails to load", func(t *testing.T) {
 		dir := t.TempDir()
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte("transport: http\nurl: https://example.com\n"))
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), []byte("not: valid: yaml: ["))
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), "transport: http\nurl: https://example.com\n")
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "not: valid: yaml: [")
 
 		var out bytes.Buffer
 		connectAndAuthorizeIfNeeded(dir, "svc", &out)
@@ -319,7 +319,7 @@ func TestRunAddImport(t *testing.T) {
 		t.Run(src.flag+" adds the server and prints the tip", func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(t.TempDir(), src.file)
-			testutil.WriteFile(t, path, []byte(src.config))
+			testutil.WriteFile(t, path, src.config)
 			var out bytes.Buffer
 
 			if err := runAdd(dir, []string{src.flag, path}, &out); err != nil {
@@ -337,11 +337,11 @@ func TestRunAddImport(t *testing.T) {
 	t.Run("a rerun keeps the configured server, reports it and still succeeds", func(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(t.TempDir(), "claude.json")
-		testutil.WriteFile(t, path, []byte(`{"mcpServers":{"svc":{"command":"run"}}}`))
+		testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"command":"run"}}}`)
 		if err := runAdd(dir, []string{"--from-claude", path}, &bytes.Buffer{}); err != nil {
 			t.Fatal(err)
 		}
-		testutil.WriteFile(t, path, []byte(`{"mcpServers":{"svc":{"command":"other"}}}`))
+		testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"command":"other"}}}`)
 		var out bytes.Buffer
 
 		if err := runAdd(dir, []string{"--from-claude", path}, &out); err != nil {
@@ -363,7 +363,7 @@ func TestRunAddImport(t *testing.T) {
 
 	t.Run("a config with no servers says so", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "settings.json")
-		testutil.WriteFile(t, path, []byte(`{}`))
+		testutil.WriteFile(t, path, `{}`)
 		var out bytes.Buffer
 
 		if err := runAdd(t.TempDir(), []string{"--from-gemini", path}, &out); err != nil {
@@ -377,9 +377,9 @@ func TestRunAddImport(t *testing.T) {
 
 	t.Run("a server that fails to add makes the import fail", func(t *testing.T) {
 		notADir := filepath.Join(t.TempDir(), "file")
-		testutil.WriteFile(t, notADir, []byte(""))
+		testutil.WriteFile(t, notADir, "")
 		path := filepath.Join(t.TempDir(), "claude.json")
-		testutil.WriteFile(t, path, []byte(`{"mcpServers":{"svc":{"command":"run"}}}`))
+		testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"command":"run"}}}`)
 
 		err := runAdd(notADir, []string{"--from-claude", path}, &bytes.Buffer{})
 
@@ -400,7 +400,7 @@ func TestProbeConnectionInvalidConfigMakesNoRequest(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit.Store(true) }))
 	defer upstream.Close()
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte("bad: [yaml\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "bad: [yaml\n")
 	err := probeConnection(context.Background(), dir, config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL})
 	if err == nil || !strings.Contains(err.Error(), "load config") || hit.Load() {
 		t.Errorf("probeConnection error=%v request hit=%v, want load-config error and no request", err, hit.Load())
@@ -424,7 +424,7 @@ func TestConnectAndAuthorizeIfNeeded_onlyStaticAuthSkipsLogin(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := t.TempDir()
 			yaml := "transport: http\nurl: " + loopback.URL + "\nheaders:\n  " + tt.header + "\nauth:\n  type: oauth2\n"
-			testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte(yaml))
+			testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), yaml)
 			var out bytes.Buffer
 			connectAndAuthorizeIfNeeded(dir, "svc", &out)
 			if got := strings.Contains(out.String(), "requires OAuth authorization"); got != tt.wantLogin {

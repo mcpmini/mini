@@ -31,7 +31,7 @@ func TestRunCleanup(t *testing.T) {
 		respDir := filepath.Join(dir, "internal", "responses")
 
 		oldJSON := filepath.Join(respDir, "old.json")
-		testutil.WriteFile(t, oldJSON, []byte(`{"ok":true}`))
+		testutil.WriteFile(t, oldJSON, `{"ok":true}`)
 		fakeClock := clock.NewFake()
 		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
@@ -53,7 +53,7 @@ func TestRunCleanup(t *testing.T) {
 		dir := t.TempDir()
 		respDir := filepath.Join(dir, "internal", "responses")
 		freshJSON := filepath.Join(respDir, "fresh.json")
-		testutil.WriteFile(t, freshJSON, []byte(`{"ok":true}`))
+		testutil.WriteFile(t, freshJSON, `{"ok":true}`)
 
 		fakeClock := clock.NewFake()
 		now := fakeClock.Now()

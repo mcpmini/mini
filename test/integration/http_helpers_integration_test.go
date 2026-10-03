@@ -72,7 +72,7 @@ func writeHTTPServerYAML(t *testing.T, configDir, serverName, url string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
 	yaml := fmt.Sprintf("transport: sse\nurl: %s\n", url)
-	testutil.WriteFile(t, filepath.Join(dir, serverName+".yaml"), []byte(yaml))
+	testutil.WriteFile(t, filepath.Join(dir, serverName+".yaml"), yaml)
 }
 
 func httpServer(t *testing.T, onCall func(int) (int, []byte)) (*fakeHTTPMCP, *mcpClient) {

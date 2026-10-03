@@ -141,9 +141,9 @@ func TestRunCatalogStepRequestedConfiguredEntriesArePreserved(t *testing.T) {
 	dir := t.TempDir()
 	existing := []byte("preserve this file\n")
 	path := filepath.Join(dir, "servers", "already.yaml")
-	testutil.WriteFile(t, path, existing)
+	testutil.WriteFileBytes(t, path, existing)
 	configured := "transport: http\nurl: https://configured.example/mcp\n"
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "configured.yaml"), []byte(configured))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "configured.yaml"), configured)
 	entries := []catalog.Entry{
 		{Name: "same-url", URL: "https://configured.example/mcp"},
 		{Name: "already", URL: "https://already.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://already.example/token"},
@@ -279,7 +279,7 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 	dir := t.TempDir()
 	original := "transport: http\nurl: [unfinished\n"
 	path := filepath.Join(dir, "servers", "github.yaml")
-	testutil.WriteFile(t, path, []byte(original))
+	testutil.WriteFile(t, path, original)
 	out := &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{
@@ -306,8 +306,8 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 
 func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "my-linear.yaml"), []byte("transport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\n"))
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), []byte("transport: [broken\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "my-linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "transport: [broken\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{
@@ -382,7 +382,7 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 
 func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers"), nil)
+	testutil.WriteFile(t, filepath.Join(dir, "servers"), "")
 	out := &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{

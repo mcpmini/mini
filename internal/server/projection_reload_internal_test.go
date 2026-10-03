@@ -14,7 +14,7 @@ import (
 func writeServerFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	p := filepath.Join(dir, "servers", name)
-	testutil.WriteFile(t, p, []byte(content))
+	testutil.WriteFile(t, p, content)
 	return p
 }
 
@@ -50,7 +50,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 		dir := t.TempDir()
 		p := writeServerFile(t, dir, "svc.proj.yaml", "tool:\n  include_only: [a]\n")
 		before := mustFingerprint(t, dir)
-		testutil.WriteFile(t, p, []byte("tool:\n  include_only: [b]\n"))
+		testutil.WriteFile(t, p, "tool:\n  include_only: [b]\n")
 		after := mustFingerprint(t, dir)
 		if before[p] == after[p] {
 			t.Error("expected hash to change on same-size content edit")
@@ -96,7 +96,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("ignores config.yaml", func(t *testing.T) {
 		dir := t.TempDir()
-		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte("log_level: debug\n"))
+		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "log_level: debug\n")
 		if fp := mustFingerprint(t, dir); len(fp) != 0 {
 			t.Errorf("fingerprint = %v, want config.yaml left out", fp)
 		}

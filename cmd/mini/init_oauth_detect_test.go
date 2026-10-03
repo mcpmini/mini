@@ -80,7 +80,7 @@ func hangingUpstream(t *testing.T) string {
 func importFromMCPJSON(t *testing.T, configDir, mcpServers string) []string {
 	t.Helper()
 	src := filepath.Join(t.TempDir(), "claude.json")
-	testutil.WriteFile(t, src, []byte(`{"mcpServers": `+mcpServers+`}`))
+	testutil.WriteFile(t, src, `{"mcpServers": `+mcpServers+`}`)
 	return captureImport(t, configDir, src)
 }
 
@@ -171,7 +171,7 @@ func TestDetectImportedOAuthProbesOnlyHTTPServersImportedThisRun(t *testing.T) {
 
 func TestDetectImportedOAuthWithNoImportsStaysSilent(t *testing.T) {
 	configDir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(configDir, "servers", "broken.yaml"), []byte("bad: [yaml\n"))
+	testutil.WriteFile(t, filepath.Join(configDir, "servers", "broken.yaml"), "bad: [yaml\n")
 	errOut := &bytes.Buffer{}
 	detectImportedOAuth(oauthDetectParams{configDir: configDir, clock: clock.System(), errOut: errOut})
 
@@ -184,7 +184,7 @@ func TestDetectImportedOAuthProbesDespiteBrokenUnrelatedFile(t *testing.T) {
 	configDir := t.TempDir()
 	url := upstreamAnswering(t, http.StatusUnauthorized, "Bearer")
 	names := importFromMCPJSON(t, configDir, `{"svc": {"type": "http", "url": "`+url+`"}}`)
-	testutil.WriteFile(t, filepath.Join(configDir, "servers", "broken.yaml"), []byte("bad: [yaml\n"))
+	testutil.WriteFile(t, filepath.Join(configDir, "servers", "broken.yaml"), "bad: [yaml\n")
 	detect(configDir, names)
 	if !config.IsOAuthDetected(configDir, "svc") {
 		t.Error("OAuth marker not written despite unrelated broken server file")
@@ -236,7 +236,7 @@ func TestInitCommandDetectsOAuthOnImportedServer(t *testing.T) {
 	configDir := t.TempDir()
 	url := upstreamAnswering(t, http.StatusUnauthorized, "Bearer")
 	src := filepath.Join(t.TempDir(), "claude.json")
-	testutil.WriteFile(t, src, []byte(`{"mcpServers": {"svc": {"type": "http", "url": "`+url+`"}}}`))
+	testutil.WriteFile(t, src, `{"mcpServers": {"svc": {"type": "http", "url": "`+url+`"}}}`)
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
 	cmd.SetArgs([]string{"--yes", "--from", src})
 

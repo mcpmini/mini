@@ -61,7 +61,7 @@ func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
 		}
 	}`
 	src := filepath.Join(t.TempDir(), "claude.json")
-	testutil.WriteFile(t, src, []byte(claudeJSON))
+	testutil.WriteFile(t, src, claudeJSON)
 	count := len(importClaudeFormat(configDir, "Claude Code", src))
 	if count != 1 {
 		t.Errorf("imported %d servers, want 1 (mini should be skipped)", count)
@@ -162,14 +162,14 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			configDir := t.TempDir()
 			src := filepath.Join(t.TempDir(), "claude.json")
-			testutil.WriteFile(t, src, []byte(`{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`))
+			testutil.WriteFile(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
 			testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
 			serverFile := filepath.Join(configDir, "servers", "foo.yaml")
 			if tt.edit != nil {
-				testutil.WriteFile(t, serverFile, []byte(string(tt.edit(serverFile))))
+				testutil.WriteFile(t, serverFile, string(tt.edit(serverFile)))
 			}
 			before := testutil.ReadFile(t, serverFile)
-			testutil.WriteFile(t, src, []byte(`{"mcpServers": `+tt.reimport+`}`))
+			testutil.WriteFile(t, src, `{"mcpServers": `+tt.reimport+`}`)
 
 			var imported []string
 			out := testutil.CaptureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
@@ -191,11 +191,11 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 func TestImportClaudeFormat_ImportsOnlyNewServers(t *testing.T) {
 	configDir := t.TempDir()
 	src := filepath.Join(t.TempDir(), "claude.json")
-	testutil.WriteFile(t, src, []byte(`{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`))
+	testutil.WriteFile(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
 	testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
-	testutil.WriteFile(t, src, []byte(`{"mcpServers": {
+	testutil.WriteFile(t, src, `{"mcpServers": {
 		"foo": {"type": "http", "url": "https://foo.example/mcp"},
-		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`))
+		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`)
 
 	var imported []string
 	testutil.CaptureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })

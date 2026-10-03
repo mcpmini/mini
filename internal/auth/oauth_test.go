@@ -90,7 +90,7 @@ func TestSaveReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := dir + "/target"
-	testutil.WriteFile(t, target, []byte("unchanged"))
+	testutil.WriteFile(t, target, "unchanged")
 	path := internal + "/myserver.token.json"
 	if err := os.Symlink(target, path); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)

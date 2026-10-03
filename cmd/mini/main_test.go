@@ -136,7 +136,7 @@ func TestRunDaemonStatusRunning(t *testing.T) {
 func TestRunDaemonStatusStaleSocket(t *testing.T) {
 	dir := shortConfigDir(t)
 	sp := daemon.SocketPath(dir)
-	testutil.WriteFile(t, sp, nil)
+	testutil.WriteFile(t, sp, "")
 	out := testutil.CaptureStdout(t, func() { runDaemonStatus(dir) })
 	if out != "daemon: not running\n" {
 		t.Fatalf("stale socket should read as not running, got %q", out)

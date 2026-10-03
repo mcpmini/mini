@@ -172,9 +172,9 @@ func TestLoadExistingSkipsExpired(t *testing.T) {
 	fakeClock := clock.NewFake()
 	dir := t.TempDir()
 	expired := tsFilename(fakeClock.Now().Add(-2 * time.Hour))
-	testutil.WriteFile(t, filepath.Join(dir, expired), []byte(`{"old":true}`))
+	testutil.WriteFile(t, filepath.Join(dir, expired), `{"old":true}`)
 	fresh := tsFilename(fakeClock.Now())
-	testutil.WriteFile(t, filepath.Join(dir, fresh), []byte(`{"new":true}`))
+	testutil.WriteFile(t, filepath.Join(dir, fresh), `{"new":true}`)
 
 	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour, Clock: fakeClock})
 	defer store.Close()

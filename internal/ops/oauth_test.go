@@ -107,7 +107,7 @@ func TestDetectOAuth(t *testing.T) {
 
 	t.Run("marker write failure is returned", func(t *testing.T) {
 		notADir := filepath.Join(tempDir(t), "file")
-		testutil.WriteFile(t, notADir, nil)
+		testutil.WriteFile(t, notADir, "")
 		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: notADir, Server: httpServer("https://example.com/mcp"), ConnErr: unauthorized("Bearer")})
 		if err == nil || got {
 			t.Errorf("got (%v, %v), want (false, error)", got, err)

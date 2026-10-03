@@ -26,7 +26,7 @@ default_args:
 func writeActionYAML(t *testing.T, dir string) {
 	t.Helper()
 	actionsDir := filepath.Join(dir, "internal", "actions")
-	testutil.WriteFile(t, filepath.Join(actionsDir, "my_search.yaml"), []byte(actionYAML))
+	testutil.WriteFile(t, filepath.Join(actionsDir, "my_search.yaml"), actionYAML)
 }
 
 func serverWithActionsDir(t *testing.T, dir string) *server.Server {
@@ -74,7 +74,7 @@ func TestLoadActions_emptyDir(t *testing.T) {
 func TestLoadActions_invalidYAML(t *testing.T) {
 	dir := t.TempDir()
 	actionsDir := filepath.Join(dir, "internal", "actions")
-	testutil.WriteFile(t, filepath.Join(actionsDir, "bad.yaml"), []byte(":\t invalid"))
+	testutil.WriteFile(t, filepath.Join(actionsDir, "bad.yaml"), ":\t invalid")
 
 	srv := serverWithActionsDir(t, dir)
 	if err := srv.LoadActions(dir); err == nil {

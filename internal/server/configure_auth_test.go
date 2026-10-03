@@ -25,7 +25,7 @@ func newServerWithDir(t *testing.T, configDir string) *server.Server {
 
 func writeServerYAML(t *testing.T, dir, name, content string) {
 	t.Helper()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", name+".yaml"), []byte(content))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", name+".yaml"), content)
 }
 
 func configureResult(t *testing.T, srv *server.Server, args map[string]any) map[string]any {

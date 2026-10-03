@@ -77,5 +77,5 @@ func TestTokenStateStringsAreDistinct(t *testing.T) {
 func writeCorruptToken(t *testing.T, dir, serverName string) {
 	t.Helper()
 	path := filepath.Join(dir, "internal", serverName+".token.json")
-	testutil.WriteFile(t, path, []byte("not json"))
+	testutil.WriteFile(t, path, "not json")
 }

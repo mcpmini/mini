@@ -194,13 +194,13 @@ func TestBenchmark_githubPRs_bundledProjectionApplies(t *testing.T) {
 func writeFixture(t *testing.T, benchDir, server, tool, content string) {
 	t.Helper()
 	dir := filepath.Join(benchDir, "fixtures", server)
-	testutil.WriteFile(t, filepath.Join(dir, tool+".json"), []byte(content))
+	testutil.WriteFile(t, filepath.Join(dir, tool+".json"), content)
 }
 
 func writeProjection(t *testing.T, benchDir, server, content string) {
 	t.Helper()
 	dir := filepath.Join(benchDir, "projections")
-	testutil.WriteFile(t, filepath.Join(dir, server+".yaml"), []byte(content))
+	testutil.WriteFile(t, filepath.Join(dir, server+".yaml"), content)
 }
 
 func repeat(s string, n int) string {

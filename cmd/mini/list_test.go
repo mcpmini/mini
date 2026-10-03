@@ -226,5 +226,5 @@ func mustMarshal(t *testing.T, v any) json.RawMessage {
 func writeServer(t *testing.T, configDir, name, yaml string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
-	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), []byte(yaml))
+	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), yaml)
 }

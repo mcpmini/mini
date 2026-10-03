@@ -43,7 +43,7 @@ func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *te
 	}
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 	path := filepath.Join(srv.configDir, "servers", "svc.yaml")
-	testutil.WriteFile(t, path, []byte("command: run\n"))
+	testutil.WriteFile(t, path, "command: run\n")
 
 	if srv.removeConfigServer("svc") {
 		t.Error("removeConfigServer removed svc while its file is saved and enabled")

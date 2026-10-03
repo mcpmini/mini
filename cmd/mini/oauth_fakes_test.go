@@ -134,7 +134,7 @@ func startFromConfigDir(t *testing.T, p BuildServerParams) *server.Server {
 			t.Fatal(err)
 		}
 		path := filepath.Join(p.ConfigDir, "servers", sc.Name+".yaml")
-		testutil.WriteFile(t, path, data)
+		testutil.WriteFileBytes(t, path, data)
 	}
 	return buildAndStart(t.Context(), p)
 }

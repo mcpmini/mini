@@ -181,7 +181,7 @@ func TestLoadExisting_evictsExpiredFromPreviousSession(t *testing.T) {
 
 func TestLoadExisting_ignoresNonTimestampFiles(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "not-a-timestamp.json"), []byte(`{}`))
+	testutil.WriteFile(t, filepath.Join(dir, "not-a-timestamp.json"), `{}`)
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
 	defer s.Close()
 
@@ -195,7 +195,7 @@ func TestLoadEntry_recordsSize(t *testing.T) {
 	dir := t.TempDir()
 	slimPath := filepath.Join(dir, epochBase(time.Now())+".json")
 	data := []byte(`{"ok":true}`)
-	testutil.WriteFile(t, slimPath, data)
+	testutil.WriteFileBytes(t, slimPath, data)
 	s := &Store{dir: dir, ttl: time.Hour}
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
@@ -214,7 +214,7 @@ func TestLoadEntry_recordsSize(t *testing.T) {
 func TestLoadEntry_skipsRawCompanionFiles(t *testing.T) {
 	dir := t.TempDir()
 	rawPath := filepath.Join(dir, epochBase(time.Now())+".raw.json")
-	testutil.WriteFile(t, rawPath, []byte(`{"full":"data"}`))
+	testutil.WriteFile(t, rawPath, `{"full":"data"}`)
 	s := &Store{dir: dir, ttl: time.Hour}
 	entries, _ := os.ReadDir(dir)
 	for _, entry := range entries {

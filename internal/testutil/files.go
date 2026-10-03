@@ -6,7 +6,12 @@ import (
 	"testing"
 )
 
-func WriteFile(t testing.TB, path string, data []byte) {
+func WriteFile(t testing.TB, path, content string) {
+	t.Helper()
+	WriteFileBytes(t, path, []byte(content))
+}
+
+func WriteFileBytes(t testing.TB, path string, data []byte) {
 	t.Helper()
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0700); err != nil {

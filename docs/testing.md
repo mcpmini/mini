@@ -39,7 +39,7 @@ Use tables when cases share the same flow and differ only in inputs and expected
 
 Tests must own their resources. Isolate config, home, output, sockets, and temporary files; close listeners and response bodies; stop and join child processes and goroutines. A test should not read or write the developer's `~/.mini`.
 
-Use `internal/testutil.WriteFile` and `ReadFile` for ordinary test setup and successful assertions. `WriteFile` creates parent directories; both helpers fail with the file operation and path. Keep direct I/O when the test checks a read or write error, polls for a file, or depends on permissions such as executable scripts or unreadable fixtures; keep directory-only setup when it models an obstacle or directory state.
+Use `internal/testutil.WriteFile` and `ReadFile` for ordinary test setup and successful assertions. `WriteFile` takes string content; use `WriteFileBytes` for byte slices such as marshaled YAML or JSON. Both writers create parent directories; both helpers fail with the file operation and path. Keep direct I/O when the test checks a read or write error, polls for a file, or depends on permissions such as executable scripts or unreadable fixtures; keep directory-only setup when it models an obstacle or directory state.
 
 ## Control failures and time
 

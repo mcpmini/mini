@@ -75,9 +75,9 @@ func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 
 func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "oauth.yaml"), []byte("transport: http\nurl: https://api.example.com\nauth:\n  type: oauth2\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "oauth.yaml"), "transport: http\nurl: https://api.example.com\nauth:\n  type: oauth2\n")
 	brokenPath := filepath.Join(dir, "servers", "broken.yaml")
-	testutil.WriteFile(t, brokenPath, []byte("bad: [yaml\n"))
+	testutil.WriteFile(t, brokenPath, "bad: [yaml\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 	runLoginStep(loginStepParams{configDir: dir, ask: func(string) string { return "s" }, out: out, errOut: errOut})
 	if strings.Count(errOut.String(), brokenPath) != 1 {
@@ -90,7 +90,7 @@ func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 
 func TestRunLoginStepBrokenMainConfigSkipsOAuthLogin(t *testing.T) {
 	dir := loginStepConfig(t, "oauth")
-	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte("disable_auth_browser_open: [unclosed\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "disable_auth_browser_open: [unclosed\n")
 	errOut := &bytes.Buffer{}
 	called := false
 	runLoginStep(loginStepParams{
@@ -110,7 +110,7 @@ func TestRunLoginStepListingShowsReasonNextToServerName(t *testing.T) {
 	if err := auth.Save(dir, "expired", expired); err != nil {
 		t.Fatal(err)
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "internal", "corrupt.token.json"), []byte("not json"))
+	testutil.WriteFile(t, filepath.Join(dir, "internal", "corrupt.token.json"), "not json")
 	out := &bytes.Buffer{}
 	runLoginStep(loginStepParams{configDir: dir, ask: func(string) string { return "s" }, out: out, errOut: &bytes.Buffer{}})
 	for _, want := range []string{"fresh (no token)", "expired (token expired)", "corrupt (token unreadable: "} {
@@ -212,7 +212,7 @@ func saveTestToken(t *testing.T, dir, name string, token *oauth2.Token) {
 
 func TestRunLoginStepPassesLoadedConfigAndServerToLogIn(t *testing.T) {
 	dir := loginStepConfig(t, "first")
-	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte("disable_auth_browser_open: true\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "disable_auth_browser_open: true\n")
 	out := &bytes.Buffer{}
 	var got logInParams
 	runLoginStep(loginStepParams{

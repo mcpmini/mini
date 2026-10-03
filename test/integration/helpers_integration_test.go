@@ -783,32 +783,32 @@ func mockFixtureDir(t *testing.T, fixtures map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for name, content := range fixtures {
-		testutil.WriteFile(t, filepath.Join(dir, name+".json"), []byte(content))
+		testutil.WriteFile(t, filepath.Join(dir, name+".json"), content)
 	}
 	return dir
 }
 
 func writeConfig(t *testing.T, configDir, content string) {
 	t.Helper()
-	testutil.WriteFile(t, filepath.Join(configDir, "config.yaml"), []byte(content))
+	testutil.WriteFile(t, filepath.Join(configDir, "config.yaml"), content)
 }
 
 func writeProjection(t *testing.T, configDir, serverName, content string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
-	testutil.WriteFile(t, filepath.Join(dir, serverName+".proj.yaml"), []byte(content))
+	testutil.WriteFile(t, filepath.Join(dir, serverName+".proj.yaml"), content)
 }
 
 func writeAction(t *testing.T, configDir, content string, name string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "internal", "actions")
-	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), []byte(content))
+	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), content)
 }
 
 func writeServerConfig(t *testing.T, configDir, name, yaml string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
-	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), []byte(yaml))
+	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), yaml)
 }
 
 func backdateFile(t *testing.T, path string, age time.Duration) {

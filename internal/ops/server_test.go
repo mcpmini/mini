@@ -186,7 +186,7 @@ func TestAddServer(t *testing.T) {
 		if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
 			t.Fatal(err)
 		}
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "reused.proj.yaml"), []byte("list:\n  include_only: [id]\n"))
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "reused.proj.yaml"), "list:\n  include_only: [id]\n")
 
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
 			t.Fatal(err)
@@ -204,7 +204,7 @@ func TestAddServer(t *testing.T) {
 	t.Run("a reused vendor name gets the bundled projection, not the old server's", func(t *testing.T) {
 		dir := tempDir(t)
 		leftover := filepath.Join(dir, "servers", "gh.proj.yaml")
-		testutil.WriteFile(t, leftover, []byte("# the old server's rules\n"))
+		testutil.WriteFile(t, leftover, "# the old server's rules\n")
 
 		added, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"})
 		if err != nil {
@@ -219,7 +219,7 @@ func TestAddServer(t *testing.T) {
 
 	t.Run("a failure to forget old state leaves nothing written", func(t *testing.T) {
 		dir := tempDir(t)
-		testutil.WriteFile(t, filepath.Join(dir, "internal", "stuck.token.json", "pinned"), []byte(""))
+		testutil.WriteFile(t, filepath.Join(dir, "internal", "stuck.token.json", "pinned"), "")
 
 		_, err := ops.AddServer(dir, config.ServerConfig{Name: "stuck", Command: "run"})
 
@@ -250,7 +250,7 @@ func TestAddServer(t *testing.T) {
 		t.Run("refuses "+name+" and keeps its state", func(t *testing.T) {
 			dir := tempDir(t)
 			path := filepath.Join(dir, "servers", "taken.yaml")
-			testutil.WriteFile(t, path, []byte(existing))
+			testutil.WriteFile(t, path, existing)
 			saveCredentials(t, dir, "taken")
 
 			_, err := ops.AddServer(dir, config.ServerConfig{Name: "taken", Command: "replacement"})
@@ -320,7 +320,7 @@ func TestRemoveServer(t *testing.T) {
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}); err != nil {
 			t.Fatal(err)
 		}
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "toremove.proj.yaml"), []byte("list:\n  include_only: [id]\n"))
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "toremove.proj.yaml"), "list:\n  include_only: [id]\n")
 		saveCredentials(t, dir, "toremove")
 		if err := config.MarkOAuthDetected(dir, "toremove"); err != nil {
 			t.Fatal(err)
@@ -367,7 +367,7 @@ func TestRemoveServer(t *testing.T) {
 			t.Fatal(err)
 		}
 		pinned := filepath.Join(dir, "internal", "stuck.token.json", "pinned")
-		testutil.WriteFile(t, pinned, []byte(""))
+		testutil.WriteFile(t, pinned, "")
 
 		if err := ops.RemoveServer(dir, "stuck"); err == nil {
 			t.Fatal("RemoveServer succeeded while the token could not be deleted")

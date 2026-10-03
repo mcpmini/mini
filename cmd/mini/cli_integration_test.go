@@ -264,7 +264,7 @@ func writeClaudeConfigFile(t *testing.T) string {
 			},
 		},
 	})
-	testutil.WriteFile(t, claudeConfig, claudeData)
+	testutil.WriteFileBytes(t, claudeConfig, claudeData)
 	return claudeConfig
 }
 
@@ -286,7 +286,7 @@ func TestIntegrationCLI_connect_badConfig(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
-	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"))
+	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), "not: valid: yaml: :::")
 
 	_, _, code := run(t, bin, cfg, "connect")
 	if code == 0 {
@@ -376,7 +376,7 @@ func writeGeminiConfigFile(t *testing.T) string {
 		},
 	})
 	path := filepath.Join(t.TempDir(), "settings.json")
-	testutil.WriteFile(t, path, data)
+	testutil.WriteFileBytes(t, path, data)
 	return path
 }
 
