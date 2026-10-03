@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
@@ -36,9 +37,13 @@ func TestConfigureReload_emptyDir(t *testing.T) {
 
 func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 	dir := t.TempDir()
-	serversDir := filepath.Join(dir, "servers")
-	testutil.WriteFile(t, filepath.Join(serversDir, "myserver.proj.yaml"), "search:\n  string_limit: 50\n")
-	testutil.WriteFile(t, filepath.Join(dir, "servers.yaml"), "servers:\n  - name: myserver\n    command: echo\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "myserver", Command: "echo"})
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "myserver",
+		Tools: map[string]*config.ProjectionConfig{"search": {
+			StringLimits: map[string]int{"body": 50},
+		}},
+	})
 
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 
@@ -430,6 +435,7 @@ func reloadResult(t *testing.T, dir string, editsAfterStart map[string]string) m
 func TestConfigureReload_resultShape(t *testing.T) {
 	cases := []struct {
 		name             string
+		servers          []config.ServerConfig
 		files            map[string]string
 		editsAfterStart  map[string]string
 		wantOK           bool
@@ -439,8 +445,18 @@ func TestConfigureReload_resultShape(t *testing.T) {
 		wantSourceErrors bool
 	}{
 		{
-			name:       "clean reload: ok=true, loaded counts, skipped=[], no source_errors",
-			files:      map[string]string{"servers/a.yaml": "command: echo\nprojections:\n  t:\n    include_only: [x]\n"},
+			name: "clean reload: ok=true, loaded counts, skipped=[], no source_errors",
+			servers: []config.ServerConfig{
+				{
+					Name:    "a",
+					Command: "echo",
+					Projections: map[string]*config.ProjectionConfig{
+						"t": {
+							IncludeOnly: []string{"x"},
+						},
+					},
+				},
+			},
 			wantOK:     true,
 			wantLoaded: []string{"a"},
 		},
@@ -451,12 +467,32 @@ func TestConfigureReload_resultShape(t *testing.T) {
 		},
 		{
 			name:        "bad proj.yaml: ok=false, skipped contains server name",
-			files:       map[string]string{"servers/a.yaml": "command: echo\n", "servers/a.proj.yaml": "bad: [yaml\n"},
+			servers:     []config.ServerConfig{{Name: "a", Command: "echo"}},
+			files:       map[string]string{"servers/a.proj.yaml": "bad: [yaml\n"},
 			wantSkipped: []string{"a"},
 		},
 		{
-			name:             "loaded excludes kept-previous server when its file broke",
-			files:            map[string]string{"servers/a.yaml": "command: echo\nprojections:\n  t:\n    include_only: [x]\n", "servers/b.yaml": "command: echo\nprojections:\n  t:\n    include_only: [y]\n"},
+			name: "loaded excludes kept-previous server when its file broke",
+			servers: []config.ServerConfig{
+				{
+					Name:    "a",
+					Command: "echo",
+					Projections: map[string]*config.ProjectionConfig{
+						"t": {
+							IncludeOnly: []string{"x"},
+						},
+					},
+				},
+				{
+					Name:    "b",
+					Command: "echo",
+					Projections: map[string]*config.ProjectionConfig{
+						"t": {
+							IncludeOnly: []string{"y"},
+						},
+					},
+				},
+			},
 			editsAfterStart:  map[string]string{"servers/b.yaml": "bad: [yaml\n"},
 			wantLoaded:       []string{"a"},
 			wantNotLoaded:    []string{"b"},
@@ -466,6 +502,9 @@ func TestConfigureReload_resultShape(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := evalTempDir(t)
+			for _, server := range tc.servers {
+				configtest.WriteServer(t, dir, server)
+			}
 			for rel, content := range tc.files {
 				testutil.WriteFile(t, filepath.Join(dir, rel), content)
 			}

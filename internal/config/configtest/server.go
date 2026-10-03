@@ -16,11 +16,11 @@ func WriteServer(t testing.TB, dir string, server config.ServerConfig) {
 	testutil.WriteFileBytes(t, config.ServerPath(dir, server.Name), writeYAML(t, server))
 }
 
-func writeYAML(t testing.TB, server config.ServerConfig) []byte {
+func writeYAML(t testing.TB, value any) []byte {
 	t.Helper()
-	data, err := yaml.Marshal(server)
+	data, err := yaml.Marshal(value)
 	if err != nil {
-		t.Fatalf("marshal server %q: %v", server.Name, err)
+		t.Fatalf("marshal YAML: %v", err)
 	}
 	return data
 }

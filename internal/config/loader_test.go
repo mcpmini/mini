@@ -103,7 +103,14 @@ func TestLoad_serverNameComesFromFile(t *testing.T) {
 		Command: "npx",
 		Args:    []string{"-y", "@buildkite/mcp-server"},
 	})
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.proj.yaml"), "list_builds:\n  include_only: [id]\n")
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "ci",
+		Tools: map[string]*config.ProjectionConfig{
+			"list_builds": {
+				IncludeOnly: []string{"id"},
+			},
+		},
+	})
 	_, servers := mustLoadConfig(t, dir)
 	sc := config.FindServer(servers, "ci")
 	if len(servers) != 1 || sc == nil {
@@ -146,14 +153,16 @@ func TestLoadMissingConfigDir_usesDefaults(t *testing.T) {
 
 func TestLoadProjectionConfig(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), `name: gh
-command: gh-mcp`)
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), `
-list_issues:
-  include_only: [number, title]
-  array_limits:
-    labels: 3
-`)
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "gh-mcp"})
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "gh",
+		Tools: map[string]*config.ProjectionConfig{
+			"list_issues": {
+				IncludeOnly: []string{"number", "title"},
+				ArrayLimits: map[string]int{"labels": 3},
+			},
+		},
+	})
 	sc := mustLoadOneServer(t, dir)
 	proj := sc.Projections
 	if proj == nil {
@@ -169,16 +178,23 @@ list_issues:
 
 func TestLoadProjectionMerges_dirWinsOverInline(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), `name: svc
-command: my-mcp
-projections:
-  my_tool:
-    include_only: [inline_field]
-`)
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), `
-my_tool:
-  include_only: [dir_field]
-`)
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "svc",
+		Command: "my-mcp",
+		Projections: map[string]*config.ProjectionConfig{
+			"my_tool": {
+				IncludeOnly: []string{"inline_field"},
+			},
+		},
+	})
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"my_tool": {
+				IncludeOnly: []string{"dir_field"},
+			},
+		},
+	})
 	sc := mustLoadOneServer(t, dir)
 	proj := sc.Projections["my_tool"]
 	if proj == nil {
@@ -527,7 +543,11 @@ func TestServerConfig_UsesOAuthLogin(t *testing.T) {
 		{"stdio oauth2", config.ServerConfig{Transport: "stdio", Auth: oauth}, false},
 		{"nil auth", config.ServerConfig{Transport: "http"}, false},
 		{"api_key type", config.ServerConfig{Transport: "http", Auth: &config.AuthConfig{Type: config.AuthTypeAPIKey}}, false},
-		{"oauth2 with Authorization header", config.ServerConfig{Transport: "http", Auth: oauth, Headers: map[string]string{"Authorization": "Bearer x"}}, false},
+		{"oauth2 with Authorization header", config.ServerConfig{
+			Transport: "http",
+			Auth:      oauth,
+			Headers:   map[string]string{"Authorization": "Bearer x"},
+		}, false},
 		{"oauth2 with unrelated header only", config.ServerConfig{Transport: "http", Auth: oauth, Headers: map[string]string{"X-Tenant": "acme"}}, true},
 	}
 	for _, tc := range cases {
@@ -608,7 +628,14 @@ func TestLoadResponseFormat(t *testing.T) {
 func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Command: "gh-mcp"})
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "gh",
+		Tools: map[string]*config.ProjectionConfig{
+			"list_issues": {
+				Format: "mini",
+			},
+		},
+	})
 	_, _, err := config.Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "toon") {
 		t.Fatalf("expected projection format error naming toon, got %v", err)

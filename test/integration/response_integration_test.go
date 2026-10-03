@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -29,7 +31,14 @@ func TestIntegrationResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}),
 	})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
+	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"get_item": {
+				Exclude: []string{"secret"},
+			},
+		},
+	})
 
 	e := startServer(t, cfg).execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
@@ -48,7 +57,14 @@ func TestIntegrationResponse_responseFileIsValidJSON(t *testing.T) {
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}),
 	})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
+	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"get_item": {
+				Exclude: []string{"secret"},
+			},
+		},
+	})
 
 	e := startServer(t, cfg).execEnvelope("svc", "get_item", nil)
 	if e.File == nil {

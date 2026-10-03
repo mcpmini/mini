@@ -13,13 +13,6 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-func writeServerFile(t *testing.T, dir, name, content string) string {
-	t.Helper()
-	p := filepath.Join(dir, "servers", name)
-	testutil.WriteFile(t, p, content)
-	return p
-}
-
 func mustFingerprint(t *testing.T, dir string) map[string]string {
 	t.Helper()
 	fp, err := fingerprintConfigSources(dir)
@@ -40,8 +33,15 @@ func TestFingerprintProjectionSources(t *testing.T) {
 	t.Run("covers server yaml and proj yaml but not other files", func(t *testing.T) {
 		dir := t.TempDir()
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "stdio"})
-		writeServerFile(t, dir, "svc.proj.yaml", "tool:\n  include_only: [a]\n")
-		writeServerFile(t, dir, "notes.txt", "ignored")
+		configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+			ServerName: "svc",
+			Tools: map[string]*config.ProjectionConfig{
+				"tool": {
+					IncludeOnly: []string{"a"},
+				},
+			},
+		})
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "notes.txt"), "ignored")
 		fp := mustFingerprint(t, dir)
 		if len(fp) != 2 {
 			t.Errorf("expected 2 entries, got %v", fp)
@@ -50,9 +50,14 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("same size content change changes hash", func(t *testing.T) {
 		dir := t.TempDir()
-		p := writeServerFile(t, dir, "svc.proj.yaml", "tool:\n  include_only: [a]\n")
+		original, replacement := "tool:\n  include_only: [a]\n", "tool:\n  include_only: [b]\n"
+		if len(original) != len(replacement) {
+			t.Fatal("same-size fixtures differ in size")
+		}
+		p := config.ProjectionPath(dir, "svc")
+		testutil.WriteFile(t, p, original)
 		before := mustFingerprint(t, dir)
-		testutil.WriteFile(t, p, "tool:\n  include_only: [b]\n")
+		testutil.WriteFile(t, p, replacement)
 		after := mustFingerprint(t, dir)
 		if before[p] == after[p] {
 			t.Error("expected hash to change on same-size content edit")

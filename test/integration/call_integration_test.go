@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 // callSetup creates a temp config dir with a fakemcp server loaded with the given fixtures.
@@ -94,7 +97,14 @@ func TestIntegrationCLICall_WithProjection(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`,
 	})
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
+	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"get_item": {
+				Exclude: []string{"secret"},
+			},
+		},
+	})
 
 	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item")
 	if code != 0 {
@@ -314,7 +324,14 @@ func TestIntegrationCLICall_ProjectionWritesFile(t *testing.T) {
 	})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
+	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"get_item": {
+				Exclude: []string{"secret"},
+			},
+		},
+	})
 
 	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item")
 	if code != 0 {

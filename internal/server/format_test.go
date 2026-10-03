@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -14,7 +13,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
-	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -258,8 +256,14 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 		configDir := t.TempDir()
 		// Wildcard projections require a server config file to be present.
 		configtest.WriteServer(t, configDir, config.ServerConfig{Name: "gh", Command: "unused"})
-		testutil.WriteFile(t, filepath.Join(configDir, "servers", "gh.proj.yaml"),
-			"\"*\":\n  format: toon\n")
+		configtest.WriteProjections(t, configDir, configtest.ProjectionFile{
+			ServerName: "gh",
+			Tools: map[string]*config.ProjectionConfig{
+				"*": {
+					Format: "toon",
+				},
+			},
+		})
 		srv := newTestServer(t, server.Params{ConfigDir: configDir})
 		srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, toolErrFakeConn())
 		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{

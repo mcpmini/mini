@@ -5,6 +5,9 @@ package integration_test
 import (
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 func proxySetup(t *testing.T, fixtures map[string]string) *mcpClient {
@@ -64,7 +67,14 @@ func TestIntegrationProxyMode_RawProjectionBypassesExclusion(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
+	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"get_item": {
+				Exclude: []string{"secret"},
+			},
+		},
+	})
 	c := startProxyServer(t, cfg)
 
 	pr := c.execProxyTool("svc__get_item", map[string]any{}, map[string]any{"projection": "raw"})

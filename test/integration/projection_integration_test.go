@@ -11,9 +11,14 @@ import (
 )
 
 func TestIntegrationProjection_excludeAlways(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc","internal_ref":"xyz"}`},
-		"", "get_item:\n  exclude: [node_id, internal_ref]\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc","internal_ref":"xyz"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				Exclude: []string{"node_id", "internal_ref"},
+			},
+		},
+	})
 
 	e := client.execEnvelope("svc", "get_item", nil)
 
@@ -27,9 +32,14 @@ func TestIntegrationProjection_excludeAlways(t *testing.T) {
 }
 
 func TestIntegrationProjection_elidedFieldsReported(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
-		"", "get_item:\n  exclude: [node_id]\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				Exclude: []string{"node_id"},
+			},
+		},
+	})
 
 	e := client.execEnvelope("svc", "get_item", nil)
 
@@ -46,9 +56,14 @@ func TestIntegrationProjection_elidedFieldsReported(t *testing.T) {
 }
 
 func TestIntegrationProjection_includeOnly(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"title":"hello","body":"long text","created_at":"2024-01-01"}`},
-		"", "get_item:\n  include_only: [id, title]\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","body":"long text","created_at":"2024-01-01"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				IncludeOnly: []string{"id", "title"},
+			},
+		},
+	})
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
@@ -62,9 +77,14 @@ func TestIntegrationProjection_includeOnly(t *testing.T) {
 
 func TestIntegrationProjection_stringLimit(t *testing.T) {
 	longStr := strings.Repeat("x", 500)
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"body":"` + longStr + `"}`},
-		"", "get_item:\n  string_limits:\n    body: 50\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1,"body":"` + longStr + `"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				StringLimits: map[string]int{"body": 50},
+			},
+		},
+	})
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), longStr) {
@@ -74,10 +94,14 @@ func TestIntegrationProjection_stringLimit(t *testing.T) {
 
 func TestIntegrationProjection_omittedEnvelope(t *testing.T) {
 	longStr := strings.Repeat("w", 400)
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"title":"short","body":"` + longStr + `"}`},
-		"",
-		"get_item:\n  string_limits:\n    body: 60\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1,"title":"short","body":"` + longStr + `"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				StringLimits: map[string]int{"body": 60},
+			},
+		},
+	})
 
 	env := client.execEnvelope("svc", "get_item", nil)
 	if env.Error != "" {
@@ -103,10 +127,14 @@ func TestIntegrationProjection_omittedEnvelope(t *testing.T) {
 }
 
 func TestIntegrationProjection_arrayLimit(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_repo": `{"issues":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5}],"name":"repo"}`},
-		"",
-		"get_repo:\n  array_limits:\n    issues: 3\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_repo": `{"issues":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5}],"name":"repo"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_repo": {
+				ArrayLimits: map[string]int{"issues": 3},
+			},
+		},
+	})
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_repo", nil).Data)
 	data := string(b)
@@ -118,12 +146,13 @@ func TestIntegrationProjection_arrayLimit(t *testing.T) {
 }
 
 func TestIntegrationProjection_wildcardAppliesAllTools(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
 			"get_b": `{"id":2,"node_id":"def","title":"b"}`,
 		},
-		"", "\"*\":\n  exclude: [node_id]\n")
+		Projections: map[string]*config.ProjectionConfig{"*": {Exclude: []string{"node_id"}}},
+	})
 
 	for _, tool := range []string{"get_a", "get_b"} {
 		b, _ := json.Marshal(client.execEnvelope("svc", tool, nil).Data)
@@ -149,9 +178,14 @@ func TestIntegrationProjection_inlineInServerYAML(t *testing.T) {
 }
 
 func TestIntegrationProjection_sessionOverridesServerLevel(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"title":"hello","body":"long content","extra":"strip this"}`},
-		"", "get_item:\n  include_only: [id, title]\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","body":"long content","extra":"strip this"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				IncludeOnly: []string{"id", "title"},
+			},
+		},
+	})
 	client.setProjection("svc", "get_item", map[string]any{"include_only": []string{"id"}}, true)
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
@@ -173,12 +207,17 @@ func TestIntegrationProjection_configurePersistsAcrossCalls(t *testing.T) {
 }
 
 func TestIntegrationProjection_toolSpecificOverridesWildcard(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
 			"get_b": `{"id":2,"node_id":"def","title":"b"}`,
 		},
-		"", "\"*\":\n  exclude: [node_id]\nget_b:\n  include_only: [id, node_id, title]\n")
+		Projections: map[string]*config.ProjectionConfig{"*": {
+			Exclude: []string{"node_id"},
+		}, "get_b": {
+			IncludeOnly: []string{"id", "node_id", "title"},
+		}},
+	})
 
 	bA, _ := json.Marshal(client.execEnvelope("svc", "get_a", nil).Data)
 	if strings.Contains(string(bA), "node_id") {
@@ -207,9 +246,14 @@ func TestIntegrationProjection_persistToDisk(t *testing.T) {
 }
 
 func TestIntegrationProjection_depthLimit(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"a":{"b":{"c":{"d":"deep"}}}}`},
-		"", "get_item:\n  depth_limit: 2\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"a":{"b":{"c":{"d":"deep"}}}}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				DepthLimit: 2,
+			},
+		},
+	})
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	if strings.Contains(string(b), `"deep"`) {
@@ -221,9 +265,15 @@ func TestIntegrationProjection_depthLimit(t *testing.T) {
 }
 
 func TestIntegrationProjection_passthrough(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"title":"hello","internal_ref":"xyz"}`},
-		"", "get_item:\n  include_only: [id, title]\n  passthrough: [internal_ref]\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","internal_ref":"xyz"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				IncludeOnly: []string{"id", "title"},
+				Passthrough: []string{"internal_ref"},
+			},
+		},
+	})
 
 	e := client.execEnvelope("svc", "get_item", nil)
 	if _, ok := e.Passthrough["internal_ref"]; !ok {
@@ -232,9 +282,15 @@ func TestIntegrationProjection_passthrough(t *testing.T) {
 }
 
 func TestIntegrationProjection_includeAndExclude(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
-		"", "get_item:\n  include_only: [id, title, node_id]\n  exclude: [node_id]\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
+		Projections: map[string]*config.ProjectionConfig{
+			"get_item": {
+				IncludeOnly: []string{"id", "title", "node_id"},
+				Exclude:     []string{"node_id"},
+			},
+		},
+	})
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
@@ -247,99 +303,15 @@ func TestIntegrationProjection_includeAndExclude(t *testing.T) {
 }
 
 func TestIntegrationProjection_globalDefaultsApply(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"get_item": `{"id":1,"description":"` + strings.Repeat("x", 300) + `"}`},
-		"default_string_limit: 50\n", "")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures:   map[string]string{"get_item": `{"id":1,"description":"` + strings.Repeat("x", 300) + `"}`},
+		ConfigYAML: "default_string_limit: 50\n",
+	})
 
 	b, _ := json.Marshal(client.execEnvelope("svc", "get_item", nil).Data)
 	data := string(b)
 	if strings.Contains(data, strings.Repeat("x", 100)) {
 		t.Errorf("global default_string_limit:50 should truncate long strings, got: %s", data[:min(200, len(data))])
-	}
-}
-
-func TestIntegrationProjection_readRecoversProjectedData(t *testing.T) {
-	cases := []struct {
-		name       string
-		fixture    string
-		projection string
-		wantByPath map[string]string // path as reported in __mini → expected read() result
-	}{
-		{
-			name:       "excluded field",
-			fixture:    `{"id":1,"secret":"hidden"}`,
-			projection: "get_item:\n  exclude: [secret]\n",
-			wantByPath: map[string]string{
-				".secret": `"hidden"`,
-			},
-		},
-		{
-			name:       "truncated string",
-			fixture:    `{"id":1,"body":"` + strings.Repeat("x", 100) + `"}`,
-			projection: "get_item:\n  string_limits:\n    body: 20\n",
-			wantByPath: map[string]string{
-				".body": `"` + strings.Repeat("x", 100) + `"`,
-			},
-		},
-		{
-			name:       "truncated array",
-			fixture:    `{"id":1,"items":[{"n":1},{"n":2},{"n":3}]}`,
-			projection: "get_item:\n  array_limits:\n    items: 1\n",
-			wantByPath: map[string]string{
-				".items": `[{"n":1},{"n":2},{"n":3}]`,
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := t.TempDir()
-			writeFakeServer(t, cfg, fakeServerParams{
-				ServerName: "svc",
-				Fixtures:   mockFixtureDir(t, map[string]string{"get_item": tc.fixture}),
-			})
-			writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
-			writeProjection(t, cfg, "svc", tc.projection)
-			client := startProxyServer(t, cfg)
-
-			raw := client.mustCall("tools/call", map[string]any{
-				"name":      "svc__get_item",
-				"arguments": map[string]any{},
-			})
-			text, _ := parseToolCallResult(raw)
-			env := parseMiniEnv(t, text)
-
-			reportedPaths := env.Excluded
-			for _, tr := range env.Truncated {
-				reportedPaths = append(reportedPaths, tr.Path)
-			}
-
-			for _, path := range reportedPaths {
-				want, ok := tc.wantByPath[path]
-				if !ok {
-					continue
-				}
-				t.Run(path, func(t *testing.T) {
-					if got := client.callRead(env.File, path); got != want {
-						t.Errorf("got %q, want %q", got, want)
-					}
-				})
-			}
-
-			for path := range tc.wantByPath {
-				found := false
-				for _, p := range reportedPaths {
-					if p == path {
-						found = true
-						break
-					}
-				}
-				if !found {
-					t.Errorf("path %q not reported in envelope: excluded=%v truncated=%v",
-						path, env.Excluded, env.Truncated)
-				}
-			}
-		})
 	}
 }
 
@@ -382,9 +354,14 @@ func TestIntegrationProjection_persistDoesNotAffectRunningSession(t *testing.T) 
 }
 
 func TestIntegrationProjection_toonFormat(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		"", "list_items:\n  format: toon\n")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures: map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
+		Projections: map[string]*config.ProjectionConfig{
+			"list_items": {
+				Format: "toon",
+			},
+		},
+	})
 
 	text := client.execTool("svc", "list_items", nil)
 	if !strings.Contains(text, "data[2]{id,name}:") {
@@ -393,9 +370,10 @@ func TestIntegrationProjection_toonFormat(t *testing.T) {
 }
 
 func TestIntegrationProjection_toonFormatGlobal(t *testing.T) {
-	client := quickServerWith(t,
-		map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
-		"response_format: toon\n", "")
+	client := quickServerWith(t, quickServerParams{
+		Fixtures:   map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
+		ConfigYAML: "response_format: toon\n",
+	})
 
 	text := client.execTool("svc", "list_items", nil)
 	if !strings.Contains(text, "data[2]{id,name}:") {

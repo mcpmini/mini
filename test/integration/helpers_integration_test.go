@@ -733,17 +733,21 @@ func (c *mcpClient) execToolAllowError(server, tool string, args map[string]any)
 	return parseToolCallResult(raw)
 }
 
-// quickServerWith starts a server with fixture files, optional global config YAML, and optional projection YAML.
-func quickServerWith(t *testing.T, fixtures map[string]string, cfgYAML, projYAML string) *mcpClient {
+type quickServerParams struct {
+	Fixtures    map[string]string
+	ConfigYAML  string
+	Projections map[string]*config.ProjectionConfig
+}
+
+func quickServerWith(t *testing.T, p quickServerParams) *mcpClient {
 	t.Helper()
-	dir := mockFixtureDir(t, fixtures)
+	dir := mockFixtureDir(t, p.Fixtures)
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
-	if cfgYAML != "" {
-		writeConfig(t, cfg, cfgYAML)
-		return startQuickServer(t, cfg, projYAML)
+	if p.ConfigYAML != "" {
+		writeConfig(t, cfg, p.ConfigYAML)
 	}
-	return startQuickServer(t, cfg, projYAML)
+	return startQuickServer(t, cfg, p.Projections)
 }
 
 // quickServer starts a server with fixture files and default config.
@@ -755,10 +759,10 @@ func quickServer(t *testing.T, fixtures map[string]string) *mcpClient {
 	return startServer(t, cfg)
 }
 
-func startQuickServer(t *testing.T, cfg, projYAML string) *mcpClient {
+func startQuickServer(t *testing.T, cfg string, projections map[string]*config.ProjectionConfig) *mcpClient {
 	t.Helper()
-	if projYAML != "" {
-		writeProjection(t, cfg, "svc", projYAML)
+	if len(projections) != 0 {
+		configtest.WriteProjections(t, cfg, configtest.ProjectionFile{ServerName: "svc", Tools: projections})
 	}
 	return startServer(t, cfg)
 }
@@ -807,12 +811,6 @@ func mockFixtureDir(t *testing.T, fixtures map[string]string) string {
 func writeConfig(t *testing.T, configDir, content string) {
 	t.Helper()
 	testutil.WriteFile(t, filepath.Join(configDir, "config.yaml"), content)
-}
-
-func writeProjection(t *testing.T, configDir, serverName, content string) {
-	t.Helper()
-	dir := filepath.Join(configDir, "servers")
-	testutil.WriteFile(t, filepath.Join(dir, serverName+".proj.yaml"), content)
 }
 
 func writeAction(t *testing.T, configDir, content string, name string) {

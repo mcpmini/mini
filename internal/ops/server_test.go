@@ -12,6 +12,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
 	"golang.org/x/oauth2"
@@ -186,7 +187,14 @@ func TestAddServer(t *testing.T) {
 		if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
 			t.Fatal(err)
 		}
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "reused.proj.yaml"), "list:\n  include_only: [id]\n")
+		configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+			ServerName: "reused",
+			Tools: map[string]*config.ProjectionConfig{
+				"list": {
+					IncludeOnly: []string{"id"},
+				},
+			},
+		})
 
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
 			t.Fatal(err)
@@ -320,7 +328,14 @@ func TestRemoveServer(t *testing.T) {
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}); err != nil {
 			t.Fatal(err)
 		}
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "toremove.proj.yaml"), "list:\n  include_only: [id]\n")
+		configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+			ServerName: "toremove",
+			Tools: map[string]*config.ProjectionConfig{
+				"list": {
+					IncludeOnly: []string{"id"},
+				},
+			},
+		})
 		saveCredentials(t, dir, "toremove")
 		if err := config.MarkOAuthDetected(dir, "toremove"); err != nil {
 			t.Fatal(err)

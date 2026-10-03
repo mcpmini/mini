@@ -47,20 +47,22 @@ type reloadEnv struct {
 }
 
 type reloadEnvParams struct {
-	ServerYAML string
-	ProjYAML   string
+	Server      config.ServerConfig
+	Projections map[string]*config.ProjectionConfig
 }
 
 func newReloadEnv(t *testing.T, p reloadEnvParams) *reloadEnv {
 	t.Helper()
 	dir := evalTempDir(t)
-	if p.ServerYAML == "" {
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
-	} else {
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), p.ServerYAML)
+	if p.Server.Name == "" {
+		p.Server.Name = "svc"
 	}
-	if p.ProjYAML != "" {
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), p.ProjYAML)
+	if p.Server.Command == "" {
+		p.Server.Command = "echo"
+	}
+	configtest.WriteServer(t, dir, p.Server)
+	if len(p.Projections) != 0 {
+		configtest.WriteProjections(t, dir, configtest.ProjectionFile{ServerName: "svc", Tools: p.Projections})
 	}
 	env := buildReloadEnv(t, dir)
 	addReloadUpstream(t, env.srv)
@@ -151,9 +153,14 @@ func (e *reloadEnv) assertDataKeys(present []string, absent []string) {
 	e.assertServerDataKeys("svc", present, absent)
 }
 
-func (e *reloadEnv) writeProjFile(content string) {
+func (e *reloadEnv) writeRawProjections(content string) {
 	e.t.Helper()
 	testutil.WriteFile(e.t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), content)
+}
+
+func (e *reloadEnv) writeProjections(tools map[string]*config.ProjectionConfig) {
+	e.t.Helper()
+	configtest.WriteProjections(e.t, e.dir, configtest.ProjectionFile{ServerName: "svc", Tools: tools})
 }
 
 func reloadCount(e *reloadEnv) int {
@@ -161,11 +168,15 @@ func reloadCount(e *reloadEnv) int {
 }
 
 func TestProjectionReload_editApplied(t *testing.T) {
-	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a, b]\n"})
+	e := newReloadEnv(t, reloadEnvParams{
+		Projections: map[string]*config.ProjectionConfig{"getData": {
+			IncludeOnly: []string{"a", "b"},
+		}},
+	})
 	e.startPoller()
 	e.assertDataKeys([]string{"a", "b"}, []string{"secret"})
 
-	e.writeProjFile("getData:\n  include_only: [a]\n")
+	e.writeProjections(map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"a"}}})
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
@@ -175,8 +186,20 @@ func TestProjectionReload_editApplied(t *testing.T) {
 }
 
 func TestProjectionReload_deleteRevealsInlineProjections(t *testing.T) {
-	inline := "command: echo\nprojections:\n  getData:\n    include_only: [a]\n"
-	e := newReloadEnv(t, reloadEnvParams{ServerYAML: inline, ProjYAML: "getData:\n  include_only: [a, b]\n"})
+	inline := config.ServerConfig{
+		Command: "echo",
+		Projections: map[string]*config.ProjectionConfig{"getData": {
+			IncludeOnly: []string{"a"},
+		}},
+	}
+	e := newReloadEnv(t, reloadEnvParams{
+		Server: inline,
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {
+				IncludeOnly: []string{"a", "b"},
+			},
+		},
+	})
 	e.startPoller()
 	e.assertDataKeys([]string{"a", "b"}, []string{"secret"})
 
@@ -193,32 +216,48 @@ func TestProjectionReload_createdFileApplied(t *testing.T) {
 	e.startPoller()
 	e.assertDataKeys([]string{"a", "b", "secret"}, nil)
 
-	e.writeProjFile("getData:\n  include_only: [a]\n")
+	e.writeProjections(map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"a"}}})
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
 }
 
 func TestProjectionReload_sameSizeEditDetected(t *testing.T) {
-	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a]\n"})
+	before, after := "getData:\n  include_only: [a]\n", "getData:\n  include_only: [b]\n"
+	if len(before) != len(after) {
+		t.Fatal("same-size fixtures differ in size")
+	}
+	e := newReloadEnv(t, reloadEnvParams{})
+	e.writeRawProjections(before)
 	e.startPoller()
 	e.assertDataKeys([]string{"a"}, []string{"b"})
 
-	e.writeProjFile("getData:\n  include_only: [b]\n")
+	e.writeRawProjections(after)
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"b"}, []string{"a"})
 }
 
 func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillReload(t *testing.T) {
-	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a]\n"})
+	e := newReloadEnv(t, reloadEnvParams{
+		Projections: map[string]*config.ProjectionConfig{"getData": {
+			IncludeOnly: []string{"a"},
+		}},
+	})
 	configtest.WriteServer(t, e.dir, config.ServerConfig{Name: "other", Command: "echo"})
 	addReloadUpstreamNamed(t, e.srv, "other")
 	e.startPoller()
 	e.assertDataKeys([]string{"a"}, []string{"b"})
 
-	e.writeProjFile("getData: [broken\n")
-	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "other.proj.yaml"), "getData:\n  include_only: [b]\n")
+	e.writeRawProjections("getData: [broken\n")
+	configtest.WriteProjections(t, e.dir, configtest.ProjectionFile{
+		ServerName: "other",
+		Tools: map[string]*config.ProjectionConfig{
+			"getData": {
+				IncludeOnly: []string{"b"},
+			},
+		},
+	})
 	e.advanceTick()
 	if logs := e.logs.String(); !strings.Contains(logs, "projection reload: skipped server") {
 		t.Errorf("expected WARN for malformed YAML, got logs:\n%s", logs)
@@ -231,13 +270,17 @@ func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillRel
 		t.Errorf("expected a single WARN for an unchanged bad file, got %d", warns)
 	}
 
-	e.writeProjFile("getData:\n  include_only: [b]\n")
+	e.writeProjections(map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"b"}}})
 	e.advanceTick()
 	e.assertDataKeys([]string{"b"}, []string{"a"})
 }
 
 func TestProjectionReload_noChangeNoReload(t *testing.T) {
-	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a]\n"})
+	e := newReloadEnv(t, reloadEnvParams{
+		Projections: map[string]*config.ProjectionConfig{"getData": {
+			IncludeOnly: []string{"a"},
+		}},
+	})
 	e.startPoller()
 
 	e.advanceTick()
@@ -254,7 +297,15 @@ func TestProjectionReload_inlineProjectionEditDetected(t *testing.T) {
 	e.startPoller()
 	e.assertDataKeys([]string{"a", "b", "secret"}, nil)
 
-	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.yaml"), "command: echo\nprojections:\n  getData:\n    include_only: [a]\n")
+	configtest.WriteServer(t, e.dir, config.ServerConfig{
+		Name:    "svc",
+		Command: "echo",
+		Projections: map[string]*config.ProjectionConfig{
+			"getData": {
+				IncludeOnly: []string{"a"},
+			},
+		},
+	})
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
@@ -264,7 +315,14 @@ func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	dir := evalTempDir(t)
 	for _, name := range []string{"held", "kept", "gone"} {
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: name, Command: "echo"})
-		testutil.WriteFile(t, filepath.Join(dir, "servers", name+".proj.yaml"), "getData:\n  include_only: [a]\n")
+		configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+			ServerName: name,
+			Tools: map[string]*config.ProjectionConfig{
+				"getData": {
+					IncludeOnly: []string{"a"},
+				},
+			},
+		})
 	}
 	env := buildReloadEnv(t, dir)
 	for _, name := range []string{"held", "kept", "gone"} {
@@ -279,8 +337,22 @@ func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	if err := os.Mkdir(heldPath, 0700); err != nil {
 		t.Fatal(err)
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "held.proj.yaml"), "getData:\n  include_only: [b]\n")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "kept.proj.yaml"), "getData:\n  include_only: [b]\n")
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "held",
+		Tools: map[string]*config.ProjectionConfig{
+			"getData": {
+				IncludeOnly: []string{"b"},
+			},
+		},
+	})
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "kept",
+		Tools: map[string]*config.ProjectionConfig{
+			"getData": {
+				IncludeOnly: []string{"b"},
+			},
+		},
+	})
 	if err := os.Remove(filepath.Join(dir, "servers", "gone.yaml")); err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +431,7 @@ func TestProjectionReload_actionSurvivesReload(t *testing.T) {
 		Description: "Get field a with defaults",
 	})
 
-	e.writeProjFile("getData:\n  include_only: [b]\n")
+	e.writeProjections(map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"b"}}})
 	e.advanceTick()
 
 	listResp := serve(t, e.srv, callTool("list", map[string]any{"query": "getA"}))
