@@ -50,10 +50,7 @@ func TestEnsureToken_mintsWhenAbsent(t *testing.T) {
 func TestEnsureToken_reMintsOnLoosePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := daemon.TokenFile(dir)
-	os.MkdirAll(filepath.Dir(path), 0700) //nolint:errcheck
-	if err := os.WriteFile(path, []byte("loose-secret"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, path, []byte("loose-secret"))
 	if err := os.Chmod(path, 0644); err != nil { // chmod ignores umask, forcing loose perms
 		t.Fatal(err)
 	}
@@ -76,10 +73,7 @@ func TestEnsureToken_reMintsOnLoosePermissions(t *testing.T) {
 func TestEnsureToken_mintsWhenEmpty(t *testing.T) {
 	dir := t.TempDir()
 	p := daemon.TokenFile(dir)
-	os.MkdirAll(filepath.Dir(p), 0700) //nolint:errcheck
-	if err := os.WriteFile(p, []byte("   "), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, p, []byte("   "))
 	got, err := daemon.EnsureToken(dir)
 	if err != nil {
 		t.Fatalf("EnsureToken: %v", err)
@@ -143,10 +137,7 @@ func TestRunning_non200ReturnsFalse(t *testing.T) {
 func TestRunning_staleSocketFileReturnsFalse(t *testing.T) {
 	dir := shortConfigDir(t)
 	sp := daemon.SocketPath(dir)
-	os.MkdirAll(filepath.Dir(sp), 0700) //nolint:errcheck
-	if err := os.WriteFile(sp, nil, 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, sp, nil)
 	if daemon.Running(dir) {
 		t.Error("expected false for a non-socket file at the socket path")
 	}

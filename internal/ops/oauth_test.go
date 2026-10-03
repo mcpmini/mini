@@ -7,13 +7,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -107,9 +107,7 @@ func TestDetectOAuth(t *testing.T) {
 
 	t.Run("marker write failure is returned", func(t *testing.T) {
 		notADir := filepath.Join(tempDir(t), "file")
-		if err := os.WriteFile(notADir, nil, 0600); err != nil {
-			t.Fatal(err)
-		}
+		testutil.WriteFile(t, notADir, nil)
 		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: notADir, Server: httpServer("https://example.com/mcp"), ConnErr: unauthorized("Bearer")})
 		if err == nil || got {
 			t.Errorf("got (%v, %v), want (false, error)", got, err)

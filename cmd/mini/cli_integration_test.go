@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func miniBin(t *testing.T) string {
@@ -94,10 +96,7 @@ func TestIntegrationCLI_add_preservesChildFlags(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("add exited %d: %s", code, output)
 	}
-	data, err := os.ReadFile(filepath.Join(cfg, "servers", "svc.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(cfg, "servers", "svc.yaml"))
 	for _, want := range []string{"- -h", "- --config", "- child-value"} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("server config %q does not contain %q", data, want)
@@ -265,7 +264,7 @@ func writeClaudeConfigFile(t *testing.T) string {
 			},
 		},
 	})
-	os.WriteFile(claudeConfig, claudeData, 0644) //nolint:errcheck
+	testutil.WriteFile(t, claudeConfig, claudeData)
 	return claudeConfig
 }
 
@@ -287,7 +286,7 @@ func TestIntegrationCLI_connect_badConfig(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
-	os.WriteFile(filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"), 0644)
+	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"))
 
 	_, _, code := run(t, bin, cfg, "connect")
 	if code == 0 {
@@ -347,10 +346,7 @@ func TestIntegrationCLI_add_withHeader(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("add --header should exit 0, got %d", code)
 	}
-	data, err := os.ReadFile(filepath.Join(cfg, "servers", "myserver.yaml"))
-	if err != nil {
-		t.Fatalf("server YAML should exist: %v", err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(cfg, "servers", "myserver.yaml"))
 	if !strings.Contains(string(data), "Authorization") {
 		t.Errorf("server YAML should contain Authorization header, got: %s", data)
 	}
@@ -363,10 +359,7 @@ func TestIntegrationCLI_add_stdioCommand(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("add stdio command should exit 0, got %d", code)
 	}
-	data, err := os.ReadFile(filepath.Join(cfg, "servers", "localserver.yaml"))
-	if err != nil {
-		t.Fatalf("server YAML should exist: %v", err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(cfg, "servers", "localserver.yaml"))
 	if !strings.Contains(string(data), "command") {
 		t.Errorf("server YAML should contain command field, got: %s", data)
 	}
@@ -383,7 +376,7 @@ func writeGeminiConfigFile(t *testing.T) string {
 		},
 	})
 	path := filepath.Join(t.TempDir(), "settings.json")
-	os.WriteFile(path, data, 0644) //nolint:errcheck
+	testutil.WriteFile(t, path, data)
 	return path
 }
 
@@ -440,10 +433,7 @@ func TestIntegrationCLI_add_protectedTool(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("add --protected should exit 0, got %d", code)
 	}
-	data, err := os.ReadFile(filepath.Join(cfg, "servers", "svc.yaml"))
-	if err != nil {
-		t.Fatalf("server YAML should exist: %v", err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(cfg, "servers", "svc.yaml"))
 	yaml := string(data)
 	if !strings.Contains(yaml, "delete_item") || !strings.Contains(yaml, "create_item") {
 		t.Errorf("YAML should contain both protected tools, got: %s", yaml)

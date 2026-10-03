@@ -10,13 +10,12 @@ import (
 	"sync"
 	"testing"
 
-	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
+	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 )
 
 func TestAddServer_writtenFile(t *testing.T) {
@@ -81,7 +80,7 @@ func TestAddServer_writtenFile(t *testing.T) {
 		if _, err := ops.AddServer(dir, sc); err != nil {
 			t.Fatalf("AddServer: %v", err)
 		}
-		data, _ := os.ReadFile(filepath.Join(dir, "servers", "http-only.yaml"))
+		data := testutil.ReadFile(t, filepath.Join(dir, "servers", "http-only.yaml"))
 		for _, unwanted := range []string{"command:", "args:", "env:"} {
 			if strings.Contains(string(data), unwanted) {
 				t.Errorf("yaml contains %q for empty field", unwanted)
@@ -107,10 +106,7 @@ func TestAddServer_writtenFile(t *testing.T) {
 			t.Fatalf("AddServer: %v", err)
 		}
 		dest := filepath.Join(dir, "servers", "gh.proj.yaml")
-		data, err := os.ReadFile(dest)
-		if err != nil {
-			t.Fatalf("bundled projection not installed: %v", err)
-		}
+		data := testutil.ReadFile(t, dest)
 		if len(data) == 0 {
 			t.Error("bundled projection file is empty")
 		}
@@ -190,7 +186,7 @@ func TestAddServer(t *testing.T) {
 		if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
 			t.Fatal(err)
 		}
-		writeFile(t, filepath.Join(dir, "servers", "reused.proj.yaml"), "list:\n  include_only: [id]\n")
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "reused.proj.yaml"), []byte("list:\n  include_only: [id]\n"))
 
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
 			t.Fatal(err)
@@ -208,17 +204,14 @@ func TestAddServer(t *testing.T) {
 	t.Run("a reused vendor name gets the bundled projection, not the old server's", func(t *testing.T) {
 		dir := tempDir(t)
 		leftover := filepath.Join(dir, "servers", "gh.proj.yaml")
-		writeFile(t, leftover, "# the old server's rules\n")
+		testutil.WriteFile(t, leftover, []byte("# the old server's rules\n"))
 
 		added, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"})
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		got, err := os.ReadFile(leftover)
-		if err != nil {
-			t.Fatal(err)
-		}
+		got := testutil.ReadFile(t, leftover)
 		if added.ProjectionPath != leftover || len(got) == 0 || strings.Contains(string(got), "the old server's rules") {
 			t.Errorf("projection path %q holds %q, want the bundled projection installed in place of the leftover", added.ProjectionPath, got)
 		}
@@ -226,7 +219,7 @@ func TestAddServer(t *testing.T) {
 
 	t.Run("a failure to forget old state leaves nothing written", func(t *testing.T) {
 		dir := tempDir(t)
-		writeFile(t, filepath.Join(dir, "internal", "stuck.token.json", "pinned"), "")
+		testutil.WriteFile(t, filepath.Join(dir, "internal", "stuck.token.json", "pinned"), []byte(""))
 
 		_, err := ops.AddServer(dir, config.ServerConfig{Name: "stuck", Command: "run"})
 
@@ -257,7 +250,7 @@ func TestAddServer(t *testing.T) {
 		t.Run("refuses "+name+" and keeps its state", func(t *testing.T) {
 			dir := tempDir(t)
 			path := filepath.Join(dir, "servers", "taken.yaml")
-			writeFile(t, path, existing)
+			testutil.WriteFile(t, path, []byte(existing))
 			saveCredentials(t, dir, "taken")
 
 			_, err := ops.AddServer(dir, config.ServerConfig{Name: "taken", Command: "replacement"})
@@ -265,7 +258,7 @@ func TestAddServer(t *testing.T) {
 			if !errors.Is(err, ops.ErrAlreadyConfigured) {
 				t.Fatalf("err = %v, want ErrAlreadyConfigured", err)
 			}
-			if got, _ := os.ReadFile(path); string(got) != existing {
+			if got := testutil.ReadFile(t, path); string(got) != existing {
 				t.Errorf("file = %q, want it untouched", got)
 			}
 			if _, err := auth.Load(dir, "taken"); err != nil {
@@ -327,7 +320,7 @@ func TestRemoveServer(t *testing.T) {
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}); err != nil {
 			t.Fatal(err)
 		}
-		writeFile(t, filepath.Join(dir, "servers", "toremove.proj.yaml"), "list:\n  include_only: [id]\n")
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "toremove.proj.yaml"), []byte("list:\n  include_only: [id]\n"))
 		saveCredentials(t, dir, "toremove")
 		if err := config.MarkOAuthDetected(dir, "toremove"); err != nil {
 			t.Fatal(err)
@@ -374,7 +367,7 @@ func TestRemoveServer(t *testing.T) {
 			t.Fatal(err)
 		}
 		pinned := filepath.Join(dir, "internal", "stuck.token.json", "pinned")
-		writeFile(t, pinned, "")
+		testutil.WriteFile(t, pinned, []byte(""))
 
 		if err := ops.RemoveServer(dir, "stuck"); err == nil {
 			t.Fatal("RemoveServer succeeded while the token could not be deleted")
@@ -447,10 +440,7 @@ func assertNoCredentials(t *testing.T, dir, name string) {
 
 func readYAML(t *testing.T, path string, out any) {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile %s: %v", path, err)
-	}
+	data := testutil.ReadFile(t, path)
 	if err := yaml.Unmarshal(data, out); err != nil {
 		t.Fatalf("yaml.Unmarshal %s: %v", path, err)
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestLoadServerConfig_expandsSecretFields(t *testing.T) {
@@ -17,7 +18,7 @@ func TestLoadServerConfig_expandsSecretFields(t *testing.T) {
 	} {
 		t.Setenv("MINI_TEST_"+key, value)
 	}
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "transport: http\nurl: https://api.example.com\nheaders:\n  Authorization: \"${MINI_TEST_HEADER} ${MINI_TEST_TOKEN}\"\nenv: [\"${MINI_TEST_ENV}\"]\nauth:\n  type: oauth2\n  token: ${MINI_TEST_TOKEN}\n  client_secret: ${MINI_TEST_CLIENT_SECRET}\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte("transport: http\nurl: https://api.example.com\nheaders:\n  Authorization: \"${MINI_TEST_HEADER} ${MINI_TEST_TOKEN}\"\nenv: [\"${MINI_TEST_ENV}\"]\nauth:\n  type: oauth2\n  token: ${MINI_TEST_TOKEN}\n  client_secret: ${MINI_TEST_CLIENT_SECRET}\n"))
 	sc := mustLoadOneServer(t, dir)
 	if sc.Headers["Authorization"] != "Bearer one three" || sc.Env[0] != "TOKEN=two" {
 		t.Errorf("expanded headers/env: %+v, %v", sc.Headers, sc.Env)
@@ -37,7 +38,7 @@ func TestLoadServerConfig_unexpandedConnectionField_isRejected(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), tc.value)
+			testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte(tc.value))
 			_, _, err := config.Load(dir)
 			if err == nil {
 				t.Fatal("Load succeeded, want unexpanded field error")
@@ -58,8 +59,8 @@ func TestLoadServerConfig_unsetVariable_leavesOnlyThatServerAsWrittenAndSaysWhy(
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_HEADER")
 	t.Setenv("MINI_TEST_DEFINED_HEADER", "set")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n  X-Other: ${MINI_TEST_DEFINED_HEADER}\n")
-	writeFile(t, filepath.Join(dir, "servers", "other.yaml"), "headers:\n  X-Key: ${MINI_TEST_DEFINED_HEADER}\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte("headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n  X-Other: ${MINI_TEST_DEFINED_HEADER}\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "other.yaml"), []byte("headers:\n  X-Key: ${MINI_TEST_DEFINED_HEADER}\n"))
 
 	_, servers, err := config.Load(dir)
 
@@ -82,7 +83,7 @@ func TestLoadServerConfig_unsetVariable_leavesOnlyThatServerAsWrittenAndSaysWhy(
 func TestLoadServerConfig_headerExpansionDoesNotInjectYAML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("MINI_TEST_MULTILINE_HEADER", "x\nurl: https://evil.example")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "url: https://api.example.com\nheaders:\n  X-Value: ${MINI_TEST_MULTILINE_HEADER}\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte("url: https://api.example.com\nheaders:\n  X-Value: ${MINI_TEST_MULTILINE_HEADER}\n"))
 	sc := mustLoadOneServer(t, dir)
 	if sc.URL != "https://api.example.com" || sc.Headers["X-Value"] != "x\nurl: https://evil.example" {
 		t.Errorf("url/header = %q / %q", sc.URL, sc.Headers["X-Value"])
@@ -92,7 +93,7 @@ func TestLoadServerConfig_headerExpansionDoesNotInjectYAML(t *testing.T) {
 func TestLoadServerConfig_authExpansionPreservesDollar(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("MINI_TEST_DOLLAR_TOKEN", "a$b")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  Authorization: \"Bearer ${MINI_TEST_DOLLAR_TOKEN}\"\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte("headers:\n  Authorization: \"Bearer ${MINI_TEST_DOLLAR_TOKEN}\"\n"))
 	sc := mustLoadOneServer(t, dir)
 	if got := sc.MergedHeaders()["Authorization"]; got != "Bearer a$b" {
 		t.Errorf("Authorization = %q", got)
@@ -103,7 +104,7 @@ func TestLoadMainConfig_onlyResponseDirExpands(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", "/testhome")
 	t.Setenv("MINI_TEST_LOG_LEVEL", "debug")
-	writeFile(t, filepath.Join(dir, "config.yaml"), "response_dir: ${HOME}/x\nlog_level: ${MINI_TEST_LOG_LEVEL}\n")
+	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte("response_dir: ${HOME}/x\nlog_level: ${MINI_TEST_LOG_LEVEL}\n"))
 	cfg, _ := mustLoadConfig(t, dir)
 	if cfg.ResponseDir != "/testhome/x" || cfg.LogLevel != "${MINI_TEST_LOG_LEVEL}" {
 		t.Errorf("response_dir/log_level = %q / %q", cfg.ResponseDir, cfg.LogLevel)
@@ -113,7 +114,7 @@ func TestLoadMainConfig_onlyResponseDirExpands(t *testing.T) {
 func TestLoadMainConfig_undefinedResponseDir_isError(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_RESPONSE_DIR")
-	writeFile(t, filepath.Join(dir, "config.yaml"), "response_dir: ${MINI_TEST_UNDEFINED_RESPONSE_DIR}\n")
+	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte("response_dir: ${MINI_TEST_UNDEFINED_RESPONSE_DIR}\n"))
 	_, _, err := config.Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "MINI_TEST_UNDEFINED_RESPONSE_DIR") {
 		t.Fatalf("Load error = %v", err)
@@ -144,7 +145,7 @@ func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *tes
 func TestInterpolateActionConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("MY_TOKEN", "secretval")
-	writeFile(t, filepath.Join(dir, "internal", "actions", "myaction.yaml"), "name: myaction\nserver: gh\ntool: list_issues\ndefault_args:\n  token: ${MY_TOKEN}\n")
+	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "myaction.yaml"), []byte("name: myaction\nserver: gh\ntool: list_issues\ndefault_args:\n  token: ${MY_TOKEN}\n"))
 	ac := mustLoadOneAction(t, dir)
 	if ac.DefaultArgs["token"] != "secretval" {
 		t.Errorf("expected token substituted, got %v", ac.DefaultArgs["token"])
@@ -154,8 +155,8 @@ func TestInterpolateActionConfig(t *testing.T) {
 func TestProjectionNotInterpolated(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("UNSET_PROJ_VAR_XXXX")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "command: my-mcp\n")
-	writeFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "list_issues:\n  include_only: [number, title]\n  alias: \"${UNSET_PROJ_VAR_XXXX}\"\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), []byte("command: my-mcp\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), []byte("list_issues:\n  include_only: [number, title]\n  alias: \"${UNSET_PROJ_VAR_XXXX}\"\n"))
 	sc := mustLoadOneServer(t, dir)
 	proj := sc.Projections["list_issues"]
 	if proj == nil {

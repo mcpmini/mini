@@ -4,17 +4,16 @@ package server_test
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
+	"golang.org/x/oauth2"
 )
 
 func newServerWithDir(t *testing.T, configDir string) *server.Server {
@@ -26,13 +25,7 @@ func newServerWithDir(t *testing.T, configDir string) *server.Server {
 
 func writeServerYAML(t *testing.T, dir, name, content string) {
 	t.Helper()
-	serversDir := filepath.Join(dir, "servers")
-	if err := os.MkdirAll(serversDir, 0700); err != nil {
-		t.Fatalf("mkdir servers: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(serversDir, name+".yaml"), []byte(content), 0600); err != nil {
-		t.Fatalf("write server yaml: %v", err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, "servers", name+".yaml"), []byte(content))
 }
 
 func configureResult(t *testing.T, srv *server.Server, args map[string]any) map[string]any {

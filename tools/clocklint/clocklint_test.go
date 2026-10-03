@@ -3,18 +3,17 @@ package main
 import (
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func writeGoFile(t *testing.T, src string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "src.go")
-	if err := os.WriteFile(path, []byte(src), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, path, []byte(src))
 	return path
 }
 

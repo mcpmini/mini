@@ -14,6 +14,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func realPath(t *testing.T, path string) string {
@@ -151,7 +152,5 @@ func TestWithRealFilesystemMCP_WriteProtected(t *testing.T) {
 	if env["error"] != nil {
 		t.Errorf("write_file failed: %v", env)
 	}
-	if _, err := os.ReadFile(testFile); err != nil {
-		t.Fatalf("file not written: %v", err)
-	}
+	testutil.ReadFile(t, testFile)
 }

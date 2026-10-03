@@ -14,6 +14,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -36,9 +37,8 @@ func TestConfigureReload_emptyDir(t *testing.T) {
 func TestConfigureReload_loadsProjectionsFromDisk(t *testing.T) {
 	dir := t.TempDir()
 	serversDir := filepath.Join(dir, "servers")
-	os.MkdirAll(serversDir, 0700)
-	os.WriteFile(filepath.Join(serversDir, "myserver.proj.yaml"), []byte("search:\n  string_limit: 50\n"), 0600)
-	os.WriteFile(filepath.Join(dir, "servers.yaml"), []byte("servers:\n  - name: myserver\n    command: echo\n"), 0600)
+	testutil.WriteFile(t, filepath.Join(serversDir, "myserver.proj.yaml"), []byte("search:\n  string_limit: 50\n"))
+	testutil.WriteFile(t, filepath.Join(dir, "servers.yaml"), []byte("servers:\n  - name: myserver\n    command: echo\n"))
 
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 
@@ -418,7 +418,7 @@ func reloadResult(t *testing.T, dir string, editsAfterStart map[string]string) m
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	t.Cleanup(srv.Close)
 	for rel, content := range editsAfterStart {
-		writeReloadFile(t, filepath.Join(dir, rel), content)
+		testutil.WriteFile(t, filepath.Join(dir, rel), []byte(content))
 	}
 	var result map[string]any
 	if err := json.Unmarshal([]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "reload"})))), &result); err != nil {
@@ -467,7 +467,7 @@ func TestConfigureReload_resultShape(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := evalTempDir(t)
 			for rel, content := range tc.files {
-				writeReloadFile(t, filepath.Join(dir, rel), content)
+				testutil.WriteFile(t, filepath.Join(dir, rel), []byte(content))
 			}
 			result := reloadResult(t, dir, tc.editsAfterStart)
 			if result["ok"] != tc.wantOK {

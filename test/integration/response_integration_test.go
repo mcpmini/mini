@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestIntegrationResponse_inlineSmallResponse(t *testing.T) {
@@ -46,10 +48,7 @@ func TestIntegrationResponse_responseFileIsValidJSON(t *testing.T) {
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}
-	data, err := os.ReadFile(filepath.Join(respDir, *e.File+".json"))
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(respDir, *e.File+".json"))
 	var parsed any
 	if err := json.Unmarshal(data, &parsed); err != nil {
 		t.Errorf("response file is not valid JSON: %v", err)

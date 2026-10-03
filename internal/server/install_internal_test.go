@@ -16,15 +16,15 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/invoke"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
+	"golang.org/x/oauth2"
 )
 
 func newInstallTestServer(t *testing.T) *Server {
@@ -43,12 +43,7 @@ func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *te
 	}
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 	path := filepath.Join(srv.configDir, "servers", "svc.yaml")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("command: run\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, path, []byte("command: run\n"))
 
 	if srv.removeConfigServer("svc") {
 		t.Error("removeConfigServer removed svc while its file is saved and enabled")

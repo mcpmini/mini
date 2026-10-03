@@ -7,11 +7,11 @@ import (
 	"runtime"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/bench"
 	"github.com/mcpmini/mini/internal/config"
 	minidefaults "github.com/mcpmini/mini/internal/defaults"
+	"github.com/mcpmini/mini/internal/testutil"
+	"gopkg.in/yaml.v3"
 )
 
 var defaults = bench.DefaultProjectionDefaults()
@@ -194,23 +194,13 @@ func TestBenchmark_githubPRs_bundledProjectionApplies(t *testing.T) {
 func writeFixture(t *testing.T, benchDir, server, tool, content string) {
 	t.Helper()
 	dir := filepath.Join(benchDir, "fixtures", server)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, tool+".json"), []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, tool+".json"), []byte(content))
 }
 
 func writeProjection(t *testing.T, benchDir, server, content string) {
 	t.Helper()
 	dir := filepath.Join(benchDir, "projections")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, server+".yaml"), []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, server+".yaml"), []byte(content))
 }
 
 func repeat(s string, n int) string {

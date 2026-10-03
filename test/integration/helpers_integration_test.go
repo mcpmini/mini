@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/testutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -116,13 +117,6 @@ func buildBin(p buildBinParams) (string, error) {
 
 func cliArgs(configDir string, args []string) []string {
 	return append([]string{"--config", configDir}, args...)
-}
-
-func writeStringFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func fakeServerYAML(fixtures string, extraArgs ...string) string {
@@ -400,10 +394,7 @@ func connectableServers(t *testing.T, configDir string, unreachable []string) []
 
 func serverFileEnabled(t *testing.T, path string) bool {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := testutil.ReadFile(t, path)
 	var server struct {
 		Enabled *bool `yaml:"enabled"`
 	}
@@ -792,47 +783,32 @@ func mockFixtureDir(t *testing.T, fixtures map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
 	for name, content := range fixtures {
-		if err := os.WriteFile(filepath.Join(dir, name+".json"), []byte(content), 0644); err != nil {
-			t.Fatal(err)
-		}
+		testutil.WriteFile(t, filepath.Join(dir, name+".json"), []byte(content))
 	}
 	return dir
 }
 
 func writeConfig(t *testing.T, configDir, content string) {
 	t.Helper()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(configDir, "config.yaml"), []byte(content))
 }
 
 func writeProjection(t *testing.T, configDir, serverName, content string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
-	os.MkdirAll(dir, 0700)
-	if err := os.WriteFile(filepath.Join(dir, serverName+".proj.yaml"), []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, serverName+".proj.yaml"), []byte(content))
 }
 
 func writeAction(t *testing.T, configDir, content string, name string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "internal", "actions")
-	os.MkdirAll(dir, 0700)
-	if err := os.WriteFile(filepath.Join(dir, name+".yaml"), []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), []byte(content))
 }
 
 func writeServerConfig(t *testing.T, configDir, name, yaml string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, name+".yaml"), []byte(yaml), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), []byte(yaml))
 }
 
 func backdateFile(t *testing.T, path string, age time.Duration) {

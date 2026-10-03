@@ -7,6 +7,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestInstallBundledProjection(t *testing.T) {
@@ -49,15 +50,14 @@ func TestInstallBundledProjection(t *testing.T) {
 	t.Run("existing file is not overwritten", func(t *testing.T) {
 		dir := tempDir(t)
 		serversDir := filepath.Join(dir, "servers")
-		os.MkdirAll(serversDir, 0700)
 		dest := filepath.Join(serversDir, "my-slack.proj.yaml")
 		original := []byte("# custom\n")
-		os.WriteFile(dest, original, 0600)
+		testutil.WriteFile(t, dest, original)
 		sc := config.ServerConfig{Name: "my-slack", URL: "https://slack.com/mcp"}
 		if installed, err := ops.InstallBundledProjection(dir, sc); installed != "" || err != nil {
 			t.Errorf("InstallBundledProjection = %q, %v, want \"\" and no error for an existing file", installed, err)
 		}
-		got, _ := os.ReadFile(dest)
+		got := testutil.ReadFile(t, dest)
 		if string(got) != string(original) {
 			t.Errorf("existing projection was overwritten; got %q", got)
 		}
@@ -65,7 +65,7 @@ func TestInstallBundledProjection(t *testing.T) {
 
 	t.Run("a write that fails for another reason is reported", func(t *testing.T) {
 		dir := tempDir(t)
-		writeFile(t, filepath.Join(dir, "servers"), "not a directory\n")
+		testutil.WriteFile(t, filepath.Join(dir, "servers"), []byte("not a directory\n"))
 		sc := config.ServerConfig{Name: "my-github", URL: "https://api.github.com/mcp"}
 		if installed, err := ops.InstallBundledProjection(dir, sc); err == nil {
 			t.Errorf("InstallBundledProjection = %q, nil, want an error when servers/ can't hold the file", installed)

@@ -14,6 +14,7 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func newTestStore(t *testing.T) *response.Store {
@@ -171,9 +172,9 @@ func TestLoadExistingSkipsExpired(t *testing.T) {
 	fakeClock := clock.NewFake()
 	dir := t.TempDir()
 	expired := tsFilename(fakeClock.Now().Add(-2 * time.Hour))
-	os.WriteFile(filepath.Join(dir, expired), []byte(`{"old":true}`), 0600)
+	testutil.WriteFile(t, filepath.Join(dir, expired), []byte(`{"old":true}`))
 	fresh := tsFilename(fakeClock.Now())
-	os.WriteFile(filepath.Join(dir, fresh), []byte(`{"new":true}`), 0600)
+	testutil.WriteFile(t, filepath.Join(dir, fresh), []byte(`{"new":true}`))
 
 	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour, Clock: fakeClock})
 	defer store.Close()

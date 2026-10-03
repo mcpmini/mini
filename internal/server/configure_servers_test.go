@@ -18,13 +18,13 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
+	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 )
 
 type configToolEnv struct {
@@ -147,10 +147,7 @@ func requireEchoMCP(t *testing.T) string {
 
 func readProjectionRuleNames(t *testing.T, path string) []string {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := testutil.ReadFile(t, path)
 	var rules map[string]any
 	if err := yaml.Unmarshal(data, &rules); err != nil {
 		t.Fatal(err)

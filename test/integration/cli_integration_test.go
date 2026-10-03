@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestIntegrationCLIVersion(t *testing.T) {
@@ -56,7 +58,7 @@ func TestIntegrationCLILsTooManyArgs_ExitsTwo(t *testing.T) {
 
 func TestIntegrationCLIConnectInvalidConfig(t *testing.T) {
 	cfg := t.TempDir()
-	os.WriteFile(filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"), 0644)
+	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), []byte("not: valid: yaml: :::"))
 	_, _, code := runCLI(t, cfg, "status")
 	if code == 0 {
 		t.Error("status with invalid config.yaml should exit non-zero")
@@ -185,10 +187,7 @@ func TestIntegrationCLI_add_Protected(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("add --protected should exit 0, got %d", code)
 	}
-	data, err := os.ReadFile(filepath.Join(cfg, "servers", "myserver.yaml"))
-	if err != nil {
-		t.Fatalf("server YAML should exist: %v", err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(cfg, "servers", "myserver.yaml"))
 	if !strings.Contains(string(data), "protected") {
 		t.Errorf("server YAML should mention 'protected', got: %s", data)
 	}
@@ -201,10 +200,7 @@ func TestIntegrationCLI_add_Header(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("add --header should exit 0, got %d", code)
 	}
-	data, err := os.ReadFile(filepath.Join(cfg, "servers", "myserver.yaml"))
-	if err != nil {
-		t.Fatalf("server YAML should exist: %v", err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(cfg, "servers", "myserver.yaml"))
 	if !strings.Contains(string(data), "Authorization") || !strings.Contains(string(data), "X-Custom") {
 		t.Errorf("server YAML should contain headers, got: %s", data)
 	}
@@ -381,8 +377,8 @@ func TestIntegrationCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
 	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
 
 	expiredPath := filepath.Join(respDir, "20200101000000000.json")
-	os.WriteFile(expiredPath, []byte(`{}`), 0600)
-	os.WriteFile(filepath.Join(respDir, "20200101000000000.raw.json"), []byte(`{}`), 0600)
+	testutil.WriteFile(t, expiredPath, []byte(`{}`))
+	testutil.WriteFile(t, filepath.Join(respDir, "20200101000000000.raw.json"), []byte(`{}`))
 	backdateFile(t, expiredPath, 2*time.Hour)
 
 	stdout, _, code := runCLI(t, cfg, "cleanup")
@@ -400,7 +396,7 @@ func TestIntegrationCLI_cleanup_RetainsNonExpiredFiles(t *testing.T) {
 	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
 
 	freshPath := filepath.Join(respDir, "20990101000000000.json")
-	os.WriteFile(freshPath, []byte(`{}`), 0600)
+	testutil.WriteFile(t, freshPath, []byte(`{}`))
 
 	runCLI(t, cfg, "cleanup")
 	if _, err := os.Stat(freshPath); err != nil {
@@ -469,7 +465,7 @@ func writeClaudeConfig(t *testing.T, serverDef any) string {
 		"mcpServers": map[string]any{"imported-server": serverDef},
 	})
 	path := filepath.Join(t.TempDir(), "claude.json")
-	os.WriteFile(path, data, 0644)
+	testutil.WriteFile(t, path, data)
 	return path
 }
 
@@ -481,6 +477,6 @@ func writeClaudeCodeConfig(t *testing.T, servers map[string]any) string {
 		},
 	})
 	path := filepath.Join(t.TempDir(), "claude-code.json")
-	os.WriteFile(path, data, 0644) //nolint:errcheck
+	testutil.WriteFile(t, path, data)
 	return path
 }

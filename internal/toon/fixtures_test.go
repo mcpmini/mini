@@ -2,9 +2,10 @@ package toon
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type fixtureFile struct {
@@ -81,10 +82,7 @@ func TestSpecEncodeFixtures(t *testing.T) {
 }
 
 func runFixtureFile(t *testing.T, path string, seenSkips map[string]bool) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
+	raw := testutil.ReadFile(t, path)
 	var ff fixtureFile
 	if err := json.Unmarshal(raw, &ff); err != nil {
 		t.Fatalf("parse %s: %v", path, err)

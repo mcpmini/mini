@@ -97,7 +97,9 @@ func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 func socketHealthServer(t *testing.T, dir, body string) {
 	t.Helper()
 	sp := daemon.SocketPath(dir)
-	os.MkdirAll(filepath.Dir(sp), 0700) //nolint:errcheck
+	if err := os.MkdirAll(filepath.Dir(sp), 0700); err != nil {
+		t.Fatalf("mkdir socket directory: %v", err)
+	}
 	ln, err := net.Listen("unix", sp)
 	if err != nil {
 		t.Fatalf("listen unix: %v", err)
@@ -134,10 +136,7 @@ func TestRunDaemonStatusRunning(t *testing.T) {
 func TestRunDaemonStatusStaleSocket(t *testing.T) {
 	dir := shortConfigDir(t)
 	sp := daemon.SocketPath(dir)
-	os.MkdirAll(filepath.Dir(sp), 0700) //nolint:errcheck
-	if err := os.WriteFile(sp, nil, 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, sp, nil)
 	out := testutil.CaptureStdout(t, func() { runDaemonStatus(dir) })
 	if out != "daemon: not running\n" {
 		t.Fatalf("stale socket should read as not running, got %q", out)

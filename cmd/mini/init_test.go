@@ -61,9 +61,7 @@ func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
 		}
 	}`
 	src := filepath.Join(t.TempDir(), "claude.json")
-	if err := os.WriteFile(src, []byte(claudeJSON), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, src, []byte(claudeJSON))
 	count := len(importClaudeFormat(configDir, "Claude Code", src))
 	if count != 1 {
 		t.Errorf("imported %d servers, want 1 (mini should be skipped)", count)
@@ -164,19 +162,20 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			configDir := t.TempDir()
 			src := filepath.Join(t.TempDir(), "claude.json")
-			writeImportSource(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
+			testutil.WriteFile(t, src, []byte(`{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`))
 			testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
 			serverFile := filepath.Join(configDir, "servers", "foo.yaml")
 			if tt.edit != nil {
-				writeImportSource(t, serverFile, string(tt.edit(serverFile)))
+				testutil.WriteFile(t, serverFile, []byte(string(tt.edit(serverFile))))
 			}
-			before, _ := os.ReadFile(serverFile) //nolint:errcheck // compared below
-			writeImportSource(t, src, `{"mcpServers": `+tt.reimport+`}`)
+			before := testutil.ReadFile(t, serverFile)
+			testutil.WriteFile(t, src, []byte(`{"mcpServers": `+tt.reimport+`}`))
 
 			var imported []string
 			out := testutil.CaptureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
 
-			if after, _ := os.ReadFile(serverFile); len(imported) != 0 || string(after) != string(before) { //nolint:errcheck // a missing file fails the comparison
+			after := testutil.ReadFile(t, serverFile)
+			if len(imported) != 0 || string(after) != string(before) {
 				t.Errorf("imported %v, foo.yaml %q -> %q; want nothing imported and the file unchanged", imported, before, after)
 			}
 			if !strings.Contains(out, tt.wantLine) {
@@ -192,11 +191,11 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 func TestImportClaudeFormat_ImportsOnlyNewServers(t *testing.T) {
 	configDir := t.TempDir()
 	src := filepath.Join(t.TempDir(), "claude.json")
-	writeImportSource(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
+	testutil.WriteFile(t, src, []byte(`{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`))
 	testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
-	writeImportSource(t, src, `{"mcpServers": {
+	testutil.WriteFile(t, src, []byte(`{"mcpServers": {
 		"foo": {"type": "http", "url": "https://foo.example/mcp"},
-		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`)
+		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`))
 
 	var imported []string
 	testutil.CaptureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
@@ -206,12 +205,5 @@ func TestImportClaudeFormat_ImportsOnlyNewServers(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(configDir, "servers", "bar.yaml")); err != nil {
 		t.Errorf("bar.yaml not written: %v", err)
-	}
-}
-
-func writeImportSource(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		t.Fatal(err)
 	}
 }

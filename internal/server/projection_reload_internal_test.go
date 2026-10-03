@@ -7,18 +7,14 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func writeServerFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
-	serversDir := filepath.Join(dir, "servers")
-	if err := os.MkdirAll(serversDir, 0700); err != nil {
-		t.Fatal(err)
-	}
-	p := filepath.Join(serversDir, name)
-	if err := os.WriteFile(p, []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
+	p := filepath.Join(dir, "servers", name)
+	testutil.WriteFile(t, p, []byte(content))
 	return p
 }
 
@@ -54,9 +50,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 		dir := t.TempDir()
 		p := writeServerFile(t, dir, "svc.proj.yaml", "tool:\n  include_only: [a]\n")
 		before := mustFingerprint(t, dir)
-		if err := os.WriteFile(p, []byte("tool:\n  include_only: [b]\n"), 0600); err != nil {
-			t.Fatal(err)
-		}
+		testutil.WriteFile(t, p, []byte("tool:\n  include_only: [b]\n"))
 		after := mustFingerprint(t, dir)
 		if before[p] == after[p] {
 			t.Error("expected hash to change on same-size content edit")
@@ -102,9 +96,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("ignores config.yaml", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte("log_level: debug\n"), 0600); err != nil {
-			t.Fatal(err)
-		}
+		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), []byte("log_level: debug\n"))
 		if fp := mustFingerprint(t, dir); len(fp) != 0 {
 			t.Errorf("fingerprint = %v, want config.yaml left out", fp)
 		}

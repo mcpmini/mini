@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func newTestStore(t *testing.T, cfg StoreConfig) *Store {
@@ -180,7 +181,7 @@ func TestLoadExisting_evictsExpiredFromPreviousSession(t *testing.T) {
 
 func TestLoadExisting_ignoresNonTimestampFiles(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "not-a-timestamp.json"), []byte(`{}`), 0600) //nolint:errcheck
+	testutil.WriteFile(t, filepath.Join(dir, "not-a-timestamp.json"), []byte(`{}`))
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
 	defer s.Close()
 
@@ -194,9 +195,7 @@ func TestLoadEntry_recordsSize(t *testing.T) {
 	dir := t.TempDir()
 	slimPath := filepath.Join(dir, epochBase(time.Now())+".json")
 	data := []byte(`{"ok":true}`)
-	if err := os.WriteFile(slimPath, data, 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, slimPath, data)
 	s := &Store{dir: dir, ttl: time.Hour}
 	entries, _ := os.ReadDir(dir)
 	for _, e := range entries {
@@ -215,9 +214,7 @@ func TestLoadEntry_recordsSize(t *testing.T) {
 func TestLoadEntry_skipsRawCompanionFiles(t *testing.T) {
 	dir := t.TempDir()
 	rawPath := filepath.Join(dir, epochBase(time.Now())+".raw.json")
-	if err := os.WriteFile(rawPath, []byte(`{"full":"data"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, rawPath, []byte(`{"full":"data"}`))
 	s := &Store{dir: dir, ttl: time.Hour}
 	entries, _ := os.ReadDir(dir)
 	for _, entry := range entries {

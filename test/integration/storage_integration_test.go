@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func projectedResponseClient(t *testing.T, extraConfig string) (*mcpClient, string, string) {
@@ -51,10 +53,7 @@ func TestIntegrationStorage_rawFileIsPrettyPrinted(t *testing.T) {
 	if e.File == nil {
 		t.Fatal("expected file response")
 	}
-	data, err := os.ReadFile(filepath.Join(respDir, *e.File+".json"))
-	if err != nil {
-		t.Fatalf("read raw file: %v", err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(respDir, *e.File+".json"))
 	if !strings.Contains(string(data), "\n") || !strings.Contains(string(data), "  ") {
 		t.Errorf("raw file should be pretty-printed JSON, got first 100 chars: %s", data[:min(100, len(data))])
 	}
