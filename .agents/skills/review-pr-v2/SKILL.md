@@ -6,7 +6,7 @@ argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [pa
 
 Adversarial review of $ARGUMENTS (or the current branch diff if blank).
 
-Read [Go engineering in mini](../../../docs/go-guidelines.md) for shared design and correctness guidance, and [the testing guide](../../../docs/testing.md) for the test-quality standard.
+The general Go and testing guidance lives in `docs/go-guidelines.md` and `docs/testing.md`, which Step 0 has you read; this skill doesn't repeat it.
 
 **Assume bugs exist. Your job is to find and prove them.** Do not explain away suspicious patterns: investigate until you have proof or can rule the issue out.
 
@@ -32,7 +32,8 @@ Read [Go engineering in mini](../../../docs/go-guidelines.md) for shared design 
    ```bash
    ./check.sh 2>&1 | tee /tmp/review-pr-v2-check-$(date +%s).log
    ```
-5. Read every changed file in full, not just the hunks.
+5. Read `docs/go-guidelines.md` and `docs/testing.md` from the repository root.
+6. Read every changed file in full, not just the hunks.
 
 ## Step 1 — Understand
 
@@ -77,12 +78,12 @@ Settle every risk from Step 1 with at least one method. Use the reference checkl
 
 ## Step 3 — Reference checklist
 
+What `docs/go-guidelines.md` and `docs/testing.md` don't already cover.
+
 **Concurrency** (the check suite already runs `-race`, vet and staticcheck)
-- Every goroutine has a stop: context, done channel, or WaitGroup; `context.Background()` in a long-lived goroutine can't be cancelled.
-- Every access to a shared field, reads included, holds its lock. No I/O, channel send, or network call under a lock (snapshot, release, then call). Consistent order when two locks are held; no `RLock`→`Lock` upgrade.
-- Send-on-closed panics, and `select { case ch <- v: default: }` doesn't guard it. One owner closes each channel.
-- Check-then-act split across a lock release; two separately locked steps that expose an inconsistent state between them.
-- `WaitGroup.Add` before the goroutine starts; no copied mutexes; `http.Server.Shutdown` with a bounded context.
+- Every access to a shared field, reads included, holds its lock. No `RLock`→`Lock` upgrade; no `RLock` held across a network call.
+- `context.Background()` in a long-lived goroutine can't be cancelled; `http.Server.Shutdown` needs a bounded context.
+- `WaitGroup.Add` before the goroutine starts; a `sync.Once` that panics stays poisoned.
 - Every blocking `select` can be woken on every equivalent path (HTTP as well as stdio, after eviction and restart).
 
 **Security**
@@ -92,15 +93,13 @@ Settle every risk from Step 1 with at least one method. Use the reference checkl
 - Tokens or secrets in logs, errors, or agent-facing results. `crypto/rand` for state, nonces, and verifiers.
 
 **Correctness**
-- Discarded errors that leave state inconsistent; silent fallback to zero values; partial writes with no recovery.
+- Silent fallback to zero values, so the caller proceeds as if nothing happened.
 - Nil dereferences on config, parsed input, and optional fields; `defer Close()` before the error check.
 - Off-by-one, wrong comparator, negated condition.
-- Timeouts that don't propagate, unbounded retries or queues, retries of errors a retry can't fix.
+- Unbounded queues; retries of errors a retry can't fix.
 - State kept in two places that can drift; "call X before Y" contracts the types don't enforce.
 
 **Tests**
-- Each changed behavior has a test that reaches the changed path through its production entry point and asserts something that would break if the behavior regressed.
-- Tests start from realistic existing state, not only a clean slate, and cover the failure the change is about.
 - A fix in one path is tested in that path, not only a sibling (HTTP fix, HTTP test).
 - High-risk changes (auth, permissions, tokens, goroutines, shared state) with no covering test.
 
@@ -125,6 +124,7 @@ Settle every risk from Step 1 with at least one method. Use the reference checkl
 2. For each finding, confirm the file:line, the quoted code, and that the trigger reaches that code. Drop any you can't confirm.
 3. For each finding, check whether this PR introduced or worsened it. Pre-existing issues go in a one-line "Pre-existing (not blocking)" note and don't count toward the verdict.
 4. Confirm every risk and call site from Step 1 was settled. List anything not investigated in the report.
+5. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
 
 ## Report
 
