@@ -1,6 +1,6 @@
 ---
 name: review-pr
-description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, experience, tests, then conventions. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
+description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, experience, tests, then maintainability. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
 argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [paths to limit the review to]
 ---
 
@@ -46,7 +46,7 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
 2. **Shared state**: what structs, maps, slices, channels, or package-level vars does the diff touch?
 3. **Trust boundaries**: what new inputs arrive from outside (user, config, network, MCP tool args, env vars) and where do they land?
 4. **New control paths**: what new error paths, goroutine launches, or auth checks does the change introduce?
-5. **Candidate list**: for each of Passes 2a–2f and 3, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
+5. **Candidate list**: for each of Passes 2a–2f, 3 and 4, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
 6. **Call-site audit** — for every function or method whose signature, parameters, return contract, or behavior changes in this diff, including new helper functions immediately wired into multiple places:
    a. Grep for *all* call sites — not just the ones visible in the diff hunks.
    b. List every call site explicitly with file:line.
@@ -229,25 +229,18 @@ go test -race -tags test -run TestReview ./path/to/package/... -v
 
 Name the unprotected contract, realistic failure, existing coverage, and why the missing evidence matters. Missing a new test or a race-detector run alone does not establish a defect or determine the verdict.
 
-## Pass 4 — Conventions (diff-level only)
+## Pass 4 — Maintainability
 
-This pass works only from the diff — no deep exploration. Flag quickly, one line each.
+Read the changed code as an engineer new to it would, and flag where they would misread it or likely break it when changing it. `check.sh` catches function length and parameter count; this pass covers what it can't.
 
-Report explicit project-rule violations, but assess their severity from concrete correctness or maintenance consequences. Style preferences are optional suggestions. A redundant comment, single-use helper, or name choice is not automatically a MEDIUM or blocking finding.
+- **Names:** functions are verb phrases that say what they do and predict their effects; types and variables are domain nouns. Flag vague names (`handle`, `process`, `data`, `util`, `manager`) and names that mislead.
+- **Shape:** each function does one thing at one level of abstraction, and the normal path reads straight down with early returns. Flag deep nesting, long functions that need scrolling to follow, and boolean or empty-string flags as positional args.
+- **Explicitness:** no clever tricks, hidden side effects, or order-dependent calls the types don't enforce. The code says what it means without relying on a comment.
+- **Reuse:** the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops and wrappers; no abstraction without a contract.
+- **Consistency:** naming, error style, and idioms match the surrounding package.
+- **Comments:** they explain why, not what; no section dividers in tests; no doc comments that repeat the name.
 
-**Project style violations** (AGENTS.md):
-- Boolean or empty-string flags as positional args — `check.sh` catches function length and param count mechanically; this is what it misses
-
-**Comments to inspect:**
-- Describes what the code does rather than why (rename instead)
-- Section dividers in test files (`// --- setup ---`, `// --- act ---`)
-- Doc-style comment on a function whose name already conveys the contract
-
-**Naming and design to inspect:**
-- Names that don't self-document (force the reader to read the body to understand purpose)
-- Abstractions that don't earn their keep; a single-use helper may still clarify an operation or isolate a resource lifetime
-- Defensive nil/error checks for values the framework guarantees non-nil/non-error
-- Unnecessary intermediate variables whose only purpose is naming an already-clear expression
+**Proof standard:** quote the code, say what a reader would get wrong or what change it makes risky, and give the clearer form. Assess severity by that cost or by an explicit AGENTS.md rule, not by preference alone.
 
 ## Pre-report gate
 
@@ -272,7 +265,7 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 [One paragraph. Overall quality, biggest risk area, what the verdict hinges on.]
 
 ## 🔴 HIGH — [title]
-**Pass:** Concurrency | Security | Correctness | Experience | Tests
+**Pass:** Concurrency | Security | Correctness | Experience | Tests | Maintainability
 **File:** path/file.go:LINE
 **Bug:** What the issue is.
 **Proof:** Execution trace, goroutine pair, test output — whatever proves it.
@@ -283,7 +276,7 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 [same structure]
 
 ## 🟡 LOW — [title]
-**Pass:** Conventions | Correctness
+**Pass:** Maintainability | Correctness
 [One line. What and where. Reserve LOW for truly trivial findings — borderline preference calls, not rule violations.]
 
 ## Test coverage verdict
