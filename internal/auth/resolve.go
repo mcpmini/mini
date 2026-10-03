@@ -36,6 +36,9 @@ type ResolveEndpointsParams struct {
 // into sc.Auth.ResourceURL. Endpoint discovery is skipped when AuthURL,
 // TokenURL, and ClientID are all already set.
 func ResolveEndpoints(ctx context.Context, sc *config.ServerConfig, p ResolveEndpointsParams) error {
+	if sc.UnsetEnv != nil {
+		return sc.UnsetEnv
+	}
 	if err := ApplyResourceURL(sc); err != nil {
 		return err
 	}

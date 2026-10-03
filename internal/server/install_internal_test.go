@@ -219,12 +219,16 @@ func waitUntil(t *testing.T, what string, condition func() bool) {
 	}
 }
 
-func TestRetryStartupAfter_stopsForACommandAnAgentMayNotRun(t *testing.T) {
+func TestRetryStartupAfter_stopsForFailuresARetryCantFix(t *testing.T) {
 	srv := newInstallTestServer(t)
 	refused := fmt.Errorf("connect to svc: svc: %w", invoke.ErrAgentCommandNotAllowed)
 
 	if srv.retryStartupAfter("svc", refused, time.Second) {
 		t.Error("startup retries a command dangerous_allow_runtime_stdio doesn't allow, so it warns forever")
+	}
+	unset := fmt.Errorf("connect to svc: %w", &config.UnsetEnvError{Field: "headers.Authorization", Names: []string{"GITHUB_TOKEN"}})
+	if srv.retryStartupAfter("svc", unset, time.Second) {
+		t.Error("startup retries a server whose environment variable isn't set, which a retry can't fix")
 	}
 	if !srv.retryStartupAfter("svc", errors.New("connection refused"), time.Second) {
 		t.Error("startup gave up on an ordinary connect failure")

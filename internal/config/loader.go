@@ -161,9 +161,9 @@ func loadMainConfig(dir string) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
-	responseDir, err := expandEnvValue(cfg.ResponseDir, strictEnvExpansion)
+	responseDir, err := expandEnvValue("response_dir", cfg.ResponseDir)
 	if err != nil {
-		return nil, fmt.Errorf("config.yaml: response_dir: %w", err)
+		return nil, fmt.Errorf("config.yaml: %w", err)
 	}
 	cfg.ResponseDir = responseDir
 	return cfg, nil
@@ -256,10 +256,10 @@ func loadServerConfig(path string) (*ServerConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return parseServerConfig(path, data, strictEnvExpansion)
+	return parseServerConfig(path, data)
 }
 
-func parseServerConfig(path string, data []byte, mode envExpansionMode) (*ServerConfig, error) {
+func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	name := serverNameFromPath(path)
 	if err := checkServerName(name, path); err != nil {
 		return nil, err
@@ -272,20 +272,11 @@ func parseServerConfig(path string, data []byte, mode envExpansionMode) (*Server
 	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
 	}
-	if err := validateServerFields(path, &s, mode); err != nil {
-		return nil, err
+	if err := checkUnexpandedFields(s); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
+	expandServerEnv(&s)
 	return &s, nil
-}
-
-func validateServerFields(source string, sc *ServerConfig, mode envExpansionMode) error {
-	if err := checkUnexpandedFields(*sc); err != nil {
-		return fmt.Errorf("%s: %w", source, err)
-	}
-	if err := expandServerSecrets(sc, mode); err != nil {
-		return fmt.Errorf("%s: server %s: %w", source, sc.Name, err)
-	}
-	return nil
 }
 
 func ServerPath(configDir, name string) string {
@@ -312,9 +303,9 @@ func serverNameFromPath(path string) string {
 }
 
 // ValidateServerFile checks data as a server file at path, which names the server. An unset ${VAR}
-// in a secret field passes, since it only has to be set where mini runs.
+// passes, since it only has to be set where mini runs.
 func ValidateServerFile(path string, data []byte) error {
-	sc, err := parseServerConfig(path, data, lenientEnvExpansion)
+	sc, err := parseServerConfig(path, data)
 	if err != nil {
 		return err
 	}

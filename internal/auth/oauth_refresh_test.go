@@ -47,6 +47,25 @@ func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	}
 }
 
+func TestRefresh_sendsTheClientSecretVerbatim(t *testing.T) {
+	t.Setenv("MINI_TEST_LOCAL_SECRET", "must-not-be-sent")
+	mock := authtest.NewTokenServer(t)
+	ac := mock.AuthConfig()
+	ac.ClientSecret = "${MINI_TEST_LOCAL_SECRET}"
+	ac.TokenEndpointAuthMethod = "client_secret_post"
+	expired := &oauth2.Token{AccessToken: "old", RefreshToken: "r", Expiry: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}
+
+	if _, err := auth.Refresh(context.Background(), ac, expired); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+
+	mock.Mu.Lock()
+	defer mock.Mu.Unlock()
+	if mock.LastSecret != "${MINI_TEST_LOCAL_SECRET}" {
+		t.Errorf("client_secret sent = %q; auth must never expand a value, since it may come from the server", mock.LastSecret)
+	}
+}
+
 func TestRefresh_redirectResponse_failsWithoutFollowing(t *testing.T) {
 	targetCalled := false
 	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
