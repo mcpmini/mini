@@ -28,13 +28,14 @@ func (s *Server) configServerNames() []string {
 }
 
 func (s *Server) removeServersGoneFromConfig() {
-	set := config.LoadServerSet(s.configDir)
-	if len(set.SourceErrors) > 0 {
-		s.logger.Warn("config reload: keeping servers whose config file fails to load", "files", sourceErrorPaths(set.SourceErrors))
+	// A broken server isn't removed; applyReload reads the same files and logs each one.
+	servers, err := config.LoadServers(s.configDir)
+	if err != nil {
+		return // applyReload, which runs next, hits the same error and logs it
 	}
 	removed := false
 	for _, name := range s.configServerNames() {
-		if !goneFromConfig(set, name) {
+		if !goneFromConfig(servers, name) {
 			continue
 		}
 		if s.removeConfigServer(name) {
@@ -47,14 +48,18 @@ func (s *Server) removeServersGoneFromConfig() {
 	}
 }
 
-func goneFromConfig(set config.ServerSet, name string) bool {
-	return !set.KeepsPreviousServer(name) && !set.IsEnabled(name)
+func goneFromConfig(servers config.Servers, name string) bool {
+	return !servers.IsBroken(name) && !servers.IsEnabled(name)
 }
 
 func (s *Server) removeConfigServer(name string) bool {
 	unlock := s.serverNames.lock(name)
 	defer unlock()
-	if !s.isConfigServer(name) || !goneFromConfig(config.LoadServerSet(s.configDir), name) {
+	if !s.isConfigServer(name) {
+		return false
+	}
+	servers, err := config.LoadServers(s.configDir)
+	if err != nil || !goneFromConfig(servers, name) {
 		return false
 	}
 	s.detachAndCloseServer(name)

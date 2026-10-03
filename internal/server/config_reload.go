@@ -5,9 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 const configPollInterval = 5 * time.Second
@@ -57,7 +58,10 @@ func (s *Server) reloadIfConfigChanged(last map[string]string) map[string]string
 
 func (s *Server) applyConfig() map[string]int {
 	s.removeServersGoneFromConfig()
-	_, fresh := s.applyReload()
+	_, fresh, err := s.applyReload()
+	if err != nil {
+		s.logger.Warn("config reload: keeping the current config", "err", err)
+	}
 	return fresh
 }
 
@@ -71,7 +75,7 @@ func (s *Server) fingerprintOrWarn() (map[string]string, bool) {
 }
 
 func fingerprintConfigSources(configDir string) (map[string]string, error) {
-	paths, err := filepath.Glob(filepath.Join(configDir, "servers", "*.yaml"))
+	paths, err := config.ServerDirFiles(configDir)
 	if err != nil {
 		return nil, err
 	}

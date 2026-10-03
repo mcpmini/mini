@@ -18,9 +18,9 @@ func TestWriteConfigPreservesDefaultsAndExplicitZeros(t *testing.T) {
 				want.ResponseDiskBudgetMB = 0
 			}
 			WriteConfig(t, dir, want)
-			got, _, err := config.Load(dir)
+			got, err := config.LoadMain(dir)
 			if err != nil {
-				t.Fatalf("Load: %v", err)
+				t.Fatalf("LoadMain: %v", err)
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("loaded config = %#v, want %#v", got, want)

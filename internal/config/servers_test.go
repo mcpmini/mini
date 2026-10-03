@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -157,15 +158,6 @@ func TestLoadServers(t *testing.T) {
 			checkLoadServers(t, mustLoadServers(t, dir), tc)
 		})
 	}
-}
-
-func mustLoadServers(t *testing.T, dir string) config.Servers {
-	t.Helper()
-	servers, err := config.LoadServers(dir)
-	if err != nil {
-		t.Fatalf("LoadServers: %v", err)
-	}
-	return servers
 }
 
 func wantUnprojected(name, file string) func(*testing.T, config.Servers) {
@@ -321,5 +313,33 @@ func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
 
 	if sc, err := config.LoadServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("LoadServer(GitHub) = %q, %v; want fs.ErrNotExist, not github.yaml under another name", sc.Name, err)
+	}
+}
+
+func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{"valid settings load", "disable_auth_browser_open: true\n", ""},
+		{"invalid YAML", "bad: [yaml\n", "parse config"},
+		{"invalid response_format", "response_format: bogus\n", "response_format"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), tt.yaml)
+			cfg, err := config.LoadMain(dir)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || cfg != nil {
+					t.Errorf("LoadMain = (%#v, %v), want (nil, error containing %q) rather than defaults", cfg, err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || cfg == nil || !cfg.DisableAuthBrowserOpen {
+				t.Errorf("LoadMain = (%#v, %v), want disable_auth_browser_open", cfg, err)
+			}
+		})
 	}
 }

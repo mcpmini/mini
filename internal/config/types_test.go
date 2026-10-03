@@ -52,28 +52,3 @@ func TestServerConfig_IsEnabled(t *testing.T) {
 		})
 	}
 }
-
-func TestFindServer(t *testing.T) {
-	servers := []config.ServerConfig{
-		{Name: "alpha"},
-		{Name: "beta"},
-	}
-	t.Run("found", func(t *testing.T) {
-		got := config.FindServer(servers, "beta")
-		if got == nil || got.Name != "beta" {
-			t.Fatalf("FindServer returned %v, want beta", got)
-		}
-	})
-	t.Run("not found", func(t *testing.T) {
-		if got := config.FindServer(servers, "gamma"); got != nil {
-			t.Fatalf("FindServer returned %v, want nil", got)
-		}
-	})
-	t.Run("returns pointer into slice", func(t *testing.T) {
-		got := config.FindServer(servers, "alpha")
-		got.Name = "modified"
-		if servers[0].Name != "modified" {
-			t.Fatal("FindServer should return pointer into slice")
-		}
-	})
-}
