@@ -10,21 +10,20 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
+	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 )
 
 type testTokenEndpoint struct {
@@ -135,12 +134,7 @@ func startFromConfigDir(t *testing.T, p BuildServerParams) *server.Server {
 			t.Fatal(err)
 		}
 		path := filepath.Join(p.ConfigDir, "servers", sc.Name+".yaml")
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, data, 0600); err != nil {
-			t.Fatal(err)
-		}
+		testutil.WriteFileBytes(t, path, data)
 	}
 	return buildAndStart(t.Context(), p)
 }

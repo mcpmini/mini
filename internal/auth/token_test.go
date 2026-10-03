@@ -1,14 +1,13 @@
 package auth_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/testutil"
+	"golang.org/x/oauth2"
 )
 
 func TestReadTokenState(t *testing.T) {
@@ -78,10 +77,5 @@ func TestTokenStateStringsAreDistinct(t *testing.T) {
 func writeCorruptToken(t *testing.T, dir, serverName string) {
 	t.Helper()
 	path := filepath.Join(dir, "internal", serverName+".token.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("not json"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, path, "not json")
 }

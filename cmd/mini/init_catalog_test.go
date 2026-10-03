@@ -16,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestParseCatalogSelection(t *testing.T) {
@@ -138,18 +139,11 @@ func TestRunCatalogStepAddsRequestedEntriesWithoutPicker(t *testing.T) {
 
 func TestRunCatalogStepRequestedConfiguredEntriesArePreserved(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "servers"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	existing := []byte("preserve this file\n")
 	path := filepath.Join(dir, "servers", "already.yaml")
-	if err := os.WriteFile(path, existing, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFileBytes(t, path, existing)
 	configured := "transport: http\nurl: https://configured.example/mcp\n"
-	if err := os.WriteFile(filepath.Join(dir, "servers", "configured.yaml"), []byte(configured), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "configured.yaml"), configured)
 	entries := []catalog.Entry{
 		{Name: "same-url", URL: "https://configured.example/mcp"},
 		{Name: "already", URL: "https://already.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://already.example/token"},
@@ -161,9 +155,9 @@ func TestRunCatalogStepRequestedConfiguredEntriesArePreserved(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "servers", "same-url.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("same URL created second file: %v", err)
 	}
-	got, err := os.ReadFile(path)
-	if err != nil || !bytes.Equal(got, existing) {
-		t.Fatalf("existing file = %q, %v", got, err)
+	got := testutil.ReadFile(t, path)
+	if !bytes.Equal(got, existing) {
+		t.Fatalf("existing file = %q", got)
 	}
 	if !strings.Contains(out.String(), "same-url already configured") || !strings.Contains(out.String(), "already already configured") || strings.Contains(out.String(), "already needs an access token") {
 		t.Fatalf("unexpected existing-entry output: %s", out.String())
@@ -285,7 +279,7 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 	dir := t.TempDir()
 	original := "transport: http\nurl: [unfinished\n"
 	path := filepath.Join(dir, "servers", "github.yaml")
-	writeLoginStepFile(t, path, original)
+	testutil.WriteFile(t, path, original)
 	out := &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{
@@ -299,7 +293,7 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data, _ := os.ReadFile(path); string(data) != original { //nolint:errcheck // a missing file fails the comparison
+	if data := testutil.ReadFile(t, path); string(data) != original {
 		t.Errorf("servers/github.yaml = %q, want it untouched", data)
 	}
 	if !strings.Contains(out.String(), "  github already configured in mini") {
@@ -312,8 +306,8 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 
 func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
 	dir := t.TempDir()
-	writeLoginStepFile(t, filepath.Join(dir, "servers", "my-linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\n")
-	writeLoginStepFile(t, filepath.Join(dir, "servers", "broken.yaml"), "transport: [broken\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "my-linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "transport: [broken\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{
@@ -388,9 +382,7 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 
 func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "servers"), nil, 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, "servers"), "")
 	out := &bytes.Buffer{}
 
 	err := runCatalogStep(catalogStepParams{

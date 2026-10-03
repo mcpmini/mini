@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
+	"golang.org/x/oauth2"
 )
 
 func pkceToken(t *testing.T, ac *config.AuthConfig) *oauth2.Token {
@@ -90,9 +90,7 @@ func TestSaveReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	target := dir + "/target"
-	if err := os.WriteFile(target, []byte("unchanged"), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, target, "unchanged")
 	path := internal + "/myserver.token.json"
 	if err := os.Symlink(target, path); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
@@ -100,10 +98,7 @@ func TestSaveReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 	if err := auth.Save(dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	got, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatal(err)
-	}
+	got := testutil.ReadFile(t, target)
 	if string(got) != "unchanged" {
 		t.Errorf("symlink target was overwritten: %q", got)
 	}

@@ -17,13 +17,13 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
+	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
 )
 
 func oauthMCPHandler(validToken string, tools []map[string]any) http.HandlerFunc {
@@ -201,10 +201,7 @@ func readServerYAML(t *testing.T, dir, name string) config.ServerConfig {
 
 func readYAMLFile(t *testing.T, path string, out any) {
 	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile %s: %v", path, err)
-	}
+	data := testutil.ReadFile(t, path)
 	if err := yaml.Unmarshal(data, out); err != nil {
 		t.Fatalf("yaml.Unmarshal %s: %v", path, err)
 	}

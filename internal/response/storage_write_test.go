@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestWriteRaw_writesFile(t *testing.T) {
@@ -20,7 +22,7 @@ func TestWriteRaw_writesFile(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("raw file not written: %v", err)
 	}
-	data, _ := os.ReadFile(path)
+	data := testutil.ReadFile(t, path)
 	if !json.Valid(data) {
 		t.Errorf("raw file is not valid JSON: %s", data)
 	}
@@ -59,7 +61,7 @@ func TestWriteRaw_nonJSONPassesThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	data, _ := os.ReadFile(filepath.Join(s.dir, key+".json"))
+	data := testutil.ReadFile(t, filepath.Join(s.dir, key+".json"))
 	if string(data) != "not json" {
 		t.Errorf("expected passthrough for non-JSON, got: %s", data)
 	}
@@ -72,7 +74,7 @@ func TestWriteRaw_prettyPrintsValidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WriteRaw: %v", err)
 	}
-	data, _ := os.ReadFile(filepath.Join(s.dir, key+".json"))
+	data := testutil.ReadFile(t, filepath.Join(s.dir, key+".json"))
 	if string(data) == string(compact) {
 		t.Error("expected pretty-printed output to differ from compact input")
 	}

@@ -39,6 +39,8 @@ Use tables when cases share the same flow and differ only in inputs and expected
 
 Tests must own their resources. Isolate config, home, output, sockets, and temporary files; close listeners and response bodies; stop and join child processes and goroutines. A test should not read or write the developer's `~/.mini`.
 
+Use shared file helpers for routine test I/O. Keep direct I/O when errors, polling, or permissions are part of the behavior under test.
+
 ## Control failures and time
 
 Exercise network errors, delays, cancellation, malformed responses, partial failure, retry, and process exit where the changed contract depends on them. Simulate each failure at the boundary it belongs to: `FakeConnection` for server routing, `httptest.Server` for HTTP behavior, and the fake MCP process for real stdio or subprocess behavior. Add a fake capability when a named product test needs it; prefer scripted responses and observable call events over probability.

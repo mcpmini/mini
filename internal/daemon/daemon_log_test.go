@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 const testCap = 100 // small cap so tests don't need to allocate 10MB
@@ -24,7 +26,7 @@ func TestCappedLog_appendsBelowCap(t *testing.T) {
 	w.Write([]byte("line2\n"))
 	w.Close()
 
-	data := mustReadFile(t, logPath)
+	data := testutil.ReadFile(t, logPath)
 	if string(data) != "line1\nline2\n" {
 		t.Errorf("expected appended lines, got %q", data)
 	}
@@ -45,7 +47,7 @@ func TestCappedLog_rotatesWhenFull(t *testing.T) {
 	if _, err := os.Stat(logPath + ".old"); err != nil {
 		t.Fatalf("expected .old file after rotation: %v", err)
 	}
-	data := mustReadFile(t, logPath)
+	data := testutil.ReadFile(t, logPath)
 	if string(data) != "after-rotation\n" {
 		t.Errorf("expected only post-rotation content, got %q", data)
 	}
@@ -61,7 +63,7 @@ func TestCappedLog_secondRotationOverwritesOld(t *testing.T) {
 	w.Write([]byte("first\n"))
 	w.Close()
 
-	if old := mustReadFile(t, logPath+".old"); !bytes.Equal(old, bytes.Repeat([]byte("a"), testCap)) {
+	if old := testutil.ReadFile(t, logPath+".old"); !bytes.Equal(old, bytes.Repeat([]byte("a"), testCap)) {
 		t.Fatalf("after first rotation: .old should be a's, got %q", old)
 	}
 
@@ -70,11 +72,11 @@ func TestCappedLog_secondRotationOverwritesOld(t *testing.T) {
 	w.Write(bytes.Repeat([]byte("b"), testCap))
 	w.Close()
 
-	old := mustReadFile(t, logPath+".old")
+	old := testutil.ReadFile(t, logPath+".old")
 	if string(old) != "first\n" {
 		t.Errorf(".old should be 'first\\n' after second rotation, got %q", old)
 	}
-	cur := mustReadFile(t, logPath)
+	cur := testutil.ReadFile(t, logPath)
 	if !bytes.Equal(cur, bytes.Repeat([]byte("b"), testCap)) {
 		t.Errorf("current log should be b's after second rotation, got %q", cur)
 	}
@@ -95,9 +97,7 @@ func TestCappedLog_initializesWrittenFromExistingFile(t *testing.T) {
 
 	// Write near the cap, then close (simulates a previous daemon run).
 	existing := bytes.Repeat([]byte("x"), testCap-5)
-	if err := os.WriteFile(logPath, existing, 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFileBytes(t, logPath, existing)
 
 	// Reopen and write enough to push past the cap — should rotate.
 	w := openCappedLog(logPath, testCap)
@@ -181,13 +181,4 @@ func TestCappedLog_stderrNotClosedOnRotate(t *testing.T) {
 	if cl.f != os.Stderr {
 		t.Error("rotate() changed c.f away from os.Stderr; guard must prevent closing fd 2")
 	}
-}
-
-func mustReadFile(t *testing.T, path string) []byte {
-	t.Helper()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
-	}
-	return data
 }

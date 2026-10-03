@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 // fakeHTTPMCP is an in-process HTTP MCP server for tests.
@@ -70,13 +71,8 @@ func (f *fakeHTTPMCP) serveHTTP(w http.ResponseWriter, r *http.Request) {
 func writeHTTPServerYAML(t *testing.T, configDir, serverName, url string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		t.Fatal(err)
-	}
 	yaml := fmt.Sprintf("transport: sse\nurl: %s\n", url)
-	if err := os.WriteFile(filepath.Join(dir, serverName+".yaml"), []byte(yaml), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, serverName+".yaml"), yaml)
 }
 
 func httpServer(t *testing.T, onCall func(int) (int, []byte)) (*fakeHTTPMCP, *mcpClient) {

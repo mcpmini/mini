@@ -1,13 +1,13 @@
 package importers
 
 import (
-	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func tempDir(t *testing.T) string {
@@ -22,9 +22,7 @@ func tempDir(t *testing.T) string {
 func writeClientConfig(t *testing.T, name, content string) string {
 	t.Helper()
 	path := filepath.Join(tempDir(t), name)
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		t.Fatal(err)
-	}
+	testutil.WriteFile(t, path, content)
 	return path
 }
 
@@ -168,7 +166,7 @@ func TestReadConfigFile(t *testing.T) {
 		dir := tempDir(t)
 		f := filepath.Join(dir, "test.json")
 		want := []byte(`{"hello":"world"}`)
-		os.WriteFile(f, want, 0600)
+		testutil.WriteFileBytes(t, f, want)
 
 		got, err := ReadConfigFile(f)
 		if err != nil {
@@ -183,7 +181,7 @@ func TestReadConfigFile(t *testing.T) {
 		dir := tempDir(t)
 		f := filepath.Join(dir, "big.json")
 		big := make([]byte, maxImportConfigBytes+1)
-		os.WriteFile(f, big, 0600)
+		testutil.WriteFileBytes(t, f, big)
 
 		_, err := ReadConfigFile(f)
 		if err == nil {
@@ -196,7 +194,7 @@ func TestReadConfigFile(t *testing.T) {
 
 	t.Run("file at the limit is returned whole", func(t *testing.T) {
 		f := filepath.Join(tempDir(t), "limit.json")
-		os.WriteFile(f, make([]byte, maxImportConfigBytes), 0600)
+		testutil.WriteFileBytes(t, f, make([]byte, maxImportConfigBytes))
 
 		got, err := ReadConfigFile(f)
 		if err != nil {

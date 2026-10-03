@@ -5,13 +5,13 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/jq"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 // TestProxy_MiniRead_JQRoundTrip verifies that jq paths in __mini.excluded and
@@ -82,10 +82,7 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 				t.Fatalf("expected __mini.file, got: %s", text)
 			}
 
-			rawFile, err := os.ReadFile(filepath.Join(cfg.ResponseDir, key+".json"))
-			if err != nil {
-				t.Fatalf("read raw file: %v", err)
-			}
+			rawFile := testutil.ReadFile(t, filepath.Join(cfg.ResponseDir, key+".json"))
 
 			paths := tc.wantPaths(mini)
 			if len(paths) == 0 {

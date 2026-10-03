@@ -10,13 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/bench"
 	"github.com/mcpmini/mini/internal/config"
 	minidefaults "github.com/mcpmini/mini/internal/defaults"
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
+	"github.com/mcpmini/mini/internal/testutil"
+	"gopkg.in/yaml.v3"
 )
 
 // validateCase defines what to assert after projecting a fixture.
@@ -71,10 +71,7 @@ func TestProjectionValidation(t *testing.T) {
 				t.Skipf("fixture not found: benchmarks/fixtures/%s/%s.json", serverDir, toolName)
 			}
 
-			raw, err := os.ReadFile(fixturePath)
-			if err != nil {
-				t.Fatalf("read fixture: %v", err)
-			}
+			raw := testutil.ReadFile(t, fixturePath)
 
 			projServer := vc.projection
 			if projServer == "" {

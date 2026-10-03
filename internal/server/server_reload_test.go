@@ -14,6 +14,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type serverReloadEnv struct {
@@ -32,7 +33,7 @@ func (e *serverReloadEnv) serverPath(name string) string {
 
 func (e *serverReloadEnv) writeServer(name, extra string) {
 	e.t.Helper()
-	writeReloadFile(e.t, e.serverPath(name), "transport: http\nurl: "+e.upstream.URL+"\n"+extra)
+	testutil.WriteFile(e.t, e.serverPath(name), "transport: http\nurl: "+e.upstream.URL+"\n"+extra)
 }
 
 func (e *serverReloadEnv) removeServerFile(name string) {
@@ -125,7 +126,7 @@ func TestServerReload_disabledServer_isRemoved(t *testing.T) {
 func TestServerReload_brokenFileHoldsOnlyItsServer(t *testing.T) {
 	breaks := map[string]func(e *serverReloadEnv){
 		"malformed": func(e *serverReloadEnv) {
-			writeReloadFile(e.t, e.serverPath("broken"), "url: [oops\n")
+			testutil.WriteFile(e.t, e.serverPath("broken"), "url: [oops\n")
 		},
 		"unreadable": func(e *serverReloadEnv) {
 			e.removeServerFile("broken")
@@ -168,7 +169,7 @@ func TestServerReload_editBeforePollerStarts_isApplied(t *testing.T) {
 func TestServerReload_removalDuringStartupRetry_staysRemoved(t *testing.T) {
 	ts, _ := upstreamFailingFirst(t, 1, pingMCPHandler)
 	e := newServerReloadEnv(t)
-	writeReloadFile(t, e.serverPath("flaky"), "transport: http\nurl: "+ts.URL+"\n")
+	testutil.WriteFile(t, e.serverPath("flaky"), "transport: http\nurl: "+ts.URL+"\n")
 	e.srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "flaky", Transport: "http", URL: ts.URL}})
 	e.waitForRetryBackoff()
 

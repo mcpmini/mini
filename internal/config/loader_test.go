@@ -1,23 +1,13 @@
 package config_test
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
-
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func mustLoadOneServer(t *testing.T, dir string) config.ServerConfig {
 	t.Helper()
@@ -96,7 +86,7 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadMainConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "config.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), `
 log_level: debug
 `)
 	cfg, _ := mustLoadConfig(t, dir)
@@ -107,11 +97,11 @@ log_level: debug
 
 func TestLoad_serverNameComesFromFile(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.yaml"), `
 command: npx
 args: ["-y", "@buildkite/mcp-server"]
 `)
-	writeFile(t, filepath.Join(dir, "servers", "ci.proj.yaml"), "list_builds:\n  include_only: [id]\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.proj.yaml"), "list_builds:\n  include_only: [id]\n")
 	_, servers := mustLoadConfig(t, dir)
 	sc := config.FindServer(servers, "ci")
 	if len(servers) != 1 || sc == nil {
@@ -126,7 +116,7 @@ func TestLoad_invalidServerFileName(t *testing.T) {
 	for _, file := range []string{".yaml", "bad name!.yaml", "a.b.yaml"} {
 		t.Run(file, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "servers", file), "command: echo\n")
+			testutil.WriteFile(t, filepath.Join(dir, "servers", file), "command: echo\n")
 			if _, _, err := config.Load(dir); err == nil || !strings.Contains(err.Error(), "invalid server name") {
 				t.Fatalf("want an invalid server name error, got %v", err)
 			}
@@ -136,13 +126,13 @@ func TestLoad_invalidServerFileName(t *testing.T) {
 
 func TestLoadMalformedMainConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "config.yaml"), `not: valid: yaml: [`)
+	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), `not: valid: yaml: [`)
 	expectLoadError(t, dir)
 }
 
 func TestLoadMalformedServerConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "bad.yaml"), `not: valid: yaml: [`)
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "bad.yaml"), `not: valid: yaml: [`)
 	expectLoadError(t, dir)
 }
 
@@ -154,9 +144,9 @@ func TestLoadMissingConfigDir_usesDefaults(t *testing.T) {
 
 func TestLoadProjectionConfig(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), `name: gh
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), `name: gh
 command: gh-mcp`)
-	writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), `
 list_issues:
   include_only: [number, title]
   array_limits:
@@ -177,13 +167,13 @@ list_issues:
 
 func TestLoadProjectionMerges_dirWinsOverInline(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `name: svc
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), `name: svc
 command: my-mcp
 projections:
   my_tool:
     include_only: [inline_field]
 `)
-	writeFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), `
 my_tool:
   include_only: [dir_field]
 `)
@@ -200,7 +190,7 @@ my_tool:
 
 func TestLoadActions_basic(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "internal", "actions", "my_prs.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "my_prs.yaml"), `
 name: my_prs
 description: My open PRs
 server: gh
@@ -226,7 +216,7 @@ func assertActionDefaults(t *testing.T, ac config.ActionConfig, wantName, wantKe
 func TestLoadActions_nameFromFilename(t *testing.T) {
 	dir := t.TempDir()
 	// action file with no name field → name derived from filename
-	writeFile(t, filepath.Join(dir, "internal", "actions", "my_action.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "my_action.yaml"), `
 server: gh
 tool: list_issues
 `)
@@ -269,7 +259,7 @@ func TestValidToolName(t *testing.T) {
 
 func TestLoadServerConfig_handshakeTimeoutParses(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: 3s\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: 3s\n")
 	sc := mustLoadOneServer(t, dir)
 	if sc.HandshakeTimeout != "3s" {
 		t.Fatalf("expected handshake_timeout %q, got %q", "3s", sc.HandshakeTimeout)
@@ -280,7 +270,7 @@ func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 	for _, spec := range []string{"-1s", "nonsense"} {
 		t.Run(spec, func(t *testing.T) {
 			dir := t.TempDir()
-			writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: "+spec+"\n")
+			testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.yaml"), "command: mcp\nhandshake_timeout: "+spec+"\n")
 			expectLoadError(t, dir)
 		})
 	}
@@ -288,7 +278,7 @@ func TestLoad_invalidHandshakeTimeout(t *testing.T) {
 
 func TestLoadServerConfig_withAuth(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "notion.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "notion.yaml"), `
 name: notion
 transport: http
 url: https://mcp.notion.com
@@ -306,7 +296,7 @@ auth:
 
 func TestLoadServerConfig_mergesDetectedOAuthMarker(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "detected.yaml"), `
 name: detected
 transport: http
 url: https://example.com/mcp
@@ -322,7 +312,7 @@ url: https://example.com/mcp
 
 func TestLoadServerConfig_ignoresADetectedMarkerOnAnAgentAddedServer(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
 transport: http
 url: https://example.com/mcp
 agent_added: true
@@ -337,7 +327,7 @@ agent_added: true
 
 func TestLoadServerConfig_existingAuthTakesPrecedenceOverDetectedMarker(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "hasauth.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "hasauth.yaml"), `
 name: hasauth
 transport: http
 url: https://example.com/mcp
@@ -356,7 +346,7 @@ auth:
 
 func TestLoadServerConfig_mergesBundledAuthForKnownServer(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
 name: slack
 transport: http
 url: https://mcp.slack.com/mcp
@@ -375,7 +365,7 @@ url: https://mcp.slack.com/mcp
 
 func TestLoadServerConfig_bundledAuthMatchesByURLNotName(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
 name: slack
 transport: http
 url: https://example.com/mcp
@@ -388,7 +378,7 @@ url: https://example.com/mcp
 
 func TestLoadServerConfig_bundledAuthMatchesRenamedKnownServer(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "myslack.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "myslack.yaml"), `
 name: myslack
 transport: http
 url: https://mcp.slack.com/mcp
@@ -401,7 +391,7 @@ url: https://mcp.slack.com/mcp
 
 func TestLoadServerConfig_bundledAuthRejectsVendorNameInPath(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
 name: svc
 transport: http
 url: https://attacker.example/proxy/slack.com/mcp
@@ -414,7 +404,7 @@ url: https://attacker.example/proxy/slack.com/mcp
 
 func TestLoadServerConfig_bundledAuthRejectsLookalikeHost(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
 name: svc
 transport: http
 url: https://evilslack.com.attacker.example/mcp
@@ -427,7 +417,7 @@ url: https://evilslack.com.attacker.example/mcp
 
 func TestLoadServerConfig_bundledAuthIgnoresCommandOnURLServer(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), `
 name: svc
 transport: http
 url: https://attacker.example/mcp
@@ -441,7 +431,7 @@ command: server-slack
 
 func TestLoadServerConfig_unknownServerGetsNoBundledAuth(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "unknown.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "unknown.yaml"), `
 name: unknown
 transport: http
 url: https://example.com/mcp
@@ -454,7 +444,7 @@ url: https://example.com/mcp
 
 func TestLoadServerConfig_existingAuthTakesPrecedenceOverBundledDefault(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "slack.yaml"), `
 name: slack
 transport: http
 url: https://mcp.slack.com/mcp
@@ -561,7 +551,7 @@ func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType, wantClient
 
 func TestLoadServerConfig_withPermissions(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "ci.yaml"), `
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "ci.yaml"), `
 name: ci
 command: mcp-ci
 permissions:
@@ -590,7 +580,7 @@ func assertPermissions(t *testing.T, sc config.ServerConfig, wantProtected int, 
 func TestLoadResponseFormat(t *testing.T) {
 	t.Run("toon accepted", func(t *testing.T) {
 		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, "config.yaml"), "response_format: toon\n")
+		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "response_format: toon\n")
 		cfg, _ := mustLoadConfig(t, dir)
 		if cfg.ResponseFormat != "toon" {
 			t.Errorf("expected toon, got %q", cfg.ResponseFormat)
@@ -598,7 +588,7 @@ func TestLoadResponseFormat(t *testing.T) {
 	})
 	t.Run("mini rejected naming toon as the replacement", func(t *testing.T) {
 		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, "config.yaml"), "response_format: mini\n")
+		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "response_format: mini\n")
 		_, _, err := config.Load(dir)
 		if err == nil || !strings.Contains(err.Error(), "toon") {
 			t.Fatalf("expected error naming toon as the replacement, got %v", err)
@@ -606,15 +596,15 @@ func TestLoadResponseFormat(t *testing.T) {
 	})
 	t.Run("unknown format rejected", func(t *testing.T) {
 		dir := t.TempDir()
-		writeFile(t, filepath.Join(dir, "config.yaml"), "response_format: xml\n")
+		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "response_format: xml\n")
 		expectLoadError(t, dir)
 	})
 }
 
 func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "command: gh-mcp\n")
-	writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.yaml"), "command: gh-mcp\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
 	_, _, err := config.Load(dir)
 	if err == nil || !strings.Contains(err.Error(), "toon") {
 		t.Fatalf("expected projection format error naming toon, got %v", err)
@@ -657,31 +647,31 @@ func TestEffectiveFormat(t *testing.T) {
 
 func TestLoadProjection_malformedYAML_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "srv.proj.yaml"), `not: valid: yaml: [`)
+	testutil.WriteFile(t, filepath.Join(dir, "servers", "srv.proj.yaml"), `not: valid: yaml: [`)
 	expectLoadError(t, dir)
 }
 
 func TestLoadActions_malformedYAML_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "internal", "actions", "bad.yaml"), `not: valid: yaml: [`)
+	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "bad.yaml"), `not: valid: yaml: [`)
 	expectLoadActionsError(t, dir)
 }
 
 func TestLoadActions_invalidActionName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "internal", "actions", "bad.yaml"), "name: \"bad name\"\nserver: gh\ntool: list\n")
+	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "bad.yaml"), "name: \"bad name\"\nserver: gh\ntool: list\n")
 	expectLoadActionsError(t, dir)
 }
 
 func TestLoadActions_invalidServerName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "internal", "actions", "act.yaml"), "name: act\nserver: \"bad server\"\ntool: list\n")
+	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "act.yaml"), "name: act\nserver: \"bad server\"\ntool: list\n")
 	expectLoadActionsError(t, dir)
 }
 
 func TestLoadActions_invalidToolName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "internal", "actions", "act.yaml"), "name: act\nserver: gh\ntool: \"bad/tool\"\n")
+	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "act.yaml"), "name: act\nserver: gh\ntool: \"bad/tool\"\n")
 	expectLoadActionsError(t, dir)
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestRunCleanup(t *testing.T) {
@@ -28,10 +29,9 @@ func TestRunCleanup(t *testing.T) {
 	t.Run("reports removed count and freed bytes for expired files", func(t *testing.T) {
 		dir := t.TempDir()
 		respDir := filepath.Join(dir, "internal", "responses")
-		os.MkdirAll(respDir, 0700)
 
 		oldJSON := filepath.Join(respDir, "old.json")
-		os.WriteFile(oldJSON, []byte(`{"ok":true}`), 0600)
+		testutil.WriteFile(t, oldJSON, `{"ok":true}`)
 		fakeClock := clock.NewFake()
 		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
@@ -52,9 +52,8 @@ func TestRunCleanup(t *testing.T) {
 	t.Run("does not remove fresh files", func(t *testing.T) {
 		dir := t.TempDir()
 		respDir := filepath.Join(dir, "internal", "responses")
-		os.MkdirAll(respDir, 0700)
 		freshJSON := filepath.Join(respDir, "fresh.json")
-		os.WriteFile(freshJSON, []byte(`{"ok":true}`), 0600)
+		testutil.WriteFile(t, freshJSON, `{"ok":true}`)
 
 		fakeClock := clock.NewFake()
 		now := fakeClock.Now()

@@ -5,11 +5,12 @@ package integration_test
 import (
 	"bufio"
 	"encoding/json"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestIntegrationServer_initialize(t *testing.T) {
@@ -81,10 +82,7 @@ func TestIntegrationServer_execWithProjection(t *testing.T) {
 	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
 	writeProjection(t, cfg, "github", "list_pull_requests:\n  include_only: [number, title]\n")
 
-	rawFixture, err := os.ReadFile(filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	rawFixture := testutil.ReadFile(t, filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
 	projected := startServer(t, cfg).execTool("github", "list_pull_requests", nil)
 	if len(projected) >= len(rawFixture) {
 		t.Errorf("projected (%d bytes) should be smaller than raw (%d bytes)", len(projected), len(rawFixture))
@@ -342,7 +340,7 @@ func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 	client := startServer(t, cfg)
 	client.setProjection("github", "list_pull_requests", map[string]any{"include_only": []string{"number"}, "depth_limit": 1}, true)
 
-	rawFixture, _ := os.ReadFile(filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
+	rawFixture := testutil.ReadFile(t, filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
 	projected := client.execTool("github", "list_pull_requests", nil)
 	if len(projected) >= len(rawFixture) {
 		t.Errorf("configure-projected response (%d) should be smaller than raw (%d)", len(projected), len(rawFixture))

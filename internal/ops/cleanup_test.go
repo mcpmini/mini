@@ -10,6 +10,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestPurgeExpiredResponses(t *testing.T) {
@@ -28,11 +29,10 @@ func TestPurgeExpiredResponses(t *testing.T) {
 	t.Run("removes expired json file and reports exact bytes freed", func(t *testing.T) {
 		dir := tempDir(t)
 		respDir := filepath.Join(dir, "internal", "responses")
-		os.MkdirAll(respDir, 0700)
 
 		jsonBody := []byte(`{"ok":true}`)
 		oldJSON := filepath.Join(respDir, "old.json")
-		os.WriteFile(oldJSON, jsonBody, 0600)
+		testutil.WriteFileBytes(t, oldJSON, jsonBody)
 		fakeClock := clock.NewFake()
 		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
@@ -55,9 +55,8 @@ func TestPurgeExpiredResponses(t *testing.T) {
 	t.Run("does not remove fresh files", func(t *testing.T) {
 		dir := tempDir(t)
 		respDir := filepath.Join(dir, "internal", "responses")
-		os.MkdirAll(respDir, 0700)
 		freshJSON := filepath.Join(respDir, "fresh.json")
-		os.WriteFile(freshJSON, []byte(`{"ok":true}`), 0600)
+		testutil.WriteFile(t, freshJSON, `{"ok":true}`)
 
 		fakeClock := clock.NewFake()
 		now := fakeClock.Now()
@@ -77,10 +76,9 @@ func TestPurgeExpiredResponses(t *testing.T) {
 	t.Run("removes expired json when raw counterpart is absent", func(t *testing.T) {
 		dir := tempDir(t)
 		respDir := filepath.Join(dir, "internal", "responses")
-		os.MkdirAll(respDir, 0700)
 		jsonBody := []byte(`{"ok":true}`)
 		oldJSON := filepath.Join(respDir, "solo.json")
-		os.WriteFile(oldJSON, jsonBody, 0600)
+		testutil.WriteFileBytes(t, oldJSON, jsonBody)
 		fakeClock := clock.NewFake()
 		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(oldJSON, past, past)
@@ -100,9 +98,8 @@ func TestPurgeExpiredResponses(t *testing.T) {
 	t.Run("legacy raw.json orphan files are cleaned up", func(t *testing.T) {
 		dir := tempDir(t)
 		respDir := filepath.Join(dir, "internal", "responses")
-		os.MkdirAll(respDir, 0700)
 		rawOnly := filepath.Join(respDir, "orphan.raw.json")
-		os.WriteFile(rawOnly, []byte(`{}`), 0600)
+		testutil.WriteFile(t, rawOnly, `{}`)
 		fakeClock := clock.NewFake()
 		past := fakeClock.Now().Add(-30 * 24 * time.Hour)
 		os.Chtimes(rawOnly, past, past)

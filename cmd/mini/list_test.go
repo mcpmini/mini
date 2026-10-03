@@ -3,11 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -226,8 +226,5 @@ func mustMarshal(t *testing.T, v any) json.RawMessage {
 func writeServer(t *testing.T, configDir, name, yaml string) {
 	t.Helper()
 	dir := filepath.Join(configDir, "servers")
-	os.MkdirAll(dir, 0700)
-	if err := os.WriteFile(filepath.Join(dir, name+".yaml"), []byte(yaml), 0600); err != nil {
-		t.Fatalf("writeServer: %v", err)
-	}
+	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), yaml)
 }

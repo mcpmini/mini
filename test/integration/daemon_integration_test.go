@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/daemon"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func shortConfigDir(t *testing.T) string {
@@ -127,10 +128,7 @@ func reapDaemons(cfg string) {
 
 func readDaemonToken(t *testing.T, cfg string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(cfg, "internal", "daemon", "daemon.token"))
-	if err != nil {
-		t.Fatalf("read daemon token: %v", err)
-	}
+	data := testutil.ReadFile(t, filepath.Join(cfg, "internal", "daemon", "daemon.token"))
 	return strings.TrimSpace(string(data))
 }
 
