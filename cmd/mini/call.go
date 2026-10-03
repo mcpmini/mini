@@ -26,12 +26,21 @@ func newCallCmd(opts *rootOptions) *cobra.Command {
 	return newCallCommand(opts, false)
 }
 
+const callLong = "PARAMS is a JSON object of tool arguments, or - to read it from stdin. `mini ls SERVER TOOL` lists a tool's arguments."
+
+const callExample = `  mini call deepwiki read_wiki_structure '{"repoName": "facebook/react"}'
+  echo '{"repoName": "facebook/react"}' | mini call deepwiki read_wiki_structure -`
+
+const permCallExample = `  mini perm-call github add_issue_comment '{"owner": "me", "repo": "notes", "issue_number": 1, "body": "Done"}'`
+
 func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 	f := callFlags{}
 	cmd := &cobra.Command{
-		Use:   "call SERVER TOOL [PARAMS]",
-		Short: "Invoke an open tool directly (exit 1 on tool error)",
-		Args:  usageArgs(cobra.RangeArgs(2, 3)),
+		Use:     "call SERVER TOOL [PARAMS]",
+		Short:   "Invoke an open tool directly (exit 1 on tool error)",
+		Long:    callLong,
+		Example: callExample,
+		Args:    usageArgs(cobra.RangeArgs(2, 3)),
 		PreRunE: func(*cobra.Command, []string) error {
 			if f.enabledCount() > 1 {
 				return usageErrf("choose only one output mode: --json, --toon, or --raw")
@@ -43,16 +52,21 @@ func newCallCommand(opts *rootOptions, protected bool) *cobra.Command {
 			return nil
 		},
 	}
+	addCallOutputFlags(cmd, &f)
+	return cmd
+}
+
+func addCallOutputFlags(cmd *cobra.Command, f *callFlags) {
 	cmd.Flags().BoolVarP(&f.json, "json", "j", false, "JSON output (projected envelope, default)")
 	cmd.Flags().BoolVarP(&f.toon, "toon", "t", false, "TOON format (token-oriented object notation)")
 	cmd.Flags().BoolVarP(&f.raw, "raw", "r", false, "raw upstream response, no projection")
-	return cmd
 }
 
 func newPermCallCmd(opts *rootOptions) *cobra.Command {
 	cmd := newCallCommand(opts, true)
 	cmd.Use = "perm-call SERVER TOOL [PARAMS]"
 	cmd.Short = "Invoke a protected tool directly"
+	cmd.Example = permCallExample
 	return cmd
 }
 
@@ -233,7 +247,7 @@ func parseParams(pos []string) (map[string]any, bool) {
 	}
 	var params map[string]any
 	if err := json.Unmarshal(raw, &params); err != nil {
-		fmt.Fprintf(os.Stderr, "mini: invalid params JSON: %v\n", err)
+		fmt.Fprintf(os.Stderr, "mini: PARAMS must be a JSON object such as '{\"name\": \"value\"}': %v\n", err)
 		return nil, false
 	}
 	return params, true

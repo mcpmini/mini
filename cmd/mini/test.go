@@ -45,6 +45,13 @@ func runTest(configDir string, timeout time.Duration) {
 	printTestResults(checkUpstreams(ctx, srv, enabled, timeout))
 }
 
+func emptyTestMessage(servers []config.ServerConfig) string {
+	if len(servers) == 0 {
+		return noServersConfigured
+	}
+	return "no enabled servers"
+}
+
 func buildTestServer(ctx context.Context, configDir string) (*server.Server, []config.ServerConfig) {
 	cfg, servers, err := config.Load(configDir)
 	if err != nil {
@@ -53,7 +60,7 @@ func buildTestServer(ctx context.Context, configDir string) (*server.Server, []c
 	injectOAuthTokens(ctx, configDir, servers)
 	enabled := enabledServers(servers)
 	if len(enabled) == 0 {
-		fmt.Println("no servers configured")
+		fmt.Println(emptyTestMessage(servers))
 		os.Exit(0)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

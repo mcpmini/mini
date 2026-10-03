@@ -4,8 +4,8 @@ package provider_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -17,6 +17,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func TestAuthorization_nearExpiry_refreshesBeforeTokenExpires(t *testing.T) {
@@ -64,14 +65,14 @@ func TestAuthorization_nearExpiry_refreshesBeforeTokenExpires(t *testing.T) {
 	}
 }
 
-func TestAuthorization_noStoredToken_returnsReauthRemedy(t *testing.T) {
+func TestAuthorization_noStoredToken_saysNotLoggedIn(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{})
 	_, err := f.provider.Authorization(context.Background())
-	if err == nil {
-		t.Fatal("expected error for missing token")
+	if err == nil || err.Error() != "srv is not logged in; run `mini auth srv`" {
+		t.Fatalf("error = %v, want the not-logged-in remedy without file details", err)
 	}
-	if !strings.Contains(err.Error(), "mini auth srv") {
-		t.Errorf("error should name remedy, got: %v", err)
+	if !errors.Is(err, transport.ErrReauthRequired) {
+		t.Errorf("error %v must match transport.ErrReauthRequired so reconnects stop", err)
 	}
 }
 

@@ -233,6 +233,9 @@ func TestCall_401AfterReplay_returnsReauthError(t *testing.T) {
 	if !strings.Contains(err.Error(), "myserver requires re-authorization") || !strings.Contains(err.Error(), "mini auth myserver") {
 		t.Errorf("terminal error should name server and remedy, got: %v", err)
 	}
+	if strings.Count(err.Error(), "re-authorization") != 1 || !errors.Is(err, ErrReauthRequired) {
+		t.Errorf("terminal error should say re-authorization once and match ErrReauthRequired, got: %v", err)
+	}
 	var uerr *UnauthorizedError
 	if !errors.As(err, &uerr) {
 		t.Errorf("terminal error must unwrap to *UnauthorizedError, got: %T %v", err, err)
