@@ -1,16 +1,16 @@
 ---
-name: review-pr
-description: Adversarial multi-pass PR review — concurrency, security, correctness, structure, duplication, tests, then conventions. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / REQUEST CHANGES / REJECT verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
+name: review-pr-passes
+description: Adversarial PR review organized as category passes, with impact-and-likelihood ratings, an experience pass that runs the change as each audience sees it, and a maintainability pass. Same invocation as review-pr and review-pr-methods, so they can run side by side. Passes: concurrency, security, correctness, structure, duplication, experience, tests, then maintainability. Assumes bugs exist. Proves findings before reporting. Emits APPROVE / APPROVE WITH COMMENTS / REQUEST CHANGES verdict. Invoke it generically with only the target (PR, branch, or paths to limit it to). Never pass a design summary, suspected weak spots, angles to check, or earlier findings, since that anchors the reviewer and narrows the review.
 argument-hint: <PR-number, PR-URL, branch, or blank for current branch diff> [paths to limit the review to]
 ---
 
 Adversarial review of $ARGUMENTS (or the current branch diff if blank).
 
-Read [Go engineering in mini](../../../docs/go-guidelines.md) for shared design and correctness guidance. Treat smell checks as investigation prompts; assess findings by reachable behavior and consequences.
+The passes below hold review methods and mini-specific checks; the general Go and testing guidance they rely on lives in `docs/go-guidelines.md` and `docs/testing.md`, which Step 0 has you read. Treat smell checks as investigation prompts; assess findings by reachable behavior and consequences.
 
 **Assume bugs exist. Your job is to find and prove them.**
 
-Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REJECT.
+Do not explain away suspicious patterns — investigate until you have proof or can definitively rule the issue out. Write tests if needed. If high-risk code is undertested, that alone can justify REQUEST CHANGES.
 
 ## Non-negotiables (apply to every pass)
 
@@ -19,23 +19,44 @@ Do not explain away suspicious patterns — investigate until you have proof or 
 3. **Pick up check.sh results.** Do not write the report until the background check suite from Step 0 has finished and you have read its log.
 4. **Verdict is mechanical.** Derive the verdict from the findings table using the rules at the end — never from overall impression.
 5. **The request's framing is a claim, not a fact.** Statements in the review request or PR description about the design ("built on X", "reuses Y", "no duplication") are things to verify. Angles the requester lists add to the passes; they never narrow them.
+6. **Be pragmatic.** Rate every finding as "Weigh every finding" describes. A PR doesn't have to solve every problem, and a finding doesn't call for a redesign unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere that are worth fixing go under "Outside this PR".
+7. **Describe problems, not solutions.** Say what is wrong and what it costs; the author has the context to choose the fix. Only when the fix is trivial and unambiguous (a typo, log or message wording, a small rename) state it.
+
+## Weigh every finding
+
+Rate each finding's impact and likelihood, then decide.
+
+**Impact**, on the user, the agent, or the next developer:
+- **High:** a crash or hang, lost data or credentials, a security hole, mini or a server unusable, or an agent misled into a wrong action.
+- **Medium:** a feature misbehaves or fails confusingly, or code so hard to follow that the next change will likely break it, such as a function hundreds of lines long.
+- **Low:** cosmetic, or a little confusing but still readable.
+
+**Likelihood**, in normal use. Normal includes events that are rare but routine: slow or flaky networks, upstreams that time out or fail, a user who edits a config and gets it wrong, invalid input, several agents at once. Unlikely means it depends on something mini doesn't promise to support, such as working with an MCP server that breaks the spec, or misuse beyond the trust model. Containing malformed input is always mini's job, though: whatever an upstream server or agent sends, mini must not crash or leak a credential.
+
+**Decide:**
+- Severity follows impact. HIGH when the impact is high and normal use reaches it. MEDIUM for medium impact, or high impact that only an unlikely path reaches.
+- Low impact is LOW, and worth raising only when its likelihood is medium or above. When both are low, leave it out; it isn't worth an issue.
+- When it's unclear whether something happens in practice, say so; it can wait for evidence rather than be solved speculatively.
+
+**Deliberate breaking changes don't count while mini is v0.x.** When the PR means to rename a config field, change CLI flags or output, remove a behavior, or stop loading an old file format, it isn't a finding. Mention it in a line if users will notice it, so the PR description can say so. An unintended loss of behavior or data is still a finding; if you can't tell whether a break was intended, say so.
 
 ## Step 0 — Gather the diff and check out the PR branch
 
 1. Resolve the PR number from the arguments (`1` from `https://github.com/mcpmini/mini/pull/1`, from `#1`, or bare `1`). If the arguments are blank, review the current branch's diff against main in the current checkout and skip to step 5. If they name a branch instead, review that branch's diff against main: skip step 2 and use the branch as `<head-branch>` in step 3. Paths after the target limit which changed files the passes cover; still read the code those files interact with.
 2. Get the PR description, diff, and full file list. Use GitHub through mini's MCP integration or the mini CLI when possible to dogfood this repository's tooling; otherwise fall back to the `gh` CLI.
-3. Check out the PR head in a dedicated worktree so you review the PR's actual files (not the diff against your current branch) and run the check suite against the PR's code. If `.agents/worktrees/review-pr-<number>` already exists from a prior review, reuse it; otherwise:
+3. Check out the PR head in a dedicated worktree so you review the PR's actual files (not the diff against your current branch) and run the check suite against the PR's code. If `.agents/worktrees/review-pr-passes-<number>` already exists from a prior review, reuse it; otherwise:
    ```bash
    git fetch origin <head-branch>
-   git worktree add .agents/worktrees/review-pr-<number> FETCH_HEAD --detach
+   git worktree add .agents/worktrees/review-pr-passes-<number> FETCH_HEAD --detach
    ```
    Detached HEAD works even if another worktree already has the branch checked out.
-4. Enter the worktree — with Claude Code use `EnterWorktree(path: ".agents/worktrees/review-pr-<number>")`; otherwise run all subsequent commands from that directory.
+4. Enter the worktree — with Claude Code use `EnterWorktree(path: ".agents/worktrees/review-pr-passes-<number>")`; otherwise run all subsequent commands from that directory.
 5. Fire off the full check suite in the background (`run_in_background: true`) and note the log path, then continue immediately with Pass 1. It covers build, staticcheck, golangci-lint, function length, parameter count, return value checks, and the race-detector test suite. You will be notified when it finishes; pick up the results before writing the report — any failure introduced by the PR is a finding.
    ```bash
-   ./check.sh 2>&1 | tee /tmp/review-pr-check-$(date +%s).log
+   ./check.sh 2>&1 | tee /tmp/review-pr-passes-check-$(date +%s).log
    ```
-6. Read every changed file **in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
+6. Read `docs/go-guidelines.md` and `docs/testing.md` from the repository root. The passes assume their guidance and don't repeat it.
+7. Read every changed file **in full** — not just the diff hunks. A diff shows what changed; the full file shows what it interacts with and what invariants it relies on.
 
 ## Pass 1 — Triage
 
@@ -45,7 +66,7 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
 2. **Shared state**: what structs, maps, slices, channels, or package-level vars does the diff touch?
 3. **Trust boundaries**: what new inputs arrive from outside (user, config, network, MCP tool args, env vars) and where do they land?
 4. **New control paths**: what new error paths, goroutine launches, or auth checks does the change introduce?
-5. **Candidate list**: for each of Passes 2a–2c, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
+5. **Candidate list**: for each of Passes 2a–2f, 3 and 4, list specific things to investigate. Be precise — not "check locking" but "check whether `s.authFlows` reads on lines 45–47 are covered by `s.authMu`".
 6. **Call-site audit** — for every function or method whose signature, parameters, return contract, or behavior changes in this diff, including new helper functions immediately wired into multiple places:
    a. Grep for *all* call sites — not just the ones visible in the diff hunks.
    b. List every call site explicitly with file:line.
@@ -53,50 +74,19 @@ Scan the diff and changed files. Before investigating anything deeply, answer:
    d. Carry any call site whose correctness is unclear into Pass 2c.
 
    A function correct for the call site the author had in mind can be wrong for a call site that existed before the change, or for a sibling call site added in the same diff.
+7. **Audiences**: who sees what this change outputs — a CLI user, an agent over MCP, the init wizard, an operator reading logs? List each affected command or tool for Pass 2f.
 
 Produce a brief triage note to drive Passes 2–4. Do not write it into the final report.
 
 ## Pass 2a — Concurrency
 
-Check suite output from Step 0 already covers race tests, vet, and staticcheck. Work through every candidate from triage.
+Check suite output from Step 0 already covers race tests, vet, and staticcheck. Work through every candidate from triage, applying the concurrency and lifecycle guidance in `docs/go-guidelines.md`. Also check what it doesn't cover:
 
-**Goroutine lifecycle**
-- What stops it? A done-channel, context cancellation, or WaitGroup? `context.Background()` passed to a long-lived goroutine is a red flag — there is no way to cancel it, and leaks compound on every call.
-- Trace reachable panic paths. An unrecovered panic in a goroutine kills the process, but ordinary network or parsing errors do not require blanket recovery. Check recovery only where the contract calls for containment.
-- Does it hold resources (subprocess, listener, ticker, connection) that leak if it never exits?
-
-**Shared state access**
-- List every field of every shared struct the diff reads or writes. For each: is every access — including reads — inside the protecting mutex? "Usually protected" is not protected.
-- Watch for: partially-protected structs; closures capturing outer mutable state.
-
-**Map and slice concurrent access**
-- Unsynchronized conflicting map access is a data race and can cause a fatal runtime error. The race detector can catch exercised races; a passing run does not prove every interleaving safe.
-- Shared slice headers and backing arrays need protection for conflicting accesses, including append. Trace actual aliasing and accessed elements rather than assuming every shared slice is unsafe.
-
-**Lock discipline**
-- If two mutexes are ever both held, is acquisition order consistent at every call site? Inconsistent order → deadlock.
-- Are there channel sends, I/O, or external calls inside a held lock? That starves every other waiter.
-- `RLock` → `Lock` upgrade on the same mutex in the same goroutine → deadlock.
-- Large critical sections that acquire/release the same lock multiple times create race windows between releases.
-
-**Channel safety**
-- Sending to a closed channel panics. `select { case ch <- v: default: }` does NOT guard this — `default` fires when the channel is full, not when it is closed.
-- A channel must not be closed twice. Verify closure ownership and coordination; `sync.Once` is one option and does not prevent concurrent sends.
-- Check timer lifetime, repeated allocation, and reset semantics against the supported Go version and injected clock. Modern Go can collect unreferenced timers; `time.After` does not launch a goroutine per call. See [timer changes](https://go.dev/wiki/Go123Timer).
-
-**TOCTOU**
-- Check-then-act pairs where the check is inside a lock and the act is outside it.
-- Two separately-locked operations (e.g. Remove then Add on a shared index) leave a window where concurrent observers see inconsistent state.
-
-**`sync` primitives misuse**
-- `WaitGroup.Add` must be called before the goroutine that calls `Done` is launched, not inside it — the goroutine may call `Done` before `Add` is observed.
-- `sync.Once` that panics leaves the `Once` permanently poisoned; subsequent calls silently do nothing.
-- Copying a `sync.Mutex`, `WaitGroup`, or `Cond` after first use is a bug (`go vet` catches this, but also check structs passed by value or appended to slices).
-
-**Initialization races**
-- Package-level variables mutated after `init` are shared global state — any goroutine touching them needs synchronization.
-- Concurrent lazy initialization needs synchronization or exclusive ownership; `sync.Once`, a mutex, or atomics may provide it.
-- Constructors that start goroutines before returning: callers may not realize the object is "live" the moment `New()` returns.
+- **Shared state:** list every field of every shared struct the diff reads or writes, and confirm every access, reads included, holds the protecting mutex. "Usually protected" is not protected. Watch closures capturing outer mutable state.
+- **Maps and slices:** unsynchronized conflicting map access can crash the process, and the race detector only catches interleavings that ran. Trace slice aliasing, including append, rather than assuming.
+- **Lock upgrades:** `RLock` → `Lock` on the same mutex in the same goroutine deadlocks.
+- **`sync` misuse:** `WaitGroup.Add` must run before the goroutine that calls `Done` starts. A `sync.Once` that panics stays poisoned and silently does nothing afterward.
+- **Initialization:** package-level variables mutated after `init` are shared state. A constructor that starts goroutines makes the object live before `New()` returns.
 
 **Smell test — quick scan for red flags** (grep for these, investigate any hit):
 - `go func()` with no done-channel, no context, and no WaitGroup — orphaned goroutine
@@ -149,15 +139,15 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 
 ## Pass 2c — Correctness
 
-**Error handling**
-- Errors assigned to `_` or silently ignored: are they genuinely safe to discard, or does ignoring them leave state inconsistent?
-- Errors on partial writes or partial updates: if the operation fails mid-way, is the resulting state consistent and recoverable?
-- Silent fallback to zero/nil values on failure — the caller proceeds as if nothing happened.
+Apply the errors, resources, and state-transition guidance in `docs/go-guidelines.md`. Also check:
+
+**Silent failure**
+- A fallback to zero or nil values on failure, so the caller proceeds as if nothing happened.
 
 **Nil and zero-value hazards**
 - Pointer dereferences without nil checks, especially on values from config, parsed input, or optional struct fields.
 - Method calls on interface values that could be nil.
-- `defer f.Close()` before a nil check on `f`.
+- `defer f.Close()` or `defer resp.Body.Close()` before the error or nil check.
 
 **Logic correctness**
 - Off-by-one in ranges, indices, string slicing.
@@ -165,21 +155,13 @@ Check suite output from Step 0 already covers race tests, vet, and staticcheck. 
 - Boundary behavior: empty slice, zero value, MaxInt, empty string, single element.
 - **Read the doc string for every changed function and verify the implementation matches what it claims.** Mismatches here are common and dangerous.
 
-**Resource lifecycle**
-- `defer f.Close()` must come after the nil/error check. The pattern is: call → check error → defer close.
-- HTTP response bodies: `defer resp.Body.Close()` after the nil check on `resp`.
-- Connections, listeners, tickers, timers: a close on every exit path including error returns.
-
 **Operational correctness**
-- Timeout handling: what happens if a dependency is slow or permanently stuck? Is there a timeout? Does it propagate correctly through context?
-- Graceful shutdown: are in-flight requests completed before exit? Are resources (connections, temp files, subprocesses) released?
-- Retry logic: is it bounded? Does it back off? Does it retry non-retryable errors (e.g. 400 Bad Request)?
-- Backpressure: under sustained load, does the system queue unboundedly? Does it shed load or return pressure to callers?
-- Partial failure: if a multi-step operation fails halfway, is persistent state consistent? Is there a recovery path that doesn't require manual intervention?
+- Retries of errors a retry can't fix (e.g. 400 Bad Request).
+- Backpressure: under sustained load, does the system queue unboundedly, or shed load and return pressure to callers?
 
 **Design problems that cause bugs**
 - State duplicated in two places that can drift out of sync — one gets updated and the other doesn't.
-- Abstraction leaks that force callers to know implementation details: callers constructing internal state, ordering requirements not enforced by the type, "must call X before Y" contracts with no enforcement.
+- Abstraction leaks that force callers to know implementation details: callers constructing internal state, or "must call X before Y" rules a caller in this codebase gets wrong or easily could.
 - API contracts easy to misuse: positional parameters where meaning is ambiguous, zero value that silently enables dangerous behavior, optional fields that interact in non-obvious ways.
 - Coupling that prevents safe evolution: reloading one thing requires parsing everything; a config change in one package requires coordinated changes in three others.
 
@@ -229,26 +211,28 @@ This pass explores the whole codebase, not just the diff. For every function, ty
    Also check the diff against itself for blocks repeated across files.
 3. **Compare shared and separate forms.** For matching contracts, consider which operation should own the shared rule and how callers would use it. Preserve separate implementations when sharing hides different contracts or creates more coupling than it removes. Justify a finding through observed drift or meaningful maintenance cost.
 
-**Proof standard:** cite every location's file:line, show that they do the same job (same inputs, outputs, and side effects), and give the unification.
+**Proof standard:** cite every location's file:line, show that they do the same job (same inputs, outputs, and side effects), and show where they have drifted or would drift.
 
 Assess duplication by inconsistent behavior or concrete maintenance cost. Similar code alone does not establish a blocking defect; shared abstraction can also hide different contracts.
 
+## Pass 2f — Experience
+
+**Skip this pass** if triage found no audience.
+
+Run each command or tool from triage against one fixture combining every state the diff distinguishes that can coexist (healthy, each failure kind, disabled), plus a separate run for each state that can't, such as empty or a fatal error that stops the command. Read the whole output as that audience would; for an agent, read the raw tool result.
+- A failure says what failed, why, and what to do next, at the earliest step the audience can act, through a channel they actually see.
+- Each fact appears once, is true on every path that prints it, and agrees with the exit status and totals.
+
+**Proof standard:** quote the output, name the audience, and say what they needed to see instead.
+
 ## Pass 3 — Tests
 
-Read [the testing guide](../../../docs/testing.md) for the project's test-quality standard. Map each changed behavior to new or existing tests. Check the success path, the failure or boundary that matters to this change, and the production entry point the tests actually exercise. Do not require a new test per changed function or every possible permutation.
+Map each changed behavior to new or existing tests. Check the success path, the failure or boundary that matters to this change, and the production entry point the tests actually exercise. Do not require a new test per changed function or every possible permutation.
 
-**Representative situations** — do tests reflect how real users encounter the code?
-- Do they set up pre-existing state where relevant? (e.g. a server that already has tools registered, a config that already has other projections set, a token that is already expired) A test that only runs against a clean slate will miss bugs that only surface with existing data.
-- Are the inputs realistic? Fake data that is too simple (single-character strings, empty structs) can mask bugs that appear with real payloads.
+Apply `docs/testing.md`: realistic setup and pre-existing state, assertions that would catch a regression, perturbing the behavior when an assertion's strength is uncertain, and tests as readable code. Also check:
+
 - Do tests cover the interaction between the new change and pre-existing behavior, not just the new behavior in isolation?
-
-**Regression value** — will these tests actually catch it if the behavior regresses?
-- A test that passes trivially (asserts `err == nil` when the function cannot return an error, or checks the output contains a string that would always be present) adds no regression safety.
-- Does the decisive assertion protect a stable behavior, or would routine fixture edits break it? Check that the test reaches the changed path rather than only passing through setup.
-- When a test's value is uncertain, temporarily perturb the changed behavior and run the focused case. It should fail for the expected reason; an unrelated failure or compile error proves nothing. Restore the code afterward. This is a targeted review technique, not a mandatory mutation exercise.
-- Tests that only cover the happy path for a function that is primarily about error handling provide false confidence.
-
-**Tests as code** — can a reader quickly identify setup, action, and decisive assertion? Do helpers remove repeated setup without hiding behavior? Are preconditions established for state transitions? For a forbidden side effect, does the test wait for a causal completion point before checking absence, rather than sleeping and assuming the work finished? Flag duplication or brittle setup when it creates meaningful maintenance or correctness risk.
+- Tests that only cover the happy path of a function that is mainly about error handling give false confidence.
 
 **Write a test to prove a suspected bug** when code analysis strongly suggests an issue but a test settles it faster than further tracing. Use the existing test infrastructure (`FakeConnection`, `serve()`, `callTool()` helpers in `server_test.go`). Name it `review_<something>_test.go` so it's easy to find and clean up.
 
@@ -265,25 +249,18 @@ go test -race -tags test -run TestReview ./path/to/package/... -v
 
 Name the unprotected contract, realistic failure, existing coverage, and why the missing evidence matters. Missing a new test or a race-detector run alone does not establish a defect or determine the verdict.
 
-## Pass 4 — Conventions (diff-level only)
+## Pass 4 — Maintainability
 
-This pass works only from the diff — no deep exploration. Flag quickly, one line each.
+Read the changed code as an engineer new to it would, and flag where they would misread it or likely break it when changing it. `check.sh` catches function length and parameter count; this pass covers what it can't.
 
-Report explicit project-rule violations, but assess their severity from concrete correctness or maintenance consequences. Style preferences are optional suggestions. A redundant comment, single-use helper, or name choice is not automatically a MEDIUM or blocking finding.
+- **Names:** functions are verb phrases that say what they do and predict their effects; types and variables are domain nouns. Flag vague names (`handle`, `process`, `data`, `util`, `manager`) and names that mislead.
+- **Shape:** each function does one job, and the normal path reads straight down with early returns. Flag deep nesting, long functions that need scrolling to follow, and boolean or empty-string flags as positional args.
+- **Explicitness:** no clever tricks or hidden side effects; steps that must happen in a certain order are obvious from the code. The code says what it means without relying on a comment.
+- **Reuse:** the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops; no layers, interfaces, or helpers that don't make the code easier to read or change.
+- **Consistency:** naming, error style, and idioms match the surrounding package.
+- **Comments:** they explain why, not what; no section dividers in tests; no doc comments that repeat the name.
 
-**Project style violations** (AGENTS.md):
-- Boolean or empty-string flags as positional args — `check.sh` catches function length and param count mechanically; this is what it misses
-
-**Comments to inspect:**
-- Describes what the code does rather than why (rename instead)
-- Section dividers in test files (`// --- setup ---`, `// --- act ---`)
-- Doc-style comment on a function whose name already conveys the contract
-
-**Naming and design to inspect:**
-- Names that don't self-document (force the reader to read the body to understand purpose)
-- Abstractions that don't earn their keep; a single-use helper may still clarify an operation or isolate a resource lifetime
-- Defensive nil/error checks for values the framework guarantees non-nil/non-error
-- Unnecessary intermediate variables whose only purpose is naming an already-clear expression
+**Proof standard:** quote the code, and say what a reader would get wrong or what change it makes risky. Assess severity by that cost or by an explicit AGENTS.md rule, not by preference alone.
 
 ## Pre-report gate
 
@@ -291,8 +268,9 @@ Complete every item before writing the report:
 
 1. Read the check.sh log from Step 0 in full. Any failure introduced by the PR is a finding.
 2. For each candidate finding, re-read the cited code and confirm all three: the file:line is right, the quoted code matches, and the trigger scenario actually reaches that code. If any of the three can't be confirmed, drop the finding.
-3. For each finding, check the diff: is the issue introduced or made worse by this PR, or pre-existing? Pre-existing issues go in a one-line "Pre-existing (not blocking)" note and do not count toward the verdict.
+3. For each finding, check the diff: is the issue introduced or made worse by this PR? Anything it didn't goes under "Outside this PR" and doesn't count toward the verdict.
 4. Confirm every Pass 1 candidate and every call site from the call-site audit was investigated. Anything skipped must be listed explicitly in the report as not investigated.
+5. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
 
 ## Report
 
@@ -301,13 +279,14 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 ```markdown
 # PR Review — [title or branch]
 **Date:** YYYY-MM-DD
-**Verdict:** APPROVE | REQUEST CHANGES | REJECT
+**Verdict:** APPROVE | APPROVE WITH COMMENTS | REQUEST CHANGES
 
 ## Executive Summary
-[One paragraph. Overall quality, biggest risk area, what the verdict hinges on.]
+[One paragraph. Overall quality, biggest risk area, and why the verdict: which findings drive it, and whether they can be fixed within the current approach or call for rethinking it.]
 
 ## 🔴 HIGH — [title]
-**Pass:** Concurrency | Security | Correctness | Tests
+**Pass:** Concurrency | Security | Correctness | Experience | Tests | Maintainability
+**Rating:** impact High | Medium | Low, likelihood High | Medium | Low
 **File:** path/file.go:LINE
 **Bug:** What the issue is.
 **Proof:** Execution trace, goroutine pair, test output — whatever proves it.
@@ -318,8 +297,11 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 [same structure]
 
 ## 🟡 LOW — [title]
-**Pass:** Conventions | Correctness
-[One line. What and where. Reserve LOW for truly trivial findings — borderline preference calls, not rule violations.]
+**Pass:** Maintainability | Correctness
+[One line. What and where, and the fix only if it's trivial.]
+
+## Outside this PR
+[Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
 
 ## Test coverage verdict
 [What is tested, what is missing, whether the gap is a blocker.]
@@ -330,8 +312,8 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 ```
 
 **Verdict:**
-- **APPROVE** — no HIGH or MEDIUM; LOWs are optional cleanup
-- **REQUEST CHANGES** — one or more MEDIUMs that must be fixed before merge
-- **REJECT** — any HIGH supported by a reachable failure and consequential impact. Assess coverage gaps by the unprotected contract and risk, and races by their behavior, rather than a categorical test-count rule.
+- **APPROVE** — nothing to raise
+- **APPROVE WITH COMMENTS** — only LOWs: tweaks the author can make now or defer
+- **REQUEST CHANGES** — one or more HIGH or MEDIUM findings. Assess coverage gaps by the unprotected contract and risk, and races by their behavior, rather than a categorical test-count rule.
 
 Don't pad the report. If the code is correct and well-tested, say so in two sentences and APPROVE.
