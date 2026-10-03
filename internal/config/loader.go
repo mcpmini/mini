@@ -303,7 +303,7 @@ func serverNameFromPath(path string) string {
 }
 
 // ValidateServerFile checks data as a server file at path, which names the server. An unset ${VAR}
-// in a secret field passes, since it only has to be set where mini runs.
+// passes, since it only has to be set where mini runs.
 func ValidateServerFile(path string, data []byte) error {
 	sc, err := parseServerConfig(path, data)
 	if err != nil {

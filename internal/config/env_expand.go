@@ -48,14 +48,14 @@ func expandServerEnv(sc *ServerConfig) {
 	expanded := *sc
 	expanded.Headers = maps.Clone(sc.Headers)
 	expanded.Env = slices.Clone(sc.Env)
-	if err := expandServerSecrets(&expanded); err != nil {
+	if err := expandEnvFields(&expanded); err != nil {
 		sc.UnsetEnv = fmt.Errorf("server %s: %w", sc.Name, err)
 		return
 	}
 	*sc = expanded
 }
 
-func expandServerSecrets(sc *ServerConfig) error {
+func expandEnvFields(sc *ServerConfig) error {
 	for name, value := range sc.Headers {
 		if err := expandField("headers."+name, &value); err != nil {
 			return err
@@ -96,7 +96,7 @@ func checkUnexpandedFields(sc ServerConfig) error {
 	}
 	for i, value := range values {
 		if ref := envVarRef.FindString(value); ref != "" {
-			return fmt.Errorf("server %s: %s: %s isn't expanded; put secrets in headers, env, auth.token or auth.client_secret", sc.Name, names[i], ref)
+			return fmt.Errorf("server %s: %s: %s isn't expanded; ${VAR} is only expanded in headers, env, auth.token and auth.client_secret", sc.Name, names[i], ref)
 		}
 	}
 	return nil
