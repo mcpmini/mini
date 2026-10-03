@@ -262,7 +262,13 @@ func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 		fmt.Fprintf(out, "warning: could not reload config to check for required auth: %v\n", err)
 		return
 	}
-	if scp == nil || !scp.IsHTTPTransport() {
+	if scp == nil {
+		return
+	}
+	if scp.ProjectionsErr != nil {
+		warnUnprojected(out, *scp.ProjectionsErr)
+	}
+	if !scp.IsHTTPTransport() {
 		return
 	}
 	sc := *scp
@@ -308,7 +314,7 @@ func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) con
 	return *reloaded
 }
 
-// config.Load already merges bundled and detected auth, so a non-nil Auth leaves nothing to discover.
+// Loading already merges bundled and detected auth, so a non-nil Auth leaves nothing to discover.
 func authUndiscovered(sc config.ServerConfig) bool {
 	return sc.IsHTTPTransport() && sc.Auth == nil
 }

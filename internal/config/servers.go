@@ -11,14 +11,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Servers is the server files as this process loaded them. A server whose file, or projection
-// file, fails to load is in Broken instead of Loaded, so it can't stop the others.
+// Servers is the server files as this process loaded them. A server whose file fails to load is in
+// Broken instead of Loaded, so it can't stop the others.
 type Servers struct {
 	Loaded []ServerConfig
 	Broken []SourceError
 }
 
-// SourceError is a server whose file, or projection file, failed to load.
 type SourceError struct {
 	Path       string
 	ServerName string
@@ -51,6 +50,20 @@ func (s Servers) IsBroken(name string) bool {
 	return slices.ContainsFunc(s.Broken, func(b SourceError) bool { return b.ServerName == name })
 }
 
+func (s Servers) BrokenProjections() []SourceError {
+	var broken []SourceError
+	for _, sc := range s.Loaded {
+		if sc.ProjectionsErr != nil {
+			broken = append(broken, *sc.ProjectionsErr)
+		}
+	}
+	return broken
+}
+
+func (s Servers) HasProblems() bool {
+	return len(s.Broken) > 0 || len(s.BrokenProjections()) > 0
+}
+
 func (s Servers) IsEnabled(name string) bool {
 	sc, ok := s.Find(name)
 	return ok && sc.IsEnabled()
@@ -73,14 +86,25 @@ func loadServerFile(configDir, path string) (ServerConfig, error) {
 	if err != nil {
 		return ServerConfig{}, err
 	}
-	if err := mergeProjectionFile(sc, ProjectionPath(configDir, sc.Name)); err != nil {
-		return ServerConfig{}, err
-	}
-	if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
-		return ServerConfig{}, err
-	}
+	loadProjections(sc, path, ProjectionPath(configDir, sc.Name))
 	mergeKnownAuth(configDir, sc)
 	return *sc, nil
+}
+
+// Projections only trim responses, so a broken one leaves the server running without any
+// rather than down: the server file alone decides whether and how mini connects.
+func loadProjections(sc *ServerConfig, serverPath, projectionPath string) {
+	failed := func(path string, err error) {
+		sc.Projections = nil
+		sc.ProjectionsErr = &SourceError{Path: path, ServerName: sc.Name, Err: err}
+	}
+	if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
+		failed(serverPath, fmt.Errorf("%s: %w", serverPath, err))
+		return
+	}
+	if err := mergeProjectionFile(sc, projectionPath); err != nil {
+		failed(projectionPath, err)
+	}
 }
 
 // mergeProjectionFile overlays the server's projection file onto its inline projections; the file wins.
@@ -95,6 +119,9 @@ func mergeProjectionFile(sc *ServerConfig, path string) error {
 	var toolProjections map[string]*ProjectionConfig
 	if err := yaml.Unmarshal(data, &toolProjections); err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	if err := validateServerProjectionFormats(sc.Name, toolProjections); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	if sc.Projections == nil {
 		sc.Projections = make(map[string]*ProjectionConfig, len(toolProjections))

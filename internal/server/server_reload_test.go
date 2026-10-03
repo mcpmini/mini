@@ -113,13 +113,25 @@ func TestServerReload_deletedServerFile_removesServerAndNotifiesAgents(t *testin
 }
 
 func TestServerReload_disabledServer_isRemoved(t *testing.T) {
-	e := newServerReloadEnv(t)
-	e.startWithServers("svc")
+	t.Run("with working projections", func(t *testing.T) {
+		e := newServerReloadEnv(t)
+		e.startWithServers("svc")
 
-	e.writeServer("svc", "enabled: false\n")
-	e.advanceTick()
+		e.writeServer("svc", "enabled: false\n")
+		e.advanceTick()
 
-	e.assertRemoved("svc")
+		e.assertRemoved("svc")
+	})
+	t.Run("even when its projection file fails to load", func(t *testing.T) {
+		e := newServerReloadEnv(t)
+		e.startWithServers("svc")
+
+		writeReloadFile(t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), "tool: [broken\n")
+		e.writeServer("svc", "enabled: false\n")
+		e.advanceTick()
+
+		e.assertRemoved("svc")
+	})
 }
 
 func TestServerReload_brokenFileHoldsOnlyItsServer(t *testing.T) {

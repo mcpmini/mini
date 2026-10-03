@@ -42,7 +42,7 @@ func runLoginStep(p loginStepParams) {
 		return
 	}
 	servers := config.LoadServers(p.configDir)
-	warnBrokenServers(p.errOut, servers.Broken)
+	warnServerProblems(p.errOut, servers)
 	candidates := findLoginCandidates(p.configDir, servers.Loaded)
 	if len(candidates) == 0 {
 		return

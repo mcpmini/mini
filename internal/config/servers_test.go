@@ -56,17 +56,28 @@ func TestLoadServers(t *testing.T) {
 			},
 		},
 		{
-			name:       "bad projection format breaks that server",
+			name:       "bad inline projection format loads the server without projections",
 			files:      map[string]string{"servers/github.yaml": "command: echo\nprojections:\n  t:\n    format: bad-format\n"},
-			wantBroken: []string{"github"},
+			wantLoaded: []string{"github"},
+			check:      wantUnprojected("github", "github.yaml"),
 		},
 		{
-			name: "bad .proj.yaml breaks its server",
+			name: "bad .proj.yaml loads its server without any projections",
 			files: map[string]string{
 				"servers/b.yaml":      "command: echo\nprojections:\n  t:\n    include_only: [inline]\n",
 				"servers/b.proj.yaml": "bad: [yaml\n",
 			},
-			wantBroken: []string{"b"},
+			wantLoaded: []string{"b"},
+			check:      wantUnprojected("b", "b.proj.yaml"),
+		},
+		{
+			name: "bad format in the .proj.yaml is blamed on that file",
+			files: map[string]string{
+				"servers/b.yaml":      "command: echo\n",
+				"servers/b.proj.yaml": "t:\n  format: bad-format\n",
+			},
+			wantLoaded: []string{"b"},
+			check:      wantUnprojected("b", "b.proj.yaml"),
 		},
 		{
 			name: "the projection file overlays inline projections",
@@ -117,6 +128,19 @@ func TestLoadServers(t *testing.T) {
 			}
 			checkLoadServers(t, config.LoadServers(dir), tc)
 		})
+	}
+}
+
+func wantUnprojected(name, file string) func(*testing.T, config.Servers) {
+	return func(t *testing.T, servers config.Servers) {
+		t.Helper()
+		sc, _ := servers.Find(name)
+		if sc.ProjectionsErr == nil || filepath.Base(sc.ProjectionsErr.Path) != file || sc.Projections != nil {
+			t.Errorf("%s = projections %v, error %+v; want no projections and an error blaming %s", name, sc.Projections, sc.ProjectionsErr, file)
+		}
+		if broken := servers.BrokenProjections(); len(broken) != 1 || broken[0].ServerName != name {
+			t.Errorf("BrokenProjections = %+v, want only %s", broken, name)
+		}
 	}
 }
 
@@ -178,7 +202,7 @@ func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 	}
 }
 
-func TestLoadServers_anUnreadableProjectionFileBreaksItsServer(t *testing.T) {
+func TestLoadServers_anUnreadableProjectionFileLeavesItsServerUnprojected(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("running as root; permission test not meaningful")
 	}
@@ -191,9 +215,7 @@ func TestLoadServers_anUnreadableProjectionFileBreaksItsServer(t *testing.T) {
 
 	servers := config.LoadServers(dir)
 
-	if !servers.IsBroken("svc") || len(servers.Loaded) != 0 {
-		t.Errorf("Loaded = %v, Broken = %v; want svc broken, not loaded without its projections", loadedNames(servers), brokenNames(servers))
-	}
+	wantUnprojected("svc", "svc.proj.yaml")(t, servers)
 }
 
 func TestLoadServers_mergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
@@ -236,7 +258,7 @@ func TestLoadServer_matchesLoadServersWithoutNeedingTheOtherFiles(t *testing.T) 
 		t.Errorf("LoadServer(missing) err = %v, want fs.ErrNotExist", err)
 	}
 	writeFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  format: bogus\n")
-	if _, err := config.LoadServer(dir, "linear"); err == nil {
+	if got, _ := config.LoadServer(dir, "linear"); got.ProjectionsErr == nil {
 		t.Error("LoadServer accepted a projection format LoadServers rejects")
 	}
 }

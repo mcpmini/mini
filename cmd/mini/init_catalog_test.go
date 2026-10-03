@@ -310,9 +310,10 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 	}
 }
 
-func TestRunCatalogStepStillFiltersWhenAServerFileFailsToLoad(t *testing.T) {
+func TestRunCatalogStepStillFiltersWhenAServerFileOrItsProjectionsFailToLoad(t *testing.T) {
 	dir := t.TempDir()
 	writeLoginStepFile(t, filepath.Join(dir, "servers", "my-linear.yaml"), "transport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\n")
+	writeLoginStepFile(t, filepath.Join(dir, "servers", "my-linear.proj.yaml"), "list_issues: [broken\n")
 	writeLoginStepFile(t, filepath.Join(dir, "servers", "broken.yaml"), "transport: [broken\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 

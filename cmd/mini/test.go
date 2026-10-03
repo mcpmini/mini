@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"text/tabwriter"
 	"time"
 
@@ -42,7 +43,7 @@ func runTest(configDir string, timeout time.Duration) {
 	ctx := context.Background()
 	srv, servers := buildTestServer(ctx, configDir)
 	defer srv.Close()
-	results := brokenServerResults(servers.Broken)
+	results := brokenServerResults(slices.Concat(servers.Broken, servers.BrokenProjections()))
 	printTestResults(append(results, checkUpstreams(ctx, srv, enabledServers(servers.Loaded), timeout)...))
 }
 

@@ -623,9 +623,9 @@ func TestLoadProjectionFormat_rejectsMini(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "servers", "gh.yaml"), "command: gh-mcp\n")
 	writeFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_issues:\n  format: mini\n")
-	_, err := config.LoadServer(dir, "gh")
-	if err == nil || !strings.Contains(err.Error(), "toon") {
-		t.Fatalf("expected projection format error naming toon, got %v", err)
+	sc, err := config.LoadServer(dir, "gh")
+	if err != nil || sc.ProjectionsErr == nil || !strings.Contains(sc.ProjectionsErr.Err.Error(), "toon") {
+		t.Fatalf("LoadServer = %+v, %v; want a projection format error naming toon", sc.ProjectionsErr, err)
 	}
 }
 
@@ -661,13 +661,6 @@ func TestEffectiveFormat(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestLoadProjection_malformedYAML_returnsError(t *testing.T) {
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "srv.yaml"), "command: echo\n")
-	writeFile(t, filepath.Join(dir, "servers", "srv.proj.yaml"), `not: valid: yaml: [`)
-	expectBrokenServer(t, dir, "srv")
 }
 
 func TestLoadActions_malformedYAML_returnsError(t *testing.T) {

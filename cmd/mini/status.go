@@ -56,7 +56,7 @@ func listAllServers(configDir string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	warnBrokenServers(os.Stderr, servers.Broken)
+	warnServerProblems(os.Stderr, servers)
 	if noServers(servers) {
 		fmt.Fprintln(out, "no servers configured")
 		return nil
@@ -124,10 +124,13 @@ func buildStatusServer(cfg *config.Config, configDir string) *server.Server {
 func printStatusTable(ctx context.Context, srv *server.Server, servers config.Servers) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tTRANSPORT\tSTATUS\tTOOLS")
-	for _, b := range servers.Broken {
-		fmt.Fprintf(w, "%s\t-\terror: %v\t-\n", b.ServerName, b.Err)
+	for _, se := range servers.Broken {
+		fmt.Fprintf(w, "%s\t-\terror: %v\t-\n", se.ServerName, se.Err)
 	}
-	anyFailed := len(servers.Broken) > 0
+	for _, se := range servers.BrokenProjections() {
+		fmt.Fprintf(w, "%s\t-\tprojections error: %v\t-\n", se.ServerName, se.Err)
+	}
+	anyFailed := servers.HasProblems()
 	for _, sc := range servers.Loaded {
 		anyFailed = printStatusRow(ctx, w, srv, sc) || anyFailed
 	}

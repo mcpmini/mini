@@ -171,7 +171,7 @@ func (s *Server) applyReload() (config.Servers, map[string]int) {
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	servers := config.LoadServers(s.configDir)
-	logBrokenServers(s.logger, servers.Broken)
+	logReloadProblems(s.logger, servers)
 	projections := serverProjections(servers.Loaded)
 	fresh := projectionCounts(projections)
 	s.replaceProjections(projections, servers)
@@ -186,11 +186,11 @@ func (s *Server) reloadProjections() any {
 
 func buildReloadResult(servers config.Servers, fresh map[string]int) map[string]any {
 	result := map[string]any{
-		"ok":     len(servers.Broken) == 0,
+		"ok":     !servers.HasProblems(),
 		"loaded": fresh,
 	}
-	if len(servers.Broken) > 0 {
-		result["source_errors"] = sourceErrorPaths(servers.Broken)
+	if servers.HasProblems() {
+		result["source_errors"] = sourceErrorPaths(slices.Concat(servers.Broken, servers.BrokenProjections()))
 	}
 	return result
 }
@@ -204,9 +204,12 @@ func sourceErrorPaths(errors []config.SourceError) []string {
 	return paths
 }
 
-func logBrokenServers(logger *slog.Logger, broken []config.SourceError) {
-	for _, se := range broken {
+func logReloadProblems(logger *slog.Logger, servers config.Servers) {
+	for _, se := range servers.Broken {
 		logger.Warn("config reload: keeping the running server, its config fails to load", "server", se.ServerName, "path", se.Path, "err", se.Err)
+	}
+	for _, se := range servers.BrokenProjections() {
+		logger.Warn("config reload: keeping the server's previous projections, they fail to load", "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
 }
 
@@ -220,11 +223,16 @@ func serverProjections(servers []config.ServerConfig) map[string]map[string]*con
 	return projections
 }
 
+func keepsLiveProjections(servers config.Servers, name string) bool {
+	sc, loaded := servers.Find(name)
+	return servers.IsBroken(name) || (loaded && sc.ProjectionsErr != nil)
+}
+
 func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig, servers config.Servers) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	for name, live := range s.projections {
-		if servers.IsBroken(name) {
+		if keepsLiveProjections(servers, name) {
 			projections[name] = live
 		}
 	}

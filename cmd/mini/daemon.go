@@ -55,7 +55,7 @@ func runDaemon(configDir string, logLevel string) {
 	logW := daemon.OpenCappedLog(filepath.Join(configDir, "internal", "daemon", "daemon.log"))
 	defer logW.Close()
 	logger := buildLogger(cfg, logLevel, logW)
-	logBrokenServers(logger, servers.Broken)
+	logServerProblems(logger, servers)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	ln := bindSocket(socket)

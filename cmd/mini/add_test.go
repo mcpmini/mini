@@ -223,7 +223,7 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("warns instead of silently skipping when the server's projection file fails to load", func(t *testing.T) {
+	t.Run("warns that the server runs without projections when its projection file fails to load", func(t *testing.T) {
 		dir := t.TempDir()
 		if err := os.MkdirAll(filepath.Join(dir, "servers"), 0755); err != nil {
 			t.Fatal(err)
@@ -237,8 +237,8 @@ func TestRunAdd(t *testing.T) {
 
 		var out bytes.Buffer
 		connectAndAuthorizeIfNeeded(dir, "svc", &out)
-		if !strings.Contains(out.String(), "warning:") {
-			t.Errorf("output = %q, want a warning when config reload fails instead of silence", out.String())
+		if !strings.Contains(out.String(), "warning: server svc runs without projections") {
+			t.Errorf("output = %q, want a warning that svc runs without projections", out.String())
 		}
 	})
 

@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"os"
 
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -18,7 +19,6 @@ func loadConfig(configDir string) (*config.Config, config.Servers, error) {
 	return cfg, config.LoadServers(configDir), nil
 }
 
-// loadOneServer doesn't load the other server files, so one that is broken can't block this one.
 func loadOneServer(configDir, name string) (*config.Config, *config.ServerConfig, error) {
 	cfg, err := config.LoadMain(configDir)
 	if err != nil {
@@ -31,17 +31,30 @@ func loadOneServer(configDir, name string) (*config.Config, *config.ServerConfig
 	if err != nil {
 		return nil, nil, err
 	}
+	if sc.ProjectionsErr != nil {
+		warnUnprojected(os.Stderr, *sc.ProjectionsErr)
+	}
 	return cfg, &sc, nil
 }
 
-func warnBrokenServers(out io.Writer, broken []config.SourceError) {
-	for _, b := range broken {
-		fmt.Fprintf(out, "warning: skipping server %s: %v\n", b.ServerName, b.Err)
+func warnServerProblems(out io.Writer, servers config.Servers) {
+	for _, se := range servers.Broken {
+		fmt.Fprintf(out, "warning: skipping server %s: %v\n", se.ServerName, se.Err)
+	}
+	for _, se := range servers.BrokenProjections() {
+		warnUnprojected(out, se)
 	}
 }
 
-func logBrokenServers(logger *slog.Logger, broken []config.SourceError) {
-	for _, b := range broken {
-		logger.Warn("skipping server whose config fails to load", "server", b.ServerName, "err", b.Err)
+func warnUnprojected(out io.Writer, se config.SourceError) {
+	fmt.Fprintf(out, "warning: server %s runs without projections: %v\n", se.ServerName, se.Err)
+}
+
+func logServerProblems(logger *slog.Logger, servers config.Servers) {
+	for _, se := range servers.Broken {
+		logger.Warn("skipping server whose config fails to load", "server", se.ServerName, "err", se.Err)
+	}
+	for _, se := range servers.BrokenProjections() {
+		logger.Warn("server runs without projections, they fail to load", "server", se.ServerName, "err", se.Err)
 	}
 }

@@ -435,6 +435,7 @@ func TestConfigureReload_resultShape(t *testing.T) {
 		wantLoaded       []string
 		wantNotLoaded    []string
 		wantSourceErrors bool
+		wantErrorFile    string
 	}{
 		{
 			name:       "clean reload: ok=true, loaded counts, no source_errors",
@@ -448,9 +449,10 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			wantSourceErrors: true,
 		},
 		{
-			name:             "bad proj.yaml: ok=false, source_errors present",
+			name:             "bad proj.yaml: ok=false, source_errors names the projection file",
 			files:            map[string]string{"servers/a.yaml": "command: echo\n", "servers/a.proj.yaml": "bad: [yaml\n"},
 			wantSourceErrors: true,
+			wantErrorFile:    "a.proj.yaml",
 		},
 		{
 			name:             "loaded excludes kept-previous server when its file broke",
@@ -475,8 +477,12 @@ func TestConfigureReload_resultShape(t *testing.T) {
 				t.Errorf("expected no source_errors, got %v", result["source_errors"])
 			}
 			if tc.wantSourceErrors {
-				if errs, _ := result["source_errors"].([]any); len(errs) == 0 {
+				errs, _ := result["source_errors"].([]any)
+				if len(errs) == 0 {
 					t.Errorf("expected source_errors list, got %v", result)
+				}
+				if path, _ := errs[0].(string); tc.wantErrorFile != "" && filepath.Base(path) != tc.wantErrorFile {
+					t.Errorf("source_errors = %v, want it to name %s", errs, tc.wantErrorFile)
 				}
 			}
 			loaded, _ := result["loaded"].(map[string]any)
