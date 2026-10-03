@@ -19,6 +19,7 @@ Do not explain away suspicious patterns — investigate until you have proof or 
 3. **Pick up check.sh results.** Do not write the report until the background check suite from Step 0 has finished and you have read its log.
 4. **Verdict is mechanical.** Derive the verdict from the findings table using the rules at the end — never from overall impression.
 5. **The request's framing is a claim, not a fact.** Statements in the review request or PR description about the design ("built on X", "reuses Y", "no duplication") are things to verify. Angles the requester lists add to the passes; they never narrow them.
+6. **Be pragmatic.** Think through edge cases, then weigh each finding by how likely a real user, agent, or maintainer is to hit it and how bad it would be. Only a likely problem, or an unlikely one with severe impact (security, data loss, mini unusable), is MEDIUM or above; report the rest as LOW. A PR doesn't have to solve every problem: recommend the smallest fix that removes this one, not a redesign, new layers, or type machinery, unless the current shape has already caused a bug or a clear maintenance cost. Small cleanups in code the PR touches are welcome (leave it cleaner than you found it); problems elsewhere go under "Outside this PR".
 
 ## Step 0 — Gather the diff and check out the PR branch
 
@@ -141,7 +142,7 @@ Apply the errors, resources, and state-transition guidance in `docs/go-guideline
 
 **Design problems that cause bugs**
 - State duplicated in two places that can drift out of sync — one gets updated and the other doesn't.
-- Abstraction leaks that force callers to know implementation details: callers constructing internal state, ordering requirements not enforced by the type, "must call X before Y" contracts with no enforcement.
+- Abstraction leaks that force callers to know implementation details: callers constructing internal state, or "must call X before Y" rules a caller in this codebase gets wrong or easily could.
 - API contracts easy to misuse: positional parameters where meaning is ambiguous, zero value that silently enables dangerous behavior, optional fields that interact in non-obvious ways.
 - Coupling that prevents safe evolution: reloading one thing requires parsing everything; a config change in one package requires coordinated changes in three others.
 
@@ -234,9 +235,9 @@ Name the unprotected contract, realistic failure, existing coverage, and why the
 Read the changed code as an engineer new to it would, and flag where they would misread it or likely break it when changing it. `check.sh` catches function length and parameter count; this pass covers what it can't.
 
 - **Names:** functions are verb phrases that say what they do and predict their effects; types and variables are domain nouns. Flag vague names (`handle`, `process`, `data`, `util`, `manager`) and names that mislead.
-- **Shape:** each function does one thing at one level of abstraction, and the normal path reads straight down with early returns. Flag deep nesting, long functions that need scrolling to follow, and boolean or empty-string flags as positional args.
-- **Explicitness:** no clever tricks, hidden side effects, or order-dependent calls the types don't enforce. The code says what it means without relying on a comment.
-- **Reuse:** the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops and wrappers; no abstraction without a contract.
+- **Shape:** each function does one job, and the normal path reads straight down with early returns. Flag deep nesting, long functions that need scrolling to follow, and boolean or empty-string flags as positional args.
+- **Explicitness:** no clever tricks or hidden side effects; steps that must happen in a certain order are obvious from the code. The code says what it means without relying on a comment.
+- **Reuse:** the standard library (`slices`, `maps`, `strings`, `errors`, `context`, `sync`) and existing helpers over hand-rolled loops; no layers, interfaces, or helpers that don't make the code easier to read or change.
 - **Consistency:** naming, error style, and idioms match the surrounding package.
 - **Comments:** they explain why, not what; no section dividers in tests; no doc comments that repeat the name.
 
@@ -248,7 +249,7 @@ Complete every item before writing the report:
 
 1. Read the check.sh log from Step 0 in full. Any failure introduced by the PR is a finding.
 2. For each candidate finding, re-read the cited code and confirm all three: the file:line is right, the quoted code matches, and the trigger scenario actually reaches that code. If any of the three can't be confirmed, drop the finding.
-3. For each finding, check the diff: is the issue introduced or made worse by this PR, or pre-existing? Pre-existing issues go in a one-line "Pre-existing (not blocking)" note and do not count toward the verdict.
+3. For each finding, check the diff: is the issue introduced or made worse by this PR? Anything it didn't goes under "Outside this PR" and doesn't count toward the verdict.
 4. Confirm every Pass 1 candidate and every call site from the call-site audit was investigated. Anything skipped must be listed explicitly in the report as not investigated.
 5. Confirm you read `docs/go-guidelines.md` and `docs/testing.md` in Step 0.
 
@@ -278,6 +279,9 @@ Output the report directly in the conversation. Do **not** post it as a GitHub P
 ## 🟡 LOW — [title]
 **Pass:** Maintainability | Correctness
 [One line. What and where. Reserve LOW for truly trivial findings — borderline preference calls, not rule violations.]
+
+## Outside this PR
+[Problems found in code this PR didn't cause and doesn't need to fix. One entry each: file:line, the problem, and why it matters, so the caller can decide whether to file an issue. They don't affect the verdict. Omit the section if there are none.]
 
 ## Test coverage verdict
 [What is tested, what is missing, whether the gap is a blocker.]
