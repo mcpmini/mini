@@ -28,7 +28,6 @@ func (s *Server) configServerNames() []string {
 }
 
 func (s *Server) removeServersGoneFromConfig() {
-	// A broken server isn't removed; applyReload reads the same files and logs each one.
 	servers, err := config.LoadServers(s.configDir)
 	if err != nil {
 		return // applyReload, which runs next, hits the same error and logs it
