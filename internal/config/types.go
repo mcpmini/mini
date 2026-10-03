@@ -219,6 +219,9 @@ type ServerConfig struct {
 	// AgentAdded marks a server the config tool saved for an agent; deleting the line trusts it.
 	// OAuth detection skips it: its own metadata would choose where the user's code is sent.
 	AgentAdded bool `yaml:"agent_added,omitempty" json:"-"`
+	// UnsetEnv is why a ${VAR} in a secret field couldn't be expanded where this config was loaded.
+	// The fields are then left as written, and connecting or logging in refuses the server.
+	UnsetEnv error `yaml:"-" json:"-"`
 }
 
 func (sc ServerConfig) IsEnabled() bool {

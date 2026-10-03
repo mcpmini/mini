@@ -2,67 +2,86 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 )
 
-type envExpansionMode uint8
+// UnsetEnvError is a ${VAR} whose variable isn't set where mini runs.
+type UnsetEnvError struct {
+	Field string
+	Names []string
+}
 
-const (
-	strictEnvExpansion envExpansionMode = iota
-	lenientEnvExpansion
-)
+func (e *UnsetEnvError) Error() string {
+	verb := "isn't"
+	if len(e.Names) > 1 {
+		verb = "aren't"
+	}
+	return fmt.Sprintf("%s: %s %s set where mini runs", e.Field, strings.Join(e.Names, ", "), verb)
+}
 
-func expandEnvValue(value string, mode envExpansionMode) (string, error) {
+func expandEnvValue(field, value string) (string, error) {
 	var missing []string
-	seen := make(map[string]bool)
 	expanded := envVarRef.ReplaceAllStringFunc(value, func(ref string) string {
 		name := ref[2 : len(ref)-1]
 		if expanded, ok := os.LookupEnv(name); ok {
 			return expanded
 		}
-		if mode == lenientEnvExpansion {
-			return ref
-		}
-		if !seen[name] {
+		if !slices.Contains(missing, name) {
 			missing = append(missing, name)
-			seen[name] = true
 		}
 		return ref
 	})
 	if len(missing) > 0 {
-		return "", fmt.Errorf("undefined environment variable(s): %s", strings.Join(missing, ", "))
+		return "", &UnsetEnvError{Field: field, Names: missing}
 	}
 	return expanded, nil
 }
 
-func expandServerSecrets(sc *ServerConfig, mode envExpansionMode) error {
+// expandServerEnv runs only on a config just parsed from its file: a value merged in later, such
+// as a client secret from the OAuth server, must never be expanded. A config with an unset
+// variable stays as written, so code that never connects with it, like mini init in a shell
+// without the variable, can still use it.
+func expandServerEnv(sc *ServerConfig) {
+	expanded := *sc
+	expanded.Headers = maps.Clone(sc.Headers)
+	expanded.Env = slices.Clone(sc.Env)
+	if err := expandServerSecrets(&expanded); err != nil {
+		sc.UnsetEnv = fmt.Errorf("server %s: %w", sc.Name, err)
+		return
+	}
+	*sc = expanded
+}
+
+func expandServerSecrets(sc *ServerConfig) error {
 	for name, value := range sc.Headers {
-		if err := expandServerField(mode, "headers."+name, &value); err != nil {
+		if err := expandField("headers."+name, &value); err != nil {
 			return err
 		}
 		sc.Headers[name] = value
 	}
 	for i := range sc.Env {
-		if err := expandServerField(mode, fmt.Sprintf("env[%d]", i), &sc.Env[i]); err != nil {
+		if err := expandField(fmt.Sprintf("env[%d]", i), &sc.Env[i]); err != nil {
 			return err
 		}
 	}
-	if sc.Auth != nil {
-		if err := expandServerField(mode, "auth.token", &sc.Auth.Token); err != nil {
-			return err
-		}
-		if err := expandServerField(mode, "auth.client_secret", &sc.Auth.ClientSecret); err != nil {
-			return err
-		}
+	if sc.Auth == nil {
+		return nil
 	}
-	return nil
+	auth := *sc.Auth
+	sc.Auth = &auth
+	if err := expandField("auth.token", &auth.Token); err != nil {
+		return err
+	}
+	return expandField("auth.client_secret", &auth.ClientSecret)
 }
 
-func expandServerField(mode envExpansionMode, field string, value *string) error {
-	expanded, err := expandEnvValue(*value, mode)
+func expandField(field string, value *string) error {
+	expanded, err := expandEnvValue(field, *value)
 	if err != nil {
-		return fmt.Errorf("%s: %w", field, err)
+		return err
 	}
 	*value = expanded
 	return nil

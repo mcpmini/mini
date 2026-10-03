@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,23 +54,28 @@ func TestLoadServerConfig_unexpandedConnectionField_isRejected(t *testing.T) {
 	}
 }
 
-func TestLoadServerConfig_undefinedHeader_isStrictButLenientLoadKeepsLiteral(t *testing.T) {
+func TestLoadServerConfig_unsetVariable_leavesOnlyThatServerAsWrittenAndSaysWhy(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_HEADER")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n")
-	_, _, err := config.Load(dir)
-	if err == nil {
-		t.Fatal("Load succeeded, want undefined variable error")
+	t.Setenv("MINI_TEST_DEFINED_HEADER", "set")
+	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n  X-Other: ${MINI_TEST_DEFINED_HEADER}\n")
+	writeFile(t, filepath.Join(dir, "servers", "other.yaml"), "headers:\n  X-Key: ${MINI_TEST_DEFINED_HEADER}\n")
+
+	_, servers, err := config.Load(dir)
+
+	if err != nil {
+		t.Fatalf("Load: %v, want only svc affected", err)
 	}
-	for _, want := range []string{"svc", "headers.X-Key", "MINI_TEST_UNDEFINED_HEADER"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not contain %q", err, want)
-		}
+	svc, other := config.FindServer(servers, "svc"), config.FindServer(servers, "other")
+	var unset *config.UnsetEnvError
+	if svc == nil || !errors.As(svc.UnsetEnv, &unset) || svc.UnsetEnv.Error() != "server svc: headers.X-Key: MINI_TEST_UNDEFINED_HEADER isn't set where mini runs" {
+		t.Fatalf("svc = %+v, want its UnsetEnv naming the field and variable", svc)
 	}
-	set := config.LoadServerSet(dir)
-	sc, ok := set.Servers["svc"]
-	if !ok || sc.Headers["X-Key"] != "${MINI_TEST_UNDEFINED_HEADER}" {
-		t.Errorf("lenient server = %+v, loaded=%v", sc, ok)
+	if svc.Headers["X-Key"] != "${MINI_TEST_UNDEFINED_HEADER}" || svc.Headers["X-Other"] != "${MINI_TEST_DEFINED_HEADER}" {
+		t.Errorf("svc headers = %v, want them all as written", svc.Headers)
+	}
+	if other == nil || other.UnsetEnv != nil || other.Headers["X-Key"] != "set" {
+		t.Errorf("other = %+v, want it expanded", other)
 	}
 }
 

@@ -5,6 +5,7 @@ package auth_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,6 +62,19 @@ func TestResolveEndpoints_cimd(t *testing.T) {
 	}
 	if sc.Auth.ResourceURL != sc.URL {
 		t.Errorf("ResourceURL = %q, want %q", sc.Auth.ResourceURL, sc.URL)
+	}
+}
+
+func TestResolveEndpoints_refusesAServerWithAnUnsetVariable(t *testing.T) {
+	sc := configuredOAuthServer("https://example.com/mcp")
+	sc.Auth.ClientSecret = "${MINI_TEST_CLIENT_SECRET}"
+	unset := errors.New("server srv: auth.client_secret: MINI_TEST_CLIENT_SECRET isn't set where mini runs")
+	sc.UnsetEnv = unset
+
+	err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
+
+	if !errors.Is(err, unset) {
+		t.Errorf("ResolveEndpoints = %v, want the login refused before it sends the literal ${MINI_TEST_CLIENT_SECRET}", err)
 	}
 }
 

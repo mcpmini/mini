@@ -103,6 +103,26 @@ func startMiniCmdCapturingStderr(t *testing.T, configDir string) (stdin io.Write
 	return stdin, sc, errBuf
 }
 
+func TestIntegrationStartup_aServerWithAnUnsetVariableDoesNotStopTheOthers(t *testing.T) {
+	cfg := t.TempDir()
+	writeFakeServer(t, cfg, "healthy", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
+	writeServerConfig(t, cfg, "github", "transport: http\nurl: https://example.com/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_TOKEN}\n")
+	stdin, scanner, stderr := startMiniCmdCapturingStderr(t, cfg)
+	c := newMCPClient(t, stdin, scanner)
+	c.mustCall("initialize", map[string]any{
+		"protocolVersion": "2024-11-05",
+		"capabilities":    map[string]any{},
+		"clientInfo":      map[string]any{"name": "test", "version": "0"},
+	})
+
+	waitForServersConnected(t, c, []string{"healthy"})
+
+	if !strings.Contains(c.listTools("healthy"), "get_item") {
+		t.Error("healthy's tools are missing: one server's unset variable stopped the others")
+	}
+	waitForStderrContains(t, stderr, "MINI_TEST_UNSET_TOKEN isn't set where mini runs")
+}
+
 func waitForStderrContains(t *testing.T, stderr *syncBuffer, want string) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)

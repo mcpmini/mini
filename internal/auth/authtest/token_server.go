@@ -25,6 +25,7 @@ type TokenServer struct {
 	LastGrant      string
 	LastRefresh    string
 	LastClientID   string
+	LastSecret     string
 	LastBasicAuth  string
 	LastResource   string
 	HoldReady      chan struct{}
@@ -103,6 +104,7 @@ func (m *TokenServer) captureRequestFields(r *http.Request) {
 	m.LastGrant = r.FormValue("grant_type")
 	m.LastRefresh = r.FormValue("refresh_token")
 	m.LastClientID = r.FormValue("client_id")
+	m.LastSecret = r.FormValue("client_secret")
 	m.LastResource = r.FormValue("resource")
 	if user, _, ok := r.BasicAuth(); ok {
 		m.LastBasicAuth = user

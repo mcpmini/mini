@@ -25,6 +25,9 @@ type DialParams struct {
 }
 
 func Dial(ctx context.Context, p DialParams) (transport.Connection, error) {
+	if p.Server.UnsetEnv != nil {
+		return nil, p.Server.UnsetEnv
+	}
 	if p.Server.IsHTTPTransport() {
 		return dialHTTP(p)
 	}

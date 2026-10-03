@@ -81,6 +81,10 @@ func (s *Server) retryStartupAfter(name string, err error, backoff time.Duration
 	case errors.Is(err, invoke.ErrAgentCommandNotAllowed):
 		s.logger.Warn("upstream not allowed to start, not retrying", "server", name, "err", err)
 		return false
+	case errors.As(err, new(*config.UnsetEnvError)):
+		// The environment is fixed when mini starts, so a retry finds the variable unset again.
+		s.logger.Warn("upstream needs an environment variable mini doesn't have, not retrying", "server", name, "err", err)
+		return false
 	}
 	s.logger.Warn("upstream unavailable at startup, retrying", "server", name, "err", err, "backoff", backoff)
 	return true

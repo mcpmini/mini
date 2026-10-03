@@ -128,6 +128,9 @@ func injectOAuthTokens(ctx context.Context, configDir string, servers []config.S
 }
 
 func injectToken(ctx context.Context, configDir string, sc *config.ServerConfig) {
+	if sc.UnsetEnv != nil {
+		return // dialing reports it; a refresh now would send a ${VAR} as the client secret
+	}
 	t, err := auth.Load(configDir, sc.Name)
 	if auth.IsNotFound(err) {
 		return

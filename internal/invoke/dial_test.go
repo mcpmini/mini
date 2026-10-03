@@ -86,3 +86,20 @@ func TestDial_agentAddedCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestDial_refusesAServerWithAnUnsetVariableWithoutReachingIt(t *testing.T) {
+	var hits atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	t.Cleanup(upstream.Close)
+	unset := errors.New("server svc: headers.Authorization: GITHUB_TOKEN isn't set where mini runs")
+	server := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Headers: map[string]string{"Authorization": "Bearer ${GITHUB_TOKEN}"}, UnsetEnv: unset}
+
+	_, err := Dial(t.Context(), DialParams{Config: &config.Config{}, Server: server, Clock: clock.System()})
+
+	if !errors.Is(err, unset) {
+		t.Errorf("Dial = %v, want the unset variable reported", err)
+	}
+	if hits.Load() > 0 {
+		t.Error("Dial sent the literal ${GITHUB_TOKEN} to the upstream")
+	}
+}

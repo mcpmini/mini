@@ -71,7 +71,7 @@ func loadServerConfigLenient(path string) (*ServerConfig, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return parseServerConfig(path, data, lenientEnvExpansion)
+	return parseServerConfig(path, data)
 }
 
 func loadProjFilesIsolated(configDir string, servers []ServerConfig, load *LoadProjectionsResult) map[string]map[string]*ProjectionConfig {
