@@ -40,7 +40,7 @@ func editOnce(path string, edit func([]byte) ([]byte, error), now time.Time) (st
 	if err != nil {
 		return "", err
 	}
-	edited, err := edit(bytes.Clone(original))
+	edited, err := editConfigBytes(original, edit)
 	if err != nil || bytes.Equal(edited, original) {
 		return "", err
 	}
@@ -53,6 +53,14 @@ func editOnce(path string, edit func([]byte) ([]byte, error), now time.Time) (st
 		return "", err
 	}
 	return backup, nil
+}
+
+func editConfigBytes(original []byte, edit func([]byte) ([]byte, error)) ([]byte, error) {
+	edited, err := edit(bytes.Clone(original))
+	if err == nil && edited == nil {
+		return nil, errors.New("config edit returned nil data")
+	}
+	return edited, err
 }
 
 func replaceIfUnchanged(path string, original, edited []byte, mode os.FileMode) error {

@@ -273,3 +273,29 @@ func replaceTestSymlink(t *testing.T, link, target string) {
 		t.Fatal(err)
 	}
 }
+
+func TestEditFile_nilResultIsRefusedButExplicitEmptyContentIsWritten(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		data []byte
+	}{
+		{"nil", nil},
+		{"explicit empty", []byte{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(tempDir(t), "config.toml")
+			testutil.WriteFile(t, path, "original\n")
+			backup, err := EditFile(path, func([]byte) ([]byte, error) { return tt.data, nil }, editTime)
+			if tt.data == nil {
+				if err == nil || backup != "" || string(testutil.ReadFile(t, path)) != "original\n" {
+					t.Fatalf("nil result: backup = %q, error = %v; want refusal and original bytes", backup, err)
+				}
+				requireFiles(t, filepath.Dir(path), "config.toml")
+				return
+			}
+			if err != nil || backup == "" || len(testutil.ReadFile(t, path)) != 0 || string(testutil.ReadFile(t, backup)) != "original\n" {
+				t.Fatalf("empty result: backup = %q, error = %v; want empty file and original backup", backup, err)
+			}
+		})
+	}
+}

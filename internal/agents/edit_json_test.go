@@ -1,6 +1,8 @@
 package agents
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -18,11 +20,6 @@ func TestEditJSONServers_removesImportedServersAndSetsMini(t *testing.T) {
 			config: `{"mcpServers":{"github":{"url":"https://example.com/mcp"},"linear":{"url":"https://linear.example/mcp"}}}`,
 			remove: []string{"github"},
 			want:   "{\n  \"mcpServers\": {\n    \"linear\": {\n      \"url\": \"https://linear.example/mcp\"\n    },\n    \"mini\": {\n      \"args\": [\n        \"connect\"\n      ],\n      \"command\": \"/usr/local/bin/mini\"\n    }\n  }\n}\n",
-		},
-		{
-			name:   "an existing mini entry is replaced",
-			config: `{"mcpServers":{"mini":{"command":"/old/mini","args":["serve"]}}}`,
-			want:   "{\n  \"mcpServers\": {\n    \"mini\": {\n      \"args\": [\n        \"connect\"\n      ],\n      \"command\": \"/usr/local/bin/mini\"\n    }\n  }\n}\n",
 		},
 		{
 			name:   "missing mcpServers is created and other settings are kept",
@@ -69,6 +66,40 @@ func TestEditJSONServers_refusesConfigsItCannotEditSafely(t *testing.T) {
 			got, err := EditJSONServers([]byte(tt.config), nil, map[string]any{"mini": testMiniEntry})
 			if err == nil || !strings.Contains(err.Error(), tt.want) || got != nil {
 				t.Fatalf("EditJSONServers = %s, %v; want no output and an error containing %q", got, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestEditJSONServers_preservesExistingMiniSettings(t *testing.T) {
+	for _, entry := range []string{
+		`{"command":"custom-mini","args":["connect","--standalone"],"env":{"TOKEN":"synthetic-token"},"enabled":false,"extra":12345678901234567890}`,
+		`null`,
+	} {
+		t.Run(entry, func(t *testing.T) {
+			original := []byte(`{"mcpServers":{"other":{"url":"https://example.com/mcp"},"mini":` + entry + `}}`)
+			got, err := EditJSONServers(original, []string{"mini", "other"}, map[string]any{"mini": testMiniEntry})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var decoded struct {
+				Servers map[string]json.RawMessage `json:"mcpServers"`
+			}
+			if err := json.Unmarshal(got, &decoded); err != nil {
+				t.Fatal(err)
+			}
+			var actual, expected any
+			if err := json.Unmarshal(decoded.Servers["mini"], &actual); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(entry), &expected); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(actual, expected) || len(decoded.Servers) != 1 {
+				t.Fatalf("servers = %s; want only original mini %s", got, entry)
+			}
+			if strings.Contains(entry, "12345678901234567890") && !strings.Contains(string(got), "12345678901234567890") {
+				t.Fatalf("mini numeric value changed: %s", got)
 			}
 		})
 	}

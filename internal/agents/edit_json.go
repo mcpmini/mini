@@ -8,7 +8,7 @@ import (
 	"io"
 )
 
-// EditJSONServers removes and adds entries in a JSON agent config's top-level mcpServers.
+// EditJSONServers removes and adds servers, preserving an existing mini entry.
 func EditJSONServers(data []byte, remove []string, add map[string]any) ([]byte, error) {
 	doc, err := decodeJSONObject(data)
 	if err != nil {
@@ -18,14 +18,22 @@ func EditJSONServers(data []byte, remove []string, add map[string]any) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	for _, name := range remove {
-		delete(servers, name)
-	}
-	for name, entry := range add {
-		servers[name] = entry
-	}
+	editJSONEntries(servers, remove, add)
 	doc["mcpServers"] = servers
 	return encodeJSON(doc)
+}
+
+func editJSONEntries(servers map[string]any, remove []string, add map[string]any) {
+	for _, name := range remove {
+		if name != "mini" {
+			delete(servers, name)
+		}
+	}
+	for name, entry := range add {
+		if _, exists := servers[name]; name != "mini" || !exists {
+			servers[name] = entry
+		}
+	}
 }
 
 func decodeJSONObject(data []byte) (map[string]any, error) {
