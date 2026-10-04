@@ -26,7 +26,7 @@ type oauthDetectParams struct {
 func detectImportedOAuth(p oauthDetectParams) {
 	servers, err := config.LoadServers(p.configDir)
 	if err != nil {
-		return // the login step that runs next hits the same error and reports it
+		return // the catalog and login steps that run next hit the same error and report it
 	}
 	targets := oauthDetectionTargets(servers.Loaded, p.names)
 	if len(targets) == 0 {
