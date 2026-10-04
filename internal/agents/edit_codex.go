@@ -16,9 +16,7 @@ type CodexServer struct {
 	Args    []string `toml:"args"`
 }
 
-// EditCodexServers switches off the named servers and writes mini's entry, editing lines in
-// place so the user's comments and layout survive. The result is re-parsed and must differ from
-// the original only in those servers' enabled values and the mini table, or nothing is returned.
+// EditCodexServers disables named servers and writes mini's entry while preserving other settings.
 func EditCodexServers(data []byte, disable []string, mini CodexServer) ([]byte, error) {
 	before, err := decodeCodexConfig(data)
 	if err != nil {
@@ -133,8 +131,6 @@ func isServerHeader(l tomlLine, name string) bool {
 	return !l.arrayTable && slices.Equal(l.header, []string{"mcp_servers", name})
 }
 
-// Line edits only understand [mcp_servers.<name>] tables; anything else could be rewritten
-// wrongly, so it is refused by name.
 func requireTableForm(lines []tomlLine, name string) error {
 	if slices.ContainsFunc(lines, func(l tomlLine) bool { return isServerHeader(l, name) }) {
 		return nil
@@ -163,7 +159,6 @@ func hasPrefix(path, prefix []string) bool {
 	return len(prefix) <= len(path) && slices.Equal(path[:len(prefix)], prefix)
 }
 
-// The comments and blank lines ending a mini section introduce whatever table follows, so they stay.
 func miniTableLines(lines []tomlLine) (map[int]bool, int) {
 	drop, at := map[int]bool{}, -1
 	inMini := false
@@ -198,7 +193,7 @@ func (p codexEditPlan) apply(lines []tomlLine, miniLines []string) []string {
 		switch {
 		case p.dropMini[i]:
 		case p.replaceEnabled[i]:
-			out = append(out, leadingSpace(l.text)+"enabled = false"+trailingComment(l.value))
+			out = append(out, leadingSpace(l.text)+"enabled = false"+trailingEnabledComment(l.value))
 		default:
 			out = append(out, l.text)
 		}
@@ -219,8 +214,7 @@ func appendTable(lines, table []string) []string {
 	return append(lines, table...)
 }
 
-// enabled holds a bool, so a # in its value can only start a comment.
-func trailingComment(value string) string {
+func trailingEnabledComment(value string) string {
 	if i := strings.Index(value, "#"); i >= 0 {
 		return " " + value[i:]
 	}

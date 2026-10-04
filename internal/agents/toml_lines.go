@@ -6,8 +6,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// tomlLine is one physical line of a TOML file as the line editor sees it. Lines inside a
-// multi-line string or a multi-line array are content: never a header and never a key.
 type tomlLine struct {
 	text       string
 	header     []string
@@ -62,7 +60,7 @@ func (s *tomlScanner) skipOpenString(text string) string {
 	if s.openString == "" {
 		return text
 	}
-	end := closingQuote(text, s.openString)
+	end := closingQuoteEndIndex(text, s.openString)
 	if end < 0 {
 		return ""
 	}
@@ -90,7 +88,7 @@ func (s *tomlScanner) skipString(text string, start int) int {
 	if strings.HasPrefix(text[start:], strings.Repeat(quote, 3)) {
 		quote = strings.Repeat(quote, 3)
 	}
-	end := closingQuote(text[start+len(quote):], quote)
+	end := closingQuoteEndIndex(text[start+len(quote):], quote)
 	if end < 0 {
 		if len(quote) == 3 {
 			s.openString = quote
@@ -100,9 +98,7 @@ func (s *tomlScanner) skipString(text string, start int) int {
 	return start + len(quote) + end - 1
 }
 
-// closingQuote returns the index just past the closing quote, or -1 when the line has none.
-// Basic strings (") honor backslash escapes; literal strings (') don't.
-func closingQuote(text, quote string) int {
+func closingQuoteEndIndex(text, quote string) int {
 	for i := 0; i < len(text); i++ {
 		if quote[0] == '"' && text[i] == '\\' {
 			i++
@@ -166,7 +162,7 @@ func parseTOMLKeyPart(text string) (string, string, bool) {
 		return "", "", false
 	}
 	if text[0] == '"' || text[0] == '\'' {
-		end := closingQuote(text[1:], text[:1])
+		end := closingQuoteEndIndex(text[1:], text[:1])
 		if end < 0 {
 			return "", "", false
 		}
