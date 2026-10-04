@@ -59,14 +59,14 @@ func runDaemon(configDir string, logLevel string) {
 	defer stop()
 	ln := bindSocket(socket)
 	serveDaemon(ctx, DaemonServeParams{
-		ConfigDir: configDir, Cfg: cfg, Servers: servers, Logger: logger, Listener: ln,
+		ConfigDir: configDir, Cfg: cfg, Servers: servers.Loaded, Logger: logger, Listener: ln,
 	})
 }
 
-func loadDaemonConfig(configDir string) (*config.Config, []config.ServerConfig) {
-	cfg, servers, err := config.Load(configDir)
+func loadDaemonConfig(configDir string) (*config.Config, config.Servers) {
+	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
-		fatalf("load config: %v", err)
+		fatalf("%v", err)
 	}
 	return cfg, servers
 }

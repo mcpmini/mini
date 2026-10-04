@@ -62,7 +62,11 @@ func requestedCatalogEntries(f initFlags) ([]catalog.Entry, error) {
 }
 
 func addRequestedCatalogEntries(p catalogStepParams) error {
-	configured := configuredKeys(configuredServers(p.configDir))
+	servers, err := configuredServers(p.configDir)
+	if err != nil {
+		return err
+	}
+	configured := configuredKeys(servers)
 	toWrite := make([]catalog.Entry, 0, len(p.requested))
 	for _, entry := range p.requested {
 		if isConfigured(configured, entry) {

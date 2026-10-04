@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"text/tabwriter"
 	"time"
 
@@ -40,9 +41,10 @@ func newTestCmd(opts *rootOptions) *cobra.Command {
 
 func runTest(configDir string, timeout time.Duration) {
 	ctx := context.Background()
-	srv, enabled := buildTestServer(ctx, configDir)
+	srv, servers := buildTestServer(ctx, configDir)
 	defer srv.Close()
-	printTestResults(checkUpstreams(ctx, srv, enabled, timeout))
+	results := brokenServerResults(servers.Broken)
+	printTestResults(append(results, checkServers(ctx, srv, servers.Loaded, timeout)...))
 }
 
 func emptyTestMessage(servers []config.ServerConfig) string {
@@ -52,37 +54,50 @@ func emptyTestMessage(servers []config.ServerConfig) string {
 	return "no enabled servers"
 }
 
-func buildTestServer(ctx context.Context, configDir string) (*server.Server, []config.ServerConfig) {
-	cfg, servers, err := config.Load(configDir)
+func buildTestServer(ctx context.Context, configDir string) (*server.Server, config.Servers) {
+	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
-		fatalf("load config: %v", err)
+		fatalf("%v", err)
 	}
-	injectOAuthTokens(ctx, configDir, servers)
-	enabled := enabledServers(servers)
-	if len(enabled) == 0 {
-		fmt.Println(emptyTestMessage(servers))
+	injectOAuthTokens(ctx, configDir, servers.Loaded)
+	if !slices.ContainsFunc(servers.Loaded, config.ServerConfig.IsEnabled) && !servers.HasProblems() {
+		fmt.Println(emptyTestMessage(servers.Loaded))
 		os.Exit(0)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), enabled
+	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), servers
 }
 
-func enabledServers(servers []config.ServerConfig) []config.ServerConfig {
-	out := make([]config.ServerConfig, 0, len(servers))
-	for _, sc := range servers {
-		if sc.IsEnabled() {
-			out = append(out, sc)
-		}
-	}
-	return out
-}
-
-func checkUpstreams(ctx context.Context, srv *server.Server, servers []config.ServerConfig, timeout time.Duration) []upstreamResult {
-	results := make([]upstreamResult, len(servers))
-	for i, sc := range servers {
-		results[i] = probeUpstream(ctx, srv, sc, timeout)
+func brokenServerResults(broken []config.SourceError) []upstreamResult {
+	results := make([]upstreamResult, len(broken))
+	for i, b := range broken {
+		results[i] = upstreamResult{name: b.ServerName, transport: unknownTransport, err: b.Err}
 	}
 	return results
+}
+
+func checkServers(ctx context.Context, srv *server.Server, servers []config.ServerConfig, timeout time.Duration) []upstreamResult {
+	var results []upstreamResult
+	for _, sc := range servers {
+		if sc.IsEnabled() {
+			results = append(results, checkServer(ctx, srv, sc, timeout))
+		} else if sc.ProjectionsErr != nil {
+			results = append(results, upstreamResult{name: sc.Name, transport: sc.Transport, err: projectionsError(sc)})
+		}
+	}
+	return results
+}
+
+func checkServer(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {
+	r := probeUpstream(ctx, srv, sc, timeout)
+	if r.err == nil && sc.ProjectionsErr != nil {
+		r.err = projectionsError(sc)
+	}
+	return r
+}
+
+func projectionsError(sc config.ServerConfig) error {
+	return fmt.Errorf("projections: %w", sc.ProjectionsErr.Err)
 }
 
 func probeUpstream(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {
@@ -125,7 +140,7 @@ func printTestResults(results []upstreamResult) {
 
 func writeTestRow(w *tabwriter.Writer, r upstreamResult) {
 	if r.err != nil {
-		fmt.Fprintf(w, "FAIL\t%s\t%s\t%v\n", r.name, displayTransport(r.transport), r.err)
+		fmt.Fprintf(w, "FAIL\t%s\t%s\t%s\n", r.name, displayTransport(r.transport), singleLine(r.err))
 	} else {
 		fmt.Fprintf(w, "PASS\t%s\t%s\t%d tools\t(%s)\n", r.name, displayTransport(r.transport), r.tools, r.elapsed.Round(time.Millisecond))
 	}

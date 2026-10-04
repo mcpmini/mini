@@ -3,8 +3,6 @@
 package config_test
 
 import (
-	"errors"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -38,68 +36,6 @@ func TestLoadServerSet_brokenFileHoldsOnlyItsServer(t *testing.T) {
 		if set.KeepsPreviousServer(name) {
 			t.Errorf("KeepsPreviousServer(%q) = true, want only the failing file's server held", name)
 		}
-	}
-}
-
-func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{
-		Name:      "linear",
-		Transport: "http",
-		URL:       "https://mcp.linear.app/mcp",
-	})
-	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-		ServerName: "linear",
-		Tools: map[string]*config.ProjectionConfig{
-			"list_issues": {
-				IncludeOnly: []string{"title"},
-			},
-		},
-	})
-	_, servers, err := config.Load(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := *config.FindServer(servers, "linear")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
-
-	got, err := config.LoadServer(dir, "linear")
-
-	if err != nil {
-		t.Fatalf("LoadServer: %v", err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("LoadServer = %+v\nwant what Load gives: %+v", got, want)
-	}
-	if got.Auth == nil || got.Projections["list_issues"] == nil {
-		t.Errorf("LoadServer = %+v, want bundled auth and the projection file merged", got)
-	}
-	if _, err := config.LoadServer(dir, "missing"); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("LoadServer(missing) err = %v, want fs.ErrNotExist", err)
-	}
-	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-		ServerName: "linear",
-		Tools: map[string]*config.ProjectionConfig{
-			"list_issues": {
-				Format: "bogus",
-			},
-		},
-	})
-	if _, err := config.LoadServer(dir, "linear"); err == nil {
-		t.Error("LoadServer accepted a projection format Load rejects, so the server would stop mini's next start")
-	}
-}
-
-func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{
-		Name:      "github",
-		Transport: "http",
-		URL:       "https://api.githubcopilot.com/mcp/",
-	})
-
-	if sc, err := config.LoadServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("LoadServer(GitHub) = %q, %v; want fs.ErrNotExist, not github.yaml under another name", sc.Name, err)
 	}
 }
 

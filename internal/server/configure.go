@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"os"
@@ -118,12 +120,32 @@ func (s *Server) setServerProjection(p configureParams, visibleTool string) (any
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 
+	if err := s.checkSavedProjectionsLoad(p.ServerName); err != nil {
+		return nil, err
+	}
 	prev := s.storeServerProjection(p.ServerName, p.Tool, p.Projection)
 	if err := s.persistProjectionsLocked(p.ServerName); err != nil {
 		s.restoreServerProjection(p.ServerName, p.Tool, prev)
 		return nil, fmt.Errorf("set_projection: persistence failed: %w", err)
 	}
 	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, visibleTool)}, nil
+}
+
+// Saving writes every live projection of the server over its projection file. Unless the saved
+// config loads, the live projections may not match the file, so saving could replace rules the
+// user wrote.
+func (s *Server) checkSavedProjectionsLoad(serverName string) error {
+	sc, err := config.LoadServer(s.configDir, serverName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil // no server file, so nothing saved was loaded that saving could replace
+	}
+	if err == nil && sc.ProjectionsErr != nil {
+		err = sc.ProjectionsErr.Err
+	}
+	if err != nil {
+		return fmt.Errorf("set_projection: %s's saved config fails to load, so saving could replace rules on disk; fix the file, or pass session_only: %w", serverName, err)
+	}
+	return nil
 }
 
 func (s *Server) storeServerProjection(serverName, tool string, projection *config.ProjectionConfig) *config.ProjectionConfig {
