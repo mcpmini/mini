@@ -256,7 +256,7 @@ func TestInitCommandDetectsOAuthOnImportedServer(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "claude.json")
 	testutil.WriteFile(t, src, `{"mcpServers": {"svc": {"type": "http", "url": "`+url+`"}}}`)
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
-	cmd.SetArgs([]string{"--yes", "--from", src})
+	cmd.SetArgs([]string{"--from", src})
 
 	out := testutil.CaptureStdout(t, func() {
 		if err := cmd.Execute(); err != nil {
@@ -264,10 +264,7 @@ func TestInitCommandDetectsOAuthOnImportedServer(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(out, "svc (no token)") || !strings.Contains(out, "mini auth svc") {
-		t.Errorf("init output = %q, want the login step to list svc", out)
-	}
-	if strings.Count(out, "imported") != 1 {
-		t.Errorf("init output has %d imported lines, want one: %q", strings.Count(out, "imported"), out)
+	if !strings.Contains(out, "1 still needs finishing") || !strings.Contains(out, "auth svc") {
+		t.Errorf("init output = %q, want svc listed as needing a login", out)
 	}
 }

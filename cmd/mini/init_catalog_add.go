@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/catalog"
 )
 
@@ -47,7 +46,7 @@ func unknownCatalogNamesError(unknown []string) error {
 	return fmt.Errorf("not in the server catalog: %s", strings.Join(unknown, ", "))
 }
 
-func requestedCatalogEntries(f initFlags) ([]catalog.Entry, error) {
+func requestedCatalogEntries(f initFlags, entries []catalog.Entry) ([]catalog.Entry, error) {
 	if !f.addGiven {
 		return nil, nil
 	}
@@ -55,30 +54,7 @@ func requestedCatalogEntries(f initFlags) ([]catalog.Entry, error) {
 	if len(names) == 0 {
 		return nil, errors.New("--add needs at least one server name")
 	}
-	entries, err := publishedCatalogSource().entries()
-	if err != nil {
-		return nil, err
-	}
 	return resolveCatalogNames(entries, names)
-}
-
-func addRequestedCatalogEntries(p catalogStepParams) error {
-	servers, err := configuredServers(p.configDir)
-	if err != nil {
-		return err
-	}
-	configured := initcmd.NewConfiguredKeys(servers)
-	toWrite := make([]catalog.Entry, 0, len(p.requested))
-	for _, entry := range p.requested {
-		if configured.Has(entry) {
-			fmt.Fprintf(p.out, "  %s already configured in mini\n", entry.Name)
-			continue
-		}
-		toWrite = append(toWrite, entry)
-	}
-	written, err := writeCatalogEntries(p, toWrite, allCatalogIndexes(len(toWrite)))
-	printSetupNotes(p.out, toWrite, written)
-	return err
 }
 
 func nonBlankNames(names []string) []string {
