@@ -182,6 +182,29 @@ func requireMode(t *testing.T, path string, want os.FileMode) {
 	}
 }
 
+func TestCreateFile(t *testing.T) {
+	t.Run("writes a private file, making its directory", func(t *testing.T) {
+		path := filepath.Join(tempDir(t), "new", "mcp.json")
+		if err := CreateFile(path, []byte("{}\n")); err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(path)
+		if err != nil || info.Mode().Perm() != 0600 || string(testutil.ReadFile(t, path)) != "{}\n" {
+			t.Errorf("stat = %v, %v; want a 0600 file holding {}", info, err)
+		}
+	})
+	t.Run("never replaces a file that appeared meanwhile", func(t *testing.T) {
+		path := filepath.Join(tempDir(t), "mcp.json")
+		testutil.WriteFile(t, path, "the agent's")
+		if err := CreateFile(path, []byte("{}\n")); !errors.Is(err, os.ErrExist) {
+			t.Errorf("err = %v, want it to exist already", err)
+		}
+		if got := string(testutil.ReadFile(t, path)); got != "the agent's" {
+			t.Errorf("file = %q, want the agent's content kept", got)
+		}
+	})
+}
+
 func requireFiles(t *testing.T, dir string, want ...string) {
 	t.Helper()
 	entries, err := os.ReadDir(dir)

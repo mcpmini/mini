@@ -9,7 +9,13 @@ import (
 type Agent struct {
 	Name       string
 	ConfigPath string
-	Read       func(path string) (map[string]Server, error)
+	// Dir is the agent's own directory: when it exists the agent is installed, even before its
+	// MCP config file does.
+	Dir     string
+	Read    func(path string) (map[string]Server, error)
+	Connect func(config []byte, remove []string, mini MiniEntry) ([]byte, error)
+	// RemoveDisables is set for agents where removing an entry switches it off instead.
+	RemoveDisables bool
 }
 
 func Detect() []Agent {
@@ -28,11 +34,11 @@ func Detect() []Agent {
 
 func Known(home string) []Agent {
 	return []Agent{
-		{Name: "Claude Code", ConfigPath: filepath.Join(home, ".claude.json"), Read: ReadClaude},
+		jsonAgent("Claude Code", filepath.Join(home, ".claude.json"), filepath.Join(home, ".claude"), ReadClaude),
 		codex(home),
-		{Name: "Cursor", ConfigPath: filepath.Join(home, ".cursor", "mcp.json"), Read: ReadClaude},
-		{Name: "Windsurf", ConfigPath: filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), Read: ReadClaude},
-		{Name: "Gemini CLI", ConfigPath: filepath.Join(home, ".gemini", "settings.json"), Read: ReadGemini},
+		jsonAgent("Cursor", filepath.Join(home, ".cursor", "mcp.json"), filepath.Join(home, ".cursor"), ReadClaude),
+		jsonAgent("Windsurf", filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), filepath.Join(home, ".codeium", "windsurf"), ReadClaude),
+		jsonAgent("Gemini CLI", filepath.Join(home, ".gemini", "settings.json"), filepath.Join(home, ".gemini"), ReadGemini),
 		claudeDesktop(home),
 	}
 }
@@ -42,7 +48,14 @@ func codex(home string) Agent {
 	if dir == "" {
 		dir = filepath.Join(home, ".codex")
 	}
-	return Agent{Name: "Codex", ConfigPath: filepath.Join(dir, "config.toml"), Read: ReadCodex}
+	return Agent{
+		Name: "Codex", ConfigPath: filepath.Join(dir, "config.toml"), Dir: dir,
+		Read: ReadCodex, Connect: connectCodex, RemoveDisables: true,
+	}
+}
+
+func jsonAgent(name, configPath, dir string, read func(string) (map[string]Server, error)) Agent {
+	return Agent{Name: name, ConfigPath: configPath, Dir: dir, Read: read, Connect: connectJSON}
 }
 
 func claudeDesktop(home string) Agent {
@@ -57,5 +70,8 @@ func claudeDesktop(home string) Agent {
 	default:
 		path = filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
 	}
-	return Agent{Name: "Claude Desktop", ConfigPath: path, Read: ReadClaude}
+	if path == "" {
+		return Agent{Name: "Claude Desktop", Read: ReadClaude, Connect: connectJSON}
+	}
+	return jsonAgent("Claude Desktop", path, filepath.Dir(path), ReadClaude)
 }
