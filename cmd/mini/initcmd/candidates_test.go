@@ -85,6 +85,9 @@ func TestFindServers_merging(t *testing.T) {
 		{"names are lowercased with other characters as dashes",
 			[]agents.Agent{agentWith("Cursor", map[string]agents.Server{"-My Server.v2!": a})},
 			nil, []row{{"my-server-v2", []string{"Cursor"}, true}}},
+		{"one config under two names is one row, named by the first agent",
+			[]agents.Agent{agentWith("Claude Code", map[string]agents.Server{"github": a}), agentWith("Cursor", map[string]agents.Server{"GitHub MCP": a})},
+			nil, []row{{"github", []string{"Claude Code", "Cursor"}, true}}},
 		{"a configured name is hidden whatever its config",
 			[]agents.Agent{agentWith("Claude Code", map[string]agents.Server{"github": a}), agentWith("Codex", map[string]agents.Server{"github": b})},
 			[]string{"GitHub"}, nil},
@@ -96,6 +99,19 @@ func TestFindServers_merging(t *testing.T) {
 				t.Errorf("rows = %+v\nwant %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFindServers_aServerMiniHasUnderAnotherNameIsHidden(t *testing.T) {
+	entry := remoteEntry("https://example.com/mcp", "${A}")
+	configured := entry.Config
+	configured.Name = "gh"
+	candidates, _ := FindServers(FindParams{
+		Agents:     []agents.Agent{agentWith("Claude Code", map[string]agents.Server{"github": entry})},
+		Configured: []config.ServerConfig{configured},
+	})
+	if len(candidates) != 0 {
+		t.Errorf("candidates = %+v, want none: mini already has this server as gh", candidates)
 	}
 }
 

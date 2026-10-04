@@ -11,14 +11,15 @@ import (
 
 type rowMerger struct {
 	rows []Candidate
-	// byName holds the rows for each normalized name, including the suffixed ones.
-	byName map[string][]int
-	used   map[string]bool
+	// suffixed marks rows that took a suffix because another config has their name.
+	suffixed []bool
+	claimed  map[string]bool
+	used     map[string]bool
 }
 
 // Entries arrive in agent order, then by name, which fixes which config keeps the plain name.
 func mergeEntries(entries []agentEntry, configured map[string]bool) []Candidate {
-	m := rowMerger{byName: map[string][]int{}, used: maps.Clone(configured)}
+	m := rowMerger{claimed: map[string]bool{}, used: maps.Clone(configured)}
 	for _, e := range entries {
 		m.used[NormalizeName(e.name)] = true
 	}
@@ -29,25 +30,26 @@ func mergeEntries(entries []agentEntry, configured map[string]bool) []Candidate 
 	return m.rows
 }
 
+// One server under several names is still one row: importing it twice would expose its tools twice.
 func (m *rowMerger) add(e agentEntry) {
-	name := NormalizeName(e.name)
 	source := Source{Agent: e.agent, Name: e.name, Entry: e.server.Config}
-	for n, i := range m.byName[name] {
-		if agents.SameServer(m.rows[i].Config, e.server.Config) {
-			m.rows[i].Sources = append(m.rows[i].Sources, source)
-			m.rows[i].Checked = m.rows[i].Checked || (n == 0 && !e.server.Disabled)
-			return
-		}
+	i := slices.IndexFunc(m.rows, func(row Candidate) bool { return agents.SameServer(row.Config, e.server.Config) })
+	if i >= 0 {
+		m.rows[i].Sources = append(m.rows[i].Sources, source)
+		m.rows[i].Checked = m.rows[i].Checked || (!m.suffixed[i] && !e.server.Disabled)
+		return
 	}
-	row := Candidate{Name: name, Sources: []Source{source}, Checked: !e.server.Disabled}
-	if len(m.byName[name]) > 0 {
+	row := Candidate{Name: NormalizeName(e.name), Sources: []Source{source}, Checked: !e.server.Disabled}
+	suffixed := m.claimed[row.Name]
+	if suffixed {
 		// A second config under the same name would expose the same tools twice if ticked by default.
-		row.Name, row.Checked = m.nextFreeName(name), false
+		row.Name, row.Checked = m.nextFreeName(row.Name), false
 	}
+	m.claimed[row.Name] = true
 	row.Config = e.server.Config
 	row.Config.Name = row.Name
-	m.byName[name] = append(m.byName[name], len(m.rows))
 	m.rows = append(m.rows, row)
+	m.suffixed = append(m.suffixed, suffixed)
 }
 
 func (m *rowMerger) nextFreeName(name string) string {

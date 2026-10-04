@@ -47,7 +47,9 @@ type SkippedServer struct {
 }
 
 type FindParams struct {
-	Agents     []agents.Agent
+	Agents []agents.Agent
+	// Configured holds mini's servers as written, before ${VAR} expansion, so they compare with
+	// agent entries, which hold references unexpanded too.
 	Configured []config.ServerConfig
 	// SelfPath is the running binary, so an entry that runs it is recognized as mini.
 	SelfPath string
@@ -62,10 +64,15 @@ type agentEntry struct {
 	server agents.Server
 }
 
+type finder struct {
+	FindParams
+	configuredNames map[string]bool
+	entries         []agentEntry
+	skipped         []SkippedServer
+}
+
 func FindServers(p FindParams) ([]Candidate, []SkippedServer) {
-	configured := lowercaseNames(p.Configured)
-	var entries []agentEntry
-	var skipped []SkippedServer
+	f := finder{FindParams: p, configuredNames: lowercaseNames(p.Configured)}
 	for _, agent := range p.Agents {
 		servers, err := agent.Read(agent.ConfigPath)
 		if err != nil {
@@ -73,24 +80,29 @@ func FindServers(p FindParams) ([]Candidate, []SkippedServer) {
 			continue
 		}
 		for _, name := range slices.Sorted(maps.Keys(servers)) {
-			entry := agentEntry{agent: agent.Name, name: name, server: servers[name]}
-			if !offered(entry, configured, p.SelfPath) {
-				continue
-			}
-			if skip, ok := skipReason(entry); ok {
-				skipped = append(skipped, skip)
-				continue
-			}
-			entries = append(entries, entry)
+			f.add(agentEntry{agent: agent.Name, name: name, server: servers[name]})
 		}
 	}
-	return mergeEntries(entries, configured), skipped
+	return mergeEntries(f.entries, f.configuredNames), f.skipped
 }
 
-// mini's copy wins over an agent's for a configured name, whatever its config.
-func offered(e agentEntry, configured map[string]bool, selfPath string) bool {
+func (f *finder) add(e agentEntry) {
+	if !f.offered(e) {
+		return
+	}
+	if skip, ok := skipReason(e); ok {
+		f.skipped = append(f.skipped, skip)
+		return
+	}
+	f.entries = append(f.entries, e)
+}
+
+// mini's copy wins over an agent's for a configured name, whatever its config, and for a
+// configured server under another name.
+func (f *finder) offered(e agentEntry) bool {
 	name := NormalizeName(e.name)
-	return name != miniKey && !configured[name] && !agents.IsMiniEntry(e.server.Config, selfPath)
+	return name != miniKey && !f.configuredNames[name] && !agents.IsMiniEntry(e.server.Config, f.SelfPath) &&
+		!slices.ContainsFunc(f.Configured, func(sc config.ServerConfig) bool { return agents.SameServer(sc, e.server.Config) })
 }
 
 func skipReason(e agentEntry) (SkippedServer, bool) {

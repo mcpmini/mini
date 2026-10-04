@@ -6,6 +6,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/ops"
 )
 
 const oauthCheckTimeout = 5 * time.Second
@@ -22,6 +23,8 @@ func (s *Session) startChecks() {
 	for _, sc := range targets {
 		s.checks.wg.Go(func() { s.check(ctx, sc) })
 	}
+	// stopChecks showed every check finished; the restarted ones are running again.
+	s.notifyChanged()
 }
 
 // Checks the servers as loaded, so bundled and already-detected auth count.
@@ -33,16 +36,11 @@ func (s *Session) checkTargets() []config.ServerConfig {
 	}
 	var targets []config.ServerConfig
 	for _, sc := range servers.Loaded {
-		if _, ok := s.written[sc.Name]; ok && !s.checked[sc.Name] && mayNeedOAuth(sc) {
+		if _, ok := s.written[sc.Name]; ok && !s.checked[sc.Name] && ops.MayNeedOAuth(sc) {
 			targets = append(targets, sc)
 		}
 	}
 	return targets
-}
-
-// Any header may hold a credential under a custom name, so a server with headers isn't checked.
-func mayNeedOAuth(sc config.ServerConfig) bool {
-	return sc.IsHTTPTransport() && sc.Auth == nil && len(sc.Headers) == 0
 }
 
 func (s *Session) check(ctx context.Context, sc config.ServerConfig) {

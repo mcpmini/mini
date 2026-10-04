@@ -19,7 +19,7 @@ type DetectOAuthParams struct {
 // so later loads of the server config merge OAuth auth in.
 func DetectOAuth(ctx context.Context, p DetectOAuthParams) (bool, error) {
 	sc := p.Server
-	if !eligibleForOAuthDetection(sc) {
+	if !MayNeedOAuth(sc) {
 		return false, nil
 	}
 	// Skip re-running the PRM probe and rewriting the marker on every
@@ -37,7 +37,8 @@ func DetectOAuth(ctx context.Context, p DetectOAuthParams) (bool, error) {
 	return true, nil
 }
 
-func eligibleForOAuthDetection(sc config.ServerConfig) bool {
+// MayNeedOAuth reports whether connecting to sc could prove it needs an OAuth login.
+func MayNeedOAuth(sc config.ServerConfig) bool {
 	// Before auth is configured any header may hold a credential under a custom name (e.g. X-Api-Key),
 	// and an expired static key answers with the same 401 as OAuth.
 	return !sc.AgentAdded && sc.Auth == nil && sc.IsHTTPTransport() && len(sc.Headers) == 0

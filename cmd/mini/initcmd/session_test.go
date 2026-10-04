@@ -173,6 +173,7 @@ func TestSessionChecks_aTimedOutCheckIsDone(t *testing.T) {
 	s, _ := newTestSession(t, probe, fake)
 	open := httpServer("open", "https://open.example/mcp")
 	s.Sync([]config.ServerConfig{open})
+	<-s.Changed()
 	waitStarted(t, probe)
 	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
