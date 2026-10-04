@@ -21,11 +21,11 @@ var errChangedDuringEdit = errors.New("changed during edit")
 // before its rename is discarded and retried. It returns the backup's path, or "" when the edit
 // changed nothing and the file was left alone.
 func EditFile(path string, edit func([]byte) ([]byte, error), now time.Time) (string, error) {
-	target, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return "", err
-	}
 	for range maxEditAttempts {
+		target, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return "", err
+		}
 		backup, err := editOnce(target, edit, now)
 		if !errors.Is(err, errChangedDuringEdit) {
 			return backup, err
@@ -43,7 +43,7 @@ func editOnce(path string, edit func([]byte) ([]byte, error), now time.Time) (st
 	if err != nil {
 		return "", err
 	}
-	edited, err := edit(original)
+	edited, err := edit(bytes.Clone(original))
 	if err != nil || bytes.Equal(edited, original) {
 		return "", err
 	}

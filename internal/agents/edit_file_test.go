@@ -205,3 +205,71 @@ func requireFiles(t *testing.T, dir string, want ...string) {
 		t.Errorf("%s holds %v, want %v", dir, got, want)
 	}
 }
+
+func TestEditFile_mutableCallbackKeepsTheOriginalBackup(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		edit func([]byte) ([]byte, error)
+		want string
+	}{
+		{"returns its input", func(data []byte) ([]byte, error) { copy(data, "new"); return data, nil }, "new\n"},
+		{"returns separate bytes", func(data []byte) ([]byte, error) { copy(data, "new"); return []byte("replacement\n"), nil }, "replacement\n"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(tempDir(t), "config.toml")
+			testutil.WriteFile(t, path, "old\n")
+			backup, err := EditFile(path, tt.edit, editTime)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(testutil.ReadFile(t, backup)); got != "old\n" {
+				t.Fatalf("backup = %q, want original bytes", got)
+			}
+			if got := string(testutil.ReadFile(t, path)); got != tt.want {
+				t.Fatalf("config = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestEditFile_retryFollowsTheCurrentSymlinkTarget(t *testing.T) {
+	dir := tempDir(t)
+	first, second, link := filepath.Join(dir, "first.toml"), filepath.Join(dir, "second.toml"), filepath.Join(dir, "config.toml")
+	testutil.WriteFile(t, first, "first\n")
+	testutil.WriteFile(t, second, "second\n")
+	if err := os.Symlink(first, link); err != nil {
+		t.Skip("cannot create symlink:", err)
+	}
+	calls := 0
+	edit := func(data []byte) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			testutil.WriteFile(t, first, "agent wrote\n")
+			replaceTestSymlink(t, link, second)
+		}
+		return append(data, "mini\n"...), nil
+	}
+	backup, err := EditFile(link, edit, editTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(testutil.ReadFile(t, link)); got != "second\nmini\n" || calls != 2 {
+		t.Fatalf("config = %q after %d attempts; want second target edited on attempt 2", got, calls)
+	}
+	if got := string(testutil.ReadFile(t, first)); got != "agent wrote\n" {
+		t.Fatalf("old target = %q, want external write untouched", got)
+	}
+	if backup != filepath.Join(dir, "second.minibackup.toml") || string(testutil.ReadFile(t, backup)) != "second\n" {
+		t.Fatalf("backup = %q, want second target's starting bytes", backup)
+	}
+}
+
+func replaceTestSymlink(t *testing.T, link, target string) {
+	t.Helper()
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+}
