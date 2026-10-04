@@ -35,14 +35,18 @@ func importAgentConfig(configDir, source string, agent agents.Agent) []string {
 	return added
 }
 
-func (imp serverImport) addAll(servers map[string]config.ServerConfig) (added []string, failed int) {
+func (imp serverImport) addAll(servers map[string]agents.Server) (added []string, failed int) {
 	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
-		sc := servers[name]
-		if isSelfEntry(sc.Command, selfPath) {
+		server := servers[name]
+		if isSelfEntry(server.Config.Command, selfPath) {
 			continue
 		}
-		switch err := imp.add(sc); {
+		if reason := notImportedReason(server); reason != "" {
+			fmt.Fprintf(imp.out, "  %s: %s %s\n", imp.source, name, reason)
+			continue
+		}
+		switch err := imp.add(server.Config); {
 		case err == nil:
 			added = append(added, name)
 		case !errors.Is(err, ops.ErrAlreadyConfigured):
@@ -50,6 +54,20 @@ func (imp serverImport) addAll(servers map[string]config.ServerConfig) (added []
 		}
 	}
 	return added, failed
+}
+
+// A copy in mini must not expose tools the agent forbids, behave differently, or switch on a
+// server the user switched off.
+func notImportedReason(server agents.Server) string {
+	switch {
+	case server.LimitsTools:
+		return "kept in the agent: it limits which tools are allowed"
+	case len(server.Unsupported) > 0:
+		return "kept in the agent: uses " + strings.Join(server.Unsupported, ", ")
+	case server.Disabled:
+		return "not imported: switched off in the agent"
+	}
+	return ""
 }
 
 func (imp serverImport) add(sc config.ServerConfig) error {

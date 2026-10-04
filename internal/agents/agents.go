@@ -4,14 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-
-	"github.com/mcpmini/mini/internal/config"
 )
 
 type Agent struct {
 	Name       string
 	ConfigPath string
-	Read       func(path string) (map[string]config.ServerConfig, error)
+	Read       func(path string) (map[string]Server, error)
 }
 
 func Detect() []Agent {
@@ -31,10 +29,10 @@ func Detect() []Agent {
 func Known(home string) []Agent {
 	return []Agent{
 		{Name: "Claude Code", ConfigPath: filepath.Join(home, ".claude.json"), Read: ReadClaude},
+		{Name: "Codex", ConfigPath: filepath.Join(home, ".codex", "config.toml"), Read: ReadCodex},
 		{Name: "Cursor", ConfigPath: filepath.Join(home, ".cursor", "mcp.json"), Read: ReadClaude},
 		{Name: "Windsurf", ConfigPath: filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), Read: ReadClaude},
-		// ReadGemini drops `url` entries that ReadClaude keeps, so it isn't a drop-in replacement yet.
-		{Name: "Gemini CLI", ConfigPath: filepath.Join(home, ".gemini", "settings.json"), Read: ReadClaude},
+		{Name: "Gemini CLI", ConfigPath: filepath.Join(home, ".gemini", "settings.json"), Read: ReadGemini},
 		claudeDesktop(home),
 	}
 }

@@ -213,6 +213,76 @@ func TestImportAgentConfig_ImportsOnlyNewServers(t *testing.T) {
 	}
 }
 
+func TestInitImportsCodexAndKeepsWhatMiniCannotCopy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	configDir := t.TempDir()
+	testutil.WriteFile(t, filepath.Join(home, ".codex", "config.toml"), `
+[mcp_servers.search]
+url = "https://search.example/mcp"
+bearer_token_env_var = "SEARCH_TOKEN"
+
+[mcp_servers.files]
+command = "files-server"
+cwd = "/srv/files"
+
+[mcp_servers.tickets]
+url = "https://tickets.example/mcp"
+enabled_tools = ["read"]
+
+[mcp_servers.paused]
+command = "paused-server"
+enabled = false
+`)
+	cmd := newInitCmd(&rootOptions{configDir: configDir})
+	cmd.SetArgs([]string{"--yes"})
+
+	out := testutil.CaptureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	written := testutil.ReadFile(t, filepath.Join(configDir, "servers", "search.yaml"))
+	if !strings.Contains(string(written), "Bearer ${SEARCH_TOKEN}") {
+		t.Errorf("search.yaml = %s, want the bearer token kept as a reference", written)
+	}
+	for _, name := range []string{"files", "tickets", "paused"} {
+		if _, err := os.Stat(filepath.Join(configDir, "servers", name+".yaml")); !os.IsNotExist(err) {
+			t.Errorf("%s was imported: %v", name, err)
+		}
+	}
+	for _, want := range []string{
+		"Codex: files kept in the agent: uses cwd",
+		"Codex: tickets kept in the agent: it limits which tools are allowed",
+		"Codex: paused not imported: switched off in the agent",
+		"codex mcp add mini -- ",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("init output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestInitFromATOMLPathReadsCodexFormat(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	configDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "team.toml")
+	testutil.WriteFile(t, src, "[mcp_servers.search]\nurl = \"https://search.example/mcp\"\n")
+	cmd := newInitCmd(&rootOptions{configDir: configDir})
+	cmd.SetArgs([]string{"--yes", "--from", src})
+
+	out := testutil.CaptureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if _, err := os.Stat(filepath.Join(configDir, "servers", "search.yaml")); err != nil {
+		t.Errorf("search.yaml not written: %v\n%s", err, out)
+	}
+}
+
 func TestFindKnownAgent_missingHomeDoesNotUseWorkingDirectory(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("USERPROFILE", "")
@@ -238,7 +308,7 @@ func TestResolveFromSource_explicitFileWorksWithoutHome(t *testing.T) {
 		t.Fatalf("source = %+v, want an explicit-file reader for %q", agent, path)
 	}
 	servers, err := agent.Read(agent.ConfigPath)
-	if err != nil || servers["example"].URL != "https://example.com/mcp" {
+	if err != nil || servers["example"].Config.URL != "https://example.com/mcp" {
 		t.Fatalf("servers = %+v, error = %v; want the explicit file's server", servers, err)
 	}
 }

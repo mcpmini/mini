@@ -3,29 +3,26 @@ package agents
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/mcpmini/mini/internal/config"
 )
 
 type openClawMCPEntry struct {
 	clientEntryFields
-	URL string `json:"url"`
+	URL     string `json:"url"`
+	Enabled *bool  `json:"enabled"`
 }
+
+var openClawFormat = entryFormat{kinds: map[string]keyKind{
+	"command": keyMapped, "args": keyMapped, "env": keyMapped, "url": keyMapped, "headers": keyMapped, "enabled": keyMapped,
+	"transport": keyDropped, "connectionTimeoutMs": keyDropped, "requestTimeoutMs": keyDropped, "supportsParallelToolCalls": keyDropped,
+	"toolFilter": keyLimitsTools, "codex": keyLimitsTools,
+}}
 
 // ReadOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
 // Format: {"mcp": {"servers": {"name": {"command": "...", "args": [...], "env": {...}}}}}
-func ReadOpenClaw(path string) (map[string]config.ServerConfig, error) {
-	entries, err := parseOpenClawConfig(path)
-	if err != nil {
-		return nil, err
-	}
-	return serverConfigs(entries), nil
-}
-
-func parseOpenClawConfig(path string) (map[string]openClawMCPEntry, error) {
+func ReadOpenClaw(path string) (map[string]Server, error) {
 	var cfg struct {
 		MCP struct {
-			Servers map[string]openClawMCPEntry `json:"servers"`
+			Servers map[string]json.RawMessage `json:"servers"`
 		} `json:"mcp"`
 	}
 	data, err := ReadConfigFile(path)
@@ -35,12 +32,17 @@ func parseOpenClawConfig(path string) (map[string]openClawMCPEntry, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	return cfg.MCP.Servers, nil
+	entries, keys, err := decodeJSONEntries[openClawMCPEntry](cfg.MCP.Servers)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return importedServers(entries, keys, openClawFormat), nil
 }
 
-func (e openClawMCPEntry) serverConfig(name string) config.ServerConfig {
+func (e openClawMCPEntry) server(name string) Server {
+	disabled := e.Enabled != nil && !*e.Enabled
 	if e.URL != "" {
-		return e.httpServer(name, e.URL)
+		return Server{Config: e.httpServer(name, e.URL), Disabled: disabled}
 	}
-	return e.stdioServer(name)
+	return Server{Config: e.stdioServer(name), Disabled: disabled}
 }

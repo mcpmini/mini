@@ -3,28 +3,26 @@ package agents
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/mcpmini/mini/internal/config"
 )
 
 type geminiMCPEntry struct {
 	clientEntryFields
 	HTTPUrl string `json:"httpUrl"`
+	URL     string `json:"url"`
 }
+
+var geminiFormat = entryFormat{bareRefs: true, kinds: map[string]keyKind{
+	"command": keyMapped, "args": keyMapped, "env": keyMapped, "headers": keyMapped,
+	"url": keyMapped, "httpUrl": keyMapped,
+	"timeout": keyDropped, "trust": keyDropped, "description": keyDropped,
+	"includeTools": keyLimitsTools, "excludeTools": keyLimitsTools,
+}}
 
 // ReadGemini reads a Gemini CLI settings.json.
-// Format: mcpServers map with httpUrl (HTTP) or command/args (stdio).
-func ReadGemini(path string) (map[string]config.ServerConfig, error) {
-	entries, err := loadGeminiServers(path)
-	if err != nil {
-		return nil, err
-	}
-	return serverConfigs(entries), nil
-}
-
-func loadGeminiServers(path string) (map[string]geminiMCPEntry, error) {
+// Format: mcpServers map with httpUrl (streamable HTTP), url (SSE) or command/args (stdio).
+func ReadGemini(path string) (map[string]Server, error) {
 	var cfg struct {
-		McpServers map[string]geminiMCPEntry `json:"mcpServers"`
+		McpServers map[string]json.RawMessage `json:"mcpServers"`
 	}
 	data, err := ReadConfigFile(path)
 	if err != nil {
@@ -33,12 +31,21 @@ func loadGeminiServers(path string) (map[string]geminiMCPEntry, error) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	return cfg.McpServers, nil
+	entries, keys, err := decodeJSONEntries[geminiMCPEntry](cfg.McpServers)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return importedServers(entries, keys, geminiFormat), nil
 }
 
-func (e geminiMCPEntry) serverConfig(name string) config.ServerConfig {
+func (e geminiMCPEntry) server(name string) Server {
+	fields := e.clientEntryFields
+	fields.Env, fields.Headers = translateRefs(fields.Env, true), translateRefs(fields.Headers, true)
 	if e.HTTPUrl != "" {
-		return e.httpServer(name, e.HTTPUrl)
+		return Server{Config: fields.httpServer(name, e.HTTPUrl)}
 	}
-	return e.stdioServer(name)
+	if e.URL != "" {
+		return Server{Config: fields.httpServer(name, e.URL)}
+	}
+	return Server{Config: fields.stdioServer(name)}
 }

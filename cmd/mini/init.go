@@ -145,6 +145,7 @@ var fromClientNames = map[string]string{
 	"cursor":         "Cursor",
 	"windsurf":       "Windsurf",
 	"gemini":         "Gemini CLI",
+	"codex":          "Codex",
 }
 
 func resolveFromSource(from string) agents.Agent {
@@ -154,6 +155,9 @@ func resolveFromSource(from string) agents.Agent {
 			fatalf("could not find config for %q", from)
 		}
 		return agent
+	}
+	if strings.EqualFold(filepath.Ext(from), ".toml") {
+		return agents.Agent{ConfigPath: from, Read: agents.ReadCodex}
 	}
 	return agents.Agent{ConfigPath: from, Read: agents.ReadClaude}
 }
@@ -205,9 +209,14 @@ func printInstallInstructions() {
 
 func printAgentInstall(a agents.Agent, binPath string) {
 	fmt.Println()
-	if a.Name == "Claude Code" {
+	switch a.Name {
+	case "Claude Code":
 		fmt.Println("  Claude Code:")
 		fmt.Println("    claude mcp add mini " + binPath + " connect")
+		return
+	case "Codex":
+		fmt.Println("  Codex:")
+		fmt.Println("    codex mcp add mini -- " + binPath + " connect")
 		return
 	}
 	fmt.Printf("  %s — add to %s:\n", a.Name, a.ConfigPath)
