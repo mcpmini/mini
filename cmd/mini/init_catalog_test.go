@@ -51,35 +51,28 @@ func TestParseCatalogSelection(t *testing.T) {
 	}
 }
 
-func TestAvailableCatalogFiltersConfiguredNamesAndURLs(t *testing.T) {
-	c := catalog.Catalog{Popular: []string{"linear", "notion"}, Categories: []catalog.Category{{Title: "Dev", Servers: []catalog.Entry{
+func TestAvailableCatalogEntriesFiltersConfiguredNamesAndURLs(t *testing.T) {
+	entries := []catalog.Entry{
 		{Name: "github", URL: "https://github.example/mcp"},
 		{Name: "linear", URL: "https://linear.example/mcp"},
 		{Name: "notion", URL: "https://notion.example/mcp"},
-	}}}}
-	servers := []config.ServerConfig{{Name: "GitHub"}, {Name: "my-linear", URL: "https://LINEAR.example/mcp/"}}
-	available := availableCatalog(c, servers)
-	if names := catalogNames(available.Entries()); !reflect.DeepEqual(names, []string{"notion"}) {
-		t.Errorf("available = %v, want only notion", names)
 	}
-	if !reflect.DeepEqual(available.Popular, []string{"notion"}) {
-		t.Errorf("popular = %v, want only notion", available.Popular)
+	servers := []config.ServerConfig{{Name: "GitHub"}, {Name: "my-linear", URL: "https://LINEAR.example/mcp/"}}
+	available := availableCatalogEntries(entries, servers)
+	if !reflect.DeepEqual(available, entries[2:]) {
+		t.Errorf("available = %v, want only notion", available)
 	}
 }
 
-func TestAvailableCatalogKeepsCatalogOrderAndDropsCategoriesWithNothingLeft(t *testing.T) {
-	c := catalog.Catalog{Categories: []catalog.Category{
-		{Title: "Dev", Servers: []catalog.Entry{{Name: "c"}, {Name: "a"}}},
-		{Title: "Configured", Servers: []catalog.Entry{{Name: "taken"}}},
-		{Title: "Data", Servers: []catalog.Entry{{Name: "b"}}},
-	}}
-	available := availableCatalog(c, []config.ServerConfig{{Name: "taken"}})
-	var titles []string
-	for _, category := range available.Categories {
-		titles = append(titles, category.Title)
+func TestAvailableCatalogEntriesGroupsCategoriesInFirstSeenOrder(t *testing.T) {
+	entries := []catalog.Entry{
+		{Name: "a", Category: "Dev"},
+		{Name: "b", Category: "Data"},
+		{Name: "c", Category: "Dev"},
 	}
-	if !reflect.DeepEqual(titles, []string{"Dev", "Data"}) || !reflect.DeepEqual(catalogNames(available.Entries()), []string{"c", "a", "b"}) {
-		t.Errorf("available = %v %v, want [Dev Data] [c a b]", titles, catalogNames(available.Entries()))
+	names := catalogNames(availableCatalogEntries(entries, nil))
+	if !reflect.DeepEqual(names, []string{"a", "c", "b"}) {
+		t.Errorf("order = %v, want [a c b]", names)
 	}
 }
 
@@ -114,7 +107,7 @@ func TestRunCatalogStepAddsRequestedEntriesWithoutPicker(t *testing.T) {
 		t.Run(fmt.Sprintf("autoYes_%v", autoYes), func(t *testing.T) {
 			dir := t.TempDir()
 			out := &bytes.Buffer{}
-			if err := runCatalogStep(catalogStepParams{configDir: dir, autoYes: autoYes, requested: entries, loadCatalog: func() (catalog.Catalog, error) { return catalogOf(entries...), nil }, ask: func(string) string { t.Fatal("picker called"); return "" }, out: out, errOut: &bytes.Buffer{}}); err != nil {
+			if err := runCatalogStep(catalogStepParams{configDir: dir, autoYes: autoYes, requested: entries, loadCatalog: func() ([]catalog.Entry, error) { return entries, nil }, ask: func(string) string { t.Fatal("picker called"); return "" }, out: out, errOut: &bytes.Buffer{}}); err != nil {
 				t.Fatal(err)
 			}
 			for _, entry := range entries {
@@ -127,12 +120,12 @@ func TestRunCatalogStepAddsRequestedEntriesWithoutPicker(t *testing.T) {
 			}
 		})
 	}
-	t.Run("requested entries keep the requested order", func(t *testing.T) {
+	t.Run("requested entries keep order across categories", func(t *testing.T) {
 		dir := t.TempDir()
 		entries := []catalog.Entry{
-			{Name: "b", URL: "https://b.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://b.example/token"},
-			{Name: "a", URL: "https://a.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://a.example/token"},
-			{Name: "c", URL: "https://c.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://c.example/token"},
+			{Name: "b", Category: "Y", URL: "https://b.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://b.example/token"},
+			{Name: "a", Category: "X", URL: "https://a.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://a.example/token"},
+			{Name: "c", Category: "Y", URL: "https://c.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://c.example/token"},
 		}
 		out := &bytes.Buffer{}
 		if err := runCatalogStep(catalogStepParams{configDir: dir, requested: entries, out: out, errOut: &bytes.Buffer{}}); err != nil {
@@ -213,7 +206,7 @@ func TestInitAddFlagAppendsValues(t *testing.T) {
 }
 
 func TestCatalogSourcePrefersPublishedCatalog(t *testing.T) {
-	published := `{"schema_version":1,"categories":[{"title":"Test","servers":[{"name":"remote","title":"Remote","url":"https://remote.example/mcp","description":"remote","auth":"none"}]}]}`
+	published := `{"schema_version":1,"entries":[{"name":"remote","title":"Remote","url":"https://remote.example/mcp","description":"remote","category":"Test","auth":"none"}]}`
 	tests := []struct {
 		name      string
 		status    int
@@ -232,10 +225,10 @@ func TestCatalogSourcePrefersPublishedCatalog(t *testing.T) {
 			t.Cleanup(srv.Close)
 			var warn bytes.Buffer
 
-			c, err := catalogSource{client: srv.Client(), url: srv.URL, warn: &warn}.load()
+			entries, err := catalogSource{client: srv.Client(), url: srv.URL, warn: &warn}.entries()
 
-			if err != nil || !reflect.DeepEqual(catalogNames(c.Entries()), tt.wantNames) {
-				t.Errorf("entries = %v, %v; want %v", catalogNames(c.Entries()), err, tt.wantNames)
+			if err != nil || !reflect.DeepEqual(catalogNames(entries), tt.wantNames) {
+				t.Errorf("entries = %v, %v; want %v", catalogNames(entries), err, tt.wantNames)
 			}
 			if gotNote := strings.Contains(warn.String(), "built-in server catalog"); gotNote != tt.wantNote {
 				t.Errorf("note printed = %v, want %v (%q)", gotNote, tt.wantNote, warn.String())
@@ -250,11 +243,7 @@ func embeddedCatalogNames(t *testing.T) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return catalogNames(c.Entries())
-}
-
-func catalogOf(entries ...catalog.Entry) catalog.Catalog {
-	return catalog.Catalog{Categories: []catalog.Category{{Title: "Test", Servers: entries}}}
+	return catalogNames(c.Entries)
 }
 
 func catalogNames(entries []catalog.Entry) []string {
@@ -276,18 +265,14 @@ func TestEntryHostShowsWhereTheServerIs(t *testing.T) {
 	}
 }
 
-func TestPrintCatalogNumbersEntriesUnderCategoryHeadersInCatalogOrder(t *testing.T) {
-	c := catalog.Catalog{Popular: []string{"b"}, Categories: []catalog.Category{
-		{Title: "Dev", Servers: []catalog.Entry{
-			{Name: "a", Title: "A", Description: "first", URL: "https://a.example/mcp", Auth: catalog.AuthOAuth2},
-			{Name: "c", Title: "C", Description: "third", URL: "https://c.example/mcp", Auth: catalog.AuthNone},
-		}},
-		{Title: "Data", Servers: []catalog.Entry{
-			{Name: "b", Title: "B", Description: "second", URL: "https://b.example/mcp", Auth: catalog.AuthToken},
-		}},
-	}}
+func TestPrintCatalogEntriesNumbersEntriesUnderCategoryHeaders(t *testing.T) {
+	entries := []catalog.Entry{
+		{Name: "a", Title: "A", Description: "first", Category: "Dev", URL: "https://a.example/mcp", Auth: catalog.AuthOAuth2},
+		{Name: "c", Title: "C", Description: "third", Category: "Dev", URL: "https://c.example/mcp", Auth: catalog.AuthNone},
+		{Name: "b", Title: "B", Description: "second", Category: "Data", URL: "https://b.example/mcp", Auth: catalog.AuthToken},
+	}
 	var out bytes.Buffer
-	printCatalog(&out, c)
+	printCatalogEntries(&out, entries)
 	want := "Available MCP servers:\n  Dev:\n    1. A [a.example] - first (OAuth login)\n    2. C [c.example] - third\n  Data:\n    3. B [b.example] - second (needs an access token)\n"
 	if out.String() != want {
 		t.Errorf("output =\n%s\nwant\n%s", out.String(), want)
@@ -303,7 +288,7 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: catalog.Load,
+		loadCatalog: embeddedCatalogEntries,
 		ask:         func(string) string { return "a" },
 		out:         out,
 		errOut:      &bytes.Buffer{},
@@ -337,7 +322,7 @@ func TestRunCatalogStepStillFiltersWhenAServerFileOrItsProjectionsFailToLoad(t *
 
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: catalog.Load,
+		loadCatalog: embeddedCatalogEntries,
 		ask:         func(string) string { return "" },
 		out:         out,
 		errOut:      errOut,
@@ -381,7 +366,7 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	out := &bytes.Buffer{}
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: catalog.Load,
+		loadCatalog: embeddedCatalogEntries,
 		ask:         func(string) string { return catalogNumberOf(t, out.String(), "GitHub") },
 		out:         out,
 		errOut:      &bytes.Buffer{},
@@ -412,7 +397,7 @@ func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: catalog.Load,
+		loadCatalog: embeddedCatalogEntries,
 		ask:         func(string) string { return catalogNumberOf(t, out.String(), "GitHub") },
 		out:         out,
 		errOut:      &bytes.Buffer{},
@@ -424,11 +409,11 @@ func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 }
 
 func TestCatalogSentryInstallsBundledProjection(t *testing.T) {
-	entries, err := catalog.Load()
+	c, err := catalog.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := catalogEntry(t, entries.Entries(), "sentry")
+	entry := catalogEntry(t, c.Entries, "sentry")
 	if entry.URL != "https://mcp.sentry.dev/mcp" {
 		t.Fatalf("sentry URL = %q", entry.URL)
 	}
@@ -563,7 +548,7 @@ func TestAutoYesSkipsCatalogAndAuth(t *testing.T) {
 	called := false
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: func() (catalog.Catalog, error) { called = true; return catalog.Catalog{}, nil },
+		loadCatalog: func() ([]catalog.Entry, error) { called = true; return nil, nil },
 		autoYes:     true,
 		ask:         func(string) string { called = true; return "a" },
 		out:         &bytes.Buffer{},
@@ -583,4 +568,9 @@ func TestAutoYesSkipsCatalogAndAuth(t *testing.T) {
 	if called || !strings.Contains(out.String(), "mini auth imported") {
 		t.Errorf("runLoginStep called=%v output=%q", called, out.String())
 	}
+}
+
+func embeddedCatalogEntries() ([]catalog.Entry, error) {
+	c, err := catalog.Load()
+	return c.Entries, err
 }

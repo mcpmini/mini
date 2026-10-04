@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const oneEntryCatalog = `{"schema_version":1,"popular":["remote"],"categories":[{"title":"Test","servers":[{"name":"remote","title":"Remote","url":"https://remote.example/mcp","description":"remote server","auth":"none"}]}]}`
+const oneEntryCatalog = `{"schema_version":1,"entries":[{"name":"remote","title":"Remote","url":"https://remote.example/mcp","description":"remote server","category":"Test","auth":"none"}]}`
 
 func catalogServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *http.Client) {
 	t.Helper()
@@ -31,32 +31,25 @@ func TestFetchReturnsPublishedEntries(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	if entries := c.Entries(); len(entries) != 1 || entries[0].Name != "remote" || !slices.Equal(c.Popular, []string{"remote"}) {
-		t.Errorf("catalog = %+v, want the single remote entry, popular", c)
+	if len(c.Entries) != 1 || c.Entries[0].Name != "remote" {
+		t.Errorf("entries = %+v, want the single remote entry", c)
 	}
 }
 
 func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
 	future := strings.Replace(oneEntryCatalog, `"auth":"none"`, `"auth":"future-kind"`, 1)
 	withEntry := func(entry string) string {
-		return strings.Replace(future, `"servers":[`, `"servers":[`+entry+`,`, 1)
+		return strings.Replace(future, `"entries":[`, `"entries":[`+entry+`,`, 1)
 	}
-	withCategory := func(entry string) string {
-		return strings.Replace(future, `"categories":[`, `"categories":[{"title":"Known","servers":[`+entry+`]},`, 1)
-	}
-	known := `{"name":"known","title":"Known","url":"https://known.example/mcp","description":"known server","auth":"none"}`
 	tests := []struct {
-		name       string
-		document   string
-		wantNames  []string
-		wantTitles []string
-		wantErr    string
+		name      string
+		document  string
+		wantNames []string
+		wantErr   string
 	}{
-		{"keeps the known entries", withEntry(known), []string{"known"}, []string{"Test"}, ""},
-		{"drops a category it empties", withCategory(known), []string{"known"}, []string{"Known"}, ""},
-		{"fails when nothing is left", future, nil, nil, "catalog categories are required"},
-		{"still validates the kept entries", withEntry(`{"name":"invalid","title":"Invalid","url":"https://invalid.example/mcp","description":"bad\u001btext","auth":"none"}`), nil, nil, "description contains control characters"},
-		{"still rejects a category published empty", strings.Replace(withCategory(known), `"categories":[`, `"categories":[{"title":"Empty","servers":[]},`, 1), nil, nil, "has no servers"},
+		{"keeps the known entries", withEntry(`{"name":"known","title":"Known","url":"https://known.example/mcp","description":"known server","category":"Test","auth":"none"}`), []string{"known"}, ""},
+		{"fails when nothing is left", future, nil, "catalog entries are required"},
+		{"still validates the kept entries", withEntry(`{"name":"invalid","title":"Invalid","url":"https://invalid.example/mcp","description":"bad\u001btext","category":"Test","auth":"none"}`), nil, "description contains control characters"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -66,12 +59,12 @@ func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
 
 			c, err := Fetch(context.Background(), client, srv.URL)
 
-			names, titles := entryNames(c.Entries()), categoryTitles(c)
-			if !slices.Equal(names, tt.wantNames) || !slices.Equal(titles, tt.wantTitles) || (tt.wantErr == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
-				t.Fatalf("Fetch = %v %v, %v; want %v %v, error containing %q", titles, names, err, tt.wantTitles, tt.wantNames, tt.wantErr)
+			var names []string
+			for _, entry := range c.Entries {
+				names = append(names, entry.Name)
 			}
-			if err == nil && len(c.Popular) != 0 {
-				t.Errorf("popular = %v, want the skipped server dropped from it", c.Popular)
+			if !slices.Equal(names, tt.wantNames) || (tt.wantErr == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Fatalf("Fetch = %v, %v; want %v, error containing %q", names, err, tt.wantNames, tt.wantErr)
 			}
 		})
 	}
@@ -105,7 +98,7 @@ func TestFetchRejectsUnusableResponses(t *testing.T) {
 			srv, client := catalogServer(t, tt.handler)
 			c, err := Fetch(context.Background(), client, srv.URL)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("Fetch = %d entries, error %v; want error containing %q", len(c.Entries()), err, tt.want)
+				t.Errorf("Fetch = %d entries, error %v; want error containing %q", len(c.Entries), err, tt.want)
 			}
 		})
 	}
@@ -174,5 +167,54 @@ func TestFetchRefusesNonHTTPSURLWithoutRequesting(t *testing.T) {
 
 	if err == nil || requested {
 		t.Errorf("Fetch over http: error %v, requested %v; want an error and no request", err, requested)
+	}
+}
+
+func TestFetchPopular_preservesOrderAndSkipsOnlyUnknownAuthIDs(t *testing.T) {
+	entries := []map[string]any{
+		validEntry(func(e map[string]any) { e["name"] = "first" }),
+		validEntry(func(e map[string]any) { e["name"], e["auth"] = "future", "future-kind" }),
+		validEntry(func(e map[string]any) { e["name"] = "second" }),
+	}
+	data := catalogWithPopular(t, []string{"second", "future", "first"}, entries...)
+	srv, client := catalogServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write(data); err != nil {
+			t.Errorf("write catalog: %v", err)
+		}
+	})
+	c, err := Fetch(context.Background(), client, srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.Popular, []string{"second", "first"}) || len(c.Entries) != 2 || c.Entries[0].Name != "first" || c.Entries[1].Name != "second" {
+		t.Fatalf("Fetch = %+v, want popular [second first] and entries [first second]", c)
+	}
+}
+
+func TestFetchPopular_rejectsUnknownAndRepeatedIDsBeforeSkippingAuth(t *testing.T) {
+	entries := []map[string]any{
+		validEntry(func(e map[string]any) { e["name"] = "known" }),
+		validEntry(func(e map[string]any) { e["name"], e["auth"] = "future", "future-kind" }),
+	}
+	for _, tt := range []struct {
+		name    string
+		popular []string
+		want    string
+	}{
+		{"unknown", []string{"missing"}, "not a catalog server"},
+		{"duplicate skipped ID", []string{"future", "future"}, "listed twice"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := catalogWithPopular(t, tt.popular, entries...)
+			srv, client := catalogServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				if _, err := w.Write(data); err != nil {
+					t.Errorf("write catalog: %v", err)
+				}
+			})
+			_, err := Fetch(context.Background(), client, srv.URL)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Fetch error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

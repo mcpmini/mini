@@ -54,11 +54,11 @@ func requestedCatalogEntries(f initFlags) ([]catalog.Entry, error) {
 	if len(names) == 0 {
 		return nil, errors.New("--add needs at least one server name")
 	}
-	c, err := publishedCatalogSource().load()
+	entries, err := publishedCatalogSource().entries()
 	if err != nil {
 		return nil, err
 	}
-	return resolveCatalogNames(c.Entries(), names)
+	return resolveCatalogNames(entries, names)
 }
 
 func addRequestedCatalogEntries(p catalogStepParams) error {

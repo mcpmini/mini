@@ -11,7 +11,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// GitHub Pages serves catalog/v1.json from main here. No release reads it yet; once one does, v1
+// GitHub Pages serves catalog/v1.json from main here, and every released binary reads it, so v1
 // changes must stay additive. An oauth2 entry that needs a bundled client registration must wait
 // for the release that bundles it, or older binaries write it without one.
 const PublishedURL = "https://mcpmini.github.io/mini/catalog/v1.json"
@@ -39,25 +39,21 @@ func Fetch(ctx context.Context, client *http.Client, url string) (Catalog, error
 	if err != nil {
 		return Catalog{}, err
 	}
+	if err := validatePopular(doc.Catalog); err != nil {
+		return Catalog{}, err
+	}
 	return validated(withoutUnknownAuth(doc.Catalog))
 }
 
 func withoutUnknownAuth(c Catalog) Catalog {
 	skipped := make(map[string]bool)
-	var categories []Category
-	for _, category := range c.Categories {
-		listed := len(category.Servers)
-		category.Servers = slices.DeleteFunc(slices.Clone(category.Servers), func(entry Entry) bool {
-			unknown := !slices.Contains(knownAuthValues, entry.Auth)
-			skipped[entry.Name] = skipped[entry.Name] || unknown
-			return unknown
-		})
-		if len(category.Servers) > 0 || listed == 0 {
-			categories = append(categories, category)
-		}
-	}
-	popular := slices.DeleteFunc(slices.Clone(c.Popular), func(name string) bool { return skipped[name] })
-	return Catalog{Popular: popular, Categories: categories}
+	c.Entries = slices.DeleteFunc(c.Entries, func(entry Entry) bool {
+		unknown := !slices.Contains(knownAuthValues, entry.Auth)
+		skipped[entry.Name] = skipped[entry.Name] || unknown
+		return unknown
+	})
+	c.Popular = slices.DeleteFunc(c.Popular, func(name string) bool { return skipped[name] })
+	return c
 }
 
 func download(ctx context.Context, client *http.Client, url string) ([]byte, error) {

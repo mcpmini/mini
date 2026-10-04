@@ -20,15 +20,9 @@ type document struct {
 	Catalog
 }
 
-// Catalog keeps the published order: clients render categories and their servers as given.
 type Catalog struct {
-	Popular    []string   `json:"popular"`
-	Categories []Category `json:"categories"`
-}
-
-type Category struct {
-	Title   string  `json:"title"`
-	Servers []Entry `json:"servers"`
+	Entries []Entry  `json:"entries"`
+	Popular []string `json:"popular"`
 }
 
 type Entry struct {
@@ -36,16 +30,9 @@ type Entry struct {
 	Title       string `json:"title"`
 	URL         string `json:"url"`
 	Description string `json:"description"`
+	Category    string `json:"category"`
 	Auth        string `json:"auth"`
 	SetupURL    string `json:"setup_url,omitempty"`
-}
-
-func (c Catalog) Entries() []Entry {
-	var entries []Entry
-	for _, category := range c.Categories {
-		entries = append(entries, category.Servers...)
-	}
-	return entries
 }
 
 const (
@@ -79,65 +66,18 @@ func parse(data []byte) (Catalog, error) {
 }
 
 func validated(c Catalog) (Catalog, error) {
-	if err := validateCatalog(c); err != nil {
+	if _, err := validateEntries(c.Entries); err != nil {
+		return Catalog{}, err
+	}
+	if err := validatePopular(c); err != nil {
 		return Catalog{}, err
 	}
 	return c, nil
 }
 
-func decode(data []byte) (document, error) {
-	var doc document
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return document{}, fmt.Errorf("parse catalog: %w", err)
-	}
-	if doc.SchemaVersion != 1 {
-		return document{}, fmt.Errorf("catalog schema_version must be 1")
-	}
-	return doc, nil
-}
-
-func validateCatalog(c Catalog) error {
-	if len(c.Categories) == 0 {
-		return fmt.Errorf("catalog categories are required")
-	}
-	for i, category := range c.Categories {
-		if err := validateCategory(category); err != nil {
-			return fmt.Errorf("catalog category %s: %w", categoryLabel(category, i), err)
-		}
-	}
-	if err := validateEntries(c.Entries()); err != nil {
-		return err
-	}
-	return validatePopular(c)
-}
-
-func validateCategory(category Category) error {
-	if err := validateText("title", category.Title); err != nil {
-		return err
-	}
-	if len(category.Servers) == 0 {
-		return fmt.Errorf("has no servers")
-	}
-	return nil
-}
-
-func validateEntries(entries []Entry) error {
-	seen := make(map[string]bool, len(entries))
-	for i, entry := range entries {
-		if err := validateEntry(entry); err != nil {
-			return fmt.Errorf("catalog entry %s: %w", entryLabel(entry, i), err)
-		}
-		if seen[entry.Name] {
-			return fmt.Errorf("catalog entry %q: duplicate name", entry.Name)
-		}
-		seen[entry.Name] = true
-	}
-	return nil
-}
-
 func validatePopular(c Catalog) error {
-	names := make(map[string]bool)
-	for _, entry := range c.Entries() {
+	names := make(map[string]bool, len(c.Entries))
+	for _, entry := range c.Entries {
 		names[entry.Name] = true
 	}
 	seen := make(map[string]bool, len(c.Popular))
@@ -153,6 +93,34 @@ func validatePopular(c Catalog) error {
 	return nil
 }
 
+func decode(data []byte) (document, error) {
+	var doc document
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return document{}, fmt.Errorf("parse catalog: %w", err)
+	}
+	if doc.SchemaVersion != 1 {
+		return document{}, fmt.Errorf("catalog schema_version must be 1")
+	}
+	return doc, nil
+}
+
+func validateEntries(entries []Entry) ([]Entry, error) {
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("catalog entries are required")
+	}
+	seen := make(map[string]bool, len(entries))
+	for i, entry := range entries {
+		if err := validateEntry(entry); err != nil {
+			return nil, fmt.Errorf("catalog entry %s: %w", entryLabel(entry, i), err)
+		}
+		if seen[entry.Name] {
+			return nil, fmt.Errorf("catalog entry %q: duplicate name", entry.Name)
+		}
+		seen[entry.Name] = true
+	}
+	return entries, nil
+}
+
 func validateEntry(entry Entry) error {
 	if err := validateName(entry.Name); err != nil {
 		return err
@@ -160,7 +128,7 @@ func validateEntry(entry Entry) error {
 	if entry.URL == "" {
 		return fmt.Errorf("url is required")
 	}
-	if err := cmp.Or(validateTitle(entry.Title), validateText("description", entry.Description)); err != nil {
+	if err := cmp.Or(validateTitle(entry.Title), validateText("description", entry.Description), validateText("category", entry.Category)); err != nil {
 		return err
 	}
 	if !slices.Contains(knownAuthValues, entry.Auth) {
@@ -225,13 +193,6 @@ func validateTitle(title string) error {
 func hasIrregularSpacing(value string) bool {
 	return strings.HasPrefix(value, " ") || strings.HasSuffix(value, " ") || strings.Contains(value, "  ") ||
 		strings.ContainsFunc(value, func(r rune) bool { return unicode.IsSpace(r) && r != ' ' })
-}
-
-func categoryLabel(category Category, index int) string {
-	if category.Title != "" {
-		return strconv.Quote(category.Title)
-	}
-	return fmt.Sprintf("%d", index+1)
 }
 
 func entryLabel(entry Entry, index int) string {

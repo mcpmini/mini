@@ -88,7 +88,7 @@ func newLoginStepParams(configDir string, autoYes bool, p prompter) loginStepPar
 }
 
 func runInitCatalogSelection(p catalogStepParams) {
-	p.loadCatalog, p.out, p.errOut = publishedCatalogSource().load, os.Stdout, os.Stderr
+	p.loadCatalog, p.out, p.errOut = publishedCatalogSource().entries, os.Stdout, os.Stderr
 	if err := runCatalogStep(p); err != nil {
 		fatalf("catalog: %v", err)
 	}

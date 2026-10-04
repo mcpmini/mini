@@ -21,7 +21,7 @@ import (
 type catalogStepParams struct {
 	configDir   string
 	autoYes     bool
-	loadCatalog func() (catalog.Catalog, error)
+	loadCatalog func() ([]catalog.Entry, error)
 	ask         func(string) string
 	out         io.Writer
 	errOut      io.Writer
@@ -38,13 +38,14 @@ func publishedCatalogSource() catalogSource {
 	return catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL, warn: os.Stderr}
 }
 
-func (s catalogSource) load() (catalog.Catalog, error) {
+func (s catalogSource) entries() ([]catalog.Entry, error) {
 	c, err := catalog.Fetch(context.Background(), s.client, s.url)
 	if err == nil {
-		return c, nil
+		return c.Entries, nil
 	}
 	fmt.Fprintf(s.warn, "note: using the built-in server catalog (the published one is unavailable: %v)\n", err)
-	return catalog.Load()
+	c, err = catalog.Load()
+	return c.Entries, err
 }
 
 func runCatalogStep(p catalogStepParams) error {
@@ -54,7 +55,7 @@ func runCatalogStep(p catalogStepParams) error {
 	if p.autoYes {
 		return nil
 	}
-	c, err := p.loadCatalog()
+	entries, err := p.loadCatalog()
 	if err != nil {
 		return err
 	}
@@ -62,12 +63,12 @@ func runCatalogStep(p catalogStepParams) error {
 	if err != nil {
 		return err
 	}
-	available := availableCatalog(c, servers)
-	if len(available.Categories) == 0 {
+	available := availableCatalogEntries(entries, servers)
+	if len(available) == 0 {
 		return nil
 	}
-	printCatalog(p.out, available)
-	return selectCatalogEntries(p, available.Entries())
+	printCatalogEntries(p.out, available)
+	return selectCatalogEntries(p, available)
 }
 
 func configuredServers(configDir string) ([]config.ServerConfig, error) {
@@ -76,25 +77,12 @@ func configuredServers(configDir string) ([]config.ServerConfig, error) {
 	return servers.Loaded, err
 }
 
-func availableCatalog(c catalog.Catalog, servers []config.ServerConfig) catalog.Catalog {
+func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
 	configured := configuredKeys(servers)
-	var available catalog.Catalog
-	for _, category := range c.Categories {
-		category.Servers = slices.DeleteFunc(slices.Clone(category.Servers), func(entry catalog.Entry) bool {
-			return isConfigured(configured, entry)
-		})
-		if len(category.Servers) > 0 {
-			available.Categories = append(available.Categories, category)
-		}
-	}
-	available.Popular = availablePopular(c.Popular, available.Entries())
-	return available
-}
-
-func availablePopular(popular []string, available []catalog.Entry) []string {
-	return slices.DeleteFunc(slices.Clone(popular), func(name string) bool {
-		return !slices.ContainsFunc(available, func(entry catalog.Entry) bool { return entry.Name == name })
+	available := slices.DeleteFunc(slices.Clone(entries), func(entry catalog.Entry) bool {
+		return isConfigured(configured, entry)
 	})
+	return groupByCategory(available)
 }
 
 func configuredKeys(servers []config.ServerConfig) map[string]bool {
@@ -121,15 +109,27 @@ func serverURLKey(rawURL string) string {
 	return u.String()
 }
 
-func printCatalog(out io.Writer, c catalog.Catalog) {
-	fmt.Fprintln(out, "Available MCP servers:")
-	number := 0
-	for _, category := range c.Categories {
-		fmt.Fprintf(out, "  %s:\n", category.Title)
-		for _, entry := range category.Servers {
-			number++
-			fmt.Fprintf(out, "    %d. %s [%s] - %s%s\n", number, entry.Title, entryHost(entry.URL), entry.Description, authLabel(entry.Auth))
+func groupByCategory(entries []catalog.Entry) []catalog.Entry {
+	firstSeen := make(map[string]int)
+	for i, entry := range entries {
+		if _, ok := firstSeen[entry.Category]; !ok {
+			firstSeen[entry.Category] = i
 		}
+	}
+	return slices.SortedStableFunc(slices.Values(entries), func(a, b catalog.Entry) int {
+		return firstSeen[a.Category] - firstSeen[b.Category]
+	})
+}
+
+func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
+	fmt.Fprintln(out, "Available MCP servers:")
+	category := ""
+	for i, entry := range entries {
+		if entry.Category != category {
+			category = entry.Category
+			fmt.Fprintf(out, "  %s:\n", category)
+		}
+		fmt.Fprintf(out, "    %d. %s [%s] - %s%s\n", i+1, entry.Title, entryHost(entry.URL), entry.Description, authLabel(entry.Auth))
 	}
 }
 
