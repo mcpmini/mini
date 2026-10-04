@@ -174,32 +174,26 @@ func (s *Server) logReloadProblems(servers config.Servers) {
 		s.logger.Warn("server config fails to load, "+s.brokenServerOutcome(se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
 	for _, se := range servers.BrokenProjections() {
-		s.logger.Warn("projections fail to load, "+s.brokenProjectionsOutcome(servers, se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
+		s.logger.Warn("projections fail to load, "+s.brokenProjectionsOutcome(se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
 }
 
 func (s *Server) brokenServerOutcome(name string) string {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	if s.runsOrIsStartingLocked(name) {
-		return "keeping the server as it was"
+	if s.upstreams[name] != nil || s.configServers[name] {
+		return "keeping the config it last loaded"
 	}
 	return "skipping the server"
 }
 
-func (s *Server) brokenProjectionsOutcome(servers config.Servers, name string) string {
-	if !servers.IsEnabled(name) {
-		return "the server is disabled"
-	}
+func (s *Server) brokenProjectionsOutcome(name string) string {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	if s.projections[name] != nil {
 		return "keeping the server's previous projections"
 	}
-	if !s.runsOrIsStartingLocked(name) {
-		return "the server isn't running"
-	}
-	return "the server runs without projections"
+	return "the server has no projections until the file loads"
 }
 
 func serverProjections(servers []config.ServerConfig) map[string]map[string]*config.ProjectionConfig {
@@ -251,9 +245,4 @@ func projectionCounts(projections map[string]map[string]*config.ProjectionConfig
 		counts[serverName] = len(tools)
 	}
 	return counts
-}
-
-// A config server with no upstream yet is still in its startup connect retry, which installs it later.
-func (s *Server) runsOrIsStartingLocked(name string) bool {
-	return s.upstreams[name] != nil || s.configServers[name]
 }

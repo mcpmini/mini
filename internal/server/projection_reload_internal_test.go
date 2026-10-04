@@ -167,12 +167,12 @@ func TestApplyConfig_keepsServersAndProjectionsWhileTheServerFilesCantBeListed(t
 	}
 }
 
-func TestBrokenServerOutcome_keepsAConfiguredServerThatIsStillConnecting(t *testing.T) {
+func TestBrokenServerOutcome_keepsTheConfigOfAServerMiniLoadedBefore(t *testing.T) {
 	srv := newInstallTestServer(t)
-	srv.recordConfigServers([]config.ServerConfig{{Name: "retrying", Command: "run"}})
+	srv.recordConfigServers([]config.ServerConfig{{Name: "unconnected", Command: "run"}})
 
-	if got := srv.brokenServerOutcome("retrying"); got != "keeping the server as it was" {
-		t.Errorf("outcome for a configured server with no upstream yet = %q, want it kept: its startup retry still installs it", got)
+	if got := srv.brokenServerOutcome("unconnected"); got != "keeping the config it last loaded" {
+		t.Errorf("outcome for a configured server with no upstream = %q, want its last config kept", got)
 	}
 	if got := srv.brokenServerOutcome("never-started"); got != "skipping the server" {
 		t.Errorf("outcome for a server mini never started = %q, want it skipped", got)
