@@ -240,8 +240,8 @@ func (s *Server) logReloadProblems(servers config.Servers) {
 func (s *Server) brokenServerOutcome(name string) string {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	if s.upstreams[name] != nil {
-		return "keeping the running server as it is"
+	if s.upstreams[name] != nil || s.configServers[name] {
+		return "keeping the server as it was"
 	}
 	return "skipping the server"
 }

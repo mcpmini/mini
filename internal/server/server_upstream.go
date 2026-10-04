@@ -215,19 +215,19 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	u := newUpstreamServer(sc, conn, s.clock)
 	u.lastDefs = tools
 	old := s.swapUpstream(sc.Name, u)
-	s.seedProjections(sc)
+	s.seedProjectionsIfNone(sc)
 	s.registerTools(sc, tools, old)
 	s.attachNotificationHandler(u, conn)
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
 
-func (s *Server) seedProjections(sc config.ServerConfig) {
+func (s *Server) seedProjectionsIfNone(sc config.ServerConfig) {
 	if sc.Projections == nil {
 		return
 	}
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	if s.projections[sc.Name] == nil { // sc may predate a reload or set_projection, so it never replaces live rules
+	if s.projections[sc.Name] == nil {
 		s.projections[sc.Name] = sc.Projections
 	}
 }
@@ -259,11 +259,10 @@ func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDef
 	s.reg.AddServer(p)
 }
 
-// Walks the map under the lock because set_projection writes into it.
 func (s *Server) currentAliasesFor(serverName string) map[string]string {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	return config.AliasesFromProjections(s.projections[serverName])
+	return config.AliasesFromProjections(s.projections[serverName]) // walked under the lock: set_projection writes into this map
 }
 
 // Must be called in a goroutine; blocks until ctx is canceled.

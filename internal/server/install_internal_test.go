@@ -70,7 +70,11 @@ func TestApplyConfig_keepsServersAndProjectionsWhileTheServerFilesCantBeListed(t
 	if err := os.Chmod(serversDir, 0); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(serversDir, 0700) }) // t.TempDir's cleanup fails the test if this doesn't run
+	t.Cleanup(func() {
+		if err := os.Chmod(serversDir, 0700); err != nil {
+			t.Error(err)
+		}
+	})
 
 	srv.applyConfig()
 	removedByName := srv.removeConfigServer("svc")
@@ -428,5 +432,17 @@ func waitForChannel(t *testing.T, what string, ch <-chan struct{}) {
 	case <-ch:
 	case <-time.After(5 * time.Second):
 		t.Fatalf("timed out waiting until %s", what)
+	}
+}
+
+func TestBrokenServerOutcome_keepsAConfiguredServerThatIsStillConnecting(t *testing.T) {
+	srv := newInstallTestServer(t)
+	srv.recordConfigServers([]config.ServerConfig{{Name: "retrying", Command: "run"}})
+
+	if got := srv.brokenServerOutcome("retrying"); got != "keeping the server as it was" {
+		t.Errorf("outcome for a configured server with no upstream yet = %q, want it kept: its startup retry still installs it", got)
+	}
+	if got := srv.brokenServerOutcome("never-started"); got != "skipping the server" {
+		t.Errorf("outcome for a server mini never started = %q, want it skipped", got)
 	}
 }

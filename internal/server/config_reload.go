@@ -57,11 +57,12 @@ func (s *Server) reloadIfConfigChanged(last map[string]string) map[string]string
 }
 
 func (s *Server) applyConfig() map[string]int {
-	s.removeServersGoneFromConfig()
-	_, fresh, err := s.applyReload()
+	servers, fresh, err := s.applyReload()
 	if err != nil {
 		s.logger.Warn("config reload: keeping the current config", "err", err)
+		return nil
 	}
+	s.removeServersGoneFromConfig(servers)
 	return fresh
 }
 

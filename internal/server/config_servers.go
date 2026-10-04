@@ -27,11 +27,7 @@ func (s *Server) configServerNames() []string {
 	return names
 }
 
-func (s *Server) removeServersGoneFromConfig() {
-	servers, err := config.LoadServers(s.configDir)
-	if err != nil {
-		return // applyConfig logs this error once applyReload hits it
-	}
+func (s *Server) removeServersGoneFromConfig(servers config.Servers) {
 	removed := false
 	for _, name := range s.configServerNames() {
 		if !goneFromConfig(servers, name) {
@@ -58,7 +54,10 @@ func (s *Server) removeConfigServer(name string) bool {
 		return false
 	}
 	servers, err := config.LoadServers(s.configDir)
-	if err != nil || !goneFromConfig(servers, name) {
+	if err != nil {
+		return false // the server files can't be listed now, so nothing shows the server is gone
+	}
+	if !goneFromConfig(servers, name) {
 		return false
 	}
 	s.detachAndCloseServer(name)
