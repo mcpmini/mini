@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -28,6 +27,26 @@ type BrowserLogin struct {
 	oauth2Cfg   *oauth2.Config
 	verifier    string
 	resourceURL string
+}
+
+type BeginLoginParams = ResolveEndpointsParams
+
+// BeginLogin binds the callback port before discovery, so a busy port fails before a client is
+// registered. It may fill in sc.Auth.
+func BeginLogin(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (*BrowserLogin, error) {
+	listener, err := ListenCallback(ctx, sc.Auth)
+	if err != nil {
+		return nil, err
+	}
+	if err := ResolveEndpoints(ctx, sc, p); err != nil {
+		listener.Close() //nolint:errcheck // nothing was served on it; the resolve error is the one to report
+		return nil, fmt.Errorf("resolve oauth endpoints: %w", err)
+	}
+	login, err := StartBrowserLogin(sc.Auth, listener)
+	if err != nil {
+		return nil, fmt.Errorf("start oauth login: %w", err)
+	}
+	return login, nil
 }
 
 var callbackListenAddr = func(ac *config.AuthConfig) string {
@@ -128,9 +147,17 @@ func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {
 	l.serving.Go(func() {
 		err := l.server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
-			log.Printf("oauth callback server: %v", err)
+			l.reportServeFailure(err)
 		}
 	})
+}
+
+// A callback that already arrived wins: the login can still finish without the server.
+func (l *BrowserLogin) reportServeFailure(err error) {
+	select {
+	case l.results <- loginCallbackResult{err: fmt.Errorf("oauth callback server: %w", err)}:
+	default:
+	}
 }
 
 // http.Server.Close only flags a Serve goroutine that has not started yet; that goroutine closes the

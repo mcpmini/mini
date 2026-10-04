@@ -80,16 +80,28 @@ func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", p.serverName)
-	resolveParams := auth.ResolveEndpointsParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
-	if err := auth.ResolveEndpoints(ctx, p.sc, resolveParams); err != nil {
-		return nil, fmt.Errorf("resolve oauth config: %w", err)
-	}
-	token, err := auth.PKCEFlow(ctx, p.sc.Auth, p.opener)
+	token, err := runBrowserLogin(ctx, p)
 	if err != nil {
-		return nil, fmt.Errorf("auth flow: %w", err)
+		return nil, err
 	}
 	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
 		return nil, fmt.Errorf("save token: %w", err)
+	}
+	return token, nil
+}
+
+func runBrowserLogin(ctx context.Context, p pkceFlowParams) (*oauth2.Token, error) {
+	params := auth.BeginLoginParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
+	login, err := auth.BeginLogin(ctx, p.sc, params)
+	if err != nil {
+		return nil, err
+	}
+	defer login.Close() //nolint:errcheck // Close always returns nil
+	fmt.Printf("Open this URL in your browser:\n%s\n\n", login.AuthURL())
+	p.opener(login.AuthURL()) //nolint:errcheck // the URL is printed above, so a failed open only costs a click
+	token, err := login.Wait(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("auth flow: %w", err)
 	}
 	return token, nil
 }

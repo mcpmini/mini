@@ -296,28 +296,3 @@ func TestBrowserLogin_closeDuringExchangeDiscardsToken(t *testing.T) {
 		t.Errorf("Wait returned %v after Close, want ErrLoginClosed", err)
 	}
 }
-
-func TestPKCEFlow_opensAuthURLAndReturnsToken(t *testing.T) {
-	auth.UseEphemeralCallbackPort()
-	mock := authtest.NewTokenServer(t)
-	var opened string
-	openBrowser := func(authURL string) error {
-		opened = authURL
-		authtest.CompleteAuthorization(t, authURL, "test-auth-code")
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	token, err := auth.PKCEFlow(ctx, mock.AuthConfig(), openBrowser)
-
-	if err != nil {
-		t.Fatalf("PKCEFlow: %v", err)
-	}
-	if token.AccessToken != "test-access-token" {
-		t.Errorf("access token = %q, want test-access-token", token.AccessToken)
-	}
-	if !strings.Contains(opened, "code_challenge=") {
-		t.Errorf("browser opened %q, want the authorization URL", opened)
-	}
-}
