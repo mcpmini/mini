@@ -18,7 +18,11 @@ func UseLoopbackEndpoints() {
 }
 
 func UseEphemeralCallbackPort() {
-	callbackListenAddr = func(*config.AuthConfig) string { return "127.0.0.1:0" }
+	UseCallbackListenAddr("127.0.0.1:0")
+}
+
+func UseCallbackListenAddr(addr string) {
+	callbackListenAddr = func(*config.AuthConfig) string { return addr }
 }
 
 func ResetEndpointValidation() {

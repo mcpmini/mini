@@ -3,7 +3,6 @@ package auth
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -80,23 +79,6 @@ func (t resourceTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		return io.NopCloser(bytes.NewReader(body)), nil
 	}
 	return t.base.RoundTrip(clone)
-}
-
-// PKCEFlow performs OAuth2 Authorization Code + PKCE.
-// Always prints the auth URL, then also attempts to open it in the browser.
-func PKCEFlow(ctx context.Context, ac *config.AuthConfig, openBrowser func(string) error) (*oauth2.Token, error) {
-	listener, err := ListenCallback(ctx, ac)
-	if err != nil {
-		return nil, err
-	}
-	login, err := StartBrowserLogin(ac, listener)
-	if err != nil {
-		return nil, err
-	}
-	defer login.Close() //nolint:errcheck
-	fmt.Printf("Open this URL in your browser:\n%s\n\n", login.AuthURL())
-	openBrowser(login.AuthURL()) //nolint:errcheck
-	return login.Wait(ctx)
 }
 
 // ClientMetadataURL is mini's CIMD document URL — the stable client_id used when

@@ -70,24 +70,14 @@ type pkceFlowResult struct {
 	authCtx context.Context
 }
 
-func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) { //nolint:funclen
+func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) {
 	s.cancelExistingAuthFlow(serverName)
 	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	listener, err := auth.ListenCallback(authCtx, sc.Auth)
+	params := auth.BeginLoginParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
+	login, err := auth.BeginLogin(authCtx, &sc, params)
 	if err != nil {
 		cancel()
 		return pkceFlowResult{}, err
-	}
-	resolveParams := auth.ResolveEndpointsParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
-	if err := auth.ResolveEndpoints(authCtx, &sc, resolveParams); err != nil {
-		listener.Close() //nolint:errcheck
-		cancel()
-		return pkceFlowResult{}, fmt.Errorf("resolve oauth endpoints: %w", err)
-	}
-	login, err := auth.StartBrowserLogin(sc.Auth, listener)
-	if err != nil {
-		cancel()
-		return pkceFlowResult{}, fmt.Errorf("start auth flow: %w", err)
 	}
 	state := &authFlowState{cancel: cancel, login: login}
 	s.storeAuthFlow(serverName, state)
