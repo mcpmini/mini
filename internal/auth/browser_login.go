@@ -21,7 +21,7 @@ var ErrLoginClosed = errors.New("oauth browser login closed")
 type BrowserLogin struct {
 	server      *http.Server
 	serving     sync.WaitGroup
-	codes       chan string
+	results     chan loginCallbackResult
 	closed      chan struct{}
 	closeOnce   sync.Once
 	authURL     string
@@ -52,14 +52,14 @@ func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener) (*BrowserLo
 	}
 	cfg, verifier, state := buildPKCEConfig(ac, tcpAddr.Port)
 	login := &BrowserLogin{
-		codes: make(chan string, 1), closed: make(chan struct{}),
+		results: make(chan loginCallbackResult, 1), closed: make(chan struct{}),
 		oauth2Cfg: cfg, verifier: verifier, resourceURL: ac.ResourceURL,
 		authURL: buildAuthURL(cfg, buildAuthURLParams{
 			state: state, verifier: verifier,
 			resourceURL: ac.ResourceURL, extraAuthParams: ac.ExtraAuthParams,
 		}),
 	}
-	login.serve(listener, callbackHandler(state, login.codes))
+	login.serve(listener, callbackHandler(state, login.results))
 	return login, nil
 }
 
@@ -90,8 +90,11 @@ func (l *BrowserLogin) Wait(ctx context.Context) (*oauth2.Token, error) {
 
 func (l *BrowserLogin) awaitCode(ctx context.Context) (string, error) {
 	select {
-	case code := <-l.codes:
-		return code, nil
+	case result := <-l.results:
+		if l.isClosed() {
+			return "", ErrLoginClosed
+		}
+		return result.code, result.err
 	case <-l.closed:
 		return "", ErrLoginClosed
 	case <-ctx.Done():
@@ -135,36 +138,4 @@ func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {
 func (l *BrowserLogin) stopServing() {
 	l.server.Close() //nolint:errcheck
 	l.serving.Wait()
-}
-
-func callbackHandler(state string, codes chan<- string) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		if q.Get("state") != state {
-			http.Error(w, "state mismatch", http.StatusBadRequest)
-			return
-		}
-		code := q.Get("code")
-		if code == "" {
-			http.Error(w, "missing code", http.StatusBadRequest)
-			return
-		}
-		writeAuthorizedResponse(w)
-		sendAuthCode(codes, code)
-	})
-}
-
-func writeAuthorizedResponse(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintln(w, "<html><body><p>Authorized. You can close this tab.</p></body></html>")
-	if f, ok := w.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func sendAuthCode(codes chan<- string, code string) {
-	select {
-	case codes <- code:
-	default:
-	}
 }
