@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 type loadServersCase struct {
@@ -147,7 +149,7 @@ func TestLoadServers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			for rel, content := range tc.files {
-				writeFile(t, filepath.Join(dir, rel), content)
+				testutil.WriteFile(t, filepath.Join(dir, rel), content)
 			}
 			checkLoadServers(t, mustLoadServers(t, dir), tc)
 		})
@@ -214,7 +216,7 @@ func brokenNames(servers config.Servers) []string {
 
 func TestLoadServers_aConfigPathWithGlobSyntaxStillListsItsServers(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "odd[name")
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "command: echo\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
 
 	if got := loadedNames(mustLoadServers(t, dir)); !slices.Equal(got, []string{"svc"}) {
 		t.Errorf("Loaded = %v, want [svc]", got)
@@ -223,7 +225,7 @@ func TestLoadServers_aConfigPathWithGlobSyntaxStillListsItsServers(t *testing.T)
 
 func TestLoadServers_failsWhenItCannotListTheServerFiles(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers"), "not a directory\n")
+	testutil.WriteFile(t, filepath.Join(dir, "servers"), "not a directory\n")
 
 	if _, err := config.LoadServers(dir); err == nil {
 		t.Error("LoadServers = nil error, want one: an empty result would read as every server removed")
@@ -232,7 +234,7 @@ func TestLoadServers_failsWhenItCannotListTheServerFiles(t *testing.T) {
 
 func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "good.yaml"), "command: echo\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "good", Command: "echo"})
 	if err := os.MkdirAll(filepath.Join(dir, "servers", "unreadable.yaml"), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -248,13 +250,9 @@ func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 }
 
 func TestLoadServers_anUnreadableProjectionFileLeavesItsServerUnprojected(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("running as root; permission test not meaningful")
-	}
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "svc.yaml"), "command: echo\n")
-	p := filepath.Join(dir, "servers", "svc.proj.yaml")
-	if err := os.WriteFile(p, []byte("tool:\n  include_only: [a]\n"), 0000); err != nil {
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
+	if err := os.MkdirAll(filepath.Join(dir, "servers", "svc.proj.yaml"), 0700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -265,8 +263,8 @@ func TestLoadServers_anUnreadableProjectionFileLeavesItsServerUnprojected(t *tes
 
 func TestLoadServers_mergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "servers", "detected.yaml"), "command: echo\n")
-	writeFile(t, filepath.Join(dir, "servers", "custom.yaml"), "command: echo\nauth:\n  type: bearer\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "detected", Command: "echo"})
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "custom", Command: "echo", Auth: &config.AuthConfig{Type: config.AuthTypeBearer}})
 	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
 		t.Fatal(err)
 	}
