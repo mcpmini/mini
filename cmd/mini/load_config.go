@@ -53,10 +53,8 @@ func warnUnprojected(out io.Writer, se config.SourceError) {
 	fmt.Fprintf(out, "warning: skipping the projections of server %s: %v\n", se.ServerName, se.Err)
 }
 
-// unknownTransport stands in for a server whose file failed to load, so its transport is unknown.
 const unknownTransport = "-"
 
-// A YAML error lists each problem on its own line, which would break a table row apart.
 func singleLine(err error) string {
 	return strings.Join(strings.Fields(err.Error()), " ")
 }

@@ -131,7 +131,7 @@ func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testin
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "unprojected", Fixtures: fixtures})
 	testutil.WriteFile(t, config.ProjectionPath(cfg, "unprojected"), "get_item: [broken\n")
 	testutil.WriteFile(t, config.ServerPath(cfg, "web"), "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
-	testutil.WriteFile(t, config.ServerPath(cfg, "typo"), "command: echo\nenabled: maybe\n") // yaml lists type errors on lines of their own
+	testutil.WriteFile(t, config.ServerPath(cfg, "multiline-yaml-error"), "command: echo\nenabled: maybe\n")
 
 	stdout, _, code := runCLI(t, cfg, "test")
 

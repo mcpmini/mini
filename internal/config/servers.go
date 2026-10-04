@@ -95,7 +95,6 @@ func (s Servers) IsEnabled(name string) bool {
 	return ok && sc.IsEnabled()
 }
 
-// LoadServer loads one server as LoadServers would, without needing any other server file to load.
 func LoadServer(configDir, name string) (ServerConfig, error) {
 	if err := checkServerName(name, "the request"); err != nil {
 		return ServerConfig{}, err

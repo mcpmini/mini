@@ -131,13 +131,10 @@ func (s *Server) setServerProjection(p configureParams, visibleTool string) (any
 	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, visibleTool)}, nil
 }
 
-// Saving writes every live projection of the server over its projection file. Unless the saved
-// config loads, the live projections may not match the file, so saving could replace rules the
-// user wrote.
 func (s *Server) checkSavedProjectionsLoad(serverName string) error {
 	sc, err := config.LoadServer(s.configDir, serverName)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil // no server file, so nothing saved was loaded that saving could replace
+		return nil
 	}
 	if err == nil && sc.ProjectionsErr != nil {
 		err = sc.ProjectionsErr.Err
