@@ -11,7 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
 )
@@ -23,9 +23,9 @@ type serverImport struct {
 	errOut    io.Writer
 }
 
-func importClaudeFormat(configDir, source, path string) []string {
-	imp := serverImport{configDir: configDir, source: source, out: os.Stdout, errOut: os.Stderr}
-	servers, err := importers.ReadClaude(path)
+func importAgentConfig(configDir string, agent agents.Agent) []string {
+	imp := serverImport{configDir: configDir, source: agent.Name, out: os.Stdout, errOut: os.Stderr}
+	servers, err := agent.Read(agent.ConfigPath)
 	if err != nil {
 		fmt.Fprintf(imp.errOut, "  warning: %v\n", err)
 		return nil

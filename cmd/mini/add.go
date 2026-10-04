@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/mcpmini/mini/cmd/mini/importers"
+	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/server"
@@ -168,15 +168,15 @@ const (
 func selectedImport(f importFlags) importSource {
 	switch {
 	case f.claude != "":
-		return importSource{path: f.claude, read: importers.ReadClaude, tip: headersTip}
+		return importSource{path: f.claude, read: agents.ReadClaude, tip: headersTip}
 	case f.cursor != "":
-		return importSource{path: f.cursor, read: importers.ReadClaude, tip: headersTip}
+		return importSource{path: f.cursor, read: agents.ReadClaude, tip: headersTip}
 	case f.codex != "":
-		return importSource{path: f.codex, read: importers.ReadCodex, tip: envTip}
+		return importSource{path: f.codex, read: agents.ReadCodex, tip: envTip}
 	case f.gemini != "":
-		return importSource{path: f.gemini, read: importers.ReadGemini, tip: headersTip}
+		return importSource{path: f.gemini, read: agents.ReadGemini, tip: headersTip}
 	default:
-		return importSource{path: f.openclaw, read: importers.ReadOpenClaw, tip: envTip}
+		return importSource{path: f.openclaw, read: agents.ReadOpenClaw, tip: envTip}
 	}
 }
 

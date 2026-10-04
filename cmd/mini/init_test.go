@@ -9,8 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/testutil"
 )
+
+func claudeCodeAt(path string) agents.Agent {
+	return agents.Agent{Name: "Claude Code", ConfigPath: path, Read: agents.ReadClaude}
+}
 
 func TestIsSelfEntry(t *testing.T) {
 	self, err := os.Executable()
@@ -44,7 +49,7 @@ func TestIsSelfEntry(t *testing.T) {
 	})
 }
 
-func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
+func TestImportAgentConfig_SkipsSelf(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +67,7 @@ func TestImportClaudeFormat_SkipsSelf(t *testing.T) {
 	}`
 	src := filepath.Join(t.TempDir(), "claude.json")
 	testutil.WriteFile(t, src, claudeJSON)
-	count := len(importClaudeFormat(configDir, "Claude Code", src))
+	count := len(importAgentConfig(configDir, claudeCodeAt(src)))
 	if count != 1 {
 		t.Errorf("imported %d servers, want 1 (mini should be skipped)", count)
 	}
@@ -120,7 +125,7 @@ func TestAutoConfirmAccepts(t *testing.T) {
 	}
 }
 
-func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
+func TestImportAgentConfig_NeverReplacesAConfiguredServer(t *testing.T) {
 	tests := []struct {
 		name      string
 		reimport  string
@@ -163,7 +168,7 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 			configDir := t.TempDir()
 			src := filepath.Join(t.TempDir(), "claude.json")
 			testutil.WriteFile(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
-			testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
+			testutil.CaptureStdout(t, func() { importAgentConfig(configDir, claudeCodeAt(src)) })
 			serverFile := filepath.Join(configDir, "servers", "foo.yaml")
 			if tt.edit != nil {
 				testutil.WriteFileBytes(t, serverFile, tt.edit(serverFile))
@@ -172,7 +177,7 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 			testutil.WriteFile(t, src, `{"mcpServers": `+tt.reimport+`}`)
 
 			var imported []string
-			out := testutil.CaptureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
+			out := testutil.CaptureStdout(t, func() { imported = importAgentConfig(configDir, claudeCodeAt(src)) })
 
 			after := testutil.ReadFile(t, serverFile)
 			if len(imported) != 0 || string(after) != string(before) {
@@ -188,17 +193,17 @@ func TestImportClaudeFormat_NeverReplacesAConfiguredServer(t *testing.T) {
 	}
 }
 
-func TestImportClaudeFormat_ImportsOnlyNewServers(t *testing.T) {
+func TestImportAgentConfig_ImportsOnlyNewServers(t *testing.T) {
 	configDir := t.TempDir()
 	src := filepath.Join(t.TempDir(), "claude.json")
 	testutil.WriteFile(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
-	testutil.CaptureStdout(t, func() { importClaudeFormat(configDir, "Claude Code", src) })
+	testutil.CaptureStdout(t, func() { importAgentConfig(configDir, claudeCodeAt(src)) })
 	testutil.WriteFile(t, src, `{"mcpServers": {
 		"foo": {"type": "http", "url": "https://foo.example/mcp"},
 		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`)
 
 	var imported []string
-	testutil.CaptureStdout(t, func() { imported = importClaudeFormat(configDir, "Claude Code", src) })
+	testutil.CaptureStdout(t, func() { imported = importAgentConfig(configDir, claudeCodeAt(src)) })
 
 	if !slices.Equal(imported, []string{"bar"}) {
 		t.Errorf("second import = %v, want [bar] (only bar is new)", imported)
