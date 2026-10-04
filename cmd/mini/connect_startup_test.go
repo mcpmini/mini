@@ -15,7 +15,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
-	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -45,7 +44,14 @@ const cleanupTimerAndPollTicker = 2
 func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 	dir := shortConfigDir(t)
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "getData:\n  include_only: [a, b]\n")
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"getData": {
+				IncludeOnly: []string{"a", "b"},
+			},
+		},
+	})
 	reloaded := logSignal{msg: "projections reloaded", seen: make(chan struct{}, 1)}
 	fc := clock.NewFake()
 	cfg := config.DefaultConfig()
@@ -63,7 +69,14 @@ func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 		t.Fatalf("initial projection should keep a and b, got %v", data)
 	}
 
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "getData:\n  include_only: [a]\n")
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"getData": {
+				IncludeOnly: []string{"a"},
+			},
+		},
+	})
 	fc.Advance(5 * time.Second)
 	reloaded.wait(t)
 

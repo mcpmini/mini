@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -22,7 +24,14 @@ func projectedResponseClient(t *testing.T, extraConfig string) (*mcpClient, stri
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","body":"full text"}`}),
 	})
 	writeConfig(t, cfg, extraConfig+"response_dir: "+respDir+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
+	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"get_item": {
+				Exclude: []string{"secret"},
+			},
+		},
+	})
 	return startServer(t, cfg), respDir, cfg
 }
 
@@ -76,7 +85,14 @@ func TestIntegrationStorage_responseDirAutoCreated(t *testing.T) {
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}),
 	})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
-	writeProjection(t, cfg, "svc", "get_item:\n  include_only: [id]\n")
+	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
+		ServerName: "svc",
+		Tools: map[string]*config.ProjectionConfig{
+			"get_item": {
+				IncludeOnly: []string{"id"},
+			},
+		},
+	})
 
 	client := startServer(t, cfg)
 	e := client.execEnvelope("svc", "get_item", nil)

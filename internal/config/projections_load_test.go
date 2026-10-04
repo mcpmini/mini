@@ -18,168 +18,6 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-type projLoadCase struct {
-	name              string
-	files             map[string]string
-	env               map[string]string
-	wantProjected     []string
-	wantAbsent        []string
-	wantSkipped       []string // nil = don't check; []string{} = assert empty
-	wantSourceErrors  int
-	wantKeepsPrevious []string
-	wantDropsPrevious []string
-	check             func(*testing.T, string, config.LoadProjectionsResult)
-}
-
-func checkProjLoad(t *testing.T, dir string, load config.LoadProjectionsResult, tc projLoadCase) {
-	t.Helper()
-	for _, name := range tc.wantProjected {
-		if load.Projections[name] == nil {
-			t.Errorf("expected %q in Projections", name)
-		}
-	}
-	for _, name := range tc.wantAbsent {
-		if _, ok := load.Projections[name]; ok {
-			t.Errorf("expected %q absent from Projections", name)
-		}
-	}
-	if tc.wantSkipped != nil {
-		for _, name := range tc.wantSkipped {
-			if _, ok := load.SkippedServers[name]; !ok {
-				t.Errorf("expected %q in SkippedServers", name)
-			}
-		}
-		if len(tc.wantSkipped) == 0 && len(load.SkippedServers) != 0 {
-			t.Errorf("expected SkippedServers empty, got %v", load.SkippedServers)
-		}
-	}
-	if got := len(load.SourceErrors); got != tc.wantSourceErrors {
-		t.Errorf("expected %d SourceErrors, got %d: %v", tc.wantSourceErrors, got, load.SourceErrors)
-	}
-	for _, name := range tc.wantKeepsPrevious {
-		if !load.KeepsPreviousProjection(name) {
-			t.Errorf("KeepsPreviousProjection(%q) should be true", name)
-		}
-	}
-	for _, name := range tc.wantDropsPrevious {
-		if load.KeepsPreviousProjection(name) {
-			t.Errorf("KeepsPreviousProjection(%q) should be false", name)
-		}
-	}
-	if tc.check != nil {
-		tc.check(t, dir, load)
-	}
-}
-
-func TestLoadProjections(t *testing.T) {
-	cases := []projLoadCase{
-		{
-			name:        "orphan proj.yaml is ignored",
-			files:       map[string]string{"servers/orphan.proj.yaml": "tool:\n  include_only: [x]\n"},
-			wantAbsent:  []string{"orphan"},
-			wantSkipped: []string{},
-		},
-		{
-			name:        "broken orphan proj.yaml is ignored: no SkippedServers, no SourceError",
-			files:       map[string]string{"servers/orphan.proj.yaml": "bad: [yaml\n"},
-			wantSkipped: []string{},
-		},
-		{
-			name:          "undefined ${VAR} in server file still loads projections",
-			files:         map[string]string{"servers/svc.yaml": "url: https://api.example.com\nheaders:\n  Authorization: Bearer ${UNDEFINED_TOKEN_XYZ}\nprojections:\n  t:\n    include_only: [a]\n"},
-			wantProjected: []string{"svc"},
-			wantSkipped:   []string{},
-		},
-		{
-			name:              "args ${VAR} is an unexpanded connection field source error",
-			files:             map[string]string{"servers/svc.yaml": "command: echo\nargs: [--token, \"${PROJ_TEST_TOK_XYZ}\"]\nprojections:\n  t:\n    include_only: [a]\n"},
-			wantSourceErrors:  1,
-			wantKeepsPrevious: []string{"svc"},
-		},
-		{
-			name:          "undefined ${VAR} in server file projection rule stays literal",
-			files:         map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  t:\n    include_only: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n"},
-			wantProjected: []string{"svc"},
-			wantSkipped:   []string{},
-			check: func(t *testing.T, _ string, load config.LoadProjectionsResult) {
-				if got := load.Projections["svc"]["t"].IncludeOnly[0]; got != "${PROJ_UNDEFINED_FIELD_XYZ}" {
-					t.Errorf("include_only = %q, want literal reference", got)
-				}
-			},
-		},
-		{
-			name:        "bad projection format skips that server",
-			files:       map[string]string{"servers/github.yaml": "command: echo\nprojections:\n  t:\n    format: bad-format\n"},
-			wantAbsent:  []string{"github"},
-			wantSkipped: []string{"github"},
-		},
-		{
-			name: "bad .proj.yaml with rules in the server file: server absent from Projections",
-			files: map[string]string{
-				"servers/b.yaml":      "command: echo\nprojections:\n  t:\n    include_only: [inline]\n",
-				"servers/b.proj.yaml": "bad: [yaml\n",
-			},
-			wantAbsent:        []string{"b"},
-			wantSkipped:       []string{"b"},
-			wantKeepsPrevious: []string{"b"},
-		},
-		{
-			name: "malformed servers/b.yaml holds only b, not a or a server whose file is gone",
-			files: map[string]string{
-				"servers/a.yaml": "command: echo\nprojections:\n  t:\n    include_only: [ok]\n",
-				"servers/b.yaml": "bad: [yaml\n",
-			},
-			wantProjected:     []string{"a"},
-			wantSourceErrors:  1,
-			wantKeepsPrevious: []string{"b"},
-			wantDropsPrevious: []string{"a", "file-gone"},
-			check:             wantSourceErrorFor("b"),
-		},
-		{
-			name: "invalid file name is a source error that holds no valid server",
-			files: map[string]string{
-				"servers/good.yaml":     "command: echo\nprojections:\n  t:\n    include_only: [a]\n",
-				"servers/bad.name.yaml": "command: echo\n",
-			},
-			wantProjected:     []string{"good"},
-			wantSourceErrors:  1,
-			wantDropsPrevious: []string{"good"},
-			check:             wantSourceErrorFor("bad.name"),
-		},
-		{
-			name: "config.yaml is not a server source, even when broken",
-			files: map[string]string{
-				"servers/file-svc.yaml": "command: echo\n",
-				"config.yaml":           "bad: [yaml\n",
-			},
-			wantSourceErrors:  0,
-			wantDropsPrevious: []string{"file-svc"},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			for rel, content := range tc.files {
-				testutil.WriteFile(t, filepath.Join(dir, rel), content)
-			}
-			for k, v := range tc.env {
-				t.Setenv(k, v)
-			}
-			load := config.LoadProjections(dir)
-			checkProjLoad(t, dir, load, tc)
-		})
-	}
-}
-
-func wantSourceErrorFor(name string) func(*testing.T, string, config.LoadProjectionsResult) {
-	return func(t *testing.T, _ string, load config.LoadProjectionsResult) {
-		t.Helper()
-		if len(load.SourceErrors) != 1 || load.SourceErrors[0].ServerName != name {
-			t.Errorf("SourceErrors = %v, want one for server %q", load.SourceErrors, name)
-		}
-	}
-}
-
 func TestLoadServerSet_brokenFileHoldsOnlyItsServer(t *testing.T) {
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "good", Command: "echo"})
@@ -210,7 +48,14 @@ func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
 		Transport: "http",
 		URL:       "https://mcp.linear.app/mcp",
 	})
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  include_only: [title]\n")
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "linear",
+		Tools: map[string]*config.ProjectionConfig{
+			"list_issues": {
+				IncludeOnly: []string{"title"},
+			},
+		},
+	})
 	_, servers, err := config.Load(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +77,14 @@ func TestLoadServer_matchesLoadWithoutNeedingTheOtherFiles(t *testing.T) {
 	if _, err := config.LoadServer(dir, "missing"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("LoadServer(missing) err = %v, want fs.ErrNotExist", err)
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "linear.proj.yaml"), "list_issues:\n  format: bogus\n")
+	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+		ServerName: "linear",
+		Tools: map[string]*config.ProjectionConfig{
+			"list_issues": {
+				Format: "bogus",
+			},
+		},
+	})
 	if _, err := config.LoadServer(dir, "linear"); err == nil {
 		t.Error("LoadServer accepted a projection format Load rejects, so the server would stop mini's next start")
 	}
@@ -254,30 +106,72 @@ func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
 func TestLoadProjections_parity(t *testing.T) {
 	cases := []struct {
 		name  string
-		files map[string]string
+		files projectionSources
 		env   map[string]string
 	}{
 		{
 			name: "multi-server with proj.yaml overlay",
-			files: map[string]string{
-				"servers/a.yaml":      "url: https://a.example.com\nheaders:\n  Auth: Bearer ${PARITY_TOKEN}\nprojections:\n  tool1:\n    include_only: [x, y]\n  tool2:\n    exclude: [secret]\n",
-				"servers/a.proj.yaml": "tool3:\n  include_only: [z]\n",
-				"servers/b.yaml":      "command: echo\nprojections:\n  toolB:\n    include_only: [q]\n",
+			files: projectionSources{
+				Servers: []config.ServerConfig{
+					{
+						Name:    "a",
+						URL:     "https://a.example.com",
+						Headers: map[string]string{"Auth": "Bearer ${PARITY_TOKEN}"},
+						Projections: map[string]*config.ProjectionConfig{
+							"tool1": {
+								IncludeOnly: []string{"x", "y"},
+							},
+							"tool2": {
+								Exclude: []string{"secret"},
+							},
+						},
+					},
+					{
+						Name:    "b",
+						Command: "echo",
+						Projections: map[string]*config.ProjectionConfig{
+							"toolB": {
+								IncludeOnly: []string{"q"},
+							},
+						},
+					},
+				},
+				Projections: []configtest.ProjectionFile{
+					{
+						ServerName: "a",
+						Tools: map[string]*config.ProjectionConfig{
+							"tool3": {
+								IncludeOnly: []string{"z"},
+							},
+						},
+					},
+				},
 			},
 			env: map[string]string{"PARITY_TOKEN": "tok123"},
 		},
 		{
-			name:  "defined ${VAR} in headers expands while projection reference stays literal",
-			files: map[string]string{"servers/svc.yaml": "url: https://x.example.com\nheaders:\n  Auth: Bearer ${PARITY_SVC_TOKEN}\nprojections:\n  t:\n    include_only: [\"${PARITY_SVC_FIELD}\"]\n"},
-			env:   map[string]string{"PARITY_SVC_TOKEN": "tok", "PARITY_SVC_FIELD": "a"},
+			name: "defined ${VAR} in headers expands while projection reference stays literal",
+			files: projectionSources{
+				Servers: []config.ServerConfig{
+					{
+						Name:    "svc",
+						URL:     "https://x.example.com",
+						Headers: map[string]string{"Auth": "Bearer ${PARITY_SVC_TOKEN}"},
+						Projections: map[string]*config.ProjectionConfig{
+							"t": {
+								IncludeOnly: []string{"${PARITY_SVC_FIELD}"},
+							},
+						},
+					},
+				},
+			},
+			env: map[string]string{"PARITY_SVC_TOKEN": "tok", "PARITY_SVC_FIELD": "a"},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			for rel, content := range tc.files {
-				testutil.WriteFile(t, filepath.Join(dir, rel), content)
-			}
+			writeProjectionSources(t, dir, tc.files)
 			for k, v := range tc.env {
 				t.Setenv(k, v)
 			}

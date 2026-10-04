@@ -5,14 +5,12 @@ package server_test
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
-	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -270,7 +268,14 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: tt.initialProjection}, fake)
 
 			// Write disk projection with a new alias and reload — reapplyAliases must pick it up.
-			testutil.WriteFile(t, filepath.Join(dir, "servers", "gh.proj.yaml"), "list_pull_requests:\n  alias: list_prs\n")
+			configtest.WriteProjections(t, dir, configtest.ProjectionFile{
+				ServerName: "gh",
+				Tools: map[string]*config.ProjectionConfig{
+					"list_pull_requests": {
+						Alias: "list_prs",
+					},
+				},
+			})
 			serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 
 			names := listNames(t, srv)

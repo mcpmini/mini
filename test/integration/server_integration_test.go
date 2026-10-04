@@ -82,7 +82,14 @@ func TestIntegrationServer_execReturnsResponse(t *testing.T) {
 func TestIntegrationServer_execWithProjection(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
-	writeProjection(t, cfg, "github", "list_pull_requests:\n  include_only: [number, title]\n")
+	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
+		ServerName: "github",
+		Tools: map[string]*config.ProjectionConfig{
+			"list_pull_requests": {
+				IncludeOnly: []string{"number", "title"},
+			},
+		},
+	})
 
 	rawFixture := testutil.ReadFile(t, filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
 	projected := startServer(t, cfg).execTool("github", "list_pull_requests", nil)
