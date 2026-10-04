@@ -16,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -142,8 +143,11 @@ func TestRunCatalogStepRequestedConfiguredEntriesArePreserved(t *testing.T) {
 	existing := []byte("preserve this file\n")
 	path := filepath.Join(dir, "servers", "already.yaml")
 	testutil.WriteFileBytes(t, path, existing)
-	configured := "transport: http\nurl: https://configured.example/mcp\n"
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "configured.yaml"), configured)
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:      "configured",
+		Transport: "http",
+		URL:       "https://configured.example/mcp",
+	})
 	entries := []catalog.Entry{
 		{Name: "same-url", URL: "https://configured.example/mcp"},
 		{Name: "already", URL: "https://already.example/mcp", Auth: catalog.AuthToken, SetupURL: "https://already.example/token"},

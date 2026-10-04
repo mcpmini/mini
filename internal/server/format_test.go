@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
@@ -256,8 +257,7 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 	t.Run("wildcard toon projection renders tool_error as TOON", func(t *testing.T) {
 		configDir := t.TempDir()
 		// Wildcard projections require a server config file to be present.
-		testutil.WriteFile(t, filepath.Join(configDir, "servers", "gh.yaml"),
-			"command: unused\n")
+		configtest.WriteServer(t, configDir, config.ServerConfig{Name: "gh", Command: "unused"})
 		testutil.WriteFile(t, filepath.Join(configDir, "servers", "gh.proj.yaml"),
 			"\"*\":\n  format: toon\n")
 		srv := newTestServer(t, server.Params{ConfigDir: configDir})

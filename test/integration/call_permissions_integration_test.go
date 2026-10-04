@@ -6,20 +6,21 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
-// callSetupWithPerms is like callSetup but appends extra YAML to the server config (e.g. permissions).
-func callSetupWithPerms(t *testing.T, fixtures map[string]string, serverExtra string) string {
+func callSetupWithPerms(t *testing.T, fixtures map[string]string, permissions *config.PermissionsConfig) string {
 	t.Helper()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, fixtures)
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+serverExtra)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir, Permissions: permissions})
 	return cfg
 }
 
 func TestIntegrationCLICall_ProtectedTool_RequiresPermCall(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"create_item": `{"id":1}`},
-		"permissions:\n  protected:\n    - create_item\n")
+		&config.PermissionsConfig{Protected: []string{"create_item"}})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "create_item")
 	if code != 2 {
 		t.Errorf("protected tool via call should exit 2, got %d", code)
@@ -31,7 +32,7 @@ func TestIntegrationCLICall_ProtectedTool_RequiresPermCall(t *testing.T) {
 
 func TestIntegrationCLICall_PermCallBypassesProtection(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"create_item": `{"id":1}`},
-		"permissions:\n  protected:\n    - create_item\n")
+		&config.PermissionsConfig{Protected: []string{"create_item"}})
 	stdout, _, code := runCLI(t, cfg, "perm-call", "svc", "create_item")
 	if code != 0 {
 		t.Fatalf("perm-call on protected tool should exit 0, got %d", code)
@@ -49,7 +50,7 @@ func TestIntegrationCLICall_PermCallBypassesProtection(t *testing.T) {
 
 func TestIntegrationCLICall_HiddenTool_NotFound(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"secret_tool": `{"id":1}`},
-		"permissions:\n  hidden:\n    - secret_tool\n")
+		&config.PermissionsConfig{Hidden: []string{"secret_tool"}})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "secret_tool")
 	if code != 1 {
 		t.Errorf("hidden tool should exit 1, got %d", code)
@@ -61,7 +62,7 @@ func TestIntegrationCLICall_HiddenTool_NotFound(t *testing.T) {
 
 func TestIntegrationCLICall_DefaultProtected_RequiresPermCall(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"any_tool": `{"id":1}`},
-		"permissions:\n  default: protected\n")
+		&config.PermissionsConfig{Default: "protected"})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "any_tool")
 	if code != 2 {
 		t.Errorf("default-protected tool via call should exit 2, got %d", code)
@@ -77,7 +78,7 @@ func TestIntegrationCLICall_DefaultProtected_RequiresPermCall(t *testing.T) {
 
 func TestIntegrationCLICall_DefaultHidden_NotFound(t *testing.T) {
 	cfg := callSetupWithPerms(t, map[string]string{"any_tool": `{"id":1}`},
-		"permissions:\n  default: hidden\n")
+		&config.PermissionsConfig{Default: "hidden"})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "any_tool")
 	if code != 1 {
 		t.Errorf("default-hidden tool should exit 1, got %d", code)

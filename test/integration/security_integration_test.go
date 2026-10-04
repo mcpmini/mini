@@ -5,6 +5,8 @@ package integration_test
 import (
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
 )
 
 func noSSRFClient(t *testing.T) *mcpClient {
@@ -59,7 +61,13 @@ func TestIntegrationSecurity_timeoutNoReconnect(t *testing.T) {
 func TestIntegrationSecurity_PermissionCaseMismatch(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"MyTool": `{"id":1}`})
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir)+"permissions:\n  protected:\n    - MyTool\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   dir,
+		Permissions: &config.PermissionsConfig{
+			Protected: []string{"MyTool"},
+		},
+	})
 
 	client := startServer(t, cfg)
 	_, isErr := client.execToolAllowError("svc", "mytool", nil)

@@ -11,6 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"time"
 
 	"github.com/mcpmini/mini/internal/testutil"
@@ -81,7 +84,7 @@ func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
 		"get_item":   `{"id":1}`,
 		"list_items": `[]`,
 	})
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	stdout, _, code := runCLI(t, cfg, "ls", "svc")
 	if code != 0 {
@@ -101,7 +104,7 @@ func TestIntegrationCLI_ls_ToolDetail(t *testing.T) {
 		"get_item":   `{"id":1}`,
 		"list_items": `[]`,
 	})
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	stdout, _, code := runCLI(t, cfg, "ls", "svc", "get_item")
 	if code != 0 {
@@ -125,7 +128,7 @@ func TestIntegrationCLI_ls_UnknownServer(t *testing.T) {
 func TestIntegrationCLI_ls_UnknownTool(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	_, stderr, code := runCLI(t, cfg, "ls", "svc", "nonexistent_tool")
 	if code == 0 {
@@ -299,7 +302,7 @@ func TestIntegrationCLI_status_LiveServer(t *testing.T) {
 		"get_item":   `{"id":1}`,
 		"list_items": `[]`,
 	})
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	stdout, _, code := runCLI(t, cfg, "status")
 	if code != 0 {
@@ -315,7 +318,7 @@ func TestIntegrationCLI_status_LiveServer(t *testing.T) {
 
 func TestIntegrationCLI_status_Unreachable(t *testing.T) {
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "bad", "command: /nonexistent_binary_xyz\n")
+	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "bad", Command: "/nonexistent_binary_xyz"})
 	_, _, code := runCLI(t, cfg, "status")
 	if code == 0 {
 		t.Error("status with unreachable server should exit non-zero")

@@ -11,7 +11,7 @@ func proxySetup(t *testing.T, fixtures map[string]string) *mcpClient {
 	t.Helper()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, fixtures)
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	return startProxyServer(t, cfg)
 }
 
@@ -63,7 +63,7 @@ func TestIntegrationProxyMode_ArgsReachUpstream(t *testing.T) {
 func TestIntegrationProxyMode_RawProjectionBypassesExclusion(t *testing.T) {
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`})
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 	c := startProxyServer(t, cfg)
 

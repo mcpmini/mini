@@ -24,7 +24,10 @@ func TestIntegrationResponse_inlineSmallResponse(t *testing.T) {
 func TestIntegrationResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
-	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}),
+	})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 
@@ -40,7 +43,10 @@ func TestIntegrationResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 func TestIntegrationResponse_responseFileIsValidJSON(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
-	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}))
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}),
+	})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 

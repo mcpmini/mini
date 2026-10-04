@@ -11,7 +11,7 @@ func actionServer(t *testing.T, fixtures map[string]string, actionYAML, actionNa
 	t.Helper()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, fixtures)
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	writeAction(t, cfg, actionYAML, actionName)
 	return startServer(t, cfg)
 }
@@ -62,7 +62,7 @@ func TestIntegrationActions_execAction(t *testing.T) {
 	t.Skip("actions not user-visible in v0.1")
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":42,"name":"fetched"}`})
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	writeAction(t, cfg, "name: myfetch\ndescription: Fetch item 42\nserver: svc\ntool: get_item\ndefault_args:\n  id: 42\n", "myfetch")
 
 	client := startServer(t, cfg)

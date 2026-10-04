@@ -15,7 +15,11 @@ func TestIntegrationListTools_paginatesAcrossPages(t *testing.T) {
 	}
 	dir := mockFixtureDir(t, fixtures)
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "svc", fakeServerYAML(dir, "--list-page-size", "2"))
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   dir,
+		ExtraArgs:  []string{"--list-page-size", "2"},
+	})
 	client := startServer(t, cfg)
 
 	result := client.listTools("svc")

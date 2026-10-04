@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 	"gopkg.in/yaml.v3"
 )
@@ -119,15 +121,24 @@ func cliArgs(configDir string, args []string) []string {
 	return append([]string{"--config", configDir}, args...)
 }
 
-func fakeServerYAML(fixtures string, extraArgs ...string) string {
-	data, err := yaml.Marshal(struct {
-		Command string   `yaml:"command"`
-		Args    []string `yaml:"args"`
-	}{fakemcpBin, append([]string{"--fixtures", fixtures}, extraArgs...)})
-	if err != nil {
-		panic(err)
+type fakeServerParams struct {
+	ServerName  string
+	Fixtures    string
+	ExtraArgs   []string
+	Permissions *config.PermissionsConfig
+	Projections map[string]*config.ProjectionConfig
+	Enabled     *bool
+}
+
+func fakeServerConfig(p fakeServerParams) config.ServerConfig {
+	return config.ServerConfig{
+		Name:        p.ServerName,
+		Command:     fakemcpBin,
+		Args:        append([]string{"--fixtures", p.Fixtures}, p.ExtraArgs...),
+		Permissions: p.Permissions,
+		Projections: p.Projections,
+		Enabled:     p.Enabled,
 	}
-	return string(data)
 }
 
 func toolCallRaw(serverTool string, server, tool string, args map[string]any) map[string]any {
@@ -190,9 +201,9 @@ func runCLIWithStdin(t *testing.T, stdin string, configDir string, args ...strin
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-func writeFakeServer(t *testing.T, configDir, serverName, fixtures string) {
+func writeFakeServer(t *testing.T, configDir string, p fakeServerParams) {
 	t.Helper()
-	writeServerConfig(t, configDir, serverName, fakeServerYAML(fixtures))
+	configtest.WriteServer(t, configDir, fakeServerConfig(p))
 }
 
 type FakeMCPControl struct {
@@ -221,7 +232,7 @@ func startFakeMCPProcess(t *testing.T, fixtures string) io.Reader {
 func startFakeMCP(t *testing.T, configDir, serverName, fixtures string) *FakeMCPControl {
 	t.Helper()
 	addr := readControlAddr(t, startFakeMCPProcess(t, fixtures))
-	writeFakeServer(t, configDir, serverName, fixtures)
+	writeFakeServer(t, configDir, fakeServerParams{ServerName: serverName, Fixtures: fixtures})
 	return &FakeMCPControl{addr: addr, t: t}
 }
 
@@ -727,7 +738,7 @@ func quickServerWith(t *testing.T, fixtures map[string]string, cfgYAML, projYAML
 	t.Helper()
 	dir := mockFixtureDir(t, fixtures)
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	if cfgYAML != "" {
 		writeConfig(t, cfg, cfgYAML)
 		return startQuickServer(t, cfg, projYAML)
@@ -740,7 +751,7 @@ func quickServer(t *testing.T, fixtures map[string]string) *mcpClient {
 	t.Helper()
 	dir := mockFixtureDir(t, fixtures)
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	return startServer(t, cfg)
 }
 
@@ -762,21 +773,26 @@ func faultServer(t *testing.T, fixtures map[string]string, fault map[string]any,
 }
 
 type faultServerParams struct {
-	ConfigDir   string
-	ServerName  string
-	Fixtures    string
-	FaultJSON   string
-	ToolTimeout string
-	Extra       string
+	ConfigDir          string
+	ServerName         string
+	Fixtures           string
+	FaultJSON          string
+	ToolTimeout        string
+	HandshakeTimeout   string
+	MaxPendingRequests int
 }
 
 func writeFaultServer(t *testing.T, p faultServerParams) {
 	t.Helper()
-	server := fakeServerYAML(p.Fixtures, "--initial-fault", p.FaultJSON)
-	if p.ToolTimeout != "" {
-		server += "tool_timeout: " + p.ToolTimeout + "\n"
-	}
-	writeServerConfig(t, p.ConfigDir, p.ServerName, server+p.Extra)
+	server := fakeServerConfig(fakeServerParams{
+		ServerName: p.ServerName,
+		Fixtures:   p.Fixtures,
+		ExtraArgs:  []string{"--initial-fault", p.FaultJSON},
+	})
+	server.ToolTimeout = p.ToolTimeout
+	server.HandshakeTimeout = p.HandshakeTimeout
+	server.MaxPendingRequests = p.MaxPendingRequests
+	configtest.WriteServer(t, p.ConfigDir, server)
 }
 
 func mockFixtureDir(t *testing.T, fixtures map[string]string) string {

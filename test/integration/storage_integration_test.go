@@ -17,7 +17,10 @@ func projectedResponseClient(t *testing.T, extraConfig string) (*mcpClient, stri
 	t.Helper()
 	cfg := t.TempDir()
 	respDir := t.TempDir()
-	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","body":"full text"}`}))
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","body":"full text"}`}),
+	})
 	writeConfig(t, cfg, extraConfig+"response_dir: "+respDir+"\n")
 	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 	return startServer(t, cfg), respDir, cfg
@@ -37,7 +40,10 @@ func TestIntegrationStorage_rawFileExists(t *testing.T) {
 func TestIntegrationStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
-	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}),
+	})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	client := startServer(t, cfg)
 
@@ -65,7 +71,10 @@ func TestIntegrationStorage_rawFileIsPrettyPrinted(t *testing.T) {
 func TestIntegrationStorage_responseDirAutoCreated(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := filepath.Join(t.TempDir(), "auto_created_responses")
-	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}),
+	})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	writeProjection(t, cfg, "svc", "get_item:\n  include_only: [id]\n")
 
@@ -130,7 +139,7 @@ func TestIntegrationStorage_cleanupRetainsNonExpired(t *testing.T) {
 
 func TestIntegrationStorage_unprojectedLargeResponseInlines(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", fixturesDir+"/github")
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: fixturesDir + "/github"})
 	writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
 	client := startServer(t, cfg)
 
@@ -145,7 +154,10 @@ func TestIntegrationStorage_unprojectedLargeResponseInlines(t *testing.T) {
 
 func TestIntegrationStorage_nonJSONResponseFromUpstreamPassedThrough(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", mockFixtureDir(t, map[string]string{"get_status": `plain text response`}))
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "svc",
+		Fixtures:   mockFixtureDir(t, map[string]string{"get_status": `plain text response`}),
+	})
 	client := startServer(t, cfg)
 
 	result, isErr := client.execToolAllowError("svc", "get_status", nil)

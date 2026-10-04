@@ -5,6 +5,9 @@ package integration_test
 import (
 	"fmt"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 func TestIntegrationError_upstreamRPCError(t *testing.T) {
@@ -52,7 +55,7 @@ func TestIntegrationError_unknownTool(t *testing.T) {
 // upstreams from working.
 func TestIntegrationError_upstreamNeverStarts(t *testing.T) {
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "bad", "command: /nonexistent_binary_xyz_does_not_exist\n")
+	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "bad", Command: "/nonexistent_binary_xyz_does_not_exist"})
 
 	stdin, scanner := startMiniCmd(t, cfg)
 	c := &mcpClient{stdin: stdin, done: make(chan struct{}), t: t}

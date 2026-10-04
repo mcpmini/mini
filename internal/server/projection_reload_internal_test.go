@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -37,7 +39,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("covers server yaml and proj yaml but not other files", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServerFile(t, dir, "svc.yaml", "transport: stdio\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "stdio"})
 		writeServerFile(t, dir, "svc.proj.yaml", "tool:\n  include_only: [a]\n")
 		writeServerFile(t, dir, "notes.txt", "ignored")
 		fp := mustFingerprint(t, dir)
@@ -59,7 +61,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("identical content yields identical fingerprint", func(t *testing.T) {
 		dir := t.TempDir()
-		writeServerFile(t, dir, "svc.yaml", "transport: stdio\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "stdio"})
 		if a, b := mustFingerprint(t, dir), mustFingerprint(t, dir); !reflect.DeepEqual(a, b) {
 			t.Errorf("expected stable fingerprint, got %v vs %v", a, b)
 		}
@@ -67,7 +69,8 @@ func TestFingerprintProjectionSources(t *testing.T) {
 
 	t.Run("unreadable file keeps siblings and reads as changed once it recovers", func(t *testing.T) {
 		dir := t.TempDir()
-		sibling := writeServerFile(t, dir, "other.yaml", "transport: stdio\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "other", Transport: "stdio"})
+		sibling := filepath.Join(dir, "servers", "other.yaml")
 		broken := filepath.Join(dir, "servers", "svc.yaml")
 		if err := os.Mkdir(broken, 0700); err != nil {
 			t.Fatal(err)
@@ -82,7 +85,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 		if err := os.Remove(broken); err != nil {
 			t.Fatal(err)
 		}
-		writeServerFile(t, dir, "svc.yaml", "transport: stdio\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "stdio"})
 		if recovered := mustFingerprint(t, dir); recovered[broken] == first[broken] {
 			t.Error("fingerprint unchanged after the unreadable file became readable")
 		}

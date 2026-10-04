@@ -15,6 +15,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 )
@@ -54,9 +55,10 @@ func newReloadEnv(t *testing.T, p reloadEnvParams) *reloadEnv {
 	t.Helper()
 	dir := evalTempDir(t)
 	if p.ServerYAML == "" {
-		p.ServerYAML = "command: echo\n"
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
+	} else {
+		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), p.ServerYAML)
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), p.ServerYAML)
 	if p.ProjYAML != "" {
 		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), p.ProjYAML)
 	}
@@ -210,7 +212,7 @@ func TestProjectionReload_sameSizeEditDetected(t *testing.T) {
 
 func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillReload(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{ProjYAML: "getData:\n  include_only: [a]\n"})
-	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "other.yaml"), "command: echo\n")
+	configtest.WriteServer(t, e.dir, config.ServerConfig{Name: "other", Command: "echo"})
 	addReloadUpstreamNamed(t, e.srv, "other")
 	e.startPoller()
 	e.assertDataKeys([]string{"a"}, []string{"b"})
@@ -261,7 +263,7 @@ func TestProjectionReload_inlineProjectionEditDetected(t *testing.T) {
 func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	dir := evalTempDir(t)
 	for _, name := range []string{"held", "kept", "gone"} {
-		testutil.WriteFile(t, filepath.Join(dir, "servers", name+".yaml"), "command: echo\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: name, Command: "echo"})
 		testutil.WriteFile(t, filepath.Join(dir, "servers", name+".proj.yaml"), "getData:\n  include_only: [a]\n")
 	}
 	env := buildReloadEnv(t, dir)
@@ -291,7 +293,7 @@ func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	if err := os.Remove(heldPath); err != nil {
 		t.Fatal(err)
 	}
-	testutil.WriteFile(t, heldPath, "command: echo\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "held", Command: "echo"})
 	env.advanceTick()
 
 	env.assertServerDataKeys("held", []string{"b"}, []string{"a", "secret"})

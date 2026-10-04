@@ -13,7 +13,7 @@ func callSetup(t *testing.T, fixtures map[string]string) string {
 	t.Helper()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, fixtures)
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	return cfg
 }
 
@@ -312,7 +312,7 @@ func TestIntegrationCLICall_ProjectionWritesFile(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`,
 	})
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
 	writeProjection(t, cfg, "svc", "get_item:\n  exclude: [secret]\n")
 
@@ -373,7 +373,7 @@ func TestIntegrationCLICall_ToonFormat_ZeroValuesPreserved(t *testing.T) {
 func TestIntegrationCLICall_UnreachableServer_ExitsNonZero(t *testing.T) {
 	cfg := t.TempDir()
 	// HTTP transport is lazy — dial succeeds, error surfaces on first call (exit 1).
-	writeHTTPServerYAML(t, cfg, "dead", "http://127.0.0.1:19998")
+	writeHTTPServer(t, cfg, httpServerParams{ServerName: "dead", URL: "http://127.0.0.1:19998"})
 	_, stderr, code := runCLI(t, cfg, "call", "dead", "some_tool")
 	if code == 0 {
 		t.Errorf("unreachable server should exit non-zero, got 0\nstderr: %s", stderr)

@@ -52,7 +52,7 @@ func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 func TestIntegrationAuth_noTokenNoAuthHeader(t *testing.T) {
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
-	writeHTTPServerYAML(t, cfg, "svc", f.srv.URL)
+	writeServerConfig(t, cfg, "svc", "transport: sse\nurl: "+f.srv.URL+"\n")
 
 	client := startServer(t, cfg)
 	client.execTool("svc", "get_item", nil)

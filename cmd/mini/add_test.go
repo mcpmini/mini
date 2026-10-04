@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 	"gopkg.in/yaml.v3"
 )
@@ -225,7 +226,7 @@ func TestRunAdd(t *testing.T) {
 
 	t.Run("warns instead of silently skipping when the server's projection file fails to load", func(t *testing.T) {
 		dir := t.TempDir()
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), "transport: http\nurl: https://example.com\n")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com"})
 		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "not: valid: yaml: [")
 
 		var out bytes.Buffer

@@ -10,12 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestIntegrationServer_initialize(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	raw := startServer(t, cfg).mustCall("initialize", map[string]any{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]any{},
@@ -36,7 +38,7 @@ func TestIntegrationServer_initialize(t *testing.T) {
 
 func TestIntegrationServer_toolsList(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	raw := startServer(t, cfg).mustCall("tools/list", nil)
 	var result struct {
 		Tools []struct {
@@ -59,7 +61,7 @@ func TestIntegrationServer_toolsList(t *testing.T) {
 
 func TestIntegrationServer_listUpstreamTools(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	text := startServer(t, cfg).listTools("github")
 	for _, want := range []string{"list_pull_requests", "list_issues", "get_file_contents", "search_code"} {
 		if !strings.Contains(text, want) {
@@ -70,7 +72,7 @@ func TestIntegrationServer_listUpstreamTools(t *testing.T) {
 
 func TestIntegrationServer_execReturnsResponse(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	text := startServer(t, cfg).execTool("github", "list_pull_requests", nil)
 	if !strings.Contains(text, `"data"`) {
 		t.Errorf("expected data envelope in response, got: %q", text[:min(200, len(text))])
@@ -79,7 +81,7 @@ func TestIntegrationServer_execReturnsResponse(t *testing.T) {
 
 func TestIntegrationServer_execWithProjection(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	writeProjection(t, cfg, "github", "list_pull_requests:\n  include_only: [number, title]\n")
 
 	rawFixture := testutil.ReadFile(t, filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
@@ -94,7 +96,7 @@ func TestIntegrationServer_execWithProjection(t *testing.T) {
 
 func TestIntegrationServer_execUnknownTool(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
 		"name":      "call",
 		"arguments": map[string]any{"server": "github", "tool": "nonexistent_tool", "args": map[string]any{}},
@@ -164,7 +166,7 @@ func startProxyServerWithUnreachable(t *testing.T, configDir string, unreachable
 // returns config and read in tools/list.
 func TestIntegrationProxy_initialize(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	raw := startProxyServer(t, cfg).mustCall("tools/list", nil)
 	var result struct {
 		Tools []struct {
@@ -194,7 +196,7 @@ func TestIntegrationProxy_initialize(t *testing.T) {
 // correctly to the upstream and returns a result.
 func TestIntegrationProxy_callUpstreamTool(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	client := startProxyServer(t, cfg)
 	raw := client.mustCall("tools/call", map[string]any{
 		"name":      "github__list_pull_requests",
@@ -215,7 +217,7 @@ func TestIntegrationProxy_toolsListAnnotationsPassthrough(t *testing.T) {
 		"do_thing":        `{"ok":true}`,
 		"do_thing.schema": `{"annotations":{"readOnlyHint":true,"title":"Do Thing"}}`,
 	})
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 
 	raw := startProxyServer(t, cfg).mustCall("tools/list", nil)
 	var result struct {
@@ -253,9 +255,8 @@ func TestIntegrationProxy_toolsListAnnotationsPassthrough(t *testing.T) {
 func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 	cfg := t.TempDir()
 	// Valid upstream (will connect) + unreachable HTTP upstream
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
-	writeServerConfig(t, cfg, "dead",
-		"transport: http\nurl: http://127.0.0.1:19998\n") // nothing listening
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
+	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "dead", Transport: "http", URL: "http://127.0.0.1:19998"})
 	client := startServerWithUnreachable(t, cfg, []string{"dead"})
 	// Should still serve list/call for the working upstream
 	text := client.listTools("github")
@@ -267,9 +268,8 @@ func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 // TestIntegrationProxy_unreachableUpstreamDoesNotExit is the proxy-mode equivalent.
 func TestIntegrationProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
-	writeServerConfig(t, cfg, "dead",
-		"transport: http\nurl: http://127.0.0.1:19998\n")
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
+	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "dead", Transport: "http", URL: "http://127.0.0.1:19998"})
 	client := startProxyServerWithUnreachable(t, cfg, []string{"dead"})
 	raw := client.mustCall("tools/list", nil)
 	var result struct {
@@ -292,9 +292,13 @@ func TestIntegrationProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
 	}
 }
 
-func writeGitHubServerYAML(t *testing.T, cfg, permKey, tool string) {
+func writeGitHubServer(t *testing.T, cfg string, permissions *config.PermissionsConfig) {
 	t.Helper()
-	writeServerConfig(t, cfg, "github", fakeServerYAML(filepath.Join(fixturesDir, "github"))+"permissions:\n  "+permKey+":\n    - "+tool+"\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName:  "github",
+		Fixtures:    filepath.Join(fixturesDir, "github"),
+		Permissions: permissions,
+	})
 }
 
 func execGitHubToolIsError(t *testing.T, client *mcpClient, execName, tool string) bool {
@@ -312,7 +316,7 @@ func execGitHubToolIsError(t *testing.T, client *mcpClient, execName, tool strin
 
 func TestIntegrationServer_protectedToolRequiresExecProtected(t *testing.T) {
 	cfg := t.TempDir()
-	writeGitHubServerYAML(t, cfg, "protected", "list_pull_requests")
+	writeGitHubServer(t, cfg, &config.PermissionsConfig{Protected: []string{"list_pull_requests"}})
 	client := startServer(t, cfg)
 	if !execGitHubToolIsError(t, client, "call", "list_pull_requests") {
 		t.Error("expected call to fail for protected tool")
@@ -324,7 +328,13 @@ func TestIntegrationServer_protectedToolRequiresExecProtected(t *testing.T) {
 
 func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "github", fakeServerYAML(filepath.Join(fixturesDir, "github"))+"permissions:\n  hidden:\n    - search_code\n")
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "github",
+		Fixtures:   filepath.Join(fixturesDir, "github"),
+		Permissions: &config.PermissionsConfig{
+			Hidden: []string{"search_code"},
+		},
+	})
 	text := startServer(t, cfg).listTools("github")
 	if strings.Contains(text, "search_code") {
 		t.Errorf("hidden tool 'search_code' should not appear in list output")
@@ -336,7 +346,7 @@ func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
 
 func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "github", filepath.Join(fixturesDir, "github"))
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	client := startServer(t, cfg)
 	client.setProjection("github", "list_pull_requests", map[string]any{"include_only": []string{"number"}, "depth_limit": 1}, true)
 
@@ -350,7 +360,10 @@ func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 func TestIntegrationServer_listAllTools(t *testing.T) {
 	cfg := t.TempDir()
 	for _, srv := range []string{"alpha", "beta"} {
-		writeFakeServer(t, cfg, srv, mockFixtureDir(t, map[string]string{"do_" + srv: `{"ok":true}`}))
+		writeFakeServer(t, cfg, fakeServerParams{
+			ServerName: srv,
+			Fixtures:   mockFixtureDir(t, map[string]string{"do_" + srv: `{"ok":true}`}),
+		})
 	}
 	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
 		"name":      "list",
@@ -367,7 +380,10 @@ func TestIntegrationServer_listAllTools(t *testing.T) {
 func TestIntegrationServer_multipleUpstreams(t *testing.T) {
 	cfg := t.TempDir()
 	for _, srv := range []string{"alpha", "beta"} {
-		writeFakeServer(t, cfg, srv, mockFixtureDir(t, map[string]string{"do_thing": `{"ok":true}`}))
+		writeFakeServer(t, cfg, fakeServerParams{
+			ServerName: srv,
+			Fixtures:   mockFixtureDir(t, map[string]string{"do_thing": `{"ok":true}`}),
+		})
 	}
 	client := startServer(t, cfg)
 	for _, srv := range []string{"alpha", "beta"} {

@@ -21,14 +21,17 @@ func TestIntegrationStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testin
 	cfg := t.TempDir()
 
 	healthyDir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
-	writeFakeServer(t, cfg, "healthy", healthyDir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "healthy", Fixtures: healthyDir})
 
 	hungDir := mockFixtureDir(t, map[string]string{"never": `{}`})
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 5000}
 	faultJSON, _ := json.Marshal(fault)
 	writeFaultServer(t, faultServerParams{
-		ConfigDir: cfg, ServerName: "hung", Fixtures: hungDir, FaultJSON: string(faultJSON),
-		Extra: "handshake_timeout: \"1s\"\n",
+		ConfigDir:        cfg,
+		ServerName:       "hung",
+		Fixtures:         hungDir,
+		FaultJSON:        string(faultJSON),
+		HandshakeTimeout: "1s",
 	})
 
 	stdin, scanner, stderr := startMiniCmdCapturingStderr(t, cfg)
@@ -105,7 +108,10 @@ func startMiniCmdCapturingStderr(t *testing.T, configDir string) (stdin io.Write
 
 func TestIntegrationStartup_aServerWithAnUnsetVariableDoesNotStopTheOthers(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "healthy", mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}))
+	writeFakeServer(t, cfg, fakeServerParams{
+		ServerName: "healthy",
+		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}),
+	})
 	writeServerConfig(t, cfg, "github", "transport: http\nurl: https://example.com/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_TOKEN}\n")
 	stdin, scanner, stderr := startMiniCmdCapturingStderr(t, cfg)
 	c := newMCPClient(t, stdin, scanner)
@@ -253,8 +259,11 @@ func TestIntegrationStandaloneSIGTERM_delayedConnectIsDrained(t *testing.T) {
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 30000}
 	faultJSON, _ := json.Marshal(fault)
 	writeFaultServer(t, faultServerParams{
-		ConfigDir: cfg, ServerName: "hung", Fixtures: hungDir,
-		FaultJSON: string(faultJSON), Extra: "handshake_timeout: \"10s\"\n",
+		ConfigDir:        cfg,
+		ServerName:       "hung",
+		Fixtures:         hungDir,
+		FaultJSON:        string(faultJSON),
+		HandshakeTimeout: "10s",
 	})
 	proc := startMiniForSignal(t, cfg)
 	doMiniHandshake(t, proc)

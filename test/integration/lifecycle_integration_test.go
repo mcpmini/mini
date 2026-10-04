@@ -38,7 +38,7 @@ func TestIntegrationLifecycle_addServerAtRuntime(t *testing.T) {
 func TestIntegrationLifecycle_removeServerAtRuntime(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, "svc", dir)
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
 	client := startServer(t, cfg)
 
 	if !strings.Contains(client.listTools("svc"), "get_item") {
@@ -80,7 +80,8 @@ func TestIntegrationLifecycle_addServerBadURL(t *testing.T) {
 func TestIntegrationLifecycle_disabledServerNotLoaded(t *testing.T) {
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
-	writeServerConfig(t, cfg, "disabled", fakeServerYAML(dir)+"enabled: false\n")
+	disabled := false
+	writeFakeServer(t, cfg, fakeServerParams{ServerName: "disabled", Fixtures: dir, Enabled: &disabled})
 
 	client := startServer(t, cfg)
 	_, isErr := client.execToolAllowError("disabled", "get_item", nil)
@@ -97,7 +98,7 @@ func TestIntegrationLifecycle_tenServersSimultaneously(t *testing.T) {
 	for i := range 10 {
 		dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 		name := fmt.Sprintf("svc%d", i)
-		writeFakeServer(t, cfg, name, dir)
+		writeFakeServer(t, cfg, fakeServerParams{ServerName: name, Fixtures: dir})
 	}
 
 	client := startServer(t, cfg)
