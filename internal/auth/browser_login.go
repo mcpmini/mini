@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -34,7 +36,7 @@ type BeginLoginParams = ResolveEndpointsParams
 // BeginLogin binds the callback port before discovery, so a busy port fails before a client is
 // registered. It may fill in sc.Auth.
 func BeginLogin(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams) (*BrowserLogin, error) {
-	listener, err := ListenCallback(ctx, sc.Auth)
+	listener, err := listenCallback(ctx, sc.Auth)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +55,7 @@ var callbackListenAddr = func(ac *config.AuthConfig) string {
 	return fmt.Sprintf("localhost:%d", ResolvedCallbackPort(ac))
 }
 
-func ListenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, error) {
+func listenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, error) {
 	addr := callbackListenAddr(ac)
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
 	if err != nil {
@@ -141,6 +143,7 @@ func (l *BrowserLogin) Close() error {
 func (l *BrowserLogin) serve(listener net.Listener, handler http.Handler) {
 	l.server = &http.Server{
 		Handler:           handler,
+		ErrorLog:          log.New(io.Discard, "", 0), // net/http logs retried accept errors; a login must not print
 		ReadHeaderTimeout: 30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 	}
