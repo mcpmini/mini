@@ -12,7 +12,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// A server whose file fails to load is in Broken instead of Loaded, so it can't stop the others.
 type Servers struct {
 	Loaded []ServerConfig
 	Broken []SourceError
@@ -43,7 +42,6 @@ func LoadServers(configDir string) (Servers, error) {
 	return servers, nil
 }
 
-// Reads the directory rather than globbing, since the config path may contain glob syntax.
 func ServerDirFiles(configDir string) ([]string, error) {
 	dir := filepath.Join(configDir, "servers")
 	entries, err := os.ReadDir(dir)
@@ -107,7 +105,7 @@ func loadServerFile(configDir, path string) (ServerConfig, error) {
 	return *sc, nil
 }
 
-// A broken projection leaves the server running without projections rather than down: the server
+// A broken projection leaves the server loaded without projections rather than broken: the server
 // file alone decides whether and how mini connects.
 func loadProjections(sc *ServerConfig, serverPath, projectionPath string) {
 	if sc.ProjectionsErr != nil {
@@ -121,7 +119,8 @@ func loadProjections(sc *ServerConfig, serverPath, projectionPath string) {
 		failed(projectionPath, err)
 		return
 	}
-	if err := validateInlineProjections(sc); err != nil {
+	// The overlay already checked the projection file's own rules, so only an inline rule can fail here.
+	if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
 		failed(serverPath, fmt.Errorf("%s: %w", serverPath, err))
 	}
 }
@@ -148,11 +147,6 @@ func overlayProjectionFile(sc *ServerConfig, path string) error {
 		sc.Projections[tool] = p
 	}
 	return nil
-}
-
-// Runs after the overlay, whose own rules already passed, so only an inline rule can fail here.
-func validateInlineProjections(sc *ServerConfig) error {
-	return validateServerProjectionFormats(sc.Name, sc.Projections)
 }
 
 // mergeKnownAuth fills in Auth from a bundled default or a prior detection marker,
