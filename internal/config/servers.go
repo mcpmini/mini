@@ -95,6 +95,17 @@ func (s Servers) IsEnabled(name string) bool {
 	return ok && sc.IsEnabled()
 }
 
+func LoadServer(configDir, name string) (ServerConfig, error) {
+	if err := checkServerName(name, "the request"); err != nil {
+		return ServerConfig{}, err
+	}
+	path := ServerPath(configDir, name)
+	if !ServerFileExists(configDir, name) {
+		return ServerConfig{}, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
+	}
+	return loadServerFile(configDir, path)
+}
+
 func loadServerFile(configDir, path string) (ServerConfig, error) {
 	sc, err := loadServerConfig(path)
 	if err != nil {
