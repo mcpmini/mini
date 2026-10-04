@@ -314,7 +314,7 @@ func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) con
 	return *reloaded
 }
 
-// Loading already merges bundled and detected auth, so a non-nil Auth leaves nothing to discover.
+// LoadServer and LoadServers already merge bundled and detected auth, so a non-nil Auth leaves nothing to discover.
 func authUndiscovered(sc config.ServerConfig) bool {
 	return sc.IsHTTPTransport() && sc.Auth == nil
 }
