@@ -12,8 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Servers is the server files as this process loaded them. A server whose file fails to load is in
-// Broken instead of Loaded, so it can't stop the others.
+// A server whose file fails to load is in Broken instead of Loaded, so it can't stop the others.
 type Servers struct {
 	Loaded []ServerConfig
 	Broken []SourceError
@@ -44,8 +43,7 @@ func LoadServers(configDir string) (Servers, error) {
 	return servers, nil
 }
 
-// ServerDirFiles lists the .yaml files in the servers directory, projection files included.
-// It reads the directory rather than globbing, since the config path may contain glob syntax.
+// Reads the directory rather than globbing, since the config path may contain glob syntax.
 func ServerDirFiles(configDir string) ([]string, error) {
 	dir := filepath.Join(configDir, "servers")
 	entries, err := os.ReadDir(dir)
@@ -86,7 +84,6 @@ func (s Servers) BrokenProjections() []SourceError {
 	return broken
 }
 
-// Problems is every file that failed to load: the broken servers', then the broken projections'.
 func (s Servers) Problems() []SourceError {
 	return slices.Concat(s.Broken, s.BrokenProjections())
 }
@@ -110,28 +107,26 @@ func loadServerFile(configDir, path string) (ServerConfig, error) {
 	return *sc, nil
 }
 
-// Projections only trim responses, so a broken one leaves the server running without any
-// rather than down: the server file alone decides whether and how mini connects.
+// A broken projection leaves the server running without projections rather than down: the server
+// file alone decides whether and how mini connects.
 func loadProjections(sc *ServerConfig, serverPath, projectionPath string) {
 	if sc.ProjectionsErr != nil {
-		return // the inline projections failed to decode, which already leaves the server without any
+		return
 	}
 	failed := func(path string, err error) {
 		sc.Projections = nil
 		sc.ProjectionsErr = &SourceError{Path: path, ServerName: sc.Name, Err: err}
 	}
-	if err := mergeProjectionFile(sc, projectionPath); err != nil {
+	if err := overlayProjectionFile(sc, projectionPath); err != nil {
 		failed(projectionPath, err)
 		return
 	}
-	// The projection file's own rules passed, so whatever fails now was written inline.
-	if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
+	if err := validateInlineProjections(sc); err != nil {
 		failed(serverPath, fmt.Errorf("%s: %w", serverPath, err))
 	}
 }
 
-// mergeProjectionFile overlays the server's projection file onto its inline projections; the file wins.
-func mergeProjectionFile(sc *ServerConfig, path string) error {
+func overlayProjectionFile(sc *ServerConfig, path string) error {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -153,6 +148,11 @@ func mergeProjectionFile(sc *ServerConfig, path string) error {
 		sc.Projections[tool] = p
 	}
 	return nil
+}
+
+// Runs after the overlay, whose own rules already passed, so only an inline rule can fail here.
+func validateInlineProjections(sc *ServerConfig) error {
+	return validateServerProjectionFormats(sc.Name, sc.Projections)
 }
 
 // mergeKnownAuth fills in Auth from a bundled default or a prior detection marker,

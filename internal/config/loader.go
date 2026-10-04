@@ -268,8 +268,7 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	return &s, nil
 }
 
-// Inline projections decode apart from the rest of the file, so a mistake in them costs the
-// server only its projections, as one in its projection file does.
+// Inline projections decode apart, so a mistake in them costs the server only its projections.
 func decodeServerFile(data []byte, s *ServerConfig) (inlineProjections *yaml.Node, err error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
@@ -282,7 +281,6 @@ func decodeServerFile(data []byte, s *ServerConfig) (inlineProjections *yaml.Nod
 	return inlineProjections, doc.Decode(s)
 }
 
-// Decoding refuses a key written twice, so detaching one must too, or the other would slip through.
 func detachMappingValue(doc *yaml.Node, key string) (*yaml.Node, error) {
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
 		return nil, nil
