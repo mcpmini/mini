@@ -255,6 +255,9 @@ func (s *Server) brokenProjectionsOutcome(servers config.Servers, name string) s
 	if s.projections[name] != nil {
 		return "keeping the server's previous projections"
 	}
+	if s.upstreams[name] == nil && !s.configServers[name] {
+		return "the server isn't running"
+	}
 	return "the server runs without projections"
 }
 

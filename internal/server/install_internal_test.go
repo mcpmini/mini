@@ -99,7 +99,9 @@ func TestInstallChecked_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.
 	})
 	wg.Go(func() {
 		for range 20 {
-			_ = srv.installChecked(&transport.FakeConnection{}, tools, srv.replacingInstall(config.ServerConfig{Name: "svc"})) // the race detector judges this, not the result
+			if err := srv.installChecked(&transport.FakeConnection{}, tools, srv.replacingInstall(config.ServerConfig{Name: "svc"})); err != nil {
+				t.Error(err)
+			}
 		}
 	})
 	wg.Wait()
