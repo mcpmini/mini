@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"strings"
 
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -51,10 +50,4 @@ func warnServerProblems(out io.Writer, servers config.Servers) {
 
 func warnUnprojected(out io.Writer, se config.SourceError) {
 	fmt.Fprintf(out, "warning: skipping the projections of server %s: %v\n", se.ServerName, se.Err)
-}
-
-const unknownTransport = "-"
-
-func singleLine(err error) string {
-	return strings.Join(strings.Fields(err.Error()), " ")
 }

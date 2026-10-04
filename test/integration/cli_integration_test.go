@@ -401,6 +401,30 @@ func TestIntegrationCLI_status_Unreachable(t *testing.T) {
 	}
 }
 
+func TestIntegrationCLI_status_failsWhenAServersProjectionsFailToLoad(t *testing.T) {
+	disabled := false
+	cases := map[string]struct {
+		enabled *bool
+		wantRow string
+	}{
+		"running server":  {wantRow: "ok, projections:"},
+		"disabled server": {enabled: &disabled, wantRow: "disabled, projections:"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			cfg := t.TempDir()
+			writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}), Enabled: tc.enabled})
+			testutil.WriteFile(t, config.ProjectionPath(cfg, "svc"), "get_item: [broken\n")
+
+			stdout, _, code := runCLI(t, cfg, "status")
+
+			if code == 0 || !strings.Contains(stdout, tc.wantRow) {
+				t.Errorf("status = exit %d, stdout %q; want non-zero and a row with %q", code, stdout, tc.wantRow)
+			}
+		})
+	}
+}
+
 func TestIntegrationCLI_init_CreatesDirectories(t *testing.T) {
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "init", "--yes")

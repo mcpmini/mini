@@ -140,7 +140,7 @@ func (s *Server) checkSavedProjectionsLoad(serverName string) error {
 		err = sc.ProjectionsErr.Err
 	}
 	if err != nil {
-		return fmt.Errorf("set_projection: %s's saved config fails to load, so saving could replace rules on disk; fix the file, or pass session_only: %w", serverName, err)
+		return fmt.Errorf("set_projection: %s's saved config fails to load (%w), so saving could replace rules on disk; fix the file, or pass session_only", serverName, err)
 	}
 	return nil
 }

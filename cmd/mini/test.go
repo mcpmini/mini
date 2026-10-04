@@ -96,10 +96,6 @@ func checkServer(ctx context.Context, srv *server.Server, sc config.ServerConfig
 	return r
 }
 
-func projectionsError(sc config.ServerConfig) error {
-	return fmt.Errorf("projections: %w", sc.ProjectionsErr.Err)
-}
-
 func probeUpstream(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {
 	clock := clock.System()
 	tctx, cancel := context.WithTimeout(ctx, timeout)
