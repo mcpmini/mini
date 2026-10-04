@@ -18,6 +18,7 @@ go run ./tools/params .
 go run ./tools/returns .
 go run ./tools/clocklint .
 go run ./tools/testkind .
+go run ./tools/fileiolint .
 testbin=$(mktemp -d)
 go build -o "$testbin/echomcp" ./cmd/echomcp
 export ECHOMCP_BIN="$testbin/echomcp"

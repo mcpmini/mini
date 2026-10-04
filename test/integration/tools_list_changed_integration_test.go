@@ -65,7 +65,7 @@ func waitForControlFile(t *testing.T, path string) string {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" {
+		if data, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(data)) != "" { //fileiolint:allow poll for the subprocess control address
 			return strings.TrimSpace(string(data))
 		}
 		time.Sleep(10 * time.Millisecond)

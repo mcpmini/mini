@@ -14,7 +14,7 @@ func TestWriteToken_replacesLooseFileWith0600(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(stale), 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(stale, []byte("old"), 0644); err != nil {
+	if err := os.WriteFile(stale, []byte("old"), 0644); err != nil { //fileiolint:allow loose permissions exercise token replacement
 		t.Fatal(err)
 	}
 

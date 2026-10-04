@@ -174,7 +174,7 @@ func TestBenchmark_githubPRs_bundledProjectionApplies(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	root := filepath.Join(filepath.Dir(thisFile), "..", "..")
 	fixture := filepath.Join(root, "benchmarks", "fixtures", "github", "list_pull_requests.json")
-	raw, err := os.ReadFile(fixture)
+	raw, err := os.ReadFile(fixture) //fileiolint:allow missing optional benchmark fixture skips the test
 	if err != nil {
 		t.Skip("fixture not available:", err)
 	}

@@ -15,7 +15,7 @@ func TestReadConfigFileReadsAPipe(t *testing.T) {
 		t.Skipf("mkfifo: %v", err)
 	}
 	go func() {
-		os.WriteFile(fifo, []byte(`{"mcpServers":{}}`), 0600) //nolint:errcheck // a failed write fails the read below
+		os.WriteFile(fifo, []byte(`{"mcpServers":{}}`), 0600) //nolint:errcheck // a failed write fails the read below //fileiolint:allow FIFO writer must unblock the reader from a goroutine
 	}()
 
 	data, err := ReadConfigFile(fifo)

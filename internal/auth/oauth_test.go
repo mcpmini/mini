@@ -68,7 +68,7 @@ func TestSaveTightensExistingTokenPermissions(t *testing.T) {
 	if err := os.MkdirAll(dir+"/internal", 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{}`), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(`{}`), 0644); err != nil { //fileiolint:allow loose permissions exercise credential hardening
 		t.Fatal(err)
 	}
 	if err := auth.Save(dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
