@@ -1,4 +1,4 @@
-package importers
+package agents
 
 import (
 	"path/filepath"

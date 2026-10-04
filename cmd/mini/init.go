@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/clock"
 )
@@ -102,39 +103,39 @@ func importServers(configDir, from string, prompt func(string) bool) []string {
 }
 
 func importDetected(configDir string, prompt func(string) bool) []string {
-	clients := detectAgentClients()
-	if len(clients) == 0 {
+	detected := agents.Detect()
+	if len(detected) == 0 {
 		fmt.Println("no agent configs detected")
 		return nil
 	}
 	var names []string
-	for _, c := range clients {
-		names = append(names, importClientIfConfirmed(configDir, c, prompt)...)
+	for _, a := range detected {
+		names = append(names, importAgentIfConfirmed(configDir, a, prompt)...)
 	}
 	return names
 }
 
-func importClientIfConfirmed(configDir string, c agentClient, prompt func(string) bool) []string {
-	q := fmt.Sprintf("import MCP servers from %s (%s)?", c.Name, c.ConfigPath)
+func importAgentIfConfirmed(configDir string, a agents.Agent, prompt func(string) bool) []string {
+	q := fmt.Sprintf("import MCP servers from %s (%s)?", a.Name, a.ConfigPath)
 	if !prompt(q) {
 		return nil
 	}
-	names := importClaudeFormat(configDir, c.Name, c.ConfigPath)
-	fmt.Printf("  imported %d server(s) from %s\n", len(names), c.Name)
+	names := importAgentConfig(configDir, a.Name, a)
+	fmt.Printf("  imported %d server(s) from %s\n", len(names), a.Name)
 	return names
 }
 
 func importFrom(configDir, from string, prompt func(string) bool) []string {
-	path := resolveFromPath(from)
-	if _, err := os.Stat(path); err != nil {
-		fatalf("config not found: %s", path)
+	source := resolveFromSource(from)
+	if _, err := os.Stat(source.ConfigPath); err != nil {
+		fatalf("config not found: %s", source.ConfigPath)
 	}
-	q := fmt.Sprintf("import MCP servers from %s?", path)
+	q := fmt.Sprintf("import MCP servers from %s?", source.ConfigPath)
 	if !prompt(q) {
 		return nil
 	}
-	names := importClaudeFormat(configDir, path, path)
-	fmt.Printf("imported %d server(s) from %s\n", len(names), path)
+	names := importAgentConfig(configDir, source.ConfigPath, source)
+	fmt.Printf("imported %d server(s) from %s\n", len(names), source.ConfigPath)
 	return names
 }
 
@@ -146,25 +147,28 @@ var fromClientNames = map[string]string{
 	"gemini":         "Gemini CLI",
 }
 
-func resolveFromPath(from string) string {
-	if client, ok := fromClientNames[strings.ToLower(from)]; ok {
-		aliasPath := findClientPath(client)
-		if aliasPath == "" {
+func resolveFromSource(from string) agents.Agent {
+	if name, ok := fromClientNames[strings.ToLower(from)]; ok {
+		agent, found := findKnownAgent(name)
+		if !found {
 			fatalf("could not find config for %q", from)
 		}
-		return aliasPath
+		return agent
 	}
-	return from
+	return agents.Agent{ConfigPath: from, Read: agents.ReadClaude}
 }
 
-func findClientPath(name string) string {
-	home, _ := os.UserHomeDir()
-	for _, c := range knownClients(home) {
-		if c.Name == name {
-			return c.ConfigPath
+func findKnownAgent(name string) (agents.Agent, bool) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return agents.Agent{}, false
+	}
+	for _, a := range agents.Known(home) {
+		if a.Name == name && a.ConfigPath != "" {
+			return a, true
 		}
 	}
-	return ""
+	return agents.Agent{}, false
 }
 
 func createConfigDirs(configDir string) error {
@@ -187,26 +191,26 @@ func resolveInstallBinPath() string {
 func printInstallInstructions() {
 	binPath := resolveInstallBinPath()
 	fmt.Println("\nTo connect mini to your agent:")
-	clients := detectAgentClients()
-	if len(clients) == 0 {
+	detected := agents.Detect()
+	if len(detected) == 0 {
 		fmt.Println()
 		fmt.Println("  Add to your agent's MCP config:")
 		fmt.Println(indent(renderMinimcpInstallJSON(binPath), "    "))
 		return
 	}
-	for _, c := range clients {
-		printClientInstall(c, binPath)
+	for _, a := range detected {
+		printAgentInstall(a, binPath)
 	}
 }
 
-func printClientInstall(c agentClient, binPath string) {
+func printAgentInstall(a agents.Agent, binPath string) {
 	fmt.Println()
-	if c.Name == "Claude Code" {
+	if a.Name == "Claude Code" {
 		fmt.Println("  Claude Code:")
 		fmt.Println("    claude mcp add mini " + binPath + " connect")
 		return
 	}
-	fmt.Printf("  %s — add to %s:\n", c.Name, c.ConfigPath)
+	fmt.Printf("  %s — add to %s:\n", a.Name, a.ConfigPath)
 	fmt.Println(indent(renderMinimcpInstallJSON(binPath), "    "))
 }
 
