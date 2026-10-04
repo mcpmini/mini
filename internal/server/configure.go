@@ -6,11 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
 
 	"gopkg.in/yaml.v3"
 
@@ -57,7 +54,7 @@ func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams,
 	case "set_projection":
 		return s.setProjection(session, p)
 	case "reload":
-		return s.reloadProjections(), nil
+		return s.reloadProjections()
 	case "add_server":
 		return s.addServerFromAgent(ctx, p.ServerCfg)
 	case "remove_server":
@@ -181,104 +178,6 @@ func (s *Server) restoreServerProjection(serverName, tool string, prev *config.P
 		return
 	}
 	delete(s.projections[serverName], tool)
-}
-
-func (s *Server) applyReload() (config.LoadProjectionsResult, map[string]int) {
-	// Hold persistMu for the entire load+replace so we don't interleave with a
-	// concurrent set_projection that has already updated the in-memory map but
-	// hasn't yet flushed to disk: without this lock, reload could wipe the
-	// in-memory update and then set_projection would persist the wiped state.
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
-	load := config.LoadProjections(s.configDir)
-	logProjectionLoadProblems(s.logger, load)
-	fresh := projectionCounts(load.Projections)
-	s.replaceProjections(load)
-	s.reapplyAliases()
-	return load, fresh
-}
-
-func (s *Server) reloadProjections() any {
-	load, fresh := s.applyReload()
-	return buildReloadResult(load, fresh)
-}
-
-func buildReloadResult(load config.LoadProjectionsResult, fresh map[string]int) map[string]any {
-	ok := len(load.SourceErrors) == 0 && len(load.SkippedServers) == 0
-	result := map[string]any{
-		"ok":      ok,
-		"loaded":  fresh,
-		"skipped": skippedNames(load.SkippedServers),
-	}
-	if len(load.SourceErrors) > 0 {
-		result["source_errors"] = sourceErrorPaths(load.SourceErrors)
-	}
-	return result
-}
-
-func sourceErrorPaths(errors []config.SourceError) []string {
-	paths := make([]string, len(errors))
-	for i, se := range errors {
-		paths[i] = se.Path
-	}
-	slices.Sort(paths)
-	return paths
-}
-
-func logProjectionLoadProblems(logger *slog.Logger, load config.LoadProjectionsResult) {
-	for _, se := range load.SourceErrors {
-		logger.Warn("projection reload: source error", "path", se.Path, "err", se.Err)
-	}
-	for name, err := range load.SkippedServers {
-		logger.Warn("projection reload: skipped server", "server", name, "err", err)
-	}
-}
-
-func skippedNames(skipped map[string]error) []string {
-	if len(skipped) == 0 {
-		return []string{}
-	}
-	return slices.Sorted(maps.Keys(skipped))
-}
-
-func (s *Server) replaceProjections(load config.LoadProjectionsResult) {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	s.carryOverPreviousProjectionsLocked(load)
-	s.projections = load.Projections
-}
-
-func (s *Server) carryOverPreviousProjectionsLocked(load config.LoadProjectionsResult) {
-	for name, live := range s.projections {
-		if load.KeepsPreviousProjection(name) {
-			load.Projections[name] = live
-		}
-	}
-}
-
-func (s *Server) reapplyAliases() {
-	s.serverOpMu.Lock()
-	defer s.serverOpMu.Unlock()
-
-	for _, u := range s.snapshotUpstreams() {
-		if u.lastDefs == nil {
-			continue
-		}
-		s.reg.ReplaceServerTools(registry.ServerParams{
-			Name:            u.cfg.Name,
-			Defs:            u.lastDefs,
-			Perm:            u.cfg.Permissions,
-			AliasByToolName: s.currentAliasesFor(u.cfg.Name),
-		})
-	}
-}
-
-func projectionCounts(projections map[string]map[string]*config.ProjectionConfig) map[string]int {
-	counts := make(map[string]int, len(projections))
-	for serverName, tools := range projections {
-		counts[serverName] = len(tools)
-	}
-	return counts
 }
 
 func (s *Server) statusReport() map[string]any {

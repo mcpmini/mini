@@ -263,14 +263,18 @@ func newMCPServerThatLaterDemandsOAuth(t *testing.T) (*httptest.Server, func()) 
 
 func restartWithSavedServer(t *testing.T, dir, name string) error {
 	t.Helper()
-	cfg, servers, err := config.Load(dir)
+	cfg, err := config.LoadMain(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sc, err := config.LoadServer(dir, name)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg.DangerousAllowPrivateURLs = true
 	restarted := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 	t.Cleanup(restarted.Close)
-	return restarted.AddUpstream(t.Context(), *config.FindServer(servers, name))
+	return restarted.AddUpstream(t.Context(), sc)
 }
 
 func TestConfigAddServer_overlappingAddsOfOneName_theFirstWins(t *testing.T) {

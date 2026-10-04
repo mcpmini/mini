@@ -159,15 +159,6 @@ func TestLoadServers(t *testing.T) {
 	}
 }
 
-func mustLoadServers(t *testing.T, dir string) config.Servers {
-	t.Helper()
-	servers, err := config.LoadServers(dir)
-	if err != nil {
-		t.Fatalf("LoadServers: %v", err)
-	}
-	return servers
-}
-
 func wantUnprojected(name, file string) func(*testing.T, config.Servers) {
 	return func(t *testing.T, servers config.Servers) {
 		t.Helper()

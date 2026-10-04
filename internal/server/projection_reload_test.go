@@ -259,14 +259,14 @@ func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillRel
 		},
 	})
 	e.advanceTick()
-	if logs := e.logs.String(); !strings.Contains(logs, "projection reload: skipped server") {
+	if logs := e.logs.String(); !strings.Contains(logs, "projections fail to load, keeping the server's previous projections") {
 		t.Errorf("expected WARN for malformed YAML, got logs:\n%s", logs)
 	}
 	e.assertDataKeys([]string{"a"}, []string{"b"})
 	e.assertServerDataKeys("other", []string{"b"}, []string{"a"})
 
 	e.advanceTick()
-	if warns := strings.Count(e.logs.String(), "projection reload: skipped server"); warns != 1 {
+	if warns := strings.Count(e.logs.String(), "projections fail to load, keeping the server's previous projections"); warns != 1 {
 		t.Errorf("expected a single WARN for an unchanged bad file, got %d", warns)
 	}
 
@@ -306,6 +306,24 @@ func TestSetProjection_keepsAProjectionFileThatFailsToLoad(t *testing.T) {
 				t.Errorf("svc.proj.yaml = %q, want the user's %q kept", after, saved.projYAML)
 			}
 		})
+	}
+}
+
+func TestConfigReload_startupLogsSayWhatHappensToEachBrokenServer(t *testing.T) {
+	e := newReloadEnv(t, reloadEnvParams{})
+	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), "getData: [broken\n")
+	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "broken.yaml"), "command: [oops\n")
+
+	e.startPoller()
+
+	logs := e.logs.String()
+	for _, want := range []string{
+		"server config fails to load, skipping the server",
+		"projections fail to load, the server has no projections until the file loads",
+	} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("startup logs lack %q; got:\n%s", want, logs)
+		}
 	}
 }
 
