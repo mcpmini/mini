@@ -11,9 +11,10 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// GitHub Pages serves catalog/v1.json from main here, and every released binary reads it, so v1
-// changes must stay additive. An oauth2 entry that needs a bundled client registration must wait
-// for the release that bundles it, or older binaries write it without one.
+// GitHub Pages serves catalog/v1.json from main here, and every released binary reads it. From
+// here on v1 changes must stay additive; binaries released before the popular/categories layout
+// reject it and use their built-in catalog. An oauth2 entry that needs a bundled client
+// registration must wait for the release that bundles it, or older binaries write it without one.
 const PublishedURL = "https://mcpmini.github.io/mini/catalog/v1.json"
 
 const (
@@ -27,22 +28,37 @@ func NewFetchClient() *http.Client {
 
 // Fetch skips entries whose auth this binary doesn't know, so newer auth kinds can be
 // published; any other invalid entry rejects the whole document.
-func Fetch(ctx context.Context, client *http.Client, url string) ([]Entry, error) {
+func Fetch(ctx context.Context, client *http.Client, url string) (Catalog, error) {
 	if err := validateHTTPSURL(url); err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
 	data, err := download(ctx, client, url)
 	if err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
 	doc, err := decode(data)
 	if err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
-	doc.Entries = slices.DeleteFunc(doc.Entries, func(entry Entry) bool {
-		return !slices.Contains(knownAuthValues, entry.Auth)
-	})
-	return validateEntries(doc.Entries)
+	return validated(withoutUnknownAuth(doc.Catalog))
+}
+
+func withoutUnknownAuth(c Catalog) Catalog {
+	skipped := make(map[string]bool)
+	var categories []Category
+	for _, category := range c.Categories {
+		listed := len(category.Servers)
+		category.Servers = slices.DeleteFunc(slices.Clone(category.Servers), func(entry Entry) bool {
+			unknown := !slices.Contains(knownAuthValues, entry.Auth)
+			skipped[entry.Name] = skipped[entry.Name] || unknown
+			return unknown
+		})
+		if len(category.Servers) > 0 || listed == 0 {
+			categories = append(categories, category)
+		}
+	}
+	popular := slices.DeleteFunc(slices.Clone(c.Popular), func(name string) bool { return skipped[name] })
+	return Catalog{Popular: popular, Categories: categories}
 }
 
 func download(ctx context.Context, client *http.Client, url string) ([]byte, error) {
