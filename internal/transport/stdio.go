@@ -51,7 +51,7 @@ func startSubprocess(p StdioCommand) (*StdioConnection, error) {
 	// background context: stdio MCP connections are long-running
 	cmd := exec.CommandContext(context.Background(), p.Command, p.Args...)
 	if len(p.Env) > 0 {
-		cmd.Env = p.Env
+		cmd.Env = append(cmd.Environ(), p.Env...)
 	}
 	stdin, stdout, err := cmdPipes(cmd)
 	if err != nil {
