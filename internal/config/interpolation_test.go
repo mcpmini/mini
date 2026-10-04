@@ -160,6 +160,7 @@ func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *tes
 		{"bad handshake timeout", "servers/svc.yaml", "handshake_timeout: invalid\n", "handshake_timeout"},
 		{"invalid name from the path", "servers/a.b.yaml", "transport: stdio\n", "invalid server name \"a.b\""},
 		{"invalid projection format", "servers/svc.yaml", "projections:\n  t:\n    format: xml\n", "projection t: format"},
+		{"inline projection of the wrong type", "servers/svc.yaml", "projections:\n  t:\n    include_only: 5\n", "cannot unmarshal"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
