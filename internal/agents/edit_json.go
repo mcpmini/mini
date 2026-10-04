@@ -1,0 +1,70 @@
+package agents
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+)
+
+// EditJSONServers removes and adds entries in a JSON agent config's top-level mcpServers.
+// Numbers are decoded as json.Number so values like large IDs survive exactly; key order
+// becomes alphabetical.
+func EditJSONServers(data []byte, remove []string, add map[string]any) ([]byte, error) {
+	doc, err := decodeJSONObject(data)
+	if err != nil {
+		return nil, err
+	}
+	servers, err := mcpServersOf(doc)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range remove {
+		delete(servers, name)
+	}
+	for name, entry := range add {
+		servers[name] = entry
+	}
+	doc["mcpServers"] = servers
+	return encodeJSON(doc)
+}
+
+func decodeJSONObject(data []byte) (map[string]any, error) {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var doc map[string]any
+	if err := decoder.Decode(&doc); err != nil {
+		return nil, fmt.Errorf("parse agent config: %w", err)
+	}
+	if doc == nil {
+		return nil, errors.New("parse agent config: not a JSON object")
+	}
+	if decoder.More() {
+		return nil, errors.New("parse agent config: unexpected data after the JSON object")
+	}
+	return doc, nil
+}
+
+func mcpServersOf(doc map[string]any) (map[string]any, error) {
+	raw, ok := doc["mcpServers"]
+	if !ok || raw == nil {
+		return map[string]any{}, nil
+	}
+	servers, ok := raw.(map[string]any)
+	if !ok {
+		return nil, errors.New("agent config's mcpServers is not an object")
+	}
+	return servers, nil
+}
+
+// Agent configs hold URLs with & in query strings; HTML escaping would rewrite them as &.
+func encodeJSON(doc map[string]any) ([]byte, error) {
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(doc); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
