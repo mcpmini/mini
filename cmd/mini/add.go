@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -297,7 +296,7 @@ func loadServerConfigForAdd(configDir, name string) (*config.ServerConfig, error
 func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) config.ServerConfig {
 	ctx, cancel := context.WithTimeout(context.Background(), addProbeTimeout)
 	defer cancel()
-	connectErr := probeConnection(ctx, configDir, sc)
+	connectErr := server.ProbeServer(ctx, configDir, sc)
 	// Connecting may have triggered OAuth detection (markOAuthIfRequired) — reload to see it merged in.
 	reloaded, err := loadServerConfigForAdd(configDir, sc.Name)
 	if err != nil || reloaded == nil {
@@ -317,18 +316,6 @@ func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) con
 // LoadServer and LoadServers already merge bundled and detected auth, so a non-nil Auth leaves nothing to discover.
 func authUndiscovered(sc config.ServerConfig) bool {
 	return sc.IsHTTPTransport() && sc.Auth == nil
-}
-
-// Connecting through server.AddUpstream records a detected OAuth requirement, same as the proxy.
-func probeConnection(ctx context.Context, configDir string, sc config.ServerConfig) error {
-	cfg, err := config.LoadMain(configDir)
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
-	defer srv.Close()
-	return srv.AddUpstream(ctx, sc)
 }
 
 type authorizeParams struct {

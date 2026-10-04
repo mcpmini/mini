@@ -10,6 +10,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 )
 
 const oauthProbeTimeout = 5 * time.Second
@@ -51,23 +52,8 @@ func oauthDetectionTargets(servers []config.ServerConfig, names []string) []conf
 }
 
 func (p oauthDetectParams) detectOne(sc config.ServerConfig) {
-	ctx, cancel := p.probeContext()
+	ctx, cancel := clock.WithTimeout(context.Background(), p.clock, oauthProbeTimeout)
 	defer cancel()
 	// Only the recorded OAuth requirement matters here; an unreachable server is left for the proxy.
-	probeConnection(ctx, p.configDir, sc) //nolint:errcheck
-}
-
-// The deadline runs on p.clock so tests can expire it without waiting it out.
-func (p oauthDetectParams) probeContext() (context.Context, context.CancelFunc) {
-	ctx, cancel := context.WithCancel(context.Background())
-	deadline := p.clock.NewTimer(oauthProbeTimeout)
-	go func() {
-		select {
-		case <-deadline.Chan():
-			cancel()
-		case <-ctx.Done():
-			deadline.Stop()
-		}
-	}()
-	return ctx, cancel
+	server.ProbeServer(ctx, p.configDir, sc) //nolint:errcheck
 }

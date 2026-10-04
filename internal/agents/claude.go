@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
-	"os"
 	"slices"
 )
 
@@ -35,36 +34,16 @@ func ReadClaude(path string) (map[string]Server, error) {
 	return importedServers(entries, keys, claudeFormat), nil
 }
 
-// claudeMCPServers handles both Claude Desktop (top-level mcpServers)
-// and Claude Code (~/.claude.json, projects[path].mcpServers) formats.
+// Only user-scoped servers: Claude Code's per-project servers under projects[path] belong to
+// those projects and are left alone.
 func claudeMCPServers(data []byte) (map[string]json.RawMessage, error) {
 	var doc struct {
 		McpServers map[string]json.RawMessage `json:"mcpServers"`
-		Projects   map[string]struct {
-			McpServers map[string]json.RawMessage `json:"mcpServers"`
-		} `json:"projects"`
 	}
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, err
 	}
-	if len(doc.McpServers) > 0 {
-		return doc.McpServers, nil
-	}
-	merged := map[string]json.RawMessage{}
-	for _, project := range slices.Sorted(maps.Keys(doc.Projects)) {
-		mergeClaudeProjectServers(merged, doc.Projects[project].McpServers)
-	}
-	return merged, nil
-}
-
-func mergeClaudeProjectServers(dst, src map[string]json.RawMessage) {
-	for _, name := range slices.Sorted(maps.Keys(src)) {
-		if _, exists := dst[name]; exists {
-			fmt.Fprintf(os.Stderr, "warning: duplicate server name %q across projects — keeping first seen\n", name)
-			continue
-		}
-		dst[name] = src[name]
-	}
+	return doc.McpServers, nil
 }
 
 func (e claudeMCPEntry) server(name string) Server {

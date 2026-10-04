@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
@@ -78,47 +79,8 @@ func configuredServers(configDir string) ([]config.ServerConfig, error) {
 }
 
 func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
-	configured := configuredKeys(servers)
-	available := slices.DeleteFunc(slices.Clone(entries), func(entry catalog.Entry) bool {
-		return isConfigured(configured, entry)
-	})
-	return groupByCategory(available)
-}
-
-func configuredKeys(servers []config.ServerConfig) map[string]bool {
-	configured := make(map[string]bool, 2*len(servers))
-	for _, server := range servers {
-		configured[strings.ToLower(server.Name)] = true
-		if server.URL != "" {
-			configured[serverURLKey(server.URL)] = true
-		}
-	}
-	return configured
-}
-
-func isConfigured(keys map[string]bool, entry catalog.Entry) bool {
-	return keys[strings.ToLower(entry.Name)] || keys[serverURLKey(entry.URL)]
-}
-
-func serverURLKey(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-	u.Scheme, u.Host, u.Path = strings.ToLower(u.Scheme), strings.ToLower(u.Host), strings.TrimSuffix(u.Path, "/")
-	return u.String()
-}
-
-func groupByCategory(entries []catalog.Entry) []catalog.Entry {
-	firstSeen := make(map[string]int)
-	for i, entry := range entries {
-		if _, ok := firstSeen[entry.Category]; !ok {
-			firstSeen[entry.Category] = i
-		}
-	}
-	return slices.SortedStableFunc(slices.Values(entries), func(a, b catalog.Entry) int {
-		return firstSeen[a.Category] - firstSeen[b.Category]
-	})
+	available := initcmd.AvailableCatalog(catalog.Catalog{Entries: entries}, servers)
+	return initcmd.GroupByCategory(available.Entries)
 }
 
 func printCatalogEntries(out io.Writer, entries []catalog.Entry) {

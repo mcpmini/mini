@@ -17,38 +17,6 @@ func claudeCodeAt(path string) agents.Agent {
 	return agents.Agent{Name: "Claude Code", ConfigPath: path, Read: agents.ReadClaude}
 }
 
-func TestIsSelfEntry(t *testing.T) {
-	self, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Run("current executable is self", func(t *testing.T) {
-		if !isSelfEntry(self, self) {
-			t.Error("expected self to match self")
-		}
-	})
-	t.Run("symlink to self is self", func(t *testing.T) {
-		dir := t.TempDir()
-		link := filepath.Join(dir, "mini-link")
-		if err := os.Symlink(self, link); err != nil {
-			t.Skip("cannot create symlink:", err)
-		}
-		if !isSelfEntry(link, self) {
-			t.Error("expected symlink to self to be detected as self")
-		}
-	})
-	t.Run("unrelated binary is not self", func(t *testing.T) {
-		if isSelfEntry("/usr/bin/env", self) {
-			t.Error("expected /usr/bin/env to not be self")
-		}
-	})
-	t.Run("empty cmd is not self", func(t *testing.T) {
-		if isSelfEntry("", self) {
-			t.Error("expected empty cmd to return false")
-		}
-	})
-}
-
 func TestImportAgentConfig_SkipsSelf(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
@@ -56,13 +24,9 @@ func TestImportAgentConfig_SkipsSelf(t *testing.T) {
 	}
 	configDir := t.TempDir()
 	claudeJSON := `{
-		"projects": {
-			"/some/path": {
-				"mcpServers": {
-					"github": {"type": "http", "url": "https://api.githubcopilot.com/mcp"},
-					"mini":   {"command": "` + self + `", "args": ["connect"]}
-				}
-			}
+		"mcpServers": {
+			"github": {"type": "http", "url": "https://api.githubcopilot.com/mcp"},
+			"mini":   {"command": "` + self + `", "args": ["connect"]}
 		}
 	}`
 	src := filepath.Join(t.TempDir(), "claude.json")
