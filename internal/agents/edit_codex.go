@@ -16,7 +16,7 @@ type CodexServer struct {
 	Args    []string `toml:"args"`
 }
 
-// EditCodexServers disables named servers and writes mini's entry while preserving other settings.
+// EditCodexServers disables named servers and adds mini only when its entry is absent.
 func EditCodexServers(data []byte, disable []string, mini CodexServer) ([]byte, error) {
 	before, err := decodeCodexConfig(data)
 	if err != nil {
@@ -28,11 +28,11 @@ func EditCodexServers(data []byte, disable []string, mini CodexServer) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	miniLines, err := codexMiniTable(mini)
+	miniLines, err := codexMiniTable(before, mini)
 	if err != nil {
 		return nil, err
 	}
-	doc.lines = plan.apply(scanned, miniLines)
+	doc.lines = plan.apply(scanned, miniLines, doc.eol)
 	edited := doc.join()
 	if err := verifyCodexEdit(data, edited, disable, miniLines); err != nil {
 		return nil, err
@@ -65,41 +65,32 @@ func splitCodexLines(data []byte) codexLines {
 	if strings.Contains(text, "\r\n") {
 		doc.eol = "\r\n"
 	}
-	text = strings.TrimSuffix(strings.TrimSuffix(text, "\n"), "\r")
-	if text != "" {
-		doc.lines = strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	doc.lines = strings.SplitAfter(text, "\n")
+	if doc.lines[len(doc.lines)-1] == "" {
+		doc.lines = doc.lines[:len(doc.lines)-1]
 	}
 	return doc
 }
 
 func (d codexLines) join() []byte {
-	text := strings.Join(d.lines, d.eol)
-	if len(d.lines) > 0 {
-		text += d.eol
-	}
-	return []byte(d.bom + text)
+	return []byte(d.bom + strings.Join(d.lines, ""))
 }
 
 type codexEditPlan struct {
 	replaceEnabled map[int]bool
 	insertEnabled  map[int]bool
-	dropMini       map[int]bool
-	miniAt         int
 }
 
 func planCodexEdit(lines []tomlLine, before map[string]any, disable []string) (codexEditPlan, error) {
-	plan := codexEditPlan{replaceEnabled: map[int]bool{}, insertEnabled: map[int]bool{}, miniAt: -1}
+	plan := codexEditPlan{replaceEnabled: map[int]bool{}, insertEnabled: map[int]bool{}}
 	for _, name := range disable {
+		if name == "mini" {
+			continue
+		}
 		if err := plan.disableServer(lines, before, name); err != nil {
 			return codexEditPlan{}, err
 		}
 	}
-	if serverDefined(before, "mini") {
-		if err := requireTableForm(lines, "mini"); err != nil {
-			return codexEditPlan{}, err
-		}
-	}
-	plan.dropMini, plan.miniAt = miniTableLines(lines)
 	return plan, nil
 }
 
@@ -159,59 +150,42 @@ func hasPrefix(path, prefix []string) bool {
 	return len(prefix) <= len(path) && slices.Equal(path[:len(prefix)], prefix)
 }
 
-func miniTableLines(lines []tomlLine) (map[int]bool, int) {
-	drop, at := map[int]bool{}, -1
-	inMini := false
-	for i, l := range lines {
-		if l.isHeader() {
-			inMini = hasPrefix(l.header, []string{"mcp_servers", "mini"})
-			if inMini && at < 0 {
-				at = i
-			}
-		}
-		drop[i] = inMini
-	}
-	for i := len(lines) - 1; i > at; i-- {
-		if drop[i] && isBlankOrComment(lines[i]) && (i+1 == len(lines) || !drop[i+1]) {
-			drop[i] = false
-		}
-	}
-	return drop, at
-}
-
-func isBlankOrComment(l tomlLine) bool {
-	trimmed := strings.TrimSpace(l.text)
-	return l.key == nil && !l.isHeader() && (trimmed == "" || strings.HasPrefix(trimmed, "#"))
-}
-
-func (p codexEditPlan) apply(lines []tomlLine, miniLines []string) []string {
+func (p codexEditPlan) apply(lines []tomlLine, miniLines []string, eol string) []string {
 	var out []string
 	for i, l := range lines {
-		if i == p.miniAt {
-			out = append(out, miniLines...)
+		text := l.text
+		if p.replaceEnabled[i] {
+			text = leadingSpace(text) + "enabled = false" + trailingEnabledComment(l.value)
 		}
-		switch {
-		case p.dropMini[i]:
-		case p.replaceEnabled[i]:
-			out = append(out, leadingSpace(l.text)+"enabled = false"+trailingEnabledComment(l.value))
-		default:
-			out = append(out, l.text)
+		ending := l.ending
+		if p.insertEnabled[i] && ending == "" {
+			ending = eol
 		}
+		out = append(out, text+ending)
 		if p.insertEnabled[i] {
-			out = append(out, "enabled = false")
+			out = append(out, "enabled = false"+ending)
 		}
 	}
-	if p.miniAt < 0 {
-		out = appendTable(out, miniLines)
-	}
-	return out
+	return appendTable(out, miniLines, eol)
 }
 
-func appendTable(lines, table []string) []string {
-	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) != "" {
-		lines = append(lines, "")
+func appendTable(lines, table []string, eol string) []string {
+	if len(table) == 0 {
+		return lines
 	}
-	return append(lines, table...)
+	if len(lines) > 0 {
+		last := len(lines) - 1
+		if !strings.HasSuffix(lines[last], "\n") {
+			lines[last] += eol
+		}
+		if strings.TrimSpace(lines[last]) != "" {
+			lines = append(lines, eol)
+		}
+	}
+	for _, line := range table {
+		lines = append(lines, line+eol)
+	}
+	return lines
 }
 
 func trailingEnabledComment(value string) string {
@@ -225,7 +199,10 @@ func leadingSpace(text string) string {
 	return text[:len(text)-len(strings.TrimLeft(text, " \t"))]
 }
 
-func codexMiniTable(mini CodexServer) ([]string, error) {
+func codexMiniTable(before map[string]any, mini CodexServer) ([]string, error) {
+	if serverDefined(before, "mini") {
+		return nil, nil
+	}
 	var body bytes.Buffer
 	if err := toml.NewEncoder(&body).Encode(mini); err != nil {
 		return nil, err
@@ -254,20 +231,29 @@ func expectedCodexConfig(original []byte, disable []string, miniLines []string) 
 	if err != nil {
 		return nil, err
 	}
-	fresh, err := decodeCodexConfig([]byte(strings.Join(miniLines, "\n")))
-	if err != nil {
-		return nil, err
-	}
 	servers := tableAt(want, "mcp_servers")
 	for _, name := range disable {
+		if name == "mini" {
+			continue
+		}
 		server, ok := servers[name].(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("codex server %q is not a table", name)
 		}
 		server["enabled"] = false
 	}
-	servers["mini"] = tableAt(fresh, "mcp_servers")["mini"]
-	return want, nil
+	return want, addExpectedMini(servers, miniLines)
+}
+
+func addExpectedMini(servers map[string]any, miniLines []string) error {
+	if _, exists := servers["mini"]; exists {
+		return nil
+	}
+	fresh, err := decodeCodexConfig([]byte(strings.Join(miniLines, "\n")))
+	if err == nil {
+		servers["mini"] = tableAt(fresh, "mcp_servers")["mini"]
+	}
+	return err
 }
 
 func tableAt(doc map[string]any, key string) map[string]any {

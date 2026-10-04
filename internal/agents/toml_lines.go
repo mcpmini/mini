@@ -8,6 +8,7 @@ import (
 
 type tomlLine struct {
 	text       string
+	ending     string
 	header     []string
 	arrayTable bool
 	key        []string
@@ -33,7 +34,8 @@ func scanTOMLLines(lines []string) []tomlLine {
 }
 
 func (s *tomlScanner) scan(text string) tomlLine {
-	line := tomlLine{text: text, table: s.table}
+	text, ending := splitTOMLLineEnding(text)
+	line := tomlLine{text: text, ending: ending, table: s.table}
 	atTopLevel := s.openString == "" && s.depth == 0
 	rest := s.skipOpenString(text)
 	if !atTopLevel {
@@ -54,6 +56,16 @@ func (s *tomlScanner) scan(text string) tomlLine {
 		s.track(value)
 	}
 	return line
+}
+
+func splitTOMLLineEnding(text string) (string, string) {
+	if strings.HasSuffix(text, "\r\n") {
+		return strings.TrimSuffix(text, "\r\n"), "\r\n"
+	}
+	if strings.HasSuffix(text, "\n") {
+		return strings.TrimSuffix(text, "\n"), "\n"
+	}
+	return text, ""
 }
 
 func (s *tomlScanner) skipOpenString(text string) string {
@@ -105,7 +117,13 @@ func closingQuoteEndIndex(text, quote string) int {
 			continue
 		}
 		if strings.HasPrefix(text[i:], quote) {
-			return i + len(quote)
+			end := i + len(quote)
+			if len(quote) == 3 {
+				for end < len(text) && text[end] == quote[0] {
+					end++
+				}
+			}
+			return end
 		}
 	}
 	return -1

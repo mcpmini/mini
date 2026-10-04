@@ -64,16 +64,6 @@ func TestEditCodexServers_switchesOffServersAndAddsMini(t *testing.T) {
 			want:    "[mcp_servers.grid]\ncommand = \"grid\"\nmatrix = [\n  [1, 2],\n]\nenabled = false\n\n" + testMiniTable,
 		},
 		{
-			name:   "a disabled mini table ends enabled and fresh, sub-tables included",
-			config: "[mcp_servers.mini]\ncommand = \"/old/mini\"\nenabled = false\n\n[mcp_servers.mini.env]\nTOKEN = \"x\"\n\n[mcp_servers.other]\ncommand = \"other\"\n",
-			want:   testMiniTable + "\n[mcp_servers.other]\ncommand = \"other\"\n",
-		},
-		{
-			name:   "comments introducing the table after mini are kept",
-			config: "[mcp_servers.mini]\ncommand = \"/old/mini\"\n\n# work account, do not remove\n[mcp_servers.github]\nurl = \"https://example.com/mcp\"\n",
-			want:   testMiniTable + "\n# work account, do not remove\n[mcp_servers.github]\nurl = \"https://example.com/mcp\"\n",
-		},
-		{
 			name:    "a byte order mark is kept and doesn't hide the first header",
 			config:  "\ufeff[mcp_servers.github]\nurl = \"https://example.com/mcp\"\n",
 			disable: []string{"github"},
@@ -125,7 +115,6 @@ func TestEditCodexServers_refusesWhatLineEditsCannotChangeSafely(t *testing.T) {
 		{"dotted keys at the root", "mcp_servers.github.url = \"https://example.com/mcp\"\n", "github", `"github" is written as dotted keys`},
 		{"array of tables", "[[mcp_servers.github]]\nurl = \"https://example.com/mcp\"\n", "github", `"github" is written as an array of tables`},
 		{"only a sub-table", "[mcp_servers.github.env]\nTOKEN = \"x\"\n", "github", `"github" is written as sub-tables only`},
-		{"mini as an inline table", "[mcp_servers]\nmini = { command = \"/old/mini\" }\n", "", `"mini" is written as an inline table`},
 		{"unknown server", "[mcp_servers.github]\nurl = \"https://example.com/mcp\"\n", "linear", `codex config has no server "linear"`},
 		{"invalid TOML", "[mcp_servers.github\n", "github", "parse codex config"},
 	}
@@ -138,6 +127,81 @@ func TestEditCodexServers_refusesWhatLineEditsCannotChangeSafely(t *testing.T) {
 			edited, err := EditCodexServers([]byte(tt.config), disable, testMini)
 			if err == nil || !strings.Contains(err.Error(), tt.want) || edited != nil {
 				t.Fatalf("EditCodexServers = %q, %v; want no output and an error containing %q", edited, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestEditCodexServers_preservesExistingMiniInEveryForm(t *testing.T) {
+	for name, entry := range map[string]string{
+		"table with settings and env": "[mcp_servers.mini]\ncommand = \"custom-mini\"\nenabled = false\ntool_timeout_sec = 99\n\n[mcp_servers.mini.env]\nTOKEN = \"synthetic-token\"",
+		"inline table":                "[mcp_servers]\nmini = { command = \"custom-mini\", enabled = false }",
+		"root inline table":           "mcp_servers = { mini = { command = \"custom-mini\" } }",
+		"sub-tables only":             "[mcp_servers.mini.env]\nTOKEN = \"synthetic-token\"",
+		"dotted keys":                 "mcp_servers.mini.command = \"custom-mini\"\nmcp_servers.mini.enabled = false",
+		"array of tables":             "[[mcp_servers.mini]]\ncommand = \"custom-mini\"",
+	} {
+		t.Run(name, func(t *testing.T) {
+			config := "[mcp_servers.other]\ncommand = \"other\"\n\n" + entry
+			if name == "root inline table" || name == "dotted keys" {
+				config = entry + "\n\n[mcp_servers.other]\ncommand = \"other\"\n"
+			}
+			want := strings.Replace(config, "[mcp_servers.other]\n", "[mcp_servers.other]\nenabled = false\n", 1)
+			if got := editCodex(t, config, "mini", "other"); got != want {
+				t.Fatalf("existing mini changed:\n%s\nwant:\n%s", got, want)
+			}
+		})
+	}
+}
+
+func TestEditCodexServers_ignoresMiniWhenAbsentFromDisable(t *testing.T) {
+	if got := editCodex(t, "", "mini"); got != testMiniTable {
+		t.Fatalf("config = %q, want mini added", got)
+	}
+}
+
+func TestEditCodexServers_preservesMixedEndingsAndFinalMiniBytes(t *testing.T) {
+	config := "[mcp_servers.other]\r\ncommand = \"other\"\n\r\n[mcp_servers.mini]\ncommand = \"custom-mini\"\r\nenabled = false"
+	want := strings.Replace(config, "[mcp_servers.other]\r\n", "[mcp_servers.other]\r\nenabled = false\r\n", 1)
+	if got := editCodex(t, config, "other"); got != want {
+		t.Fatalf("config = %q, want %q", got, want)
+	}
+}
+
+func TestEditCodexServers_quoteRunsDoNotHideLaterServerHeaders(t *testing.T) {
+	for _, quote := range []string{"\"", "'"} {
+		for _, count := range []int{4, 5} {
+			value := "[" + strings.Repeat(quote, 3) + "x" + strings.Repeat(quote, count) + "]"
+			t.Run(value, func(t *testing.T) {
+				config := "[mcp_servers.a]\nargs = " + value + "\n[mcp_servers.b]\ncommand = \"b\"\n"
+				want := strings.Replace(config, "[mcp_servers.b]\n", "[mcp_servers.b]\nenabled = false\n", 1) + "\n" + testMiniTable
+				if got := editCodex(t, config, "b"); got != want {
+					t.Fatalf("config = %q, want %q", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestEditCodexServers_refusesAnEditThatWouldNotParse(t *testing.T) {
+	config := "[mcp_servers.other]\nenabled = \"\"\"first\nsecond\"\"\"\n"
+	edited, err := EditCodexServers([]byte(config), []string{"other"}, testMini)
+	if err == nil || edited != nil || !strings.Contains(err.Error(), "edit would not parse") {
+		t.Fatalf("edit = %q, %v; want refused unparseable result", edited, err)
+	}
+}
+
+func TestVerifyCodexEdit_refusesUnintendedChangesAndInvalidTOML(t *testing.T) {
+	original := "model = \"synthetic-model\"\n[mcp_servers.mini]\ncommand = \"custom-mini\"\n"
+	for name, edited := range map[string]string{
+		"changed unrelated setting": strings.Replace(original, "synthetic-model", "changed-model", 1),
+		"changed existing mini":     strings.Replace(original, "custom-mini", "changed-mini", 1),
+		"invalid result":            "[mcp_servers.mini\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := verifyCodexEdit([]byte(original), []byte(edited), nil, nil)
+			if err == nil {
+				t.Fatalf("verification accepted %s", edited)
 			}
 		})
 	}
