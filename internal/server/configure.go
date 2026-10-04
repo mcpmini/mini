@@ -233,7 +233,7 @@ func (s *Server) logReloadProblems(servers config.Servers) {
 		s.logger.Warn("server config fails to load, "+s.brokenServerOutcome(se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
 	for _, se := range servers.BrokenProjections() {
-		s.logger.Warn("projections fail to load, "+s.brokenProjectionsOutcome(se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
+		s.logger.Warn("projections fail to load, "+s.brokenProjectionsOutcome(servers, se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
 	}
 }
 
@@ -247,7 +247,10 @@ func (s *Server) brokenServerOutcome(name string) string {
 	return "skipping the server"
 }
 
-func (s *Server) brokenProjectionsOutcome(name string) string {
+func (s *Server) brokenProjectionsOutcome(servers config.Servers, name string) string {
+	if !servers.IsEnabled(name) {
+		return "the server is disabled"
+	}
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	if s.projections[name] != nil {

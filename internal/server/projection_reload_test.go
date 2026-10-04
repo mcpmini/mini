@@ -313,11 +313,18 @@ func TestConfigReload_startupLogsSayWhatHappensToEachBrokenServer(t *testing.T) 
 	e := newReloadEnv(t, reloadEnvParams{})
 	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), "getData: [broken\n")
 	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "broken.yaml"), "command: [oops\n")
+	disabled := false
+	configtest.WriteServer(t, e.dir, config.ServerConfig{Name: "off", Command: "echo", Enabled: &disabled})
+	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "off.proj.yaml"), "getData: [broken\n")
 
 	e.startPoller()
 
 	logs := e.logs.String()
-	for _, want := range []string{"server config fails to load, skipping the server", "projections fail to load, the server runs without projections"} {
+	for _, want := range []string{
+		"server config fails to load, skipping the server",
+		"projections fail to load, the server runs without projections",
+		"projections fail to load, the server is disabled",
+	} {
 		if !strings.Contains(logs, want) {
 			t.Errorf("startup logs lack %q; got:\n%s", want, logs)
 		}
