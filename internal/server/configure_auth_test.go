@@ -4,13 +4,13 @@ package server_test
 
 import (
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"golang.org/x/oauth2"
@@ -21,11 +21,6 @@ func newServerWithDir(t *testing.T, configDir string) *server.Server {
 	cfg := config.DefaultConfig()
 	cfg.DisableAuthBrowserOpen = true
 	return newTestServer(t, server.Params{Config: cfg, ConfigDir: configDir})
-}
-
-func writeServerYAML(t *testing.T, dir, name, content string) {
-	t.Helper()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", name+".yaml"), content)
 }
 
 func configureResult(t *testing.T, srv *server.Server, args map[string]any) map[string]any {
@@ -56,20 +51,17 @@ func TestAuthStatus_noToken_returnsUnauthorized(t *testing.T) {
 	}
 }
 
-func saveToken(t *testing.T, dir, serverName string, tok *oauth2.Token) {
-	t.Helper()
-	if err := auth.Save(dir, serverName, tok); err != nil {
-		t.Fatalf("save token: %v", err)
-	}
-}
-
 func TestAuthStatus_validToken_returnsAuthorized(t *testing.T) {
 	dir := t.TempDir()
-	saveToken(t, dir, "myserver", &oauth2.Token{
-		AccessToken:  "test-access-token",
-		RefreshToken: "test-refresh-token",
-		TokenType:    "Bearer",
-		Expiry:       time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC),
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "myserver",
+		Token: &oauth2.Token{
+			AccessToken:  "test-access-token",
+			RefreshToken: "test-refresh-token",
+			TokenType:    "Bearer",
+			Expiry:       time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
 	})
 
 	result := configureResult(t, newServerWithDir(t, dir), map[string]any{
@@ -86,10 +78,14 @@ func TestAuthStatus_validToken_returnsAuthorized(t *testing.T) {
 
 func TestAuthStatus_expiredToken_returnsUnauthorized(t *testing.T) {
 	dir := t.TempDir()
-	saveToken(t, dir, "myserver", &oauth2.Token{
-		AccessToken: "old-token",
-		TokenType:   "Bearer",
-		Expiry:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "myserver",
+		Token: &oauth2.Token{
+			AccessToken: "old-token",
+			TokenType:   "Bearer",
+			Expiry:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		},
 	})
 
 	result := configureResult(t, newServerWithDir(t, dir), map[string]any{
@@ -145,9 +141,7 @@ func TestStartAuth_serverNotFound_returnsError(t *testing.T) {
 
 func TestStartAuth_noOAuthConfig_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	writeServerYAML(t, dir, "plain", `name: plain
-command: echo hello
-`)
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "plain", Command: "echo hello"})
 	srv := newServerWithDir(t, dir)
 
 	resp := serve(t, srv, callTool("config", map[string]any{
@@ -162,8 +156,8 @@ command: echo hello
 
 func TestStartAuth_loadsTheNamedServerWhenAnotherServerFileIsBroken(t *testing.T) {
 	dir := t.TempDir()
-	writeServerYAML(t, dir, "plain", "command: echo hello\n")
-	writeServerYAML(t, dir, "other", "transport: http\nurl: [unfinished\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "plain", Command: "echo hello"})
+	testutil.WriteFile(t, config.ServerPath(dir, "other"), "transport: http\nurl: [unfinished\n")
 	srv := newServerWithDir(t, dir)
 
 	resp := serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "plain"}))

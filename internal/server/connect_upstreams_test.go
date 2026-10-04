@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"golang.org/x/oauth2"
 )
 
 func newConnectTestServer(t *testing.T) *server.Server {
@@ -194,10 +194,14 @@ func TestServerClose_inFlightOAuthRefresh_isAborted(t *testing.T) {
 	t.Cleanup(func() { release(); tokenSrv.Close() })
 
 	dir := t.TempDir()
-	saveToken(t, dir, "oauth-svc", &oauth2.Token{
-		AccessToken:  "expired-access",
-		RefreshToken: "old-refresh",
-		Expiry:       time.Now().Add(-time.Hour),
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: "oauth-svc",
+		Token: &oauth2.Token{
+			AccessToken:  "expired-access",
+			RefreshToken: "old-refresh",
+			Expiry:       time.Now().Add(-time.Hour),
+		},
 	})
 
 	cfg := config.DefaultConfig()

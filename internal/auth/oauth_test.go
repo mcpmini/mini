@@ -170,12 +170,10 @@ func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
 func TestTokenValidAfterForcedExpiry(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
-	if err := auth.Save(dir, "srv", pkceToken(t, mock.AuthConfig())); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: pkceToken(t, mock.AuthConfig())})
 	loaded, _ := auth.Load(dir, "srv")
 	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-	auth.Save(dir, "srv", loaded) //nolint:errcheck
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: loaded})
 	reloaded, _ := auth.Load(dir, "srv")
 	if reloaded.Valid() {
 		t.Error("token should be invalid after forced expiry")

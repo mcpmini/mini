@@ -808,12 +808,6 @@ func mockFixtureDir(t *testing.T, fixtures map[string]string) string {
 	return dir
 }
 
-func writeServerConfig(t *testing.T, configDir, name, yaml string) {
-	t.Helper()
-	dir := filepath.Join(configDir, "servers")
-	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), yaml)
-}
-
 func backdateFile(t *testing.T, path string, age time.Duration) {
 	t.Helper()
 	ts := time.Now().Add(-age)

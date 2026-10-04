@@ -148,9 +148,13 @@ func TestResolveEndpoints_cachedRegistrationBeforeCIMD(t *testing.T) {
 	defer asSrv.Close()
 
 	dir := t.TempDir()
-	if err := auth.SaveRegistration(dir, "srv", &auth.Registration{ClientID: "cached-id"}); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveRegistration(t, authtest.RegistrationFile{
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Registration: &auth.Registration{
+			ClientID: "cached-id",
+		},
+	})
 
 	sc := &config.ServerConfig{
 		URL:  asSrv.URL + "/mcp",

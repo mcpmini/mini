@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
@@ -435,12 +436,20 @@ func fileExists(path string) bool {
 
 func saveCredentials(t *testing.T, dir, name string) {
 	t.Helper()
-	if err := auth.Save(dir, name, &oauth2.Token{AccessToken: "old-server-token"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := auth.SaveRegistration(dir, name, &auth.Registration{ClientID: "old-client"}); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{
+		ConfigDir:  dir,
+		ServerName: name,
+		Token: &oauth2.Token{
+			AccessToken: "old-server-token",
+		},
+	})
+	authtest.SaveRegistration(t, authtest.RegistrationFile{
+		ConfigDir:  dir,
+		ServerName: name,
+		Registration: &auth.Registration{
+			ClientID: "old-client",
+		},
+	})
 }
 
 func assertNoCredentials(t *testing.T, dir, name string) {

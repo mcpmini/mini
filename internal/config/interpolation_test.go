@@ -19,7 +19,18 @@ func TestLoadServerConfig_expandsSecretFields(t *testing.T) {
 	} {
 		t.Setenv("MINI_TEST_"+key, value)
 	}
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), "transport: http\nurl: https://api.example.com\nheaders:\n  Authorization: \"${MINI_TEST_HEADER} ${MINI_TEST_TOKEN}\"\nenv: [\"${MINI_TEST_ENV}\"]\nauth:\n  type: oauth2\n  token: ${MINI_TEST_TOKEN}\n  client_secret: ${MINI_TEST_CLIENT_SECRET}\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:      "svc",
+		Env:       []string{"${MINI_TEST_ENV}"},
+		Transport: "http",
+		URL:       "https://api.example.com",
+		Headers:   map[string]string{"Authorization": "${MINI_TEST_HEADER} ${MINI_TEST_TOKEN}"},
+		Auth: &config.AuthConfig{
+			Type:         "oauth2",
+			Token:        "${MINI_TEST_TOKEN}",
+			ClientSecret: "${MINI_TEST_CLIENT_SECRET}",
+		},
+	})
 	sc := mustLoadOneServer(t, dir)
 	if sc.Headers["Authorization"] != "Bearer one three" || sc.Env[0] != "TOKEN=two" {
 		t.Errorf("expanded headers/env: %+v, %v", sc.Headers, sc.Env)
@@ -60,8 +71,14 @@ func TestLoadServerConfig_unsetVariable_leavesOnlyThatServerAsWrittenAndSaysWhy(
 	dir := t.TempDir()
 	os.Unsetenv("MINI_TEST_UNDEFINED_HEADER")
 	t.Setenv("MINI_TEST_DEFINED_HEADER", "set")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  X-Key: ${MINI_TEST_UNDEFINED_HEADER}\n  X-Other: ${MINI_TEST_DEFINED_HEADER}\n")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "other.yaml"), "headers:\n  X-Key: ${MINI_TEST_DEFINED_HEADER}\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "svc",
+		Headers: map[string]string{"X-Key": "${MINI_TEST_UNDEFINED_HEADER}", "X-Other": "${MINI_TEST_DEFINED_HEADER}"},
+	})
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "other",
+		Headers: map[string]string{"X-Key": "${MINI_TEST_DEFINED_HEADER}"},
+	})
 
 	_, servers, err := config.Load(dir)
 
@@ -84,7 +101,11 @@ func TestLoadServerConfig_unsetVariable_leavesOnlyThatServerAsWrittenAndSaysWhy(
 func TestLoadServerConfig_headerExpansionDoesNotInjectYAML(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("MINI_TEST_MULTILINE_HEADER", "x\nurl: https://evil.example")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), "url: https://api.example.com\nheaders:\n  X-Value: ${MINI_TEST_MULTILINE_HEADER}\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "svc",
+		URL:     "https://api.example.com",
+		Headers: map[string]string{"X-Value": "${MINI_TEST_MULTILINE_HEADER}"},
+	})
 	sc := mustLoadOneServer(t, dir)
 	if sc.URL != "https://api.example.com" || sc.Headers["X-Value"] != "x\nurl: https://evil.example" {
 		t.Errorf("url/header = %q / %q", sc.URL, sc.Headers["X-Value"])
@@ -94,7 +115,10 @@ func TestLoadServerConfig_headerExpansionDoesNotInjectYAML(t *testing.T) {
 func TestLoadServerConfig_authExpansionPreservesDollar(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("MINI_TEST_DOLLAR_TOKEN", "a$b")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.yaml"), "headers:\n  Authorization: \"Bearer ${MINI_TEST_DOLLAR_TOKEN}\"\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "svc",
+		Headers: map[string]string{"Authorization": "Bearer ${MINI_TEST_DOLLAR_TOKEN}"},
+	})
 	sc := mustLoadOneServer(t, dir)
 	if got := sc.MergedHeaders()["Authorization"]; got != "Bearer a$b" {
 		t.Errorf("Authorization = %q", got)

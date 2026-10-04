@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/testutil"
 	"golang.org/x/oauth2"
 )
@@ -28,9 +29,7 @@ func TestReadTokenState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			if tc.token != nil {
-				if err := auth.Save(dir, "srv", tc.token); err != nil {
-					t.Fatal(err)
-				}
+				authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: tc.token})
 			}
 			if tc.corrupt {
 				writeCorruptToken(t, dir, "srv")

@@ -10,20 +10,17 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"golang.org/x/oauth2"
 )
 
 func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
 	mock := authtest.NewTokenServer(t)
 	dir := t.TempDir()
 	token := pkceToken(t, mock.AuthConfig())
-	if err := auth.Save(dir, "srv", token); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: token})
 	loaded, _ := auth.Load(dir, "srv")
 	loaded.Expiry = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	mock.AccessToken = "refreshed-access-token"

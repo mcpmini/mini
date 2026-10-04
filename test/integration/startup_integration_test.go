@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 func TestIntegrationStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
@@ -112,7 +115,12 @@ func TestIntegrationStartup_aServerWithAnUnsetVariableDoesNotStopTheOthers(t *te
 		ServerName: "healthy",
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}),
 	})
-	writeServerConfig(t, cfg, "github", "transport: http\nurl: https://example.com/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_TOKEN}\n")
+	configtest.WriteServer(t, cfg, config.ServerConfig{
+		Name:      "github",
+		Transport: "http",
+		URL:       "https://example.com/mcp",
+		Headers:   map[string]string{"Authorization": "Bearer ${MINI_TEST_UNSET_TOKEN}"},
+	})
 	stdin, scanner, stderr := startMiniCmdCapturingStderr(t, cfg)
 	c := newMCPClient(t, stdin, scanner)
 	c.mustCall("initialize", map[string]any{

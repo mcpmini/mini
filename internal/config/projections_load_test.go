@@ -198,7 +198,11 @@ func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "good", Command: "echo"})
 	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "unset.yaml"), "command: echo\nheaders:\n  X-Token: \"${LOAD_LENIENT_UNSET}\"\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "unset",
+		Command: "echo",
+		Headers: map[string]string{"X-Token": "${LOAD_LENIENT_UNSET}"},
+	})
 	servers, sourceErrors := config.LoadLenient(dir)
 	var names []string
 	for _, server := range servers {
@@ -214,8 +218,14 @@ func TestLoadLenientKeepsLoadableServersAndReportsBrokenSources(t *testing.T) {
 
 func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "detected.yaml"), "command: echo\n")
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "custom.yaml"), "command: echo\nauth:\n  type: bearer\n")
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "detected", Command: "echo"})
+	configtest.WriteServer(t, dir, config.ServerConfig{
+		Name:    "custom",
+		Command: "echo",
+		Auth: &config.AuthConfig{
+			Type: "bearer",
+		},
+	})
 	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
 		t.Fatal(err)
 	}

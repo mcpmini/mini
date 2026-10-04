@@ -10,11 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/oauth2"
-
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/transport"
+	"golang.org/x/oauth2"
 )
 
 func TestRefreshAuthorization_deadRefreshToken_notResentUntilTokenChanges(t *testing.T) {
@@ -77,9 +76,7 @@ func TestRefreshAuthorization_newTokenFromMiniAuth_clearsDeadRefreshBlock(t *tes
 	hitsAfterDead := f.endpoint.Hits.Load()
 
 	fresh := &oauth2.Token{AccessToken: "fresh-access", RefreshToken: "fresh-refresh"}
-	if err := auth.Save(f.dir, "srv", fresh); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: fresh})
 	f.endpoint.ClearOverride()
 
 	got, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access")
@@ -114,9 +111,7 @@ func TestRefreshAuthorization_reauthReturnsSameRefreshToken_clearsDeadRefreshBlo
 		t.Fatalf("first call: want ErrReauthRequired, got: %v", err)
 	}
 	sameRefresh := &oauth2.Token{AccessToken: "fresh-access", RefreshToken: "stored-refresh"}
-	if err := auth.Save(f.dir, "srv", sameRefresh); err != nil {
-		t.Fatal(err)
-	}
+	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: sameRefresh})
 	f.endpoint.ClearOverride()
 	if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
 		t.Fatalf("adoption call: %v", err)
