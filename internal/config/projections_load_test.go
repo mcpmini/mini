@@ -245,6 +245,8 @@ func TestLoadLenientMergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
 	valid := config.DefaultConfig()
 	valid.DisableAuthBrowserOpen = true
+	badFormat := config.DefaultConfig()
+	badFormat.ResponseFormat = "bogus"
 	tests := []struct {
 		name    string
 		cfg     *config.Config
@@ -253,6 +255,7 @@ func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
 	}{
 		{"valid settings load", valid, "", ""},
 		{"invalid YAML", nil, "bad: [yaml\n", "parse config"},
+		{"invalid response_format", badFormat, "", "response_format"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

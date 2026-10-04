@@ -22,7 +22,9 @@ func LoadServerSet(configDir string) ServerSet {
 func LoadLenient(configDir string) ([]ServerConfig, []SourceError) {
 	load := newLoadProjectionsResult()
 	servers := loadServerDirLenient(configDir, &load)
-	mergeKnownAuth(configDir, servers)
+	for i := range servers {
+		mergeKnownAuth(configDir, &servers[i])
+	}
 	return servers, load.SourceErrors
 }
 

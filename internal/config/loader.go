@@ -32,9 +32,6 @@ func Load(configDir string) (*Config, []ServerConfig, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
-		return nil, nil, fmt.Errorf("config.yaml: response_format: %w", err)
-	}
 	servers, err := loadServerConfigs(configDir)
 	if err != nil {
 		return nil, nil, err
@@ -80,11 +77,16 @@ func loadNamedServerFile(configDir, name string) (*ServerConfig, error) {
 func completeServers(configDir string, servers []ServerConfig, projections map[string]map[string]*ProjectionConfig) error {
 	mergeProjections(servers, projections)
 	for _, s := range servers {
+		if s.ProjectionsErr != nil {
+			return s.ProjectionsErr.Err
+		}
 		if err := validateServerProjectionFormats(s.Name, s.Projections); err != nil {
 			return err
 		}
 	}
-	mergeKnownAuth(configDir, servers)
+	for i := range servers {
+		mergeKnownAuth(configDir, &servers[i])
+	}
 	return nil
 }
 
@@ -166,6 +168,9 @@ func loadMainConfig(dir string) (*Config, error) {
 		return nil, fmt.Errorf("config.yaml: %w", err)
 	}
 	cfg.ResponseDir = responseDir
+	if err := ValidResponseFormat(cfg.ResponseFormat); err != nil {
+		return nil, fmt.Errorf("config.yaml: response_format: %w", err)
+	}
 	return cfg, nil
 }
 
@@ -187,24 +192,6 @@ func loadServerConfigs(dir string) ([]ServerConfig, error) {
 		return nil, err
 	}
 	return loadServerFiles(filterServerPaths(paths))
-}
-
-// mergeKnownAuth fills in Auth from a bundled default or a prior detection marker —
-// but never overrides a server's own auth: block.
-func mergeKnownAuth(dir string, servers []ServerConfig) {
-	for i := range servers {
-		if servers[i].Auth != nil {
-			continue
-		}
-		if ac := bundledAuth(servers[i]); ac != nil {
-			servers[i].Auth = ac
-			continue
-		}
-		// A marker can outlive the server that earned it, and an agent's server never gets OAuth.
-		if !servers[i].AgentAdded && readServerMeta(dir, servers[i].Name).OAuthDetected {
-			servers[i].Auth = &AuthConfig{Type: AuthTypeOAuth2}
-		}
-	}
 }
 
 // HasBundledAuth reports whether loading sc merges in a vendor's bundled auth config,
@@ -265,10 +252,12 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 		return nil, err
 	}
 	var s ServerConfig
-	if err := yaml.Unmarshal(data, &s); err != nil {
+	inlineProjections, err := decodeServerFile(data, &s)
+	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	s.Name = name
+	decodeInlineProjections(&s, path, inlineProjections)
 	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
 	}
@@ -277,6 +266,51 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	}
 	expandServerEnv(&s)
 	return &s, nil
+}
+
+// Inline projections decode apart from the rest of the file, so a mistake in them costs the
+// server only its projections, as one in its projection file does.
+func decodeServerFile(data []byte, s *ServerConfig) (inlineProjections *yaml.Node, err error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	inlineProjections, err = detachMappingValue(&doc, "projections")
+	if err != nil {
+		return nil, err
+	}
+	return inlineProjections, doc.Decode(s)
+}
+
+// Decoding refuses a key written twice, so detaching one must too, or the other would slip through.
+func detachMappingValue(doc *yaml.Node, key string) (*yaml.Node, error) {
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	mapping := doc.Content[0]
+	var value *yaml.Node
+	for i := 0; i+1 < len(mapping.Content); {
+		if mapping.Content[i].Value != key {
+			i += 2
+			continue
+		}
+		if value != nil {
+			return nil, fmt.Errorf("line %d: mapping key %q already defined", mapping.Content[i].Line, key)
+		}
+		value = mapping.Content[i+1]
+		mapping.Content = slices.Delete(mapping.Content, i, i+2)
+	}
+	return value, nil
+}
+
+func decodeInlineProjections(s *ServerConfig, path string, node *yaml.Node) {
+	if node == nil {
+		return
+	}
+	if err := node.Decode(&s.Projections); err != nil {
+		s.Projections = nil
+		s.ProjectionsErr = &SourceError{Path: path, ServerName: s.Name, Err: fmt.Errorf("parse %s: %w", path, err)}
+	}
 }
 
 func ServerPath(configDir, name string) string {
@@ -308,6 +342,9 @@ func ValidateServerFile(path string, data []byte) error {
 	sc, err := parseServerConfig(path, data)
 	if err != nil {
 		return err
+	}
+	if sc.ProjectionsErr != nil {
+		return sc.ProjectionsErr.Err
 	}
 	return validateServerProjectionFormats(sc.Name, sc.Projections)
 }
