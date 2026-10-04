@@ -38,23 +38,6 @@ func TestRunLoginStepAllContinuesAfterFailure(t *testing.T) {
 	assertReminded(t, out.String(), []string{"first", "second"}, []string{"first"})
 }
 
-func TestRunLoginStepAutoYesSkipsPrompts(t *testing.T) {
-	dir := loginStepConfig(t, "first")
-	called := false
-	out := &bytes.Buffer{}
-	runLoginStep(loginStepParams{
-		configDir: dir,
-		autoYes:   true,
-		ask:       func(string) string { called = true; return "a" },
-		confirm:   func(string) bool { called = true; return true },
-		out:       out,
-		errOut:    &bytes.Buffer{},
-	})
-	if called || !strings.Contains(out.String(), "  mini auth first\n") {
-		t.Errorf("auto yes prompts=%v output=%q", called, out.String())
-	}
-}
-
 func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := ops.AddServer(dir, config.ServerConfig{Name: "slack", Command: "npx", Args: []string{"server-slack"}}); err != nil {

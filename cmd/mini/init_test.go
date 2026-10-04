@@ -83,12 +83,6 @@ func TestPrompterConfirm(t *testing.T) {
 	}
 }
 
-func TestAutoConfirmAccepts(t *testing.T) {
-	if !autoConfirm("Q") {
-		t.Error("autoConfirm = false, want true")
-	}
-}
-
 func TestImportAgentConfig_NeverReplacesAConfiguredServer(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -211,7 +205,7 @@ env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 	t.Setenv("SEARCH_TOKEN", "")
 	os.Unsetenv("SEARCH_TOKEN") //nolint:errcheck // t.Setenv above restores it after the test
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
-	cmd.SetArgs([]string{"--yes"})
+	cmd.SetArgs([]string{"--import"})
 
 	out := testutil.CaptureStdout(t, func() {
 		if err := cmd.Execute(); err != nil {
@@ -234,15 +228,15 @@ env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 		}
 	}
 	for _, want := range []string{
-		"Codex: files imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
-			filepath.Join(configDir, "servers", "files.yaml"),
-		"Codex: search imported, but headers.Authorization: SEARCH_TOKEN isn't set where mini runs; set it, or edit " +
+		"mini is set up with 4 servers, 1 still needs finishing:",
+		"search  needs SEARCH_TOKEN set where mini runs (used in headers.Authorization), or edit " +
 			filepath.Join(configDir, "servers", "search.yaml"),
-		"Codex: paused not imported: switched off in the agent",
-		"Codex: templated kept in the agent: uses an environment variable in command or args",
-		"Codex: team imported with its static X-Team header, since MINI_TEST_NEVER_SET wasn't set; to use MINI_TEST_NEVER_SET instead, set X-Team: ${MINI_TEST_NEVER_SET} in " +
+		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
+			filepath.Join(configDir, "servers", "files.yaml"),
+		"[mcp_servers.mini]",
+		"  templated kept in Codex: uses an environment variable in command or args",
+		"team was imported with its static X-Team header, since MINI_TEST_NEVER_SET wasn't set; to use MINI_TEST_NEVER_SET instead, set X-Team: ${MINI_TEST_NEVER_SET} in " +
 			filepath.Join(configDir, "servers", "team.yaml"),
-		"codex mcp add mini -- ",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("init output missing %q:\n%s", want, out)
@@ -257,7 +251,7 @@ func TestInitFromATOMLPathReadsCodexFormat(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "team.toml")
 	testutil.WriteFile(t, src, "[mcp_servers.search]\nurl = \"https://search.example/mcp\"\n")
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
-	cmd.SetArgs([]string{"--yes", "--from", src})
+	cmd.SetArgs([]string{"--from", src})
 
 	out := testutil.CaptureStdout(t, func() {
 		if err := cmd.Execute(); err != nil {
@@ -292,9 +286,9 @@ func TestResolveFromSource_explicitFileWorksWithoutHome(t *testing.T) {
 	t.Setenv("home", "")
 	path := filepath.Join(t.TempDir(), "agent.json")
 	testutil.WriteFile(t, path, `{"mcpServers":{"example":{"url":"https://example.com/mcp"}}}`)
-	agent := resolveFromSource(path)
-	if agent.ConfigPath != path || agent.Read == nil {
-		t.Fatalf("source = %+v, want an explicit-file reader for %q", agent, path)
+	agent, err := resolveFromSource(path)
+	if err != nil || agent.ConfigPath != path || agent.Read == nil {
+		t.Fatalf("source = %+v, %v; want an explicit-file reader for %q", agent, err, path)
 	}
 	servers, err := agent.Read(agent.ConfigPath)
 	if err != nil || servers["example"].Config.URL != "https://example.com/mcp" {

@@ -151,6 +151,11 @@ func (s *Session) Changed() <-chan struct{} {
 	return s.changed
 }
 
+// WaitChecks lets the running checks finish, for runs with nothing to show meanwhile.
+func (s *Session) WaitChecks() {
+	s.checks.wg.Wait()
+}
+
 // Close cancels the running checks and waits for them, so nothing is written after it returns.
 func (s *Session) Close() {
 	s.stopChecks()

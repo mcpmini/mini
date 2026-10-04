@@ -1,0 +1,128 @@
+package initcmd
+
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"github.com/mcpmini/mini/internal/agents"
+)
+
+func requireLines(t *testing.T, got string, want ...string) {
+	t.Helper()
+	for _, line := range want {
+		if !strings.Contains(got, line) {
+			t.Errorf("summary missing %q:\n%s", line, got)
+		}
+	}
+}
+
+func TestSummary_servers(t *testing.T) {
+	custom := agents.MiniEntry{Command: "/opt/mini", Args: []string{"--config", "/srv/my mini", "connect"}}
+	t.Run("what is left, with the step that finishes each", func(t *testing.T) {
+		got := Summary(Report{ConfigDir: "/cfg", Mini: custom, Connected: []AgentResult{}, Servers: []ServerStatus{
+			{Name: "github", Finish: NeedsToken, SetupURL: "https://github.example.com/tokens"},
+			{Name: "asana", Finish: NeedsOwnApp, SetupURL: "https://asana.example.com/apps"},
+			{Name: "notion", Finish: NeedsLogin},
+			{Name: "files", Finish: Ready},
+		}})
+		requireLines(t, got,
+			"mini is set up with 4 servers, 3 still need finishing:\n",
+			"  github  needs a token: create one at https://github.example.com/tokens, then add this header to /cfg/servers/github.yaml:\n",
+			"Authorization: Bearer ${GITHUB_TOKEN}\n",
+			"  asana   needs your own OAuth app: register one at https://asana.example.com/apps",
+			"client_id: <your app's client ID>",
+			"and run: mini --config '/srv/my mini' auth asana\n",
+			"  notion  run: mini --config '/srv/my mini' auth notion\n",
+		)
+		if strings.Contains(got, "files") {
+			t.Errorf("a ready server is listed:\n%s", got)
+		}
+	})
+	t.Run("nothing left", func(t *testing.T) {
+		got := Summary(Report{Connected: []AgentResult{}, Servers: []ServerStatus{{Name: "files"}}})
+		requireLines(t, got, "mini is set up with 1 server.\n")
+	})
+	t.Run("no servers", func(t *testing.T) {
+		requireLines(t, Summary(Report{Connected: []AgentResult{}}), "mini has no servers yet.\n")
+	})
+}
+
+var testMini = agents.MiniEntry{Command: "/opt/mini/bin/mini", Args: []string{"connect"}}
+
+func TestSummary_importAndFailures(t *testing.T) {
+	got := Summary(Report{
+		Connected:         []AgentResult{},
+		AlreadyConfigured: []string{"linear"},
+		Skipped: []SkippedServer{
+			{Agent: "Codex", Name: "templated", Reason: SkipUnexpandableRefs, Refs: []string{"an environment variable in url"}},
+			{Agent: "Cursor", Name: "!!!", Reason: SkipEmptyName},
+		},
+		Ignored:          map[string][]string{"files": {"cwd"}},
+		UnusedEnvHeaders: map[string]map[string]string{"team": {"X-Team": "TEAM_VAR"}},
+		ConfigDir:        "/config",
+		Sync:             SyncResult{Failed: []ServerError{{Name: "broken", Err: errors.New("disk full")}}},
+		StatusErr:        errors.New("permission denied"),
+	})
+	requireLines(t, got,
+		"Already configured in mini: linear\n",
+		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit /config/servers/files.yaml\n",
+		"team was imported with its static X-Team header, since TEAM_VAR wasn't set; to use TEAM_VAR instead, set X-Team: ${TEAM_VAR} in /config/servers/team.yaml\n",
+		"  templated kept in Codex: uses an environment variable in url\n",
+		`  "!!!" in Cursor: its name has no letters or digits mini can use`,
+		"Could not add broken: disk full\n",
+		"Could not read mini's servers: permission denied\n",
+	)
+}
+
+func TestSummary_connected(t *testing.T) {
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml", RemoveDisables: true}
+	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
+	gemini := agents.Agent{Name: "Gemini CLI", ConfigPath: "/home/u/.gemini/settings.json"}
+	got := Summary(Report{Mini: testMini, Connected: []AgentResult{
+		{Agent: claude, Backup: "/home/u/.claude.minibackup.json", Removed: []string{"github"},
+			Kept: []KeptEntry{{Entry: "linear", Server: "linear", Err: errors.New("needs a login")}}, Changed: []string{"files"}},
+		{Agent: codex, Err: errors.New("inline table")},
+		{Agent: gemini, Created: true},
+		{Agent: cursor},
+	}})
+	requireLines(t, got,
+		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json; to undo: cp /home/u/.claude.minibackup.json /home/u/.claude.json\n",
+		"  linear stays in Claude Code: mini's linear failed its connection check: needs a login\n",
+		"  files stays in Claude Code: it changed after it was checked\n",
+		"Could not connect Codex: inline table\nAdd mini to /home/u/.codex/config.toml by hand:\n  [mcp_servers.mini]\n",
+		"Gemini CLI: created /home/u/.gemini/settings.json; to undo: rm /home/u/.gemini/settings.json\n",
+		"Restart Claude Code and Gemini CLI to start using mini.\n",
+	)
+}
+
+func TestSummary_howToConnectByHand(t *testing.T) {
+	list := []agents.Agent{
+		{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"},
+		{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml", RemoveDisables: true},
+		{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"},
+	}
+	mini := agents.MiniEntry{Command: "/Users/u/My Apps/mini", Args: []string{"connect"}}
+	got := Summary(Report{Mini: mini, Unconnected: list})
+	requireLines(t, got,
+		"claude mcp add --scope user mini -- '/Users/u/My Apps/mini' connect\n",
+		"[mcp_servers.mini]\n    command = \"/Users/u/My Apps/mini\"\n    args = [\"connect\"]\n",
+		`"command": "/Users/u/My Apps/mini"`,
+	)
+	if strings.Contains(got, "Restart") {
+		t.Errorf("nothing was connected, but the summary asks for a restart:\n%s", got)
+	}
+	requireLines(t, Summary(Report{Mini: mini}), "To connect mini to your agent, add it to its MCP config:\n")
+	if got := Summary(Report{Mini: mini, HasMini: list[:1]}); strings.Contains(got, "To connect mini") {
+		t.Errorf("every agent already has mini, but the summary shows how to connect one:\n%s", got)
+	}
+}
+
+func TestShellQuote(t *testing.T) {
+	for in, want := range map[string]string{"/usr/bin/mini": "/usr/bin/mini", "a b": "'a b'", "it's": `'it'\''s'`} {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
