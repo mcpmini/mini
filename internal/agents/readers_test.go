@@ -81,8 +81,8 @@ func TestReadClientConfigs(t *testing.T) {
 			"[mcp_servers.s]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"synthetic\" }\n",
 			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Args: []string{"-y", "server-github"}, Env: []string{"TOKEN=synthetic"}}}},
 		{"codex http headers, env headers and bearer token variable", ReadCodex, "config.toml",
-			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"core\" }\nenv_http_headers = { X-Key = \"EXAMPLE_KEY\" }\nbearer_token_env_var = \"EXAMPLE_TOKEN\"\n",
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"X-Team": "core", "X-Key": "${EXAMPLE_KEY}", "Authorization": "Bearer ${EXAMPLE_TOKEN}"})}},
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"core\" }\nenv_http_headers = { X-Key = \"MINI_TEST_SET_KEY\", X-Optional = \"MINI_TEST_UNSET_KEY\" }\nbearer_token_env_var = \"EXAMPLE_TOKEN\"\n",
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"X-Team": "core", "X-Key": "${MINI_TEST_SET_KEY}", "Authorization": "Bearer ${EXAMPLE_TOKEN}"})}},
 		{"codex switched off", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
 			Server{Config: stdio("s", "run"), Disabled: true}},
@@ -95,6 +95,12 @@ func TestReadClientConfigs(t *testing.T) {
 		{"codex tool filters are kept in the agent", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\nenabled_tools = [\"search\"]\n",
 			Server{Config: stdio("s", "run"), LimitsTools: true}},
+		{"codex approval settings are kept in the agent", ReadCodex, "config.toml",
+			"[mcp_servers.s]\ncommand = \"run\"\ndefault_tools_approval_mode = \"prompt\"\n",
+			Server{Config: stdio("s", "run"), RequiresApproval: true}},
+		{"cursor editor placeholders are kept in the agent", ReadClaude, "mcp.json",
+			`{"mcpServers":{"s":{"command":"run","env":{"ROOT":"${workspaceFolder}/data"}}}}`,
+			Server{Config: config.ServerConfig{Name: "s", Command: "run", Env: []string{"ROOT=${workspaceFolder}/data"}}, Unsupported: []string{"an editor placeholder like ${userHome}"}}},
 		{"gemini httpUrl entry", ReadGemini, "settings.json",
 			`{"mcpServers":{"s":{"httpUrl":"https://example.com/mcp","timeout":30000}}}`,
 			Server{Config: remote("s", "https://example.com/mcp", nil)}},
@@ -117,6 +123,7 @@ func TestReadClientConfigs(t *testing.T) {
 			`{"mcp":{"servers":{"s":{"url":"https://example.com/mcp","enabled":false}}}}`,
 			Server{Config: remote("s", "https://example.com/mcp", nil), Disabled: true}},
 	}
+	t.Setenv("MINI_TEST_SET_KEY", "synthetic")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.read(writeClientConfig(t, tt.file, tt.config))
@@ -163,6 +170,7 @@ func TestServerCandidate(t *testing.T) {
 		{"plain", Server{}, true},
 		{"switched off is still a candidate", Server{Disabled: true}, true},
 		{"limits tools", Server{LimitsTools: true}, false},
+		{"requires approval", Server{RequiresApproval: true}, false},
 		{"unsupported setting", Server{Unsupported: []string{"cwd"}}, false},
 	} {
 		if got := tt.server.Candidate(); got != tt.want {

@@ -59,15 +59,19 @@ func (imp serverImport) addAll(servers map[string]agents.Server) (added []string
 // A copy in mini must not expose tools the agent forbids, behave differently, or switch on a
 // server the user switched off.
 func notImportedReason(server agents.Server) string {
+	if server.Candidate() {
+		if server.Disabled {
+			return "not imported: switched off in the agent"
+		}
+		return ""
+	}
 	switch {
 	case server.LimitsTools:
 		return "kept in the agent: it limits which tools are allowed"
-	case len(server.Unsupported) > 0:
-		return "kept in the agent: uses " + strings.Join(server.Unsupported, ", ")
-	case server.Disabled:
-		return "not imported: switched off in the agent"
+	case server.RequiresApproval:
+		return "kept in the agent: it asks for approval before some tools run"
 	}
-	return ""
+	return "kept in the agent: uses " + strings.Join(server.Unsupported, ", ")
 }
 
 func (imp serverImport) add(sc config.ServerConfig) error {

@@ -35,17 +35,18 @@ func ReadConfigFile(path string) ([]byte, error) {
 
 // Server is one agent entry as mini would import it, with what the agent does that mini can't.
 type Server struct {
-	Config      config.ServerConfig
-	Disabled    bool
-	LimitsTools bool
+	Config           config.ServerConfig
+	Disabled         bool
+	LimitsTools      bool
+	RequiresApproval bool
 	// Unsupported names the settings mini can't carry over; a copy in mini would run differently.
 	Unsupported []string
 }
 
 // Candidate reports whether a copy in mini would behave like the agent's entry and expose
-// no tools the user forbade there.
+// no tools the user forbade or wanted to approve there.
 func (s Server) Candidate() bool {
-	return !s.LimitsTools && len(s.Unsupported) == 0
+	return !s.LimitsTools && !s.RequiresApproval && len(s.Unsupported) == 0
 }
 
 type keyKind int
@@ -54,6 +55,7 @@ const (
 	keyMapped keyKind = iota
 	keyDropped
 	keyLimitsTools
+	keyRequiresApproval
 )
 
 // entryFormat is what an agent's config format means beyond the fields a reader maps.
@@ -71,27 +73,25 @@ func importedServers[E clientEntry](entries map[string]E, keys map[string][]stri
 	servers := make(map[string]Server, len(entries))
 	for name, entry := range entries {
 		s := entry.server(name)
-		limits, unsupported := classifyKeys(keys[name], f.kinds)
-		s.LimitsTools = s.LimitsTools || limits
-		s.Unsupported = append(unsupported, unexpandableFields(s.Config, f.bareRefs)...)
+		classifyKeys(&s, keys[name], f.kinds)
+		s.Unsupported = append(s.Unsupported, unexpandableFields(s.Config, f.bareRefs)...)
 		servers[name] = s
 	}
 	return servers
 }
 
-func classifyKeys(keys []string, kinds map[string]keyKind) (bool, []string) {
-	limitsTools := false
-	var unsupported []string
+func classifyKeys(s *Server, keys []string, kinds map[string]keyKind) {
 	for _, key := range slices.Sorted(slices.Values(keys)) {
 		kind, known := kinds[key]
 		switch {
 		case !known:
-			unsupported = append(unsupported, key)
+			s.Unsupported = append(s.Unsupported, key)
 		case kind == keyLimitsTools:
-			limitsTools = true
+			s.LimitsTools = true
+		case kind == keyRequiresApproval:
+			s.RequiresApproval = true
 		}
 	}
-	return limitsTools, unsupported
 }
 
 type clientEntryFields struct {
@@ -156,11 +156,17 @@ func unexpandableFields(sc config.ServerConfig, bareRefs bool) []string {
 	if ref.MatchString(sc.Command) || slices.ContainsFunc(sc.Args, ref.MatchString) {
 		fields = append(fields, "an environment variable in command or args")
 	}
-	if slices.ContainsFunc(sc.Env, hasForeignRef) || slices.ContainsFunc(slices.Collect(maps.Values(sc.Headers)), hasForeignRef) {
+	values := append(slices.Clone(sc.Env), slices.Collect(maps.Values(sc.Headers))...)
+	if slices.ContainsFunc(values, editorPlaceholder.MatchString) {
+		fields = append(fields, "an editor placeholder like ${userHome}")
+	} else if slices.ContainsFunc(values, hasForeignRef) {
 		fields = append(fields, "an environment variable syntax mini doesn't read")
 	}
 	return fields
 }
+
+// Cursor and Windsurf resolve these themselves; they look like ${VAR} but no environment holds them.
+var editorPlaceholder = regexp.MustCompile(`\$\{(userHome|workspaceFolder|workspaceFolderBasename|pathSeparator)\}`)
 
 func hasForeignRef(value string) bool {
 	return strings.Contains(miniEnvRef.ReplaceAllString(value, ""), "${")

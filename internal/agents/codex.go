@@ -3,6 +3,7 @@ package agents
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 
 	"github.com/BurntSushi/toml"
@@ -17,15 +18,16 @@ type codexMCPEntry struct {
 }
 
 // Timeouts and the other client-side knobs don't change what the server does, so they are
-// dropped; approval and tool filters guard what the user allowed, so they keep the entry in Codex.
+// dropped; tool filters and approval settings guard what the user allowed, so they keep the
+// entry in Codex.
 var codexFormat = entryFormat{kinds: map[string]keyKind{
 	"command": keyMapped, "args": keyMapped, "env": keyMapped, "url": keyMapped,
 	"http_headers": keyMapped, "env_http_headers": keyMapped, "bearer_token_env_var": keyMapped, "enabled": keyMapped,
 	"startup_timeout_sec": keyDropped, "startup_timeout_ms": keyDropped, "tool_timeout_sec": keyDropped,
 	"required": keyDropped, "startup_readiness": keyDropped, "supports_parallel_tool_calls": keyDropped,
 	"tool_input_schema_max_bytes": keyDropped, "name": keyDropped,
-	"enabled_tools": keyLimitsTools, "disabled_tools": keyLimitsTools, "tools": keyLimitsTools,
-	"default_tools_approval_mode": keyLimitsTools, "omit_tools_from": keyLimitsTools,
+	"enabled_tools": keyLimitsTools, "disabled_tools": keyLimitsTools, "omit_tools_from": keyLimitsTools,
+	"default_tools_approval_mode": keyRequiresApproval, "tools": keyRequiresApproval,
 }}
 
 // ReadCodex reads a Codex config.toml: [mcp_servers.NAME] tables with command/args/env or url.
@@ -85,7 +87,10 @@ func (e codexMCPEntry) headers() map[string]string {
 		headers[name] = value
 	}
 	for name, envVar := range e.EnvHTTPHeaders {
-		set(name, "${"+envVar+"}")
+		// Codex leaves the header out while its variable is unset; mini would refuse to start the server.
+		if os.Getenv(envVar) != "" {
+			set(name, "${"+envVar+"}")
+		}
 	}
 	if e.BearerTokenEnvVar != "" {
 		set("Authorization", "Bearer ${"+e.BearerTokenEnvVar+"}")

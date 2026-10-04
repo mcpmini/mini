@@ -14,7 +14,7 @@ type openClawMCPEntry struct {
 var openClawFormat = entryFormat{kinds: map[string]keyKind{
 	"command": keyMapped, "args": keyMapped, "env": keyMapped, "url": keyMapped, "headers": keyMapped, "enabled": keyMapped,
 	"transport": keyDropped, "connectionTimeoutMs": keyDropped, "requestTimeoutMs": keyDropped, "supportsParallelToolCalls": keyDropped,
-	"toolFilter": keyLimitsTools, "codex": keyLimitsTools,
+	"toolFilter": keyLimitsTools, "codex": keyRequiresApproval,
 }}
 
 // ReadOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
