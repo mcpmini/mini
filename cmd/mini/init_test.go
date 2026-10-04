@@ -67,7 +67,7 @@ func TestImportAgentConfig_SkipsSelf(t *testing.T) {
 	}`
 	src := filepath.Join(t.TempDir(), "claude.json")
 	testutil.WriteFile(t, src, claudeJSON)
-	count := len(importAgentConfig(configDir, claudeCodeAt(src)))
+	count := len(importAgentConfig(configDir, "Claude Code", claudeCodeAt(src)))
 	if count != 1 {
 		t.Errorf("imported %d servers, want 1 (mini should be skipped)", count)
 	}
@@ -168,7 +168,7 @@ func TestImportAgentConfig_NeverReplacesAConfiguredServer(t *testing.T) {
 			configDir := t.TempDir()
 			src := filepath.Join(t.TempDir(), "claude.json")
 			testutil.WriteFile(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
-			testutil.CaptureStdout(t, func() { importAgentConfig(configDir, claudeCodeAt(src)) })
+			testutil.CaptureStdout(t, func() { importAgentConfig(configDir, "Claude Code", claudeCodeAt(src)) })
 			serverFile := filepath.Join(configDir, "servers", "foo.yaml")
 			if tt.edit != nil {
 				testutil.WriteFileBytes(t, serverFile, tt.edit(serverFile))
@@ -177,7 +177,7 @@ func TestImportAgentConfig_NeverReplacesAConfiguredServer(t *testing.T) {
 			testutil.WriteFile(t, src, `{"mcpServers": `+tt.reimport+`}`)
 
 			var imported []string
-			out := testutil.CaptureStdout(t, func() { imported = importAgentConfig(configDir, claudeCodeAt(src)) })
+			out := testutil.CaptureStdout(t, func() { imported = importAgentConfig(configDir, "Claude Code", claudeCodeAt(src)) })
 
 			after := testutil.ReadFile(t, serverFile)
 			if len(imported) != 0 || string(after) != string(before) {
@@ -197,13 +197,13 @@ func TestImportAgentConfig_ImportsOnlyNewServers(t *testing.T) {
 	configDir := t.TempDir()
 	src := filepath.Join(t.TempDir(), "claude.json")
 	testutil.WriteFile(t, src, `{"mcpServers": {"foo": {"type": "http", "url": "https://foo.example/mcp"}}}`)
-	testutil.CaptureStdout(t, func() { importAgentConfig(configDir, claudeCodeAt(src)) })
+	testutil.CaptureStdout(t, func() { importAgentConfig(configDir, "Claude Code", claudeCodeAt(src)) })
 	testutil.WriteFile(t, src, `{"mcpServers": {
 		"foo": {"type": "http", "url": "https://foo.example/mcp"},
 		"bar": {"type": "http", "url": "https://bar.example/mcp"}}}`)
 
 	var imported []string
-	testutil.CaptureStdout(t, func() { imported = importAgentConfig(configDir, claudeCodeAt(src)) })
+	testutil.CaptureStdout(t, func() { imported = importAgentConfig(configDir, "Claude Code", claudeCodeAt(src)) })
 
 	if !slices.Equal(imported, []string{"bar"}) {
 		t.Errorf("second import = %v, want [bar] (only bar is new)", imported)

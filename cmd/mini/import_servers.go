@@ -23,8 +23,8 @@ type serverImport struct {
 	errOut    io.Writer
 }
 
-func importAgentConfig(configDir string, agent agents.Agent) []string {
-	imp := serverImport{configDir: configDir, source: agent.Name, out: os.Stdout, errOut: os.Stderr}
+func importAgentConfig(configDir, source string, agent agents.Agent) []string {
+	imp := serverImport{configDir: configDir, source: source, out: os.Stdout, errOut: os.Stderr}
 	servers, err := agent.Read(agent.ConfigPath)
 	if err != nil {
 		fmt.Fprintf(imp.errOut, "  warning: %v\n", err)

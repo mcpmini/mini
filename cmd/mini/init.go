@@ -120,7 +120,7 @@ func importAgentIfConfirmed(configDir string, a agents.Agent, prompt func(string
 	if !prompt(q) {
 		return nil
 	}
-	names := importAgentConfig(configDir, a)
+	names := importAgentConfig(configDir, a.Name, a)
 	fmt.Printf("  imported %d server(s) from %s\n", len(names), a.Name)
 	return names
 }
@@ -134,7 +134,7 @@ func importFrom(configDir, from string, prompt func(string) bool) []string {
 	if !prompt(q) {
 		return nil
 	}
-	names := importAgentConfig(configDir, source)
+	names := importAgentConfig(configDir, source.ConfigPath, source)
 	fmt.Printf("imported %d server(s) from %s\n", len(names), source.ConfigPath)
 	return names
 }
@@ -153,14 +153,16 @@ func resolveFromSource(from string) agents.Agent {
 		if !found {
 			fatalf("could not find config for %q", from)
 		}
-		agent.Name = agent.ConfigPath // --from reports by file path, alias or not
 		return agent
 	}
-	return agents.Agent{Name: from, ConfigPath: from, Read: agents.ReadClaude}
+	return agents.Agent{ConfigPath: from, Read: agents.ReadClaude}
 }
 
 func findKnownAgent(name string) (agents.Agent, bool) {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return agents.Agent{}, false
+	}
 	for _, a := range agents.Known(home) {
 		if a.Name == name && a.ConfigPath != "" {
 			return a, true

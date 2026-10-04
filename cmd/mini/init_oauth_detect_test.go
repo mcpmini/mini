@@ -87,7 +87,7 @@ func importFromMCPJSON(t *testing.T, configDir, mcpServers string) []string {
 func captureImport(t *testing.T, configDir, src string) []string {
 	t.Helper()
 	var names []string
-	testutil.CaptureStdout(t, func() { names = importAgentConfig(configDir, claudeCodeAt(src)) })
+	testutil.CaptureStdout(t, func() { names = importAgentConfig(configDir, "Claude Code", claudeCodeAt(src)) })
 	return names
 }
 
