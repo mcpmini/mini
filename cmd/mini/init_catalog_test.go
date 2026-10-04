@@ -52,14 +52,18 @@ func TestParseCatalogSelection(t *testing.T) {
 }
 
 func TestAvailableCatalogFiltersConfiguredNamesAndURLs(t *testing.T) {
-	c := catalog.Catalog{Categories: []catalog.Category{{Title: "Dev", Servers: []catalog.Entry{
+	c := catalog.Catalog{Popular: []string{"linear", "notion"}, Categories: []catalog.Category{{Title: "Dev", Servers: []catalog.Entry{
 		{Name: "github", URL: "https://github.example/mcp"},
 		{Name: "linear", URL: "https://linear.example/mcp"},
 		{Name: "notion", URL: "https://notion.example/mcp"},
 	}}}}
 	servers := []config.ServerConfig{{Name: "GitHub"}, {Name: "my-linear", URL: "https://LINEAR.example/mcp/"}}
-	if names := catalogNames(availableCatalog(c, servers).Entries()); !reflect.DeepEqual(names, []string{"notion"}) {
+	available := availableCatalog(c, servers)
+	if names := catalogNames(available.Entries()); !reflect.DeepEqual(names, []string{"notion"}) {
 		t.Errorf("available = %v, want only notion", names)
+	}
+	if !reflect.DeepEqual(available.Popular, []string{"notion"}) {
+		t.Errorf("popular = %v, want only notion", available.Popular)
 	}
 }
 

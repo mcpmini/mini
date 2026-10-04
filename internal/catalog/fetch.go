@@ -11,10 +11,9 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// GitHub Pages serves catalog/v1.json from main here, and every released binary reads it. From
-// here on v1 changes must stay additive; binaries released before the popular/categories layout
-// reject it and use their built-in catalog. An oauth2 entry that needs a bundled client
-// registration must wait for the release that bundles it, or older binaries write it without one.
+// GitHub Pages serves catalog/v1.json from main here. No release reads it yet; once one does, v1
+// changes must stay additive. An oauth2 entry that needs a bundled client registration must wait
+// for the release that bundles it, or older binaries write it without one.
 const PublishedURL = "https://mcpmini.github.io/mini/catalog/v1.json"
 
 const (

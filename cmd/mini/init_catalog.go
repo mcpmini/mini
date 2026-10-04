@@ -87,7 +87,14 @@ func availableCatalog(c catalog.Catalog, servers []config.ServerConfig) catalog.
 			available.Categories = append(available.Categories, category)
 		}
 	}
+	available.Popular = availablePopular(c.Popular, available.Entries())
 	return available
+}
+
+func availablePopular(popular []string, available []catalog.Entry) []string {
+	return slices.DeleteFunc(slices.Clone(popular), func(name string) bool {
+		return !slices.ContainsFunc(available, func(entry catalog.Entry) bool { return entry.Name == name })
+	})
 }
 
 func configuredKeys(servers []config.ServerConfig) map[string]bool {
