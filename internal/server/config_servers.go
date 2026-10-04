@@ -30,7 +30,7 @@ func (s *Server) configServerNames() []string {
 func (s *Server) removeServersGoneFromConfig() {
 	servers, err := config.LoadServers(s.configDir)
 	if err != nil {
-		return // applyReload, which runs next, hits the same error and logs it
+		return // applyConfig logs this error once applyReload hits it
 	}
 	removed := false
 	for _, name := range s.configServerNames() {

@@ -221,15 +221,13 @@ func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Co
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
 
-// The live projections outrank the config's, which may predate a reload or set_projection, so the
-// config only fills in a server that has none yet.
 func (s *Server) seedProjections(sc config.ServerConfig) {
 	if sc.Projections == nil {
 		return
 	}
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	if s.projections[sc.Name] == nil {
+	if s.projections[sc.Name] == nil { // sc may predate a reload or set_projection, so it never replaces live rules
 		s.projections[sc.Name] = sc.Projections
 	}
 }

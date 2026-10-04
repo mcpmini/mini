@@ -237,7 +237,6 @@ func (s *Server) logReloadProblems(servers config.Servers) {
 	}
 }
 
-// Startup and reload log the same problems, so each message says what happens to the server now.
 func (s *Server) brokenServerOutcome(name string) string {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
