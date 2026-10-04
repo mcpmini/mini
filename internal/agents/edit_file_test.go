@@ -144,6 +144,19 @@ func TestEditFile_neverOverwritesAnEarlierBackup(t *testing.T) {
 	})
 }
 
+func TestEditFile_anEditThatChangesNothingWritesNothing(t *testing.T) {
+	path := filepath.Join(tempDir(t), "config.toml")
+	testutil.WriteFile(t, path, "model = \"o3\"\n")
+	unchanged := func(data []byte) ([]byte, error) { return data, nil }
+
+	backup, err := EditFile(path, unchanged, editTime)
+
+	if err != nil || backup != "" {
+		t.Fatalf("EditFile = %q, %v; want no backup and no error", backup, err)
+	}
+	requireFiles(t, filepath.Dir(path), "config.toml")
+}
+
 func TestEditFile_anEditErrorLeavesNothingBehind(t *testing.T) {
 	path := filepath.Join(tempDir(t), "config.toml")
 	testutil.WriteFile(t, path, "model = \"o3\"\n")

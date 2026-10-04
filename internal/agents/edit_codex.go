@@ -53,11 +53,17 @@ func decodeCodexConfig(data []byte) (map[string]any, error) {
 type codexLines struct {
 	lines []string
 	eol   string
+	bom   string
 }
+
+const utf8BOM = "\ufeff"
 
 func splitCodexLines(data []byte) codexLines {
 	text := string(data)
 	doc := codexLines{eol: "\n"}
+	if strings.HasPrefix(text, utf8BOM) {
+		doc.bom, text = utf8BOM, strings.TrimPrefix(text, utf8BOM)
+	}
 	if strings.Contains(text, "\r\n") {
 		doc.eol = "\r\n"
 	}
@@ -73,7 +79,7 @@ func (d codexLines) join() []byte {
 	if len(d.lines) > 0 {
 		text += d.eol
 	}
-	return []byte(text)
+	return []byte(d.bom + text)
 }
 
 type codexEditPlan struct {
@@ -138,30 +144,49 @@ func requireTableForm(lines []tomlLine, name string) error {
 
 func codexServerForm(lines []tomlLine, name string) string {
 	target := []string{"mcp_servers", name}
+	form := "sub-tables only"
 	for _, l := range lines {
 		path := append(slices.Clone(l.table), l.key...)
-		if l.key != nil && len(path) <= len(target) && slices.Equal(path, target[:len(path)]) && strings.HasPrefix(l.value, "{") {
+		switch {
+		case l.arrayTable && slices.Equal(l.header, target):
+			return "an array of tables"
+		case l.key != nil && hasPrefix(target, path) && strings.HasPrefix(l.value, "{"):
 			return "an inline table"
+		case l.key != nil && len(l.table) < len(target) && len(path) > len(target) && hasPrefix(path, target):
+			form = "dotted keys"
 		}
 	}
-	return "dotted keys"
+	return form
 }
 
+func hasPrefix(path, prefix []string) bool {
+	return len(prefix) <= len(path) && slices.Equal(path[:len(prefix)], prefix)
+}
+
+// The comments and blank lines ending a mini section introduce whatever table follows, so they stay.
 func miniTableLines(lines []tomlLine) (map[int]bool, int) {
 	drop, at := map[int]bool{}, -1
 	inMini := false
 	for i, l := range lines {
 		if l.isHeader() {
-			inMini = len(l.header) >= 2 && slices.Equal(l.header[:2], []string{"mcp_servers", "mini"})
+			inMini = hasPrefix(l.header, []string{"mcp_servers", "mini"})
 			if inMini && at < 0 {
 				at = i
 			}
 		}
-		if inMini {
-			drop[i] = true
+		drop[i] = inMini
+	}
+	for i := len(lines) - 1; i > at; i-- {
+		if drop[i] && isBlankOrComment(lines[i]) && (i+1 == len(lines) || !drop[i+1]) {
+			drop[i] = false
 		}
 	}
 	return drop, at
+}
+
+func isBlankOrComment(l tomlLine) bool {
+	trimmed := strings.TrimSpace(l.text)
+	return l.key == nil && !l.isHeader() && (trimmed == "" || strings.HasPrefix(trimmed, "#"))
 }
 
 func (p codexEditPlan) apply(lines []tomlLine, miniLines []string) []string {
@@ -173,7 +198,7 @@ func (p codexEditPlan) apply(lines []tomlLine, miniLines []string) []string {
 		switch {
 		case p.dropMini[i]:
 		case p.replaceEnabled[i]:
-			out = append(out, leadingSpace(l.text)+"enabled = false")
+			out = append(out, leadingSpace(l.text)+"enabled = false"+trailingComment(l.value))
 		default:
 			out = append(out, l.text)
 		}
@@ -192,6 +217,14 @@ func appendTable(lines, table []string) []string {
 		lines = append(lines, "")
 	}
 	return append(lines, table...)
+}
+
+// enabled holds a bool, so a # in its value can only start a comment.
+func trailingComment(value string) string {
+	if i := strings.Index(value, "#"); i >= 0 {
+		return " " + value[i:]
+	}
+	return ""
 }
 
 func leadingSpace(text string) string {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 )
 
 // EditJSONServers removes and adds entries in a JSON agent config's top-level mcpServers.
@@ -39,7 +40,7 @@ func decodeJSONObject(data []byte) (map[string]any, error) {
 	if doc == nil {
 		return nil, errors.New("parse agent config: not a JSON object")
 	}
-	if decoder.More() {
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return nil, errors.New("parse agent config: unexpected data after the JSON object")
 	}
 	return doc, nil

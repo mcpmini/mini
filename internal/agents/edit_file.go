@@ -18,7 +18,8 @@ var errChangedDuringEdit = errors.New("changed during edit")
 
 // EditFile replaces an agent's config with edit's result, keeping a backup of exactly the bytes
 // edit saw. Agents rewrite their configs while running, so an attempt that finds the file changed
-// before its rename is discarded and retried. It returns the backup's path.
+// before its rename is discarded and retried. It returns the backup's path, or "" when the edit
+// changed nothing and the file was left alone.
 func EditFile(path string, edit func([]byte) ([]byte, error), now time.Time) (string, error) {
 	target, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -43,7 +44,7 @@ func editOnce(path string, edit func([]byte) ([]byte, error), now time.Time) (st
 		return "", err
 	}
 	edited, err := edit(original)
-	if err != nil {
+	if err != nil || bytes.Equal(edited, original) {
 		return "", err
 	}
 	backup, err := writeBackup(path, original, now)

@@ -61,6 +61,7 @@ func TestEditJSONServers_refusesConfigsItCannotEditSafely(t *testing.T) {
 		{"not an object", `["mcpServers"]`, "parse agent config"},
 		{"null", `null`, "not a JSON object"},
 		{"trailing data", `{"mcpServers":{}} {}`, "unexpected data"},
+		{"stray closing brace", `{"mcpServers":{}} }`, "unexpected data"},
 		{"mcpServers not an object", `{"mcpServers":["github"]}`, "mcpServers is not an object"},
 	}
 	for _, tt := range tests {

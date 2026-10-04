@@ -37,7 +37,7 @@ func TestEditCodexServers_switchesOffServersAndAddsMini(t *testing.T) {
 			name:    "an existing enabled line is replaced in place",
 			config:  "[mcp_servers.github]\n  enabled = true # on\nurl = \"https://example.com/mcp\"\n",
 			disable: []string{"github"},
-			want:    "[mcp_servers.github]\n  enabled = false\nurl = \"https://example.com/mcp\"\n\n" + testMiniTable,
+			want:    "[mcp_servers.github]\n  enabled = false # on\nurl = \"https://example.com/mcp\"\n\n" + testMiniTable,
 		},
 		{
 			name:    "sub-tables and comments are left byte for byte",
@@ -66,7 +66,18 @@ func TestEditCodexServers_switchesOffServersAndAddsMini(t *testing.T) {
 		{
 			name:   "a disabled mini table ends enabled and fresh, sub-tables included",
 			config: "[mcp_servers.mini]\ncommand = \"/old/mini\"\nenabled = false\n\n[mcp_servers.mini.env]\nTOKEN = \"x\"\n\n[mcp_servers.other]\ncommand = \"other\"\n",
-			want:   testMiniTable + "[mcp_servers.other]\ncommand = \"other\"\n",
+			want:   testMiniTable + "\n[mcp_servers.other]\ncommand = \"other\"\n",
+		},
+		{
+			name:   "comments introducing the table after mini are kept",
+			config: "[mcp_servers.mini]\ncommand = \"/old/mini\"\n\n# work account, do not remove\n[mcp_servers.github]\nurl = \"https://example.com/mcp\"\n",
+			want:   testMiniTable + "\n# work account, do not remove\n[mcp_servers.github]\nurl = \"https://example.com/mcp\"\n",
+		},
+		{
+			name:    "a byte order mark is kept and doesn't hide the first header",
+			config:  "\ufeff[mcp_servers.github]\nurl = \"https://example.com/mcp\"\n",
+			disable: []string{"github"},
+			want:    "\ufeff[mcp_servers.github]\nenabled = false\nurl = \"https://example.com/mcp\"\n\n" + testMiniTable,
 		},
 		{
 			name:   "an empty config gets just the mini table",
@@ -112,6 +123,8 @@ func TestEditCodexServers_refusesWhatLineEditsCannotChangeSafely(t *testing.T) {
 		{"inline tables at the root", "mcp_servers = { github = { url = \"https://example.com/mcp\" } }\n", "github", `"github" is written as an inline table`},
 		{"dotted keys", "[mcp_servers]\ngithub.url = \"https://example.com/mcp\"\n", "github", `"github" is written as dotted keys`},
 		{"dotted keys at the root", "mcp_servers.github.url = \"https://example.com/mcp\"\n", "github", `"github" is written as dotted keys`},
+		{"array of tables", "[[mcp_servers.github]]\nurl = \"https://example.com/mcp\"\n", "github", `"github" is written as an array of tables`},
+		{"only a sub-table", "[mcp_servers.github.env]\nTOKEN = \"x\"\n", "github", `"github" is written as sub-tables only`},
 		{"mini as an inline table", "[mcp_servers]\nmini = { command = \"/old/mini\" }\n", "", `"mini" is written as an inline table`},
 		{"unknown server", "[mcp_servers.github]\nurl = \"https://example.com/mcp\"\n", "linear", `codex config has no server "linear"`},
 		{"invalid TOML", "[mcp_servers.github\n", "github", "parse codex config"},
