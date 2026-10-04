@@ -261,8 +261,7 @@ func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDef
 	s.reg.AddServer(p)
 }
 
-// currentAliasesFor reads the live, reload-updated projections rather than an install-time
-// snapshot, and walks them under the lock because set_projection writes into the same map.
+// Walks the map under the lock because set_projection writes into it.
 func (s *Server) currentAliasesFor(serverName string) map[string]string {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()

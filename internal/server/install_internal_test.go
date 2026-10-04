@@ -70,7 +70,7 @@ func TestApplyConfig_keepsServersAndProjectionsWhileTheServerFilesCantBeListed(t
 	if err := os.Chmod(serversDir, 0); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(serversDir, 0700) }) // lets t.TempDir remove it; a failure there fails the test anyway
+	t.Cleanup(func() { _ = os.Chmod(serversDir, 0700) }) // t.TempDir's cleanup fails the test if this doesn't run
 
 	srv.applyConfig()
 	removedByName := srv.removeConfigServer("svc")
