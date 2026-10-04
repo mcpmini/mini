@@ -735,7 +735,7 @@ func (c *mcpClient) execToolAllowError(server, tool string, args map[string]any)
 
 type quickServerParams struct {
 	Fixtures    map[string]string
-	ConfigYAML  string
+	Config      *config.Config
 	Projections map[string]*config.ProjectionConfig
 }
 
@@ -744,8 +744,8 @@ func quickServerWith(t *testing.T, p quickServerParams) *mcpClient {
 	dir := mockFixtureDir(t, p.Fixtures)
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
-	if p.ConfigYAML != "" {
-		writeConfig(t, cfg, p.ConfigYAML)
+	if p.Config != nil {
+		configtest.WriteConfig(t, cfg, p.Config)
 	}
 	return startQuickServer(t, cfg, p.Projections)
 }
@@ -806,17 +806,6 @@ func mockFixtureDir(t *testing.T, fixtures map[string]string) string {
 		testutil.WriteFile(t, filepath.Join(dir, name+".json"), content)
 	}
 	return dir
-}
-
-func writeConfig(t *testing.T, configDir, content string) {
-	t.Helper()
-	testutil.WriteFile(t, filepath.Join(configDir, "config.yaml"), content)
-}
-
-func writeAction(t *testing.T, configDir, content string, name string) {
-	t.Helper()
-	dir := filepath.Join(configDir, "internal", "actions")
-	testutil.WriteFile(t, filepath.Join(dir, name+".yaml"), content)
 }
 
 func writeServerConfig(t *testing.T, configDir, name, yaml string) {

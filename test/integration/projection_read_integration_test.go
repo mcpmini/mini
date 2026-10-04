@@ -50,7 +50,10 @@ func TestIntegrationProjection_readRecoversProjectedData(t *testing.T) {
 				ServerName: "svc",
 				Fixtures:   mockFixtureDir(t, map[string]string{"get_item": tc.fixture}),
 			})
-			writeConfig(t, cfg, "response_dir: "+t.TempDir()+"\n")
+			fixtureConfig := config.DefaultConfig()
+			fixtureConfig.ResponseDir = t.TempDir()
+			configtest.WriteConfig(t, cfg, fixtureConfig)
+
 			configtest.WriteProjections(t, cfg, configtest.ProjectionFile{ServerName: "svc", Tools: tc.projection})
 			client := startProxyServer(t, cfg)
 

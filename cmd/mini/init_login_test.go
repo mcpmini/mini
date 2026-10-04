@@ -12,6 +12,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
 	"golang.org/x/oauth2"
@@ -212,7 +213,10 @@ func saveTestToken(t *testing.T, dir, name string, token *oauth2.Token) {
 
 func TestRunLoginStepPassesLoadedConfigAndServerToLogIn(t *testing.T) {
 	dir := loginStepConfig(t, "first")
-	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "disable_auth_browser_open: true\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.DisableAuthBrowserOpen = true
+	configtest.WriteConfig(t, dir, fixtureConfig)
+
 	out := &bytes.Buffer{}
 	var got logInParams
 	runLoginStep(loginStepParams{

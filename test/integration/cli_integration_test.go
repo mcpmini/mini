@@ -11,11 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
-	"time"
-
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -377,7 +376,10 @@ func TestIntegrationCLI_init_yesWithOAuthServer_listsLoginReminderBeforeInstallI
 func TestIntegrationCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
-	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = respDir
+	fixtureConfig.ResponseTTL = "1h"
+	configtest.WriteConfig(t, cfg, fixtureConfig)
 
 	expiredPath := filepath.Join(respDir, "20200101000000000.json")
 	testutil.WriteFile(t, expiredPath, `{}`)
@@ -396,7 +398,10 @@ func TestIntegrationCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
 func TestIntegrationCLI_cleanup_RetainsNonExpiredFiles(t *testing.T) {
 	cfg := t.TempDir()
 	respDir := t.TempDir()
-	writeConfig(t, cfg, "response_dir: "+respDir+"\nresponse_ttl: 1h\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = respDir
+	fixtureConfig.ResponseTTL = "1h"
+	configtest.WriteConfig(t, cfg, fixtureConfig)
 
 	freshPath := filepath.Join(respDir, "20990101000000000.json")
 	testutil.WriteFile(t, freshPath, `{}`)
@@ -441,7 +446,9 @@ func TestIntegrationCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
 	defer unauthorized.Close()
 
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "disable_auth_browser_open: true\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.DisableAuthBrowserOpen = true
+	configtest.WriteConfig(t, cfg, fixtureConfig)
 
 	stdout, _, code := runCLI(t, cfg, "add", "myserver", "--url", unauthorized.URL)
 	if code != 0 {

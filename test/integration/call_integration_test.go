@@ -4,11 +4,13 @@ package integration_test
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 // callSetup creates a temp config dir with a fakemcp server loaded with the given fixtures.
@@ -145,7 +147,7 @@ func TestIntegrationCLICall_ToolError_ExitsOne(t *testing.T) {
 
 func TestIntegrationCLICall_ServerNotFound_ExitsTwo(t *testing.T) {
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "")
+	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), "")
 	_, stderr, code := runCLI(t, cfg, "call", "nosuchserver", "some_tool")
 	if code != 2 {
 		t.Errorf("expected exit 2 for unknown server, got %d", code)
@@ -157,7 +159,7 @@ func TestIntegrationCLICall_ServerNotFound_ExitsTwo(t *testing.T) {
 
 func TestIntegrationCLICall_MissingArgs_ExitsTwo(t *testing.T) {
 	cfg := t.TempDir()
-	writeConfig(t, cfg, "")
+	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), "")
 	_, _, code := runCLI(t, cfg, "call", "svc")
 	if code != 2 {
 		t.Errorf("expected exit 2 for missing tool arg, got %d", code)
@@ -251,7 +253,10 @@ func TestIntegrationCLICall_ConfigFormatToon(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1,"name":"thing"}`,
 	})
-	writeConfig(t, cfg, "response_format: toon\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseFormat = "toon"
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	stdout, _, code := runCLI(t, cfg, "call", "svc", "get_item")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
@@ -268,7 +273,10 @@ func TestIntegrationCLICall_FlagOverridesConfigFormat(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1}`,
 	})
-	writeConfig(t, cfg, "response_format: toon\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseFormat = "toon"
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	stdout, _, code := runCLI(t, cfg, "call", "-j", "svc", "get_item")
 	if code != 0 {
 		t.Fatalf("expected exit 0, got %d", code)
@@ -285,7 +293,10 @@ func TestIntegrationCLICall_RejectsMiniFormatInConfig(t *testing.T) {
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1}`,
 	})
-	writeConfig(t, cfg, "response_format: mini\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseFormat = "mini"
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "get_item")
 	if code == 0 {
 		t.Fatal("expected non-zero exit for removed format name \"mini\"")
@@ -323,7 +334,10 @@ func TestIntegrationCLICall_ProjectionWritesFile(t *testing.T) {
 		"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`,
 	})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
-	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = respDir
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
 		ServerName: "svc",
 		Tools: map[string]*config.ProjectionConfig{

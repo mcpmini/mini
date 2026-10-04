@@ -87,9 +87,10 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadMainConfig(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), `
-log_level: debug
-`)
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.LogLevel = "debug"
+	configtest.WriteConfig(t, dir, fixtureConfig)
+
 	cfg, _ := mustLoadConfig(t, dir)
 	if cfg.LogLevel != "debug" {
 		t.Errorf("expected debug, got %s", cfg.LogLevel)
@@ -208,15 +209,13 @@ func TestLoadProjectionMerges_dirWinsOverInline(t *testing.T) {
 
 func TestLoadActions_basic(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "my_prs.yaml"), `
-name: my_prs
-description: My open PRs
-server: gh
-tool: list_pull_requests
-default_args:
-  state: open
-  author: "@me"
-`)
+	configtest.WriteAction(t, dir, config.ActionConfig{
+		Name:        "my_prs",
+		Description: "My open PRs",
+		Server:      "gh",
+		Tool:        "list_pull_requests",
+		DefaultArgs: map[string]any{"author": "@me", "state": "open"},
+	})
 	ac := mustLoadOneAction(t, dir)
 	assertActionDefaults(t, ac, "my_prs", "state", "open")
 }
@@ -604,7 +603,10 @@ func assertPermissions(t *testing.T, sc config.ServerConfig, wantProtected int, 
 func TestLoadResponseFormat(t *testing.T) {
 	t.Run("toon accepted", func(t *testing.T) {
 		dir := t.TempDir()
-		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "response_format: toon\n")
+		fixtureConfig := config.DefaultConfig()
+		fixtureConfig.ResponseFormat = "toon"
+		configtest.WriteConfig(t, dir, fixtureConfig)
+
 		cfg, _ := mustLoadConfig(t, dir)
 		if cfg.ResponseFormat != "toon" {
 			t.Errorf("expected toon, got %q", cfg.ResponseFormat)
@@ -612,7 +614,10 @@ func TestLoadResponseFormat(t *testing.T) {
 	})
 	t.Run("mini rejected naming toon as the replacement", func(t *testing.T) {
 		dir := t.TempDir()
-		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "response_format: mini\n")
+		fixtureConfig := config.DefaultConfig()
+		fixtureConfig.ResponseFormat = "mini"
+		configtest.WriteConfig(t, dir, fixtureConfig)
+
 		_, _, err := config.Load(dir)
 		if err == nil || !strings.Contains(err.Error(), "toon") {
 			t.Fatalf("expected error naming toon as the replacement, got %v", err)
@@ -620,7 +625,10 @@ func TestLoadResponseFormat(t *testing.T) {
 	})
 	t.Run("unknown format rejected", func(t *testing.T) {
 		dir := t.TempDir()
-		testutil.WriteFile(t, filepath.Join(dir, "config.yaml"), "response_format: xml\n")
+		fixtureConfig := config.DefaultConfig()
+		fixtureConfig.ResponseFormat = "xml"
+		configtest.WriteConfig(t, dir, fixtureConfig)
+
 		expectLoadError(t, dir)
 	})
 }
@@ -696,13 +704,13 @@ func TestLoadActions_invalidActionName_returnsError(t *testing.T) {
 
 func TestLoadActions_invalidServerName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "act.yaml"), "name: act\nserver: \"bad server\"\ntool: list\n")
+	configtest.WriteAction(t, dir, config.ActionConfig{Name: "act", Server: "bad server", Tool: "list"})
 	expectLoadActionsError(t, dir)
 }
 
 func TestLoadActions_invalidToolName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "act.yaml"), "name: act\nserver: gh\ntool: \"bad/tool\"\n")
+	configtest.WriteAction(t, dir, config.ActionConfig{Name: "act", Server: "gh", Tool: "bad/tool"})
 	expectLoadActionsError(t, dir)
 }
 

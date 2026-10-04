@@ -30,7 +30,10 @@ func TestIntegrationResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 		ServerName: "svc",
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}),
 	})
-	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = respDir
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
 		ServerName: "svc",
 		Tools: map[string]*config.ProjectionConfig{
@@ -56,7 +59,10 @@ func TestIntegrationResponse_responseFileIsValidJSON(t *testing.T) {
 		ServerName: "svc",
 		Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`}),
 	})
-	writeConfig(t, cfg, "response_dir: "+respDir+"\n")
+	fixtureConfig := config.DefaultConfig()
+	fixtureConfig.ResponseDir = respDir
+	configtest.WriteConfig(t, cfg, fixtureConfig)
+
 	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
 		ServerName: "svc",
 		Tools: map[string]*config.ProjectionConfig{
