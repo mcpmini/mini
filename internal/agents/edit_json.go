@@ -9,8 +9,6 @@ import (
 )
 
 // EditJSONServers removes and adds entries in a JSON agent config's top-level mcpServers.
-// Numbers are decoded as json.Number so values like large IDs survive exactly; key order
-// becomes alphabetical.
 func EditJSONServers(data []byte, remove []string, add map[string]any) ([]byte, error) {
 	doc, err := decodeJSONObject(data)
 	if err != nil {
@@ -58,7 +56,6 @@ func mcpServersOf(doc map[string]any) (map[string]any, error) {
 	return servers, nil
 }
 
-// Agent configs hold URLs with & in query strings; HTML escaping would rewrite them as &.
 func encodeJSON(doc map[string]any) ([]byte, error) {
 	var out bytes.Buffer
 	encoder := json.NewEncoder(&out)

@@ -16,10 +16,7 @@ var ErrConfigKeptChanging = errors.New("the file kept changing while mini edited
 
 var errChangedDuringEdit = errors.New("changed during edit")
 
-// EditFile replaces an agent's config with edit's result, keeping a backup of exactly the bytes
-// edit saw. Agents rewrite their configs while running, so an attempt that finds the file changed
-// before its rename is discarded and retried. It returns the backup's path, or "" when the edit
-// changed nothing and the file was left alone.
+// EditFile applies edit with a backup; unchanged files return an empty backup path.
 func EditFile(path string, edit func([]byte) ([]byte, error), now time.Time) (string, error) {
 	for range maxEditAttempts {
 		target, err := filepath.EvalSymlinks(path)
@@ -90,7 +87,6 @@ func writeTemp(path string, data []byte, mode os.FileMode) (string, error) {
 	return tmp.Name(), nil
 }
 
-// Backups hold the agent's tokens, so they are created 0600 and never overwrite an earlier one.
 func writeBackup(path string, data []byte, now time.Time) (string, error) {
 	backup := backupPath(path, "")
 	f, err := os.OpenFile(backup, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -109,8 +105,6 @@ func writeBackup(path string, data []byte, now time.Time) (string, error) {
 	return backup, nil
 }
 
-// backupPath keeps the extension last so editors still recognize the format:
-// config.toml → config.minibackup.toml, .claude.json → .claude.minibackup.json.
 func backupPath(path, stamp string) string {
 	dir, name := filepath.Split(path)
 	ext := filepath.Ext(name)
