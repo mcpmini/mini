@@ -212,3 +212,33 @@ func TestImportAgentConfig_ImportsOnlyNewServers(t *testing.T) {
 		t.Errorf("bar.yaml not written: %v", err)
 	}
 }
+
+func TestFindKnownAgent_missingHomeDoesNotUseWorkingDirectory(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("home", "")
+	if _, err := os.UserHomeDir(); err == nil {
+		t.Skip("platform supplies a default home directory")
+	}
+	t.Chdir(t.TempDir())
+	testutil.WriteFile(t, ".claude.json", `{"mcpServers":{"example":{"url":"https://example.com/mcp"}}}`)
+	if agent, found := findKnownAgent("Claude Code"); found || agent.ConfigPath != "" {
+		t.Fatalf("agent = %+v, found = %v; want no agent without a home directory", agent, found)
+	}
+}
+
+func TestResolveFromSource_explicitFileWorksWithoutHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("home", "")
+	path := filepath.Join(t.TempDir(), "agent.json")
+	testutil.WriteFile(t, path, `{"mcpServers":{"example":{"url":"https://example.com/mcp"}}}`)
+	agent := resolveFromSource(path)
+	if agent.ConfigPath != path || agent.Read == nil {
+		t.Fatalf("source = %+v, want an explicit-file reader for %q", agent, path)
+	}
+	servers, err := agent.Read(agent.ConfigPath)
+	if err != nil || servers["example"].URL != "https://example.com/mcp" {
+		t.Fatalf("servers = %+v, error = %v; want the explicit file's server", servers, err)
+	}
+}
