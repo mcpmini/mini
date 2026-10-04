@@ -11,6 +11,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func mustFingerprint(t *testing.T, dir string) map[string]string {
@@ -134,5 +135,46 @@ func TestChangedPaths(t *testing.T) {
 				t.Errorf("changedPaths(%v, %v) = %v, want %v", tt.prev, tt.curr, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestApplyConfig_keepsServersAndProjectionsWhileTheServerFilesCantBeListed(t *testing.T) {
+	srv := newInstallTestServer(t)
+	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{}); err != nil {
+		t.Fatal(err)
+	}
+	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": {"getData": {Alias: "fetch"}}}, config.Servers{})
+	configtest.WriteServer(t, srv.configDir, config.ServerConfig{Name: "svc", Command: "run"})
+	serversDir := filepath.Join(srv.configDir, "servers")
+	if err := os.Chmod(serversDir, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(serversDir, 0700); err != nil {
+			t.Error(err)
+		}
+	})
+
+	srv.applyConfig()
+	removedByName := srv.removeConfigServer("svc")
+
+	if !srv.isConfigServer("svc") || removedByName {
+		t.Error("svc was removed because its servers dir couldn't be listed, as if every server file were gone")
+	}
+	if srv.liveProjections("svc") == nil {
+		t.Error("svc's projections were dropped because its servers dir couldn't be listed")
+	}
+}
+
+func TestBrokenServerOutcome_keepsAConfiguredServerThatIsStillConnecting(t *testing.T) {
+	srv := newInstallTestServer(t)
+	srv.recordConfigServers([]config.ServerConfig{{Name: "retrying", Command: "run"}})
+
+	if got := srv.brokenServerOutcome("retrying"); got != "keeping the server as it was" {
+		t.Errorf("outcome for a configured server with no upstream yet = %q, want it kept: its startup retry still installs it", got)
+	}
+	if got := srv.brokenServerOutcome("never-started"); got != "skipping the server" {
+		t.Errorf("outcome for a server mini never started = %q, want it skipped", got)
 	}
 }
