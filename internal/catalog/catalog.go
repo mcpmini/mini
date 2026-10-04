@@ -16,8 +16,13 @@ import (
 )
 
 type document struct {
-	SchemaVersion int     `json:"schema_version"`
-	Entries       []Entry `json:"entries"`
+	SchemaVersion int `json:"schema_version"`
+	Catalog
+}
+
+type Catalog struct {
+	Entries []Entry  `json:"entries"`
+	Popular []string `json:"popular"`
 }
 
 type Entry struct {
@@ -48,16 +53,44 @@ func (e Entry) needsUserCredentials() bool {
 	return e.Auth == AuthToken || e.Auth == AuthOAuth2App
 }
 
-func Load() ([]Entry, error) {
+func Load() (Catalog, error) {
 	return parse(catalogdata.V1())
 }
 
-func parse(data []byte) ([]Entry, error) {
+func parse(data []byte) (Catalog, error) {
 	doc, err := decode(data)
 	if err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
-	return validateEntries(doc.Entries)
+	return validated(doc.Catalog)
+}
+
+func validated(c Catalog) (Catalog, error) {
+	if _, err := validateEntries(c.Entries); err != nil {
+		return Catalog{}, err
+	}
+	if err := validatePopular(c); err != nil {
+		return Catalog{}, err
+	}
+	return c, nil
+}
+
+func validatePopular(c Catalog) error {
+	names := make(map[string]bool, len(c.Entries))
+	for _, entry := range c.Entries {
+		names[entry.Name] = true
+	}
+	seen := make(map[string]bool, len(c.Popular))
+	for _, name := range c.Popular {
+		if !names[name] {
+			return fmt.Errorf("catalog popular: %q is not a catalog server", name)
+		}
+		if seen[name] {
+			return fmt.Errorf("catalog popular: %q is listed twice", name)
+		}
+		seen[name] = true
+	}
+	return nil
 }
 
 func decode(data []byte) (document, error) {

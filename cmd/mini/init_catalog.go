@@ -39,12 +39,13 @@ func publishedCatalogSource() catalogSource {
 }
 
 func (s catalogSource) entries() ([]catalog.Entry, error) {
-	entries, err := catalog.Fetch(context.Background(), s.client, s.url)
+	c, err := catalog.Fetch(context.Background(), s.client, s.url)
 	if err == nil {
-		return entries, nil
+		return c.Entries, nil
 	}
 	fmt.Fprintf(s.warn, "note: using the built-in server catalog (the published one is unavailable: %v)\n", err)
-	return catalog.Load()
+	c, err = catalog.Load()
+	return c.Entries, err
 }
 
 func runCatalogStep(p catalogStepParams) error {

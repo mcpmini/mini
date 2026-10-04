@@ -26,13 +26,13 @@ func TestFetchReturnsPublishedEntries(t *testing.T) {
 		w.Write([]byte(oneEntryCatalog)) //nolint:errcheck
 	})
 
-	entries, err := Fetch(context.Background(), client, srv.URL+"/catalog/v1.json")
+	c, err := Fetch(context.Background(), client, srv.URL+"/catalog/v1.json")
 
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	if len(entries) != 1 || entries[0].Name != "remote" {
-		t.Errorf("entries = %+v, want the single remote entry", entries)
+	if len(c.Entries) != 1 || c.Entries[0].Name != "remote" {
+		t.Errorf("entries = %+v, want the single remote entry", c)
 	}
 }
 
@@ -57,10 +57,10 @@ func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
 				w.Write([]byte(tt.document)) //nolint:errcheck
 			})
 
-			entries, err := Fetch(context.Background(), client, srv.URL)
+			c, err := Fetch(context.Background(), client, srv.URL)
 
 			var names []string
-			for _, entry := range entries {
+			for _, entry := range c.Entries {
 				names = append(names, entry.Name)
 			}
 			if !slices.Equal(names, tt.wantNames) || (tt.wantErr == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
@@ -96,9 +96,9 @@ func TestFetchRejectsUnusableResponses(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv, client := catalogServer(t, tt.handler)
-			entries, err := Fetch(context.Background(), client, srv.URL)
+			c, err := Fetch(context.Background(), client, srv.URL)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("Fetch = %d entries, error %v; want error containing %q", len(entries), err, tt.want)
+				t.Errorf("Fetch = %d entries, error %v; want error containing %q", len(c.Entries), err, tt.want)
 			}
 		})
 	}
@@ -167,5 +167,54 @@ func TestFetchRefusesNonHTTPSURLWithoutRequesting(t *testing.T) {
 
 	if err == nil || requested {
 		t.Errorf("Fetch over http: error %v, requested %v; want an error and no request", err, requested)
+	}
+}
+
+func TestFetchPopular_preservesOrderAndSkipsOnlyUnknownAuthIDs(t *testing.T) {
+	entries := []map[string]any{
+		validEntry(func(e map[string]any) { e["name"] = "first" }),
+		validEntry(func(e map[string]any) { e["name"], e["auth"] = "future", "future-kind" }),
+		validEntry(func(e map[string]any) { e["name"] = "second" }),
+	}
+	data := catalogWithPopular(t, []string{"second", "future", "first"}, entries...)
+	srv, client := catalogServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write(data); err != nil {
+			t.Errorf("write catalog: %v", err)
+		}
+	})
+	c, err := Fetch(context.Background(), client, srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.Popular, []string{"second", "first"}) || len(c.Entries) != 2 || c.Entries[0].Name != "first" || c.Entries[1].Name != "second" {
+		t.Fatalf("Fetch = %+v, want popular [second first] and entries [first second]", c)
+	}
+}
+
+func TestFetchPopular_rejectsUnknownAndRepeatedIDsBeforeSkippingAuth(t *testing.T) {
+	entries := []map[string]any{
+		validEntry(func(e map[string]any) { e["name"] = "known" }),
+		validEntry(func(e map[string]any) { e["name"], e["auth"] = "future", "future-kind" }),
+	}
+	for _, tt := range []struct {
+		name    string
+		popular []string
+		want    string
+	}{
+		{"unknown", []string{"missing"}, "not a catalog server"},
+		{"duplicate skipped ID", []string{"future", "future"}, "listed twice"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := catalogWithPopular(t, tt.popular, entries...)
+			srv, client := catalogServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				if _, err := w.Write(data); err != nil {
+					t.Errorf("write catalog: %v", err)
+				}
+			})
+			_, err := Fetch(context.Background(), client, srv.URL)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Fetch error = %v, want %q", err, tt.want)
+			}
+		})
 	}
 }

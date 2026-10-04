@@ -2,6 +2,8 @@ package catalog
 
 import (
 	"encoding/json"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"unicode"
@@ -10,16 +12,23 @@ import (
 )
 
 func TestLoad(t *testing.T) {
-	var published struct{ Entries []json.RawMessage }
+	var published struct {
+		Entries []Entry
+		Popular []string
+	}
 	if err := json.Unmarshal(catalogdata.V1(), &published); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := Load()
+	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != len(published.Entries) {
-		t.Errorf("entries = %d, want %d", len(entries), len(published.Entries))
+	if !reflect.DeepEqual(c.Entries, published.Entries) {
+		t.Errorf("entries changed while loading: got %+v, want %+v", c.Entries, published.Entries)
+	}
+	wantPopular := []string{"github", "slack", "atlassian", "notion", "linear", "datadog", "sentry"}
+	if !slices.Equal(c.Popular, wantPopular) {
+		t.Errorf("popular = %v, want %v", c.Popular, wantPopular)
 	}
 }
 
@@ -39,19 +48,19 @@ func validEntry(change func(map[string]any)) map[string]any {
 }
 
 func TestParseAcceptsAValidEntry(t *testing.T) {
-	entries, err := parse(catalogJSON(t, 1, validEntry(func(map[string]any) {})))
-	if err != nil || len(entries) != 1 || entries[0].Name != "example" {
-		t.Fatalf("parse = %v, %v; want the one entry", entries, err)
+	c, err := parse(catalogJSON(t, 1, validEntry(func(map[string]any) {})))
+	if err != nil || len(c.Entries) != 1 || c.Entries[0].Name != "example" {
+		t.Fatalf("parse = %v, %v; want the one entry", c, err)
 	}
 }
 
 func TestParseAcceptsTextAtTheRunesLimit(t *testing.T) {
 	description := strings.Repeat("é", maxTextRunes)
-	entries, err := parse(catalogJSON(t, 1, validEntry(func(entry map[string]any) {
+	c, err := parse(catalogJSON(t, 1, validEntry(func(entry map[string]any) {
 		entry["description"] = description
 	})))
-	if err != nil || len(entries) != 1 || entries[0].Description != description {
-		t.Fatalf("parse = %v, %v; want the entry with %d-rune description", entries, err, maxTextRunes)
+	if err != nil || len(c.Entries) != 1 || c.Entries[0].Description != description {
+		t.Fatalf("parse = %v, %v; want the entry with %d-rune description", c, err, maxTextRunes)
 	}
 }
 
@@ -121,6 +130,56 @@ func TestParseRejectsInvalidDocuments(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assertTerminalSafeParseError(t, tt.data, tt.want)
+		})
+	}
+}
+
+func catalogWithPopular(t *testing.T, popular []string, entries ...map[string]any) []byte {
+	t.Helper()
+	data, err := json.Marshal(map[string]any{"schema_version": 1, "entries": entries, "popular": popular})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestParsePopular_preservesIDOrderAndFlatEntries(t *testing.T) {
+	first := validEntry(func(e map[string]any) { e["name"], e["category"] = "first", "Zeta" })
+	second := validEntry(func(e map[string]any) { e["name"], e["category"] = "second", "Alpha" })
+	c, err := parse(catalogWithPopular(t, []string{"second", "first"}, first, second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(c.Popular, []string{"second", "first"}) || c.Entries[0].Name != "first" || c.Entries[1].Name != "second" {
+		t.Fatalf("catalog = %+v, want popular [second first] and entries [first second]", c)
+	}
+	if c.Entries[0].Category != "Zeta" || c.Entries[1].Category != "Alpha" {
+		t.Fatalf("category metadata changed: %+v", c.Entries)
+	}
+}
+
+func TestParsePopular_missingOrEmptyIsAccepted(t *testing.T) {
+	entry := validEntry(func(map[string]any) {})
+	for _, data := range [][]byte{catalogJSON(t, 1, entry), catalogWithPopular(t, []string{}, entry)} {
+		c, err := parse(data)
+		if err != nil || len(c.Popular) != 0 || len(c.Entries) != 1 {
+			t.Fatalf("parse = %+v, %v; want one entry and no popular IDs", c, err)
+		}
+	}
+}
+
+func TestParsePopular_unknownOrRepeatedIDIsRefused(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		popular []string
+		want    string
+	}{
+		{"unknown", []string{"missing"}, `"missing" is not a catalog server`},
+		{"duplicate", []string{"example", "example"}, `"example" is listed twice`},
+		{"control characters", []string{"bad\x1b"}, "not a catalog server"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assertTerminalSafeParseError(t, catalogWithPopular(t, tt.popular, validEntry(func(map[string]any) {})), tt.want)
 		})
 	}
 }

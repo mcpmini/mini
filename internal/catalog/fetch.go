@@ -27,22 +27,33 @@ func NewFetchClient() *http.Client {
 
 // Fetch skips entries whose auth this binary doesn't know, so newer auth kinds can be
 // published; any other invalid entry rejects the whole document.
-func Fetch(ctx context.Context, client *http.Client, url string) ([]Entry, error) {
+func Fetch(ctx context.Context, client *http.Client, url string) (Catalog, error) {
 	if err := validateHTTPSURL(url); err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
 	data, err := download(ctx, client, url)
 	if err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
 	doc, err := decode(data)
 	if err != nil {
-		return nil, err
+		return Catalog{}, err
 	}
-	doc.Entries = slices.DeleteFunc(doc.Entries, func(entry Entry) bool {
-		return !slices.Contains(knownAuthValues, entry.Auth)
+	if err := validatePopular(doc.Catalog); err != nil {
+		return Catalog{}, err
+	}
+	return validated(withoutUnknownAuth(doc.Catalog))
+}
+
+func withoutUnknownAuth(c Catalog) Catalog {
+	skipped := make(map[string]bool)
+	c.Entries = slices.DeleteFunc(c.Entries, func(entry Entry) bool {
+		unknown := !slices.Contains(knownAuthValues, entry.Auth)
+		skipped[entry.Name] = skipped[entry.Name] || unknown
+		return unknown
 	})
-	return validateEntries(doc.Entries)
+	c.Popular = slices.DeleteFunc(c.Popular, func(name string) bool { return skipped[name] })
+	return c
 }
 
 func download(ctx context.Context, client *http.Client, url string) ([]byte, error) {

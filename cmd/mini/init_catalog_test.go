@@ -239,11 +239,11 @@ func TestCatalogSourcePrefersPublishedCatalog(t *testing.T) {
 
 func embeddedCatalogNames(t *testing.T) []string {
 	t.Helper()
-	entries, err := catalog.Load()
+	c, err := catalog.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return catalogNames(entries)
+	return catalogNames(c.Entries)
 }
 
 func catalogNames(entries []catalog.Entry) []string {
@@ -288,7 +288,7 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: catalog.Load,
+		loadCatalog: embeddedCatalogEntries,
 		ask:         func(string) string { return "a" },
 		out:         out,
 		errOut:      &bytes.Buffer{},
@@ -322,7 +322,7 @@ func TestRunCatalogStepStillFiltersWhenAServerFileOrItsProjectionsFailToLoad(t *
 
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: catalog.Load,
+		loadCatalog: embeddedCatalogEntries,
 		ask:         func(string) string { return "" },
 		out:         out,
 		errOut:      errOut,
@@ -366,7 +366,7 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	out := &bytes.Buffer{}
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: catalog.Load,
+		loadCatalog: embeddedCatalogEntries,
 		ask:         func(string) string { return catalogNumberOf(t, out.String(), "GitHub") },
 		out:         out,
 		errOut:      &bytes.Buffer{},
@@ -397,7 +397,7 @@ func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
-		loadCatalog: catalog.Load,
+		loadCatalog: embeddedCatalogEntries,
 		ask:         func(string) string { return catalogNumberOf(t, out.String(), "GitHub") },
 		out:         out,
 		errOut:      &bytes.Buffer{},
@@ -409,11 +409,11 @@ func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 }
 
 func TestCatalogSentryInstallsBundledProjection(t *testing.T) {
-	entries, err := catalog.Load()
+	c, err := catalog.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := catalogEntry(t, entries, "sentry")
+	entry := catalogEntry(t, c.Entries, "sentry")
 	if entry.URL != "https://mcp.sentry.dev/mcp" {
 		t.Fatalf("sentry URL = %q", entry.URL)
 	}
@@ -568,4 +568,9 @@ func TestAutoYesSkipsCatalogAndAuth(t *testing.T) {
 	if called || !strings.Contains(out.String(), "mini auth imported") {
 		t.Errorf("runLoginStep called=%v output=%q", called, out.String())
 	}
+}
+
+func embeddedCatalogEntries() ([]catalog.Entry, error) {
+	c, err := catalog.Load()
+	return c.Entries, err
 }

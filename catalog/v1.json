@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "popular": ["github", "slack", "atlassian", "notion", "linear", "datadog", "sentry"],
   "entries": [
     {"name": "github", "title": "GitHub", "url": "https://api.githubcopilot.com/mcp/", "description": "Search code, read files, and manage issues and pull requests", "category": "Developer tools", "auth": "token", "setup_url": "https://github.com/settings/personal-access-tokens"},
     {"name": "cloudflare", "title": "Cloudflare", "url": "https://mcp.cloudflare.com/mcp", "description": "Manage Workers, DNS, R2 storage, and other account resources", "category": "Developer tools", "auth": "oauth2"},
