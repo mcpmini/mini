@@ -11,6 +11,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/fileio"
 )
 
 // Tokens are stored as 0600 plaintext JSON. Same pattern used by:
@@ -47,33 +48,7 @@ func Save(configDir, serverName string, t *oauth2.Token) error {
 	if err != nil {
 		return err
 	}
-	return atomicReplaceFile(path, data)
-}
-
-func atomicReplaceFile(path string, data []byte) (err error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = os.Remove(tmp.Name())
-		}
-	}()
-	if _, err = tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		return err
-	}
-	if err = os.Rename(tmp.Name(), path); err == nil {
-		return nil
-	}
-	if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0600})
 }
 
 func IsNotFound(err error) bool {

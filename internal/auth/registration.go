@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/fileio"
 )
 
 type Registration struct {
@@ -46,7 +47,7 @@ func SaveRegistration(configDir, serverName string, r *Registration) error {
 	if err != nil {
 		return err
 	}
-	return atomicReplaceFile(path, data)
+	return fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0600})
 }
 
 func registrationPath(configDir, serverName string) string {

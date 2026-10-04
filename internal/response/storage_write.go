@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mcpmini/mini/internal/fileio"
 	"github.com/mcpmini/mini/internal/randutil"
 )
 
@@ -59,31 +60,12 @@ func (s *Store) createUniqueFile(base string, b []byte) (string, error) {
 			name = base + "_" + randutil.HexString(2)
 		}
 		path := filepath.Join(s.dir, name+".json")
-		if err := writeExclusive(path, b); os.IsExist(err) {
+		if err := fileio.CreateFile(path, b, 0600); os.IsExist(err) {
 			continue
 		} else if err != nil {
-			return "", err
+			return "", fmt.Errorf("write response file: %w", err)
 		}
 		return path, nil
 	}
 	return "", fmt.Errorf("write response file: name collision for %s", base)
-}
-
-func writeExclusive(path string, b []byte) error {
-	// O_EXCL makes create atomic at the OS level — no TOCTOU race between
-	// checking existence and opening; exactly one caller wins per path.
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return err
-	}
-	if _, err = f.Write(b); err != nil {
-		f.Close() //nolint:errcheck
-		os.Remove(path)
-		return fmt.Errorf("write response file: %w", err)
-	}
-	if cerr := f.Close(); cerr != nil {
-		os.Remove(path)
-		return fmt.Errorf("write response file: %w", cerr)
-	}
-	return nil
 }
