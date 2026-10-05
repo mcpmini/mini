@@ -5,7 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/agents"
+	"github.com/mcpmini/mini/internal/config"
 )
 
 func requireLines(t *testing.T, got string, want ...string) {
@@ -30,8 +33,7 @@ func TestSummary_servers(t *testing.T) {
 			t,
 			got,
 			"mini is set up with 4 servers, 3 still need finishing:\n",
-			"  github  needs a token: create one at https://github.example.com/tokens, then add this header to /cfg/servers/github.yaml:\n",
-			"Authorization: Bearer ${GITHUB_TOKEN}\n",
+			"  github  needs a token: create one at https://github.example.com/tokens, then add to /cfg/servers/github.yaml:\n",
 			"  asana   needs your own OAuth app: register one at https://asana.example.com/apps",
 			"client_id: <your app's client ID>",
 			"and run: mini --config '/srv/my mini' auth asana\n",
@@ -39,6 +41,22 @@ func TestSummary_servers(t *testing.T) {
 		)
 		if strings.Contains(got, "files") {
 			t.Errorf("a ready server is listed:\n%s", got)
+		}
+	})
+	t.Run("the token step is YAML that sets the header", func(t *testing.T) {
+		got := Summary(Report{ConfigDir: "/cfg", Connected: []AgentResult{}, Servers: []ServerStatus{
+			{Name: "github", Finish: NeedsToken, SetupURL: "https://github.example.com/tokens"},
+		}})
+		_, step, _ := strings.Cut(got, "github.yaml:\n")
+		lines := strings.SplitN(step, "\n", 3)[:2]
+		indent := len(lines[0]) - len(strings.TrimLeft(lines[0], " "))
+		var sc config.ServerConfig
+		if err := yaml.Unmarshal(
+			[]byte(lines[0][indent:]+"\n"+lines[1][indent:]),
+			&sc,
+		); err != nil ||
+			sc.Headers["Authorization"] != "Bearer ${GITHUB_TOKEN}" {
+			t.Errorf("step %q parses to %+v, %v; want the Authorization header", lines, sc.Headers, err)
 		}
 	})
 	t.Run("nothing left", func(t *testing.T) {
@@ -56,6 +74,7 @@ func TestSummary_importAndFailures(t *testing.T) {
 	got := Summary(Report{
 		Connected:         []AgentResult{},
 		AlreadyConfigured: []string{"linear"},
+		FromImport:        []string{"github"},
 		Skipped: []SkippedServer{
 			{
 				Agent:  "Codex",
@@ -64,6 +83,7 @@ func TestSummary_importAndFailures(t *testing.T) {
 				Refs:   []string{"an environment variable in url"},
 			},
 			{Agent: "Cursor", Name: "!!!", Reason: SkipEmptyName},
+			{Agent: "Codex", Name: "paused", Reason: SkipSwitchedOff},
 		},
 		Ignored:          map[string][]string{"files": {"cwd"}},
 		UnusedEnvHeaders: map[string]map[string]string{"team": {"X-Team": "TEAM_VAR"}},
@@ -75,6 +95,8 @@ func TestSummary_importAndFailures(t *testing.T) {
 		t,
 		got,
 		"Already configured in mini: linear\n",
+		"Imported from your agents instead of the catalog: github\n",
+		"  paused switched off in Codex\n",
 		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit /config/servers/files.yaml\n",
 		"team was imported with its static X-Team header, since TEAM_VAR wasn't set; to use TEAM_VAR instead, set X-Team: ${TEAM_VAR} in /config/servers/team.yaml\n",
 		"  templated kept in Codex: uses an environment variable in url\n",
@@ -134,6 +156,13 @@ func TestSummary_howToConnectByHand(t *testing.T) {
 	requireLines(t, Summary(Report{Mini: mini}), "To connect mini to your agent, add it to its MCP config:\n")
 	if got := Summary(Report{Mini: mini, HasMini: list[:1]}); strings.Contains(got, "To connect mini") {
 		t.Errorf("every agent already has mini, but the summary shows how to connect one:\n%s", got)
+	}
+	got = Summary(Report{Mini: mini, InactiveMini: list[2:]})
+	requireLines(t, got, "Cursor (/home/u/.cursor/mcp.json) has a mini entry that may not run these servers: "+
+		"it's switched off, uses another config directory, or doesn't name mini by absolute path. "+
+		"To use them, have it run: '/Users/u/My Apps/mini' connect\n")
+	if strings.Contains(got, "To connect mini") {
+		t.Errorf("the only agent has a mini entry, but the summary adds a generic step:\n%s", got)
 	}
 }
 

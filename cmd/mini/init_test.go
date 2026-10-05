@@ -243,6 +243,7 @@ env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 			filepath.Join(configDir, "servers", "files.yaml"),
 		"[mcp_servers.mini]",
 		"  templated kept in Codex: uses an environment variable in command or args",
+		"  paused switched off in Codex",
 		"team was imported with its static X-Team header, since MINI_TEST_NEVER_SET wasn't set; to use MINI_TEST_NEVER_SET instead, set X-Team: ${MINI_TEST_NEVER_SET} in " +
 			filepath.Join(configDir, "servers", "team.yaml"),
 	} {

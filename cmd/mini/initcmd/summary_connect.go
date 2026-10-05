@@ -65,8 +65,9 @@ func writeAgentResult(b *strings.Builder, r Report, result AgentResult) {
 }
 
 func writeManualConnect(b *strings.Builder, r Report) {
+	writeInactiveMini(b, r)
 	if len(r.Unconnected) == 0 {
-		if len(r.HasMini) > 0 {
+		if len(r.HasMini) > 0 || len(r.InactiveMini) > 0 {
 			return
 		}
 		fmt.Fprintf(
@@ -79,6 +80,14 @@ func writeManualConnect(b *strings.Builder, r Report) {
 	fmt.Fprintln(b, "\nTo connect mini to your agents:")
 	for _, agent := range r.Unconnected {
 		fmt.Fprintf(b, "  %s (%s):\n%s\n", agent.Name, agent.ConfigPath, indent(manualStep(agent, r.Mini), "    "))
+	}
+}
+
+func writeInactiveMini(b *strings.Builder, r Report) {
+	for _, agent := range r.InactiveMini {
+		fmt.Fprintf(b, "\n%s (%s) has a mini entry that may not run these servers: it's switched off, uses another "+
+			"config directory, or doesn't name mini by absolute path. To use them, have it run: %s\n",
+			agent.Name, agent.ConfigPath, shellCommand(r.Mini))
 	}
 }
 

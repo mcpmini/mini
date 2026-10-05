@@ -3,6 +3,7 @@
 package initcmd
 
 import (
+	"errors"
 	"reflect"
 	"slices"
 	"testing"
@@ -39,6 +40,7 @@ func TestRunFlags(t *testing.T) {
 		"paused":{"command":"paused-server","disabled":true}}}`)
 	codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"files-server\"\ncwd = \"/srv\"\n")
 	add := []catalog.Entry{
+		{Name: "files", URL: "https://files.example.com/mcp"},
 		{Name: "github", URL: "https://gh.example.com/mcp"},
 		{Name: "linear", URL: "https://linear.example.com/mcp"},
 		{Name: "notion", URL: "https://notion.example.com/mcp", Auth: catalog.AuthOAuth2},
@@ -60,10 +62,19 @@ func TestRunFlags(t *testing.T) {
 	if !reflect.DeepEqual(report.AlreadyConfigured, []string{"linear"}) {
 		t.Errorf("already configured = %v, want linear", report.AlreadyConfigured)
 	}
-	if report.Skipped != nil || !reflect.DeepEqual(report.Ignored, map[string][]string{"files": {"cwd"}}) ||
+	if !reflect.DeepEqual(report.FromImport, []string{"files", "github"}) {
+		t.Errorf("from import = %v, want files and github, which the imports cover", report.FromImport)
+	}
+	wantSkipped := []SkippedServer{{Agent: "Claude Code", Name: "paused", Reason: SkipSwitchedOff}}
+	if !reflect.DeepEqual(report.Skipped, wantSkipped) ||
+		!reflect.DeepEqual(report.Ignored, map[string][]string{"files": {"cwd"}}) ||
 		report.Failed() {
-		t.Errorf("skipped = %+v, ignored = %v, failed = %v; want files imported with its cwd named and no failure",
-			report.Skipped, report.Ignored, report.Failed())
+		t.Errorf(
+			"skipped = %+v, ignored = %v, failed = %v; want paused named as switched off, files' cwd named, no failure",
+			report.Skipped,
+			report.Ignored,
+			report.Failed(),
+		)
 	}
 	github, err := config.ReadUnexpandedServer(f.configDir, "github")
 	if err != nil || github.Headers["Authorization"] != "Bearer ${GH}" {
@@ -71,22 +82,48 @@ func TestRunFlags(t *testing.T) {
 	}
 }
 
-func TestRunFlags_agentsThatHaveMiniGetNoConnectStep(t *testing.T) {
+func TestRunFlags_sortsAgentsByTheirMiniEntry(t *testing.T) {
 	f := newApplyFixture(t)
 	cursor := f.write(
 		t,
 		"Cursor",
 		`{"mcpServers":{"mini":{"command":"/opt/old/mini","args":["connect"],"disabled":true}}}`,
 	)
+	windsurf := f.write(t, "Windsurf", `{"mcpServers":{"proxy":`+f.servingMini()+`}}`)
 	claude := f.write(t, "Claude Code", `{"mcpServers":{}}`)
 
-	report := RunFlags(FlagRun{ConfigDir: f.configDir, Connectable: []agents.Agent{cursor, claude}, SelfPath: testSelf})
+	report := RunFlags(
+		FlagRun{ConfigDir: f.configDir, Connectable: []agents.Agent{cursor, windsurf, claude}, SelfPath: testSelf},
+	)
 
-	if got := agentNames(report.Unconnected); !reflect.DeepEqual(got, []string{"Claude Code"}) {
-		t.Errorf("unconnected = %v, want only Claude Code: Cursor's mini entry is the user's", got)
+	for _, group := range []struct {
+		name string
+		got  []agents.Agent
+		want []string
+	}{
+		{"unconnected", report.Unconnected, []string{"Claude Code"}},
+		{"has a serving mini", report.HasMini, []string{"Windsurf"}},
+		{"has an inactive mini", report.InactiveMini, []string{"Cursor"}},
+	} {
+		if got := agentNames(group.got); !reflect.DeepEqual(got, group.want) {
+			t.Errorf("%s = %v, want %v", group.name, got, group.want)
+		}
 	}
-	if got := agentNames(report.HasMini); !reflect.DeepEqual(got, []string{"Cursor"}) {
-		t.Errorf("has mini = %v, want Cursor", got)
+}
+
+func TestReport_failed(t *testing.T) {
+	for name, tt := range map[string]struct {
+		report Report
+		want   bool
+	}{
+		"nothing failed":        {Report{Connected: []AgentResult{{}}}, false},
+		"a server write failed": {Report{Sync: SyncResult{Failed: []ServerError{{Name: "x", Err: errors.New("disk full")}}}}, true},
+		"servers can't be read": {Report{StatusErr: errors.New("permission denied")}, true},
+		"an agent edit failed":  {Report{Connected: []AgentResult{{Err: errors.New("inline table")}}}, true},
+	} {
+		if got := tt.report.Failed(); got != tt.want {
+			t.Errorf("%s: Failed() = %v, want %v", name, got, tt.want)
+		}
 	}
 }
 
