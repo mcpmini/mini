@@ -290,12 +290,15 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			`"mini":{"command":"`+f.mini+`","args":[`+dir+`,"serve"]}}}`)
 		claude := f.write(t, "Claude Code", `{"mcpServers":{"files":{"command":"files-server"},`+
 			`"mini":{"command":"`+filepath.Join(f.home, "moved", "mini")+`","args":[`+dir+`,"connect"]}}}`)
+		t.Setenv("PATH", filepath.Dir(f.mini))
+		windsurf := f.write(t, "Windsurf", `{"mcpServers":{"files":{"command":"files-server"},`+
+			`"mini":{"command":"mini","args":[`+dir+`,"connect"]}}}`)
 
-		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor, claude)
+		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor, claude, windsurf)
 
 		for _, result := range results {
 			if result.ExistingMini != MiniEntryInactive || result.Removed != nil {
-				t.Errorf("%s result = %+v, want the old serve entry or missing binary reported inactive and files kept", result.Agent.Name, result)
+				t.Errorf("%s result = %+v, want an old serve entry, a moved binary or a bare name on init's PATH reported inactive and files kept", result.Agent.Name, result)
 			}
 		}
 	})

@@ -61,8 +61,8 @@ const (
 	NoMiniEntry ExistingMini = iota
 	// MiniEntryServes: switched on and running the config directory init set up.
 	MiniEntryServes
-	// MiniEntryInactive: switched off, running another config directory, or another server under
-	// mini's key; the agent doesn't get this mini's servers through it.
+	// MiniEntryInactive: switched off, running another config directory, not known to start, or
+	// another server under mini's key; the agent may not get this mini's servers through it.
 	MiniEntryInactive
 )
 
@@ -80,10 +80,13 @@ func (p ApplyParams) existingMini(entries map[string]agents.Server) ExistingMini
 	return found
 }
 
-// mini has no serve command any more, and a binary moved by an upgrade leaves its old path behind.
+// Only an absolute path to a binary that's still there is known to start: an agent may run with
+// another PATH than init (GUI apps get the system's minimal one), an upgrade can move the binary,
+// and mini has no serve command any more.
 func (p ApplyParams) serves(sc config.ServerConfig, disabled bool) bool {
 	_, err := exec.LookPath(sc.Command)
-	return !disabled && err == nil && slices.Contains(sc.Args, "connect") && sameDir(configDirArg(sc.Args), p.ConfigDir)
+	return !disabled && filepath.IsAbs(sc.Command) && err == nil && slices.Contains(sc.Args, "connect") &&
+		sameDir(configDirArg(sc.Args), p.ConfigDir)
 }
 
 func configDirArg(args []string) string {

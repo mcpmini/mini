@@ -56,7 +56,7 @@ type KeptEntry struct {
 
 var (
 	errNotChecked   = errors.New("its connection wasn't checked")
-	errMiniInactive = errors.New("the agent's mini entry is switched off, runs another config directory, or isn't mini")
+	errMiniInactive = errors.New("the agent's mini entry may not run this mini: it's switched off, uses another config directory, or doesn't start mini connect by absolute path")
 )
 
 // Apply connects mini to each agent in turn. A failed agent doesn't stop the others; once ctx is
