@@ -34,6 +34,7 @@ func TestServerStatuses(t *testing.T) {
 		{Name: "off", Command: "run", Enabled: new(false)},
 		{Name: "unset", Transport: "http", URL: "https://unset.example.com/mcp", Headers: map[string]string{"Authorization": "Bearer ${MINI_TEST_UNSET}"}},
 		{Name: "github", Command: "docker", Args: []string{"run", "github-mcp"}},
+		{Name: "tok", Transport: "http", URL: "https://Token.example.com/mcp/"},
 	} {
 		configtest.WriteServer(t, dir, sc)
 	}
@@ -82,6 +83,7 @@ func TestServerStatuses(t *testing.T) {
 		{Name: "local", Finish: Ready},
 		{Name: "loggedin", Finish: Ready},
 		{Name: "login", Finish: NeedsLogin},
+		{Name: "tok", Finish: NeedsToken, SetupURL: "https://token.example.com/new"},
 		{Name: "token", Finish: NeedsToken, SetupURL: "https://token.example.com/new"},
 		{
 			Name:     "unset",

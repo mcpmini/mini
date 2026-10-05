@@ -71,7 +71,7 @@ func RunFlags(p FlagRun) Report {
 		return report
 	}
 	candidates, skipped := FindServers(FindParams{Agents: p.Import, Configured: configured, SelfPath: p.SelfPath})
-	report.Skipped = append(skipped, switchedOffRows(candidates)...)
+	report.Skipped = append(skipped, leftOutRows(candidates)...)
 	report.Ignored, report.UnusedEnvHeaders = ignoredSettings(candidates), unusedEnvHeaders(candidates)
 	picks := flagPicks(candidates, p.Add, configured)
 	report.AlreadyConfigured, report.FromImport = picks.already, picks.fromImport
@@ -120,29 +120,37 @@ func flagPicks(candidates []Candidate, add []catalog.Entry, configured []config.
 	return p
 }
 
-// A row every agent switched off stays out: importing it would switch it on for every agent
-// connected to mini.
-func switchedOffRows(candidates []Candidate) []SkippedServer {
-	var off []SkippedServer
+// Flags leave out each row the UI starts unticked: one every agent switched off, which importing
+// would switch on for every agent connected to mini, and a second config under a name in use.
+func leftOutRows(candidates []Candidate) []SkippedServer {
+	var left []SkippedServer
 	for _, c := range candidates {
-		if c.Checked || slices.ContainsFunc(c.Sources, func(s Source) bool { return !s.Disabled }) {
+		if c.Checked {
 			continue
 		}
+		reason := SkipSecondConfig
+		if !slices.ContainsFunc(c.Sources, func(s Source) bool { return !s.Disabled }) {
+			reason = SkipSwitchedOff
+		}
 		for _, s := range c.Sources {
-			off = append(off, SkippedServer{Agent: s.Agent, Name: c.Name, Reason: SkipSwitchedOff})
+			left = append(left, SkippedServer{Agent: s.Agent, Name: s.Name, Reason: reason})
 		}
 	}
-	return off
+	return left
 }
 
 func (p FlagRun) sortByMini(r *Report) {
 	existing := ApplyParams{ConfigDir: p.ConfigDir, SelfPath: p.SelfPath}
 	for _, agent := range p.Connectable {
 		entries, err := agent.Read(agent.ConfigPath)
-		switch {
-		case err != nil || existing.existingMini(entries) == NoMiniEntry:
+		mini := NoMiniEntry
+		if err == nil {
+			mini = existing.existingMini(entries)
+		}
+		switch mini {
+		case NoMiniEntry:
 			r.Unconnected = append(r.Unconnected, agent)
-		case existing.existingMini(entries) == MiniEntryServes:
+		case MiniEntryServes:
 			r.HasMini = append(r.HasMini, agent)
 		default:
 			r.InactiveMini = append(r.InactiveMini, agent)
@@ -153,11 +161,11 @@ func (p FlagRun) sortByMini(r *Report) {
 func unusedEnvHeaders(candidates []Candidate) map[string]map[string]string {
 	unused := map[string]map[string]string{}
 	for _, c := range candidates {
+		if !c.Checked {
+			continue
+		}
 		for _, source := range c.Sources {
 			for header, envVar := range source.UnusedEnvHeaders {
-				if !c.Checked {
-					continue
-				}
 				if unused[c.Name] == nil {
 					unused[c.Name] = map[string]string{}
 				}

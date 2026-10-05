@@ -82,6 +82,24 @@ func TestRunFlags(t *testing.T) {
 	}
 }
 
+func TestRunFlags_namesASecondConfigItLeavesOut(t *testing.T) {
+	f := newApplyFixture(t)
+	claude := f.write(t, "Claude Code", `{"mcpServers":{"github":{"command":"gh-server-a"}}}`)
+	cursor := f.write(t, "Cursor", `{"mcpServers":{"github":{"command":"gh-server-b"}}}`)
+
+	report := RunFlags(FlagRun{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf})
+
+	want := []SkippedServer{{Agent: "Cursor", Name: "github", Reason: SkipSecondConfig}}
+	if !reflect.DeepEqual(report.Skipped, want) ||
+		!reflect.DeepEqual(configuredNames(t, f.configDir), []string{"github"}) {
+		t.Errorf(
+			"skipped = %+v, configured = %v; want Claude Code's github imported and Cursor's named",
+			report.Skipped,
+			configuredNames(t, f.configDir),
+		)
+	}
+}
+
 func TestRunFlags_sortsAgentsByTheirMiniEntry(t *testing.T) {
 	f := newApplyFixture(t)
 	cursor := f.write(

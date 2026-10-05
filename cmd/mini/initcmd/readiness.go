@@ -50,10 +50,11 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 		status.Finish = NeedsEnv
 		return status
 	}
-	// A server that only shares the catalog's name, like a local stdio github, isn't the catalog's.
+	// A server is the catalog's when it runs the catalog's URL, under any name; one that only
+	// shares the name, like a local stdio github, isn't.
 	if i := slices.IndexFunc(
 		entries,
-		func(e catalog.Entry) bool { return e.Name == sc.Name && e.URL == sc.URL },
+		func(e catalog.Entry) bool { return sc.URL != "" && serverURLKey(e.URL) == serverURLKey(sc.URL) },
 	); i >= 0 {
 		status.SetupURL = entries[i].SetupURL
 		switch {
