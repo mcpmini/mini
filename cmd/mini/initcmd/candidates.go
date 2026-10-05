@@ -28,6 +28,7 @@ type Source struct {
 	Name               string
 	Entry              config.ServerConfig
 	IgnoredRunSettings []string
+	UnusedEnvHeaders   map[string]string
 }
 
 type SkipReason int

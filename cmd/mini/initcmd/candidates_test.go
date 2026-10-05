@@ -164,9 +164,10 @@ func TestFindServers_skipped(t *testing.T) {
 	}
 }
 
-func TestFindServers_ignoredRunSettingsStayOnTheirSource(t *testing.T) {
+func TestFindServers_importCaveatsStayOnTheirSource(t *testing.T) {
 	files := remoteEntry("https://files.example/mcp", "")
 	files.IgnoredRunSettings = []string{"cwd"}
+	files.UnusedEnvHeaders = map[string]string{"X-Team": "TEAM_VAR"}
 	candidates, skipped := find([]agents.Agent{
 		agentWith("Codex", map[string]agents.Server{"files": files}),
 		agentWith("Cursor", map[string]agents.Server{"files": remoteEntry("https://files.example/mcp", "")}),
@@ -174,8 +175,12 @@ func TestFindServers_ignoredRunSettingsStayOnTheirSource(t *testing.T) {
 	if len(skipped) != 0 || len(candidates) != 1 || len(candidates[0].Sources) != 2 {
 		t.Fatalf("candidates = %+v, skipped = %+v; want one row from both agents", candidates, skipped)
 	}
-	if got := candidates[0].Sources; !reflect.DeepEqual(got[0].IgnoredRunSettings, []string{"cwd"}) || got[1].IgnoredRunSettings != nil {
-		t.Errorf("sources = %+v, want cwd named on the Codex source only", got)
+	codex, cursor := candidates[0].Sources[0], candidates[0].Sources[1]
+	if !reflect.DeepEqual(codex.IgnoredRunSettings, []string{"cwd"}) || !reflect.DeepEqual(codex.UnusedEnvHeaders, files.UnusedEnvHeaders) {
+		t.Errorf("Codex source = %+v, want its cwd and unused X-Team override named", codex)
+	}
+	if cursor.IgnoredRunSettings != nil || cursor.UnusedEnvHeaders != nil {
+		t.Errorf("Cursor source = %+v, want no caveats", cursor)
 	}
 }
 

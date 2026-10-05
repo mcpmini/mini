@@ -75,6 +75,15 @@ func waitStarted(t *testing.T, probe *fakeProbe) string {
 	}
 }
 
+func waitChanged(t *testing.T, s *Session) {
+	t.Helper()
+	select {
+	case <-s.Changed():
+	case <-time.After(5 * time.Second):
+		t.Fatal("no OAuth check state change")
+	}
+}
+
 func addedNames(result SyncResult) []string {
 	var names []string
 	for _, added := range result.Added {
@@ -115,6 +124,23 @@ func TestSessionSync_aChangedSourceIsWrittenAgain(t *testing.T) {
 	}
 	if got := string(testutil.ReadFile(t, config.ServerPath(dir, "github"))); !strings.Contains(got, "imported.example") {
 		t.Errorf("server file = %s, want the imported URL", got)
+	}
+}
+
+func TestSessionChecks_aChangedServerIsCheckedAgain(t *testing.T) {
+	probe := newFakeProbe(false)
+	s, _ := newTestSession(t, probe, clock.System())
+	s.Sync([]config.ServerConfig{httpServer("github", "https://catalog.example/mcp")})
+	waitStarted(t, probe)
+	for s.Checking("github") {
+		waitChanged(t, s)
+	}
+
+	s.Sync([]config.ServerConfig{httpServer("github", "https://imported.example/mcp")})
+	s.Close()
+
+	if probed, _ := probe.counts(); !reflect.DeepEqual(probed, []string{"github", "github"}) {
+		t.Errorf("probed = %v, want github checked again after its URL changed", probed)
 	}
 }
 
@@ -205,14 +231,14 @@ func TestSessionChecks_aTimedOutCheckIsDone(t *testing.T) {
 	s, _ := newTestSession(t, probe, fake)
 	open := httpServer("open", "https://open.example/mcp")
 	s.Sync([]config.ServerConfig{open})
-	<-s.Changed()
+	waitChanged(t, s)
 	waitStarted(t, probe)
 	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
 
 	fake.Advance(oauthCheckTimeout)
-	<-s.Changed()
+	waitChanged(t, s)
 
 	if s.Checking("open") {
 		t.Error("Checking = true after the timeout")
