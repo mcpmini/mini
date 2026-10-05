@@ -3,6 +3,7 @@ package agents
 import (
 	"fmt"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
@@ -69,7 +70,12 @@ func (e codexMCPEntry) server(name string) Server {
 func (e codexMCPEntry) headers() map[string]string {
 	headers := maps.Clone(e.Headers)
 	for _, name := range slices.Sorted(maps.Keys(e.EnvHTTPHeaders)) {
-		headers = replaceHeader(headers, name, "${"+e.EnvHTTPHeaders[name]+"}")
+		envVar := e.EnvHTTPHeaders[name]
+		// Codex keeps the static header while the variable is unset or blank. mini can't make a
+		// reference optional, so without a static header the reference is kept and import names it.
+		if strings.TrimSpace(os.Getenv(envVar)) != "" || !hasHeader(headers, name) {
+			headers = replaceHeader(headers, name, "${"+envVar+"}")
+		}
 	}
 	if e.BearerTokenEnvVar != "" {
 		headers = replaceHeader(headers, "Authorization", "Bearer ${"+e.BearerTokenEnvVar+"}")
@@ -77,7 +83,13 @@ func (e codexMCPEntry) headers() map[string]string {
 	return headers
 }
 
-// Codex applies env and bearer headers over the static ones, and header names ignore case.
+func hasHeader(headers map[string]string, name string) bool {
+	return slices.ContainsFunc(slices.Collect(maps.Keys(headers)), func(existing string) bool {
+		return strings.EqualFold(existing, name)
+	})
+}
+
+// Header names ignore case, so a header replaces any spelling of its name.
 func replaceHeader(headers map[string]string, name, value string) map[string]string {
 	if headers == nil {
 		headers = map[string]string{}

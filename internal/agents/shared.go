@@ -123,8 +123,8 @@ func translateRefs(values map[string]string, f entryFormat) map[string]string {
 	return out
 }
 
-// mini expands ${VAR} only in env and header values; a reference anywhere else, or in another
-// syntax, would reach the server unexpanded.
+// mini doesn't expand ${VAR} in url, command or args, and reads no other reference syntax; such
+// a reference would reach the server as text.
 func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
 	ref := bracedRef
 	if f.expandsBareVars {

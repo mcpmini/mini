@@ -29,12 +29,20 @@ func Detect() []Agent {
 func Known(home string) []Agent {
 	return []Agent{
 		{Name: "Claude Code", ConfigPath: filepath.Join(home, ".claude.json"), Read: ReadClaude},
-		{Name: "Codex", ConfigPath: filepath.Join(home, ".codex", "config.toml"), Read: ReadCodex},
+		codex(home),
 		{Name: "Cursor", ConfigPath: filepath.Join(home, ".cursor", "mcp.json"), Read: ReadClaude},
 		{Name: "Windsurf", ConfigPath: filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), Read: ReadClaude},
 		{Name: "Gemini CLI", ConfigPath: filepath.Join(home, ".gemini", "settings.json"), Read: ReadGemini},
 		claudeDesktop(home),
 	}
+}
+
+func codex(home string) Agent {
+	dir := os.Getenv("CODEX_HOME")
+	if dir == "" {
+		dir = filepath.Join(home, ".codex")
+	}
+	return Agent{Name: "Codex", ConfigPath: filepath.Join(dir, "config.toml"), Read: ReadCodex}
 }
 
 func claudeDesktop(home string) Agent {
