@@ -14,7 +14,7 @@ type MiniEntry struct {
 	Args    []string
 }
 
-// The key mini is written under; an agent's existing entry there is replaced.
+// The key mini is written under; an agent's existing entry there is the user's and never changed.
 const MiniKey = "mini"
 
 func connectJSON(config []byte, remove []string, mini MiniEntry) ([]byte, error) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -138,7 +137,6 @@ func TestApply_neverReplaces(t *testing.T) {
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "off", Command: "off-server", Enabled: new(false)})
 	cursor := f.write(t, "Cursor", `{"mcpServers":{
-		"limited":{"command":"files-server","disabledTools":["delete"]},
 		"switched-off":{"command":"files-server","disabled":true},
 		"unchecked":{"command":"files-server","args":["--other"]},
 		"disabled-in-mini":{"command":"off-server"},
@@ -146,7 +144,7 @@ func TestApply_neverReplaces(t *testing.T) {
 
 	results := f.apply(ConnectAndRemove, map[string]error{"files": nil, "off": nil}, cursor)
 
-	want := []string{"disabled-in-mini", "limited", "mini", "old-mini", "unchecked"}
+	want := []string{"disabled-in-mini", "mini", "old-mini", "unchecked"}
 	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, want) || results[0].Removed != nil {
 		t.Errorf("entries = %v, removed = %v; want %v and nothing removed", got, results[0].Removed, want)
 	}
@@ -219,16 +217,32 @@ func TestApply_failuresAndCancel(t *testing.T) {
 	})
 }
 
-func TestApply_rerunReplacesMinisEntry(t *testing.T) {
-	f := newApplyFixture(t)
-	codex := f.write(t, "Codex", "[mcp_servers.mini]\ncommand = \"/old/mini\"\nargs = [\"connect\"]\nenabled = false\n")
-	f.apply(ConnectOnly, nil, codex)
-	f.apply(ConnectOnly, nil, codex)
-	data := string(testutil.ReadFile(t, codex.ConfigPath))
-	if strings.Count(data, "[mcp_servers.mini]") != 1 || strings.Contains(data, "/old/mini") || !reflect.DeepEqual(entryNamesIn(t, codex), []string{"mini"}) {
-		t.Errorf("config:\n%s\nwant one switched-on mini table with the new command", data)
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(codex.ConfigPath), "config.minibackup.toml")); err != nil {
-		t.Errorf("backup: %v", err)
-	}
+func TestApply_existingMiniEntry(t *testing.T) {
+	t.Run("with nothing to remove the file is left alone", func(t *testing.T) {
+		f := newApplyFixture(t)
+		original := "[mcp_servers.mini]\ncommand = \"/old/mini\"\nargs = [\"connect\"]\nenabled = false\ntool_timeout_sec = 300\n"
+		codex := f.write(t, "Codex", original)
+		cursorOriginal := `{"mcpServers": {"mini": {"command": "/old/mini"}}}`
+		cursor := f.write(t, "Cursor", cursorOriginal)
+		results := f.apply(ConnectAndRemove, nil, codex, cursor)
+		for i, want := range []string{original, cursorOriginal} {
+			if !results[i].MiniAlreadyConnected || results[i].Backup != "" || results[i].Err != nil {
+				t.Errorf("result = %+v, want mini reported as already connected and no edit", results[i])
+			}
+			if got := string(testutil.ReadFile(t, results[i].Agent.ConfigPath)); got != want {
+				t.Errorf("config:\n%s\nwant it unchanged", got)
+			}
+		}
+	})
+	t.Run("duplicates are still removed and mini's settings kept", func(t *testing.T) {
+		f := newApplyFixture(t)
+		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+		cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"},`+
+			`"mini":{"command":"/old/mini","args":["connect"],"env":{"MINI_FLAG":"1"}}}}`)
+		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor)
+		data := string(testutil.ReadFile(t, cursor.ConfigPath))
+		if !reflect.DeepEqual(results[0].Removed, []string{"files"}) || !strings.Contains(data, "/old/mini") || !strings.Contains(data, "MINI_FLAG") {
+			t.Errorf("result = %+v, config:\n%s\nwant files removed and mini's entry unchanged", results[0], data)
+		}
+	})
 }

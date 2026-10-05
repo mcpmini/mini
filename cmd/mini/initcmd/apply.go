@@ -39,10 +39,12 @@ type AgentResult struct {
 	Agent   agents.Agent
 	Backup  string
 	Created bool
-	Removed []string
-	Kept    []KeptEntry
-	Changed []string
-	Err     error
+	// MiniAlreadyConnected: the agent had a mini entry, which is the user's and is left as it is.
+	MiniAlreadyConnected bool
+	Removed              []string
+	Kept                 []KeptEntry
+	Changed              []string
+	Err                  error
 }
 
 // KeptEntry is an agent entry mini duplicates but couldn't replace, because mini's copy failed
@@ -99,10 +101,14 @@ func (p ApplyParams) create(agent agents.Agent) error {
 func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {
 	result := AgentResult{Agent: agent}
 	edit := func(config []byte) ([]byte, error) {
-		var err error
-		result.Removed, result.Kept, err = p.replaceable(agent, mini)
+		entries, err := agent.Read(agent.ConfigPath)
 		if err != nil {
 			return nil, err
+		}
+		_, result.MiniAlreadyConnected = entries[agents.MiniKey]
+		result.Removed, result.Kept = p.replaceable(entries, mini)
+		if result.MiniAlreadyConnected && len(result.Removed) == 0 {
+			return config, nil
 		}
 		return agent.Connect(config, result.Removed, p.Mini)
 	}
@@ -114,13 +120,9 @@ func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {
 }
 
 // Reads the entries again at apply, so an entry edited since Connect's check is judged as it is now.
-func (p ApplyParams) replaceable(agent agents.Agent, mini MiniServers) ([]string, []KeptEntry, error) {
+func (p ApplyParams) replaceable(entries map[string]agents.Server, mini MiniServers) ([]string, []KeptEntry) {
 	if p.Choice != ConnectAndRemove {
-		return nil, nil, nil
-	}
-	entries, err := agent.Read(agent.ConfigPath)
-	if err != nil {
-		return nil, nil, err
+		return nil, nil
 	}
 	var remove []string
 	var kept []KeptEntry
@@ -132,7 +134,7 @@ func (p ApplyParams) replaceable(agent agents.Agent, mini MiniServers) ([]string
 			remove = append(remove, entry)
 		}
 	}
-	return remove, kept, nil
+	return remove, kept
 }
 
 func (p ApplyParams) checkResult(server string) error {

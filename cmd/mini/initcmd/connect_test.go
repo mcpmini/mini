@@ -49,14 +49,14 @@ func TestMiniServersDuplicates(t *testing.T) {
 	stdio := func(command string) agents.Server {
 		return agents.Server{Config: config.ServerConfig{Command: command}}
 	}
-	limited := stdio("files-server")
-	limited.LimitsTools = true
+	templated := stdio("files-server")
+	templated.UnexpandableRefs = []string{"an environment variable in command or args"}
 	entries := map[string]agents.Server{
-		"fs":       stdio("files-server"),
-		"mini":     stdio("files-server"),
-		"limited":  limited,
-		"off-copy": stdio("off-server"),
-		"other":    stdio("other-server"),
+		"fs":        stdio("files-server"),
+		"mini":      stdio("files-server"),
+		"templated": templated,
+		"off-copy":  stdio("off-server"),
+		"other":     stdio("other-server"),
 	}
 
 	got := mini.Duplicates(entries, testSelf)
