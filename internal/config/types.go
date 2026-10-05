@@ -182,7 +182,7 @@ type ServerConfig struct {
 	Permissions *PermissionsConfig `yaml:"permissions,omitempty"`
 
 	// Projections maps tool name → projection config.
-	Projections map[string]*ProjectionConfig `yaml:"projections,omitempty"`
+	Projections map[string]*ProjectionConfig `yaml:"-"`
 
 	// ToolTimeout is the per-call deadline (e.g. "30s", "5m"). Default "30s", "0" = no timeout.
 	// Supports long durations for slow tools (e.g. "10m" for AI-powered analysis).

@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -24,13 +23,6 @@ var ValidToolName = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 
 // Only ${VAR} form (not bare $VAR) avoids false positives in shell args and YAML comments.
 var envVarRef = regexp.MustCompile(`\$\{([^}]+)\}`)
-
-func checkServerName(name, source string) error {
-	if !ValidServerName.MatchString(name) {
-		return fmt.Errorf("invalid server name %q in %s: must match ^[a-zA-Z0-9_-]+$", name, source)
-	}
-	return nil
-}
 
 // LoadMain loads global settings and returns config.yaml parse and interpolation errors.
 func LoadMain(configDir string) (*Config, error) {
@@ -104,113 +96,8 @@ func filterServerPaths(paths []string) []string {
 	return out
 }
 
-func loadServerConfig(path string) (*ServerConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	return parseServerConfig(path, data)
-}
-
-func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
-	name := serverNameFromPath(path)
-	if err := checkServerName(name, path); err != nil {
-		return nil, err
-	}
-	var s ServerConfig
-	inlineProjections, err := decodeServerFile(data, &s)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	s.Name = name
-	decodeInlineProjections(&s, path, inlineProjections)
-	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
-		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
-	}
-	if err := checkUnexpandedFields(s); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	expandServerEnv(&s)
-	return &s, nil
-}
-
-// Inline projections decode apart, so a mistake in them costs the server only its projections.
-func decodeServerFile(data []byte, s *ServerConfig) (inlineProjections *yaml.Node, err error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	inlineProjections, err = detachMappingValue(&doc, "projections")
-	if err != nil {
-		return nil, err
-	}
-	return inlineProjections, doc.Decode(s)
-}
-
-func detachMappingValue(doc *yaml.Node, key string) (*yaml.Node, error) {
-	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return nil, nil
-	}
-	mapping := doc.Content[0]
-	var value *yaml.Node
-	for i := 0; i+1 < len(mapping.Content); {
-		if mapping.Content[i].Value != key {
-			i += 2
-			continue
-		}
-		if value != nil {
-			return nil, fmt.Errorf("line %d: mapping key %q already defined", mapping.Content[i].Line, key)
-		}
-		value = mapping.Content[i+1]
-		mapping.Content = slices.Delete(mapping.Content, i, i+2)
-	}
-	return value, nil
-}
-
-func decodeInlineProjections(s *ServerConfig, path string, node *yaml.Node) {
-	if node == nil {
-		return
-	}
-	if err := node.Decode(&s.Projections); err != nil {
-		s.Projections = nil
-		s.ProjectionsErr = &SourceError{Path: path, ServerName: s.Name, Err: fmt.Errorf("parse %s: %w", path, err)}
-	}
-}
-
-func ServerPath(configDir, name string) string {
-	return filepath.Join(configDir, "servers", name+".yaml")
-}
-
 func ProjectionPath(configDir, name string) string {
 	return filepath.Join(configDir, "servers", name+".proj.yaml")
-}
-
-// ServerFileExists matches the name exactly: a case-insensitive disk would otherwise
-// treat "GitHub" as github.yaml, and act on that server under the wrong name.
-func ServerFileExists(configDir, name string) bool {
-	path := ServerPath(configDir, name)
-	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil {
-		return false
-	}
-	return slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == filepath.Base(path) })
-}
-
-func serverNameFromPath(path string) string {
-	return strings.TrimSuffix(filepath.Base(path), ".yaml")
-}
-
-// ValidateServerFile checks data as a server file at path, which names the server. An unset ${VAR}
-// passes, since it only has to be set where mini runs.
-func ValidateServerFile(path string, data []byte) error {
-	sc, err := parseServerConfig(path, data)
-	if err != nil {
-		return err
-	}
-	if sc.ProjectionsErr != nil {
-		return sc.ProjectionsErr.Err
-	}
-	return validateServerProjectionFormats(sc.Name, sc.Projections)
 }
 
 func readAndInterpolate(path string) ([]byte, error) {

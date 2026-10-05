@@ -72,6 +72,30 @@ func TestLoadServers(t *testing.T) {
 			check:      wantUnprojected("svc", "svc.yaml"),
 		},
 		{
+			name:       "inline projections of the wrong type reached through a merge key load the server without any",
+			files:      map[string]string{"servers/svc.yaml": "base: &base\n  projections:\n    t:\n      include_only: 5\n<<: *base\ncommand: echo\n"},
+			wantLoaded: []string{"svc"},
+			check:      wantUnprojected("svc", "svc.yaml"),
+		},
+		{
+			name: "inline projections reached through a merge key apply, and a projections key of the server's own replaces them",
+			files: map[string]string{
+				"servers/merged.yaml": "base: &base\n  projections:\n    t:\n      include_only: [merged]\n<<: *base\ncommand: echo\n",
+				"servers/own.yaml":    "base: &base\n  projections:\n    t:\n      include_only: [merged]\n    u:\n      include_only: [merged]\nprojections:\n  t:\n    include_only: [own]\n<<: *base\ncommand: echo\n",
+			},
+			wantLoaded: []string{"merged", "own"},
+			check: func(t *testing.T, servers config.Servers) {
+				merged, _ := servers.Find("merged")
+				own, _ := servers.Find("own")
+				if got := projectionRules(merged); !reflect.DeepEqual(got, map[string][]string{"t": {"merged"}}) {
+					t.Errorf("merged projections = %v, want t from the merge key", got)
+				}
+				if got := projectionRules(own); !reflect.DeepEqual(got, map[string][]string{"t": {"own"}}) {
+					t.Errorf("own projections = %v, want only the server's own t", got)
+				}
+			},
+		},
+		{
 			name:       "a projections key written twice breaks the server, as any duplicate key does",
 			files:      map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  a:\n    include_only: [x]\nprojections:\n  b:\n    include_only: [y]\n"},
 			wantBroken: []string{"svc"},
@@ -313,4 +337,29 @@ func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
 	if sc, err := config.LoadServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("LoadServer(GitHub) = %q, %v; want fs.ErrNotExist, not github.yaml under another name", sc.Name, err)
 	}
+}
+
+func TestLoadServer_readsBackTheProjectionsAServerFileWasWrittenWith(t *testing.T) {
+	dir := t.TempDir()
+	written := config.ServerConfig{Name: "svc", Command: "echo", Projections: map[string]*config.ProjectionConfig{
+		"t": {IncludeOnly: []string{"id"}, ArrayLimits: map[string]int{"items": 5}},
+	}}
+	configtest.WriteServer(t, dir, written)
+
+	got, err := config.LoadServer(dir, "svc")
+
+	if err != nil {
+		t.Fatalf("LoadServer: %v", err)
+	}
+	if !reflect.DeepEqual(got.Projections, written.Projections) || got.ProjectionsErr != nil {
+		t.Errorf("projections = %+v, error %+v; want %+v as written", got.Projections["t"], got.ProjectionsErr, written.Projections["t"])
+	}
+}
+
+func projectionRules(sc config.ServerConfig) map[string][]string {
+	rules := map[string][]string{}
+	for tool, p := range sc.Projections {
+		rules[tool] = p.IncludeOnly
+	}
+	return rules
 }
