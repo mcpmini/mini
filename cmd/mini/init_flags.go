@@ -24,6 +24,9 @@ func (f initFlags) flagRun() bool {
 }
 
 func runInitFlags(configDir string, f initFlags) error {
+	if f.addGiven && len(nonBlankNames(f.add)) == 0 {
+		return errEmptyAdd
+	}
 	entries, err := flagCatalog(f)
 	if err != nil {
 		return err

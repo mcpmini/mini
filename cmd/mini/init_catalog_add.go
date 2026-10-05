@@ -50,12 +50,10 @@ func requestedCatalogEntries(f initFlags, entries []catalog.Entry) ([]catalog.En
 	if !f.addGiven {
 		return nil, nil
 	}
-	names := nonBlankNames(f.add)
-	if len(names) == 0 {
-		return nil, errors.New("--add needs at least one server name")
-	}
-	return resolveCatalogNames(entries, names)
+	return resolveCatalogNames(entries, nonBlankNames(f.add))
 }
+
+var errEmptyAdd = errors.New("--add needs at least one server name")
 
 func nonBlankNames(names []string) []string {
 	var kept []string

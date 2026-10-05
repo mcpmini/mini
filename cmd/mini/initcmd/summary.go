@@ -30,6 +30,7 @@ func Summary(r Report) string {
 func writeServers(b *strings.Builder, r Report) {
 	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Finish == Ready })
 	switch {
+	case len(r.Servers) == 0 && r.StatusErr != nil:
 	case len(r.Servers) == 0:
 		fmt.Fprintln(b, "mini has no servers yet.")
 	case len(unfinished) == 0:
@@ -83,6 +84,12 @@ func finishStep(r Report, s ServerStatus, width int) string {
 	return "run: " + r.miniCommand("auth", s.Name)
 }
 
+// SetupStep is the step that finishes a catalog server needing a token or the user's own app, as
+// the summary words it.
+func SetupStep(configDir string, s ServerStatus) string {
+	return finishStep(Report{ConfigDir: configDir, Mini: MiniCommand(configDir)}, s, 0)
+}
+
 // TokenEnvVar is the variable the token setup step tells the user to hold a server's token in.
 func TokenEnvVar(serverName string) string {
 	return strings.ToUpper(strings.ReplaceAll(serverName, "-", "_")) + "_TOKEN"
@@ -114,10 +121,9 @@ func skippedLine(s SkippedServer) string {
 		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
 	case SkipSecondConfig:
 		return fmt.Sprintf(
-			"%s in %s: another agent's %s is imported instead; run mini init to pick both",
+			"%s in %s: a different config under that name is imported instead; run mini init to pick both",
 			s.Name,
 			s.Agent,
-			s.Name,
 		)
 	}
 	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))

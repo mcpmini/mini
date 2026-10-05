@@ -66,6 +66,12 @@ func TestSummary_servers(t *testing.T) {
 	t.Run("no servers", func(t *testing.T) {
 		requireLines(t, Summary(Report{Connected: []AgentResult{}}), "mini has no servers yet.\n")
 	})
+	t.Run("servers that can't be read aren't called none", func(t *testing.T) {
+		got := Summary(Report{Connected: []AgentResult{}, StatusErr: errors.New("permission denied")})
+		if strings.Contains(got, "no servers yet") {
+			t.Errorf("summary says there are no servers although it couldn't read them:\n%s", got)
+		}
+	})
 }
 
 var testMini = agents.MiniEntry{Command: "/opt/mini/bin/mini", Args: []string{"connect"}}
@@ -98,7 +104,7 @@ func TestSummary_importAndFailures(t *testing.T) {
 		"Already configured in mini: linear\n",
 		"Imported from your agents instead of the catalog: github\n",
 		"  paused switched off in Codex\n",
-		"  github in Cursor: another agent's github is imported instead; run mini init to pick both\n",
+		"  github in Cursor: a different config under that name is imported instead; run mini init to pick both\n",
 		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit /config/servers/files.yaml\n",
 		"team was imported with its static X-Team header, since TEAM_VAR wasn't set; to use TEAM_VAR instead, set X-Team: ${TEAM_VAR} in /config/servers/team.yaml\n",
 		"  templated kept in Codex: uses an environment variable in url\n",
