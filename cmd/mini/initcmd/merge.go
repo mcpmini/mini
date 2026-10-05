@@ -32,7 +32,7 @@ func mergeEntries(entries []agentEntry, configured map[string]bool) []Candidate 
 
 // One server under several names is still one row: importing it twice would expose its tools twice.
 func (m *rowMerger) add(e agentEntry) {
-	source := Source{Agent: e.agent, Name: e.name, Entry: e.server.Config}
+	source := Source{Agent: e.agent, Name: e.name, Entry: e.server.Config, IgnoredRunSettings: e.server.IgnoredRunSettings}
 	i := slices.IndexFunc(m.rows, func(row Candidate) bool { return agents.SameServer(row.Config, e.server.Config) })
 	if i >= 0 {
 		m.rows[i].Sources = append(m.rows[i].Sources, source)

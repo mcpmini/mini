@@ -24,26 +24,25 @@ type Candidate struct {
 
 // Source is the agent entry a candidate came from, as read, so apply can tell when it changed since.
 type Source struct {
-	Agent string
-	Name  string
-	Entry config.ServerConfig
+	Agent              string
+	Name               string
+	Entry              config.ServerConfig
+	IgnoredRunSettings []string
 }
 
 type SkipReason int
 
 const (
 	SkipEmptyName SkipReason = iota
-	SkipLimitsTools
-	SkipRequiresApproval
-	SkipUnsupported
+	SkipUnexpandableRefs
 )
 
 // SkippedServer is an agent entry init leaves in the agent; the summary says why.
 type SkippedServer struct {
-	Agent    string
-	Name     string
-	Reason   SkipReason
-	Settings []string
+	Agent  string
+	Name   string
+	Reason SkipReason
+	Refs   []string
 }
 
 type FindParams struct {
@@ -110,12 +109,8 @@ func skipReason(e agentEntry) (SkippedServer, bool) {
 	switch {
 	case NormalizeName(e.name) == "":
 		skip.Reason = SkipEmptyName
-	case e.server.LimitsTools:
-		skip.Reason = SkipLimitsTools
-	case e.server.RequiresApproval:
-		skip.Reason = SkipRequiresApproval
-	case len(e.server.Unsupported) > 0:
-		skip.Reason, skip.Settings = SkipUnsupported, e.server.Unsupported
+	case !e.server.Candidate():
+		skip.Reason, skip.Refs = SkipUnexpandableRefs, e.server.UnexpandableRefs
 	default:
 		return SkippedServer{}, false
 	}

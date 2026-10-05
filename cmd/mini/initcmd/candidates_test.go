@@ -148,21 +148,34 @@ func TestFindServers_miniItselfIsNeverACandidate(t *testing.T) {
 
 func TestFindServers_skipped(t *testing.T) {
 	plain := remoteEntry("https://example.com/mcp", "")
-	limited, approval, cwd := plain, plain, plain
-	limited.LimitsTools, approval.RequiresApproval, cwd.Unsupported = true, true, []string{"cwd"}
+	unexpandable := plain
+	unexpandable.UnexpandableRefs = []string{"an environment variable in url"}
 	agentList := []agents.Agent{
-		agentWith("Codex", map[string]agents.Server{"filtered": limited, "approved": approval, "files": cwd, "!!!": plain}),
+		agentWith("Codex", map[string]agents.Server{"templated": unexpandable, "!!!": plain}),
 		{Name: "Broken", ConfigPath: "x", Read: func(string) (map[string]agents.Server, error) { return nil, errors.New("invalid JSON") }},
 	}
 	candidates, skipped := find(agentList)
 	want := []SkippedServer{
 		{Agent: "Codex", Name: "!!!", Reason: SkipEmptyName},
-		{Agent: "Codex", Name: "approved", Reason: SkipRequiresApproval},
-		{Agent: "Codex", Name: "files", Reason: SkipUnsupported, Settings: []string{"cwd"}},
-		{Agent: "Codex", Name: "filtered", Reason: SkipLimitsTools},
+		{Agent: "Codex", Name: "templated", Reason: SkipUnexpandableRefs, Refs: []string{"an environment variable in url"}},
 	}
 	if len(candidates) != 0 || !reflect.DeepEqual(skipped, want) {
 		t.Errorf("candidates = %+v\nskipped = %+v\nwant no candidates and %+v", candidates, skipped, want)
+	}
+}
+
+func TestFindServers_ignoredRunSettingsStayOnTheirSource(t *testing.T) {
+	files := remoteEntry("https://files.example/mcp", "")
+	files.IgnoredRunSettings = []string{"cwd"}
+	candidates, skipped := find([]agents.Agent{
+		agentWith("Codex", map[string]agents.Server{"files": files}),
+		agentWith("Cursor", map[string]agents.Server{"files": remoteEntry("https://files.example/mcp", "")}),
+	})
+	if len(skipped) != 0 || len(candidates) != 1 || len(candidates[0].Sources) != 2 {
+		t.Fatalf("candidates = %+v, skipped = %+v; want one row from both agents", candidates, skipped)
+	}
+	if got := candidates[0].Sources; !reflect.DeepEqual(got[0].IgnoredRunSettings, []string{"cwd"}) || got[1].IgnoredRunSettings != nil {
+		t.Errorf("sources = %+v, want cwd named on the Codex source only", got)
 	}
 }
 
