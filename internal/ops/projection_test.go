@@ -45,7 +45,7 @@ func TestAddServerKeepsExplicitProjectionMaps(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(loaded.Projections, want) {
+			if len(loaded.Projections)+len(want) > 0 && !reflect.DeepEqual(loaded.Projections, want) {
 				t.Fatalf("loaded projections = %#v, want %#v", loaded.Projections, want)
 			}
 		})

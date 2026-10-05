@@ -109,12 +109,6 @@ func loadServerFile(configDir, path string) (ServerConfig, error) {
 	if err != nil {
 		return ServerConfig{}, err
 	}
-	if sc.ProjectionsErr == nil {
-		if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
-			sc.Projections = nil
-			sc.ProjectionsErr = &SourceError{Path: path, ServerName: sc.Name, Err: fmt.Errorf("%s: %w", path, err)}
-		}
-	}
 	mergeKnownAuth(configDir, sc)
 	return *sc, nil
 }
@@ -133,16 +127,4 @@ func mergeKnownAuth(dir string, sc *ServerConfig) {
 	if !sc.AgentAdded && readServerMeta(dir, sc.Name).OAuthDetected {
 		sc.Auth = &AuthConfig{Type: AuthTypeOAuth2}
 	}
-}
-
-func validateServerProjectionFormats(name string, projections map[string]*ProjectionConfig) error {
-	for tool, p := range projections {
-		if p == nil {
-			continue
-		}
-		if err := ValidResponseFormat(p.Format); err != nil {
-			return fmt.Errorf("server %s: projection %s: format: %w", name, tool, err)
-		}
-	}
-	return nil
 }

@@ -379,13 +379,10 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	if server.Transport != "http" || server.URL != "https://api.githubcopilot.com/mcp/" {
 		t.Errorf("server = %+v", server)
 	}
-	if _, err := config.LoadServer(dir, "github"); err != nil {
-		t.Fatalf("config.LoadServer: %v", err)
-	}
 	if loaded, err := config.LoadServer(dir, "github"); err != nil || len(loaded.Projections) == 0 {
 		t.Fatalf("github projections = %#v, %v", loaded.Projections, err)
 	}
-	if want := "added github (with default projections)"; !strings.Contains(out.String(), want) {
+	if want := "added github → " + config.ServerPath(dir, "github") + " (with default projections)"; !strings.Contains(out.String(), want) {
 		t.Errorf("output = %q, want %q", out.String(), want)
 	}
 }

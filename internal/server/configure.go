@@ -90,7 +90,7 @@ func validateProjectionTarget(p configureParams) error {
 	if err := validateServerName(p.ServerName); err != nil {
 		return err
 	}
-	if p.Tool != "*" && !config.ValidToolName.MatchString(p.Tool) {
+	if !config.ValidToolName.MatchString(p.Tool) {
 		return fmt.Errorf("invalid tool name: %q", p.Tool)
 	}
 	if p.Projection != nil {
@@ -111,22 +111,14 @@ func (s *Server) setServerProjection(p configureParams, visibleTool string) (any
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 
-	projection, err := config.ReplaceServerProjection(config.ServerProjectionParams{
-		ConfigDir: s.configDir, ServerName: p.ServerName, Tool: p.Tool, Projection: cloneProjectionRequest(p.Projection),
+	projection, err := config.SaveServerProjection(config.ServerProjectionParams{
+		ConfigDir: s.configDir, ServerName: p.ServerName, Tool: p.Tool, Projection: p.Projection,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("set_projection: persistence failed: %w; fix the server file or pass session_only", err)
+		return nil, fmt.Errorf("set_projection: not saved: %w; pass session_only:true to apply it to this session only", err)
 	}
 	s.publishServerProjection(p.ServerName, p.Tool, projection)
 	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, visibleTool)}, nil
-}
-
-func cloneProjectionRequest(projection *config.ProjectionConfig) *config.ProjectionConfig {
-	if projection == nil {
-		return nil
-	}
-	copy := *projection
-	return &copy
 }
 
 func (s *Server) publishServerProjection(serverName, tool string, projection *config.ProjectionConfig) {

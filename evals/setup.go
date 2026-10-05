@@ -143,7 +143,22 @@ func writeBundledProjection(srcDir, serversDir, name string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(serversDir, name+".proj.yaml"), data, 0600)
+	path := filepath.Join(serversDir, name+".yaml")
+	server, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(server, inlineProjections(data)...), 0600)
+}
+
+func inlineProjections(bundled []byte) []byte {
+	lines := strings.Split(strings.TrimRight(string(bundled), "\n"), "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = "  " + line
+		}
+	}
+	return []byte("projections:\n" + strings.Join(lines, "\n") + "\n")
 }
 
 func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {

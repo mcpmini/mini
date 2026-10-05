@@ -122,7 +122,7 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 
-	conn := fakeConn("get_item", "get_other")
+	conn := fakeConn("get_item")
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
 
@@ -333,53 +333,5 @@ func TestProxy_Initialize_PerSessionInstructions(t *testing.T) {
 	compact := instructions(true, "dddddddd-dddd-dddd-dddd-dddddddddddd")
 	if !strings.Contains(compact, "perm_call") {
 		t.Errorf("compact instructions wrong: %q", compact)
-	}
-}
-
-func TestHTTPSessionProjectionWildcardPrecedenceAndCoverage(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	writeTestServerConfig(t, srv, config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{"get_item": {IncludeOnly: []string{"id"}}}})
-	conn := fakeConn("get_item", "get_other")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"name\":\"item\"}"}]}`)
-	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{"get_item": {IncludeOnly: []string{"id"}}}}, conn); err != nil {
-		t.Fatal(err)
-	}
-
-	const sessionID = "cccccccc-cccc-cccc-cccc-000000000003"
-	postMCP(t, srv, sessionID, initMsg(true))
-	setProjection := func(id int, tool string, projection map[string]any) {
-		t.Helper()
-		resp := postMCP(t, srv, sessionID, map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{"name": "config", "arguments": map[string]any{"action": "set_projection", "server": "svc", "tool": tool, "projection": projection, "session_only": true}}})
-		result, _ := resp["result"].(map[string]any)
-		if result["isError"] == true {
-			t.Fatalf("set_projection %s: %v", tool, result)
-		}
-	}
-	call := func(id int, tool string) string {
-		t.Helper()
-		resp := postMCP(t, srv, sessionID, map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{"name": "call", "arguments": map[string]any{"server": "svc", "tool": tool, "params": map[string]any{}}}})
-		result, _ := resp["result"].(map[string]any)
-		content, _ := result["content"].([]any)
-		if len(content) == 0 {
-			t.Fatalf("call response = %#v", resp)
-		}
-		text, _ := content[0].(map[string]any)["text"].(string)
-		return text
-	}
-
-	setProjection(1, "*", map[string]any{"exclude": []string{"secret"}})
-	wildcardResult := call(2, "get_item")
-	if strings.Contains(wildcardResult, `"hidden"`) || !strings.Contains(wildcardResult, `"name":"item"`) {
-		t.Fatalf("session wildcard did not override server rule: %s", wildcardResult)
-	}
-	uncoveredWildcard := call(3, "get_other")
-	if strings.Contains(uncoveredWildcard, `"hidden"`) || !strings.Contains(uncoveredWildcard, `"name":"item"`) {
-		t.Fatalf("session wildcard did not cover another tool: %s", uncoveredWildcard)
-	}
-	setProjection(4, "get_item", map[string]any{"include_only": []string{"id"}})
-	exactResult := call(5, "get_item")
-	if strings.Contains(exactResult, `"name":"item"`) || strings.Contains(exactResult, `"hidden"`) || !strings.Contains(exactResult, `"id":1`) {
-		t.Fatalf("session exact rule did not win over wildcard: %s", exactResult)
 	}
 }

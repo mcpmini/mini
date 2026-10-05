@@ -86,7 +86,7 @@ func TestRunAdd(t *testing.T) {
 		printed := out.String()
 		serverPath := filepath.Join(dir, "servers", "gh.yaml")
 		for _, want := range []string{
-			"added gh (with default projections)",
+			"added gh → " + serverPath + " (with default projections)",
 			"applied default permissions → " + serverPath,
 		} {
 			if !strings.Contains(printed, want) {

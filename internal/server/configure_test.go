@@ -339,102 +339,73 @@ func TestConfigureUnknownAction(t *testing.T) {
 	}
 }
 
-func TestConfigureSetProjectionSaveFailureOffersSessionOnlyAndKeepsLiveRule(t *testing.T) {
-	for name, missingFile := range map[string]bool{"broken server file": false, "missing server file": true} {
-		t.Run(name, func(t *testing.T) { verifyProjectionSaveFailureSession(t, missingFile) })
+func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillApplies(t *testing.T) {
+	const broken = "command: echo\nprojections: {getData: {include_only: 5}}\n"
+	cases := map[string]func(t *testing.T, path string){
+		"broken server file": func(t *testing.T, path string) { testutil.WriteFile(t, path, broken) },
+		"missing server file": func(t *testing.T, path string) {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, breakFile := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := newTestServer(t, server.Params{})
+			addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{
+				"getData": {IncludeOnly: []string{"a"}},
+			}}, fakeGetData())
+			path := config.ServerPath(srv.ConfigDir(), "svc")
+			breakFile(t, path)
+			before := serverFileText(t, path)
+			const sessionID = "cccccccc-cccc-cccc-cccc-000000000004"
+			postMCP(t, srv, sessionID, initMsg(true))
+
+			saved := postMCP(t, srv, sessionID, setGetDataProjection(2, false))
+			assertIsErrorResult(t, saved)
+			if text := toolResultText(t, saved); !strings.Contains(text, "session_only") {
+				t.Errorf("failed save = %q, want session_only advice", text)
+			}
+			assertProjectedFields(t, toolResultText(t, postMCP(t, srv, sessionID, callGetData(3))), []string{"a"}, []string{"b"})
+
+			sessionOnly := postMCP(t, srv, sessionID, setGetDataProjection(4, true))
+			if text := toolResultText(t, sessionOnly); strings.Contains(text, `"error"`) {
+				t.Fatalf("session_only set_projection = %s", text)
+			}
+			assertProjectedFields(t, toolResultText(t, postMCP(t, srv, sessionID, callGetData(5))), []string{"b"}, []string{"a"})
+			if after := serverFileText(t, path); after != before {
+				t.Errorf("server file = %q, want it untouched (%q)", after, before)
+			}
+		})
 	}
 }
 
-func verifyProjectionSaveFailureSession(t *testing.T, missingFile bool) {
+func serverFileText(t *testing.T, path string) string {
 	t.Helper()
-	srv, path := projectionSaveFailureServer(t)
-	broken := "command: echo\nprojections: {getData: {include_only: 5}}\n"
-	if missingFile {
-		if err := os.Remove(path); err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		testutil.WriteFile(t, path, broken)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return "<missing>"
 	}
-	const sessionID = "cccccccc-cccc-cccc-cccc-000000000004"
-	postMCP(t, srv, sessionID, initMsg(true))
-	assertPersistentSaveFailure(t, srv, sessionID)
-	assertSessionOnlyProjection(t, srv, sessionID)
-	if missingFile {
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Errorf("server file stat error = %v, want file absent", err)
-		}
-	} else if got := string(testutil.ReadFile(t, path)); got != broken {
-		t.Errorf("failed persistent save changed server file: %q", got)
-	}
+	return string(testutil.ReadFile(t, path))
 }
 
-func projectionSaveFailureServer(t *testing.T) (*server.Server, string) {
-	t.Helper()
-	srv := newTestServer(t, server.Params{})
-	initial := config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{
-		"getData": {IncludeOnly: []string{"a"}},
+func setGetDataProjection(id int, sessionOnly bool) map[string]any {
+	return map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
+		"name": "config", "arguments": map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "getData", "session_only": sessionOnly,
+			"projection": map[string]any{"include_only": []string{"b"}},
+		},
 	}}
-	addEdgeConn(t, srv, initial, fakeGetData())
-	return srv, config.ServerPath(srv.ConfigDir(), "svc")
 }
 
-func assertPersistentSaveFailure(t *testing.T, srv *server.Server, sessionID string) {
-	t.Helper()
-	resp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-		"params": map[string]any{"name": "config", "arguments": map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "getData",
-			"projection": map[string]any{"include_only": []string{"b"}},
-		}},
-	})
-	assertIsErrorResult(t, resp)
-	if text := toolResultText(t, resp); !strings.Contains(text, "session_only") {
-		t.Fatalf("save failure = %q, want session_only guidance", text)
-	}
-	assertProjectionResponse(t, postMCP(t, srv, sessionID, dataCall(3)), []string{"a"}, []string{"b"})
-}
-
-func assertSessionOnlyProjection(t *testing.T, srv *server.Server, sessionID string) {
-	t.Helper()
-	resp := postMCP(t, srv, sessionID, map[string]any{
-		"jsonrpc": "2.0", "id": 4, "method": "tools/call",
-		"params": map[string]any{"name": "config", "arguments": map[string]any{
-			"action": "set_projection", "server": "svc", "tool": "getData", "session_only": true,
-			"projection": map[string]any{"include_only": []string{"b"}},
-		}},
-	})
-	if text := toolResultText(t, resp); strings.Contains(text, `"error"`) {
-		t.Fatalf("session-only set_projection = %s", text)
-	}
-	assertProjectionResponse(t, postMCP(t, srv, sessionID, dataCall(5)), []string{"b"}, []string{"a"})
-}
-
-func dataCall(id int) map[string]any {
+func callGetData(id int) map[string]any {
 	return map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
 		"name": "call", "arguments": map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}},
 	}}
 }
 
-func assertProjectionResponse(t *testing.T, resp map[string]any, present, absent []string) {
+func assertProjectedFields(t *testing.T, text string, present, absent []string) {
 	t.Helper()
-	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
-	for _, key := range present {
-		if data[key] == nil {
-			t.Errorf("field %q missing from projected data %v", key, data)
-		}
-	}
-	for _, key := range absent {
-		if data[key] != nil {
-			t.Errorf("field %q survived projection in %v", key, data)
-		}
-	}
-}
-
-func assertProjectionData(t *testing.T, srv *server.Server, serverName string, present, absent []string) {
-	t.Helper()
-	resp := serve(t, srv, callTool("call", map[string]any{"server": serverName, "tool": "getData", "params": map[string]any{}}))
-	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	data := parseProxyEnvelope(t, text).Data
 	for _, key := range present {
 		if data[key] == nil {
 			t.Errorf("field %q missing from projected data %v", key, data)

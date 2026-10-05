@@ -19,7 +19,6 @@ import (
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
-	"gopkg.in/yaml.v3"
 )
 
 type syncBuffer struct {
@@ -138,17 +137,7 @@ func (e *reloadEnv) advanceTick() {
 func (e *reloadEnv) assertServerDataKeys(server string, present, absent []string) {
 	e.t.Helper()
 	resp := serve(e.t, e.srv, callTool("call", map[string]any{"server": server, "tool": "getData", "params": map[string]any{}}))
-	data := parseProxyEnvelope(e.t, toolResultText(e.t, resp)).Data
-	for _, k := range present {
-		if data[k] == nil {
-			e.t.Errorf("expected field %q present on %q, got: %v", k, server, data)
-		}
-	}
-	for _, k := range absent {
-		if data[k] != nil {
-			e.t.Errorf("expected field %q absent on %q, got: %v", k, server, data)
-		}
-	}
+	assertProjectedFields(e.t, toolResultText(e.t, resp), present, absent)
 }
 
 func (e *reloadEnv) assertDataKeys(present []string, absent []string) {
@@ -157,41 +146,7 @@ func (e *reloadEnv) assertDataKeys(present []string, absent []string) {
 
 func (e *reloadEnv) writeRawProjections(content string) {
 	e.t.Helper()
-	var fixture, serverDocument yaml.Node
-	if err := yaml.Unmarshal([]byte("projections:\n  "+strings.ReplaceAll(content, "\n", "\n  ")), &fixture); err != nil {
-		e.t.Fatalf("parse projection fixture: %v", err)
-	}
-	if len(fixture.Content) != 1 || len(fixture.Content[0].Content) != 2 {
-		e.t.Fatal("projection fixture must be a mapping")
-	}
-	path := config.ServerPath(e.dir, "svc")
-	if err := yaml.Unmarshal(testutil.ReadFile(e.t, path), &serverDocument); err != nil {
-		e.t.Fatalf("parse server fixture: %v", err)
-	}
-	root := serverDocument.Content[0]
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value == "projections" {
-			root.Content[i+1] = fixture.Content[0].Content[1]
-			writeReloadServerNode(e.t, path, &serverDocument)
-			return
-		}
-	}
-	root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "projections"}, fixture.Content[0].Content[1])
-	writeReloadServerNode(e.t, path, &serverDocument)
-}
-
-func writeReloadServerNode(t *testing.T, path string, document *yaml.Node) {
-	t.Helper()
-	var output bytes.Buffer
-	encoder := yaml.NewEncoder(&output)
-	encoder.SetIndent(4)
-	if err := encoder.Encode(document); err != nil {
-		t.Fatal(err)
-	}
-	if err := encoder.Close(); err != nil {
-		t.Fatal(err)
-	}
-	testutil.WriteFileBytes(t, path, output.Bytes())
+	configtest.WriteRawProjections(e.t, e.dir, "svc", content)
 }
 
 func (e *reloadEnv) writeProjections(tools map[string]*config.ProjectionConfig) {
@@ -259,7 +214,7 @@ func TestProjectionReload_sameSizeEditDetected(t *testing.T) {
 	e.assertDataKeys([]string{"b"}, []string{"a"})
 }
 
-func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillReload(t *testing.T) {
+func TestProjectionReload_malformedProjections_keepsPreviousWarnsOnceOthersStillReload(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{
 		Projections: map[string]*config.ProjectionConfig{"getData": {
 			IncludeOnly: []string{"a"},
