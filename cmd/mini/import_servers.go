@@ -48,7 +48,7 @@ func (imp serverImport) addAll(servers map[string]agents.Server) (added []string
 		}
 		switch err := imp.add(server.Config); {
 		case err == nil:
-			imp.reportIgnored(name, server.IgnoredRunSettings)
+			imp.reportCaveats(name, server)
 			added = append(added, name)
 		case !errors.Is(err, ops.ErrAlreadyConfigured):
 			failed++
@@ -68,10 +68,14 @@ func notImportedReason(server agents.Server) string {
 	return ""
 }
 
-func (imp serverImport) reportIgnored(name string, ignored []string) {
-	if len(ignored) > 0 {
+func (imp serverImport) reportCaveats(name string, server agents.Server) {
+	path := config.ServerPath(imp.configDir, name)
+	if ignored := server.IgnoredRunSettings; len(ignored) > 0 {
 		fmt.Fprintf(imp.out, "  %s: %s imported without its %s, which mini doesn't support yet; if it fails to start, edit %s\n",
-			imp.source, name, strings.Join(ignored, ", "), config.ServerPath(imp.configDir, name))
+			imp.source, name, strings.Join(ignored, ", "), path)
+	}
+	if err := config.UnsetEnvRefs(server.Config); err != nil {
+		fmt.Fprintf(imp.out, "  %s: %s imported, but %v; set it, or edit %s\n", imp.source, name, err, path)
 	}
 }
 

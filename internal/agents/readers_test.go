@@ -82,7 +82,13 @@ func TestReadClientConfigs(t *testing.T) {
 			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Args: []string{"-y", "server-github"}, Env: []string{"TOKEN=synthetic"}}}},
 		{"codex http headers, env headers and bearer token variable", ReadCodex, "config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"core\" }\nenv_http_headers = { X-Key = \"MINI_TEST_SET_KEY\", X-Optional = \"MINI_TEST_UNSET_KEY\" }\nbearer_token_env_var = \"EXAMPLE_TOKEN\"\n",
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"X-Team": "core", "X-Key": "${MINI_TEST_SET_KEY}", "Authorization": "Bearer ${EXAMPLE_TOKEN}"})}},
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{
+				"X-Team": "core", "X-Key": "${MINI_TEST_SET_KEY}", "X-Optional": "${MINI_TEST_UNSET_KEY}", "Authorization": "Bearer ${EXAMPLE_TOKEN}",
+			})}},
+		{"codex env and bearer headers replace a static header whatever its case", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { authorization = \"Bearer old\", x-key = \"old\" }\n" +
+				"env_http_headers = { X-Key = \"KEY_VAR\" }\nbearer_token_env_var = \"TOKEN_VAR\"\n",
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"X-Key": "${KEY_VAR}", "Authorization": "Bearer ${TOKEN_VAR}"})}},
 		{"codex switched off", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
 			Server{Config: stdio("s", "run"), Disabled: true}},

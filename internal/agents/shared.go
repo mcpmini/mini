@@ -108,7 +108,6 @@ var (
 	braceOrBare  = regexp.MustCompile(`\$(\{|[A-Za-z_])`)
 )
 
-// Secrets stay references and are never copied into mini's files.
 func translateRefs(values map[string]string, f entryFormat) map[string]string {
 	if values == nil {
 		return nil
@@ -147,7 +146,7 @@ func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
 	return fields
 }
 
-// Cursor and Windsurf resolve these themselves; they look like ${VAR} but no environment holds them.
+// Cursor and Windsurf substitute these themselves; mini would read them as environment variables.
 var editorPlaceholder = regexp.MustCompile(`\$\{(userHome|workspaceFolder|workspaceFolderBasename|pathSeparator)\}`)
 
 func hasForeignRef(value string) bool {

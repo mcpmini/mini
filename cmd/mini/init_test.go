@@ -234,6 +234,8 @@ enabled_tools = ["read"]
 command = "paused-server"
 enabled = false
 `)
+	t.Setenv("SEARCH_TOKEN", "")
+	os.Unsetenv("SEARCH_TOKEN") //nolint:errcheck // t.Setenv restores it; unset is what this test needs
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
 	cmd.SetArgs([]string{"--yes"})
 
@@ -258,6 +260,8 @@ enabled = false
 	for _, want := range []string{
 		"Codex: files imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
 			filepath.Join(configDir, "servers", "files.yaml"),
+		"Codex: search imported, but headers.Authorization: SEARCH_TOKEN isn't set where mini runs; set it, or edit " +
+			filepath.Join(configDir, "servers", "search.yaml"),
 		"Codex: paused not imported: switched off in the agent",
 		"codex mcp add mini -- ",
 	} {

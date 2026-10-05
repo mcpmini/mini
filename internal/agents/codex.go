@@ -3,8 +3,8 @@ package agents
 import (
 	"fmt"
 	"maps"
-	"os"
 	"slices"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -68,20 +68,25 @@ func (e codexMCPEntry) server(name string) Server {
 
 func (e codexMCPEntry) headers() map[string]string {
 	headers := maps.Clone(e.Headers)
-	set := func(name, value string) {
-		if headers == nil {
-			headers = map[string]string{}
-		}
-		headers[name] = value
-	}
-	for name, envVar := range e.EnvHTTPHeaders {
-		// Codex leaves the header out while its variable is unset; mini would refuse to start the server.
-		if os.Getenv(envVar) != "" {
-			set(name, "${"+envVar+"}")
-		}
+	for _, name := range slices.Sorted(maps.Keys(e.EnvHTTPHeaders)) {
+		headers = replaceHeader(headers, name, "${"+e.EnvHTTPHeaders[name]+"}")
 	}
 	if e.BearerTokenEnvVar != "" {
-		set("Authorization", "Bearer ${"+e.BearerTokenEnvVar+"}")
+		headers = replaceHeader(headers, "Authorization", "Bearer ${"+e.BearerTokenEnvVar+"}")
 	}
+	return headers
+}
+
+// Codex applies env and bearer headers over the static ones, and header names ignore case.
+func replaceHeader(headers map[string]string, name, value string) map[string]string {
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	for existing := range headers {
+		if strings.EqualFold(existing, name) {
+			delete(headers, existing)
+		}
+	}
+	headers[name] = value
 	return headers
 }
