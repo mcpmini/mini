@@ -4,10 +4,13 @@ package server_test
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 )
 
@@ -61,7 +64,7 @@ func TestConfigureGetProjection_reportsTheServerRuleAndThisSessionsOverride(t *t
 	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"session": session, "server": own}})
 }
 
-func TestConfigureGetProjection_aToolWithoutRulesReportsNone(t *testing.T) {
+func TestConfigureGetProjection_aToolWithoutRulesReportsNoRules(t *testing.T) {
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000011"
 	srv := newProjectionServer(t, sessionID, nil)
 
@@ -89,6 +92,22 @@ func TestConfigureGetProjection_aRuleReadBackCanBeChangedWithoutLosingTheRest(t 
 
 	want := &config.ProjectionConfig{Exclude: []string{"secret"}, StringLimits: map[string]int{"body": 500}}
 	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": want}})
+}
+
+func TestConfigureGetProjection_readsAServerStillAwaitingAuthorization(t *testing.T) {
+	const sessionID = "cccccccc-cccc-cccc-cccc-000000000015"
+	upstream := httptest.NewServer(http.HandlerFunc(requireBearer))
+	t.Cleanup(upstream.Close)
+	rule := &config.ProjectionConfig{Exclude: []string{"secret"}}
+	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Projections: map[string]*config.ProjectionConfig{"getData": rule}}
+	dir := t.TempDir()
+	configtest.WriteServer(t, dir, sc)
+	srv := newTestServer(t, server.Params{ConfigDir: dir})
+	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{sc})
+	srv.WaitForStartupConnects()
+	postMCP(t, srv, sessionID, initMsg(true))
+
+	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": rule}})
 }
 
 func TestConfigureGetProjection_rejectsAMissingToolOrUnknownServer(t *testing.T) {

@@ -39,18 +39,11 @@ func (s *Server) getProjection(session *Session, p configureParams) (any, error)
 	if err := validateProjectionTarget(p); err != nil {
 		return nil, err
 	}
-	if !s.hasServer(p.ServerName) {
+	if !s.isKnownServer(p.ServerName) {
 		return nil, fmt.Errorf("unknown server %q", p.ServerName)
 	}
 	rules := s.projectionRules(p.ServerName, s.upstreamToolName(p.ServerName, p.Tool), session)
 	return map[string]any{"tool": toolFullName(p.ServerName, p.Tool), "rules": rules}, nil
-}
-
-func (s *Server) hasServer(name string) bool {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	_, ok := s.upstreams[name]
-	return ok
 }
 
 func (s *Server) upstreamToolName(server, visibleTool string) string {

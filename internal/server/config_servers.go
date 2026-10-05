@@ -64,6 +64,12 @@ func (s *Server) removeConfigServer(name string) bool {
 	return true
 }
 
+func (s *Server) isKnownServer(name string) bool {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return s.upstreams[name] != nil || s.configServers[name]
+}
+
 func (s *Server) isConfigServer(name string) bool {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
