@@ -35,11 +35,11 @@ func Detect() []Agent {
 
 func Known(home string) []Agent {
 	return []Agent{
-		jsonAgent("Claude Code", filepath.Join(home, ".claude.json"), filepath.Join(home, ".claude"), ReadClaude),
+		claudeCode(home),
 		codex(home),
-		jsonAgent("Cursor", filepath.Join(home, ".cursor", "mcp.json"), filepath.Join(home, ".cursor"), ReadClaude),
-		jsonAgent("Windsurf", filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), filepath.Join(home, ".codeium", "windsurf"), ReadClaude),
-		jsonAgent("Gemini CLI", filepath.Join(home, ".gemini", "settings.json"), filepath.Join(home, ".gemini"), ReadGemini),
+		jsonAgent("Cursor", filepath.Join(home, ".cursor", "mcp.json"), ReadClaude),
+		jsonAgent("Windsurf", filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), ReadClaude),
+		jsonAgent("Gemini CLI", filepath.Join(home, ".gemini", "settings.json"), ReadGemini),
 		claudeDesktop(home),
 	}
 }
@@ -55,8 +55,15 @@ func codex(home string) Agent {
 	}
 }
 
-func jsonAgent(name, configPath, dir string, read func(string) (map[string]Server, error)) Agent {
-	return Agent{Name: name, ConfigPath: configPath, Dir: dir, Read: read, Connect: connectJSON}
+func jsonAgent(name, configPath string, read func(string) (map[string]Server, error)) Agent {
+	return Agent{Name: name, ConfigPath: configPath, Dir: filepath.Dir(configPath), Read: read, Connect: connectJSON}
+}
+
+// Claude Code keeps its MCP config in the home directory, outside its own directory.
+func claudeCode(home string) Agent {
+	agent := jsonAgent("Claude Code", filepath.Join(home, ".claude.json"), ReadClaude)
+	agent.Dir = filepath.Join(home, ".claude")
+	return agent
 }
 
 func claudeDesktop(home string) Agent {
@@ -74,5 +81,5 @@ func claudeDesktop(home string) Agent {
 	if path == "" {
 		return Agent{Name: "Claude Desktop", Read: ReadClaude, Connect: connectJSON}
 	}
-	return jsonAgent("Claude Desktop", path, filepath.Dir(path), ReadClaude)
+	return jsonAgent("Claude Desktop", path, ReadClaude)
 }
