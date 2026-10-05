@@ -2,7 +2,6 @@ package agents
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 type openClawMCPEntry struct {
@@ -16,21 +15,21 @@ var openClawFormat = entryFormat{ignoredRunSettings: []string{"cwd", "sslVerify"
 // ReadOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
 // Format: {"mcp": {"servers": {"name": {"command": "...", "args": [...], "env": {...}}}}}
 func ReadOpenClaw(path string) (map[string]Server, error) {
+	return readParsed(path, ParseOpenClaw)
+}
+
+func ParseOpenClaw(data []byte) (map[string]Server, error) {
 	var cfg struct {
 		MCP struct {
 			Servers map[string]json.RawMessage `json:"servers"`
 		} `json:"mcp"`
 	}
-	data, err := ReadConfigFile(path)
-	if err != nil {
-		return nil, err
-	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, err
 	}
 	entries, keys, err := decodeJSONEntries[openClawMCPEntry](cfg.MCP.Servers)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, err
 	}
 	return importedServers(entries, keys, openClawFormat), nil
 }

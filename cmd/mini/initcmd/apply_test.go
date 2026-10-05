@@ -127,6 +127,26 @@ func TestApply_keepsDuplicatesWhenTheWrittenMiniWontServeThem(t *testing.T) {
 	}
 }
 
+func TestApply_keepsGeminiDuplicatesWhenItsListsSwitchOffTheWrittenMini(t *testing.T) {
+	for name, lists := range map[string]string{
+		"allowed lists only files": `{"allowed":["files"]}`,
+		"excluded lists mini":      `{"excluded":["mini"]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newApplyFixture(t)
+			configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+			gemini := f.write(t, "Gemini CLI", `{"mcp":`+lists+`,"mcpServers":{"files":{"command":"files-server"}}}`)
+
+			results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, gemini)
+
+			wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
+			if results[0].Removed != nil || !reflect.DeepEqual(results[0].Kept, wantKept) {
+				t.Errorf("result = %+v, want files kept: Gemini won't start the mini init writes", results[0])
+			}
+		})
+	}
+}
+
 func TestApply_aFailedEditReportsNothingRemoved(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})

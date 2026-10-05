@@ -28,7 +28,7 @@ func (p ApplyParams) existingMini(entries map[string]agents.Server) ExistingMini
 	for name, entry := range entries {
 		isMini := agents.IsMiniEntry(entry.Config, p.SelfPath)
 		switch {
-		case isMini && p.serves(entry.Config, entry.Disabled):
+		case isMini && p.serves(entry):
 			return MiniEntryServes
 		case isMini || name == agents.MiniKey:
 			found = MiniEntryInactive
@@ -40,10 +40,11 @@ func (p ApplyParams) existingMini(entries map[string]agents.Server) ExistingMini
 // Only absolute paths are known to mean the same thing to the agent: it may run with another PATH
 // and working directory than init (GUI apps get the system's minimal PATH). An upgrade can move
 // the binary, and mini has no serve command any more.
-func (p ApplyParams) serves(sc config.ServerConfig, disabled bool) bool {
+func (p ApplyParams) serves(entry agents.Server) bool {
+	sc := entry.Config
 	_, err := exec.LookPath(sc.Command)
 	dir := configDirArg(sc.Args)
-	return !disabled && filepath.IsAbs(sc.Command) && err == nil && slices.Contains(sc.Args, "connect") &&
+	return !entry.Disabled && filepath.IsAbs(sc.Command) && err == nil && slices.Contains(sc.Args, "connect") &&
 		filepath.IsAbs(dir) && sameDir(dir, p.ConfigDir)
 }
 

@@ -2,7 +2,6 @@ package agents
 
 import (
 	"encoding/json"
-	"fmt"
 	"slices"
 )
 
@@ -17,20 +16,20 @@ var geminiFormat = entryFormat{expandsBareVars: true, ignoredRunSettings: []stri
 // ReadGemini reads a Gemini CLI settings.json.
 // Format: mcpServers map with httpUrl (streamable HTTP), url (SSE) or command/args (stdio).
 func ReadGemini(path string) (map[string]Server, error) {
+	return readParsed(path, ParseGemini)
+}
+
+func ParseGemini(data []byte) (map[string]Server, error) {
 	var cfg struct {
 		McpServers map[string]json.RawMessage `json:"mcpServers"`
 		MCP        geminiServerLists          `json:"mcp"`
 	}
-	data, err := ReadConfigFile(path)
-	if err != nil {
-		return nil, err
-	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, err
 	}
 	entries, keys, err := decodeJSONEntries[geminiMCPEntry](cfg.McpServers)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, err
 	}
 	servers := importedServers(entries, keys, geminiFormat)
 	for name, s := range servers {

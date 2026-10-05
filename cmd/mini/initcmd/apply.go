@@ -3,6 +3,7 @@ package initcmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"maps"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/agents"
-	"github.com/mcpmini/mini/internal/config"
 )
 
 type ConnectChoice int
@@ -110,17 +110,21 @@ func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {
 	return result
 }
 
-// Reads the entries again at apply, so an entry edited since Connect's check is judged as it is now.
+// Judges the entries as they are at apply, so an entry edited since Connect's check is judged as it is now.
 func (p ApplyParams) editedConfig(agent agents.Agent, mini MiniServers, config []byte, result *AgentResult) ([]byte, error) {
-	entries, err := agent.Read(agent.ConfigPath)
+	entries, err := agent.Parse(config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse %s: %w", agent.ConfigPath, err)
 	}
 	result.ExistingMini = p.existingMini(entries)
 	if p.Choice == ConnectAndRemove {
+		served, err := p.servedAfterEdit(agent, config, result.ExistingMini)
+		if err != nil {
+			return nil, err
+		}
 		duplicates := mini.Duplicates(entries, p.SelfPath)
 		result.Changed = changedSince(p.Counted[agent.Name], duplicates)
-		result.Removed, result.Kept = p.replaceable(duplicates, p.servedAfterEdit(result.ExistingMini))
+		result.Removed, result.Kept = p.replaceable(duplicates, served)
 	}
 	switch {
 	case result.ExistingMini == NoMiniEntry:
@@ -142,16 +146,23 @@ func changedSince(counted []string, duplicates map[string]string) []string {
 	return changed
 }
 
-// A duplicate goes only when the agent ends up with an enabled mini serving the servers checked
-// here: its own entry, or the one init writes.
-func (p ApplyParams) servedAfterEdit(existing ExistingMini) bool {
-	switch existing {
-	case MiniEntryServes:
-		return true
-	case NoMiniEntry:
-		return p.serves(config.ServerConfig{Command: p.Mini.Command, Args: p.Mini.Args}, false)
+// A duplicate goes only when the agent ends up with a mini entry serving the servers checked here:
+// its own, or the one init writes, read back as the agent will see it (an agent may switch it off
+// elsewhere in the file, like Gemini's mcp.allowed).
+func (p ApplyParams) servedAfterEdit(agent agents.Agent, config []byte, existing ExistingMini) (bool, error) {
+	if existing != NoMiniEntry {
+		return existing == MiniEntryServes, nil
 	}
-	return false
+	preview, err := agent.Connect(config, nil, &p.Mini)
+	if err != nil {
+		return false, err
+	}
+	entries, err := agent.Parse(preview)
+	if err != nil {
+		return false, fmt.Errorf("parse %s as edited: %w", agent.ConfigPath, err)
+	}
+	written, ok := entries[agents.MiniKey]
+	return ok && p.serves(written), nil
 }
 
 func (p ApplyParams) replaceable(duplicates map[string]string, served bool) ([]string, []KeptEntry) {
