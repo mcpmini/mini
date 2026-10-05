@@ -2,14 +2,12 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/fileio"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -214,92 +212,6 @@ func TestSaveServerProjection_leavesTheFileAloneWhenTheRuleIsTheSame(t *testing.
 	}
 }
 
-func TestSaveServerProjection_whenTheFileChangesDuringTheSave(t *testing.T) {
-	request := ServerProjectionParams{ServerName: "svc", Tool: "first", Projection: &ProjectionConfig{Exclude: []string{"hidden"}}}
-
-	t.Run("retries against the new file and keeps its edits", func(t *testing.T) {
-		dir := t.TempDir()
-		path := writeServerSource(t, dir, "command: mini\nprojections:\n  first: {alias: old_name}\n")
-		calls := 0
-		replace := func(target string, data []byte, opts fileio.ReplaceOptions) error {
-			calls++
-			if calls == 1 {
-				testutil.WriteFile(t, target, "# external edit\ncommand: mini\nprojections:\n  first: {alias: fresh_name}\n")
-			}
-			return fileio.ReplaceFile(target, data, opts)
-		}
-
-		saved, err := saveServerProjection(withConfigDir(request, dir), replace)
-
-		if err != nil || calls != 2 || saved.Alias != "fresh_name" {
-			t.Fatalf("saved = %+v, %v after %d writes; want the fresh alias after 2", saved, err, calls)
-		}
-		if data := string(testutil.ReadFile(t, path)); !strings.Contains(data, "# external edit") {
-			t.Errorf("the retry lost the external edit:\n%s", data)
-		}
-	})
-
-	t.Run("gives up after three attempts and keeps the last edit", func(t *testing.T) {
-		dir := t.TempDir()
-		path := writeServerSource(t, dir, "command: mini\n")
-		calls, last := 0, ""
-		replace := func(target string, data []byte, opts fileio.ReplaceOptions) error {
-			calls++
-			last = fmt.Sprintf("command: mini\n# external edit %d\n", calls)
-			testutil.WriteFile(t, target, last)
-			return fileio.ReplaceFile(target, data, opts)
-		}
-
-		_, err := saveServerProjection(withConfigDir(request, dir), replace)
-
-		if !errors.Is(err, errServerFileChanged) || calls != saveAttempts {
-			t.Fatalf("save = %v after %d writes, want errServerFileChanged after %d", err, calls, saveAttempts)
-		}
-		if got := string(testutil.ReadFile(t, path)); got != last {
-			t.Errorf("file = %q, want the last external edit", got)
-		}
-		wantOnlyServerFile(t, path)
-	})
-
-	t.Run("does not recreate a file removed before the rename", func(t *testing.T) {
-		dir := t.TempDir()
-		path := writeServerSource(t, dir, "command: mini\n")
-		replace := func(target string, data []byte, opts fileio.ReplaceOptions) error {
-			if err := os.Remove(target); err != nil {
-				t.Fatal(err)
-			}
-			return fileio.ReplaceFile(target, data, opts)
-		}
-
-		_, err := saveServerProjection(withConfigDir(request, dir), replace)
-
-		if !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("save = %v, want not exist", err)
-		}
-		if entries, _ := os.ReadDir(filepath.Dir(path)); len(entries) != 0 {
-			t.Errorf("servers/ = %v, want empty", entries)
-		}
-	})
-
-	t.Run("a failed write is not retried and leaves the file", func(t *testing.T) {
-		dir := t.TempDir()
-		original := "# user's file\ncommand: mini\n"
-		path := writeServerSource(t, dir, original)
-		failure := errors.New("disk full")
-		calls := 0
-		replace := func(string, []byte, fileio.ReplaceOptions) error { calls++; return failure }
-
-		_, err := saveServerProjection(withConfigDir(request, dir), replace)
-
-		if !errors.Is(err, failure) || calls != 1 {
-			t.Fatalf("save = %v after %d writes, want the write error after 1", err, calls)
-		}
-		if got := string(testutil.ReadFile(t, path)); got != original {
-			t.Errorf("file = %q, want it unchanged", got)
-		}
-	})
-}
-
 func writeServerSource(t *testing.T, dir, content string) string {
 	t.Helper()
 	path := ServerPath(dir, "svc")
@@ -314,17 +226,4 @@ func mustLoadServer(t *testing.T, dir string) ServerConfig {
 		t.Fatalf("LoadServer: %v", err)
 	}
 	return sc
-}
-
-func withConfigDir(p ServerProjectionParams, dir string) ServerProjectionParams {
-	p.ConfigDir = dir
-	return p
-}
-
-func wantOnlyServerFile(t *testing.T, path string) {
-	t.Helper()
-	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil || len(entries) != 1 || entries[0].Name() != filepath.Base(path) {
-		t.Errorf("servers/ = %v, %v; want only %s, no temp files", entries, err, filepath.Base(path))
-	}
 }

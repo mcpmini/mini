@@ -7,8 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"maps"
-	"os"
-	"path/filepath"
 	"reflect"
 
 	"gopkg.in/yaml.v3"
@@ -24,94 +22,30 @@ type ServerProjectionParams struct {
 	Projection *ProjectionConfig
 }
 
-const saveAttempts = 3
-
-var errServerFileChanged = errors.New("the server file changed while saving")
-
-type replaceFunc func(path string, data []byte, opts fileio.ReplaceOptions) error
-
-// SaveServerProjection replaces one tool's rule under projections: in the server's file, leaving the
-// rest of the file as it was, and returns the rule the file now holds for the tool.
+// SaveServerProjection replaces one tool's rule under projections: in the server's file and returns the
+// rule the file now holds for it. Other values and comments stay; the layout is re-encoded.
 func SaveServerProjection(p ServerProjectionParams) (*ProjectionConfig, error) {
-	return saveServerProjection(p, fileio.ReplaceFile)
-}
-
-func saveServerProjection(p ServerProjectionParams, replace replaceFunc) (*ProjectionConfig, error) {
 	if err := checkServerName(p.ServerName, "the request"); err != nil {
 		return nil, err
 	}
-	for range saveAttempts {
-		saved, err := saveProjectionOnce(p, replace)
-		if !errors.Is(err, errServerFileChanged) {
-			return saved, err
-		}
+	path := ServerPath(p.ConfigDir, p.ServerName)
+	if !ServerFileExists(p.ConfigDir, p.ServerName) {
+		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
 	}
-	return nil, fmt.Errorf("%w on each of %d attempts", errServerFileChanged, saveAttempts)
-}
-
-func saveProjectionOnce(p ServerProjectionParams, replace replaceFunc) (*ProjectionConfig, error) {
-	source, err := readServerSource(p.ConfigDir, p.ServerName)
+	var saved *ProjectionConfig
+	_, err := fileio.EditFile(fileio.EditParams{Path: path, Edit: func(data []byte) ([]byte, error) {
+		edited, rule, err := editProjection(path, data, p.Tool, p.Projection)
+		saved = rule
+		return edited, err
+	}})
 	if err != nil {
-		return nil, err
-	}
-	edited, saved, err := editProjection(source, p.Tool, p.Projection)
-	if err != nil {
-		return nil, err
-	}
-	if bytes.Equal(edited, source.data) {
-		return saved, nil
-	}
-	opts := fileio.ReplaceOptions{Perm: source.mode, BeforeRename: source.checkUnchanged}
-	if err := replace(source.target, edited, opts); err != nil {
 		return nil, err
 	}
 	return saved, nil
 }
 
-type serverSource struct {
-	path   string
-	target string
-	data   []byte
-	mode   os.FileMode
-}
-
-func readServerSource(configDir, name string) (serverSource, error) {
-	path := ServerPath(configDir, name)
-	if !ServerFileExists(configDir, name) {
-		return serverSource{}, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
-	}
-	target, err := filepath.EvalSymlinks(path)
-	if err != nil {
-		return serverSource{}, err
-	}
-	info, err := os.Stat(target)
-	if err != nil {
-		return serverSource{}, err
-	}
-	data, err := os.ReadFile(target)
-	if err != nil {
-		return serverSource{}, err
-	}
-	return serverSource{path: path, target: target, data: data, mode: info.Mode().Perm()}, nil
-}
-
-func (s serverSource) checkUnchanged() error {
-	target, err := filepath.EvalSymlinks(s.path)
-	if err != nil {
-		return err
-	}
-	current, err := os.ReadFile(target)
-	if err != nil {
-		return err
-	}
-	if target != s.target || !bytes.Equal(current, s.data) {
-		return errServerFileChanged
-	}
-	return nil
-}
-
-func editProjection(source serverSource, tool string, requested *ProjectionConfig) ([]byte, *ProjectionConfig, error) {
-	before, doc, err := parseEditableServerFile(source.path, source.data)
+func editProjection(path string, data []byte, tool string, requested *ProjectionConfig) ([]byte, *ProjectionConfig, error) {
+	before, doc, err := parseEditableServerFile(path, data)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -120,13 +54,13 @@ func editProjection(source serverSource, tool string, requested *ProjectionConfi
 		return nil, nil, err
 	}
 	if reflect.DeepEqual(want, before.Projections[tool]) {
-		return source.data, want, nil
+		return data, want, nil
 	}
 	edited, err := yaml.Marshal(doc)
 	if err != nil {
 		return nil, nil, err
 	}
-	saved, err := checkOnlyTheRuleChanged(source.path, edited, before, tool, want)
+	saved, err := checkOnlyTheRuleChanged(path, edited, before, tool, want)
 	return edited, saved, err
 }
 
@@ -137,8 +71,11 @@ func checkOnlyTheRuleChanged(path string, edited []byte, before *ServerConfig, t
 	if err != nil {
 		return nil, fmt.Errorf("the edited server file would not load: %w", err)
 	}
-	if !reflect.DeepEqual(after.Projections[tool], want) || !sameRulesExcept(before.Projections, after.Projections, tool) {
-		return nil, fmt.Errorf("saving %s would also change rules that come through a YAML merge key or anchor", tool)
+	if !reflect.DeepEqual(after.Projections[tool], want) {
+		return nil, fmt.Errorf("the rule for %s comes through a YAML merge key or anchor, which a save can't change", tool)
+	}
+	if !sameRulesExcept(before.Projections, after.Projections, tool) {
+		return nil, fmt.Errorf("saving %s would also change other tools' rules, which come through a YAML merge key or anchor", tool)
 	}
 	return after.Projections[tool], nil
 }

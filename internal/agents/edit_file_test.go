@@ -93,27 +93,6 @@ func TestEditFile_retriesWhenTheAgentWritesDuringTheEdit(t *testing.T) {
 	requireFiles(t, filepath.Dir(path), ".claude.json", ".claude.minibackup.json")
 }
 
-func TestEditFile_givesUpWhenTheFileKeepsChanging(t *testing.T) {
-	path := filepath.Join(tempDir(t), "config.toml")
-	testutil.WriteFile(t, path, "0\n")
-	calls := 0
-	edit := func(data []byte) ([]byte, error) {
-		calls++
-		testutil.WriteFile(t, path, strings.Repeat("x", calls)+"\n")
-		return []byte("mini\n"), nil
-	}
-
-	_, err := EditFile(path, edit, editTime)
-
-	if !errors.Is(err, ErrConfigKeptChanging) || calls != maxEditAttempts {
-		t.Fatalf("EditFile = %v after %d attempts, want ErrConfigKeptChanging after %d", err, calls, maxEditAttempts)
-	}
-	if got := string(testutil.ReadFile(t, path)); got != "xxx\n" {
-		t.Errorf("config = %q, want the agent's last write untouched", got)
-	}
-	requireFiles(t, filepath.Dir(path), "config.toml")
-}
-
 func TestEditFile_neverOverwritesAnEarlierBackup(t *testing.T) {
 	dir := tempDir(t)
 	path := filepath.Join(dir, "config.toml")
@@ -153,17 +132,6 @@ func TestEditFile_anEditThatChangesNothingWritesNothing(t *testing.T) {
 
 	if err != nil || backup != "" {
 		t.Fatalf("EditFile = %q, %v; want no backup and no error", backup, err)
-	}
-	requireFiles(t, filepath.Dir(path), "config.toml")
-}
-
-func TestEditFile_anEditErrorLeavesNothingBehind(t *testing.T) {
-	path := filepath.Join(tempDir(t), "config.toml")
-	testutil.WriteFile(t, path, "model = \"o3\"\n")
-	refuse := func([]byte) ([]byte, error) { return nil, errors.New("synthetic refusal") }
-
-	if _, err := EditFile(path, refuse, editTime); err == nil || err.Error() != "synthetic refusal" {
-		t.Fatalf("EditFile = %v, want the edit's error", err)
 	}
 	requireFiles(t, filepath.Dir(path), "config.toml")
 }
@@ -271,31 +239,5 @@ func replaceTestSymlink(t *testing.T, link, target string) {
 	}
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestEditFile_nilResultIsRefusedButExplicitEmptyContentIsWritten(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		data []byte
-	}{
-		{"nil", nil},
-		{"explicit empty", []byte{}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join(tempDir(t), "config.toml")
-			testutil.WriteFile(t, path, "original\n")
-			backup, err := EditFile(path, func([]byte) ([]byte, error) { return tt.data, nil }, editTime)
-			if tt.data == nil {
-				if err == nil || backup != "" || string(testutil.ReadFile(t, path)) != "original\n" {
-					t.Fatalf("nil result: backup = %q, error = %v; want refusal and original bytes", backup, err)
-				}
-				requireFiles(t, filepath.Dir(path), "config.toml")
-				return
-			}
-			if err != nil || backup == "" || len(testutil.ReadFile(t, path)) != 0 || string(testutil.ReadFile(t, backup)) != "original\n" {
-				t.Fatalf("empty result: backup = %q, error = %v; want empty file and original backup", backup, err)
-			}
-		})
 	}
 }

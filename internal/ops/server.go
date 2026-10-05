@@ -72,7 +72,10 @@ func forgetStateStoredByName(configDir, name string) error {
 
 func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 	written, defaultPermissions := withBundledPermissions(sc)
-	written, defaultProjections := withBundledProjections(written)
+	written, defaultProjections, err := withBundledProjections(written)
+	if err != nil {
+		return AddedServer{}, err
+	}
 	path := config.ServerPath(configDir, sc.Name)
 	data, err := yaml.Marshal(written)
 	if err != nil {

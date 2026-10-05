@@ -325,6 +325,9 @@ func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 	if text := toolResultText(t, resp); strings.Contains(text, "error") {
 		t.Fatalf("set_projection failed: %s", text)
 	}
+	if live := srv.LiveProjection("gh", "get_pr"); live == nil || live.Alias != "pr" || len(live.Exclude) != 1 {
+		t.Errorf("live rule = %+v, want the saved rule with its alias kept", live)
+	}
 
 	serve(t, srv, callTool("config", map[string]any{"action": "reload"}))
 

@@ -1,7 +1,6 @@
 package agents
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -12,73 +11,29 @@ import (
 	"github.com/mcpmini/mini/internal/fileio"
 )
 
-const maxEditAttempts = 3
-
-var ErrConfigKeptChanging = errors.New("the file kept changing while mini edited it")
-
-var errChangedDuringEdit = errors.New("changed during edit")
+var ErrConfigKeptChanging = fileio.ErrKeptChanging
 
 // EditFile applies edit with a backup; unchanged files return an empty backup path.
 func EditFile(path string, edit func([]byte) ([]byte, error), now time.Time) (string, error) {
-	for range maxEditAttempts {
-		target, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return "", err
-		}
-		backup, err := editOnce(target, edit, now)
-		if !errors.Is(err, errChangedDuringEdit) {
-			return backup, err
-		}
-	}
-	return "", fmt.Errorf("%s: %w", path, ErrConfigKeptChanging)
-}
-
-func editOnce(path string, edit func([]byte) ([]byte, error), now time.Time) (string, error) {
-	info, err := os.Stat(path)
+	var backup string
+	_, err := fileio.EditFile(fileio.EditParams{
+		Path: path,
+		Edit: edit,
+		BeforeReplace: func(target string, original []byte) (func(), error) {
+			written, err := writeBackup(target, original, now)
+			if err != nil {
+				return nil, fmt.Errorf("back up %s: %w", target, err)
+			}
+			backup = written
+			return func() {
+				os.Remove(written) //nolint:errcheck // the file is untouched, so a leftover backup is only clutter
+			}, nil
+		},
+	})
 	if err != nil {
-		return "", err
-	}
-	original, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	edited, err := editConfigBytes(original, edit)
-	if err != nil || bytes.Equal(edited, original) {
-		return "", err
-	}
-	backup, err := writeBackup(path, original, now)
-	if err != nil {
-		return "", fmt.Errorf("back up %s: %w", path, err)
-	}
-	if err := replaceIfUnchanged(path, original, edited, info.Mode().Perm()); err != nil {
-		os.Remove(backup) //nolint:errcheck // the file is untouched, so a leftover backup is only clutter
 		return "", err
 	}
 	return backup, nil
-}
-
-func editConfigBytes(original []byte, edit func([]byte) ([]byte, error)) ([]byte, error) {
-	edited, err := edit(bytes.Clone(original))
-	if err == nil && edited == nil {
-		return nil, errors.New("config edit returned nil data")
-	}
-	return edited, err
-}
-
-func replaceIfUnchanged(path string, original, edited []byte, mode os.FileMode) error {
-	return fileio.ReplaceFile(path, edited, fileio.ReplaceOptions{
-		Perm: mode,
-		BeforeRename: func() error {
-			current, err := os.ReadFile(path)
-			if err != nil {
-				return err
-			}
-			if !bytes.Equal(current, original) {
-				return errChangedDuringEdit
-			}
-			return nil
-		},
-	})
 }
 
 func writeBackup(path string, data []byte, now time.Time) (string, error) {
