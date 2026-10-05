@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mcpmini/mini/internal/fileio"
 )
 
 const maxEditAttempts = 3
@@ -64,50 +66,29 @@ func editConfigBytes(original []byte, edit func([]byte) ([]byte, error)) ([]byte
 }
 
 func replaceIfUnchanged(path string, original, edited []byte, mode os.FileMode) error {
-	tmp, err := writeTemp(path, edited, mode)
-	if err != nil {
-		return err
-	}
-	current, err := os.ReadFile(path)
-	if err == nil && !bytes.Equal(current, original) {
-		err = errChangedDuringEdit
-	}
-	if err == nil {
-		err = os.Rename(tmp, path)
-	}
-	if err != nil {
-		os.Remove(tmp) //nolint:errcheck // the edit already failed; a leftover temp file is only clutter
-	}
-	return err
-}
-
-func writeTemp(path string, data []byte, mode os.FileMode) (string, error) {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".mini-*")
-	if err != nil {
-		return "", err
-	}
-	_, err = tmp.Write(data)
-	err = errors.Join(err, tmp.Chmod(mode), tmp.Close())
-	if err != nil {
-		os.Remove(tmp.Name()) //nolint:errcheck // the write already failed
-		return "", err
-	}
-	return tmp.Name(), nil
+	return fileio.ReplaceFile(path, edited, fileio.ReplaceOptions{
+		Perm: mode,
+		BeforeRename: func() error {
+			current, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if !bytes.Equal(current, original) {
+				return errChangedDuringEdit
+			}
+			return nil
+		},
+	})
 }
 
 func writeBackup(path string, data []byte, now time.Time) (string, error) {
 	backup := backupPath(path, "")
-	f, err := os.OpenFile(backup, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	err := fileio.CreateFile(backup, data, 0o600)
 	if errors.Is(err, os.ErrExist) {
 		backup = backupPath(path, now.Format("20060102T150405"))
-		f, err = os.OpenFile(backup, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		err = fileio.CreateFile(backup, data, 0o600)
 	}
 	if err != nil {
-		return "", err
-	}
-	_, err = f.Write(data)
-	if err = errors.Join(err, f.Close()); err != nil {
-		os.Remove(backup) //nolint:errcheck // a partial backup must not be mistaken for a full one
 		return "", err
 	}
 	return backup, nil
