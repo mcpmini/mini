@@ -15,10 +15,10 @@ var openClawFormat = entryFormat{ignoredRunSettings: []string{"cwd", "sslVerify"
 // ReadOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
 // Format: {"mcp": {"servers": {"name": {"command": "...", "args": [...], "env": {...}}}}}
 func ReadOpenClaw(path string) (map[string]Server, error) {
-	return readParsed(path, ParseOpenClaw)
+	return readParsed(path, parseOpenClaw)
 }
 
-func ParseOpenClaw(data []byte) (map[string]Server, error) {
+func parseOpenClaw(data []byte) (map[string]Server, error) {
 	var cfg struct {
 		MCP struct {
 			Servers map[string]json.RawMessage `json:"servers"`

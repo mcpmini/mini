@@ -41,10 +41,13 @@ type AgentResult struct {
 	Backup       string
 	Created      bool
 	ExistingMini ExistingMini
-	Removed      []string
-	Kept         []KeptEntry
-	Changed      []string
-	Err          error
+	// MiniServes: the agent ends up with a switched-on mini entry for this config directory, its
+	// own or the one init wrote; false means the agent won't get mini's servers through it.
+	MiniServes bool
+	Removed    []string
+	Kept       []KeptEntry
+	Changed    []string
+	Err        error
 }
 
 // KeptEntry is an agent entry mini duplicates but didn't replace: mini's copy failed its
@@ -83,18 +86,22 @@ func Apply(ctx context.Context, p ApplyParams) []AgentResult {
 
 func (p ApplyParams) connect(agent agents.Agent, mini MiniServers) AgentResult {
 	if _, err := os.Stat(agent.ConfigPath); errors.Is(err, fs.ErrNotExist) {
-		err := p.create(agent)
-		return AgentResult{Agent: agent, Created: err == nil, Err: err}
+		served, err := p.create(agent)
+		return AgentResult{Agent: agent, Created: err == nil, MiniServes: served, Err: err}
 	}
 	return p.edit(agent, mini)
 }
 
-func (p ApplyParams) create(agent agents.Agent) error {
+func (p ApplyParams) create(agent agents.Agent) (bool, error) {
+	served, err := p.servedAfterEdit(agent, nil, NoMiniEntry)
+	if err != nil {
+		return false, err
+	}
 	data, err := agent.Connect(nil, nil, &p.Mini)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return agents.CreateFile(agent.ConfigPath, data)
+	return served, agents.CreateFile(agent.ConfigPath, data)
 }
 
 func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {
@@ -105,7 +112,7 @@ func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {
 	}
 	result.Backup, result.Err = agents.EditFile(agent.ConfigPath, edit, p.Now)
 	if result.Err != nil {
-		result.Removed, result.Kept, result.Changed = nil, nil, nil
+		result.MiniServes, result.Removed, result.Kept, result.Changed = false, nil, nil, nil
 	}
 	return result
 }
@@ -117,14 +124,13 @@ func (p ApplyParams) editedConfig(agent agents.Agent, mini MiniServers, config [
 		return nil, fmt.Errorf("parse %s: %w", agent.ConfigPath, err)
 	}
 	result.ExistingMini = p.existingMini(entries)
+	if result.MiniServes, err = p.servedAfterEdit(agent, config, result.ExistingMini); err != nil {
+		return nil, err
+	}
 	if p.Choice == ConnectAndRemove {
-		served, err := p.servedAfterEdit(agent, config, result.ExistingMini)
-		if err != nil {
-			return nil, err
-		}
 		duplicates := mini.Duplicates(entries, p.SelfPath)
 		result.Changed = changedSince(p.Counted[agent.Name], duplicates)
-		result.Removed, result.Kept = p.replaceable(duplicates, served)
+		result.Removed, result.Kept = p.replaceable(duplicates, result.MiniServes)
 	}
 	switch {
 	case result.ExistingMini == NoMiniEntry:

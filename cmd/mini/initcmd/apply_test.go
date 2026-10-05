@@ -147,6 +147,23 @@ func TestApply_keepsGeminiDuplicatesWhenItsListsSwitchOffTheWrittenMini(t *testi
 	}
 }
 
+func TestApply_reportsWhetherTheAgentEndsUpWithAServingMini(t *testing.T) {
+	f := newApplyFixture(t)
+	gemini := f.write(t, "Gemini CLI", `{"mcp":{"allowed":["files"]},"mcpServers":{}}`)
+	cursor := f.write(t, "Cursor", `{"mcpServers":{}}`)
+	if err := os.MkdirAll(f.agents["Windsurf"].Dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	results := f.apply(ConnectOnly, nil, gemini, cursor, f.agents["Windsurf"])
+
+	for i, want := range []bool{false, true, true} {
+		if results[i].MiniServes != want || results[i].Err != nil {
+			t.Errorf("%s: MiniServes = %v, err = %v; want %v", results[i].Agent.Name, results[i].MiniServes, results[i].Err, want)
+		}
+	}
+}
+
 func TestApply_aFailedEditReportsNothingRemoved(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
