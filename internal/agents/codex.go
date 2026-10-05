@@ -17,18 +17,7 @@ type codexMCPEntry struct {
 	Enabled           *bool             `toml:"enabled"`
 }
 
-// Timeouts and the other client-side knobs don't change what the server does, so they are
-// dropped; tool filters and approval settings guard what the user allowed, so they keep the
-// entry in Codex.
-var codexFormat = entryFormat{kinds: map[string]keyKind{
-	"command": keyMapped, "args": keyMapped, "env": keyMapped, "url": keyMapped,
-	"http_headers": keyMapped, "env_http_headers": keyMapped, "bearer_token_env_var": keyMapped, "enabled": keyMapped,
-	"startup_timeout_sec": keyDropped, "startup_timeout_ms": keyDropped, "tool_timeout_sec": keyDropped,
-	"required": keyDropped, "startup_readiness": keyDropped, "supports_parallel_tool_calls": keyDropped,
-	"tool_input_schema_max_bytes": keyDropped, "name": keyDropped,
-	"enabled_tools": keyLimitsTools, "disabled_tools": keyLimitsTools, "omit_tools_from": keyLimitsTools,
-	"default_tools_approval_mode": keyRequiresApproval, "tools": keyRequiresApproval,
-}}
+var codexFormat = entryFormat{ignoredRunSettings: []string{"cwd"}}
 
 // ReadCodex reads a Codex config.toml: [mcp_servers.NAME] tables with command/args/env or url.
 func ReadCodex(path string) (map[string]Server, error) {
@@ -77,7 +66,6 @@ func (e codexMCPEntry) server(name string) Server {
 	return Server{Config: fields.httpServer(name, e.URL), Disabled: disabled}
 }
 
-// Codex reads these header values from its environment; mini's ${VAR} keeps them references.
 func (e codexMCPEntry) headers() map[string]string {
 	headers := maps.Clone(e.Headers)
 	set := func(name, value string) {

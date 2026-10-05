@@ -58,25 +58,25 @@ func TestReadClientConfigs(t *testing.T) {
 			Server{Config: remote("s", "https://sse.example.com", nil)}},
 		{"claude ${VAR} in args is kept in the agent", ReadClaude, "claude.json",
 			`{"mcpServers":{"s":{"command":"run","args":["--root","${HOME}/src"]}}}`,
-			Server{Config: stdio("s", "run", "--root", "${HOME}/src"), Unsupported: []string{"an environment variable in command or args"}}},
+			Server{Config: stdio("s", "run", "--root", "${HOME}/src"), UnexpandableRefs: []string{"an environment variable in command or args"}}},
 		{"claude $ in args is literal, as Claude Code passes it", ReadClaude, "claude.json",
 			`{"mcpServers":{"s":{"command":"grep","args":["^end$"]}}}`,
 			Server{Config: stdio("s", "grep", "^end$")}},
 		{"claude default-value syntax is kept in the agent", ReadClaude, "claude.json",
 			`{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH:-none}"}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH:-none}"}), Unsupported: []string{"an environment variable syntax mini doesn't read"}}},
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH:-none}"}), UnexpandableRefs: []string{"an environment variable syntax mini doesn't read"}}},
 		{"cursor ${env:VAR} becomes ${VAR}", ReadClaude, "mcp.json",
 			`{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${env:API_KEY}"}}}}`,
 			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${API_KEY}"})}},
-		{"cursor envFile is kept in the agent", ReadClaude, "mcp.json",
+		{"cursor envFile is ignored and named", ReadClaude, "mcp.json",
 			`{"mcpServers":{"s":{"command":"run","envFile":".env"}}}`,
-			Server{Config: stdio("s", "run"), Unsupported: []string{"envFile"}}},
+			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"envFile"}}},
 		{"windsurf serverUrl is the url", ReadClaude, "mcp_config.json",
 			`{"mcpServers":{"s":{"serverUrl":"https://example.com/mcp"}}}`,
 			Server{Config: remote("s", "https://example.com/mcp", nil)}},
 		{"windsurf disabled and disabledTools", ReadClaude, "mcp_config.json",
 			`{"mcpServers":{"s":{"command":"run","disabled":true,"disabledTools":["delete"]}}}`,
-			Server{Config: stdio("s", "run"), Disabled: true, LimitsTools: true}},
+			Server{Config: stdio("s", "run"), Disabled: true}},
 		{"codex stdio entry", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"synthetic\" }\n",
 			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Args: []string{"-y", "server-github"}, Env: []string{"TOKEN=synthetic"}}}},
@@ -86,21 +86,16 @@ func TestReadClientConfigs(t *testing.T) {
 		{"codex switched off", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
 			Server{Config: stdio("s", "run"), Disabled: true}},
-		{"codex timeouts are dropped", ReadCodex, "config.toml",
-			"[mcp_servers.s]\ncommand = \"run\"\nstartup_timeout_sec = 20\ntool_timeout_sec = 60\n",
+		{"codex settings mini doesn't carry over are dropped, including ones it has never seen", ReadCodex, "config.toml",
+			"[mcp_servers.s]\ncommand = \"run\"\ntool_timeout_sec = 60\nenabled_tools = [\"search\"]\n" +
+				"default_tools_approval_mode = \"prompt\"\nsetting_added_later = true\n",
 			Server{Config: stdio("s", "run")}},
-		{"codex cwd is kept in the agent", ReadCodex, "config.toml",
+		{"codex cwd is ignored and named", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\ncwd = \"/srv/app\"\n",
-			Server{Config: stdio("s", "run"), Unsupported: []string{"cwd"}}},
-		{"codex tool filters are kept in the agent", ReadCodex, "config.toml",
-			"[mcp_servers.s]\ncommand = \"run\"\nenabled_tools = [\"search\"]\n",
-			Server{Config: stdio("s", "run"), LimitsTools: true}},
-		{"codex approval settings are kept in the agent", ReadCodex, "config.toml",
-			"[mcp_servers.s]\ncommand = \"run\"\ndefault_tools_approval_mode = \"prompt\"\n",
-			Server{Config: stdio("s", "run"), RequiresApproval: true}},
+			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"cwd"}}},
 		{"cursor editor placeholders are kept in the agent", ReadClaude, "mcp.json",
 			`{"mcpServers":{"s":{"command":"run","env":{"ROOT":"${workspaceFolder}/data"}}}}`,
-			Server{Config: config.ServerConfig{Name: "s", Command: "run", Env: []string{"ROOT=${workspaceFolder}/data"}}, Unsupported: []string{"an editor placeholder like ${userHome}"}}},
+			Server{Config: config.ServerConfig{Name: "s", Command: "run", Env: []string{"ROOT=${workspaceFolder}/data"}}, UnexpandableRefs: []string{"an editor placeholder like ${userHome}"}}},
 		{"gemini httpUrl entry", ReadGemini, "settings.json",
 			`{"mcpServers":{"s":{"httpUrl":"https://example.com/mcp","timeout":30000}}}`,
 			Server{Config: remote("s", "https://example.com/mcp", nil)}},
@@ -112,13 +107,16 @@ func TestReadClientConfigs(t *testing.T) {
 			Server{Config: config.ServerConfig{Name: "s", Command: "node", Args: []string{"server.js"}, Env: []string{"TOKEN=${EXAMPLE_TOKEN}"}}}},
 		{"gemini $VAR in args is kept in the agent", ReadGemini, "settings.json",
 			`{"mcpServers":{"s":{"command":"node","args":["$HOME/server.js"]}}}`,
-			Server{Config: stdio("s", "node", "$HOME/server.js"), Unsupported: []string{"an environment variable in command or args"}}},
-		{"gemini tool lists and cwd", ReadGemini, "settings.json",
+			Server{Config: stdio("s", "node", "$HOME/server.js"), UnexpandableRefs: []string{"an environment variable in command or args"}}},
+		{"gemini tool lists are dropped and cwd is named", ReadGemini, "settings.json",
 			`{"mcpServers":{"s":{"command":"node","cwd":"/srv","includeTools":["read"]}}}`,
-			Server{Config: stdio("s", "node"), LimitsTools: true, Unsupported: []string{"cwd"}}},
+			Server{Config: stdio("s", "node"), IgnoredRunSettings: []string{"cwd"}}},
 		{"openclaw stdio entry", ReadOpenClaw, "openclaw.json",
 			`{"mcp":{"servers":{"s":{"command":"npx","env":{"ROOT":"/data"}}}}}`,
 			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Env: []string{"ROOT=/data"}}}},
+		{"openclaw tool filter and approval settings are dropped", ReadOpenClaw, "openclaw.json",
+			`{"mcp":{"servers":{"s":{"command":"npx","toolFilter":{"allow":["read"]},"codex":{"approval":"prompt"}}}}}`,
+			Server{Config: stdio("s", "npx")}},
 		{"openclaw http entry switched off", ReadOpenClaw, "openclaw.json",
 			`{"mcp":{"servers":{"s":{"url":"https://example.com/mcp","enabled":false}}}}`,
 			Server{Config: remote("s", "https://example.com/mcp", nil), Disabled: true}},
@@ -159,6 +157,11 @@ func TestReadClientConfigs_unparsableConfigIsAnError(t *testing.T) {
 			t.Fatal("expected a parse error")
 		}
 	})
+	t.Run("a malformed codex entry", func(t *testing.T) {
+		if _, err := ReadCodex(writeClientConfig(t, "config.toml", "[mcp_servers.s]\nargs = \"not a list\"\n")); err == nil {
+			t.Fatal("expected a parse error")
+		}
+	})
 }
 
 func TestServerCandidate(t *testing.T) {
@@ -169,9 +172,8 @@ func TestServerCandidate(t *testing.T) {
 	}{
 		{"plain", Server{}, true},
 		{"switched off is still a candidate", Server{Disabled: true}, true},
-		{"limits tools", Server{LimitsTools: true}, false},
-		{"requires approval", Server{RequiresApproval: true}, false},
-		{"unsupported setting", Server{Unsupported: []string{"cwd"}}, false},
+		{"ignored settings are still a candidate", Server{IgnoredRunSettings: []string{"cwd"}}, true},
+		{"unsupported reference", Server{UnexpandableRefs: []string{"an environment variable in url"}}, false},
 	} {
 		if got := tt.server.Candidate(); got != tt.want {
 			t.Errorf("%s: Candidate() = %v, want %v", tt.name, got, tt.want)

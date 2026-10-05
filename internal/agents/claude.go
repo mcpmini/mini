@@ -16,12 +16,7 @@ type claudeMCPEntry struct {
 	Disabled  bool   `json:"disabled"`
 }
 
-// One format covers Claude Code, Claude Desktop, Cursor and Windsurf; each ignores the others' keys.
-var claudeFormat = entryFormat{kinds: map[string]keyKind{
-	"type": keyMapped, "command": keyMapped, "args": keyMapped, "env": keyMapped,
-	"url": keyMapped, "serverUrl": keyMapped, "headers": keyMapped, "disabled": keyMapped,
-	"disabledTools": keyLimitsTools,
-}}
+var claudeFormat = entryFormat{ignoredRunSettings: []string{"envFile"}}
 
 // ReadClaude reads Claude Desktop and Claude Code configs, and Cursor's and Windsurf's, which share their format.
 func ReadClaude(path string) (map[string]Server, error) {
@@ -91,7 +86,7 @@ func decodeJSONEntries[E any](raw map[string]json.RawMessage) (map[string]E, map
 
 func (e claudeMCPEntry) server(name string) Server {
 	fields := e.clientEntryFields
-	fields.Env, fields.Headers = translateRefs(fields.Env, false), translateRefs(fields.Headers, false)
+	fields.Env, fields.Headers = translateRefs(fields.Env, claudeFormat), translateRefs(fields.Headers, claudeFormat)
 	url := e.URL
 	if url == "" {
 		url = e.ServerURL

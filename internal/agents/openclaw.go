@@ -11,11 +11,7 @@ type openClawMCPEntry struct {
 	Enabled *bool  `json:"enabled"`
 }
 
-var openClawFormat = entryFormat{kinds: map[string]keyKind{
-	"command": keyMapped, "args": keyMapped, "env": keyMapped, "url": keyMapped, "headers": keyMapped, "enabled": keyMapped,
-	"transport": keyDropped, "connectionTimeoutMs": keyDropped, "requestTimeoutMs": keyDropped, "supportsParallelToolCalls": keyDropped,
-	"toolFilter": keyLimitsTools, "codex": keyRequiresApproval,
-}}
+var openClawFormat = entryFormat{}
 
 // ReadOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
 // Format: {"mcp": {"servers": {"name": {"command": "...", "args": [...], "env": {...}}}}}

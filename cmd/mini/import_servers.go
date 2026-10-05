@@ -48,6 +48,7 @@ func (imp serverImport) addAll(servers map[string]agents.Server) (added []string
 		}
 		switch err := imp.add(server.Config); {
 		case err == nil:
+			imp.reportIgnored(name, server.IgnoredRunSettings)
 			added = append(added, name)
 		case !errors.Is(err, ops.ErrAlreadyConfigured):
 			failed++
@@ -56,22 +57,22 @@ func (imp serverImport) addAll(servers map[string]agents.Server) (added []string
 	return added, failed
 }
 
-// A copy in mini must not expose tools the agent forbids, behave differently, or switch on a
-// server the user switched off.
 func notImportedReason(server agents.Server) string {
-	if server.Candidate() {
-		if server.Disabled {
-			return "not imported: switched off in the agent"
-		}
-		return ""
-	}
 	switch {
-	case server.LimitsTools:
-		return "kept in the agent: it limits which tools are allowed"
-	case server.RequiresApproval:
-		return "kept in the agent: it asks for approval before some tools run"
+	case !server.Candidate():
+		return "kept in the agent: uses " + strings.Join(server.UnexpandableRefs, ", ")
+	case server.Disabled:
+		// Importing a switched-off server would switch it on for every agent connected to mini.
+		return "not imported: switched off in the agent"
 	}
-	return "kept in the agent: uses " + strings.Join(server.Unsupported, ", ")
+	return ""
+}
+
+func (imp serverImport) reportIgnored(name string, ignored []string) {
+	if len(ignored) > 0 {
+		fmt.Fprintf(imp.out, "  %s: %s imported without its %s, which mini doesn't support yet; if it fails to start, edit %s\n",
+			imp.source, name, strings.Join(ignored, ", "), config.ServerPath(imp.configDir, name))
+	}
 }
 
 func (imp serverImport) add(sc config.ServerConfig) error {

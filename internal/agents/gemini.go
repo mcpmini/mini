@@ -11,12 +11,7 @@ type geminiMCPEntry struct {
 	URL     string `json:"url"`
 }
 
-var geminiFormat = entryFormat{bareRefs: true, kinds: map[string]keyKind{
-	"command": keyMapped, "args": keyMapped, "env": keyMapped, "headers": keyMapped,
-	"url": keyMapped, "httpUrl": keyMapped,
-	"timeout": keyDropped, "trust": keyDropped, "description": keyDropped,
-	"includeTools": keyLimitsTools, "excludeTools": keyLimitsTools,
-}}
+var geminiFormat = entryFormat{expandsBareVars: true, ignoredRunSettings: []string{"cwd"}}
 
 // ReadGemini reads a Gemini CLI settings.json.
 // Format: mcpServers map with httpUrl (streamable HTTP), url (SSE) or command/args (stdio).
@@ -40,7 +35,7 @@ func ReadGemini(path string) (map[string]Server, error) {
 
 func (e geminiMCPEntry) server(name string) Server {
 	fields := e.clientEntryFields
-	fields.Env, fields.Headers = translateRefs(fields.Env, true), translateRefs(fields.Headers, true)
+	fields.Env, fields.Headers = translateRefs(fields.Env, geminiFormat), translateRefs(fields.Headers, geminiFormat)
 	if e.HTTPUrl != "" {
 		return Server{Config: fields.httpServer(name, e.HTTPUrl)}
 	}

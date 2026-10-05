@@ -213,7 +213,7 @@ func TestImportAgentConfig_ImportsOnlyNewServers(t *testing.T) {
 	}
 }
 
-func TestInitImportsCodexAndKeepsWhatMiniCannotCopy(t *testing.T) {
+func TestInitImportsCodexAndNamesWhatMiniDoesNotCarryOver(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	configDir := t.TempDir()
@@ -247,14 +247,17 @@ enabled = false
 	if !strings.Contains(string(written), "Bearer ${SEARCH_TOKEN}") {
 		t.Errorf("search.yaml = %s, want the bearer token kept as a reference", written)
 	}
-	for _, name := range []string{"files", "tickets", "paused"} {
-		if _, err := os.Stat(filepath.Join(configDir, "servers", name+".yaml")); !os.IsNotExist(err) {
-			t.Errorf("%s was imported: %v", name, err)
+	for _, name := range []string{"files", "tickets"} {
+		if _, err := os.Stat(filepath.Join(configDir, "servers", name+".yaml")); err != nil {
+			t.Errorf("%s was not imported: %v", name, err)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(configDir, "servers", "paused.yaml")); !os.IsNotExist(err) {
+		t.Errorf("paused was imported: %v", err)
+	}
 	for _, want := range []string{
-		"Codex: files kept in the agent: uses cwd",
-		"Codex: tickets kept in the agent: it limits which tools are allowed",
+		"Codex: files imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
+			filepath.Join(configDir, "servers", "files.yaml"),
 		"Codex: paused not imported: switched off in the agent",
 		"codex mcp add mini -- ",
 	} {

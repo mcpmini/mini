@@ -33,36 +33,23 @@ func ReadConfigFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-// Server is one agent entry as mini would import it, with what the agent does that mini can't.
+// Server is one agent entry as mini would import it.
 type Server struct {
-	Config           config.ServerConfig
-	Disabled         bool
-	LimitsTools      bool
-	RequiresApproval bool
-	// Unsupported names the settings mini can't carry over; a copy in mini would run differently.
-	Unsupported []string
+	Config             config.ServerConfig
+	Disabled           bool
+	IgnoredRunSettings []string
+	UnexpandableRefs   []string
 }
 
-// Candidate reports whether a copy in mini would behave like the agent's entry and expose
-// no tools the user forbade or wanted to approve there.
 func (s Server) Candidate() bool {
-	return !s.LimitsTools && !s.RequiresApproval && len(s.Unsupported) == 0
+	return len(s.UnexpandableRefs) == 0
 }
 
-type keyKind int
-
-const (
-	keyMapped keyKind = iota
-	keyDropped
-	keyLimitsTools
-	keyRequiresApproval
-)
-
-// entryFormat is what an agent's config format means beyond the fields a reader maps.
 type entryFormat struct {
-	kinds map[string]keyKind
-	// bareRefs is set for agents that expand $VAR as well as ${VAR}.
-	bareRefs bool
+	// Unmapped keys not listed here are dropped without notice, so a setting an agent adds later
+	// never blocks an import.
+	ignoredRunSettings []string
+	expandsBareVars    bool
 }
 
 type clientEntry interface {
@@ -73,25 +60,21 @@ func importedServers[E clientEntry](entries map[string]E, keys map[string][]stri
 	servers := make(map[string]Server, len(entries))
 	for name, entry := range entries {
 		s := entry.server(name)
-		classifyKeys(&s, keys[name], f.kinds)
-		s.Unsupported = append(s.Unsupported, unexpandableFields(s.Config, f.bareRefs)...)
+		s.IgnoredRunSettings = presentKeys(keys[name], f.ignoredRunSettings)
+		s.UnexpandableRefs = unexpandableFields(s.Config, f)
 		servers[name] = s
 	}
 	return servers
 }
 
-func classifyKeys(s *Server, keys []string, kinds map[string]keyKind) {
-	for _, key := range slices.Sorted(slices.Values(keys)) {
-		kind, known := kinds[key]
-		switch {
-		case !known:
-			s.Unsupported = append(s.Unsupported, key)
-		case kind == keyLimitsTools:
-			s.LimitsTools = true
-		case kind == keyRequiresApproval:
-			s.RequiresApproval = true
+func presentKeys(keys, wanted []string) []string {
+	var present []string
+	for _, key := range wanted {
+		if slices.Contains(keys, key) {
+			present = append(present, key)
 		}
 	}
+	return present
 }
 
 type clientEntryFields struct {
@@ -125,16 +108,15 @@ var (
 	braceOrBare  = regexp.MustCompile(`\$(\{|[A-Za-z_])`)
 )
 
-// translateRefs rewrites the agent's environment references into mini's ${VAR}, so secrets stay
-// references and are never copied into mini's files.
-func translateRefs(values map[string]string, bareRefs bool) map[string]string {
+// Secrets stay references and are never copied into mini's files.
+func translateRefs(values map[string]string, f entryFormat) map[string]string {
 	if values == nil {
 		return nil
 	}
 	out := make(map[string]string, len(values))
 	for k, v := range values {
 		v = cursorEnvRef.ReplaceAllString(v, "$${$1}")
-		if bareRefs {
+		if f.expandsBareVars {
 			v = bareEnvRef.ReplaceAllString(v, "$${$1}")
 		}
 		out[k] = v
@@ -144,9 +126,9 @@ func translateRefs(values map[string]string, bareRefs bool) map[string]string {
 
 // mini expands ${VAR} only in env and header values; a reference anywhere else, or in another
 // syntax, would reach the server unexpanded.
-func unexpandableFields(sc config.ServerConfig, bareRefs bool) []string {
+func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
 	ref := bracedRef
-	if bareRefs {
+	if f.expandsBareVars {
 		ref = braceOrBare
 	}
 	var fields []string
