@@ -3,6 +3,7 @@ package agents
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 type geminiMCPEntry struct {
@@ -18,6 +19,7 @@ var geminiFormat = entryFormat{expandsBareVars: true, ignoredRunSettings: []stri
 func ReadGemini(path string) (map[string]Server, error) {
 	var cfg struct {
 		McpServers map[string]json.RawMessage `json:"mcpServers"`
+		MCP        geminiServerLists          `json:"mcp"`
 	}
 	data, err := ReadConfigFile(path)
 	if err != nil {
@@ -30,7 +32,22 @@ func ReadGemini(path string) (map[string]Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	return importedServers(entries, keys, geminiFormat), nil
+	servers := importedServers(entries, keys, geminiFormat)
+	for name, s := range servers {
+		s.Disabled = s.Disabled || cfg.MCP.switchesOff(name)
+		servers[name] = s
+	}
+	return servers, nil
+}
+
+// Gemini switches servers off in settings.json's mcp lists rather than in their entries.
+type geminiServerLists struct {
+	Allowed  []string `json:"allowed"`
+	Excluded []string `json:"excluded"`
+}
+
+func (l geminiServerLists) switchesOff(name string) bool {
+	return slices.Contains(l.Excluded, name) || (len(l.Allowed) > 0 && !slices.Contains(l.Allowed, name))
 }
 
 func (e geminiMCPEntry) server(name string) Server {

@@ -320,6 +320,17 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			t.Errorf("Cursor entries = %v, result = %+v; want proxy alone and no edit", got, results[1])
 		}
 	})
+	t.Run("a mini switched off in Gemini's mcp.excluded keeps the duplicates", func(t *testing.T) {
+		f := newApplyFixture(t)
+		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+		gemini := f.write(t, "Gemini CLI", `{"mcp":{"excluded":["mini"]},"mcpServers":{"files":{"command":"files-server"},"mini":`+f.servingMini()+`}}`)
+
+		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, gemini)
+
+		if results[0].ExistingMini != MiniEntryInactive || results[0].Removed != nil {
+			t.Errorf("result = %+v, want the excluded mini reported inactive and files kept", results[0])
+		}
+	})
 	t.Run("a relative --config keeps the duplicates", func(t *testing.T) {
 		f := newApplyFixture(t)
 		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
