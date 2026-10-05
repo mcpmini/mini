@@ -45,6 +45,8 @@ func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams,
 	switch p.Action {
 	case "status":
 		return s.statusReport(), nil
+	case "get_projection":
+		return s.getProjection(session, p)
 	case "set_projection":
 		return s.setProjection(session, p)
 	case "reload":
@@ -67,71 +69,6 @@ func (s *Server) dispatchConfigureAuthAction(p configureParams) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown configure action: %s", p.Action)
 	}
-}
-
-func (s *Server) setProjection(session *Session, p configureParams) (any, error) {
-	if err := validateProjectionTarget(p); err != nil {
-		return nil, err
-	}
-	visibleTool := p.Tool
-	if entry, err := s.reg.Lookup(toolFullName(p.ServerName, p.Tool)); err == nil {
-		p.Tool = entry.ToolName.UpstreamName
-	}
-	if p.SessionOnly {
-		return s.setSessionProjection(session, p, visibleTool), nil
-	}
-	return s.setServerProjection(p, visibleTool)
-}
-
-func validateProjectionTarget(p configureParams) error {
-	if p.Tool == "" {
-		return fmt.Errorf("tool is required for set_projection")
-	}
-	if err := validateServerName(p.ServerName); err != nil {
-		return err
-	}
-	if !config.ValidToolName.MatchString(p.Tool) {
-		return fmt.Errorf("invalid tool name: %q", p.Tool)
-	}
-	if p.Projection != nil {
-		if err := config.ValidResponseFormat(p.Projection.Format); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *Server) setSessionProjection(session *Session, p configureParams, visibleTool string) any {
-	fullName := toolFullName(p.ServerName, p.Tool)
-	session.SetProjection(fullName, p.Projection)
-	return map[string]any{"ok": true, "scope": "session", "tool": toolFullName(p.ServerName, visibleTool)}
-}
-
-func (s *Server) setServerProjection(p configureParams, visibleTool string) (any, error) {
-	s.persistMu.Lock()
-	defer s.persistMu.Unlock()
-
-	projection, err := config.SaveServerProjection(config.ServerProjectionParams{
-		ConfigDir: s.configDir, ServerName: p.ServerName, Tool: p.Tool, Projection: p.Projection,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("set_projection: not saved: %w; pass session_only:true to apply it to this session only", err)
-	}
-	s.publishServerProjection(p.ServerName, p.Tool, projection)
-	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, visibleTool)}, nil
-}
-
-func (s *Server) publishServerProjection(serverName, tool string, projection *config.ProjectionConfig) {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	if projection == nil {
-		delete(s.projections[serverName], tool)
-		return
-	}
-	if s.projections[serverName] == nil {
-		s.projections[serverName] = make(map[string]*config.ProjectionConfig)
-	}
-	s.projections[serverName][tool] = projection
 }
 
 func (s *Server) statusReport() map[string]any {

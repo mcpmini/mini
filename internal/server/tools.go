@@ -53,9 +53,9 @@ func configureSchema() map[string]any {
 		"name":        "config",
 		"description": configureDescription(),
 		"inputSchema": schema(map[string]any{
-			"action":       prop("string", "status | set_projection | reload (re-reads projections from disk, replacing all runtime-set projections) | add_server | remove_server"),
-			"server":       prop("string", "Server name (for set_projection, add_server, remove_server)"),
-			"tool":         prop("string", "Tool name (for set_projection)"),
+			"action":       prop("string", "status | get_projection | set_projection | reload (re-reads projections from disk, replacing all runtime-set projections) | add_server | remove_server"),
+			"server":       prop("string", "Server name (for get_projection, set_projection, add_server, remove_server)"),
+			"tool":         prop("string", "Tool name (for get_projection, set_projection)"),
 			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {mode, include_only, exclude, string_limits, array_limits, strip_markup}"},
 			"session_only": prop("boolean", "If true, projection applies only to this session (not persisted). Default: false."),
 			"config":       map[string]any{"type": "object", "description": "ServerConfig for add_server"},
@@ -66,6 +66,7 @@ func configureSchema() map[string]any {
 func configureDescription() string {
 	return "Runtime admin for mini. Actions: " +
 		"status (server health + response store stats); " +
+		"get_projection (a tool's session, server and server-wide \"*\" rules, and which one applies; read it before set_projection, which replaces the whole rule); " +
 		"set_projection (replace a tool's projection in its server YAML — live + persisted, or session_only:true for temporary); " +
 		"reload (re-read projections from server YAML files without restart); " +
 		"add_server (connect a new upstream MCP and save it to config); " +
@@ -78,11 +79,11 @@ func configureDescription() string {
 func miniConfigSchema() map[string]any {
 	return map[string]any{
 		"name":        "config",
-		"description": "Runtime admin for mini. Actions: status (server health + response store stats); set_projection (replace a tool's projection in its server YAML); reload (re-read projections from server YAML files); add_server (connect a new upstream MCP and save it to config); remove_server (disconnect an upstream and delete it from config); start_auth (begin OAuth2 PKCE flow); auth_status (check OAuth token status).",
+		"description": "Runtime admin for mini. Actions: status (server health + response store stats); get_projection (a tool's current projection rules and which one applies); set_projection (replace a tool's projection in its server YAML); reload (re-read projections from server YAML files); add_server (connect a new upstream MCP and save it to config); remove_server (disconnect an upstream and delete it from config); start_auth (begin OAuth2 PKCE flow); auth_status (check OAuth token status).",
 		"inputSchema": schema(map[string]any{
-			"action":       prop("string", "status | set_projection | reload | add_server | remove_server | start_auth | auth_status"),
-			"server":       prop("string", "Server name (for set_projection, add_server, remove_server)"),
-			"tool":         prop("string", "Tool name (for set_projection)"),
+			"action":       prop("string", "status | get_projection | set_projection | reload | add_server | remove_server | start_auth | auth_status"),
+			"server":       prop("string", "Server name (for get_projection, set_projection, add_server, remove_server)"),
+			"tool":         prop("string", "Tool name (for get_projection, set_projection)"),
 			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {mode, include_only, exclude, string_limits, array_limits, strip_markup}"},
 			"session_only": prop("boolean", "If true, projection applies only to this session (not persisted). Default: false."),
 			"config":       map[string]any{"type": "object", "description": "ServerConfig for add_server"},
