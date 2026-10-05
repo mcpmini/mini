@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"maps"
 	"reflect"
 
@@ -25,16 +24,13 @@ type ServerProjectionParams struct {
 // SaveServerProjection replaces one tool's rule under projections: in the server's file and returns the
 // rule the file now holds for it. Other values and comments stay; the layout is re-encoded.
 func SaveServerProjection(p ServerProjectionParams) (*ProjectionConfig, error) {
-	if err := checkServerName(p.ServerName, "the request"); err != nil {
+	path, err := existingServerPath(p.ConfigDir, p.ServerName)
+	if err != nil {
 		return nil, err
-	}
-	path := ServerPath(p.ConfigDir, p.ServerName)
-	if !ServerFileExists(p.ConfigDir, p.ServerName) {
-		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
 	}
 	edit := projectionEdit{path: path, tool: p.Tool, requested: p.Projection}
 	var saved *ProjectionConfig
-	_, err := fileio.EditFile(fileio.EditParams{Path: path, Edit: func(data []byte) ([]byte, error) {
+	_, err = fileio.EditFile(fileio.EditParams{Path: path, Edit: func(data []byte) ([]byte, error) {
 		edited, rule, err := edit.apply(data)
 		saved = rule
 		return edited, err

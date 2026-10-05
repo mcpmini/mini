@@ -160,6 +160,7 @@ func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *tes
 		{"unexpanded url", "servers/svc.yaml", "url: https://example.com/${X}\n", "url"},
 		{"bad handshake timeout", "servers/svc.yaml", "handshake_timeout: invalid\n", "handshake_timeout"},
 		{"invalid name from the path", "servers/a.b.yaml", "transport: stdio\n", "invalid server name \"a.b\""},
+		{"a leftover projection file", "servers/svc.proj.yaml", "t: {exclude: [a]}\n", "move these rules under projections: in svc.yaml"},
 		{"invalid projection format", "servers/svc.yaml", "projections:\n  t:\n    format: xml\n", "projection t: format"},
 		{"inline projection of the wrong type", "servers/svc.yaml", "projections:\n  t:\n    include_only: 5\n", "cannot unmarshal"},
 	}

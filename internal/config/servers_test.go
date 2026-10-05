@@ -226,7 +226,7 @@ func TestLoadServers_anUnreadableLegacyProjectionFileIsBrokenWithoutAffectingIts
 		t.Fatalf("server state = %+v, want valid sibling loaded", servers)
 	}
 	if !servers.IsBroken("svc.proj") {
-		t.Fatalf("broken sources = %+v, want legacy file reported by invalid name", servers.Broken)
+		t.Fatalf("broken sources = %+v, want the legacy file reported", servers.Broken)
 	}
 	if sc, _ := servers.Find("svc"); sc.Projections["tool"] == nil || sc.Projections["tool"].Exclude[0] != "secret" {
 		t.Fatalf("valid sibling projections = %#v, want secret exclusion preserved", sc.Projections)
