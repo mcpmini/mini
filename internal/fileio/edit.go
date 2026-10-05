@@ -24,7 +24,7 @@ type EditParams struct {
 }
 
 // EditFile edits the file Path resolves to and keeps its mode. When the file or its symlink changes
-// between the read and the replace, the edit runs again on the new bytes, so no one's write is lost.
+// between the read and the replace, the edit runs again on the new bytes.
 func EditFile(p EditParams) (changed bool, err error) {
 	for range editAttempts {
 		changed, err := editOnce(p)

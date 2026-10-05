@@ -93,6 +93,29 @@ func TestEditFile_retriesWhenTheAgentWritesDuringTheEdit(t *testing.T) {
 	requireFiles(t, filepath.Dir(path), ".claude.json", ".claude.minibackup.json")
 }
 
+func TestEditFile_aRetryThatChangesNothingReportsNoBackup(t *testing.T) {
+	path := filepath.Join(tempDir(t), "config.toml")
+	testutil.WriteFile(t, path, "first\n")
+	calls := 0
+	edit := func(data []byte) ([]byte, error) {
+		calls++
+		if calls == 1 {
+			testutil.WriteFile(t, path, "first\nmini\n")
+		}
+		if strings.HasSuffix(string(data), "mini\n") {
+			return data, nil
+		}
+		return append(data, "mini\n"...), nil
+	}
+
+	backup, err := EditFile(path, edit, editTime)
+
+	if err != nil || backup != "" || calls != 2 {
+		t.Fatalf("EditFile = %q, %v after %d edits; want no backup once the retry found nothing to change", backup, err, calls)
+	}
+	requireFiles(t, filepath.Dir(path), "config.toml")
+}
+
 func TestEditFile_neverOverwritesAnEarlierBackup(t *testing.T) {
 	dir := tempDir(t)
 	path := filepath.Join(dir, "config.toml")

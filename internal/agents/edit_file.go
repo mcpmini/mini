@@ -16,7 +16,7 @@ var ErrConfigKeptChanging = fileio.ErrKeptChanging
 // EditFile applies edit with a backup; unchanged files return an empty backup path.
 func EditFile(path string, edit func([]byte) ([]byte, error), now time.Time) (string, error) {
 	var backup string
-	_, err := fileio.EditFile(fileio.EditParams{
+	changed, err := fileio.EditFile(fileio.EditParams{
 		Path: path,
 		Edit: edit,
 		BeforeReplace: func(target string, original []byte) (func(), error) {
@@ -30,7 +30,7 @@ func EditFile(path string, edit func([]byte) ([]byte, error), now time.Time) (st
 			}, nil
 		},
 	})
-	if err != nil {
+	if err != nil || !changed {
 		return "", err
 	}
 	return backup, nil
