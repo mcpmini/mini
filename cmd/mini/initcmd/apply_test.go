@@ -34,6 +34,10 @@ func newApplyFixture(t *testing.T) applyFixture {
 	return f
 }
 
+func (f applyFixture) servingMini() string {
+	return `{"command":"/usr/local/bin/mini","args":["--config","` + f.configDir + `","connect"]}`
+}
+
 func (f applyFixture) write(t *testing.T, agent, content string) agents.Agent {
 	t.Helper()
 	a := f.agents[agent]
@@ -143,7 +147,7 @@ func TestApply_neverReplaces(t *testing.T) {
 		"never-checked":{"command":"unasked-server"},
 		"unchecked":{"command":"files-server","args":["--other"]},
 		"disabled-in-mini":{"command":"off-server"},
-		"old-mini":{"command":"/usr/local/bin/mini","args":["connect"]}}}`)
+		"old-mini":`+f.servingMini()+`}}`)
 
 	results := f.apply(ConnectAndRemove, map[string]error{"files": nil, "off": nil}, cursor)
 
@@ -245,7 +249,7 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		f := newApplyFixture(t)
 		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 		cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"},`+
-			`"mini":{"command":"/old/mini","args":["connect"],"env":{"MINI_FLAG":"1"}}}}`)
+			`"mini":{"command":"/old/mini","args":["--config","`+f.configDir+`","connect"],"env":{"MINI_FLAG":"1"}}}}`)
 		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor)
 		data := string(testutil.ReadFile(t, cursor.ConfigPath))
 		if !reflect.DeepEqual(results[0].Removed, []string{"files"}) || !strings.Contains(data, "/old/mini") || !strings.Contains(data, "MINI_FLAG") {
@@ -256,8 +260,8 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		f := newApplyFixture(t)
 		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 		codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"files-server\"\n\n"+
-			"[mcp_servers.proxy]\ncommand = \"/usr/local/bin/mini\"\nargs = [\"connect\"]\n")
-		cursor := f.write(t, "Cursor", `{"mcpServers":{"proxy":{"command":"/usr/local/bin/mini","args":["connect"]}}}`)
+			"[mcp_servers.proxy]\ncommand = \"/usr/local/bin/mini\"\nargs = [\"--config="+f.configDir+"\", \"connect\"]\n")
+		cursor := f.write(t, "Cursor", `{"mcpServers":{"proxy":`+f.servingMini()+`}}`)
 		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, codex, cursor)
 		if !results[0].MiniAlreadyConnected || !reflect.DeepEqual(results[0].Removed, []string{"files"}) {
 			t.Errorf("Codex result = %+v, want mini reported as connected and files switched off", results[0])
@@ -267,6 +271,27 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		}
 		if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, []string{"proxy"}) || results[1].Backup != "" {
 			t.Errorf("Cursor entries = %v, result = %+v; want proxy alone and no edit", got, results[1])
+		}
+	})
+	t.Run("a mini entry that won't serve the checked servers keeps their duplicates", func(t *testing.T) {
+		f := newApplyFixture(t)
+		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+		codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"files-server\"\n\n"+
+			"[mcp_servers.mini]\ncommand = \"/usr/local/bin/mini\"\nargs = [\"--config\", \""+f.configDir+"\", \"connect\"]\nenabled = false\n")
+		cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"},`+
+			`"other-mini":{"command":"/usr/local/bin/mini","args":["--config","/srv/other-mini","connect"]}}}`)
+		before := [][]byte{testutil.ReadFile(t, codex.ConfigPath), testutil.ReadFile(t, cursor.ConfigPath)}
+
+		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, codex, cursor)
+
+		wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniElsewhere}}
+		for i, result := range results {
+			if !result.MiniAlreadyConnected || result.Removed != nil || !reflect.DeepEqual(result.Kept, wantKept) {
+				t.Errorf("%s result = %+v, want files kept because mini won't serve it", result.Agent.Name, result)
+			}
+			if after := testutil.ReadFile(t, result.Agent.ConfigPath); string(after) != string(before[i]) {
+				t.Errorf("%s config changed:\n%s", result.Agent.Name, after)
+			}
 		}
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
@@ -49,6 +50,46 @@ func (l binaryLookup) binaryPath() string {
 		return self
 	}
 	return "mini"
+}
+
+type existingMini int
+
+const (
+	noMini existingMini = iota
+	miniServesConfigDir
+	miniElsewhere
+)
+
+func (p ApplyParams) existingMini(entries map[string]agents.Server) existingMini {
+	found := noMini
+	for name, entry := range entries {
+		isMini := agents.IsMiniEntry(entry.Config, p.SelfPath)
+		switch {
+		case isMini && !entry.Disabled && sameDir(configDirArg(entry.Config.Args), p.ConfigDir):
+			return miniServesConfigDir
+		case isMini || name == agents.MiniKey:
+			found = miniElsewhere
+		}
+	}
+	return found
+}
+
+func configDirArg(args []string) string {
+	for i, arg := range args {
+		if dir, ok := strings.CutPrefix(arg, "--config="); ok {
+			return dir
+		}
+		if arg == "--config" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return config.DefaultConfigDir()
+}
+
+func sameDir(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && absA == absB
 }
 
 func sameFile(a, b string) bool {

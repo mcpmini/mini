@@ -95,8 +95,8 @@ func (f *finder) add(e agentEntry) {
 }
 
 // mini's copy wins over an agent's for a configured name, whatever its config, and for a
-// configured server under another name. Whatever an agent has under mini's own key is replaced
-// by Connect, never imported.
+// configured server under another name. Whatever an agent has under mini's own key is never
+// imported.
 func (f *finder) offered(e agentEntry) bool {
 	name := NormalizeName(e.name)
 	return name != agents.MiniKey && !f.configuredNames[name] && !agents.IsMiniEntry(e.server.Config, f.SelfPath) &&
