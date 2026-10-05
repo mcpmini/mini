@@ -198,6 +198,7 @@ func TestAlias_serverSetProjectionTakesEffect(t *testing.T) {
 		},
 	}
 	proj := map[string]*config.ProjectionConfig{"get_pr_real": {Alias: "get_pr"}}
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Projections: proj})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, fake)
 
 	configResp := serve(t, srv, callTool("config", map[string]any{
@@ -261,7 +262,6 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			srv := newTestServer(t, server.Params{ConfigDir: dir})
 			t.Cleanup(srv.Close)
 
-			// Server stub lets loadServerProjections merge projection files for "gh".
 			configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh"})
 
 			fake := fakeConn("list_pull_requests")
@@ -313,10 +313,9 @@ func TestAlias_setProjectionPreservesAliasOnReload(t *testing.T) {
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	t.Cleanup(srv.Close)
 
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh"})
-
 	fake := fakeConn("get_pr")
 	proj := map[string]*config.ProjectionConfig{"get_pr": {Alias: "pr"}}
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh", Projections: proj})
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, fake)
 
 	resp := serve(t, srv, callTool("config", map[string]any{

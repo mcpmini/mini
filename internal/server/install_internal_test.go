@@ -65,7 +65,7 @@ func TestInstallChecked_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.
 	var wg sync.WaitGroup
 	wg.Go(func() {
 		for i := range 100 {
-			srv.storeServerProjection("svc", fmt.Sprintf("tool%d", i), &config.ProjectionConfig{})
+			srv.publishServerProjection("svc", fmt.Sprintf("tool%d", i), &config.ProjectionConfig{})
 		}
 	})
 	wg.Go(func() {
@@ -219,7 +219,7 @@ func TestChangeSavedServer_keepsSetProjectionOutUntilTheChangeFinishes(t *testin
 	_ = srv.changeSavedServer("svc", func() error {
 		if srv.persistMu.TryLock() {
 			srv.persistMu.Unlock()
-			t.Error("set_projection could write svc.proj.yaml during the change, recreating it after a remove")
+			t.Error("set_projection could save svc.yaml during the change, racing with a remove")
 		}
 		return nil
 	})

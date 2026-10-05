@@ -316,7 +316,7 @@ func TestRunCatalogStepStillFiltersWhenAServerFileOrItsProjectionsFailToLoad(t *
 		URL:       "https://mcp.linear.app/mcp",
 		Headers:   map[string]string{"Authorization": "Bearer ${MINI_TEST_UNSET_CATALOG_VAR}"},
 	})
-	testutil.WriteFile(t, filepath.Join(dir, "servers", "my-linear.proj.yaml"), "list_issues: [broken\n")
+	testutil.WriteFile(t, config.ServerPath(dir, "my-linear"), "transport: http\nurl: https://mcp.linear.app/mcp\nheaders:\n  Authorization: Bearer ${MINI_TEST_UNSET_CATALOG_VAR}\nprojections: {list_issues: [broken]}\n")
 	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "transport: [broken\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
 
@@ -382,10 +382,10 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	if _, err := config.LoadServer(dir, "github"); err != nil {
 		t.Fatalf("config.LoadServer: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "servers", "github.proj.yaml")); err != nil {
-		t.Fatalf("github projection: %v", err)
+	if loaded, err := config.LoadServer(dir, "github"); err != nil || len(loaded.Projections) == 0 {
+		t.Fatalf("github projections = %#v, %v", loaded.Projections, err)
 	}
-	if want := "added github → " + filepath.Join(dir, "servers", "github.yaml"); !strings.Contains(out.String(), want) {
+	if want := "added github (with default projections)"; !strings.Contains(out.String(), want) {
 		t.Errorf("output = %q, want %q", out.String(), want)
 	}
 }
@@ -408,7 +408,7 @@ func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 	}
 }
 
-func TestCatalogSentryInstallsBundledProjection(t *testing.T) {
+func TestCatalogSentryStoresBundledProjectionInline(t *testing.T) {
 	c, err := catalog.Load()
 	if err != nil {
 		t.Fatal(err)
@@ -421,8 +421,8 @@ func TestCatalogSentryInstallsBundledProjection(t *testing.T) {
 	if _, err := writeCatalogEntries(catalogStepParams{configDir: dir, out: &bytes.Buffer{}}, []catalog.Entry{entry}, []int{0}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "servers", "sentry.proj.yaml")); err != nil {
-		t.Fatalf("sentry projection: %v", err)
+	if loaded, err := config.LoadServer(dir, "sentry"); err != nil || len(loaded.Projections) == 0 {
+		t.Fatalf("sentry projections = %#v, %v", loaded.Projections, err)
 	}
 }
 

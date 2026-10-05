@@ -134,7 +134,7 @@ func TestLoad_serverNameComesFromFile(t *testing.T) {
 		t.Fatalf("servers = %#v, want one named ci", servers)
 	}
 	if p := servers[0].Projections["list_builds"]; p == nil || len(p.IncludeOnly) != 1 {
-		t.Errorf("projections = %v, want ci.proj.yaml applied to ci", servers[0].Projections)
+		t.Errorf("projections = %v, want inline projections loaded", servers[0].Projections)
 	}
 }
 

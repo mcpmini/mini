@@ -41,7 +41,10 @@ func parseRPCResponse(t *testing.T, data []byte) map[string]any {
 
 func addEdgeConn(t *testing.T, srv *server.Server, cfg config.ServerConfig, conn *transport.FakeConnection) {
 	t.Helper()
-	srv.AddConnection(context.Background(), cfg, conn)
+	writeTestServerConfig(t, srv, cfg)
+	if err := srv.AddConnection(context.Background(), cfg, conn); err != nil {
+		t.Fatalf("AddConnection %s: %v", cfg.Name, err)
+	}
 }
 
 func assertIsErrorResult(t *testing.T, resp map[string]any) {

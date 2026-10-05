@@ -153,11 +153,8 @@ func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage
 	return s.callUpstream(ctx, p, entry, session)
 }
 
-// hasProjectionCoverage reports whether a tool has an explicit projection entry or a
-// wildcard "*" for its server. Returns true when no projections file exists for the
-// server at all — the restriction only kicks in once a projections file is present.
 func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bool {
-	if session.Projection(toolFullName(server, tool)) != nil {
+	if session.Projection(toolFullName(server, tool)) != nil || session.Projection(toolFullName(server, "*")) != nil {
 		return true
 	}
 	s.stateMu.RLock()
@@ -276,6 +273,9 @@ func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelo
 
 func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {
 	if p := session.Projection(toolFullName(server, tool)); p != nil {
+		return p
+	}
+	if p := session.Projection(toolFullName(server, "*")); p != nil {
 		return p
 	}
 	s.stateMu.RLock()

@@ -107,10 +107,9 @@ func TestAddServer_writtenFile(t *testing.T) {
 		if _, err := ops.AddServer(dir, sc); err != nil {
 			t.Fatalf("AddServer: %v", err)
 		}
-		dest := filepath.Join(dir, "servers", "gh.proj.yaml")
-		data := testutil.ReadFile(t, dest)
-		if len(data) == 0 {
-			t.Error("bundled projection file is empty")
+		got, err := config.LoadServer(dir, "gh")
+		if err != nil || len(got.Projections) == 0 {
+			t.Errorf("LoadServer projections = %#v, %v; want bundled defaults inline", got.Projections, err)
 		}
 	})
 
@@ -167,8 +166,8 @@ func TestAddServer(t *testing.T) {
 		if err != nil {
 			t.Fatalf("AddServer: %v", err)
 		}
-		if added.Path != filepath.Join(dir, "servers", "gh.yaml") || added.ProjectionPath != filepath.Join(dir, "servers", "gh.proj.yaml") {
-			t.Errorf("paths = %q, %q", added.Path, added.ProjectionPath)
+		if added.Path != filepath.Join(dir, "servers", "gh.yaml") || !added.DefaultProjections {
+			t.Errorf("added = %+v, want inline defaults in %s", added, filepath.Join(dir, "servers", "gh.yaml"))
 		}
 		if !added.DefaultPermissions || added.Config.Permissions == nil {
 			t.Errorf("added = %+v, want github's bundled permissions applied and reported", added)
@@ -184,14 +183,8 @@ func TestAddServer(t *testing.T) {
 		if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
 			t.Fatal(err)
 		}
-		configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-			ServerName: "reused",
-			Tools: map[string]*config.ProjectionConfig{
-				"list": {
-					IncludeOnly: []string{"id"},
-				},
-			},
-		})
+		legacy := filepath.Join(dir, "servers", "reused.proj.yaml")
+		testutil.WriteFile(t, legacy, "list: {include_only: [id]}\n")
 
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
 			t.Fatal(err)
@@ -201,8 +194,8 @@ func TestAddServer(t *testing.T) {
 		if config.IsOAuthDetected(dir, "reused") {
 			t.Error("the new server inherited the old server's OAuth marker")
 		}
-		if fileExists(filepath.Join(dir, "servers", "reused.proj.yaml")) {
-			t.Error("the new server inherited the old server's projections")
+		if got, err := config.LoadServer(dir, "reused"); err != nil || len(got.Projections) != 0 {
+			t.Errorf("new server projections = %#v, %v; want no legacy rules", got.Projections, err)
 		}
 	})
 
@@ -217,8 +210,12 @@ func TestAddServer(t *testing.T) {
 		}
 
 		got := testutil.ReadFile(t, leftover)
-		if added.ProjectionPath != leftover || len(got) == 0 || strings.Contains(string(got), "the old server's rules") {
-			t.Errorf("projection path %q holds %q, want the bundled projection installed in place of the leftover", added.ProjectionPath, got)
+		loaded, loadErr := config.LoadServer(dir, "gh")
+		if !added.DefaultProjections || loadErr != nil || len(loaded.Projections) == 0 {
+			t.Errorf("added defaults=%v, inline projections=%#v, err=%v", added.DefaultProjections, loaded.Projections, loadErr)
+		}
+		if !strings.Contains(string(got), "the old server's rules") {
+			t.Errorf("legacy file changed: %q", got)
 		}
 	})
 
@@ -281,8 +278,8 @@ func TestAddServer(t *testing.T) {
 		if fileExists(filepath.Join(dir, "servers", "gh.yaml")) {
 			t.Error("a server file was written")
 		}
-		if _, err := os.Stat(filepath.Join(dir, "servers", "gh.proj.yaml")); err == nil {
-			t.Error("a bundled projection was installed for a refused server")
+		if got, err := config.LoadServer(dir, "gh"); err == nil {
+			t.Errorf("a refused server was written: %+v", got)
 		}
 	})
 
@@ -320,7 +317,7 @@ func TestAddServer(t *testing.T) {
 }
 
 func TestRemoveServer(t *testing.T) {
-	t.Run("removes the file and its projections, and forgets the token, registration and OAuth marker", func(t *testing.T) {
+	t.Run("removes the server file and forgets the token, registration and OAuth marker", func(t *testing.T) {
 		dir := tempDir(t)
 		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "toremove", Command: "run"}); err != nil {
 			t.Fatal(err)
@@ -345,9 +342,6 @@ func TestRemoveServer(t *testing.T) {
 		if fileExists(filepath.Join(dir, "servers", "toremove.yaml")) {
 			t.Error("server file still exists after remove")
 		}
-		if fileExists(filepath.Join(dir, "servers", "toremove.proj.yaml")) {
-			t.Error("a server reusing this name would inherit the removed server's projections")
-		}
 		assertNoCredentials(t, dir, "toremove")
 		if config.IsOAuthDetected(dir, "toremove") {
 			t.Error("a server reusing this name would inherit a stale OAuth marker")
@@ -368,8 +362,8 @@ func TestRemoveServer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if added.ProjectionPath == "" {
-			t.Error("the re-added server kept no bundled projection; the removed server's file was left in the way")
+		if !added.DefaultProjections || len(added.Config.Projections) == 0 {
+			t.Error("the re-added server has no inline bundled projections")
 		}
 	})
 

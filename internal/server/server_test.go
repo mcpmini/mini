@@ -19,6 +19,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
 )
@@ -91,6 +92,11 @@ func newTestServer(t *testing.T, p server.Params) *server.Server {
 	srv := server.New(p)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func writeTestServerConfig(t *testing.T, srv *server.Server, sc config.ServerConfig) {
+	t.Helper()
+	configtest.WriteServer(t, srv.ConfigDir(), sc)
 }
 
 // newMCPTestServer starts a minimal HTTP MCP server advertising the given tools.

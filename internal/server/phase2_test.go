@@ -53,6 +53,7 @@ func TestExecProtectedRejectsOpenTool(t *testing.T) {
 
 func TestConfigureSetProjection(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
+	writeTestServerConfig(t, srv, config.ServerConfig{Name: "ci"})
 
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection",

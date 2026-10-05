@@ -132,9 +132,9 @@ func TestConfigAddServer_runsTheServerAsARestartWould(t *testing.T) {
 		t.Fatalf("add_server: %s", text)
 	}
 
-	saved := readProjectionRuleNames(t, filepath.Join(e.dir, "servers", "added.proj.yaml"))
+	saved := readProjectionRuleNames(t, config.ServerPath(e.dir, "added"))
 	if rules := slices.Sorted(slices.Values(e.liveProjectionRules("added"))); len(saved) == 0 || !slices.Equal(rules, saved) {
-		t.Errorf("live projection rules %v, want the saved projection file's %v", rules, saved)
+		t.Errorf("live projection rules %v, want the saved server file's %v", rules, saved)
 	}
 }
 
@@ -150,11 +150,15 @@ func requireEchoMCP(t *testing.T) string {
 func readProjectionRuleNames(t *testing.T, path string) []string {
 	t.Helper()
 	data := testutil.ReadFile(t, path)
-	var rules map[string]any
-	if err := yaml.Unmarshal(data, &rules); err != nil {
+	var serverFile map[string]any
+	if err := yaml.Unmarshal(data, &serverFile); err != nil {
 		t.Fatal(err)
 	}
-	return slices.Sorted(maps.Keys(rules))
+	projections, ok := serverFile["projections"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return slices.Sorted(maps.Keys(projections))
 }
 
 func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testing.T) {
@@ -178,7 +182,9 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 	t.Run("running without a config file", func(t *testing.T) {
 		e := newConfigToolEnv(t)
 		running := fakeConn("real_tool")
-		addEdgeConn(t, e.srv, config.ServerConfig{Name: "svc"}, running)
+		if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, running); err != nil {
+			t.Fatal(err)
+		}
 		authtest.SaveToken(t, authtest.TokenFile{
 			ConfigDir:  e.dir,
 			ServerName: "svc",
@@ -480,7 +486,9 @@ func TestConfigRemoveServer(t *testing.T) {
 	})
 	t.Run("disconnects a server with no config file", func(t *testing.T) {
 		e := newConfigToolEnv(t)
-		addEdgeConn(t, e.srv, config.ServerConfig{Name: "svc"}, fakeConn("ping"))
+		if err := e.srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fakeConn("ping")); err != nil {
+			t.Fatal(err)
+		}
 
 		if text, failed := e.removeServer("svc"); failed {
 			t.Fatalf("remove_server: %s", text)

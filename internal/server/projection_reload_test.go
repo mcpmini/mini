@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +19,7 @@ import (
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
+	"gopkg.in/yaml.v3"
 )
 
 type syncBuffer struct {
@@ -155,7 +157,41 @@ func (e *reloadEnv) assertDataKeys(present []string, absent []string) {
 
 func (e *reloadEnv) writeRawProjections(content string) {
 	e.t.Helper()
-	testutil.WriteFile(e.t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), content)
+	var fixture, serverDocument yaml.Node
+	if err := yaml.Unmarshal([]byte("projections:\n  "+strings.ReplaceAll(content, "\n", "\n  ")), &fixture); err != nil {
+		e.t.Fatalf("parse projection fixture: %v", err)
+	}
+	if len(fixture.Content) != 1 || len(fixture.Content[0].Content) != 2 {
+		e.t.Fatal("projection fixture must be a mapping")
+	}
+	path := config.ServerPath(e.dir, "svc")
+	if err := yaml.Unmarshal(testutil.ReadFile(e.t, path), &serverDocument); err != nil {
+		e.t.Fatalf("parse server fixture: %v", err)
+	}
+	root := serverDocument.Content[0]
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "projections" {
+			root.Content[i+1] = fixture.Content[0].Content[1]
+			writeReloadServerNode(e.t, path, &serverDocument)
+			return
+		}
+	}
+	root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "projections"}, fixture.Content[0].Content[1])
+	writeReloadServerNode(e.t, path, &serverDocument)
+}
+
+func writeReloadServerNode(t *testing.T, path string, document *yaml.Node) {
+	t.Helper()
+	var output bytes.Buffer
+	encoder := yaml.NewEncoder(&output)
+	encoder.SetIndent(4)
+	if err := encoder.Encode(document); err != nil {
+		t.Fatal(err)
+	}
+	if err := encoder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFileBytes(t, path, output.Bytes())
 }
 
 func (e *reloadEnv) writeProjections(tools map[string]*config.ProjectionConfig) {
@@ -180,35 +216,20 @@ func TestProjectionReload_editApplied(t *testing.T) {
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
-	if logs := e.logs.String(); !strings.Contains(logs, "projections reloaded") || !strings.Contains(logs, "svc.proj.yaml") {
+	if logs := e.logs.String(); !strings.Contains(logs, "projections reloaded") || !strings.Contains(logs, "svc.yaml") {
 		t.Errorf("expected INFO naming the changed file, got logs:\n%s", logs)
 	}
 }
 
-func TestProjectionReload_deleteRevealsInlineProjections(t *testing.T) {
-	inline := config.ServerConfig{
-		Command: "echo",
-		Projections: map[string]*config.ProjectionConfig{"getData": {
-			IncludeOnly: []string{"a"},
-		}},
-	}
-	e := newReloadEnv(t, reloadEnvParams{
-		Server: inline,
-		Projections: map[string]*config.ProjectionConfig{
-			"getData": {
-				IncludeOnly: []string{"a", "b"},
-			},
-		},
-	})
+func TestProjectionReload_inlineProjectionRemovalApplied(t *testing.T) {
+	e := newReloadEnv(t, reloadEnvParams{Projections: map[string]*config.ProjectionConfig{
+		"getData": {IncludeOnly: []string{"a"}},
+	}})
 	e.startPoller()
-	e.assertDataKeys([]string{"a", "b"}, []string{"secret"})
-
-	if err := os.Remove(filepath.Join(e.dir, "servers", "svc.proj.yaml")); err != nil {
-		t.Fatal(err)
-	}
-	e.advanceTick()
-
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
+	e.writeProjections(nil)
+	e.advanceTick()
+	e.assertDataKeys([]string{"a", "b", "secret"}, nil)
 }
 
 func TestProjectionReload_createdFileApplied(t *testing.T) {
@@ -249,7 +270,7 @@ func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillRel
 	e.startPoller()
 	e.assertDataKeys([]string{"a"}, []string{"b"})
 
-	e.writeRawProjections("getData: [broken\n")
+	e.writeRawProjections("getData:\n  include_only: 5\n")
 	configtest.WriteProjections(t, e.dir, configtest.ProjectionFile{
 		ServerName: "other",
 		Tools: map[string]*config.ProjectionConfig{
@@ -275,35 +296,26 @@ func TestProjectionReload_malformedProjFile_keepsPreviousWarnsOnceOthersStillRel
 	e.assertDataKeys([]string{"b"}, []string{"a"})
 }
 
-type savedFiles struct {
-	serverYAML string
-	projYAML   string
-}
-
-func TestSetProjection_keepsAProjectionFileThatFailsToLoad(t *testing.T) {
-	const savedRules = "getData:\n  include_only: [a]\nother:\n  alias: kept\nbroken: [oops\n"
-	cases := map[string]savedFiles{
-		"broken projection file":    {serverYAML: "command: echo\n", projYAML: savedRules},
-		"broken inline projections": {serverYAML: "command: echo\nprojections:\n  getData:\n    exclude: 3\n", projYAML: "getData:\n  include_only: [a]\n"},
-		"broken server file":        {serverYAML: "command: [unclosed\n", projYAML: "getData:\n  include_only: [a]\nother:\n  alias: kept\n"},
+func TestSetProjection_keepsServerFileWhenInlineProjectionsFailToLoad(t *testing.T) {
+	cases := map[string]string{
+		"broken projection shape":  "command: echo\nprojections:\n  getData:\n    include_only: 5\n",
+		"broken projection format": "command: echo\nprojections:\n  getData:\n    format: unknown\n",
+		"broken server file":       "command: [unclosed\n",
 	}
-	for name, saved := range cases {
+	for name, serverYAML := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := newReloadEnv(t, reloadEnvParams{})
-			testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.yaml"), saved.serverYAML)
-			projPath := filepath.Join(e.dir, "servers", "svc.proj.yaml")
-			testutil.WriteFile(t, projPath, saved.projYAML)
-
+			path := config.ServerPath(e.dir, "svc")
+			testutil.WriteFile(t, path, serverYAML)
 			resp := serve(t, e.srv, callTool("config", map[string]any{
 				"action": "set_projection", "server": "svc", "tool": "getData",
 				"projection": map[string]any{"include_only": []string{"b"}},
 			}))
-
 			if text := toolResultText(t, resp); !strings.Contains(text, "session_only") {
 				t.Errorf("set_projection = %s, want it refused with a pointer to session_only", text)
 			}
-			if after := string(testutil.ReadFile(t, projPath)); after != saved.projYAML {
-				t.Errorf("svc.proj.yaml = %q, want the user's %q kept", after, saved.projYAML)
+			if after := string(testutil.ReadFile(t, path)); after != serverYAML {
+				t.Errorf("server file = %q, want %q kept", after, serverYAML)
 			}
 		})
 	}
@@ -311,7 +323,7 @@ func TestSetProjection_keepsAProjectionFileThatFailsToLoad(t *testing.T) {
 
 func TestConfigReload_startupLogsSayWhatHappensToEachBrokenServer(t *testing.T) {
 	e := newReloadEnv(t, reloadEnvParams{})
-	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), "getData: [broken\n")
+	e.writeRawProjections("getData:\n  include_only: 5\n")
 	testutil.WriteFile(t, filepath.Join(e.dir, "servers", "broken.yaml"), "command: [oops\n")
 
 	e.startPoller()
@@ -366,21 +378,18 @@ func TestProjectionReload_inlineProjectionEditDetected(t *testing.T) {
 func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	dir := evalTempDir(t)
 	for _, name := range []string{"held", "kept", "gone"} {
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: name, Command: "echo"})
-		configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-			ServerName: name,
-			Tools: map[string]*config.ProjectionConfig{
-				"getData": {
-					IncludeOnly: []string{"a"},
-				},
-			},
-		})
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: name, Command: "echo", Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"a"}},
+		}})
 	}
 	env := buildReloadEnv(t, dir)
 	for _, name := range []string{"held", "kept", "gone"} {
 		addReloadUpstreamNamed(t, env.srv, name)
 	}
 	env.startPoller()
+	for _, name := range []string{"held", "kept", "gone"} {
+		env.assertServerDataKeys(name, []string{"a"}, []string{"b", "secret"})
+	}
 
 	heldPath := filepath.Join(dir, "servers", "held.yaml")
 	if err := os.Remove(heldPath); err != nil {
@@ -389,22 +398,9 @@ func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	if err := os.Mkdir(heldPath, 0700); err != nil {
 		t.Fatal(err)
 	}
-	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-		ServerName: "held",
-		Tools: map[string]*config.ProjectionConfig{
-			"getData": {
-				IncludeOnly: []string{"b"},
-			},
-		},
-	})
-	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-		ServerName: "kept",
-		Tools: map[string]*config.ProjectionConfig{
-			"getData": {
-				IncludeOnly: []string{"b"},
-			},
-		},
-	})
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "kept", Command: "echo", Projections: map[string]*config.ProjectionConfig{
+		"getData": {IncludeOnly: []string{"b"}},
+	}})
 	if err := os.Remove(filepath.Join(dir, "servers", "gone.yaml")); err != nil {
 		t.Fatal(err)
 	}
@@ -420,7 +416,7 @@ func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "held", Command: "echo"})
 	env.advanceTick()
 
-	env.assertServerDataKeys("held", []string{"b"}, []string{"a", "secret"})
+	env.assertServerDataKeys("held", []string{"a", "b", "secret"}, nil)
 }
 
 func TestProjectionReload_ctxCancelStopsPoller(t *testing.T) {
@@ -466,9 +462,12 @@ func TestProjectionReload_setProjectionFinalValuePersistedAndSurvivesReload(t *t
 	e.advanceTick()
 
 	e.assertDataKeys([]string{"a"}, []string{"b", "secret"})
-	persisted := testutil.ReadFile(t, filepath.Join(e.dir, "servers", "svc.proj.yaml"))
-	if !strings.Contains(string(persisted), "- a") {
-		t.Errorf("expected persisted projection to keep last set value, got:\n%s", persisted)
+	persisted, err := config.LoadServer(e.dir, "svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := persisted.Projections["getData"].IncludeOnly; !reflect.DeepEqual(got, []string{"a"}) {
+		t.Errorf("persisted include_only = %v, want last set value [a]", got)
 	}
 }
 

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
@@ -124,12 +126,38 @@ func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 	}
 }
 
+func writeInvalidProjection(t *testing.T, configDir, serverName string) {
+	t.Helper()
+	path := config.ServerPath(configDir, serverName)
+	var document yaml.Node
+	if err := yaml.Unmarshal(testutil.ReadFile(t, path), &document); err != nil {
+		t.Fatalf("parse server fixture: %v", err)
+	}
+	root := document.Content[0]
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "projections" {
+			root.Content = append(root.Content[:i], root.Content[i+2:]...)
+			break
+		}
+	}
+	var projections yaml.Node
+	if err := projections.Encode(map[string]any{"get_item": map[string]any{"include_only": 5}}); err != nil {
+		t.Fatal(err)
+	}
+	root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "projections"}, &projections)
+	data, err := yaml.Marshal(&document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFileBytes(t, path, data)
+}
+
 func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testing.T) {
 	cfg := t.TempDir()
 	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: fixtures})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "unprojected", Fixtures: fixtures})
-	testutil.WriteFile(t, config.ProjectionPath(cfg, "unprojected"), "get_item: [broken\n")
+	writeInvalidProjection(t, cfg, "unprojected")
 	testutil.WriteFile(t, config.ServerPath(cfg, "web"), "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
 	testutil.WriteFile(t, config.ServerPath(cfg, "multiline-yaml-error"), "command: echo\nenabled: maybe\n")
 
@@ -165,7 +193,7 @@ func TestIntegrationCLI_test_failsForBrokenProjectionsEvenWithNoServerToCheck(t 
 	cfg := t.TempDir()
 	disabled := false
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "off", Command: "echo", Enabled: &disabled})
-	testutil.WriteFile(t, config.ProjectionPath(cfg, "off"), "tool: [broken\n")
+	writeInvalidProjection(t, cfg, "off")
 
 	stdout, _, code := runCLI(t, cfg, "test")
 
@@ -414,7 +442,7 @@ func TestIntegrationCLI_status_failsWhenAServersProjectionsFailToLoad(t *testing
 		t.Run(name, func(t *testing.T) {
 			cfg := t.TempDir()
 			writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}), Enabled: tc.enabled})
-			testutil.WriteFile(t, config.ProjectionPath(cfg, "svc"), "get_item: [broken\n")
+			writeInvalidProjection(t, cfg, "svc")
 
 			stdout, _, code := runCLI(t, cfg, "status")
 

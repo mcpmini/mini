@@ -3,13 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/registry"
@@ -96,7 +90,7 @@ func validateProjectionTarget(p configureParams) error {
 	if err := validateServerName(p.ServerName); err != nil {
 		return err
 	}
-	if !config.ValidToolName.MatchString(p.Tool) {
+	if p.Tool != "*" && !config.ValidToolName.MatchString(p.Tool) {
 		return fmt.Errorf("invalid tool name: %q", p.Tool)
 	}
 	if p.Projection != nil {
@@ -117,67 +111,35 @@ func (s *Server) setServerProjection(p configureParams, visibleTool string) (any
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 
-	if err := s.checkSavedProjectionsLoad(p.ServerName); err != nil {
-		return nil, err
+	projection, err := config.ReplaceServerProjection(config.ServerProjectionParams{
+		ConfigDir: s.configDir, ServerName: p.ServerName, Tool: p.Tool, Projection: cloneProjectionRequest(p.Projection),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("set_projection: persistence failed: %w; fix the server file or pass session_only", err)
 	}
-	prev := s.storeServerProjection(p.ServerName, p.Tool, p.Projection)
-	if err := s.persistProjectionsLocked(p.ServerName); err != nil {
-		s.restoreServerProjection(p.ServerName, p.Tool, prev)
-		return nil, fmt.Errorf("set_projection: persistence failed: %w", err)
-	}
+	s.publishServerProjection(p.ServerName, p.Tool, projection)
 	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, visibleTool)}, nil
 }
 
-func (s *Server) checkSavedProjectionsLoad(serverName string) error {
-	sc, err := config.LoadServer(s.configDir, serverName)
-	if errors.Is(err, fs.ErrNotExist) {
+func cloneProjectionRequest(projection *config.ProjectionConfig) *config.ProjectionConfig {
+	if projection == nil {
 		return nil
 	}
-	if err == nil && sc.ProjectionsErr != nil {
-		err = sc.ProjectionsErr.Err
-	}
-	if err != nil {
-		return fmt.Errorf("set_projection: %s's saved config fails to load (%w), so saving could replace rules on disk; fix the file, or pass session_only", serverName, err)
-	}
-	return nil
+	copy := *projection
+	return &copy
 }
 
-func (s *Server) storeServerProjection(serverName, tool string, projection *config.ProjectionConfig) *config.ProjectionConfig {
+func (s *Server) publishServerProjection(serverName, tool string, projection *config.ProjectionConfig) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
+	if projection == nil {
+		delete(s.projections[serverName], tool)
+		return
+	}
 	if s.projections[serverName] == nil {
 		s.projections[serverName] = make(map[string]*config.ProjectionConfig)
 	}
-	prev := s.projections[serverName][tool]
-	s.projections[serverName][tool] = preserveAlias(projection, prev)
-	return prev
-}
-
-// preserveAlias carries the tool's existing Alias forward onto the new
-// projection. The alias is admin-configured, not part of set_projection's
-// agent-facing surface — without this, set_projection silently drops the
-// alias from the persisted config, and it disappears on the next reload.
-func preserveAlias(projection, prev *config.ProjectionConfig) *config.ProjectionConfig {
-	if prev == nil || prev.Alias == "" {
-		return projection
-	}
-	if projection == nil {
-		return &config.ProjectionConfig{Alias: prev.Alias}
-	}
-	if projection.Alias == "" {
-		projection.Alias = prev.Alias
-	}
-	return projection
-}
-
-func (s *Server) restoreServerProjection(serverName, tool string, prev *config.ProjectionConfig) {
-	s.stateMu.Lock()
-	defer s.stateMu.Unlock()
-	if prev != nil {
-		s.projections[serverName][tool] = prev
-		return
-	}
-	delete(s.projections[serverName], tool)
+	s.projections[serverName][tool] = projection
 }
 
 func (s *Server) statusReport() map[string]any {
@@ -226,25 +188,4 @@ func buildServerStatus(upstreams map[string]*upstreamServer, reg *registry.Regis
 		servers[name] = info
 	}
 	return servers
-}
-
-func (s *Server) persistProjectionsLocked(serverName string) error {
-	if err := validateServerName(serverName); err != nil {
-		return err
-	}
-	b, err := s.marshalServerProjections(serverName)
-	if err != nil {
-		return err
-	}
-	path := config.ProjectionPath(s.configDir, serverName)
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return err
-	}
-	return os.WriteFile(path, b, 0600)
-}
-
-func (s *Server) marshalServerProjections(serverName string) ([]byte, error) {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	return yaml.Marshal(s.projections[serverName])
 }

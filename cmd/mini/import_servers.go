@@ -67,9 +67,10 @@ func (imp serverImport) add(sc config.ServerConfig) error {
 }
 
 func printAdded(w io.Writer, added ops.AddedServer) {
-	fmt.Fprintf(w, "added %s → %s\n", added.Config.Name, added.Path)
-	if added.ProjectionPath != "" {
-		fmt.Fprintf(w, "installed default projection → %s\n", added.ProjectionPath)
+	if added.DefaultProjections {
+		fmt.Fprintf(w, "added %s (with default projections)\n", added.Config.Name)
+	} else {
+		fmt.Fprintf(w, "added %s\n", added.Config.Name)
 	}
 	if added.DefaultPermissions {
 		fmt.Fprintf(w, "applied default permissions → %s\n", added.Path)

@@ -226,6 +226,7 @@ func TestRemoveServer_ClearsProjections(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	ctx := context.Background()
+	writeTestServerConfig(t, srv, config.ServerConfig{Name: "svc"})
 
 	fake := fakeConn("search")
 	if err := srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fake); err != nil {

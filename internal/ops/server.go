@@ -19,7 +19,7 @@ var ErrAlreadyConfigured = errors.New("already configured")
 type AddedServer struct {
 	Config             config.ServerConfig
 	Path               string
-	ProjectionPath     string
+	DefaultProjections bool
 	DefaultPermissions bool
 }
 
@@ -37,10 +37,6 @@ func AddServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 		return AddedServer{}, err
 	}
 	if err := forgetStateStoredByName(configDir, sc.Name); err != nil {
-		return AddedServer{}, errors.Join(err, os.Remove(added.Path))
-	}
-	added.ProjectionPath, err = InstallBundledProjection(configDir, sc)
-	if err != nil {
 		return AddedServer{}, errors.Join(err, os.Remove(added.Path))
 	}
 	return added, nil
@@ -68,9 +64,6 @@ func forgetStateStoredByName(configDir, name string) error {
 	if err := os.Remove(config.ServerMetaPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("forget %s state: %w", name, err)
 	}
-	if err := os.Remove(config.ProjectionPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("forget %s projections: %w", name, err)
-	}
 	if err := auth.DeleteCredentials(configDir, name); err != nil {
 		return fmt.Errorf("forget %s credentials: %w", name, err)
 	}
@@ -79,6 +72,7 @@ func forgetStateStoredByName(configDir, name string) error {
 
 func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 	written, defaultPermissions := withBundledPermissions(sc)
+	written, defaultProjections := withBundledProjections(written)
 	path := config.ServerPath(configDir, sc.Name)
 	data, err := yaml.Marshal(written)
 	if err != nil {
@@ -90,7 +84,7 @@ func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) 
 	if err := writeNewFile(path, data); err != nil {
 		return AddedServer{}, fmt.Errorf("write %s: %w", path, err)
 	}
-	return AddedServer{Config: written, Path: path, DefaultPermissions: defaultPermissions}, nil
+	return AddedServer{Config: written, Path: path, DefaultPermissions: defaultPermissions, DefaultProjections: defaultProjections}, nil
 }
 
 func writeNewFile(path string, data []byte) error {

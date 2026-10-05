@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 type Servers struct {
@@ -31,7 +29,7 @@ func LoadServers(configDir string) (Servers, error) {
 		return Servers{}, err
 	}
 	var servers Servers
-	for _, path := range filterServerPaths(paths) {
+	for _, path := range paths {
 		sc, err := loadServerFile(configDir, path)
 		if err != nil {
 			servers.Broken = append(servers.Broken, SourceError{Path: path, ServerName: serverNameFromPath(path), Err: err})
@@ -111,53 +109,14 @@ func loadServerFile(configDir, path string) (ServerConfig, error) {
 	if err != nil {
 		return ServerConfig{}, err
 	}
-	loadProjections(sc, path, ProjectionPath(configDir, sc.Name))
+	if sc.ProjectionsErr == nil {
+		if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
+			sc.Projections = nil
+			sc.ProjectionsErr = &SourceError{Path: path, ServerName: sc.Name, Err: fmt.Errorf("%s: %w", path, err)}
+		}
+	}
 	mergeKnownAuth(configDir, sc)
 	return *sc, nil
-}
-
-// A broken projection leaves the server loaded without projections rather than broken: the server
-// file alone decides whether and how mini connects.
-func loadProjections(sc *ServerConfig, serverPath, projectionPath string) {
-	if sc.ProjectionsErr != nil {
-		return
-	}
-	failed := func(path string, err error) {
-		sc.Projections = nil
-		sc.ProjectionsErr = &SourceError{Path: path, ServerName: sc.Name, Err: err}
-	}
-	if err := overlayProjectionFile(sc, projectionPath); err != nil {
-		failed(projectionPath, err)
-		return
-	}
-	// The overlay already checked the projection file's own rules, so only an inline rule can fail here.
-	if err := validateServerProjectionFormats(sc.Name, sc.Projections); err != nil {
-		failed(serverPath, fmt.Errorf("%s: %w", serverPath, err))
-	}
-}
-
-func overlayProjectionFile(sc *ServerConfig, path string) error {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-	var toolProjections map[string]*ProjectionConfig
-	if err := yaml.Unmarshal(data, &toolProjections); err != nil {
-		return fmt.Errorf("parse %s: %w", path, err)
-	}
-	if err := validateServerProjectionFormats(sc.Name, toolProjections); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
-	}
-	if sc.Projections == nil {
-		sc.Projections = make(map[string]*ProjectionConfig, len(toolProjections))
-	}
-	for tool, p := range toolProjections {
-		sc.Projections[tool] = p
-	}
-	return nil
 }
 
 // mergeKnownAuth fills in Auth from a bundled default or a prior detection marker,

@@ -7,17 +7,20 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
-func newInternalConfigTestServer(t *testing.T) *Server {
+func newInternalConfigTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	return New(Params{Config: cfg, ConfigDir: t.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	dir := t.TempDir()
+	return New(Params{Config: cfg, ConfigDir: dir, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}), dir
 }
 
 func TestSetServerProjectionWaitsForPersistLockBeforeMemoryUpdate(t *testing.T) {
-	srv := newInternalConfigTestServer(t)
+	srv, dir := newInternalConfigTestServer(t)
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
 	srv.persistMu.Lock()
 
 	done := make(chan error, 1)

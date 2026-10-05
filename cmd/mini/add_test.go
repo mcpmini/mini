@@ -86,8 +86,7 @@ func TestRunAdd(t *testing.T) {
 		printed := out.String()
 		serverPath := filepath.Join(dir, "servers", "gh.yaml")
 		for _, want := range []string{
-			"added gh → " + serverPath,
-			"installed default projection → " + filepath.Join(dir, "servers", "gh.proj.yaml"),
+			"added gh (with default projections)",
 			"applied default permissions → " + serverPath,
 		} {
 			if !strings.Contains(printed, want) {
@@ -224,10 +223,10 @@ func TestRunAdd(t *testing.T) {
 		}
 	})
 
-	t.Run("warns that the server's projections are skipped when its projection file fails to load", func(t *testing.T) {
+	t.Run("warns that the server's projections are skipped when inline projections fail to load", func(t *testing.T) {
 		dir := t.TempDir()
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com"})
-		testutil.WriteFile(t, filepath.Join(dir, "servers", "svc.proj.yaml"), "not: valid: yaml: [")
+		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com", Projections: map[string]*config.ProjectionConfig{"list": {Format: "invalid"}}})
 
 		var out bytes.Buffer
 		connectAndAuthorizeIfNeeded(dir, "svc", &out)

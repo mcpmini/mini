@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -209,7 +208,7 @@ func TestProjectionExcludeFields(t *testing.T) {
 		Tools:     []transport.ToolDefinition{{Name: "get_file_info", Description: "info", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)},
 	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "fs"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "fs"}, fake)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "get_file_info",
 		"projection": map[string]any{"include_only": []string{"name", "size"}},
@@ -230,7 +229,7 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 		Tools:     []transport.ToolDefinition{{Name: "get_doc", Description: "doc", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)},
 	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_doc",
 		"projection": map[string]any{"string_limits": map[string]any{"body": 50}},
@@ -291,7 +290,7 @@ func TestHealthStatsAfterCalls(t *testing.T) {
 		Tools:     []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)},
 	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
 	for i := 0; i < nCalls; i++ {
 		serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "ping", "params": map[string]any{}}))
 	}
@@ -337,6 +336,114 @@ func TestConfigureUnknownAction(t *testing.T) {
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, "unknown configure action") {
 		t.Errorf("expected error message, got: %s", text)
+	}
+}
+
+func TestConfigureSetProjectionSaveFailureOffersSessionOnlyAndKeepsLiveRule(t *testing.T) {
+	for name, missingFile := range map[string]bool{"broken server file": false, "missing server file": true} {
+		t.Run(name, func(t *testing.T) { verifyProjectionSaveFailureSession(t, missingFile) })
+	}
+}
+
+func verifyProjectionSaveFailureSession(t *testing.T, missingFile bool) {
+	t.Helper()
+	srv, path := projectionSaveFailureServer(t)
+	broken := "command: echo\nprojections: {getData: {include_only: 5}}\n"
+	if missingFile {
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		testutil.WriteFile(t, path, broken)
+	}
+	const sessionID = "cccccccc-cccc-cccc-cccc-000000000004"
+	postMCP(t, srv, sessionID, initMsg(true))
+	assertPersistentSaveFailure(t, srv, sessionID)
+	assertSessionOnlyProjection(t, srv, sessionID)
+	if missingFile {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("server file stat error = %v, want file absent", err)
+		}
+	} else if got := string(testutil.ReadFile(t, path)); got != broken {
+		t.Errorf("failed persistent save changed server file: %q", got)
+	}
+}
+
+func projectionSaveFailureServer(t *testing.T) (*server.Server, string) {
+	t.Helper()
+	srv := newTestServer(t, server.Params{})
+	initial := config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{
+		"getData": {IncludeOnly: []string{"a"}},
+	}}
+	addEdgeConn(t, srv, initial, fakeGetData())
+	return srv, config.ServerPath(srv.ConfigDir(), "svc")
+}
+
+func assertPersistentSaveFailure(t *testing.T, srv *server.Server, sessionID string) {
+	t.Helper()
+	resp := postMCP(t, srv, sessionID, map[string]any{
+		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+		"params": map[string]any{"name": "config", "arguments": map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "getData",
+			"projection": map[string]any{"include_only": []string{"b"}},
+		}},
+	})
+	assertIsErrorResult(t, resp)
+	if text := toolResultText(t, resp); !strings.Contains(text, "session_only") {
+		t.Fatalf("save failure = %q, want session_only guidance", text)
+	}
+	assertProjectionResponse(t, postMCP(t, srv, sessionID, dataCall(3)), []string{"a"}, []string{"b"})
+}
+
+func assertSessionOnlyProjection(t *testing.T, srv *server.Server, sessionID string) {
+	t.Helper()
+	resp := postMCP(t, srv, sessionID, map[string]any{
+		"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+		"params": map[string]any{"name": "config", "arguments": map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "getData", "session_only": true,
+			"projection": map[string]any{"include_only": []string{"b"}},
+		}},
+	})
+	if text := toolResultText(t, resp); strings.Contains(text, `"error"`) {
+		t.Fatalf("session-only set_projection = %s", text)
+	}
+	assertProjectionResponse(t, postMCP(t, srv, sessionID, dataCall(5)), []string{"b"}, []string{"a"})
+}
+
+func dataCall(id int) map[string]any {
+	return map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
+		"name": "call", "arguments": map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}},
+	}}
+}
+
+func assertProjectionResponse(t *testing.T, resp map[string]any, present, absent []string) {
+	t.Helper()
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	for _, key := range present {
+		if data[key] == nil {
+			t.Errorf("field %q missing from projected data %v", key, data)
+		}
+	}
+	for _, key := range absent {
+		if data[key] != nil {
+			t.Errorf("field %q survived projection in %v", key, data)
+		}
+	}
+}
+
+func assertProjectionData(t *testing.T, srv *server.Server, serverName string, present, absent []string) {
+	t.Helper()
+	resp := serve(t, srv, callTool("call", map[string]any{"server": serverName, "tool": "getData", "params": map[string]any{}}))
+	data := parseProxyEnvelope(t, toolResultText(t, resp)).Data
+	for _, key := range present {
+		if data[key] == nil {
+			t.Errorf("field %q missing from projected data %v", key, data)
+		}
+	}
+	for _, key := range absent {
+		if data[key] != nil {
+			t.Errorf("field %q survived projection in %v", key, data)
+		}
 	}
 }
 
@@ -465,11 +572,11 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			wantSourceErrors: true,
 		},
 		{
-			name:             "bad proj.yaml: ok=false, source_errors names the projection file",
+			name:             "bad inline projection: ok=false, source_errors names the server file",
 			servers:          []config.ServerConfig{{Name: "a", Command: "echo"}},
-			files:            map[string]string{"servers/a.proj.yaml": "bad: [yaml\n"},
+			files:            map[string]string{"servers/a.yaml": "command: echo\nprojections: {tool: {format: invalid}}\n"},
 			wantSourceErrors: true,
-			wantErrorFile:    "a.proj.yaml",
+			wantErrorFile:    "a.yaml",
 		},
 		{
 			name: "loaded excludes kept-previous server when its file broke",
