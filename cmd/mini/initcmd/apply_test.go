@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -19,6 +20,7 @@ import (
 var testMini = agents.MiniEntry{Command: "/opt/mini/bin/mini", Args: []string{"connect"}}
 
 type applyFixture struct {
+	mini      string
 	home      string
 	configDir string
 	agents    map[string]agents.Agent
@@ -31,11 +33,16 @@ func newApplyFixture(t *testing.T) applyFixture {
 	for _, agent := range agents.Known(f.home) {
 		f.agents[agent.Name] = agent
 	}
+	f.mini = filepath.Join(f.home, "bin", "mini")
+	testutil.WriteFile(t, f.mini, "#!/bin/sh\n")
+	if err := os.Chmod(f.mini, 0700); err != nil {
+		t.Fatal(err)
+	}
 	return f
 }
 
 func (f applyFixture) servingMini() string {
-	return `{"command":"/usr/local/bin/mini","args":["--config","` + f.configDir + `","connect"]}`
+	return `{"command":"` + f.mini + `","args":["--config","` + f.configDir + `","connect"]}`
 }
 
 func (f applyFixture) write(t *testing.T, agent, content string) agents.Agent {
@@ -251,10 +258,10 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		f := newApplyFixture(t)
 		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 		cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"},`+
-			`"mini":{"command":"/old/mini","args":["--config","`+f.configDir+`","connect"],"env":{"MINI_FLAG":"1"}}}}`)
+			`"mini":{"command":"`+f.mini+`","args":["--config","`+f.configDir+`","connect"],"env":{"MINI_FLAG":"1"}}}}`)
 		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor)
 		data := string(testutil.ReadFile(t, cursor.ConfigPath))
-		if !reflect.DeepEqual(results[0].Removed, []string{"files"}) || !strings.Contains(data, "/old/mini") || !strings.Contains(data, "MINI_FLAG") {
+		if !reflect.DeepEqual(results[0].Removed, []string{"files"}) || !strings.Contains(data, f.mini) || !strings.Contains(data, "MINI_FLAG") {
 			t.Errorf("result = %+v, config:\n%s\nwant files removed and mini's entry unchanged", results[0], data)
 		}
 	})
@@ -262,7 +269,7 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		f := newApplyFixture(t)
 		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 		codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"files-server\"\n\n"+
-			"[mcp_servers.proxy]\ncommand = \"/usr/local/bin/mini\"\nargs = [\"--config="+f.configDir+"\", \"connect\"]\n")
+			"[mcp_servers.proxy]\ncommand = \""+f.mini+"\"\nargs = [\"--config="+f.configDir+"\", \"connect\"]\n")
 		cursor := f.write(t, "Cursor", `{"mcpServers":{"proxy":`+f.servingMini()+`}}`)
 		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, codex, cursor)
 		if results[0].ExistingMini != MiniEntryServes || !reflect.DeepEqual(results[0].Removed, []string{"files"}) {
@@ -275,13 +282,30 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			t.Errorf("Cursor entries = %v, result = %+v; want proxy alone and no edit", got, results[1])
 		}
 	})
+	t.Run("a mini entry that can't start keeps the duplicates", func(t *testing.T) {
+		f := newApplyFixture(t)
+		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+		dir := `"--config","` + f.configDir + `"`
+		cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"},`+
+			`"mini":{"command":"`+f.mini+`","args":[`+dir+`,"serve"]}}}`)
+		claude := f.write(t, "Claude Code", `{"mcpServers":{"files":{"command":"files-server"},`+
+			`"mini":{"command":"`+filepath.Join(f.home, "moved", "mini")+`","args":[`+dir+`,"connect"]}}}`)
+
+		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor, claude)
+
+		for _, result := range results {
+			if result.ExistingMini != MiniEntryInactive || result.Removed != nil {
+				t.Errorf("%s result = %+v, want the old serve entry or missing binary reported inactive and files kept", result.Agent.Name, result)
+			}
+		}
+	})
 	t.Run("a mini entry that won't serve the checked servers keeps their duplicates", func(t *testing.T) {
 		f := newApplyFixture(t)
 		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 		codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"files-server\"\n\n"+
-			"[mcp_servers.mini]\ncommand = \"/usr/local/bin/mini\"\nargs = [\"--config\", \""+f.configDir+"\", \"connect\"]\nenabled = false\n")
+			"[mcp_servers.mini]\ncommand = \""+f.mini+"\"\nargs = [\"--config\", \""+f.configDir+"\", \"connect\"]\nenabled = false\n")
 		cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"},`+
-			`"other-mini":{"command":"/usr/local/bin/mini","args":["--config","/srv/other-mini","connect"]}}}`)
+			`"other-mini":{"command":"`+f.mini+`","args":["--config","/srv/other-mini","connect"]}}}`)
 		before := [][]byte{testutil.ReadFile(t, codex.ConfigPath), testutil.ReadFile(t, cursor.ConfigPath)}
 
 		results := Apply(context.Background(), ApplyParams{

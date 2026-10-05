@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/mcpmini/mini/internal/agents"
@@ -70,13 +71,19 @@ func (p ApplyParams) existingMini(entries map[string]agents.Server) ExistingMini
 	for name, entry := range entries {
 		isMini := agents.IsMiniEntry(entry.Config, p.SelfPath)
 		switch {
-		case isMini && !entry.Disabled && sameDir(configDirArg(entry.Config.Args), p.ConfigDir):
+		case isMini && p.serves(entry.Config, entry.Disabled):
 			return MiniEntryServes
 		case isMini || name == agents.MiniKey:
 			found = MiniEntryInactive
 		}
 	}
 	return found
+}
+
+// mini has no serve command any more, and a binary moved by an upgrade leaves its old path behind.
+func (p ApplyParams) serves(sc config.ServerConfig, disabled bool) bool {
+	_, err := exec.LookPath(sc.Command)
+	return !disabled && err == nil && slices.Contains(sc.Args, "connect") && sameDir(configDirArg(sc.Args), p.ConfigDir)
 }
 
 func configDirArg(args []string) string {

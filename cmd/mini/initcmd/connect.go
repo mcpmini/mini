@@ -58,7 +58,7 @@ func LoadMiniServers(configDir string) (MiniServers, error) {
 	mini := MiniServers{loaded: map[string]config.ServerConfig{}}
 	for _, sc := range servers.Loaded {
 		written, err := UnexpandedServer(configDir, sc.Name)
-		if !sc.IsEnabled() || err != nil {
+		if !sc.IsEnabled() || err != nil { // a server left out here only keeps its duplicates in the agents
 			continue
 		}
 		mini.written = append(mini.written, written)
