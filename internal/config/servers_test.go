@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
@@ -316,4 +317,19 @@ func projectionRules(sc config.ServerConfig) map[string][]string {
 		rules[tool] = p.IncludeOnly
 	}
 	return rules
+}
+
+func TestReadUnexpandedServer(t *testing.T) {
+	configDir := t.TempDir()
+	t.Setenv("API_KEY", "synthetic")
+	testutil.WriteFile(t, config.ServerPath(configDir, "svc"), "transport: http\nurl: https://example.com/mcp\nheaders:\n  X-Api-Key: ${API_KEY}\n")
+	testutil.WriteFile(t, config.ServerPath(configDir, "broken"), "headers: [secret-token-value\n")
+
+	sc, err := config.ReadUnexpandedServer(configDir, "svc")
+	if err != nil || sc.Name != "svc" || sc.Headers["X-Api-Key"] != "${API_KEY}" {
+		t.Errorf("ReadUnexpandedServer = %+v, %v; want the reference as written", sc, err)
+	}
+	if _, err := config.ReadUnexpandedServer(configDir, "broken"); err == nil || strings.Contains(err.Error(), "secret-token-value") {
+		t.Errorf("err = %v, want a parse error that doesn't quote the file", err)
+	}
 }

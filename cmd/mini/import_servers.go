@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -125,7 +124,7 @@ func (imp serverImport) reportConfigured(imported config.ServerConfig) {
 
 // Compares the file as written, before env expansion, since imported values are unexpanded too.
 func configuredDifferences(configDir string, imported config.ServerConfig) ([]string, error) {
-	configured, err := initcmd.UnexpandedServer(configDir, imported.Name)
+	configured, err := config.ReadUnexpandedServer(configDir, imported.Name)
 	if err != nil {
 		return nil, fmt.Errorf("could not compare it: %w", err)
 	}

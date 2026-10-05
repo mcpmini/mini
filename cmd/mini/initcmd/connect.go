@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
@@ -57,7 +55,7 @@ func LoadMiniServers(configDir string) (MiniServers, error) {
 	}
 	mini := MiniServers{loaded: map[string]config.ServerConfig{}}
 	for _, sc := range servers.Loaded {
-		written, err := UnexpandedServer(configDir, sc.Name)
+		written, err := config.ReadUnexpandedServer(configDir, sc.Name)
 		if !sc.IsEnabled() || err != nil { // a server left out here only keeps its duplicates in the agents
 			continue
 		}
@@ -65,22 +63,6 @@ func LoadMiniServers(configDir string) (MiniServers, error) {
 		mini.loaded[sc.Name] = sc
 	}
 	return mini, nil
-}
-
-// UnexpandedServer reads a server file as written, before ${VAR} expansion.
-func UnexpandedServer(configDir, name string) (config.ServerConfig, error) {
-	path := config.ServerPath(configDir, name)
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return config.ServerConfig{}, err
-	}
-	var sc config.ServerConfig
-	// yaml errors can quote the offending value, which may be a header token.
-	if yaml.Unmarshal(data, &sc) != nil {
-		return config.ServerConfig{}, errors.New(path + " does not parse")
-	}
-	sc.Name = name
-	return sc, nil
 }
 
 // Duplicates pairs each agent entry init may replace with the mini server it duplicates. Entries

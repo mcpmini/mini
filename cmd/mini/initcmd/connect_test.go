@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
-	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func agentNames(list []agents.Agent) []string {
@@ -37,6 +37,21 @@ func TestConnectableAgents(t *testing.T) {
 
 	if want := []string{"Claude Code", "Gemini CLI"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("connectable = %v, want %v: a config that reads, and an installed agent with none yet", got, want)
+	}
+}
+
+func TestConnectableAgents_claudeCodeIsInstalledOnlyWithItsOwnDirectory(t *testing.T) {
+	f := newApplyFixture(t)
+	claude := []agents.Agent{f.agents["Claude Code"]}
+	if got := agentNames(ConnectableAgents(claude)); got != nil {
+		t.Errorf("connectable = %v, want none: its config would land in the home directory every user has", got)
+	}
+
+	if err := os.MkdirAll(filepath.Join(f.home, ".claude"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentNames(ConnectableAgents(claude)); !reflect.DeepEqual(got, []string{"Claude Code"}) {
+		t.Errorf("connectable = %v, want Claude Code once ~/.claude exists", got)
 	}
 }
 
@@ -89,16 +104,6 @@ func TestMiniServersCheck(t *testing.T) {
 
 	if want := map[string]error{"up": nil, "down": failure}; !reflect.DeepEqual(got, want) {
 		t.Errorf("checks = %v, want %v", got, want)
-	}
-}
-
-func TestUnexpandedServer_keepsReferences(t *testing.T) {
-	configDir := t.TempDir()
-	t.Setenv("API_KEY", "synthetic")
-	testutil.WriteFile(t, config.ServerPath(configDir, "svc"), "transport: http\nurl: https://example.com/mcp\nheaders:\n  X-Api-Key: ${API_KEY}\n")
-	sc, err := UnexpandedServer(configDir, "svc")
-	if err != nil || sc.Name != "svc" || sc.Headers["X-Api-Key"] != "${API_KEY}" {
-		t.Errorf("UnexpandedServer = %+v, %v; want the reference as written", sc, err)
 	}
 }
 
