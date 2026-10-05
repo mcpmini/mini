@@ -234,6 +234,15 @@ enabled_tools = ["read"]
 [mcp_servers.paused]
 command = "paused-server"
 enabled = false
+
+[mcp_servers.templated]
+command = "run"
+args = ["${HOME}/server.js"]
+
+[mcp_servers.team]
+url = "https://team.example/mcp"
+http_headers = { X-Team = "default" }
+env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 `)
 	t.Setenv("SEARCH_TOKEN", "")
 	os.Unsetenv("SEARCH_TOKEN") //nolint:errcheck // t.Setenv above restores it after the test
@@ -255,8 +264,10 @@ enabled = false
 			t.Errorf("%s was not imported: %v", name, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(configDir, "servers", "paused.yaml")); !os.IsNotExist(err) {
-		t.Errorf("paused was imported: %v", err)
+	for _, name := range []string{"paused", "templated"} {
+		if _, err := os.Stat(filepath.Join(configDir, "servers", name+".yaml")); !os.IsNotExist(err) {
+			t.Errorf("%s was imported: %v", name, err)
+		}
 	}
 	for _, want := range []string{
 		"Codex: files imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
@@ -264,6 +275,9 @@ enabled = false
 		"Codex: search imported, but headers.Authorization: SEARCH_TOKEN isn't set where mini runs; set it, or edit " +
 			filepath.Join(configDir, "servers", "search.yaml"),
 		"Codex: paused not imported: switched off in the agent",
+		"Codex: templated kept in the agent: uses an environment variable in command or args",
+		"Codex: team imported with its static X-Team header, since MINI_TEST_NEVER_SET wasn't set; to use MINI_TEST_NEVER_SET instead, set X-Team: ${MINI_TEST_NEVER_SET} in " +
+			filepath.Join(configDir, "servers", "team.yaml"),
 		"codex mcp add mini -- ",
 	} {
 		if !strings.Contains(out, want) {

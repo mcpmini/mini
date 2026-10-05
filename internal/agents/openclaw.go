@@ -36,7 +36,7 @@ func ReadOpenClaw(path string) (map[string]Server, error) {
 }
 
 func (e openClawMCPEntry) server(name string) Server {
-	disabled := e.Enabled != nil && !*e.Enabled
+	disabled := switchedOff(e.Enabled)
 	if e.URL != "" {
 		return Server{Config: e.httpServer(name, e.URL), Disabled: disabled}
 	}

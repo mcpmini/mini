@@ -74,6 +74,11 @@ func (imp serverImport) reportCaveats(name string, server agents.Server) {
 		fmt.Fprintf(imp.out, "  %s: %s imported without its %s, which mini doesn't support yet; if it fails to start, edit %s\n",
 			imp.source, name, strings.Join(ignored, ", "), path)
 	}
+	for _, header := range slices.Sorted(maps.Keys(server.UnusedEnvHeaders)) {
+		envVar := server.UnusedEnvHeaders[header]
+		fmt.Fprintf(imp.out, "  %s: %s imported with its static %s header, since %s wasn't set; to use %s instead, set %s: ${%s} in %s\n",
+			imp.source, name, header, envVar, envVar, header, envVar, path)
+	}
 	if err := config.UnsetEnvRefs(server.Config); err != nil {
 		fmt.Fprintf(imp.out, "  %s: %s imported, but %v; set it, or edit %s\n", imp.source, name, err, path)
 	}

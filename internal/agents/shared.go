@@ -39,6 +39,13 @@ type Server struct {
 	Disabled           bool
 	IgnoredRunSettings []string
 	UnexpandableRefs   []string
+	// UnusedEnvHeaders maps a static header kept at import to the variable the agent would read
+	// it from once that is set; mini won't switch to it later.
+	UnusedEnvHeaders map[string]string
+}
+
+func switchedOff(enabled *bool) bool {
+	return enabled != nil && !*enabled
 }
 
 func (s Server) Candidate() bool {
@@ -61,7 +68,7 @@ func importedServers[E clientEntry](entries map[string]E, keys map[string][]stri
 	servers := make(map[string]Server, len(entries))
 	for name, entry := range entries {
 		s := entry.server(name)
-		s.IgnoredRunSettings = append(presentKeys(keys[name], f.ignoredRunSettings), s.IgnoredRunSettings...)
+		s.IgnoredRunSettings = presentKeys(keys[name], f.ignoredRunSettings)
 		s.UnexpandableRefs = unexpandableFields(s.Config, f)
 		servers[name] = s
 	}
