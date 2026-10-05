@@ -194,15 +194,17 @@ func TestApply_createsAMissingConfig(t *testing.T) {
 func TestApply_reportsEntriesChangedSinceTheCheck(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
-	cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server","args":["--edited"]}}}`)
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "lin", Command: "lin-server"})
+	cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server","args":["--edited"]},"lin":{"command":"lin-server"}}}`)
 
 	results := Apply(context.Background(), ApplyParams{
 		ConfigDir: f.configDir, Agents: []agents.Agent{cursor}, Choice: ConnectAndRemove, Mini: testMini,
-		Checks: map[string]error{"files": nil}, Counted: map[string][]string{"Cursor": {"files"}},
+		Checks:  map[string]error{"files": nil, "lin": errors.New("unreachable")},
+		Counted: map[string][]string{"Cursor": {"files", "lin"}},
 	})
 
 	if !reflect.DeepEqual(results[0].Changed, []string{"files"}) || results[0].Removed != nil {
-		t.Errorf("result = %+v, want files left alone and reported as changed", results[0])
+		t.Errorf("result = %+v, want files reported as changed and lin, kept by its failed check, not", results[0])
 	}
 }
 
@@ -237,8 +239,8 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		cursor := f.write(t, "Cursor", cursorOriginal)
 		results := f.apply(ConnectAndRemove, nil, codex, cursor)
 		for i, want := range []string{original, cursorOriginal} {
-			if !results[i].MiniAlreadyConnected || results[i].Backup != "" || results[i].Err != nil {
-				t.Errorf("result = %+v, want mini reported as already connected and no edit", results[i])
+			if results[i].ExistingMini != MiniEntryInactive || results[i].Backup != "" || results[i].Err != nil {
+				t.Errorf("result = %+v, want the switched-off or non-mini entry reported inactive and no edit", results[i])
 			}
 			if got := string(testutil.ReadFile(t, results[i].Agent.ConfigPath)); got != want {
 				t.Errorf("config:\n%s\nwant it unchanged", got)
@@ -263,7 +265,7 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			"[mcp_servers.proxy]\ncommand = \"/usr/local/bin/mini\"\nargs = [\"--config="+f.configDir+"\", \"connect\"]\n")
 		cursor := f.write(t, "Cursor", `{"mcpServers":{"proxy":`+f.servingMini()+`}}`)
 		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, codex, cursor)
-		if !results[0].MiniAlreadyConnected || !reflect.DeepEqual(results[0].Removed, []string{"files"}) {
+		if results[0].ExistingMini != MiniEntryServes || !reflect.DeepEqual(results[0].Removed, []string{"files"}) {
 			t.Errorf("Codex result = %+v, want mini reported as connected and files switched off", results[0])
 		}
 		if data := string(testutil.ReadFile(t, codex.ConfigPath)); strings.Contains(data, "mcp_servers.mini") {
@@ -282,12 +284,18 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			`"other-mini":{"command":"/usr/local/bin/mini","args":["--config","/srv/other-mini","connect"]}}}`)
 		before := [][]byte{testutil.ReadFile(t, codex.ConfigPath), testutil.ReadFile(t, cursor.ConfigPath)}
 
-		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, codex, cursor)
+		results := Apply(context.Background(), ApplyParams{
+			ConfigDir: f.configDir, Agents: []agents.Agent{codex, cursor}, Choice: ConnectAndRemove, Mini: testMini,
+			Checks: map[string]error{"files": nil}, Counted: map[string][]string{"Codex": {"files"}, "Cursor": {"files"}},
+		})
 
-		wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniElsewhere}}
+		wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
 		for i, result := range results {
-			if !result.MiniAlreadyConnected || result.Removed != nil || !reflect.DeepEqual(result.Kept, wantKept) {
+			if result.ExistingMini != MiniEntryInactive || result.Removed != nil || !reflect.DeepEqual(result.Kept, wantKept) {
 				t.Errorf("%s result = %+v, want files kept because mini won't serve it", result.Agent.Name, result)
+			}
+			if result.Changed != nil {
+				t.Errorf("%s changed = %v, want none: files is as Connect counted it", result.Agent.Name, result.Changed)
 			}
 			if after := testutil.ReadFile(t, result.Agent.ConfigPath); string(after) != string(before[i]) {
 				t.Errorf("%s config changed:\n%s", result.Agent.Name, after)

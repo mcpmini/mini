@@ -36,16 +36,14 @@ type ApplyParams struct {
 }
 
 type AgentResult struct {
-	Agent   agents.Agent
-	Backup  string
-	Created bool
-	// MiniAlreadyConnected: the agent already ran mini, under any key; that entry is the user's and
-	// is left as it is.
-	MiniAlreadyConnected bool
-	Removed              []string
-	Kept                 []KeptEntry
-	Changed              []string
-	Err                  error
+	Agent        agents.Agent
+	Backup       string
+	Created      bool
+	ExistingMini ExistingMini
+	Removed      []string
+	Kept         []KeptEntry
+	Changed      []string
+	Err          error
 }
 
 // KeptEntry is an agent entry mini duplicates but didn't replace, because mini's copy failed its
@@ -57,8 +55,8 @@ type KeptEntry struct {
 }
 
 var (
-	errNotChecked    = errors.New("its connection wasn't checked")
-	errMiniElsewhere = errors.New("the agent's mini entry is switched off or runs another config directory")
+	errNotChecked   = errors.New("its connection wasn't checked")
+	errMiniInactive = errors.New("the agent's mini entry is switched off, runs another config directory, or isn't mini")
 )
 
 // Apply connects mini to each agent in turn. A failed agent doesn't stop the others; once ctx is
@@ -87,11 +85,7 @@ func (p ApplyParams) connect(agent agents.Agent, mini MiniServers) AgentResult {
 		err := p.create(agent)
 		return AgentResult{Agent: agent, Created: err == nil, Err: err}
 	}
-	result := p.edit(agent, mini)
-	result.Changed = slices.DeleteFunc(slices.Clone(p.Counted[agent.Name]), func(entry string) bool {
-		return result.Err != nil || slices.Contains(result.Removed, entry)
-	})
-	return result
+	return p.edit(agent, mini)
 }
 
 func (p ApplyParams) create(agent agents.Agent) error {
@@ -105,37 +99,51 @@ func (p ApplyParams) create(agent agents.Agent) error {
 func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {
 	result := AgentResult{Agent: agent}
 	edit := func(config []byte) ([]byte, error) {
-		entries, err := agent.Read(agent.ConfigPath)
-		if err != nil {
-			return nil, err
-		}
-		existing := p.existingMini(entries)
-		result.MiniAlreadyConnected = existing != noMini
-		result.Removed, result.Kept = p.replaceable(entries, mini, existing)
-		switch {
-		case !result.MiniAlreadyConnected:
-			return agent.Connect(config, result.Removed, &p.Mini)
-		case len(result.Removed) == 0:
-			return config, nil
-		default:
-			return agent.Connect(config, result.Removed, nil)
-		}
+		result = AgentResult{Agent: agent}
+		return p.editedConfig(agent, mini, config, &result)
 	}
 	result.Backup, result.Err = agents.EditFile(agent.ConfigPath, edit, p.Now)
 	if result.Err != nil {
-		result.Removed, result.Kept = nil, nil
+		result.Removed, result.Kept, result.Changed = nil, nil, nil
 	}
 	return result
 }
 
 // Reads the entries again at apply, so an entry edited since Connect's check is judged as it is now.
-func (p ApplyParams) replaceable(entries map[string]agents.Server, mini MiniServers, existing existingMini) ([]string, []KeptEntry) {
-	if p.Choice != ConnectAndRemove {
-		return nil, nil
+func (p ApplyParams) editedConfig(agent agents.Agent, mini MiniServers, config []byte, result *AgentResult) ([]byte, error) {
+	entries, err := agent.Read(agent.ConfigPath)
+	if err != nil {
+		return nil, err
 	}
+	result.ExistingMini = p.existingMini(entries)
+	if p.Choice == ConnectAndRemove {
+		duplicates := mini.Duplicates(entries, p.SelfPath)
+		result.Changed = changedSince(p.Counted[agent.Name], duplicates)
+		result.Removed, result.Kept = p.replaceable(duplicates, result.ExistingMini)
+	}
+	switch {
+	case result.ExistingMini == NoMiniEntry:
+		return agent.Connect(config, result.Removed, &p.Mini)
+	case len(result.Removed) == 0:
+		return config, nil
+	default:
+		return agent.Connect(config, result.Removed, nil)
+	}
+}
+
+func changedSince(counted []string, duplicates map[string]string) []string {
+	var changed []string
+	for _, entry := range counted {
+		if _, still := duplicates[entry]; !still {
+			changed = append(changed, entry)
+		}
+	}
+	return changed
+}
+
+func (p ApplyParams) replaceable(duplicates map[string]string, existing ExistingMini) ([]string, []KeptEntry) {
 	var remove []string
 	var kept []KeptEntry
-	duplicates := mini.Duplicates(entries, p.SelfPath)
 	for _, entry := range slices.Sorted(maps.Keys(duplicates)) {
 		if err := p.keepReason(duplicates[entry], existing); err != nil {
 			kept = append(kept, KeptEntry{Entry: entry, Server: duplicates[entry], Err: err})
@@ -146,11 +154,10 @@ func (p ApplyParams) replaceable(entries map[string]agents.Server, mini MiniServ
 	return remove, kept
 }
 
-// A duplicate goes only when the agent ends up with an enabled mini serving the servers checked
-// here; a mini entry init leaves alone may be switched off or run another config directory.
-func (p ApplyParams) keepReason(server string, existing existingMini) error {
-	if existing == miniElsewhere {
-		return errMiniElsewhere
+// A duplicate goes only when the agent ends up with an enabled mini serving the servers checked here.
+func (p ApplyParams) keepReason(server string, existing ExistingMini) error {
+	if existing == MiniEntryInactive {
+		return errMiniInactive
 	}
 	if err, checked := p.Checks[server]; checked {
 		return err

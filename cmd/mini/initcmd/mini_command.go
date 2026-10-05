@@ -52,23 +52,28 @@ func (l binaryLookup) binaryPath() string {
 	return "mini"
 }
 
-type existingMini int
+// ExistingMini is what an agent already had for mini. That entry is the user's: apply never
+// changes it or adds a second one.
+type ExistingMini int
 
 const (
-	noMini existingMini = iota
-	miniServesConfigDir
-	miniElsewhere
+	NoMiniEntry ExistingMini = iota
+	// MiniEntryServes: switched on and running the config directory init set up.
+	MiniEntryServes
+	// MiniEntryInactive: switched off, running another config directory, or another server under
+	// mini's key; the agent doesn't get this mini's servers through it.
+	MiniEntryInactive
 )
 
-func (p ApplyParams) existingMini(entries map[string]agents.Server) existingMini {
-	found := noMini
+func (p ApplyParams) existingMini(entries map[string]agents.Server) ExistingMini {
+	found := NoMiniEntry
 	for name, entry := range entries {
 		isMini := agents.IsMiniEntry(entry.Config, p.SelfPath)
 		switch {
 		case isMini && !entry.Disabled && sameDir(configDirArg(entry.Config.Args), p.ConfigDir):
-			return miniServesConfigDir
+			return MiniEntryServes
 		case isMini || name == agents.MiniKey:
-			found = miniElsewhere
+			found = MiniEntryInactive
 		}
 	}
 	return found
@@ -89,7 +94,7 @@ func configDirArg(args []string) string {
 func sameDir(a, b string) bool {
 	absA, errA := filepath.Abs(a)
 	absB, errB := filepath.Abs(b)
-	return errA == nil && errB == nil && absA == absB
+	return (errA == nil && errB == nil && absA == absB) || sameFile(a, b)
 }
 
 func sameFile(a, b string) bool {
