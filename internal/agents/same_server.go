@@ -9,8 +9,8 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// ConnectionDifferences names the connection fields where two configs differ. Two entries on the
-// same URL with different credentials are different servers.
+// ConnectionDifferences names the connection fields where two configs differ. Agent entries keep
+// their tokens in headers and env, so the same URL with a different token is a different server.
 func ConnectionDifferences(a, b config.ServerConfig) []string {
 	fields := []struct {
 		name string

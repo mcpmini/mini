@@ -70,24 +70,41 @@ func forgetStateStoredByName(configDir, name string) error {
 	return nil
 }
 
+// ValidateServer reports whether AddServer would accept sc, without writing anything.
+func ValidateServer(configDir string, sc config.ServerConfig) error {
+	if err := validServerName(sc.Name); err != nil {
+		return err
+	}
+	_, _, err := encodeServer(configDir, sc)
+	return err
+}
+
 func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
+	added, data, err := encodeServer(configDir, sc)
+	if err != nil {
+		return AddedServer{}, err
+	}
+	if err := writeNewFile(added.Path, data); err != nil {
+		return AddedServer{}, fmt.Errorf("write %s: %w", added.Path, err)
+	}
+	return added, nil
+}
+
+func encodeServer(configDir string, sc config.ServerConfig) (AddedServer, []byte, error) {
 	written, defaultPermissions := withBundledPermissions(sc)
 	written, defaultProjections, err := withBundledProjections(written)
 	if err != nil {
-		return AddedServer{}, err
+		return AddedServer{}, nil, err
 	}
-	path := config.ServerPath(configDir, sc.Name)
+	added := AddedServer{
+		Config: written, Path: config.ServerPath(configDir, sc.Name),
+		DefaultPermissions: defaultPermissions, DefaultProjections: defaultProjections,
+	}
 	data, err := yaml.Marshal(written)
 	if err != nil {
-		return AddedServer{}, err
+		return AddedServer{}, nil, err
 	}
-	if err := config.ValidateServerFile(path, data); err != nil {
-		return AddedServer{}, err
-	}
-	if err := writeNewFile(path, data); err != nil {
-		return AddedServer{}, fmt.Errorf("write %s: %w", path, err)
-	}
-	return AddedServer{Config: written, Path: path, DefaultPermissions: defaultPermissions, DefaultProjections: defaultProjections}, nil
+	return added, data, config.ValidateServerFile(added.Path, data)
 }
 
 func writeNewFile(path string, data []byte) error {

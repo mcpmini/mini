@@ -54,7 +54,7 @@ type FindParams struct {
 	SelfPath string
 }
 
-// The key Connect writes mini under; whatever an agent has there is replaced, never imported.
+// The key Connect writes mini under; whatever an agent has there is mini, never imported.
 const miniKey = "mini"
 
 type agentEntry struct {

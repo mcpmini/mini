@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// WithTimeout is context.WithTimeout with the deadline on c, so tests can expire it with a fake
-// clock instead of waiting it out.
+// WithTimeout cancels the context once d passes on c, so tests can expire it with a fake clock
+// instead of waiting it out. Unlike context.WithTimeout, expiry reports context.Canceled.
 func WithTimeout(parent context.Context, c Clock, d time.Duration) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(parent)
 	deadline := c.NewTimer(d)

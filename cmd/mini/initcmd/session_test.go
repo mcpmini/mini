@@ -118,6 +118,38 @@ func TestSessionSync_aChangedSourceIsWrittenAgain(t *testing.T) {
 	}
 }
 
+func TestSessionSync_aChangeMadeThroughSharedMapsIsStillWritten(t *testing.T) {
+	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
+	github := httpServer("github", "https://gh.example/mcp")
+	github.Headers = map[string]string{"X-Team": "first"}
+	s.Sync([]config.ServerConfig{github})
+
+	github.Headers["X-Team"] = "second"
+	result := s.Sync([]config.ServerConfig{github})
+
+	if !reflect.DeepEqual(addedNames(result), []string{"github"}) {
+		t.Errorf("result = %+v, want github written again", result)
+	}
+	if got := string(testutil.ReadFile(t, config.ServerPath(dir, "github"))); !strings.Contains(got, "second") {
+		t.Errorf("server file = %s, want the changed header", got)
+	}
+}
+
+func TestSessionSync_aRejectedReplacementKeepsTheWrittenServer(t *testing.T) {
+	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
+	s.Sync([]config.ServerConfig{{Name: "svc", Command: "run"}})
+	before := testutil.ReadFile(t, config.ServerPath(dir, "svc"))
+
+	result := s.Sync([]config.ServerConfig{{Name: "svc", Command: "run", HandshakeTimeout: "nonsense"}})
+
+	if len(result.Failed) != 1 || result.Failed[0].Name != "svc" || result.Removed != nil {
+		t.Errorf("result = %+v, want svc reported as failed and nothing removed", result)
+	}
+	if after := testutil.ReadFile(t, config.ServerPath(dir, "svc")); string(after) != string(before) {
+		t.Errorf("server file = %s, want the previous config kept", after)
+	}
+}
+
 func TestSessionSync_neverRemovesServersFromBeforeTheRun(t *testing.T) {
 	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "existing", Command: "run"})

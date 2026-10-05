@@ -3,8 +3,6 @@ package agents
 import (
 	"encoding/json"
 	"fmt"
-	"maps"
-	"slices"
 )
 
 type claudeMCPEntry struct {
