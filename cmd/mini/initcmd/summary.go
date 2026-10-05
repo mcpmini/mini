@@ -35,8 +35,11 @@ func writeServers(b *strings.Builder, r Report) {
 	case len(unfinished) == 0:
 		fmt.Fprintf(b, "mini is set up with %s.\n", plural(len(r.Servers), "server"))
 	default:
-		fmt.Fprintf(b, "mini is set up with %s, %d still %s finishing:\n", plural(len(r.Servers), "server"), len(unfinished),
-			map[bool]string{true: "needs", false: "need"}[len(unfinished) == 1])
+		verb := "need"
+		if len(unfinished) == 1 {
+			verb = "needs"
+		}
+		fmt.Fprintf(b, "mini is set up with %s, %d still %s finishing:\n", plural(len(r.Servers), "server"), len(unfinished), verb)
 	}
 	width := nameWidth(unfinished)
 	for _, s := range unfinished {
@@ -97,6 +100,8 @@ func skippedLine(s SkippedServer) string {
 		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
 	case SkipSwitchedOff:
 		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
+	case SkipSecondConfig:
+		return fmt.Sprintf("%s in %s: another agent's %s is imported instead; run mini init to pick both", s.Name, s.Agent, s.Name)
 	}
 	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))
 }

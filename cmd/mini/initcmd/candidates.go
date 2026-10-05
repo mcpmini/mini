@@ -38,6 +38,7 @@ const (
 	SkipEmptyName SkipReason = iota
 	SkipUnexpandableRefs
 	SkipSwitchedOff
+	SkipSecondConfig
 )
 
 // SkippedServer is an agent entry init leaves in the agent; the summary says why.
