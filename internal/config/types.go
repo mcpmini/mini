@@ -181,7 +181,7 @@ type ServerConfig struct {
 	// Permissions config.
 	Permissions *PermissionsConfig `yaml:"permissions,omitempty"`
 
-	// Projections maps tool name → projection config. UnmarshalYAML and MarshalYAML read and write it.
+	// Projections maps tool name → projection config.
 	Projections map[string]*ProjectionConfig `yaml:"-"`
 
 	// ToolTimeout is the per-call deadline (e.g. "30s", "5m"). Default "30s", "0" = no timeout.
