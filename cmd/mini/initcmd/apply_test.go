@@ -26,6 +26,7 @@ type applyFixture struct {
 
 func newApplyFixture(t *testing.T) applyFixture {
 	t.Helper()
+	t.Setenv("CODEX_HOME", "")
 	f := applyFixture{home: t.TempDir(), configDir: t.TempDir(), agents: map[string]agents.Agent{}}
 	for _, agent := range agents.Known(f.home) {
 		f.agents[agent.Name] = agent
@@ -146,7 +147,7 @@ func TestApply_neverReplaces(t *testing.T) {
 
 	results := f.apply(ConnectAndRemove, map[string]error{"files": nil, "off": nil}, cursor)
 
-	want := []string{"disabled-in-mini", "mini", "never-checked", "old-mini", "unchecked"}
+	want := []string{"disabled-in-mini", "never-checked", "old-mini", "unchecked"}
 	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, want) || results[0].Removed != nil {
 		t.Errorf("entries = %v, removed = %v; want %v and nothing removed", got, results[0].Removed, want)
 	}
@@ -249,6 +250,23 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		data := string(testutil.ReadFile(t, cursor.ConfigPath))
 		if !reflect.DeepEqual(results[0].Removed, []string{"files"}) || !strings.Contains(data, "/old/mini") || !strings.Contains(data, "MINI_FLAG") {
 			t.Errorf("result = %+v, config:\n%s\nwant files removed and mini's entry unchanged", results[0], data)
+		}
+	})
+	t.Run("mini under another key gets no second entry", func(t *testing.T) {
+		f := newApplyFixture(t)
+		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+		codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"files-server\"\n\n"+
+			"[mcp_servers.proxy]\ncommand = \"/usr/local/bin/mini\"\nargs = [\"connect\"]\n")
+		cursor := f.write(t, "Cursor", `{"mcpServers":{"proxy":{"command":"/usr/local/bin/mini","args":["connect"]}}}`)
+		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, codex, cursor)
+		if !results[0].MiniAlreadyConnected || !reflect.DeepEqual(results[0].Removed, []string{"files"}) {
+			t.Errorf("Codex result = %+v, want mini reported as connected and files switched off", results[0])
+		}
+		if data := string(testutil.ReadFile(t, codex.ConfigPath)); strings.Contains(data, "mcp_servers.mini") {
+			t.Errorf("Codex config:\n%s\nwant no second mini entry", data)
+		}
+		if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, []string{"proxy"}) || results[1].Backup != "" {
+			t.Errorf("Cursor entries = %v, result = %+v; want proxy alone and no edit", got, results[1])
 		}
 	})
 }

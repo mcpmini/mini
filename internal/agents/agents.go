@@ -11,9 +11,10 @@ type Agent struct {
 	ConfigPath string
 	// Dir is the agent's own directory: when it exists the agent is installed, even before its
 	// MCP config file does.
-	Dir     string
-	Read    func(path string) (map[string]Server, error)
-	Connect func(config []byte, remove []string, mini MiniEntry) ([]byte, error)
+	Dir  string
+	Read func(path string) (map[string]Server, error)
+	// A nil mini adds no entry, for an agent that already runs mini under another key.
+	Connect func(config []byte, remove []string, mini *MiniEntry) ([]byte, error)
 	// RemoveDisables is set for agents where removing an entry switches it off instead.
 	RemoveDisables bool
 }

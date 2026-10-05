@@ -17,7 +17,7 @@ type CodexServer struct {
 }
 
 // EditCodexServers disables named servers and adds mini only when its entry is absent.
-func EditCodexServers(data []byte, disable []string, mini CodexServer) ([]byte, error) {
+func EditCodexServers(data []byte, disable []string, mini *CodexServer) ([]byte, error) {
 	before, err := decodeCodexConfig(data)
 	if err != nil {
 		return nil, err
@@ -199,8 +199,8 @@ func leadingSpace(text string) string {
 	return text[:len(text)-len(strings.TrimLeft(text, " \t"))]
 }
 
-func codexMiniTable(before map[string]any, mini CodexServer) ([]string, error) {
-	if serverDefined(before, "mini") {
+func codexMiniTable(before map[string]any, mini *CodexServer) ([]string, error) {
+	if mini == nil || serverDefined(before, "mini") {
 		return nil, nil
 	}
 	var body bytes.Buffer
@@ -246,7 +246,7 @@ func expectedCodexConfig(original []byte, disable []string, miniLines []string) 
 }
 
 func addExpectedMini(servers map[string]any, miniLines []string) error {
-	if _, exists := servers["mini"]; exists {
+	if _, exists := servers["mini"]; exists || len(miniLines) == 0 {
 		return nil
 	}
 	fresh, err := decodeCodexConfig([]byte(strings.Join(miniLines, "\n")))

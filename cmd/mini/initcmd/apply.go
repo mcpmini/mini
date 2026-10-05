@@ -39,7 +39,8 @@ type AgentResult struct {
 	Agent   agents.Agent
 	Backup  string
 	Created bool
-	// MiniAlreadyConnected: the agent had a mini entry, which is the user's and is left as it is.
+	// MiniAlreadyConnected: the agent already ran mini, under any key; that entry is the user's and
+	// is left as it is.
 	MiniAlreadyConnected bool
 	Removed              []string
 	Kept                 []KeptEntry
@@ -91,7 +92,7 @@ func (p ApplyParams) connect(agent agents.Agent, mini MiniServers) AgentResult {
 }
 
 func (p ApplyParams) create(agent agents.Agent) error {
-	data, err := agent.Connect(nil, nil, p.Mini)
+	data, err := agent.Connect(nil, nil, &p.Mini)
 	if err != nil {
 		return err
 	}
@@ -105,18 +106,31 @@ func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {
 		if err != nil {
 			return nil, err
 		}
-		_, result.MiniAlreadyConnected = entries[agents.MiniKey]
+		result.MiniAlreadyConnected = runsMini(entries, p.SelfPath)
 		result.Removed, result.Kept = p.replaceable(entries, mini)
-		if result.MiniAlreadyConnected && len(result.Removed) == 0 {
+		switch {
+		case !result.MiniAlreadyConnected:
+			return agent.Connect(config, result.Removed, &p.Mini)
+		case len(result.Removed) == 0:
 			return config, nil
+		default:
+			return agent.Connect(config, result.Removed, nil)
 		}
-		return agent.Connect(config, result.Removed, p.Mini)
 	}
 	result.Backup, result.Err = agents.EditFile(agent.ConfigPath, edit, p.Now)
 	if result.Err != nil {
 		result.Removed, result.Kept = nil, nil
 	}
 	return result
+}
+
+func runsMini(entries map[string]agents.Server, selfPath string) bool {
+	for name, entry := range entries {
+		if name == agents.MiniKey || agents.IsMiniEntry(entry.Config, selfPath) {
+			return true
+		}
+	}
+	return false
 }
 
 // Reads the entries again at apply, so an entry edited since Connect's check is judged as it is now.

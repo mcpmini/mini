@@ -84,7 +84,8 @@ func UnexpandedServer(configDir, name string) (config.ServerConfig, error) {
 }
 
 // Duplicates pairs each agent entry init may replace with the mini server it duplicates. Entries
-// that limit tools, ask for approval, are switched off, or are mini itself are never replaced.
+// that are switched off, weren't importable, or run mini are never replaced. Tool limits and
+// approval settings aren't carried into mini; a replaced entry keeps them only in the backup.
 func (m MiniServers) Duplicates(entries map[string]agents.Server, selfPath string) map[string]string {
 	duplicates := map[string]string{}
 	for name, entry := range entries {

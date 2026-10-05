@@ -17,16 +17,19 @@ type MiniEntry struct {
 // The key mini is written under; an agent's existing entry there is the user's and never changed.
 const MiniKey = "mini"
 
-func connectJSON(config []byte, remove []string, mini MiniEntry) ([]byte, error) {
+func connectJSON(config []byte, remove []string, mini *MiniEntry) ([]byte, error) {
 	if len(bytes.TrimSpace(config)) == 0 {
 		config = []byte("{}")
 	}
-	entry := map[string]any{"command": mini.Command, "args": mini.Args}
-	return EditJSONServers(config, remove, map[string]any{MiniKey: entry})
+	var add map[string]any
+	if mini != nil {
+		add = map[string]any{MiniKey: map[string]any{"command": mini.Command, "args": mini.Args}}
+	}
+	return EditJSONServers(config, remove, add)
 }
 
-func connectCodex(config []byte, disable []string, mini MiniEntry) ([]byte, error) {
-	return EditCodexServers(config, disable, CodexServer(mini))
+func connectCodex(config []byte, disable []string, mini *MiniEntry) ([]byte, error) {
+	return EditCodexServers(config, disable, (*CodexServer)(mini))
 }
 
 // CreateFile writes the MCP config of an agent that has none yet. It never replaces a file: one
