@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -69,13 +70,10 @@ func notImportedReason(server agents.Server) string {
 func (imp serverImport) reportCaveats(name string, server agents.Server) {
 	path := config.ServerPath(imp.configDir, name)
 	if ignored := server.IgnoredRunSettings; len(ignored) > 0 {
-		fmt.Fprintf(imp.out, "  %s: %s imported without its %s, which mini doesn't support yet; if it fails to start, edit %s\n",
-			imp.source, name, strings.Join(ignored, ", "), path)
+		fmt.Fprintf(imp.out, "  %s: %s\n", imp.source, initcmd.IgnoredSettingsNote(name, ignored, path))
 	}
-	for _, header := range slices.Sorted(maps.Keys(server.UnusedEnvHeaders)) {
-		envVar := server.UnusedEnvHeaders[header]
-		fmt.Fprintf(imp.out, "  %s: %s imported with its static %s header, since %s wasn't set; to use %s instead, set %s: ${%s} in %s\n",
-			imp.source, name, header, envVar, envVar, header, envVar, path)
+	for _, note := range initcmd.StaticHeaderNotes(name, server.UnusedEnvHeaders, path) {
+		fmt.Fprintf(imp.out, "  %s: %s\n", imp.source, note)
 	}
 	if err := config.UnsetEnvRefs(server.Config); err != nil {
 		fmt.Fprintf(imp.out, "  %s: %s imported, but %v; set it, or edit %s\n", imp.source, name, err, path)

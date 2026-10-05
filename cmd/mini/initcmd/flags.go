@@ -34,14 +34,20 @@ type Report struct {
 	// agent would read it from once that is set.
 	UnusedEnvHeaders  map[string]map[string]string
 	AlreadyConfigured []string
+	// FromImport are --add names an imported server already covers, so the catalog's isn't added.
+	FromImport []string
 	// Connected holds one result per agent Connect touched; nil when nothing was connected.
 	Connected []AgentResult
 	// Unconnected are agents the summary shows how to connect by hand.
 	Unconnected []agents.Agent
-	// HasMini are agents that already have a mini entry; it is the user's, so they get no step.
-	HasMini   []agents.Agent
-	Mini      agents.MiniEntry
-	StatusErr error
+	// HasMini are agents whose mini entry serves this config directory; it is the user's, so
+	// they get no step.
+	HasMini []agents.Agent
+	// InactiveMini are agents whose mini entry may not run these servers; it is the user's, so
+	// the summary says what it should run instead of adding a second one.
+	InactiveMini []agents.Agent
+	Mini         agents.MiniEntry
+	StatusErr    error
 }
 
 func (r Report) Failed() bool {
@@ -58,57 +64,90 @@ func (r Report) Failed() bool {
 
 func RunFlags(p FlagRun) Report {
 	report := Report{ConfigDir: p.ConfigDir, Mini: MiniCommand(p.ConfigDir)}
-	report.Unconnected, report.HasMini = p.splitByMini()
+	p.sortByMini(&report)
 	configured, err := writtenServers(p.ConfigDir)
 	if err != nil {
 		report.StatusErr = err
 		return report
 	}
 	candidates, skipped := FindServers(FindParams{Agents: p.Import, Configured: configured, SelfPath: p.SelfPath})
-	report.Skipped, report.Ignored, report.UnusedEnvHeaders = skipped, ignoredSettings(candidates), unusedEnvHeaders(candidates)
-	want, already := flagPicks(candidates, p.Add, configured)
-	report.AlreadyConfigured = already
+	report.Skipped = append(skipped, switchedOffRows(candidates)...)
+	report.Ignored, report.UnusedEnvHeaders = ignoredSettings(candidates), unusedEnvHeaders(candidates)
+	picks := flagPicks(candidates, p.Add, configured)
+	report.AlreadyConfigured, report.FromImport = picks.already, picks.fromImport
 	session := NewSession(SessionParams{ConfigDir: p.ConfigDir})
-	report.Sync = session.Sync(want)
+	report.Sync = session.Sync(picks.want)
 	session.WaitChecks()
+	report.dropNotesOfFailedServers()
 	report.Servers, report.StatusErr = ServerStatuses(p.ConfigDir, p.Catalog)
 	return report
 }
 
-// Flags take each row's default tick, so switched-off servers and second configs stay out. An
-// imported server wins over a catalog server it matches.
-func flagPicks(candidates []Candidate, add []catalog.Entry, configured []config.ServerConfig) ([]config.ServerConfig, []string) {
-	var want []config.ServerConfig
-	for _, c := range candidates {
-		if c.Checked {
-			want = append(want, c.Config)
-		}
+func (r *Report) dropNotesOfFailedServers() {
+	for _, failure := range r.Sync.Failed {
+		delete(r.Ignored, failure.Name)
+		delete(r.UnusedEnvHeaders, failure.Name)
 	}
-	hidden := NewConfiguredKeys(configured)
-	picked := NewConfiguredKeys(want)
-	var already []string
-	for _, entry := range add {
-		switch {
-		case hidden.Has(entry):
-			already = append(already, entry.Name)
-		case !picked.Has(entry):
-			want = append(want, CatalogServer(entry))
-		}
-	}
-	return want, already
 }
 
-func (p FlagRun) splitByMini() (unconnected, hasMini []agents.Agent) {
+type picks struct {
+	want       []config.ServerConfig
+	already    []string
+	fromImport []string
+}
+
+// Flags take each row's default tick, so switched-off servers and second configs stay out. An
+// imported server wins over a catalog server it matches.
+func flagPicks(candidates []Candidate, add []catalog.Entry, configured []config.ServerConfig) picks {
+	var p picks
+	for _, c := range candidates {
+		if c.Checked {
+			p.want = append(p.want, c.Config)
+		}
+	}
+	configuredKeys := NewConfiguredKeys(configured)
+	imported := NewConfiguredKeys(p.want)
+	for _, entry := range add {
+		switch {
+		case configuredKeys.Has(entry):
+			p.already = append(p.already, entry.Name)
+		case imported.Has(entry):
+			p.fromImport = append(p.fromImport, entry.Name)
+		default:
+			p.want = append(p.want, CatalogServer(entry))
+		}
+	}
+	return p
+}
+
+// A row every agent switched off stays out: importing it would switch it on for every agent
+// connected to mini.
+func switchedOffRows(candidates []Candidate) []SkippedServer {
+	var off []SkippedServer
+	for _, c := range candidates {
+		if c.Checked || slices.ContainsFunc(c.Sources, func(s Source) bool { return !s.Disabled }) {
+			continue
+		}
+		for _, s := range c.Sources {
+			off = append(off, SkippedServer{Agent: s.Agent, Name: c.Name, Reason: SkipSwitchedOff})
+		}
+	}
+	return off
+}
+
+func (p FlagRun) sortByMini(r *Report) {
 	existing := ApplyParams{ConfigDir: p.ConfigDir, SelfPath: p.SelfPath}
 	for _, agent := range p.Connectable {
 		entries, err := agent.Read(agent.ConfigPath)
-		if err == nil && existing.existingMini(entries) != NoMiniEntry {
-			hasMini = append(hasMini, agent)
-		} else {
-			unconnected = append(unconnected, agent)
+		switch {
+		case err != nil || existing.existingMini(entries) == NoMiniEntry:
+			r.Unconnected = append(r.Unconnected, agent)
+		case existing.existingMini(entries) == MiniEntryServes:
+			r.HasMini = append(r.HasMini, agent)
+		default:
+			r.InactiveMini = append(r.InactiveMini, agent)
 		}
 	}
-	return unconnected, hasMini
 }
 
 func unusedEnvHeaders(candidates []Candidate) map[string]map[string]string {

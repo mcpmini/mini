@@ -45,6 +45,9 @@ func writeServers(b *strings.Builder, r Report) {
 	if len(r.AlreadyConfigured) > 0 {
 		fmt.Fprintf(b, "Already configured in mini: %s\n", strings.Join(r.AlreadyConfigured, ", "))
 	}
+	if len(r.FromImport) > 0 {
+		fmt.Fprintf(b, "Imported from your agents instead of the catalog: %s\n", strings.Join(r.FromImport, ", "))
+	}
 }
 
 func finishStep(r Report, s ServerStatus, width int) string {
@@ -52,8 +55,8 @@ func finishStep(r Report, s ServerStatus, width int) string {
 	more := "\n" + strings.Repeat(" ", width+4)
 	switch s.Finish {
 	case NeedsToken:
-		return fmt.Sprintf("needs a token: create one at %s, then add this header to %s:%s  Authorization: Bearer ${%s}",
-			s.SetupURL, file, more, TokenEnvVar(s.Name))
+		return fmt.Sprintf("needs a token: create one at %s, then add to %s:%s  headers:%s    Authorization: Bearer ${%s}",
+			s.SetupURL, file, more, more, TokenEnvVar(s.Name))
 	case NeedsEnv:
 		return fmt.Sprintf("needs %s set where mini runs (used in %s), or edit %s",
 			strings.Join(s.UnsetEnv.Names, ", "), s.UnsetEnv.Field, file)
@@ -89,27 +92,43 @@ func writeSkipped(b *strings.Builder, skipped []SkippedServer) {
 }
 
 func skippedLine(s SkippedServer) string {
-	if s.Reason == SkipEmptyName {
+	switch s.Reason {
+	case SkipEmptyName:
 		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
+	case SkipSwitchedOff:
+		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
 	}
 	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))
 }
 
 func writeIgnored(b *strings.Builder, r Report) {
 	for _, name := range slices.Sorted(maps.Keys(r.Ignored)) {
-		fmt.Fprintf(b, "\n%s was imported without its %s, which mini doesn't support yet; if it fails to start, edit %s\n",
-			name, strings.Join(r.Ignored[name], ", "), config.ServerPath(r.ConfigDir, name))
+		fmt.Fprintf(b, "\n%s\n", IgnoredSettingsNote(name, r.Ignored[name], config.ServerPath(r.ConfigDir, name)))
 	}
 }
 
 func writeUnusedEnvHeaders(b *strings.Builder, r Report) {
 	for _, name := range slices.Sorted(maps.Keys(r.UnusedEnvHeaders)) {
-		for _, header := range slices.Sorted(maps.Keys(r.UnusedEnvHeaders[name])) {
-			envVar := r.UnusedEnvHeaders[name][header]
-			fmt.Fprintf(b, "\n%s was imported with its static %s header, since %s wasn't set; to use %s instead, set %s: ${%s} in %s\n",
-				name, header, envVar, envVar, header, envVar, config.ServerPath(r.ConfigDir, name))
+		for _, note := range StaticHeaderNotes(name, r.UnusedEnvHeaders[name], config.ServerPath(r.ConfigDir, name)) {
+			fmt.Fprintf(b, "\n%s\n", note)
 		}
 	}
+}
+
+// IgnoredSettingsNote and StaticHeaderNotes word the import caveats for init and mini add alike.
+func IgnoredSettingsNote(name string, settings []string, file string) string {
+	return fmt.Sprintf("%s was imported without its %s, which mini doesn't support yet; if it fails to start, edit %s",
+		name, strings.Join(settings, ", "), file)
+}
+
+func StaticHeaderNotes(name string, unused map[string]string, file string) []string {
+	var notes []string
+	for _, header := range slices.Sorted(maps.Keys(unused)) {
+		envVar := unused[header]
+		notes = append(notes, fmt.Sprintf("%s was imported with its static %s header, since %s wasn't set; to use %s instead, set %s: ${%s} in %s",
+			name, header, envVar, envVar, header, envVar, file))
+	}
+	return notes
 }
 
 func writeFailures(b *strings.Builder, r Report) {

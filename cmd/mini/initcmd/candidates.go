@@ -27,6 +27,7 @@ type Source struct {
 	Agent              string
 	Name               string
 	Entry              config.ServerConfig
+	Disabled           bool
 	IgnoredRunSettings []string
 	UnusedEnvHeaders   map[string]string
 }
@@ -36,6 +37,7 @@ type SkipReason int
 const (
 	SkipEmptyName SkipReason = iota
 	SkipUnexpandableRefs
+	SkipSwitchedOff
 )
 
 // SkippedServer is an agent entry init leaves in the agent; the summary says why.

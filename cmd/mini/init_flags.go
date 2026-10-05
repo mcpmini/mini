@@ -39,7 +39,8 @@ func runInitFlags(configDir string, f initFlags) error {
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	report := initcmd.RunFlags(newFlagRun(configDir, sources, requested, entries))
+	run := initcmd.FlagRun{ConfigDir: configDir, Import: sources, Add: requested, Catalog: entries}
+	report := initcmd.RunFlags(withAgentsToConnect(run))
 	fmt.Print(initcmd.Summary(report))
 	if report.Failed() {
 		return &exitError{code: 1, err: errInitIncomplete}
@@ -47,13 +48,11 @@ func runInitFlags(configDir string, f initFlags) error {
 	return nil
 }
 
-func newFlagRun(configDir string, sources []agents.Agent, requested, entries []catalog.Entry) initcmd.FlagRun {
+func withAgentsToConnect(run initcmd.FlagRun) initcmd.FlagRun {
 	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is recognized by its command name alone
 	home, _ := os.UserHomeDir()    //nolint:errcheck // without a home there are no agents to show how to connect
-	return initcmd.FlagRun{
-		ConfigDir: configDir, Import: sources, Add: requested, Catalog: entries,
-		Connectable: initcmd.ConnectableAgents(knownAgentsIn(home)), SelfPath: selfPath,
-	}
+	run.Connectable, run.SelfPath = initcmd.ConnectableAgents(knownAgentsIn(home)), selfPath
+	return run
 }
 
 func knownAgentsIn(home string) []agents.Agent {
