@@ -89,6 +89,19 @@ func TestReadClientConfigs(t *testing.T) {
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { authorization = \"Bearer old\", x-key = \"old\" }\n" +
 				"env_http_headers = { X-Key = \"MINI_TEST_SET_KEY\" }\nbearer_token_env_var = \"TOKEN_VAR\"\n",
 			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"X-Key": "${MINI_TEST_SET_KEY}", "Authorization": "Bearer ${TOKEN_VAR}"})}},
+		{"codex keeps a static header whatever its case while its env override is unset", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { x-team = \"default\" }\n" +
+				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\" }\n",
+			Server{
+				Config:           remote("s", "https://example.com/mcp", map[string]string{"x-team": "default"}),
+				UnusedEnvHeaders: map[string]string{"X-Team": "MINI_TEST_UNSET_KEY"},
+			}},
+		{"codex header helpers are dropped and named", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers_helper = \"get-token\"\n",
+			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"http_headers_helper"}}},
+		{"openclaw cwd and tls settings are dropped and named", ReadOpenClaw, "openclaw.json",
+			`{"mcp":{"servers":{"s":{"command":"npx","cwd":"/srv","sslVerify":false}}}}`,
+			Server{Config: stdio("s", "npx"), IgnoredRunSettings: []string{"cwd", "sslVerify"}}},
 		{"codex keeps a static header while its env override is unset or blank", ReadCodex, "config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"default\", X-Org = \"acme\" }\n" +
 				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\", X-Org = \"MINI_TEST_BLANK_KEY\" }\n",

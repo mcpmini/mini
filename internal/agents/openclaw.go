@@ -11,7 +11,7 @@ type openClawMCPEntry struct {
 	Enabled *bool  `json:"enabled"`
 }
 
-var openClawFormat = entryFormat{}
+var openClawFormat = entryFormat{ignoredRunSettings: []string{"cwd", "sslVerify", "clientCert", "clientKey"}}
 
 // ReadOpenClaw reads an OpenClaw (formerly MoltBot) openclaw.json config.
 // Format: {"mcp": {"servers": {"name": {"command": "...", "args": [...], "env": {...}}}}}

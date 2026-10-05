@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -159,4 +160,21 @@ var editorPlaceholder = regexp.MustCompile(`\$\{(userHome|workspaceFolder|worksp
 
 func hasForeignRef(value string) bool {
 	return strings.Contains(miniEnvRef.ReplaceAllString(value, ""), "${")
+}
+
+func decodeJSONEntries[E any](raw map[string]json.RawMessage) (map[string]E, map[string][]string, error) {
+	entries := make(map[string]E, len(raw))
+	keys := make(map[string][]string, len(raw))
+	for name, message := range raw {
+		var fields map[string]json.RawMessage
+		var entry E
+		if err := json.Unmarshal(message, &fields); err != nil {
+			return nil, nil, fmt.Errorf("server %q: %w", name, err)
+		}
+		if err := json.Unmarshal(message, &entry); err != nil {
+			return nil, nil, fmt.Errorf("server %q: %w", name, err)
+		}
+		entries[name], keys[name] = entry, slices.Collect(maps.Keys(fields))
+	}
+	return entries, keys, nil
 }

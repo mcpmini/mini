@@ -18,7 +18,7 @@ type codexMCPEntry struct {
 	Enabled           *bool             `toml:"enabled"`
 }
 
-var codexFormat = entryFormat{ignoredRunSettings: []string{"cwd"}}
+var codexFormat = entryFormat{ignoredRunSettings: []string{"cwd", "environment_id", "http_headers_helper"}}
 
 // ReadCodex reads a Codex config.toml: [mcp_servers.NAME] tables with command/args/env or url.
 func ReadCodex(path string) (map[string]Server, error) {

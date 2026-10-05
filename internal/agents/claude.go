@@ -16,7 +16,7 @@ type claudeMCPEntry struct {
 	Disabled  bool   `json:"disabled"`
 }
 
-var claudeFormat = entryFormat{ignoredRunSettings: []string{"envFile"}, editorPlaceholders: true}
+var claudeFormat = entryFormat{ignoredRunSettings: []string{"envFile", "headersHelper"}, editorPlaceholders: true}
 
 // ReadClaude reads Claude Desktop and Claude Code configs, and Cursor's and Windsurf's, which share their format.
 func ReadClaude(path string) (map[string]Server, error) {
@@ -65,23 +65,6 @@ func mergeClaudeProjectServers(dst, src map[string]json.RawMessage) {
 		}
 		dst[name] = src[name]
 	}
-}
-
-func decodeJSONEntries[E any](raw map[string]json.RawMessage) (map[string]E, map[string][]string, error) {
-	entries := make(map[string]E, len(raw))
-	keys := make(map[string][]string, len(raw))
-	for name, message := range raw {
-		var fields map[string]json.RawMessage
-		var entry E
-		if err := json.Unmarshal(message, &fields); err != nil {
-			return nil, nil, fmt.Errorf("server %q: %w", name, err)
-		}
-		if err := json.Unmarshal(message, &entry); err != nil {
-			return nil, nil, fmt.Errorf("server %q: %w", name, err)
-		}
-		entries[name], keys[name] = entry, slices.Collect(maps.Keys(fields))
-	}
-	return entries, keys, nil
 }
 
 func (e claudeMCPEntry) server(name string) Server {
