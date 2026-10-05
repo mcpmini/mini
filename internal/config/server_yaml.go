@@ -2,12 +2,10 @@ package config
 
 import "gopkg.in/yaml.v3"
 
-// serverFields drops ServerConfig's YAML methods, so decoding it inside them doesn't recurse.
 type serverFields ServerConfig
 
-// UnmarshalYAML decodes projections apart from the other fields, so a mistake in them costs the
-// server only its projections: it is recorded in ProjectionsErr rather than returned. The library
-// still resolves the projections key, so a block reached through a merge key (<<) is handled too.
+// UnmarshalYAML records a mistake in projections in ProjectionsErr instead of returning it, so it
+// costs the server only its projections.
 func (sc *ServerConfig) UnmarshalYAML(value *yaml.Node) error {
 	var file struct {
 		serverFields `yaml:",inline"`
