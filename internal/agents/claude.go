@@ -16,7 +16,7 @@ type claudeMCPEntry struct {
 	Disabled  bool   `json:"disabled"`
 }
 
-var claudeFormat = entryFormat{ignoredRunSettings: []string{"envFile", "headersHelper"}, editorPlaceholders: true}
+var claudeFormat = entryFormat{ignoredRunSettings: []string{"envFile", "headersHelper", "oauth"}, editorPlaceholders: true}
 
 // ReadClaude reads Claude Desktop and Claude Code configs, and Cursor's and Windsurf's, which share their format.
 func ReadClaude(path string) (map[string]Server, error) {

@@ -11,7 +11,7 @@ type geminiMCPEntry struct {
 	URL     string `json:"url"`
 }
 
-var geminiFormat = entryFormat{expandsBareVars: true, ignoredRunSettings: []string{"cwd"}}
+var geminiFormat = entryFormat{expandsBareVars: true, ignoredRunSettings: []string{"cwd", "authProviderType", "oauth"}}
 
 // ReadGemini reads a Gemini CLI settings.json.
 // Format: mcpServers map with httpUrl (streamable HTTP), url (SSE) or command/args (stdio).
