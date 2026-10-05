@@ -16,6 +16,7 @@ import (
 
 func addProxyConn(t *testing.T, srv *server.Server, name string, conn *transport.FakeConnection) {
 	t.Helper()
+	writeTestServerConfig(t, srv, config.ServerConfig{Name: name})
 	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: name}, conn); err != nil {
 		t.Fatalf("AddConnection %s: %v", name, err)
 	}

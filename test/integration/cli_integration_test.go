@@ -124,12 +124,17 @@ func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 	}
 }
 
+func writeInvalidProjection(t *testing.T, configDir, serverName string) {
+	t.Helper()
+	configtest.WriteRawProjections(t, configDir, serverName, "get_item: {include_only: 5}\n")
+}
+
 func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testing.T) {
 	cfg := t.TempDir()
 	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: fixtures})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "unprojected", Fixtures: fixtures})
-	testutil.WriteFile(t, config.ProjectionPath(cfg, "unprojected"), "get_item: [broken\n")
+	writeInvalidProjection(t, cfg, "unprojected")
 	testutil.WriteFile(t, config.ServerPath(cfg, "web"), "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
 	testutil.WriteFile(t, config.ServerPath(cfg, "multiline-yaml-error"), "command: echo\nenabled: maybe\n")
 
@@ -165,7 +170,7 @@ func TestIntegrationCLI_test_failsForBrokenProjectionsEvenWithNoServerToCheck(t 
 	cfg := t.TempDir()
 	disabled := false
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "off", Command: "echo", Enabled: &disabled})
-	testutil.WriteFile(t, config.ProjectionPath(cfg, "off"), "tool: [broken\n")
+	writeInvalidProjection(t, cfg, "off")
 
 	stdout, _, code := runCLI(t, cfg, "test")
 
@@ -414,7 +419,7 @@ func TestIntegrationCLI_status_failsWhenAServersProjectionsFailToLoad(t *testing
 		t.Run(name, func(t *testing.T) {
 			cfg := t.TempDir()
 			writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}), Enabled: tc.enabled})
-			testutil.WriteFile(t, config.ProjectionPath(cfg, "svc"), "get_item: [broken\n")
+			writeInvalidProjection(t, cfg, "svc")
 
 			stdout, _, code := runCLI(t, cfg, "status")
 

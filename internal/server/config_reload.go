@@ -123,10 +123,8 @@ func changedPaths(prev, curr map[string]string) []string {
 }
 
 func (s *Server) applyReload() (config.Servers, map[string]int, error) {
-	// Hold persistMu for the entire load+replace so we don't interleave with a
-	// concurrent set_projection that has already updated the in-memory map but
-	// hasn't yet flushed to disk: without this lock, reload could wipe the
-	// in-memory update and then set_projection would persist the wiped state.
+	// A set_projection between this load and the replace below would publish a rule that the
+	// replace then overwrites with the file's older contents.
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	servers, err := config.LoadServers(s.configDir)

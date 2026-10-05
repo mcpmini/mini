@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -124,37 +123,6 @@ func TestExecuteProtected_callsProtectedTool(t *testing.T) {
 	}
 }
 
-func newReadOnlyConfigServer(t *testing.T) *server.Server {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0500); err != nil {
-		t.Skip("cannot set read-only dir:", err)
-	}
-	t.Cleanup(func() { os.Chmod(dir, 0700) }) //nolint:errcheck
-	return newTestServer(t, server.Params{ConfigDir: dir})
-}
-
-func TestSetProjection_persistenceFailureReturnsError(t *testing.T) {
-	srv := newReadOnlyConfigServer(t)
-	fake := fakeConn("myTool")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"secret\":\"hidden\"}"}]}`)
-	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fake)
-
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "myTool",
-		"projection": map[string]any{"exclude": []string{"secret"}},
-	}))
-	result, _ := resp["result"].(map[string]any)
-	if result == nil || result["isError"] != true {
-		t.Errorf("expected isError=true when persistence fails, got: %v", resp)
-	}
-
-	execResp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "myTool"}))
-	if text := toolResultText(t, execResp); !strings.Contains(text, "secret") {
-		t.Error("projection should be rolled back: secret should still appear in response")
-	}
-}
-
 func TestToolsList_returnsProxySchemas(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`+"\n"))
@@ -209,7 +177,7 @@ func TestProjectionExcludeFields(t *testing.T) {
 		Tools:     []transport.ToolDefinition{{Name: "get_file_info", Description: "info", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)},
 	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "fs"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "fs"}, fake)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "get_file_info",
 		"projection": map[string]any{"include_only": []string{"name", "size"}},
@@ -230,7 +198,7 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 		Tools:     []transport.ToolDefinition{{Name: "get_doc", Description: "doc", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)},
 	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "svc", "tool": "get_doc",
 		"projection": map[string]any{"string_limits": map[string]any{"body": 50}},
@@ -291,7 +259,7 @@ func TestHealthStatsAfterCalls(t *testing.T) {
 		Tools:     []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)},
 	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
 	for i := 0; i < nCalls; i++ {
 		serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "ping", "params": map[string]any{}}))
 	}
@@ -337,6 +305,92 @@ func TestConfigureUnknownAction(t *testing.T) {
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, "unknown configure action") {
 		t.Errorf("expected error message, got: %s", text)
+	}
+}
+
+func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillApplies(t *testing.T) {
+	const broken = "command: echo\nprojections: {getData: {include_only: 5}}\n"
+	cases := map[string]func(t *testing.T, path string){
+		"broken server file": func(t *testing.T, path string) { testutil.WriteFile(t, path, broken) },
+		"missing server file": func(t *testing.T, path string) {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"unwritable servers directory": func(t *testing.T, path string) {
+			dir := filepath.Dir(path)
+			if err := os.Chmod(dir, 0o500); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Chmod(dir, 0o700) }) //nolint:errcheck // TempDir cleanup reports a directory it can't remove
+		},
+	}
+	for name, breakFile := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := newTestServer(t, server.Params{})
+			addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Projections: map[string]*config.ProjectionConfig{
+				"getData": {IncludeOnly: []string{"a"}},
+			}}, fakeGetData())
+			path := config.ServerPath(srv.ConfigDir(), "svc")
+			breakFile(t, path)
+			before := serverFileText(t, path)
+			const sessionID = "cccccccc-cccc-cccc-cccc-000000000004"
+			postMCP(t, srv, sessionID, initMsg(true))
+
+			saved := postMCP(t, srv, sessionID, setGetDataProjection(2, false))
+			assertIsErrorResult(t, saved)
+			if text := toolResultText(t, saved); !strings.Contains(text, "session_only") {
+				t.Errorf("failed save = %q, want session_only advice", text)
+			}
+			assertProjectedFields(t, toolResultText(t, postMCP(t, srv, sessionID, callGetData(3))), []string{"a"}, []string{"b"})
+
+			sessionOnly := postMCP(t, srv, sessionID, setGetDataProjection(4, true))
+			if text := toolResultText(t, sessionOnly); strings.Contains(text, `"error"`) {
+				t.Fatalf("session_only set_projection = %s", text)
+			}
+			assertProjectedFields(t, toolResultText(t, postMCP(t, srv, sessionID, callGetData(5))), []string{"b"}, []string{"a"})
+			if after := serverFileText(t, path); after != before {
+				t.Errorf("server file = %q, want it untouched (%q)", after, before)
+			}
+		})
+	}
+}
+
+func serverFileText(t *testing.T, path string) string {
+	t.Helper()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return "<missing>"
+	}
+	return string(testutil.ReadFile(t, path))
+}
+
+func setGetDataProjection(id int, sessionOnly bool) map[string]any {
+	return map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
+		"name": "config", "arguments": map[string]any{
+			"action": "set_projection", "server": "svc", "tool": "getData", "session_only": sessionOnly,
+			"projection": map[string]any{"include_only": []string{"b"}},
+		},
+	}}
+}
+
+func callGetData(id int) map[string]any {
+	return map[string]any{"jsonrpc": "2.0", "id": id, "method": "tools/call", "params": map[string]any{
+		"name": "call", "arguments": map[string]any{"server": "svc", "tool": "getData", "params": map[string]any{}},
+	}}
+}
+
+func assertProjectedFields(t *testing.T, text string, present, absent []string) {
+	t.Helper()
+	data := parseProxyEnvelope(t, text).Data
+	for _, key := range present {
+		if data[key] == nil {
+			t.Errorf("field %q missing from projected data %v", key, data)
+		}
+	}
+	for _, key := range absent {
+		if data[key] != nil {
+			t.Errorf("field %q survived projection in %v", key, data)
+		}
 	}
 }
 
@@ -465,11 +519,11 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			wantSourceErrors: true,
 		},
 		{
-			name:             "bad proj.yaml: ok=false, source_errors names the projection file",
+			name:             "bad inline projection: ok=false, source_errors names the server file",
 			servers:          []config.ServerConfig{{Name: "a", Command: "echo"}},
-			files:            map[string]string{"servers/a.proj.yaml": "bad: [yaml\n"},
+			files:            map[string]string{"servers/a.yaml": "command: echo\nprojections: {tool: {format: invalid}}\n"},
 			wantSourceErrors: true,
-			wantErrorFile:    "a.proj.yaml",
+			wantErrorFile:    "a.yaml",
 		},
 		{
 			name: "loaded excludes kept-previous server when its file broke",

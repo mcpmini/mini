@@ -86,20 +86,6 @@ func bundledAuth(sc ServerConfig) *AuthConfig {
 	return &ac
 }
 
-func filterServerPaths(paths []string) []string {
-	var out []string
-	for _, p := range paths {
-		if !strings.HasSuffix(p, ".proj.yaml") {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-func ProjectionPath(configDir, name string) string {
-	return filepath.Join(configDir, "servers", name+".proj.yaml")
-}
-
 func readAndInterpolate(path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

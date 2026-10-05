@@ -1,9 +1,7 @@
 package ops
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 
 	"gopkg.in/yaml.v3"
 
@@ -11,26 +9,21 @@ import (
 	"github.com/mcpmini/mini/internal/defaults"
 )
 
-// InstallBundledProjection returns the installed path, or "" when nothing was installed.
-// A projection file already there is kept, and isn't an error.
-func InstallBundledProjection(configDir string, sc config.ServerConfig) (string, error) {
+func withBundledProjections(sc config.ServerConfig) (config.ServerConfig, bool, error) {
+	if sc.Projections != nil {
+		return sc, false, nil
+	}
 	key := defaults.MatchKnownServer(sc.Command, sc.Args, sc.URL)
-	if key == "" {
-		return "", nil
+	data := defaults.ProjectionFor(key)
+	if data == nil {
+		return sc, false, nil
 	}
-	bundled := defaults.ProjectionFor(key)
-	if bundled == nil {
-		return "", nil
+	var projections map[string]*config.ProjectionConfig
+	if err := yaml.Unmarshal(data, &projections); err != nil {
+		return sc, false, fmt.Errorf("bundled projections for %s: %w", key, err)
 	}
-	dest := config.ProjectionPath(configDir, sc.Name)
-	err := writeNewFile(dest, bundled)
-	if errors.Is(err, fs.ErrExist) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("install the default projection for %s: %w", sc.Name, err)
-	}
-	return dest, nil
+	sc.Projections = projections
+	return sc, true, nil
 }
 
 func withBundledPermissions(sc config.ServerConfig) (config.ServerConfig, bool) {

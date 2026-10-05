@@ -31,31 +31,23 @@ func TestFingerprintProjectionSources(t *testing.T) {
 		}
 	})
 
-	t.Run("covers server yaml and proj yaml but not other files", func(t *testing.T) {
+	t.Run("covers server yaml but not other files", func(t *testing.T) {
 		dir := t.TempDir()
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "stdio"})
-		configtest.WriteProjections(t, dir, configtest.ProjectionFile{
-			ServerName: "svc",
-			Tools: map[string]*config.ProjectionConfig{
-				"tool": {
-					IncludeOnly: []string{"a"},
-				},
-			},
-		})
 		testutil.WriteFile(t, filepath.Join(dir, "servers", "notes.txt"), "ignored")
 		fp := mustFingerprint(t, dir)
-		if len(fp) != 2 {
-			t.Errorf("expected 2 entries, got %v", fp)
+		if len(fp) != 1 {
+			t.Errorf("expected 1 entry, got %v", fp)
 		}
 	})
 
 	t.Run("same size content change changes hash", func(t *testing.T) {
 		dir := t.TempDir()
-		original, replacement := "tool:\n  include_only: [a]\n", "tool:\n  include_only: [b]\n"
+		original, replacement := "command: aaaaa\n", "command: bbbbb\n"
 		if len(original) != len(replacement) {
 			t.Fatal("same-size fixtures differ in size")
 		}
-		p := config.ProjectionPath(dir, "svc")
+		p := config.ServerPath(dir, "svc")
 		testutil.WriteFile(t, p, original)
 		before := mustFingerprint(t, dir)
 		testutil.WriteFile(t, p, replacement)

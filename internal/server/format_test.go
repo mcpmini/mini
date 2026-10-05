@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"regexp"
@@ -35,7 +34,7 @@ func newSrvWithResponse(t *testing.T, format string, payload string) *server.Ser
 			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(issuesJSON) + `}]}`),
 		},
 	}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, fake)
 	return srv
 }
 
@@ -98,7 +97,7 @@ func newSrvWithConfigFormat(t *testing.T, format string) *server.Server {
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(issuesJSON) + `}]}`)},
 	}
 	srv := newTestServer(t, server.Params{Config: cfg})
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, fake)
 	return srv
 }
 
@@ -216,7 +215,7 @@ func newSrvConfigDirAndToolErr(t *testing.T, globalFormat string) *server.Server
 	cfg := config.DefaultConfig()
 	cfg.ResponseFormat = globalFormat
 	srv := newTestServer(t, server.Params{Config: cfg})
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, toolErrFakeConn())
+	addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, toolErrFakeConn())
 	return srv
 }
 
@@ -265,7 +264,7 @@ func TestErrorEnvelopeHonorsFormat(t *testing.T) {
 			},
 		})
 		srv := newTestServer(t, server.Params{ConfigDir: configDir})
-		srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh"}, toolErrFakeConn())
+		addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, toolErrFakeConn())
 		text := toolResultText(t, serve(t, srv, callTool("call", map[string]any{
 			"server": "gh", "tool": "list_issues", "params": map[string]any{},
 		})))
@@ -320,7 +319,7 @@ func TestToonFormatWithUpstream(t *testing.T) {
 	fake := fakeConn("list_directory")
 	fake.RespondWith(map[string]any{"entries": []string{"a.txt", "b.txt", "c.go"}})
 	srv := newTestServer(t, server.Params{})
-	addTestConnection(t, srv, config.ServerConfig{Name: "fs"}, fake)
+	addEdgeConn(t, srv, config.ServerConfig{Name: "fs"}, fake)
 
 	serve(t, srv, callTool("config", map[string]any{
 		"action": "set_projection", "server": "fs", "tool": "list_directory",

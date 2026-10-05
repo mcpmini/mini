@@ -202,6 +202,7 @@ func TestAddConnection_reAddWithStaleProjections_keepsLiveSetProjection(t *testi
 	srv := newConfigServer(t)
 	fake := fakeConn("getData")
 	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2}"}]}`)
+	writeTestServerConfig(t, srv, config.ServerConfig{Name: "svc"})
 	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fake); err != nil {
 		t.Fatal(err)
 	}

@@ -66,8 +66,8 @@ func configureSchema() map[string]any {
 func configureDescription() string {
 	return "Runtime admin for mini. Actions: " +
 		"status (server health + response store stats); " +
-		"set_projection (tune response fields for a tool — live + persisted, or session_only:true for temporary); " +
-		"reload (re-read projection files from disk without restart); " +
+		"set_projection (replace a tool's projection in its server YAML — live + persisted, or session_only:true for temporary); " +
+		"reload (re-read projections from server YAML files without restart); " +
 		"add_server (connect a new upstream MCP and save it to config); " +
 		"remove_server (disconnect an upstream and delete it from config); " +
 		"start_auth (begin OAuth2 PKCE flow for a server — returns URL for user to visit; reconnects automatically on completion); " +
@@ -78,7 +78,7 @@ func configureDescription() string {
 func miniConfigSchema() map[string]any {
 	return map[string]any{
 		"name":        "config",
-		"description": "Runtime admin for mini. Actions: status (server health + response store stats); set_projection (tune response fields for a tool); reload (re-read projection files); add_server (connect a new upstream MCP and save it to config); remove_server (disconnect an upstream and delete it from config); start_auth (begin OAuth2 PKCE flow); auth_status (check OAuth token status).",
+		"description": "Runtime admin for mini. Actions: status (server health + response store stats); set_projection (replace a tool's projection in its server YAML); reload (re-read projections from server YAML files); add_server (connect a new upstream MCP and save it to config); remove_server (disconnect an upstream and delete it from config); start_auth (begin OAuth2 PKCE flow); auth_status (check OAuth token status).",
 		"inputSchema": schema(map[string]any{
 			"action":       prop("string", "status | set_projection | reload | add_server | remove_server | start_auth | auth_status"),
 			"server":       prop("string", "Server name (for set_projection, add_server, remove_server)"),

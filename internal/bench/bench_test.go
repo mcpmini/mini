@@ -9,7 +9,6 @@ import (
 
 	"github.com/mcpmini/mini/internal/bench"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/config/configtest"
 	minidefaults "github.com/mcpmini/mini/internal/defaults"
 	"github.com/mcpmini/mini/internal/testutil"
 	"gopkg.in/yaml.v3"
@@ -105,12 +104,16 @@ func fixtureDir(t *testing.T) string {
 	writeFixture(t, benchDir, "github", "list_pull_requests", `[{"number":1,"title":"Test"}]`)
 	writeFixture(t, benchDir, "github", "list_issues", `[{"number":2,"title":"Bug"}]`)
 	writeFixture(t, benchDir, "linear", "list_issues", `{"nodes":[{"id":"abc"}]}`)
-	configtest.WriteProjectionFile(t, filepath.Join(benchDir, "projections", "github.yaml"), map[string]*config.ProjectionConfig{
+	projectionYAML, err := yaml.Marshal(map[string]*config.ProjectionConfig{
 		"list_pull_requests": {
 			IncludeOnly:  []string{"number", "title"},
 			StringLimits: map[string]int{"body": 300},
 		},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFileBytes(t, filepath.Join(benchDir, "projections", "github.yaml"), projectionYAML)
 	return benchDir
 }
 

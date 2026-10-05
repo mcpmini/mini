@@ -143,13 +143,12 @@ When projection removes or truncates data, `call`/`perm_call` wraps the response
 ~/.mini/
   config.yaml                # global Config
   servers/<name>.yaml        # one ServerConfig per upstream
-  servers/<name>.proj.yaml   # ProjectionConfig map (tool → config)
   internal/                  # machine-managed runtime state
     daemon/                  # daemon runtime files (sock, token, lock, log)
     responses/               # raw recovery files for projected responses
 ```
 
-Projections can be embedded inline in a server's YAML under `projections:`. A `"*"` key is a wildcard applying to all tools on that server.
+Projections live in the server's YAML under `projections:`. A `"*"` key is a wildcard applying to all tools on that server.
 
 ### Tool visibility and compact-mode gates
 

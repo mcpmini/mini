@@ -18,6 +18,14 @@ func (s *Server) ReplaceProjections(p map[string]map[string]*config.ProjectionCo
 
 func (s *Server) WaitForStartupConnects() { s.connector.wait() }
 
+func (s *Server) ConfigDir() string { return s.configDir }
+
+func (s *Server) LiveProjection(server, tool string) *config.ProjectionConfig {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return s.projections[server][tool]
+}
+
 const ConfigPollInterval = configPollInterval
 
 // NameLockCallers counts the calls holding or waiting on name's lock.

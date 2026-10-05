@@ -27,27 +27,29 @@ type loadServersCase struct {
 func TestLoadServers(t *testing.T) {
 	cases := []loadServersCase{
 		{
-			name:  "orphan proj.yaml is ignored, even when broken",
-			files: map[string]string{"servers/orphan.proj.yaml": "bad: [yaml\n"},
+			name:       "leftover projection filename is a broken source while its sibling loads",
+			files:      map[string]string{"servers/orphan.proj.yaml": "bad: [yaml\n", "servers/good.yaml": "command: echo\n"},
+			wantLoaded: []string{"good"},
+			wantBroken: []string{"orphan.proj"},
 		},
 		{
-			name:       "undefined ${VAR} in a header loads the server with UnsetEnv",
-			files:      map[string]string{"servers/svc.yaml": "url: https://api.example.com\nheaders:\n  Authorization: Bearer ${UNDEFINED_TOKEN_XYZ}\nprojections:\n  t:\n    include_only: [a]\n"},
+			name:       "undefined environment reference in header loads with UnsetEnv",
+			files:      map[string]string{"servers/svc.yaml": "url: https://api.example.com\nheaders:\n  Authorization: Bearer ${UNDEFINED_TOKEN_XYZ}\nprojections:\n  t: {include_only: [a]}\n"},
 			wantLoaded: []string{"svc"},
 			check: func(t *testing.T, servers config.Servers) {
 				if sc, _ := servers.Find("svc"); sc.UnsetEnv == nil || sc.Projections["t"] == nil {
-					t.Errorf("svc = %+v, want UnsetEnv set and its projections kept", sc)
+					t.Errorf("svc = %+v, want UnsetEnv and projections", sc)
 				}
 			},
 		},
 		{
-			name:       "args ${VAR} breaks only that server",
+			name:       "undefined environment reference in args breaks only that server",
 			files:      map[string]string{"servers/svc.yaml": "command: echo\nargs: [--token, \"${PROJ_TEST_TOK_XYZ}\"]\n", "servers/ok.yaml": "command: echo\n"},
 			wantLoaded: []string{"ok"},
 			wantBroken: []string{"svc"},
 		},
 		{
-			name:       "undefined ${VAR} in a projection rule stays literal",
+			name:       "undefined environment references in projections stay literal",
 			files:      map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  t:\n    include_only: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n"},
 			wantLoaded: []string{"svc"},
 			check: func(t *testing.T, servers config.Servers) {
@@ -57,118 +59,64 @@ func TestLoadServers(t *testing.T) {
 			},
 		},
 		{
-			name:       "bad inline projection format loads the server without projections",
+			name:       "bad inline projection format keeps server loaded without projections",
 			files:      map[string]string{"servers/github.yaml": "command: echo\nprojections:\n  t:\n    format: bad-format\n"},
 			wantLoaded: []string{"github"},
 			check:      wantUnprojected("github", "github.yaml"),
 		},
 		{
-			name: "inline projections of the wrong type load the server without any, even with a good projection file",
-			files: map[string]string{
-				"servers/svc.yaml":      "command: echo\nprojections:\n  t:\n    include_only: 5\n",
-				"servers/svc.proj.yaml": "t2:\n  include_only: [a]\n",
-			},
+			name:       "invalid inline projection structure keeps server loaded without projections",
+			files:      map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  t:\n    include_only: 5\n"},
 			wantLoaded: []string{"svc"},
 			check:      wantUnprojected("svc", "svc.yaml"),
 		},
 		{
-			name:       "inline projections of the wrong type reached through a merge key load the server without any",
-			files:      map[string]string{"servers/svc.yaml": "base: &base\n  projections:\n    t:\n      include_only: 5\n<<: *base\ncommand: echo\n"},
-			wantLoaded: []string{"svc"},
-			check:      wantUnprojected("svc", "svc.yaml"),
-		},
-		{
-			name: "inline projections reached through a merge key apply, and a projections key of the server's own replaces them",
-			files: map[string]string{
-				"servers/merged.yaml": "base: &base\n  projections:\n    t:\n      include_only: [merged]\n<<: *base\ncommand: echo\n",
-				"servers/own.yaml":    "base: &base\n  projections:\n    t:\n      include_only: [merged]\n    u:\n      include_only: [merged]\nprojections:\n  t:\n    include_only: [own]\n<<: *base\ncommand: echo\n",
-			},
-			wantLoaded: []string{"merged", "own"},
+			name:       "inline projections reached through a merge key apply",
+			files:      map[string]string{"servers/merged.yaml": "base: &base\n  projections:\n    t:\n      include_only: [merged]\n<<: *base\ncommand: echo\n"},
+			wantLoaded: []string{"merged"},
 			check: func(t *testing.T, servers config.Servers) {
-				merged, _ := servers.Find("merged")
-				own, _ := servers.Find("own")
-				if got := projectionRules(merged); !reflect.DeepEqual(got, map[string][]string{"t": {"merged"}}) {
-					t.Errorf("merged projections = %v, want t from the merge key", got)
-				}
-				if got := projectionRules(own); !reflect.DeepEqual(got, map[string][]string{"t": {"own"}}) {
-					t.Errorf("own projections = %v, want only the server's own t", got)
+				if sc, _ := servers.Find("merged"); sc.Projections["t"].IncludeOnly[0] != "merged" {
+					t.Errorf("merged projections = %#v", sc.Projections)
 				}
 			},
 		},
 		{
-			name:       "a projections key written twice breaks the server, as any duplicate key does",
-			files:      map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  a:\n    include_only: [x]\nprojections:\n  b:\n    include_only: [y]\n"},
+			name:       "malformed inherited projection block remains a projection error",
+			files:      map[string]string{"servers/svc.yaml": "base: &base\n  projections: {t: {include_only: 5}}\n<<: *base\ncommand: echo\n"},
+			wantLoaded: []string{"svc"},
+			check:      wantUnprojected("svc", "svc.yaml"),
+		},
+		{
+			name:       "direct projections replace inherited projections during load",
+			files:      map[string]string{"servers/svc.yaml": "base: &base\n  projections: {t: {include_only: [merged]}, u: {include_only: [merged]}}\nprojections: {t: {include_only: [own]}}\n<<: *base\ncommand: echo\n"},
+			wantLoaded: []string{"svc"},
+			check: func(t *testing.T, servers config.Servers) {
+				sc, _ := servers.Find("svc")
+				if !reflect.DeepEqual(projectionRules(sc), map[string][]string{"t": {"own"}}) {
+					t.Errorf("projections = %v", projectionRules(sc))
+				}
+			},
+		},
+		{
+			name:       "duplicate projections keys break the server",
+			files:      map[string]string{"servers/svc.yaml": "command: echo\nprojections: {}\nprojections: {}\n"},
 			wantBroken: []string{"svc"},
 		},
 		{
-			name: "bad .proj.yaml loads its server without any projections",
-			files: map[string]string{
-				"servers/b.yaml":      "command: echo\nprojections:\n  t:\n    include_only: [inline]\n",
-				"servers/b.proj.yaml": "bad: [yaml\n",
-			},
-			wantLoaded: []string{"b"},
-			check:      wantUnprojected("b", "b.proj.yaml"),
-		},
-		{
-			name: "bad format in the .proj.yaml is blamed on that file",
-			files: map[string]string{
-				"servers/b.yaml":      "command: echo\n",
-				"servers/b.proj.yaml": "t:\n  format: bad-format\n",
-			},
-			wantLoaded: []string{"b"},
-			check:      wantUnprojected("b", "b.proj.yaml"),
-		},
-		{
-			name: "a bad inline rule the projection file replaces doesn't count",
-			files: map[string]string{
-				"servers/b.yaml":      "command: echo\nprojections:\n  t:\n    format: bad-format\n",
-				"servers/b.proj.yaml": "t:\n  format: json\n  exclude: [secret]\n",
-			},
-			wantLoaded: []string{"b"},
-			check: func(t *testing.T, servers config.Servers) {
-				if sc, _ := servers.Find("b"); sc.ProjectionsErr != nil || len(sc.Projections["t"].Exclude) != 1 {
-					t.Errorf("b = projections %v, error %+v; want the projection file's rule applied", sc.Projections, sc.ProjectionsErr)
-				}
-			},
-		},
-		{
-			name: "the projection file overlays inline projections",
-			files: map[string]string{
-				"servers/a.yaml":      "command: echo\nprojections:\n  t1:\n    include_only: [inline]\n  t2:\n    include_only: [kept]\n",
-				"servers/a.proj.yaml": "t1:\n  include_only: [file]\n",
-			},
-			wantLoaded: []string{"a"},
-			check: func(t *testing.T, servers config.Servers) {
-				sc, _ := servers.Find("a")
-				if sc.Projections["t1"].IncludeOnly[0] != "file" || sc.Projections["t2"].IncludeOnly[0] != "kept" {
-					t.Errorf("projections = t1 %v, t2 %v; want the file's t1 and the inline t2", sc.Projections["t1"].IncludeOnly, sc.Projections["t2"].IncludeOnly)
-				}
-			},
-		},
-		{
-			name: "malformed servers/b.yaml breaks only b",
-			files: map[string]string{
-				"servers/a.yaml": "command: echo\n",
-				"servers/b.yaml": "bad: [yaml\n",
-			},
+			name:       "malformed server breaks only itself",
+			files:      map[string]string{"servers/a.yaml": "command: echo\n", "servers/b.yaml": "bad: [yaml\n"},
 			wantLoaded: []string{"a"},
 			wantBroken: []string{"b"},
 		},
 		{
-			name: "invalid file name is broken under that name",
-			files: map[string]string{
-				"servers/good.yaml":     "command: echo\n",
-				"servers/bad.name.yaml": "command: echo\n",
-			},
+			name:       "invalid file name is broken under that name",
+			files:      map[string]string{"servers/good.yaml": "command: echo\n", "servers/bad.name.yaml": "command: echo\n"},
 			wantLoaded: []string{"good"},
 			wantBroken: []string{"bad.name"},
 		},
 		{
-			name: "config.yaml is not a server source, even when broken",
-			files: map[string]string{
-				"servers/file-svc.yaml": "command: echo\n",
-				"config.yaml":           "bad: [yaml\n",
-			},
+			name:       "config.yaml is not a server source",
+			files:      map[string]string{"servers/file-svc.yaml": "command: echo\n", "config.yaml": "bad: [yaml\n"},
 			wantLoaded: []string{"file-svc"},
 		},
 	}
@@ -267,16 +215,22 @@ func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 	}
 }
 
-func TestLoadServers_anUnreadableProjectionFileLeavesItsServerUnprojected(t *testing.T) {
+func TestLoadServers_anUnreadableLegacyProjectionFileIsBrokenWithoutAffectingItsServer(t *testing.T) {
 	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo"})
+	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo", Projections: map[string]*config.ProjectionConfig{"tool": {Exclude: []string{"secret"}}}})
 	if err := os.MkdirAll(filepath.Join(dir, "servers", "svc.proj.yaml"), 0700); err != nil {
 		t.Fatal(err)
 	}
-
 	servers := mustLoadServers(t, dir)
-
-	wantUnprojected("svc", "svc.proj.yaml")(t, servers)
+	if !servers.IsEnabled("svc") || servers.IsBroken("svc") {
+		t.Fatalf("server state = %+v, want valid sibling loaded", servers)
+	}
+	if !servers.IsBroken("svc.proj") {
+		t.Fatalf("broken sources = %+v, want the legacy file reported", servers.Broken)
+	}
+	if sc, _ := servers.Find("svc"); sc.Projections["tool"] == nil || sc.Projections["tool"].Exclude[0] != "secret" {
+		t.Fatalf("valid sibling projections = %#v, want secret exclusion preserved", sc.Projections)
+	}
 }
 
 func TestLoadServers_mergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
@@ -316,7 +270,7 @@ func TestLoadServer_matchesLoadServersWithoutNeedingTheOtherFiles(t *testing.T) 
 		t.Errorf("LoadServer = %+v\nwant what LoadServers gives: %+v", got, want)
 	}
 	if got.Auth == nil || got.Projections["list_issues"] == nil {
-		t.Errorf("LoadServer = %+v, want bundled auth and the projection file merged", got)
+		t.Errorf("LoadServer = %+v, want bundled auth and inline projections", got)
 	}
 	if _, err := config.LoadServer(dir, "missing"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("LoadServer(missing) err = %v, want fs.ErrNotExist", err)

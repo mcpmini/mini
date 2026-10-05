@@ -128,13 +128,11 @@ func TestServerReload_disabledServer_isRemoved(t *testing.T) {
 
 		e.assertRemoved("svc")
 	})
-	t.Run("even when its projection file fails to load", func(t *testing.T) {
+	t.Run("even when inline projections fail to load", func(t *testing.T) {
 		e := newServerReloadEnv(t)
 		e.startWithServers("svc")
 
-		testutil.WriteFile(t, filepath.Join(e.dir, "servers", "svc.proj.yaml"), "tool: [broken\n")
-		disabled := false
-		e.writeServer(config.ServerConfig{Name: "svc", Transport: "http", URL: e.upstream.URL, Enabled: &disabled})
+		testutil.WriteFile(t, e.serverPath("svc"), "transport: http\nurl: "+e.upstream.URL+"\nenabled: false\nprojections: {tool: {include_only: 5}}\n")
 		e.advanceTick()
 
 		e.assertRemoved("svc")

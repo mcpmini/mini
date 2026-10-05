@@ -154,8 +154,8 @@ func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage
 }
 
 // hasProjectionCoverage reports whether a tool has an explicit projection entry or a
-// wildcard "*" for its server. Returns true when no projections file exists for the
-// server at all — the restriction only kicks in once a projections file is present.
+// wildcard "*" for its server. Returns true when the server has no projections at all —
+// the restriction only kicks in once it has some.
 func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bool {
 	if session.Projection(toolFullName(server, tool)) != nil {
 		return true
