@@ -1,3 +1,5 @@
+//go:build test
+
 package initcmd
 
 import (
@@ -97,5 +99,32 @@ func TestUnexpandedServer_keepsReferences(t *testing.T) {
 	sc, err := UnexpandedServer(configDir, "svc")
 	if err != nil || sc.Name != "svc" || sc.Headers["X-Api-Key"] != "${API_KEY}" {
 		t.Errorf("UnexpandedServer = %+v, %v; want the reference as written", sc, err)
+	}
+}
+
+func TestMiniServersCheck_hungServerTimesOut(t *testing.T) {
+	configDir := t.TempDir()
+	configtest.WriteServer(t, configDir, config.ServerConfig{Name: "hung", Command: "hung-server"})
+	mini, err := LoadMiniServers(configDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := clock.NewFake()
+	probe := func(ctx context.Context, _ string, _ config.ServerConfig) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	done := make(chan map[string]error, 1)
+	go func() {
+		done <- mini.Check(context.Background(), CheckParams{ConfigDir: configDir, Servers: []string{"hung"}, Clock: fake, Probe: probe})
+	}()
+
+	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {
+		t.Fatal(err)
+	}
+	fake.Advance(connectCheckTimeout)
+
+	if got := <-done; !errors.Is(got["hung"], context.Canceled) {
+		t.Errorf("checks = %v, want hung to fail once the check timeout passes", got)
 	}
 }

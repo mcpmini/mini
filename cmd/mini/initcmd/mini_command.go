@@ -24,7 +24,11 @@ func MiniCommand(configDir string) agents.MiniEntry {
 
 func (l binaryLookup) miniCommand(configDir string) agents.MiniEntry {
 	args := []string{"connect"}
-	if dir, err := filepath.Abs(configDir); err == nil && dir != filepath.Clean(config.DefaultConfigDir()) {
+	dir := configDir
+	if abs, err := filepath.Abs(configDir); err == nil {
+		dir = abs
+	}
+	if filepath.Clean(dir) != filepath.Clean(config.DefaultConfigDir()) {
 		args = []string{"--config", dir, "connect"}
 	}
 	return agents.MiniEntry{Command: l.binaryPath(), Args: args}

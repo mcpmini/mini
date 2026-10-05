@@ -136,17 +136,23 @@ func TestApply_neverReplaces(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "off", Command: "off-server", Enabled: new(false)})
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "unasked", Command: "unasked-server"})
 	cursor := f.write(t, "Cursor", `{"mcpServers":{
 		"switched-off":{"command":"files-server","disabled":true},
+		"never-checked":{"command":"unasked-server"},
 		"unchecked":{"command":"files-server","args":["--other"]},
 		"disabled-in-mini":{"command":"off-server"},
 		"old-mini":{"command":"/usr/local/bin/mini","args":["connect"]}}}`)
 
 	results := f.apply(ConnectAndRemove, map[string]error{"files": nil, "off": nil}, cursor)
 
-	want := []string{"disabled-in-mini", "mini", "old-mini", "unchecked"}
+	want := []string{"disabled-in-mini", "mini", "never-checked", "old-mini", "unchecked"}
 	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, want) || results[0].Removed != nil {
 		t.Errorf("entries = %v, removed = %v; want %v and nothing removed", got, results[0].Removed, want)
+	}
+	wantKept := []KeptEntry{{Entry: "never-checked", Server: "unasked", Err: errNotChecked}}
+	if !reflect.DeepEqual(results[0].Kept, wantKept) {
+		t.Errorf("kept = %+v, want %+v", results[0].Kept, wantKept)
 	}
 }
 

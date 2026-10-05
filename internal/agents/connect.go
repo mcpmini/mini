@@ -2,10 +2,10 @@ package agents
 
 import (
 	"bytes"
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/mcpmini/mini/internal/fileio"
 )
 
 // MiniEntry is the command an agent runs to start mini.
@@ -35,16 +35,5 @@ func CreateFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(data)
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return errors.Join(fmt.Errorf("write %s: %w", path, err), os.Remove(path))
-	}
-	return nil
+	return fileio.CreateFile(path, data, 0600)
 }

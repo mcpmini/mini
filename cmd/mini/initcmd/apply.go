@@ -47,8 +47,8 @@ type AgentResult struct {
 	Err                  error
 }
 
-// KeptEntry is an agent entry mini duplicates but couldn't replace, because mini's copy failed
-// its connection check.
+// KeptEntry is an agent entry mini duplicates but didn't replace, because mini's copy failed its
+// connection check or was never checked.
 type KeptEntry struct {
 	Entry  string
 	Server string
