@@ -117,64 +117,30 @@ func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	if err := checkServerName(name, path); err != nil {
 		return nil, err
 	}
-	var s ServerConfig
-	inlineProjections, err := decodeServerFile(data, &s)
+	s, err := decodeServerFile(path, name, data)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, err
 	}
-	s.Name = name
-	decodeInlineProjections(&s, path, inlineProjections)
 	if _, err := ParseTimeoutSpec(s.HandshakeTimeout, 0); err != nil {
 		return nil, fmt.Errorf("invalid handshake_timeout in %s: %w", path, err)
 	}
-	if err := checkUnexpandedFields(s); err != nil {
+	if err := checkUnexpandedFields(*s); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
-	expandServerEnv(&s)
+	expandServerEnv(s)
+	return s, nil
+}
+
+func decodeServerFile(path, name string, data []byte) (*ServerConfig, error) {
+	var s ServerConfig
+	if err := yaml.Unmarshal(data, &s); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	s.Name = name
+	if s.ProjectionsErr != nil {
+		s.ProjectionsErr = &SourceError{Path: path, ServerName: name, Err: fmt.Errorf("parse %s: %w", path, s.ProjectionsErr.Err)}
+	}
 	return &s, nil
-}
-
-// Inline projections decode apart, so a mistake in them costs the server only its projections.
-func decodeServerFile(data []byte, s *ServerConfig) (inlineProjections *yaml.Node, err error) {
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	inlineProjections, err = detachMappingValue(&doc, "projections")
-	if err != nil {
-		return nil, err
-	}
-	return inlineProjections, doc.Decode(s)
-}
-
-func detachMappingValue(doc *yaml.Node, key string) (*yaml.Node, error) {
-	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
-		return nil, nil
-	}
-	mapping := doc.Content[0]
-	var value *yaml.Node
-	for i := 0; i+1 < len(mapping.Content); {
-		if mapping.Content[i].Value != key {
-			i += 2
-			continue
-		}
-		if value != nil {
-			return nil, fmt.Errorf("line %d: mapping key %q already defined", mapping.Content[i].Line, key)
-		}
-		value = mapping.Content[i+1]
-		mapping.Content = slices.Delete(mapping.Content, i, i+2)
-	}
-	return value, nil
-}
-
-func decodeInlineProjections(s *ServerConfig, path string, node *yaml.Node) {
-	if node == nil {
-		return
-	}
-	if err := node.Decode(&s.Projections); err != nil {
-		s.Projections = nil
-		s.ProjectionsErr = &SourceError{Path: path, ServerName: s.Name, Err: fmt.Errorf("parse %s: %w", path, err)}
-	}
 }
 
 func ServerPath(configDir, name string) string {
