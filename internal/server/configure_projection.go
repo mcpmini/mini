@@ -9,19 +9,17 @@ import (
 type projectionRules struct {
 	Session        *config.ProjectionConfig `json:"session,omitempty"`
 	Server         *config.ProjectionConfig `json:"server,omitempty"`
-	ServerWildcard *config.ProjectionConfig `json:"server_wildcard,omitempty"`
+	serverWildcard *config.ProjectionConfig
 }
 
-func (r projectionRules) applied() (string, *config.ProjectionConfig) {
+func (r projectionRules) applied() *config.ProjectionConfig {
 	switch {
 	case r.Session != nil:
-		return "session", r.Session
+		return r.Session
 	case r.Server != nil:
-		return "server", r.Server
-	case r.ServerWildcard != nil:
-		return "server_wildcard", r.ServerWildcard
+		return r.Server
 	}
-	return "none", nil
+	return r.serverWildcard
 }
 
 func (s *Server) projectionRules(server, tool string, session *Session) projectionRules {
@@ -29,13 +27,12 @@ func (s *Server) projectionRules(server, tool string, session *Session) projecti
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	rules.Server = s.projections[server][tool]
-	rules.ServerWildcard = s.projections[server]["*"]
+	rules.serverWildcard = s.projections[server]["*"]
 	return rules
 }
 
 func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {
-	_, rule := s.projectionRules(server, tool, session).applied()
-	return rule
+	return s.projectionRules(server, tool, session).applied()
 }
 
 func (s *Server) getProjection(session *Session, p configureParams) (any, error) {
@@ -46,8 +43,7 @@ func (s *Server) getProjection(session *Session, p configureParams) (any, error)
 		return nil, fmt.Errorf("unknown server %q", p.ServerName)
 	}
 	rules := s.projectionRules(p.ServerName, s.upstreamToolName(p.ServerName, p.Tool), session)
-	applies, _ := rules.applied()
-	return map[string]any{"tool": toolFullName(p.ServerName, p.Tool), "applies": applies, "rules": rules}, nil
+	return map[string]any{"tool": toolFullName(p.ServerName, p.Tool), "rules": rules}, nil
 }
 
 func (s *Server) hasServer(name string) bool {

@@ -12,9 +12,8 @@ import (
 )
 
 type projectionReport struct {
-	Tool    string                              `json:"tool"`
-	Applies string                              `json:"applies"`
-	Rules   map[string]*config.ProjectionConfig `json:"rules"`
+	Tool  string                              `json:"tool"`
+	Rules map[string]*config.ProjectionConfig `json:"rules"`
 }
 
 func configCall(id int, args map[string]any) map[string]any {
@@ -49,25 +48,24 @@ func assertReport(t *testing.T, got, want projectionReport) {
 	}
 }
 
-func TestConfigureGetProjection_reportsEachRuleAndWhichApplies(t *testing.T) {
+func TestConfigureGetProjection_reportsTheServerRuleAndThisSessionsOverride(t *testing.T) {
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000010"
-	own, wildcard := &config.ProjectionConfig{Exclude: []string{"secret"}}, &config.ProjectionConfig{IncludeOnly: []string{"id"}}
-	srv := newProjectionServer(t, sessionID, map[string]*config.ProjectionConfig{"getData": own, "*": wildcard})
+	own := &config.ProjectionConfig{Exclude: []string{"secret"}}
+	srv := newProjectionServer(t, sessionID, map[string]*config.ProjectionConfig{"getData": own})
 
-	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Applies: "server", Rules: map[string]*config.ProjectionConfig{"server": own, "server_wildcard": wildcard}})
-	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other", Applies: "server_wildcard", Rules: map[string]*config.ProjectionConfig{"server_wildcard": wildcard}})
+	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": own}})
 
 	postMCP(t, srv, sessionID, setGetDataProjection(11, true))
 
 	session := &config.ProjectionConfig{IncludeOnly: []string{"b"}}
-	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Applies: "session", Rules: map[string]*config.ProjectionConfig{"session": session, "server": own, "server_wildcard": wildcard}})
+	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"session": session, "server": own}})
 }
 
 func TestConfigureGetProjection_aToolWithoutRulesReportsNone(t *testing.T) {
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000011"
 	srv := newProjectionServer(t, sessionID, nil)
 
-	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Applies: "none"})
+	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData"})
 }
 
 func TestConfigureGetProjection_acceptsTheAliasAgentsSee(t *testing.T) {
@@ -75,7 +73,7 @@ func TestConfigureGetProjection_acceptsTheAliasAgentsSee(t *testing.T) {
 	rule := &config.ProjectionConfig{Alias: "fetch", Exclude: []string{"secret"}}
 	srv := newProjectionServer(t, sessionID, map[string]*config.ProjectionConfig{"getData": rule})
 
-	assertReport(t, getProjection(t, srv, sessionID, "fetch"), projectionReport{Tool: "svc.fetch", Applies: "server", Rules: map[string]*config.ProjectionConfig{"server": rule}})
+	assertReport(t, getProjection(t, srv, sessionID, "fetch"), projectionReport{Tool: "svc.fetch", Rules: map[string]*config.ProjectionConfig{"server": rule}})
 }
 
 func TestConfigureGetProjection_aRuleReadBackCanBeChangedWithoutLosingTheRest(t *testing.T) {
@@ -90,7 +88,7 @@ func TestConfigureGetProjection_aRuleReadBackCanBeChangedWithoutLosingTheRest(t 
 	}
 
 	want := &config.ProjectionConfig{Exclude: []string{"secret"}, StringLimits: map[string]int{"body": 500}}
-	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Applies: "server", Rules: map[string]*config.ProjectionConfig{"server": want}})
+	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": want}})
 }
 
 func TestConfigureGetProjection_rejectsAMissingToolOrUnknownServer(t *testing.T) {
