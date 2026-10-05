@@ -116,9 +116,9 @@ func TestSaveServerProjection_rules(t *testing.T) {
 
 func TestSaveServerProjection_refusesFilesItCannotEditSafely(t *testing.T) {
 	cases := []struct {
-		name      string
-		file      string
-		requested *ProjectionConfig
+		name     string
+		file     string
+		deleting bool
 	}{
 		{name: "a file that does not load", file: "command: mini\nprojections:\n  first: {include_only: 5}\n"},
 		{name: "a second YAML document", file: "command: mini\n---\ncommand: other\n"},
@@ -126,14 +126,14 @@ func TestSaveServerProjection_refusesFilesItCannotEditSafely(t *testing.T) {
 		{name: "projections inherited through a merge key", file: "base: &base\n  projections: {other: {exclude: [secret]}}\n<<: *base\ncommand: mini\n"},
 		{name: "projections written as an alias that also holds other rules", file: "command: mini\nrules: &rules {first: {exclude: [secret]}, other: {exclude: [private]}}\nprojections: *rules\n"},
 		{name: "a rule another tool shares through an anchor", file: "command: mini\nprojections:\n  first: &rule {exclude: [secret]}\n  other: *rule\n"},
-		{name: "a deletion that would expose an inherited rule", file: "command: mini\nbase: &base\n  projections: {first: {exclude: [inherited]}}\n<<: *base\nprojections: {first: {exclude: [direct]}}\n"},
+		{name: "a deletion that would expose an inherited rule", deleting: true, file: "command: mini\nbase: &base\n  projections: {first: {exclude: [inherited]}}\n<<: *base\nprojections: {first: {exclude: [direct]}}\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := writeServerSource(t, dir, tc.file)
 			requested := &ProjectionConfig{IncludeOnly: []string{"id"}}
-			if strings.HasPrefix(tc.name, "a deletion") {
+			if tc.deleting {
 				requested = nil
 			}
 

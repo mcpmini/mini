@@ -32,9 +32,10 @@ func SaveServerProjection(p ServerProjectionParams) (*ProjectionConfig, error) {
 	if !ServerFileExists(p.ConfigDir, p.ServerName) {
 		return nil, fmt.Errorf("read %s: %w", path, fs.ErrNotExist)
 	}
+	edit := projectionEdit{path: path, tool: p.Tool, requested: p.Projection}
 	var saved *ProjectionConfig
 	_, err := fileio.EditFile(fileio.EditParams{Path: path, Edit: func(data []byte) ([]byte, error) {
-		edited, rule, err := editProjection(path, data, p.Tool, p.Projection)
+		edited, rule, err := edit.apply(data)
 		saved = rule
 		return edited, err
 	}})
@@ -44,40 +45,45 @@ func SaveServerProjection(p ServerProjectionParams) (*ProjectionConfig, error) {
 	return saved, nil
 }
 
-func editProjection(path string, data []byte, tool string, requested *ProjectionConfig) ([]byte, *ProjectionConfig, error) {
-	before, doc, err := parseEditableServerFile(path, data)
+type projectionEdit struct {
+	path, tool string
+	requested  *ProjectionConfig
+}
+
+func (e projectionEdit) apply(data []byte) ([]byte, *ProjectionConfig, error) {
+	before, doc, err := parseEditableServerFile(e.path, data)
 	if err != nil {
 		return nil, nil, err
 	}
-	want, err := setProjectionNode(doc.Content[0], tool, keepAlias(requested, before.Projections[tool]))
+	want, err := setProjectionNode(doc.Content[0], e.tool, keepAlias(e.requested, before.Projections[e.tool]))
 	if err != nil {
 		return nil, nil, err
 	}
-	if reflect.DeepEqual(want, before.Projections[tool]) {
+	if reflect.DeepEqual(want, before.Projections[e.tool]) {
 		return data, want, nil
 	}
 	edited, err := yaml.Marshal(doc)
 	if err != nil {
 		return nil, nil, err
 	}
-	saved, err := checkOnlyTheRuleChanged(path, edited, before, tool, want)
+	saved, err := e.checkOnlyTheRuleChanged(edited, before, want)
 	return edited, saved, err
 }
 
 // checkOnlyTheRuleChanged loads the edited file, since rules can reach projections: through YAML merge
 // keys and anchors, which editing one key can't account for.
-func checkOnlyTheRuleChanged(path string, edited []byte, before *ServerConfig, tool string, want *ProjectionConfig) (*ProjectionConfig, error) {
-	after, err := parseValidServerFile(path, edited)
+func (e projectionEdit) checkOnlyTheRuleChanged(edited []byte, before *ServerConfig, want *ProjectionConfig) (*ProjectionConfig, error) {
+	after, err := parseValidServerFile(e.path, edited)
 	if err != nil {
 		return nil, fmt.Errorf("the edited server file would not load: %w", err)
 	}
-	if !reflect.DeepEqual(after.Projections[tool], want) {
-		return nil, fmt.Errorf("the rule for %s comes through a YAML merge key or anchor, which a save can't change", tool)
+	if !reflect.DeepEqual(after.Projections[e.tool], want) {
+		return nil, fmt.Errorf("the rule for %s comes through a YAML merge key or anchor, which a save can't change", e.tool)
 	}
-	if !sameRulesExcept(before.Projections, after.Projections, tool) {
-		return nil, fmt.Errorf("saving %s would also change other tools' rules, which come through a YAML merge key or anchor", tool)
+	if !sameRulesExcept(before.Projections, after.Projections, e.tool) {
+		return nil, fmt.Errorf("saving %s would also change other tools' rules, which come through a YAML merge key or anchor", e.tool)
 	}
-	return after.Projections[tool], nil
+	return after.Projections[e.tool], nil
 }
 
 func parseEditableServerFile(path string, data []byte) (*ServerConfig, *yaml.Node, error) {
