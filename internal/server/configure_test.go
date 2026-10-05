@@ -123,37 +123,6 @@ func TestExecuteProtected_callsProtectedTool(t *testing.T) {
 	}
 }
 
-func newReadOnlyConfigServer(t *testing.T) *server.Server {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.Chmod(dir, 0500); err != nil {
-		t.Skip("cannot set read-only dir:", err)
-	}
-	t.Cleanup(func() { os.Chmod(dir, 0700) }) //nolint:errcheck
-	return newTestServer(t, server.Params{ConfigDir: dir})
-}
-
-func TestSetProjection_persistenceFailureReturnsError(t *testing.T) {
-	srv := newReadOnlyConfigServer(t)
-	fake := fakeConn("myTool")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"secret\":\"hidden\"}"}]}`)
-	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, fake)
-
-	resp := serve(t, srv, callTool("config", map[string]any{
-		"action": "set_projection", "server": "svc", "tool": "myTool",
-		"projection": map[string]any{"exclude": []string{"secret"}},
-	}))
-	result, _ := resp["result"].(map[string]any)
-	if result == nil || result["isError"] != true {
-		t.Errorf("expected isError=true when persistence fails, got: %v", resp)
-	}
-
-	execResp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "myTool"}))
-	if text := toolResultText(t, execResp); !strings.Contains(text, "secret") {
-		t.Error("projection should be rolled back: secret should still appear in response")
-	}
-}
-
 func TestToolsList_returnsProxySchemas(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	resp := serve(t, srv, []byte(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`+"\n"))
@@ -347,6 +316,13 @@ func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillAp
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
 			}
+		},
+		"unwritable servers directory": func(t *testing.T, path string) {
+			dir := filepath.Dir(path)
+			if err := os.Chmod(dir, 0o500); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Chmod(dir, 0o700) }) //nolint:errcheck // TempDir cleanup reports a directory it can't remove
 		},
 	}
 	for name, breakFile := range cases {
