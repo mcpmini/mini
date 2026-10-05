@@ -50,6 +50,7 @@ type entryFormat struct {
 	// never blocks an import.
 	ignoredRunSettings []string
 	expandsBareVars    bool
+	editorPlaceholders bool
 }
 
 type clientEntry interface {
@@ -138,7 +139,7 @@ func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
 		fields = append(fields, "an environment variable in command or args")
 	}
 	values := append(slices.Clone(sc.Env), slices.Collect(maps.Values(sc.Headers))...)
-	if slices.ContainsFunc(values, editorPlaceholder.MatchString) {
+	if f.editorPlaceholders && slices.ContainsFunc(values, editorPlaceholder.MatchString) {
 		fields = append(fields, "an editor placeholder like ${userHome}")
 	} else if slices.ContainsFunc(values, hasForeignRef) {
 		fields = append(fields, "an environment variable syntax mini doesn't read")

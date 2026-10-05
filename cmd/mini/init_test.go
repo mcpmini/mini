@@ -216,6 +216,7 @@ func TestImportAgentConfig_ImportsOnlyNewServers(t *testing.T) {
 func TestInitImportsCodexAndNamesWhatMiniDoesNotCarryOver(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
 	configDir := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(home, ".codex", "config.toml"), `
 [mcp_servers.search]
@@ -273,6 +274,7 @@ enabled = false
 
 func TestInitFromATOMLPathReadsCodexFormat(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	configDir := t.TempDir()
 	src := filepath.Join(t.TempDir(), "team.toml")
 	testutil.WriteFile(t, src, "[mcp_servers.search]\nurl = \"https://search.example/mcp\"\n")
@@ -292,6 +294,7 @@ func TestInitFromATOMLPathReadsCodexFormat(t *testing.T) {
 
 func TestFindKnownAgent_missingHomeDoesNotUseWorkingDirectory(t *testing.T) {
 	t.Setenv("HOME", "")
+	t.Setenv("CODEX_HOME", "")
 	t.Setenv("USERPROFILE", "")
 	t.Setenv("home", "")
 	if _, err := os.UserHomeDir(); err == nil {
@@ -306,6 +309,7 @@ func TestFindKnownAgent_missingHomeDoesNotUseWorkingDirectory(t *testing.T) {
 
 func TestResolveFromSource_explicitFileWorksWithoutHome(t *testing.T) {
 	t.Setenv("HOME", "")
+	t.Setenv("CODEX_HOME", "")
 	t.Setenv("USERPROFILE", "")
 	t.Setenv("home", "")
 	path := filepath.Join(t.TempDir(), "agent.json")

@@ -93,6 +93,9 @@ func TestReadClientConfigs(t *testing.T) {
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"default\", X-Org = \"acme\" }\n" +
 				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\", X-Org = \"MINI_TEST_BLANK_KEY\" }\n",
 			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"X-Team": "default", "X-Org": "acme"})}},
+		{"codex variable named like an editor placeholder is a plain reference", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nbearer_token_env_var = \"userHome\"\n",
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${userHome}"})}},
 		{"codex switched off", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
 			Server{Config: stdio("s", "run"), Disabled: true}},
