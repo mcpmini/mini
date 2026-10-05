@@ -40,8 +40,7 @@ type Server struct {
 	Disabled           bool
 	IgnoredRunSettings []string
 	UnexpandableRefs   []string
-	// UnusedEnvHeaders maps a static header kept at import to the variable the agent would read
-	// it from once that is set; mini won't switch to it later.
+	// header → the variable Codex would read it from once set; mini keeps the static value.
 	UnusedEnvHeaders map[string]string
 }
 
@@ -54,8 +53,7 @@ func (s Server) Candidate() bool {
 }
 
 type entryFormat struct {
-	// Unmapped keys not listed here are dropped without notice, so a setting an agent adds later
-	// never blocks an import.
+	// Other unmapped keys are dropped silently, so a setting an agent adds later never blocks an import.
 	ignoredRunSettings []string
 	expandsBareVars    bool
 	editorPlaceholders bool
@@ -132,8 +130,6 @@ func translateRefs(values map[string]string, f entryFormat) map[string]string {
 	return out
 }
 
-// mini doesn't expand ${VAR} in url, command or args, and reads no other reference syntax, so a
-// copy with such a reference wouldn't run the way the agent's entry does.
 func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
 	ref := bracedRef
 	if f.expandsBareVars {
@@ -155,7 +151,6 @@ func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
 	return fields
 }
 
-// Cursor and Windsurf substitute these themselves; mini would read them as environment variables.
 var editorPlaceholder = regexp.MustCompile(`\$\{(userHome|workspaceFolder|workspaceFolderBasename|pathSeparator)\}`)
 
 func hasForeignRef(value string) bool {

@@ -68,16 +68,16 @@ func (e codexMCPEntry) server(name string) Server {
 	return Server{Config: fields.httpServer(name, e.URL), Disabled: disabled, UnusedEnvHeaders: unusedOverrides}
 }
 
-// mini can't make a header reference optional, so Codex's choice is made once, at import: the
-// env override when its variable is set, otherwise the static header, otherwise the reference.
 func (e codexMCPEntry) headers() (map[string]string, map[string]string) {
 	headers := maps.Clone(e.Headers)
 	var unusedOverrides map[string]string
 	for _, name := range slices.Sorted(maps.Keys(e.EnvHTTPHeaders)) {
 		envVar := e.EnvHTTPHeaders[name]
+		// Codex keeps the static header while the variable is unset; mini can't make a reference
+		// optional, so the choice is made once, at import.
 		switch {
-		case strings.TrimSpace(os.Getenv(envVar)) != "" || !hasHeader(headers, name):
-			headers = replaceHeader(headers, name, "${"+envVar+"}")
+		case strings.TrimSpace(os.Getenv(envVar)) != "" || !hasHeaderAnyCase(headers, name):
+			headers = replaceHeaderAnyCase(headers, name, "${"+envVar+"}")
 		case unusedOverrides == nil:
 			unusedOverrides = map[string]string{name: envVar}
 		default:
@@ -85,19 +85,18 @@ func (e codexMCPEntry) headers() (map[string]string, map[string]string) {
 		}
 	}
 	if e.BearerTokenEnvVar != "" {
-		headers = replaceHeader(headers, "Authorization", "Bearer ${"+e.BearerTokenEnvVar+"}")
+		headers = replaceHeaderAnyCase(headers, "Authorization", "Bearer ${"+e.BearerTokenEnvVar+"}")
 	}
 	return headers, unusedOverrides
 }
 
-func hasHeader(headers map[string]string, name string) bool {
+func hasHeaderAnyCase(headers map[string]string, name string) bool {
 	return slices.ContainsFunc(slices.Collect(maps.Keys(headers)), func(existing string) bool {
 		return strings.EqualFold(existing, name)
 	})
 }
 
-// Header names ignore case, so a header replaces any spelling of its name.
-func replaceHeader(headers map[string]string, name, value string) map[string]string {
+func replaceHeaderAnyCase(headers map[string]string, name, value string) map[string]string {
 	if headers == nil {
 		headers = map[string]string{}
 	}
