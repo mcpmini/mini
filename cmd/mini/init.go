@@ -207,16 +207,23 @@ func printInstallInstructions() {
 	}
 }
 
+func shellQuoted(arg string) string {
+	if !strings.ContainsAny(arg, " \t\n'\"\\$`;&|<>()*?[]{}!#~") {
+		return arg
+	}
+	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
+}
+
 func printAgentInstall(a agents.Agent, binPath string) {
 	fmt.Println()
 	switch a.Name {
 	case "Claude Code":
 		fmt.Println("  Claude Code:")
-		fmt.Println("    claude mcp add mini " + binPath + " connect")
+		fmt.Println("    claude mcp add mini " + shellQuoted(binPath) + " connect")
 		return
 	case "Codex":
 		fmt.Println("  Codex:")
-		fmt.Println("    codex mcp add mini -- " + binPath + " connect")
+		fmt.Println("    codex mcp add mini -- " + shellQuoted(binPath) + " connect")
 		return
 	}
 	fmt.Printf("  %s — add to %s:\n", a.Name, a.ConfigPath)

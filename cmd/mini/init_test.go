@@ -236,7 +236,7 @@ command = "paused-server"
 enabled = false
 `)
 	t.Setenv("SEARCH_TOKEN", "")
-	os.Unsetenv("SEARCH_TOKEN") //nolint:errcheck // t.Setenv restores it; unset is what this test needs
+	os.Unsetenv("SEARCH_TOKEN") //nolint:errcheck // t.Setenv above restores it after the test
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
 	cmd.SetArgs([]string{"--yes"})
 
@@ -321,5 +321,18 @@ func TestResolveFromSource_explicitFileWorksWithoutHome(t *testing.T) {
 	servers, err := agent.Read(agent.ConfigPath)
 	if err != nil || servers["example"].Config.URL != "https://example.com/mcp" {
 		t.Fatalf("servers = %+v, error = %v; want the explicit file's server", servers, err)
+	}
+}
+
+func TestShellQuoted(t *testing.T) {
+	for in, want := range map[string]string{
+		"/usr/local/bin/mini": "/usr/local/bin/mini",
+		"/Users/a b/bin/mini": "'/Users/a b/bin/mini'",
+		"/opt/it's/mini":      `'/opt/it'\''s/mini'`,
+		"/opt/$HOME/mini":     "'/opt/$HOME/mini'",
+	} {
+		if got := shellQuoted(in); got != want {
+			t.Errorf("shellQuoted(%q) = %s, want %s", in, got, want)
+		}
 	}
 }

@@ -61,7 +61,7 @@ func importedServers[E clientEntry](entries map[string]E, keys map[string][]stri
 	servers := make(map[string]Server, len(entries))
 	for name, entry := range entries {
 		s := entry.server(name)
-		s.IgnoredRunSettings = presentKeys(keys[name], f.ignoredRunSettings)
+		s.IgnoredRunSettings = append(presentKeys(keys[name], f.ignoredRunSettings), s.IgnoredRunSettings...)
 		s.UnexpandableRefs = unexpandableFields(s.Config, f)
 		servers[name] = s
 	}
@@ -124,8 +124,8 @@ func translateRefs(values map[string]string, f entryFormat) map[string]string {
 	return out
 }
 
-// mini doesn't expand ${VAR} in url, command or args, and reads no other reference syntax; such
-// a reference would reach the server as text.
+// mini doesn't expand ${VAR} in url, command or args, and reads no other reference syntax, so a
+// copy with such a reference wouldn't run the way the agent's entry does.
 func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
 	ref := bracedRef
 	if f.expandsBareVars {

@@ -63,24 +63,30 @@ func (e codexMCPEntry) server(name string) Server {
 		return Server{Config: e.stdioServer(name), Disabled: disabled}
 	}
 	fields := e.clientEntryFields
-	fields.Headers = e.headers()
-	return Server{Config: fields.httpServer(name, e.URL), Disabled: disabled}
+	var droppedOverrides []string
+	fields.Headers, droppedOverrides = e.headers()
+	return Server{Config: fields.httpServer(name, e.URL), Disabled: disabled, IgnoredRunSettings: droppedOverrides}
 }
 
-func (e codexMCPEntry) headers() map[string]string {
+// mini can't make a header reference optional, so Codex's choice is made once, at import: the
+// env override when its variable is set, otherwise the static header, otherwise the reference.
+// A static header kept over an override is named, since setting the variable later won't apply.
+func (e codexMCPEntry) headers() (map[string]string, []string) {
 	headers := maps.Clone(e.Headers)
+	var droppedOverrides []string
 	for _, name := range slices.Sorted(maps.Keys(e.EnvHTTPHeaders)) {
 		envVar := e.EnvHTTPHeaders[name]
-		// Codex keeps the static header while the variable is unset or blank. mini can't make a
-		// reference optional, so without a static header the reference is kept and import names it.
-		if strings.TrimSpace(os.Getenv(envVar)) != "" || !hasHeader(headers, name) {
+		switch {
+		case strings.TrimSpace(os.Getenv(envVar)) != "" || !hasHeader(headers, name):
 			headers = replaceHeader(headers, name, "${"+envVar+"}")
+		default:
+			droppedOverrides = append(droppedOverrides, "env_http_headers."+name)
 		}
 	}
 	if e.BearerTokenEnvVar != "" {
 		headers = replaceHeader(headers, "Authorization", "Bearer ${"+e.BearerTokenEnvVar+"}")
 	}
-	return headers
+	return headers, droppedOverrides
 }
 
 func hasHeader(headers map[string]string, name string) bool {
