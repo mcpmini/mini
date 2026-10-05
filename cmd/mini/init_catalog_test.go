@@ -286,7 +286,7 @@ func TestSelectCatalogEntriesPrintsSetupNotesAfterPartialWrite(t *testing.T) {
 	if err == nil {
 		t.Fatal("selectCatalogEntries succeeded, want the second server write to fail")
 	}
-	if !strings.Contains(out.String(), "first needs an access token: create one at https://first.example/tokens") {
+	if !strings.Contains(out.String(), "first needs a token: create one at https://first.example/tokens") {
 		t.Errorf("output missing setup note for the written server:\n%s", out.String())
 	}
 }
@@ -406,8 +406,9 @@ func TestSelectCatalogEntriesPrintsSetupNotesForSelectedServers(t *testing.T) {
 	}
 	out := &bytes.Buffer{}
 
+	configDir := t.TempDir()
 	err := selectCatalogEntries(catalogStepParams{
-		configDir: t.TempDir(),
+		configDir: configDir,
 		ask:       func(string) string { return "1-3" },
 		out:       out,
 		errOut:    &bytes.Buffer{},
@@ -417,10 +418,11 @@ func TestSelectCatalogEntriesPrintsSetupNotesForSelectedServers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"my-svc needs an access token: create one at https://svc.example/tokens",
+		"my-svc needs a token: create one at https://svc.example/tokens",
 		"Authorization: Bearer ${MY_SVC_TOKEN}",
 		"apps needs your own OAuth app: register one at https://apps.example/new-app with redirect URI " + auth.ResolvedCallbackURI(nil),
-		"and run: mini auth apps",
+		"headers:\n",
+		"and run: mini --config " + configDir + " auth apps",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

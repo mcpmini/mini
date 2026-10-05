@@ -17,17 +17,43 @@ type rowMerger struct {
 	used     map[string]bool
 }
 
-// Entries arrive in agent order, then by name, which fixes which config keeps the plain name.
+// Entries arrive in agent order, then by name, which fixes which config keeps the plain name; an
+// enabled config claims it before a switched-off one, so the server the user runs starts ticked.
 func mergeEntries(entries []agentEntry, configured map[string]bool) []Candidate {
 	m := rowMerger{claimed: map[string]bool{}, used: maps.Clone(configured)}
 	for _, e := range entries {
 		m.used[NormalizeName(e.name)] = true
 	}
-	for _, e := range entries {
+	ordered := slices.Clone(entries)
+	slices.SortStableFunc(ordered, func(a, b agentEntry) int { return boolOrder(a.server.Disabled, b.server.Disabled) })
+	for _, e := range ordered {
 		m.add(e)
 	}
+	keepAgentOrder(m.rows, entries)
 	slices.SortFunc(m.rows, func(a, b Candidate) int { return strings.Compare(a.Name, b.Name) })
 	return m.rows
+}
+
+func keepAgentOrder(rows []Candidate, entries []agentEntry) {
+	position := map[[2]string]int{}
+	for i, e := range entries {
+		position[[2]string{e.agent, e.name}] = i
+	}
+	for _, row := range rows {
+		slices.SortStableFunc(row.Sources, func(a, b Source) int {
+			return position[[2]string{a.Agent, a.Name}] - position[[2]string{b.Agent, b.Name}]
+		})
+	}
+}
+
+func boolOrder(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case b:
+		return -1
+	}
+	return 1
 }
 
 // One server under several names is still one row: importing it twice would expose its tools twice.

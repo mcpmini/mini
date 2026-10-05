@@ -77,6 +77,23 @@ func TestRunFlags_namesASecondConfigItLeavesOut(t *testing.T) {
 	}
 }
 
+func TestRunFlags_anEnabledConfigWinsANameFromASwitchedOffOne(t *testing.T) {
+	f := newApplyFixture(t)
+	claude := f.write(t, "Claude Code", `{"mcpServers":{"github":{"command":"gh-server-a","disabled":true}}}`)
+	cursor := f.write(t, "Cursor", `{"mcpServers":{"github":{"command":"gh-server-b"}}}`)
+
+	report := RunFlags(FlagRun{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf})
+
+	github, err := config.ReadUnexpandedServer(f.configDir, "github")
+	if err != nil || github.Command != "gh-server-b" {
+		t.Errorf("github = %+v, %v; want Cursor's enabled config imported", github, err)
+	}
+	want := []SkippedServer{{Agent: "Claude Code", Name: "github", Reason: SkipSwitchedOff}}
+	if !reflect.DeepEqual(report.Skipped, want) {
+		t.Errorf("skipped = %+v, want Claude Code's switched-off github named", report.Skipped)
+	}
+}
+
 func TestRunFlags_sortsAgentsByTheirMiniEntry(t *testing.T) {
 	f := newApplyFixture(t)
 	cursor := f.write(t, "Cursor", `{"mcpServers":{"mini":{"command":"/opt/old/mini","args":["connect"],"disabled":true}}}`)
