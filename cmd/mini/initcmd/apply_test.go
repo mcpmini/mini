@@ -17,8 +17,6 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
-var testMini = agents.MiniEntry{Command: "/opt/mini/bin/mini", Args: []string{"connect"}}
-
 type applyFixture struct {
 	mini      string
 	home      string
@@ -52,9 +50,13 @@ func (f applyFixture) write(t *testing.T, agent, content string) agents.Agent {
 	return a
 }
 
+func (f applyFixture) miniEntry() agents.MiniEntry {
+	return agents.MiniEntry{Command: f.mini, Args: []string{"--config", f.configDir, "connect"}}
+}
+
 func (f applyFixture) apply(choice ConnectChoice, checks map[string]error, list ...agents.Agent) []AgentResult {
 	return Apply(context.Background(), ApplyParams{
-		ConfigDir: f.configDir, Agents: list, Choice: choice, Mini: testMini, SelfPath: testSelf,
+		ConfigDir: f.configDir, Agents: list, Choice: choice, Mini: f.miniEntry(), SelfPath: testSelf,
 		Checks: checks, Now: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC),
 	})
 }
@@ -103,6 +105,25 @@ func TestApply_removesOnlyVerifiedDuplicates(t *testing.T) {
 		if r.Err != nil || r.Backup == "" {
 			t.Errorf("%s: err = %v, backup = %q; want an edit with a backup", r.Agent.Name, r.Err, r.Backup)
 		}
+	}
+}
+
+func TestApply_keepsDuplicatesWhenTheWrittenMiniWontServeThem(t *testing.T) {
+	f := newApplyFixture(t)
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+	cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"}}}`)
+
+	results := Apply(context.Background(), ApplyParams{
+		ConfigDir: f.configDir, Agents: []agents.Agent{cursor}, Choice: ConnectAndRemove,
+		Mini: agents.MiniEntry{Command: f.mini, Args: []string{"connect"}}, Checks: map[string]error{"files": nil},
+	})
+
+	wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
+	if results[0].Removed != nil || !reflect.DeepEqual(results[0].Kept, wantKept) {
+		t.Errorf("result = %+v, want files kept: the mini written runs the default config directory", results[0])
+	}
+	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, []string{"files", "mini"}) {
+		t.Errorf("entries = %v, want files and the new mini", got)
 	}
 }
 
@@ -205,7 +226,7 @@ func TestApply_reportsEntriesChangedSinceTheCheck(t *testing.T) {
 	cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server","args":["--edited"]},"lin":{"command":"lin-server"}}}`)
 
 	results := Apply(context.Background(), ApplyParams{
-		ConfigDir: f.configDir, Agents: []agents.Agent{cursor}, Choice: ConnectAndRemove, Mini: testMini,
+		ConfigDir: f.configDir, Agents: []agents.Agent{cursor}, Choice: ConnectAndRemove, Mini: f.miniEntry(),
 		Checks:  map[string]error{"files": nil, "lin": errors.New("unreachable")},
 		Counted: map[string][]string{"Cursor": {"files", "lin"}},
 	})
@@ -230,7 +251,7 @@ func TestApply_failuresAndCancel(t *testing.T) {
 		claude := f.write(t, "Claude Code", `{}`)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		results := Apply(ctx, ApplyParams{ConfigDir: f.configDir, Agents: []agents.Agent{claude}, Choice: ConnectOnly, Mini: testMini})
+		results := Apply(ctx, ApplyParams{ConfigDir: f.configDir, Agents: []agents.Agent{claude}, Choice: ConnectOnly, Mini: f.miniEntry()})
 		if !errors.Is(results[0].Err, context.Canceled) || string(testutil.ReadFile(t, claude.ConfigPath)) != "{}" {
 			t.Errorf("result = %+v, want cancelled and untouched", results[0])
 		}
@@ -312,7 +333,7 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		before := [][]byte{testutil.ReadFile(t, codex.ConfigPath), testutil.ReadFile(t, cursor.ConfigPath)}
 
 		results := Apply(context.Background(), ApplyParams{
-			ConfigDir: f.configDir, Agents: []agents.Agent{codex, cursor}, Choice: ConnectAndRemove, Mini: testMini,
+			ConfigDir: f.configDir, Agents: []agents.Agent{codex, cursor}, Choice: ConnectAndRemove, Mini: f.miniEntry(),
 			Checks: map[string]error{"files": nil}, Counted: map[string][]string{"Codex": {"files"}, "Cursor": {"files"}},
 		})
 

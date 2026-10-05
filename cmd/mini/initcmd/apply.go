@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/agents"
+	"github.com/mcpmini/mini/internal/config"
 )
 
 type ConnectChoice int
@@ -56,7 +57,7 @@ type KeptEntry struct {
 
 var (
 	errNotChecked   = errors.New("its connection wasn't checked")
-	errMiniInactive = errors.New("the agent's mini entry may not run this mini: it's switched off, uses another config directory, or doesn't start mini connect by absolute path")
+	errMiniInactive = errors.New("the agent's mini entry may not run these servers: it's switched off, uses another config directory, or doesn't start mini connect by absolute path")
 )
 
 // Apply connects mini to each agent in turn. A failed agent doesn't stop the others; once ctx is
@@ -119,7 +120,7 @@ func (p ApplyParams) editedConfig(agent agents.Agent, mini MiniServers, config [
 	if p.Choice == ConnectAndRemove {
 		duplicates := mini.Duplicates(entries, p.SelfPath)
 		result.Changed = changedSince(p.Counted[agent.Name], duplicates)
-		result.Removed, result.Kept = p.replaceable(duplicates, result.ExistingMini)
+		result.Removed, result.Kept = p.replaceable(duplicates, p.servedAfterEdit(result.ExistingMini))
 	}
 	switch {
 	case result.ExistingMini == NoMiniEntry:
@@ -141,11 +142,23 @@ func changedSince(counted []string, duplicates map[string]string) []string {
 	return changed
 }
 
-func (p ApplyParams) replaceable(duplicates map[string]string, existing ExistingMini) ([]string, []KeptEntry) {
+// A duplicate goes only when the agent ends up with an enabled mini serving the servers checked
+// here: its own entry, or the one init writes.
+func (p ApplyParams) servedAfterEdit(existing ExistingMini) bool {
+	switch existing {
+	case MiniEntryServes:
+		return true
+	case NoMiniEntry:
+		return p.serves(config.ServerConfig{Command: p.Mini.Command, Args: p.Mini.Args}, false)
+	}
+	return false
+}
+
+func (p ApplyParams) replaceable(duplicates map[string]string, served bool) ([]string, []KeptEntry) {
 	var remove []string
 	var kept []KeptEntry
 	for _, entry := range slices.Sorted(maps.Keys(duplicates)) {
-		if err := p.keepReason(duplicates[entry], existing); err != nil {
+		if err := p.keepReason(duplicates[entry], served); err != nil {
 			kept = append(kept, KeptEntry{Entry: entry, Server: duplicates[entry], Err: err})
 		} else {
 			remove = append(remove, entry)
@@ -154,9 +167,8 @@ func (p ApplyParams) replaceable(duplicates map[string]string, existing Existing
 	return remove, kept
 }
 
-// A duplicate goes only when the agent ends up with an enabled mini serving the servers checked here.
-func (p ApplyParams) keepReason(server string, existing ExistingMini) error {
-	if existing == MiniEntryInactive {
+func (p ApplyParams) keepReason(server string, served bool) error {
+	if !served {
 		return errMiniInactive
 	}
 	if err, checked := p.Checks[server]; checked {
