@@ -16,9 +16,9 @@ import (
 type ConnectChoice int
 
 const (
-	ConnectAndRemove ConnectChoice = iota
+	DontConnect ConnectChoice = iota
 	ConnectOnly
-	DontConnect
+	ConnectAndRemove
 )
 
 type ApplyParams struct {
@@ -47,8 +47,8 @@ type AgentResult struct {
 	Err          error
 }
 
-// KeptEntry is an agent entry mini duplicates but didn't replace, because mini's copy failed its
-// connection check or was never checked.
+// KeptEntry is an agent entry mini duplicates but didn't replace: mini's copy failed its
+// connection check or was never checked, or the agent's mini entry won't serve it.
 type KeptEntry struct {
 	Entry  string
 	Server string

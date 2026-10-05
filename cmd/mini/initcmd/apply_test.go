@@ -127,6 +127,23 @@ func TestApply_keepsDuplicatesWhenTheWrittenMiniWontServeThem(t *testing.T) {
 	}
 }
 
+func TestApply_aFailedEditReportsNothingRemoved(t *testing.T) {
+	f := newApplyFixture(t)
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "lin", Command: "lin-server"})
+	codex := f.write(t, "Codex", "[mcp_servers.lin]\ncommand = \"lin-server\"\n\n[mcp_servers]\nfiles = { command = \"files-server\" }\n")
+	before := testutil.ReadFile(t, codex.ConfigPath)
+
+	results := f.apply(ConnectAndRemove, map[string]error{"files": nil, "lin": nil}, codex)
+
+	if results[0].Err == nil || results[0].Removed != nil || results[0].Kept != nil {
+		t.Errorf("result = %+v, want the edit's error and nothing reported removed or kept", results[0])
+	}
+	if after := testutil.ReadFile(t, codex.ConfigPath); string(after) != string(before) {
+		t.Errorf("config changed:\n%s", after)
+	}
+}
+
 func TestApply_disablesInCodex(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
@@ -301,6 +318,19 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		}
 		if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, []string{"proxy"}) || results[1].Backup != "" {
 			t.Errorf("Cursor entries = %v, result = %+v; want proxy alone and no edit", got, results[1])
+		}
+	})
+	t.Run("a relative --config keeps the duplicates", func(t *testing.T) {
+		f := newApplyFixture(t)
+		configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+		t.Chdir(filepath.Dir(f.configDir))
+		cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"},`+
+			`"mini":{"command":"`+f.mini+`","args":["--config","`+filepath.Base(f.configDir)+`","connect"]}}}`)
+
+		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor)
+
+		if results[0].ExistingMini != MiniEntryInactive || results[0].Removed != nil {
+			t.Errorf("result = %+v, want the relative config dir reported inactive: the agent resolves it from its own directory", results[0])
 		}
 	})
 	t.Run("a mini entry that can't start keeps the duplicates", func(t *testing.T) {
