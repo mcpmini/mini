@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mcpmini/mini/internal/fileio"
 	"github.com/mcpmini/mini/internal/randutil"
 )
 
@@ -26,7 +27,7 @@ func WriteToken(configDir string) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return "", err
 	}
-	return token, atomicWriteFile(path, token)
+	return token, fileio.ReplaceFile(path, []byte(token), fileio.ReplaceOptions{Perm: 0600})
 }
 
 func ReadToken(configDir string) (string, error) {
@@ -55,28 +56,4 @@ func readPrivateToken(configDir string) (string, error) {
 		return "", fmt.Errorf("token file has insecure permissions %#o", info.Mode().Perm())
 	}
 	return ReadToken(configDir)
-}
-
-func atomicWriteFile(path, data string) (err error) {
-	// Write to a temp file then rename so concurrent readers never see partial content.
-	// https://github.com/natefinch/atomic/blob/59b8c279e6d5/atomic.go#L17
-	// CreateTemp guarantees 0600 regardless of prior file perms.
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
-	if err != nil {
-		return err
-	}
-	// Cleanup only; the write/rename error that set err is the one worth returning.
-	defer func() {
-		if err != nil {
-			_ = os.Remove(tmp.Name())
-		}
-	}()
-	if _, err = tmp.WriteString(data); err != nil {
-		_ = tmp.Close()
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
 }

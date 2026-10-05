@@ -43,6 +43,27 @@ func TestWriteRaw_filenameIsMilliseconds(t *testing.T) {
 	}
 }
 
+func TestWriteRaw_collisionUsesAnotherNameAndPreservesBothPayloads(t *testing.T) {
+	s := newStore(t)
+	base := s.newFileBase()
+	firstPath := filepath.Join(s.dir, base+".json")
+	testutil.WriteFile(t, firstPath, `{"existing":true}`)
+
+	key, err := s.WriteRaw([]byte(`{"new":true}`))
+	if err != nil {
+		t.Fatalf("WriteRaw: %v", err)
+	}
+	if key == base {
+		t.Fatalf("returned colliding key %q", key)
+	}
+	if got := string(testutil.ReadFile(t, firstPath)); got != `{"existing":true}` {
+		t.Fatalf("existing payload = %q", got)
+	}
+	if got := string(testutil.ReadFile(t, filepath.Join(s.dir, key+".json"))); got != "{\n  \"new\": true\n}" {
+		t.Fatalf("new payload = %q", got)
+	}
+}
+
 func TestWriteRaw_unwritableDir(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: 0, BudgetMB: 100, CleanupInterval: 0})

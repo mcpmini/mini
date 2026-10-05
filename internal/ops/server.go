@@ -11,6 +11,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/fileio"
 )
 
 var ErrAlreadyConfigured = errors.New("already configured")
@@ -96,19 +97,7 @@ func writeNewFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		return err
-	}
-	_, err = f.Write(data)
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	// Adds never replace a file, so a partly written one would block every later add.
-	if err != nil {
-		return errors.Join(err, os.Remove(path))
-	}
-	return nil
+	return fileio.CreateFile(path, data, 0600)
 }
 
 func validServerName(name string) error {
