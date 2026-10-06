@@ -71,12 +71,13 @@ func TestConfigureGetProjection_aToolWithoutRulesReportsNoRules(t *testing.T) {
 	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData"})
 }
 
-func TestConfigureGetProjection_acceptsTheAliasAgentsSee(t *testing.T) {
+func TestConfigureGetProjection_acceptsTheAliasOrTheUpstreamName(t *testing.T) {
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000012"
 	rule := &config.ProjectionConfig{Alias: "fetch", Exclude: []string{"secret"}}
 	srv := newProjectionServer(t, sessionID, map[string]*config.ProjectionConfig{"getData": rule})
 
 	assertReport(t, getProjection(t, srv, sessionID, "fetch"), projectionReport{Tool: "svc.fetch", Rules: map[string]*config.ProjectionConfig{"server": rule}})
+	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": rule}})
 }
 
 func TestConfigureGetProjection_aRuleReadBackCanBeChangedWithoutLosingTheRest(t *testing.T) {
@@ -108,14 +109,16 @@ func TestConfigureGetProjection_readsAServerStillAwaitingAuthorization(t *testin
 	postMCP(t, srv, sessionID, initMsg(true))
 
 	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": rule}})
+	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other"})
 }
 
-func TestConfigureGetProjection_rejectsAMissingToolOrUnknownServer(t *testing.T) {
+func TestConfigureGetProjection_rejectsAMissingToolOrAnUnknownServerOrTool(t *testing.T) {
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000014"
 	srv := newProjectionServer(t, sessionID, nil)
 	cases := map[string]map[string]any{
-		"missing tool":   {"action": "get_projection", "server": "svc"},
-		"unknown server": {"action": "get_projection", "server": "nope", "tool": "getData"},
+		"missing tool":                 {"action": "get_projection", "server": "svc"},
+		"unknown server":               {"action": "get_projection", "server": "nope", "tool": "getData"},
+		"tool the server doesn't list": {"action": "get_projection", "server": "svc", "tool": "getDta"},
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {

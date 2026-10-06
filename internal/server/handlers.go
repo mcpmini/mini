@@ -153,17 +153,11 @@ func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage
 	return s.callUpstream(ctx, p, entry, session)
 }
 
-// hasProjectionCoverage reports whether a tool has an explicit projection entry or a
-// wildcard "*" for its server. Returns true when the server has no projections at all —
-// the restriction only kicks in once it has some.
+// hasProjectionCoverage is also true for a server with no projections at all: the restriction
+// only kicks in once it has some.
 func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bool {
-	if session.Projection(toolFullName(server, tool)) != nil {
-		return true
-	}
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	toolMap := s.projections[server]
-	return len(toolMap) == 0 || toolMap[tool] != nil || toolMap["*"] != nil
+	rules := s.projectionRules(server, tool, session)
+	return rules.applied() != nil || !rules.serverHasRules
 }
 
 func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *registry.ToolEntry, session *Session) (any, error) {

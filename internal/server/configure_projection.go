@@ -10,6 +10,7 @@ type projectionRules struct {
 	Session        *config.ProjectionConfig `json:"session,omitempty"`
 	Server         *config.ProjectionConfig `json:"server,omitempty"`
 	serverWildcard *config.ProjectionConfig
+	serverHasRules bool
 }
 
 func (r projectionRules) applied() *config.ProjectionConfig {
@@ -28,6 +29,7 @@ func (s *Server) projectionRules(server, tool string, session *Session) projecti
 	defer s.stateMu.RUnlock()
 	rules.Server = s.projections[server][tool]
 	rules.serverWildcard = s.projections[server]["*"]
+	rules.serverHasRules = len(s.projections[server]) > 0
 	return rules
 }
 
@@ -42,15 +44,25 @@ func (s *Server) getProjection(session *Session, p configureParams) (any, error)
 	if !s.isKnownServer(p.ServerName) {
 		return nil, fmt.Errorf("unknown server %q", p.ServerName)
 	}
-	rules := s.projectionRules(p.ServerName, s.upstreamToolName(p.ServerName, p.Tool), session)
+	tool, listed := s.upstreamToolName(p.ServerName, p.Tool)
+	rules := s.projectionRules(p.ServerName, tool, session)
+	if !listed && rules.Session == nil && rules.Server == nil && s.isConnectedServer(p.ServerName) {
+		return nil, fmt.Errorf("server %q has no tool %q", p.ServerName, p.Tool)
+	}
 	return map[string]any{"tool": toolFullName(p.ServerName, p.Tool), "rules": rules}, nil
 }
 
-func (s *Server) upstreamToolName(server, visibleTool string) string {
+func (s *Server) isConnectedServer(name string) bool {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return s.upstreams[name] != nil
+}
+
+func (s *Server) upstreamToolName(server, visibleTool string) (tool string, listed bool) {
 	if entry, err := s.reg.Lookup(toolFullName(server, visibleTool)); err == nil {
-		return entry.ToolName.UpstreamName
+		return entry.ToolName.UpstreamName, true
 	}
-	return visibleTool
+	return visibleTool, false
 }
 
 func (s *Server) setProjection(session *Session, p configureParams) (any, error) {
@@ -63,7 +75,7 @@ func (s *Server) setProjection(session *Session, p configureParams) (any, error)
 		}
 	}
 	visibleTool := p.Tool
-	p.Tool = s.upstreamToolName(p.ServerName, p.Tool)
+	p.Tool, _ = s.upstreamToolName(p.ServerName, p.Tool)
 	if p.SessionOnly {
 		return s.setSessionProjection(session, p, visibleTool), nil
 	}
