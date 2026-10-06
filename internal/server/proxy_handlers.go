@@ -39,6 +39,9 @@ func (s *Server) handleProxyCall(
 	}
 	entry, err := s.reg.Lookup(server + "." + tool)
 	if err != nil {
+		if env, unavailable := s.unavailableServerError(server); unavailable {
+			return env, nil
+		}
 		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
 	req, err := parseProxyRequest(args)

@@ -87,6 +87,10 @@ func (s *Server) listHidden() (any, error) {
 func (s *Server) listDetail(fullName string) (any, error) {
 	e, err := s.reg.Lookup(fullName)
 	if err != nil {
+		server, _, _ := strings.Cut(fullName, ".")
+		if env, unavailable := s.unavailableServerError(server); unavailable {
+			return env, nil
+		}
 		return nil, err
 	}
 	m := e.Def.ToMap()
@@ -141,11 +145,14 @@ func (e errLookup) Unwrap() error { return e.cause }
 
 func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) {
 	var le errLookup
-	if errors.As(err, &le) {
-		env := response.BuildError("not_found", err.Error(), false, "")
-		return s.formatEnvelope(server, tool, env, nil)
+	if !errors.As(err, &le) {
+		return nil, err
 	}
-	return nil, err
+	env, unavailable := s.unavailableServerError(server)
+	if !unavailable {
+		env = response.BuildError("not_found", err.Error(), false, "")
+	}
+	return s.formatEnvelope(server, tool, env, nil)
 }
 
 func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {

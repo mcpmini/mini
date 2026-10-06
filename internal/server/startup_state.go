@@ -172,7 +172,11 @@ func (s *Server) startupReportLocked() startupReport {
 
 // Agents read these, so they never include the upstream error: it can hold credentials.
 func (st startupState) reason(name string) string {
-	if st.phase == phaseDelayed {
+	switch st.phase {
+	case phaseConnecting:
+		return fmt.Sprintf(
+			"server %q is still connecting; its tools appear when it's ready. Try again in a few seconds.", name)
+	case phaseDelayed:
 		return fmt.Sprintf(
 			"server %q hasn't connected yet; mini keeps trying in the background. "+
 				`If this persists, ask the user to run "mini status".`, name)
