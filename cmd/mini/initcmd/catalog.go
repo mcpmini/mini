@@ -1,5 +1,5 @@
 // Package initcmd holds mini init's logic: what to offer, what to write, and what happened.
-// It returns data and never prints; the command and the UI present it.
+// It returns data and never prints; the command presents it.
 package initcmd
 
 import (
