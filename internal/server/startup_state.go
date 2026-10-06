@@ -12,7 +12,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-// Long enough for the servers measured on a cold start (6 s), well inside clients' 30 s request timeouts.
+// Above the cold start measured in #322 (6 s) and well inside the 30 s request timeouts of Claude Code, Codex and opencode.
 const startupHold = 10 * time.Second
 
 type startupPhase string
