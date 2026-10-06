@@ -38,6 +38,9 @@ func (s *Server) upstreamToolName(server, visibleTool string) (tool string, list
 	if entry, ok := s.reg.LookupWithHidden(toolFullName(server, visibleTool)); ok {
 		return entry.ToolName.UpstreamName, true
 	}
+	if s.isUpstreamRegistered(server) {
+		return visibleTool, false
+	}
 	if tool, ok := s.toolForAlias(server, visibleTool); ok {
 		return tool, true
 	}

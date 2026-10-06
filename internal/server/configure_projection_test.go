@@ -108,6 +108,18 @@ func TestConfigureProjection_anAliasTheServerRejectedNamesTheRealTool(t *testing
 	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": {Exclude: []string{"c"}}}})
 }
 
+func TestConfigureProjection_anAliasTwoToolsClaimNamesNoTool(t *testing.T) {
+	const sessionID = "cccccccc-cccc-cccc-cccc-000000000018"
+	first, second := &config.ProjectionConfig{Alias: "dup", Exclude: []string{"a"}}, &config.ProjectionConfig{Alias: "dup", Exclude: []string{"b"}}
+	srv := newProjectionServer(t, sessionID, map[string]*config.ProjectionConfig{"getData": first, "other": second})
+
+	assertIsErrorResult(t, postMCP(t, srv, sessionID, configCall(11, map[string]any{"action": "get_projection", "server": "svc", "tool": "dup"})))
+	postMCP(t, srv, sessionID, configCall(12, map[string]any{"action": "set_projection", "server": "svc", "tool": "dup", "projection": map[string]any{"exclude": []string{"c"}}}))
+
+	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": first}})
+	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": second}})
+}
+
 func TestConfigureGetProjection_readsAServerStillAwaitingAuthorization(t *testing.T) {
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000015"
 	upstream := httptest.NewServer(http.HandlerFunc(requireBearer))
