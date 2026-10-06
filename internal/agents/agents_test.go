@@ -83,7 +83,7 @@ func TestKnownAgents_followTheAgentContract(t *testing.T) {
 			t.Run("the user's own mini entry is never changed", func(t *testing.T) { connectKeepsUsersMini(t, agent) })
 			t.Run("a missing file is an error", func(t *testing.T) { missingFileIsAnError(t, agent) })
 			t.Run("no servers is an empty result", func(t *testing.T) { noServersIsEmpty(t, agent) })
-			t.Run("a malformed file is an error", func(t *testing.T) { malformedFileIsAnError(t, agent) })
+			t.Run("a malformed config is an error", func(t *testing.T) { malformedConfigIsAnError(t, agent) })
 		})
 	}
 }
@@ -135,7 +135,7 @@ func noServersIsEmpty(t *testing.T, agent Agent) {
 	}
 }
 
-func malformedFileIsAnError(t *testing.T, agent Agent) {
+func malformedConfigIsAnError(t *testing.T, agent Agent) {
 	if _, err := agent.Parse([]byte("{not valid")); err == nil {
 		t.Fatal("expected a parse error")
 	}
