@@ -156,7 +156,7 @@ func (f serverFlags) hasServerOptions() bool {
 
 type importSource struct {
 	path string
-	read func(path string) (map[string]config.ServerConfig, error)
+	read func(path string) (map[string]agents.Server, error)
 	tip  string
 }
 

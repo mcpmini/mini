@@ -233,6 +233,7 @@ func TestDetectImportedOAuthLeavesUnreachableServerUnmarked(t *testing.T) {
 
 func TestInitCommandDetectsOAuthOnImportedServer(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	configDir := t.TempDir()
 	url := upstreamAnswering(t, http.StatusUnauthorized, "Bearer")
 	src := filepath.Join(t.TempDir(), "claude.json")

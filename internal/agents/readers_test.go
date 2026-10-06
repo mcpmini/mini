@@ -26,114 +26,194 @@ func writeClientConfig(t *testing.T, name, content string) string {
 	return path
 }
 
+type readerFunc func(string) (map[string]Server, error)
+
+func stdio(name, command string, args ...string) config.ServerConfig {
+	return config.ServerConfig{Name: name, Command: command, Args: args}
+}
+
+func remote(name, url string, headers map[string]string) config.ServerConfig {
+	return config.ServerConfig{Name: name, Transport: "http", URL: url, Headers: headers}
+}
+
 func TestReadClientConfigs(t *testing.T) {
 	tests := []struct {
 		name   string
-		read   func(string) (map[string]config.ServerConfig, error)
+		read   readerFunc
 		file   string
 		config string
-		want   map[string]config.ServerConfig
+		want   Server
 	}{
-		{
-			name:   "claude desktop stdio entry, env as a sorted KEY=VALUE list",
-			read:   ReadClaude,
-			file:   "claude.json",
-			config: `{"mcpServers":{"gh":{"command":"npx","args":["server-github"],"env":{"B":"2","A":"1"}}}}`,
-			want:   map[string]config.ServerConfig{"gh": {Name: "gh", Command: "npx", Args: []string{"server-github"}, Env: []string{"A=1", "B=2"}}},
-		},
-		{
-			name:   "claude code project entries",
-			read:   ReadClaude,
-			file:   "claude.json",
-			config: `{"projects":{"/home/user/proj":{"mcpServers":{"local":{"command":"run"}}}}}`,
-			want:   map[string]config.ServerConfig{"local": {Name: "local", Command: "run"}},
-		},
-		{
-			name:   "claude http entry by url keeps headers",
-			read:   ReadClaude,
-			file:   "claude.json",
-			config: `{"mcpServers":{"gh":{"url":"https://api.github.com/mcp","headers":{"Authorization":"Bearer ${GH}"}}}}`,
-			want:   map[string]config.ServerConfig{"gh": {Name: "gh", Transport: "http", URL: "https://api.github.com/mcp", Headers: map[string]string{"Authorization": "Bearer ${GH}"}}},
-		},
-		{
-			name:   "claude sse type is http",
-			read:   ReadClaude,
-			file:   "claude.json",
-			config: `{"mcpServers":{"s":{"type":"sse","url":"https://sse.example.com"}}}`,
-			want:   map[string]config.ServerConfig{"s": {Name: "s", Transport: "http", URL: "https://sse.example.com"}},
-		},
-		{
-			name:   "codex stdio entry",
-			read:   ReadCodex,
-			file:   "config.toml",
-			config: "[mcp_servers.gh]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"${GH}\" }\n",
-			want:   map[string]config.ServerConfig{"gh": {Name: "gh", Command: "npx", Args: []string{"-y", "server-github"}, Env: []string{"TOKEN=${GH}"}}},
-		},
-		{
-			name:   "codex http entry via url",
-			read:   ReadCodex,
-			file:   "config.toml",
-			config: "[mcp_servers.sentry]\nurl = \"https://mcp.sentry.io\"\nheaders = { Authorization = \"Bearer ${SENTRY}\" }\n",
-			want:   map[string]config.ServerConfig{"sentry": {Name: "sentry", Transport: "http", URL: "https://mcp.sentry.io", Headers: map[string]string{"Authorization": "Bearer ${SENTRY}"}}},
-		},
-		{
-			name:   "gemini httpUrl entry",
-			read:   ReadGemini,
-			file:   "settings.json",
-			config: `{"mcpServers":{"github":{"httpUrl":"https://api.github.com/mcp"}}}`,
-			want:   map[string]config.ServerConfig{"github": {Name: "github", Transport: "http", URL: "https://api.github.com/mcp"}},
-		},
-		{
-			name:   "gemini command entry",
-			read:   ReadGemini,
-			file:   "settings.json",
-			config: `{"mcpServers":{"local":{"command":"node","args":["server.js"]}}}`,
-			want:   map[string]config.ServerConfig{"local": {Name: "local", Command: "node", Args: []string{"server.js"}}},
-		},
-		{
-			name:   "openclaw stdio entry",
-			read:   ReadOpenClaw,
-			file:   "openclaw.json",
-			config: `{"mcp":{"servers":{"fs":{"command":"npx","env":{"ROOT":"/data"}}}}}`,
-			want:   map[string]config.ServerConfig{"fs": {Name: "fs", Command: "npx", Env: []string{"ROOT=/data"}}},
-		},
-		{
-			name:   "openclaw http entry",
-			read:   ReadOpenClaw,
-			file:   "openclaw.json",
-			config: `{"mcp":{"servers":{"remote":{"url":"https://example.com/mcp"}}}}`,
-			want:   map[string]config.ServerConfig{"remote": {Name: "remote", Transport: "http", URL: "https://example.com/mcp"}},
-		},
-		{
-			name:   "no servers is an empty result, not an error",
-			read:   ReadGemini,
-			file:   "settings.json",
-			config: `{}`,
-			want:   map[string]config.ServerConfig{},
-		},
+		{"claude desktop stdio entry, env as a sorted KEY=VALUE list", ReadClaude, "claude.json",
+			`{"mcpServers":{"s":{"command":"npx","args":["server-github"],"env":{"B":"2","A":"1"}}}}`,
+			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Args: []string{"server-github"}, Env: []string{"A=1", "B=2"}}}},
+		{"claude code project entries", ReadClaude, "claude.json",
+			`{"projects":{"/home/user/proj":{"mcpServers":{"s":{"command":"run"}}}}}`,
+			Server{Config: stdio("s", "run")}},
+		{"claude http entry by url keeps headers", ReadClaude, "claude.json",
+			`{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH}"}}}}`,
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH}"})}},
+		{"claude sse type is http", ReadClaude, "claude.json",
+			`{"mcpServers":{"s":{"type":"sse","url":"https://sse.example.com"}}}`,
+			Server{Config: remote("s", "https://sse.example.com", nil)}},
+		{"claude ${VAR} in args is kept in the agent", ReadClaude, "claude.json",
+			`{"mcpServers":{"s":{"command":"run","args":["--root","${HOME}/src"]}}}`,
+			Server{Config: stdio("s", "run", "--root", "${HOME}/src"), UnexpandableRefs: []string{"an environment variable in command or args"}}},
+		{"claude $ in args is literal, as Claude Code passes it", ReadClaude, "claude.json",
+			`{"mcpServers":{"s":{"command":"grep","args":["^end$"]}}}`,
+			Server{Config: stdio("s", "grep", "^end$")}},
+		{"claude default-value syntax is kept in the agent", ReadClaude, "claude.json",
+			`{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH:-none}"}}}}`,
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH:-none}"}), UnexpandableRefs: []string{"an environment variable syntax mini doesn't read"}}},
+		{"cursor ${env:VAR} becomes ${VAR}", ReadClaude, "mcp.json",
+			`{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${env:API_KEY}"}}}}`,
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${API_KEY}"})}},
+		{"cursor envFile is ignored and named", ReadClaude, "mcp.json",
+			`{"mcpServers":{"s":{"command":"run","envFile":".env"}}}`,
+			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"envFile"}}},
+		{"windsurf serverUrl is the url", ReadClaude, "mcp_config.json",
+			`{"mcpServers":{"s":{"serverUrl":"https://example.com/mcp"}}}`,
+			Server{Config: remote("s", "https://example.com/mcp", nil)}},
+		{"windsurf disabled and disabledTools", ReadClaude, "mcp_config.json",
+			`{"mcpServers":{"s":{"command":"run","disabled":true,"disabledTools":["delete"]}}}`,
+			Server{Config: stdio("s", "run"), Disabled: true}},
+		{"codex stdio entry", ReadCodex, "config.toml",
+			"[mcp_servers.s]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"synthetic\" }\n",
+			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Args: []string{"-y", "server-github"}, Env: []string{"TOKEN=synthetic"}}}},
+		{"codex http headers, env headers and bearer token variable", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"core\" }\nenv_http_headers = { X-Key = \"MINI_TEST_SET_KEY\", X-Optional = \"MINI_TEST_UNSET_KEY\" }\nbearer_token_env_var = \"EXAMPLE_TOKEN\"\n",
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{
+				"X-Team": "core", "X-Key": "${MINI_TEST_SET_KEY}", "X-Optional": "${MINI_TEST_UNSET_KEY}", "Authorization": "Bearer ${EXAMPLE_TOKEN}",
+			})}},
+		{"codex env and bearer headers replace a static header whatever its case", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { authorization = \"Bearer old\", x-key = \"old\" }\n" +
+				"env_http_headers = { X-Key = \"MINI_TEST_SET_KEY\" }\nbearer_token_env_var = \"TOKEN_VAR\"\n",
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"X-Key": "${MINI_TEST_SET_KEY}", "Authorization": "Bearer ${TOKEN_VAR}"})}},
+		{"codex keeps a static header whatever its case while its env override is unset", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { x-team = \"default\" }\n" +
+				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\" }\n",
+			Server{
+				Config:           remote("s", "https://example.com/mcp", map[string]string{"x-team": "default"}),
+				UnusedEnvHeaders: map[string]string{"X-Team": "MINI_TEST_UNSET_KEY"},
+			}},
+		{"codex auth settings are dropped and named", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nscopes = [\"read\"]\noauth = { client_id = \"synthetic\" }\n",
+			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"oauth", "scopes"}}},
+		{"claude oauth client is dropped and named", ReadClaude, "claude.json",
+			`{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","oauth":{"clientId":"synthetic"}}}}`,
+			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"oauth"}}},
+		{"codex header helpers are dropped and named", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers_helper = \"get-token\"\n",
+			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"http_headers_helper"}}},
+		{"openclaw cwd and tls settings are dropped and named", ReadOpenClaw, "openclaw.json",
+			`{"mcp":{"servers":{"s":{"command":"npx","cwd":"/srv","sslVerify":false}}}}`,
+			Server{Config: stdio("s", "npx"), IgnoredRunSettings: []string{"cwd", "sslVerify"}}},
+		{"codex keeps a static header while its env override is unset or blank", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"default\", X-Org = \"acme\" }\n" +
+				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\", X-Org = \"MINI_TEST_BLANK_KEY\" }\n",
+			Server{
+				Config:           remote("s", "https://example.com/mcp", map[string]string{"X-Team": "default", "X-Org": "acme"}),
+				UnusedEnvHeaders: map[string]string{"X-Org": "MINI_TEST_BLANK_KEY", "X-Team": "MINI_TEST_UNSET_KEY"},
+			}},
+		{"codex variable named like an editor placeholder is a plain reference", ReadCodex, "config.toml",
+			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nbearer_token_env_var = \"userHome\"\n",
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${userHome}"})}},
+		{"codex switched off", ReadCodex, "config.toml",
+			"[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
+			Server{Config: stdio("s", "run"), Disabled: true}},
+		{"codex settings mini doesn't carry over are dropped, including ones it has never seen", ReadCodex, "config.toml",
+			"[mcp_servers.s]\ncommand = \"run\"\ntool_timeout_sec = 60\nenabled_tools = [\"search\"]\n" +
+				"default_tools_approval_mode = \"prompt\"\nsetting_added_later = true\n",
+			Server{Config: stdio("s", "run")}},
+		{"codex cwd is ignored and named", ReadCodex, "config.toml",
+			"[mcp_servers.s]\ncommand = \"run\"\ncwd = \"/srv/app\"\n",
+			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"cwd"}}},
+		{"cursor editor placeholders are kept in the agent", ReadClaude, "mcp.json",
+			`{"mcpServers":{"s":{"command":"run","env":{"ROOT":"${workspaceFolder}/data"}}}}`,
+			Server{Config: config.ServerConfig{Name: "s", Command: "run", Env: []string{"ROOT=${workspaceFolder}/data"}}, UnexpandableRefs: []string{"an editor placeholder like ${userHome}"}}},
+		{"gemini httpUrl entry", ReadGemini, "settings.json",
+			`{"mcpServers":{"s":{"httpUrl":"https://example.com/mcp","timeout":30000}}}`,
+			Server{Config: remote("s", "https://example.com/mcp", nil)}},
+		{"gemini url (SSE) entry", ReadGemini, "settings.json",
+			`{"mcpServers":{"s":{"url":"https://example.com/sse"}}}`,
+			Server{Config: remote("s", "https://example.com/sse", nil)}},
+		{"gemini $VAR becomes ${VAR}", ReadGemini, "settings.json",
+			`{"mcpServers":{"s":{"command":"node","args":["server.js"],"env":{"TOKEN":"$EXAMPLE_TOKEN"}}}}`,
+			Server{Config: config.ServerConfig{Name: "s", Command: "node", Args: []string{"server.js"}, Env: []string{"TOKEN=${EXAMPLE_TOKEN}"}}}},
+		{"gemini $VAR in args is kept in the agent", ReadGemini, "settings.json",
+			`{"mcpServers":{"s":{"command":"node","args":["$HOME/server.js"]}}}`,
+			Server{Config: stdio("s", "node", "$HOME/server.js"), UnexpandableRefs: []string{"an environment variable in command or args"}}},
+		{"gemini tool lists are dropped and cwd is named", ReadGemini, "settings.json",
+			`{"mcpServers":{"s":{"command":"node","cwd":"/srv","includeTools":["read"]}}}`,
+			Server{Config: stdio("s", "node"), IgnoredRunSettings: []string{"cwd"}}},
+		{"openclaw stdio entry", ReadOpenClaw, "openclaw.json",
+			`{"mcp":{"servers":{"s":{"command":"npx","env":{"ROOT":"/data"}}}}}`,
+			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Env: []string{"ROOT=/data"}}}},
+		{"openclaw tool filter and approval settings are dropped", ReadOpenClaw, "openclaw.json",
+			`{"mcp":{"servers":{"s":{"command":"npx","toolFilter":{"allow":["read"]},"codex":{"approval":"prompt"}}}}}`,
+			Server{Config: stdio("s", "npx")}},
+		{"openclaw http entry switched off", ReadOpenClaw, "openclaw.json",
+			`{"mcp":{"servers":{"s":{"url":"https://example.com/mcp","enabled":false}}}}`,
+			Server{Config: remote("s", "https://example.com/mcp", nil), Disabled: true}},
 	}
+	t.Setenv("MINI_TEST_SET_KEY", "synthetic")
+	t.Setenv("MINI_TEST_BLANK_KEY", " ")
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := tt.read(writeClientConfig(t, tt.file, tt.config))
 			if err != nil {
 				t.Fatalf("read: %v", err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("got  %#v\nwant %#v", got, tt.want)
+			if want := map[string]Server{"s": tt.want}; !reflect.DeepEqual(got, want) {
+				t.Errorf("got  %#v\nwant %#v", got, want)
 			}
 		})
 	}
 }
 
+func TestReadClientConfigs_noServersIsAnEmptyResult(t *testing.T) {
+	got, err := ReadGemini(writeClientConfig(t, "settings.json", `{}`))
+	if err != nil || len(got) != 0 {
+		t.Fatalf("ReadGemini = %v, %v; want nothing and no error", got, err)
+	}
+}
+
 func TestReadClientConfigs_unparsableConfigIsAnError(t *testing.T) {
-	for name, read := range map[string]func(string) (map[string]config.ServerConfig, error){
-		"codex": ReadCodex, "gemini": ReadGemini, "openclaw": ReadOpenClaw,
+	for name, read := range map[string]readerFunc{
+		"claude": ReadClaude, "codex": ReadCodex, "gemini": ReadGemini, "openclaw": ReadOpenClaw,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := read(writeClientConfig(t, "bad", "not = valid = anything {")); err == nil {
 				t.Fatal("expected a parse error")
 			}
 		})
+	}
+	t.Run("a malformed entry", func(t *testing.T) {
+		if _, err := ReadClaude(writeClientConfig(t, "claude.json", `{"mcpServers":{"s":{"args":"not a list"}}}`)); err == nil {
+			t.Fatal("expected a parse error")
+		}
+	})
+	t.Run("a malformed codex entry", func(t *testing.T) {
+		if _, err := ReadCodex(writeClientConfig(t, "config.toml", "[mcp_servers.s]\nargs = \"not a list\"\n")); err == nil {
+			t.Fatal("expected a parse error")
+		}
+	})
+}
+
+func TestServerCandidate(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		server Server
+		want   bool
+	}{
+		{"plain", Server{}, true},
+		{"switched off is still a candidate", Server{Disabled: true}, true},
+		{"ignored settings are still a candidate", Server{IgnoredRunSettings: []string{"cwd"}}, true},
+		{"unsupported reference", Server{UnexpandableRefs: []string{"an environment variable in url"}}, false},
+	} {
+		if got := tt.server.Candidate(); got != tt.want {
+			t.Errorf("%s: Candidate() = %v, want %v", tt.name, got, tt.want)
+		}
 	}
 }
 
@@ -204,4 +284,23 @@ func TestReadConfigFile(t *testing.T) {
 			t.Errorf("read %d bytes, want %d", len(got), maxImportConfigBytes)
 		}
 	})
+}
+
+func TestKnownCodexConfigFollowsCodexHome(t *testing.T) {
+	codexPath := func() string {
+		for _, a := range Known("/home/user") {
+			if a.Name == "Codex" {
+				return a.ConfigPath
+			}
+		}
+		return ""
+	}
+	t.Setenv("CODEX_HOME", "")
+	if got := codexPath(); got != filepath.Join("/home/user", ".codex", "config.toml") {
+		t.Errorf("default Codex config = %q, want ~/.codex/config.toml", got)
+	}
+	t.Setenv("CODEX_HOME", "/srv/codex")
+	if got := codexPath(); got != filepath.Join("/srv/codex", "config.toml") {
+		t.Errorf("Codex config with CODEX_HOME set = %q, want /srv/codex/config.toml", got)
+	}
 }

@@ -1,11 +1,14 @@
 package agents
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
 	"os"
+	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -31,23 +34,61 @@ func ReadConfigFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-type clientEntry interface {
-	serverConfig(name string) config.ServerConfig
+// Server is one agent entry as mini would import it.
+type Server struct {
+	Config             config.ServerConfig
+	Disabled           bool
+	IgnoredRunSettings []string
+	UnexpandableRefs   []string
+	// header → the variable Codex would read it from once set; mini keeps the static value.
+	UnusedEnvHeaders map[string]string
 }
 
-func serverConfigs[E clientEntry](entries map[string]E) map[string]config.ServerConfig {
-	servers := make(map[string]config.ServerConfig, len(entries))
+func switchedOff(enabled *bool) bool {
+	return enabled != nil && !*enabled
+}
+
+func (s Server) Candidate() bool {
+	return len(s.UnexpandableRefs) == 0
+}
+
+type entryFormat struct {
+	// Other unmapped keys are dropped silently, so a setting an agent adds later never blocks an import.
+	ignoredRunSettings []string
+	expandsBareVars    bool
+	editorPlaceholders bool
+}
+
+type clientEntry interface {
+	server(name string) Server
+}
+
+func importedServers[E clientEntry](entries map[string]E, keys map[string][]string, f entryFormat) map[string]Server {
+	servers := make(map[string]Server, len(entries))
 	for name, entry := range entries {
-		servers[name] = entry.serverConfig(name)
+		s := entry.server(name)
+		s.IgnoredRunSettings = presentKeys(keys[name], f.ignoredRunSettings)
+		s.UnexpandableRefs = unexpandableFields(s.Config, f)
+		servers[name] = s
 	}
 	return servers
+}
+
+func presentKeys(keys, wanted []string) []string {
+	var present []string
+	for _, key := range wanted {
+		if slices.Contains(keys, key) {
+			present = append(present, key)
+		}
+	}
+	return present
 }
 
 type clientEntryFields struct {
 	Command string            `json:"command" toml:"command"`
 	Args    []string          `json:"args" toml:"args"`
 	Env     map[string]string `json:"env" toml:"env"`
-	Headers map[string]string `json:"headers" toml:"headers"`
+	Headers map[string]string `json:"headers" toml:"http_headers"`
 }
 
 func (f clientEntryFields) httpServer(name, url string) config.ServerConfig {
@@ -64,4 +105,71 @@ func envList(env map[string]string) []string {
 		out = append(out, k+"="+env[k])
 	}
 	return out
+}
+
+var (
+	cursorEnvRef = regexp.MustCompile(`\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}`)
+	bareEnvRef   = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
+	miniEnvRef   = regexp.MustCompile(`\$\{[A-Za-z_][A-Za-z0-9_]*\}`)
+	bracedRef    = regexp.MustCompile(`\$\{`)
+	braceOrBare  = regexp.MustCompile(`\$(\{|[A-Za-z_])`)
+)
+
+func translateRefs(values map[string]string, f entryFormat) map[string]string {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]string, len(values))
+	for k, v := range values {
+		v = cursorEnvRef.ReplaceAllString(v, "$${$1}")
+		if f.expandsBareVars {
+			v = bareEnvRef.ReplaceAllString(v, "$${$1}")
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
+	ref := bracedRef
+	if f.expandsBareVars {
+		ref = braceOrBare
+	}
+	var fields []string
+	if ref.MatchString(sc.URL) {
+		fields = append(fields, "an environment variable in url")
+	}
+	if ref.MatchString(sc.Command) || slices.ContainsFunc(sc.Args, ref.MatchString) {
+		fields = append(fields, "an environment variable in command or args")
+	}
+	values := append(slices.Clone(sc.Env), slices.Collect(maps.Values(sc.Headers))...)
+	if f.editorPlaceholders && slices.ContainsFunc(values, editorPlaceholder.MatchString) {
+		fields = append(fields, "an editor placeholder like ${userHome}")
+	} else if slices.ContainsFunc(values, hasForeignRef) {
+		fields = append(fields, "an environment variable syntax mini doesn't read")
+	}
+	return fields
+}
+
+var editorPlaceholder = regexp.MustCompile(`\$\{(userHome|workspaceFolder|workspaceFolderBasename|pathSeparator)\}`)
+
+func hasForeignRef(value string) bool {
+	return strings.Contains(miniEnvRef.ReplaceAllString(value, ""), "${")
+}
+
+func decodeJSONEntries[E any](raw map[string]json.RawMessage) (map[string]E, map[string][]string, error) {
+	entries := make(map[string]E, len(raw))
+	keys := make(map[string][]string, len(raw))
+	for name, message := range raw {
+		var fields map[string]json.RawMessage
+		var entry E
+		if err := json.Unmarshal(message, &fields); err != nil {
+			return nil, nil, fmt.Errorf("server %q: %w", name, err)
+		}
+		if err := json.Unmarshal(message, &entry); err != nil {
+			return nil, nil, fmt.Errorf("server %q: %w", name, err)
+		}
+		entries[name], keys[name] = entry, slices.Collect(maps.Keys(fields))
+	}
+	return entries, keys, nil
 }

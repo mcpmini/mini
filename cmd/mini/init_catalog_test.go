@@ -178,6 +178,7 @@ func TestInitRejectsEmptyAddBeforeChangingAnything(t *testing.T) {
 	for _, arg := range []string{"--add=", "--add= , "} {
 		t.Run(arg, func(t *testing.T) {
 			t.Setenv("HOME", t.TempDir())
+			t.Setenv("CODEX_HOME", "")
 			configDir := filepath.Join(t.TempDir(), "config")
 			cmd := newInitCmd(&rootOptions{configDir: configDir})
 			cmd.SetArgs([]string{"--yes", arg})

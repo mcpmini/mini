@@ -39,6 +39,13 @@ func expandEnvValue(field, value string) (string, error) {
 	return expanded, nil
 }
 
+// UnsetEnvRefs reports the first field whose ${VAR} references aren't set where mini runs.
+func UnsetEnvRefs(sc ServerConfig) error {
+	sc.Headers = maps.Clone(sc.Headers)
+	sc.Env = slices.Clone(sc.Env)
+	return expandEnvFields(&sc)
+}
+
 // Only for a config fresh from its file: a value merged in later, like an OAuth server's client secret, must never be expanded.
 func expandServerEnv(sc *ServerConfig) {
 	expanded := *sc

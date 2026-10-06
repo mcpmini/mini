@@ -35,21 +35,53 @@ func importAgentConfig(configDir, source string, agent agents.Agent) []string {
 	return added
 }
 
-func (imp serverImport) addAll(servers map[string]config.ServerConfig) (added []string, failed int) {
+func (imp serverImport) addAll(servers map[string]agents.Server) (added []string, failed int) {
 	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
-		sc := servers[name]
-		if isSelfEntry(sc.Command, selfPath) {
+		server := servers[name]
+		if isSelfEntry(server.Config.Command, selfPath) {
 			continue
 		}
-		switch err := imp.add(sc); {
+		if reason := notImportedReason(server); reason != "" {
+			fmt.Fprintf(imp.out, "  %s: %s %s\n", imp.source, name, reason)
+			continue
+		}
+		switch err := imp.add(server.Config); {
 		case err == nil:
+			imp.reportCaveats(name, server)
 			added = append(added, name)
 		case !errors.Is(err, ops.ErrAlreadyConfigured):
 			failed++
 		}
 	}
 	return added, failed
+}
+
+func notImportedReason(server agents.Server) string {
+	switch {
+	case !server.Candidate():
+		return "kept in the agent: uses " + strings.Join(server.UnexpandableRefs, ", ")
+	case server.Disabled:
+		// Importing a switched-off server would switch it on for every agent connected to mini.
+		return "not imported: switched off in the agent"
+	}
+	return ""
+}
+
+func (imp serverImport) reportCaveats(name string, server agents.Server) {
+	path := config.ServerPath(imp.configDir, name)
+	if ignored := server.IgnoredRunSettings; len(ignored) > 0 {
+		fmt.Fprintf(imp.out, "  %s: %s imported without its %s, which mini doesn't support yet; if it fails to start, edit %s\n",
+			imp.source, name, strings.Join(ignored, ", "), path)
+	}
+	for _, header := range slices.Sorted(maps.Keys(server.UnusedEnvHeaders)) {
+		envVar := server.UnusedEnvHeaders[header]
+		fmt.Fprintf(imp.out, "  %s: %s imported with its static %s header, since %s wasn't set; to use %s instead, set %s: ${%s} in %s\n",
+			imp.source, name, header, envVar, envVar, header, envVar, path)
+	}
+	if err := config.UnsetEnvRefs(server.Config); err != nil {
+		fmt.Fprintf(imp.out, "  %s: %s imported, but %v; set it, or edit %s\n", imp.source, name, err, path)
+	}
 }
 
 func (imp serverImport) add(sc config.ServerConfig) error {

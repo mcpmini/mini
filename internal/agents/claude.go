@@ -3,74 +3,79 @@ package agents
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
-
-	"github.com/mcpmini/mini/internal/config"
+	"slices"
 )
 
 type claudeMCPEntry struct {
 	clientEntryFields
-	Type string `json:"type"`
-	URL  string `json:"url"`
+	Type      string `json:"type"`
+	URL       string `json:"url"`
+	ServerURL string `json:"serverUrl"`
+	Disabled  bool   `json:"disabled"`
 }
 
-// ReadClaude reads Claude Desktop and Claude Code configs, and Cursor's mcp.json, which shares their format.
-func ReadClaude(path string) (map[string]config.ServerConfig, error) {
+var claudeFormat = entryFormat{ignoredRunSettings: []string{"envFile", "headersHelper", "oauth"}, editorPlaceholders: true}
+
+// ReadClaude reads Claude Desktop and Claude Code configs, and Cursor's and Windsurf's, which share their format.
+func ReadClaude(path string) (map[string]Server, error) {
 	data, err := ReadConfigFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return serverConfigs(extractClaudeMCPServers(data)), nil
+	raw, err := claudeMCPServers(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	entries, keys, err := decodeJSONEntries[claudeMCPEntry](raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return importedServers(entries, keys, claudeFormat), nil
 }
 
-// extractClaudeMCPServers handles both Claude Desktop (top-level mcpServers)
+// claudeMCPServers handles both Claude Desktop (top-level mcpServers)
 // and Claude Code (~/.claude.json, projects[path].mcpServers) formats.
-func extractClaudeMCPServers(data []byte) map[string]claudeMCPEntry {
-	if servers := tryClaudeDesktopFormat(data); len(servers) > 0 {
-		return servers
-	}
-	return tryClaudeCodeFormat(data)
-}
-
-func tryClaudeDesktopFormat(data []byte) map[string]claudeMCPEntry {
-	var desktop struct {
-		McpServers map[string]claudeMCPEntry `json:"mcpServers"`
-	}
-	if json.Unmarshal(data, &desktop) == nil {
-		return desktop.McpServers
-	}
-	return nil
-}
-
-func tryClaudeCodeFormat(data []byte) map[string]claudeMCPEntry {
-	var claudeCode struct {
-		Projects map[string]struct {
-			McpServers map[string]claudeMCPEntry `json:"mcpServers"`
+func claudeMCPServers(data []byte) (map[string]json.RawMessage, error) {
+	var doc struct {
+		McpServers map[string]json.RawMessage `json:"mcpServers"`
+		Projects   map[string]struct {
+			McpServers map[string]json.RawMessage `json:"mcpServers"`
 		} `json:"projects"`
 	}
-	if json.Unmarshal(data, &claudeCode) != nil {
-		return nil
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, err
 	}
-	merged := map[string]claudeMCPEntry{}
-	for _, proj := range claudeCode.Projects {
-		mergeClaudeProjectServers(merged, proj.McpServers)
+	if len(doc.McpServers) > 0 {
+		return doc.McpServers, nil
 	}
-	return merged
+	merged := map[string]json.RawMessage{}
+	for _, project := range slices.Sorted(maps.Keys(doc.Projects)) {
+		mergeClaudeProjectServers(merged, doc.Projects[project].McpServers)
+	}
+	return merged, nil
 }
 
-func mergeClaudeProjectServers(dst, src map[string]claudeMCPEntry) {
-	for name, entry := range src {
+func mergeClaudeProjectServers(dst, src map[string]json.RawMessage) {
+	for _, name := range slices.Sorted(maps.Keys(src)) {
 		if _, exists := dst[name]; exists {
 			fmt.Fprintf(os.Stderr, "warning: duplicate server name %q across projects — keeping first seen\n", name)
 			continue
 		}
-		dst[name] = entry
+		dst[name] = src[name]
 	}
 }
 
-func (e claudeMCPEntry) serverConfig(name string) config.ServerConfig {
-	if e.URL != "" || e.Type == "http" || e.Type == "sse" {
-		return e.httpServer(name, e.URL)
+func (e claudeMCPEntry) server(name string) Server {
+	fields := e.clientEntryFields
+	fields.Env, fields.Headers = translateRefs(fields.Env, claudeFormat), translateRefs(fields.Headers, claudeFormat)
+	url := e.URL
+	if url == "" {
+		url = e.ServerURL
 	}
-	return e.stdioServer(name)
+	if url != "" || e.Type == "http" || e.Type == "sse" {
+		return Server{Config: fields.httpServer(name, url), Disabled: e.Disabled}
+	}
+	return Server{Config: fields.stdioServer(name), Disabled: e.Disabled}
 }
