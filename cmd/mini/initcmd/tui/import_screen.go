@@ -77,7 +77,7 @@ func (s *importScreen) body(height int) string {
 }
 
 func (s *importScreen) keys() string {
-	return "space tick · a all · enter continue"
+	return "space tick · a all · / filter · enter continue"
 }
 
 func (s *importScreen) empty() bool {

@@ -89,6 +89,75 @@ func TestList_toggleAllTicksEveryRowThenNone(t *testing.T) {
 	}
 }
 
+func TestList_toggleAllLeavesRowsTheFilterHides(t *testing.T) {
+	checked := map[string]bool{}
+	l := newList(serverRows(), checked)
+	typeKeys(l, "/", "g", "i", "t", "enter")
+	l.toggleAll()
+	if !checked["github"] || checked["linear"] || checked["notion"] {
+		t.Errorf("checked = %v, want only github, the one row the filter shows", checked)
+	}
+}
+
+func TestList_filter(t *testing.T) {
+	t.Run("shows only matching rows, by name or detail", func(t *testing.T) {
+		l := newList(serverRows(), map[string]bool{})
+		typeKeys(l, "/", "p", "a", "g")
+		if view := plainView(l, 20); !strings.Contains(view, "notion") || strings.Contains(view, "linear") ||
+			strings.Contains(view, "github") {
+			t.Errorf("filtered view:\n%s\nwant only notion, whose detail matches", view)
+		}
+	})
+	t.Run("typed characters edit the filter instead of acting", func(t *testing.T) {
+		checked := map[string]bool{}
+		l := newList(serverRows(), checked)
+		typeKeys(l, "/", "space")
+		if l.filter != " " || checked["linear"] {
+			t.Errorf(
+				"filter = %q, checked = %v; want a space typed into the filter and nothing ticked",
+				l.filter,
+				checked,
+			)
+		}
+	})
+	t.Run("enter keeps the filter and leaves filter mode", func(t *testing.T) {
+		l := newList(serverRows(), map[string]bool{})
+		typeKeys(l, "/", "g", "i", "t", "enter", "space")
+		if l.filtering || l.filter != "git" || !l.checked["github"] {
+			t.Errorf(
+				"filtering = %v, filter = %q, checked = %v; want filter git kept and github ticked",
+				l.filtering,
+				l.filter,
+				l.checked,
+			)
+		}
+	})
+	t.Run("esc clears the filter", func(t *testing.T) {
+		l := newList(serverRows(), map[string]bool{})
+		typeKeys(l, "/", "g", "esc")
+		if l.filtering || l.filter != "" || len(l.visible()) != len(serverRows()) {
+			t.Errorf("filtering = %v, filter = %q; want every row back", l.filtering, l.filter)
+		}
+	})
+	t.Run("esc after enter clears the applied filter", func(t *testing.T) {
+		l := newList(serverRows(), map[string]bool{})
+		typeKeys(l, "/", "g", "enter")
+		if !l.handle(press("esc")) || l.filter != "" {
+			t.Errorf("filter = %q; want esc taken by the list and the filter cleared", l.filter)
+		}
+		if l.handle(press("esc")) {
+			t.Error("esc with no filter was taken by the list; want it left for the screen")
+		}
+	})
+	t.Run("backspace removes the last character", func(t *testing.T) {
+		l := newList(serverRows(), map[string]bool{})
+		typeKeys(l, "/", "g", "é", "backspace")
+		if l.filter != "g" {
+			t.Errorf("filter = %q, want g", l.filter)
+		}
+	})
+}
+
 func TestList_scrollsToKeepTheCursorShown(t *testing.T) {
 	var rows []row
 	for i := range 30 {
