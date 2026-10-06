@@ -32,7 +32,7 @@ func runUnattendedInit(configDir string, f initFlags) error {
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	return printReport(initcmd.RunUnattended(run), "")
+	return printReport(initcmd.RunUnattended(run))
 }
 
 // Every flag is checked before anything is written.
@@ -117,36 +117,27 @@ func printNoTerminalHelp(w io.Writer) {
 
 var errInitQuit = errors.New("init quit; nothing was written")
 
-// The UI can't take --add yet, so the built-in catalog only says which servers need a token or an app.
+// The full-screen init imports from every agent found, like --import, and lets the user choose.
 func runFullScreenInit(configDir string) error {
-	builtIn, err := catalog.Load()
+	setup, err := unattendedRun(configDir, initFlags{importAll: true})
 	if err != nil {
 		return err
 	}
-	out, err := tui.Run(tui.Params{Setup: initcmd.Setup{
-		ConfigDir:       configDir,
-		Import:          agents.Detect(),
-		Catalog:         builtIn.Entries,
-		AgentsToConnect: agentsToConnect(),
-		SelfPath:        selfPath(),
-	}})
+	plan, quit, err := tui.Run(tui.Params{Setup: setup})
 	switch {
 	case err != nil:
 		return err
-	case out.Quit:
+	case quit:
 		return &exitError{code: 1, err: errInitQuit}
 	}
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	return printReport(out.Report, out.LogFile)
+	return printReport(setup.Write(plan))
 }
 
-func printReport(report initcmd.Report, logFile string) error {
+func printReport(report initcmd.Report) error {
 	fmt.Print(initcmd.Summary(report))
-	if logFile != "" {
-		fmt.Printf("\nLog output while init ran: %s\n", logFile)
-	}
 	if report.Failed() {
 		return &exitError{code: 1, err: errInitIncomplete}
 	}

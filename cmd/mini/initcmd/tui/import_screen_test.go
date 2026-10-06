@@ -39,6 +39,20 @@ func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
 	}
 }
 
+func TestImportScreen_anUntickedRowSaysWhy(t *testing.T) {
+	switchedOff := candidate("notes", "https://notes.example.com/mcp", false, "Codex")
+	switchedOff.Reason = initcmd.SkipSwitchedOff
+	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
+	second.From[0].Name = "GitHub"
+	second.Reason = initcmd.SkipSecondConfig
+	text := screenText(newImportScreen([]initcmd.Candidate{second, switchedOff}))
+	for _, want := range []string{"github-2  gh.example.com     Cursor  another config named github\n", "switched off in Codex"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("screen missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestImportScreen_oneAgentIsNamedInTheHeadingInsteadOfAColumn(t *testing.T) {
 	s := newImportScreen([]initcmd.Candidate{candidate("linear", "https://linear.example.com/mcp", true, "Cursor")})
 	if text := screenText(s); !strings.HasPrefix(text, "Import servers from Cursor\n") ||

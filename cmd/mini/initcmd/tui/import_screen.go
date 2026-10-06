@@ -86,6 +86,7 @@ func (s *importScreen) pick(candidates []initcmd.Candidate) {
 type columns struct {
 	target int
 	agents int
+	auth   int
 }
 
 func (s *importScreen) columnWidths() columns {
@@ -93,6 +94,7 @@ func (s *importScreen) columnWidths() columns {
 	for _, c := range s.candidates {
 		w.target = max(w.target, len(target(c.Server)))
 		w.agents = max(w.agents, len(agentList(c)))
+		w.auth = max(w.auth, len(authKind(c.Server)))
 	}
 	return w
 }
@@ -103,8 +105,22 @@ func (s *importScreen) detail(c initcmd.Candidate, w columns) string {
 	if len(s.agents) > 1 {
 		parts = append(parts, fmt.Sprintf("%-*s", w.agents, agentList(c)))
 	}
-	parts = append(parts, authKind(c.Server))
+	if w.auth > 0 {
+		parts = append(parts, fmt.Sprintf("%-*s", w.auth, authKind(c.Server)))
+	}
+	parts = append(parts, unpickedReason(c))
 	return strings.TrimRight(strings.Join(parts, "  "), " ")
+}
+
+// An unticked row says why, so ticking it is an informed choice.
+func unpickedReason(c initcmd.Candidate) string {
+	switch {
+	case c.Picked:
+		return ""
+	case c.Reason == initcmd.SkipSwitchedOff:
+		return "switched off in " + agentList(c)
+	}
+	return "another config named " + initcmd.NormalizeName(c.From[0].Name)
 }
 
 func target(sc config.ServerConfig) string {

@@ -56,10 +56,23 @@ func TestIntegrationInitUI_ctrlCLeavesNoServersAndRestoresTheTerminal(t *testing
 	if code := term.exitCode(); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
-	if _, err := os.Stat(filepath.Join(configDir, "servers")); !os.IsNotExist(err) {
-		t.Errorf("servers dir after ctrl+c: %v, want none", err)
+	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+		t.Errorf("config dir after ctrl+c: %v, want it never created", err)
 	}
 	if term.altScreen() {
 		t.Error("the terminal is still on the alternate screen after ctrl+c")
 	}
+}
+
+func serverFiles(t *testing.T, configDir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(configDir, "servers"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
 }

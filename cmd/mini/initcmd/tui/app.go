@@ -25,8 +25,8 @@ type screen interface {
 
 const minWidth, minHeight = 60, 12
 
-// The heading, the footer and a blank line after each.
-const chromeLines = 4
+// The heading, the footer's two lines, and a blank line after the heading and before the footer.
+const chromeLines = 5
 
 type app struct {
 	screens  []screen
@@ -95,10 +95,11 @@ func (a *app) render() string {
 	return bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + dim.Render(a.footer(s))
 }
 
+// Two lines, so the footer fits the narrowest window the UI draws in.
 func (a *app) footer(s screen) string {
-	parts := []string{s.keys()}
+	var leave []string
 	if a.at > 0 {
-		parts = append(parts, "esc back")
+		leave = append(leave, "esc back")
 	}
-	return strings.Join(append(parts, "ctrl+c quit without saving"), " · ")
+	return s.keys() + "\n" + strings.Join(append(leave, "ctrl+c quit without saving"), " · ")
 }

@@ -1,11 +1,9 @@
 package tui
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -35,77 +33,54 @@ func pressing(keys ...string) func(tea.Model) error {
 	}
 }
 
-func serverFiles(t *testing.T, configDir string) []string {
-	t.Helper()
-	entries, err := os.ReadDir(filepath.Join(configDir, "servers"))
-	if err != nil && !os.IsNotExist(err) {
-		t.Fatal(err)
-	}
-	var names []string
-	for _, e := range entries {
-		names = append(names, e.Name())
-	}
-	return names
-}
-
 func setupFor(configDir string, list ...agents.Agent) initcmd.Setup {
 	return initcmd.Setup{ConfigDir: configDir, Import: list}
 }
 
-func TestRun_quittingWritesNothing(t *testing.T) {
-	configDir := t.TempDir()
-	out, err := Run(Params{Setup: setupFor(configDir, stdioAgent("Codex", "files")), Program: pressing("ctrl+c")})
-	if err != nil || !out.Quit {
-		t.Fatalf("Run = %+v, %v; want a quit", out, err)
+func pickedNames(plan initcmd.Plan) []string {
+	var names []string
+	for _, c := range plan.Import.Candidates {
+		if c.Picked {
+			names = append(names, c.Server.Name)
+		}
 	}
-	if files := serverFiles(t, configDir); len(files) != 0 {
-		t.Errorf("server files after quitting: %v, want none", files)
+	return names
+}
+
+func TestRun_quittingReturnsNoPlanAndTouchesNothing(t *testing.T) {
+	configDir := filepath.Join(t.TempDir(), "config")
+	plan, quit, err := Run(
+		Params{Setup: setupFor(configDir, stdioAgent("Codex", "files")), Program: pressing("ctrl+c")},
+	)
+	if err != nil || !quit || len(plan.Import.Candidates) != 0 {
+		t.Fatalf("Run = %+v, %v, %v; want a quit with no plan", plan, quit, err)
+	}
+	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+		t.Errorf("config dir after quitting: %v, want it untouched", err)
 	}
 }
 
-func TestRun_finishingWritesTheTickedServers(t *testing.T) {
-	configDir := t.TempDir()
-	out, err := Run(Params{
-		Setup:   setupFor(configDir, stdioAgent("Codex", "files", "notes")),
+func TestRun_finishingReturnsThePlanWithTheTicks(t *testing.T) {
+	plan, quit, err := Run(Params{
+		Setup:   setupFor(t.TempDir(), stdioAgent("Codex", "files", "notes")),
 		Program: pressing("space", "enter"),
 	})
-	if err != nil || out.Quit {
-		t.Fatalf("Run = %+v, %v; want it finished", out, err)
+	if err != nil || quit {
+		t.Fatalf("Run = %v, %v; want it finished", quit, err)
 	}
-	if files := serverFiles(t, configDir); !slices.Equal(files, []string{"notes.yaml"}) {
-		t.Errorf("server files = %v, want only notes: files was unticked", files)
+	if got := pickedNames(plan); !slices.Equal(got, []string{"notes"}) {
+		t.Errorf("picked = %v, want only notes: files was unticked", got)
 	}
 }
 
 func TestRun_withNothingToImportShowsNoUI(t *testing.T) {
-	configDir := t.TempDir()
 	shown := false
 	program := func(tea.Model) error {
 		shown = true
 		return nil
 	}
-	out, err := Run(Params{Setup: setupFor(configDir, stdioAgent("Codex")), Program: program})
-	if err != nil || out.Quit || shown {
-		t.Errorf("Run = %+v, %v, UI shown = %v; want a finished run with no UI", out, err, shown)
-	}
-}
-
-func TestRun_logOutputWhileTheUIRunsGoesToAFile(t *testing.T) {
-	configDir := t.TempDir()
-	program := func(m tea.Model) error {
-		log.Print("probe failed")
-		return pressing("enter")(m)
-	}
-	out, err := Run(Params{Setup: setupFor(configDir, stdioAgent("Codex", "files")), Program: program})
-	want := filepath.Join(configDir, "internal", "init.log")
-	if err != nil || out.LogFile != want {
-		t.Fatalf("Run = %+v, %v; want the log file %s named", out, err, want)
-	}
-	data, err := os.ReadFile(want) //fileiolint:allow read the log file the run wrote
-	if err != nil || !strings.HasSuffix(string(data), "probe failed\n") {
-		t.Errorf("log file = %q, %v; want the logged line", data, err)
-	}
-	if log.Writer() != os.Stderr {
-		t.Errorf("log output wasn't restored after the UI")
+	_, quit, err := Run(Params{Setup: setupFor(t.TempDir(), stdioAgent("Codex")), Program: program})
+	if err != nil || quit || shown {
+		t.Errorf("Run: quit = %v, err = %v, UI shown = %v; want a finished run with no UI", quit, err, shown)
 	}
 }

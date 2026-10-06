@@ -6,6 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
 type fakeScreen struct {
@@ -88,17 +90,28 @@ func TestApp_ctrlCQuitsFromAnyScreenWithoutPassingTheKeyOn(t *testing.T) {
 	}
 }
 
-func TestApp_footerNamesEnterEscAndCtrlC(t *testing.T) {
-	a := sized(newApp([]screen{&fakeScreen{name: "First"}, &fakeScreen{name: "Last"}}))
-	first := shown(a)
+func footerOf(view string) string {
+	lines := strings.Split(view, "\n")
+	return strings.Join(lines[len(lines)-2:], "\n")
+}
+
+func TestApp_footerNamesEnterEscAndCtrlCWithinTheNarrowestWindow(t *testing.T) {
+	imports := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	a := sized(newApp([]screen{imports, &fakeScreen{name: "Last"}}))
+	first := footerOf(shown(a))
 	send(a, "enter")
 	second := shown(a)
-	lastLine := func(view string) string { return view[strings.LastIndex(view, "\n")+1:] }
-	if strings.Contains(lastLine(first), "esc") || !strings.Contains(lastLine(first), "ctrl+c quit without saving") {
-		t.Errorf("first screen's footer = %q, want no esc (it does nothing there) and ctrl+c", lastLine(first))
+	if strings.Contains(first, "esc") || !strings.Contains(first, "enter continue") ||
+		!strings.Contains(first, "ctrl+c quit without saving") {
+		t.Errorf("first screen's footer = %q, want enter and ctrl+c, and no esc (it does nothing there)", first)
 	}
-	if !strings.Contains(lastLine(second), "esc back") {
-		t.Errorf("second screen's footer = %q, want esc back", lastLine(second))
+	if !strings.Contains(footerOf(second), "esc back") {
+		t.Errorf("second screen's footer = %q, want esc back", footerOf(second))
+	}
+	for _, line := range strings.Split(first, "\n") {
+		if len([]rune(line)) > minWidth {
+			t.Errorf("footer line %q is wider than the %d columns the UI draws in", line, minWidth)
+		}
 	}
 	if lines := strings.Count(second, "\n") + 1; lines != 30 {
 		t.Errorf("view has %d lines, want the window's 30 so the footer sits at the bottom", lines)

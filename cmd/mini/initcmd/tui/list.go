@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -62,13 +63,15 @@ func (l *list) toggle() {
 	}
 }
 
-// toggleAll ticks every row, or unticks them all when they are all ticked already.
+// toggleAll ticks every row the filter shows, or unticks them when they are all ticked already.
+// Rows the filter hides keep their ticks: the user can't see them change.
 func (l *list) toggleAll() {
+	shown := l.visible()
 	all := true
-	for _, r := range l.rows {
+	for _, r := range shown {
 		all = all && l.checked[r.key]
 	}
-	for _, r := range l.rows {
+	for _, r := range shown {
 		l.checked[r.key] = !all
 	}
 }
@@ -108,7 +111,8 @@ func (l *list) handleFilterKey(key tea.KeyPressMsg) {
 		l.setFilter("")
 	case "backspace":
 		if l.filter != "" {
-			l.setFilter(l.filter[:len(l.filter)-1])
+			_, size := utf8.DecodeLastRuneInString(l.filter)
+			l.setFilter(l.filter[:len(l.filter)-size])
 		}
 	case "up":
 		l.move(-1)

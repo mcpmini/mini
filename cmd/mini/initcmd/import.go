@@ -30,6 +30,8 @@ type Candidate struct {
 	Server config.ServerConfig
 	From   []AgentEntry
 	Picked bool
+	// Reason is why an unpicked candidate isn't picked: SkipSwitchedOff or SkipSecondConfig.
+	Reason SkipReason
 }
 
 // AgentEntry is where a candidate was found: an agent and the name the entry has there.
@@ -183,8 +185,14 @@ func (plan *ImportPlan) offer(g *serverGroup, taken takenNames) {
 	if !ok {
 		name, ok = taken.suffixed(g)
 	}
-	if ok {
-		plan.addCandidate(g, name, taken, false)
+	if !ok {
+		return
+	}
+	plan.addCandidate(g, name, taken, false)
+	c := &plan.Candidates[len(plan.Candidates)-1]
+	c.Reason = SkipSecondConfig
+	if !g.enabled() {
+		c.Reason = SkipSwitchedOff
 	}
 }
 

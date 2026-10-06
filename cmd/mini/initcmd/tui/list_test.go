@@ -89,6 +89,16 @@ func TestList_toggleAllTicksEveryRowThenNone(t *testing.T) {
 	}
 }
 
+func TestList_toggleAllLeavesRowsTheFilterHides(t *testing.T) {
+	checked := map[string]bool{}
+	l := newList(serverRows(), checked)
+	typeKeys(l, "/", "g", "i", "t", "enter")
+	l.toggleAll()
+	if !checked["github"] || checked["linear"] || checked["notion"] {
+		t.Errorf("checked = %v, want only github, the one row the filter shows", checked)
+	}
+}
+
 func TestList_filter(t *testing.T) {
 	t.Run("shows only matching rows, by name or detail", func(t *testing.T) {
 		l := newList(serverRows(), map[string]bool{})
@@ -131,7 +141,7 @@ func TestList_filter(t *testing.T) {
 	})
 	t.Run("backspace removes the last character", func(t *testing.T) {
 		l := newList(serverRows(), map[string]bool{})
-		typeKeys(l, "/", "g", "x", "backspace")
+		typeKeys(l, "/", "g", "é", "backspace")
 		if l.filter != "g" {
 			t.Errorf("filter = %q, want g", l.filter)
 		}

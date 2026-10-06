@@ -354,15 +354,16 @@ func TestPlanImport_offersWhatItLeavesOutUnpicked(t *testing.T) {
 		name   string
 		from   []AgentEntry
 		picked bool
+		reason SkipReason
 	}
 	var got []row
 	for _, c := range plan.Candidates {
-		got = append(got, row{c.Server.Name, c.From, c.Picked})
+		got = append(got, row{c.Server.Name, c.From, c.Picked, c.Reason})
 	}
 	want := []row{
-		{"github", []AgentEntry{{"Claude Code", "github"}}, true},
-		{"github-3", []AgentEntry{{"Codex", "github"}}, false},
-		{"notes", []AgentEntry{{"Codex", "notes"}}, false},
+		{"github", []AgentEntry{{"Claude Code", "github"}}, true, 0},
+		{"github-3", []AgentEntry{{"Codex", "github"}}, false, SkipSecondConfig},
+		{"notes", []AgentEntry{{"Codex", "notes"}}, false, SkipSwitchedOff},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf(
