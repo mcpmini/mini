@@ -235,31 +235,41 @@ func TestServerConfig_HasStaticAuthHeader(t *testing.T) {
 		headers map[string]string
 		want    bool
 	}{
-		{"exact key", oauth, map[string]string{"Authorization": "Bearer x"}, true},
-		{"lowercase key", oauth, map[string]string{"authorization": "Bearer x"}, true},
-		{"empty value", oauth, map[string]string{"Authorization": ""}, false},
-		{"whitespace value", oauth, map[string]string{"Authorization": "  "}, false},
+		{name: "exact key", auth: oauth, headers: map[string]string{"Authorization": "Bearer x"}, want: true},
+		{name: "lowercase key", auth: oauth, headers: map[string]string{"authorization": "Bearer x"}, want: true},
+		{name: "empty value", auth: oauth, headers: map[string]string{"Authorization": ""}, want: false},
+		{name: "whitespace value", auth: oauth, headers: map[string]string{"Authorization": "  "}, want: false},
 		{
-			"env var reference stays literal",
-			oauth,
-			map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_EMPTY}"},
-			true,
+			name:    "env var reference stays literal",
+			auth:    oauth,
+			headers: map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_EMPTY}"},
+			want:    true,
 		},
 		{
-			"literal env reference is a static header",
-			oauth,
-			map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_SET}"},
-			true,
+			name:    "literal env reference is a static header",
+			auth:    oauth,
+			headers: map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_SET}"},
+			want:    true,
 		},
-		{"auth token set", &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: "tok"}, nil, true},
-		{"auth token reference stays literal", &config.AuthConfig{
+		{
+			name:    "auth token set",
+			auth:    &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: "tok"},
+			headers: nil,
+			want:    true,
+		},
+		{name: "auth token reference stays literal", auth: &config.AuthConfig{
 			Type:  config.AuthTypeOAuth2,
 			Token: "${MINI_TEST_STATIC_AUTH_EMPTY}",
-		}, nil, true},
-		{"custom auth header", custom, map[string]string{"X-Api-Key": "k"}, true},
-		{"custom auth header configured but Authorization set", custom, map[string]string{"Authorization": "x"}, false},
-		{"unrelated header only", oauth, map[string]string{"X-Tenant": "acme"}, false},
-		{"nil auth", nil, map[string]string{"Authorization": "Bearer x"}, false},
+		}, headers: nil, want: true},
+		{name: "custom auth header", auth: custom, headers: map[string]string{"X-Api-Key": "k"}, want: true},
+		{
+			name:    "custom auth header configured but Authorization set",
+			auth:    custom,
+			headers: map[string]string{"Authorization": "x"},
+			want:    false,
+		},
+		{name: "unrelated header only", auth: oauth, headers: map[string]string{"X-Tenant": "acme"}, want: false},
+		{name: "nil auth", auth: nil, headers: map[string]string{"Authorization": "Bearer x"}, want: false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -389,27 +399,33 @@ func TestConfig_BrowserCommandFor(t *testing.T) {
 		wantCommand string
 		wantOpen    bool
 	}{
-		{"per-server wins over global", config.Config{
+		{name: "per-server wins over global", cfg: config.Config{
 			BrowserCommand: "global-cmd",
-		}, withBrowser("per-server-cmd"), "per-server-cmd", true},
+		}, sc: withBrowser("per-server-cmd"), wantCommand: "per-server-cmd", wantOpen: true},
 		{
-			"global used when no per-server",
-			config.Config{BrowserCommand: "global-cmd"},
-			withBrowser(""),
-			"global-cmd",
-			true,
+			name:        "global used when no per-server",
+			cfg:         config.Config{BrowserCommand: "global-cmd"},
+			sc:          withBrowser(""),
+			wantCommand: "global-cmd",
+			wantOpen:    true,
 		},
-		{"global used when server has no auth", config.Config{
+		{name: "global used when server has no auth", cfg: config.Config{
 			BrowserCommand: "global-cmd",
-		}, config.ServerConfig{}, "global-cmd", true},
-		{"neither set returns empty and still opens", config.Config{}, withBrowser(""), "", true},
-		{"per-server with args wins", config.Config{
+		}, sc: config.ServerConfig{}, wantCommand: "global-cmd", wantOpen: true},
+		{
+			name:        "neither set returns empty and still opens",
+			cfg:         config.Config{},
+			sc:          withBrowser(""),
+			wantCommand: "",
+			wantOpen:    true,
+		},
+		{name: "per-server with args wins", cfg: config.Config{
 			BrowserCommand: "global-cmd",
-		}, withBrowser("open -a Firefox"), "open -a Firefox", true},
-		{"disabled overrides every command", config.Config{
+		}, sc: withBrowser("open -a Firefox"), wantCommand: "open -a Firefox", wantOpen: true},
+		{name: "disabled overrides every command", cfg: config.Config{
 			BrowserCommand:         "global-cmd",
 			DisableAuthBrowserOpen: true,
-		}, withBrowser("per-server-cmd"), "", false},
+		}, sc: withBrowser("per-server-cmd"), wantCommand: "", wantOpen: false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

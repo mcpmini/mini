@@ -329,10 +329,20 @@ func TestRunAddImport(t *testing.T) {
 	sources := []struct {
 		flag, file, config, tip string
 	}{
-		{"--from-claude", "claude.json", `{"mcpServers":{"svc":{"command":"run"}}}`, headersTip},
-		{"--from-cursor", "mcp.json", `{"mcpServers":{"svc":{"command":"run"}}}`, headersTip},
-		{"--from-codex", "config.toml", "[mcp_servers.svc]\ncommand = \"run\"\n", envTip},
-		{"--from-openclaw", "openclaw.json", `{"mcp":{"servers":{"svc":{"command":"run"}}}}`, envTip},
+		{
+			flag:   "--from-claude",
+			file:   "claude.json",
+			config: `{"mcpServers":{"svc":{"command":"run"}}}`,
+			tip:    headersTip,
+		},
+		{flag: "--from-cursor", file: "mcp.json", config: `{"mcpServers":{"svc":{"command":"run"}}}`, tip: headersTip},
+		{flag: "--from-codex", file: "config.toml", config: "[mcp_servers.svc]\ncommand = \"run\"\n", tip: envTip},
+		{
+			flag:   "--from-openclaw",
+			file:   "openclaw.json",
+			config: `{"mcp":{"servers":{"svc":{"command":"run"}}}}`,
+			tip:    envTip,
+		},
 	}
 	for _, src := range sources {
 		t.Run(src.flag+" adds the server and prints the tip", func(t *testing.T) {

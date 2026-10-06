@@ -217,12 +217,47 @@ func TestListenerDelay_failuresDoubleToCapAndSuccessResets(t *testing.T) {
 		delay   time.Duration
 		next    time.Duration
 	}{
-		{"first failure", 503, nil, time.Second, time.Second, 2 * time.Second},
-		{"doubling", 503, nil, 2 * time.Second, 2 * time.Second, 4 * time.Second},
-		{"cap at 60s from 40s", 503, nil, 40 * time.Second, 40 * time.Second, 60 * time.Second},
-		{"stays at 60s cap", 503, nil, 60 * time.Second, 60 * time.Second, 60 * time.Second},
-		{"reset after 200", 200, nil, 30 * time.Second, time.Second, time.Second},
-		{"reauth uses max backoff", 0, ErrReauthRequired, time.Second, maxListenerBackoff, maxListenerBackoff},
+		{name: "first failure", status: 503, err: nil, backoff: time.Second, delay: time.Second, next: 2 * time.Second},
+		{
+			name:    "doubling",
+			status:  503,
+			err:     nil,
+			backoff: 2 * time.Second,
+			delay:   2 * time.Second,
+			next:    4 * time.Second,
+		},
+		{
+			name:    "cap at 60s from 40s",
+			status:  503,
+			err:     nil,
+			backoff: 40 * time.Second,
+			delay:   40 * time.Second,
+			next:    60 * time.Second,
+		},
+		{
+			name:    "stays at 60s cap",
+			status:  503,
+			err:     nil,
+			backoff: 60 * time.Second,
+			delay:   60 * time.Second,
+			next:    60 * time.Second,
+		},
+		{
+			name:    "reset after 200",
+			status:  200,
+			err:     nil,
+			backoff: 30 * time.Second,
+			delay:   time.Second,
+			next:    time.Second,
+		},
+		{
+			name:    "reauth uses max backoff",
+			status:  0,
+			err:     ErrReauthRequired,
+			backoff: time.Second,
+			delay:   maxListenerBackoff,
+			next:    maxListenerBackoff,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

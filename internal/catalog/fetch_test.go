@@ -47,21 +47,21 @@ func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
 		wantErr   string
 	}{
 		{
-			"keeps the known entries",
-			withEntry(
+			name: "keeps the known entries",
+			document: withEntry(
 				`{"name":"known","title":"Known","url":"https://known.example/mcp","description":"known server","category":"Test","auth":"none"}`,
 			),
-			[]string{"known"},
-			"",
+			wantNames: []string{"known"},
+			wantErr:   "",
 		},
-		{"fails when nothing is left", future, nil, "catalog entries are required"},
+		{name: "fails when nothing is left", document: future, wantNames: nil, wantErr: "catalog entries are required"},
 		{
-			"still validates the kept entries",
-			withEntry(
+			name: "still validates the kept entries",
+			document: withEntry(
 				`{"name":"invalid","title":"Invalid","url":"https://invalid.example/mcp","description":"bad\u001btext","category":"Test","auth":"none"}`,
 			),
-			nil,
-			"description contains control characters",
+			wantNames: nil,
+			wantErr:   "description contains control characters",
 		},
 	}
 	for _, tt := range tests {

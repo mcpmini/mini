@@ -10,10 +10,10 @@ import (
 func TestCodexReader(t *testing.T) {
 	tests := []readerCase{
 		{
-			"codex stdio entry",
-			"config.toml",
-			"[mcp_servers.s]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"synthetic\" }\n",
-			Server{
+			name:   "codex stdio entry",
+			file:   "config.toml",
+			config: "[mcp_servers.s]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"synthetic\" }\n",
+			want: Server{
 				Config: config.ServerConfig{
 					Name:    "s",
 					Command: "npx",
@@ -23,10 +23,10 @@ func TestCodexReader(t *testing.T) {
 			},
 		},
 		{
-			"codex http headers, env headers and bearer token variable",
-			"config.toml",
-			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"core\" }\nenv_http_headers = { X-Key = \"MINI_TEST_SET_KEY\", X-Optional = \"MINI_TEST_UNSET_KEY\" }\nbearer_token_env_var = \"EXAMPLE_TOKEN\"\n",
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{
+			name:   "codex http headers, env headers and bearer token variable",
+			file:   "config.toml",
+			config: "[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"core\" }\nenv_http_headers = { X-Key = \"MINI_TEST_SET_KEY\", X-Optional = \"MINI_TEST_UNSET_KEY\" }\nbearer_token_env_var = \"EXAMPLE_TOKEN\"\n",
+			want: Server{Config: remote("s", "https://example.com/mcp", map[string]string{
 				"X-Team":        "core",
 				"X-Key":         "${MINI_TEST_SET_KEY}",
 				"X-Optional":    "${MINI_TEST_UNSET_KEY}",
@@ -34,11 +34,11 @@ func TestCodexReader(t *testing.T) {
 			})},
 		},
 		{
-			"codex env and bearer headers replace a static header whatever its case",
-			"config.toml",
-			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { authorization = \"Bearer old\", x-key = \"old\" }\n" +
+			name: "codex env and bearer headers replace a static header whatever its case",
+			file: "config.toml",
+			config: "[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { authorization = \"Bearer old\", x-key = \"old\" }\n" +
 				"env_http_headers = { X-Key = \"MINI_TEST_SET_KEY\" }\nbearer_token_env_var = \"TOKEN_VAR\"\n",
-			Server{
+			want: Server{
 				Config: remote(
 					"s",
 					"https://example.com/mcp",
@@ -47,38 +47,38 @@ func TestCodexReader(t *testing.T) {
 			},
 		},
 		{
-			"codex keeps a static header whatever its case while its env override is unset", "config.toml",
-			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { x-team = \"default\" }\n" +
+			name: "codex keeps a static header whatever its case while its env override is unset", file: "config.toml",
+			config: "[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { x-team = \"default\" }\n" +
 				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\" }\n",
-			Server{
+			want: Server{
 				Config:           remote("s", "https://example.com/mcp", map[string]string{"x-team": "default"}),
 				UnusedEnvHeaders: map[string]string{"X-Team": "MINI_TEST_UNSET_KEY"},
 			},
 		},
 		{
-			"codex auth settings are dropped and named",
-			"config.toml",
-			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nscopes = [\"read\"]\noauth = { client_id = \"synthetic\" }\n",
-			Server{
+			name:   "codex auth settings are dropped and named",
+			file:   "config.toml",
+			config: "[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nscopes = [\"read\"]\noauth = { client_id = \"synthetic\" }\n",
+			want: Server{
 				Config:             remote("s", "https://example.com/mcp", nil),
 				IgnoredRunSettings: []string{"oauth", "scopes"},
 			},
 		},
 		{
-			"codex header helpers are dropped and named",
-			"config.toml",
-			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers_helper = \"get-token\"\n",
-			Server{
+			name:   "codex header helpers are dropped and named",
+			file:   "config.toml",
+			config: "[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers_helper = \"get-token\"\n",
+			want: Server{
 				Config:             remote("s", "https://example.com/mcp", nil),
 				IgnoredRunSettings: []string{"http_headers_helper"},
 			},
 		},
 		{
-			"codex keeps a static header while its env override is unset or blank",
-			"config.toml",
-			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"default\", X-Org = \"acme\" }\n" +
+			name: "codex keeps a static header while its env override is unset or blank",
+			file: "config.toml",
+			config: "[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"default\", X-Org = \"acme\" }\n" +
 				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\", X-Org = \"MINI_TEST_BLANK_KEY\" }\n",
-			Server{
+			want: Server{
 				Config: remote(
 					"s",
 					"https://example.com/mcp",
@@ -88,10 +88,10 @@ func TestCodexReader(t *testing.T) {
 			},
 		},
 		{
-			"codex variable named like an editor placeholder is a plain reference",
-			"config.toml",
-			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nbearer_token_env_var = \"userHome\"\n",
-			Server{
+			name:   "codex variable named like an editor placeholder is a plain reference",
+			file:   "config.toml",
+			config: "[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nbearer_token_env_var = \"userHome\"\n",
+			want: Server{
 				Config: remote(
 					"s",
 					"https://example.com/mcp",
@@ -100,21 +100,21 @@ func TestCodexReader(t *testing.T) {
 			},
 		},
 		{
-			"codex switched off", "config.toml",
-			"[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
-			Server{Config: stdio("s", "run"), Disabled: true},
+			name: "codex switched off", file: "config.toml",
+			config: "[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
+			want:   Server{Config: stdio("s", "run"), Disabled: true},
 		},
 		{
-			"codex settings mini doesn't carry over are dropped, including ones it has never seen",
-			"config.toml",
-			"[mcp_servers.s]\ncommand = \"run\"\ntool_timeout_sec = 60\nenabled_tools = [\"search\"]\n" +
+			name: "codex settings mini doesn't carry over are dropped, including ones it has never seen",
+			file: "config.toml",
+			config: "[mcp_servers.s]\ncommand = \"run\"\ntool_timeout_sec = 60\nenabled_tools = [\"search\"]\n" +
 				"default_tools_approval_mode = \"prompt\"\nsetting_added_later = true\n",
-			Server{Config: stdio("s", "run")},
+			want: Server{Config: stdio("s", "run")},
 		},
 		{
-			"codex cwd is ignored and named", "config.toml",
-			"[mcp_servers.s]\ncommand = \"run\"\ncwd = \"/srv/app\"\n",
-			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"cwd"}},
+			name: "codex cwd is ignored and named", file: "config.toml",
+			config: "[mcp_servers.s]\ncommand = \"run\"\ncwd = \"/srv/app\"\n",
+			want:   Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"cwd"}},
 		},
 	}
 	t.Setenv("MINI_TEST_SET_KEY", "synthetic")

@@ -26,19 +26,19 @@ func TestParseCatalogSelection(t *testing.T) {
 		want  []int
 		err   bool
 	}{
-		{"empty", "", nil, false},
-		{"all", "a", []int{0, 1, 2, 3}, false},
-		{"numbers and ranges", "1,3,2-4", []int{0, 2, 1, 3}, false},
-		{"out of range rejects all", "1,9", nil, true},
-		{"reversed range", "3-1", nil, true},
-		{"malformed range", "1-2-3", nil, true},
-		{"zero", "0", nil, true},
-		{"range from zero", "0-2", nil, true},
-		{"uppercase all", "A", []int{0, 1, 2, 3}, false},
-		{"spaces around tokens", " 1 , 3 ", []int{0, 2}, false},
-		{"not a number", "x", nil, true},
-		{"range start not a number", "x-2", nil, true},
-		{"range end not a number", "1-x", nil, true},
+		{name: "empty", input: "", want: nil, err: false},
+		{name: "all", input: "a", want: []int{0, 1, 2, 3}, err: false},
+		{name: "numbers and ranges", input: "1,3,2-4", want: []int{0, 2, 1, 3}, err: false},
+		{name: "out of range rejects all", input: "1,9", want: nil, err: true},
+		{name: "reversed range", input: "3-1", want: nil, err: true},
+		{name: "malformed range", input: "1-2-3", want: nil, err: true},
+		{name: "zero", input: "0", want: nil, err: true},
+		{name: "range from zero", input: "0-2", want: nil, err: true},
+		{name: "uppercase all", input: "A", want: []int{0, 1, 2, 3}, err: false},
+		{name: "spaces around tokens", input: " 1 , 3 ", want: []int{0, 2}, err: false},
+		{name: "not a number", input: "x", want: nil, err: true},
+		{name: "range start not a number", input: "x-2", want: nil, err: true},
+		{name: "range end not a number", input: "1-x", want: nil, err: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,8 +135,13 @@ func TestCatalogSourcePrefersPublishedCatalog(t *testing.T) {
 		wantNames []string
 		wantNote  bool
 	}{
-		{"published catalog", http.StatusOK, []string{"remote"}, false},
-		{"fetch fails", http.StatusInternalServerError, embeddedCatalogNames(t), true},
+		{name: "published catalog", status: http.StatusOK, wantNames: []string{"remote"}, wantNote: false},
+		{
+			name:      "fetch fails",
+			status:    http.StatusInternalServerError,
+			wantNames: embeddedCatalogNames(t),
+			wantNote:  true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

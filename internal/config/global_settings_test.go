@@ -55,9 +55,9 @@ func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
 		rawYAML string
 		wantErr string
 	}{
-		{"valid settings load", valid, "", ""},
-		{"invalid YAML", nil, "bad: [yaml\n", "parse config"},
-		{"invalid response_format", badFormat, "", "response_format"},
+		{name: "valid settings load", cfg: valid, rawYAML: "", wantErr: ""},
+		{name: "invalid YAML", cfg: nil, rawYAML: "bad: [yaml\n", wantErr: "parse config"},
+		{name: "invalid response_format", cfg: badFormat, rawYAML: "", wantErr: "response_format"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

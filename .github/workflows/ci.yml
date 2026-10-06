@@ -29,6 +29,7 @@ jobs:
           go run ./tools/returns .
           go run ./tools/clocklint .
           go run ./tools/testkind .
+          GOFLAGS="${GOFLAGS:-} -tags=integration,test" go run ./tools/structlint ./...
 
       - name: Vet
         # go vet ./... doesn't run against all tags by default

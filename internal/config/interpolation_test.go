@@ -158,27 +158,37 @@ func TestLoadMainConfig_undefinedResponseDir_isError(t *testing.T) {
 
 func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *testing.T) {
 	cases := []struct{ name, path, data, want string }{
-		{"undefined secret", "servers/svc.yaml", "headers:\n  X-Key: ${MISSING}\n", ""},
-		{"unexpanded url", "servers/svc.yaml", "url: https://example.com/${X}\n", "url"},
-		{"bad handshake timeout", "servers/svc.yaml", "handshake_timeout: invalid\n", "handshake_timeout"},
-		{"invalid name from the path", "servers/a.b.yaml", "transport: stdio\n", "invalid server name \"a.b\""},
+		{name: "undefined secret", path: "servers/svc.yaml", data: "headers:\n  X-Key: ${MISSING}\n", want: ""},
+		{name: "unexpanded url", path: "servers/svc.yaml", data: "url: https://example.com/${X}\n", want: "url"},
 		{
-			"a leftover projection file",
-			"servers/svc.proj.yaml",
-			"t: {exclude: [a]}\n",
-			"move these rules under projections: in svc.yaml",
+			name: "bad handshake timeout",
+			path: "servers/svc.yaml",
+			data: "handshake_timeout: invalid\n",
+			want: "handshake_timeout",
 		},
 		{
-			"invalid projection format",
-			"servers/svc.yaml",
-			"projections:\n  t:\n    format: xml\n",
-			"projection t: format",
+			name: "invalid name from the path",
+			path: "servers/a.b.yaml",
+			data: "transport: stdio\n",
+			want: "invalid server name \"a.b\"",
 		},
 		{
-			"inline projection of the wrong type",
-			"servers/svc.yaml",
-			"projections:\n  t:\n    include_only: 5\n",
-			"cannot unmarshal",
+			name: "a leftover projection file",
+			path: "servers/svc.proj.yaml",
+			data: "t: {exclude: [a]}\n",
+			want: "move these rules under projections: in svc.yaml",
+		},
+		{
+			name: "invalid projection format",
+			path: "servers/svc.yaml",
+			data: "projections:\n  t:\n    format: xml\n",
+			want: "projection t: format",
+		},
+		{
+			name: "inline projection of the wrong type",
+			path: "servers/svc.yaml",
+			data: "projections:\n  t:\n    include_only: 5\n",
+			want: "cannot unmarshal",
 		},
 	}
 	for _, tc := range cases {
