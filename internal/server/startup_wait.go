@@ -43,8 +43,8 @@ func (s *Server) startupWaitTarget() (changed <-chan struct{}, until time.Time, 
 	defer s.stateMu.RUnlock()
 	now := s.clock.Now()
 	for name := range s.configServers {
-		if s.startupStateLocked(name, now).phase == phaseConnecting {
-			return s.startup.changed, s.startup.startedAt[name].Add(startupHold), true
+		if s.startup.state(name, now).phase == phaseConnecting {
+			return s.startup.changed, s.startup.windowEnd(name), true
 		}
 	}
 	return nil, time.Time{}, false

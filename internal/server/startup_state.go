@@ -53,9 +53,48 @@ func newStartupTracker() *startupTracker {
 	}
 }
 
-func (t *startupTracker) broadcastChangeLocked() {
+func (t *startupTracker) open(name string, now time.Time) {
+	t.startedAt[name] = now
+	t.broadcastChange()
+}
+
+func (t *startupTracker) markReady(name string) {
+	t.toolsReady[name] = true
+	t.broadcastChange()
+}
+
+func (t *startupTracker) recordFailure(name string, failure startupFailure) {
+	t.failures[name] = failure
+	t.broadcastChange()
+}
+
+func (t *startupTracker) forget(name string) {
+	delete(t.startedAt, name)
+	delete(t.toolsReady, name)
+	delete(t.failures, name)
+	t.broadcastChange()
+}
+
+func (t *startupTracker) broadcastChange() {
 	close(t.changed)
 	t.changed = make(chan struct{})
+}
+
+func (t *startupTracker) ready(name string) bool { return t.toolsReady[name] }
+
+func (t *startupTracker) windowEnd(name string) time.Time { return t.startedAt[name].Add(startupHold) }
+
+func (t *startupTracker) state(name string, now time.Time) startupState {
+	if t.toolsReady[name] {
+		return startupState{phase: phaseConnected}
+	}
+	if failure, ok := t.failures[name]; ok {
+		return startupState{phase: phaseFailed, failure: failure}
+	}
+	if now.Before(t.windowEnd(name)) {
+		return startupState{phase: phaseConnecting}
+	}
+	return startupState{phase: phaseDelayed}
 }
 
 type startupState struct {
@@ -90,7 +129,7 @@ func (f startupFailure) logMessage() string {
 func (s *Server) openConnectWindow(name string) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.startup.startedAt[name] = s.clock.Now()
+	s.startup.open(name, s.clock.Now())
 }
 
 func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure) {
@@ -101,35 +140,13 @@ func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure
 	}
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.startup.failures[in.cfg.Name] = failure
-	s.startup.broadcastChangeLocked()
+	s.startup.recordFailure(in.cfg.Name, failure)
 }
 
 func (s *Server) markToolsReady(name string) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.startup.toolsReady[name] = true
-	s.startup.broadcastChangeLocked()
-}
-
-func (s *Server) forgetStartupLocked(name string) {
-	delete(s.startup.startedAt, name)
-	delete(s.startup.toolsReady, name)
-	delete(s.startup.failures, name)
-	s.startup.broadcastChangeLocked()
-}
-
-func (s *Server) startupStateLocked(name string, now time.Time) startupState {
-	if s.startup.toolsReady[name] {
-		return startupState{phase: phaseConnected}
-	}
-	if failure, ok := s.startup.failures[name]; ok {
-		return startupState{phase: phaseFailed, failure: failure}
-	}
-	if now.Before(s.startup.startedAt[name].Add(startupHold)) {
-		return startupState{phase: phaseConnecting}
-	}
-	return startupState{phase: phaseDelayed}
+	s.startup.markReady(name)
 }
 
 type startupReport struct {
@@ -141,7 +158,7 @@ func (s *Server) startupReportLocked() startupReport {
 	now := s.clock.Now()
 	report := startupReport{starting: []string{}, unavailable: map[string]any{}}
 	for name := range s.configServers {
-		state := s.startupStateLocked(name, now)
+		state := s.startup.state(name, now)
 		switch state.phase {
 		case phaseConnecting:
 			report.starting = append(report.starting, name)

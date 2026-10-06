@@ -96,7 +96,7 @@ func (s *Server) snapshotStatusInputs() statusInputs {
 	defer s.stateMu.RUnlock()
 	ready := make(map[string]*upstreamServer, len(s.upstreams))
 	for name, u := range s.upstreams {
-		if s.startup.toolsReady[name] {
+		if s.startup.ready(name) {
 			ready[name] = u
 		}
 	}
