@@ -153,11 +153,17 @@ func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage
 	return s.callUpstream(ctx, p, entry, session)
 }
 
-// hasProjectionCoverage is also true for a server with no projections at all: the restriction
-// only kicks in once it has some.
+// hasProjectionCoverage reports whether a tool has an explicit projection entry or a
+// wildcard "*" for its server. Returns true when the server has no projections at all —
+// the restriction only kicks in once it has some.
 func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bool {
-	rules := s.projectionRules(server, tool, session)
-	return rules.applied() != nil || !rules.serverHasRules
+	if session.Projection(toolFullName(server, tool)) != nil {
+		return true
+	}
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	toolMap := s.projections[server]
+	return len(toolMap) == 0 || toolMap[tool] != nil || toolMap["*"] != nil
 }
 
 func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *registry.ToolEntry, session *Session) (any, error) {
@@ -266,6 +272,22 @@ func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelo
 		return formattedEnvelope{text: text, isError: env.Error != ""}, nil
 	}
 	return env, nil
+}
+
+func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {
+	if p := session.Projection(toolFullName(server, tool)); p != nil {
+		return p
+	}
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	toolMap := s.projections[server]
+	if toolMap == nil {
+		return nil
+	}
+	if p := toolMap[tool]; p != nil {
+		return p
+	}
+	return toolMap["*"]
 }
 
 func unmarshalOptional(raw json.RawMessage, v any) error {

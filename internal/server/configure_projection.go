@@ -7,20 +7,8 @@ import (
 )
 
 type projectionRules struct {
-	Session        *config.ProjectionConfig `json:"session,omitempty"`
-	Server         *config.ProjectionConfig `json:"server,omitempty"`
-	serverWildcard *config.ProjectionConfig
-	serverHasRules bool
-}
-
-func (r projectionRules) applied() *config.ProjectionConfig {
-	switch {
-	case r.Session != nil:
-		return r.Session
-	case r.Server != nil:
-		return r.Server
-	}
-	return r.serverWildcard
+	Session *config.ProjectionConfig `json:"session,omitempty"`
+	Server  *config.ProjectionConfig `json:"server,omitempty"`
 }
 
 func (s *Server) projectionRules(server, tool string, session *Session) projectionRules {
@@ -28,13 +16,7 @@ func (s *Server) projectionRules(server, tool string, session *Session) projecti
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	rules.Server = s.projections[server][tool]
-	rules.serverWildcard = s.projections[server]["*"]
-	rules.serverHasRules = len(s.projections[server]) > 0
 	return rules
-}
-
-func (s *Server) resolveProjection(server, tool string, session *Session) *config.ProjectionConfig {
-	return s.projectionRules(server, tool, session).applied()
 }
 
 func (s *Server) getProjection(session *Session, p configureParams) (any, error) {
