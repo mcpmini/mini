@@ -17,7 +17,7 @@ type CodexServer struct {
 }
 
 // EditCodexServers disables named servers and adds mini only when its entry is absent.
-func EditCodexServers(data []byte, disable []string, mini CodexServer) ([]byte, error) {
+func EditCodexServers(data []byte, disable []string, mini *CodexServer) ([]byte, error) {
 	before, err := decodeCodexConfig(data)
 	if err != nil {
 		return nil, err
@@ -84,7 +84,7 @@ type codexEditPlan struct {
 func planCodexEdit(lines []tomlLine, before map[string]any, disable []string) (codexEditPlan, error) {
 	plan := codexEditPlan{replaceEnabled: map[int]bool{}, insertEnabled: map[int]bool{}}
 	for _, name := range disable {
-		if name == "mini" {
+		if name == MiniKey {
 			continue
 		}
 		if err := plan.disableServer(lines, before, name); err != nil {
@@ -199,8 +199,8 @@ func leadingSpace(text string) string {
 	return text[:len(text)-len(strings.TrimLeft(text, " \t"))]
 }
 
-func codexMiniTable(before map[string]any, mini CodexServer) ([]string, error) {
-	if serverDefined(before, "mini") {
+func codexMiniTable(before map[string]any, mini *CodexServer) ([]string, error) {
+	if mini == nil || serverDefined(before, MiniKey) {
 		return nil, nil
 	}
 	var body bytes.Buffer
@@ -208,7 +208,7 @@ func codexMiniTable(before map[string]any, mini CodexServer) ([]string, error) {
 		return nil, err
 	}
 	lines := strings.Split(strings.TrimRight(body.String(), "\n"), "\n")
-	return append([]string{"[mcp_servers.mini]"}, lines...), nil
+	return append([]string{"[mcp_servers." + MiniKey + "]"}, lines...), nil
 }
 
 func verifyCodexEdit(original, edited []byte, disable []string, miniLines []string) error {
@@ -233,7 +233,7 @@ func expectedCodexConfig(original []byte, disable []string, miniLines []string) 
 	}
 	servers := tableAt(want, "mcp_servers")
 	for _, name := range disable {
-		if name == "mini" {
+		if name == MiniKey {
 			continue
 		}
 		server, ok := servers[name].(map[string]any)
@@ -246,12 +246,12 @@ func expectedCodexConfig(original []byte, disable []string, miniLines []string) 
 }
 
 func addExpectedMini(servers map[string]any, miniLines []string) error {
-	if _, exists := servers["mini"]; exists {
+	if _, exists := servers[MiniKey]; exists || len(miniLines) == 0 {
 		return nil
 	}
 	fresh, err := decodeCodexConfig([]byte(strings.Join(miniLines, "\n")))
 	if err == nil {
-		servers["mini"] = tableAt(fresh, "mcp_servers")["mini"]
+		servers[MiniKey] = tableAt(fresh, "mcp_servers")[MiniKey]
 	}
 	return err
 }

@@ -25,12 +25,12 @@ func EditJSONServers(data []byte, remove []string, add map[string]any) ([]byte, 
 
 func editJSONEntries(servers map[string]any, remove []string, add map[string]any) {
 	for _, name := range remove {
-		if name != "mini" {
+		if name != MiniKey {
 			delete(servers, name)
 		}
 	}
 	for name, entry := range add {
-		if _, exists := servers[name]; name != "mini" || !exists {
+		if _, exists := servers[name]; name != MiniKey || !exists {
 			servers[name] = entry
 		}
 	}

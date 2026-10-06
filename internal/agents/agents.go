@@ -9,7 +9,14 @@ import (
 type Agent struct {
 	Name       string
 	ConfigPath string
-	Read       func(path string) (map[string]Server, error)
+	// Dir is the agent's own directory: when it exists the agent is installed, even before its
+	// MCP config file does.
+	Dir  string
+	Read func(path string) (map[string]Server, error)
+	// Parse reads the same servers from config bytes, such as an edit before it's written.
+	Parse func(data []byte) (map[string]Server, error)
+	// A nil mini adds no entry, for an agent that already runs mini under another key.
+	Connect func(config []byte, remove []string, mini *MiniEntry) ([]byte, error)
 }
 
 func Detect() []Agent {
@@ -28,10 +35,10 @@ func Detect() []Agent {
 
 func Known(home string) []Agent {
 	return []Agent{
-		{Name: "Claude Code", ConfigPath: filepath.Join(home, ".claude.json"), Read: ReadClaude},
+		claudeCode(home),
 		codex(home),
-		{Name: "Cursor", ConfigPath: filepath.Join(home, ".cursor", "mcp.json"), Read: ReadClaude},
-		{Name: "Windsurf", ConfigPath: filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), Read: ReadClaude},
+		jsonAgent("Cursor", filepath.Join(home, ".cursor", "mcp.json"), ParseClaude),
+		jsonAgent("Windsurf", filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), ParseClaude),
 		claudeDesktop(home),
 	}
 }
@@ -41,7 +48,25 @@ func codex(home string) Agent {
 	if dir == "" {
 		dir = filepath.Join(home, ".codex")
 	}
-	return Agent{Name: "Codex", ConfigPath: filepath.Join(dir, "config.toml"), Read: ReadCodex}
+	return Agent{
+		Name: "Codex", ConfigPath: filepath.Join(dir, "config.toml"), Dir: dir,
+		Read: ReadCodex, Parse: ParseCodex, Connect: connectCodex,
+	}
+}
+
+func jsonAgent(name, configPath string, parse func(data []byte) (map[string]Server, error)) Agent {
+	return Agent{
+		Name: name, ConfigPath: configPath, Dir: filepath.Dir(configPath),
+		Read:  func(path string) (map[string]Server, error) { return readParsed(path, parse) },
+		Parse: parse, Connect: connectJSON,
+	}
+}
+
+// Claude Code keeps its MCP config in the home directory, outside its own directory.
+func claudeCode(home string) Agent {
+	agent := jsonAgent("Claude Code", filepath.Join(home, ".claude.json"), ParseClaude)
+	agent.Dir = filepath.Join(home, ".claude")
+	return agent
 }
 
 func claudeDesktop(home string) Agent {
@@ -56,5 +81,8 @@ func claudeDesktop(home string) Agent {
 	default:
 		path = filepath.Join(home, ".config", "Claude", "claude_desktop_config.json")
 	}
-	return Agent{Name: "Claude Desktop", ConfigPath: path, Read: ReadClaude}
+	if path == "" {
+		return Agent{Name: "Claude Desktop", Read: ReadClaude, Parse: ParseClaude, Connect: connectJSON}
+	}
+	return jsonAgent("Claude Desktop", path, ParseClaude)
 }

@@ -32,6 +32,10 @@ func ConnectionDifferences(a, b config.ServerConfig) []string {
 	return differences
 }
 
+func SameServer(a, b config.ServerConfig) bool {
+	return len(ConnectionDifferences(a, b)) == 0
+}
+
 func transportOrStdio(transport string) string {
 	if transport == "" {
 		return "stdio"
