@@ -87,18 +87,21 @@ func Apply(ctx context.Context, p ApplyParams) []AgentResult {
 
 func (p ApplyParams) connect(agent agents.Agent, mini MiniServers) AgentResult {
 	if _, err := os.Stat(agent.ConfigPath); errors.Is(err, fs.ErrNotExist) {
-		served, err := p.create(agent)
-		return AgentResult{Agent: agent, Created: err == nil, MiniServes: served, Err: err}
+		err := p.create(agent)
+		// A config the agent wrote since the check is the agent's, so it's edited like any other.
+		if !errors.Is(err, fs.ErrExist) {
+			return AgentResult{Agent: agent, Created: err == nil, MiniServes: err == nil && p.servedAfterEdit(NoMiniEntry), Err: err}
+		}
 	}
 	return p.edit(agent, mini)
 }
 
-func (p ApplyParams) create(agent agents.Agent) (bool, error) {
+func (p ApplyParams) create(agent agents.Agent) error {
 	data, err := agent.Connect(nil, nil, &p.Mini)
 	if err != nil {
-		return false, err
+		return err
 	}
-	return p.servedAfterEdit(NoMiniEntry), agents.CreateFile(agent.ConfigPath, data)
+	return agents.CreateFile(agent.ConfigPath, data)
 }
 
 func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {

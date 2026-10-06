@@ -255,6 +255,52 @@ func TestApply_createsAMissingConfig(t *testing.T) {
 	}
 }
 
+func TestApply_aFailedCreateReportsNoServingMini(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root writes into read-only directories")
+	}
+	f := newApplyFixture(t)
+	windsurf := f.agents["Windsurf"]
+	if err := os.MkdirAll(windsurf.Dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(windsurf.Dir, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(windsurf.Dir, 0700) }) //nolint:errcheck // only lets the temp dir be removed
+
+	results := f.apply(ConnectOnly, nil, windsurf)
+
+	if results[0].Err == nil || results[0].Created || results[0].MiniServes {
+		t.Errorf("result = %+v, want the error and no mini reported: nothing was written", results[0])
+	}
+}
+
+func TestApply_aConfigTheAgentWritesMeanwhileIsEdited(t *testing.T) {
+	f := newApplyFixture(t)
+	windsurf := f.agents["Windsurf"]
+	if err := os.MkdirAll(windsurf.Dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	connect, wrote := windsurf.Connect, false
+	windsurf.Connect = func(config []byte, remove []string, mini *agents.MiniEntry) ([]byte, error) {
+		if !wrote {
+			wrote = true
+			testutil.WriteFile(t, windsurf.ConfigPath, `{"mcpServers":{"notes":{"command":"notes-server"}}}`)
+		}
+		return connect(config, remove, mini)
+	}
+
+	results := f.apply(ConnectOnly, nil, windsurf)
+
+	if results[0].Err != nil || results[0].Created || results[0].Backup == "" {
+		t.Errorf("result = %+v, want the agent's new file edited with a backup", results[0])
+	}
+	if got := entryNamesIn(t, windsurf); !reflect.DeepEqual(got, []string{"mini", "notes"}) {
+		t.Errorf("entries = %v, want the agent's notes kept and mini added", got)
+	}
+}
+
 func TestApply_reportsEntriesChangedSinceTheCheck(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
