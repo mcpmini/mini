@@ -25,7 +25,7 @@ type Setup struct {
 // Report is what a run did, for the summary.
 type Report struct {
 	ConfigDir string
-	// Import is the plan, less the notes of servers that failed to write.
+	// Import is the plan, with notes only for the imports written and skip lines only for entries left behind.
 	Import             ImportPlan
 	AlreadyConfigured  []string
 	AddCoveredByImport []string

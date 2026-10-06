@@ -43,8 +43,7 @@ func TestImportScreen_anUntickedRowSaysWhy(t *testing.T) {
 	switchedOff := candidate("notes", "https://notes.example.com/mcp", false, "Codex")
 	switchedOff.Reason = initcmd.SkipSwitchedOff
 	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
-	second.From[0].Name = "GitHub"
-	second.Reason = initcmd.SkipSecondConfig
+	second.Reason, second.SharesName = initcmd.SkipSecondConfig, "github"
 	text := screenText(newImportScreen([]initcmd.Candidate{second, switchedOff}))
 	for _, want := range []string{
 		"github-2  gh.example.com/mcp     Cursor\n      another config named github\n",
@@ -97,8 +96,7 @@ func TestImportScreen_aSecondConfigSaysWhatDiffersFromTheFirst(t *testing.T) {
 	first := candidate("github", "https://gh.example.com/mcp", true, "Claude Code")
 	first.Server.Headers = map[string]string{"X-Team": "one"}
 	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
-	second.From[0].Name = "github"
-	second.Reason = initcmd.SkipSecondConfig
+	second.Reason, second.SharesName = initcmd.SkipSecondConfig, "github"
 	second.Server.Headers = map[string]string{"X-Team": "two"}
 	if text := screenText(newImportScreen([]initcmd.Candidate{first, second})); !strings.Contains(
 		text, "another config named github: different headers",
@@ -116,19 +114,5 @@ func TestImportScreen_aLongCommandLeavesRoomForTheOtherColumns(t *testing.T) {
 	text := screenText(newImportScreen([]initcmd.Candidate{long, other}))
 	if !strings.Contains(text, "…  Codex") {
 		t.Errorf("screen:\n%s\nwant the command cut short so the agents column stays in line", text)
-	}
-}
-
-func TestImportScreen_aSecondConfigIsComparedWithTheConfigThatHoldsTheName(t *testing.T) {
-	other := candidate("bar", "https://bar.example.com/mcp", true, "Codex")
-	other.From = append(other.From, initcmd.AgentEntry{Agent: "Cursor", Name: "foo"})
-	first := candidate("foo", "https://foo.example.com/mcp", true, "Claude Code")
-	second := candidate("foo-2", "https://foo.example.com/mcp", false, "Windsurf")
-	second.From[0].Name = "foo"
-	second.Reason = initcmd.SkipSecondConfig
-	second.Server.Headers = map[string]string{"X-Team": "two"}
-	text := screenText(newImportScreen([]initcmd.Candidate{other, first, second}))
-	if !strings.Contains(text, "another config named foo: different headers") {
-		t.Errorf("screen:\n%s\nwant foo-2 compared with foo, which differs only in headers", text)
 	}
 }

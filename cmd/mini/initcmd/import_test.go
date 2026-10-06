@@ -3,6 +3,7 @@ package initcmd
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/agents"
@@ -355,15 +356,16 @@ func TestPlanImport_offersWhatItLeavesOutUnpicked(t *testing.T) {
 		from   []AgentEntry
 		picked bool
 		reason SkipReason
+		shares string
 	}
 	var got []row
 	for _, c := range plan.Candidates {
-		got = append(got, row{c.Server.Name, c.From, c.Picked, c.Reason})
+		got = append(got, row{c.Server.Name, c.From, c.Picked, c.Reason, c.SharesName})
 	}
 	want := []row{
-		{"github", []AgentEntry{{"Claude Code", "github"}}, true, 0},
-		{"github-3", []AgentEntry{{"Codex", "github"}}, false, SkipSecondConfig},
-		{"notes", []AgentEntry{{"Codex", "notes"}}, false, SkipSwitchedOff},
+		{"github", []AgentEntry{{"Claude Code", "github"}}, true, SkipNone, ""},
+		{"github-3", []AgentEntry{{"Codex", "github"}}, false, SkipSecondConfig, "github"},
+		{"notes", []AgentEntry{{"Codex", "notes"}}, false, SkipSwitchedOff, ""},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf(
@@ -372,5 +374,18 @@ func TestPlanImport_offersWhatItLeavesOutUnpicked(t *testing.T) {
 			got,
 			want,
 		)
+	}
+}
+
+func TestPlanImport_aSecondConfigSharesTheNameItsSuffixComesFrom(t *testing.T) {
+	x, y := remoteEntry("https://gh.example.com/mcp", "${X}"), remoteEntry("https://gh.example.com/mcp", "${Y}")
+	plan := planFor([]agents.Agent{
+		agentWith("Claude Code", map[string]agents.Server{"gh": y}),
+		agentWith("Codex", map[string]agents.Server{"github": x}),
+		agentWith("Cursor", map[string]agents.Server{"gh": x}),
+	}, "github")
+	i := slices.IndexFunc(plan.Candidates, func(c Candidate) bool { return c.Server.Name == "gh-2" })
+	if i < 0 || plan.Candidates[i].SharesName != "gh" {
+		t.Errorf("candidates = %+v; want gh-2 sharing gh, not the github mini already has", plan.Candidates)
 	}
 }

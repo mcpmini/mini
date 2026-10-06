@@ -125,8 +125,8 @@ func (s *importScreen) unpickedReason(c initcmd.Candidate) string {
 	case c.Reason == initcmd.SkipSwitchedOff:
 		return "switched off in " + agentList(c)
 	}
-	reason := "another config named " + initcmd.NormalizeName(c.From[0].Name)
-	if primary, ok := s.primaryOf(c); ok {
+	reason := "another config named " + c.SharesName
+	if primary, ok := s.named(c.SharesName); ok {
 		if differences := agents.ConnectionDifferences(primary.Server, c.Server); len(differences) > 0 {
 			reason += ": different " + strings.Join(differences, ", ")
 		}
@@ -135,28 +135,12 @@ func (s *importScreen) unpickedReason(c initcmd.Candidate) string {
 }
 
 // Two configs under one name often share a target, so the row says what sets them apart.
-// The first config usually holds the name itself; one imported under another name may only list it.
-func (s *importScreen) primaryOf(second initcmd.Candidate) (initcmd.Candidate, bool) {
-	name := initcmd.NormalizeName(second.From[0].Name)
-	var listsName []initcmd.Candidate
-	for _, c := range s.candidates {
-		if c.Reason == initcmd.SkipSecondConfig || c.Server.Name == second.Server.Name {
-			continue
-		}
-		if c.Server.Name == name {
-			return c, true
-		}
-		if slices.ContainsFunc(
-			c.From,
-			func(e initcmd.AgentEntry) bool { return initcmd.NormalizeName(e.Name) == name },
-		) {
-			listsName = append(listsName, c)
-		}
-	}
-	if len(listsName) == 0 {
+func (s *importScreen) named(name string) (initcmd.Candidate, bool) {
+	i := slices.IndexFunc(s.candidates, func(c initcmd.Candidate) bool { return c.Server.Name == name })
+	if i < 0 {
 		return initcmd.Candidate{}, false
 	}
-	return listsName[0], true
+	return s.candidates[i], true
 }
 
 // A long command would crowd out the other columns.
