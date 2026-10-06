@@ -162,10 +162,11 @@ it sits in the middle — surface upstream health to the *model*, which the agen
   its window reaches clients through `list_changed`.
 - **A per-upstream connect timeout** bounds when a server is marked degraded, so one slow
   upstream never blocks the others.
-- **Surface degraded upstreams to the model.** `config{action:"status"}` lists servers that are
-  `starting` or `unavailable` with a reason, and a call to a missing tool on such a server returns
-  that state (`server_starting`, `server_delayed`, `server_needs_auth`, ...) instead of
-  `not_found` (#279). The Layer-1 handshake `instructions` aren't used for this yet.
+- **Surface degraded upstreams to the model.** `config{action:"status"}` lists the servers still
+  `starting`, and the `unavailable` ones with a reason. A call to a tool on a server that isn't
+  connected returns its state (`server_starting`, `server_delayed`, `server_needs_auth`, ...) as a
+  tool error, where it used to be `not_found` (or invalid params in proxy mode) (#279). The
+  Layer-1 handshake `instructions` aren't used for this yet.
 
 Connection-robustness and degraded-upstream reporting are tracked in
 [issue #33](https://github.com/mcpmini/mini/issues/33).

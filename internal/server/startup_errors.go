@@ -12,14 +12,16 @@ type errServerNotReady struct{ env *response.Envelope }
 func (e errServerNotReady) Error() string { return e.env.Message }
 
 func (s *Server) lookupTool(server, tool string) (*registry.ToolEntry, error) {
-	entry, err := s.reg.Lookup(toolFullName(server, tool))
-	if err == nil {
-		return entry, nil
-	}
+	// State first: a server is marked ready only after its tools are registered, so a server that
+	// becomes ready in between is found by the lookup instead of reported as not_found.
 	if env, notReady := s.serverNotReadyError(server); notReady {
 		return nil, errServerNotReady{env}
 	}
-	return nil, errLookup{err}
+	entry, err := s.reg.Lookup(toolFullName(server, tool))
+	if err != nil {
+		return nil, errLookup{err}
+	}
+	return entry, nil
 }
 
 func (s *Server) serverNotReadyError(server string) (*response.Envelope, bool) {
