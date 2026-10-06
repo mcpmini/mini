@@ -65,6 +65,8 @@ func runInitCommand(configDir string, f initFlags) error {
 	case !isTerminal(os.Stdin) || !isTerminal(os.Stdout):
 		printNoTerminalHelp(os.Stderr)
 		return &exitError{code: 1, err: errors.New("no terminal")}
+	case os.Getenv("MINI_NEW_INIT") == "1":
+		return runFullScreenInit(configDir)
 	}
 	runInit(configDir)
 	return nil
