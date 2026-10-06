@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/catalog"
 )
@@ -112,6 +113,27 @@ func isTerminal(f *os.File) bool {
 
 func printNoTerminalHelp(w io.Writer) {
 	fmt.Fprint(w, noTerminalHelp)
+}
+
+var errInitQuit = errors.New("init quit; nothing was written")
+
+// The full-screen init imports from every agent found, like --import, and lets the user choose.
+func runFullScreenInit(configDir string) error {
+	setup, err := unattendedRun(configDir, initFlags{importAll: true})
+	if err != nil {
+		return err
+	}
+	plan, quit, err := tui.Run(tui.Params{Setup: setup})
+	switch {
+	case err != nil:
+		return err
+	case quit:
+		return &exitError{code: 1, err: errInitQuit}
+	}
+	if err := createConfigDirs(configDir); err != nil {
+		return fmt.Errorf("create config dirs: %w", err)
+	}
+	return printReport(setup.Write(plan))
 }
 
 func printReport(report initcmd.Report) error {
