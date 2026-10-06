@@ -151,26 +151,12 @@ func TestReport_failed(t *testing.T) {
 		report Report
 		want   bool
 	}{
-		"nothing failed":        {Report{Connected: []AgentResult{{}}}, false},
+		"nothing failed":        {Report{}, false},
 		"a server write failed": {Report{WriteErrors: []ServerError{{Name: "x", Err: errors.New("disk full")}}}, true},
 		"servers can't be read": {Report{StatusErr: errors.New("permission denied")}, true},
-		"an agent edit failed":  {Report{Connected: []AgentResult{{Err: errors.New("inline table")}}}, true},
 	} {
 		if got := tt.report.Failed(); got != tt.want {
 			t.Errorf("%s: Failed() = %v, want %v", name, got, tt.want)
 		}
-	}
-}
-
-func TestRunFlags_addAloneImportsNothing(t *testing.T) {
-	f := newApplyFixture(t)
-	f.write(t, "Claude Code", `{"mcpServers":{"files":{"command":"files-server"}}}`)
-
-	RunFlags(
-		FlagRun{ConfigDir: f.configDir, Add: []catalog.Entry{{Name: "notion", URL: "https://notion.example.com/mcp"}}},
-	)
-
-	if got := configuredNames(t, f.configDir); !reflect.DeepEqual(got, []string{"notion"}) {
-		t.Errorf("configured = %v, want only notion", got)
 	}
 }

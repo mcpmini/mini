@@ -10,58 +10,13 @@ import (
 	"github.com/mcpmini/mini/internal/agents"
 )
 
-func writeConnected(b *strings.Builder, r Report) {
-	var changed []string
-	for _, result := range r.Connected {
-		writeAgentResult(b, r, result)
-		if result.Err == nil && (result.Backup != "" || result.Created) {
-			changed = append(changed, result.Agent.Name)
-		}
-	}
-	if len(changed) > 0 {
-		fmt.Fprintf(b, "\nRestart %s to start using mini.\n", joinAnd(changed))
-	}
-}
-
-func writeAgentResult(b *strings.Builder, r Report, result AgentResult) {
-	name, file := result.Agent.Name, result.Agent.ConfigPath
-	switch {
-	case result.Err != nil:
-		fmt.Fprintf(
-			b,
-			"\nCould not connect %s: %v\nAdd mini to %s by hand:\n%s\n",
-			name,
-			result.Err,
-			file,
-			indent(manualStep(result.Agent, r.Mini), "  "),
-		)
-		return
-	case result.Created:
-		fmt.Fprintf(b, "\n%s: created %s; to undo: rm %s\n", name, file, shellQuote(file))
-	case result.Backup != "":
-		fmt.Fprintf(
-			b,
-			"\n%s: %s backed up to %s; to undo: cp %s %s\n",
-			name,
-			file,
-			result.Backup,
-			shellQuote(result.Backup),
-			shellQuote(file),
-		)
-	}
-	for _, kept := range result.Kept {
-		fmt.Fprintf(
-			b,
-			"  %s stays in %s: mini's %s failed its connection check: %v\n",
-			kept.Entry,
-			name,
-			kept.Server,
-			kept.Err,
-		)
-	}
-	for _, entry := range result.Changed {
-		fmt.Fprintf(b, "  %s stays in %s: it changed after it was checked\n", entry, name)
-	}
+// ConnectSteps is how to connect mini to each agent by hand; an agent already running mini gets no step.
+func ConnectSteps(configDir, selfPath string, connectable []agents.Agent) string {
+	r := Report{ConfigDir: configDir, Mini: MiniCommand(configDir)}
+	FlagRun{ConfigDir: configDir, Connectable: connectable, SelfPath: selfPath}.sortByMini(&r)
+	var b strings.Builder
+	writeManualConnect(&b, r)
+	return b.String()
 }
 
 func writeManualConnect(b *strings.Builder, r Report) {
@@ -141,11 +96,4 @@ func shellQuote(s string) string {
 
 func indent(s, prefix string) string {
 	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
-}
-
-func joinAnd(names []string) string {
-	if len(names) == 1 {
-		return names[0]
-	}
-	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }

@@ -305,15 +305,35 @@ func TestResolveFromSource_explicitFileWorksWithoutHome(t *testing.T) {
 	}
 }
 
-func TestShellQuoted(t *testing.T) {
-	for in, want := range map[string]string{
-		"/usr/local/bin/mini": "/usr/local/bin/mini",
-		"/Users/a b/bin/mini": "'/Users/a b/bin/mini'",
-		"/opt/it's/mini":      `'/opt/it'\''s/mini'`,
-		"/opt/$HOME/mini":     "'/opt/$HOME/mini'",
+func TestImportSources(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	testutil.WriteFile(t, filepath.Join(home, ".cursor", "mcp.json"), `{"mcpServers":{}}`)
+	team := filepath.Join(t.TempDir(), "team.json")
+	testutil.WriteFile(t, team, `{"mcpServers":{}}`)
+	for name, tt := range map[string]struct {
+		flags initFlags
+		want  []string
+	}{
+		"--add alone imports nothing":         {initFlags{add: []string{"notion"}, addGiven: true}, nil},
+		"--import reads every detected agent": {initFlags{importAll: true}, []string{"Cursor"}},
+		"--from reads only its source":        {initFlags{from: team}, []string{team}},
 	} {
-		if got := shellQuoted(in); got != want {
-			t.Errorf("shellQuoted(%q) = %s, want %s", in, got, want)
-		}
+		t.Run(name, func(t *testing.T) {
+			sources, err := importSources(tt.flags)
+			var got []string
+			for _, source := range sources {
+				got = append(got, source.Name)
+			}
+			if err != nil || !slices.Equal(got, tt.want) {
+				t.Errorf("sources = %v, %v; want %v", got, err, tt.want)
+			}
+		})
 	}
+	t.Run("an unreadable --from source is an error", func(t *testing.T) {
+		if _, err := importSources(initFlags{from: filepath.Join(t.TempDir(), "missing.json")}); err == nil {
+			t.Error("want an error for a source that can't be read")
+		}
+	})
 }

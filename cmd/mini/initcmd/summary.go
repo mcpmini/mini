@@ -17,13 +17,9 @@ func Summary(r Report) string {
 	writeServers(&b, r)
 	writeIgnored(&b, r)
 	writeUnusedEnvHeaders(&b, r)
-	writeSkipped(&b, r.Skipped)
+	writeSkipped(&b, r)
 	writeFailures(&b, r)
-	if r.Connected == nil {
-		writeManualConnect(&b, r)
-	} else {
-		writeConnected(&b, r)
-	}
+	writeManualConnect(&b, r)
 	return b.String()
 }
 
@@ -104,26 +100,31 @@ func (r Report) miniCommand(args ...string) string {
 	return strings.Join(append(words, args...), " ")
 }
 
-func writeSkipped(b *strings.Builder, skipped []SkippedServer) {
-	if len(skipped) > 0 {
+func writeSkipped(b *strings.Builder, r Report) {
+	if len(r.Skipped) > 0 {
 		fmt.Fprintln(b, "\nNot imported:")
 	}
-	for _, s := range skipped {
-		fmt.Fprintf(b, "  %s\n", skippedLine(s))
+	for _, s := range r.Skipped {
+		fmt.Fprintf(b, "  %s\n", skippedLine(s, r.ConfigDir))
 	}
 }
 
-func skippedLine(s SkippedServer) string {
+func skippedLine(s SkippedServer, configDir string) string {
 	switch s.Reason {
 	case SkipEmptyName:
 		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
 	case SkipSwitchedOff:
 		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
 	case SkipSecondConfig:
+		return fmt.Sprintf("%s in %s: a different config under that name is imported instead", s.Name, s.Agent)
+	case SkipNameInMini:
+		name := NormalizeName(s.Name)
 		return fmt.Sprintf(
-			"%s in %s: a different config under that name is imported instead; run mini init to pick both",
+			"%s in %s: mini already has a different %s; to use this one, edit %s",
 			s.Name,
 			s.Agent,
+			name,
+			config.ServerPath(configDir, name),
 		)
 	}
 	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))

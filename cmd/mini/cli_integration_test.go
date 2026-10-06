@@ -234,6 +234,8 @@ func TestIntegrationCLI_test_unreachableServer(t *testing.T) {
 
 func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 	bin := miniBin(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	cfg := t.TempDir()
 
 	stdout, _, code := run(t, bin, cfg, "init", "--import")
@@ -270,6 +272,8 @@ func writeClaudeConfigFile(t *testing.T) string {
 
 func TestIntegrationCLI_init_importFromClaude(t *testing.T) {
 	bin := miniBin(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	cfg := t.TempDir()
 	claudeConfig := writeClaudeConfigFile(t)
 	_, _, code := run(t, bin, cfg, "init", "--from", claudeConfig)

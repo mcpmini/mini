@@ -13,6 +13,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/clock"
 )
@@ -89,7 +90,7 @@ func runInit(configDir string) {
 	)
 	runInitCatalogSelection(catalogStepParams{configDir: configDir, ask: p.ask})
 	runLoginStep(newLoginStepParams(configDir, p))
-	printInstallInstructions()
+	printConnectSteps(configDir)
 }
 
 func newLoginStepParams(configDir string, p prompter) loginStepParams {
@@ -177,60 +178,9 @@ func createConfigDirs(configDir string) error {
 	return nil
 }
 
-func resolveInstallBinPath() string {
-	binPath, _ := os.Executable()
-	if binPath == "" {
-		return "/usr/local/bin/mini"
-	}
-	return binPath
-}
-
-func printInstallInstructions() {
-	binPath := resolveInstallBinPath()
-	fmt.Println("\nTo connect mini to your agent:")
-	detected := agents.Detect()
-	if len(detected) == 0 {
-		fmt.Println()
-		fmt.Println("  Add to your agent's MCP config:")
-		fmt.Println(indent(renderMinimcpInstallJSON(binPath), "    "))
-		return
-	}
-	for _, a := range detected {
-		printAgentInstall(a, binPath)
-	}
-}
-
-func shellQuoted(arg string) string {
-	if !strings.ContainsAny(arg, " \t\n'\"\\$`;&|<>()*?[]{}!#~") {
-		return arg
-	}
-	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
-}
-
-func printAgentInstall(a agents.Agent, binPath string) {
-	fmt.Println()
-	switch a.Name {
-	case "Claude Code":
-		fmt.Println("  Claude Code:")
-		fmt.Println("    claude mcp add mini " + shellQuoted(binPath) + " connect")
-		return
-	case "Codex":
-		fmt.Println("  Codex:")
-		fmt.Println("    codex mcp add mini -- " + shellQuoted(binPath) + " connect")
-		return
-	}
-	fmt.Printf("  %s — add to %s:\n", a.Name, a.ConfigPath)
-	fmt.Println(indent(renderMinimcpInstallJSON(binPath), "    "))
-}
-
-func indent(s, prefix string) string {
-	lines := strings.Split(s, "\n")
-	for i, l := range lines {
-		if l != "" {
-			lines[i] = prefix + l
-		}
-	}
-	return strings.Join(lines, "\n")
+func printConnectSteps(configDir string) {
+	run := withAgentsToConnect(initcmd.FlagRun{ConfigDir: configDir})
+	fmt.Print(initcmd.ConnectSteps(configDir, run.SelfPath, run.Connectable))
 }
 
 type prompter struct {

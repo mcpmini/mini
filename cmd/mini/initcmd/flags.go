@@ -38,8 +38,6 @@ type Report struct {
 	AlreadyConfigured []string
 	// FromImport are --add names an imported server already covers, so the catalog's isn't added.
 	FromImport []string
-	// Connected holds one result per agent Connect touched; nil when nothing was connected.
-	Connected []AgentResult
 	// Unconnected are agents the summary shows how to connect by hand.
 	Unconnected []agents.Agent
 	// HasMini are agents whose mini entry serves this config directory; it is the user's, so
@@ -53,15 +51,7 @@ type Report struct {
 }
 
 func (r Report) Failed() bool {
-	if len(r.WriteErrors) > 0 || r.StatusErr != nil {
-		return true
-	}
-	for _, result := range r.Connected {
-		if result.Err != nil {
-			return true
-		}
-	}
-	return false
+	return len(r.WriteErrors) > 0 || r.StatusErr != nil
 }
 
 func RunFlags(p FlagRun) Report {

@@ -132,14 +132,17 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 			nil,
 		},
 		{
-			"a configured name is left out whatever its config",
+			"a config under a name mini has is left in its agent and named",
 			[]agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Codex", map[string]agents.Server{"github": b}),
 			},
 			[]string{"GitHub"},
 			nil,
-			nil,
+			[]SkippedServer{
+				{Agent: "Claude Code", Name: "github", Reason: SkipNameInMini},
+				{Agent: "Codex", Name: "github", Reason: SkipNameInMini},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -171,6 +174,34 @@ func TestPlanImport_aServerMiniHasUnderAnotherNameIsLeftOut(t *testing.T) {
 	})
 	if len(plan.Servers) != 0 || len(plan.Skipped) != 0 {
 		t.Errorf("plan = %+v, want nothing: mini already has this server as gh", plan)
+	}
+}
+
+func TestPlanImport_anAgentEntryUnderAConfiguredName(t *testing.T) {
+	mine := config.ServerConfig{Name: "github", Transport: "http", URL: "https://a.example.com/mcp"}
+	for name, tt := range map[string]struct {
+		url         string
+		wantSkipped []SkippedServer
+	}{
+		"with mini's config is already imported": {"https://a.example.com/mcp", nil},
+		"with another config is named":           {"https://b.example.com/mcp", []SkippedServer{{Agent: "Claude Code", Name: "github", Reason: SkipNameInMini}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan := PlanImport(ImportParams{
+				Agents: []agents.Agent{
+					agentWith("Claude Code", map[string]agents.Server{"github": remoteEntry(tt.url, "")}),
+				},
+				Configured: []config.ServerConfig{mine},
+			})
+			if len(plan.Servers) != 0 || !reflect.DeepEqual(plan.Skipped, tt.wantSkipped) {
+				t.Errorf(
+					"servers = %+v, skipped = %+v; want none imported and skipped %+v",
+					plan.Servers,
+					plan.Skipped,
+					tt.wantSkipped,
+				)
+			}
+		})
 	}
 }
 

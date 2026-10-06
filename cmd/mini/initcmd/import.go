@@ -28,6 +28,7 @@ const (
 	SkipUnexpandableRefs
 	SkipSwitchedOff
 	SkipSecondConfig
+	SkipNameInMini
 )
 
 // SkippedServer is an agent entry init leaves in the agent; the summary says why.
@@ -86,34 +87,33 @@ func (p ImportParams) importable(plan *ImportPlan) []agentEntry {
 		}
 		for _, name := range slices.Sorted(maps.Keys(servers)) {
 			e := agentEntry{agent: agent.Name, name: name, server: servers[name]}
-			if !p.offered(e, configuredNames) {
-				continue
-			}
-			if skip, ok := skipReason(e); ok {
+			switch skip, ok := skipReason(e, configuredNames); {
+			case !p.offered(e):
+			case ok:
 				plan.Skipped = append(plan.Skipped, skip)
-				continue
+			default:
+				importable = append(importable, e)
 			}
-			importable = append(importable, e)
 		}
 	}
 	return importable
 }
 
-// mini's copy wins over an agent's for a configured name, whatever its config, and for a
-// configured server under another name. Whatever an agent has under mini's own key is never
-// imported.
-func (p ImportParams) offered(e agentEntry, configuredNames map[string]bool) bool {
-	name := NormalizeName(e.name)
-	return name != agents.MiniKey && !configuredNames[name] && !agents.IsMiniEntry(e.server.Config, p.SelfPath) &&
+// Whatever an agent has under mini's own key, mini itself, and a server mini already has under
+// any name are left out without a word: there's nothing for the user to do about them.
+func (p ImportParams) offered(e agentEntry) bool {
+	return NormalizeName(e.name) != agents.MiniKey && !agents.IsMiniEntry(e.server.Config, p.SelfPath) &&
 		!slices.ContainsFunc(
 			p.Configured,
 			func(sc config.ServerConfig) bool { return agents.SameServer(sc, e.server.Config) },
 		)
 }
 
-func skipReason(e agentEntry) (SkippedServer, bool) {
+func skipReason(e agentEntry, configuredNames map[string]bool) (SkippedServer, bool) {
 	skip := SkippedServer{Agent: e.agent, Name: e.name}
 	switch {
+	case configuredNames[NormalizeName(e.name)]:
+		skip.Reason = SkipNameInMini
 	case NormalizeName(e.name) == "":
 		skip.Reason = SkipEmptyName
 	case !e.server.Candidate():

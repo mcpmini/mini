@@ -475,6 +475,8 @@ func TestIntegrationCLI_status_failsWhenAServersProjectionsFailToLoad(t *testing
 }
 
 func TestIntegrationCLI_init_withoutATerminalOrFlagsWritesNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	cfg := filepath.Join(t.TempDir(), "config")
 	_, stderr, code := runCLI(t, cfg, "init")
 	if code != 1 || !strings.Contains(stderr, "mini init --import") {
@@ -486,6 +488,8 @@ func TestIntegrationCLI_init_withoutATerminalOrFlagsWritesNothing(t *testing.T) 
 }
 
 func TestIntegrationCLI_init_fromWithImportIsAUsageError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	_, _, code := runCLI(t, t.TempDir(), "init", "--import", "--from", "cursor")
 	if code != 2 {
 		t.Errorf("init --import --from = exit %d, want 2", code)
@@ -493,6 +497,8 @@ func TestIntegrationCLI_init_fromWithImportIsAUsageError(t *testing.T) {
 }
 
 func TestIntegrationCLI_init_CreatesDirectories(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "init", "--import")
 	if code != 0 {
@@ -506,6 +512,8 @@ func TestIntegrationCLI_init_CreatesDirectories(t *testing.T) {
 }
 
 func TestIntegrationCLI_init_FromPath(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	claudePath := writeClaudeConfig(t, map[string]any{
 		"command": "npx",
 		"args":    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
@@ -521,6 +529,8 @@ func TestIntegrationCLI_init_FromPath(t *testing.T) {
 }
 
 func TestIntegrationCLI_init_fromWithOAuthServer_listsTheLoginBeforeHowToConnect(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	claudePath := writeClaudeConfig(t, map[string]any{"type": "http", "url": "https://slack.com/mcp"})
 	cfg := t.TempDir()
 	stdout, _, code := runCLI(t, cfg, "init", "--from", claudePath)
