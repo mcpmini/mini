@@ -35,11 +35,11 @@ func (s *Server) getProjection(session *Session, p configureParams) (any, error)
 }
 
 func (s *Server) upstreamToolName(server, visibleTool string) (tool string, listed bool) {
-	if tool, ok := s.toolForAlias(server, visibleTool); ok {
-		return tool, true
-	}
 	if entry, ok := s.reg.LookupWithHidden(toolFullName(server, visibleTool)); ok {
 		return entry.ToolName.UpstreamName, true
+	}
+	if tool, ok := s.toolForAlias(server, visibleTool); ok {
+		return tool, true
 	}
 	return visibleTool, false
 }
