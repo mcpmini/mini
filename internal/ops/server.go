@@ -5,13 +5,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/fileio"
 )
 
 var ErrAlreadyConfigured = errors.New("already configured")
@@ -76,16 +72,9 @@ func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) 
 	if err != nil {
 		return AddedServer{}, err
 	}
-	path := config.ServerPath(configDir, sc.Name)
-	data, err := yaml.Marshal(written)
+	path, err := config.CreateServerFile(configDir, written)
 	if err != nil {
 		return AddedServer{}, err
-	}
-	if err := config.ValidateServerFile(path, data); err != nil {
-		return AddedServer{}, err
-	}
-	if err := writeNewFile(path, data); err != nil {
-		return AddedServer{}, fmt.Errorf("write %s: %w", path, err)
 	}
 	return AddedServer{
 		Config:             written,
@@ -93,13 +82,6 @@ func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) 
 		DefaultPermissions: defaultPermissions,
 		DefaultProjections: defaultProjections,
 	}, nil
-}
-
-func writeNewFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
-	return fileio.CreateFile(path, data, 0o600)
 }
 
 func validServerName(name string) error {
