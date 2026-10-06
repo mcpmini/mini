@@ -4,11 +4,13 @@ package server_test
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -67,7 +69,7 @@ func TestMissingTool_aConfiguredServerThatIsNotConnectedSaysWhy(t *testing.T) {
 			url, _ := gatedUpstream(t)
 			return connectWithFakeClock(t, httpServer("svc", url))
 		}},
-		{name: "delayed", want: "server_unavailable", wantRetryable: true, start: func(t *testing.T) startupRetry {
+		{name: "delayed", want: "server_delayed", wantRetryable: true, start: func(t *testing.T) startupRetry {
 			url, _ := gatedUpstream(t)
 			r := connectWithFakeClock(t, httpServer("svc", url))
 			r.clock.Advance(startupHold)
@@ -145,4 +147,23 @@ func rpcErrorCode(resp map[string]any) float64 {
 	errVal, _ := resp["error"].(map[string]any)
 	code, _ := errVal["code"].(float64)
 	return code
+}
+
+func TestMissingTool_aNotReadyErrorFollowsTheConfiguredResponseFormatOnEveryCompactSurface(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.DangerousAllowPrivateURLs = true
+	cfg.ResponseFormat = config.FormatToon
+	srv := newTestServer(t, server.Params{Config: cfg, Logger: slog.New(discardLogs()), Clock: clock.NewFake()})
+	url, _ := gatedUpstream(t)
+	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{httpServer("svc", url)})
+
+	for _, surface := range missingToolSurfaces {
+		if surface.name == "proxy call" {
+			continue
+		}
+		text := toolResultText(t, surface.call(t, srv))
+		if strings.HasPrefix(strings.TrimSpace(text), "{") || !strings.Contains(text, "server_starting") {
+			t.Errorf("%s returned %q, want a TOON server_starting error", surface.name, text)
+		}
+	}
 }

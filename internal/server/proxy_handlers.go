@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -37,11 +38,11 @@ func (s *Server) handleProxyCall(
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
-	entry, err := s.reg.Lookup(server + "." + tool)
+	entry, err := s.lookupTool(server, tool)
+	if notReady := (errServerNotReady{}); errors.As(err, &notReady) {
+		return notReady.env, nil
+	}
 	if err != nil {
-		if env, unavailable := s.unavailableServerError(server); unavailable {
-			return env, nil
-		}
 		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
 	}
 	req, err := parseProxyRequest(args)

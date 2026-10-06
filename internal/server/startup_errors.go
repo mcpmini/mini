@@ -1,10 +1,28 @@
 package server
 
-import "github.com/mcpmini/mini/internal/response"
+import (
+	"github.com/mcpmini/mini/internal/registry"
+	"github.com/mcpmini/mini/internal/response"
+)
 
-// A missing tool on a configured server that isn't connected gets the server's state instead of
+// A missing tool on a configured server that isn't connected reports the server's state instead of
 // not_found, so the agent can tell "wait", "ask the user" and "doesn't exist" apart (#279).
-func (s *Server) unavailableServerError(server string) (*response.Envelope, bool) {
+type errServerNotReady struct{ env *response.Envelope }
+
+func (e errServerNotReady) Error() string { return e.env.Message }
+
+func (s *Server) lookupTool(server, tool string) (*registry.ToolEntry, error) {
+	entry, err := s.reg.Lookup(toolFullName(server, tool))
+	if err == nil {
+		return entry, nil
+	}
+	if env, notReady := s.serverNotReadyError(server); notReady {
+		return nil, errServerNotReady{env}
+	}
+	return nil, errLookup{err}
+}
+
+func (s *Server) serverNotReadyError(server string) (*response.Envelope, bool) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
 	if !s.configServers[server] {
@@ -22,7 +40,7 @@ func (st startupState) errorCode() string {
 	case phaseConnecting:
 		return "server_starting"
 	case phaseDelayed:
-		return "server_unavailable"
+		return "server_delayed"
 	}
 	switch st.failure.kind {
 	case failureNeedsAuth:
