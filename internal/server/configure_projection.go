@@ -14,7 +14,7 @@ type projectionRules struct {
 	Server  *config.ProjectionConfig `json:"server,omitempty"`
 }
 
-func (s *Server) projectionRules(server, tool string, session *Session) projectionRules {
+func (s *Server) rulesFor(server, tool string, session *Session) projectionRules {
 	rules := projectionRules{Session: session.Projection(toolFullName(server, tool))}
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
@@ -30,7 +30,7 @@ func (s *Server) getProjection(session *Session, p configureParams) (any, error)
 		return nil, fmt.Errorf("unknown server %q", p.ServerName)
 	}
 	tool, listed := s.upstreamToolName(p.ServerName, p.Tool)
-	rules := s.projectionRules(p.ServerName, tool, session)
+	rules := s.rulesFor(p.ServerName, tool, session)
 	if !listed && rules.Session == nil && rules.Server == nil && s.isUpstreamRegistered(p.ServerName) {
 		return nil, fmt.Errorf("server %q has no tool %q", p.ServerName, p.Tool)
 	}

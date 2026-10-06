@@ -151,6 +151,9 @@ func TestConfigureProjection_beforeConnectingDropsTheAliasesTheServerWouldReject
 		srv := newServerAwaitingAuthorization(t, sessionID, map[string]*config.ProjectionConfig{"getData": aliased, "other": other})
 
 		assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": other}})
+		postMCP(t, srv, sessionID, configCall(11, map[string]any{"action": "set_projection", "server": "svc", "tool": "other", "projection": map[string]any{"exclude": []string{"c"}}}))
+		assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": aliased}})
+		assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": {Exclude: []string{"c"}}}})
 	})
 	t.Run("an alias two tools claim", func(t *testing.T) {
 		const sessionID = "cccccccc-cccc-cccc-cccc-000000000020"
