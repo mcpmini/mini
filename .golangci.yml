@@ -25,6 +25,7 @@ linters:
 
   settings:
     gosec:
+      # Rule descriptions: https://github.com/securego/gosec/blob/v2.29.0/RULES.md#rules-list
       includes:
         - G106
         - G110
