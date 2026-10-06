@@ -177,9 +177,7 @@ func (s *Server) logReloadProblems(servers config.Servers) {
 }
 
 func (s *Server) brokenServerOutcome(name string) string {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	if s.upstreams[name] != nil || s.configServers[name] {
+	if s.isKnownServer(name) {
 		return "keeping the config it last loaded"
 	}
 	return "skipping the server"

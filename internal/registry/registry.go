@@ -299,6 +299,12 @@ func (r *Registry) Lookup(fullName string) (*ToolEntry, error) {
 	return e, nil
 }
 
+func (r *Registry) LookupWithHidden(fullName string) (*ToolEntry, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.entryByFullNameLocked(fullName)
+}
+
 func (r *Registry) AllFull() []*ToolEntry {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
