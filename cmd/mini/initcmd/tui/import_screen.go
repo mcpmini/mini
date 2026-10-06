@@ -88,6 +88,16 @@ func (s *importScreen) empty() bool {
 	return len(s.candidates) == 0
 }
 
+func (s *importScreen) ticked() []config.ServerConfig {
+	var servers []config.ServerConfig
+	for _, c := range s.candidates {
+		if s.list.checked[c.Server.Name] {
+			servers = append(servers, c.Server)
+		}
+	}
+	return servers
+}
+
 func (s *importScreen) pick(candidates []initcmd.Candidate) {
 	for i := range candidates {
 		candidates[i].Picked = s.list.checked[candidates[i].Server.Name]

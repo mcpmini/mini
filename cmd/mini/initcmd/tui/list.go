@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -13,11 +14,19 @@ type row struct {
 	detail string
 	// subtitle is a dim line under the row; it never scrolls out of view with the cursor on it.
 	subtitle string
+	// section is the heading the row is listed under; consecutive rows share one heading.
+	section string
+	// search is text the filter matches that the row doesn't show.
+	search string
+	// repeated marks a row listed again under another section; the filter shows each row once.
+	repeated bool
 }
 
 func (r row) matches(filter string) bool {
 	filter = strings.ToLower(filter)
-	return strings.Contains(strings.ToLower(r.label), filter) || strings.Contains(strings.ToLower(r.detail), filter)
+	return slices.ContainsFunc([]string{r.label, r.detail, r.search}, func(text string) bool {
+		return strings.Contains(strings.ToLower(text), filter)
+	})
 }
 
 // The cursor indexes the rows the filter shows.
@@ -42,7 +51,7 @@ func (l *list) visible() []row {
 	}
 	var shown []row
 	for _, r := range l.rows {
-		if r.matches(l.filter) {
+		if !r.repeated && r.matches(l.filter) {
 			shown = append(shown, r)
 		}
 	}

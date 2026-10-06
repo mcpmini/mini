@@ -171,3 +171,23 @@ func TestApp_aLineWiderThanTheWindowIsCutSoTheFooterStaysPut(t *testing.T) {
 		)
 	}
 }
+
+type enteredScreen struct {
+	fakeScreen
+	entered int
+}
+
+func (s *enteredScreen) enter() { s.entered++ }
+
+func TestApp_aScreenIsToldEachTimeItIsShownAgain(t *testing.T) {
+	first, second := &enteredScreen{
+		fakeScreen: fakeScreen{name: "First"},
+	}, &enteredScreen{
+		fakeScreen: fakeScreen{name: "Second"},
+	}
+	a := sized(newApp([]screen{first, second}))
+	send(a, "enter", "esc", "enter")
+	if first.entered != 1 || second.entered != 2 {
+		t.Errorf("entered: first %d, second %d; want 1 and 2, once per arrival", first.entered, second.entered)
+	}
+}

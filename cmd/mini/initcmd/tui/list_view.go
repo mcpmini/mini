@@ -58,9 +58,19 @@ func (l *list) scrollTo(line, rowHeight, height int) {
 
 func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
 	width := l.labelWidth()
+	section := ""
 	for i, r := range l.visible() {
+		if r.section != section && len(lines) > 0 {
+			lines = append(lines, "")
+		}
+		start := len(lines)
+		if r.section != section {
+			lines = append(lines, bold.Render(r.section))
+			section = r.section
+		}
 		if i == l.cursor {
-			cursorLine, cursorHeight = len(lines), 1
+			// The block starts at the heading, so scrolling up to a section's first row shows its heading.
+			cursorLine, cursorHeight = start, len(lines)-start+1
 		}
 		lines = append(lines, l.line(r, i == l.cursor, width))
 		if r.subtitle != "" {
