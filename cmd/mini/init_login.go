@@ -14,7 +14,6 @@ import (
 
 type loginStepParams struct {
 	configDir string
-	autoYes   bool
 	confirm   func(string) bool
 	ask       func(string) string
 	logIn     func(logInParams) (*oauth2.Token, error)
@@ -79,9 +78,6 @@ func printLoginCandidates(out io.Writer, candidates []loginCandidate) {
 }
 
 func chooseLoginCandidates(p loginStepParams, candidates []loginCandidate) []loginCandidate {
-	if p.autoYes {
-		return nil
-	}
 	choice := strings.ToLower(strings.TrimSpace(p.ask("Log in now? [a]ll / [p]ick / [s]kip")))
 	if choice == "a" || choice == "all" {
 		return candidates

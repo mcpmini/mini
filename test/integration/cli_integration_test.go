@@ -474,9 +474,67 @@ func TestIntegrationCLI_status_failsWhenAServersProjectionsFailToLoad(t *testing
 	}
 }
 
-func TestIntegrationCLI_init_CreatesDirectories(t *testing.T) {
+func TestIntegrationCLI_init_withoutATerminalOrFlagsWritesNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
+	cfg := filepath.Join(t.TempDir(), "config")
+	_, stderr, code := runCLI(t, cfg, "init")
+	if code != 1 || !strings.Contains(stderr, "mini init --import") {
+		t.Errorf("init without a terminal = exit %d, stderr %q; want 1 and the flags to use", code, stderr)
+	}
+	if _, err := os.Stat(cfg); !os.IsNotExist(err) {
+		t.Errorf("config dir after a refused init: %v, want it not created", err)
+	}
+}
+
+func TestIntegrationCLI_init_fromWithImportIsAUsageError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
+	_, _, code := runCLI(t, t.TempDir(), "init", "--import", "--from", "cursor")
+	if code != 2 {
+		t.Errorf("init --import --from = exit %d, want 2", code)
+	}
+}
+
+func TestIntegrationCLI_init_importWithAnUnreadableAgentConfigNamesItAndExits1(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	testutil.WriteFile(t, filepath.Join(home, ".claude.json"), `{"mcpServers":{"files":{"command":"files-server"}}}`)
+	cursorPath := filepath.Join(home, ".cursor", "mcp.json")
+	testutil.WriteFile(t, cursorPath, `{"mcpServers": {broken`)
 	cfg := t.TempDir()
-	_, _, code := runCLI(t, cfg, "init", "--yes")
+
+	stdout, _, code := runCLI(t, cfg, "init", "--import")
+
+	if code != 1 || !strings.Contains(stdout, "Could not read Cursor's config ("+cursorPath+")") {
+		t.Errorf("init --import = exit %d, stdout:\n%s\nwant 1 and Cursor's config named", code, stdout)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, "servers", "files.yaml")); err != nil {
+		t.Errorf("the readable agent's server wasn't imported: %v", err)
+	}
+}
+
+func TestIntegrationCLI_init_fromAFileThatCantBeReadWritesNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
+	cfg := filepath.Join(t.TempDir(), "config")
+
+	_, stderr, code := runCLI(t, cfg, "init", "--from", filepath.Join(t.TempDir(), "missing.json"))
+
+	if code != 1 || !strings.Contains(stderr, "missing.json") {
+		t.Errorf("init --from a missing file = exit %d, stderr %q; want 1 and the file named", code, stderr)
+	}
+	if _, err := os.Stat(cfg); !os.IsNotExist(err) {
+		t.Errorf("config dir after a failed --from: %v, want it not created", err)
+	}
+}
+
+func TestIntegrationCLI_init_CreatesDirectories(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
+	cfg := t.TempDir()
+	_, _, code := runCLI(t, cfg, "init", "--import")
 	if code != 0 {
 		t.Fatalf("init should exit 0, got %d", code)
 	}
@@ -488,32 +546,35 @@ func TestIntegrationCLI_init_CreatesDirectories(t *testing.T) {
 }
 
 func TestIntegrationCLI_init_FromPath(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	claudePath := writeClaudeConfig(t, map[string]any{
 		"command": "npx",
 		"args":    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
 	})
 	cfg := t.TempDir()
-	_, _, code := runCLI(t, cfg, "init", "--yes", "--from", claudePath)
+	_, _, code := runCLI(t, cfg, "init", "--from", claudePath)
 	if code != 0 {
-		t.Fatalf("init --yes --from PATH should exit 0, got %d", code)
+		t.Fatalf("init --from PATH should exit 0, got %d", code)
 	}
 	if _, err := os.Stat(filepath.Join(cfg, "servers", "imported-server.yaml")); err != nil {
 		t.Errorf("expected imported-server.yaml after init --from: %v", err)
 	}
 }
 
-func TestIntegrationCLI_init_yesWithOAuthServer_listsLoginReminderBeforeInstallInstructions(t *testing.T) {
+func TestIntegrationCLI_init_fromWithOAuthServer_listsTheLoginBeforeHowToConnect(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
 	claudePath := writeClaudeConfig(t, map[string]any{"type": "http", "url": "https://slack.com/mcp"})
 	cfg := t.TempDir()
-	stdout, _, code := runCLI(t, cfg, "init", "--yes", "--from", claudePath)
+	stdout, _, code := runCLI(t, cfg, "init", "--from", claudePath)
 	if code != 0 {
 		t.Fatalf("init exit = %d, stdout:\n%s", code, stdout)
 	}
 	markers := []string{
-		"imported 1 server(s)",
-		"OAuth login needed:",
-		"imported-server (no token)",
-		"  mini auth imported-server\n",
+		"mini is set up with 1 server, 1 still needs finishing:",
+		"imported-server  run: mini --config ",
+		"auth imported-server\n",
 		"To connect mini to your agent",
 	}
 	last := -1

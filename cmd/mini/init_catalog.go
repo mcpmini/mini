@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -21,12 +20,10 @@ import (
 
 type catalogStepParams struct {
 	configDir   string
-	autoYes     bool
 	loadCatalog func() ([]catalog.Entry, error)
 	ask         func(string) string
 	out         io.Writer
 	errOut      io.Writer
-	requested   []catalog.Entry
 }
 
 type catalogSource struct {
@@ -50,12 +47,6 @@ func (s catalogSource) entries() ([]catalog.Entry, error) {
 }
 
 func runCatalogStep(p catalogStepParams) error {
-	if len(p.requested) > 0 {
-		return addRequestedCatalogEntries(p)
-	}
-	if p.autoYes {
-		return nil
-	}
 	entries, err := p.loadCatalog()
 	if err != nil {
 		return err
@@ -133,36 +124,25 @@ func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {
 			continue
 		}
 		written, err := writeCatalogEntries(p, entries, indexes)
-		printSetupNotes(p.out, entries, written)
+		printSetupNotes(p, entries, written)
 		return err
 	}
 }
 
-const tokenSetupNote = `%s needs an access token: create one at %s, then add it to servers/%s.yaml, for example:
-  headers:
-    Authorization: Bearer ${%s}
-`
-
-const appSetupNote = `%s needs your own OAuth app: register one at %s with redirect URI %s, then add to servers/%s.yaml:
-  auth:
-    type: oauth2
-    client_id: <your app's client ID>
-and run: mini auth %s
-`
-
-func printSetupNotes(out io.Writer, entries []catalog.Entry, indexes []int) {
+func printSetupNotes(p catalogStepParams, entries []catalog.Entry, indexes []int) {
 	for _, index := range indexes {
-		switch e := entries[index]; e.Auth {
+		e := entries[index]
+		status := initcmd.ServerStatus{Name: e.Name, SetupURL: e.SetupURL}
+		switch e.Auth {
 		case catalog.AuthToken:
-			fmt.Fprintf(out, tokenSetupNote, e.Name, e.SetupURL, e.Name, tokenEnvVar(e.Name))
+			status.Readiness = initcmd.NeedsToken
 		case catalog.AuthOAuth2App:
-			fmt.Fprintf(out, appSetupNote, e.Name, e.SetupURL, auth.ResolvedCallbackURI(nil), e.Name, e.Name)
+			status.Readiness = initcmd.NeedsOwnApp
+		default:
+			continue
 		}
+		fmt.Fprintf(p.out, "%s %s\n", e.Name, initcmd.SetupStep(p.configDir, status))
 	}
-}
-
-func tokenEnvVar(serverName string) string {
-	return strings.ToUpper(strings.ReplaceAll(serverName, "-", "_")) + "_TOKEN"
 }
 
 func parseCatalogSelection(input string, count int) ([]int, error) {
@@ -220,7 +200,7 @@ func parseSelectionRange(token string) (int, int, error) {
 func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes []int) ([]int, error) {
 	var written []int
 	for _, index := range indexes {
-		added, err := ops.AddServer(p.configDir, catalogServerConfig(entries[index]))
+		added, err := ops.AddServer(p.configDir, initcmd.CatalogServer(entries[index]))
 		if errors.Is(err, ops.ErrAlreadyConfigured) {
 			fmt.Fprintf(p.out, "  %s already configured in mini\n", entries[index].Name)
 			continue
@@ -232,12 +212,4 @@ func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes [
 		written = append(written, index)
 	}
 	return written, nil
-}
-
-func catalogServerConfig(entry catalog.Entry) config.ServerConfig {
-	sc := config.ServerConfig{Name: entry.Name, Transport: "http", URL: entry.URL}
-	if entry.Auth == catalog.AuthOAuth2 && !sc.HasBundledAuth() {
-		sc.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}
-	}
-	return sc
 }

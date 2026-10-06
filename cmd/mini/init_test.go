@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -80,12 +82,6 @@ func TestPrompterConfirm(t *testing.T) {
 	p.confirm("Import?")
 	if out.String() != "Import? [y/N]: " {
 		t.Errorf("confirm prompt = %q, want %q", out.String(), "Import? [y/N]: ")
-	}
-}
-
-func TestAutoConfirmAccepts(t *testing.T) {
-	if !autoConfirm("Q") {
-		t.Error("autoConfirm = false, want true")
 	}
 }
 
@@ -219,7 +215,7 @@ env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 	t.Setenv("SEARCH_TOKEN", "")
 	os.Unsetenv("SEARCH_TOKEN") //nolint:errcheck // t.Setenv above restores it after the test
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
-	cmd.SetArgs([]string{"--yes"})
+	cmd.SetArgs([]string{"--import"})
 
 	out := testutil.CaptureStdout(t, func() {
 		if err := cmd.Execute(); err != nil {
@@ -242,15 +238,16 @@ env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 		}
 	}
 	for _, want := range []string{
-		"Codex: files imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
-			filepath.Join(configDir, "servers", "files.yaml"),
-		"Codex: search imported, but headers.Authorization: SEARCH_TOKEN isn't set where mini runs; set it, or edit " +
+		"mini is set up with 4 servers, 1 still needs finishing:",
+		"search  needs SEARCH_TOKEN set where mini runs (used in headers.Authorization), or edit " +
 			filepath.Join(configDir, "servers", "search.yaml"),
-		"Codex: paused not imported: switched off in the agent",
-		"Codex: templated kept in the agent: uses an environment variable in command or args",
-		"Codex: team imported with its static X-Team header, since MINI_TEST_NEVER_SET wasn't set; to use MINI_TEST_NEVER_SET instead, set X-Team: ${MINI_TEST_NEVER_SET} in " +
+		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
+			filepath.Join(configDir, "servers", "files.yaml"),
+		"[mcp_servers.mini]",
+		"  templated kept in Codex: uses an environment variable in command or args",
+		"  paused switched off in Codex",
+		"team was imported with its static X-Team header, since MINI_TEST_NEVER_SET wasn't set; to use MINI_TEST_NEVER_SET instead, set X-Team: ${MINI_TEST_NEVER_SET} in " +
 			filepath.Join(configDir, "servers", "team.yaml"),
-		"codex mcp add mini -- ",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("init output missing %q:\n%s", want, out)
@@ -265,7 +262,7 @@ func TestInitFromATOMLPathReadsCodexFormat(t *testing.T) {
 	src := filepath.Join(t.TempDir(), "team.toml")
 	testutil.WriteFile(t, src, "[mcp_servers.search]\nurl = \"https://search.example/mcp\"\n")
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
-	cmd.SetArgs([]string{"--yes", "--from", src})
+	cmd.SetArgs([]string{"--from", src})
 
 	out := testutil.CaptureStdout(t, func() {
 		if err := cmd.Execute(); err != nil {
@@ -300,9 +297,9 @@ func TestResolveFromSource_explicitFileWorksWithoutHome(t *testing.T) {
 	t.Setenv("home", "")
 	path := filepath.Join(t.TempDir(), "agent.json")
 	testutil.WriteFile(t, path, `{"mcpServers":{"example":{"url":"https://example.com/mcp"}}}`)
-	agent := resolveFromSource(path)
-	if agent.ConfigPath != path || agent.Read == nil {
-		t.Fatalf("source = %+v, want an explicit-file reader for %q", agent, path)
+	agent, err := resolveFromSource(path)
+	if err != nil || agent.ConfigPath != path || agent.Read == nil {
+		t.Fatalf("source = %+v, %v; want an explicit-file reader for %q", agent, err, path)
 	}
 	servers, err := agent.Read(agent.ConfigPath)
 	if err != nil || servers["example"].Config.URL != "https://example.com/mcp" {
@@ -310,15 +307,89 @@ func TestResolveFromSource_explicitFileWorksWithoutHome(t *testing.T) {
 	}
 }
 
-func TestShellQuoted(t *testing.T) {
-	for in, want := range map[string]string{
-		"/usr/local/bin/mini": "/usr/local/bin/mini",
-		"/Users/a b/bin/mini": "'/Users/a b/bin/mini'",
-		"/opt/it's/mini":      `'/opt/it'\''s/mini'`,
-		"/opt/$HOME/mini":     "'/opt/$HOME/mini'",
+func TestImportSources(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	testutil.WriteFile(t, filepath.Join(home, ".cursor", "mcp.json"), `{"mcpServers":{}}`)
+	team := filepath.Join(t.TempDir(), "team.json")
+	testutil.WriteFile(t, team, `{"mcpServers":{}}`)
+	for name, tt := range map[string]struct {
+		flags initFlags
+		want  []string
+	}{
+		"--add alone imports nothing":         {initFlags{add: []string{"notion"}, addGiven: true}, nil},
+		"--import reads every detected agent": {initFlags{importAll: true}, []string{"Cursor"}},
+		"--from reads only its source":        {initFlags{from: team}, []string{team}},
 	} {
-		if got := shellQuoted(in); got != want {
-			t.Errorf("shellQuoted(%q) = %s, want %s", in, got, want)
+		t.Run(name, func(t *testing.T) {
+			sources, err := importSources(tt.flags)
+			var got []string
+			for _, source := range sources {
+				got = append(got, source.Name)
+			}
+			if err != nil || !slices.Equal(got, tt.want) {
+				t.Errorf("sources = %v, %v; want %v", got, err, tt.want)
+			}
+		})
+	}
+	t.Run("an unreadable --from source is an error", func(t *testing.T) {
+		if _, err := importSources(initFlags{from: filepath.Join(t.TempDir(), "missing.json")}); err == nil {
+			t.Error("want an error for a source that can't be read")
+		}
+	})
+}
+
+func TestInitImportWritesEachConfigOnceAndLeavesTheAgentsAlone(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	configDir := t.TempDir()
+	claudePath := filepath.Join(home, ".claude.json")
+	cursorPath := filepath.Join(home, ".cursor", "mcp.json")
+	testutil.WriteFile(t, claudePath, `{"mcpServers":{"github":{"command":"gh-server"}}}`)
+	testutil.WriteFile(
+		t,
+		cursorPath,
+		`{"mcpServers":{"GitHub MCP":{"command":"gh-server"},"Notes":{"command":"notes-server"}}}`,
+	)
+	before := filesUnder(t, home)
+	cmd := newInitCmd(&rootOptions{configDir: configDir})
+	cmd.SetArgs([]string{"--import"})
+
+	out := testutil.CaptureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if got := slices.Sorted(maps.Keys(filesUnder(t, filepath.Join(configDir, "servers")))); !slices.Equal(
+		got, []string{"github.yaml", "notes.yaml"}) {
+		t.Errorf("server files = %v, want github once for both agents, and notes", got)
+	}
+	if after := filesUnder(t, home); !maps.Equal(after, before) {
+		t.Errorf("home changed during init --import:\nbefore %v\nafter  %v", before, after)
+	}
+	for _, want := range []string{"claude mcp add --scope user mini", "Cursor (" + cursorPath + ")"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing the hand-connect step %q:\n%s", want, out)
 		}
 	}
+}
+
+func filesUnder(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		files[rel] = string(testutil.ReadFile(t, path))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }
