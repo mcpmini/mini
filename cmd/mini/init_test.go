@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -336,4 +338,58 @@ func TestImportSources(t *testing.T) {
 			t.Error("want an error for a source that can't be read")
 		}
 	})
+}
+
+func TestInitImportWritesEachConfigOnceAndLeavesTheAgentsAlone(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	configDir := t.TempDir()
+	claudePath := filepath.Join(home, ".claude.json")
+	cursorPath := filepath.Join(home, ".cursor", "mcp.json")
+	testutil.WriteFile(t, claudePath, `{"mcpServers":{"github":{"command":"gh-server"}}}`)
+	testutil.WriteFile(
+		t,
+		cursorPath,
+		`{"mcpServers":{"GitHub MCP":{"command":"gh-server"},"Notes":{"command":"notes-server"}}}`,
+	)
+	before := filesUnder(t, home)
+	cmd := newInitCmd(&rootOptions{configDir: configDir})
+	cmd.SetArgs([]string{"--import"})
+
+	out := testutil.CaptureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if got := slices.Sorted(maps.Keys(filesUnder(t, filepath.Join(configDir, "servers")))); !slices.Equal(
+		got, []string{"github.yaml", "notes.yaml"}) {
+		t.Errorf("server files = %v, want github once for both agents, and notes", got)
+	}
+	if after := filesUnder(t, home); !maps.Equal(after, before) {
+		t.Errorf("home changed during init --import:\nbefore %v\nafter  %v", before, after)
+	}
+	for _, want := range []string{"claude mcp add --scope user mini", "Cursor (" + cursorPath + ")"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing the hand-connect step %q:\n%s", want, out)
+		}
+	}
+}
+
+func filesUnder(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		files[rel] = string(testutil.ReadFile(t, path))
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
 }

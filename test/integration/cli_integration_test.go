@@ -496,6 +496,40 @@ func TestIntegrationCLI_init_fromWithImportIsAUsageError(t *testing.T) {
 	}
 }
 
+func TestIntegrationCLI_init_importWithAnUnreadableAgentConfigNamesItAndExits1(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", "")
+	testutil.WriteFile(t, filepath.Join(home, ".claude.json"), `{"mcpServers":{"files":{"command":"files-server"}}}`)
+	cursorPath := filepath.Join(home, ".cursor", "mcp.json")
+	testutil.WriteFile(t, cursorPath, `{"mcpServers": {broken`)
+	cfg := t.TempDir()
+
+	stdout, _, code := runCLI(t, cfg, "init", "--import")
+
+	if code != 1 || !strings.Contains(stdout, "Could not read Cursor's config ("+cursorPath+")") {
+		t.Errorf("init --import = exit %d, stdout:\n%s\nwant 1 and Cursor's config named", code, stdout)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, "servers", "files.yaml")); err != nil {
+		t.Errorf("the readable agent's server wasn't imported: %v", err)
+	}
+}
+
+func TestIntegrationCLI_init_fromAFileThatCantBeReadWritesNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
+	cfg := filepath.Join(t.TempDir(), "config")
+
+	_, stderr, code := runCLI(t, cfg, "init", "--from", filepath.Join(t.TempDir(), "missing.json"))
+
+	if code != 1 || !strings.Contains(stderr, "missing.json") {
+		t.Errorf("init --from a missing file = exit %d, stderr %q; want 1 and the file named", code, stderr)
+	}
+	if _, err := os.Stat(cfg); !os.IsNotExist(err) {
+		t.Errorf("config dir after a failed --from: %v, want it not created", err)
+	}
+}
+
 func TestIntegrationCLI_init_CreatesDirectories(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CODEX_HOME", "")
