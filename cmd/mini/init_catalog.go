@@ -79,8 +79,7 @@ func configuredServers(configDir string) ([]config.ServerConfig, error) {
 }
 
 func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
-	available := initcmd.AvailableCatalog(catalog.Catalog{Entries: entries}, servers)
-	return initcmd.GroupByCategory(available.Entries)
+	return initcmd.GroupByCategory(initcmd.AvailableEntries(entries, servers))
 }
 
 func printCatalogEntries(out io.Writer, entries []catalog.Entry) {

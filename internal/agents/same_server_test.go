@@ -46,13 +46,13 @@ func TestConnectionDifferences(t *testing.T) {
 	t.Run("name and order of env don't matter", func(t *testing.T) {
 		other := base
 		other.Name, other.Env = "b", []string{"B=2", "A=1"}
-		if !SameServer(base, other) {
-			t.Errorf("differences = %v, want none", ConnectionDifferences(base, other))
+		if got := ConnectionDifferences(base, other); got != nil {
+			t.Errorf("differences = %v, want none", got)
 		}
 	})
 	t.Run("an empty transport is stdio", func(t *testing.T) {
-		if !SameServer(config.ServerConfig{Command: "run"}, config.ServerConfig{Transport: "stdio", Command: "run"}) {
-			t.Error("want the same server")
+		if got := ConnectionDifferences(config.ServerConfig{Command: "run"}, config.ServerConfig{Transport: "stdio", Command: "run"}); got != nil {
+			t.Errorf("differences = %v, want none", got)
 		}
 	})
 	t.Run("same url with other credentials is another server", func(t *testing.T) {

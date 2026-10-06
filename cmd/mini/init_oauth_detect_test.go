@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/testutil"
@@ -146,7 +147,7 @@ func TestDetectImportedOAuthLeavesOpenServerUnmarked(t *testing.T) {
 	}
 }
 
-func TestDetectImportedOAuthProbesOnlyHTTPServersImportedThisRun(t *testing.T) {
+func TestDetectImportedOAuthProbesOnlyKeylessHTTPServersImportedThisRun(t *testing.T) {
 	configDir := t.TempDir()
 	url, requests := recordingUpstream(t)
 	spawned := filepath.Join(t.TempDir(), "spawned")
@@ -161,8 +162,8 @@ func TestDetectImportedOAuthProbesOnlyHTTPServersImportedThisRun(t *testing.T) {
 
 	detect(configDir, names)
 
-	if got := requests.seen(); !slices.Equal(got, []string{"/plain", "/withkey"}) {
-		t.Errorf("upstream saw requests for %v, want [/plain /withkey]", got)
+	if got := requests.seen(); !slices.Equal(got, []string{"/plain"}) {
+		t.Errorf("upstream saw requests for %v, want only /plain: a server with a key header can't be proven to need OAuth", got)
 	}
 	if _, err := os.Stat(spawned); err == nil {
 		t.Error("detection started the stdio server's command")
@@ -206,7 +207,7 @@ func TestDetectImportedOAuthGivesUpOnAnUnresponsiveServer(t *testing.T) {
 	if err := fc.BlockUntilContext(waitCtx, 1); err != nil {
 		t.Fatal("probe deadline never started:", err)
 	}
-	fc.Advance(oauthProbeTimeout)
+	fc.Advance(initcmd.OAuthCheckTimeout)
 
 	select {
 	case <-done:

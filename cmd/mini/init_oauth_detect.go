@@ -1,19 +1,12 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"slices"
-	"sync"
-	"time"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/clock"
-	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
 )
-
-const oauthProbeTimeout = 5 * time.Second
 
 type oauthDetectParams struct {
 	configDir string
@@ -22,38 +15,11 @@ type oauthDetectParams struct {
 	errOut    io.Writer
 }
 
-// detectImportedOAuth probes only the servers this run imported: the login step
-// can't list an OAuth server until something has recorded that it needs OAuth.
 func detectImportedOAuth(p oauthDetectParams) {
-	servers, err := config.LoadServers(p.configDir)
-	if err != nil {
-		return // a later init step hits the same error and reports it
-	}
-	targets := oauthDetectionTargets(servers.Loaded, p.names)
+	targets := initcmd.OAuthTargets(p.configDir, p.names)
 	if len(targets) == 0 {
 		return
 	}
 	fmt.Fprintf(p.errOut, "checking %d imported server(s) for OAuth...\n", len(targets))
-	var wg sync.WaitGroup
-	for _, sc := range targets {
-		wg.Go(func() { p.detectOne(sc) })
-	}
-	wg.Wait()
-}
-
-func oauthDetectionTargets(servers []config.ServerConfig, names []string) []config.ServerConfig {
-	var targets []config.ServerConfig
-	for _, sc := range servers {
-		if slices.Contains(names, sc.Name) && authUndiscovered(sc) {
-			targets = append(targets, sc)
-		}
-	}
-	return targets
-}
-
-func (p oauthDetectParams) detectOne(sc config.ServerConfig) {
-	ctx, cancel := clock.WithTimeout(context.Background(), p.clock, oauthProbeTimeout)
-	defer cancel()
-	// Only the recorded OAuth requirement matters here; an unreachable server is left for the proxy.
-	server.ProbeServer(ctx, p.configDir, sc) //nolint:errcheck
+	initcmd.CheckOAuth(p.configDir, targets, p.clock)
 }
