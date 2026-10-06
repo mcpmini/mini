@@ -38,7 +38,6 @@ func (s *Server) awaitStartupChange(ctx context.Context, changed <-chan struct{}
 	}
 }
 
-// Any connecting server's window end will do: waitForStartup checks again when it passes.
 func (s *Server) startupWaitTarget() (changed <-chan struct{}, until time.Time, connecting bool) {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()

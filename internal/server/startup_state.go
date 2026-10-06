@@ -37,12 +37,11 @@ type startupFailure struct {
 	envVars []string
 }
 
-// Every field is guarded by Server.stateMu.
 type startupTracker struct {
 	startedAt  map[string]time.Time
 	toolsReady map[string]bool // set after the registry has the tools; upstreams is set before
 	failures   map[string]startupFailure
-	changed    chan struct{} // closed and replaced whenever a server's startup state changes
+	changed    chan struct{}
 }
 
 func newStartupTracker() *startupTracker {

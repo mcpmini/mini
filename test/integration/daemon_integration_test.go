@@ -262,7 +262,6 @@ func TestIntegrationDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 	}
 }
 
-// #322: Codex keeps the first tools/list it gets, so a cold start must answer it with a slow server's tools.
 func TestIntegrationDaemon_coldStartFirstToolsListIncludesASlowServer(t *testing.T) {
 	cfg := shortConfigDir(t)
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})

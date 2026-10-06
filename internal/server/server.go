@@ -19,7 +19,7 @@ type Server struct {
 	reg                  *registry.Registry
 	upstreams            map[string]*upstreamServer
 	configServers        map[string]bool // servers started from the config files, the only ones a config edit removes
-	startup              *startupTracker
+	startup              *startupTracker // guarded by stateMu
 	stopWaiting          chan struct{}
 	stopWaitingOnce      sync.Once
 	projections          map[string]map[string]*config.ProjectionConfig
