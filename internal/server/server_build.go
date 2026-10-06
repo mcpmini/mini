@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
@@ -73,6 +74,9 @@ func newServer(
 		reg:              registry.New(),
 		upstreams:        make(map[string]*upstreamServer),
 		configServers:    make(map[string]bool),
+		connectStartedAt: make(map[string]time.Time),
+		toolsReady:       make(map[string]bool),
+		startupFailures:  make(map[string]startupFailure),
 		removeGen:        make(map[string]uint64),
 		projections:      projections,
 		projDefaults:     projection.DefaultsFrom(cfg),

@@ -72,29 +72,39 @@ func (s *Server) dispatchConfigureAuthAction(p configureParams) (any, error) {
 }
 
 func (s *Server) statusReport() map[string]any {
-	servers, projInfo := s.collectStatusData()
+	in := s.snapshotStatusInputs()
 	fileCount, usedBytes := s.store.Stats()
 	return map[string]any{
-		"servers":     servers,
+		"servers":     buildServerStatus(in.ready, s.reg),
+		"starting":    in.startup.starting,
+		"unavailable": in.startup.unavailable,
 		"store":       map[string]any{"files": fileCount, "used_mb": float64(usedBytes) / (1024 * 1024)},
-		"projections": projInfo,
+		"projections": in.projections,
 		"sessions":    s.sessions.aggregateMetrics(),
 	}
 }
 
-func (s *Server) collectStatusData() (map[string]any, map[string][]string) {
-	upstreamsCopy, projInfo := s.snapshotStatusInputs()
-	return buildServerStatus(upstreamsCopy, s.reg), projInfo
+type statusInputs struct {
+	ready       map[string]*upstreamServer
+	startup     startupReport
+	projections map[string][]string
 }
 
-func (s *Server) snapshotStatusInputs() (map[string]*upstreamServer, map[string][]string) {
+// One snapshot, so a server that finishes connecting meanwhile is never listed both as ready and as starting.
+func (s *Server) snapshotStatusInputs() statusInputs {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	upstreamsCopy := make(map[string]*upstreamServer, len(s.upstreams))
+	ready := make(map[string]*upstreamServer, len(s.upstreams))
 	for name, u := range s.upstreams {
-		upstreamsCopy[name] = u
+		if s.toolsReady[name] {
+			ready[name] = u
+		}
 	}
-	return upstreamsCopy, snapshotProjectionNames(s.projections)
+	return statusInputs{
+		ready:       ready,
+		startup:     s.startupReportLocked(),
+		projections: snapshotProjectionNames(s.projections),
+	}
 }
 
 func snapshotProjectionNames(projections map[string]map[string]*config.ProjectionConfig) map[string][]string {
