@@ -171,7 +171,7 @@ func StaticHeaderNotes(name string, unused map[string]string, file string) []str
 }
 
 func writeFailures(b *strings.Builder, r Report) {
-	for _, failure := range r.Sync.Failed {
+	for _, failure := range r.WriteErrors {
 		fmt.Fprintf(b, "\nCould not add %s: %v\n", failure.Name, failure.Err)
 	}
 	if r.StatusErr != nil {

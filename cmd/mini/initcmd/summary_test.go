@@ -95,7 +95,7 @@ func TestSummary_importAndFailures(t *testing.T) {
 		Ignored:          map[string][]string{"files": {"cwd"}},
 		UnusedEnvHeaders: map[string]map[string]string{"team": {"X-Team": "TEAM_VAR"}},
 		ConfigDir:        "/config",
-		Sync:             SyncResult{Failed: []ServerError{{Name: "broken", Err: errors.New("disk full")}}},
+		WriteErrors:      []ServerError{{Name: "broken", Err: errors.New("disk full")}},
 		StatusErr:        errors.New("permission denied"),
 	})
 	requireLines(

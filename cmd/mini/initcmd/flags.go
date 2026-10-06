@@ -5,7 +5,9 @@ import (
 
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/catalog"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/ops"
 )
 
 // FlagRun is init without the UI: it writes servers and never edits an agent or opens a browser.
@@ -24,10 +26,10 @@ type FlagRun struct {
 
 // Report is what a run did, for the summary.
 type Report struct {
-	ConfigDir string
-	Servers   []ServerStatus
-	Sync      SyncResult
-	Skipped   []SkippedServer
+	ConfigDir   string
+	Servers     []ServerStatus
+	WriteErrors []ServerError
+	Skipped     []SkippedServer
 	// Ignored holds, per imported server, the agent settings mini doesn't carry over.
 	Ignored map[string][]string
 	// UnusedEnvHeaders holds, per imported server, each static header kept over the variable the
@@ -51,7 +53,7 @@ type Report struct {
 }
 
 func (r Report) Failed() bool {
-	if len(r.Sync.Failed) > 0 || r.StatusErr != nil {
+	if len(r.WriteErrors) > 0 || r.StatusErr != nil {
 		return true
 	}
 	for _, result := range r.Connected {
@@ -70,21 +72,38 @@ func RunFlags(p FlagRun) Report {
 		report.StatusErr = err
 		return report
 	}
-	candidates, skipped := FindServers(FindParams{Agents: p.Import, Configured: configured, SelfPath: p.SelfPath})
-	report.Skipped = append(skipped, leftOutRows(candidates)...)
-	report.Ignored, report.UnusedEnvHeaders = ignoredSettings(candidates), unusedEnvHeaders(candidates)
-	picks := flagPicks(candidates, p.Add, configured)
+	plan := PlanImport(ImportParams{Agents: p.Import, Configured: configured, SelfPath: p.SelfPath})
+	report.Skipped, report.Ignored, report.UnusedEnvHeaders = plan.Skipped, plan.Ignored, plan.UnusedEnvHeaders
+	picks := flagPicks(plan.Servers, p.Add, configured)
 	report.AlreadyConfigured, report.FromImport = picks.already, picks.fromImport
-	session := NewSession(SessionParams{ConfigDir: p.ConfigDir})
-	report.Sync = session.Sync(picks.want)
-	session.WaitChecks()
+	written, writeErrors := addServers(p.ConfigDir, picks.want)
+	report.WriteErrors = writeErrors
+	CheckOAuth(p.ConfigDir, OAuthTargets(p.ConfigDir, written), clock.System())
 	report.dropNotesOfFailedServers()
 	report.Servers, report.StatusErr = ServerStatuses(p.ConfigDir, p.Catalog)
 	return report
 }
 
+type ServerError struct {
+	Name string
+	Err  error
+}
+
+func addServers(configDir string, servers []config.ServerConfig) ([]string, []ServerError) {
+	var written []string
+	var failed []ServerError
+	for _, sc := range servers {
+		if _, err := ops.AddServer(configDir, sc); err != nil {
+			failed = append(failed, ServerError{Name: sc.Name, Err: err})
+			continue
+		}
+		written = append(written, sc.Name)
+	}
+	return written, failed
+}
+
 func (r *Report) dropNotesOfFailedServers() {
-	for _, failure := range r.Sync.Failed {
+	for _, failure := range r.WriteErrors {
 		delete(r.Ignored, failure.Name)
 		delete(r.UnusedEnvHeaders, failure.Name)
 	}
@@ -96,15 +115,9 @@ type picks struct {
 	fromImport []string
 }
 
-// Flags take each row's default tick, so switched-off servers and second configs stay out. An
-// imported server wins over a catalog server it matches.
-func flagPicks(candidates []Candidate, add []catalog.Entry, configured []config.ServerConfig) picks {
-	var p picks
-	for _, c := range candidates {
-		if c.Checked {
-			p.want = append(p.want, c.Config)
-		}
-	}
+// An imported server wins over a catalog server it matches.
+func flagPicks(imports []config.ServerConfig, add []catalog.Entry, configured []config.ServerConfig) picks {
+	p := picks{want: slices.Clone(imports)}
 	configuredKeys := NewConfiguredKeys(configured)
 	imported := NewConfiguredKeys(p.want)
 	for _, entry := range add {
@@ -118,25 +131,6 @@ func flagPicks(candidates []Candidate, add []catalog.Entry, configured []config.
 		}
 	}
 	return p
-}
-
-// Flags leave out each row the UI starts unticked: one every agent switched off, which importing
-// would switch on for every agent connected to mini, and a second config under a name in use.
-func leftOutRows(candidates []Candidate) []SkippedServer {
-	var left []SkippedServer
-	for _, c := range candidates {
-		if c.Checked {
-			continue
-		}
-		reason := SkipSecondConfig
-		if !slices.ContainsFunc(c.Sources, func(s Source) bool { return !s.Disabled }) {
-			reason = SkipSwitchedOff
-		}
-		for _, s := range c.Sources {
-			left = append(left, SkippedServer{Agent: s.Agent, Name: s.Name, Reason: reason})
-		}
-	}
-	return left
 }
 
 func (p FlagRun) sortByMini(r *Report) {
@@ -156,38 +150,6 @@ func (p FlagRun) sortByMini(r *Report) {
 			r.InactiveMini = append(r.InactiveMini, agent)
 		}
 	}
-}
-
-func unusedEnvHeaders(candidates []Candidate) map[string]map[string]string {
-	unused := map[string]map[string]string{}
-	for _, c := range candidates {
-		if !c.Checked {
-			continue
-		}
-		for _, source := range c.Sources {
-			for header, envVar := range source.UnusedEnvHeaders {
-				if unused[c.Name] == nil {
-					unused[c.Name] = map[string]string{}
-				}
-				unused[c.Name][header] = envVar
-			}
-		}
-	}
-	return unused
-}
-
-func ignoredSettings(candidates []Candidate) map[string][]string {
-	ignored := map[string][]string{}
-	for _, c := range candidates {
-		for _, source := range c.Sources {
-			for _, setting := range source.IgnoredRunSettings {
-				if c.Checked && !slices.Contains(ignored[c.Name], setting) {
-					ignored[c.Name] = append(ignored[c.Name], setting)
-				}
-			}
-		}
-	}
-	return ignored
 }
 
 // CatalogServer is the server config written for a catalog entry.

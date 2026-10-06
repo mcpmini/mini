@@ -152,7 +152,7 @@ func TestReport_failed(t *testing.T) {
 		want   bool
 	}{
 		"nothing failed":        {Report{Connected: []AgentResult{{}}}, false},
-		"a server write failed": {Report{Sync: SyncResult{Failed: []ServerError{{Name: "x", Err: errors.New("disk full")}}}}, true},
+		"a server write failed": {Report{WriteErrors: []ServerError{{Name: "x", Err: errors.New("disk full")}}}, true},
 		"servers can't be read": {Report{StatusErr: errors.New("permission denied")}, true},
 		"an agent edit failed":  {Report{Connected: []AgentResult{{Err: errors.New("inline table")}}}, true},
 	} {
