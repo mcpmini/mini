@@ -2,6 +2,7 @@ package agents
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -26,6 +27,28 @@ func writeClientConfig(t *testing.T, name, content string) string {
 }
 
 type readerFunc func(string) (map[string]Server, error)
+
+type readerCase struct {
+	name   string
+	file   string
+	config string
+	want   Server
+}
+
+func runReaderCases(t *testing.T, read readerFunc, cases []readerCase) {
+	t.Helper()
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := read(writeClientConfig(t, tt.file, tt.config))
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if want := map[string]Server{"s": tt.want}; !reflect.DeepEqual(got, want) {
+				t.Errorf("got  %#v\nwant %#v", got, want)
+			}
+		})
+	}
+}
 
 func stdio(name, command string, args ...string) config.ServerConfig {
 	return config.ServerConfig{Name: name, Command: command, Args: args}

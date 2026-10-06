@@ -2,23 +2,15 @@ package agents
 
 import (
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/config"
 )
 
 func TestCodexReader(t *testing.T) {
-	tests := []struct {
-		name   string
-		read   readerFunc
-		file   string
-		config string
-		want   Server
-	}{
+	tests := []readerCase{
 		{
 			"codex stdio entry",
-			ReadCodex,
 			"config.toml",
 			"[mcp_servers.s]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"synthetic\" }\n",
 			Server{
@@ -32,7 +24,6 @@ func TestCodexReader(t *testing.T) {
 		},
 		{
 			"codex http headers, env headers and bearer token variable",
-			ReadCodex,
 			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"core\" }\nenv_http_headers = { X-Key = \"MINI_TEST_SET_KEY\", X-Optional = \"MINI_TEST_UNSET_KEY\" }\nbearer_token_env_var = \"EXAMPLE_TOKEN\"\n",
 			Server{Config: remote("s", "https://example.com/mcp", map[string]string{
@@ -44,7 +35,6 @@ func TestCodexReader(t *testing.T) {
 		},
 		{
 			"codex env and bearer headers replace a static header whatever its case",
-			ReadCodex,
 			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { authorization = \"Bearer old\", x-key = \"old\" }\n" +
 				"env_http_headers = { X-Key = \"MINI_TEST_SET_KEY\" }\nbearer_token_env_var = \"TOKEN_VAR\"\n",
@@ -57,7 +47,7 @@ func TestCodexReader(t *testing.T) {
 			},
 		},
 		{
-			"codex keeps a static header whatever its case while its env override is unset", ReadCodex, "config.toml",
+			"codex keeps a static header whatever its case while its env override is unset", "config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { x-team = \"default\" }\n" +
 				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\" }\n",
 			Server{
@@ -67,7 +57,6 @@ func TestCodexReader(t *testing.T) {
 		},
 		{
 			"codex auth settings are dropped and named",
-			ReadCodex,
 			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nscopes = [\"read\"]\noauth = { client_id = \"synthetic\" }\n",
 			Server{
@@ -77,7 +66,6 @@ func TestCodexReader(t *testing.T) {
 		},
 		{
 			"codex header helpers are dropped and named",
-			ReadCodex,
 			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers_helper = \"get-token\"\n",
 			Server{
@@ -87,7 +75,6 @@ func TestCodexReader(t *testing.T) {
 		},
 		{
 			"codex keeps a static header while its env override is unset or blank",
-			ReadCodex,
 			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"default\", X-Org = \"acme\" }\n" +
 				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\", X-Org = \"MINI_TEST_BLANK_KEY\" }\n",
@@ -102,7 +89,6 @@ func TestCodexReader(t *testing.T) {
 		},
 		{
 			"codex variable named like an editor placeholder is a plain reference",
-			ReadCodex,
 			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nbearer_token_env_var = \"userHome\"\n",
 			Server{
@@ -114,37 +100,26 @@ func TestCodexReader(t *testing.T) {
 			},
 		},
 		{
-			"codex switched off", ReadCodex, "config.toml",
+			"codex switched off", "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
 			Server{Config: stdio("s", "run"), Disabled: true},
 		},
 		{
 			"codex settings mini doesn't carry over are dropped, including ones it has never seen",
-			ReadCodex,
 			"config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\ntool_timeout_sec = 60\nenabled_tools = [\"search\"]\n" +
 				"default_tools_approval_mode = \"prompt\"\nsetting_added_later = true\n",
 			Server{Config: stdio("s", "run")},
 		},
 		{
-			"codex cwd is ignored and named", ReadCodex, "config.toml",
+			"codex cwd is ignored and named", "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\ncwd = \"/srv/app\"\n",
 			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"cwd"}},
 		},
 	}
 	t.Setenv("MINI_TEST_SET_KEY", "synthetic")
 	t.Setenv("MINI_TEST_BLANK_KEY", " ")
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := tt.read(writeClientConfig(t, tt.file, tt.config))
-			if err != nil {
-				t.Fatalf("read: %v", err)
-			}
-			if want := map[string]Server{"s": tt.want}; !reflect.DeepEqual(got, want) {
-				t.Errorf("got  %#v\nwant %#v", got, want)
-			}
-		})
-	}
+	runReaderCases(t, ReadCodex, tests)
 }
 
 func TestReadCodex_aMalformedEntryIsAnError(t *testing.T) {

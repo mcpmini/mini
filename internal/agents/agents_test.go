@@ -68,13 +68,6 @@ func mustParse(t *testing.T, agent Agent, cfg []byte) map[string]Server {
 	return got
 }
 
-func emptyDocument(agent Agent) []byte {
-	if agent.Name == "Codex" {
-		return nil
-	}
-	return []byte("{}")
-}
-
 func TestKnownAgents_followTheAgentContract(t *testing.T) {
 	t.Setenv("CODEX_HOME", "")
 	for _, agent := range Known(tempDir(t)) {
@@ -120,9 +113,10 @@ func connectRemovesOnlyNamed(t *testing.T, agent Agent) {
 }
 
 func connectKeepsUsersMini(t *testing.T, agent Agent) {
+	mini := contractMini
 	cfg := configWith(t, agent, map[string]string{MiniKey: "custom-mini"})
 	before := mustParse(t, agent, cfg)[MiniKey]
-	got := connectAndParse(t, agent, cfg, nil, nil)[MiniKey]
+	got := connectAndParse(t, agent, cfg, []string{MiniKey}, &mini)[MiniKey]
 	if !reflect.DeepEqual(got, before) {
 		t.Errorf("mini = %#v, want the user's entry %#v", got, before)
 	}
@@ -135,7 +129,7 @@ func missingFileIsAnError(t *testing.T, agent Agent) {
 }
 
 func noServersIsEmpty(t *testing.T, agent Agent) {
-	got, err := agent.Parse(emptyDocument(agent))
+	got, err := agent.Parse(configWith(t, agent, nil))
 	if err != nil || len(got) != 0 {
 		t.Fatalf("Parse(empty) = %v, %v; want nothing and no error", got, err)
 	}
