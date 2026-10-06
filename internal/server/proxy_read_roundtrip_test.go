@@ -17,7 +17,9 @@ import (
 // TestProxy_MiniRead_JQRoundTrip verifies that jq paths in __mini.excluded and
 // __mini.truncated can be used directly as read() filters against the raw file.
 func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
-	upstream := `{"id":1,"secret":"key-123","body":"` + longString(3000) + `","items":[{"n":1},{"n":2},{"n":3},{"n":4},{"n":5}]}`
+	upstream := `{"id":1,"secret":"key-123","body":"` + longString(
+		3000,
+	) + `","items":[{"n":1},{"n":2},{"n":3},{"n":4},{"n":5}]}`
 
 	cases := []struct {
 		name       string
@@ -56,7 +58,9 @@ func TestProxy_MiniRead_JQRoundTrip(t *testing.T) {
 			defer srv.Close()
 
 			conn := fakeConn("get_data")
-			conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + marshalString(upstream) + `}]}`)
+			conn.Responses["tools/call"] = json.RawMessage(
+				`{"content":[{"type":"text","text":` + marshalString(upstream) + `}]}`,
+			)
 			addProxyConn(t, srv, "svc", conn)
 
 			serveProxy(t, srv, callTool("config", map[string]any{

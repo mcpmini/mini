@@ -154,7 +154,12 @@ func injectToken(ctx context.Context, configDir string, sc *config.ServerConfig)
 	auth.ApplyBearerToken(sc, t.AccessToken)
 }
 
-func ensureValidToken(ctx context.Context, configDir string, sc *config.ServerConfig, t *oauth2.Token) (*oauth2.Token, error) {
+func ensureValidToken(
+	ctx context.Context,
+	configDir string,
+	sc *config.ServerConfig,
+	t *oauth2.Token,
+) (*oauth2.Token, error) {
 	if t.Valid() {
 		return t, nil
 	}
@@ -165,7 +170,12 @@ func ensureValidToken(ctx context.Context, configDir string, sc *config.ServerCo
 	return refreshAndSaveToken(ctx, configDir, sc, t)
 }
 
-func refreshAndSaveToken(ctx context.Context, configDir string, sc *config.ServerConfig, t *oauth2.Token) (*oauth2.Token, error) {
+func refreshAndSaveToken(
+	ctx context.Context,
+	configDir string,
+	sc *config.ServerConfig,
+	t *oauth2.Token,
+) (*oauth2.Token, error) {
 	if err := auth.ApplyResourceURL(sc); err != nil {
 		fmt.Fprintf(os.Stderr, "mini: resolve resource URL for %s: %v\n", sc.Name, err)
 		return nil, err

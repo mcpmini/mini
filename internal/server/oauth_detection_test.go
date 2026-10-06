@@ -4,12 +4,13 @@ package server_test
 
 import (
 	"context"
-	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/config/configtest"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 func TestAddUpstream_detectsOAuthFrom401(t *testing.T) {
@@ -125,7 +126,9 @@ func TestAddUpstream_staticBearerHeaderIsNotMisclassifiedAsOAuth(t *testing.T) {
 	}
 
 	if config.IsOAuthDetected(dir, "statictoken") {
-		t.Error("a server with a manually-configured Authorization header must never be marked oauth2 — RFC 6750 mandates the same Bearer challenge for an expired static token")
+		t.Error(
+			"a server with a manually-configured Authorization header must never be marked oauth2 — RFC 6750 mandates the same Bearer challenge for an expired static token",
+		)
 	}
 }
 

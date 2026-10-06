@@ -342,7 +342,17 @@ func TestIntegrationCLI_daemon_status_noDaemon(t *testing.T) {
 func TestIntegrationCLI_add_withHeader(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--header", "Authorization=Bearer tok123")
+	_, _, code := run(
+		t,
+		bin,
+		cfg,
+		"add",
+		"myserver",
+		"--url",
+		"http://example.com/mcp",
+		"--header",
+		"Authorization=Bearer tok123",
+	)
 	if code != 0 {
 		t.Fatalf("add --header should exit 0, got %d", code)
 	}
@@ -355,7 +365,19 @@ func TestIntegrationCLI_add_withHeader(t *testing.T) {
 func TestIntegrationCLI_add_stdioCommand(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "add", "localserver", "--no-connect", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+	_, _, code := run(
+		t,
+		bin,
+		cfg,
+		"add",
+		"localserver",
+		"--no-connect",
+		"--",
+		"npx",
+		"-y",
+		"@modelcontextprotocol/server-filesystem",
+		"/tmp",
+	)
 	if code != 0 {
 		t.Fatalf("add stdio command should exit 0, got %d", code)
 	}
@@ -401,7 +423,19 @@ func TestIntegrationCLI_version_flag(t *testing.T) {
 func TestIntegrationCLI_add_protectedTool(t *testing.T) {
 	bin := miniBin(t)
 	cfg := t.TempDir()
-	_, _, code := run(t, bin, cfg, "add", "svc", "--url", "http://example.com/mcp", "--protected", "delete_item", "--protected", "create_item")
+	_, _, code := run(
+		t,
+		bin,
+		cfg,
+		"add",
+		"svc",
+		"--url",
+		"http://example.com/mcp",
+		"--protected",
+		"delete_item",
+		"--protected",
+		"create_item",
+	)
 	if code != 0 {
 		t.Fatalf("add --protected should exit 0, got %d", code)
 	}

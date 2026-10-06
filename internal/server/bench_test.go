@@ -22,7 +22,9 @@ func benchSrv(b *testing.B) *server.Server {
 	b.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = b.TempDir()
-	return server.New(server.Params{Config: cfg, ConfigDir: b.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	return server.New(
+		server.Params{Config: cfg, ConfigDir: b.TempDir(), Logger: slog.New(slog.NewTextHandler(io.Discard, nil))},
+	)
 }
 
 func buildBenchInput(call []byte) []byte {

@@ -57,8 +57,10 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 }
 
 func addInitFlags(cmd *cobra.Command, f *initFlags) {
-	cmd.Flags().BoolVar(&f.yes, "yes", false, "run without prompts: import every detected client, skip the catalog picker, and leave logins for later")
-	cmd.Flags().StringVar(&f.from, "from", "", "import only from this client ("+strings.Join(slices.Sorted(maps.Keys(fromClientNames)), ", ")+") or config file")
+	cmd.Flags().
+		BoolVar(&f.yes, "yes", false, "run without prompts: import every detected client, skip the catalog picker, and leave logins for later")
+	cmd.Flags().
+		StringVar(&f.from, "from", "", "import only from this client ("+strings.Join(slices.Sorted(maps.Keys(fromClientNames)), ", ")+") or config file")
 	cmd.Flags().StringSliceVar(&f.add, "add", nil, "catalog servers to add without the picker (comma-separated names)")
 }
 
@@ -69,7 +71,9 @@ func runInit(configDir string, f initFlags, requested []catalog.Entry) {
 	}
 	fmt.Printf("config directory: %s\n", configDir)
 	imported := importServers(configDir, f.from, importConfirmer(p, f.yes))
-	detectImportedOAuth(oauthDetectParams{configDir: configDir, names: imported, clock: clock.System(), errOut: os.Stderr})
+	detectImportedOAuth(
+		oauthDetectParams{configDir: configDir, names: imported, clock: clock.System(), errOut: os.Stderr},
+	)
 	runInitCatalogSelection(catalogStepParams{configDir: configDir, autoYes: f.yes, ask: p.ask, requested: requested})
 	runLoginStep(newLoginStepParams(configDir, f.yes, p))
 	printInstallInstructions()
@@ -175,7 +179,7 @@ func findKnownAgent(name string) (agents.Agent, bool) {
 
 func createConfigDirs(configDir string) error {
 	for _, sub := range []string{"servers", "internal", "internal/daemon", "internal/responses"} {
-		if err := os.MkdirAll(filepath.Join(configDir, sub), 0700); err != nil {
+		if err := os.MkdirAll(filepath.Join(configDir, sub), 0o700); err != nil {
 			return err
 		}
 	}

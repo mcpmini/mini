@@ -38,8 +38,11 @@ func TestEditFile_writesNothingUnlessTheEditChangesTheBytes(t *testing.T) {
 		wantErr bool
 	}{
 		"returns them unchanged": {edit: func(data []byte) ([]byte, error) { return data, nil }},
-		"returns an error":       {edit: func([]byte) ([]byte, error) { return nil, errors.New("refused") }, wantErr: true},
-		"returns nil":            {edit: func([]byte) ([]byte, error) { return nil, nil }, wantErr: true},
+		"returns an error": {
+			edit:    func([]byte) ([]byte, error) { return nil, errors.New("refused") },
+			wantErr: true,
+		},
+		"returns nil": {edit: func([]byte) ([]byte, error) { return nil, nil }, wantErr: true},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -48,13 +51,21 @@ func TestEditFile_writesNothingUnlessTheEditChangesTheBytes(t *testing.T) {
 			testutil.WriteFile(t, path, "original\n")
 			hookRan := false
 
-			changed, err := EditFile(EditParams{Path: path, Edit: tc.edit, BeforeReplace: func(string, []byte) (func(), error) {
-				hookRan = true
-				return nil, nil
-			}})
+			changed, err := EditFile(
+				EditParams{Path: path, Edit: tc.edit, BeforeReplace: func(string, []byte) (func(), error) {
+					hookRan = true
+					return nil, nil
+				}},
+			)
 
 			if changed || (err != nil) != tc.wantErr || hookRan {
-				t.Fatalf("EditFile = %v, %v, hook ran %v; want unchanged, error %v, no hook", changed, err, hookRan, tc.wantErr)
+				t.Fatalf(
+					"EditFile = %v, %v, hook ran %v; want unchanged, error %v, no hook",
+					changed,
+					err,
+					hookRan,
+					tc.wantErr,
+				)
 			}
 			if got := string(testutil.ReadFile(t, path)); got != "original\n" {
 				t.Errorf("file = %q, want it untouched", got)
@@ -120,7 +131,16 @@ func TestEditFile_givesUpWhenTheFileKeepsChanging(t *testing.T) {
 
 func TestEditFile_followsTheSymlinkWhereItPointsNow(t *testing.T) {
 	dir := t.TempDir()
-	first, second, link := filepath.Join(dir, "first.toml"), filepath.Join(dir, "second.toml"), filepath.Join(dir, "config.toml")
+	first, second, link := filepath.Join(
+		dir,
+		"first.toml",
+	), filepath.Join(
+		dir,
+		"second.toml",
+	), filepath.Join(
+		dir,
+		"config.toml",
+	)
 	testutil.WriteFile(t, first, "first\n")
 	testutil.WriteFile(t, second, "second\n")
 	if err := os.Symlink(first, link); err != nil {
@@ -175,12 +195,18 @@ func TestEditFile_beforeReplace(t *testing.T) {
 		testutil.WriteFile(t, path, "first\n")
 		refusal := errors.New("no backup")
 
-		_, err := EditFile(EditParams{Path: path, Edit: appendLine("mini"), BeforeReplace: func(string, []byte) (func(), error) {
-			return nil, refusal
-		}})
+		_, err := EditFile(
+			EditParams{Path: path, Edit: appendLine("mini"), BeforeReplace: func(string, []byte) (func(), error) {
+				return nil, refusal
+			}},
+		)
 
 		if !errors.Is(err, refusal) || string(testutil.ReadFile(t, path)) != "first\n" {
-			t.Fatalf("EditFile = %v, file %q; want the hook's error and the file untouched", err, testutil.ReadFile(t, path))
+			t.Fatalf(
+				"EditFile = %v, file %q; want the hook's error and the file untouched",
+				err,
+				testutil.ReadFile(t, path),
+			)
 		}
 	})
 
@@ -194,17 +220,26 @@ func TestEditFile_beforeReplace(t *testing.T) {
 			if err := os.Chmod(dir, 0o500); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { os.Chmod(dir, 0o700) }) //nolint:errcheck // TempDir cleanup reports a directory it can't remove
+			t.Cleanup(
+				func() { os.Chmod(dir, 0o700) },
+			) //nolint:errcheck // TempDir cleanup reports a directory it can't remove
 			return append(data, "mini\n"...), nil
 		}
 
-		_, err := EditFile(EditParams{Path: path, Edit: edit, BeforeReplace: func(_ string, original []byte) (func(), error) {
-			seen = string(original)
-			return func() { undone = true }, nil
-		}})
+		_, err := EditFile(
+			EditParams{Path: path, Edit: edit, BeforeReplace: func(_ string, original []byte) (func(), error) {
+				seen = string(original)
+				return func() { undone = true }, nil
+			}},
+		)
 
 		if err == nil || seen != "first\n" || !undone {
-			t.Fatalf("EditFile = %v, hook saw %q, undone %v; want a replace error, the original bytes, and the undo", err, seen, undone)
+			t.Fatalf(
+				"EditFile = %v, hook saw %q, undone %v; want a replace error, the original bytes, and the undo",
+				err,
+				seen,
+				undone,
+			)
 		}
 	})
 }

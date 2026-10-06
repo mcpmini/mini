@@ -45,7 +45,10 @@ func assertSprintRun(label string, run ClaudeResult) []error {
 	add(AssertToolCalled(run.CallLogDir, "jira", "search_issues"))
 	add(AssertResponseContains(run.Text, "ENG-", "WEBAPP-"))
 	if run.Turns < 3 {
-		errs = append(errs, fmt.Errorf("[%s] expected at least 3 turns for a multi-system task, got %d", label, run.Turns))
+		errs = append(
+			errs,
+			fmt.Errorf("[%s] expected at least 3 turns for a multi-system task, got %d", label, run.Turns),
+		)
 	}
 	return errs
 }
@@ -56,8 +59,10 @@ func RunBaselineEval(ctx context.Context, r *Runner, env *Env) (EvalResult, []er
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}
-	result, err := r.RunEval(ctx, evalCtx{Env: env, Params: EvalParams{Servers: servers},
-		Task: "Say hello and nothing else. Do not use any tools."})
+	result, err := r.RunEval(ctx, evalCtx{
+		Env: env, Params: EvalParams{Servers: servers},
+		Task: "Say hello and nothing else. Do not use any tools.",
+	})
 	if err != nil {
 		return EvalResult{}, []error{err}
 	}

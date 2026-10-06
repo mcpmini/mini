@@ -73,24 +73,36 @@ func TestSaveLoadRegistration_confidentialClientFields(t *testing.T) {
 
 func TestSaveRegistration_filePermissions(t *testing.T) {
 	dir := t.TempDir()
-	if err := auth.SaveRegistration(dir, "myserver", &auth.Registration{ClientID: "id1", ClientSecret: "secret"}); err != nil {
+	if err := auth.SaveRegistration(
+		dir,
+		"myserver",
+		&auth.Registration{ClientID: "id1", ClientSecret: "secret"},
+	); err != nil {
 		t.Fatalf("save: %v", err)
 	}
 	info, err := os.Stat(dir + "/internal/myserver.dcr.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0600 {
+	if got := info.Mode().Perm(); got != 0o600 {
 		t.Errorf("registration file permissions = %#o, want 0600", got)
 	}
 }
 
 func TestSaveRegistration_overwritesExistingAtomically(t *testing.T) {
 	dir := t.TempDir()
-	if err := auth.SaveRegistration(dir, "myserver", &auth.Registration{ClientID: "old-id", ClientSecret: "old-secret"}); err != nil {
+	if err := auth.SaveRegistration(
+		dir,
+		"myserver",
+		&auth.Registration{ClientID: "old-id", ClientSecret: "old-secret"},
+	); err != nil {
 		t.Fatalf("first save: %v", err)
 	}
-	if err := auth.SaveRegistration(dir, "myserver", &auth.Registration{ClientID: "new-id", ClientSecret: "new-secret"}); err != nil {
+	if err := auth.SaveRegistration(
+		dir,
+		"myserver",
+		&auth.Registration{ClientID: "new-id", ClientSecret: "new-secret"},
+	); err != nil {
 		t.Fatalf("second save: %v", err)
 	}
 	loaded, err := auth.LoadRegistration(dir, "myserver")

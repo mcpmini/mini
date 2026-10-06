@@ -128,7 +128,11 @@ func validateEntry(entry Entry) error {
 	if entry.URL == "" {
 		return fmt.Errorf("url is required")
 	}
-	if err := cmp.Or(validateTitle(entry.Title), validateText("description", entry.Description), validateText("category", entry.Category)); err != nil {
+	if err := cmp.Or(
+		validateTitle(entry.Title),
+		validateText("description", entry.Description),
+		validateText("category", entry.Category),
+	); err != nil {
 		return err
 	}
 	if !slices.Contains(knownAuthValues, entry.Auth) {

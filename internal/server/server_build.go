@@ -61,7 +61,12 @@ func applyParams(s *Server, p Params) {
 	s.allowNonLoopbackHost = p.AllowNonLoopbackHost
 }
 
-func newServer(cfg *config.Config, configDir string, projections map[string]map[string]*config.ProjectionConfig, logger *slog.Logger) *Server {
+func newServer(
+	cfg *config.Config,
+	configDir string,
+	projections map[string]map[string]*config.ProjectionConfig,
+	logger *slog.Logger,
+) *Server {
 	s := &Server{
 		cfg:              cfg,
 		configDir:        configDir,

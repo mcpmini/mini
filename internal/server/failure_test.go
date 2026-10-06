@@ -162,7 +162,9 @@ func TestUpstream_toolReturnsIsError_gracefulEnvelope(t *testing.T) {
 	fake := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"not found: resource XYZ"}],"isError":true}`),
+			"tools/call": json.RawMessage(
+				`{"content":[{"type":"text","text":"not found: resource XYZ"}],"isError":true}`,
+			),
 		},
 	}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fake)
@@ -208,7 +210,9 @@ func TestUpstream_malformedJSONResponse_gracefulError(t *testing.T) {
 		Tools: []transport.ToolDefinition{{Name: "op", InputSchema: json.RawMessage(`{}`)}},
 		Responses: map[string]json.RawMessage{
 			// Valid JSON but content has text that's invalid JSON → treated as string
-			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"<html>error page</html>"}],"isError":false}`),
+			"tools/call": json.RawMessage(
+				`{"content":[{"type":"text","text":"<html>error page</html>"}],"isError":false}`,
+			),
 		},
 	}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "svc"}, fake)
@@ -227,8 +231,10 @@ func TestUpstream_oneFailsOthersWork(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
 	goodFake := &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
-		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"pong"}]}`)},
+		Tools: []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"pong"}]}`),
+		},
 	}
 	badFake := fakeToolConn("fail")
 	srv.AddConnection(ctx, config.ServerConfig{Name: "good"}, goodFake)

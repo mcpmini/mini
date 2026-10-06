@@ -101,10 +101,15 @@ func NewHTTPConnection(cfg HTTPConnectionConfig) (*HTTPConnection, error) {
 		authProvider:            cfg.AuthProvider,
 		authHeaderName:          cfg.AuthHeaderName,
 		disableRetryOnRateLimit: cfg.DisableRetryOnRateLimit,
-		client:                  NewNoRedirectClient(NoRedirectClientOptions{Timeout: resolveClientTimeout(cfg.ClientTimeout), BlockPrivateIPs: cfg.BlockPrivateIPs}),
-		clock:                   cfg.Clock,
-		listenerCtx:             listenerCtx,
-		listenerCancel:          listenerCancel,
+		client: NewNoRedirectClient(
+			NoRedirectClientOptions{
+				Timeout:         resolveClientTimeout(cfg.ClientTimeout),
+				BlockPrivateIPs: cfg.BlockPrivateIPs,
+			},
+		),
+		clock:          cfg.Clock,
+		listenerCtx:    listenerCtx,
+		listenerCancel: listenerCancel,
 	}, nil
 }
 
@@ -161,7 +166,10 @@ func (c *HTTPConnection) Call(ctx context.Context, method string, params json.Ra
 	})
 }
 
-func (c *HTTPConnection) withSessionRecovery(ctx context.Context, do func() (json.RawMessage, error)) (json.RawMessage, error) {
+func (c *HTTPConnection) withSessionRecovery(
+	ctx context.Context,
+	do func() (json.RawMessage, error),
+) (json.RawMessage, error) {
 	result, err := do()
 	var expiredErr *SessionExpiredError
 	if !errors.As(err, &expiredErr) {
@@ -209,7 +217,12 @@ func (c *HTTPConnection) post(ctx context.Context, rpcReq Request) (postResult, 
 	return postResult{}, fmt.Errorf("exceeded max retries for %s", rpcReq.Method)
 }
 
-func (c *HTTPConnection) postWithRetryDelay(ctx context.Context, rpcReq Request, i int, backoff *time.Duration) (postResult, bool, error) {
+func (c *HTTPConnection) postWithRetryDelay(
+	ctx context.Context,
+	rpcReq Request,
+	i int,
+	backoff *time.Duration,
+) (postResult, bool, error) {
 	r, err := c.doPost(ctx, rpcReq)
 	if err == nil {
 		return r, true, nil
@@ -276,7 +289,11 @@ func (c *HTTPConnection) buildHTTPRequest(ctx context.Context, rpcReq Request) (
 	return httpReq, sentAuth, nil
 }
 
-func (c *HTTPConnection) processResponse(resp *http.Response, request Request, sentSessionID string) (postResult, error) {
+func (c *HTTPConnection) processResponse(
+	resp *http.Response,
+	request Request,
+	sentSessionID string,
+) (postResult, error) {
 	if resp.StatusCode >= 400 {
 		return c.httpErrorResult(resp, request.Method, sentSessionID)
 	}

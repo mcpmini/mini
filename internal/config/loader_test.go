@@ -411,13 +411,26 @@ func TestEffectiveFormat(t *testing.T) {
 		{"projection when no explicit", "", config.FormatToon, config.FormatJSON, config.FormatToon},
 		{"global when no explicit or projection", "", "", config.FormatToon, config.FormatToon},
 		{"json default when all empty", "", "", "", config.FormatJSON},
-		{"explicit json beats toon projection", config.FormatJSON, config.FormatToon, config.FormatToon, config.FormatJSON},
+		{
+			"explicit json beats toon projection",
+			config.FormatJSON,
+			config.FormatToon,
+			config.FormatToon,
+			config.FormatJSON,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := config.EffectiveFormat(tc.explicit, tc.projection, tc.global)
 			if got != tc.want {
-				t.Errorf("EffectiveFormat(%q, %q, %q) = %q, want %q", tc.explicit, tc.projection, tc.global, got, tc.want)
+				t.Errorf(
+					"EffectiveFormat(%q, %q, %q) = %q, want %q",
+					tc.explicit,
+					tc.projection,
+					tc.global,
+					got,
+					tc.want,
+				)
 			}
 		})
 	}
@@ -431,7 +444,11 @@ func TestLoadActions_malformedYAML_returnsError(t *testing.T) {
 
 func TestLoadActions_invalidActionName_returnsError(t *testing.T) {
 	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "bad.yaml"), "name: \"bad name\"\nserver: gh\ntool: list\n")
+	testutil.WriteFile(
+		t,
+		filepath.Join(dir, "internal", "actions", "bad.yaml"),
+		"name: \"bad name\"\nserver: gh\ntool: list\n",
+	)
 	expectLoadActionsError(t, dir)
 }
 

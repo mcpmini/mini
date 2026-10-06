@@ -60,7 +60,7 @@ func (s *Store) createUniqueFile(base string, b []byte) (string, error) {
 			name = base + "_" + randutil.HexString(2)
 		}
 		path := filepath.Join(s.dir, name+".json")
-		if err := fileio.CreateFile(path, b, 0600); os.IsExist(err) {
+		if err := fileio.CreateFile(path, b, 0o600); os.IsExist(err) {
 			continue
 		} else if err != nil {
 			return "", fmt.Errorf("write response file: %w", err)

@@ -80,7 +80,11 @@ func (c *HTTPConnection) applyAuthProvider(ctx context.Context, req *http.Reques
 	return value, nil
 }
 
-func (c *HTTPConnection) sendOneWithAuthRetry(ctx context.Context, client *http.Client, build func(context.Context) (*http.Request, string, error)) (*http.Response, error) {
+func (c *HTTPConnection) sendOneWithAuthRetry(
+	ctx context.Context,
+	client *http.Client,
+	build func(context.Context) (*http.Request, string, error),
+) (*http.Response, error) {
 	var lastResp *http.Response
 	err := c.withAuthRetry(ctx, func() (string, error) {
 		req, sentAuth, err := build(ctx)

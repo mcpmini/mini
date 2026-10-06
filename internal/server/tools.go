@@ -53,12 +53,24 @@ func configureSchema() map[string]any {
 		"name":        "config",
 		"description": configureDescription(),
 		"inputSchema": schema(map[string]any{
-			"action":       prop("string", "status | get_projection | set_projection | reload (re-reads projections from disk, replacing all runtime-set projections) | add_server | remove_server"),
-			"server":       prop("string", "Server name (for get_projection, set_projection, add_server, remove_server)"),
-			"tool":         prop("string", "Tool name (for get_projection, set_projection)"),
-			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {include_only, exclude, passthrough, string_limits, array_limits, depth_limit, strip_markup, format (json|toon), alias}"},
-			"session_only": prop("boolean", "If true, projection applies only to this session (not persisted). Default: false."),
-			"config":       map[string]any{"type": "object", "description": "ServerConfig for add_server"},
+			"action": prop(
+				"string",
+				"status | get_projection | set_projection | reload (re-reads projections from disk, replacing all runtime-set projections) | add_server | remove_server",
+			),
+			"server": prop(
+				"string",
+				"Server name (for get_projection, set_projection, add_server, remove_server)",
+			),
+			"tool": prop("string", "Tool name (for get_projection, set_projection)"),
+			"projection": map[string]any{
+				"type":        "object",
+				"description": "ProjectionConfig: {include_only, exclude, passthrough, string_limits, array_limits, depth_limit, strip_markup, format (json|toon), alias}",
+			},
+			"session_only": prop(
+				"boolean",
+				"If true, projection applies only to this session (not persisted). Default: false.",
+			),
+			"config": map[string]any{"type": "object", "description": "ServerConfig for add_server"},
 		}),
 	}
 }
@@ -81,12 +93,24 @@ func miniConfigSchema() map[string]any {
 		"name":        "config",
 		"description": "Runtime admin for mini. Actions: status (server health + response store stats); get_projection (a tool's server rule and this session's override); set_projection (replace a tool's projection in its server YAML); reload (re-read projections from server YAML files); add_server (connect a new upstream MCP and save it to config); remove_server (disconnect an upstream and delete it from config); start_auth (begin OAuth2 PKCE flow); auth_status (check OAuth token status).",
 		"inputSchema": schema(map[string]any{
-			"action":       prop("string", "status | get_projection | set_projection | reload | add_server | remove_server | start_auth | auth_status"),
-			"server":       prop("string", "Server name (for get_projection, set_projection, add_server, remove_server)"),
-			"tool":         prop("string", "Tool name (for get_projection, set_projection)"),
-			"projection":   map[string]any{"type": "object", "description": "ProjectionConfig: {include_only, exclude, passthrough, string_limits, array_limits, depth_limit, strip_markup, format (json|toon), alias}"},
-			"session_only": prop("boolean", "If true, projection applies only to this session (not persisted). Default: false."),
-			"config":       map[string]any{"type": "object", "description": "ServerConfig for add_server"},
+			"action": prop(
+				"string",
+				"status | get_projection | set_projection | reload | add_server | remove_server | start_auth | auth_status",
+			),
+			"server": prop(
+				"string",
+				"Server name (for get_projection, set_projection, add_server, remove_server)",
+			),
+			"tool": prop("string", "Tool name (for get_projection, set_projection)"),
+			"projection": map[string]any{
+				"type":        "object",
+				"description": "ProjectionConfig: {include_only, exclude, passthrough, string_limits, array_limits, depth_limit, strip_markup, format (json|toon), alias}",
+			},
+			"session_only": prop(
+				"boolean",
+				"If true, projection applies only to this session (not persisted). Default: false.",
+			),
+			"config": map[string]any{"type": "object", "description": "ServerConfig for add_server"},
 		}),
 	}
 }

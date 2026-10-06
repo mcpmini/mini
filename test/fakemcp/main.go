@@ -42,7 +42,11 @@ func parseFlags() (fakeOpts, error) {
 	fixturesDir := flag.String("fixtures", "", "directory of fixture JSON files (each .json = one tool)")
 	controlAddr := flag.String("control-addr", "127.0.0.1:0", "host:port for HTTP control API (0 = random port)")
 	controlFile := flag.String("control-file", "", "file to write the chosen control API address to")
-	initialFault := flag.String("initial-fault", "", "JSON-encoded Fault to apply at startup (e.g. for subprocess fault injection)")
+	initialFault := flag.String(
+		"initial-fault",
+		"",
+		"JSON-encoded Fault to apply at startup (e.g. for subprocess fault injection)",
+	)
 	callLog := flag.String("call-log", "", "append a JSON line per tool call to this file")
 	listPageSize := flag.Int("list-page-size", 0, "paginate tools/list at this page size (0 = disabled)")
 	flag.Parse()
@@ -92,7 +96,7 @@ func main() {
 		os.Exit(1)
 	}
 	if opts.controlFile != "" {
-		if err := os.WriteFile(opts.controlFile, []byte(addr), 0600); err != nil {
+		if err := os.WriteFile(opts.controlFile, []byte(addr), 0o600); err != nil {
 			fmt.Fprintf(os.Stderr, "fakemcp: write control file: %v\n", err)
 			os.Exit(1)
 		}

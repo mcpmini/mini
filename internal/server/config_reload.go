@@ -169,10 +169,26 @@ func sourceErrorPaths(errors []config.SourceError) []string {
 
 func (s *Server) logReloadProblems(servers config.Servers) {
 	for _, se := range servers.Broken {
-		s.logger.Warn("server config fails to load, "+s.brokenServerOutcome(se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
+		s.logger.Warn(
+			"server config fails to load, "+s.brokenServerOutcome(se.ServerName),
+			"server",
+			se.ServerName,
+			"path",
+			se.Path,
+			"err",
+			se.Err,
+		)
 	}
 	for _, se := range servers.BrokenProjections() {
-		s.logger.Warn("projections fail to load, "+s.brokenProjectionsOutcome(se.ServerName), "server", se.ServerName, "path", se.Path, "err", se.Err)
+		s.logger.Warn(
+			"projections fail to load, "+s.brokenProjectionsOutcome(se.ServerName),
+			"server",
+			se.ServerName,
+			"path",
+			se.Path,
+			"err",
+			se.Err,
+		)
 	}
 }
 
@@ -207,7 +223,10 @@ func keepsLiveProjections(servers config.Servers, name string) bool {
 	return servers.IsBroken(name) || (loaded && sc.ProjectionsErr != nil)
 }
 
-func (s *Server) replaceProjections(projections map[string]map[string]*config.ProjectionConfig, servers config.Servers) {
+func (s *Server) replaceProjections(
+	projections map[string]map[string]*config.ProjectionConfig,
+	servers config.Servers,
+) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
 	for name, live := range s.projections {

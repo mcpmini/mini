@@ -218,7 +218,10 @@ func TestAlias_actionTargetingHiddenAliasedToolByAliasName_resolvesUpstreamTool(
 		t.Fatalf("action lookup failed: %v", err)
 	}
 	if e.TargetTool != "secret_op" {
-		t.Errorf("action targeting hidden aliased tool by alias name should resolve to upstream name, got %q", e.TargetTool)
+		t.Errorf(
+			"action targeting hidden aliased tool by alias name should resolve to upstream name, got %q",
+			e.TargetTool,
+		)
 	}
 }
 

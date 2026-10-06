@@ -27,7 +27,6 @@ func TestFetchReturnsPublishedEntries(t *testing.T) {
 	})
 
 	c, err := Fetch(context.Background(), client, srv.URL+"/catalog/v1.json")
-
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -47,9 +46,23 @@ func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
 		wantNames []string
 		wantErr   string
 	}{
-		{"keeps the known entries", withEntry(`{"name":"known","title":"Known","url":"https://known.example/mcp","description":"known server","category":"Test","auth":"none"}`), []string{"known"}, ""},
+		{
+			"keeps the known entries",
+			withEntry(
+				`{"name":"known","title":"Known","url":"https://known.example/mcp","description":"known server","category":"Test","auth":"none"}`,
+			),
+			[]string{"known"},
+			"",
+		},
 		{"fails when nothing is left", future, nil, "catalog entries are required"},
-		{"still validates the kept entries", withEntry(`{"name":"invalid","title":"Invalid","url":"https://invalid.example/mcp","description":"bad\u001btext","category":"Test","auth":"none"}`), nil, "description contains control characters"},
+		{
+			"still validates the kept entries",
+			withEntry(
+				`{"name":"invalid","title":"Invalid","url":"https://invalid.example/mcp","description":"bad\u001btext","category":"Test","auth":"none"}`,
+			),
+			nil,
+			"description contains control characters",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,7 +76,8 @@ func TestFetchSkipsEntriesWithUnknownAuth(t *testing.T) {
 			for _, entry := range c.Entries {
 				names = append(names, entry.Name)
 			}
-			if !slices.Equal(names, tt.wantNames) || (tt.wantErr == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
+			if !slices.Equal(names, tt.wantNames) || (tt.wantErr == "") != (err == nil) ||
+				(err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
 				t.Fatalf("Fetch = %v, %v; want %v, error containing %q", names, err, tt.wantNames, tt.wantErr)
 			}
 		})
@@ -76,7 +90,11 @@ func TestFetchRejectsUnusableResponses(t *testing.T) {
 		handler http.HandlerFunc
 		want    string
 	}{
-		{"error status", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) }, "status 404"},
+		{
+			"error status",
+			func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNotFound) },
+			"status 404",
+		},
 		{"redirect", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "https://elsewhere.example/catalog.json", http.StatusFound)
 		}, "status 302"},
@@ -90,7 +108,9 @@ func TestFetchRejectsUnusableResponses(t *testing.T) {
 			w.Write([]byte("<html><body>Sign in to the network</body></html>")) //nolint:errcheck
 		}, "parse catalog"},
 		{"unknown schema version", func(w http.ResponseWriter, _ *http.Request) {
-			w.Write([]byte(strings.Replace(oneEntryCatalog, `"schema_version":1`, `"schema_version":2`, 1))) //nolint:errcheck
+			w.Write(
+				[]byte(strings.Replace(oneEntryCatalog, `"schema_version":1`, `"schema_version":2`, 1)),
+			) //nolint:errcheck
 		}, "schema_version"},
 	}
 	for _, tt := range tests {
@@ -186,7 +206,8 @@ func TestFetchPopular_preservesOrderAndSkipsOnlyUnknownAuthIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(c.Popular, []string{"second", "first"}) || len(c.Entries) != 2 || c.Entries[0].Name != "first" || c.Entries[1].Name != "second" {
+	if !slices.Equal(c.Popular, []string{"second", "first"}) || len(c.Entries) != 2 || c.Entries[0].Name != "first" ||
+		c.Entries[1].Name != "second" {
 		t.Fatalf("Fetch = %+v, want popular [second first] and entries [first second]", c)
 	}
 }

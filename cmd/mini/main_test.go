@@ -97,7 +97,7 @@ func shortConfigDir(t *testing.T) string { return testutil.ShortTempDir(t) }
 func socketHealthServer(t *testing.T, dir, body string) {
 	t.Helper()
 	sp := daemon.SocketPath(dir)
-	if err := os.MkdirAll(filepath.Dir(sp), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sp), 0o700); err != nil {
 		t.Fatalf("mkdir socket directory: %v", err)
 	}
 	ln, err := net.Listen("unix", sp)

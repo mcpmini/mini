@@ -23,11 +23,36 @@ func TestDirectFileCallsRequireReasonedExemptions(t *testing.T) {
 		{"other os operation", `import "os"`, `os.Stat("fixture")`, ""},
 		{"reason", `import "os"`, "os.ReadFile(\"fixture\") //fileiolint:allow poll for output", ""},
 		{"no reason", `import "os"`, "os.ReadFile(\"fixture\") //fileiolint:allow ", "direct os.ReadFile call"},
-		{"whitespace reason", `import "os"`, "os.ReadFile(\"fixture\") //fileiolint:allow \t ", "direct os.ReadFile call"},
-		{"preceding comment", `import "os"`, "//fileiolint:allow poll for output\nos.ReadFile(\"fixture\")", "direct os.ReadFile call"},
-		{"string marker", `import "os"`, `os.ReadFile("//fileiolint:allow poll for output")`, "direct os.ReadFile call"},
-		{"block comment", `import "os"`, `os.ReadFile("fixture") /* //fileiolint:allow poll for output */`, "direct os.ReadFile call"},
-		{"another linter", `import "os"`, "os.WriteFile(\"fixture\", nil, 0600) //nolint:errcheck //fileiolint:allow executable script", ""},
+		{
+			"whitespace reason",
+			`import "os"`,
+			"os.ReadFile(\"fixture\") //fileiolint:allow \t ",
+			"direct os.ReadFile call",
+		},
+		{
+			"preceding comment",
+			`import "os"`,
+			"//fileiolint:allow poll for output\nos.ReadFile(\"fixture\")",
+			"direct os.ReadFile call",
+		},
+		{
+			"string marker",
+			`import "os"`,
+			`os.ReadFile("//fileiolint:allow poll for output")`,
+			"direct os.ReadFile call",
+		},
+		{
+			"block comment",
+			`import "os"`,
+			`os.ReadFile("fixture") /* //fileiolint:allow poll for output */`,
+			"direct os.ReadFile call",
+		},
+		{
+			"another linter",
+			`import "os"`,
+			"os.WriteFile(\"fixture\", nil, 0600) //nolint:errcheck //fileiolint:allow executable script",
+			"",
+		},
 		{"multiline", `import "os"`, "os.ReadFile(\n\"fixture\",\n) //fileiolint:allow poll for output", ""},
 	}
 	for _, tc := range cases {

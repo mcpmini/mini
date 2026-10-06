@@ -31,7 +31,11 @@ var pingMCPHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Reques
 	fakeMCPHandle(w, r, pingTools)
 })
 
-func upstreamFailingFirst(t *testing.T, failures int32, afterFailures http.HandlerFunc) (*httptest.Server, *atomic.Int32) {
+func upstreamFailingFirst(
+	t *testing.T,
+	failures int32,
+	afterFailures http.HandlerFunc,
+) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var attempts atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +132,10 @@ func TestConnectUpstreams_laterCall_leavesEarlierRetriesRunning(t *testing.T) {
 	r.waitForBackoffTimer(t)
 
 	other := newMCPTestServer(t, pingTools)
-	r.srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "other", Transport: "http", URL: other.URL}})
+	r.srv.ConnectUpstreams(
+		context.Background(),
+		[]config.ServerConfig{{Name: "other", Transport: "http", URL: other.URL}},
+	)
 	r.clock.Advance(time.Second)
 	r.srv.WaitForStartupConnects()
 
@@ -221,7 +228,11 @@ func TestConnectUpstreamAsync_runtimeAddDuringRetry_isNotOverwritten(t *testing.
 	defer mustCloseWithin(t, r.srv, 3*time.Second)
 
 	r.waitForBackoffTimer(t)
-	if err := r.srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConn("runtime_a", "runtime_b")); err != nil {
+	if err := r.srv.AddConnection(
+		context.Background(),
+		config.ServerConfig{Name: "svc"},
+		fakeConn("runtime_a", "runtime_b"),
+	); err != nil {
 		t.Fatalf("AddConnection: %v", err)
 	}
 	r.clock.Advance(time.Second)
@@ -287,7 +298,11 @@ func TestConnectUpstreamAsync_runtimeAddWhileDialInFlight_doesNotOverwriteRuntim
 		t.Fatal("handler did not reach tools/list within 5s")
 	}
 
-	if err := srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, fakeConn("runtime_a", "runtime_b")); err != nil {
+	if err := srv.AddConnection(
+		context.Background(),
+		config.ServerConfig{Name: "svc"},
+		fakeConn("runtime_a", "runtime_b"),
+	); err != nil {
 		t.Fatalf("AddConnection: %v", err)
 	}
 
@@ -309,8 +324,18 @@ func TestConnectUpstreamAsync_projectionsReloadedDuringRetry_installUsesLiveProj
 		wantListed  string
 		wantMissing string
 	}{
-		{name: "projections removed", reloaded: map[string]map[string]*config.ProjectionConfig{}, wantListed: "svc.ping", wantMissing: "svc.old_alias"},
-		{name: "alias changed", reloaded: aliasPing("new_alias"), wantListed: "svc.new_alias", wantMissing: "svc.old_alias"},
+		{
+			name:        "projections removed",
+			reloaded:    map[string]map[string]*config.ProjectionConfig{},
+			wantListed:  "svc.ping",
+			wantMissing: "svc.old_alias",
+		},
+		{
+			name:        "alias changed",
+			reloaded:    aliasPing("new_alias"),
+			wantListed:  "svc.new_alias",
+			wantMissing: "svc.old_alias",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

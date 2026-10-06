@@ -59,10 +59,10 @@ func NewStore(cfg StoreConfig) (*Store, error) {
 // secureDir creates dir and enforces 0700 even if it already existed with looser
 // permissions (e.g. response_dir overridden to a world-readable location like /tmp).
 func secureDir(dir string) error {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create response dir: %w", err)
 	}
-	if err := os.Chmod(dir, 0700); err != nil {
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return fmt.Errorf("secure response dir: %w", err)
 	}
 	return nil

@@ -258,7 +258,11 @@ func TestNotificationStream_401_refreshesAndReconnects(t *testing.T) {
 			}
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprintf(w, "data: {\"jsonrpc\":\"2.0\",\"method\":\"%s\"}\n\n", NotificationToolsChanged) //nolint:errcheck
+			fmt.Fprintf(
+				w,
+				"data: {\"jsonrpc\":\"2.0\",\"method\":\"%s\"}\n\n",
+				NotificationToolsChanged,
+			) //nolint:errcheck
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -313,6 +317,7 @@ type refreshSucceedsProvider struct{}
 func (refreshSucceedsProvider) Authorization(_ context.Context) (string, error) {
 	return "Bearer initial", nil
 }
+
 func (refreshSucceedsProvider) RefreshAuthorization(_ context.Context, _ string) (string, error) {
 	return "Bearer refreshed", nil
 }

@@ -21,7 +21,11 @@ func TestCanonicalizeNumberBoundaryTable(t *testing.T) {
 		{"negative zero integer normalizes to zero", "-0", "0"},
 		{"negative zero float normalizes to zero", "-0.0", "0"},
 		{"uppercase E with plus sign canonicalizes", "1E+6", "1000000"},
-		{"arbitrary precision integer survives verbatim", "123456789012345678901234567890", "123456789012345678901234567890"},
+		{
+			"arbitrary precision integer survives verbatim",
+			"123456789012345678901234567890",
+			"123456789012345678901234567890",
+		},
 		{"exponent with fractional mantissa", "2.5e-7", "2.5e-7"},
 	}
 	for _, tc := range cases {

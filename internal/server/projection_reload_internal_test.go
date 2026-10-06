@@ -70,7 +70,7 @@ func TestFingerprintProjectionSources(t *testing.T) {
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: "other", Transport: "stdio"})
 		sibling := filepath.Join(dir, "servers", "other.yaml")
 		broken := filepath.Join(dir, "servers", "svc.yaml")
-		if err := os.Mkdir(broken, 0700); err != nil {
+		if err := os.Mkdir(broken, 0o700); err != nil {
 			t.Fatal(err)
 		}
 		first, second := mustFingerprint(t, dir), mustFingerprint(t, dir)
@@ -78,7 +78,11 @@ func TestFingerprintProjectionSources(t *testing.T) {
 			t.Fatalf("fingerprint %v is missing the readable sibling", first)
 		}
 		if first[broken] == "" || first[broken] != second[broken] {
-			t.Fatalf("unreadable file fingerprints %q then %q, want one stable non-empty value", first[broken], second[broken])
+			t.Fatalf(
+				"unreadable file fingerprints %q then %q, want one stable non-empty value",
+				first[broken],
+				second[broken],
+			)
 		}
 		if err := os.Remove(broken); err != nil {
 			t.Fatal(err)
@@ -115,11 +119,36 @@ func TestChangedPaths(t *testing.T) {
 		want []string
 	}{
 		{name: "no change", prev: map[string]string{"a": "1"}, curr: map[string]string{"a": "1"}, want: nil},
-		{name: "nil prev reports all current", prev: nil, curr: map[string]string{"a": "1", "b": "2"}, want: []string{"a", "b"}},
-		{name: "added file", prev: map[string]string{"a": "1"}, curr: map[string]string{"a": "1", "b": "2"}, want: []string{"b"}},
-		{name: "removed file", prev: map[string]string{"a": "1", "b": "2"}, curr: map[string]string{"a": "1"}, want: []string{"b"}},
-		{name: "modified hash", prev: map[string]string{"a": "1"}, curr: map[string]string{"a": "9"}, want: []string{"a"}},
-		{name: "rename is add plus remove", prev: map[string]string{"a": "1"}, curr: map[string]string{"b": "1"}, want: []string{"a", "b"}},
+		{
+			name: "nil prev reports all current",
+			prev: nil,
+			curr: map[string]string{"a": "1", "b": "2"},
+			want: []string{"a", "b"},
+		},
+		{
+			name: "added file",
+			prev: map[string]string{"a": "1"},
+			curr: map[string]string{"a": "1", "b": "2"},
+			want: []string{"b"},
+		},
+		{
+			name: "removed file",
+			prev: map[string]string{"a": "1", "b": "2"},
+			curr: map[string]string{"a": "1"},
+			want: []string{"b"},
+		},
+		{
+			name: "modified hash",
+			prev: map[string]string{"a": "1"},
+			curr: map[string]string{"a": "9"},
+			want: []string{"a"},
+		},
+		{
+			name: "rename is add plus remove",
+			prev: map[string]string{"a": "1"},
+			curr: map[string]string{"b": "1"},
+			want: []string{"a", "b"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -132,18 +161,25 @@ func TestChangedPaths(t *testing.T) {
 
 func TestApplyConfig_keepsServersAndProjectionsWhileTheServerFilesCantBeListed(t *testing.T) {
 	srv := newInstallTestServer(t)
-	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{}); err != nil {
+	if err := srv.AddConnection(
+		t.Context(),
+		config.ServerConfig{Name: "svc"},
+		&transport.FakeConnection{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
-	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": {"getData": {Alias: "fetch"}}}, config.Servers{})
+	srv.replaceProjections(
+		map[string]map[string]*config.ProjectionConfig{"svc": {"getData": {Alias: "fetch"}}},
+		config.Servers{},
+	)
 	configtest.WriteServer(t, srv.configDir, config.ServerConfig{Name: "svc", Command: "run"})
 	serversDir := filepath.Join(srv.configDir, "servers")
 	if err := os.Chmod(serversDir, 0); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := os.Chmod(serversDir, 0700); err != nil {
+		if err := os.Chmod(serversDir, 0o700); err != nil {
 			t.Error(err)
 		}
 	})

@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
@@ -26,7 +28,6 @@ import (
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/invoke"
 	"github.com/mcpmini/mini/internal/transport"
-	"golang.org/x/oauth2"
 )
 
 func newInstallTestServer(t *testing.T) *Server {
@@ -40,7 +41,11 @@ func newInstallTestServer(t *testing.T) *Server {
 
 func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *testing.T) {
 	srv := newInstallTestServer(t)
-	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{}); err != nil {
+	if err := srv.AddConnection(
+		t.Context(),
+		config.ServerConfig{Name: "svc"},
+		&transport.FakeConnection{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
@@ -60,7 +65,10 @@ func TestRemoveConfigServer_keepsANameSavedAgainSinceTheServerSetWasLoaded(t *te
 
 func TestInstallChecked_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.T) {
 	srv := newInstallTestServer(t)
-	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": {"getData": {Alias: "fetch"}}}, config.Servers{})
+	srv.replaceProjections(
+		map[string]map[string]*config.ProjectionConfig{"svc": {"getData": {Alias: "fetch"}}},
+		config.Servers{},
+	)
 	tools := []transport.ToolDefinition{{Name: "getData", InputSchema: json.RawMessage(`{}`)}}
 	var wg sync.WaitGroup
 	wg.Go(func() {
@@ -70,7 +78,11 @@ func TestInstallChecked_readsLiveAliasesWhileSetProjectionWritesThem(t *testing.
 	})
 	wg.Go(func() {
 		for range 20 {
-			if err := srv.installChecked(&transport.FakeConnection{}, tools, srv.replacingInstall(config.ServerConfig{Name: "svc"})); err != nil {
+			if err := srv.installChecked(
+				&transport.FakeConnection{},
+				tools,
+				srv.replacingInstall(config.ServerConfig{Name: "svc"}),
+			); err != nil {
 				t.Error(err)
 			}
 		}
@@ -117,14 +129,20 @@ func TestInstallChecked_namesToolsByTheLiveProjections(t *testing.T) {
 	t.Run("a reinstall whose config's projections failed to load keeps the live ones", func(t *testing.T) {
 		srv := newInstallTestServer(t)
 		srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{"svc": aliased}, config.Servers{})
-		reloaded := config.ServerConfig{Name: "svc", ProjectionsErr: &config.SourceError{ServerName: "svc", Err: errors.New("parse failed")}}
+		reloaded := config.ServerConfig{
+			Name:           "svc",
+			ProjectionsErr: &config.SourceError{ServerName: "svc", Err: errors.New("parse failed")},
+		}
 
 		if err := srv.installChecked(&transport.FakeConnection{}, tools, srv.replacingInstall(reloaded)); err != nil {
 			t.Fatal(err)
 		}
 
 		if got := registeredToolNames(srv); !slices.Equal(got, []string{"svc.fetch"}) {
-			t.Errorf("tools = %v, want [svc.fetch]: a reinstall, like finishing an OAuth login, must not drop the kept alias", got)
+			t.Errorf(
+				"tools = %v, want [svc.fetch]: a reinstall, like finishing an OAuth login, must not drop the kept alias",
+				got,
+			)
 		}
 	})
 }
@@ -134,11 +152,21 @@ func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.
 	srv.cfg.DangerousAllowPrivateURLs = true
 	startedDuringTheAdd := srv.replacingInstall(config.ServerConfig{Name: "svc"})
 
-	if _, err := srv.addServerFromAgent(t.Context(), &config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp"}); err == nil {
+	if _, err := srv.addServerFromAgent(
+		t.Context(),
+		&config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp"},
+	); err == nil {
 		t.Fatal("add_server to an unreachable URL succeeded")
 	}
 
-	if err := srv.installChecked(&transport.FakeConnection{}, nil, startedDuringTheAdd); !errors.Is(err, errServerRemoved) {
+	if err := srv.installChecked(
+		&transport.FakeConnection{},
+		nil,
+		startedDuringTheAdd,
+	); !errors.Is(
+		err,
+		errServerRemoved,
+	) {
 		t.Errorf("install started during the failed add = %v, want errServerRemoved so no unsaved server runs", err)
 	}
 }
@@ -146,7 +174,9 @@ func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.
 func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *testing.T) {
 	echomcp := os.Getenv("ECHOMCP_BIN")
 	if echomcp == "" {
-		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+		t.Fatal(
+			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
+		)
 	}
 	srv := newInstallTestServer(t)
 	srv.cfg.DangerousAllowRuntimeStdio = true
@@ -156,7 +186,14 @@ func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *tes
 		t.Fatal(err)
 	}
 
-	if err := srv.installChecked(&transport.FakeConnection{}, nil, startedForTheEarlierServer); !errors.Is(err, errServerRemoved) {
+	if err := srv.installChecked(
+		&transport.FakeConnection{},
+		nil,
+		startedForTheEarlierServer,
+	); !errors.Is(
+		err,
+		errServerRemoved,
+	) {
 		t.Errorf("install for the earlier svc = %v, want errServerRemoved so it can't replace the added one", err)
 	}
 }
@@ -185,7 +222,11 @@ func TestRemoveServerFromAgent_anAddOfTheNameWaitsUntilTheRemoveFinishes(t *test
 			URL:       "http://127.0.0.1:1/mcp",
 		}) // fails to connect either way
 	}()
-	waitUntil(t, "the add waits for svc or finishes", func() bool { return srv.NameLockCallers("svc") == 2 || isClosed(added) })
+	waitUntil(
+		t,
+		"the add waits for svc or finishes",
+		func() bool { return srv.NameLockCallers("svc") == 2 || isClosed(added) },
+	)
 	addFinishedMidRemove := isClosed(added)
 	resume()
 	<-removed
@@ -203,13 +244,19 @@ func TestStartAuth_waitsUntilAnAddOrRemoveOfTheNameFinishes(t *testing.T) {
 
 	started := make(chan struct{})
 	go func() { defer close(started); _, _ = srv.handleStartAuth("svc") }() // svc isn't saved, so it fails either way
-	waitUntil(t, "start_auth waits for svc or finishes", func() bool { return srv.NameLockCallers("svc") == 2 || isClosed(started) })
+	waitUntil(
+		t,
+		"start_auth waits for svc or finishes",
+		func() bool { return srv.NameLockCallers("svc") == 2 || isClosed(started) },
+	)
 	startedMidChange := isClosed(started)
 	unlock()
 	<-started
 
 	if startedMidChange {
-		t.Error("start_auth for svc ran while an add_server or remove_server of svc held it, so it could write files the remove deletes")
+		t.Error(
+			"start_auth for svc ran while an add_server or remove_server of svc held it, so it could write files the remove deletes",
+		)
 	}
 }
 
@@ -228,7 +275,9 @@ func TestChangeSavedServer_keepsSetProjectionOutUntilTheChangeFinishes(t *testin
 func TestAddServerFromAgent_aTokenRefreshForTheNamesEarlierServerLeavesNoToken(t *testing.T) {
 	echomcp := os.Getenv("ECHOMCP_BIN")
 	if echomcp == "" {
-		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+		t.Fatal(
+			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
+		)
 	}
 	srv := newInstallTestServer(t)
 	srv.cfg.DangerousAllowRuntimeStdio = true
@@ -251,7 +300,10 @@ func TestAddServerFromAgent_aTokenRefreshForTheNamesEarlierServerLeavesNoToken(t
 		t.Fatal(err)
 	}
 	if _, err := auth.Load(srv.configDir, "svc"); !auth.IsNotFound(err) {
-		t.Errorf("token after add_server: %v, want none: the earlier svc's refresh saved it after the add cleared it", err)
+		t.Errorf(
+			"token after add_server: %v, want none: the earlier svc's refresh saved it after the add cleared it",
+			err,
+		)
 	}
 }
 
@@ -282,7 +334,10 @@ func TestRetryStartupAfter_stopsForFailuresARetryCantFix(t *testing.T) {
 	if srv.retryStartupAfter("svc", refused, time.Second) {
 		t.Error("startup retries a command dangerous_allow_runtime_stdio doesn't allow, so it warns forever")
 	}
-	unset := fmt.Errorf("connect to svc: %w", &config.UnsetEnvError{Field: "headers.Authorization", Names: []string{"GITHUB_TOKEN"}})
+	unset := fmt.Errorf(
+		"connect to svc: %w",
+		&config.UnsetEnvError{Field: "headers.Authorization", Names: []string{"GITHUB_TOKEN"}},
+	)
 	if srv.retryStartupAfter("svc", unset, time.Second) {
 		t.Error("startup retries a server whose environment variable isn't set, which a retry can't fix")
 	}
@@ -357,8 +412,10 @@ func startTokenRefresh(t *testing.T, srv *Server) (finish func(), refreshed <-ch
 
 func TestCommitTokenUnlessRemoved(t *testing.T) {
 	login := func(srv *Server) upstreamInstall {
-		sc := config.ServerConfig{Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp",
-			Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: "http://127.0.0.1:1/token"}}
+		sc := config.ServerConfig{
+			Name: "svc", Transport: "http", URL: "http://127.0.0.1:1/mcp",
+			Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: "http://127.0.0.1:1/token"},
+		}
 		return upstreamInstall{cfg: sc, removeGen: srv.snapshotRemoveGen("svc")}
 	}
 

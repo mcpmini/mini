@@ -227,7 +227,18 @@ func (r *Runner) proxySetup(ec evalCtx, i, rep int) (runSetup, error) {
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newMCPRunSetup(mcpRunSetupParams{"proxy", i, rep, callDir, workDir, cfg, proxyAllowedTools(p.Servers, p.AllowedTools), ec.Task}), nil
+	return newMCPRunSetup(
+		mcpRunSetupParams{
+			"proxy",
+			i,
+			rep,
+			callDir,
+			workDir,
+			cfg,
+			proxyAllowedTools(p.Servers, p.AllowedTools),
+			ec.Task,
+		},
+	), nil
 }
 
 func (r *Runner) rawSetup(ec evalCtx, rep int) (runSetup, error) {
@@ -241,7 +252,9 @@ func (r *Runner) rawSetup(ec evalCtx, rep int) (runSetup, error) {
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newMCPRunSetup(mcpRunSetupParams{"direct", 0, rep, callDir, workDir, cfg, rawAllowedTools(p.Servers, p.AllowedTools), ec.Task}), nil
+	return newMCPRunSetup(
+		mcpRunSetupParams{"direct", 0, rep, callDir, workDir, cfg, rawAllowedTools(p.Servers, p.AllowedTools), ec.Task},
+	), nil
 }
 
 func (r *Runner) mcpSetup(ec evalCtx, i, rep int) (runSetup, error) {
@@ -255,7 +268,9 @@ func (r *Runner) mcpSetup(ec evalCtx, i, rep int) (runSetup, error) {
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newMCPRunSetup(mcpRunSetupParams{"mcp", i, rep, callDir, workDir, cfg, miniMCPAllowedTools(p.AllowedTools), ec.Task}), nil
+	return newMCPRunSetup(
+		mcpRunSetupParams{"mcp", i, rep, callDir, workDir, cfg, miniMCPAllowedTools(p.AllowedTools), ec.Task},
+	), nil
 }
 
 func (r *Runner) cliSetup(ec evalCtx, i, rep int) (runSetup, error) {
@@ -273,7 +288,17 @@ func (r *Runner) cliSetup(ec evalCtx, i, rep int) (runSetup, error) {
 	if err != nil {
 		return runSetup{}, err
 	}
-	return newCLIRunSetup(CLIRunSetupParams{Idx: i, Rep: rep, CallDir: callDir, WorkDir: workDir, WrapDir: wrapDir, Allowed: cliAllowedTools(p.AllowedTools), Task: ec.Task}), nil
+	return newCLIRunSetup(
+		CLIRunSetupParams{
+			Idx:     i,
+			Rep:     rep,
+			CallDir: callDir,
+			WorkDir: workDir,
+			WrapDir: wrapDir,
+			Allowed: cliAllowedTools(p.AllowedTools),
+			Task:    ec.Task,
+		},
+	), nil
 }
 
 type mcpRunSetupParams struct {

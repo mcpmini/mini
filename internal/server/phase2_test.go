@@ -17,8 +17,10 @@ func TestExecProtected(t *testing.T) {
 	ctx := context.Background()
 	perm := &config.PermissionsConfig{Protected: []string{"sendMessage"}}
 	fake := &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: "sendMessage"}},
-		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"sent"}]}`)},
+		Tools: []transport.ToolDefinition{{Name: "sendMessage"}},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"sent"}]}`),
+		},
 	}
 	srv.AddConnection(ctx, config.ServerConfig{Name: "slack", Permissions: perm}, fake)
 
@@ -97,8 +99,10 @@ func TestDiscoverDetail(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
-			{Name: "getBuild", Description: "Get a build by ID",
-				InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}}}`)},
+			{
+				Name: "getBuild", Description: "Get a build by ID",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}}}`),
+			},
 		},
 		Responses: make(map[string]json.RawMessage),
 	}

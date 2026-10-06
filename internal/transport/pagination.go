@@ -7,7 +7,10 @@ import (
 
 const maxToolsListPages = 10
 
-func paginateToolsList(ctx context.Context, callPage func(context.Context, string) (ToolsListResult, error)) ([]ToolDefinition, error) {
+func paginateToolsList(
+	ctx context.Context,
+	callPage func(context.Context, string) (ToolsListResult, error),
+) ([]ToolDefinition, error) {
 	var tools []ToolDefinition
 	cursor := ""
 	seen := map[string]bool{}

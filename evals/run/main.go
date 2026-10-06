@@ -257,7 +257,7 @@ func openResultsFile(evalArg string, modes []string) (*os.File, string, error) {
 		return nil, "", err
 	}
 	dir := filepath.Join(root, "evals", "results")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, "", err
 	}
 	path := buildResultsPath(dir, evalArg, modes)

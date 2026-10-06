@@ -30,7 +30,9 @@ func TestProxy_StableOutput_AllRootShapesWrapInData(t *testing.T) {
 			srv := newTestServer(t, server.Params{})
 			defer srv.Close()
 			conn := fakeConn("get_value")
-			conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":` + jsonQuote(tc.upstream) + `}]}`)
+			conn.Responses["tools/call"] = json.RawMessage(
+				`{"content":[{"type":"text","text":` + jsonQuote(tc.upstream) + `}]}`,
+			)
 			addProxyConn(t, srv, "svc", conn)
 
 			resp := serveProxy(t, srv, callTool("svc__get_value", map[string]any{}))
@@ -58,7 +60,9 @@ func TestProxy_StableOutput_TextAndStructuredContentMatch(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_value")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"name\":\"alice\"}"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 
 	resp := serveProxy(t, srv, callTool("svc__get_value", map[string]any{}))
@@ -215,7 +219,11 @@ func TestProxy_ForwardsLargeIntegerArgs(t *testing.T) {
 	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)
 	addProxyConn(t, srv, "svc", conn)
 
-	serveProxy(t, srv, callTool("svc__get_item", map[string]any{"args": map[string]any{"id": json.Number("9007199254740993")}}))
+	serveProxy(
+		t,
+		srv,
+		callTool("svc__get_item", map[string]any{"args": map[string]any{"id": json.Number("9007199254740993")}}),
+	)
 	lastParams := string(conn.LastParams)
 	if !strings.Contains(lastParams, "9007199254740993") {
 		t.Errorf("large integer corrupted in forwarded args: %s", lastParams)

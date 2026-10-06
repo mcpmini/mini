@@ -7,11 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/testutil"
-	"golang.org/x/oauth2"
 )
 
 func pkceToken(t *testing.T, ac *config.AuthConfig) *oauth2.Token {
@@ -65,10 +66,14 @@ func TestSave_tokenFilePermissions(t *testing.T) {
 func TestSaveTightensExistingTokenPermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/internal/myserver.token.json"
-	if err := os.MkdirAll(dir+"/internal", 0700); err != nil {
+	if err := os.MkdirAll(dir+"/internal", 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte(`{}`), 0644); err != nil { //fileiolint:allow loose permissions exercise credential hardening
+	if err := os.WriteFile(
+		path,
+		[]byte(`{}`),
+		0o644,
+	); err != nil { //fileiolint:allow loose permissions exercise credential hardening
 		t.Fatal(err)
 	}
 	if err := auth.Save(dir, "myserver", &oauth2.Token{AccessToken: "secret"}); err != nil {
@@ -78,7 +83,7 @@ func TestSaveTightensExistingTokenPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := info.Mode().Perm(); got != 0600 {
+	if got := info.Mode().Perm(); got != 0o600 {
 		t.Errorf("token permissions = %#o, want 0600", got)
 	}
 }
@@ -86,7 +91,7 @@ func TestSaveTightensExistingTokenPermissions(t *testing.T) {
 func TestSaveReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {
 	dir := t.TempDir()
 	internal := dir + "/internal"
-	if err := os.MkdirAll(internal, 0700); err != nil {
+	if err := os.MkdirAll(internal, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	target := dir + "/target"
@@ -122,7 +127,7 @@ func assertTokenFilesPrivate(t *testing.T, tokensDir string) {
 		if err != nil {
 			t.Fatalf("Stat %s: %v", e.Name(), err)
 		}
-		if info.Mode().Perm()&0077 != 0 {
+		if info.Mode().Perm()&0o077 != 0 {
 			t.Errorf("token file %s has world/group-readable permissions: %v", e.Name(), info.Mode().Perm())
 		}
 	}
@@ -160,7 +165,11 @@ func TestBuildAuthURL_extraParamsDoNotOverrideResource(t *testing.T) {
 	}
 	q := parsed.Query()
 	if got := q.Get("resource"); got != "https://resource.example.com" {
-		t.Errorf("resource = %q, want %q — ExtraAuthParams must not override computed resource", got, "https://resource.example.com")
+		t.Errorf(
+			"resource = %q, want %q — ExtraAuthParams must not override computed resource",
+			got,
+			"https://resource.example.com",
+		)
 	}
 	if got := q.Get("prompt"); got != "consent" {
 		t.Errorf("prompt = %q, want consent — ExtraAuthParams should pass through", got)

@@ -42,7 +42,10 @@ func classifyForward(sess DaemonSession, body []byte) forwardOutcome {
 // else is treated as potentially post-send (fail safe — never double-execute a write).
 func classifyDoError(body []byte, err error) forwardOutcome {
 	if isDialError(err) {
-		return forwardOutcome{kind: outcomeTransportDown, resp: daemonErrorResponse(body, "daemon unreachable: "+err.Error())}
+		return forwardOutcome{
+			kind: outcomeTransportDown,
+			resp: daemonErrorResponse(body, "daemon unreachable: "+err.Error()),
+		}
 	}
 	return forwardOutcome{kind: outcomeOther, resp: daemonErrorResponse(body, "daemon error: "+err.Error())}
 }
@@ -63,7 +66,13 @@ func classifyResponse(resp *http.Response, body []byte) forwardOutcome {
 	if resp.StatusCode >= 400 {
 		// Request reached daemon; can't prove it didn't execute → outcomeOther (never retried).
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-		return forwardOutcome{kind: outcomeOther, resp: daemonErrorResponse(body, fmt.Sprintf("daemon returned HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(errBody)))}
+		return forwardOutcome{
+			kind: outcomeOther,
+			resp: daemonErrorResponse(
+				body,
+				fmt.Sprintf("daemon returned HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(errBody)),
+			),
+		}
 	}
 	out := readForwardResponse(resp)
 	if isNotInitialized(out) {
@@ -76,7 +85,11 @@ func classifyResponse(resp *http.Response, body []byte) forwardOutcome {
 const daemonURL = "http://localhost/mcp"
 
 func newDaemonRequest(sess DaemonSession, body []byte) (*http.Request, error) {
-	req, err := http.NewRequest(http.MethodPost, daemonURL, bytes.NewReader(body)) //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
+	req, err := http.NewRequest( //nolint:noctx // no context at proxy level; daemon enforces per-call timeouts
+		http.MethodPost,
+		daemonURL,
+		bytes.NewReader(body),
+	)
 	if err != nil {
 		return nil, err
 	}

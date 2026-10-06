@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/testutil"
-	"golang.org/x/oauth2"
 )
 
 func TestSaveTokenWritesSuppliedValuesAndReplacesExisting(t *testing.T) {

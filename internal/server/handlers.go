@@ -101,7 +101,10 @@ func (s *Server) handleExecute(ctx context.Context, raw json.RawMessage, session
 		return nil, fmt.Errorf("tool %q is protected — use perm_call instead", entry.FullName)
 	}
 	if !s.hasProjectionCoverage(p.Server, p.Tool, session) {
-		return nil, fmt.Errorf("tool %q has no projection configured — add one with config(action:set_projection) or use perm_call to invoke without projection", entry.FullName)
+		return nil, fmt.Errorf(
+			"tool %q has no projection configured — add one with config(action:set_projection) or use perm_call to invoke without projection",
+			entry.FullName,
+		)
 	}
 	return s.callUpstream(ctx, p, entry, session)
 }
@@ -166,18 +169,30 @@ func (s *Server) hasProjectionCoverage(server, tool string, session *Session) bo
 	return len(toolMap) == 0 || toolMap[tool] != nil || toolMap["*"] != nil
 }
 
-func (s *Server) callUpstream(ctx context.Context, p executeParams, entry *registry.ToolEntry, session *Session) (any, error) {
+func (s *Server) callUpstream(
+	ctx context.Context,
+	p executeParams,
+	entry *registry.ToolEntry,
+	session *Session,
+) (any, error) {
 	server, tool, params := resolveTarget(p, entry)
 	upstream, err := s.getUpstream(server)
 	if err != nil {
 		return nil, err
 	}
-	raw, latencyMs, toolErr := s.dispatchRaw(ctx, dispatchParams{Upstream: upstream, Tool: tool, Params: params, Session: session})
+	raw, latencyMs, toolErr := s.dispatchRaw(
+		ctx,
+		dispatchParams{Upstream: upstream, Tool: tool, Params: params, Session: session},
+	)
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
-		return s.handleToolErr(toolErrParams{Server: server, Tool: tool, LatencyMs: latencyMs, Err: toolErr, Session: session})
+		return s.handleToolErr(
+			toolErrParams{Server: server, Tool: tool, LatencyMs: latencyMs, Err: toolErr, Session: session},
+		)
 	}
-	return s.buildEnvelope(envelopeParams{Entry: entry, Tool: tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs})
+	return s.buildEnvelope(
+		envelopeParams{Entry: entry, Tool: tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs},
+	)
 }
 
 type toolErrParams struct {
@@ -227,13 +242,15 @@ type envelopeParams struct {
 func (s *Server) buildEnvelope(p envelopeParams) (any, error) {
 	projCfg := s.resolveProjection(p.Entry.Server, p.Tool, p.Session)
 	projStart := s.clock.Now()
-	env, stats, err := s.buildProjectedEnvelope(projectedEnvelopeParams{Server: p.Entry.Server, Tool: p.Tool, Raw: p.Raw, ProjCfg: projCfg})
+	env, stats, err := s.buildProjectedEnvelope(
+		projectedEnvelopeParams{Server: p.Entry.Server, Tool: p.Tool, Raw: p.Raw, ProjCfg: projCfg},
+	)
 	if err != nil {
 		return nil, err
 	}
 	saved := int64(stats.RawTokens - stats.SummaryTokens)
 	p.Upstream.recordSaved(p.Session, p.LatencyMs, saved)
-	s.logger.Debug("projection applied", "server", p.Entry.Server, "tool", p.Tool, "upstream_ms", p.LatencyMs, "proj_ms", s.clock.Since(projStart).Milliseconds(), "raw_tokens", stats.RawTokens, "tokens_saved", saved)
+	s.logProjection(p, stats, s.clock.Since(projStart).Milliseconds())
 	return s.formatEnvelope(p.Entry.Server, p.Entry.ToolName.Name(), env, projCfg)
 }
 
@@ -262,7 +279,11 @@ type formattedEnvelope struct {
 	isError bool
 }
 
-func (s *Server) formatEnvelope(server, displayTool string, env *response.Envelope, projCfg *config.ProjectionConfig) (any, error) {
+func (s *Server) formatEnvelope(
+	server, displayTool string,
+	env *response.Envelope,
+	projCfg *config.ProjectionConfig,
+) (any, error) {
 	projFormat := config.ProjectionFormat(projCfg)
 	if config.EffectiveFormat("", projFormat, s.cfg.ResponseFormat) == config.FormatToon {
 		text, err := EncodeToon(s.logger.With("server", server, "tool", displayTool), env)
@@ -299,4 +320,23 @@ func unmarshalOptional(raw json.RawMessage, v any) error {
 		return nil
 	}
 	return json.Unmarshal(raw, v)
+}
+
+func (s *Server) logProjection(p envelopeParams, stats response.CallStats, projectionMs int64) {
+	saved := int64(stats.RawTokens - stats.SummaryTokens)
+	s.logger.Debug(
+		"projection applied",
+		"server",
+		p.Entry.Server,
+		"tool",
+		p.Tool,
+		"upstream_ms",
+		p.LatencyMs,
+		"proj_ms",
+		projectionMs,
+		"raw_tokens",
+		stats.RawTokens,
+		"tokens_saved",
+		saved,
+	)
 }

@@ -21,7 +21,7 @@ func TestAcquireSpawnLock(t *testing.T) {
 		if err != nil {
 			t.Fatalf("stat: %v", err)
 		}
-		if info.Mode().Perm() != 0600 {
+		if info.Mode().Perm() != 0o600 {
 			t.Errorf("perm = %#o, want 0600", info.Mode().Perm())
 		}
 	})

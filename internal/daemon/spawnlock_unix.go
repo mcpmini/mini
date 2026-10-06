@@ -14,10 +14,10 @@ import (
 // startup (OAuth injection, upstream connections).
 func acquireSpawnLock(configDir string) (release func(), err error) {
 	lockPath := filepath.Join(configDir, "internal", "daemon", "daemon.lock")
-	if err := os.MkdirAll(filepath.Dir(lockPath), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0600)
+	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}

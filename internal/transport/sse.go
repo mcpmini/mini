@@ -8,8 +8,10 @@ import (
 	"io"
 )
 
-const maxSSEMessageBytes = 64 << 20
-const maxSSELineBytes = maxSSEMessageBytes + len("data: ") + 2
+const (
+	maxSSEMessageBytes = 64 << 20
+	maxSSELineBytes    = maxSSEMessageBytes + len("data: ") + 2
+)
 
 var utf8BOM = []byte{0xef, 0xbb, 0xbf}
 

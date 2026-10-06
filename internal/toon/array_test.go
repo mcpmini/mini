@@ -24,13 +24,37 @@ func TestEncodeInlineArray(t *testing.T) {
 		v    Value
 		want string
 	}{
-		{"strings", objVal(Field{Key: "tags", Val: arrVal(strVal("reading"), strVal("gaming"))}), "tags[2]: reading,gaming"},
+		{
+			"strings",
+			objVal(Field{Key: "tags", Val: arrVal(strVal("reading"), strVal("gaming"))}),
+			"tags[2]: reading,gaming",
+		},
 		{"numbers", objVal(Field{Key: "nums", Val: arrVal(numVal("1"), numVal("2"), numVal("3"))}), "nums[3]: 1,2,3"},
-		{"mixed primitives", objVal(Field{Key: "data", Val: arrVal(strVal("x"), boolVal(true), numVal("10"), nullVal())}), "data[4]: x,true,10,null"},
-		{"quotes comma and colon values", objVal(Field{Key: "items", Val: arrVal(strVal("a"), strVal("b,c"), strVal("d:e"))}), `items[3]: a,"b,c","d:e"`},
-		{"quotes ambiguous literals", objVal(Field{Key: "items", Val: arrVal(strVal("true"), strVal("42"))}), `items[2]: "true","42"`},
-		{"empty string item", objVal(Field{Key: "items", Val: arrVal(strVal("a"), strVal(""), strVal("b"))}), `items[3]: a,"",b`},
-		{"whitespace-only items", objVal(Field{Key: "items", Val: arrVal(strVal(" "), strVal("  "))}), `items[2]: " ","  "`},
+		{
+			"mixed primitives",
+			objVal(Field{Key: "data", Val: arrVal(strVal("x"), boolVal(true), numVal("10"), nullVal())}),
+			"data[4]: x,true,10,null",
+		},
+		{
+			"quotes comma and colon values",
+			objVal(Field{Key: "items", Val: arrVal(strVal("a"), strVal("b,c"), strVal("d:e"))}),
+			`items[3]: a,"b,c","d:e"`,
+		},
+		{
+			"quotes ambiguous literals",
+			objVal(Field{Key: "items", Val: arrVal(strVal("true"), strVal("42"))}),
+			`items[2]: "true","42"`,
+		},
+		{
+			"empty string item",
+			objVal(Field{Key: "items", Val: arrVal(strVal("a"), strVal(""), strVal("b"))}),
+			`items[3]: a,"",b`,
+		},
+		{
+			"whitespace-only items",
+			objVal(Field{Key: "items", Val: arrVal(strVal(" "), strVal("  "))}),
+			`items[2]: " ","  "`,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -80,8 +104,16 @@ func TestEncodeTabularArray(t *testing.T) {
 		{
 			"uniform objects",
 			objVal(Field{Key: "items", Val: arrVal(
-				objVal(Field{Key: "sku", Val: strVal("A1")}, Field{Key: "qty", Val: numVal("2")}, Field{Key: "price", Val: numVal("9.99")}),
-				objVal(Field{Key: "sku", Val: strVal("B2")}, Field{Key: "qty", Val: numVal("1")}, Field{Key: "price", Val: numVal("14.5")}),
+				objVal(
+					Field{Key: "sku", Val: strVal("A1")},
+					Field{Key: "qty", Val: numVal("2")},
+					Field{Key: "price", Val: numVal("9.99")},
+				),
+				objVal(
+					Field{Key: "sku", Val: strVal("B2")},
+					Field{Key: "qty", Val: numVal("1")},
+					Field{Key: "price", Val: numVal("14.5")},
+				),
 			)}),
 			"items[2]{sku,qty,price}:\n  A1,2,9.99\n  B2,1,14.5",
 		},
@@ -104,8 +136,16 @@ func TestEncodeTabularArray(t *testing.T) {
 		{
 			"key order follows first object with lookup for later rows",
 			objVal(Field{Key: "items", Val: arrVal(
-				objVal(Field{Key: "a", Val: numVal("1")}, Field{Key: "b", Val: numVal("2")}, Field{Key: "c", Val: numVal("3")}),
-				objVal(Field{Key: "c", Val: numVal("30")}, Field{Key: "b", Val: numVal("20")}, Field{Key: "a", Val: numVal("10")}),
+				objVal(
+					Field{Key: "a", Val: numVal("1")},
+					Field{Key: "b", Val: numVal("2")},
+					Field{Key: "c", Val: numVal("3")},
+				),
+				objVal(
+					Field{Key: "c", Val: numVal("30")},
+					Field{Key: "b", Val: numVal("20")},
+					Field{Key: "a", Val: numVal("10")},
+				),
 			)}),
 			"items[2]{a,b,c}:\n  1,2,3\n  10,20,30",
 		},
@@ -301,7 +341,11 @@ func TestEncodeRootArrayForms(t *testing.T) {
 		want string
 	}{
 		{"inline", arrVal(strVal("x"), strVal("true"), boolVal(true), numVal("10")), `[4]: x,"true",true,10`},
-		{"tabular", arrVal(objVal(Field{Key: "id", Val: numVal("1")}), objVal(Field{Key: "id", Val: numVal("2")})), "[2]{id}:\n  1\n  2"},
+		{
+			"tabular",
+			arrVal(objVal(Field{Key: "id", Val: numVal("1")}), objVal(Field{Key: "id", Val: numVal("2")})),
+			"[2]{id}:\n  1\n  2",
+		},
 		{
 			"list of non-uniform objects",
 			arrVal(
@@ -324,8 +368,14 @@ func TestEncodeRootArrayForms(t *testing.T) {
 func TestEncodeNestedFieldGroups(t *testing.T) {
 	t.Run("single nesting level", func(t *testing.T) {
 		v := objVal(Field{Key: "rows", Val: arrVal(
-			objVal(Field{Key: "loc", Val: objVal(Field{Key: "x", Val: numVal("1")}, Field{Key: "y", Val: numVal("2")})}, Field{Key: "name", Val: strVal("A")}),
-			objVal(Field{Key: "loc", Val: objVal(Field{Key: "x", Val: numVal("3")}, Field{Key: "y", Val: numVal("4")})}, Field{Key: "name", Val: strVal("B")}),
+			objVal(
+				Field{Key: "loc", Val: objVal(Field{Key: "x", Val: numVal("1")}, Field{Key: "y", Val: numVal("2")})},
+				Field{Key: "name", Val: strVal("A")},
+			),
+			objVal(
+				Field{Key: "loc", Val: objVal(Field{Key: "x", Val: numVal("3")}, Field{Key: "y", Val: numVal("4")})},
+				Field{Key: "name", Val: strVal("B")},
+			),
 		)})
 		want := "rows[2]{loc{x,y},name}:\n  1,2,A\n  3,4,B"
 		if got := encodeOK(t, v); got != want {
@@ -334,8 +384,14 @@ func TestEncodeNestedFieldGroups(t *testing.T) {
 	})
 	t.Run("mixed primitive and nested column", func(t *testing.T) {
 		v := objVal(Field{Key: "rows", Val: arrVal(
-			objVal(Field{Key: "id", Val: numVal("1")}, Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("10")}, Field{Key: "y", Val: numVal("20")})}),
-			objVal(Field{Key: "id", Val: numVal("2")}, Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("30")}, Field{Key: "y", Val: numVal("40")})}),
+			objVal(
+				Field{Key: "id", Val: numVal("1")},
+				Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("10")}, Field{Key: "y", Val: numVal("20")})},
+			),
+			objVal(
+				Field{Key: "id", Val: numVal("2")},
+				Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("30")}, Field{Key: "y", Val: numVal("40")})},
+			),
 		)})
 		want := "rows[2]{id,pt{x,y}}:\n  1,10,20\n  2,30,40"
 		if got := encodeOK(t, v); got != want {
@@ -344,8 +400,14 @@ func TestEncodeNestedFieldGroups(t *testing.T) {
 	})
 	t.Run("falls to list when nested column sub-keys differ", func(t *testing.T) {
 		v := objVal(Field{Key: "rows", Val: arrVal(
-			objVal(Field{Key: "id", Val: numVal("1")}, Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("1")}, Field{Key: "y", Val: numVal("2")})}),
-			objVal(Field{Key: "id", Val: numVal("2")}, Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("3")}, Field{Key: "z", Val: numVal("4")})}),
+			objVal(
+				Field{Key: "id", Val: numVal("1")},
+				Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("1")}, Field{Key: "y", Val: numVal("2")})},
+			),
+			objVal(
+				Field{Key: "id", Val: numVal("2")},
+				Field{Key: "pt", Val: objVal(Field{Key: "x", Val: numVal("3")}, Field{Key: "z", Val: numVal("4")})},
+			),
 		)})
 		want := "rows[2]:\n  - id: 1\n    pt:\n      x: 1\n      y: 2\n  - id: 2\n    pt:\n      x: 3\n      z: 4"
 		if got := encodeOK(t, v); got != want {

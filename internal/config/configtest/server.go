@@ -3,9 +3,10 @@ package configtest
 import (
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/testutil"
-	"gopkg.in/yaml.v3"
 )
 
 func WriteServer(t testing.TB, dir string, server config.ServerConfig) {

@@ -41,7 +41,6 @@ func TestEditJSONServers_keepsValuesExactly(t *testing.T) {
 	config := `{"userID":12345678901234567890,"ratio":0.1000,"mcpServers":{"search":{"url":"https://example.com/mcp?a=1&b=<2>"}}}`
 
 	got, err := EditJSONServers([]byte(config), nil, map[string]any{"mini": testMiniEntry})
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +97,8 @@ func TestEditJSONServers_preservesExistingMiniSettings(t *testing.T) {
 			if !reflect.DeepEqual(actual, expected) || len(decoded.Servers) != 1 {
 				t.Fatalf("servers = %s; want only original mini %s", got, entry)
 			}
-			if strings.Contains(entry, "12345678901234567890") && !strings.Contains(string(got), "12345678901234567890") {
+			if strings.Contains(entry, "12345678901234567890") &&
+				!strings.Contains(string(got), "12345678901234567890") {
 				t.Fatalf("mini numeric value changed: %s", got)
 			}
 		})

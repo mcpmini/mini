@@ -29,7 +29,7 @@ func OpenCappedLog(path string) io.WriteCloser {
 }
 
 func openCappedLog(path string, cap int64) io.WriteCloser {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nopWriteCloser{os.Stderr}
 	}
@@ -58,8 +58,11 @@ func (c *cappedLog) rotate() {
 		return
 	}
 	c.f.Close()
-	os.Rename(c.path, c.path+".old") //nolint:errcheck — rotation is best-effort; if rename fails the .old file is overwritten
-	f, err := os.OpenFile(c.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	os.Rename(
+		c.path,
+		c.path+".old",
+	) //nolint:errcheck — rotation is best-effort; if rename fails the .old file is overwritten
+	f, err := os.OpenFile(c.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		f = os.Stderr // last resort: don't crash if log dir becomes unwritable
 	}

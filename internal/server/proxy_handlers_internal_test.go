@@ -37,7 +37,14 @@ func TestParseProxyToolName(t *testing.T) {
 				t.Fatalf("parseProxyToolName(%q): unexpected error: %v", tc.input, err)
 			}
 			if srv != tc.wantSrv || tool != tc.wantTool {
-				t.Errorf("parseProxyToolName(%q) = (%q, %q), want (%q, %q)", tc.input, srv, tool, tc.wantSrv, tc.wantTool)
+				t.Errorf(
+					"parseProxyToolName(%q) = (%q, %q), want (%q, %q)",
+					tc.input,
+					srv,
+					tool,
+					tc.wantSrv,
+					tc.wantTool,
+				)
 			}
 		})
 	}

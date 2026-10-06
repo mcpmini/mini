@@ -87,7 +87,13 @@ func (p *tokenProvider) exchangeRefreshTokenLocked(ctx context.Context) (*oauth2
 
 func (p *tokenProvider) persistRefreshedToken(refreshed *oauth2.Token) {
 	if err := auth.Save(p.configDir, p.serverName, refreshed); err != nil {
-		slog.Warn("persist refreshed oauth token failed; using refreshed token in memory", "server", p.serverName, "err", err)
+		slog.Warn(
+			"persist refreshed oauth token failed; using refreshed token in memory",
+			"server",
+			p.serverName,
+			"err",
+			err,
+		)
 		return
 	}
 	p.persistedToken = cloneToken(refreshed)

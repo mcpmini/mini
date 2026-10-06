@@ -200,14 +200,23 @@ func validateRegistrationConsistency(reg *Registration) error {
 	switch reg.TokenEndpointAuthMethod {
 	case "", "none":
 		if reg.ClientSecret != "" {
-			return fmt.Errorf("client registration: client_secret present but token_endpoint_auth_method is %q", reg.TokenEndpointAuthMethod)
+			return fmt.Errorf(
+				"client registration: client_secret present but token_endpoint_auth_method is %q",
+				reg.TokenEndpointAuthMethod,
+			)
 		}
 	case "client_secret_basic", "client_secret_post":
 		if reg.ClientSecret == "" {
-			return fmt.Errorf("client registration: token_endpoint_auth_method %q requires a client_secret", reg.TokenEndpointAuthMethod)
+			return fmt.Errorf(
+				"client registration: token_endpoint_auth_method %q requires a client_secret",
+				reg.TokenEndpointAuthMethod,
+			)
 		}
 	default:
-		return fmt.Errorf("client registration: unrecognized token_endpoint_auth_method %q", reg.TokenEndpointAuthMethod)
+		return fmt.Errorf(
+			"client registration: unrecognized token_endpoint_auth_method %q",
+			reg.TokenEndpointAuthMethod,
+		)
 	}
 	return nil
 }

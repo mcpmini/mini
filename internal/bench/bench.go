@@ -34,8 +34,17 @@ func Measure(c Case, defaults *projection.Defaults) []Result {
 		return []Result{raw}
 	}
 
-	proj := applyAndMarshal(ApplyParams{Server: c.Server, Tool: c.Tool, Mode: "projected", Value: parsed, Cfg: c.ProjConfig, Defaults: defaults, Strip: false})
-	stripped := applyAndMarshal(ApplyParams{Server: c.Server, Tool: c.Tool, Mode: "stripped", Value: parsed, Cfg: c.ProjConfig, Defaults: defaults, Strip: true})
+	params := ApplyParams{
+		Server:   c.Server,
+		Tool:     c.Tool,
+		Mode:     "projected",
+		Value:    parsed,
+		Cfg:      c.ProjConfig,
+		Defaults: defaults,
+	}
+	proj := applyAndMarshal(params)
+	params.Mode, params.Strip = "stripped", true
+	stripped := applyAndMarshal(params)
 
 	return []Result{raw, proj, stripped}
 }

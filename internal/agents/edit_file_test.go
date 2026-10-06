@@ -25,7 +25,6 @@ func TestEditFile_replacesTheFileAndBacksUpWhatItRead(t *testing.T) {
 	}
 
 	backup, err := EditFile(path, appendLine("# edited"), editTime)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +51,6 @@ func TestEditFile_editsASymlinksTargetAndKeepsTheLink(t *testing.T) {
 	}
 
 	backup, err := EditFile(link, appendLine("edited"), editTime)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +78,6 @@ func TestEditFile_retriesWhenTheAgentWritesDuringTheEdit(t *testing.T) {
 	}
 
 	backup, err := EditFile(path, edit, editTime)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +108,12 @@ func TestEditFile_aRetryThatChangesNothingReportsNoBackup(t *testing.T) {
 	backup, err := EditFile(path, edit, editTime)
 
 	if err != nil || backup != "" || calls != 2 {
-		t.Fatalf("EditFile = %q, %v after %d edits; want no backup once the retry found nothing to change", backup, err, calls)
+		t.Fatalf(
+			"EditFile = %q, %v after %d edits; want no backup once the retry found nothing to change",
+			backup,
+			err,
+			calls,
+		)
 	}
 	requireFiles(t, filepath.Dir(path), "config.toml")
 }
@@ -124,7 +126,6 @@ func TestEditFile_neverOverwritesAnEarlierBackup(t *testing.T) {
 	testutil.WriteFile(t, earlier, "earlier\n")
 
 	backup, err := EditFile(path, appendLine("edited"), editTime)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +190,7 @@ func TestCreateFile(t *testing.T) {
 			t.Fatal(err)
 		}
 		info, err := os.Stat(path)
-		if err != nil || info.Mode().Perm() != 0600 || string(testutil.ReadFile(t, path)) != "{}\n" {
+		if err != nil || info.Mode().Perm() != 0o600 || string(testutil.ReadFile(t, path)) != "{}\n" {
 			t.Errorf("stat = %v, %v; want a 0600 file holding {}", info, err)
 		}
 	})
@@ -248,7 +249,16 @@ func TestEditFile_mutableCallbackKeepsTheOriginalBackup(t *testing.T) {
 
 func TestEditFile_retryFollowsTheCurrentSymlinkTarget(t *testing.T) {
 	dir := tempDir(t)
-	first, second, link := filepath.Join(dir, "first.toml"), filepath.Join(dir, "second.toml"), filepath.Join(dir, "config.toml")
+	first, second, link := filepath.Join(
+		dir,
+		"first.toml",
+	), filepath.Join(
+		dir,
+		"second.toml",
+	), filepath.Join(
+		dir,
+		"config.toml",
+	)
 	testutil.WriteFile(t, first, "first\n")
 	testutil.WriteFile(t, second, "second\n")
 	if err := os.Symlink(first, link); err != nil {

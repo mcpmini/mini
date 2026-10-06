@@ -86,7 +86,11 @@ func (s *Server) refreshTools(u *upstreamServer) error {
 	return nil
 }
 
-func (s *Server) publishRefreshedTools(u *upstreamServer, conn transport.Connection, tools []transport.ToolDefinition) bool {
+func (s *Server) publishRefreshedTools(
+	u *upstreamServer,
+	conn transport.Connection,
+	tools []transport.ToolDefinition,
+) bool {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if !s.isCurrentUpstreamConn(u, conn) {

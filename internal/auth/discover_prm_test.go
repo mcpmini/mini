@@ -216,7 +216,11 @@ func TestDiscover_prmValidJSONWithoutJSONContentTypeIsUsed(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"authorization_endpoint":"` + "http://" + r.Host + `/authorize","token_endpoint":"` + "http://" + r.Host + `/token","code_challenge_methods_supported":["S256"]}`)) //nolint:errcheck
+		w.Write(
+			[]byte(
+				`{"authorization_endpoint":"` + "http://" + r.Host + `/authorize","token_endpoint":"` + "http://" + r.Host + `/token","code_challenge_methods_supported":["S256"]}`,
+			),
+		) //nolint:errcheck
 	}))
 	defer as.Close()
 	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

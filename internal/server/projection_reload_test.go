@@ -88,7 +88,10 @@ func buildReloadEnvWithConfig(t *testing.T, dir string, cfg *config.Config) *rel
 	t.Helper()
 	fc := clock.NewFake()
 	logs := &syncBuffer{}
-	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir, Logger: slog.New(slog.NewTextHandler(logs, nil)), Clock: fc})
+	srv := newTestServer(
+		t,
+		server.Params{Config: cfg, ConfigDir: dir, Logger: slog.New(slog.NewTextHandler(logs, nil)), Clock: fc},
+	)
 	t.Cleanup(srv.Close)
 	return &reloadEnv{t: t, srv: srv, clock: fc, dir: dir, logs: logs, ticked: make(chan struct{}, 64)}
 }
@@ -96,7 +99,9 @@ func buildReloadEnvWithConfig(t *testing.T, dir string, cfg *config.Config) *rel
 func addReloadUpstreamNamed(t *testing.T, srv *server.Server, name string) {
 	t.Helper()
 	fake := fakeConn("getData")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`)
+	fake.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`,
+	)
 	if err := srv.AddConnection(t.Context(), config.ServerConfig{Name: name}, fake); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +141,11 @@ func (e *reloadEnv) advanceTick() {
 
 func (e *reloadEnv) assertServerDataKeys(server string, present, absent []string) {
 	e.t.Helper()
-	resp := serve(e.t, e.srv, callTool("call", map[string]any{"server": server, "tool": "getData", "params": map[string]any{}}))
+	resp := serve(
+		e.t,
+		e.srv,
+		callTool("call", map[string]any{"server": server, "tool": "getData", "params": map[string]any{}}),
+	)
 	assertProjectedFields(e.t, toolResultText(e.t, resp), present, absent)
 }
 
@@ -235,14 +244,20 @@ func TestProjectionReload_malformedProjections_keepsPreviousWarnsOnceOthersStill
 		},
 	})
 	e.advanceTick()
-	if logs := e.logs.String(); !strings.Contains(logs, "projections fail to load, keeping the server's previous projections") {
+	if logs := e.logs.String(); !strings.Contains(
+		logs,
+		"projections fail to load, keeping the server's previous projections",
+	) {
 		t.Errorf("expected WARN for malformed YAML, got logs:\n%s", logs)
 	}
 	e.assertDataKeys([]string{"a"}, []string{"b"})
 	e.assertServerDataKeys("other", []string{"b"}, []string{"a"})
 
 	e.advanceTick()
-	if warns := strings.Count(e.logs.String(), "projections fail to load, keeping the server's previous projections"); warns != 1 {
+	if warns := strings.Count(
+		e.logs.String(),
+		"projections fail to load, keeping the server's previous projections",
+	); warns != 1 {
 		t.Errorf("expected a single WARN for an unchanged bad file, got %d", warns)
 	}
 
@@ -333,9 +348,13 @@ func TestProjectionReload_inlineProjectionEditDetected(t *testing.T) {
 func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	dir := evalTempDir(t)
 	for _, name := range []string{"held", "kept", "gone"} {
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: name, Command: "echo", Projections: map[string]*config.ProjectionConfig{
-			"getData": {IncludeOnly: []string{"a"}},
-		}})
+		configtest.WriteServer(
+			t,
+			dir,
+			config.ServerConfig{Name: name, Command: "echo", Projections: map[string]*config.ProjectionConfig{
+				"getData": {IncludeOnly: []string{"a"}},
+			}},
+		)
 	}
 	env := buildReloadEnv(t, dir)
 	for _, name := range []string{"held", "kept", "gone"} {
@@ -350,12 +369,16 @@ func TestProjectionReload_unreadableServerFileHoldsOnlyItsRules(t *testing.T) {
 	if err := os.Remove(heldPath); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(heldPath, 0700); err != nil {
+	if err := os.Mkdir(heldPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "kept", Command: "echo", Projections: map[string]*config.ProjectionConfig{
-		"getData": {IncludeOnly: []string{"b"}},
-	}})
+	configtest.WriteServer(
+		t,
+		dir,
+		config.ServerConfig{Name: "kept", Command: "echo", Projections: map[string]*config.ProjectionConfig{
+			"getData": {IncludeOnly: []string{"b"}},
+		}},
+	)
 	if err := os.Remove(filepath.Join(dir, "servers", "gone.yaml")); err != nil {
 		t.Fatal(err)
 	}

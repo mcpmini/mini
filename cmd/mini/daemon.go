@@ -122,11 +122,11 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 
 func bindSocket(socket string) net.Listener {
 	dir := filepath.Dir(socket)
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		fatalf("create socket dir: %v", err)
 	}
 	// The dir's permissions are the access boundary — macOS ignores the socket file's own mode on connect.
-	_ = os.Chmod(dir, 0700)
+	_ = os.Chmod(dir, 0o700)
 	ln, err := net.Listen("unix", socket)
 	// Binding the socket is the single-winner election: if another daemon is healthy
 	// on this socket we exit; if a stale socket remains from a SIGKILL we reclaim it.
@@ -140,7 +140,7 @@ func bindSocket(socket string) net.Listener {
 		}
 	}
 	// Linux honors the socket file's own mode on connect; a permissive umask would otherwise leave it world-writable.
-	_ = os.Chmod(socket, 0600)
+	_ = os.Chmod(socket, 0o600)
 	return ln
 }
 

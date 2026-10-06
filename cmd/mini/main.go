@@ -48,12 +48,7 @@ func newConnectCmd(opts *rootOptions) *cobra.Command {
 			return runConnect(opts.configDir, f)
 		},
 	}
-	fl := cmd.Flags()
-	fl.StringVar(&f.logLevel, "log-level", "", "log level (debug|info|warn|error)")
-	fl.StringVar(&f.httpAddr, "http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
-	fl.BoolVar(&f.standalone, "standalone", false, "skip daemon detection, serve directly (useful for debugging)")
-	fl.BoolVar(&f.dangerNonLoopback, "dangerous-nonloopback-http", false, "allow --http to bind to a non-loopback address")
-	fl.StringVar(&toolModeStr, "tool-mode", "", "tool interface: compact for the four-meta-tool interface (default is proxy)")
+	bindConnectFlags(cmd, &f, &toolModeStr)
 	return cmd
 }
 
@@ -310,16 +305,31 @@ type loopbackPolicyParams struct {
 
 func checkLoopbackPolicy(p loopbackPolicyParams) {
 	if p.NonLoopback && !p.DangerNonLoopback {
-		fatalf("--http %q binds to a non-loopback address; pass --dangerous-nonloopback-http to allow this (ensures all network clients are trusted)", p.Addr)
+		fatalf(
+			"--http %q binds to a non-loopback address; pass --dangerous-nonloopback-http to allow this (ensures all network clients are trusted)",
+			p.Addr,
+		)
 	}
 	if p.NonLoopback {
-		p.Logger.Warn("HTTP server binding to non-loopback address; ensure all network clients are trusted", "addr", p.Resolved)
+		p.Logger.Warn(
+			"HTTP server binding to non-loopback address; ensure all network clients are trusted",
+			"addr",
+			p.Resolved,
+		)
 	}
 }
 
 func startHTTPServer(addr string, handler http.Handler, logger *slog.Logger, dangerNonLoopback bool) *http.Server {
 	resolved, nonLoopback := resolveHTTPAddr(addr)
-	checkLoopbackPolicy(loopbackPolicyParams{Addr: addr, Resolved: resolved, NonLoopback: nonLoopback, DangerNonLoopback: dangerNonLoopback, Logger: logger})
+	checkLoopbackPolicy(
+		loopbackPolicyParams{
+			Addr:              addr,
+			Resolved:          resolved,
+			NonLoopback:       nonLoopback,
+			DangerNonLoopback: dangerNonLoopback,
+			Logger:            logger,
+		},
+	)
 	ln, err := net.Listen("tcp", resolved)
 	if err != nil {
 		fatalf("listen: %v", err)
@@ -332,4 +342,23 @@ func startHTTPServer(addr string, handler http.Handler, logger *slog.Logger, dan
 		}
 	}()
 	return httpSrv
+}
+
+func bindConnectFlags(cmd *cobra.Command, f *connectFlags, toolModeStr *string) {
+	fl := cmd.Flags()
+	fl.StringVar(&f.logLevel, "log-level", "", "log level (debug|info|warn|error)")
+	fl.StringVar(&f.httpAddr, "http", "", "also listen for HTTP MCP connections on this address (e.g. :4857)")
+	fl.BoolVar(&f.standalone, "standalone", false, "skip daemon detection, serve directly (useful for debugging)")
+	fl.BoolVar(
+		&f.dangerNonLoopback,
+		"dangerous-nonloopback-http",
+		false,
+		"allow --http to bind to a non-loopback address",
+	)
+	fl.StringVar(
+		toolModeStr,
+		"tool-mode",
+		"",
+		"tool interface: compact for the four-meta-tool interface (default is proxy)",
+	)
 }

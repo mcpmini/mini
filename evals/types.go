@@ -43,8 +43,10 @@ type RunStats struct {
 
 func (s RunStats) Ran() bool { return len(s.Runs) > 0 }
 
-type tokenStats struct{ min, max, avg, p95 int }
-type costStats struct{ min, max, avg float64 }
+type (
+	tokenStats struct{ min, max, avg, p95 int }
+	costStats  struct{ min, max, avg float64 }
+)
 
 func intStat(vals []int) tokenStats {
 	if len(vals) == 0 {

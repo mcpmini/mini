@@ -27,7 +27,12 @@ func (s *Server) routeProxyTool(ctx context.Context, name string, args json.RawM
 	}
 }
 
-func (s *Server) handleProxyCall(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
+func (s *Server) handleProxyCall(
+	ctx context.Context,
+	name string,
+	args json.RawMessage,
+	session *Session,
+) (any, error) {
 	server, tool, err := parseProxyToolName(name)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidParams, err)
@@ -103,8 +108,11 @@ func rejectLegacyFields(envelope map[string]json.RawMessage) error {
 		return nil
 	}
 	sort.Strings(extra)
-	return fmt.Errorf("%w: legacy flat tool call — upstream arguments must be nested under \"args\" (unexpected field(s): %s), e.g. {\"args\": {...}}",
-		errInvalidParams, strings.Join(extra, ", "))
+	return fmt.Errorf(
+		"%w: legacy flat tool call — upstream arguments must be nested under \"args\" (unexpected field(s): %s), e.g. {\"args\": {...}}",
+		errInvalidParams,
+		strings.Join(extra, ", "),
+	)
 }
 
 func extractProxyArgs(envelope map[string]json.RawMessage) (map[string]any, error) {
@@ -136,7 +144,11 @@ func extractProxyControls(envelope map[string]json.RawMessage) (proxyControls, e
 		return proxyControls{}, fmt.Errorf("%w: __mini must be an object: %w", errInvalidParams, err)
 	}
 	if !c.Projection.Valid() {
-		return proxyControls{}, fmt.Errorf("%w: __mini.projection must be \"default\" or \"raw\", got %q", errInvalidParams, c.Projection)
+		return proxyControls{}, fmt.Errorf(
+			"%w: __mini.projection must be \"default\" or \"raw\", got %q",
+			errInvalidParams,
+			c.Projection,
+		)
 	}
 	return proxyControls{Projection: c.Projection}, nil
 }
@@ -156,13 +168,23 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 	if err != nil {
 		return nil, err
 	}
-	raw, latencyMs, toolErr := s.dispatchRaw(ctx, dispatchParams{Upstream: upstream, Tool: tool, Params: params, Session: p.Session})
+	raw, latencyMs, toolErr := s.dispatchRaw(
+		ctx,
+		dispatchParams{Upstream: upstream, Tool: tool, Params: params, Session: p.Session},
+	)
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
 		p.Session.recordCall(latencyMs, 0, true)
 		return response.BuildError("tool_error", toolErr.Error(), false, ""), nil
 	}
-	ep := envelopeParams{Entry: p.Entry, Tool: tool, Raw: raw, Session: p.Session, Upstream: upstream, LatencyMs: latencyMs}
+	ep := envelopeParams{
+		Entry:     p.Entry,
+		Tool:      tool,
+		Raw:       raw,
+		Session:   p.Session,
+		Upstream:  upstream,
+		LatencyMs: latencyMs,
+	}
 	ep.Bypass = p.Controls.Projection == projectionRaw
 	return s.proxyProject(ep)
 }

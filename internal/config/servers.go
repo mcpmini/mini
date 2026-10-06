@@ -32,7 +32,10 @@ func LoadServers(configDir string) (Servers, error) {
 	for _, path := range paths {
 		sc, err := loadServerFile(configDir, path)
 		if err != nil {
-			servers.Broken = append(servers.Broken, SourceError{Path: path, ServerName: serverNameFromPath(path), Err: err})
+			servers.Broken = append(
+				servers.Broken,
+				SourceError{Path: path, ServerName: serverNameFromPath(path), Err: err},
+			)
 			continue
 		}
 		servers.Loaded = append(servers.Loaded, sc)

@@ -11,10 +11,14 @@ import (
 func TestWriteToken_replacesLooseFileWith0600(t *testing.T) {
 	configDir := t.TempDir()
 	stale := daemon.TokenFile(configDir)
-	if err := os.MkdirAll(filepath.Dir(stale), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(stale), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(stale, []byte("old"), 0644); err != nil { //fileiolint:allow loose permissions exercise token replacement
+	if err := os.WriteFile(
+		stale,
+		[]byte("old"),
+		0o644,
+	); err != nil { //fileiolint:allow loose permissions exercise token replacement
 		t.Fatal(err)
 	}
 
@@ -27,7 +31,7 @@ func TestWriteToken_replacesLooseFileWith0600(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat token: %v", err)
 	}
-	if perm := info.Mode().Perm(); perm != 0600 {
+	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Errorf("token mode = %o, want 0600 (must tighten the stale 0644 file)", perm)
 	}
 

@@ -203,7 +203,8 @@ func TestHTTPConnection_4xxError(t *testing.T) {
 
 func TestHTTPConnection_401WrapsUnauthorizedError(t *testing.T) {
 	srv := newJSONRPCServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://example.com/.well-known/oauth-protected-resource"`)
+		w.Header().
+			Set("WWW-Authenticate", `Bearer resource_metadata="https://example.com/.well-known/oauth-protected-resource"`)
 		http.Error(w, "not authorized", http.StatusUnauthorized)
 	})
 	conn := mustHTTPConn(t, HTTPConnectionConfig{URL: srv.URL})
@@ -358,7 +359,11 @@ func TestNewNoRedirectClient_blockPrivateIPsBypassesProxies(t *testing.T) {
 	// Checked structurally: Go reads the proxy environment once per process, so a test can't set HTTP_PROXY reliably.
 	tr, ok := client.Transport.(*http.Transport)
 	if !ok || tr.Proxy != nil {
-		t.Fatalf("transport = %T with proxy set = %v; want *http.Transport without a proxy, so the SSRF dialer sees the destination", client.Transport, ok && tr.Proxy != nil)
+		t.Fatalf(
+			"transport = %T with proxy set = %v; want *http.Transport without a proxy, so the SSRF dialer sees the destination",
+			client.Transport,
+			ok && tr.Proxy != nil,
+		)
 	}
 }
 

@@ -25,14 +25,14 @@ func MarkOAuthDetected(configDir, serverName string) error {
 		return fmt.Errorf("invalid server name: %q", serverName)
 	}
 	path := ServerMetaPath(configDir, serverName)
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.Marshal(ServerMeta{OAuthDetected: true})
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0600)
+	return os.WriteFile(path, data, 0o600)
 }
 
 // IsOAuthDetected reports whether MarkOAuthDetected has previously recorded serverName.

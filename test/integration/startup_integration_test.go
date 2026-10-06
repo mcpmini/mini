@@ -84,9 +84,22 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-func startMiniCmdCapturingStderr(t *testing.T, configDir string) (stdin io.WriteCloser, scanner *bufio.Scanner, stderr *syncBuffer) {
+func startMiniCmdCapturingStderr(
+	t *testing.T,
+	configDir string,
+) (stdin io.WriteCloser, scanner *bufio.Scanner, stderr *syncBuffer) {
 	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--standalone", "--tool-mode", "compact", "--log-level", "warn")
+	cmd := exec.Command(
+		miniBin,
+		"--config",
+		configDir,
+		"connect",
+		"--standalone",
+		"--tool-mode",
+		"compact",
+		"--log-level",
+		"warn",
+	)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)

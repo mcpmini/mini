@@ -105,7 +105,7 @@ func TestIntegrationDaemon_TokenFilePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if perm := fi.Mode().Perm(); perm != 0600 {
+	if perm := fi.Mode().Perm(); perm != 0o600 {
 		t.Fatalf("expected token file mode 0600, got %04o", perm)
 	}
 }

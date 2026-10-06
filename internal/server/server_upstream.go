@@ -37,7 +37,12 @@ type upstreamInstall struct {
 }
 
 func (s *Server) startupInstall(sc config.ServerConfig) upstreamInstall {
-	return upstreamInstall{cfg: sc, removeGen: s.snapshotRemoveGen(sc.Name), refuseIfRunning: true, keepLiveProjections: true}
+	return upstreamInstall{
+		cfg:                 sc,
+		removeGen:           s.snapshotRemoveGen(sc.Name),
+		refuseIfRunning:     true,
+		keepLiveProjections: true,
+	}
 }
 
 func (s *Server) newServerInstall(sc config.ServerConfig) upstreamInstall {
@@ -82,7 +87,13 @@ func (s *Server) retryStartupAfter(name string, err error, backoff time.Duration
 		s.logger.Warn("upstream not allowed to start, not retrying", "server", name, "err", err)
 		return false
 	case errors.As(err, new(*config.UnsetEnvError)):
-		s.logger.Warn("upstream needs an environment variable mini didn't start with, not retrying", "server", name, "err", err)
+		s.logger.Warn(
+			"upstream needs an environment variable mini didn't start with, not retrying",
+			"server",
+			name,
+			"err",
+			err,
+		)
 		return false
 	}
 	s.logger.Warn("upstream unavailable at startup, retrying", "server", name, "err", err, "backoff", backoff)
@@ -118,7 +129,13 @@ func (s *Server) markOAuthIfRequired(ctx context.Context, sc config.ServerConfig
 }
 
 func oauthRequiredError(serverName string, connErr error) error {
-	return fmt.Errorf("%s requires OAuth authorization; run `mini auth %s`: %w: %w", serverName, serverName, transport.ErrReauthRequired, connErr)
+	return fmt.Errorf(
+		"%s requires OAuth authorization; run `mini auth %s`: %w: %w",
+		serverName,
+		serverName,
+		transport.ErrReauthRequired,
+		connErr,
+	)
 }
 
 func (s *Server) AddConnection(ctx context.Context, sc config.ServerConfig, conn transport.Connection) error {
@@ -211,7 +228,11 @@ func (s *Server) checkInstallLocked(in upstreamInstall) error {
 	return nil
 }
 
-func (s *Server) installUpstreamLocked(sc config.ServerConfig, conn transport.Connection, tools []transport.ToolDefinition) {
+func (s *Server) installUpstreamLocked(
+	sc config.ServerConfig,
+	conn transport.Connection,
+	tools []transport.ToolDefinition,
+) {
 	u := newUpstreamServer(sc, conn, s.clock)
 	u.lastDefs = tools
 	old := s.swapUpstream(sc.Name, u)
@@ -250,7 +271,12 @@ func (s *Server) swapUpstream(name string, u *upstreamServer) *upstreamServer {
 }
 
 func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDefinition, old *upstreamServer) {
-	p := registry.ServerParams{Name: sc.Name, Defs: tools, Perm: sc.Permissions, AliasByToolName: s.currentAliasesFor(sc.Name)}
+	p := registry.ServerParams{
+		Name:            sc.Name,
+		Defs:            tools,
+		Perm:            sc.Permissions,
+		AliasByToolName: s.currentAliasesFor(sc.Name),
+	}
 	if old != nil {
 		old.shutdownAndClose()
 		s.reg.ReplaceServer(p)
@@ -262,7 +288,9 @@ func (s *Server) registerTools(sc config.ServerConfig, tools []transport.ToolDef
 func (s *Server) currentAliasesFor(serverName string) map[string]string {
 	s.stateMu.RLock()
 	defer s.stateMu.RUnlock()
-	return config.AliasesFromProjections(s.projections[serverName]) // walked under the lock: set_projection writes into this map
+	return config.AliasesFromProjections(
+		s.projections[serverName],
+	) // walked under the lock: set_projection writes into this map
 }
 
 // Must be called in a goroutine; blocks until ctx is canceled.

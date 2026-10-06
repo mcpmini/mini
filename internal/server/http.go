@@ -93,7 +93,12 @@ func streamFlusher(w http.ResponseWriter) (http.Flusher, bool) {
 	return flusher, true
 }
 
-func (s *Server) writeNotificationStream(r *http.Request, w http.ResponseWriter, flusher http.Flusher, session *Session) {
+func (s *Server) writeNotificationStream(
+	r *http.Request,
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	session *Session,
+) {
 	stream, ok := session.openToolsChangedStream()
 	if !ok {
 		w.WriteHeader(http.StatusNoContent)
@@ -112,7 +117,12 @@ func startEventStream(w http.ResponseWriter, flusher http.Flusher) {
 	flusher.Flush()
 }
 
-func (s *Server) writeNotifications(r *http.Request, w http.ResponseWriter, flusher http.Flusher, stream chan json.RawMessage) {
+func (s *Server) writeNotifications(
+	r *http.Request,
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	stream chan json.RawMessage,
+) {
 	for {
 		select {
 		case <-r.Context().Done():

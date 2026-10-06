@@ -409,7 +409,8 @@ func TestIntegrationCLICall_UnreachableServer_ExitsNonZero(t *testing.T) {
 	if code == 0 {
 		t.Errorf("unreachable server should exit non-zero, got 0\nstderr: %s", stderr)
 	}
-	if !strings.Contains(stderr, "connect") && !strings.Contains(stderr, "refused") && !strings.Contains(stderr, "dead") {
+	if !strings.Contains(stderr, "connect") && !strings.Contains(stderr, "refused") &&
+		!strings.Contains(stderr, "dead") {
 		t.Errorf("expected connection error in stderr, got: %s", stderr)
 	}
 }

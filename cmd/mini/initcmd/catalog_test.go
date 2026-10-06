@@ -30,8 +30,10 @@ func TestAvailableEntries(t *testing.T) {
 	})
 	t.Run("keeps catalog order after filtering", func(t *testing.T) {
 		entries := []catalog.Entry{
-			{Name: "c", Category: "Dev"}, {Name: "taken", Category: "Configured"},
-			{Name: "b", Category: "Data"}, {Name: "a", Category: "Dev"},
+			{Name: "c", Category: "Dev"},
+			{Name: "taken", Category: "Configured"},
+			{Name: "b", Category: "Data"},
+			{Name: "a", Category: "Dev"},
 		}
 		available := AvailableEntries(entries, []config.ServerConfig{{Name: "taken"}})
 		if names := entryNames(available); !reflect.DeepEqual(names, []string{"c", "b", "a"}) {

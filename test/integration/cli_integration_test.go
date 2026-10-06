@@ -99,13 +99,22 @@ func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
 
 func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
 	cfg := t.TempDir()
-	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})})
+	writeFakeServer(
+		t,
+		cfg,
+		fakeServerParams{ServerName: "svc", Fixtures: mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})},
+	)
 	testutil.WriteFile(t, config.ServerPath(cfg, "broken"), "command: [unclosed\n")
 
 	t.Run("ls warns about it and lists the rest", func(t *testing.T) {
 		stdout, stderr, code := runCLI(t, cfg, "ls")
 		if code != 0 || !strings.Contains(stdout, "svc") || !strings.Contains(stderr, "skipping server broken") {
-			t.Errorf("ls = exit %d, stdout %q, stderr %q; want svc listed and broken warned about", code, stdout, stderr)
+			t.Errorf(
+				"ls = exit %d, stdout %q, stderr %q; want svc listed and broken warned about",
+				code,
+				stdout,
+				stderr,
+			)
 		}
 	})
 	t.Run("another server still lists its tools", func(t *testing.T) {
@@ -135,7 +144,11 @@ func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testin
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: fixtures})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "unprojected", Fixtures: fixtures})
 	writeInvalidProjection(t, cfg, "unprojected")
-	testutil.WriteFile(t, config.ServerPath(cfg, "web"), "transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n")
+	testutil.WriteFile(
+		t,
+		config.ServerPath(cfg, "web"),
+		"transport: http\nurl: https://example.com/mcp\nhandshake_timeout: nonsense\n",
+	)
 	testutil.WriteFile(t, config.ServerPath(cfg, "multiline-yaml-error"), "command: echo\nenabled: maybe\n")
 
 	stdout, _, code := runCLI(t, cfg, "test")
@@ -144,7 +157,8 @@ func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testin
 		t.Errorf("test = exit %d, stdout %q; want 1 passed, 3 failed", code, stdout)
 	}
 	for line := range strings.Lines(strings.TrimSpace(stdout)) {
-		if !strings.HasPrefix(line, "PASS") && !strings.HasPrefix(line, "FAIL") && strings.TrimSpace(line) != "" && !strings.Contains(line, "passed") {
+		if !strings.HasPrefix(line, "PASS") && !strings.HasPrefix(line, "FAIL") && strings.TrimSpace(line) != "" &&
+			!strings.Contains(line, "passed") {
 			t.Errorf("test printed %q outside any row; a multi-line error broke its row apart", line)
 		}
 	}
@@ -242,7 +256,17 @@ func TestIntegrationCLI_add_UrlCreatesFile(t *testing.T) {
 
 func TestIntegrationCLI_add_CommandCreatesFile(t *testing.T) {
 	cfg := t.TempDir()
-	_, _, code := runCLI(t, cfg, "add", "myserver", "--", "npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp")
+	_, _, code := runCLI(
+		t,
+		cfg,
+		"add",
+		"myserver",
+		"--",
+		"npx",
+		"-y",
+		"@modelcontextprotocol/server-filesystem",
+		"/tmp",
+	)
 	if code != 0 {
 		t.Fatalf("add with command should exit 0, got %d", code)
 	}
@@ -267,7 +291,17 @@ func TestIntegrationCLI_add_NoURLOrCommand(t *testing.T) {
 
 func TestIntegrationCLI_add_Protected(t *testing.T) {
 	cfg := t.TempDir()
-	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--protected", "list_items", "--no-connect")
+	_, _, code := runCLI(
+		t,
+		cfg,
+		"add",
+		"myserver",
+		"--url",
+		"http://example.com/mcp",
+		"--protected",
+		"list_items",
+		"--no-connect",
+	)
 	if code != 0 {
 		t.Fatalf("add --protected should exit 0, got %d", code)
 	}
@@ -307,7 +341,10 @@ func TestIntegrationCLI_add_FromClaude(t *testing.T) {
 
 func TestIntegrationCLI_add_FromClaudeCodeImportsOnlyUserServers(t *testing.T) {
 	cfg := t.TempDir()
-	server := map[string]any{"command": "npx", "args": []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"}}
+	server := map[string]any{
+		"command": "npx",
+		"args":    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
+	}
 	path := writeClaudeCodeConfig(t, map[string]any{"user-server": server}, map[string]any{"project-server": server})
 	_, _, code := runCLI(t, cfg, "add", "--from-claude", path)
 	if code != 0 {
@@ -417,7 +454,15 @@ func TestIntegrationCLI_status_failsWhenAServersProjectionsFailToLoad(t *testing
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			cfg := t.TempDir()
-			writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}), Enabled: tc.enabled})
+			writeFakeServer(
+				t,
+				cfg,
+				fakeServerParams{
+					ServerName: "svc",
+					Fixtures:   mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`}),
+					Enabled:    tc.enabled,
+				},
+			)
 			writeInvalidProjection(t, cfg, "svc")
 
 			stdout, _, code := runCLI(t, cfg, "status")
@@ -464,7 +509,13 @@ func TestIntegrationCLI_init_yesWithOAuthServer_listsLoginReminderBeforeInstallI
 	if code != 0 {
 		t.Fatalf("init exit = %d, stdout:\n%s", code, stdout)
 	}
-	markers := []string{"imported 1 server(s)", "OAuth login needed:", "imported-server (no token)", "  mini auth imported-server\n", "To connect mini to your agent"}
+	markers := []string{
+		"imported 1 server(s)",
+		"OAuth login needed:",
+		"imported-server (no token)",
+		"  mini auth imported-server\n",
+		"To connect mini to your agent",
+	}
 	last := -1
 	for _, marker := range markers {
 		i := strings.Index(stdout, marker)
@@ -557,7 +608,10 @@ func TestIntegrationCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
 
 	stdout, _, code := runCLI(t, cfg, "add", "myserver", "--url", unauthorized.URL)
 	if code != 0 {
-		t.Errorf("expected exit 0 even though auto-authorization can't complete against a loopback test server, got %d", code)
+		t.Errorf(
+			"expected exit 0 even though auto-authorization can't complete against a loopback test server, got %d",
+			code,
+		)
 	}
 	if !strings.Contains(stdout, "requires OAuth authorization") {
 		t.Errorf("expected stdout to mention required OAuth authorization, got: %q", stdout)

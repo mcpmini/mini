@@ -77,7 +77,10 @@ func TestMultipleServers(t *testing.T) {
 	addTestConnection(t, srv, config.ServerConfig{Name: "fs2"}, fake2)
 
 	var tools []map[string]any
-	json.Unmarshal([]byte(toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))), &tools) //nolint:errcheck
+	json.Unmarshal(
+		[]byte(toolResultText(t, serve(t, srv, callTool("list", map[string]any{})))),
+		&tools,
+	) //nolint:errcheck
 	if countToolsByPrefix(tools, "fs1.") == 0 || countToolsByPrefix(tools, "fs2.") == 0 {
 		t.Errorf("expected tools from both servers, got fs1=%d fs2=%d",
 			countToolsByPrefix(tools, "fs1."), countToolsByPrefix(tools, "fs2."))
@@ -102,7 +105,13 @@ func assertAddServer(t *testing.T, srv *server.Server) {
 	if result["error"] != nil {
 		t.Fatalf("add_server failed: %s", text)
 	}
-	if text2 := toolResultText(t, serve(t, srv, callTool("list", map[string]any{}))); !strings.Contains(text2, "dynamic_echo") {
+	if text2 := toolResultText(
+		t,
+		serve(t, srv, callTool("list", map[string]any{})),
+	); !strings.Contains(
+		text2,
+		"dynamic_echo",
+	) {
 		t.Errorf("expected dynamic_echo tools after add_server: %s", text2)
 	}
 }
@@ -115,14 +124,22 @@ func assertRemoveServer(t *testing.T, srv *server.Server) {
 	if result["error"] != nil {
 		t.Fatalf("remove_server failed: %v", result)
 	}
-	if text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{}))); strings.Contains(text, "dynamic_echo") {
+	if text := toolResultText(
+		t,
+		serve(t, srv, callTool("list", map[string]any{})),
+	); strings.Contains(
+		text,
+		"dynamic_echo",
+	) {
 		t.Errorf("dynamic_echo still present after remove: %s", text)
 	}
 }
 
 func TestAddRemoveServer(t *testing.T) {
 	if echomcpBin == "" {
-		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+		t.Fatal(
+			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
+		)
 	}
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowRuntimeStdio = true
@@ -156,9 +173,14 @@ func TestAddUpstream_existingServer_replacesIt(t *testing.T) {
 	serveTools := func(names ...string) string {
 		var tools []map[string]any
 		for _, n := range names {
-			tools = append(tools, map[string]any{"name": n, "description": n, "inputSchema": map[string]any{"type": "object"}})
+			tools = append(
+				tools,
+				map[string]any{"name": n, "description": n, "inputSchema": map[string]any{"type": "object"}},
+			)
 		}
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fakeMCPHandle(w, r, tools) }))
+		ts := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fakeMCPHandle(w, r, tools) }),
+		)
 		t.Cleanup(ts.Close)
 		return ts.URL
 	}
@@ -166,7 +188,10 @@ func TestAddUpstream_existingServer_replacesIt(t *testing.T) {
 	defer srv.Close()
 
 	for _, url := range []string{serveTools("a"), serveTools("a", "b")} {
-		if err := srv.AddUpstream(context.Background(), config.ServerConfig{Name: "svc", Transport: "http", URL: url}); err != nil {
+		if err := srv.AddUpstream(
+			context.Background(),
+			config.ServerConfig{Name: "svc", Transport: "http", URL: url},
+		); err != nil {
 			t.Fatalf("AddUpstream: %v", err)
 		}
 	}

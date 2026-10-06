@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
-	"golang.org/x/oauth2"
 )
 
 func TestRefresh_expiredToken_returnsNewTokenAndSendsResource(t *testing.T) {
@@ -59,7 +60,10 @@ func TestRefresh_sendsTheClientSecretVerbatim(t *testing.T) {
 	mock.Mu.Lock()
 	defer mock.Mu.Unlock()
 	if mock.LastSecret != "${MINI_TEST_LOCAL_SECRET}" {
-		t.Errorf("client_secret sent = %q; auth must never expand a value, since it may come from the server", mock.LastSecret)
+		t.Errorf(
+			"client_secret sent = %q; auth must never expand a value, since it may come from the server",
+			mock.LastSecret,
+		)
 	}
 }
 

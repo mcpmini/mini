@@ -32,7 +32,10 @@ func ResolveAliases(realNames []string, aliasByToolName map[string]string) Alias
 	return AliasResolution{visible: visible, dropped: dropped}
 }
 
-func buildAliasClaims(realNames []string, aliasByToolName map[string]string) (map[string]string, map[string]bool, map[string][]string) {
+func buildAliasClaims(
+	realNames []string,
+	aliasByToolName map[string]string,
+) (map[string]string, map[string]bool, map[string][]string) {
 	nameSet := make(map[string]bool, len(realNames))
 	for _, n := range realNames {
 		nameSet[n] = true

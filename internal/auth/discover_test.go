@@ -264,7 +264,8 @@ func TestDiscover_scopesFromPRM(t *testing.T) {
 	defer prmSrv.Close()
 
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource"`)
+		w.Header().
+			Set("WWW-Authenticate", `Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource"`)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer mcpSrv.Close()
@@ -309,7 +310,10 @@ func TestDiscover_wwwAuthScopePreservedWhenPRMHasNoAS(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(meta.Scopes) != 1 || meta.Scopes[0] != "files:read" {
-		t.Errorf("Scopes: got %v, want [files:read] (WWW-Authenticate scope must survive PRM-no-AS fallback)", meta.Scopes)
+		t.Errorf(
+			"Scopes: got %v, want [files:read] (WWW-Authenticate scope must survive PRM-no-AS fallback)",
+			meta.Scopes,
+		)
 	}
 }
 
@@ -360,7 +364,10 @@ func TestDiscover_noScopesWhenASMetaOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(meta.Scopes) != 0 {
-		t.Errorf("Scopes: got %v, want empty (AS metadata scopes_supported must not be used for scope selection)", meta.Scopes)
+		t.Errorf(
+			"Scopes: got %v, want empty (AS metadata scopes_supported must not be used for scope selection)",
+			meta.Scopes,
+		)
 	}
 }
 
@@ -461,7 +468,9 @@ func TestRequiresOAuth_nonBearerSchemeSkipsPRMFallback(t *testing.T) {
 	defer srv.Close()
 
 	if auth.RequiresOAuth(context.Background(), srv.URL, `Basic realm="internal"`) {
-		t.Fatal("expected false — a Basic challenge is decisive even if a PRM document coincidentally exists at the same origin")
+		t.Fatal(
+			"expected false — a Basic challenge is decisive even if a PRM document coincidentally exists at the same origin",
+		)
 	}
 }
 

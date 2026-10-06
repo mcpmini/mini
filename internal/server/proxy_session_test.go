@@ -123,7 +123,9 @@ func TestProxy_SessionProjection_FieldExclusionPersistsAcrossCalls(t *testing.T)
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 
 	const sessionID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
@@ -156,7 +158,9 @@ func TestProxy_SessionProjection_IsolatedBetweenSessions(t *testing.T) {
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\",\"name\":\"foo\"}"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 
 	const sessionA = "aaaaaaaa-aaaa-aaaa-aaaa-000000000001"
@@ -196,7 +200,9 @@ func TestProxy_Reload_PreservesSessionProjections(t *testing.T) {
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"topsecret\"}"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000003"

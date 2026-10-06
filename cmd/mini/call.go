@@ -132,7 +132,14 @@ func parseCallContext(configDir string, args []string) callContext {
 	}
 	serverName, toolName := args[0], args[1]
 	cfg, sc := loadCallCtx(configDir, serverName)
-	return callContext{cfg: cfg, sc: sc, configDir: configDir, serverName: serverName, toolName: toolName, params: params}
+	return callContext{
+		cfg:        cfg,
+		sc:         sc,
+		configDir:  configDir,
+		serverName: serverName,
+		toolName:   toolName,
+		params:     params,
+	}
 }
 
 func loadCallCtx(configDir, serverName string) (*config.Config, *config.ServerConfig) {
@@ -179,7 +186,10 @@ func mustDialCall(ctx context.Context, configDir string, cc callContext) transpo
 }
 
 func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) {
-	raw, _, err := invoke.InvokeRaw(ctx, invoke.InvokeRawParams{Clock: cc.clock, Conn: conn, Tool: cc.toolName, Params: cc.params})
+	raw, _, err := invoke.InvokeRaw(
+		ctx,
+		invoke.InvokeRawParams{Clock: cc.clock, Conn: conn, Tool: cc.toolName, Params: cc.params},
+	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "mini: %v\n", err)
 		os.Exit(1)
@@ -295,7 +305,8 @@ func mustCallStore(cfg *config.Config, configDir string, logger *slog.Logger, cl
 
 func printCallOutput(serverName, toolName string, env *response.Envelope, mode callOutput) error {
 	if mode == callOutputToon {
-		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})).With("server", serverName, "tool", toolName)
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn})).
+			With("server", serverName, "tool", toolName)
 		text, err := server.EncodeToon(logger, env)
 		if err != nil {
 			return fmt.Errorf("encode TOON response: %w", err)

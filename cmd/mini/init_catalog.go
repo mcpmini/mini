@@ -90,7 +90,15 @@ func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 			category = entry.Category
 			fmt.Fprintf(out, "  %s:\n", category)
 		}
-		fmt.Fprintf(out, "    %d. %s [%s] - %s%s\n", i+1, entry.Title, entryHost(entry.URL), entry.Description, authLabel(entry.Auth))
+		fmt.Fprintf(
+			out,
+			"    %d. %s [%s] - %s%s\n",
+			i+1,
+			entry.Title,
+			entryHost(entry.URL),
+			entry.Description,
+			authLabel(entry.Auth),
+		)
 	}
 }
 
@@ -116,7 +124,10 @@ func entryHost(rawURL string) string {
 
 func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {
 	for {
-		indexes, err := parseCatalogSelection(p.ask("Select servers (numbers, ranges, a = all, empty = none)"), len(entries))
+		indexes, err := parseCatalogSelection(
+			p.ask("Select servers (numbers, ranges, a = all, empty = none)"),
+			len(entries),
+		)
 		if err != nil {
 			fmt.Fprintln(p.errOut, "invalid selection:", err)
 			continue

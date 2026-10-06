@@ -91,7 +91,8 @@ func shouldSkipField(key string, cfg *effectiveConfig, depth int) bool {
 	if isExcluded(key, cfg.exclude) {
 		return true
 	}
-	return depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly) && !isPassthrough(key, cfg.passthrough)
+	return depth == 0 && len(cfg.includeOnly) > 0 && !isIncluded(key, cfg.includeOnly) &&
+		!isPassthrough(key, cfg.passthrough)
 }
 
 func projectMapValue(value any, ctx projCtx, fieldName string) any {
@@ -134,7 +135,8 @@ func truncateArray(arr []any, limit int) ([]any, int) {
 }
 
 func projectString(s string, ctx projCtx, fieldName string) string {
-	if ctx.cfg.stripContent || (ctx.cfg.autoStripThreshold > 0 && len(s) >= ctx.cfg.autoStripThreshold && ctx.cfg.contentFieldSet[fieldName]) {
+	if ctx.cfg.stripContent ||
+		(ctx.cfg.autoStripThreshold > 0 && len(s) >= ctx.cfg.autoStripThreshold && ctx.cfg.contentFieldSet[fieldName]) {
 		s = StripMarkup(s)
 	}
 	limit := ctx.cfg.stringLimitFor(fieldName)
@@ -142,7 +144,10 @@ func projectString(s string, ctx projCtx, fieldName string) string {
 		runeCount := utf8.RuneCountInString(s)
 		if runeCount > limit {
 			cut := truncateAtBoundary(s, limit)
-			*ctx.truncated = append(*ctx.truncated, Truncation{JQPath: jq.FormatPath(ctx.path), Chars: runeCount - utf8.RuneCountInString(cut)})
+			*ctx.truncated = append(
+				*ctx.truncated,
+				Truncation{JQPath: jq.FormatPath(ctx.path), Chars: runeCount - utf8.RuneCountInString(cut)},
+			)
 			return cut
 		}
 	}
@@ -182,7 +187,12 @@ func truncateAtBoundary(s string, runeLimit int) string {
 	if byteLimit >= len(s) {
 		return s
 	}
-	if sentenceCut := scanBackward(s, byteLimit, 100, func(b byte) bool { return b == '.' || b == '\n' }); sentenceCut >= 0 {
+	if sentenceCut := scanBackward(
+		s,
+		byteLimit,
+		100,
+		func(b byte) bool { return b == '.' || b == '\n' },
+	); sentenceCut >= 0 {
 		return s[:sentenceCut+1]
 	}
 	if wordCut := scanBackward(s, byteLimit, 50, func(b byte) bool { return b == ' ' }); wordCut >= 0 {

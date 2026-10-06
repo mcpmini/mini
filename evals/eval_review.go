@@ -48,7 +48,10 @@ func assertReviewRun(label string, run ClaudeResult) []error {
 	add(AssertToolCalled(run.CallLogDir, "github", "add_issue_comment"))
 	add(AssertResponseContains(run.Text, "820", "821", "822"))
 	if run.Turns < 3 {
-		errs = append(errs, fmt.Errorf("[%s] expected at least 3 turns for a multi-step review, got %d", label, run.Turns))
+		errs = append(
+			errs,
+			fmt.Errorf("[%s] expected at least 3 turns for a multi-step review, got %d", label, run.Turns),
+		)
 	}
 	return errs
 }

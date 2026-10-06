@@ -14,13 +14,14 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
-	"golang.org/x/oauth2"
 )
 
 func clientIDSentToTokenEndpoint(endpoint *authtest.TokenServer) string {
@@ -170,7 +171,10 @@ func TestRefreshAuthorization_clientIDAfterRediscovery(t *testing.T) {
 				})
 			},
 			moreCalls: func(t *testing.T, f *discoveryFixture) {
-				if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer external-access"); err != nil {
+				if _, err := f.provider.RefreshAuthorization(
+					context.Background(),
+					"Bearer external-access",
+				); err != nil {
 					t.Fatalf("second RefreshAuthorization: %v", err)
 				}
 			},

@@ -74,7 +74,10 @@ func TestResolveEndpoints_refusesAServerWithAnUnsetVariable(t *testing.T) {
 	err := auth.ResolveEndpoints(context.Background(), sc, resolveParams(t.TempDir(), "srv"))
 
 	if !errors.Is(err, unset) {
-		t.Errorf("ResolveEndpoints = %v, want the login refused before it sends the literal ${MINI_TEST_CLIENT_SECRET}", err)
+		t.Errorf(
+			"ResolveEndpoints = %v, want the login refused before it sends the literal ${MINI_TEST_CLIENT_SECRET}",
+			err,
+		)
 	}
 }
 
@@ -84,9 +87,17 @@ func TestResolveEndpoints_configuredEndpoints_canonicalizesResourceURL(t *testin
 		url  string
 		want string
 	}{
-		{"userinfo and fragment are stripped", "HTTPS://user:secret@EXAMPLE.COM:443/mcp#fragment", "https://example.com/mcp"},
+		{
+			"userinfo and fragment are stripped",
+			"HTTPS://user:secret@EXAMPLE.COM:443/mcp#fragment",
+			"https://example.com/mcp",
+		},
 		{"default HTTP port and root slash are removed", "http://EXAMPLE.COM:80/", "http://example.com"},
-		{"path and query are preserved", "https://EXAMPLE.COM:8443/api/v1?scope=read&mode=full", "https://example.com:8443/api/v1?scope=read&mode=full"},
+		{
+			"path and query are preserved",
+			"https://EXAMPLE.COM:8443/api/v1?scope=read&mode=full",
+			"https://example.com:8443/api/v1?scope=read&mode=full",
+		},
 		{"IPv6 host is normalized", "https://[2001:DB8::1]:443/mcp?x=1#fragment", "https://[2001:db8::1]/mcp?x=1"},
 	}
 
@@ -265,7 +276,8 @@ func TestResolveEndpoints_scopesAutoPopulatedFromPRM(t *testing.T) {
 	defer prmSrv.Close()
 
 	mcpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource"`)
+		w.Header().
+			Set("WWW-Authenticate", `Bearer resource_metadata="`+prmSrv.URL+`/.well-known/oauth-protected-resource"`)
 		w.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer mcpSrv.Close()

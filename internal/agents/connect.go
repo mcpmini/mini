@@ -35,8 +35,8 @@ func connectCodex(config []byte, disable []string, mini *MiniEntry) ([]byte, err
 // CreateFile writes the MCP config of an agent that has none yet. It never replaces a file: one
 // that appeared meanwhile is the agent's, and must go through EditFile.
 func CreateFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return fileio.CreateFile(path, data, 0600)
+	return fileio.CreateFile(path, data, 0o600)
 }

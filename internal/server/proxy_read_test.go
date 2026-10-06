@@ -16,7 +16,9 @@ func TestProxy_MiniRead_ReadsFile(t *testing.T) {
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\"}"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 
 	serveProxy(t, srv, callTool("config", map[string]any{
@@ -61,7 +63,9 @@ func TestProxy_MiniRead_WithFilter(t *testing.T) {
 	defer srv.Close()
 
 	conn := fakeConn("get_data")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":99,\"name\":\"widget\",\"secret\":\"x\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":99,\"name\":\"widget\",\"secret\":\"x\"}"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 
 	serveProxy(t, srv, callTool("config", map[string]any{

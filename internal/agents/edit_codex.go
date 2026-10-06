@@ -126,7 +126,12 @@ func requireTableForm(lines []tomlLine, name string) error {
 	if slices.ContainsFunc(lines, func(l tomlLine) bool { return isServerHeader(l, name) }) {
 		return nil
 	}
-	return fmt.Errorf("codex server %q is written as %s; mini can only edit [mcp_servers.%s] tables", name, codexServerForm(lines, name), name)
+	return fmt.Errorf(
+		"codex server %q is written as %s; mini can only edit [mcp_servers.%s] tables",
+		name,
+		codexServerForm(lines, name),
+		name,
+	)
 }
 
 func codexServerForm(lines []tomlLine, name string) string {

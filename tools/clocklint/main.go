@@ -87,7 +87,13 @@ func checkFile(path string, fset *token.FileSet, hasError *bool) {
 	})
 }
 
-func inspectTimeCalls(n ast.Node, fset *token.FileSet, srcLines []string, timeIdents map[string]bool, hasError *bool) bool {
+func inspectTimeCalls(
+	n ast.Node,
+	fset *token.FileSet,
+	srcLines []string,
+	timeIdents map[string]bool,
+	hasError *bool,
+) bool {
 	call, ok := n.(*ast.CallExpr)
 	if !ok {
 		return true

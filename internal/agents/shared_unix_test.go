@@ -11,11 +11,15 @@ import (
 
 func TestReadConfigFileReadsAPipe(t *testing.T) {
 	fifo := filepath.Join(tempDir(t), "config.fifo")
-	if err := syscall.Mkfifo(fifo, 0600); err != nil {
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Skipf("mkfifo: %v", err)
 	}
 	go func() {
-		os.WriteFile(fifo, []byte(`{"mcpServers":{}}`), 0600) //nolint:errcheck // a failed write fails the read below //fileiolint:allow FIFO writer must unblock the reader from a goroutine
+		os.WriteFile(
+			fifo,
+			[]byte(`{"mcpServers":{}}`),
+			0o600,
+		) //nolint:errcheck // a failed write fails the read below //fileiolint:allow FIFO writer must unblock the reader from a goroutine
 	}()
 
 	data, err := ReadConfigFile(fifo)

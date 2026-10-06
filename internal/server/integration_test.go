@@ -37,9 +37,12 @@ func setupFSServer(t *testing.T, allowedDir string) (*server.Server, context.Can
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	srv := server.New(server.Params{Config: cfg, ConfigDir: t.TempDir(), Logger: logger})
 	sc := config.ServerConfig{
-		Name: "fs", Command: "npx",
-		Args:        []string{"-y", "@modelcontextprotocol/server-filesystem", allowedDir},
-		Permissions: &config.PermissionsConfig{Protected: []string{"write_file", "create_directory", "move_file", "delete_file"}},
+		Name:    "fs",
+		Command: "npx",
+		Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", allowedDir},
+		Permissions: &config.PermissionsConfig{
+			Protected: []string{"write_file", "create_directory", "move_file", "delete_file"},
+		},
 	}
 	if err := srv.AddUpstream(ctx, sc); err != nil {
 		t.Fatalf("connect to filesystem MCP: %v", err)
@@ -131,9 +134,12 @@ func newProtectedFSServer(t *testing.T) (*server.Server, string) {
 	t.Cleanup(srv.Close)
 	tmpDir := realPath(t, t.TempDir())
 	sc := config.ServerConfig{
-		Name: "fs", Command: "npx",
-		Args:        []string{"-y", "@modelcontextprotocol/server-filesystem", tmpDir},
-		Permissions: &config.PermissionsConfig{Protected: []string{"write_file", "create_directory", "delete_file", "move_file"}},
+		Name:    "fs",
+		Command: "npx",
+		Args:    []string{"-y", "@modelcontextprotocol/server-filesystem", tmpDir},
+		Permissions: &config.PermissionsConfig{
+			Protected: []string{"write_file", "create_directory", "delete_file", "move_file"},
+		},
 	}
 	if err := srv.AddUpstream(ctx, sc); err != nil {
 		t.Fatalf("connect: %v", err)

@@ -203,7 +203,12 @@ func TestProxySchema_NullUpstreamSchemaDoesNotPanic(t *testing.T) {
 	conn := &transport.FakeConnection{
 		Tools: []transport.ToolDefinition{
 			{Name: "null_input", Description: "desc", InputSchema: json.RawMessage(`null`)},
-			{Name: "null_output", Description: "desc", InputSchema: json.RawMessage(`{"type":"object"}`), OutputSchema: json.RawMessage(`null`)},
+			{
+				Name:         "null_output",
+				Description:  "desc",
+				InputSchema:  json.RawMessage(`{"type":"object"}`),
+				OutputSchema: json.RawMessage(`null`),
+			},
 		},
 		Responses: make(map[string]json.RawMessage),
 	}
@@ -222,11 +227,15 @@ func TestProxySchema_RefsWithinArgsStayUnrewritten(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{{
-			Name:        "get_item",
-			Description: "desc",
-			InputSchema: json.RawMessage(`{"type":"object","properties":{"filter":{"$ref":"#/$defs/Filter"}},"$defs":{"Filter":{"type":"string"}}}`),
-		}},
+		Tools: []transport.ToolDefinition{
+			{
+				Name:        "get_item",
+				Description: "desc",
+				InputSchema: json.RawMessage(
+					`{"type":"object","properties":{"filter":{"$ref":"#/$defs/Filter"}},"$defs":{"Filter":{"type":"string"}}}`,
+				),
+			},
+		},
 		Responses: make(map[string]json.RawMessage),
 	}
 	addProxyConn(t, srv, "gh", conn)

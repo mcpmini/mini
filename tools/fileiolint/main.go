@@ -93,7 +93,15 @@ func callDiagnostics(fset *token.FileSet, f *ast.File) []string {
 		}
 		pos := fset.Position(call.Pos())
 		name := fileOperation(call.Fun, imports)
-		violations = append(violations, fmt.Sprintf("%s:%d: direct os.%s call; use internal/testutil or add //fileiolint:allow <reason> after the call", pos.Filename, pos.Line, name))
+		violations = append(
+			violations,
+			fmt.Sprintf(
+				"%s:%d: direct os.%s call; use internal/testutil or add //fileiolint:allow <reason> after the call",
+				pos.Filename,
+				pos.Line,
+				name,
+			),
+		)
 	}
 	return violations
 }

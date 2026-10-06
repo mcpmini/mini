@@ -248,8 +248,10 @@ func namedArrayLimitsApply(t *testing.T) projection.Result {
 		"issues":     []any{1, 2, 3, 4, 5, 6, 7},
 		"other_list": []any{"a", "b", "c", "d", "e"},
 	}
-	limits := &projection.Defaults{StringLimit: 1000, DepthLimit: 5,
-		ContentFields: []string{}, AutoStripThreshold: 0}
+	limits := &projection.Defaults{
+		StringLimit: 1000, DepthLimit: 5,
+		ContentFields: []string{}, AutoStripThreshold: 0,
+	}
 	return projection.Apply(value, cfg, limits)
 }
 

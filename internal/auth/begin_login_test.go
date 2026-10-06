@@ -59,7 +59,11 @@ func TestBeginLogin_discoveryFailureReleasesCallbackPort(t *testing.T) {
 	t.Cleanup(auth.UseEphemeralCallbackPort)
 	noDiscovery := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(noDiscovery.Close)
-	sc := &config.ServerConfig{Name: "synthetic", URL: noDiscovery.URL + "/mcp", Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}
+	sc := &config.ServerConfig{
+		Name: "synthetic",
+		URL:  noDiscovery.URL + "/mcp",
+		Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2},
+	}
 
 	login, err := auth.BeginLogin(context.Background(), sc, beginLoginParams(t))
 

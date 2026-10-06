@@ -7,8 +7,10 @@ import (
 )
 
 func TestMergeWithDefaultsNilConfigUsesDefaults(t *testing.T) {
-	defaults := &Defaults{StringLimit: 1000, DepthLimit: 4,
-		ContentFields: []string{"body", "summary"}, AutoStripThreshold: 500}
+	defaults := &Defaults{
+		StringLimit: 1000, DepthLimit: 4,
+		ContentFields: []string{"body", "summary"}, AutoStripThreshold: 500,
+	}
 	got := mergeWithDefaults(nil, defaults)
 	if got.defaultStringLimit != 1000 {
 		t.Fatalf("defaultStringLimit = %d, want 1000", got.defaultStringLimit)

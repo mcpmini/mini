@@ -53,7 +53,10 @@ func TestAddServerKeepsExplicitProjectionMaps(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir := tempDir(t)
 			want := projections
-			added, err := ops.AddServer(dir, config.ServerConfig{Name: "my-github", URL: "https://api.github.com/mcp", Projections: want})
+			added, err := ops.AddServer(
+				dir,
+				config.ServerConfig{Name: "my-github", URL: "https://api.github.com/mcp", Projections: want},
+			)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -66,7 +66,12 @@ func (c *capturingTokenServer) handle(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func hydrateFromSavedRegistration(t *testing.T, reg *auth.Registration, tokenURL string, clk clock.Clock) *config.AuthConfig {
+func hydrateFromSavedRegistration(
+	t *testing.T,
+	reg *auth.Registration,
+	tokenURL string,
+	clk clock.Clock,
+) *config.AuthConfig {
 	t.Helper()
 	dir := t.TempDir()
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
@@ -190,7 +195,11 @@ func TestHydratedRegistration_noSecretLeavesPublicClientUnchanged(t *testing.T) 
 	ac := hydrateFromSavedRegistration(t, reg, tokenSrv.srv.URL, clock.System())
 
 	if ac.ClientSecret != "" || ac.TokenEndpointAuthMethod != "" {
-		t.Fatalf("expected no secret/method hydrated for public client, got secret=%q method=%q", ac.ClientSecret, ac.TokenEndpointAuthMethod)
+		t.Fatalf(
+			"expected no secret/method hydrated for public client, got secret=%q method=%q",
+			ac.ClientSecret,
+			ac.TokenEndpointAuthMethod,
+		)
 	}
 
 	exchangeAndRefresh(t, ac)
@@ -225,7 +234,11 @@ func TestRegistrationExpiry_appliesOrIgnoresSecretByBoundary(t *testing.T) {
 				t.Errorf("secret applied = %v, want %v (ClientSecret=%q)", got, tc.wantApplied, ac.ClientSecret)
 			}
 			if ac.ClientID != reg.ClientID {
-				t.Errorf("ClientID = %q, want %q — ClientID applies regardless of secret expiry", ac.ClientID, reg.ClientID)
+				t.Errorf(
+					"ClientID = %q, want %q — ClientID applies regardless of secret expiry",
+					ac.ClientID,
+					reg.ClientID,
+				)
 			}
 		})
 	}
@@ -248,20 +261,31 @@ func TestRegistrationInconsistency_failsResolutionNamingTheField(t *testing.T) {
 			wantIn: "client_secret",
 		},
 		{
-			name:   "secret with method none",
-			reg:    &auth.Registration{ClientID: "c4", ClientSecret: "sk-test-usurp-inconsistent", TokenEndpointAuthMethod: "none"},
+			name: "secret with method none",
+			reg: &auth.Registration{
+				ClientID:                "c4",
+				ClientSecret:            "sk-test-usurp-inconsistent",
+				TokenEndpointAuthMethod: "none",
+			},
 			wantIn: "token_endpoint_auth_method",
 		},
 		{
-			name:   "unrecognized method",
-			reg:    &auth.Registration{ClientID: "c5", ClientSecret: "sk-test-usurp-inconsistent", TokenEndpointAuthMethod: "client_secret_jwt"},
+			name: "unrecognized method",
+			reg: &auth.Registration{
+				ClientID:                "c5",
+				ClientSecret:            "sk-test-usurp-inconsistent",
+				TokenEndpointAuthMethod: "client_secret_jwt",
+			},
 			wantIn: "client_secret_jwt",
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: tc.reg})
+			authtest.SaveRegistration(
+				t,
+				authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: tc.reg},
+			)
 			asSrv := authtest.ServeASMeta(t, "/.well-known/oauth-authorization-server", map[string]any{
 				"authorization_endpoint":           "https://as.example.com/authorize",
 				"token_endpoint":                   "https://as.example.com/token",
@@ -310,7 +334,11 @@ func TestResolveEndpoints_freshDCRCapturesAndPersistsConfidentialClient(t *testi
 		t.Fatalf("ResolveEndpoints: %v", err)
 	}
 	if sc.Auth.ClientSecret != "sk-test-usurp-fresh" || sc.Auth.TokenEndpointAuthMethod != "client_secret_post" {
-		t.Errorf("AuthConfig not hydrated from fresh DCR response: secret=%q method=%q", sc.Auth.ClientSecret, sc.Auth.TokenEndpointAuthMethod)
+		t.Errorf(
+			"AuthConfig not hydrated from fresh DCR response: secret=%q method=%q",
+			sc.Auth.ClientSecret,
+			sc.Auth.TokenEndpointAuthMethod,
+		)
 	}
 
 	persisted, err := auth.LoadRegistration(dir, "srv")
@@ -395,7 +423,11 @@ func TestFreshDCR_exchangeUsesCorrectAuthStyle(t *testing.T) {
 func TestClientSecretNeverAppearsInResolutionOrExchangeErrors(t *testing.T) {
 	const secret = "sk-test-usurp-should-not-leak"
 	dir := t.TempDir()
-	reg := &auth.Registration{ClientID: "leak-check-client", ClientSecret: secret, TokenEndpointAuthMethod: "client_secret_basic"}
+	reg := &auth.Registration{
+		ClientID:                "leak-check-client",
+		ClientSecret:            secret,
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	rejectingTokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid_client", http.StatusUnauthorized)

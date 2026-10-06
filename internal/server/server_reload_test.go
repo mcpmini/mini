@@ -88,7 +88,10 @@ func (e *serverReloadEnv) assertRemoved(names ...string) {
 func TestServerReload_deletedFileOfAnAgentAddedServer_removesIt(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowPrivateURLs = true
-	e := &serverReloadEnv{reloadEnv: buildReloadEnvWithConfig(t, evalTempDir(t), cfg), upstream: newMCPTestServer(t, pingTools)}
+	e := &serverReloadEnv{
+		reloadEnv: buildReloadEnvWithConfig(t, evalTempDir(t), cfg),
+		upstream:  newMCPTestServer(t, pingTools),
+	}
 	e.startPoller()
 	resp := serve(t, e.srv, callTool("config", map[string]any{
 		"action": "add_server", "config": map[string]any{"name": "ag", "transport": "http", "url": e.upstream.URL},
@@ -132,7 +135,11 @@ func TestServerReload_disabledServer_isRemoved(t *testing.T) {
 		e := newServerReloadEnv(t)
 		e.startWithServers("svc")
 
-		testutil.WriteFile(t, e.serverPath("svc"), "transport: http\nurl: "+e.upstream.URL+"\nenabled: false\nprojections: {tool: {include_only: 5}}\n")
+		testutil.WriteFile(
+			t,
+			e.serverPath("svc"),
+			"transport: http\nurl: "+e.upstream.URL+"\nenabled: false\nprojections: {tool: {include_only: 5}}\n",
+		)
 		e.advanceTick()
 
 		e.assertRemoved("svc")
@@ -146,7 +153,7 @@ func TestServerReload_brokenFileHoldsOnlyItsServer(t *testing.T) {
 		},
 		"unreadable": func(e *serverReloadEnv) {
 			e.removeServerFile("broken")
-			if err := os.Mkdir(e.serverPath("broken"), 0700); err != nil {
+			if err := os.Mkdir(e.serverPath("broken"), 0o700); err != nil {
 				e.t.Fatal(err)
 			}
 		},

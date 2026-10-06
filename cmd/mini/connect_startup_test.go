@@ -56,7 +56,10 @@ func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 	fc := clock.NewFake()
 	cfg := config.DefaultConfig()
 	cfg.ResponseDir = t.TempDir()
-	srv := buildAndStart(t.Context(), BuildServerParams{Cfg: cfg, ConfigDir: dir, Logger: slog.New(reloaded), Clock: fc})
+	srv := buildAndStart(
+		t.Context(),
+		BuildServerParams{Cfg: cfg, ConfigDir: dir, Logger: slog.New(reloaded), Clock: fc},
+	)
 	defer srv.Close()
 	addGetDataUpstream(t, srv)
 	waitCtx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
@@ -88,7 +91,9 @@ func TestBuildAndStart_ProjectionHotReload(t *testing.T) {
 func addGetDataUpstream(t *testing.T, srv *server.Server) {
 	t.Helper()
 	fake := &transport.FakeConnection{
-		Tools: []transport.ToolDefinition{{Name: "getData", Description: "d", InputSchema: json.RawMessage(`{"type":"object"}`)}},
+		Tools: []transport.ToolDefinition{
+			{Name: "getData", Description: "d", InputSchema: json.RawMessage(`{"type":"object"}`)},
+		},
 		Responses: map[string]json.RawMessage{
 			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{\"a\":1,\"b\":2,\"secret\":\"x\"}"}]}`),
 		},

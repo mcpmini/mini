@@ -24,7 +24,12 @@ const maxSocketPathLen = 100
 
 func CheckSocketPath(configDir string) error {
 	if p := SocketPath(configDir); len(p) > maxSocketPathLen {
-		return fmt.Errorf("daemon socket path is too long (%d > %d bytes): %s — use a shorter --config directory", len(p), maxSocketPathLen, p)
+		return fmt.Errorf(
+			"daemon socket path is too long (%d > %d bytes): %s — use a shorter --config directory",
+			len(p),
+			maxSocketPathLen,
+			p,
+		)
 	}
 	return nil
 }

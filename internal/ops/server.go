@@ -87,14 +87,19 @@ func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) 
 	if err := writeNewFile(path, data); err != nil {
 		return AddedServer{}, fmt.Errorf("write %s: %w", path, err)
 	}
-	return AddedServer{Config: written, Path: path, DefaultPermissions: defaultPermissions, DefaultProjections: defaultProjections}, nil
+	return AddedServer{
+		Config:             written,
+		Path:               path,
+		DefaultPermissions: defaultPermissions,
+		DefaultProjections: defaultProjections,
+	}, nil
 }
 
 func writeNewFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	return fileio.CreateFile(path, data, 0600)
+	return fileio.CreateFile(path, data, 0o600)
 }
 
 func validServerName(name string) error {

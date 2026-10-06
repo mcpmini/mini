@@ -54,7 +54,10 @@ func TestLoadServerConfig_ignoresADetectedMarkerOnAnAgentAddedServer(t *testing.
 		t.Fatalf("MarkOAuthDetected: %v", err)
 	}
 	if sc := mustLoadOneServer(t, dir); sc.Auth != nil {
-		t.Errorf("Auth = %+v, want none: a marker left by an earlier svc must not let start_auth run for an agent's server", sc.Auth)
+		t.Errorf(
+			"Auth = %+v, want none: a marker left by an earlier svc must not let start_auth run for an agent's server",
+			sc.Auth,
+		)
 	}
 }
 
@@ -80,7 +83,11 @@ func TestLoadServerConfig_existingAuthTakesPrecedenceOverDetectedMarker(t *testi
 
 func TestLoadServerConfig_mergesBundledAuthForKnownServer(t *testing.T) {
 	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "slack", Transport: "http", URL: "https://mcp.slack.com/mcp"})
+	configtest.WriteServer(
+		t,
+		dir,
+		config.ServerConfig{Name: "slack", Transport: "http", URL: "https://mcp.slack.com/mcp"},
+	)
 	sc := mustLoadOneServer(t, dir)
 	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
 		t.Fatalf("Auth = %+v, want type oauth2 merged in from the slack bundled default", sc.Auth)
@@ -95,10 +102,17 @@ func TestLoadServerConfig_mergesBundledAuthForKnownServer(t *testing.T) {
 
 func TestLoadServerConfig_bundledAuthMatchesByURLNotName(t *testing.T) {
 	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "slack", Transport: "http", URL: "https://example.com/mcp"})
+	configtest.WriteServer(
+		t,
+		dir,
+		config.ServerConfig{Name: "slack", Transport: "http", URL: "https://example.com/mcp"},
+	)
 	sc := mustLoadOneServer(t, dir)
 	if sc.Auth != nil {
-		t.Errorf("Auth = %+v, a server merely named 'slack' but pointed elsewhere must not get Slack's bundled OAuth credentials", sc.Auth)
+		t.Errorf(
+			"Auth = %+v, a server merely named 'slack' but pointed elsewhere must not get Slack's bundled OAuth credentials",
+			sc.Auth,
+		)
 	}
 }
 
@@ -111,7 +125,10 @@ func TestLoadServerConfig_bundledAuthMatchesRenamedKnownServer(t *testing.T) {
 	})
 	sc := mustLoadOneServer(t, dir)
 	if sc.Auth == nil || sc.Auth.Type != "oauth2" {
-		t.Errorf("Auth = %+v, a server pointed at slack.com should get the bundled default regardless of its chosen name", sc.Auth)
+		t.Errorf(
+			"Auth = %+v, a server pointed at slack.com should get the bundled default regardless of its chosen name",
+			sc.Auth,
+		)
 	}
 }
 
@@ -124,7 +141,10 @@ func TestLoadServerConfig_bundledAuthRejectsVendorNameInPath(t *testing.T) {
 	})
 	sc := mustLoadOneServer(t, dir)
 	if sc.Auth != nil {
-		t.Errorf("Auth = %+v, a vendor name appearing only in the URL path must not trigger the bundled default", sc.Auth)
+		t.Errorf(
+			"Auth = %+v, a vendor name appearing only in the URL path must not trigger the bundled default",
+			sc.Auth,
+		)
 	}
 }
 
@@ -157,7 +177,11 @@ func TestLoadServerConfig_bundledAuthIgnoresCommandOnURLServer(t *testing.T) {
 
 func TestLoadServerConfig_unknownServerGetsNoBundledAuth(t *testing.T) {
 	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "unknown", Transport: "http", URL: "https://example.com/mcp"})
+	configtest.WriteServer(
+		t,
+		dir,
+		config.ServerConfig{Name: "unknown", Transport: "http", URL: "https://example.com/mcp"},
+	)
 	sc := mustLoadOneServer(t, dir)
 	if sc.Auth != nil {
 		t.Errorf("Auth = %+v, want nil for a server with no bundled default", sc.Auth)
@@ -215,8 +239,18 @@ func TestServerConfig_HasStaticAuthHeader(t *testing.T) {
 		{"lowercase key", oauth, map[string]string{"authorization": "Bearer x"}, true},
 		{"empty value", oauth, map[string]string{"Authorization": ""}, false},
 		{"whitespace value", oauth, map[string]string{"Authorization": "  "}, false},
-		{"env var reference stays literal", oauth, map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_EMPTY}"}, true},
-		{"literal env reference is a static header", oauth, map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_SET}"}, true},
+		{
+			"env var reference stays literal",
+			oauth,
+			map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_EMPTY}"},
+			true,
+		},
+		{
+			"literal env reference is a static header",
+			oauth,
+			map[string]string{"Authorization": "${MINI_TEST_STATIC_AUTH_SET}"},
+			true,
+		},
 		{"auth token set", &config.AuthConfig{Type: config.AuthTypeOAuth2, Token: "tok"}, nil, true},
 		{"auth token reference stays literal", &config.AuthConfig{
 			Type:  config.AuthTypeOAuth2,
@@ -358,7 +392,13 @@ func TestConfig_BrowserCommandFor(t *testing.T) {
 		{"per-server wins over global", config.Config{
 			BrowserCommand: "global-cmd",
 		}, withBrowser("per-server-cmd"), "per-server-cmd", true},
-		{"global used when no per-server", config.Config{BrowserCommand: "global-cmd"}, withBrowser(""), "global-cmd", true},
+		{
+			"global used when no per-server",
+			config.Config{BrowserCommand: "global-cmd"},
+			withBrowser(""),
+			"global-cmd",
+			true,
+		},
 		{"global used when server has no auth", config.Config{
 			BrowserCommand: "global-cmd",
 		}, config.ServerConfig{}, "global-cmd", true},

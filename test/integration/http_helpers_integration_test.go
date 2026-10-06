@@ -39,8 +39,10 @@ func fakeMCPResult(method string) any {
 		}
 	case "tools/list":
 		return map[string]any{
-			"tools": []map[string]any{{"name": "get_item", "description": "test tool",
-				"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}}}},
+			"tools": []map[string]any{{
+				"name": "get_item", "description": "test tool",
+				"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}},
+			}},
 		}
 	case "tools/call":
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": `{"ok":true}`}}}
@@ -64,7 +66,9 @@ func (f *fakeHTTPMCP) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": fakeMCPResult(req.Method)}) //nolint:errcheck
+	json.NewEncoder(w).
+		Encode(map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": fakeMCPResult(req.Method)})
+	//nolint:errcheck
 }
 
 type httpServerParams struct {

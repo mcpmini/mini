@@ -32,7 +32,11 @@ func TestIntegrationStdioEnvironment_overlaysParent(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := subprocessEnvironment(t, tc.env)
-			want := map[string]string{"PATH": "/path/to/parent/bin", "MINI_ENV_BASE": tc.base, "MINI_ENV_ADDED": tc.added}
+			want := map[string]string{
+				"PATH":           "/path/to/parent/bin",
+				"MINI_ENV_BASE":  tc.base,
+				"MINI_ENV_ADDED": tc.added,
+			}
 			if !maps.Equal(got, want) {
 				t.Fatalf("child environment = %v, want %v", got, want)
 			}
@@ -83,7 +87,11 @@ func TestIntegrationStdioEnvironment_helper(t *testing.T) {
 			os.Exit(2)
 		}
 		sendResponse(os.Stdout, req.ID, map[string]string{
-			"PATH": os.Getenv("PATH"), "MINI_ENV_BASE": os.Getenv("MINI_ENV_BASE"), "MINI_ENV_ADDED": os.Getenv("MINI_ENV_ADDED"),
+			"PATH": os.Getenv(
+				"PATH",
+			),
+			"MINI_ENV_BASE":  os.Getenv("MINI_ENV_BASE"),
+			"MINI_ENV_ADDED": os.Getenv("MINI_ENV_ADDED"),
 		})
 	}
 	os.Exit(0)
