@@ -1,6 +1,7 @@
 package initcmd
 
 import (
+	"fmt"
 	"maps"
 	"regexp"
 	"slices"
@@ -10,9 +11,10 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// ImportPlan is what importing the agents' servers writes to mini, and what it leaves in them.
+// ImportPlan is every server config found in the agents, which of them importing picks by default,
+// and what it leaves in the agents.
 type ImportPlan struct {
-	Servers    []config.ServerConfig
+	Candidates []Candidate
 	Skipped    []SkippedServer
 	Unreadable []UnreadableAgent
 	// DroppedSettings holds, per imported server, the agent settings mini doesn't carry over.
@@ -22,10 +24,31 @@ type ImportPlan struct {
 	StaticHeaders map[string]map[string]string
 }
 
+// Candidate is one server config found in the agents, under the name mini would give it. Picked
+// ones are imported by default; the others (switched off everywhere, or a second config under a
+// name in use) are offered for the user to pick.
+type Candidate struct {
+	Server config.ServerConfig
+	From   []AgentEntry
+	Picked bool
+	// Reason is why an unpicked candidate isn't picked: SkipSwitchedOff or SkipSecondConfig.
+	Reason SkipReason
+	// SharesName is the name in use that a suffixed candidate would otherwise have had.
+	SharesName string
+}
+
+// AgentEntry is where a candidate was found: an agent and the name the entry has there.
+type AgentEntry struct {
+	Agent string
+	Name  string
+}
+
 type SkipReason int
 
 const (
-	SkipEmptyName SkipReason = iota
+	// SkipNone is a picked candidate's Reason.
+	SkipNone SkipReason = iota
+	SkipEmptyName
 	SkipUnexpandableRefs
 	SkipSwitchedOff
 	SkipSecondConfig
@@ -77,10 +100,17 @@ func PlanImport(p ImportParams) ImportPlan {
 	}
 	// Groups keep agent order, which decides which config keeps a shared name.
 	taken := takenNames{inMini: lowercaseNames(p.Written), imported: map[string]bool{}}
+	var unpicked []*serverGroup
 	for _, g := range groups {
-		plan.add(g, taken)
+		if !plan.add(g, taken) {
+			unpicked = append(unpicked, g)
+		}
 	}
-	slices.SortFunc(plan.Servers, func(a, b config.ServerConfig) int { return strings.Compare(a.Name, b.Name) })
+	// Offered after every picked config has its name, so a suffix never takes a name one needs.
+	for _, g := range unpicked {
+		plan.offer(g, taken)
+	}
+	slices.SortFunc(plan.Candidates, func(a, b Candidate) int { return strings.Compare(a.Server.Name, b.Server.Name) })
 	return plan
 }
 
@@ -138,23 +168,50 @@ func (g *serverGroup) enabled() bool {
 	return slices.ContainsFunc(g.entries, func(e agentEntry) bool { return !e.server.Disabled })
 }
 
-func (plan *ImportPlan) add(g *serverGroup, taken takenNames) {
+func (plan *ImportPlan) add(g *serverGroup, taken takenNames) bool {
 	if !g.enabled() {
 		// Importing a server every agent switched off would switch it on for every agent connected
 		// to mini.
 		plan.skipAll(g, func(agentEntry) SkipReason { return SkipSwitchedOff })
-		return
+		return false
 	}
 	name, ok := taken.firstFree(g)
 	if !ok {
 		// Another config under a name in use would need a new name the user never chose.
 		plan.skipAll(g, taken.noFreeNameReason)
+		return false
+	}
+	plan.addCandidate(g, name, taken, true)
+	return true
+}
+
+func (plan *ImportPlan) offer(g *serverGroup, taken takenNames) {
+	name, ok := taken.firstFree(g)
+	var shares string
+	if !ok {
+		name, shares, ok = taken.suffixed(g)
+	}
+	if !ok {
 		return
 	}
+	plan.addCandidate(g, name, taken, false)
+	c := &plan.Candidates[len(plan.Candidates)-1]
+	c.SharesName = shares
+	c.Reason = SkipSecondConfig
+	if !g.enabled() {
+		c.Reason = SkipSwitchedOff
+	}
+}
+
+func (plan *ImportPlan) addCandidate(g *serverGroup, name string, taken takenNames, picked bool) {
 	taken.imported[name] = true
 	sc := g.config
 	sc.Name = name
-	plan.Servers = append(plan.Servers, sc)
+	c := Candidate{Server: sc, Picked: picked}
+	for _, e := range g.entries {
+		c.From = append(c.From, AgentEntry{Agent: e.agent, Name: e.name})
+	}
+	plan.Candidates = append(plan.Candidates, c)
 	plan.noteCaveats(name, g)
 }
 
@@ -165,6 +222,22 @@ func (t takenNames) firstFree(g *serverGroup) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func (t takenNames) suffixed(g *serverGroup) (name, base string, ok bool) {
+	i := slices.IndexFunc(g.entries, func(e agentEntry) bool {
+		name := NormalizeName(e.name)
+		return name != "" && !t.inMini[name]
+	})
+	if i < 0 { // every name is mini's, and mini's copy wins
+		return "", "", false
+	}
+	base = NormalizeName(g.entries[i].name)
+	for n := 2; ; n++ {
+		if name := fmt.Sprintf("%s-%d", base, n); !t.inMini[name] && !t.imported[name] {
+			return name, base, true
+		}
+	}
 }
 
 func (t takenNames) noFreeNameReason(e agentEntry) SkipReason {
