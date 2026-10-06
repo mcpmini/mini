@@ -144,6 +144,27 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 				{Agent: "Codex", Name: "github", Reason: SkipNameInMini},
 			},
 		},
+		{
+			"a second config comes in under the free name another agent gives it",
+			[]agents.Agent{
+				agentWith("Claude Code", map[string]agents.Server{"github": a}),
+				agentWith("Codex", map[string]agents.Server{"github": b}),
+				agentWith("Cursor", map[string]agents.Server{"gh-work": b}),
+			},
+			nil,
+			[]string{"gh-work", "github"},
+			nil,
+		},
+		{
+			"a config under a name mini has comes in under the free name another agent gives it",
+			[]agents.Agent{
+				agentWith("Claude Code", map[string]agents.Server{"github": a}),
+				agentWith("Cursor", map[string]agents.Server{"gh": a}),
+			},
+			[]string{"github"},
+			[]string{"gh"},
+			nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

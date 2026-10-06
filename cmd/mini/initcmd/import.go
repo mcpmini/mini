@@ -56,9 +56,13 @@ type agentEntry struct {
 
 // serverGroup is one server config found in one or more agents.
 type serverGroup struct {
-	name    string
 	config  config.ServerConfig
 	entries []agentEntry
+}
+
+type takenNames struct {
+	inMini   map[string]bool
+	imported map[string]bool
 }
 
 func PlanImport(p ImportParams) ImportPlan {
@@ -68,16 +72,15 @@ func PlanImport(p ImportParams) ImportPlan {
 		groups = addToGroup(groups, e)
 	}
 	// Groups keep agent order, which decides which config keeps a shared name.
-	claimed := map[string]bool{}
+	taken := takenNames{inMini: lowercaseNames(p.Configured), imported: map[string]bool{}}
 	for _, g := range groups {
-		plan.add(g, claimed)
+		plan.add(g, taken)
 	}
 	slices.SortFunc(plan.Servers, func(a, b config.ServerConfig) int { return strings.Compare(a.Name, b.Name) })
 	return plan
 }
 
 func (p ImportParams) importable(plan *ImportPlan) []agentEntry {
-	configuredNames := lowercaseNames(p.Configured)
 	var importable []agentEntry
 	for _, agent := range p.Agents {
 		servers, err := agent.Read(agent.ConfigPath)
@@ -87,13 +90,14 @@ func (p ImportParams) importable(plan *ImportPlan) []agentEntry {
 		}
 		for _, name := range slices.Sorted(maps.Keys(servers)) {
 			e := agentEntry{agent: agent.Name, name: name, server: servers[name]}
-			switch skip, ok := skipReason(e, configuredNames); {
-			case !p.offered(e):
-			case ok:
-				plan.Skipped = append(plan.Skipped, skip)
-			default:
-				importable = append(importable, e)
+			if !p.offered(e) {
+				continue
 			}
+			if skip, ok := skipReason(e); ok {
+				plan.Skipped = append(plan.Skipped, skip)
+				continue
+			}
+			importable = append(importable, e)
 		}
 	}
 	return importable
@@ -109,11 +113,9 @@ func (p ImportParams) offered(e agentEntry) bool {
 		)
 }
 
-func skipReason(e agentEntry, configuredNames map[string]bool) (SkippedServer, bool) {
+func skipReason(e agentEntry) (SkippedServer, bool) {
 	skip := SkippedServer{Agent: e.agent, Name: e.name}
 	switch {
-	case configuredNames[NormalizeName(e.name)]:
-		skip.Reason = SkipNameInMini
 	case NormalizeName(e.name) == "":
 		skip.Reason = SkipEmptyName
 	case !e.server.Candidate():
@@ -131,49 +133,69 @@ func addToGroup(groups []*serverGroup, e agentEntry) []*serverGroup {
 		groups[i].entries = append(groups[i].entries, e)
 		return groups
 	}
-	return append(groups, &serverGroup{name: NormalizeName(e.name), config: e.server.Config, entries: []agentEntry{e}})
+	return append(groups, &serverGroup{config: e.server.Config, entries: []agentEntry{e}})
 }
 
 func (g *serverGroup) enabled() bool {
 	return slices.ContainsFunc(g.entries, func(e agentEntry) bool { return !e.server.Disabled })
 }
 
-func (plan *ImportPlan) add(g *serverGroup, claimed map[string]bool) {
-	switch {
-	case !g.enabled():
+func (plan *ImportPlan) add(g *serverGroup, taken takenNames) {
+	if !g.enabled() {
 		// Importing a server every agent switched off would switch it on for every agent connected
-		// to mini. It claims no name, so an enabled config elsewhere keeps the name.
-		plan.skipAll(g, SkipSwitchedOff)
-	case claimed[g.name]:
+		// to mini. It takes no name, so an enabled config elsewhere keeps the name.
+		plan.skipAll(g, func(agentEntry) SkipReason { return SkipSwitchedOff })
+		return
+	}
+	name, ok := taken.firstFree(g)
+	if !ok {
 		// Another config under a name in use would need a new name the user never chose.
-		plan.skipAll(g, SkipSecondConfig)
-	default:
-		claimed[g.name] = true
-		sc := g.config
-		sc.Name = g.name
-		plan.Servers = append(plan.Servers, sc)
-		plan.noteCaveats(g)
+		plan.skipAll(g, taken.reason)
+		return
 	}
+	taken.imported[name] = true
+	sc := g.config
+	sc.Name = name
+	plan.Servers = append(plan.Servers, sc)
+	plan.noteCaveats(name, g)
 }
 
-func (plan *ImportPlan) skipAll(g *serverGroup, reason SkipReason) {
+// The first of a config's names that's free wins, so a config one agent holds under a name in use
+// still comes in under the name another agent gives it.
+func (t takenNames) firstFree(g *serverGroup) (string, bool) {
 	for _, e := range g.entries {
-		plan.Skipped = append(plan.Skipped, SkippedServer{Agent: e.agent, Name: e.name, Reason: reason})
+		if name := NormalizeName(e.name); !t.inMini[name] && !t.imported[name] {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func (t takenNames) reason(e agentEntry) SkipReason {
+	if t.inMini[NormalizeName(e.name)] {
+		return SkipNameInMini
+	}
+	return SkipSecondConfig
+}
+
+func (plan *ImportPlan) skipAll(g *serverGroup, reason func(agentEntry) SkipReason) {
+	for _, e := range g.entries {
+		plan.Skipped = append(plan.Skipped, SkippedServer{Agent: e.agent, Name: e.name, Reason: reason(e)})
 	}
 }
 
-func (plan *ImportPlan) noteCaveats(g *serverGroup) {
+func (plan *ImportPlan) noteCaveats(name string, g *serverGroup) {
 	for _, e := range g.entries {
 		for _, setting := range e.server.IgnoredRunSettings {
-			if !slices.Contains(plan.Ignored[g.name], setting) {
-				plan.Ignored[g.name] = append(plan.Ignored[g.name], setting)
+			if !slices.Contains(plan.Ignored[name], setting) {
+				plan.Ignored[name] = append(plan.Ignored[name], setting)
 			}
 		}
 		for header, envVar := range e.server.UnusedEnvHeaders {
-			if plan.UnusedEnvHeaders[g.name] == nil {
-				plan.UnusedEnvHeaders[g.name] = map[string]string{}
+			if plan.UnusedEnvHeaders[name] == nil {
+				plan.UnusedEnvHeaders[name] = map[string]string{}
 			}
-			plan.UnusedEnvHeaders[g.name][header] = envVar
+			plan.UnusedEnvHeaders[name][header] = envVar
 		}
 	}
 }
