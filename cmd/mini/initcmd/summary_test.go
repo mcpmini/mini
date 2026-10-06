@@ -94,7 +94,10 @@ func TestSummary_importAndFailures(t *testing.T) {
 		UnusedEnvHeaders: map[string]map[string]string{"team": {"X-Team": "TEAM_VAR"}},
 		ConfigDir:        "/config",
 		WriteErrors:      []ServerError{{Name: "broken", Err: errors.New("disk full")}},
-		StatusErr:        errors.New("permission denied"),
+		Unreadable: []UnreadableAgent{
+			{Agent: "Cursor", ConfigPath: "/home/.cursor/mcp.json", Err: errors.New("invalid character")},
+		},
+		StatusErr: errors.New("permission denied"),
 	})
 	requireLines(
 		t,
@@ -109,6 +112,7 @@ func TestSummary_importAndFailures(t *testing.T) {
 		"  templated kept in Codex: uses an environment variable in url\n",
 		`  "!!!" in Cursor: its name has no letters or digits mini can use`,
 		"Could not add broken: disk full\n",
+		"Could not read Cursor's config (/home/.cursor/mcp.json), so none of its servers were imported: invalid character\n",
 		"Could not read mini's servers: permission denied\n",
 	)
 }

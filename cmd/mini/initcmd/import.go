@@ -12,8 +12,9 @@ import (
 
 // ImportPlan is what importing the agents' servers writes to mini, and what it leaves in them.
 type ImportPlan struct {
-	Servers []config.ServerConfig
-	Skipped []SkippedServer
+	Servers    []config.ServerConfig
+	Skipped    []SkippedServer
+	Unreadable []UnreadableAgent
 	// Ignored holds, per imported server, the agent settings mini doesn't carry over.
 	Ignored map[string][]string
 	// UnusedEnvHeaders holds, per imported server, each static header kept over the variable the
@@ -37,6 +38,13 @@ type SkippedServer struct {
 	Name   string
 	Reason SkipReason
 	Refs   []string
+}
+
+// UnreadableAgent is an agent whose config couldn't be read, so none of its servers were imported.
+type UnreadableAgent struct {
+	Agent      string
+	ConfigPath string
+	Err        error
 }
 
 type ImportParams struct {
@@ -85,7 +93,10 @@ func (p ImportParams) importable(plan *ImportPlan) []agentEntry {
 	for _, agent := range p.Agents {
 		servers, err := agent.Read(agent.ConfigPath)
 		if err != nil {
-			// TODO(#277): tell the user which agents couldn't be read and why.
+			plan.Unreadable = append(
+				plan.Unreadable,
+				UnreadableAgent{Agent: agent.Name, ConfigPath: agent.ConfigPath, Err: err},
+			)
 			continue
 		}
 		for _, name := range slices.Sorted(maps.Keys(servers)) {

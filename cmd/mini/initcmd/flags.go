@@ -29,6 +29,7 @@ type Report struct {
 	ConfigDir   string
 	Servers     []ServerStatus
 	WriteErrors []ServerError
+	Unreadable  []UnreadableAgent
 	Skipped     []SkippedServer
 	// Ignored holds, per imported server, the agent settings mini doesn't carry over.
 	Ignored map[string][]string
@@ -51,7 +52,7 @@ type Report struct {
 }
 
 func (r Report) Failed() bool {
-	return len(r.WriteErrors) > 0 || r.StatusErr != nil
+	return len(r.WriteErrors) > 0 || len(r.Unreadable) > 0 || r.StatusErr != nil
 }
 
 func RunFlags(p FlagRun) Report {
@@ -63,7 +64,8 @@ func RunFlags(p FlagRun) Report {
 		return report
 	}
 	plan := PlanImport(ImportParams{Agents: p.Import, Configured: configured, SelfPath: p.SelfPath})
-	report.Skipped, report.Ignored, report.UnusedEnvHeaders = plan.Skipped, plan.Ignored, plan.UnusedEnvHeaders
+	report.Skipped, report.Unreadable = plan.Skipped, plan.Unreadable
+	report.Ignored, report.UnusedEnvHeaders = plan.Ignored, plan.UnusedEnvHeaders
 	picks := flagPicks(plan.Servers, p.Add, configured)
 	report.AlreadyConfigured, report.FromImport = picks.already, picks.fromImport
 	written, writeErrors := addServers(p.ConfigDir, picks.want)

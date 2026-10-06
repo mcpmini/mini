@@ -285,6 +285,9 @@ func TestPlanImport_namesWhatItCantImport(t *testing.T) {
 	if len(plan.Servers) != 0 || !reflect.DeepEqual(plan.Skipped, want) {
 		t.Errorf("servers = %+v\nskipped = %+v\nwant none and %+v", plan.Servers, plan.Skipped, want)
 	}
+	if len(plan.Unreadable) != 1 || plan.Unreadable[0].Agent != "Broken" || plan.Unreadable[0].Err == nil {
+		t.Errorf("unreadable = %+v, want Broken with its error", plan.Unreadable)
+	}
 }
 
 func TestPlanImport_caveatsFromEveryAgentLandOnTheImportedServer(t *testing.T) {

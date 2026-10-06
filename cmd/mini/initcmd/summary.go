@@ -176,6 +176,15 @@ func StaticHeaderNotes(name string, unused map[string]string, file string) []str
 }
 
 func writeFailures(b *strings.Builder, r Report) {
+	for _, u := range r.Unreadable {
+		fmt.Fprintf(
+			b,
+			"\nCould not read %s's config (%s), so none of its servers were imported: %v\n",
+			u.Agent,
+			u.ConfigPath,
+			u.Err,
+		)
+	}
 	for _, failure := range r.WriteErrors {
 		fmt.Fprintf(b, "\nCould not add %s: %v\n", failure.Name, failure.Err)
 	}

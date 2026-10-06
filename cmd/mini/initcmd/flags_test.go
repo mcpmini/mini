@@ -4,6 +4,8 @@ package initcmd
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"testing"
@@ -154,9 +156,35 @@ func TestReport_failed(t *testing.T) {
 		"nothing failed":        {Report{}, false},
 		"a server write failed": {Report{WriteErrors: []ServerError{{Name: "x", Err: errors.New("disk full")}}}, true},
 		"servers can't be read": {Report{StatusErr: errors.New("permission denied")}, true},
+		"an agent config can't be read": {
+			Report{Unreadable: []UnreadableAgent{{Agent: "Cursor", Err: errors.New("invalid character")}}},
+			true,
+		},
 	} {
 		if got := tt.report.Failed(); got != tt.want {
 			t.Errorf("%s: Failed() = %v, want %v", name, got, tt.want)
 		}
+	}
+}
+
+func TestRunFlags_aServerThatFailsToWriteLosesItsNotes(t *testing.T) {
+	f := newApplyFixture(t)
+	codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"files-server\"\ncwd = \"/srv\"\n")
+	servers := filepath.Join(f.configDir, "servers")
+	if err := os.Mkdir(servers, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(
+		func() { _ = os.Chmod(servers, 0o700) },
+	) //nolint:errcheck // TempDir cleanup reports a dir it can't remove
+
+	report := RunFlags(FlagRun{ConfigDir: f.configDir, Import: []agents.Agent{codex}, SelfPath: testSelf})
+
+	if len(report.WriteErrors) != 1 || report.WriteErrors[0].Name != "files" || len(report.Ignored) != 0 {
+		t.Errorf(
+			"write errors = %+v, ignored = %v; want files failed and its dropped cwd not noted",
+			report.WriteErrors,
+			report.Ignored,
+		)
 	}
 }
