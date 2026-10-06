@@ -41,6 +41,9 @@ jobs:
         with:
           version: v2.14.0
 
+      - name: Vulnerability check
+        run: ./scripts/check-vulnerabilities.sh
+
   unit:
     runs-on: ubuntu-latest
     timeout-minutes: 5
