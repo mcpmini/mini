@@ -21,7 +21,7 @@ func ReadClaude(path string) (map[string]Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	raw, err := claudeMCPServers(data)
+	raw, err := claudeUserMCPServers(data)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
@@ -32,9 +32,7 @@ func ReadClaude(path string) (map[string]Server, error) {
 	return importedServers(entries, keys, claudeFormat), nil
 }
 
-// Only user-scoped servers: Claude Code's per-project servers under projects[path] belong to
-// those projects and are left alone.
-func claudeMCPServers(data []byte) (map[string]json.RawMessage, error) {
+func claudeUserMCPServers(data []byte) (map[string]json.RawMessage, error) {
 	var doc struct {
 		McpServers map[string]json.RawMessage `json:"mcpServers"`
 	}
