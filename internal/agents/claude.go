@@ -2,7 +2,6 @@ package agents
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 type claudeMCPEntry struct {
@@ -17,17 +16,17 @@ var claudeFormat = entryFormat{ignoredRunSettings: []string{"envFile", "headersH
 
 // ReadClaude reads Claude Desktop and Claude Code configs, and Cursor's and Windsurf's, which share their format.
 func ReadClaude(path string) (map[string]Server, error) {
-	data, err := ReadConfigFile(path)
+	return readParsed(path, ParseClaude)
+}
+
+func ParseClaude(data []byte) (map[string]Server, error) {
+	raw, err := claudeUserMCPServers(data)
 	if err != nil {
 		return nil, err
 	}
-	raw, err := claudeUserMCPServers(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
 	entries, keys, err := decodeJSONEntries[claudeMCPEntry](raw)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, err
 	}
 	return importedServers(entries, keys, claudeFormat), nil
 }

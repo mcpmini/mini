@@ -9,8 +9,6 @@ import (
 	"slices"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -112,7 +110,7 @@ func printAdded(w io.Writer, added ops.AddedServer) {
 // Names the differing fields but never their values: headers and env usually hold tokens.
 func (imp serverImport) reportConfigured(imported config.ServerConfig) {
 	path := config.ServerPath(imp.configDir, imported.Name)
-	differences, err := configuredDifferences(path, imported)
+	differences, err := configuredDifferences(imp.configDir, imported)
 	switch {
 	case err != nil:
 		fmt.Fprintf(imp.out, "  %s: %s not imported, %v\n", imp.source, imported.Name, err)
@@ -125,15 +123,10 @@ func (imp serverImport) reportConfigured(imported config.ServerConfig) {
 }
 
 // Compares the file as written, before env expansion, since imported values are unexpanded too.
-func configuredDifferences(path string, imported config.ServerConfig) ([]string, error) {
-	data, err := os.ReadFile(path)
+func configuredDifferences(configDir string, imported config.ServerConfig) ([]string, error) {
+	configured, err := config.ReadUnexpandedServer(configDir, imported.Name)
 	if err != nil {
-		return nil, err
-	}
-	var configured config.ServerConfig
-	// yaml errors can quote the offending value, which may be a header token.
-	if yaml.Unmarshal(data, &configured) != nil {
-		return nil, fmt.Errorf("could not compare it with %s, which does not parse", path)
+		return nil, fmt.Errorf("could not compare it: %w", err)
 	}
 	return agents.ConnectionDifferences(configured, imported), nil
 }

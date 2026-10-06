@@ -22,13 +22,13 @@ var codexFormat = entryFormat{ignoredRunSettings: []string{"cwd", "environment_i
 
 // ReadCodex reads a Codex config.toml: [mcp_servers.NAME] tables with command/args/env or url.
 func ReadCodex(path string) (map[string]Server, error) {
-	data, err := ReadConfigFile(path)
-	if err != nil {
-		return nil, err
-	}
+	return readParsed(path, ParseCodex)
+}
+
+func ParseCodex(data []byte) (map[string]Server, error) {
 	entries, keys, err := decodeCodexEntries(data)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, err
 	}
 	return importedServers(entries, keys, codexFormat), nil
 }

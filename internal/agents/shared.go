@@ -34,6 +34,18 @@ func ReadConfigFile(path string) ([]byte, error) {
 	return data, nil
 }
 
+func readParsed(path string, parse func(data []byte) (map[string]Server, error)) (map[string]Server, error) {
+	data, err := ReadConfigFile(path)
+	if err != nil {
+		return nil, err
+	}
+	servers, err := parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return servers, nil
+}
+
 // Server is one agent entry as mini would import it.
 type Server struct {
 	Config             config.ServerConfig

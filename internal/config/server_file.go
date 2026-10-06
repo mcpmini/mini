@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -104,6 +105,21 @@ func decodeServerFile(path, name string, data []byte) (*ServerConfig, error) {
 		s.ProjectionsErr = &SourceError{Path: path, ServerName: name, Err: fmt.Errorf("parse %s: %w", path, s.ProjectionsErr.Err)}
 	}
 	return &s, nil
+}
+
+// ReadUnexpandedServer reads a server file as written, before ${VAR} expansion.
+func ReadUnexpandedServer(configDir, name string) (ServerConfig, error) {
+	path := ServerPath(configDir, name)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ServerConfig{}, err
+	}
+	sc, err := decodeServerFile(path, name, data)
+	if err != nil {
+		// yaml errors can quote the offending value, which may be a header token.
+		return ServerConfig{}, errors.New(path + " does not parse")
+	}
+	return *sc, nil
 }
 
 func ServerPath(configDir, name string) string {

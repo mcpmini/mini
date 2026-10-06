@@ -123,7 +123,7 @@ func TestImportAgentConfig_NeverReplacesAConfiguredServer(t *testing.T) {
 			edit: func(path string) []byte {
 				return []byte("headers:\n  Authorization: !!int secret-token\n")
 			},
-			wantLine:  "Claude Code: foo not imported, could not compare it with ",
+			wantLine:  "Claude Code: foo not imported, could not compare it: ",
 			forbidden: "secret-token",
 		},
 	}
