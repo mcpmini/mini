@@ -8,6 +8,8 @@ type row struct {
 	key    string
 	label  string
 	detail string
+	// subtitle is a dim line under the row; it never scrolls out of view with the cursor on it.
+	subtitle string
 }
 
 type list struct {

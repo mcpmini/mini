@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -21,9 +23,15 @@ func newImportScreen(candidates []initcmd.Candidate) *importScreen {
 	s := &importScreen{candidates: candidates, agents: agentsOf(candidates)}
 	checked := map[string]bool{}
 	var rows []row
+	widths := s.columnWidths()
 	for _, c := range candidates {
 		checked[c.Server.Name] = c.Picked
-		rows = append(rows, row{key: c.Server.Name, label: c.Server.Name, detail: target(c.Server)})
+		rows = append(rows, row{
+			key:      c.Server.Name,
+			label:    c.Server.Name,
+			detail:   s.detail(c, widths),
+			subtitle: s.unpickedReason(c),
+		})
 	}
 	s.list = newList(rows, checked)
 	return s
@@ -81,7 +89,68 @@ func (s *importScreen) pick(candidates []initcmd.Candidate) {
 	}
 }
 
+type columns struct {
+	target int
+	agents int
+	auth   int
+}
+
+func (s *importScreen) columnWidths() columns {
+	var w columns
+	for _, c := range s.candidates {
+		w.target = max(w.target, ansi.StringWidth(target(c.Server)))
+		w.agents = max(w.agents, ansi.StringWidth(agentList(c)))
+		w.auth = max(w.auth, ansi.StringWidth(authKind(c.Server)))
+	}
+	return w
+}
+
+// The agents column is dropped when every server comes from one agent: the heading names it.
+func (s *importScreen) detail(c initcmd.Candidate, w columns) string {
+	parts := []string{pad(target(c.Server), w.target)}
+	if len(s.agents) > 1 {
+		parts = append(parts, pad(agentList(c), w.agents))
+	}
+	if w.auth > 0 {
+		parts = append(parts, pad(authKind(c.Server), w.auth))
+	}
+	return strings.TrimRight(strings.Join(parts, "  "), " ")
+}
+
+// An unticked row says why, so ticking it is an informed choice.
+func (s *importScreen) unpickedReason(c initcmd.Candidate) string {
+	switch {
+	case c.Picked:
+		return ""
+	case c.Reason == initcmd.SkipSwitchedOff:
+		return "switched off in " + agentList(c)
+	}
+	reason := "another config named " + c.SharesName
+	if primary, ok := s.named(c.SharesName); ok {
+		if differences := agents.ConnectionDifferences(primary.Server, c.Server); len(differences) > 0 {
+			reason += ": different " + strings.Join(differences, ", ")
+		}
+	}
+	return reason
+}
+
+// Two configs under one name often share a target, so the row says what sets them apart.
+func (s *importScreen) named(name string) (initcmd.Candidate, bool) {
+	i := slices.IndexFunc(s.candidates, func(c initcmd.Candidate) bool { return c.Server.Name == name })
+	if i < 0 {
+		return initcmd.Candidate{}, false
+	}
+	return s.candidates[i], true
+}
+
+// A long command would crowd out the other columns.
+const maxTargetRunes = 40
+
 func target(sc config.ServerConfig) string {
+	return ansi.Truncate(fullTarget(sc), maxTargetRunes, "…")
+}
+
+func fullTarget(sc config.ServerConfig) string {
 	if sc.URL != "" {
 		if u, err := url.Parse(sc.URL); err == nil && u.Host != "" {
 			return u.Host + strings.TrimSuffix(u.Path, "/")
@@ -89,4 +158,22 @@ func target(sc config.ServerConfig) string {
 		return sc.URL
 	}
 	return strings.TrimSpace(sc.Command + " " + strings.Join(sc.Args, " "))
+}
+
+func pad(s string, width int) string {
+	return s + strings.Repeat(" ", max(width-ansi.StringWidth(s), 0))
+}
+
+func agentList(c initcmd.Candidate) string {
+	return strings.Join(agentsOf([]initcmd.Candidate{c}), ", ")
+}
+
+func authKind(sc config.ServerConfig) string {
+	switch {
+	case sc.Auth != nil && sc.Auth.Type == config.AuthTypeOAuth2:
+		return "oauth"
+	case len(sc.Headers) > 0:
+		return "headers"
+	}
+	return ""
 }
