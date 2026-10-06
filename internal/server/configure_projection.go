@@ -2,8 +2,11 @@ package server
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/registry"
 )
 
 type projectionRules struct {
@@ -48,14 +51,20 @@ func (s *Server) upstreamToolName(server, visibleTool string) (tool string, list
 }
 
 func (s *Server) toolForAlias(server, alias string) (string, bool) {
-	s.stateMu.RLock()
-	defer s.stateMu.RUnlock()
-	for tool, rule := range s.projections[server] {
-		if rule != nil && rule.Alias == alias {
+	tools, aliases := s.configuredAliases(server)
+	resolution := registry.ResolveAliases(tools, aliases)
+	for _, tool := range tools {
+		if resolution.AliasFor(tool) == alias {
 			return tool, true
 		}
 	}
 	return "", false
+}
+
+func (s *Server) configuredAliases(server string) ([]string, map[string]string) {
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return slices.Collect(maps.Keys(s.projections[server])), config.AliasesFromProjections(s.projections[server])
 }
 
 func (s *Server) setProjection(session *Session, p configureParams) (any, error) {

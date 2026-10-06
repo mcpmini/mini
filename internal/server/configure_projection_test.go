@@ -120,22 +120,45 @@ func TestConfigureProjection_anAliasTwoToolsClaimNamesNoTool(t *testing.T) {
 	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": second}})
 }
 
-func TestConfigureGetProjection_readsAServerStillAwaitingAuthorization(t *testing.T) {
-	const sessionID = "cccccccc-cccc-cccc-cccc-000000000015"
+func newServerAwaitingAuthorization(t *testing.T, sessionID string, projections map[string]*config.ProjectionConfig) *server.Server {
+	t.Helper()
 	upstream := httptest.NewServer(http.HandlerFunc(requireBearer))
 	t.Cleanup(upstream.Close)
-	rule := &config.ProjectionConfig{Alias: "fetch", Exclude: []string{"secret"}}
-	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Projections: map[string]*config.ProjectionConfig{"getData": rule}}
+	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Projections: projections}
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, sc)
 	srv := newTestServer(t, server.Params{ConfigDir: dir})
 	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{sc})
 	srv.WaitForStartupConnects()
 	postMCP(t, srv, sessionID, initMsg(true))
+	return srv
+}
+
+func TestConfigureGetProjection_readsAServerStillAwaitingAuthorization(t *testing.T) {
+	const sessionID = "cccccccc-cccc-cccc-cccc-000000000015"
+	rule := &config.ProjectionConfig{Alias: "fetch", Exclude: []string{"secret"}}
+	srv := newServerAwaitingAuthorization(t, sessionID, map[string]*config.ProjectionConfig{"getData": rule})
 
 	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": rule}})
 	assertReport(t, getProjection(t, srv, sessionID, "fetch"), projectionReport{Tool: "svc.fetch", Rules: map[string]*config.ProjectionConfig{"server": rule}})
 	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other"})
+}
+
+func TestConfigureProjection_beforeConnectingDropsTheAliasesTheServerWouldReject(t *testing.T) {
+	t.Run("an alias that is another tool's name", func(t *testing.T) {
+		const sessionID = "cccccccc-cccc-cccc-cccc-000000000019"
+		aliased, other := &config.ProjectionConfig{Alias: "other", Exclude: []string{"secret"}}, &config.ProjectionConfig{Exclude: []string{"b"}}
+		srv := newServerAwaitingAuthorization(t, sessionID, map[string]*config.ProjectionConfig{"getData": aliased, "other": other})
+
+		assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other", Rules: map[string]*config.ProjectionConfig{"server": other}})
+	})
+	t.Run("an alias two tools claim", func(t *testing.T) {
+		const sessionID = "cccccccc-cccc-cccc-cccc-000000000020"
+		first, second := &config.ProjectionConfig{Alias: "dup", Exclude: []string{"a"}}, &config.ProjectionConfig{Alias: "dup", Exclude: []string{"b"}}
+		srv := newServerAwaitingAuthorization(t, sessionID, map[string]*config.ProjectionConfig{"getData": first, "other": second})
+
+		assertReport(t, getProjection(t, srv, sessionID, "dup"), projectionReport{Tool: "svc.dup"})
+	})
 }
 
 func TestConfigureGetProjection_readsAHiddenTool(t *testing.T) {
