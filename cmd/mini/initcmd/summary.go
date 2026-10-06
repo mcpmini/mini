@@ -25,25 +25,7 @@ func Summary(r Report) string {
 
 func writeServers(b *strings.Builder, r Report) {
 	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Finish == Ready })
-	switch {
-	case len(r.Servers) == 0 && r.StatusErr != nil:
-	case len(r.Servers) == 0:
-		fmt.Fprintln(b, "mini has no servers yet.")
-	case len(unfinished) == 0:
-		fmt.Fprintf(b, "mini is set up with %s.\n", plural(len(r.Servers), "server"))
-	default:
-		verb := "need"
-		if len(unfinished) == 1 {
-			verb = "needs"
-		}
-		fmt.Fprintf(
-			b,
-			"mini is set up with %s, %d still %s finishing:\n",
-			plural(len(r.Servers), "server"),
-			len(unfinished),
-			verb,
-		)
-	}
+	writeServersHeadline(b, r, len(unfinished))
 	width := nameWidth(unfinished)
 	for _, s := range unfinished {
 		fmt.Fprintf(b, "  %-*s  %s\n", width, s.Name, finishStep(r, s, width))
@@ -53,6 +35,28 @@ func writeServers(b *strings.Builder, r Report) {
 	}
 	if len(r.FromImport) > 0 {
 		fmt.Fprintf(b, "Imported from your agents instead of the catalog: %s\n", strings.Join(r.FromImport, ", "))
+	}
+}
+
+func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
+	switch {
+	case len(r.Servers) == 0 && r.StatusErr != nil:
+	case len(r.Servers) == 0:
+		fmt.Fprintln(b, "mini has no servers yet.")
+	case unfinished == 0:
+		fmt.Fprintf(b, "mini is set up with %s.\n", plural(len(r.Servers), "server"))
+	default:
+		verb := "need"
+		if unfinished == 1 {
+			verb = "needs"
+		}
+		fmt.Fprintf(
+			b,
+			"mini is set up with %s, %d still %s finishing:\n",
+			plural(len(r.Servers), "server"),
+			unfinished,
+			verb,
+		)
 	}
 }
 
