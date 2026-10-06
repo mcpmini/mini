@@ -30,7 +30,7 @@ func configuredNames(t *testing.T, configDir string) []string {
 	return names
 }
 
-func TestRunFlags(t *testing.T) {
+func TestRunUnattended(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(
 		t,
@@ -48,8 +48,8 @@ func TestRunFlags(t *testing.T) {
 		{Name: "notion", URL: "https://notion.example.com/mcp", Auth: catalog.AuthOAuth2},
 	}
 
-	report := RunFlags(
-		FlagRun{ConfigDir: f.configDir, Import: []agents.Agent{claude, codex}, Add: add, SelfPath: testSelf},
+	report := RunUnattended(
+		Unattended{ConfigDir: f.configDir, Import: []agents.Agent{claude, codex}, Add: add, SelfPath: testSelf},
 	)
 
 	if got := configuredNames(
@@ -68,13 +68,13 @@ func TestRunFlags(t *testing.T) {
 		t.Errorf("from import = %v, want files and github, which the imports cover", report.AddCoveredByImport)
 	}
 	wantSkipped := []SkippedServer{{Agent: "Claude Code", Name: "paused", Reason: SkipSwitchedOff}}
-	if !reflect.DeepEqual(report.Skipped, wantSkipped) ||
-		!reflect.DeepEqual(report.Ignored, map[string][]string{"files": {"cwd"}}) ||
+	if !reflect.DeepEqual(report.Import.Skipped, wantSkipped) ||
+		!reflect.DeepEqual(report.Import.DroppedSettings, map[string][]string{"files": {"cwd"}}) ||
 		report.Failed() {
 		t.Errorf(
 			"skipped = %+v, ignored = %v, failed = %v; want paused named as switched off, files' cwd named, no failure",
-			report.Skipped,
-			report.Ignored,
+			report.Import.Skipped,
+			report.Import.DroppedSettings,
 			report.Failed(),
 		)
 	}
@@ -84,67 +84,42 @@ func TestRunFlags(t *testing.T) {
 	}
 }
 
-func TestRunFlags_namesASecondConfigItLeavesOut(t *testing.T) {
+func TestRunUnattended_namesASecondConfigItLeavesOut(t *testing.T) {
 	f := newApplyFixture(t)
 	claude := f.write(t, "Claude Code", `{"mcpServers":{"github":{"command":"gh-server-a"}}}`)
 	cursor := f.write(t, "Cursor", `{"mcpServers":{"github":{"command":"gh-server-b"}}}`)
 
-	report := RunFlags(FlagRun{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf})
+	report := RunUnattended(
+		Unattended{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf},
+	)
 
 	want := []SkippedServer{{Agent: "Cursor", Name: "github", Reason: SkipSecondConfig}}
-	if !reflect.DeepEqual(report.Skipped, want) ||
+	if !reflect.DeepEqual(report.Import.Skipped, want) ||
 		!reflect.DeepEqual(configuredNames(t, f.configDir), []string{"github"}) {
 		t.Errorf(
 			"skipped = %+v, configured = %v; want Claude Code's github imported and Cursor's named",
-			report.Skipped,
+			report.Import.Skipped,
 			configuredNames(t, f.configDir),
 		)
 	}
 }
 
-func TestRunFlags_anEnabledConfigWinsANameFromASwitchedOffOne(t *testing.T) {
+func TestRunUnattended_anEnabledConfigWinsANameFromASwitchedOffOne(t *testing.T) {
 	f := newApplyFixture(t)
 	claude := f.write(t, "Claude Code", `{"mcpServers":{"github":{"command":"gh-server-a","disabled":true}}}`)
 	cursor := f.write(t, "Cursor", `{"mcpServers":{"github":{"command":"gh-server-b"}}}`)
 
-	report := RunFlags(FlagRun{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf})
+	report := RunUnattended(
+		Unattended{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf},
+	)
 
 	github, err := config.ReadUnexpandedServer(f.configDir, "github")
 	if err != nil || github.Command != "gh-server-b" {
 		t.Errorf("github = %+v, %v; want Cursor's enabled config imported", github, err)
 	}
 	want := []SkippedServer{{Agent: "Claude Code", Name: "github", Reason: SkipSwitchedOff}}
-	if !reflect.DeepEqual(report.Skipped, want) {
-		t.Errorf("skipped = %+v, want Claude Code's switched-off github named", report.Skipped)
-	}
-}
-
-func TestRunFlags_sortsAgentsByTheirMiniEntry(t *testing.T) {
-	f := newApplyFixture(t)
-	cursor := f.write(
-		t,
-		"Cursor",
-		`{"mcpServers":{"mini":{"command":"/opt/old/mini","args":["connect"],"disabled":true}}}`,
-	)
-	windsurf := f.write(t, "Windsurf", `{"mcpServers":{"proxy":`+f.servingMini()+`}}`)
-	claude := f.write(t, "Claude Code", `{"mcpServers":{}}`)
-
-	report := RunFlags(
-		FlagRun{ConfigDir: f.configDir, Connectable: []agents.Agent{cursor, windsurf, claude}, SelfPath: testSelf},
-	)
-
-	for _, group := range []struct {
-		name string
-		got  []agents.Agent
-		want []string
-	}{
-		{"unconnected", report.Unconnected, []string{"Claude Code"}},
-		{"has a serving mini", report.HasMini, []string{"Windsurf"}},
-		{"has an inactive mini", report.InactiveMini, []string{"Cursor"}},
-	} {
-		if got := agentNames(group.got); !reflect.DeepEqual(got, group.want) {
-			t.Errorf("%s = %v, want %v", group.name, got, group.want)
-		}
+	if !reflect.DeepEqual(report.Import.Skipped, want) {
+		t.Errorf("skipped = %+v, want Claude Code's switched-off github named", report.Import.Skipped)
 	}
 }
 
@@ -155,9 +130,9 @@ func TestReport_failed(t *testing.T) {
 	}{
 		"nothing failed":        {Report{}, false},
 		"a server write failed": {Report{WriteErrors: []ServerError{{Name: "x", Err: errors.New("disk full")}}}, true},
-		"servers can't be read": {Report{StatusErr: errors.New("permission denied")}, true},
+		"servers can't be read": {Report{ReadServersErr: errors.New("permission denied")}, true},
 		"an agent config can't be read": {
-			Report{Unreadable: []UnreadableAgent{{Agent: "Cursor", Err: errors.New("invalid character")}}},
+			Report{Import: ImportPlan{Unreadable: []UnreadableAgent{{Agent: "Cursor", Err: errors.New("invalid character")}}}},
 			true,
 		},
 	} {
@@ -167,7 +142,7 @@ func TestReport_failed(t *testing.T) {
 	}
 }
 
-func TestRunFlags_aServerThatFailsToWriteLosesItsNotes(t *testing.T) {
+func TestRunUnattended_aServerThatFailsToWriteLosesItsNotes(t *testing.T) {
 	f := newApplyFixture(t)
 	codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"files-server\"\ncwd = \"/srv\"\n")
 	servers := filepath.Join(f.configDir, "servers")
@@ -178,13 +153,14 @@ func TestRunFlags_aServerThatFailsToWriteLosesItsNotes(t *testing.T) {
 		func() { _ = os.Chmod(servers, 0o700) },
 	) //nolint:errcheck // TempDir cleanup reports a dir it can't remove
 
-	report := RunFlags(FlagRun{ConfigDir: f.configDir, Import: []agents.Agent{codex}, SelfPath: testSelf})
+	report := RunUnattended(Unattended{ConfigDir: f.configDir, Import: []agents.Agent{codex}, SelfPath: testSelf})
 
-	if len(report.WriteErrors) != 1 || report.WriteErrors[0].Name != "files" || len(report.Ignored) != 0 {
+	if len(report.WriteErrors) != 1 || report.WriteErrors[0].Name != "files" ||
+		len(report.Import.DroppedSettings) != 0 {
 		t.Errorf(
 			"write errors = %+v, ignored = %v; want files failed and its dropped cwd not noted",
 			report.WriteErrors,
-			report.Ignored,
+			report.Import.DroppedSettings,
 		)
 	}
 }

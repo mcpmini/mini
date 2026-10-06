@@ -33,7 +33,7 @@ func planFor(agentList []agents.Agent, configured ...string) ImportPlan {
 	for _, name := range configured {
 		servers = append(servers, config.ServerConfig{Name: name})
 	}
-	return PlanImport(ImportParams{Agents: agentList, Configured: servers, SelfPath: testSelf})
+	return PlanImport(ImportParams{Agents: agentList, Written: servers, SelfPath: testSelf})
 }
 
 func importedNames(plan ImportPlan) []string {
@@ -190,8 +190,8 @@ func TestPlanImport_aServerMiniHasUnderAnotherNameIsLeftOut(t *testing.T) {
 	configured := entry.Config
 	configured.Name = "gh"
 	plan := PlanImport(ImportParams{
-		Agents:     []agents.Agent{agentWith("Claude Code", map[string]agents.Server{"github": entry})},
-		Configured: []config.ServerConfig{configured},
+		Agents:  []agents.Agent{agentWith("Claude Code", map[string]agents.Server{"github": entry})},
+		Written: []config.ServerConfig{configured},
 	})
 	if len(plan.Servers) != 0 || len(plan.Skipped) != 0 {
 		t.Errorf("plan = %+v, want nothing: mini already has this server as gh", plan)
@@ -212,7 +212,7 @@ func TestPlanImport_anAgentEntryUnderAConfiguredName(t *testing.T) {
 				Agents: []agents.Agent{
 					agentWith("Claude Code", map[string]agents.Server{"github": remoteEntry(tt.url, "")}),
 				},
-				Configured: []config.ServerConfig{mine},
+				Written: []config.ServerConfig{mine},
 			})
 			if len(plan.Servers) != 0 || !reflect.DeepEqual(plan.Skipped, tt.wantSkipped) {
 				t.Errorf(
@@ -303,16 +303,16 @@ func TestPlanImport_caveatsFromEveryAgentLandOnTheImportedServer(t *testing.T) {
 		agentWith("Cursor", map[string]agents.Server{"files": envFile}),
 		agentWith("Windsurf", map[string]agents.Server{"files": switchedOff(other)}),
 	})
-	if want := map[string][]string{"files": {"cwd", "envFile"}}; !reflect.DeepEqual(plan.Ignored, want) {
-		t.Errorf("ignored = %v, want %v: the left-out Windsurf config adds nothing", plan.Ignored, want)
+	if want := map[string][]string{"files": {"cwd", "envFile"}}; !reflect.DeepEqual(plan.DroppedSettings, want) {
+		t.Errorf("ignored = %v, want %v: the left-out Windsurf config adds nothing", plan.DroppedSettings, want)
 	}
 	if want := map[string]map[string]string{
 		"files": {"X-Team": "TEAM_VAR"},
 	}; !reflect.DeepEqual(
-		plan.UnusedEnvHeaders,
+		plan.StaticHeaders,
 		want,
 	) {
-		t.Errorf("unused env headers = %v, want %v", plan.UnusedEnvHeaders, want)
+		t.Errorf("unused env headers = %v, want %v", plan.StaticHeaders, want)
 	}
 }
 

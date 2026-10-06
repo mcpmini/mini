@@ -60,8 +60,8 @@ func runInitCommand(configDir string, f initFlags) error {
 	switch {
 	case f.importAll && f.from != "":
 		return usageErrf("--from and --import can't be used together: --import already reads every agent")
-	case f.flagRun():
-		return runInitFlags(configDir, f)
+	case f.unattended():
+		return runUnattendedInit(configDir, f)
 	case !isTerminal(os.Stdin) || !isTerminal(os.Stdout):
 		printNoTerminalHelp(os.Stderr)
 		return &exitError{code: 1, err: errors.New("no terminal")}
@@ -89,7 +89,7 @@ func runInit(configDir string) {
 	)
 	runInitCatalogSelection(catalogStepParams{configDir: configDir, ask: p.ask})
 	runLoginStep(newLoginStepParams(configDir, p))
-	printConnectSteps(configDir)
+	printHandConnectSteps(configDir)
 }
 
 func newLoginStepParams(configDir string, p prompter) loginStepParams {
@@ -177,9 +177,8 @@ func createConfigDirs(configDir string) error {
 	return nil
 }
 
-func printConnectSteps(configDir string) {
-	run := withAgentsToConnect(initcmd.FlagRun{ConfigDir: configDir})
-	fmt.Print(initcmd.ConnectSteps(configDir, run.SelfPath, run.Connectable))
+func printHandConnectSteps(configDir string) {
+	fmt.Print(initcmd.HandConnectSteps(configDir, selfPath(), agentsToConnect()))
 }
 
 type prompter struct {

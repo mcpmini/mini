@@ -10,43 +10,41 @@ import (
 	"github.com/mcpmini/mini/internal/agents"
 )
 
-// ConnectSteps is how to connect mini to each agent by hand; an agent already running mini gets no step.
-func ConnectSteps(configDir, selfPath string, connectable []agents.Agent) string {
-	r := Report{ConfigDir: configDir, Mini: MiniCommand(configDir)}
-	FlagRun{ConfigDir: configDir, Connectable: connectable, SelfPath: selfPath}.sortByMini(&r)
+// HandConnectSteps is how to connect mini to each agent by hand; an agent already running mini gets no step.
+func HandConnectSteps(configDir, selfPath string, list []agents.Agent) string {
 	var b strings.Builder
-	writeManualConnect(&b, r)
+	writeHandConnect(&b, ClassifyAgents(configDir, selfPath, list))
 	return b.String()
 }
 
-func writeManualConnect(b *strings.Builder, r Report) {
-	writeInactiveMini(b, r)
-	if len(r.Unconnected) == 0 {
-		if len(r.HasMini) > 0 || len(r.InactiveMini) > 0 {
+func writeHandConnect(b *strings.Builder, c AgentConnections) {
+	writeInactiveMini(b, c)
+	if len(c.NoMini) == 0 {
+		if len(c.MiniServes) > 0 || len(c.MiniInactive) > 0 {
 			return
 		}
 		fmt.Fprintf(
 			b,
 			"\nTo connect mini to your agent, add it to its MCP config:\n%s\n",
-			indent(jsonSnippet(r.Mini), "  "),
+			indent(jsonSnippet(c.Mini), "  "),
 		)
 		return
 	}
 	fmt.Fprintln(b, "\nTo connect mini to your agents:")
-	for _, agent := range r.Unconnected {
-		fmt.Fprintf(b, "  %s (%s):\n%s\n", agent.Name, agent.ConfigPath, indent(manualStep(agent, r.Mini), "    "))
+	for _, agent := range c.NoMini {
+		fmt.Fprintf(b, "  %s (%s):\n%s\n", agent.Name, agent.ConfigPath, indent(handConnectStep(agent, c.Mini), "    "))
 	}
 }
 
-func writeInactiveMini(b *strings.Builder, r Report) {
-	for _, agent := range r.InactiveMini {
+func writeInactiveMini(b *strings.Builder, c AgentConnections) {
+	for _, agent := range c.MiniInactive {
 		fmt.Fprintf(b, "\n%s (%s) has a mini entry that may not run these servers: it's switched off, uses another "+
 			"config directory, or doesn't name mini by absolute path. To use them, have it run: %s\n",
-			agent.Name, agent.ConfigPath, shellCommand(r.Mini))
+			agent.Name, agent.ConfigPath, shellCommand(c.Mini))
 	}
 }
 
-func manualStep(agent agents.Agent, mini agents.MiniEntry) string {
+func handConnectStep(agent agents.Agent, mini agents.MiniEntry) string {
 	switch agent.Name {
 	case "Claude Code":
 		return "claude mcp add --scope user " + agents.MiniKey + " -- " + shellCommand(mini)

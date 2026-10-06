@@ -65,26 +65,6 @@ func LoadMiniServers(configDir string) (MiniServers, error) {
 	return mini, nil
 }
 
-func writtenServers(configDir string) ([]config.ServerConfig, error) {
-	servers, err := config.LoadServers(configDir)
-	if err != nil {
-		return nil, err
-	}
-	var written []config.ServerConfig
-	for _, sc := range servers.Loaded {
-		w, err := config.ReadUnexpandedServer(configDir, sc.Name)
-		if err != nil {
-			w = config.ServerConfig{Name: sc.Name}
-		}
-		written = append(written, w)
-	}
-	// A file that doesn't load still holds its name.
-	for _, broken := range servers.Broken {
-		written = append(written, config.ServerConfig{Name: broken.ServerName})
-	}
-	return written, nil
-}
-
 // Duplicates pairs each agent entry init may replace with the mini server it duplicates. Entries
 // that are switched off, weren't importable, or run mini are never replaced. Tool limits and
 // approval settings aren't carried into mini; a replaced entry keeps them only in the backup.

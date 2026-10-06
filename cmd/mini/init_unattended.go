@@ -19,31 +19,19 @@ const noTerminalHelp = `mini init asks questions, so it needs a terminal. Withou
 
 var errInitIncomplete = errors.New("init didn't finish everything; see above")
 
-func (f initFlags) flagRun() bool {
+func (f initFlags) unattended() bool {
 	return f.importAll || f.from != "" || f.addGiven
 }
 
-func runInitFlags(configDir string, f initFlags) error {
-	if f.addGiven && len(nonBlankNames(f.add)) == 0 {
-		return errEmptyAdd
-	}
-	entries, err := flagCatalog(f)
-	if err != nil {
-		return err
-	}
-	requested, err := requestedCatalogEntries(f, entries)
-	if err != nil {
-		return err
-	}
-	sources, err := importSources(f)
+func runUnattendedInit(configDir string, f initFlags) error {
+	run, err := unattendedRun(configDir, f)
 	if err != nil {
 		return err
 	}
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	run := initcmd.FlagRun{ConfigDir: configDir, Import: sources, Add: requested, Catalog: entries}
-	report := initcmd.RunFlags(withAgentsToConnect(run))
+	report := initcmd.RunUnattended(run)
 	fmt.Print(initcmd.Summary(report))
 	if report.Failed() {
 		return &exitError{code: 1, err: errInitIncomplete}
@@ -51,11 +39,41 @@ func runInitFlags(configDir string, f initFlags) error {
 	return nil
 }
 
-func withAgentsToConnect(run initcmd.FlagRun) initcmd.FlagRun {
-	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is recognized by its command name alone
-	home, _ := os.UserHomeDir()    //nolint:errcheck // without a home there are no agents to show how to connect
-	run.Connectable, run.SelfPath = initcmd.ConnectableAgents(knownAgentsIn(home)), selfPath
-	return run
+// Every flag is checked before anything is written.
+func unattendedRun(configDir string, f initFlags) (initcmd.Unattended, error) {
+	if f.addGiven && len(nonBlankNames(f.add)) == 0 {
+		return initcmd.Unattended{}, errEmptyAdd
+	}
+	entries, err := flagCatalog(f)
+	if err != nil {
+		return initcmd.Unattended{}, err
+	}
+	requested, err := requestedCatalogEntries(f, entries)
+	if err != nil {
+		return initcmd.Unattended{}, err
+	}
+	sources, err := importSources(f)
+	if err != nil {
+		return initcmd.Unattended{}, err
+	}
+	return initcmd.Unattended{
+		ConfigDir:       configDir,
+		Import:          sources,
+		Add:             requested,
+		Catalog:         entries,
+		AgentsToConnect: agentsToConnect(),
+		SelfPath:        selfPath(),
+	}, nil
+}
+
+func selfPath() string {
+	path, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is recognized by its command name alone
+	return path
+}
+
+func agentsToConnect() []agents.Agent {
+	home, _ := os.UserHomeDir() //nolint:errcheck // without a home there are no agents to show how to connect
+	return initcmd.ConnectableAgents(knownAgentsIn(home))
 }
 
 func knownAgentsIn(home string) []agents.Agent {

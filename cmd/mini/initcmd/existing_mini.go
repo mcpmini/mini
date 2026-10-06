@@ -23,12 +23,18 @@ const (
 	MiniEntryInactive
 )
 
-func (p ApplyParams) existingMini(entries map[string]agents.Server) ExistingMini {
+// miniEntryCheck judges an agent's mini entry against the config directory init set up.
+type miniEntryCheck struct {
+	configDir string
+	selfPath  string
+}
+
+func (c miniEntryCheck) existingMini(entries map[string]agents.Server) ExistingMini {
 	found := NoMiniEntry
 	for name, entry := range entries {
-		isMini := agents.IsMiniEntry(entry.Config, p.SelfPath)
+		isMini := agents.IsMiniEntry(entry.Config, c.selfPath)
 		switch {
-		case isMini && p.serves(entry):
+		case isMini && c.serves(entry):
 			return MiniEntryServes
 		case isMini || name == agents.MiniKey:
 			found = MiniEntryInactive
@@ -40,12 +46,12 @@ func (p ApplyParams) existingMini(entries map[string]agents.Server) ExistingMini
 // Only absolute paths are known to mean the same thing to the agent: it may run with another PATH
 // and working directory than init (GUI apps get the system's minimal PATH). An upgrade can move
 // the binary, and mini has no serve command any more.
-func (p ApplyParams) serves(entry agents.Server) bool {
+func (c miniEntryCheck) serves(entry agents.Server) bool {
 	sc := entry.Config
 	_, err := exec.LookPath(sc.Command)
 	dir := configDirArg(sc.Args)
 	return !entry.Disabled && filepath.IsAbs(sc.Command) && err == nil && slices.Contains(sc.Args, "connect") &&
-		filepath.IsAbs(dir) && sameDir(dir, p.ConfigDir)
+		filepath.IsAbs(dir) && sameDir(dir, c.configDir)
 }
 
 func configDirArg(args []string) string {

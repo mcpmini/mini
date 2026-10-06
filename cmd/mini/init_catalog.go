@@ -135,9 +135,9 @@ func printSetupNotes(p catalogStepParams, entries []catalog.Entry, indexes []int
 		status := initcmd.ServerStatus{Name: e.Name, SetupURL: e.SetupURL}
 		switch e.Auth {
 		case catalog.AuthToken:
-			status.Finish = initcmd.NeedsToken
+			status.Readiness = initcmd.NeedsToken
 		case catalog.AuthOAuth2App:
-			status.Finish = initcmd.NeedsOwnApp
+			status.Readiness = initcmd.NeedsOwnApp
 		default:
 			continue
 		}

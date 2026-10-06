@@ -9,10 +9,10 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-type Finish int
+type Readiness int
 
 const (
-	Ready Finish = iota
+	Ready Readiness = iota
 	NeedsLogin
 	NeedsToken
 	NeedsOwnApp
@@ -21,10 +21,10 @@ const (
 
 // ServerStatus is one enabled server and what the user still has to do before it works.
 type ServerStatus struct {
-	Name     string
-	Finish   Finish
-	SetupURL string
-	UnsetEnv *config.UnsetEnvError
+	Name      string
+	Readiness Readiness
+	SetupURL  string
+	UnsetEnv  *config.UnsetEnvError
 }
 
 // ServerStatuses judges every enabled server as mini would load it. Catalog entries say which
@@ -46,22 +46,22 @@ func ServerStatuses(configDir string, entries []catalog.Entry) ([]ServerStatus, 
 func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.Entry) ServerStatus {
 	status := ServerStatus{Name: sc.Name}
 	if errors.As(sc.UnsetEnv, &status.UnsetEnv) {
-		status.Finish = NeedsEnv
+		status.Readiness = NeedsEnv
 		return status
 	}
 	if entry, ok := catalogEntryFor(sc, entries); ok {
 		status.SetupURL = entry.SetupURL
 		switch {
 		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
-			status.Finish = NeedsToken
+			status.Readiness = NeedsToken
 			return status
 		case entry.Auth == catalog.AuthOAuth2App && (sc.Auth == nil || sc.Auth.ClientID == ""):
-			status.Finish = NeedsOwnApp
+			status.Readiness = NeedsOwnApp
 			return status
 		}
 	}
 	if sc.UsesOAuthLogin() && needsLogin(configDir, sc.Name) {
-		status.Finish = NeedsLogin
+		status.Readiness = NeedsLogin
 	}
 	return status
 }

@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/config"
 )
@@ -15,20 +16,20 @@ import (
 func Summary(r Report) string {
 	var b strings.Builder
 	writeServers(&b, r)
-	writeIgnored(&b, r)
-	writeUnusedEnvHeaders(&b, r)
+	writeDroppedSettings(&b, r)
+	writeStaticHeaders(&b, r)
 	writeSkipped(&b, r)
 	writeFailures(&b, r)
-	writeManualConnect(&b, r)
+	writeHandConnect(&b, r.Agents)
 	return b.String()
 }
 
 func writeServers(b *strings.Builder, r Report) {
-	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Finish == Ready })
+	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Readiness == Ready })
 	writeServersHeadline(b, r, len(unfinished))
 	width := nameWidth(unfinished)
 	for _, s := range unfinished {
-		fmt.Fprintf(b, "  %-*s  %s\n", width, s.Name, finishStep(r, s, width))
+		fmt.Fprintf(b, "  %-*s  %s\n", width, s.Name, finishStep(r.ConfigDir, r.Agents.Mini, s, width))
 	}
 	if len(r.AlreadyConfigured) > 0 {
 		fmt.Fprintf(b, "Already configured in mini: %s\n", strings.Join(r.AlreadyConfigured, ", "))
@@ -44,7 +45,7 @@ func writeServers(b *strings.Builder, r Report) {
 
 func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
 	switch {
-	case len(r.Servers) == 0 && r.StatusErr != nil:
+	case len(r.Servers) == 0 && r.ReadServersErr != nil:
 	case len(r.Servers) == 0:
 		fmt.Fprintln(b, "mini has no servers yet.")
 	case unfinished == 0:
@@ -64,10 +65,10 @@ func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
 	}
 }
 
-func finishStep(r Report, s ServerStatus, width int) string {
-	file := config.ServerPath(r.ConfigDir, s.Name)
+func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width int) string {
+	file := config.ServerPath(configDir, s.Name)
 	more := "\n" + strings.Repeat(" ", width+4)
-	switch s.Finish {
+	switch s.Readiness {
 	case NeedsToken:
 		return fmt.Sprintf(
 			"needs a token: create one at %s, then add to %s:%s  headers:%s    Authorization: Bearer ${%s}",
@@ -83,15 +84,15 @@ func finishStep(r Report, s ServerStatus, width int) string {
 	case NeedsOwnApp:
 		return fmt.Sprintf("needs your own OAuth app: register one at %s with redirect URI %s, then add to %s:%s"+
 			"  auth:%s    type: oauth2%s    client_id: <your app's client ID>%sand run: %s",
-			s.SetupURL, auth.ResolvedCallbackURI(nil), file, more, more, more, more, r.miniCommand("auth", s.Name))
+			s.SetupURL, auth.ResolvedCallbackURI(nil), file, more, more, more, more, miniCommand(mini, "auth", s.Name))
 	}
-	return "run: " + r.miniCommand("auth", s.Name)
+	return "run: " + miniCommand(mini, "auth", s.Name)
 }
 
 // SetupStep is the step that finishes a catalog server needing a token or the user's own app, as
 // the summary words it.
 func SetupStep(configDir string, s ServerStatus) string {
-	return finishStep(Report{ConfigDir: configDir, Mini: MiniCommand(configDir)}, s, 0)
+	return finishStep(configDir, MiniCommand(configDir), s, 0)
 }
 
 // TokenEnvVar is the variable the token setup step tells the user to hold a server's token in.
@@ -100,19 +101,19 @@ func TokenEnvVar(serverName string) string {
 }
 
 // Commands carry the config directory whenever agents are given one, so they act on the same servers.
-func (r Report) miniCommand(args ...string) string {
+func miniCommand(mini agents.MiniEntry, args ...string) string {
 	words := []string{"mini"}
-	if i := slices.Index(r.Mini.Args, "--config"); i >= 0 && i+1 < len(r.Mini.Args) {
-		words = append(words, "--config", shellQuote(r.Mini.Args[i+1]))
+	if i := slices.Index(mini.Args, "--config"); i >= 0 && i+1 < len(mini.Args) {
+		words = append(words, "--config", shellQuote(mini.Args[i+1]))
 	}
 	return strings.Join(append(words, args...), " ")
 }
 
 func writeSkipped(b *strings.Builder, r Report) {
-	if len(r.Skipped) > 0 {
+	if len(r.Import.Skipped) > 0 {
 		fmt.Fprintln(b, "\nNot imported:")
 	}
-	for _, s := range r.Skipped {
+	for _, s := range r.Import.Skipped {
 		fmt.Fprintf(b, "  %s\n", skippedLine(s, r.ConfigDir))
 	}
 }
@@ -138,15 +139,19 @@ func skippedLine(s SkippedServer, configDir string) string {
 	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))
 }
 
-func writeIgnored(b *strings.Builder, r Report) {
-	for _, name := range slices.Sorted(maps.Keys(r.Ignored)) {
-		fmt.Fprintf(b, "\n%s\n", IgnoredSettingsNote(name, r.Ignored[name], config.ServerPath(r.ConfigDir, name)))
+func writeDroppedSettings(b *strings.Builder, r Report) {
+	for _, name := range slices.Sorted(maps.Keys(r.Import.DroppedSettings)) {
+		fmt.Fprintf(
+			b,
+			"\n%s\n",
+			IgnoredSettingsNote(name, r.Import.DroppedSettings[name], config.ServerPath(r.ConfigDir, name)),
+		)
 	}
 }
 
-func writeUnusedEnvHeaders(b *strings.Builder, r Report) {
-	for _, name := range slices.Sorted(maps.Keys(r.UnusedEnvHeaders)) {
-		for _, note := range StaticHeaderNotes(name, r.UnusedEnvHeaders[name], config.ServerPath(r.ConfigDir, name)) {
+func writeStaticHeaders(b *strings.Builder, r Report) {
+	for _, name := range slices.Sorted(maps.Keys(r.Import.StaticHeaders)) {
+		for _, note := range StaticHeaderNotes(name, r.Import.StaticHeaders[name], config.ServerPath(r.ConfigDir, name)) {
 			fmt.Fprintf(b, "\n%s\n", note)
 		}
 	}
@@ -179,7 +184,7 @@ func StaticHeaderNotes(name string, unused map[string]string, file string) []str
 }
 
 func writeFailures(b *strings.Builder, r Report) {
-	for _, u := range r.Unreadable {
+	for _, u := range r.Import.Unreadable {
 		fmt.Fprintf(
 			b,
 			"\nCould not read %s's config (%s), so none of its servers were imported: %v\n",
@@ -191,8 +196,8 @@ func writeFailures(b *strings.Builder, r Report) {
 	for _, failure := range r.WriteErrors {
 		fmt.Fprintf(b, "\nCould not add %s: %v\n", failure.Name, failure.Err)
 	}
-	if r.StatusErr != nil {
-		fmt.Fprintf(b, "\nCould not read mini's servers: %v\n", r.StatusErr)
+	if r.ReadServersErr != nil {
+		fmt.Fprintf(b, "\nCould not read mini's servers: %v\n", r.ReadServersErr)
 	}
 }
 

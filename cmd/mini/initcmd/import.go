@@ -15,11 +15,11 @@ type ImportPlan struct {
 	Servers    []config.ServerConfig
 	Skipped    []SkippedServer
 	Unreadable []UnreadableAgent
-	// Ignored holds, per imported server, the agent settings mini doesn't carry over.
-	Ignored map[string][]string
-	// UnusedEnvHeaders holds, per imported server, each static header kept over the variable the
+	// DroppedSettings holds, per imported server, the agent settings mini doesn't carry over.
+	DroppedSettings map[string][]string
+	// StaticHeaders holds, per imported server, each static header kept over the variable the
 	// agent would read it from once that is set.
-	UnusedEnvHeaders map[string]map[string]string
+	StaticHeaders map[string]map[string]string
 }
 
 type SkipReason int
@@ -48,11 +48,9 @@ type UnreadableAgent struct {
 }
 
 type ImportParams struct {
-	Agents []agents.Agent
-	// Configured holds mini's servers as written, before ${VAR} expansion, so they compare with
-	// agent entries, which hold references unexpanded too.
-	Configured []config.ServerConfig
-	SelfPath   string
+	Agents   []agents.Agent
+	Written  WrittenServers
+	SelfPath string
 }
 
 type agentEntry struct {
@@ -72,13 +70,13 @@ type takenNames struct {
 }
 
 func PlanImport(p ImportParams) ImportPlan {
-	plan := ImportPlan{Ignored: map[string][]string{}, UnusedEnvHeaders: map[string]map[string]string{}}
+	plan := ImportPlan{DroppedSettings: map[string][]string{}, StaticHeaders: map[string]map[string]string{}}
 	var groups []*serverGroup
-	for _, e := range p.importable(&plan) {
+	for _, e := range p.readCandidates(&plan) {
 		groups = addToGroup(groups, e)
 	}
 	// Groups keep agent order, which decides which config keeps a shared name.
-	taken := takenNames{inMini: lowercaseNames(p.Configured), imported: map[string]bool{}}
+	taken := takenNames{inMini: lowercaseNames(p.Written), imported: map[string]bool{}}
 	for _, g := range groups {
 		plan.add(g, taken)
 	}
@@ -86,7 +84,7 @@ func PlanImport(p ImportParams) ImportPlan {
 	return plan
 }
 
-func (p ImportParams) importable(plan *ImportPlan) []agentEntry {
+func (p ImportParams) readCandidates(plan *ImportPlan) []agentEntry {
 	var importable []agentEntry
 	for _, agent := range p.Agents {
 		servers, err := agent.Read(agent.ConfigPath)
@@ -99,7 +97,7 @@ func (p ImportParams) importable(plan *ImportPlan) []agentEntry {
 		}
 		for _, name := range slices.Sorted(maps.Keys(servers)) {
 			e := agentEntry{agent: agent.Name, name: name, server: servers[name]}
-			if !p.offered(e) {
+			if !p.newToMini(e) {
 				continue
 			}
 			if skip, ok := skipReason(e); ok {
@@ -113,12 +111,9 @@ func (p ImportParams) importable(plan *ImportPlan) []agentEntry {
 }
 
 // Left out with no summary line: there's nothing for the user to do about these.
-func (p ImportParams) offered(e agentEntry) bool {
+func (p ImportParams) newToMini(e agentEntry) bool {
 	return NormalizeName(e.name) != agents.MiniKey && !agents.IsMiniEntry(e.server.Config, p.SelfPath) &&
-		!slices.ContainsFunc(
-			p.Configured,
-			func(sc config.ServerConfig) bool { return agents.SameServer(sc, e.server.Config) },
-		)
+		!p.Written.hasSame(e.server.Config)
 }
 
 func skipReason(e agentEntry) (SkippedServer, bool) {
@@ -158,7 +153,7 @@ func (plan *ImportPlan) add(g *serverGroup, taken takenNames) {
 	name, ok := taken.firstFree(g)
 	if !ok {
 		// Another config under a name in use would need a new name the user never chose.
-		plan.skipAll(g, taken.reason)
+		plan.skipAll(g, taken.takenReason)
 		return
 	}
 	taken.imported[name] = true
@@ -177,7 +172,7 @@ func (t takenNames) firstFree(g *serverGroup) (string, bool) {
 	return "", false
 }
 
-func (t takenNames) reason(e agentEntry) SkipReason {
+func (t takenNames) takenReason(e agentEntry) SkipReason {
 	if t.inMini[NormalizeName(e.name)] {
 		return SkipNameInMini
 	}
@@ -193,15 +188,15 @@ func (plan *ImportPlan) skipAll(g *serverGroup, reason func(agentEntry) SkipReas
 func (plan *ImportPlan) noteCaveats(name string, g *serverGroup) {
 	for _, e := range g.entries {
 		for _, setting := range e.server.IgnoredRunSettings {
-			if !slices.Contains(plan.Ignored[name], setting) {
-				plan.Ignored[name] = append(plan.Ignored[name], setting)
+			if !slices.Contains(plan.DroppedSettings[name], setting) {
+				plan.DroppedSettings[name] = append(plan.DroppedSettings[name], setting)
 			}
 		}
 		for header, envVar := range e.server.UnusedEnvHeaders {
-			if plan.UnusedEnvHeaders[name] == nil {
-				plan.UnusedEnvHeaders[name] = map[string]string{}
+			if plan.StaticHeaders[name] == nil {
+				plan.StaticHeaders[name] = map[string]string{}
 			}
-			plan.UnusedEnvHeaders[name][header] = envVar
+			plan.StaticHeaders[name][header] = envVar
 		}
 	}
 }

@@ -135,7 +135,7 @@ func (p ApplyParams) editedConfig(
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", agent.ConfigPath, err)
 	}
-	result.ExistingMini = p.existingMini(entries)
+	result.ExistingMini = p.miniCheck().existingMini(entries)
 	result.MiniServes = p.servedAfterEdit(result.ExistingMini)
 	if p.Choice == ConnectAndRemove {
 		duplicates := mini.Duplicates(entries, p.SelfPath)
@@ -168,7 +168,7 @@ func (p ApplyParams) servedAfterEdit(existing ExistingMini) bool {
 	if existing != NoMiniEntry {
 		return existing == MiniEntryServes
 	}
-	return p.serves(agents.Server{Config: config.ServerConfig{Command: p.Mini.Command, Args: p.Mini.Args}})
+	return p.miniCheck().serves(agents.Server{Config: config.ServerConfig{Command: p.Mini.Command, Args: p.Mini.Args}})
 }
 
 func (p ApplyParams) replaceable(duplicates map[string]string, served bool) ([]string, []KeptEntry) {
@@ -192,4 +192,8 @@ func (p ApplyParams) keepReason(server string, served bool) error {
 		return err
 	}
 	return errNotChecked
+}
+
+func (p ApplyParams) miniCheck() miniEntryCheck {
+	return miniEntryCheck{configDir: p.ConfigDir, selfPath: p.SelfPath}
 }

@@ -77,18 +77,18 @@ func TestServerStatuses(t *testing.T) {
 	statuses, err := ServerStatuses(dir, entries)
 
 	want := []ServerStatus{
-		{Name: "app", Finish: NeedsOwnApp, SetupURL: "https://app.example.com/apps"},
-		{Name: "github", Finish: Ready},
-		{Name: "keyed", Finish: Ready, SetupURL: "https://keyed.example.com/new"},
-		{Name: "local", Finish: Ready},
-		{Name: "loggedin", Finish: Ready},
-		{Name: "login", Finish: NeedsLogin},
-		{Name: "tok", Finish: NeedsToken, SetupURL: "https://token.example.com/new"},
-		{Name: "token", Finish: NeedsToken, SetupURL: "https://token.example.com/new"},
+		{Name: "app", Readiness: NeedsOwnApp, SetupURL: "https://app.example.com/apps"},
+		{Name: "github", Readiness: Ready},
+		{Name: "keyed", Readiness: Ready, SetupURL: "https://keyed.example.com/new"},
+		{Name: "local", Readiness: Ready},
+		{Name: "loggedin", Readiness: Ready},
+		{Name: "login", Readiness: NeedsLogin},
+		{Name: "tok", Readiness: NeedsToken, SetupURL: "https://token.example.com/new"},
+		{Name: "token", Readiness: NeedsToken, SetupURL: "https://token.example.com/new"},
 		{
-			Name:     "unset",
-			Finish:   NeedsEnv,
-			UnsetEnv: &config.UnsetEnvError{Field: "headers.Authorization", Names: []string{"MINI_TEST_UNSET"}},
+			Name:      "unset",
+			Readiness: NeedsEnv,
+			UnsetEnv:  &config.UnsetEnvError{Field: "headers.Authorization", Names: []string{"MINI_TEST_UNSET"}},
 		},
 	}
 	if err != nil || !reflect.DeepEqual(statuses, want) {
