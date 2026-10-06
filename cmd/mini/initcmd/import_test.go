@@ -38,7 +38,7 @@ func planFor(agentList []agents.Agent, configured ...string) ImportPlan {
 
 func importedNames(plan ImportPlan) []string {
 	var names []string
-	for _, sc := range plan.Servers {
+	for _, sc := range plan.picked() {
 		names = append(names, sc.Name)
 	}
 	return names
@@ -203,7 +203,7 @@ func TestPlanImport_aServerMiniHasUnderAnotherNameIsLeftOut(t *testing.T) {
 		Agents:  []agents.Agent{agentWith("Claude Code", map[string]agents.Server{"github": entry})},
 		Written: []config.ServerConfig{configured},
 	})
-	if len(plan.Servers) != 0 || len(plan.Skipped) != 0 {
+	if len(plan.picked()) != 0 || len(plan.Skipped) != 0 {
 		t.Errorf("plan = %+v, want nothing: mini already has this server as gh", plan)
 	}
 }
@@ -224,10 +224,10 @@ func TestPlanImport_anAgentEntryUnderAConfiguredName(t *testing.T) {
 				},
 				Written: []config.ServerConfig{mine},
 			})
-			if len(plan.Servers) != 0 || !reflect.DeepEqual(plan.Skipped, tt.wantSkipped) {
+			if len(plan.picked()) != 0 || !reflect.DeepEqual(plan.Skipped, tt.wantSkipped) {
 				t.Errorf(
 					"servers = %+v, skipped = %+v; want none imported and skipped %+v",
-					plan.Servers,
+					plan.picked(),
 					plan.Skipped,
 					tt.wantSkipped,
 				)
@@ -245,8 +245,8 @@ func TestPlanImport_writesTheAgentConfigUnderItsNormalizedName(t *testing.T) {
 		URL:       "https://example.com/mcp",
 		Headers:   entry.Config.Headers,
 	}
-	if !reflect.DeepEqual(plan.Servers, []config.ServerConfig{want}) {
-		t.Errorf("servers = %+v\nwant %+v", plan.Servers, want)
+	if !reflect.DeepEqual(plan.picked(), []config.ServerConfig{want}) {
+		t.Errorf("servers = %+v\nwant %+v", plan.picked(), want)
 	}
 }
 
@@ -292,8 +292,8 @@ func TestPlanImport_namesWhatItCantImport(t *testing.T) {
 		},
 		{Agent: "Codex", Name: "!!!", Reason: SkipEmptyName},
 	}
-	if len(plan.Servers) != 0 || !reflect.DeepEqual(plan.Skipped, want) {
-		t.Errorf("servers = %+v\nskipped = %+v\nwant none and %+v", plan.Servers, plan.Skipped, want)
+	if len(plan.picked()) != 0 || !reflect.DeepEqual(plan.Skipped, want) {
+		t.Errorf("servers = %+v\nskipped = %+v\nwant none and %+v", plan.picked(), plan.Skipped, want)
 	}
 	if len(plan.Unreadable) != 1 || plan.Unreadable[0].Agent != "Broken" || plan.Unreadable[0].Err == nil {
 		t.Errorf("unreadable = %+v, want Broken with its error", plan.Unreadable)
@@ -313,8 +313,9 @@ func TestPlanImport_caveatsFromEveryAgentLandOnTheImportedServer(t *testing.T) {
 		agentWith("Cursor", map[string]agents.Server{"files": envFile}),
 		agentWith("Windsurf", map[string]agents.Server{"files": switchedOff(other)}),
 	})
-	if want := map[string][]string{"files": {"cwd", "envFile"}}; !reflect.DeepEqual(plan.DroppedSettings, want) {
-		t.Errorf("ignored = %v, want %v: the left-out Windsurf config adds nothing", plan.DroppedSettings, want)
+	want := map[string][]string{"files": {"cwd", "envFile"}, "files-2": {"cwd"}}
+	if !reflect.DeepEqual(plan.DroppedSettings, want) {
+		t.Errorf("ignored = %v, want %v: the offered Windsurf config keeps its own notes", plan.DroppedSettings, want)
 	}
 	if want := map[string]map[string]string{
 		"files": {"X-Team": "TEAM_VAR"},
@@ -334,5 +335,41 @@ func TestNormalizeName(t *testing.T) {
 		if got := NormalizeName(in); got != want {
 			t.Errorf("NormalizeName(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestPlanImport_offersWhatItLeavesOutUnpicked(t *testing.T) {
+	a, b := remoteEntry("https://example.com/mcp", "${A}"), remoteEntry("https://example.com/mcp", "${B}")
+	plan := planFor([]agents.Agent{
+		agentWith(
+			"Claude Code",
+			map[string]agents.Server{"github": a, "linear": remoteEntry("https://linear.example/mcp", "")},
+		),
+		agentWith(
+			"Codex",
+			map[string]agents.Server{"github": b, "notes": switchedOff(remoteEntry("https://notes.example/mcp", ""))},
+		),
+	}, "linear", "github-2")
+	type row struct {
+		name   string
+		from   []AgentEntry
+		picked bool
+	}
+	var got []row
+	for _, c := range plan.Candidates {
+		got = append(got, row{c.Server.Name, c.From, c.Picked})
+	}
+	want := []row{
+		{"github", []AgentEntry{{"Claude Code", "github"}}, true},
+		{"github-3", []AgentEntry{{"Codex", "github"}}, false},
+		{"notes", []AgentEntry{{"Codex", "notes"}}, false},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf(
+			"candidates = %+v\nwant %+v: a second config is offered under the next free suffix, a switched-off one "+
+				"under its name, and a name mini has isn't offered",
+			got,
+			want,
+		)
 	}
 }

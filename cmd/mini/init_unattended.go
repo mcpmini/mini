@@ -40,23 +40,23 @@ func runUnattendedInit(configDir string, f initFlags) error {
 }
 
 // Every flag is checked before anything is written.
-func unattendedRun(configDir string, f initFlags) (initcmd.Unattended, error) {
+func unattendedRun(configDir string, f initFlags) (initcmd.Setup, error) {
 	if f.addGiven && len(nonBlankNames(f.add)) == 0 {
-		return initcmd.Unattended{}, errEmptyAdd
+		return initcmd.Setup{}, errEmptyAdd
 	}
 	entries, err := flagCatalog(f)
 	if err != nil {
-		return initcmd.Unattended{}, err
+		return initcmd.Setup{}, err
 	}
 	requested, err := requestedCatalogEntries(f, entries)
 	if err != nil {
-		return initcmd.Unattended{}, err
+		return initcmd.Setup{}, err
 	}
 	sources, err := importSources(f)
 	if err != nil {
-		return initcmd.Unattended{}, err
+		return initcmd.Setup{}, err
 	}
-	return initcmd.Unattended{
+	return initcmd.Setup{
 		ConfigDir:       configDir,
 		Import:          sources,
 		Add:             requested,

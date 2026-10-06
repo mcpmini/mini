@@ -49,7 +49,7 @@ func TestRunUnattended(t *testing.T) {
 	}
 
 	report := RunUnattended(
-		Unattended{ConfigDir: f.configDir, Import: []agents.Agent{claude, codex}, Add: add, SelfPath: testSelf},
+		Setup{ConfigDir: f.configDir, Import: []agents.Agent{claude, codex}, Add: add, SelfPath: testSelf},
 	)
 
 	if got := configuredNames(
@@ -90,7 +90,7 @@ func TestRunUnattended_namesASecondConfigItLeavesOut(t *testing.T) {
 	cursor := f.write(t, "Cursor", `{"mcpServers":{"github":{"command":"gh-server-b"}}}`)
 
 	report := RunUnattended(
-		Unattended{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf},
+		Setup{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf},
 	)
 
 	want := []SkippedServer{{Agent: "Cursor", Name: "github", Reason: SkipSecondConfig}}
@@ -110,7 +110,7 @@ func TestRunUnattended_anEnabledConfigWinsANameFromASwitchedOffOne(t *testing.T)
 	cursor := f.write(t, "Cursor", `{"mcpServers":{"github":{"command":"gh-server-b"}}}`)
 
 	report := RunUnattended(
-		Unattended{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf},
+		Setup{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf},
 	)
 
 	github, err := config.ReadUnexpandedServer(f.configDir, "github")
@@ -153,7 +153,7 @@ func TestRunUnattended_aServerThatFailsToWriteLosesItsNotes(t *testing.T) {
 		func() { _ = os.Chmod(servers, 0o700) },
 	) //nolint:errcheck // TempDir cleanup reports a dir it can't remove
 
-	report := RunUnattended(Unattended{ConfigDir: f.configDir, Import: []agents.Agent{codex}, SelfPath: testSelf})
+	report := RunUnattended(Setup{ConfigDir: f.configDir, Import: []agents.Agent{codex}, SelfPath: testSelf})
 
 	if len(report.WriteErrors) != 1 || report.WriteErrors[0].Name != "files" ||
 		len(report.Import.DroppedSettings) != 0 {
@@ -162,5 +162,30 @@ func TestRunUnattended_aServerThatFailsToWriteLosesItsNotes(t *testing.T) {
 			report.WriteErrors,
 			report.Import.DroppedSettings,
 		)
+	}
+}
+
+func TestSetupWrite_writesWhatThePlanHasPickedAndReportsOnlyThat(t *testing.T) {
+	f := newApplyFixture(t)
+	claude := f.write(t, "Claude Code", `{"mcpServers":{"files":{"command":"files-server"}}}`)
+	codex := f.write(t, "Codex", "[mcp_servers.files]\ncommand = \"other-files\"\ncwd = \"/srv\"\n")
+	setup := Setup{ConfigDir: f.configDir, Import: []agents.Agent{claude, codex}, SelfPath: testSelf}
+	plan, err := setup.Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range plan.Import.Candidates {
+		plan.Import.Candidates[i].Picked = plan.Import.Candidates[i].Server.Name == "files-2"
+	}
+
+	report := setup.Write(plan)
+
+	if got := configuredNames(t, f.configDir); !reflect.DeepEqual(got, []string{"files-2"}) {
+		t.Errorf("configured = %v, want only the picked files-2", got)
+	}
+	if len(report.Import.Skipped) != 0 ||
+		!reflect.DeepEqual(report.Import.DroppedSettings, map[string][]string{"files-2": {"cwd"}}) {
+		t.Errorf("skipped = %+v, dropped settings = %v; want Codex's files not listed as left behind, "+
+			"and notes only for files-2", report.Import.Skipped, report.Import.DroppedSettings)
 	}
 }

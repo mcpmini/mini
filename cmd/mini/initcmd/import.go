@@ -1,6 +1,7 @@
 package initcmd
 
 import (
+	"fmt"
 	"maps"
 	"regexp"
 	"slices"
@@ -12,7 +13,7 @@ import (
 
 // ImportPlan is what importing the agents' servers writes to mini, and what it leaves in them.
 type ImportPlan struct {
-	Servers    []config.ServerConfig
+	Candidates []Candidate
 	Skipped    []SkippedServer
 	Unreadable []UnreadableAgent
 	// DroppedSettings holds, per imported server, the agent settings mini doesn't carry over.
@@ -20,6 +21,21 @@ type ImportPlan struct {
 	// StaticHeaders holds, per imported server, each static header kept over the variable the
 	// agent would read it from once that is set.
 	StaticHeaders map[string]map[string]string
+}
+
+// Candidate is one server config found in the agents, under the name mini would give it. Picked
+// ones are imported by default; the others (switched off everywhere, or a second config under a
+// name in use) are offered for the user to pick.
+type Candidate struct {
+	Server config.ServerConfig
+	From   []AgentEntry
+	Picked bool
+}
+
+// AgentEntry is where a candidate was found: an agent and the name the entry has there.
+type AgentEntry struct {
+	Agent string
+	Name  string
 }
 
 type SkipReason int
@@ -77,10 +93,16 @@ func PlanImport(p ImportParams) ImportPlan {
 	}
 	// Groups keep agent order, which decides which config keeps a shared name.
 	taken := takenNames{inMini: lowercaseNames(p.Written), imported: map[string]bool{}}
+	var unpicked []*serverGroup
 	for _, g := range groups {
-		plan.add(g, taken)
+		if !plan.add(g, taken) {
+			unpicked = append(unpicked, g)
+		}
 	}
-	slices.SortFunc(plan.Servers, func(a, b config.ServerConfig) int { return strings.Compare(a.Name, b.Name) })
+	for _, g := range unpicked {
+		plan.offer(g, taken)
+	}
+	slices.SortFunc(plan.Candidates, func(a, b Candidate) int { return strings.Compare(a.Server.Name, b.Server.Name) })
 	return plan
 }
 
@@ -138,23 +160,43 @@ func (g *serverGroup) enabled() bool {
 	return slices.ContainsFunc(g.entries, func(e agentEntry) bool { return !e.server.Disabled })
 }
 
-func (plan *ImportPlan) add(g *serverGroup, taken takenNames) {
+func (plan *ImportPlan) add(g *serverGroup, taken takenNames) bool {
 	if !g.enabled() {
 		// Importing a server every agent switched off would switch it on for every agent connected
 		// to mini.
 		plan.skipAll(g, func(agentEntry) SkipReason { return SkipSwitchedOff })
-		return
+		return false
 	}
 	name, ok := taken.firstFree(g)
 	if !ok {
 		// Another config under a name in use would need a new name the user never chose.
 		plan.skipAll(g, taken.noFreeNameReason)
-		return
+		return false
 	}
+	plan.addCandidate(g, name, taken, true)
+	return true
+}
+
+// Offered after every picked config has its name, so a suffix never takes a name one needs.
+func (plan *ImportPlan) offer(g *serverGroup, taken takenNames) {
+	name, ok := taken.firstFree(g)
+	if !ok {
+		name, ok = taken.suffixed(g)
+	}
+	if ok {
+		plan.addCandidate(g, name, taken, false)
+	}
+}
+
+func (plan *ImportPlan) addCandidate(g *serverGroup, name string, taken takenNames, picked bool) {
 	taken.imported[name] = true
 	sc := g.config
 	sc.Name = name
-	plan.Servers = append(plan.Servers, sc)
+	c := Candidate{Server: sc, Picked: picked}
+	for _, e := range g.entries {
+		c.From = append(c.From, AgentEntry{Agent: e.agent, Name: e.name})
+	}
+	plan.Candidates = append(plan.Candidates, c)
 	plan.noteCaveats(name, g)
 }
 
@@ -165,6 +207,23 @@ func (t takenNames) firstFree(g *serverGroup) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// A config whose every name is mini's isn't offered: mini's copy wins.
+func (t takenNames) suffixed(g *serverGroup) (string, bool) {
+	i := slices.IndexFunc(g.entries, func(e agentEntry) bool {
+		name := NormalizeName(e.name)
+		return name != "" && !t.inMini[name]
+	})
+	if i < 0 {
+		return "", false
+	}
+	base := NormalizeName(g.entries[i].name)
+	for n := 2; ; n++ {
+		if name := fmt.Sprintf("%s-%d", base, n); !t.inMini[name] && !t.imported[name] {
+			return name, true
+		}
+	}
 }
 
 func (t takenNames) noFreeNameReason(e agentEntry) SkipReason {
