@@ -50,7 +50,7 @@ func (s *Server) startupWaitTarget() (changed <-chan struct{}, until time.Time, 
 	return nil, time.Time{}, false
 }
 
-// StopWaiting releases requests held for startup, so an HTTP shutdown's drain doesn't wait out the hold.
-func (s *Server) StopWaiting() {
+// ReleaseStartupHolds ends startup waits early, so an HTTP shutdown's drain doesn't wait out the hold.
+func (s *Server) ReleaseStartupHolds() {
 	s.stopWaitingOnce.Do(func() { close(s.stopWaiting) })
 }
