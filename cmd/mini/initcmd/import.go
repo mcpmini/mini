@@ -99,6 +99,7 @@ func PlanImport(p ImportParams) ImportPlan {
 			unpicked = append(unpicked, g)
 		}
 	}
+	// Offered after every picked config has its name, so a suffix never takes a name one needs.
 	for _, g := range unpicked {
 		plan.offer(g, taken)
 	}
@@ -177,7 +178,6 @@ func (plan *ImportPlan) add(g *serverGroup, taken takenNames) bool {
 	return true
 }
 
-// Offered after every picked config has its name, so a suffix never takes a name one needs.
 func (plan *ImportPlan) offer(g *serverGroup, taken takenNames) {
 	name, ok := taken.firstFree(g)
 	if !ok {
@@ -209,13 +209,12 @@ func (t takenNames) firstFree(g *serverGroup) (string, bool) {
 	return "", false
 }
 
-// A config whose every name is mini's isn't offered: mini's copy wins.
 func (t takenNames) suffixed(g *serverGroup) (string, bool) {
 	i := slices.IndexFunc(g.entries, func(e agentEntry) bool {
 		name := NormalizeName(e.name)
 		return name != "" && !t.inMini[name]
 	})
-	if i < 0 {
+	if i < 0 { // every name is mini's, and mini's copy wins
 		return "", false
 	}
 	base := NormalizeName(g.entries[i].name)

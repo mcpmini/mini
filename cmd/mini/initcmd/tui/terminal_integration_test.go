@@ -42,7 +42,6 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// terminal runs mini in a pseudo-terminal and keeps what it draws in an emulated screen.
 type terminal struct {
 	t      *testing.T
 	pty    *os.File
@@ -119,7 +118,6 @@ func (term *terminal) altScreen() bool {
 	return term.screen.IsAltScreen()
 }
 
-// waitFor polls the screen until it shows want, up to a deadline, and fails with the screen if not.
 func (term *terminal) waitFor(want string) {
 	term.t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
@@ -155,7 +153,6 @@ func (term *terminal) press(keys ...string) {
 	}
 }
 
-// exitCode waits for mini to exit.
 func (term *terminal) exitCode() int {
 	term.t.Helper()
 	select {

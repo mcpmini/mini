@@ -12,7 +12,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// importScreen lists the servers found in the agents. Ticks start at the plan's picks.
 type importScreen struct {
 	candidates []initcmd.Candidate
 	agents     []string
@@ -78,7 +77,6 @@ func (s *importScreen) empty() bool {
 	return len(s.candidates) == 0
 }
 
-// pick sets each candidate's pick to its tick.
 func (s *importScreen) pick(candidates []initcmd.Candidate) {
 	for i := range candidates {
 		candidates[i].Picked = s.list.checked[candidates[i].Server.Name]

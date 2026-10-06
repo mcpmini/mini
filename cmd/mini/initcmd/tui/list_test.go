@@ -42,14 +42,11 @@ func typeKeys(l *list, names ...string) {
 	}
 }
 
-func catalogRows() []row {
+func serverRows() []row {
 	return []row{
-		{label: "Popular", heading: true},
 		{key: "linear", label: "linear", detail: "issues"},
 		{key: "github", label: "github", detail: "code"},
-		{label: "Docs", heading: true},
-		{key: "notion", label: "notion", detail: "pages", disabled: true},
-		{key: "linear", label: "linear", detail: "issues"},
+		{key: "notion", label: "notion", detail: "pages"},
 	}
 }
 
@@ -58,55 +55,52 @@ func currentKey(l *list) string {
 	return r.key
 }
 
-func TestList_cursorSkipsHeadingsAndGreyedRows(t *testing.T) {
-	l := newList(catalogRows(), map[string]bool{})
+func TestList_cursorStaysWithinTheRows(t *testing.T) {
+	l := newList(serverRows(), map[string]bool{})
+	typeKeys(l, "up")
 	if got := currentKey(l); got != "linear" {
-		t.Fatalf("cursor starts on %q, want the first row under the first heading", got)
+		t.Errorf("after up on the first row: cursor on %q, want linear", got)
 	}
-	typeKeys(l, "down", "down")
-	if got := currentKey(l); got != "linear" || l.cursor != 5 {
-		t.Errorf("cursor = %q at %d, want the second linear row past the Docs heading and greyed notion", got, l.cursor)
-	}
-	typeKeys(l, "down")
-	if l.cursor != 5 {
-		t.Errorf("cursor moved past the last row to %d", l.cursor)
+	typeKeys(l, "down", "down", "down")
+	if got := currentKey(l); got != "notion" {
+		t.Errorf("after moving past the last row: cursor on %q, want notion", got)
 	}
 }
 
-func TestList_rowsSharingAKeyShareATick(t *testing.T) {
-	l := newList(catalogRows(), map[string]bool{})
-	typeKeys(l, "space")
-	if got := strings.Count(plainView(l, 20), "[x] linear"); got != 2 {
-		t.Errorf("ticked rows for linear = %d, want both rows:\n%s", got, plainView(l, 20))
+func TestList_spaceTicksTheRowUnderTheCursor(t *testing.T) {
+	checked := map[string]bool{}
+	l := newList(serverRows(), checked)
+	typeKeys(l, "down", "space")
+	if view := plainView(l, 20); !checked["github"] || !strings.Contains(view, "> [x] github") || checked["linear"] {
+		t.Errorf("checked = %v, view:\n%s\nwant github ticked under the cursor", checked, view)
 	}
 }
 
-func TestList_toggleAllTicksEverySelectableRowThenNone(t *testing.T) {
+func TestList_toggleAllTicksEveryRowThenNone(t *testing.T) {
 	checked := map[string]bool{"github": true}
-	l := newList(catalogRows(), checked)
+	l := newList(serverRows(), checked)
 	l.toggleAll()
-	if !checked["linear"] || !checked["github"] || checked["notion"] {
-		t.Fatalf("after one toggle-all: %v, want every selectable row ticked and greyed notion not", checked)
+	if !checked["linear"] || !checked["github"] || !checked["notion"] {
+		t.Fatalf("after one toggle-all: %v, want every row ticked", checked)
 	}
 	l.toggleAll()
-	if checked["linear"] || checked["github"] {
+	if checked["linear"] || checked["github"] || checked["notion"] {
 		t.Errorf("after a second toggle-all: %v, want none ticked", checked)
 	}
 }
 
 func TestList_filter(t *testing.T) {
-	t.Run("lists each match once under its heading", func(t *testing.T) {
-		l := newList(catalogRows(), map[string]bool{})
-		typeKeys(l, "/", "l", "i", "n")
-		view := plainView(l, 20)
-		if strings.Count(view, "linear") != 1 || !strings.Contains(view, "Popular") || strings.Contains(view, "Docs") ||
+	t.Run("shows only matching rows, by name or detail", func(t *testing.T) {
+		l := newList(serverRows(), map[string]bool{})
+		typeKeys(l, "/", "p", "a", "g")
+		if view := plainView(l, 20); !strings.Contains(view, "notion") || strings.Contains(view, "linear") ||
 			strings.Contains(view, "github") {
-			t.Errorf("filtered view:\n%s\nwant linear once, under Popular, and nothing else", view)
+			t.Errorf("filtered view:\n%s\nwant only notion, whose detail matches", view)
 		}
 	})
 	t.Run("typed characters edit the filter instead of acting", func(t *testing.T) {
 		checked := map[string]bool{}
-		l := newList(catalogRows(), checked)
+		l := newList(serverRows(), checked)
 		typeKeys(l, "/", "space")
 		if l.filter != " " || checked["linear"] {
 			t.Errorf(
@@ -117,26 +111,26 @@ func TestList_filter(t *testing.T) {
 		}
 	})
 	t.Run("enter keeps the filter and leaves filter mode", func(t *testing.T) {
-		l := newList(catalogRows(), map[string]bool{})
-		typeKeys(l, "/", "g", "enter")
-		if l.filtering || l.filter != "g" || currentKey(l) != "github" {
+		l := newList(serverRows(), map[string]bool{})
+		typeKeys(l, "/", "g", "i", "t", "enter", "space")
+		if l.filtering || l.filter != "git" || !l.checked["github"] {
 			t.Errorf(
-				"filtering = %v, filter = %q, cursor on %q; want filter g kept on github",
+				"filtering = %v, filter = %q, checked = %v; want filter git kept and github ticked",
 				l.filtering,
 				l.filter,
-				currentKey(l),
+				l.checked,
 			)
 		}
 	})
 	t.Run("esc clears the filter", func(t *testing.T) {
-		l := newList(catalogRows(), map[string]bool{})
+		l := newList(serverRows(), map[string]bool{})
 		typeKeys(l, "/", "g", "esc")
-		if l.filtering || l.filter != "" || len(l.visible()) != len(catalogRows()) {
+		if l.filtering || l.filter != "" || len(l.visible()) != len(serverRows()) {
 			t.Errorf("filtering = %v, filter = %q; want every row back", l.filtering, l.filter)
 		}
 	})
 	t.Run("backspace removes the last character", func(t *testing.T) {
-		l := newList(catalogRows(), map[string]bool{})
+		l := newList(serverRows(), map[string]bool{})
 		typeKeys(l, "/", "g", "x", "backspace")
 		if l.filter != "g" {
 			t.Errorf("filter = %q, want g", l.filter)

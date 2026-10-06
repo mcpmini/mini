@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// fakeScreen moves on enter and back on esc, and records the keys it was given.
 type fakeScreen struct {
 	name    string
 	nothing bool

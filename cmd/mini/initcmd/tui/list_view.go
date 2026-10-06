@@ -12,15 +12,13 @@ var (
 	bold = lipgloss.NewStyle().Bold(true)
 )
 
-// view renders the list in height lines at most, scrolled so the cursor's row shows.
 func (l *list) view(height int) string {
-	lines, cursorLine, cursorHeight := l.lines()
 	if l.filtering || l.filter != "" {
 		height--
 	}
-	l.scrollTo(cursorLine, cursorHeight, height)
-	end := min(l.offset+height, len(lines))
-	shown := strings.Join(lines[l.offset:end], "\n")
+	lines := l.lines()
+	l.scrollTo(height)
+	shown := strings.Join(lines[l.offset:min(l.offset+height, len(lines))], "\n")
 	if l.filtering || l.filter != "" {
 		shown = l.filterLine() + "\n" + shown
 	}
@@ -34,70 +32,35 @@ func (l *list) filterLine() string {
 	return dim.Render("filter: " + l.filter)
 }
 
-func (l *list) scrollTo(line, rowHeight, height int) {
-	if line < l.offset {
-		l.offset = line
+func (l *list) scrollTo(height int) {
+	if l.cursor < l.offset {
+		l.offset = l.cursor
 	}
-	if line+rowHeight > l.offset+height {
-		l.offset = line + rowHeight - height
+	if l.cursor >= l.offset+height {
+		l.offset = l.cursor - height + 1
 	}
 	l.offset = max(l.offset, 0)
 }
 
-func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
-	width := l.labelWidth()
-	for i, index := range l.visible() {
-		r := l.rows[index]
-		if i == l.cursor {
-			cursorLine, cursorHeight = len(lines), 1
-		}
-		lines = append(lines, l.line(r, i == l.cursor, width))
-		if r.subtitle != "" {
-			lines = append(lines, "      "+dim.Render(r.subtitle))
-			if i == l.cursor {
-				cursorHeight++
-			}
-		}
-	}
-	return lines, cursorLine, cursorHeight
-}
-
-func (l *list) line(r row, atCursor bool, width int) string {
-	if r.heading {
-		return bold.Render(r.label)
-	}
-	cursor := "  "
-	if atCursor {
-		cursor = "> "
-	}
-	label := fmt.Sprintf("%-*s", width, r.label)
-	if r.detail != "" {
-		label += "  " + dim.Render(r.detail)
-	}
-	if r.disabled {
-		label = dim.Render(label)
-	}
-	return cursor + l.box(r) + label
-}
-
-func (l *list) box(r row) string {
-	switch {
-	case l.checked == nil:
-		return ""
-	case r.disabled:
-		return "    "
-	case l.checked[r.key]:
-		return "[x] "
-	}
-	return "[ ] "
-}
-
-func (l *list) labelWidth() int {
+func (l *list) lines() []string {
 	width := 0
 	for _, r := range l.rows {
-		if !r.heading {
-			width = max(width, len(r.label))
-		}
+		width = max(width, len(r.label))
 	}
-	return width
+	var lines []string
+	for i, r := range l.visible() {
+		cursor, box := "  ", "[ ] "
+		if i == l.cursor {
+			cursor = "> "
+		}
+		if l.checked[r.key] {
+			box = "[x] "
+		}
+		line := cursor + box + fmt.Sprintf("%-*s", width, r.label)
+		if r.detail != "" {
+			line += "  " + dim.Render(r.detail)
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }

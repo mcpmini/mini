@@ -25,7 +25,6 @@ func stdioAgent(name string, servers ...string) agents.Agent {
 	}}
 }
 
-// pressing is a Program that sends the keys to the model, as a terminal would.
 func pressing(keys ...string) func(tea.Model) error {
 	return func(m tea.Model) error {
 		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})

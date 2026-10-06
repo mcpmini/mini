@@ -14,7 +14,6 @@ const (
 	back
 )
 
-// screen is one page of the flow. A screen with nothing to show is left out.
 type screen interface {
 	heading() string
 	handle(key tea.KeyPressMsg) step
@@ -26,8 +25,9 @@ type screen interface {
 
 const minWidth, minHeight = 60, 12
 
-// app runs the screens in order. Leaving the last screen forward finishes the flow; ctrl+c quits
-// it from anywhere.
+// The heading, the footer and a blank line after each.
+const chromeLines = 4
+
 type app struct {
 	screens  []screen
 	at       int
@@ -90,9 +90,8 @@ func (a *app) render() string {
 		return "Make the window larger"
 	}
 	s := a.screens[a.at]
-	// The heading, the footer and a blank line after each take four lines.
-	body := s.body(a.height - 4)
-	padding := strings.Repeat("\n", max(a.height-4-strings.Count(body, "\n")-1, 0))
+	body := s.body(a.height - chromeLines)
+	padding := strings.Repeat("\n", max(a.height-chromeLines-strings.Count(body, "\n")-1, 0))
 	return bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + dim.Render(a.footer(s))
 }
 
