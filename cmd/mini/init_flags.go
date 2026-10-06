@@ -65,17 +65,15 @@ func knownAgentsIn(home string) []agents.Agent {
 	return agents.Known(home)
 }
 
-// The published catalog is fetched only for --add; otherwise the built-in one says which servers
-// need a token or an app.
 func flagCatalog(f initFlags) ([]catalog.Entry, error) {
 	if f.addGiven {
 		return publishedCatalogSource().entries()
 	}
+	// Without --add the catalog only says which servers need a token or an app, so no fetch.
 	c, err := catalog.Load()
 	return c.Entries, err
 }
 
-// An unreadable --from source is an error, unlike an agent found by --import, which is skipped.
 func importSources(f initFlags) ([]agents.Agent, error) {
 	switch {
 	case f.importAll:
@@ -87,6 +85,7 @@ func importSources(f initFlags) ([]agents.Agent, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The user named this source, so it fails the run before anything is written.
 	if _, err := source.Read(source.ConfigPath); err != nil {
 		return nil, err
 	}

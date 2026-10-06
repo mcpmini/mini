@@ -65,8 +65,6 @@ func LoadMiniServers(configDir string) (MiniServers, error) {
 	return mini, nil
 }
 
-// writtenServers lists every configured server as written. A file that doesn't load still
-// holds its name, so it is listed by name alone.
 func writtenServers(configDir string) ([]config.ServerConfig, error) {
 	servers, err := config.LoadServers(configDir)
 	if err != nil {
@@ -80,6 +78,7 @@ func writtenServers(configDir string) ([]config.ServerConfig, error) {
 		}
 		written = append(written, w)
 	}
+	// A file that doesn't load still holds its name.
 	for _, broken := range servers.Broken {
 		written = append(written, config.ServerConfig{Name: broken.ServerName})
 	}

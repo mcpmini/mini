@@ -33,8 +33,12 @@ func writeServers(b *strings.Builder, r Report) {
 	if len(r.AlreadyConfigured) > 0 {
 		fmt.Fprintf(b, "Already configured in mini: %s\n", strings.Join(r.AlreadyConfigured, ", "))
 	}
-	if len(r.FromImport) > 0 {
-		fmt.Fprintf(b, "Imported from your agents instead of the catalog: %s\n", strings.Join(r.FromImport, ", "))
+	if len(r.AddCoveredByImport) > 0 {
+		fmt.Fprintf(
+			b,
+			"Imported from your agents instead of the catalog: %s\n",
+			strings.Join(r.AddCoveredByImport, ", "),
+		)
 	}
 }
 
@@ -148,7 +152,6 @@ func writeUnusedEnvHeaders(b *strings.Builder, r Report) {
 	}
 }
 
-// IgnoredSettingsNote and StaticHeaderNotes word the import caveats for init and mini add alike.
 func IgnoredSettingsNote(name string, settings []string, file string) string {
 	return fmt.Sprintf("%s was imported without its %s, which mini doesn't support yet; if it fails to start, edit %s",
 		name, strings.Join(settings, ", "), file)

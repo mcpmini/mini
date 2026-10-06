@@ -52,8 +52,7 @@ type ImportParams struct {
 	// Configured holds mini's servers as written, before ${VAR} expansion, so they compare with
 	// agent entries, which hold references unexpanded too.
 	Configured []config.ServerConfig
-	// SelfPath is the running binary, so an entry that runs it is recognized as mini.
-	SelfPath string
+	SelfPath   string
 }
 
 type agentEntry struct {
@@ -62,7 +61,6 @@ type agentEntry struct {
 	server agents.Server
 }
 
-// serverGroup is one server config found in one or more agents.
 type serverGroup struct {
 	config  config.ServerConfig
 	entries []agentEntry
@@ -114,8 +112,7 @@ func (p ImportParams) importable(plan *ImportPlan) []agentEntry {
 	return importable
 }
 
-// Whatever an agent has under mini's own key, mini itself, and a server mini already has under
-// any name are left out without a word: there's nothing for the user to do about them.
+// Left out with no summary line: there's nothing for the user to do about these.
 func (p ImportParams) offered(e agentEntry) bool {
 	return NormalizeName(e.name) != agents.MiniKey && !agents.IsMiniEntry(e.server.Config, p.SelfPath) &&
 		!slices.ContainsFunc(
@@ -154,7 +151,7 @@ func (g *serverGroup) enabled() bool {
 func (plan *ImportPlan) add(g *serverGroup, taken takenNames) {
 	if !g.enabled() {
 		// Importing a server every agent switched off would switch it on for every agent connected
-		// to mini. It takes no name, so an enabled config elsewhere keeps the name.
+		// to mini.
 		plan.skipAll(g, func(agentEntry) SkipReason { return SkipSwitchedOff })
 		return
 	}
@@ -171,8 +168,6 @@ func (plan *ImportPlan) add(g *serverGroup, taken takenNames) {
 	plan.noteCaveats(name, g)
 }
 
-// The first of a config's names that's free wins, so a config one agent holds under a name in use
-// still comes in under the name another agent gives it.
 func (t takenNames) firstFree(g *serverGroup) (string, bool) {
 	for _, e := range g.entries {
 		if name := NormalizeName(e.name); !t.inMini[name] && !t.imported[name] {

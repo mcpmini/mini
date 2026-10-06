@@ -13,13 +13,10 @@ import (
 // FlagRun is init without the UI: it writes servers and never edits an agent or opens a browser.
 type FlagRun struct {
 	ConfigDir string
-	// Import holds the agents to import from: every detected one for --import, the one source
-	// for --from, none for --add alone.
-	Import []agents.Agent
-	Add    []catalog.Entry
+	Import    []agents.Agent
+	Add       []catalog.Entry
 	// Catalog tells which servers need a token or the user's own app.
-	Catalog []catalog.Entry
-	// Connectable are the agents the summary shows how to connect by hand.
+	Catalog     []catalog.Entry
 	Connectable []agents.Agent
 	SelfPath    string
 }
@@ -31,16 +28,12 @@ type Report struct {
 	WriteErrors []ServerError
 	Unreadable  []UnreadableAgent
 	Skipped     []SkippedServer
-	// Ignored holds, per imported server, the agent settings mini doesn't carry over.
-	Ignored map[string][]string
-	// UnusedEnvHeaders holds, per imported server, each static header kept over the variable the
-	// agent would read it from once that is set.
-	UnusedEnvHeaders  map[string]map[string]string
-	AlreadyConfigured []string
-	// FromImport are --add names an imported server already covers, so the catalog's isn't added.
-	FromImport []string
-	// Unconnected are agents the summary shows how to connect by hand.
-	Unconnected []agents.Agent
+	// Ignored and UnusedEnvHeaders are the ImportPlan's, less the servers that failed to write.
+	Ignored            map[string][]string
+	UnusedEnvHeaders   map[string]map[string]string
+	AlreadyConfigured  []string
+	AddCoveredByImport []string
+	Unconnected        []agents.Agent
 	// HasMini are agents whose mini entry serves this config directory; it is the user's, so
 	// they get no step.
 	HasMini []agents.Agent
@@ -67,7 +60,7 @@ func RunFlags(p FlagRun) Report {
 	report.Skipped, report.Unreadable = plan.Skipped, plan.Unreadable
 	report.Ignored, report.UnusedEnvHeaders = plan.Ignored, plan.UnusedEnvHeaders
 	picks := flagPicks(plan.Servers, p.Add, configured)
-	report.AlreadyConfigured, report.FromImport = picks.already, picks.fromImport
+	report.AlreadyConfigured, report.AddCoveredByImport = picks.already, picks.fromImport
 	written, writeErrors := addServers(p.ConfigDir, picks.want)
 	report.WriteErrors = writeErrors
 	CheckOAuth(p.ConfigDir, OAuthTargets(p.ConfigDir, written), clock.System())
@@ -107,7 +100,6 @@ type picks struct {
 	fromImport []string
 }
 
-// An imported server wins over a catalog server it matches.
 func flagPicks(imports []config.ServerConfig, add []catalog.Entry, configured []config.ServerConfig) picks {
 	p := picks{want: slices.Clone(imports)}
 	configuredKeys := NewConfiguredKeys(configured)

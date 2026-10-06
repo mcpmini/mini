@@ -21,9 +21,8 @@ const (
 
 // ServerStatus is one enabled server and what the user still has to do before it works.
 type ServerStatus struct {
-	Name   string
-	Finish Finish
-	// SetupURL is where to get the token or register the app, from the catalog.
+	Name     string
+	Finish   Finish
 	SetupURL string
 	UnsetEnv *config.UnsetEnvError
 }
@@ -50,31 +49,39 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 		status.Finish = NeedsEnv
 		return status
 	}
-	// A server is the catalog's when it runs the catalog's URL, under any name; one that only
-	// shares the name, like a local stdio github, isn't.
-	if i := slices.IndexFunc(
-		entries,
-		func(e catalog.Entry) bool { return sc.URL != "" && serverURLKey(e.URL) == serverURLKey(sc.URL) },
-	); i >= 0 {
-		status.SetupURL = entries[i].SetupURL
+	if entry, ok := catalogEntryFor(sc, entries); ok {
+		status.SetupURL = entry.SetupURL
 		switch {
-		case entries[i].Auth == catalog.AuthToken && !hasCredential(sc):
+		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
 			status.Finish = NeedsToken
 			return status
-		case entries[i].Auth == catalog.AuthOAuth2App && (sc.Auth == nil || sc.Auth.ClientID == ""):
+		case entry.Auth == catalog.AuthOAuth2App && (sc.Auth == nil || sc.Auth.ClientID == ""):
 			status.Finish = NeedsOwnApp
 			return status
 		}
 	}
-	// A refreshable token needs no login; ReadTokenState already counts it as usable.
-	if state, _ := auth.ReadTokenState(
-		configDir,
-		sc.Name,
-	); sc.UsesOAuthLogin() &&
-		state.NeedsLogin() { //nolint:errcheck // an unreadable token reads as needing a login, which is what to tell the user
+	if sc.UsesOAuthLogin() && needsLogin(configDir, sc.Name) {
 		status.Finish = NeedsLogin
 	}
 	return status
+}
+
+// A server is the catalog's when it runs the catalog's URL, under any name; one that only shares
+// the name, like a local stdio github, isn't.
+func catalogEntryFor(sc config.ServerConfig, entries []catalog.Entry) (catalog.Entry, bool) {
+	i := slices.IndexFunc(entries, func(e catalog.Entry) bool {
+		return sc.URL != "" && serverURLKey(e.URL) == serverURLKey(sc.URL)
+	})
+	if i < 0 {
+		return catalog.Entry{}, false
+	}
+	return entries[i], true
+}
+
+// A refreshable token needs no login; ReadTokenState already counts it as usable.
+func needsLogin(configDir, name string) bool {
+	state, _ := auth.ReadTokenState(configDir, name) // nolint: errcheck // unreadable reads as needing a login
+	return state.NeedsLogin()
 }
 
 func hasCredential(sc config.ServerConfig) bool {

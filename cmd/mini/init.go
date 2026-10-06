@@ -56,7 +56,6 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 	return cmd
 }
 
-// Flags never prompt, so they work without a terminal; without flags, init asks, and needs one.
 func runInitCommand(configDir string, f initFlags) error {
 	switch {
 	case f.importAll && f.from != "":

@@ -76,8 +76,8 @@ func TestSummary_servers(t *testing.T) {
 
 func TestSummary_importAndFailures(t *testing.T) {
 	got := Summary(Report{
-		AlreadyConfigured: []string{"linear"},
-		FromImport:        []string{"github"},
+		AlreadyConfigured:  []string{"linear"},
+		AddCoveredByImport: []string{"github"},
 		Skipped: []SkippedServer{
 			{
 				Agent:  "Codex",

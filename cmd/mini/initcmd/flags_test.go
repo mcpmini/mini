@@ -64,8 +64,8 @@ func TestRunFlags(t *testing.T) {
 	if !reflect.DeepEqual(report.AlreadyConfigured, []string{"linear"}) {
 		t.Errorf("already configured = %v, want linear", report.AlreadyConfigured)
 	}
-	if !reflect.DeepEqual(report.FromImport, []string{"files", "github"}) {
-		t.Errorf("from import = %v, want files and github, which the imports cover", report.FromImport)
+	if !reflect.DeepEqual(report.AddCoveredByImport, []string{"files", "github"}) {
+		t.Errorf("from import = %v, want files and github, which the imports cover", report.AddCoveredByImport)
 	}
 	wantSkipped := []SkippedServer{{Agent: "Claude Code", Name: "paused", Reason: SkipSwitchedOff}}
 	if !reflect.DeepEqual(report.Skipped, wantSkipped) ||
