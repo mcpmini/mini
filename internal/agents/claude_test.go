@@ -13,10 +13,10 @@ import (
 func TestClaudeReader(t *testing.T) {
 	tests := []readerCase{
 		{
-			"claude desktop stdio entry, env as a sorted KEY=VALUE list",
-			"claude.json",
-			`{"mcpServers":{"s":{"command":"npx","args":["server-github"],"env":{"B":"2","A":"1"}}}}`,
-			Server{
+			name:   "claude desktop stdio entry, env as a sorted KEY=VALUE list",
+			file:   "claude.json",
+			config: `{"mcpServers":{"s":{"command":"npx","args":["server-github"],"env":{"B":"2","A":"1"}}}}`,
+			want: Server{
 				Config: config.ServerConfig{
 					Name:    "s",
 					Command: "npx",
@@ -26,35 +26,37 @@ func TestClaudeReader(t *testing.T) {
 			},
 		},
 		{
-			"claude http entry by url keeps headers",
-			"claude.json",
-			`{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH}"}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH}"})},
+			name:   "claude http entry by url keeps headers",
+			file:   "claude.json",
+			config: `{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH}"}}}}`,
+			want: Server{
+				Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH}"}),
+			},
 		},
 		{
-			"claude sse type is http", "claude.json",
-			`{"mcpServers":{"s":{"type":"sse","url":"https://sse.example.com"}}}`,
-			Server{Config: remote("s", "https://sse.example.com", nil)},
+			name: "claude sse type is http", file: "claude.json",
+			config: `{"mcpServers":{"s":{"type":"sse","url":"https://sse.example.com"}}}`,
+			want:   Server{Config: remote("s", "https://sse.example.com", nil)},
 		},
 		{
-			"claude ${VAR} in args is kept in the agent",
-			"claude.json",
-			`{"mcpServers":{"s":{"command":"run","args":["--root","${HOME}/src"]}}}`,
-			Server{
+			name:   "claude ${VAR} in args is kept in the agent",
+			file:   "claude.json",
+			config: `{"mcpServers":{"s":{"command":"run","args":["--root","${HOME}/src"]}}}`,
+			want: Server{
 				Config:           stdio("s", "run", "--root", "${HOME}/src"),
 				UnexpandableRefs: []string{"an environment variable in command or args"},
 			},
 		},
 		{
-			"claude $ in args is literal, as Claude Code passes it", "claude.json",
-			`{"mcpServers":{"s":{"command":"grep","args":["^end$"]}}}`,
-			Server{Config: stdio("s", "grep", "^end$")},
+			name: "claude $ in args is literal, as Claude Code passes it", file: "claude.json",
+			config: `{"mcpServers":{"s":{"command":"grep","args":["^end$"]}}}`,
+			want:   Server{Config: stdio("s", "grep", "^end$")},
 		},
 		{
-			"claude default-value syntax is kept in the agent",
-			"claude.json",
-			`{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH:-none}"}}}}`,
-			Server{
+			name:   "claude default-value syntax is kept in the agent",
+			file:   "claude.json",
+			config: `{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH:-none}"}}}}`,
+			want: Server{
 				Config: remote(
 					"s",
 					"https://example.com/mcp",
@@ -64,38 +66,39 @@ func TestClaudeReader(t *testing.T) {
 			},
 		},
 		{
-			"cursor ${env:VAR} becomes ${VAR}",
-			"mcp.json",
-			`{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${env:API_KEY}"}}}}`,
-			Server{
+			name:   "cursor ${env:VAR} becomes ${VAR}",
+			file:   "mcp.json",
+			config: `{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${env:API_KEY}"}}}}`,
+			want: Server{
 				Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${API_KEY}"}),
 			},
 		},
 		{
-			"cursor envFile is ignored and named", "mcp.json",
-			`{"mcpServers":{"s":{"command":"run","envFile":".env"}}}`,
-			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"envFile"}},
+			name: "cursor envFile is ignored and named", file: "mcp.json",
+			config: `{"mcpServers":{"s":{"command":"run","envFile":".env"}}}`,
+			want:   Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"envFile"}},
 		},
 		{
-			"windsurf serverUrl is the url", "mcp_config.json",
-			`{"mcpServers":{"s":{"serverUrl":"https://example.com/mcp"}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", nil)},
+			name: "windsurf serverUrl is the url", file: "mcp_config.json",
+			config: `{"mcpServers":{"s":{"serverUrl":"https://example.com/mcp"}}}`,
+			want:   Server{Config: remote("s", "https://example.com/mcp", nil)},
 		},
 		{
-			"windsurf disabled and disabledTools", "mcp_config.json",
-			`{"mcpServers":{"s":{"command":"run","disabled":true,"disabledTools":["delete"]}}}`,
-			Server{Config: stdio("s", "run"), Disabled: true},
+			name: "windsurf disabled and disabledTools", file: "mcp_config.json",
+			config: `{"mcpServers":{"s":{"command":"run","disabled":true,"disabledTools":["delete"]}}}`,
+			want:   Server{Config: stdio("s", "run"), Disabled: true},
 		},
 		{
-			"claude oauth client is dropped and named", "claude.json",
-			`{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","oauth":{"clientId":"synthetic"}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"oauth"}},
+			name:   "claude oauth client is dropped and named",
+			file:   "claude.json",
+			config: `{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","oauth":{"clientId":"synthetic"}}}}`,
+			want:   Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"oauth"}},
 		},
 		{
-			"cursor editor placeholders are kept in the agent",
-			"mcp.json",
-			`{"mcpServers":{"s":{"command":"run","env":{"ROOT":"${workspaceFolder}/data"}}}}`,
-			Server{
+			name:   "cursor editor placeholders are kept in the agent",
+			file:   "mcp.json",
+			config: `{"mcpServers":{"s":{"command":"run","env":{"ROOT":"${workspaceFolder}/data"}}}}`,
+			want: Server{
 				Config: config.ServerConfig{
 					Name:    "s",
 					Command: "run",

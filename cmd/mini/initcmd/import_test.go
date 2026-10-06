@@ -54,126 +54,126 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 		wantSkipped  []SkippedServer
 	}{
 		{
-			"one config in three agents is imported once",
-			[]agents.Agent{
+			name: "one config in three agents is imported once",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Codex", map[string]agents.Server{"github": a}),
 				agentWith("Cursor", map[string]agents.Server{"GitHub": a}),
 			},
-			nil,
-			[]string{"github"},
-			nil,
+			configured:   nil,
+			wantImported: []string{"github"},
+			wantSkipped:  nil,
 		},
 		{
-			"same url with other credentials under a name in use is left in its agent",
-			[]agents.Agent{
+			name: "same url with other credentials under a name in use is left in its agent",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Codex", map[string]agents.Server{"github": b}),
 			},
-			nil,
-			[]string{"github"},
-			[]SkippedServer{{Agent: "Codex", Name: "github", Reason: SkipSecondConfig}},
+			configured:   nil,
+			wantImported: []string{"github"},
+			wantSkipped:  []SkippedServer{{Agent: "Codex", Name: "github", Reason: SkipSecondConfig}},
 		},
 		{
-			"a server switched on in any agent is imported",
-			[]agents.Agent{
+			name: "a server switched on in any agent is imported",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": switchedOff(a)}),
 				agentWith("Codex", map[string]agents.Server{"github": a}),
 			},
-			nil,
-			[]string{"github"},
-			nil,
+			configured:   nil,
+			wantImported: []string{"github"},
+			wantSkipped:  nil,
 		},
 		{
-			"a server switched off everywhere is left in its agents",
-			[]agents.Agent{agentWith("Codex", map[string]agents.Server{"github": switchedOff(a)})},
-			nil, nil,
-			[]SkippedServer{{Agent: "Codex", Name: "github", Reason: SkipSwitchedOff}},
+			name:       "a server switched off everywhere is left in its agents",
+			agents:     []agents.Agent{agentWith("Codex", map[string]agents.Server{"github": switchedOff(a)})},
+			configured: nil, wantImported: nil,
+			wantSkipped: []SkippedServer{{Agent: "Codex", Name: "github", Reason: SkipSwitchedOff}},
 		},
 		{
-			"an enabled config claims a shared name before a switched-off one",
-			[]agents.Agent{
+			name: "an enabled config claims a shared name before a switched-off one",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": switchedOff(a)}),
 				agentWith("Cursor", map[string]agents.Server{"github": b}),
 			},
-			nil,
-			[]string{"github"},
-			[]SkippedServer{{Agent: "Claude Code", Name: "github", Reason: SkipSwitchedOff}},
+			configured:   nil,
+			wantImported: []string{"github"},
+			wantSkipped:  []SkippedServer{{Agent: "Claude Code", Name: "github", Reason: SkipSwitchedOff}},
 		},
 		{
-			"a second config stays out even when switched on in a later agent",
-			[]agents.Agent{
+			name: "a second config stays out even when switched on in a later agent",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Codex", map[string]agents.Server{"github": switchedOff(b)}),
 				agentWith("Cursor", map[string]agents.Server{"github": b}),
 			},
-			nil,
-			[]string{"github"},
-			[]SkippedServer{
+			configured:   nil,
+			wantImported: []string{"github"},
+			wantSkipped: []SkippedServer{
 				{Agent: "Codex", Name: "github", Reason: SkipSecondConfig},
 				{Agent: "Cursor", Name: "github", Reason: SkipSecondConfig},
 			},
 		},
 		{
-			"names are lowercased with other characters as dashes",
-			[]agents.Agent{agentWith("Cursor", map[string]agents.Server{"-My Server.v2!": a})},
-			nil,
-			[]string{"my-server-v2"},
-			nil,
+			name:         "names are lowercased with other characters as dashes",
+			agents:       []agents.Agent{agentWith("Cursor", map[string]agents.Server{"-My Server.v2!": a})},
+			configured:   nil,
+			wantImported: []string{"my-server-v2"},
+			wantSkipped:  nil,
 		},
 		{
-			"one config under two names is imported once, named by the first agent",
-			[]agents.Agent{
+			name: "one config under two names is imported once, named by the first agent",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Cursor", map[string]agents.Server{"GitHub MCP": a}),
 			},
-			nil,
-			[]string{"github"},
-			nil,
+			configured:   nil,
+			wantImported: []string{"github"},
+			wantSkipped:  nil,
 		},
 		{
-			"a config under a name mini has is left in its agent and named",
-			[]agents.Agent{
+			name: "a config under a name mini has is left in its agent and named",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Codex", map[string]agents.Server{"github": b}),
 			},
-			[]string{"GitHub"},
-			nil,
-			[]SkippedServer{
+			configured:   []string{"GitHub"},
+			wantImported: nil,
+			wantSkipped: []SkippedServer{
 				{Agent: "Claude Code", Name: "github", Reason: SkipNameInMini},
 				{Agent: "Codex", Name: "github", Reason: SkipNameInMini},
 			},
 		},
 		{
-			"a second config comes in under the free name another agent gives it",
-			[]agents.Agent{
+			name: "a second config comes in under the free name another agent gives it",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Codex", map[string]agents.Server{"github": b}),
 				agentWith("Cursor", map[string]agents.Server{"gh-work": b}),
 			},
-			nil,
-			[]string{"gh-work", "github"},
-			nil,
+			configured:   nil,
+			wantImported: []string{"gh-work", "github"},
+			wantSkipped:  nil,
 		},
 		{
-			"a config under a name mini has comes in under the free name another agent gives it",
-			[]agents.Agent{
+			name: "a config under a name mini has comes in under the free name another agent gives it",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Cursor", map[string]agents.Server{"gh": a}),
 			},
-			[]string{"github"},
-			[]string{"gh"},
-			nil,
+			configured:   []string{"github"},
+			wantImported: []string{"gh"},
+			wantSkipped:  nil,
 		},
 		{
-			"an unusable name goes unmentioned when its config comes in under another name",
-			[]agents.Agent{
+			name: "an unusable name goes unmentioned when its config comes in under another name",
+			agents: []agents.Agent{
 				agentWith("Claude Code", map[string]agents.Server{"github": a}),
 				agentWith("Cursor", map[string]agents.Server{"!!!": a}),
 			},
-			nil,
-			[]string{"github"},
-			nil,
+			configured:   nil,
+			wantImported: []string{"github"},
+			wantSkipped:  nil,
 		},
 	}
 	for _, tt := range tests {

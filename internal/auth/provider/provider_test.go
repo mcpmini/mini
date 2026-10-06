@@ -279,16 +279,16 @@ func TestRefreshAuthorization_resourceFallback_canonicalizesServerURL(t *testing
 		wantResource string
 	}{
 		{
-			"ServerURL canonicalized when ResourceURL empty",
-			"HTTPS://Example.COM:443/mcp",
-			"",
-			"https://example.com/mcp",
+			name:         "ServerURL canonicalized when ResourceURL empty",
+			serverURL:    "HTTPS://Example.COM:443/mcp",
+			resourceURL:  "",
+			wantResource: "https://example.com/mcp",
 		},
 		{
-			"ResourceURL wins when both set",
-			"HTTPS://Example.COM:443/mcp",
-			"https://other.example/api",
-			"https://other.example/api",
+			name:         "ResourceURL wins when both set",
+			serverURL:    "HTTPS://Example.COM:443/mcp",
+			resourceURL:  "https://other.example/api",
+			wantResource: "https://other.example/api",
 		},
 	}
 	for _, tc := range cases {

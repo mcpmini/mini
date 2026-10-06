@@ -19,17 +19,53 @@ func TestResolveCallOutput(t *testing.T) {
 		cfgFormat  string
 		want       callOutput
 	}{
-		{"raw flag", callFlags{raw: true}, "", "", callOutputRaw},
-		{"toon flag", callFlags{toon: true}, "", "", callOutputToon},
-		{"json flag", callFlags{json: true}, "", "", callOutputJSON},
-		{"cfg toon", callFlags{}, "", "toon", callOutputToon},
-		{"default", callFlags{}, "", "", callOutputJSON},
-		{"raw wins over toon", callFlags{raw: true, toon: true}, "", "", callOutputRaw},
-		{"cfg overridden by json flag", callFlags{json: true}, "", "toon", callOutputJSON},
-		{"projection toon applies without -t flag", callFlags{}, "toon", "", callOutputToon},
-		{"global toon overridden by exact-tool json projection", callFlags{}, "json", "toon", callOutputJSON},
-		{"-j flag beats toon projection", callFlags{json: true}, "toon", "", callOutputJSON},
-		{"-t flag beats json projection", callFlags{toon: true}, "json", "toon", callOutputToon},
+		{name: "raw flag", f: callFlags{raw: true}, projFormat: "", cfgFormat: "", want: callOutputRaw},
+		{name: "toon flag", f: callFlags{toon: true}, projFormat: "", cfgFormat: "", want: callOutputToon},
+		{name: "json flag", f: callFlags{json: true}, projFormat: "", cfgFormat: "", want: callOutputJSON},
+		{name: "cfg toon", f: callFlags{}, projFormat: "", cfgFormat: "toon", want: callOutputToon},
+		{name: "default", f: callFlags{}, projFormat: "", cfgFormat: "", want: callOutputJSON},
+		{
+			name:       "raw wins over toon",
+			f:          callFlags{raw: true, toon: true},
+			projFormat: "",
+			cfgFormat:  "",
+			want:       callOutputRaw,
+		},
+		{
+			name:       "cfg overridden by json flag",
+			f:          callFlags{json: true},
+			projFormat: "",
+			cfgFormat:  "toon",
+			want:       callOutputJSON,
+		},
+		{
+			name:       "projection toon applies without -t flag",
+			f:          callFlags{},
+			projFormat: "toon",
+			cfgFormat:  "",
+			want:       callOutputToon,
+		},
+		{
+			name:       "global toon overridden by exact-tool json projection",
+			f:          callFlags{},
+			projFormat: "json",
+			cfgFormat:  "toon",
+			want:       callOutputJSON,
+		},
+		{
+			name:       "-j flag beats toon projection",
+			f:          callFlags{json: true},
+			projFormat: "toon",
+			cfgFormat:  "",
+			want:       callOutputJSON,
+		},
+		{
+			name:       "-t flag beats json projection",
+			f:          callFlags{toon: true},
+			projFormat: "json",
+			cfgFormat:  "toon",
+			want:       callOutputToon,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

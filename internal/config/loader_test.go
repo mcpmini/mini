@@ -407,16 +407,34 @@ func TestEffectiveFormat(t *testing.T) {
 	cases := []struct {
 		name, explicit, projection, global, want string
 	}{
-		{"explicit wins over all", config.FormatToon, config.FormatJSON, "", config.FormatToon},
-		{"projection when no explicit", "", config.FormatToon, config.FormatJSON, config.FormatToon},
-		{"global when no explicit or projection", "", "", config.FormatToon, config.FormatToon},
-		{"json default when all empty", "", "", "", config.FormatJSON},
 		{
-			"explicit json beats toon projection",
-			config.FormatJSON,
-			config.FormatToon,
-			config.FormatToon,
-			config.FormatJSON,
+			name:       "explicit wins over all",
+			explicit:   config.FormatToon,
+			projection: config.FormatJSON,
+			global:     "",
+			want:       config.FormatToon,
+		},
+		{
+			name:       "projection when no explicit",
+			explicit:   "",
+			projection: config.FormatToon,
+			global:     config.FormatJSON,
+			want:       config.FormatToon,
+		},
+		{
+			name:       "global when no explicit or projection",
+			explicit:   "",
+			projection: "",
+			global:     config.FormatToon,
+			want:       config.FormatToon,
+		},
+		{name: "json default when all empty", explicit: "", projection: "", global: "", want: config.FormatJSON},
+		{
+			name:       "explicit json beats toon projection",
+			explicit:   config.FormatJSON,
+			projection: config.FormatToon,
+			global:     config.FormatToon,
+			want:       config.FormatJSON,
 		},
 	}
 	for _, tc := range cases {

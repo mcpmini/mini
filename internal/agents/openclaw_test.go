@@ -9,24 +9,25 @@ import (
 func TestOpenClawReader(t *testing.T) {
 	tests := []readerCase{
 		{
-			"openclaw cwd and tls settings are dropped and named", "openclaw.json",
-			`{"mcp":{"servers":{"s":{"command":"npx","cwd":"/srv","sslVerify":false}}}}`,
-			Server{Config: stdio("s", "npx"), IgnoredRunSettings: []string{"cwd", "sslVerify"}},
+			name: "openclaw cwd and tls settings are dropped and named", file: "openclaw.json",
+			config: `{"mcp":{"servers":{"s":{"command":"npx","cwd":"/srv","sslVerify":false}}}}`,
+			want:   Server{Config: stdio("s", "npx"), IgnoredRunSettings: []string{"cwd", "sslVerify"}},
 		},
 		{
-			"openclaw stdio entry", "openclaw.json",
-			`{"mcp":{"servers":{"s":{"command":"npx","env":{"ROOT":"/data"}}}}}`,
-			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Env: []string{"ROOT=/data"}}},
+			name: "openclaw stdio entry", file: "openclaw.json",
+			config: `{"mcp":{"servers":{"s":{"command":"npx","env":{"ROOT":"/data"}}}}}`,
+			want:   Server{Config: config.ServerConfig{Name: "s", Command: "npx", Env: []string{"ROOT=/data"}}},
 		},
 		{
-			"openclaw tool filter and approval settings are dropped", "openclaw.json",
-			`{"mcp":{"servers":{"s":{"command":"npx","toolFilter":{"allow":["read"]},"codex":{"approval":"prompt"}}}}}`,
-			Server{Config: stdio("s", "npx")},
+			name:   "openclaw tool filter and approval settings are dropped",
+			file:   "openclaw.json",
+			config: `{"mcp":{"servers":{"s":{"command":"npx","toolFilter":{"allow":["read"]},"codex":{"approval":"prompt"}}}}}`,
+			want:   Server{Config: stdio("s", "npx")},
 		},
 		{
-			"openclaw http entry switched off", "openclaw.json",
-			`{"mcp":{"servers":{"s":{"url":"https://example.com/mcp","enabled":false}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", nil), Disabled: true},
+			name: "openclaw http entry switched off", file: "openclaw.json",
+			config: `{"mcp":{"servers":{"s":{"url":"https://example.com/mcp","enabled":false}}}}`,
+			want:   Server{Config: remote("s", "https://example.com/mcp", nil), Disabled: true},
 		},
 	}
 	runReaderCases(t, ReadOpenClaw, tests)

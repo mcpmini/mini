@@ -42,10 +42,15 @@ func TestFormatPath_roundTripViaEval(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"root array index", []string{"[0]", "body"}, `[{"body":"ok"}]`, `"ok"`},
-		{"nested array index", []string{"items", "[0]", "body"}, `{"items":[{"body":"ok"}]}`, `"ok"`},
-		{"bracket key", []string{"body text"}, `{"body text":"ok"}`, `"ok"`},
-		{"backslash key", []string{`a\b`}, `{"a\\b":"ok"}`, `"ok"`},
+		{name: "root array index", path: []string{"[0]", "body"}, input: `[{"body":"ok"}]`, want: `"ok"`},
+		{
+			name:  "nested array index",
+			path:  []string{"items", "[0]", "body"},
+			input: `{"items":[{"body":"ok"}]}`,
+			want:  `"ok"`,
+		},
+		{name: "bracket key", path: []string{"body text"}, input: `{"body text":"ok"}`, want: `"ok"`},
+		{name: "backslash key", path: []string{`a\b`}, input: `{"a\\b":"ok"}`, want: `"ok"`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

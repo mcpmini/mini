@@ -164,7 +164,7 @@ func (s *Server) parsePostRequest(w http.ResponseWriter, r *http.Request) (parse
 		return parsedPostRequest{}, false
 	}
 	session, release := s.sessions.acquire(sessionID)
-	return parsedPostRequest{body, sessionID, session, release}, true
+	return parsedPostRequest{body: body, sessionID: sessionID, session: session, release: release}, true
 }
 
 type mcpResponseParams struct {

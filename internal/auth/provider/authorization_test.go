@@ -30,43 +30,68 @@ func TestAuthorization_nearExpiry_refreshesBeforeTokenExpires(t *testing.T) {
 		wantRefresh int32
 	}{
 		{
-			"before refresh window keeps stored token",
-			storedToken(epoch.Add(10 * time.Minute)),
-			"Bearer stored-access",
-			0,
+			name:        "before refresh window keeps stored token",
+			token:       storedToken(epoch.Add(10 * time.Minute)),
+			wantHeader:  "Bearer stored-access",
+			wantRefresh: 0,
 		},
-		{"exactly at expiry minus window refreshes", storedToken(epoch.Add(5 * time.Minute)), "Bearer new-access", 1},
-		{"inside refresh window refreshes", storedToken(epoch.Add(4 * time.Minute)), "Bearer new-access", 1},
-		{"already expired refreshes", storedToken(epoch.Add(-time.Hour)), "Bearer new-access", 1},
-		{"short-lived token uses bounded skew", shortLived, "Bearer stored-access", 0},
 		{
-			"short-lived 10pct boundary at window refreshes",
-			&oauth2.Token{
+			name:        "exactly at expiry minus window refreshes",
+			token:       storedToken(epoch.Add(5 * time.Minute)),
+			wantHeader:  "Bearer new-access",
+			wantRefresh: 1,
+		},
+		{
+			name:        "inside refresh window refreshes",
+			token:       storedToken(epoch.Add(4 * time.Minute)),
+			wantHeader:  "Bearer new-access",
+			wantRefresh: 1,
+		},
+		{
+			name:        "already expired refreshes",
+			token:       storedToken(epoch.Add(-time.Hour)),
+			wantHeader:  "Bearer new-access",
+			wantRefresh: 1,
+		},
+		{
+			name:        "short-lived token uses bounded skew",
+			token:       shortLived,
+			wantHeader:  "Bearer stored-access",
+			wantRefresh: 0,
+		},
+		{
+			name: "short-lived 10pct boundary at window refreshes",
+			token: &oauth2.Token{
 				AccessToken:  "stored-access",
 				RefreshToken: "stored-refresh",
 				Expiry:       epoch.Add(60 * time.Second),
 				ExpiresIn:    600,
 			},
-			"Bearer new-access",
-			1,
+			wantHeader:  "Bearer new-access",
+			wantRefresh: 1,
 		},
 		{
-			"short-lived 10pct boundary just outside window keeps stored token",
-			&oauth2.Token{
+			name: "short-lived 10pct boundary just outside window keeps stored token",
+			token: &oauth2.Token{
 				AccessToken:  "stored-access",
 				RefreshToken: "stored-refresh",
 				Expiry:       epoch.Add(61 * time.Second),
 				ExpiresIn:    600,
 			},
-			"Bearer stored-access",
-			0,
+			wantHeader:  "Bearer stored-access",
+			wantRefresh: 0,
 		},
-		{"zero expiry never refreshes proactively", storedToken(time.Time{}), "Bearer stored-access", 0},
 		{
-			"no refresh token skips proactive refresh",
-			&oauth2.Token{AccessToken: "stored-access", Expiry: epoch.Add(time.Minute)},
-			"Bearer stored-access",
-			0,
+			name:        "zero expiry never refreshes proactively",
+			token:       storedToken(time.Time{}),
+			wantHeader:  "Bearer stored-access",
+			wantRefresh: 0,
+		},
+		{
+			name:        "no refresh token skips proactive refresh",
+			token:       &oauth2.Token{AccessToken: "stored-access", Expiry: epoch.Add(time.Minute)},
+			wantHeader:  "Bearer stored-access",
+			wantRefresh: 0,
 		},
 	}
 	for _, tc := range cases {
