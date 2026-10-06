@@ -99,7 +99,7 @@ func TestConfigureGetProjection_readsAServerStillAwaitingAuthorization(t *testin
 	const sessionID = "cccccccc-cccc-cccc-cccc-000000000015"
 	upstream := httptest.NewServer(http.HandlerFunc(requireBearer))
 	t.Cleanup(upstream.Close)
-	rule := &config.ProjectionConfig{Exclude: []string{"secret"}}
+	rule := &config.ProjectionConfig{Alias: "fetch", Exclude: []string{"secret"}}
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Projections: map[string]*config.ProjectionConfig{"getData": rule}}
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, sc)
@@ -109,7 +109,20 @@ func TestConfigureGetProjection_readsAServerStillAwaitingAuthorization(t *testin
 	postMCP(t, srv, sessionID, initMsg(true))
 
 	assertReport(t, getProjection(t, srv, sessionID, "getData"), projectionReport{Tool: "svc.getData", Rules: map[string]*config.ProjectionConfig{"server": rule}})
+	assertReport(t, getProjection(t, srv, sessionID, "fetch"), projectionReport{Tool: "svc.fetch", Rules: map[string]*config.ProjectionConfig{"server": rule}})
 	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other"})
+}
+
+func TestConfigureGetProjection_readsAHiddenTool(t *testing.T) {
+	const sessionID = "cccccccc-cccc-cccc-cccc-000000000016"
+	srv := newTestServer(t, server.Params{})
+	hidden := &config.PermissionsConfig{Hidden: []string{"other", "getData"}}
+	rule := &config.ProjectionConfig{Alias: "fetch", Exclude: []string{"secret"}}
+	addEdgeConn(t, srv, config.ServerConfig{Name: "svc", Permissions: hidden, Projections: map[string]*config.ProjectionConfig{"getData": rule}}, fakeConn("getData", "other"))
+	postMCP(t, srv, sessionID, initMsg(true))
+
+	assertReport(t, getProjection(t, srv, sessionID, "other"), projectionReport{Tool: "svc.other"})
+	assertReport(t, getProjection(t, srv, sessionID, "fetch"), projectionReport{Tool: "svc.fetch", Rules: map[string]*config.ProjectionConfig{"server": rule}})
 }
 
 func TestConfigureGetProjection_rejectsAMissingToolOrAnUnknownServerOrTool(t *testing.T) {
