@@ -35,4 +35,14 @@ linters:
 
 formatters:
   enable:
-    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/mcpmini/mini
+    golines:
+      max-len: 120
+      shorten-comments: false
+      reformat-tags: false
