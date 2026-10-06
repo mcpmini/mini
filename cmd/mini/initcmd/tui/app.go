@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type step int
@@ -29,12 +30,11 @@ const minWidth, minHeight = 60, 12
 const chromeLines = 5
 
 type app struct {
-	screens  []screen
-	at       int
-	width    int
-	height   int
-	finished bool
-	quit     bool
+	screens []screen
+	at      int
+	width   int
+	height  int
+	quit    bool
 }
 
 func newApp(screens []screen) *app {
@@ -69,7 +69,6 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 	switch a.screens[a.at].handle(key) {
 	case forward:
 		if a.at == len(a.screens)-1 {
-			a.finished = true
 			return tea.Quit
 		}
 		a.at++
@@ -92,7 +91,16 @@ func (a *app) render() string {
 	s := a.screens[a.at]
 	body := s.body(a.height - chromeLines)
 	padding := strings.Repeat("\n", max(a.height-chromeLines-strings.Count(body, "\n")-1, 0))
-	return bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + dim.Render(a.footer(s))
+	return a.fit(bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + dim.Render(a.footer(s)))
+}
+
+// A line wider than the window would wrap and push the footer off the screen.
+func (a *app) fit(view string) string {
+	lines := strings.Split(view, "\n")
+	for i, line := range lines {
+		lines[i] = ansi.Truncate(line, a.width, "…")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Two lines, so the footer fits the narrowest window the UI draws in.

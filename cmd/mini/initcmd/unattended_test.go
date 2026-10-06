@@ -189,3 +189,23 @@ func TestSetupWrite_writesWhatThePlanHasPickedAndReportsOnlyThat(t *testing.T) {
 			"and notes only for files-2", report.Import.Skipped, report.Import.DroppedSettings)
 	}
 }
+
+func TestSetupWrite_noSecondConfigLineWhenTheFirstWasUnpickedToo(t *testing.T) {
+	f := newApplyFixture(t)
+	claude := f.write(t, "Claude Code", `{"mcpServers":{"github":{"command":"gh-server-a"}}}`)
+	cursor := f.write(t, "Cursor", `{"mcpServers":{"github":{"command":"gh-server-b"}}}`)
+	setup := Setup{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf}
+	plan, err := setup.Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range plan.Import.Candidates {
+		plan.Import.Candidates[i].Picked = false
+	}
+
+	report := setup.Write(plan)
+
+	if len(report.Import.Skipped) != 0 {
+		t.Errorf("skipped = %+v; want no line saying another github is imported instead", report.Import.Skipped)
+	}
+}

@@ -1,6 +1,7 @@
 package initcmd
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/mcpmini/mini/internal/agents"
@@ -114,18 +115,13 @@ func (plan ImportPlan) picked() []config.ServerConfig {
 // The plan's notes and skips then say what this run did: a picked candidate that failed to write
 // has no notes, and the entries of a candidate the user picked aren't listed as left behind.
 func (plan *ImportPlan) keepOnly(written []string) {
-	for name := range plan.DroppedSettings {
-		if !slices.Contains(written, name) {
-			delete(plan.DroppedSettings, name)
-		}
-	}
-	for name := range plan.StaticHeaders {
-		if !slices.Contains(written, name) {
-			delete(plan.StaticHeaders, name)
-		}
-	}
+	unwritten := func(name string) bool { return !slices.Contains(written, name) }
+	maps.DeleteFunc(plan.DroppedSettings, func(name string, _ []string) bool { return unwritten(name) })
+	maps.DeleteFunc(plan.StaticHeaders, func(name string, _ map[string]string) bool { return unwritten(name) })
 	plan.Skipped = slices.DeleteFunc(plan.Skipped, func(s SkippedServer) bool {
-		return plan.writtenFrom(written, AgentEntry{Agent: s.Agent, Name: s.Name})
+		// A second config's line says the first is imported instead; untrue once the user unticked it.
+		return plan.writtenFrom(written, AgentEntry{Agent: s.Agent, Name: s.Name}) ||
+			(s.Reason == SkipSecondConfig && unwritten(NormalizeName(s.Name)))
 	})
 }
 

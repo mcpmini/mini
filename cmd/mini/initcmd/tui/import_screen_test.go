@@ -30,8 +30,8 @@ func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
 	text := screenText(s)
 	for _, want := range []string{
 		"Import servers from your agents",
-		"> [x] github    gh.example.com  Claude Code, Codex",
-		"  [ ] github-2  gh.example.com  Codex",
+		"> [x] github    gh.example.com/mcp  Claude Code, Codex",
+		"  [ ] github-2  gh.example.com/mcp  Codex",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("screen missing %q:\n%s", want, text)
@@ -46,7 +46,10 @@ func TestImportScreen_anUntickedRowSaysWhy(t *testing.T) {
 	second.From[0].Name = "GitHub"
 	second.Reason = initcmd.SkipSecondConfig
 	text := screenText(newImportScreen([]initcmd.Candidate{second, switchedOff}))
-	for _, want := range []string{"github-2  gh.example.com     Cursor  another config named github\n", "switched off in Codex"} {
+	for _, want := range []string{
+		"github-2  gh.example.com/mcp     Cursor\n      another config named github\n",
+		"notes     notes.example.com/mcp  Codex\n      switched off in Codex",
+	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("screen missing %q:\n%s", want, text)
 		}
@@ -87,5 +90,31 @@ func TestImportScreen_enterContinuesAndEscGoesBack(t *testing.T) {
 		if got := s.handle(press(key)); got != want {
 			t.Errorf("%s = %v, want %v", key, got, want)
 		}
+	}
+}
+
+func TestImportScreen_aSecondConfigSaysWhatDiffersFromTheFirst(t *testing.T) {
+	first := candidate("github", "https://gh.example.com/mcp", true, "Claude Code")
+	first.Server.Headers = map[string]string{"X-Team": "one"}
+	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
+	second.From[0].Name = "github"
+	second.Reason = initcmd.SkipSecondConfig
+	second.Server.Headers = map[string]string{"X-Team": "two"}
+	if text := screenText(newImportScreen([]initcmd.Candidate{first, second})); !strings.Contains(
+		text, "another config named github: different headers",
+	) {
+		t.Errorf("screen:\n%s\nwant the second config's row to name the headers as the difference", text)
+	}
+}
+
+func TestImportScreen_aLongCommandLeavesRoomForTheOtherColumns(t *testing.T) {
+	long := initcmd.Candidate{
+		Server: config.ServerConfig{Name: "files", Command: "npx", Args: []string{"-y", strings.Repeat("server-", 12)}},
+		From:   []initcmd.AgentEntry{{Agent: "Codex", Name: "files"}},
+	}
+	other := candidate("notes", "https://notes.example.com/mcp", true, "Cursor")
+	text := screenText(newImportScreen([]initcmd.Candidate{long, other}))
+	if !strings.Contains(text, "…  Codex") {
+		t.Errorf("screen:\n%s\nwant the command cut short so the agents column stays in line", text)
 	}
 }

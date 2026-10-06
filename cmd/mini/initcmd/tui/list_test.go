@@ -169,3 +169,23 @@ func TestList_scrollsToKeepTheCursorShown(t *testing.T) {
 		t.Errorf("view after moving back up:\n%s\nwant it scrolled back to server-00", view)
 	}
 }
+
+func TestList_scrollingKeepsTheCursorRowsSubtitleShown(t *testing.T) {
+	var rows []row
+	for i := range 10 {
+		name := fmt.Sprintf("server-%02d", i)
+		rows = append(rows, row{key: name, label: name, subtitle: "why " + name})
+	}
+	l := newList(rows, map[string]bool{})
+	for range 4 {
+		l.handle(press("down"))
+	}
+	view := plainView(l, 5)
+	if lines := strings.Split(
+		view,
+		"\n",
+	); len(lines) != 5 ||
+		!strings.HasSuffix(view, "> [ ] server-04\n      why server-04") {
+		t.Errorf("view (%d lines):\n%s\nwant 5 lines ending with server-04 and its subtitle", len(lines), view)
+	}
+}

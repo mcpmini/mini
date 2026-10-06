@@ -64,29 +64,19 @@ func TestApp_movesThroughTheScreensItHasSomethingFor(t *testing.T) {
 		t.Errorf("after enter:\n%s\nwant the Last screen; the empty one is skipped", view)
 	}
 	send(a, "esc", "enter")
-	if a.at != 1 || a.finished {
-		t.Fatalf("at = %d, finished = %v; want back on the last screen", a.at, a.finished)
+	if a.at != 1 {
+		t.Fatalf("at = %d; want back on the last screen", a.at)
 	}
-	if cmd := send(a, "enter"); !a.finished || cmd == nil {
-		t.Errorf(
-			"enter on the last screen: finished = %v, cmd = %v; want the flow finished and the program quit",
-			a.finished,
-			cmd,
-		)
+	if cmd := send(a, "enter"); a.quit || cmd == nil {
+		t.Errorf("enter on the last screen: quit = %v, cmd = %v; want the program ended without quitting", a.quit, cmd)
 	}
 }
 
 func TestApp_ctrlCQuitsFromAnyScreenWithoutPassingTheKeyOn(t *testing.T) {
 	first := &fakeScreen{name: "First"}
 	a := sized(newApp([]screen{first, &fakeScreen{name: "Last"}}))
-	if cmd := send(a, "ctrl+c"); !a.quit || a.finished || cmd == nil || len(first.got) != 0 {
-		t.Errorf(
-			"quit = %v, finished = %v, cmd = %v, screen saw %v; want quit only",
-			a.quit,
-			a.finished,
-			cmd,
-			first.got,
-		)
+	if cmd := send(a, "ctrl+c"); !a.quit || cmd == nil || len(first.got) != 0 {
+		t.Errorf("quit = %v, cmd = %v, screen saw %v; want quit only", a.quit, cmd, first.got)
 	}
 }
 
@@ -129,5 +119,21 @@ func TestApp_aSmallWindowShowsOnlyAskToEnlarge(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
 	if got := shown(a); !strings.HasPrefix(got, "First") {
 		t.Errorf("60x12 renders %q, want the screen", got)
+	}
+}
+
+func TestApp_aLineWiderThanTheWindowIsCutSoTheFooterStaysPut(t *testing.T) {
+	a := newApp([]screen{&fakeScreen{name: strings.Repeat("wide ", 30)}})
+	a.Update(tea.WindowSizeMsg{Width: minWidth, Height: minHeight})
+	view := shown(a)
+	lines := strings.Split(view, "\n")
+	if len(lines) != minHeight || ansi.StringWidth(lines[0]) != minWidth || !strings.HasSuffix(lines[0], "…") {
+		t.Errorf(
+			"view (%d lines):\n%s\nwant %d lines, the heading cut to %d columns",
+			len(lines),
+			view,
+			minHeight,
+			minWidth,
+		)
 	}
 }

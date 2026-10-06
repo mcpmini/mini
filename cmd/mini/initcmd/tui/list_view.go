@@ -16,8 +16,8 @@ func (l *list) view(height int) string {
 	if l.filtering || l.filter != "" {
 		height--
 	}
-	lines := l.lines()
-	l.scrollTo(height)
+	lines, cursorLine, cursorHeight := l.lines()
+	l.scrollTo(cursorLine, cursorHeight, height)
 	shown := strings.Join(lines[l.offset:min(l.offset+height, len(lines))], "\n")
 	if l.filtering || l.filter != "" {
 		shown = l.filterLine() + "\n" + shown
@@ -32,35 +32,47 @@ func (l *list) filterLine() string {
 	return dim.Render("filter: " + l.filter)
 }
 
-func (l *list) scrollTo(height int) {
-	if l.cursor < l.offset {
-		l.offset = l.cursor
+func (l *list) scrollTo(line, rowHeight, height int) {
+	if line < l.offset {
+		l.offset = line
 	}
-	if l.cursor >= l.offset+height {
-		l.offset = l.cursor - height + 1
+	if line+rowHeight > l.offset+height {
+		l.offset = line + rowHeight - height
 	}
 	l.offset = max(l.offset, 0)
 }
 
-func (l *list) lines() []string {
+func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
 	width := 0
 	for _, r := range l.rows {
 		width = max(width, len(r.label))
 	}
-	var lines []string
 	for i, r := range l.visible() {
-		cursor, box := "  ", "[ ] "
 		if i == l.cursor {
-			cursor = "> "
+			cursorLine, cursorHeight = len(lines), 1
 		}
-		if l.checked[r.key] {
-			box = "[x] "
+		lines = append(lines, l.line(r, i == l.cursor, width))
+		if r.subtitle != "" {
+			lines = append(lines, "      "+dim.Render(r.subtitle))
+			if i == l.cursor {
+				cursorHeight++
+			}
 		}
-		line := cursor + box + fmt.Sprintf("%-*s", width, r.label)
-		if r.detail != "" {
-			line += "  " + dim.Render(r.detail)
-		}
-		lines = append(lines, line)
 	}
-	return lines
+	return lines, cursorLine, cursorHeight
+}
+
+func (l *list) line(r row, atCursor bool, width int) string {
+	cursor, box := "  ", "[ ] "
+	if atCursor {
+		cursor = "> "
+	}
+	if l.checked[r.key] {
+		box = "[x] "
+	}
+	line := cursor + box + fmt.Sprintf("%-*s", width, r.label)
+	if r.detail != "" {
+		line += "  " + dim.Render(r.detail)
+	}
+	return line
 }
