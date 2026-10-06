@@ -21,6 +21,27 @@ linters:
     - noctx          # HTTP/exec calls missing context propagation
     - ineffassign    # assigned value never used (can mask dropped errors)
     - misspell       # common English misspellings in identifiers and comments
+    - gosec
+
+  settings:
+    gosec:
+      # Rule descriptions: https://github.com/securego/gosec/blob/v2.29.0/RULES.md#rules-list
+      includes:
+        - G106
+        - G110
+        - G112
+        - G114
+        - G401
+        - G402
+        - G403
+        - G405
+        - G406
+        - G407
+        - G501
+        - G502
+        - G503
+        - G504
+        - G505
 
   exclusions:
     rules:
@@ -32,6 +53,12 @@ linters:
         linters: [noctx]
       - path: ^internal/(daemon|auth)/
         linters: [noctx]
+      - path: _test\.go$
+        linters: [gosec]
+      - path: ^(internal/testutil|internal/auth/authtest|internal/config/configtest|test/fakemcp|cmd/echomcp|tools)/
+        linters: [gosec]
+      - path: ^internal/(clock|transport)/fake\.go$
+        linters: [gosec]
 
 formatters:
   enable:
