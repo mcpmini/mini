@@ -98,6 +98,11 @@ func (l *list) handle(key tea.KeyPressMsg) bool {
 		l.toggle()
 	case "/":
 		l.filtering = true
+	case "esc":
+		if l.filter == "" {
+			return false
+		}
+		l.setFilter("")
 	default:
 		return false
 	}

@@ -209,3 +209,21 @@ func TestSetupWrite_noSecondConfigLineWhenTheFirstWasUnpickedToo(t *testing.T) {
 		t.Errorf("skipped = %+v; want no line saying another github is imported instead", report.Import.Skipped)
 	}
 }
+
+func TestRunUnattended_aCatalogAddIsntCreditedWithASwitchedOffConfigOfTheSameName(t *testing.T) {
+	f := newApplyFixture(t)
+	codex := f.write(t, "Codex", "[mcp_servers.notion]\ncommand = \"notion-server\"\ncwd = \"/srv\"\nenabled = false\n")
+
+	report := RunUnattended(Setup{
+		ConfigDir: f.configDir,
+		Import:    []agents.Agent{codex},
+		Add:       []catalog.Entry{{Name: "notion", URL: "https://notion.example.com/mcp"}},
+		SelfPath:  testSelf,
+	})
+
+	want := []SkippedServer{{Agent: "Codex", Name: "notion", Reason: SkipSwitchedOff}}
+	if !reflect.DeepEqual(report.Import.Skipped, want) || len(report.Import.DroppedSettings) != 0 {
+		t.Errorf("skipped = %+v, dropped settings = %v; want Codex's notion named as switched off "+
+			"and no cwd note for the catalog's notion", report.Import.Skipped, report.Import.DroppedSettings)
+	}
+}

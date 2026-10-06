@@ -139,6 +139,16 @@ func TestList_filter(t *testing.T) {
 			t.Errorf("filtering = %v, filter = %q; want every row back", l.filtering, l.filter)
 		}
 	})
+	t.Run("esc after enter clears the applied filter", func(t *testing.T) {
+		l := newList(serverRows(), map[string]bool{})
+		typeKeys(l, "/", "g", "enter")
+		if !l.handle(press("esc")) || l.filter != "" {
+			t.Errorf("filter = %q; want esc taken by the list and the filter cleared", l.filter)
+		}
+		if l.handle(press("esc")) {
+			t.Error("esc with no filter was taken by the list; want it left for the screen")
+		}
+	})
 	t.Run("backspace removes the last character", func(t *testing.T) {
 		l := newList(serverRows(), map[string]bool{})
 		typeKeys(l, "/", "g", "é", "backspace")

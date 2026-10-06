@@ -118,3 +118,17 @@ func TestImportScreen_aLongCommandLeavesRoomForTheOtherColumns(t *testing.T) {
 		t.Errorf("screen:\n%s\nwant the command cut short so the agents column stays in line", text)
 	}
 }
+
+func TestImportScreen_aSecondConfigIsComparedWithTheConfigThatHoldsTheName(t *testing.T) {
+	other := candidate("bar", "https://bar.example.com/mcp", true, "Codex")
+	other.From = append(other.From, initcmd.AgentEntry{Agent: "Cursor", Name: "foo"})
+	first := candidate("foo", "https://foo.example.com/mcp", true, "Claude Code")
+	second := candidate("foo-2", "https://foo.example.com/mcp", false, "Windsurf")
+	second.From[0].Name = "foo"
+	second.Reason = initcmd.SkipSecondConfig
+	second.Server.Headers = map[string]string{"X-Team": "two"}
+	text := screenText(newImportScreen([]initcmd.Candidate{other, first, second}))
+	if !strings.Contains(text, "another config named foo: different headers") {
+		t.Errorf("screen:\n%s\nwant foo-2 compared with foo, which differs only in headers", text)
+	}
+}

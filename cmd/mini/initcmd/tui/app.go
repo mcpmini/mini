@@ -66,6 +66,10 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 		a.quit = true
 		return tea.Quit
 	}
+	if a.tooSmall() {
+		// The screen is hidden, so a key would act on picks the user can't see.
+		return nil
+	}
 	switch a.screens[a.at].handle(key) {
 	case forward:
 		if a.at == len(a.screens)-1 {
@@ -85,13 +89,17 @@ func (a *app) View() tea.View {
 }
 
 func (a *app) render() string {
-	if a.width < minWidth || a.height < minHeight {
+	if a.tooSmall() {
 		return "Make the window larger"
 	}
 	s := a.screens[a.at]
 	body := s.body(a.height - chromeLines)
 	padding := strings.Repeat("\n", max(a.height-chromeLines-strings.Count(body, "\n")-1, 0))
 	return a.fit(bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + dim.Render(a.footer(s)))
+}
+
+func (a *app) tooSmall() bool {
+	return a.width < minWidth || a.height < minHeight
 }
 
 // A line wider than the window would wrap and push the footer off the screen.

@@ -75,7 +75,7 @@ func (s Setup) Write(p Plan) Report {
 	added, writeErrors := addServers(s.ConfigDir, adds.write)
 	report.WriteErrors = writeErrors
 	CheckOAuth(s.ConfigDir, OAuthTargets(s.ConfigDir, added), clock.System())
-	report.Import.keepOnly(added)
+	report.Import.keepOnly(report.Import.importedOf(added))
 	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, s.Catalog)
 	return report
 }
@@ -112,22 +112,39 @@ func (plan ImportPlan) picked() []config.ServerConfig {
 	return servers
 }
 
+// A catalog add can share an unpicked candidate's name, so a written name alone doesn't mean an import.
+func (plan ImportPlan) importedOf(added []string) []Candidate {
+	var imported []Candidate
+	for _, c := range plan.Candidates {
+		if c.Picked && slices.Contains(added, c.Server.Name) {
+			imported = append(imported, c)
+		}
+	}
+	return imported
+}
+
 // The plan's notes and skips then say what this run did: a picked candidate that failed to write
 // has no notes, and the entries of a candidate the user picked aren't listed as left behind.
-func (plan *ImportPlan) keepOnly(written []string) {
-	unwritten := func(name string) bool { return !slices.Contains(written, name) }
-	maps.DeleteFunc(plan.DroppedSettings, func(name string, _ []string) bool { return unwritten(name) })
-	maps.DeleteFunc(plan.StaticHeaders, func(name string, _ map[string]string) bool { return unwritten(name) })
+func (plan *ImportPlan) keepOnly(imported []Candidate) {
+	notImported := func(name string) bool {
+		return !slices.ContainsFunc(imported, func(c Candidate) bool { return c.Server.Name == name })
+	}
+	maps.DeleteFunc(plan.DroppedSettings, func(name string, _ []string) bool { return notImported(name) })
+	maps.DeleteFunc(plan.StaticHeaders, func(name string, _ map[string]string) bool { return notImported(name) })
 	plan.Skipped = slices.DeleteFunc(plan.Skipped, func(s SkippedServer) bool {
+		entry := AgentEntry{Agent: s.Agent, Name: s.Name}
+		imports := slices.ContainsFunc(imported, func(c Candidate) bool { return slices.Contains(c.From, entry) })
 		// A second config's line says the first is imported instead; untrue once the user unticked it.
-		return plan.writtenFrom(written, AgentEntry{Agent: s.Agent, Name: s.Name}) ||
-			(s.Reason == SkipSecondConfig && unwritten(NormalizeName(s.Name)))
+		return imports || (s.Reason == SkipSecondConfig && !importsTheName(imported, s.Name))
 	})
 }
 
-func (plan ImportPlan) writtenFrom(written []string, entry AgentEntry) bool {
-	return slices.ContainsFunc(plan.Candidates, func(c Candidate) bool {
-		return slices.Contains(written, c.Server.Name) && slices.Contains(c.From, entry)
+func importsTheName(imported []Candidate, name string) bool {
+	return slices.ContainsFunc(imported, func(c Candidate) bool {
+		return slices.ContainsFunc(
+			c.From,
+			func(e AgentEntry) bool { return NormalizeName(e.Name) == NormalizeName(name) },
+		)
 	})
 }
 

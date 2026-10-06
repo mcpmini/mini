@@ -116,6 +116,10 @@ func TestApp_aSmallWindowShowsOnlyAskToEnlarge(t *testing.T) {
 			t.Errorf("%dx%d renders %q", size.Width, size.Height, got)
 		}
 	}
+	first := a.screens[0].(*fakeScreen)
+	if cmd := send(a, "space", "enter"); cmd != nil || len(first.got) != 0 {
+		t.Errorf("keys behind the small-window message reached the screen: %v", first.got)
+	}
 	a.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
 	if got := shown(a); !strings.HasPrefix(got, "First") {
 		t.Errorf("60x12 renders %q, want the screen", got)

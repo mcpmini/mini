@@ -135,19 +135,28 @@ func (s *importScreen) unpickedReason(c initcmd.Candidate) string {
 }
 
 // Two configs under one name often share a target, so the row says what sets them apart.
+// The first config usually holds the name itself; one imported under another name may only list it.
 func (s *importScreen) primaryOf(second initcmd.Candidate) (initcmd.Candidate, bool) {
 	name := initcmd.NormalizeName(second.From[0].Name)
+	var listsName []initcmd.Candidate
 	for _, c := range s.candidates {
 		if c.Reason == initcmd.SkipSecondConfig || c.Server.Name == second.Server.Name {
 			continue
 		}
-		for _, from := range c.From {
-			if initcmd.NormalizeName(from.Name) == name {
-				return c, true
-			}
+		if c.Server.Name == name {
+			return c, true
+		}
+		if slices.ContainsFunc(
+			c.From,
+			func(e initcmd.AgentEntry) bool { return initcmd.NormalizeName(e.Name) == name },
+		) {
+			listsName = append(listsName, c)
 		}
 	}
-	return initcmd.Candidate{}, false
+	if len(listsName) == 0 {
+		return initcmd.Candidate{}, false
+	}
+	return listsName[0], true
 }
 
 // A long command would crowd out the other columns.
