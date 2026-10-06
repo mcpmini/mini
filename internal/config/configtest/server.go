@@ -14,7 +14,11 @@ func WriteServer(t testing.TB, dir string, server config.ServerConfig) {
 	if !config.ValidServerName.MatchString(server.Name) {
 		t.Fatalf("invalid server name %q", server.Name)
 	}
-	testutil.WriteFileBytes(t, config.ServerPath(dir, server.Name), writeYAML(t, server))
+	data, err := config.EncodeServerFile(server)
+	if err != nil {
+		t.Fatalf("encode server %s: %v", server.Name, err)
+	}
+	testutil.WriteFileBytes(t, config.ServerPath(dir, server.Name), data)
 }
 
 func writeYAML(t testing.TB, value any) []byte {

@@ -1,10 +1,7 @@
 package config
 
 import (
-	"bytes"
-	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"reflect"
 
@@ -58,7 +55,7 @@ func (e projectionEdit) apply(data []byte) ([]byte, *ProjectionConfig, error) {
 	if reflect.DeepEqual(want, before.Projections[e.tool]) {
 		return data, want, nil
 	}
-	edited, err := yaml.Marshal(doc)
+	edited, err := encodeServerYAML(doc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -97,18 +94,11 @@ func parseEditableServerFile(path string, data []byte) (*ServerConfig, *yaml.Nod
 	if err != nil {
 		return nil, nil, fmt.Errorf("the server file does not load: %w", err)
 	}
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	var doc, extra yaml.Node
-	if err := decoder.Decode(&doc); err != nil {
-		return nil, nil, err
+	doc, err := parseServerDocument(data)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", path, err)
 	}
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return nil, nil, fmt.Errorf("%s holds more than one YAML document", path)
-	}
-	if len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
-		return nil, nil, fmt.Errorf("%s is not a YAML mapping", path)
-	}
-	return sc, &doc, nil
+	return sc, doc, nil
 }
 
 // keepAlias carries the saved alias onto the new rule: the alias is the user's, written in the file,
@@ -158,32 +148,4 @@ func sameRulesExcept(before, after map[string]*ProjectionConfig, tool string) bo
 	delete(before, tool)
 	delete(after, tool)
 	return maps.EqualFunc(before, after, func(a, b *ProjectionConfig) bool { return reflect.DeepEqual(a, b) })
-}
-
-func mappingValue(node *yaml.Node, key string) *yaml.Node {
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			return node.Content[i+1]
-		}
-	}
-	return nil
-}
-
-func setMappingValue(node *yaml.Node, key string, value *yaml.Node) {
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			node.Content[i+1] = value
-			return
-		}
-	}
-	node.Content = append(node.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}, value)
-}
-
-func removeMappingValue(node *yaml.Node, key string) {
-	for i := 0; i+1 < len(node.Content); i += 2 {
-		if node.Content[i].Value == key {
-			node.Content = append(node.Content[:i], node.Content[i+2:]...)
-			return
-		}
-	}
 }
