@@ -310,7 +310,6 @@ func TestRunAddImport(t *testing.T) {
 		{"--from-claude", "claude.json", `{"mcpServers":{"svc":{"command":"run"}}}`, headersTip},
 		{"--from-cursor", "mcp.json", `{"mcpServers":{"svc":{"command":"run"}}}`, headersTip},
 		{"--from-codex", "config.toml", "[mcp_servers.svc]\ncommand = \"run\"\n", envTip},
-		{"--from-gemini", "settings.json", `{"mcpServers":{"svc":{"command":"run"}}}`, headersTip},
 		{"--from-openclaw", "openclaw.json", `{"mcp":{"servers":{"svc":{"command":"run"}}}}`, envTip},
 	}
 	for _, src := range sources {
@@ -360,11 +359,11 @@ func TestRunAddImport(t *testing.T) {
 	})
 
 	t.Run("a config with no servers says so", func(t *testing.T) {
-		path := filepath.Join(t.TempDir(), "settings.json")
+		path := filepath.Join(t.TempDir(), "mcp.json")
 		testutil.WriteFile(t, path, `{}`)
 		var out bytes.Buffer
 
-		if err := runAdd(t.TempDir(), []string{"--from-gemini", path}, &out); err != nil {
+		if err := runAdd(t.TempDir(), []string{"--from-cursor", path}, &out); err != nil {
 			t.Fatalf("runAdd: %v", err)
 		}
 

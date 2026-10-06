@@ -365,34 +365,6 @@ func TestIntegrationCLI_add_stdioCommand(t *testing.T) {
 	}
 }
 
-func writeGeminiConfigFile(t *testing.T) string {
-	t.Helper()
-	data, _ := json.Marshal(map[string]any{
-		"mcpServers": map[string]any{
-			"gemini-server": map[string]any{
-				"command": "npx",
-				"args":    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
-			},
-		},
-	})
-	path := filepath.Join(t.TempDir(), "settings.json")
-	testutil.WriteFileBytes(t, path, data)
-	return path
-}
-
-func TestIntegrationCLI_init_importFromGemini(t *testing.T) {
-	bin := miniBin(t)
-	cfg := t.TempDir()
-	geminiConfig := writeGeminiConfigFile(t)
-	_, _, code := run(t, bin, cfg, "init", "--yes", "--from", geminiConfig)
-	if code != 0 {
-		t.Errorf("init --from gemini should exit 0, got %d", code)
-	}
-	if _, err := os.Stat(filepath.Join(cfg, "servers", "gemini-server.yaml")); err != nil {
-		t.Errorf("expected gemini-server.yaml to exist: %v", err)
-	}
-}
-
 // versionPattern matches valid outputs from internal/version.computeVersion:
 //   - "a1b2c3d"            — 7-char hex hash, clean tree
 //   - "a1b2c3d+dirty"      — hash, dirty tree

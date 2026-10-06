@@ -66,7 +66,6 @@ func bindAddFlags(cmd *cobra.Command, sf *serverFlags, imports *importFlags) {
 	flags.StringVar(&imports.claude, "from-claude", "", "import from Claude Desktop / Claude Code config JSON")
 	flags.StringVar(&imports.cursor, "from-cursor", "", "import from Cursor mcp.json config")
 	flags.StringVar(&imports.codex, "from-codex", "", "import from Codex config.toml")
-	flags.StringVar(&imports.gemini, "from-gemini", "", "import from Gemini CLI settings.json")
 	flags.StringVar(&imports.openclaw, "from-openclaw", "", "import from OpenClaw (MoltBot) openclaw.json config")
 }
 
@@ -128,12 +127,12 @@ func runAddServer(p addParams) error {
 }
 
 type importFlags struct {
-	claude, cursor, codex, gemini, openclaw string
+	claude, cursor, codex, openclaw string
 }
 
 func importCount(f importFlags) int {
 	count := 0
-	for _, path := range []string{f.claude, f.cursor, f.codex, f.gemini, f.openclaw} {
+	for _, path := range []string{f.claude, f.cursor, f.codex, f.openclaw} {
 		if path != "" {
 			count++
 		}
@@ -172,8 +171,6 @@ func selectedImport(f importFlags) importSource {
 		return importSource{path: f.cursor, read: agents.ReadClaude, tip: headersTip}
 	case f.codex != "":
 		return importSource{path: f.codex, read: agents.ReadCodex, tip: envTip}
-	case f.gemini != "":
-		return importSource{path: f.gemini, read: agents.ReadGemini, tip: headersTip}
 	default:
 		return importSource{path: f.openclaw, read: agents.ReadOpenClaw, tip: envTip}
 	}
