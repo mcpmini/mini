@@ -165,6 +165,16 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 			[]string{"gh"},
 			nil,
 		},
+		{
+			"an unusable name goes unmentioned when its config comes in under another name",
+			[]agents.Agent{
+				agentWith("Claude Code", map[string]agents.Server{"github": a}),
+				agentWith("Cursor", map[string]agents.Server{"!!!": a}),
+			},
+			nil,
+			[]string{"github"},
+			nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -274,13 +284,13 @@ func TestPlanImport_namesWhatItCantImport(t *testing.T) {
 	}
 	plan := planFor(agentList)
 	want := []SkippedServer{
-		{Agent: "Codex", Name: "!!!", Reason: SkipEmptyName},
 		{
 			Agent:  "Codex",
 			Name:   "templated",
 			Reason: SkipUnexpandableRefs,
 			Refs:   []string{"an environment variable in url"},
 		},
+		{Agent: "Codex", Name: "!!!", Reason: SkipEmptyName},
 	}
 	if len(plan.Servers) != 0 || !reflect.DeepEqual(plan.Skipped, want) {
 		t.Errorf("servers = %+v\nskipped = %+v\nwant none and %+v", plan.Servers, plan.Skipped, want)

@@ -85,7 +85,7 @@ func PlanImport(p ImportParams) ImportPlan {
 }
 
 func (p ImportParams) readCandidates(plan *ImportPlan) []agentEntry {
-	var importable []agentEntry
+	var candidates []agentEntry
 	for _, agent := range p.Agents {
 		servers, err := agent.Read(agent.ConfigPath)
 		if err != nil {
@@ -95,38 +95,33 @@ func (p ImportParams) readCandidates(plan *ImportPlan) []agentEntry {
 			)
 			continue
 		}
-		for _, name := range slices.Sorted(maps.Keys(servers)) {
-			e := agentEntry{agent: agent.Name, name: name, server: servers[name]}
-			if !p.newToMini(e) {
-				continue
-			}
-			if skip, ok := skipReason(e); ok {
-				plan.Skipped = append(plan.Skipped, skip)
-				continue
-			}
-			importable = append(importable, e)
-		}
+		candidates = append(candidates, p.candidatesIn(plan, agent.Name, servers)...)
 	}
-	return importable
+	return candidates
+}
+
+func (p ImportParams) candidatesIn(plan *ImportPlan, agent string, servers map[string]agents.Server) []agentEntry {
+	var candidates []agentEntry
+	for _, name := range slices.Sorted(maps.Keys(servers)) {
+		e := agentEntry{agent: agent, name: name, server: servers[name]}
+		if !p.newToMini(e) {
+			continue
+		}
+		if !e.server.Candidate() {
+			plan.Skipped = append(plan.Skipped, SkippedServer{
+				Agent: e.agent, Name: e.name, Reason: SkipUnexpandableRefs, Refs: e.server.UnexpandableRefs,
+			})
+			continue
+		}
+		candidates = append(candidates, e)
+	}
+	return candidates
 }
 
 // Left out with no summary line: there's nothing for the user to do about these.
 func (p ImportParams) newToMini(e agentEntry) bool {
 	return NormalizeName(e.name) != agents.MiniKey && !agents.IsMiniEntry(e.server.Config, p.SelfPath) &&
 		!p.Written.hasSame(e.server.Config)
-}
-
-func skipReason(e agentEntry) (SkippedServer, bool) {
-	skip := SkippedServer{Agent: e.agent, Name: e.name}
-	switch {
-	case NormalizeName(e.name) == "":
-		skip.Reason = SkipEmptyName
-	case !e.server.Candidate():
-		skip.Reason, skip.Refs = SkipUnexpandableRefs, e.server.UnexpandableRefs
-	default:
-		return SkippedServer{}, false
-	}
-	return skip, true
 }
 
 // One server under several names is imported once: twice would expose its tools twice.
@@ -153,7 +148,7 @@ func (plan *ImportPlan) add(g *serverGroup, taken takenNames) {
 	name, ok := taken.firstFree(g)
 	if !ok {
 		// Another config under a name in use would need a new name the user never chose.
-		plan.skipAll(g, taken.takenReason)
+		plan.skipAll(g, taken.noFreeNameReason)
 		return
 	}
 	taken.imported[name] = true
@@ -165,15 +160,18 @@ func (plan *ImportPlan) add(g *serverGroup, taken takenNames) {
 
 func (t takenNames) firstFree(g *serverGroup) (string, bool) {
 	for _, e := range g.entries {
-		if name := NormalizeName(e.name); !t.inMini[name] && !t.imported[name] {
+		if name := NormalizeName(e.name); name != "" && !t.inMini[name] && !t.imported[name] {
 			return name, true
 		}
 	}
 	return "", false
 }
 
-func (t takenNames) takenReason(e agentEntry) SkipReason {
-	if t.inMini[NormalizeName(e.name)] {
+func (t takenNames) noFreeNameReason(e agentEntry) SkipReason {
+	switch name := NormalizeName(e.name); {
+	case name == "":
+		return SkipEmptyName
+	case t.inMini[name]:
 		return SkipNameInMini
 	}
 	return SkipSecondConfig
