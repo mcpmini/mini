@@ -14,8 +14,8 @@ import (
 
 const OAuthCheckTimeout = 5 * time.Second
 
-// OAuthTargets are the named servers a check could prove need an OAuth login. The login step
-// can't list an OAuth server until something has recorded that it needs OAuth.
+// OAuthTargets are the named servers a probe could prove need OAuth; the login step lists an
+// OAuth server only once that is recorded.
 func OAuthTargets(configDir string, names []string) []config.ServerConfig {
 	servers, err := config.LoadServers(configDir)
 	if err != nil {
@@ -30,7 +30,7 @@ func OAuthTargets(configDir string, names []string) []config.ServerConfig {
 	return targets
 }
 
-// CheckOAuth probes the servers at once and waits for every probe to finish or time out.
+// CheckOAuth blocks until every probe finishes or times out.
 func CheckOAuth(configDir string, servers []config.ServerConfig, clk clock.Clock) {
 	var wg sync.WaitGroup
 	for _, sc := range servers {
