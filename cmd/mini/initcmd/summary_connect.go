@@ -92,10 +92,10 @@ func writeInactiveMini(b *strings.Builder, r Report) {
 }
 
 func manualStep(agent agents.Agent, mini agents.MiniEntry) string {
-	switch {
-	case agent.Name == "Claude Code":
+	switch agent.Name {
+	case "Claude Code":
 		return "claude mcp add --scope user " + agents.MiniKey + " -- " + shellCommand(mini)
-	case agent.RemoveDisables:
+	case "Codex":
 		return codexSnippet(mini)
 	}
 	return jsonSnippet(mini)

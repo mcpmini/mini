@@ -116,9 +116,9 @@ func TestSummary_importAndFailures(t *testing.T) {
 
 func TestSummary_connected(t *testing.T) {
 	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
-	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml", RemoveDisables: true}
+	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"}
 	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
-	gemini := agents.Agent{Name: "Gemini CLI", ConfigPath: "/home/u/.gemini/settings.json"}
+	windsurf := agents.Agent{Name: "Windsurf", ConfigPath: "/home/u/.codeium/windsurf/mcp_config.json"}
 	got := Summary(Report{Mini: testMini, Connected: []AgentResult{
 		{
 			Agent:   claude,
@@ -130,7 +130,7 @@ func TestSummary_connected(t *testing.T) {
 			Changed: []string{"files"},
 		},
 		{Agent: codex, Err: errors.New("inline table")},
-		{Agent: gemini, Created: true},
+		{Agent: windsurf, Created: true},
 		{Agent: cursor},
 	}})
 	requireLines(
@@ -140,15 +140,15 @@ func TestSummary_connected(t *testing.T) {
 		"  linear stays in Claude Code: mini's linear failed its connection check: needs a login\n",
 		"  files stays in Claude Code: it changed after it was checked\n",
 		"Could not connect Codex: inline table\nAdd mini to /home/u/.codex/config.toml by hand:\n  [mcp_servers.mini]\n",
-		"Gemini CLI: created /home/u/.gemini/settings.json; to undo: rm /home/u/.gemini/settings.json\n",
-		"Restart Claude Code and Gemini CLI to start using mini.\n",
+		"Windsurf: created /home/u/.codeium/windsurf/mcp_config.json; to undo: rm /home/u/.codeium/windsurf/mcp_config.json\n",
+		"Restart Claude Code and Windsurf to start using mini.\n",
 	)
 }
 
 func TestSummary_howToConnectByHand(t *testing.T) {
 	list := []agents.Agent{
 		{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"},
-		{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml", RemoveDisables: true},
+		{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"},
 		{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"},
 	}
 	mini := agents.MiniEntry{Command: "/Users/u/My Apps/mini", Args: []string{"connect"}}
