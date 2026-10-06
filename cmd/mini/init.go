@@ -6,7 +6,6 @@ import (
 	"io"
 	"maps"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -268,50 +267,4 @@ func importConfirmer(p prompter, autoYes bool) func(string) bool {
 func autoConfirm(question string) bool {
 	fmt.Println(question + " [auto: yes]")
 	return true
-}
-
-// isSelfEntry returns true if cmd resolves to the same binary as selfPath,
-// so init doesn't re-import mini itself when it's already in the agent's MCP
-// config (handles bare names, symlinks, and alternate build paths).
-func isSelfEntry(cmd, selfPath string) bool {
-	if cmd == "" || selfPath == "" {
-		return false
-	}
-	candidates := dedup([]string{
-		resolveExe(selfPath),
-		resolveExe(filepath.Base(selfPath)),
-	})
-	cmdResolved := resolveExe(cmd)
-	for _, c := range candidates {
-		if cmdResolved == c {
-			return true
-		}
-	}
-	return false
-}
-
-// resolveExe resolves a command (absolute path, relative path, or bare name)
-// to its real path on disk, following symlinks. Returns p unchanged on error.
-func resolveExe(p string) string {
-	if !filepath.IsAbs(p) {
-		if found, err := exec.LookPath(p); err == nil {
-			p = found
-		}
-	}
-	if r, err := filepath.EvalSymlinks(p); err == nil {
-		return r
-	}
-	return p
-}
-
-func dedup(ss []string) []string {
-	seen := map[string]bool{}
-	out := ss[:0]
-	for _, s := range ss {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
 }

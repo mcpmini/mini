@@ -1,8 +1,10 @@
 package agents
 
 import (
+	"maps"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -47,9 +49,6 @@ func TestReadClientConfigs(t *testing.T) {
 		{"claude desktop stdio entry, env as a sorted KEY=VALUE list", ReadClaude, "claude.json",
 			`{"mcpServers":{"s":{"command":"npx","args":["server-github"],"env":{"B":"2","A":"1"}}}}`,
 			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Args: []string{"server-github"}, Env: []string{"A=1", "B=2"}}}},
-		{"claude code project entries", ReadClaude, "claude.json",
-			`{"projects":{"/home/user/proj":{"mcpServers":{"s":{"command":"run"}}}}}`,
-			Server{Config: stdio("s", "run")}},
 		{"claude http entry by url keeps headers", ReadClaude, "claude.json",
 			`{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH}"}}}}`,
 			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH}"})}},
@@ -217,14 +216,18 @@ func TestServerCandidate(t *testing.T) {
 	}
 }
 
-func TestReadClaude_duplicateServerAcrossProjectsKeepsOne(t *testing.T) {
-	path := writeClientConfig(t, "claude.json", `{"projects":{
-		"/a":{"mcpServers":{"dup":{"command":"first"}}},
-		"/b":{"mcpServers":{"dup":{"command":"second"}}}
-	}}`)
+func TestReadClaude_projectServersAreLeftToTheirProjects(t *testing.T) {
+	path := writeClientConfig(t, "claude.json", `{
+		"mcpServers":{"user":{"command":"run"}},
+		"projects":{"/home/user/proj":{"mcpServers":{"project":{"command":"run"}}}}
+	}`)
 	got, err := ReadClaude(path)
-	if err != nil || len(got) != 1 {
-		t.Fatalf("ReadClaude = %v, %v; want the one dup server", got, err)
+	if err != nil || !reflect.DeepEqual(slices.Sorted(maps.Keys(got)), []string{"user"}) {
+		t.Fatalf("ReadClaude = %v, %v; want only the user-scoped server", got, err)
+	}
+	onlyProjects := writeClientConfig(t, "claude.json", `{"projects":{"/home/user/proj":{"mcpServers":{"project":{"command":"run"}}}}}`)
+	if got, err := ReadClaude(onlyProjects); err != nil || len(got) != 0 {
+		t.Fatalf("ReadClaude with only project servers = %v, %v; want nothing", got, err)
 	}
 }
 

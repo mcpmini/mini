@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/catalog"
 )
 
@@ -66,10 +67,10 @@ func addRequestedCatalogEntries(p catalogStepParams) error {
 	if err != nil {
 		return err
 	}
-	configured := configuredKeys(servers)
+	configured := initcmd.NewConfiguredKeys(servers)
 	toWrite := make([]catalog.Entry, 0, len(p.requested))
 	for _, entry := range p.requested {
-		if isConfigured(configured, entry) {
+		if configured.Has(entry) {
 			fmt.Fprintf(p.out, "  %s already configured in mini\n", entry.Name)
 			continue
 		}

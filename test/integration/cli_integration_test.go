@@ -305,20 +305,19 @@ func TestIntegrationCLI_add_FromClaude(t *testing.T) {
 	}
 }
 
-func TestIntegrationCLI_add_FromClaudeCode(t *testing.T) {
+func TestIntegrationCLI_add_FromClaudeCodeImportsOnlyUserServers(t *testing.T) {
 	cfg := t.TempDir()
-	path := writeClaudeCodeConfig(t, map[string]any{
-		"code-server": map[string]any{
-			"command": "npx",
-			"args":    []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"},
-		},
-	})
+	server := map[string]any{"command": "npx", "args": []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp"}}
+	path := writeClaudeCodeConfig(t, map[string]any{"user-server": server}, map[string]any{"project-server": server})
 	_, _, code := runCLI(t, cfg, "add", "--from-claude", path)
 	if code != 0 {
 		t.Fatalf("add --from-claude (Claude Code format) should exit 0, got %d", code)
 	}
-	if _, err := os.Stat(filepath.Join(cfg, "servers", "code-server.yaml")); err != nil {
-		t.Errorf("expected code-server.yaml to exist: %v", err)
+	if _, err := os.Stat(filepath.Join(cfg, "servers", "user-server.yaml")); err != nil {
+		t.Errorf("expected user-server.yaml to exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cfg, "servers", "project-server.yaml")); !os.IsNotExist(err) {
+		t.Errorf("project-server.yaml was imported (stat err %v); project servers stay with their project", err)
 	}
 }
 
@@ -585,11 +584,12 @@ func writeClaudeConfig(t *testing.T, serverDef any) string {
 	return path
 }
 
-func writeClaudeCodeConfig(t *testing.T, servers map[string]any) string {
+func writeClaudeCodeConfig(t *testing.T, userServers, projectServers map[string]any) string {
 	t.Helper()
 	data, _ := json.Marshal(map[string]any{
+		"mcpServers": userServers,
 		"projects": map[string]any{
-			"/some/path": map[string]any{"mcpServers": servers},
+			"/some/path": map[string]any{"mcpServers": projectServers},
 		},
 	})
 	path := filepath.Join(t.TempDir(), "claude-code.json")

@@ -51,19 +51,6 @@ func TestParseCatalogSelection(t *testing.T) {
 	}
 }
 
-func TestAvailableCatalogEntriesFiltersConfiguredNamesAndURLs(t *testing.T) {
-	entries := []catalog.Entry{
-		{Name: "github", URL: "https://github.example/mcp"},
-		{Name: "linear", URL: "https://linear.example/mcp"},
-		{Name: "notion", URL: "https://notion.example/mcp"},
-	}
-	servers := []config.ServerConfig{{Name: "GitHub"}, {Name: "my-linear", URL: "https://LINEAR.example/mcp/"}}
-	available := availableCatalogEntries(entries, servers)
-	if !reflect.DeepEqual(available, entries[2:]) {
-		t.Errorf("available = %v, want only notion", available)
-	}
-}
-
 func TestAvailableCatalogEntriesGroupsCategoriesInFirstSeenOrder(t *testing.T) {
 	entries := []catalog.Entry{
 		{Name: "a", Category: "Dev"},

@@ -39,7 +39,7 @@ func (imp serverImport) addAll(servers map[string]agents.Server) (added []string
 	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		server := servers[name]
-		if isSelfEntry(server.Config.Command, selfPath) {
+		if agents.IsMiniEntry(server.Config, selfPath) {
 			continue
 		}
 		if reason := notImportedReason(server); reason != "" {
@@ -135,33 +135,5 @@ func configuredDifferences(path string, imported config.ServerConfig) ([]string,
 	if yaml.Unmarshal(data, &configured) != nil {
 		return nil, fmt.Errorf("could not compare it with %s, which does not parse", path)
 	}
-	return connectionDifferences(configured, imported), nil
-}
-
-func connectionDifferences(configured, imported config.ServerConfig) []string {
-	fields := []struct {
-		name string
-		same bool
-	}{
-		{"transport", transportOrStdio(configured.Transport) == transportOrStdio(imported.Transport)},
-		{"url", configured.URL == imported.URL},
-		{"command", configured.Command == imported.Command},
-		{"args", slices.Equal(configured.Args, imported.Args)},
-		{"env", slices.Equal(slices.Sorted(slices.Values(configured.Env)), slices.Sorted(slices.Values(imported.Env)))},
-		{"headers", maps.Equal(configured.Headers, imported.Headers)},
-	}
-	var differences []string
-	for _, field := range fields {
-		if !field.same {
-			differences = append(differences, field.name)
-		}
-	}
-	return differences
-}
-
-func transportOrStdio(transport string) string {
-	if transport == "" {
-		return "stdio"
-	}
-	return transport
+	return agents.ConnectionDifferences(configured, imported), nil
 }
