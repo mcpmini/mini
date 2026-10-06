@@ -32,7 +32,6 @@ func Known(home string) []Agent {
 		codex(home),
 		{Name: "Cursor", ConfigPath: filepath.Join(home, ".cursor", "mcp.json"), Read: ReadClaude},
 		{Name: "Windsurf", ConfigPath: filepath.Join(home, ".codeium", "windsurf", "mcp_config.json"), Read: ReadClaude},
-		{Name: "Gemini CLI", ConfigPath: filepath.Join(home, ".gemini", "settings.json"), Read: ReadGemini},
 		claudeDesktop(home),
 	}
 }

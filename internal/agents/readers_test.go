@@ -130,21 +130,6 @@ func TestReadClientConfigs(t *testing.T) {
 		{"cursor editor placeholders are kept in the agent", ReadClaude, "mcp.json",
 			`{"mcpServers":{"s":{"command":"run","env":{"ROOT":"${workspaceFolder}/data"}}}}`,
 			Server{Config: config.ServerConfig{Name: "s", Command: "run", Env: []string{"ROOT=${workspaceFolder}/data"}}, UnexpandableRefs: []string{"an editor placeholder like ${userHome}"}}},
-		{"gemini httpUrl entry", ReadGemini, "settings.json",
-			`{"mcpServers":{"s":{"httpUrl":"https://example.com/mcp","timeout":30000}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", nil)}},
-		{"gemini url (SSE) entry", ReadGemini, "settings.json",
-			`{"mcpServers":{"s":{"url":"https://example.com/sse"}}}`,
-			Server{Config: remote("s", "https://example.com/sse", nil)}},
-		{"gemini $VAR becomes ${VAR}", ReadGemini, "settings.json",
-			`{"mcpServers":{"s":{"command":"node","args":["server.js"],"env":{"TOKEN":"$EXAMPLE_TOKEN"}}}}`,
-			Server{Config: config.ServerConfig{Name: "s", Command: "node", Args: []string{"server.js"}, Env: []string{"TOKEN=${EXAMPLE_TOKEN}"}}}},
-		{"gemini $VAR in args is kept in the agent", ReadGemini, "settings.json",
-			`{"mcpServers":{"s":{"command":"node","args":["$HOME/server.js"]}}}`,
-			Server{Config: stdio("s", "node", "$HOME/server.js"), UnexpandableRefs: []string{"an environment variable in command or args"}}},
-		{"gemini tool lists are dropped and cwd is named", ReadGemini, "settings.json",
-			`{"mcpServers":{"s":{"command":"node","cwd":"/srv","includeTools":["read"]}}}`,
-			Server{Config: stdio("s", "node"), IgnoredRunSettings: []string{"cwd"}}},
 		{"openclaw stdio entry", ReadOpenClaw, "openclaw.json",
 			`{"mcp":{"servers":{"s":{"command":"npx","env":{"ROOT":"/data"}}}}}`,
 			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Env: []string{"ROOT=/data"}}}},
@@ -171,15 +156,15 @@ func TestReadClientConfigs(t *testing.T) {
 }
 
 func TestReadClientConfigs_noServersIsAnEmptyResult(t *testing.T) {
-	got, err := ReadGemini(writeClientConfig(t, "settings.json", `{}`))
+	got, err := ReadClaude(writeClientConfig(t, "mcp.json", `{}`))
 	if err != nil || len(got) != 0 {
-		t.Fatalf("ReadGemini = %v, %v; want nothing and no error", got, err)
+		t.Fatalf("ReadClaude = %v, %v; want nothing and no error", got, err)
 	}
 }
 
 func TestReadClientConfigs_unparsableConfigIsAnError(t *testing.T) {
 	for name, read := range map[string]readerFunc{
-		"claude": ReadClaude, "codex": ReadCodex, "gemini": ReadGemini, "openclaw": ReadOpenClaw,
+		"claude": ReadClaude, "codex": ReadCodex, "openclaw": ReadOpenClaw,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := read(writeClientConfig(t, "bad", "not = valid = anything {")); err == nil {

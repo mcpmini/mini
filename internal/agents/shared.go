@@ -55,7 +55,6 @@ func (s Server) Candidate() bool {
 type entryFormat struct {
 	// Other unmapped keys are dropped silently, so a setting an agent adds later never blocks an import.
 	ignoredRunSettings []string
-	expandsBareVars    bool
 	editorPlaceholders bool
 }
 
@@ -109,10 +108,8 @@ func envList(env map[string]string) []string {
 
 var (
 	cursorEnvRef = regexp.MustCompile(`\$\{env:([A-Za-z_][A-Za-z0-9_]*)\}`)
-	bareEnvRef   = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)`)
 	miniEnvRef   = regexp.MustCompile(`\$\{[A-Za-z_][A-Za-z0-9_]*\}`)
 	bracedRef    = regexp.MustCompile(`\$\{`)
-	braceOrBare  = regexp.MustCompile(`\$(\{|[A-Za-z_])`)
 )
 
 func translateRefs(values map[string]string, f entryFormat) map[string]string {
@@ -121,25 +118,17 @@ func translateRefs(values map[string]string, f entryFormat) map[string]string {
 	}
 	out := make(map[string]string, len(values))
 	for k, v := range values {
-		v = cursorEnvRef.ReplaceAllString(v, "$${$1}")
-		if f.expandsBareVars {
-			v = bareEnvRef.ReplaceAllString(v, "$${$1}")
-		}
-		out[k] = v
+		out[k] = cursorEnvRef.ReplaceAllString(v, "$${$1}")
 	}
 	return out
 }
 
 func unexpandableFields(sc config.ServerConfig, f entryFormat) []string {
-	ref := bracedRef
-	if f.expandsBareVars {
-		ref = braceOrBare
-	}
 	var fields []string
-	if ref.MatchString(sc.URL) {
+	if bracedRef.MatchString(sc.URL) {
 		fields = append(fields, "an environment variable in url")
 	}
-	if ref.MatchString(sc.Command) || slices.ContainsFunc(sc.Args, ref.MatchString) {
+	if bracedRef.MatchString(sc.Command) || slices.ContainsFunc(sc.Args, bracedRef.MatchString) {
 		fields = append(fields, "an environment variable in command or args")
 	}
 	values := append(slices.Clone(sc.Env), slices.Collect(maps.Values(sc.Headers))...)

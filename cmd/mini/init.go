@@ -143,7 +143,6 @@ var fromClientNames = map[string]string{
 	"claude-desktop": "Claude Desktop",
 	"cursor":         "Cursor",
 	"windsurf":       "Windsurf",
-	"gemini":         "Gemini CLI",
 	"codex":          "Codex",
 }
 
