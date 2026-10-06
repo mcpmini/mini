@@ -230,7 +230,8 @@ func TestCall_401AfterReplay_returnsReauthError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected terminal error")
 	}
-	if !strings.Contains(err.Error(), "myserver requires re-authorization") || !strings.Contains(err.Error(), "mini auth myserver") {
+	if !strings.Contains(err.Error(), "myserver requires re-authorization") ||
+		!strings.Contains(err.Error(), "mini auth myserver") {
 		t.Errorf("terminal error should name server and remedy, got: %v", err)
 	}
 	if strings.Count(err.Error(), "re-authorization") != 1 || !errors.Is(err, ErrReauthRequired) {

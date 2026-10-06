@@ -11,7 +11,7 @@ import (
 
 func StartUnixServer(t *testing.T, sock string, h http.HandlerFunc) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(sock), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(sock), 0o700); err != nil {
 		t.Fatalf("mkdir socket dir: %v", err)
 	}
 	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)

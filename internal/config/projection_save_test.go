@@ -26,7 +26,14 @@ projections:
 `)
 	before := mustLoadServer(t, dir)
 
-	saved, err := SaveServerProjection(ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: &ProjectionConfig{Exclude: []string{"hidden"}}})
+	saved, err := SaveServerProjection(
+		ServerProjectionParams{
+			ConfigDir:  dir,
+			ServerName: "svc",
+			Tool:       "first",
+			Projection: &ProjectionConfig{Exclude: []string{"hidden"}},
+		},
+	)
 
 	want := &ProjectionConfig{Alias: "public_first", Exclude: []string{"hidden"}}
 	if err != nil || !reflect.DeepEqual(saved, want) {
@@ -64,17 +71,24 @@ func TestSaveServerProjection_rules(t *testing.T) {
 		{
 			name: "deleting an aliased rule keeps only its alias",
 			file: "command: mini\nprojections:\n  first: {alias: public_first, exclude: [secret]}\n  second: {exclude: [private]}\n",
-			want: map[string]*ProjectionConfig{"first": {Alias: "public_first"}, "second": {Exclude: []string{"private"}}},
+			want: map[string]*ProjectionConfig{
+				"first":  {Alias: "public_first"},
+				"second": {Exclude: []string{"private"}},
+			},
 		},
 		{
 			name: "deleting the last rule removes it",
 			file: "command: mini\nprojections:\n  first: {exclude: [secret]}\n",
 		},
 		{
-			name:      "empty lists and maps save as no restriction",
-			file:      "command: mini\nprojections:\n  first: {include_only: [id], array_limits: {items: 5}}\n",
-			requested: &ProjectionConfig{IncludeOnly: []string{}, ArrayLimits: map[string]int{}, Exclude: []string{"secret"}},
-			want:      map[string]*ProjectionConfig{"first": {Exclude: []string{"secret"}}},
+			name: "empty lists and maps save as no restriction",
+			file: "command: mini\nprojections:\n  first: {include_only: [id], array_limits: {items: 5}}\n",
+			requested: &ProjectionConfig{
+				IncludeOnly: []string{},
+				ArrayLimits: map[string]int{},
+				Exclude:     []string{"secret"},
+			},
+			want: map[string]*ProjectionConfig{"first": {Exclude: []string{"secret"}}},
 		},
 		{
 			name:      "projections written as an alias of this rule alone become a block of their own",
@@ -99,15 +113,20 @@ func TestSaveServerProjection_rules(t *testing.T) {
 			dir := t.TempDir()
 			writeServerSource(t, dir, tc.file)
 
-			saved, err := SaveServerProjection(ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: tc.requested})
-
+			saved, err := SaveServerProjection(
+				ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: tc.requested},
+			)
 			if err != nil {
 				t.Fatalf("save: %v", err)
 			}
 			if !reflect.DeepEqual(saved, tc.want["first"]) {
 				t.Errorf("saved = %+v, want %+v", saved, tc.want["first"])
 			}
-			if got := mustLoadServer(t, dir).Projections; len(got)+len(tc.want) > 0 && !reflect.DeepEqual(got, tc.want) {
+			if got := mustLoadServer(
+				t,
+				dir,
+			).Projections; len(got)+len(tc.want) > 0 &&
+				!reflect.DeepEqual(got, tc.want) {
 				t.Errorf("loaded projections = %+v, want %+v", got, tc.want)
 			}
 		})
@@ -123,10 +142,23 @@ func TestSaveServerProjection_refusesFilesItCannotEditSafely(t *testing.T) {
 		{name: "a file that does not load", file: "command: mini\nprojections:\n  first: {include_only: 5}\n"},
 		{name: "a second YAML document", file: "command: mini\n---\ncommand: other\n"},
 		{name: "a malformed trailing document", file: "command: mini\n---\nprivate: [broken\n"},
-		{name: "projections inherited through a merge key", file: "base: &base\n  projections: {other: {exclude: [secret]}}\n<<: *base\ncommand: mini\n"},
-		{name: "projections written as an alias that also holds other rules", file: "command: mini\nrules: &rules {first: {exclude: [secret]}, other: {exclude: [private]}}\nprojections: *rules\n"},
-		{name: "a rule another tool shares through an anchor", file: "command: mini\nprojections:\n  first: &rule {exclude: [secret]}\n  other: *rule\n"},
-		{name: "a deletion that would expose an inherited rule", deleting: true, file: "command: mini\nbase: &base\n  projections: {first: {exclude: [inherited]}}\n<<: *base\nprojections: {first: {exclude: [direct]}}\n"},
+		{
+			name: "projections inherited through a merge key",
+			file: "base: &base\n  projections: {other: {exclude: [secret]}}\n<<: *base\ncommand: mini\n",
+		},
+		{
+			name: "projections written as an alias that also holds other rules",
+			file: "command: mini\nrules: &rules {first: {exclude: [secret]}, other: {exclude: [private]}}\nprojections: *rules\n",
+		},
+		{
+			name: "a rule another tool shares through an anchor",
+			file: "command: mini\nprojections:\n  first: &rule {exclude: [secret]}\n  other: *rule\n",
+		},
+		{
+			name:     "a deletion that would expose an inherited rule",
+			deleting: true,
+			file:     "command: mini\nbase: &base\n  projections: {first: {exclude: [inherited]}}\n<<: *base\nprojections: {first: {exclude: [direct]}}\n",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -137,7 +169,9 @@ func TestSaveServerProjection_refusesFilesItCannotEditSafely(t *testing.T) {
 				requested = nil
 			}
 
-			_, err := SaveServerProjection(ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: requested})
+			_, err := SaveServerProjection(
+				ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: requested},
+			)
 
 			if err == nil {
 				t.Fatal("save succeeded, want a refusal")
@@ -152,7 +186,9 @@ func TestSaveServerProjection_refusesFilesItCannotEditSafely(t *testing.T) {
 func TestSaveServerProjection_refusesAServerWithoutAFile(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := SaveServerProjection(ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: &ProjectionConfig{}})
+	_, err := SaveServerProjection(
+		ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: &ProjectionConfig{}},
+	)
 
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("save = %v, want not exist", err)
@@ -166,25 +202,32 @@ func TestSaveServerProjection_writesThroughASymlinkAndKeepsTheFileMode(t *testin
 	dir := t.TempDir()
 	target := filepath.Join(t.TempDir(), "server.yaml")
 	testutil.WriteFile(t, target, "command: echo\n")
-	if err := os.Chmod(target, 0640); err != nil {
+	if err := os.Chmod(target, 0o640); err != nil {
 		t.Fatal(err)
 	}
 	path := ServerPath(dir, "svc")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(target, path); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := SaveServerProjection(ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: &ProjectionConfig{Exclude: []string{"secret"}}}); err != nil {
+	if _, err := SaveServerProjection(
+		ServerProjectionParams{
+			ConfigDir:  dir,
+			ServerName: "svc",
+			Tool:       "first",
+			Projection: &ProjectionConfig{Exclude: []string{"secret"}},
+		},
+	); err != nil {
 		t.Fatal(err)
 	}
 
 	if link, err := os.Lstat(path); err != nil || link.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("server path is no longer a symlink: %v, %v", link, err)
 	}
-	if info, err := os.Stat(target); err != nil || info.Mode().Perm() != 0640 {
+	if info, err := os.Stat(target); err != nil || info.Mode().Perm() != 0o640 {
 		t.Errorf("target mode = %v, %v; want 0640", info, err)
 	}
 	if mustLoadServer(t, dir).Projections["first"] == nil {
@@ -198,7 +241,9 @@ func TestSaveServerProjection_leavesTheFileAloneWhenTheRuleIsTheSame(t *testing.
 	path := writeServerSource(t, dir, original)
 	requested := &ProjectionConfig{Exclude: []string{"secret"}}
 
-	saved, err := SaveServerProjection(ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: requested})
+	saved, err := SaveServerProjection(
+		ServerProjectionParams{ConfigDir: dir, ServerName: "svc", Tool: "first", Projection: requested},
+	)
 
 	want := &ProjectionConfig{Alias: "items", Exclude: []string{"secret"}}
 	if err != nil || !reflect.DeepEqual(saved, want) {

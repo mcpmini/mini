@@ -39,7 +39,9 @@ func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, ses
 	var wg sync.WaitGroup
 	scanner := transport.NewScanner(in)
 	for scanner.Scan() {
-		s.handleScannedLine(handleScannedLineParams{ctx: ctx, rawLine: scanner.Bytes(), session: session, writeOut: writeOut, wg: &wg})
+		s.handleScannedLine(
+			handleScannedLineParams{ctx: ctx, rawLine: scanner.Bytes(), session: session, writeOut: writeOut, wg: &wg},
+		)
 	}
 	// Signal any goroutines waiting for initialization that no more messages are coming.
 	// This unblocks them so they can return an error and allow wg.Wait() to complete.
@@ -170,7 +172,11 @@ func (s *Server) handleLine(ctx context.Context, line []byte, session *Session) 
 	return s.handleRequest(ctx, req, session)
 }
 
-func (s *Server) handleRequest(ctx context.Context, req transport.Request, session *Session) (transport.Response, bool) {
+func (s *Server) handleRequest(
+	ctx context.Context,
+	req transport.Request,
+	session *Session,
+) (transport.Response, bool) {
 	if !s.awaitInitialization(ctx, req, session) {
 		return errorResponse(req.ID, transport.CodeInvalidRequest, transport.NotInitializedMessage), true
 	}
@@ -357,7 +363,12 @@ func (s *Server) routeTool(ctx context.Context, name string, args json.RawMessag
 	return s.routeStandardTool(ctx, name, args, session)
 }
 
-func (s *Server) routeStandardTool(ctx context.Context, name string, args json.RawMessage, session *Session) (any, error) {
+func (s *Server) routeStandardTool(
+	ctx context.Context,
+	name string,
+	args json.RawMessage,
+	session *Session,
+) (any, error) {
 	switch name {
 	case "list":
 		return s.handleList(ctx, args)

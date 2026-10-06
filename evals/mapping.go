@@ -77,12 +77,12 @@ func (m *MCPMapping) WriteOp(tool string) *MCPMapping {
 func (m *MCPMapping) Dir(env *Env) (string, error) {
 	d := env.TempDir()
 	for tool, data := range m.responses {
-		if err := os.WriteFile(filepath.Join(d, tool+".json"), data, 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(d, tool+".json"), data, 0o600); err != nil {
 			return "", fmt.Errorf("write %s: %w", tool, err)
 		}
 	}
 	for tool, schema := range m.schemas {
-		if err := os.WriteFile(filepath.Join(d, tool+".schema.json"), schema, 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(d, tool+".schema.json"), schema, 0o600); err != nil {
 			return "", fmt.Errorf("write schema %s: %w", tool, err)
 		}
 	}

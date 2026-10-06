@@ -8,8 +8,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mcpmini/mini/internal/auth/provider"
 	"golang.org/x/oauth2"
+
+	"github.com/mcpmini/mini/internal/auth/provider"
 )
 
 func TestRefreshNeedsReauth_errorKinds_classifyReauthVsTransient(t *testing.T) {

@@ -366,7 +366,9 @@ func TestInlineProjections_AppliedOnAddConnection(t *testing.T) {
 	defer srv.Close()
 
 	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"name\":\"foo\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"name\":\"foo\"}"}]}`,
+	)
 
 	projCfg := &config.ProjectionConfig{Exclude: []string{"secret"}}
 	sc := config.ServerConfig{

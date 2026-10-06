@@ -76,7 +76,12 @@ func brokenServerResults(broken []config.SourceError) []upstreamResult {
 	return results
 }
 
-func checkServers(ctx context.Context, srv *server.Server, servers []config.ServerConfig, timeout time.Duration) []upstreamResult {
+func checkServers(
+	ctx context.Context,
+	srv *server.Server,
+	servers []config.ServerConfig,
+	timeout time.Duration,
+) []upstreamResult {
 	var results []upstreamResult
 	for _, sc := range servers {
 		if sc.IsEnabled() {
@@ -88,7 +93,12 @@ func checkServers(ctx context.Context, srv *server.Server, servers []config.Serv
 	return results
 }
 
-func checkServer(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {
+func checkServer(
+	ctx context.Context,
+	srv *server.Server,
+	sc config.ServerConfig,
+	timeout time.Duration,
+) upstreamResult {
 	r := probeUpstream(ctx, srv, sc, timeout)
 	if r.err == nil && sc.ProjectionsErr != nil {
 		r.err = projectionsError(sc)
@@ -96,7 +106,12 @@ func checkServer(ctx context.Context, srv *server.Server, sc config.ServerConfig
 	return r
 }
 
-func probeUpstream(ctx context.Context, srv *server.Server, sc config.ServerConfig, timeout time.Duration) upstreamResult {
+func probeUpstream(
+	ctx context.Context,
+	srv *server.Server,
+	sc config.ServerConfig,
+	timeout time.Duration,
+) upstreamResult {
 	clock := clock.System()
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	start := clock.Now()
@@ -138,7 +153,14 @@ func writeTestRow(w *tabwriter.Writer, r upstreamResult) {
 	if r.err != nil {
 		fmt.Fprintf(w, "FAIL\t%s\t%s\t%s\n", r.name, displayTransport(r.transport), singleLine(r.err))
 	} else {
-		fmt.Fprintf(w, "PASS\t%s\t%s\t%d tools\t(%s)\n", r.name, displayTransport(r.transport), r.tools, r.elapsed.Round(time.Millisecond))
+		fmt.Fprintf(
+			w,
+			"PASS\t%s\t%s\t%d tools\t(%s)\n",
+			r.name,
+			displayTransport(r.transport),
+			r.tools,
+			r.elapsed.Round(time.Millisecond),
+		)
 	}
 }
 

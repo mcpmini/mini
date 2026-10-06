@@ -111,7 +111,10 @@ func (s *Server) setServerProjection(p configureParams, visibleTool string) (any
 		ConfigDir: s.configDir, ServerName: p.ServerName, Tool: p.Tool, Projection: p.Projection,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("set_projection: not saved: %w; pass session_only:true to apply it to this session only", err)
+		return nil, fmt.Errorf(
+			"set_projection: not saved: %w; pass session_only:true to apply it to this session only",
+			err,
+		)
 	}
 	s.publishServerProjection(p.ServerName, p.Tool, projection)
 	return map[string]any{"ok": true, "scope": "server", "tool": toolFullName(p.ServerName, visibleTool)}, nil

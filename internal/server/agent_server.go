@@ -17,7 +17,14 @@ func (s *Server) agentServerConfig(raw *config.ServerConfig) (config.ServerConfi
 	if err := validateServerName(raw.Name); err != nil {
 		return config.ServerConfig{}, err
 	}
-	sc := config.ServerConfig{Name: raw.Name, Transport: raw.Transport, URL: raw.URL, Command: raw.Command, Args: raw.Args, AgentAdded: true}
+	sc := config.ServerConfig{
+		Name:       raw.Name,
+		Transport:  raw.Transport,
+		URL:        raw.URL,
+		Command:    raw.Command,
+		Args:       raw.Args,
+		AgentAdded: true,
+	}
 	if err := s.checkAgentTransport(sc); err != nil {
 		return config.ServerConfig{}, err
 	}
@@ -27,7 +34,9 @@ func (s *Server) agentServerConfig(raw *config.ServerConfig) (config.ServerConfi
 func (s *Server) checkAgentTransport(sc config.ServerConfig) error {
 	if !sc.IsHTTPTransport() {
 		if !s.cfg.DangerousAllowRuntimeStdio {
-			return errors.New("only http/sse/streamable transports are allowed; set dangerous_allow_runtime_stdio: true to enable stdio")
+			return errors.New(
+				"only http/sse/streamable transports are allowed; set dangerous_allow_runtime_stdio: true to enable stdio",
+			)
 		}
 		return nil
 	}

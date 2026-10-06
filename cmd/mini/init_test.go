@@ -141,11 +141,19 @@ func TestImportAgentConfig_NeverReplacesAConfiguredServer(t *testing.T) {
 			testutil.WriteFile(t, src, `{"mcpServers": `+tt.reimport+`}`)
 
 			var imported []string
-			out := testutil.CaptureStdout(t, func() { imported = importAgentConfig(configDir, "Claude Code", claudeCodeAt(src)) })
+			out := testutil.CaptureStdout(
+				t,
+				func() { imported = importAgentConfig(configDir, "Claude Code", claudeCodeAt(src)) },
+			)
 
 			after := testutil.ReadFile(t, serverFile)
 			if len(imported) != 0 || string(after) != string(before) {
-				t.Errorf("imported %v, foo.yaml %q -> %q; want nothing imported and the file unchanged", imported, before, after)
+				t.Errorf(
+					"imported %v, foo.yaml %q -> %q; want nothing imported and the file unchanged",
+					imported,
+					before,
+					after,
+				)
 			}
 			if !strings.Contains(out, tt.wantLine) {
 				t.Errorf("stdout %q missing %q", out, tt.wantLine)

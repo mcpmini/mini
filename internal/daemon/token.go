@@ -24,10 +24,10 @@ func GenerateToken() string {
 func WriteToken(configDir string) (string, error) {
 	token := GenerateToken()
 	path := TokenFile(configDir)
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
-	return token, fileio.ReplaceFile(path, []byte(token), fileio.ReplaceOptions{Perm: 0600})
+	return token, fileio.ReplaceFile(path, []byte(token), fileio.ReplaceOptions{Perm: 0o600})
 }
 
 func ReadToken(configDir string) (string, error) {

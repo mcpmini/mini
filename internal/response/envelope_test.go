@@ -20,7 +20,15 @@ import (
 func newTestStore(t *testing.T) *response.Store {
 	t.Helper()
 	dir := t.TempDir()
-	store, err := response.NewStore(response.StoreConfig{Dir: dir, TTL: 15 * time.Minute, BudgetMB: 200, CleanupInterval: time.Hour, Clock: clock.NewFake()})
+	store, err := response.NewStore(
+		response.StoreConfig{
+			Dir:             dir,
+			TTL:             15 * time.Minute,
+			BudgetMB:        200,
+			CleanupInterval: time.Hour,
+			Clock:           clock.NewFake(),
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +59,9 @@ func TestFileWrittenWhenProjectionApplied(t *testing.T) {
 	raw := json.RawMessage(`{"status":"ok","body":"secret content"}`)
 	data := map[string]any{"status": "ok"}
 
-	env, _, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Excluded: []string{"body"}})
+	env, _, err := builder.Build(
+		response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data, Excluded: []string{"body"}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +85,9 @@ func TestExcludedKeys(t *testing.T) {
 	data := map[string]any{"a": 1}
 	excluded := []string{"b", "c"}
 
-	env, _, err := builder.Build(response.BuildParams{Server: "s", Tool: "t", Raw: raw, Summary: data, Excluded: excluded})
+	env, _, err := builder.Build(
+		response.BuildParams{Server: "s", Tool: "t", Raw: raw, Summary: data, Excluded: excluded},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +124,9 @@ func TestCallStatsReduction(t *testing.T) {
 	store := newTestStore(t)
 	builder := response.NewBuilder(store)
 
-	raw := json.RawMessage(`{"status":"ok","body":"this is a large response with lots of text content that exceeds the threshold"}`)
+	raw := json.RawMessage(
+		`{"status":"ok","body":"this is a large response with lots of text content that exceeds the threshold"}`,
+	)
 	data := map[string]any{"status": "ok"}
 
 	_, stats, err := builder.Build(response.BuildParams{Server: "ci", Tool: "getPage", Raw: raw, Summary: data})
@@ -176,7 +190,9 @@ func TestLoadExistingSkipsExpired(t *testing.T) {
 	fresh := tsFilename(fakeClock.Now())
 	testutil.WriteFile(t, filepath.Join(dir, fresh), `{"new":true}`)
 
-	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour, Clock: fakeClock})
+	store, _ := response.NewStore(
+		response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 200, CleanupInterval: time.Hour, Clock: fakeClock},
+	)
 	defer store.Close()
 
 	count, _ := store.Stats()
@@ -190,7 +206,9 @@ func TestLoadExistingSkipsExpired(t *testing.T) {
 
 func TestStoreDiskBudget(t *testing.T) {
 	dir := t.TempDir()
-	store, _ := response.NewStore(response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour, Clock: clock.NewFake()})
+	store, _ := response.NewStore(
+		response.StoreConfig{Dir: dir, TTL: time.Hour, BudgetMB: 1, CleanupInterval: time.Hour, Clock: clock.NewFake()},
+	)
 
 	raw := []byte(`{"data":"` + strings.Repeat("x", 600*1024) + `"}`)
 	for range 5 {

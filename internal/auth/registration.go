@@ -40,14 +40,14 @@ func SaveRegistration(configDir, serverName string, r *Registration) error {
 		return fmt.Errorf("invalid server name: %q", serverName)
 	}
 	path := registrationPath(configDir, serverName)
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
 	}
-	return fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0600})
+	return fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0o600})
 }
 
 func registrationPath(configDir, serverName string) string {

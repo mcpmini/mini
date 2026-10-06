@@ -265,7 +265,11 @@ func TestAlias_reloadUpdatesAliases(t *testing.T) {
 			configtest.WriteServer(t, dir, config.ServerConfig{Name: "gh"})
 
 			fake := fakeConn("list_pull_requests")
-			srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: tt.initialProjection}, fake)
+			srv.AddConnection(
+				context.Background(),
+				config.ServerConfig{Name: "gh", Projections: tt.initialProjection},
+				fake,
+			)
 
 			// Write disk projection with a new alias and reload — reapplyAliases must pick it up.
 			configtest.WriteProjections(t, dir, configtest.ProjectionFile{

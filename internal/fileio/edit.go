@@ -57,7 +57,11 @@ func editOnce(p EditParams) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if err := ReplaceFile(source.target, edited, ReplaceOptions{Perm: source.mode, BeforeRename: source.checkUnchanged}); err != nil {
+	if err := ReplaceFile(
+		source.target,
+		edited,
+		ReplaceOptions{Perm: source.mode, BeforeRename: source.checkUnchanged},
+	); err != nil {
 		undo()
 		return false, err
 	}

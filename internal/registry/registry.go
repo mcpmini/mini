@@ -107,7 +107,8 @@ func (r *Registry) AddAction(ac config.ActionConfig) {
 	defer r.mu.Unlock()
 	target := ac.Server + "." + ac.Tool
 	if _, ok := r.targetPermissionLocked(target); !ok {
-		slog.Default().Warn("action target tool not found in registry; will fail at call time", "action", ac.Server+"."+ac.Name, "target", target)
+		slog.Default().
+			Warn("action target tool not found in registry; will fail at call time", "action", ac.Server+"."+ac.Name, "target", target)
 	}
 	entry := r.buildActionEntry(ac)
 	r.insertActionEntryLocked(ac.Server, entry)
@@ -140,7 +141,8 @@ func (r *Registry) actionPermission(ac config.ActionConfig) config.PermissionLev
 		return config.PermissionLevel(ac.Permission)
 	case "":
 	default:
-		slog.Default().Warn("invalid action permission; defaulting to protected", "action", ac.Server+"."+ac.Name, "permission", ac.Permission)
+		slog.Default().
+			Warn("invalid action permission; defaulting to protected", "action", ac.Server+"."+ac.Name, "permission", ac.Permission)
 		return config.PermProtected
 	}
 	if perm, ok := r.targetPermissionLocked(ac.Server + "." + ac.Tool); ok {

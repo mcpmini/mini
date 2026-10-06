@@ -70,7 +70,12 @@ func TestLoadMainRefusesAConfigItCannotLoadInFull(t *testing.T) {
 			cfg, err := config.LoadMain(dir)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) || cfg != nil {
-					t.Errorf("LoadMain = (%#v, %v), want (nil, error containing %q) rather than defaults", cfg, err, tt.wantErr)
+					t.Errorf(
+						"LoadMain = (%#v, %v), want (nil, error containing %q) rather than defaults",
+						cfg,
+						err,
+						tt.wantErr,
+					)
 				}
 				return
 			}

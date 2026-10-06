@@ -103,7 +103,9 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing.T) {
 	echomcp := os.Getenv("ECHOMCP_BIN")
 	if echomcp == "" {
-		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+		t.Fatal(
+			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
+		)
 	}
 	for _, tc := range []struct {
 		name      string

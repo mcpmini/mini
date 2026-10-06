@@ -55,9 +55,25 @@ func buildFixtureTool(dir, filename string) Tool {
 	path := filepath.Join(dir, filename)
 	schema, annotations := loadSchema(filepath.Join(dir, name+".schema.json"))
 	if isWriteOpFile(path) {
-		return Tool{ToolDefinition: transport.ToolDefinition{Name: name, Description: schemaDescription(schema, name), InputSchema: schema, Annotations: annotations}, WriteOp: true}
+		return Tool{
+			ToolDefinition: transport.ToolDefinition{
+				Name:        name,
+				Description: schemaDescription(schema, name),
+				InputSchema: schema,
+				Annotations: annotations,
+			},
+			WriteOp: true,
+		}
 	}
-	return Tool{ToolDefinition: transport.ToolDefinition{Name: name, Description: schemaDescription(schema, name+" (fixture)"), InputSchema: schema, Annotations: annotations}, FixturePath: path}
+	return Tool{
+		ToolDefinition: transport.ToolDefinition{
+			Name:        name,
+			Description: schemaDescription(schema, name+" (fixture)"),
+			InputSchema: schema,
+			Annotations: annotations,
+		},
+		FixturePath: path,
+	}
 }
 
 func loadSchema(path string) (inputSchema, annotations json.RawMessage) {
@@ -151,7 +167,7 @@ func (r *ToolRegistry) appendCall(tool string) {
 		return
 	}
 	line := fmt.Sprintf("{\"tool\":%q,\"ts\":%q}\n", tool, time.Now().UTC().Format(time.RFC3339Nano))
-	f, err := os.OpenFile(r.callLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	f, err := os.OpenFile(r.callLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return
 	}

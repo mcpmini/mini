@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"golang.org/x/oauth2"
 )
 
 type commitFixture struct {
@@ -143,7 +144,11 @@ func TestCommitAuthorizedToken_withStoredRegistration_usesItsClientCredentials(t
 	f := newCommitFixture(t)
 	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
 
-	reg1 := &auth.Registration{ClientID: "dcr-v1", ClientSecret: "secret-v1", TokenEndpointAuthMethod: "client_secret_basic"}
+	reg1 := &auth.Registration{
+		ClientID:                "dcr-v1",
+		ClientSecret:            "secret-v1",
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: f.dir, ServerName: "srv", Registration: reg1})
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	p, err := f.registry.GetOrCreate(params)
@@ -160,9 +165,16 @@ func TestCommitAuthorizedToken_withStoredRegistration_usesItsClientCredentials(t
 		t.Errorf("initial basic auth user = %q, want dcr-v1", gotV1)
 	}
 
-	reg2 := &auth.Registration{ClientID: "dcr-v2", ClientSecret: "secret-v2", TokenEndpointAuthMethod: "client_secret_basic"}
+	reg2 := &auth.Registration{
+		ClientID:                "dcr-v2",
+		ClientSecret:            "secret-v2",
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: f.dir, ServerName: "srv", Registration: reg2})
-	if err := f.registry.CommitAuthorizedToken(params, &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}); err != nil {
+	if err := f.registry.CommitAuthorizedToken(
+		params,
+		&oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"},
+	); err != nil {
 		t.Fatalf("CommitAuthorizedToken: %v", err)
 	}
 	if _, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access"); err != nil {
@@ -185,15 +197,18 @@ func TestCommitAuthorizedToken_saveFails_providerUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	internal := f.dir + "/internal"
-	if err := os.Chmod(internal, 0500); err != nil {
+	if err := os.Chmod(internal, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(internal, 0700) }) //nolint:errcheck
+	t.Cleanup(func() { os.Chmod(internal, 0o700) }) //nolint:errcheck
 
-	if err := f.registry.CommitAuthorizedToken(params, &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"}); err == nil {
+	if err := f.registry.CommitAuthorizedToken(
+		params,
+		&oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"},
+	); err == nil {
 		t.Fatal("expected CommitAuthorizedToken to fail when persist is denied")
 	}
-	os.Chmod(internal, 0700) //nolint:errcheck
+	os.Chmod(internal, 0o700) //nolint:errcheck
 
 	got, err := p.Authorization(context.Background())
 	if err != nil {
@@ -207,8 +222,15 @@ func TestCommitAuthorizedToken_saveFails_providerUnchanged(t *testing.T) {
 func TestCommitAuthorizedToken_differentServerURL_rejected(t *testing.T) {
 	f := newCommitFixture(t)
 	params := provider.Params{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
-		ConfigDir:  f.dir, ServerName: "srv", ServerURL: "https://a.example.com/mcp", Clock: f.clock,
+		AuthConfig: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			ClientID: "cid",
+			TokenURL: "http://localhost:1/token",
+		},
+		ConfigDir:  f.dir,
+		ServerName: "srv",
+		ServerURL:  "https://a.example.com/mcp",
+		Clock:      f.clock,
 	}
 	stored := &oauth2.Token{AccessToken: "stored-access", RefreshToken: "r", Expiry: f.clock.Now().Add(time.Hour)}
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: stored})
@@ -262,9 +284,17 @@ func TestCommitAuthorizedToken_externalReregistration_usesNewRegistrationCredent
 	f := newCommitFixture(t)
 	params := f.paramsFor(&config.AuthConfig{Type: config.AuthTypeOAuth2})
 
-	reg1 := &auth.Registration{ClientID: "dcr-v1", ClientSecret: "secret-v1", TokenEndpointAuthMethod: "client_secret_basic"}
+	reg1 := &auth.Registration{
+		ClientID:                "dcr-v1",
+		ClientSecret:            "secret-v1",
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: f.dir, ServerName: "srv", Registration: reg1})
-	initialTok := &oauth2.Token{AccessToken: "initial-access", RefreshToken: "initial-refresh", Expiry: f.clock.Now().Add(time.Hour)}
+	initialTok := &oauth2.Token{
+		AccessToken:  "initial-access",
+		RefreshToken: "initial-refresh",
+		Expiry:       f.clock.Now().Add(time.Hour),
+	}
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: initialTok})
 
 	p, err := f.registry.GetOrCreate(params)
@@ -272,14 +302,26 @@ func TestCommitAuthorizedToken_externalReregistration_usesNewRegistrationCredent
 		t.Fatal(err)
 	}
 
-	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh", Expiry: f.clock.Now().Add(time.Hour)}
+	browserTok := &oauth2.Token{
+		AccessToken:  "browser-access",
+		RefreshToken: "browser-refresh",
+		Expiry:       f.clock.Now().Add(time.Hour),
+	}
 	if err := f.registry.CommitAuthorizedToken(params, browserTok); err != nil {
 		t.Fatalf("CommitAuthorizedToken: %v", err)
 	}
 
-	reg2 := &auth.Registration{ClientID: "dcr-v2", ClientSecret: "secret-v2", TokenEndpointAuthMethod: "client_secret_basic"}
+	reg2 := &auth.Registration{
+		ClientID:                "dcr-v2",
+		ClientSecret:            "secret-v2",
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: f.dir, ServerName: "srv", Registration: reg2})
-	externalTok := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh", Expiry: f.clock.Now().Add(time.Hour)}
+	externalTok := &oauth2.Token{
+		AccessToken:  "external-access",
+		RefreshToken: "external-refresh",
+		Expiry:       f.clock.Now().Add(time.Hour),
+	}
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: externalTok})
 
 	got, err := p.RefreshAuthorization(context.Background(), "Bearer browser-access")
@@ -299,6 +341,10 @@ func TestCommitAuthorizedToken_externalReregistration_usesNewRegistrationCredent
 	clientIDForm, clientIDBasic := f.endpoint.LastClientID, f.endpoint.LastBasicAuth
 	f.endpoint.Mu.Unlock()
 	if clientIDForm != "dcr-v2" && clientIDBasic != "dcr-v2" {
-		t.Errorf("client_id = form:%q basic:%q, want dcr-v2 (preHydrationAuthConfig must not carry a resolved ClientID)", clientIDForm, clientIDBasic)
+		t.Errorf(
+			"client_id = form:%q basic:%q, want dcr-v2 (preHydrationAuthConfig must not carry a resolved ClientID)",
+			clientIDForm,
+			clientIDBasic,
+		)
 	}
 }

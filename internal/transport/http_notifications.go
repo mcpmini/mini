@@ -136,7 +136,9 @@ func (c *HTTPConnection) sendInitializedNotification(ctx context.Context) error 
 	return nil
 }
 
-func (c *HTTPConnection) buildInitializedNotifRequest(notif []byte) func(context.Context) (*http.Request, string, error) {
+func (c *HTTPConnection) buildInitializedNotifRequest(
+	notif []byte,
+) func(context.Context) (*http.Request, string, error) {
 	return func(ctx context.Context) (*http.Request, string, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url, bytes.NewReader(notif))
 		if err != nil {

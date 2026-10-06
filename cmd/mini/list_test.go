@@ -45,7 +45,11 @@ func TestRunList(t *testing.T) {
 
 	t.Run("http server shows url and transport", func(t *testing.T) {
 		dir := t.TempDir()
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: "remote", Transport: "http", URL: "https://example.com/mcp"})
+		configtest.WriteServer(
+			t,
+			dir,
+			config.ServerConfig{Name: "remote", Transport: "http", URL: "https://example.com/mcp"},
+		)
 
 		var out bytes.Buffer
 		if err := runList(dir, nil, &out); err != nil {

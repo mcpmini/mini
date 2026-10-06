@@ -108,7 +108,10 @@ func (s *Server) dialForReconnect(u *upstreamServer) (transport.Connection, erro
 	return conn, err
 }
 
-func (s *Server) listToolsForReconnect(u *upstreamServer, conn transport.Connection) ([]transport.ToolDefinition, error) {
+func (s *Server) listToolsForReconnect(
+	u *upstreamServer,
+	conn transport.Connection,
+) ([]transport.ToolDefinition, error) {
 	ctx, cancel := context.WithTimeout(u.ctx, 15*time.Second)
 	defer cancel()
 	tools, err := conn.ListTools(ctx)
@@ -140,7 +143,11 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	return true
 }
 
-func (s *Server) publishReconnectedTools(u *upstreamServer, conn transport.Connection, tools []transport.ToolDefinition) bool {
+func (s *Server) publishReconnectedTools(
+	u *upstreamServer,
+	conn transport.Connection,
+	tools []transport.ToolDefinition,
+) bool {
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if !s.isCurrentUpstreamConn(u, conn) {

@@ -11,7 +11,7 @@ import (
 )
 
 func TestReplaceFile_writesBytesAndAppliesMode(t *testing.T) {
-	for _, perm := range []os.FileMode{0600, 0644} {
+	for _, perm := range []os.FileMode{0o600, 0o644} {
 		t.Run(perm.String(), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "target")
 			testutil.WriteFile(t, path, "old")
@@ -34,7 +34,7 @@ func TestReplaceFile_replacesSymlinkAndPreservesTarget(t *testing.T) {
 	if err := os.Symlink(target, path); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if err := ReplaceFile(path, []byte("replacement"), ReplaceOptions{Perm: 0600}); err != nil {
+	if err := ReplaceFile(path, []byte("replacement"), ReplaceOptions{Perm: 0o600}); err != nil {
 		t.Fatalf("ReplaceFile: %v", err)
 	}
 	if got := string(testutil.ReadFile(t, path)); got != "replacement" {
@@ -54,7 +54,7 @@ func TestReplaceFile_hookRunsAfterStagingAndBeforeRename(t *testing.T) {
 	testutil.WriteFile(t, path, "old")
 	calls := 0
 	err := ReplaceFile(path, []byte("new"), ReplaceOptions{
-		Perm: 0644,
+		Perm: 0o644,
 		BeforeRename: func() error {
 			calls++
 			if got := string(testutil.ReadFile(t, path)); got != "old" {
@@ -64,7 +64,7 @@ func TestReplaceFile_hookRunsAfterStagingAndBeforeRename(t *testing.T) {
 			if len(staged) != 1 || string(testutil.ReadFile(t, staged[0])) != "new" {
 				t.Fatalf("staged files = %v", staged)
 			}
-			assertMode(t, staged[0], 0644)
+			assertMode(t, staged[0], 0o644)
 			return nil
 		},
 	})
@@ -82,7 +82,7 @@ func TestReplaceFile_hookErrorPreservesDestinationAndCleansStage(t *testing.T) {
 	testutil.WriteFile(t, path, "old")
 	sentinel := errors.New("check failed")
 	err := ReplaceFile(path, []byte("new"), ReplaceOptions{
-		Perm: 0600, BeforeRename: func() error { return sentinel },
+		Perm: 0o600, BeforeRename: func() error { return sentinel },
 	})
 	if err != sentinel || !errors.Is(err, sentinel) { //nolint:errorlint // identity is part of the callback contract
 		t.Fatalf("error = %v, want identical sentinel", err)
@@ -100,10 +100,10 @@ func TestReplaceFile_failedRenamePreservesDirectoryAndCleansStage(t *testing.T) 
 			path := filepath.Join(dir, "destination")
 			if populated {
 				testutil.WriteFile(t, filepath.Join(path, "keep"), "contents")
-			} else if err := os.Mkdir(path, 0700); err != nil {
+			} else if err := os.Mkdir(path, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			if err := ReplaceFile(path, []byte("new"), ReplaceOptions{Perm: 0600}); err == nil {
+			if err := ReplaceFile(path, []byte("new"), ReplaceOptions{Perm: 0o600}); err == nil {
 				t.Fatal("ReplaceFile succeeded over a directory")
 			}
 			info, err := os.Stat(path)
@@ -125,7 +125,7 @@ func TestReplaceFile_stagingErrorClosesAndCleansStage(t *testing.T) {
 	sentinel := errors.New("write failed")
 	closed, hookCalled := false, false
 	p := replaceParams{
-		path: path, data: []byte("new"), opts: ReplaceOptions{Perm: 0600, BeforeRename: func() error {
+		path: path, data: []byte("new"), opts: ReplaceOptions{Perm: 0o600, BeforeRename: func() error {
 			hookCalled = true
 			return nil
 		}},
@@ -148,13 +148,13 @@ func TestReplaceFile_stagingErrorClosesAndCleansStage(t *testing.T) {
 
 func TestCreateFile_exclusiveCreationAndCollisionClassification(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "target")
-	if err := CreateFile(path, []byte("new"), 0600); err != nil {
+	if err := CreateFile(path, []byte("new"), 0o600); err != nil {
 		t.Fatalf("CreateFile: %v", err)
 	}
 	if got := string(testutil.ReadFile(t, path)); got != "new" {
 		t.Fatalf("contents = %q", got)
 	}
-	err := CreateFile(path, []byte("overwrite"), 0600)
+	err := CreateFile(path, []byte("overwrite"), 0o600)
 	if !os.IsExist(err) || !errors.Is(err, fs.ErrExist) {
 		t.Fatalf("collision error = %v", err)
 	}
@@ -171,7 +171,7 @@ func TestCreateFile_collisionLeavesSymlinkAndTargetUntouched(t *testing.T) {
 	if err := os.Symlink(target, path); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if err := CreateFile(path, []byte("replacement"), 0600); !os.IsExist(err) {
+	if err := CreateFile(path, []byte("replacement"), 0o600); !os.IsExist(err) {
 		t.Fatalf("CreateFile collision error = %v", err)
 	}
 	info, err := os.Lstat(path)
@@ -188,7 +188,7 @@ func TestCreateFile_writeAndCloseErrorsRemovePartialFile(t *testing.T) {
 	writeErr, closeErr := errors.New("write failed"), errors.New("close failed")
 	closed := false
 	p := createParams{
-		path: path, data: []byte("partial"), perm: 0600,
+		path: path, data: []byte("partial"), perm: 0o600,
 		open: func(path string, flags int, perm os.FileMode) (file, error) {
 			f, err := os.OpenFile(path, flags, perm)
 			return failedFile{file: f, writeErr: writeErr, closeErr: closeErr, onClose: func() { closed = true }}, err
@@ -201,7 +201,7 @@ func TestCreateFile_writeAndCloseErrorsRemovePartialFile(t *testing.T) {
 	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("partial file remains: %v", err)
 	}
-	if err := CreateFile(path, []byte("complete"), 0600); err != nil {
+	if err := CreateFile(path, []byte("complete"), 0o600); err != nil {
 		t.Fatalf("later create: %v", err)
 	}
 }
@@ -223,9 +223,9 @@ func TestFileOperations_doNotCreateMissingParents(t *testing.T) {
 			path := filepath.Join(parent, "target")
 			var err error
 			if replace {
-				err = ReplaceFile(path, []byte("new"), ReplaceOptions{Perm: 0600})
+				err = ReplaceFile(path, []byte("new"), ReplaceOptions{Perm: 0o600})
 			} else {
-				err = CreateFile(path, []byte("new"), 0600)
+				err = CreateFile(path, []byte("new"), 0o600)
 			}
 			if err == nil {
 				t.Fatal("file operation succeeded with missing parent")

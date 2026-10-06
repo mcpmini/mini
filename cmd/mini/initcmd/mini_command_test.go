@@ -21,7 +21,7 @@ func TestBinaryPath(t *testing.T) {
 	testutil.WriteFile(t, self, "binary")
 	testutil.WriteFile(t, other, "another binary")
 	link := filepath.Join(dir, "bin", "mini")
-	if err := os.MkdirAll(filepath.Dir(link), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(link), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(self, link); err != nil {
@@ -48,7 +48,10 @@ func TestBinaryPath(t *testing.T) {
 }
 
 func TestMiniCommandArgs(t *testing.T) {
-	lookup := binaryLookup{func() (string, error) { return "/opt/mini", nil }, func(string) (string, error) { return "", errors.New("not found") }}
+	lookup := binaryLookup{
+		func() (string, error) { return "/opt/mini", nil },
+		func(string) (string, error) { return "", errors.New("not found") },
+	}
 	t.Setenv("HOME", t.TempDir())
 	if got := lookup.miniCommand(config.DefaultConfigDir()).Args; !reflect.DeepEqual(got, []string{"connect"}) {
 		t.Errorf("args for the default config dir = %v, want [connect]", got)

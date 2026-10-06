@@ -46,7 +46,10 @@ func (c *Registry) GetOrCreate(params Params) (transport.AuthorizationProvider, 
 	defer c.mu.Unlock()
 	if e, ok := c.m[params.ServerName]; ok {
 		if !e.identity.matches(params) {
-			return nil, fmt.Errorf("server %q OAuth configuration changed; restart mini to reconfigure", params.ServerName)
+			return nil, fmt.Errorf(
+				"server %q OAuth configuration changed; restart mini to reconfigure",
+				params.ServerName,
+			)
 		}
 		return e.provider, nil
 	}

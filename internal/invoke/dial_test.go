@@ -23,7 +23,12 @@ func TestDial_privateAddress(t *testing.T) {
 		wantReached  bool
 	}{
 		{name: "an agent-added server is refused at dial time", agentAdded: true, wantReached: false},
-		{name: "dangerous_allow_private_urls lets an agent-added server through", agentAdded: true, allowPrivate: true, wantReached: true},
+		{
+			name:         "dangerous_allow_private_urls lets an agent-added server through",
+			agentAdded:   true,
+			allowPrivate: true,
+			wantReached:  true,
+		},
 		{name: "a server the user added is reached", wantReached: true},
 	}
 	for _, tc := range cases {
@@ -36,8 +41,13 @@ func TestDial_privateAddress(t *testing.T) {
 			t.Cleanup(upstream.Close)
 			conn, err := Dial(t.Context(), DialParams{
 				Config: &config.Config{DangerousAllowPrivateURLs: tc.allowPrivate},
-				Server: config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, AgentAdded: tc.agentAdded},
-				Clock:  clock.System(),
+				Server: config.ServerConfig{
+					Name:       "svc",
+					Transport:  "http",
+					URL:        upstream.URL,
+					AgentAdded: tc.agentAdded,
+				},
+				Clock: clock.System(),
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -58,13 +68,19 @@ func TestDial_agentAddedCommand(t *testing.T) {
 		allowStdio  bool
 		wantRefusal bool
 	}{
-		{name: "an agent's command is refused once dangerous_allow_runtime_stdio is off", agentAdded: true, wantRefusal: true},
+		{
+			name:        "an agent's command is refused once dangerous_allow_runtime_stdio is off",
+			agentAdded:  true,
+			wantRefusal: true,
+		},
 		{name: "dangerous_allow_runtime_stdio still runs an agent's command", agentAdded: true, allowStdio: true},
 		{name: "a command the user added runs", allowStdio: false},
 	}
 	echomcp := os.Getenv("ECHOMCP_BIN")
 	if echomcp == "" {
-		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+		t.Fatal(
+			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
+		)
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -92,7 +108,13 @@ func TestDial_refusesAServerWithAnUnsetVariableWithoutReachingIt(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
 	t.Cleanup(upstream.Close)
 	unset := errors.New("server svc: headers.Authorization: GITHUB_TOKEN isn't set where mini runs")
-	server := config.ServerConfig{Name: "svc", Transport: "http", URL: upstream.URL, Headers: map[string]string{"Authorization": "Bearer ${GITHUB_TOKEN}"}, UnsetEnv: unset}
+	server := config.ServerConfig{
+		Name:      "svc",
+		Transport: "http",
+		URL:       upstream.URL,
+		Headers:   map[string]string{"Authorization": "Bearer ${GITHUB_TOKEN}"},
+		UnsetEnv:  unset,
+	}
 
 	_, err := Dial(t.Context(), DialParams{Config: &config.Config{}, Server: server, Clock: clock.System()})
 

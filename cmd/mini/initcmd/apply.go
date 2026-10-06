@@ -61,7 +61,9 @@ type KeptEntry struct {
 
 var (
 	errNotChecked   = errors.New("its connection wasn't checked")
-	errMiniInactive = errors.New("the agent's mini entry may not run these servers: it's switched off, uses another config directory, or doesn't start mini connect by absolute path")
+	errMiniInactive = errors.New(
+		"the agent's mini entry may not run these servers: it's switched off, uses another config directory, or doesn't start mini connect by absolute path",
+	)
 )
 
 // Apply connects mini to each agent in turn. A failed agent doesn't stop the others; once ctx is
@@ -90,7 +92,12 @@ func (p ApplyParams) connect(agent agents.Agent, mini MiniServers) AgentResult {
 		err := p.create(agent)
 		// A config the agent wrote since the check is the agent's, so it's edited like any other.
 		if !errors.Is(err, fs.ErrExist) {
-			return AgentResult{Agent: agent, Created: err == nil, MiniServes: err == nil && p.servedAfterEdit(NoMiniEntry), Err: err}
+			return AgentResult{
+				Agent:      agent,
+				Created:    err == nil,
+				MiniServes: err == nil && p.servedAfterEdit(NoMiniEntry),
+				Err:        err,
+			}
 		}
 	}
 	return p.edit(agent, mini)
@@ -118,7 +125,12 @@ func (p ApplyParams) edit(agent agents.Agent, mini MiniServers) AgentResult {
 }
 
 // Judges the entries as they are at apply, so an entry edited since Connect's check is judged as it is now.
-func (p ApplyParams) editedConfig(agent agents.Agent, mini MiniServers, config []byte, result *AgentResult) ([]byte, error) {
+func (p ApplyParams) editedConfig(
+	agent agents.Agent,
+	mini MiniServers,
+	config []byte,
+	result *AgentResult,
+) ([]byte, error) {
 	entries, err := agent.Parse(config)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", agent.ConfigPath, err)

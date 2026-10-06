@@ -355,7 +355,12 @@ func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	client := startServer(t, cfg)
-	client.setProjection("github", "list_pull_requests", map[string]any{"include_only": []string{"number"}, "depth_limit": 1}, true)
+	client.setProjection(
+		"github",
+		"list_pull_requests",
+		map[string]any{"include_only": []string{"number"}, "depth_limit": 1},
+		true,
+	)
 
 	rawFixture := testutil.ReadFile(t, filepath.Join(fixturesDir, "github", "list_pull_requests.json"))
 	projected := client.execTool("github", "list_pull_requests", nil)

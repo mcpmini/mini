@@ -84,7 +84,11 @@ func (s *proxySession) observeSuccessfulLifecycle(state linkState, message forwa
 	}
 }
 
-func (s *proxySession) recoverForwarding(state linkState, kind outcomeKind, message forwardedMessageKind) (linkState, bool) {
+func (s *proxySession) recoverForwarding(
+	state linkState,
+	kind outcomeKind,
+	message forwardedMessageKind,
+) (linkState, bool) {
 	if kind == outcomeNotInitialized && message == forwardedMessageInitialize {
 		return state, false
 	}

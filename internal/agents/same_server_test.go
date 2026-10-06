@@ -51,7 +51,10 @@ func TestConnectionDifferences(t *testing.T) {
 		}
 	})
 	t.Run("an empty transport is stdio", func(t *testing.T) {
-		if got := ConnectionDifferences(config.ServerConfig{Command: "run"}, config.ServerConfig{Transport: "stdio", Command: "run"}); got != nil {
+		if got := ConnectionDifferences(
+			config.ServerConfig{Command: "run"},
+			config.ServerConfig{Transport: "stdio", Command: "run"},
+		); got != nil {
 			t.Errorf("differences = %v, want none", got)
 		}
 	})

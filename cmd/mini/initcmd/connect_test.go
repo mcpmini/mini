@@ -28,7 +28,7 @@ func TestConnectableAgents(t *testing.T) {
 	f := newApplyFixture(t)
 	f.write(t, "Claude Code", `{"mcpServers":{}}`)
 	f.write(t, "Cursor", `not json`)
-	if err := os.MkdirAll(f.agents["Windsurf"].Dir, 0700); err != nil {
+	if err := os.MkdirAll(f.agents["Windsurf"].Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	known := []agents.Agent{f.agents["Claude Code"], f.agents["Codex"], f.agents["Cursor"], f.agents["Windsurf"]}
@@ -47,7 +47,7 @@ func TestConnectableAgents_claudeCodeIsInstalledOnlyWithItsOwnDirectory(t *testi
 		t.Errorf("connectable = %v, want none: its config would land in the home directory every user has", got)
 	}
 
-	if err := os.MkdirAll(filepath.Join(f.home, ".claude"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(f.home, ".claude"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if got := agentNames(ConnectableAgents(claude)); !reflect.DeepEqual(got, []string{"Claude Code"}) {
@@ -100,7 +100,15 @@ func TestMiniServersCheck(t *testing.T) {
 		return nil
 	}
 
-	got := mini.Check(context.Background(), CheckParams{ConfigDir: configDir, Servers: []string{"up", "down", "missing"}, Clock: clock.System(), Probe: probe})
+	got := mini.Check(
+		context.Background(),
+		CheckParams{
+			ConfigDir: configDir,
+			Servers:   []string{"up", "down", "missing"},
+			Clock:     clock.System(),
+			Probe:     probe,
+		},
+	)
 
 	if want := map[string]error{"up": nil, "down": failure}; !reflect.DeepEqual(got, want) {
 		t.Errorf("checks = %v, want %v", got, want)

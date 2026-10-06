@@ -11,10 +11,11 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
-	"gopkg.in/yaml.v3"
 )
 
 func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
@@ -26,9 +27,11 @@ func fakeUnauthenticatedMCPServer(t *testing.T) *httptest.Server {
 		switch req["method"] {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
-				"result": map[string]any{"protocolVersion": "2024-11-05",
-					"capabilities": map[string]any{"tools": map[string]any{}},
-					"serverInfo":   map[string]any{"name": "fake", "version": "0"}}})
+				"result": map[string]any{
+					"protocolVersion": "2024-11-05",
+					"capabilities":    map[string]any{"tools": map[string]any{}},
+					"serverInfo":      map[string]any{"name": "fake", "version": "0"},
+				}})
 		case "tools/list":
 			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
 				"result": map[string]any{"tools": []map[string]any{}}})
@@ -51,7 +54,12 @@ func runAdd(configDir string, args []string, out *bytes.Buffer) error {
 func TestRunAdd(t *testing.T) {
 	t.Run("a name with neither a URL nor a command is a usage error, not a crash", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := addNamedServer(dir, serverFlags{name: "svc"}, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "provide --url or a command") {
+		if err := addNamedServer(
+			dir,
+			serverFlags{name: "svc"},
+			&bytes.Buffer{},
+		); err == nil ||
+			!strings.Contains(err.Error(), "provide --url or a command") {
 			t.Fatalf("addNamedServer = %v, want the usage error", err)
 		}
 		if _, err := os.Stat(filepath.Join(dir, "servers", "svc.yaml")); err == nil {
@@ -190,7 +198,10 @@ func TestRunAdd(t *testing.T) {
 			t.Fatalf("runAdd: %v", err)
 		}
 		if strings.Contains(out.String(), "OAuth") {
-			t.Errorf("output = %q, an explicit --header should suppress the automatic OAuth flow for a known vendor", out.String())
+			t.Errorf(
+				"output = %q, an explicit --header should suppress the automatic OAuth flow for a known vendor",
+				out.String(),
+			)
 		}
 	})
 
@@ -224,7 +235,16 @@ func TestRunAdd(t *testing.T) {
 	t.Run("warns that the server's projections are skipped when inline projections fail to load", func(t *testing.T) {
 		dir := t.TempDir()
 		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com"})
-		configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com", Projections: map[string]*config.ProjectionConfig{"list": {Format: "invalid"}}})
+		configtest.WriteServer(
+			t,
+			dir,
+			config.ServerConfig{
+				Name:        "svc",
+				Transport:   "http",
+				URL:         "https://example.com",
+				Projections: map[string]*config.ProjectionConfig{"list": {Format: "invalid"}},
+			},
+		)
 
 		var out bytes.Buffer
 		connectAndAuthorizeIfNeeded(dir, "svc", &out)
@@ -242,7 +262,8 @@ func TestRunAdd(t *testing.T) {
 		}
 		var sc config.ServerConfig
 		readServerYAML(t, dir, "svc", &sc)
-		if sc.Permissions == nil || len(sc.Permissions.Protected) != 1 || sc.Permissions.Protected[0] != "delete_everything" {
+		if sc.Permissions == nil || len(sc.Permissions.Protected) != 1 ||
+			sc.Permissions.Protected[0] != "delete_everything" {
 			t.Errorf("Protected = %v, want [delete_everything]", sc.Permissions)
 		}
 	})
@@ -280,7 +301,8 @@ func TestRunAdd(t *testing.T) {
 
 		err := runAdd(dir, []string{"svc", "--", "replacement"}, &bytes.Buffer{})
 
-		if err == nil || !strings.Contains(err.Error(), "svc is already configured; run `mini rm svc` first to replace it") {
+		if err == nil ||
+			!strings.Contains(err.Error(), "svc is already configured; run `mini rm svc` first to replace it") {
 			t.Errorf("err = %v, want the already-configured error naming mini rm", err)
 		}
 		if after := string(testutil.ReadFile(t, filepath.Join(dir, "servers", "svc.yaml"))); after != before {
@@ -350,7 +372,10 @@ func TestRunAddImport(t *testing.T) {
 		if sc.Command != "run" {
 			t.Errorf("command = %q, want the configured run kept", sc.Command)
 		}
-		if want := path + ": svc not imported, mini's config has a different command"; !strings.Contains(out.String(), want) {
+		if want := path + ": svc not imported, mini's config has a different command"; !strings.Contains(
+			out.String(),
+			want,
+		) {
 			t.Errorf("output = %q, want %q", out.String(), want)
 		}
 		if strings.Contains(out.String(), "tip:") {
@@ -380,13 +405,18 @@ func TestRunAddImport(t *testing.T) {
 
 		err := runAdd(notADir, []string{"--from-claude", path}, &bytes.Buffer{})
 
-		if want := "1 of 1 servers in " + path + " could not be added"; err == nil || !strings.Contains(err.Error(), want) {
+		if want := "1 of 1 servers in " + path + " could not be added"; err == nil ||
+			!strings.Contains(err.Error(), want) {
 			t.Errorf("err = %v, want %q", err, want)
 		}
 	})
 
 	t.Run("an unreadable config is an error", func(t *testing.T) {
-		if err := runAdd(t.TempDir(), []string{"--from-codex", filepath.Join(t.TempDir(), "missing.toml")}, &bytes.Buffer{}); err == nil {
+		if err := runAdd(
+			t.TempDir(),
+			[]string{"--from-codex", filepath.Join(t.TempDir(), "missing.toml")},
+			&bytes.Buffer{},
+		); err == nil {
 			t.Fatal("expected an error for a missing config")
 		}
 	})

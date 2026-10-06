@@ -13,11 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
-	"golang.org/x/oauth2"
 )
 
 func newConnectTestServer(t *testing.T) *server.Server {
@@ -169,7 +170,10 @@ func TestConnectUpstreams_closeCancelsConnectsFromEveryCall(t *testing.T) {
 	hung := hungHTTPServer(t)
 	srv := newConnectTestServer(t)
 	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "first", Transport: "http", URL: hung.URL}})
-	srv.ConnectUpstreams(context.Background(), []config.ServerConfig{{Name: "second", Transport: "http", URL: hung.URL}})
+	srv.ConnectUpstreams(
+		context.Background(),
+		[]config.ServerConfig{{Name: "second", Transport: "http", URL: hung.URL}},
+	)
 
 	mustCloseWithin(t, srv, 3*time.Second)
 }

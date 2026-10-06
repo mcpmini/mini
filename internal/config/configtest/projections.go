@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/testutil"
-	"gopkg.in/yaml.v3"
 )
 
 type ProjectionFile struct {
@@ -44,7 +45,11 @@ func replaceServerProjections(t testing.TB, dir, serverName string, projections 
 	}
 	path := config.ServerPath(dir, serverName)
 	var doc yaml.Node
-	if err := yaml.Unmarshal(testutil.ReadFile(t, path), &doc); err != nil || len(doc.Content) != 1 || doc.Content[0].Kind != yaml.MappingNode {
+	if err := yaml.Unmarshal(
+		testutil.ReadFile(t, path),
+		&doc,
+	); err != nil || len(doc.Content) != 1 ||
+		doc.Content[0].Kind != yaml.MappingNode {
 		t.Fatalf("server fixture %s must hold one mapping: %v", path, err)
 	}
 	root := doc.Content[0]
@@ -55,7 +60,11 @@ func replaceServerProjections(t testing.TB, dir, serverName string, projections 
 		}
 	}
 	if projections != nil {
-		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "projections"}, projections)
+		root.Content = append(
+			root.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "projections"},
+			projections,
+		)
 	}
 	testutil.WriteFileBytes(t, path, encodeServerFixture(t, &doc))
 }

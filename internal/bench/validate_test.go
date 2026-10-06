@@ -10,13 +10,14 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/bench"
 	"github.com/mcpmini/mini/internal/config"
 	minidefaults "github.com/mcpmini/mini/internal/defaults"
 	"github.com/mcpmini/mini/internal/projection"
 	"github.com/mcpmini/mini/internal/response"
 	"github.com/mcpmini/mini/internal/testutil"
-	"gopkg.in/yaml.v3"
 )
 
 // validateCase defines what to assert after projecting a fixture.
@@ -50,7 +51,12 @@ var fixtureValidations = map[string]validateCase{
 	// projection config uses "jira_search". Only wildcard "*" applies (auto_strip_threshold).
 	// 30% reflects what markup stripping alone achieves on a 35K-token Jira response.
 	// Replace with "atlassian/jira_search" once real mcp-atlassian fixtures exist.
-	"jira/search_issues":          {projection: "atlassian", projTool: "search_issues", requiredKeys: []string{"issues", "total"}, minReductionPct: 25},
+	"jira/search_issues": {
+		projection:      "atlassian",
+		projTool:        "search_issues",
+		requiredKeys:    []string{"issues", "total"},
+		minReductionPct: 25,
+	},
 	"linear/list_issues":          {requiredKeys: []string{"nodes"}, minReductionPct: 5},
 	"sentry/list_issues":          {requiredKeys: []string{"id", "title"}, minReductionPct: 20},
 	"slack/conversations_history": {requiredKeys: []string{"messages"}, minReductionPct: 5},

@@ -408,6 +408,10 @@ func TestNewStreamClient_redirect_notFollowed(t *testing.T) {
 	}
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusFound || targetHits.Load() != 0 {
-		t.Errorf("status = %d, redirect target hits = %d: the stream client must not follow redirects", resp.StatusCode, targetHits.Load())
+		t.Errorf(
+			"status = %d, redirect target hits = %d: the stream client must not follow redirects",
+			resp.StatusCode,
+			targetHits.Load(),
+		)
 	}
 }

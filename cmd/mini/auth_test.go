@@ -47,7 +47,10 @@ func TestAuthOpener_disabledSkipsAll(t *testing.T) {
 	openBrowser = func(url string) error { called = true; return nil }
 	t.Cleanup(func() { openBrowser = orig })
 
-	opener := authOpener(&config.Config{BrowserCommand: "global-cmd", DisableAuthBrowserOpen: true}, oauthServerWithBrowserCmd("echo"))
+	opener := authOpener(
+		&config.Config{BrowserCommand: "global-cmd", DisableAuthBrowserOpen: true},
+		oauthServerWithBrowserCmd("echo"),
+	)
 	if err := opener("http://example.com"); err != nil {
 		t.Errorf("disabled opener returned error: %v", err)
 	}
@@ -84,11 +87,15 @@ func TestLogIn_savesTokenAndReportsSuccess(t *testing.T) {
 	}
 	t.Cleanup(func() { openBrowser = orig })
 	dir := t.TempDir()
-	sc := &config.ServerConfig{Name: "svc", Transport: "http", URL: tokenServer.Srv.URL + "/mcp", Auth: tokenServer.AuthConfig()}
+	sc := &config.ServerConfig{
+		Name:      "svc",
+		Transport: "http",
+		URL:       tokenServer.Srv.URL + "/mcp",
+		Auth:      tokenServer.AuthConfig(),
+	}
 	var out bytes.Buffer
 
 	token, err := logIn(logInParams{configDir: dir, cfg: &config.Config{}, sc: sc, out: &out})
-
 	if err != nil {
 		t.Fatalf("logIn: %v", err)
 	}

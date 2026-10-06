@@ -8,18 +8,23 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"golang.org/x/oauth2"
 )
 
 func TestProviderRegistry_sameServer_returnsSameProvider(t *testing.T) {
 	registry := provider.NewRegistry()
 	params := provider.Params{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
+		AuthConfig: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			ClientID: "cid",
+			TokenURL: "http://localhost:1/token",
+		},
 		ConfigDir:  t.TempDir(),
 		ServerName: "srv",
 		Clock:      clock.NewFake(),
@@ -190,7 +195,11 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 	t.Cleanup(func() { release() })
 
 	params := provider.Params{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "c", TokenURL: endpoint.Srv.URL + "/token"},
+		AuthConfig: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			ClientID: "c",
+			TokenURL: endpoint.Srv.URL + "/token",
+		},
 		ConfigDir:  dir,
 		ServerName: "srv",
 		Clock:      clock.NewFakeAt(epoch),
@@ -230,7 +239,11 @@ func TestProviderRegistry_close_abortsInFlightRefresh(t *testing.T) {
 func TestProviderRegistry_forget(t *testing.T) {
 	oauthParams := func(dir, serverURL string) provider.Params {
 		return provider.Params{
-			AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: "http://localhost:1/token"},
+			AuthConfig: &config.AuthConfig{
+				Type:     config.AuthTypeOAuth2,
+				ClientID: "cid",
+				TokenURL: "http://localhost:1/token",
+			},
 			ConfigDir:  dir,
 			ServerName: "srv",
 			ServerURL:  serverURL,
@@ -274,7 +287,10 @@ func TestProviderRegistry_forget(t *testing.T) {
 
 	t.Run("the forgotten provider no longer authorizes", func(t *testing.T) {
 		dir := t.TempDir()
-		authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: &oauth2.Token{AccessToken: "old"}})
+		authtest.SaveToken(
+			t,
+			authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: &oauth2.Token{AccessToken: "old"}},
+		)
 		registry := provider.NewRegistry()
 		old, err := registry.GetOrCreate(oauthParams(dir, "https://mcp.example.com/mcp"))
 		if err != nil {

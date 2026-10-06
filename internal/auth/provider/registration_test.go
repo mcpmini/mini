@@ -11,17 +11,22 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"golang.org/x/oauth2"
 )
 
 func TestNewProvider_storedRegistration_usesConfidentialClientCredentials(t *testing.T) {
 	dir := t.TempDir()
-	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "dcr-secret", TokenEndpointAuthMethod: "client_secret_basic"}
+	reg := &auth.Registration{
+		ClientID:                "dcr-client",
+		ClientSecret:            "dcr-secret",
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	endpoint := authtest.NewTokenServer(t)
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: endpoint.Srv.URL + "/token"}
@@ -46,7 +51,9 @@ func TestNewProvider_inconsistentRegistration_returnsError(t *testing.T) {
 	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "orphan-secret", TokenEndpointAuthMethod: "none"}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, TokenURL: "http://localhost:1/token"}
-	if _, err := provider.New(provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()}); err == nil {
+	if _, err := provider.New(
+		provider.Params{AuthConfig: ac, ConfigDir: dir, ServerName: "srv", Clock: clock.NewFake()},
+	); err == nil {
 		t.Fatal("expected construction error for inconsistent registration when no explicit client_id")
 	}
 }
@@ -73,7 +80,11 @@ func TestNewProvider_noRegistration_actsAsPublicClient(t *testing.T) {
 
 func TestNewProvider_concurrentConstruction_leavesSharedConfigUnchanged(t *testing.T) {
 	dir := t.TempDir()
-	reg := &auth.Registration{ClientID: "dcr-client", ClientSecret: "dcr-secret", TokenEndpointAuthMethod: "client_secret_basic"}
+	reg := &auth.Registration{
+		ClientID:                "dcr-client",
+		ClientSecret:            "dcr-secret",
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: storedToken(time.Time{})})
 	shared := &config.AuthConfig{
@@ -108,7 +119,11 @@ func TestNewProvider_concurrentConstruction_leavesSharedConfigUnchanged(t *testi
 
 func TestNewProvider_explicitClientID_ignoresStoredRegistration(t *testing.T) {
 	dir := t.TempDir()
-	reg := &auth.Registration{ClientID: "stale-id", ClientSecret: "stale-secret", TokenEndpointAuthMethod: "client_secret_basic"}
+	reg := &auth.Registration{
+		ClientID:                "stale-id",
+		ClientSecret:            "stale-secret",
+		TokenEndpointAuthMethod: "client_secret_basic",
+	}
 	authtest.SaveRegistration(t, authtest.RegistrationFile{ConfigDir: dir, ServerName: "srv", Registration: reg})
 	endpoint := authtest.NewTokenServer(t)
 	ac := &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "manual-id", TokenURL: endpoint.Srv.URL + "/token"}
@@ -129,7 +144,11 @@ func TestNewProvider_explicitClientID_ignoresStoredRegistration(t *testing.T) {
 		t.Errorf("manual-id must be used; form client_id=%q, basic user=%q", gotClientID, gotBasicUser)
 	}
 	if gotClientID == "stale-id" || gotBasicUser == "stale-id" {
-		t.Errorf("stale DCR registration must not override explicit client_id; form client_id=%q, basic user=%q", gotClientID, gotBasicUser)
+		t.Errorf(
+			"stale DCR registration must not override explicit client_id; form client_id=%q, basic user=%q",
+			gotClientID,
+			gotBasicUser,
+		)
 	}
 }
 

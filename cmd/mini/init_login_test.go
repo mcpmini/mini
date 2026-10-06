@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
-	"golang.org/x/oauth2"
 )
 
 func TestRunLoginStepAllContinuesAfterFailure(t *testing.T) {
@@ -57,7 +58,10 @@ func TestRunLoginStepAutoYesSkipsPrompts(t *testing.T) {
 
 func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := ops.AddServer(dir, config.ServerConfig{Name: "slack", Command: "npx", Args: []string{"server-slack"}}); err != nil {
+	if _, err := ops.AddServer(
+		dir,
+		config.ServerConfig{Name: "slack", Command: "npx", Args: []string{"server-slack"}},
+	); err != nil {
 		t.Fatal(err)
 	}
 	called := false
@@ -118,7 +122,9 @@ func TestRunLoginStepListingShowsReasonNextToServerName(t *testing.T) {
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "expired", Token: expired})
 	testutil.WriteFile(t, filepath.Join(dir, "internal", "corrupt.token.json"), "not json")
 	out := &bytes.Buffer{}
-	runLoginStep(loginStepParams{configDir: dir, ask: func(string) string { return "s" }, out: out, errOut: &bytes.Buffer{}})
+	runLoginStep(
+		loginStepParams{configDir: dir, ask: func(string) string { return "s" }, out: out, errOut: &bytes.Buffer{}},
+	)
 	for _, want := range []string{"fresh (no token)", "expired (token expired)", "corrupt (token unreadable: "} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("listing missing %q:\n%s", want, out.String())
@@ -195,7 +201,8 @@ func TestRunLoginStepOmitsServersWithUsableTokens(t *testing.T) {
 	if !reflect.DeepEqual(authorized, []string{"need"}) {
 		t.Errorf("authorized = %v, want [need]", authorized)
 	}
-	if !strings.Contains(out.String(), "  need (no token)\n") || strings.Contains(out.String(), "  ok ") || strings.Contains(out.String(), "  refresh ") {
+	if !strings.Contains(out.String(), "  need (no token)\n") || strings.Contains(out.String(), "  ok ") ||
+		strings.Contains(out.String(), "  refresh ") {
 		t.Errorf("listing should name only need:\n%s", out.String())
 	}
 }
@@ -203,7 +210,12 @@ func TestRunLoginStepOmitsServersWithUsableTokens(t *testing.T) {
 func TestRunLoginStepOmitsDisabledServers(t *testing.T) {
 	dir := loginStepConfig(t, "on")
 	disabled := false
-	off := config.ServerConfig{Name: "off", Transport: "http", Enabled: &disabled, Auth: &config.AuthConfig{Type: config.AuthTypeOAuth2}}
+	off := config.ServerConfig{
+		Name:      "off",
+		Transport: "http",
+		Enabled:   &disabled,
+		Auth:      &config.AuthConfig{Type: config.AuthTypeOAuth2},
+	}
 	if _, err := ops.AddServer(dir, off); err != nil {
 		t.Fatal(err)
 	}

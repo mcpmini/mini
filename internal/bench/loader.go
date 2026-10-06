@@ -54,7 +54,11 @@ func loadServerFixtures(fixturesDir, server string, projections map[string]*conf
 	return loadFixtureCases(serverDir, server, toolFiles, projections)
 }
 
-func loadFixtureCases(serverDir, server string, toolFiles []os.DirEntry, projections map[string]*config.ProjectionConfig) ([]Case, error) {
+func loadFixtureCases(
+	serverDir, server string,
+	toolFiles []os.DirEntry,
+	projections map[string]*config.ProjectionConfig,
+) ([]Case, error) {
 	var cases []Case
 	for _, tf := range toolFiles {
 		if tf.IsDir() || !strings.HasSuffix(tf.Name(), ".json") {

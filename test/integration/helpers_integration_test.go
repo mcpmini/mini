@@ -20,10 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
-	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -183,7 +184,12 @@ func runCLI(t *testing.T, configDir string, args ...string) (stdout, stderr stri
 	return outBuf.String(), errBuf.String(), exitCode
 }
 
-func runCLIWithStdin(t *testing.T, stdin string, configDir string, args ...string) (stdout, stderr string, exitCode int) {
+func runCLIWithStdin(
+	t *testing.T,
+	stdin string,
+	configDir string,
+	args ...string,
+) (stdout, stderr string, exitCode int) {
 	t.Helper()
 	cmd := exec.Command(miniBin, cliArgs(configDir, args)...)
 	cmd.Stdin = strings.NewReader(stdin)
@@ -314,7 +320,17 @@ type mcpClient struct {
 
 func startMiniCmd(t *testing.T, configDir string) (io.WriteCloser, *bufio.Scanner) {
 	t.Helper()
-	cmd := exec.Command(miniBin, "--config", configDir, "connect", "--standalone", "--tool-mode", "compact", "--log-level", "error")
+	cmd := exec.Command(
+		miniBin,
+		"--config",
+		configDir,
+		"connect",
+		"--standalone",
+		"--tool-mode",
+		"compact",
+		"--log-level",
+		"error",
+	)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -772,7 +788,16 @@ func faultServer(t *testing.T, fixtures map[string]string, fault map[string]any,
 	dir := mockFixtureDir(t, fixtures)
 	cfg := t.TempDir()
 	faultJSON, _ := json.Marshal(fault)
-	writeFaultServer(t, faultServerParams{ConfigDir: cfg, ServerName: "svc", Fixtures: dir, FaultJSON: string(faultJSON), ToolTimeout: toolTimeout})
+	writeFaultServer(
+		t,
+		faultServerParams{
+			ConfigDir:   cfg,
+			ServerName:  "svc",
+			Fixtures:    dir,
+			FaultJSON:   string(faultJSON),
+			ToolTimeout: toolTimeout,
+		},
+	)
 	return startServer(t, cfg)
 }
 

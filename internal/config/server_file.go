@@ -29,7 +29,11 @@ func loadServerConfig(path string) (*ServerConfig, error) {
 func parseServerConfig(path string, data []byte) (*ServerConfig, error) {
 	name := serverNameFromPath(path)
 	if server, ok := strings.CutSuffix(name, ".proj"); ok {
-		return nil, fmt.Errorf("%s: projection files are no longer read; move these rules under projections: in %s.yaml and delete this file", path, server)
+		return nil, fmt.Errorf(
+			"%s: projection files are no longer read; move these rules under projections: in %s.yaml and delete this file",
+			path,
+			server,
+		)
 	}
 	if err := checkServerName(name, path); err != nil {
 		return nil, err
@@ -102,7 +106,11 @@ func decodeServerFile(path, name string, data []byte) (*ServerConfig, error) {
 	}
 	s.Name = name
 	if s.ProjectionsErr != nil {
-		s.ProjectionsErr = &SourceError{Path: path, ServerName: name, Err: fmt.Errorf("parse %s: %w", path, s.ProjectionsErr.Err)}
+		s.ProjectionsErr = &SourceError{
+			Path:       path,
+			ServerName: name,
+			Err:        fmt.Errorf("parse %s: %w", path, s.ProjectionsErr.Err),
+		}
 	}
 	return &s, nil
 }

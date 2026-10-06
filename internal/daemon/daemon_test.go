@@ -51,7 +51,7 @@ func TestEnsureToken_reMintsOnLoosePermissions(t *testing.T) {
 	dir := t.TempDir()
 	path := daemon.TokenFile(dir)
 	testutil.WriteFile(t, path, "loose-secret")
-	if err := os.Chmod(path, 0644); err != nil { // chmod ignores umask, forcing loose perms
+	if err := os.Chmod(path, 0o644); err != nil { // chmod ignores umask, forcing loose perms
 		t.Fatal(err)
 	}
 	got, err := daemon.EnsureToken(dir)
@@ -65,7 +65,7 @@ func TestEnsureToken_reMintsOnLoosePermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0600 {
+	if info.Mode().Perm() != 0o600 {
 		t.Errorf("re-minted token perm = %#o, want 0600", info.Mode().Perm())
 	}
 }

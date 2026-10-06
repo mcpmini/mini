@@ -64,7 +64,11 @@ func (s *Server) connectSaved(ctx context.Context, name string) (config.ServerCo
 
 func (s *Server) rollBackAdd(name string) error {
 	if err := s.removeSavedServer(name); err != nil {
-		return fmt.Errorf("add_server: %s is still saved, so it will start next time; remove it with remove_server: %w", name, err)
+		return fmt.Errorf(
+			"add_server: %s is still saved, so it will start next time; remove it with remove_server: %w",
+			name,
+			err,
+		)
 	}
 	return nil
 }
@@ -101,7 +105,11 @@ func (s *Server) removeServerFromAgent(name string) (any, error) {
 	unlock := s.serverNames.lock(name)
 	defer unlock()
 	if err := s.removeSavedServer(name); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("remove_server: %s is disconnected but still saved, so it will start next time: %w", name, err)
+		return nil, fmt.Errorf(
+			"remove_server: %s is disconnected but still saved, so it will start next time: %w",
+			name,
+			err,
+		)
 	}
 	s.logger.Info("server removed by the config tool", "server", name)
 	return map[string]any{"ok": true, "server": name}, nil

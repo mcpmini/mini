@@ -49,7 +49,12 @@ func (s *Server) callPerSession(ctx context.Context, p dispatchParams) (json.Raw
 	return result, toolErr
 }
 
-func (s *Server) handleSessionConnErr(upstream *upstreamServer, session *Session, conn transport.Connection, err error) error {
+func (s *Server) handleSessionConnErr(
+	upstream *upstreamServer,
+	session *Session,
+	conn transport.Connection,
+	err error,
+) error {
 	var rpcErr *transport.RPCError
 	if errors.As(err, &rpcErr) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return err
@@ -60,7 +65,11 @@ func (s *Server) handleSessionConnErr(upstream *upstreamServer, session *Session
 	return connError{err}
 }
 
-func (s *Server) getOrDialSessionConn(ctx context.Context, upstream *upstreamServer, session *Session) (transport.Connection, error) {
+func (s *Server) getOrDialSessionConn(
+	ctx context.Context,
+	upstream *upstreamServer,
+	session *Session,
+) (transport.Connection, error) {
 	if conn := session.Conn(upstream.cfg.Name); conn != nil {
 		return conn, nil
 	}
@@ -73,7 +82,11 @@ func (s *Server) getOrDialSessionConn(ctx context.Context, upstream *upstreamSer
 	return s.checkDialedConn(upstream.cfg.Name, conn, session)
 }
 
-func (s *Server) checkDialedConn(name string, conn transport.Connection, session *Session) (transport.Connection, error) {
+func (s *Server) checkDialedConn(
+	name string,
+	conn transport.Connection,
+	session *Session,
+) (transport.Connection, error) {
 	if s.isUpstreamRegistered(name) {
 		return conn, nil
 	}
@@ -82,7 +95,11 @@ func (s *Server) checkDialedConn(name string, conn transport.Connection, session
 	return nil, fmt.Errorf("server %q removed during dial", name)
 }
 
-func (s *Server) dialPerSessionConn(ctx context.Context, upstream *upstreamServer, session *Session) (transport.Connection, error) {
+func (s *Server) dialPerSessionConn(
+	ctx context.Context,
+	upstream *upstreamServer,
+	session *Session,
+) (transport.Connection, error) {
 	if conn := session.Conn(upstream.cfg.Name); conn != nil {
 		return conn, nil
 	}

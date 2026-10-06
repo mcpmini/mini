@@ -68,16 +68,26 @@ func (e projectionEdit) apply(data []byte) ([]byte, *ProjectionConfig, error) {
 
 // checkOnlyTheRuleChanged loads the edited file, since rules can reach projections: through YAML merge
 // keys and anchors, which editing one key can't account for.
-func (e projectionEdit) checkOnlyTheRuleChanged(edited []byte, before *ServerConfig, want *ProjectionConfig) (*ProjectionConfig, error) {
+func (e projectionEdit) checkOnlyTheRuleChanged(
+	edited []byte,
+	before *ServerConfig,
+	want *ProjectionConfig,
+) (*ProjectionConfig, error) {
 	after, err := parseValidServerFile(e.path, edited)
 	if err != nil {
 		return nil, fmt.Errorf("the edited server file would not load: %w", err)
 	}
 	if !reflect.DeepEqual(after.Projections[e.tool], want) {
-		return nil, fmt.Errorf("the rule for %s comes through a YAML merge key or anchor, which a save can't change", e.tool)
+		return nil, fmt.Errorf(
+			"the rule for %s comes through a YAML merge key or anchor, which a save can't change",
+			e.tool,
+		)
 	}
 	if !sameRulesExcept(before.Projections, after.Projections, e.tool) {
-		return nil, fmt.Errorf("saving %s would also change other tools' rules, which come through a YAML merge key or anchor", e.tool)
+		return nil, fmt.Errorf(
+			"saving %s would also change other tools' rules, which come through a YAML merge key or anchor",
+			e.tool,
+		)
 	}
 	return after.Projections[e.tool], nil
 }

@@ -91,7 +91,9 @@ func TestExtractContent_MultiContent(t *testing.T) {
 
 func TestExtractContent_MultiContentRawArray(t *testing.T) {
 	t.Run("two JSON text blocks", func(t *testing.T) {
-		raw := json.RawMessage(`{"content":[{"type":"text","text":"{\"page\":1}"},{"type":"text","text":"{\"page\":2}"}],"isError":false}`)
+		raw := json.RawMessage(
+			`{"content":[{"type":"text","text":"{\"page\":1}"},{"type":"text","text":"{\"page\":2}"}],"isError":false}`,
+		)
 		out, err := invoke.ExtractContent(raw)
 		if err != nil {
 			t.Fatal(err)
@@ -102,7 +104,9 @@ func TestExtractContent_MultiContentRawArray(t *testing.T) {
 	})
 
 	t.Run("prose and JSON text blocks", func(t *testing.T) {
-		raw := json.RawMessage(`{"content":[{"type":"text","text":"here is the data:"},{"type":"text","text":"{\"id\":42}"}],"isError":false}`)
+		raw := json.RawMessage(
+			`{"content":[{"type":"text","text":"here is the data:"},{"type":"text","text":"{\"id\":42}"}],"isError":false}`,
+		)
 		out, err := invoke.ExtractContent(raw)
 		if err != nil {
 			t.Fatal(err)
@@ -113,7 +117,9 @@ func TestExtractContent_MultiContentRawArray(t *testing.T) {
 	})
 
 	t.Run("image and text blocks", func(t *testing.T) {
-		raw := json.RawMessage(`{"content":[{"type":"image","data":"abc","mimeType":"image/png"},{"type":"text","text":"caption"}],"isError":false}`)
+		raw := json.RawMessage(
+			`{"content":[{"type":"image","data":"abc","mimeType":"image/png"},{"type":"text","text":"caption"}],"isError":false}`,
+		)
 		out, err := invoke.ExtractContent(raw)
 		if err != nil {
 			t.Fatal(err)
@@ -177,7 +183,9 @@ func TestExtractContent_StructuredContentFallback(t *testing.T) {
 }
 
 func TestExtractContent_StructuredContentPreferredOverText(t *testing.T) {
-	raw := json.RawMessage(`{"content":[{"type":"text","text":"plain text fallback"}],"structuredContent":{"temp":72,"unit":"F"}}`)
+	raw := json.RawMessage(
+		`{"content":[{"type":"text","text":"plain text fallback"}],"structuredContent":{"temp":72,"unit":"F"}}`,
+	)
 	out, err := invoke.ExtractContent(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -199,7 +207,9 @@ func TestExtractContent_StructuredContentPreferredOverJSONText(t *testing.T) {
 }
 
 func TestExtractContent_StructuredContentPreferredOverMultiBlockContent(t *testing.T) {
-	raw := json.RawMessage(`{"content":[{"type":"text","text":"foo"},{"type":"text","text":"bar"}],"structuredContent":{"combined":true}}`)
+	raw := json.RawMessage(
+		`{"content":[{"type":"text","text":"foo"},{"type":"text","text":"bar"}],"structuredContent":{"combined":true}}`,
+	)
 	out, err := invoke.ExtractContent(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -213,7 +223,10 @@ func TestExtractContent_StructuredContentPreferredOverMultiBlockContent(t *testi
 
 func TestInvokeRaw_BasicCall(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse(`{"id":42}`, false))
-	raw, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool", Params: map[string]any{"x": 1}})
+	raw, _, err := invoke.InvokeRaw(
+		context.Background(),
+		invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool", Params: map[string]any{"x": 1}},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +237,10 @@ func TestInvokeRaw_BasicCall(t *testing.T) {
 
 func TestInvokeRaw_ToolError(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse("something failed", true))
-	_, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"})
+	_, _, err := invoke.InvokeRaw(
+		context.Background(),
+		invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"},
+	)
 	if err == nil {
 		t.Error("expected error")
 	}
@@ -232,7 +248,10 @@ func TestInvokeRaw_ToolError(t *testing.T) {
 
 func TestInvokeRaw_ConnError(t *testing.T) {
 	conn := &transport.FakeConnection{Err: errors.New("network down")}
-	_, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"})
+	_, _, err := invoke.InvokeRaw(
+		context.Background(),
+		invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"},
+	)
 	if err == nil || !contains(err.Error(), "network down") {
 		t.Errorf("expected conn error, got %v", err)
 	}
@@ -240,7 +259,10 @@ func TestInvokeRaw_ConnError(t *testing.T) {
 
 func TestInvokeRaw_NilParams(t *testing.T) {
 	conn := fakeConn("tools/call", toolResponse(`"ok"`, false))
-	raw, _, err := invoke.InvokeRaw(context.Background(), invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"})
+	raw, _, err := invoke.InvokeRaw(
+		context.Background(),
+		invoke.InvokeRawParams{Clock: clock.NewFake(), Conn: conn, Tool: "my_tool"},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,7 +361,11 @@ func TestBuildEnvelope_BypassProjectionIgnoresConfigAndDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(env.Excluded) != 0 || len(env.Truncated) != 0 {
-		t.Errorf("bypass must produce no exclusions/truncations, got excluded=%v truncated=%v", env.Excluded, env.Truncated)
+		t.Errorf(
+			"bypass must produce no exclusions/truncations, got excluded=%v truncated=%v",
+			env.Excluded,
+			env.Truncated,
+		)
 	}
 	if env.File != nil {
 		t.Errorf("bypass must not write a recovery file, got %v", *env.File)

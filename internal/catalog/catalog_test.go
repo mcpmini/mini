@@ -42,7 +42,14 @@ func catalogJSON(t *testing.T, schemaVersion int, entries ...map[string]any) []b
 }
 
 func validEntry(change func(map[string]any)) map[string]any {
-	entry := map[string]any{"name": "example", "title": "Example", "url": "https://example.com/mcp", "description": "d", "category": "c", "auth": "none"}
+	entry := map[string]any{
+		"name":        "example",
+		"title":       "Example",
+		"url":         "https://example.com/mcp",
+		"description": "d",
+		"category":    "c",
+		"auth":        "none",
+	}
 	change(entry)
 	return entry
 }
@@ -84,29 +91,109 @@ func TestParseRejectsInvalidEntries(t *testing.T) {
 		{"bad name", func(e map[string]any) { e["name"] = "bad name" }, `invalid name "bad name"`},
 		{"missing name", func(e map[string]any) { delete(e, "name") }, "catalog entry 1: name is required"},
 		{"missing url", func(e map[string]any) { delete(e, "url") }, `catalog entry "example": url is required`},
-		{"http url", func(e map[string]any) { e["url"] = "http://example.com/mcp" }, `catalog entry "example": url must be an https URL`},
-		{"hidden setup URL formatting", func(e map[string]any) { e["auth"], e["setup_url"] = "token", "https://example.com/\u202egithub.com" }, `catalog entry "example": setup_url: url must be printable ASCII`},
-		{"hidden URL formatting", func(e map[string]any) { e["url"] = "https://example.com/\u200b" }, `catalog entry "example": url must be printable ASCII`},
-		{"space in setup URL", func(e map[string]any) { e["auth"], e["setup_url"] = "token", "https://example.com/token page" }, `catalog entry "example": setup_url: url must be printable ASCII`},
-		{"lookalike percent-encoded non-ASCII host", func(e map[string]any) { e["url"] = "https://g%D1%96thub.com/mcp" }, `catalog entry "example": url host must be ASCII`},
-		{"missing description", func(e map[string]any) { delete(e, "description") }, `catalog entry "example": description is required`},
-		{"blank category", func(e map[string]any) { e["category"] = " " }, `catalog entry "example": category is required`},
-		{"control character", func(e map[string]any) { e["description"] = "hi\x1b[2J" }, `catalog entry "example": description contains control characters`},
-		{"text direction override", func(e map[string]any) { e["description"] = "safe\u202etxt.exe" }, `catalog entry "example": description contains control characters`},
-		{"description too long in runes", func(e map[string]any) { e["description"] = strings.Repeat("é", maxTextRunes+1) }, `catalog entry "example": description is longer than 120 characters`},
-		{"consecutive spaces", func(e map[string]any) { e["description"] = "a  b" }, `catalog entry "example": description has irregular spacing`},
-		{"tab spacing", func(e map[string]any) { e["description"] = "a\tb" }, `catalog entry "example": description has irregular spacing`},
-		{"trailing category space", func(e map[string]any) { e["category"] = "category " }, `catalog entry "example": category has irregular spacing`},
-		{"ideographic space", func(e map[string]any) { e["description"] = "a\u3000b" }, `catalog entry "example": description has irregular spacing`},
+		{
+			"http url",
+			func(e map[string]any) { e["url"] = "http://example.com/mcp" },
+			`catalog entry "example": url must be an https URL`,
+		},
+		{
+			"hidden setup URL formatting",
+			func(e map[string]any) { e["auth"], e["setup_url"] = "token", "https://example.com/\u202egithub.com" },
+			`catalog entry "example": setup_url: url must be printable ASCII`,
+		},
+		{
+			"hidden URL formatting",
+			func(e map[string]any) { e["url"] = "https://example.com/\u200b" },
+			`catalog entry "example": url must be printable ASCII`,
+		},
+		{
+			"space in setup URL",
+			func(e map[string]any) { e["auth"], e["setup_url"] = "token", "https://example.com/token page" },
+			`catalog entry "example": setup_url: url must be printable ASCII`,
+		},
+		{
+			"lookalike percent-encoded non-ASCII host",
+			func(e map[string]any) { e["url"] = "https://g%D1%96thub.com/mcp" },
+			`catalog entry "example": url host must be ASCII`,
+		},
+		{
+			"missing description",
+			func(e map[string]any) { delete(e, "description") },
+			`catalog entry "example": description is required`,
+		},
+		{
+			"blank category",
+			func(e map[string]any) { e["category"] = " " },
+			`catalog entry "example": category is required`,
+		},
+		{
+			"control character",
+			func(e map[string]any) { e["description"] = "hi\x1b[2J" },
+			`catalog entry "example": description contains control characters`,
+		},
+		{
+			"text direction override",
+			func(e map[string]any) { e["description"] = "safe\u202etxt.exe" },
+			`catalog entry "example": description contains control characters`,
+		},
+		{
+			"description too long in runes",
+			func(e map[string]any) { e["description"] = strings.Repeat("é", maxTextRunes+1) },
+			`catalog entry "example": description is longer than 120 characters`,
+		},
+		{
+			"consecutive spaces",
+			func(e map[string]any) { e["description"] = "a  b" },
+			`catalog entry "example": description has irregular spacing`,
+		},
+		{
+			"tab spacing",
+			func(e map[string]any) { e["description"] = "a\tb" },
+			`catalog entry "example": description has irregular spacing`,
+		},
+		{
+			"trailing category space",
+			func(e map[string]any) { e["category"] = "category " },
+			`catalog entry "example": category has irregular spacing`,
+		},
+		{
+			"ideographic space",
+			func(e map[string]any) { e["description"] = "a\u3000b" },
+			`catalog entry "example": description has irregular spacing`,
+		},
 		{"escape sequence in name", func(e map[string]any) { e["name"] = "\x1b[2J" }, "invalid name"},
-		{"unknown auth", func(e map[string]any) { e["auth"] = "magic" }, `catalog entry "example": invalid auth "magic"`},
+		{
+			"unknown auth",
+			func(e map[string]any) { e["auth"] = "magic" },
+			`catalog entry "example": invalid auth "magic"`,
+		},
 		{"escape sequence in auth", func(e map[string]any) { e["auth"] = "bad\x1b" }, "invalid auth"},
 		{"missing title", func(e map[string]any) { delete(e, "title") }, `catalog entry "example": title is required`},
-		{"host-like brackets in title", func(e map[string]any) { e["title"] = "Linear [mcp.linear.app]" }, `catalog entry "example": title must be at most 40 characters without brackets`},
-		{"title too long", func(e map[string]any) { e["title"] = strings.Repeat("é", maxTitleRunes+1) }, `catalog entry "example": title must be at most 40 characters without brackets`},
-		{"token without setup_url", func(e map[string]any) { e["auth"] = "token" }, `catalog entry "example": setup_url: url must be an https URL`},
-		{"http setup_url", func(e map[string]any) { e["auth"], e["setup_url"] = "oauth2-app", "http://example.com/apps" }, `catalog entry "example": setup_url: url must be an https URL`},
-		{"setup_url on an oauth2 entry", func(e map[string]any) { e["auth"], e["setup_url"] = "oauth2", "https://example.com/apps" }, `catalog entry "example": setup_url is only for token and oauth2-app entries`},
+		{
+			"host-like brackets in title",
+			func(e map[string]any) { e["title"] = "Linear [mcp.linear.app]" },
+			`catalog entry "example": title must be at most 40 characters without brackets`,
+		},
+		{
+			"title too long",
+			func(e map[string]any) { e["title"] = strings.Repeat("é", maxTitleRunes+1) },
+			`catalog entry "example": title must be at most 40 characters without brackets`,
+		},
+		{
+			"token without setup_url",
+			func(e map[string]any) { e["auth"] = "token" },
+			`catalog entry "example": setup_url: url must be an https URL`,
+		},
+		{
+			"http setup_url",
+			func(e map[string]any) { e["auth"], e["setup_url"] = "oauth2-app", "http://example.com/apps" },
+			`catalog entry "example": setup_url: url must be an https URL`,
+		},
+		{
+			"setup_url on an oauth2 entry",
+			func(e map[string]any) { e["auth"], e["setup_url"] = "oauth2", "https://example.com/apps" },
+			`catalog entry "example": setup_url is only for token and oauth2-app entries`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -150,7 +237,8 @@ func TestParsePopular_preservesIDOrderAndFlatEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(c.Popular, []string{"second", "first"}) || c.Entries[0].Name != "first" || c.Entries[1].Name != "second" {
+	if !slices.Equal(c.Popular, []string{"second", "first"}) || c.Entries[0].Name != "first" ||
+		c.Entries[1].Name != "second" {
 		t.Fatalf("catalog = %+v, want popular [second first] and entries [first second]", c)
 	}
 	if c.Entries[0].Category != "Zeta" || c.Entries[1].Category != "Alpha" {
@@ -179,7 +267,11 @@ func TestParsePopular_unknownOrRepeatedIDIsRefused(t *testing.T) {
 		{"control characters", []string{"bad\x1b"}, "not a catalog server"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			assertTerminalSafeParseError(t, catalogWithPopular(t, tt.popular, validEntry(func(map[string]any) {})), tt.want)
+			assertTerminalSafeParseError(
+				t,
+				catalogWithPopular(t, tt.popular, validEntry(func(map[string]any) {})),
+				tt.want,
+			)
 		})
 	}
 }

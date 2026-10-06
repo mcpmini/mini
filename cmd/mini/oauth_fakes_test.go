@@ -15,13 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/transport"
-	"golang.org/x/oauth2"
 )
 
 type testTokenEndpoint struct {
@@ -112,8 +113,10 @@ func newOAuthTestSetup(t *testing.T, tok *oauth2.Token, clk clock.Clock) *oauthT
 	configDir, token, upstream := t.TempDir(), newTestTokenEndpoint(t), newTestMCPUpstream(t)
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: configDir, ServerName: "live", Token: tok})
 	sc := oauthServerConfig("live", upstream.srv.URL, token.srv.URL, true)
-	p := BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}, Clock: clk}
+	p := BuildServerParams{
+		Cfg: &config.Config{}, ConfigDir: configDir,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}, Clock: clk,
+	}
 	srv := startFromConfigDir(t, p)
 	t.Cleanup(srv.Close)
 	awaitConnected(t, srv, "live")

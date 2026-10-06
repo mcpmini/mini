@@ -57,7 +57,9 @@ func TestIntegrationProjection_elidedFieldsReported(t *testing.T) {
 
 func TestIntegrationProjection_includeOnly(t *testing.T) {
 	client := quickServerWith(t, quickServerParams{
-		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","body":"long text","created_at":"2024-01-01"}`},
+		Fixtures: map[string]string{
+			"get_item": `{"id":1,"title":"hello","body":"long text","created_at":"2024-01-01"}`,
+		},
 		Projections: map[string]*config.ProjectionConfig{
 			"get_item": {
 				IncludeOnly: []string{"id", "title"},
@@ -128,7 +130,9 @@ func TestIntegrationProjection_omittedEnvelope(t *testing.T) {
 
 func TestIntegrationProjection_arrayLimit(t *testing.T) {
 	client := quickServerWith(t, quickServerParams{
-		Fixtures: map[string]string{"get_repo": `{"issues":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5}],"name":"repo"}`},
+		Fixtures: map[string]string{
+			"get_repo": `{"issues":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5}],"name":"repo"}`,
+		},
 		Projections: map[string]*config.ProjectionConfig{
 			"get_repo": {
 				ArrayLimits: map[string]int{"issues": 3},
@@ -259,7 +263,8 @@ func TestIntegrationProjection_depthLimit(t *testing.T) {
 	if strings.Contains(string(b), `"deep"`) {
 		t.Errorf("depth_limit should have replaced deep field, got: %s", b)
 	}
-	if !strings.Contains(string(b), "depth") && !strings.Contains(string(b), "limit") && !strings.Contains(string(b), "...") {
+	if !strings.Contains(string(b), "depth") && !strings.Contains(string(b), "limit") &&
+		!strings.Contains(string(b), "...") {
 		t.Errorf("depth_limit placeholder should be present in response, got: %s", b)
 	}
 }

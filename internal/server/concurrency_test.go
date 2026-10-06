@@ -21,8 +21,16 @@ const stressIterations = 500
 func TestConcurrentConfigureExec(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()
-	srv.AddConnection(ctx, config.ServerConfig{Name: "alpha"}, fakeConnWithResponse("toolA", `{"content":[{"type":"text","text":"a"}]}`))
-	srv.AddConnection(ctx, config.ServerConfig{Name: "beta"}, fakeConnWithResponse("toolB", `{"content":[{"type":"text","text":"b"}]}`))
+	srv.AddConnection(
+		ctx,
+		config.ServerConfig{Name: "alpha"},
+		fakeConnWithResponse("toolA", `{"content":[{"type":"text","text":"a"}]}`),
+	)
+	srv.AddConnection(
+		ctx,
+		config.ServerConfig{Name: "beta"},
+		fakeConnWithResponse("toolB", `{"content":[{"type":"text","text":"b"}]}`),
+	)
 
 	goroutinesBefore := runtime.NumGoroutine()
 	var wg sync.WaitGroup
@@ -38,7 +46,12 @@ func TestConcurrentConfigureExec(t *testing.T) {
 	wg.Wait()
 
 	if delta := runtime.NumGoroutine() - goroutinesBefore; delta > 5 {
-		t.Errorf("goroutine leak: started with %d, ended with %d (delta %d)", goroutinesBefore, goroutinesBefore+delta, delta)
+		t.Errorf(
+			"goroutine leak: started with %d, ended with %d (delta %d)",
+			goroutinesBefore,
+			goroutinesBefore+delta,
+			delta,
+		)
 	}
 }
 
@@ -59,11 +72,19 @@ func runConfigureWorker(t *testing.T, srv *server.Server, ctx context.Context, w
 	fake := fakeConnWithResponse("toolC", `{"content":[{"type":"text","text":"c"}]}`)
 	for range stressIterations {
 		srv.AddConnection(ctx, config.ServerConfig{Name: "dynamic"}, fake)
-		serve(t, srv, callTool("config", map[string]any{"action": "remove_server", "server": "dynamic"})) //nolint:errcheck
-		serve(t, srv, callTool("config", map[string]any{                                                  //nolint:errcheck
-			"action": "set_projection", "server": "alpha", "tool": "toolA",
-			"projection": map[string]any{"string_limit": 50}, "session_only": true,
-		}))
+		serve(
+			t,
+			srv,
+			callTool("config", map[string]any{"action": "remove_server", "server": "dynamic"}),
+		) //nolint:errcheck
+		serve(
+			t,
+			srv,
+			callTool("config", map[string]any{ //nolint:errcheck
+				"action": "set_projection", "server": "alpha", "tool": "toolA",
+				"projection": map[string]any{"string_limit": 50}, "session_only": true,
+			}),
+		)
 	}
 }
 

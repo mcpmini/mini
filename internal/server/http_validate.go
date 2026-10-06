@@ -95,7 +95,9 @@ func readLimitedBody(w http.ResponseWriter, body io.Reader) ([]byte, bool) {
 	}
 	if len(data) > 1<<20 {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(errorResponse(nil, transport.CodeInvalidParams, "request body exceeds 1MB limit")) //nolint:errcheck
+		json.NewEncoder(w).
+			Encode(errorResponse(nil, transport.CodeInvalidParams, "request body exceeds 1MB limit"))
+			//nolint:errcheck
 		return nil, false
 	}
 	return data, true

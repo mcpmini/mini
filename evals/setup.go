@@ -62,7 +62,16 @@ func (r *Runner) miniMCPConfig(env *Env, servers map[string]string, callLogDir s
 		"mcpServers": map[string]any{
 			"mini": map[string]any{
 				"command": r.MiniBin,
-				"args":    []string{"--config", configDir, "connect", "--standalone", "--tool-mode", "compact", "--log-level", "error"},
+				"args": []string{
+					"--config",
+					configDir,
+					"connect",
+					"--standalone",
+					"--tool-mode",
+					"compact",
+					"--log-level",
+					"error",
+				},
 			},
 		},
 	})
@@ -72,9 +81,14 @@ func (r *Runner) miniCLIConfigDir(env *Env, servers map[string]string, callLogDi
 	return r.buildMiniConfigDir(env, servers, callLogDir, format)
 }
 
-func (r *Runner) buildMiniConfigDir(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {
+func (r *Runner) buildMiniConfigDir(
+	env *Env,
+	servers map[string]string,
+	callLogDir string,
+	format int,
+) (string, error) {
 	configDir := env.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0o600); err != nil {
 		return "", err
 	}
 	if err := writeServersYAML(configDir, r.FakemcpBin, servers, callLogDir); err != nil {
@@ -101,12 +115,12 @@ func miniConfigYAML(format int) string {
 
 func writeServersYAML(configDir, fakemcpBin string, servers map[string]string, callLogDir string) error {
 	serverDir := filepath.Join(configDir, "servers")
-	if err := os.MkdirAll(serverDir, 0700); err != nil {
+	if err := os.MkdirAll(serverDir, 0o700); err != nil {
 		return err
 	}
 	for name, fixtureDir := range servers {
 		yaml := buildServerYAML(fakemcpBin, name, fixtureDir, callLogDir)
-		if err := os.WriteFile(filepath.Join(serverDir, name+".yaml"), []byte(yaml), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(serverDir, name+".yaml"), []byte(yaml), 0o600); err != nil {
 			return err
 		}
 	}
@@ -123,7 +137,7 @@ func buildServerYAML(fakemcpBin, name, fixtureDir, callLogDir string) string {
 
 func writeBundledProjections(configDir string, r *Runner, servers map[string]string) error {
 	serversDir := filepath.Join(configDir, "servers")
-	if err := os.MkdirAll(serversDir, 0700); err != nil {
+	if err := os.MkdirAll(serversDir, 0o700); err != nil {
 		return err
 	}
 	srcDir := filepath.Join(r.RepoRoot, "internal", "defaults", "projections")
@@ -148,7 +162,7 @@ func writeBundledProjection(srcDir, serversDir, name string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(server, inlineProjections(data)...), 0600)
+	return os.WriteFile(path, append(server, inlineProjections(data)...), 0o600)
 }
 
 func inlineProjections(bundled []byte) []byte {
@@ -169,9 +183,14 @@ func (r *Runner) proxyMCPConfig(env *Env, servers map[string]string, callLogDir 
 	return writeMCPConfig(env, miniServerConfig(r.MiniBin, configDir, "connect", "--log-level", "error"))
 }
 
-func (r *Runner) writeMiniProxyConfig(env *Env, servers map[string]string, callLogDir string, format int) (string, error) {
+func (r *Runner) writeMiniProxyConfig(
+	env *Env,
+	servers map[string]string,
+	callLogDir string,
+	format int,
+) (string, error) {
 	configDir := env.TempDir()
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(miniConfigYAML(format)), 0o600); err != nil {
 		return "", err
 	}
 	if err := writeServersYAML(configDir, r.FakemcpBin, servers, callLogDir); err != nil {
@@ -200,7 +219,7 @@ func miniServerConfig(miniBin, configDir string, args ...string) map[string]any 
 func writeMCPConfig(env *Env, cfg map[string]any) (string, error) {
 	b, _ := json.Marshal(cfg)
 	path := filepath.Join(env.TempDir(), "mcp.json")
-	return path, os.WriteFile(path, b, 0600)
+	return path, os.WriteFile(path, b, 0o600)
 }
 
 func fakemcpArgs(fixtureDir, callLogDir, serverName string) []string {
@@ -231,7 +250,7 @@ func proxyAllowedTools(servers map[string]string, extraBuiltins string) string {
 func writeMiniWrapper(env *Env, miniBin, configDir string) (string, error) {
 	dir := env.TempDir()
 	script := "#!/bin/sh\nexec " + miniBin + " --config " + configDir + " \"$@\"\n"
-	return dir, os.WriteFile(filepath.Join(dir, "mini"), []byte(script), 0755)
+	return dir, os.WriteFile(filepath.Join(dir, "mini"), []byte(script), 0o755)
 }
 
 func freshWorkDir(env *Env, workSrcDir string) (string, error) {

@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
-	"golang.org/x/oauth2"
 )
 
 func TestInjectToken_expiredToken_refreshSendsCanonicalResource(t *testing.T) {

@@ -18,6 +18,9 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
@@ -25,8 +28,6 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
-	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
 )
 
 type configToolEnv struct {
@@ -112,7 +113,10 @@ func TestConfigAddServer_savesAndConnectsTheServer(t *testing.T) {
 	}
 	want := config.ServerConfig{Transport: "http", URL: upstream.URL, AgentAdded: true}
 	if saved := readServerYAML(t, e.dir, "added"); !reflect.DeepEqual(saved, want) {
-		t.Errorf("saved %+v\nwant only the connection and agent_added: credentials, rules, permissions and timeouts keep mini's defaults", saved)
+		t.Errorf(
+			"saved %+v\nwant only the connection and agent_added: credentials, rules, permissions and timeouts keep mini's defaults",
+			saved,
+		)
 	}
 	if rules := e.liveProjectionRules("added"); len(rules) != 0 {
 		t.Errorf("live projection rules %v, want none from the agent's config", rules)
@@ -123,7 +127,10 @@ func TestConfigAddServer_runsTheServerAsARestartWould(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowRuntimeStdio = true
 	e := newConfigToolEnvWithConfig(t, cfg)
-	githubCommand := filepath.Join(t.TempDir(), "server-github") // a GitHub command, so the add installs GitHub's bundled projection
+	githubCommand := filepath.Join(
+		t.TempDir(),
+		"server-github",
+	) // a GitHub command, so the add installs GitHub's bundled projection
 	if err := os.Symlink(requireEchoMCP(t), githubCommand); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +140,10 @@ func TestConfigAddServer_runsTheServerAsARestartWould(t *testing.T) {
 	}
 
 	saved := readProjectionRuleNames(t, config.ServerPath(e.dir, "added"))
-	if rules := slices.Sorted(slices.Values(e.liveProjectionRules("added"))); len(saved) == 0 || !slices.Equal(rules, saved) {
+	if rules := slices.Sorted(
+		slices.Values(e.liveProjectionRules("added")),
+	); len(saved) == 0 ||
+		!slices.Equal(rules, saved) {
 		t.Errorf("live projection rules %v, want the saved server file's %v", rules, saved)
 	}
 }
@@ -142,7 +152,9 @@ func requireEchoMCP(t *testing.T) string {
 	t.Helper()
 	bin := os.Getenv("ECHOMCP_BIN")
 	if bin == "" {
-		t.Fatal("ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...")
+		t.Fatal(
+			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
+		)
 	}
 	return bin
 }
@@ -170,7 +182,9 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 			URL:       "https://real.example.com/mcp",
 		})
 
-		text, failed := e.addServer(map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL})
+		text, failed := e.addServer(
+			map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL},
+		)
 
 		if !failed || !strings.Contains(text, "svc is already configured; remove it with remove_server first") {
 			t.Fatalf("add_server = %q, want the already-configured refusal", text)
@@ -193,7 +207,9 @@ func TestConfigAddServer_aConfiguredOrRunningName_isRefusedAndLeftAlone(t *testi
 			},
 		})
 
-		text, failed := e.addServer(map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL})
+		text, failed := e.addServer(
+			map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL},
+		)
 
 		if !failed || !strings.Contains(text, "svc is already running; remove it with remove_server first") {
 			t.Fatalf("add_server = %q, want the already-running refusal", text)
@@ -218,7 +234,11 @@ func TestConfigAddServer_connectFails_leavesNoFiles(t *testing.T) {
 	if !failed {
 		t.Fatal("add_server of a command that doesn't exist succeeded")
 	}
-	if entries, _ := os.ReadDir(filepath.Join(e.dir, "servers")); len(entries) != 0 { //nolint:errcheck // a missing dir is the empty result wanted
+	if entries, _ := os.ReadDir(
+		filepath.Join(e.dir, "servers"),
+	); len(
+		entries,
+	) != 0 { //nolint:errcheck // a missing dir is the empty result wanted
 		t.Errorf("servers/ holds %v after a failed add, want the server file and its bundled projection gone", entries)
 	}
 }
@@ -226,7 +246,9 @@ func TestConfigAddServer_connectFails_leavesNoFiles(t *testing.T) {
 func TestConfigAddServer_envReferenceInURL_isRefusedSoARestartCantExpandIt(t *testing.T) {
 	e := newConfigToolEnv(t)
 
-	text, failed := e.addServer(map[string]any{"name": "leak", "transport": "http", "url": newMCPTestServer(t, pingTools).URL + "/?t=${HOME}"})
+	text, failed := e.addServer(
+		map[string]any{"name": "leak", "transport": "http", "url": newMCPTestServer(t, pingTools).URL + "/?t=${HOME}"},
+	)
 
 	if !failed || !strings.Contains(text, "isn't expanded") {
 		t.Fatalf("add_server = %q, want the unexpanded-reference refusal", text)
@@ -245,7 +267,11 @@ func TestConfigAddServer_aSavedAgentServerNeverGetsOAuthFromItsOwnChallenge(t *t
 	restartErr := restartWithSavedServer(t, e.dir, "evil")
 
 	if errors.Is(restartErr, transport.ErrReauthRequired) || config.IsOAuthDetected(e.dir, "evil") {
-		t.Errorf("restart err = %v, OAuth marker = %v; want a plain failure and no marker", restartErr, config.IsOAuthDetected(e.dir, "evil"))
+		t.Errorf(
+			"restart err = %v, OAuth marker = %v; want a plain failure and no marker",
+			restartErr,
+			config.IsOAuthDetected(e.dir, "evil"),
+		)
 	}
 	if text, failed := e.call(map[string]any{"action": "start_auth", "server": "evil"}); !failed {
 		t.Errorf("start_auth = %q, want it refused: the server's own metadata would pick where the code goes", text)
@@ -365,7 +391,12 @@ func TestConfigAddServer_anAddThatSucceedsAfterARemoveStaysSavedAndLive(t *testi
 	<-removeThenAddDone
 
 	if saved, live := e.isSaved("svc"), e.srv.ToolCount("svc") > 0; laterAddFailed || !saved || !live {
-		t.Errorf("later add failed=%v, saved=%v, live=%v; want the add that reported success kept", laterAddFailed, saved, live)
+		t.Errorf(
+			"later add failed=%v, saved=%v, live=%v; want the add that reported success kept",
+			laterAddFailed,
+			saved,
+			live,
+		)
 	}
 }
 
@@ -428,7 +459,9 @@ func newGatedMCPServer(t *testing.T) (srv *httptest.Server, inHandshake <-chan s
 func TestConfigRemoveServer(t *testing.T) {
 	t.Run("deletes the server file and disconnects", func(t *testing.T) {
 		e := newConfigToolEnv(t)
-		if text, failed := e.addServer(map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL}); failed {
+		if text, failed := e.addServer(
+			map[string]any{"name": "svc", "transport": "http", "url": newMCPTestServer(t, pingTools).URL},
+		); failed {
 			t.Fatalf("add_server: %s", text)
 		}
 

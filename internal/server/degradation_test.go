@@ -59,7 +59,11 @@ func TestQueueDepth_zeroMeansUnlimited(t *testing.T) {
 	srv.AddConnection(ctx, sc, fake)
 
 	for i := 0; i < 5; i++ {
-		resp := serve(t, srv, callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}))
+		resp := serve(
+			t,
+			srv,
+			callTool("call", map[string]any{"server": "svc", "tool": "op", "params": map[string]any{}}),
+		)
 		text := toolResultText(t, resp)
 		var env map[string]any
 		if err := json.Unmarshal([]byte(text), &env); err != nil {

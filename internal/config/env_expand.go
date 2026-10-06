@@ -99,7 +99,12 @@ func checkUnexpandedFields(sc ServerConfig) error {
 	}
 	for i, value := range values {
 		if ref := envVarRef.FindString(value); ref != "" {
-			return fmt.Errorf("server %s: %s: %s isn't expanded; ${VAR} is only expanded in headers, env, auth.token and auth.client_secret", sc.Name, names[i], ref)
+			return fmt.Errorf(
+				"server %s: %s: %s isn't expanded; ${VAR} is only expanded in headers, env, auth.token and auth.client_secret",
+				sc.Name,
+				names[i],
+				ref,
+			)
 		}
 	}
 	return nil

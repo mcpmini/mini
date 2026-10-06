@@ -56,7 +56,10 @@ type dialOnce struct {
 	done bool
 }
 
-func (s *Session) dialOnceFor(serverName string, dial func() (transport.Connection, error)) (transport.Connection, error) {
+func (s *Session) dialOnceFor(
+	serverName string,
+	dial func() (transport.Connection, error),
+) (transport.Connection, error) {
 	d := s.getDialOnce(serverName)
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -435,7 +438,13 @@ func (st *sessionStore) collectIdleSessions(deadline time.Time) []evictedSession
 
 func (st *sessionStore) evictIdle(deadline time.Time) {
 	for _, e := range st.collectIdleSessions(deadline) {
-		slog.Info("session evicted", "session_id", sessionIDPrefix(e.id), "idle_duration", e.idleDuration.Round(time.Second))
+		slog.Info(
+			"session evicted",
+			"session_id",
+			sessionIDPrefix(e.id),
+			"idle_duration",
+			e.idleDuration.Round(time.Second),
+		)
 		e.session.markAborted() // unblock any goroutine waiting in waitInitialized
 		e.session.Close()
 	}

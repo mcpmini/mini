@@ -14,7 +14,11 @@ import (
 func TestList_hidden_includesHiddenTools(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	perm := &config.PermissionsConfig{Hidden: []string{"secretTool"}}
-	srv.AddConnection(t.Context(), config.ServerConfig{Name: "svc", Permissions: perm}, fakeConn("openTool", "secretTool"))
+	srv.AddConnection(
+		t.Context(),
+		config.ServerConfig{Name: "svc", Permissions: perm},
+		fakeConn("openTool", "secretTool"),
+	)
 
 	text := toolResultText(t, serve(t, srv, callTool("list", map[string]any{"hidden": true})))
 	var results []map[string]any

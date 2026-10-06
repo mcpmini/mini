@@ -7,11 +7,12 @@ import (
 	"runtime"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/bench"
 	"github.com/mcpmini/mini/internal/config"
 	minidefaults "github.com/mcpmini/mini/internal/defaults"
 	"github.com/mcpmini/mini/internal/testutil"
-	"gopkg.in/yaml.v3"
 )
 
 var defaults = bench.DefaultProjectionDefaults()
@@ -20,8 +21,12 @@ func prListRaw(t *testing.T) []byte {
 	t.Helper()
 	raw, _ := json.Marshal([]any{
 		map[string]any{
-			"id": 1, "title": "PR title",
-			"body":     "This is a very long PR body that describes a lot of things in detail. " + repeat("more text ", 50),
+			"id":    1,
+			"title": "PR title",
+			"body": "This is a very long PR body that describes a lot of things in detail. " + repeat(
+				"more text ",
+				50,
+			),
 			"node_id":  "abc123",
 			"url":      "https://api.github.com/...",
 			"html_url": "https://github.com/...",
@@ -39,7 +44,10 @@ func TestMeasure_rawIsLargestTokenCount(t *testing.T) {
 		StringLimits: map[string]int{"body": 100},
 		StripMarkup:  true,
 	}
-	results := bench.Measure(bench.Case{Server: "github", Tool: "list_prs", Raw: prListRaw(t), ProjConfig: cfg}, defaults)
+	results := bench.Measure(
+		bench.Case{Server: "github", Tool: "list_prs", Raw: prListRaw(t), ProjConfig: cfg},
+		defaults,
+	)
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}

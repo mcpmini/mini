@@ -69,7 +69,12 @@ func TestIntegrationActions_protectedActionRequiresExecProtected(t *testing.T) {
 func TestIntegrationActions_badServerReference(t *testing.T) {
 	client := actionServer(t, actionServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1}`},
-		Action:   config.ActionConfig{Name: "broken", Description: "Bad server", Server: "nonexistent", Tool: "get_item"},
+		Action: config.ActionConfig{
+			Name:        "broken",
+			Description: "Bad server",
+			Server:      "nonexistent",
+			Tool:        "get_item",
+		},
 	})
 
 	_, isErr := client.execToolAllowError("nonexistent", "broken", nil)

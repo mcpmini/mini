@@ -124,7 +124,9 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 			},
 		})
 	case "tools/list":
-		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}}) //nolint:errcheck
+		json.NewEncoder(w).
+			Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}})
+		//nolint:errcheck
 	default:
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil}) //nolint:errcheck
 	}
@@ -246,7 +248,9 @@ func serveMode(t *testing.T, srv *server.Server, compact bool, input []byte) map
 	wantID := string(callReq.ID)
 
 	initRaw, _ := json.Marshal(initParams(compact))
-	initReq, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": json.RawMessage(initRaw)})
+	initReq, _ := json.Marshal(
+		map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": json.RawMessage(initRaw)},
+	)
 	fullInput := append(append(initReq, '\n'), input...)
 	var out bytes.Buffer
 	done := make(chan error, 1)

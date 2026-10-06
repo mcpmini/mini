@@ -11,7 +11,9 @@ import (
 )
 
 func TestSplitHTTPMessages_SSEWrapped(t *testing.T) {
-	got, err := splitHTTPMessages([]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n"))
+	got, err := splitHTTPMessages(
+		[]byte("event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +42,9 @@ func TestSplitHTTPMessages_SSEWrappedIDFirst(t *testing.T) {
 }
 
 func TestSplitHTTPMessages_SSEWrappedCommentFirst(t *testing.T) {
-	got, err := splitHTTPMessages([]byte(": keepalive\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n"))
+	got, err := splitHTTPMessages(
+		[]byte(": keepalive\nevent: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}\n\n"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,14 +10,15 @@ import (
 	"sync"
 	"testing"
 
+	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
-	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
 )
 
 func TestAddServer_writtenFile(t *testing.T) {
@@ -96,7 +97,7 @@ func TestAddServer_writtenFile(t *testing.T) {
 			t.Fatalf("AddServer: %v", err)
 		}
 		info, _ := os.Stat(filepath.Join(dir, "servers", "sec.yaml"))
-		if perm := info.Mode().Perm(); perm != 0600 {
+		if perm := info.Mode().Perm(); perm != 0o600 {
 			t.Errorf("perm = %04o, want 0600", perm)
 		}
 	})
@@ -162,7 +163,6 @@ func TestAddServer(t *testing.T) {
 		github := config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}
 
 		added, err := ops.AddServer(dir, github)
-
 		if err != nil {
 			t.Fatalf("AddServer: %v", err)
 		}
@@ -177,34 +177,40 @@ func TestAddServer(t *testing.T) {
 		}
 	})
 
-	t.Run("a reused name never inherits the old server's token, registration, OAuth marker or projections", func(t *testing.T) {
-		dir := tempDir(t)
-		saveCredentials(t, dir, "reused")
-		if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
-			t.Fatal(err)
-		}
-		legacy := filepath.Join(dir, "servers", "reused.proj.yaml")
-		testutil.WriteFile(t, legacy, "list: {include_only: [id]}\n")
+	t.Run(
+		"a reused name never inherits the old server's token, registration, OAuth marker or projections",
+		func(t *testing.T) {
+			dir := tempDir(t)
+			saveCredentials(t, dir, "reused")
+			if err := config.MarkOAuthDetected(dir, "reused"); err != nil {
+				t.Fatal(err)
+			}
+			legacy := filepath.Join(dir, "servers", "reused.proj.yaml")
+			testutil.WriteFile(t, legacy, "list: {include_only: [id]}\n")
 
-		if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
-			t.Fatal(err)
-		}
+			if _, err := ops.AddServer(dir, config.ServerConfig{Name: "reused", Command: "run"}); err != nil {
+				t.Fatal(err)
+			}
 
-		assertNoCredentials(t, dir, "reused")
-		if config.IsOAuthDetected(dir, "reused") {
-			t.Error("the new server inherited the old server's OAuth marker")
-		}
-		if got, err := config.LoadServer(dir, "reused"); err != nil || len(got.Projections) != 0 {
-			t.Errorf("new server projections = %#v, %v; want no legacy rules", got.Projections, err)
-		}
-	})
+			assertNoCredentials(t, dir, "reused")
+			if config.IsOAuthDetected(dir, "reused") {
+				t.Error("the new server inherited the old server's OAuth marker")
+			}
+			if got, err := config.LoadServer(dir, "reused"); err != nil || len(got.Projections) != 0 {
+				t.Errorf("new server projections = %#v, %v; want no legacy rules", got.Projections, err)
+			}
+		},
+	)
 
 	t.Run("a reused vendor name gets the bundled projection, not the old server's", func(t *testing.T) {
 		dir := tempDir(t)
 		leftover := filepath.Join(dir, "servers", "gh.proj.yaml")
 		testutil.WriteFile(t, leftover, "# the old server's rules\n")
 
-		added, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"})
+		added, err := ops.AddServer(
+			dir,
+			config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"},
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,7 +218,12 @@ func TestAddServer(t *testing.T) {
 		got := testutil.ReadFile(t, leftover)
 		loaded, loadErr := config.LoadServer(dir, "gh")
 		if !added.DefaultProjections || loadErr != nil || len(loaded.Projections) == 0 {
-			t.Errorf("added defaults=%v, inline projections=%#v, err=%v", added.DefaultProjections, loaded.Projections, loadErr)
+			t.Errorf(
+				"added defaults=%v, inline projections=%#v, err=%v",
+				added.DefaultProjections,
+				loaded.Projections,
+				loadErr,
+			)
 		}
 		if !strings.Contains(string(got), "the old server's rules") {
 			t.Errorf("legacy file changed: %q", got)
@@ -236,7 +247,10 @@ func TestAddServer(t *testing.T) {
 	t.Run("prints nothing, since the config tool calls it where stdout is the MCP stream", func(t *testing.T) {
 		dir := tempDir(t)
 		printed := testutil.CaptureStdout(t, func() {
-			if _, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"}); err != nil {
+			if _, err := ops.AddServer(
+				dir,
+				config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp"},
+			); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -271,7 +285,10 @@ func TestAddServer(t *testing.T) {
 
 	t.Run("a config that would not load is refused with nothing written", func(t *testing.T) {
 		dir := tempDir(t)
-		_, err := ops.AddServer(dir, config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp?t=${GITHUB_TOKEN}"})
+		_, err := ops.AddServer(
+			dir,
+			config.ServerConfig{Name: "gh", Transport: "http", URL: "https://api.github.com/mcp?t=${GITHUB_TOKEN}"},
+		)
 		if err == nil || !strings.Contains(err.Error(), "isn't expanded") {
 			t.Fatalf("err = %v, want the load error", err)
 		}

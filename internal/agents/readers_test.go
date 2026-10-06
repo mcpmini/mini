@@ -46,99 +46,239 @@ func TestReadClientConfigs(t *testing.T) {
 		config string
 		want   Server
 	}{
-		{"claude desktop stdio entry, env as a sorted KEY=VALUE list", ReadClaude, "claude.json",
+		{
+			"claude desktop stdio entry, env as a sorted KEY=VALUE list",
+			ReadClaude,
+			"claude.json",
 			`{"mcpServers":{"s":{"command":"npx","args":["server-github"],"env":{"B":"2","A":"1"}}}}`,
-			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Args: []string{"server-github"}, Env: []string{"A=1", "B=2"}}}},
-		{"claude http entry by url keeps headers", ReadClaude, "claude.json",
+			Server{
+				Config: config.ServerConfig{
+					Name:    "s",
+					Command: "npx",
+					Args:    []string{"server-github"},
+					Env:     []string{"A=1", "B=2"},
+				},
+			},
+		},
+		{
+			"claude http entry by url keeps headers",
+			ReadClaude,
+			"claude.json",
 			`{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH}"}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH}"})}},
-		{"claude sse type is http", ReadClaude, "claude.json",
+			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH}"})},
+		},
+		{
+			"claude sse type is http", ReadClaude, "claude.json",
 			`{"mcpServers":{"s":{"type":"sse","url":"https://sse.example.com"}}}`,
-			Server{Config: remote("s", "https://sse.example.com", nil)}},
-		{"claude ${VAR} in args is kept in the agent", ReadClaude, "claude.json",
+			Server{Config: remote("s", "https://sse.example.com", nil)},
+		},
+		{
+			"claude ${VAR} in args is kept in the agent",
+			ReadClaude,
+			"claude.json",
 			`{"mcpServers":{"s":{"command":"run","args":["--root","${HOME}/src"]}}}`,
-			Server{Config: stdio("s", "run", "--root", "${HOME}/src"), UnexpandableRefs: []string{"an environment variable in command or args"}}},
-		{"claude $ in args is literal, as Claude Code passes it", ReadClaude, "claude.json",
+			Server{
+				Config:           stdio("s", "run", "--root", "${HOME}/src"),
+				UnexpandableRefs: []string{"an environment variable in command or args"},
+			},
+		},
+		{
+			"claude $ in args is literal, as Claude Code passes it", ReadClaude, "claude.json",
 			`{"mcpServers":{"s":{"command":"grep","args":["^end$"]}}}`,
-			Server{Config: stdio("s", "grep", "^end$")}},
-		{"claude default-value syntax is kept in the agent", ReadClaude, "claude.json",
+			Server{Config: stdio("s", "grep", "^end$")},
+		},
+		{
+			"claude default-value syntax is kept in the agent",
+			ReadClaude,
+			"claude.json",
 			`{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${GH:-none}"}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${GH:-none}"}), UnexpandableRefs: []string{"an environment variable syntax mini doesn't read"}}},
-		{"cursor ${env:VAR} becomes ${VAR}", ReadClaude, "mcp.json",
+			Server{
+				Config: remote(
+					"s",
+					"https://example.com/mcp",
+					map[string]string{"Authorization": "Bearer ${GH:-none}"},
+				),
+				UnexpandableRefs: []string{"an environment variable syntax mini doesn't read"},
+			},
+		},
+		{
+			"cursor ${env:VAR} becomes ${VAR}",
+			ReadClaude,
+			"mcp.json",
 			`{"mcpServers":{"s":{"url":"https://example.com/mcp","headers":{"Authorization":"Bearer ${env:API_KEY}"}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${API_KEY}"})}},
-		{"cursor envFile is ignored and named", ReadClaude, "mcp.json",
+			Server{
+				Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${API_KEY}"}),
+			},
+		},
+		{
+			"cursor envFile is ignored and named", ReadClaude, "mcp.json",
 			`{"mcpServers":{"s":{"command":"run","envFile":".env"}}}`,
-			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"envFile"}}},
-		{"windsurf serverUrl is the url", ReadClaude, "mcp_config.json",
+			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"envFile"}},
+		},
+		{
+			"windsurf serverUrl is the url", ReadClaude, "mcp_config.json",
 			`{"mcpServers":{"s":{"serverUrl":"https://example.com/mcp"}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", nil)}},
-		{"windsurf disabled and disabledTools", ReadClaude, "mcp_config.json",
+			Server{Config: remote("s", "https://example.com/mcp", nil)},
+		},
+		{
+			"windsurf disabled and disabledTools", ReadClaude, "mcp_config.json",
 			`{"mcpServers":{"s":{"command":"run","disabled":true,"disabledTools":["delete"]}}}`,
-			Server{Config: stdio("s", "run"), Disabled: true}},
-		{"codex stdio entry", ReadCodex, "config.toml",
+			Server{Config: stdio("s", "run"), Disabled: true},
+		},
+		{
+			"codex stdio entry",
+			ReadCodex,
+			"config.toml",
 			"[mcp_servers.s]\ncommand = \"npx\"\nargs = [\"-y\", \"server-github\"]\nenv = { TOKEN = \"synthetic\" }\n",
-			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Args: []string{"-y", "server-github"}, Env: []string{"TOKEN=synthetic"}}}},
-		{"codex http headers, env headers and bearer token variable", ReadCodex, "config.toml",
+			Server{
+				Config: config.ServerConfig{
+					Name:    "s",
+					Command: "npx",
+					Args:    []string{"-y", "server-github"},
+					Env:     []string{"TOKEN=synthetic"},
+				},
+			},
+		},
+		{
+			"codex http headers, env headers and bearer token variable",
+			ReadCodex,
+			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"core\" }\nenv_http_headers = { X-Key = \"MINI_TEST_SET_KEY\", X-Optional = \"MINI_TEST_UNSET_KEY\" }\nbearer_token_env_var = \"EXAMPLE_TOKEN\"\n",
 			Server{Config: remote("s", "https://example.com/mcp", map[string]string{
-				"X-Team": "core", "X-Key": "${MINI_TEST_SET_KEY}", "X-Optional": "${MINI_TEST_UNSET_KEY}", "Authorization": "Bearer ${EXAMPLE_TOKEN}",
-			})}},
-		{"codex env and bearer headers replace a static header whatever its case", ReadCodex, "config.toml",
+				"X-Team":        "core",
+				"X-Key":         "${MINI_TEST_SET_KEY}",
+				"X-Optional":    "${MINI_TEST_UNSET_KEY}",
+				"Authorization": "Bearer ${EXAMPLE_TOKEN}",
+			})},
+		},
+		{
+			"codex env and bearer headers replace a static header whatever its case",
+			ReadCodex,
+			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { authorization = \"Bearer old\", x-key = \"old\" }\n" +
 				"env_http_headers = { X-Key = \"MINI_TEST_SET_KEY\" }\nbearer_token_env_var = \"TOKEN_VAR\"\n",
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"X-Key": "${MINI_TEST_SET_KEY}", "Authorization": "Bearer ${TOKEN_VAR}"})}},
-		{"codex keeps a static header whatever its case while its env override is unset", ReadCodex, "config.toml",
+			Server{
+				Config: remote(
+					"s",
+					"https://example.com/mcp",
+					map[string]string{"X-Key": "${MINI_TEST_SET_KEY}", "Authorization": "Bearer ${TOKEN_VAR}"},
+				),
+			},
+		},
+		{
+			"codex keeps a static header whatever its case while its env override is unset", ReadCodex, "config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { x-team = \"default\" }\n" +
 				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\" }\n",
 			Server{
 				Config:           remote("s", "https://example.com/mcp", map[string]string{"x-team": "default"}),
 				UnusedEnvHeaders: map[string]string{"X-Team": "MINI_TEST_UNSET_KEY"},
-			}},
-		{"codex auth settings are dropped and named", ReadCodex, "config.toml",
+			},
+		},
+		{
+			"codex auth settings are dropped and named",
+			ReadCodex,
+			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nscopes = [\"read\"]\noauth = { client_id = \"synthetic\" }\n",
-			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"oauth", "scopes"}}},
-		{"claude oauth client is dropped and named", ReadClaude, "claude.json",
+			Server{
+				Config:             remote("s", "https://example.com/mcp", nil),
+				IgnoredRunSettings: []string{"oauth", "scopes"},
+			},
+		},
+		{
+			"claude oauth client is dropped and named", ReadClaude, "claude.json",
 			`{"mcpServers":{"s":{"type":"http","url":"https://example.com/mcp","oauth":{"clientId":"synthetic"}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"oauth"}}},
-		{"codex header helpers are dropped and named", ReadCodex, "config.toml",
+			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"oauth"}},
+		},
+		{
+			"codex header helpers are dropped and named",
+			ReadCodex,
+			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers_helper = \"get-token\"\n",
-			Server{Config: remote("s", "https://example.com/mcp", nil), IgnoredRunSettings: []string{"http_headers_helper"}}},
-		{"openclaw cwd and tls settings are dropped and named", ReadOpenClaw, "openclaw.json",
+			Server{
+				Config:             remote("s", "https://example.com/mcp", nil),
+				IgnoredRunSettings: []string{"http_headers_helper"},
+			},
+		},
+		{
+			"openclaw cwd and tls settings are dropped and named", ReadOpenClaw, "openclaw.json",
 			`{"mcp":{"servers":{"s":{"command":"npx","cwd":"/srv","sslVerify":false}}}}`,
-			Server{Config: stdio("s", "npx"), IgnoredRunSettings: []string{"cwd", "sslVerify"}}},
-		{"codex keeps a static header while its env override is unset or blank", ReadCodex, "config.toml",
+			Server{Config: stdio("s", "npx"), IgnoredRunSettings: []string{"cwd", "sslVerify"}},
+		},
+		{
+			"codex keeps a static header while its env override is unset or blank",
+			ReadCodex,
+			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nhttp_headers = { X-Team = \"default\", X-Org = \"acme\" }\n" +
 				"env_http_headers = { X-Team = \"MINI_TEST_UNSET_KEY\", X-Org = \"MINI_TEST_BLANK_KEY\" }\n",
 			Server{
-				Config:           remote("s", "https://example.com/mcp", map[string]string{"X-Team": "default", "X-Org": "acme"}),
+				Config: remote(
+					"s",
+					"https://example.com/mcp",
+					map[string]string{"X-Team": "default", "X-Org": "acme"},
+				),
 				UnusedEnvHeaders: map[string]string{"X-Org": "MINI_TEST_BLANK_KEY", "X-Team": "MINI_TEST_UNSET_KEY"},
-			}},
-		{"codex variable named like an editor placeholder is a plain reference", ReadCodex, "config.toml",
+			},
+		},
+		{
+			"codex variable named like an editor placeholder is a plain reference",
+			ReadCodex,
+			"config.toml",
 			"[mcp_servers.s]\nurl = \"https://example.com/mcp\"\nbearer_token_env_var = \"userHome\"\n",
-			Server{Config: remote("s", "https://example.com/mcp", map[string]string{"Authorization": "Bearer ${userHome}"})}},
-		{"codex switched off", ReadCodex, "config.toml",
+			Server{
+				Config: remote(
+					"s",
+					"https://example.com/mcp",
+					map[string]string{"Authorization": "Bearer ${userHome}"},
+				),
+			},
+		},
+		{
+			"codex switched off", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\nenabled = false\n",
-			Server{Config: stdio("s", "run"), Disabled: true}},
-		{"codex settings mini doesn't carry over are dropped, including ones it has never seen", ReadCodex, "config.toml",
+			Server{Config: stdio("s", "run"), Disabled: true},
+		},
+		{
+			"codex settings mini doesn't carry over are dropped, including ones it has never seen",
+			ReadCodex,
+			"config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\ntool_timeout_sec = 60\nenabled_tools = [\"search\"]\n" +
 				"default_tools_approval_mode = \"prompt\"\nsetting_added_later = true\n",
-			Server{Config: stdio("s", "run")}},
-		{"codex cwd is ignored and named", ReadCodex, "config.toml",
+			Server{Config: stdio("s", "run")},
+		},
+		{
+			"codex cwd is ignored and named", ReadCodex, "config.toml",
 			"[mcp_servers.s]\ncommand = \"run\"\ncwd = \"/srv/app\"\n",
-			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"cwd"}}},
-		{"cursor editor placeholders are kept in the agent", ReadClaude, "mcp.json",
+			Server{Config: stdio("s", "run"), IgnoredRunSettings: []string{"cwd"}},
+		},
+		{
+			"cursor editor placeholders are kept in the agent",
+			ReadClaude,
+			"mcp.json",
 			`{"mcpServers":{"s":{"command":"run","env":{"ROOT":"${workspaceFolder}/data"}}}}`,
-			Server{Config: config.ServerConfig{Name: "s", Command: "run", Env: []string{"ROOT=${workspaceFolder}/data"}}, UnexpandableRefs: []string{"an editor placeholder like ${userHome}"}}},
-		{"openclaw stdio entry", ReadOpenClaw, "openclaw.json",
+			Server{
+				Config: config.ServerConfig{
+					Name:    "s",
+					Command: "run",
+					Env:     []string{"ROOT=${workspaceFolder}/data"},
+				},
+				UnexpandableRefs: []string{"an editor placeholder like ${userHome}"},
+			},
+		},
+		{
+			"openclaw stdio entry", ReadOpenClaw, "openclaw.json",
 			`{"mcp":{"servers":{"s":{"command":"npx","env":{"ROOT":"/data"}}}}}`,
-			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Env: []string{"ROOT=/data"}}}},
-		{"openclaw tool filter and approval settings are dropped", ReadOpenClaw, "openclaw.json",
+			Server{Config: config.ServerConfig{Name: "s", Command: "npx", Env: []string{"ROOT=/data"}}},
+		},
+		{
+			"openclaw tool filter and approval settings are dropped", ReadOpenClaw, "openclaw.json",
 			`{"mcp":{"servers":{"s":{"command":"npx","toolFilter":{"allow":["read"]},"codex":{"approval":"prompt"}}}}}`,
-			Server{Config: stdio("s", "npx")}},
-		{"openclaw http entry switched off", ReadOpenClaw, "openclaw.json",
+			Server{Config: stdio("s", "npx")},
+		},
+		{
+			"openclaw http entry switched off", ReadOpenClaw, "openclaw.json",
 			`{"mcp":{"servers":{"s":{"url":"https://example.com/mcp","enabled":false}}}}`,
-			Server{Config: remote("s", "https://example.com/mcp", nil), Disabled: true}},
+			Server{Config: remote("s", "https://example.com/mcp", nil), Disabled: true},
+		},
 	}
 	t.Setenv("MINI_TEST_SET_KEY", "synthetic")
 	t.Setenv("MINI_TEST_BLANK_KEY", " ")
@@ -173,12 +313,16 @@ func TestReadClientConfigs_unparsableConfigIsAnError(t *testing.T) {
 		})
 	}
 	t.Run("a malformed entry", func(t *testing.T) {
-		if _, err := ReadClaude(writeClientConfig(t, "claude.json", `{"mcpServers":{"s":{"args":"not a list"}}}`)); err == nil {
+		if _, err := ReadClaude(
+			writeClientConfig(t, "claude.json", `{"mcpServers":{"s":{"args":"not a list"}}}`),
+		); err == nil {
 			t.Fatal("expected a parse error")
 		}
 	})
 	t.Run("a malformed codex entry", func(t *testing.T) {
-		if _, err := ReadCodex(writeClientConfig(t, "config.toml", "[mcp_servers.s]\nargs = \"not a list\"\n")); err == nil {
+		if _, err := ReadCodex(
+			writeClientConfig(t, "config.toml", "[mcp_servers.s]\nargs = \"not a list\"\n"),
+		); err == nil {
 			t.Fatal("expected a parse error")
 		}
 	})
@@ -210,7 +354,11 @@ func TestReadClaude_projectServersAreLeftToTheirProjects(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(slices.Sorted(maps.Keys(got)), []string{"user"}) {
 		t.Fatalf("ReadClaude = %v, %v; want only the user-scoped server", got, err)
 	}
-	onlyProjects := writeClientConfig(t, "claude.json", `{"projects":{"/home/user/proj":{"mcpServers":{"project":{"command":"run"}}}}}`)
+	onlyProjects := writeClientConfig(
+		t,
+		"claude.json",
+		`{"projects":{"/home/user/proj":{"mcpServers":{"project":{"command":"run"}}}}}`,
+	)
 	if got, err := ReadClaude(onlyProjects); err != nil || len(got) != 0 {
 		t.Fatalf("ReadClaude with only project servers = %v, %v; want nothing", got, err)
 	}

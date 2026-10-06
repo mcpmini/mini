@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
-	"golang.org/x/oauth2"
 )
 
 func TestAuthorization_nearExpiry_refreshesBeforeTokenExpires(t *testing.T) {
@@ -28,23 +29,45 @@ func TestAuthorization_nearExpiry_refreshesBeforeTokenExpires(t *testing.T) {
 		wantHeader  string
 		wantRefresh int32
 	}{
-		{"before refresh window keeps stored token", storedToken(epoch.Add(10 * time.Minute)), "Bearer stored-access", 0},
+		{
+			"before refresh window keeps stored token",
+			storedToken(epoch.Add(10 * time.Minute)),
+			"Bearer stored-access",
+			0,
+		},
 		{"exactly at expiry minus window refreshes", storedToken(epoch.Add(5 * time.Minute)), "Bearer new-access", 1},
 		{"inside refresh window refreshes", storedToken(epoch.Add(4 * time.Minute)), "Bearer new-access", 1},
 		{"already expired refreshes", storedToken(epoch.Add(-time.Hour)), "Bearer new-access", 1},
 		{"short-lived token uses bounded skew", shortLived, "Bearer stored-access", 0},
 		{
 			"short-lived 10pct boundary at window refreshes",
-			&oauth2.Token{AccessToken: "stored-access", RefreshToken: "stored-refresh", Expiry: epoch.Add(60 * time.Second), ExpiresIn: 600},
-			"Bearer new-access", 1,
+			&oauth2.Token{
+				AccessToken:  "stored-access",
+				RefreshToken: "stored-refresh",
+				Expiry:       epoch.Add(60 * time.Second),
+				ExpiresIn:    600,
+			},
+			"Bearer new-access",
+			1,
 		},
 		{
 			"short-lived 10pct boundary just outside window keeps stored token",
-			&oauth2.Token{AccessToken: "stored-access", RefreshToken: "stored-refresh", Expiry: epoch.Add(61 * time.Second), ExpiresIn: 600},
-			"Bearer stored-access", 0,
+			&oauth2.Token{
+				AccessToken:  "stored-access",
+				RefreshToken: "stored-refresh",
+				Expiry:       epoch.Add(61 * time.Second),
+				ExpiresIn:    600,
+			},
+			"Bearer stored-access",
+			0,
 		},
 		{"zero expiry never refreshes proactively", storedToken(time.Time{}), "Bearer stored-access", 0},
-		{"no refresh token skips proactive refresh", &oauth2.Token{AccessToken: "stored-access", Expiry: epoch.Add(time.Minute)}, "Bearer stored-access", 0},
+		{
+			"no refresh token skips proactive refresh",
+			&oauth2.Token{AccessToken: "stored-access", Expiry: epoch.Add(time.Minute)},
+			"Bearer stored-access",
+			0,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -214,7 +237,11 @@ func TestAuthorization_newerStoredTokenDuringBackoff_refreshesWithoutWaiting(t *
 		t.Errorf("endpoint hits = %d, want %d: backoff should suppress retry", hits, hitsAfterFail)
 	}
 
-	newer := &oauth2.Token{AccessToken: "newer-access", RefreshToken: "newer-refresh", Expiry: epoch.Add(3 * time.Minute)}
+	newer := &oauth2.Token{
+		AccessToken:  "newer-access",
+		RefreshToken: "newer-refresh",
+		Expiry:       epoch.Add(3 * time.Minute),
+	}
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: f.dir, ServerName: "srv", Token: newer})
 	f.endpoint.Status.Store(http.StatusOK)
 	got, err := f.provider.Authorization(context.Background())
@@ -236,8 +263,14 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: t1})
 	endpoint := authtest.NewTokenServer(t)
 	p, err := provider.New(provider.Params{
-		AuthConfig: &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: "cid", TokenURL: endpoint.Srv.URL + "/token"},
-		ConfigDir:  dir, ServerName: "srv", Clock: clk,
+		AuthConfig: &config.AuthConfig{
+			Type:     config.AuthTypeOAuth2,
+			ClientID: "cid",
+			TokenURL: endpoint.Srv.URL + "/token",
+		},
+		ConfigDir:  dir,
+		ServerName: "srv",
+		Clock:      clk,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -282,7 +315,11 @@ func TestAuthorization_browserLoginDuringBackoff_refreshesWithoutWaiting(t *test
 	if _, err := prov.Authorization(context.Background()); err != nil {
 		t.Fatalf("first call (sets backoff): %v", err)
 	}
-	browserTok := &oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh", Expiry: epoch.Add(time.Minute)}
+	browserTok := &oauth2.Token{
+		AccessToken:  "browser-access",
+		RefreshToken: "browser-refresh",
+		Expiry:       epoch.Add(time.Minute),
+	}
 	if err := registry.CommitAuthorizedToken(params, browserTok); err != nil {
 		t.Fatal(err)
 	}

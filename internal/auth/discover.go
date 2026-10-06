@@ -274,7 +274,11 @@ func decodeASMeta(body io.Reader, metaURL string) (*ServerMeta, error) {
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/977e7481/docs/specification/2025-11-25/basic/authorization.mdx?plain=1#L603-L607
 	// Applies only to fetched AS metadata; fallback path proceeds without — mini always sends S256, so the AS rejects if unsupported.
 	if !pkceS256Supported(raw.PKCEMethods) {
-		return nil, fmt.Errorf("oauth discovery: authorization server %s does not support PKCE S256 (code_challenge_methods_supported=%v)", metaURL, raw.PKCEMethods)
+		return nil, fmt.Errorf(
+			"oauth discovery: authorization server %s does not support PKCE S256 (code_challenge_methods_supported=%v)",
+			metaURL,
+			raw.PKCEMethods,
+		)
 	}
 	return &ServerMeta{
 		AuthURL:         raw.AuthURL,

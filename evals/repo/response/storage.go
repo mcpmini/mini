@@ -14,7 +14,7 @@ type Store struct {
 }
 
 func NewStore(dir string, budgetMB int) (*Store, error) {
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create store dir: %w", err)
 	}
 	return &Store{dir: dir, budgetBytes: int64(budgetMB) * 1024 * 1024}, nil
@@ -27,10 +27,10 @@ func (s *Store) WritePair(id string, summary, raw []byte) error {
 	}
 	summaryPath := filepath.Join(s.dir, id+".json")
 	rawPath := filepath.Join(s.dir, id+".raw.json")
-	if err := os.WriteFile(summaryPath, summary, 0600); err != nil {
+	if err := os.WriteFile(summaryPath, summary, 0o600); err != nil {
 		return fmt.Errorf("write summary: %w", err)
 	}
-	if err := os.WriteFile(rawPath, raw, 0600); err != nil {
+	if err := os.WriteFile(rawPath, raw, 0o600); err != nil {
 		return fmt.Errorf("write raw: %w", err)
 	}
 	return nil

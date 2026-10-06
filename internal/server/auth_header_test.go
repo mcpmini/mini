@@ -13,7 +13,10 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-func fakeMCPServer(t *testing.T, onRequest func(w http.ResponseWriter, r *http.Request, req map[string]any)) *httptest.Server {
+func fakeMCPServer(
+	t *testing.T,
+	onRequest func(w http.ResponseWriter, r *http.Request, req map[string]any),
+) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
@@ -31,7 +34,8 @@ func fakeMCPServer(t *testing.T, onRequest func(w http.ResponseWriter, r *http.R
 				},
 			})
 		} else {
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": []any{}}})
+			json.NewEncoder(w).
+				Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": []any{}}})
 		}
 	}))
 }

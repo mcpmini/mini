@@ -208,7 +208,11 @@ func TestLoopbackCallbackPath_consistent(t *testing.T) {
 	}
 
 	if cbURL.Path != auth.LoopbackCallbackPath {
-		t.Errorf("PKCE redirect_uri path = %q, want %q (must match Register's URI)", cbURL.Path, auth.LoopbackCallbackPath)
+		t.Errorf(
+			"PKCE redirect_uri path = %q, want %q (must match Register's URI)",
+			cbURL.Path,
+			auth.LoopbackCallbackPath,
+		)
 	}
 }
 

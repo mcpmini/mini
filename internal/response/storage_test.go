@@ -71,7 +71,9 @@ func epochBase(at time.Time) string {
 func TestNewStore_invalidDir(t *testing.T) {
 	f, _ := os.CreateTemp(t.TempDir(), "file")
 	f.Close()
-	_, err := NewStore(StoreConfig{Dir: f.Name() + "/subdir", TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour})
+	_, err := NewStore(
+		StoreConfig{Dir: f.Name() + "/subdir", TTL: time.Hour, BudgetMB: 100, CleanupInterval: time.Hour},
+	)
 	if err == nil {
 		t.Error("expected error when creating store in invalid path")
 	}
@@ -93,7 +95,10 @@ func TestEvictExpired_keepsNonExpired(t *testing.T) {
 func TestEvictExpired_removesExpiredFiles(t *testing.T) {
 	fakeClock := clock.NewFake()
 	dir := t.TempDir()
-	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
+	s := newTestStore(
+		t,
+		StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock},
+	)
 
 	key, err := s.WriteRaw([]byte(`{"ok":true}`))
 	if err != nil {
@@ -107,7 +112,10 @@ func TestEvictExpired_removesExpiredFiles(t *testing.T) {
 func TestEvictExpired_removesRawFile(t *testing.T) {
 	fakeClock := clock.NewFake()
 	dir := t.TempDir()
-	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock})
+	s := newTestStore(
+		t,
+		StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: time.Hour, Clock: fakeClock},
+	)
 
 	key, err := s.WriteRaw([]byte(`{"full":"data"}`))
 	if err != nil {
@@ -126,7 +134,17 @@ func TestCleanupLoop_evictsExpiredFilesAutomatically(t *testing.T) {
 	fakeClock := clock.NewFake()
 	dir := t.TempDir()
 	evicted := make(chan struct{}, 1)
-	s := newTestStore(t, StoreConfig{Dir: dir, TTL: time.Minute, BudgetMB: 100, CleanupInterval: 5 * time.Minute, Clock: fakeClock, AfterEvict: func() { evicted <- struct{}{} }})
+	s := newTestStore(
+		t,
+		StoreConfig{
+			Dir:             dir,
+			TTL:             time.Minute,
+			BudgetMB:        100,
+			CleanupInterval: 5 * time.Minute,
+			Clock:           fakeClock,
+			AfterEvict:      func() { evicted <- struct{}{} },
+		},
+	)
 
 	key, _ := s.WriteRaw([]byte(`{"test":true}`))
 

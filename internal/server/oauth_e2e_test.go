@@ -15,13 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+	"gopkg.in/yaml.v3"
+
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/server"
 	"github.com/mcpmini/mini/internal/testutil"
-	"golang.org/x/oauth2"
-	"gopkg.in/yaml.v3"
 )
 
 func oauthMCPHandler(validToken string, tools []map[string]any) http.HandlerFunc {
@@ -36,13 +37,19 @@ func oauthMCPHandler(validToken string, tools []map[string]any) http.HandlerFunc
 		id := req["id"]
 		switch req["method"] {
 		case "initialize":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id,
-				"result": map[string]any{"protocolVersion": "2024-11-05",
-					"capabilities": map[string]any{"tools": map[string]any{}},
-					"serverInfo":   map[string]any{"name": "protected", "version": "0"}}})
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0", "id": id,
+				"result": map[string]any{
+					"protocolVersion": "2024-11-05",
+					"capabilities":    map[string]any{"tools": map[string]any{}},
+					"serverInfo":      map[string]any{"name": "protected", "version": "0"},
+				},
+			})
 		case "tools/list":
-			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id,
-				"result": map[string]any{"tools": tools}})
+			json.NewEncoder(w).Encode(map[string]any{
+				"jsonrpc": "2.0", "id": id,
+				"result": map[string]any{"tools": tools},
+			})
 		default:
 			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil})
 		}
@@ -150,7 +157,13 @@ func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
 	cfg.BrowserCommand = "false"
 	srv := newTestServer(t, server.Params{Config: cfg, ConfigDir: dir})
 
-	authResult := parseEnvelope(t, toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "protected"}))))
+	authResult := parseEnvelope(
+		t,
+		toolResultText(
+			t,
+			serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "protected"})),
+		),
+	)
 
 	authURL, _ := authResult["url"].(string)
 	if authURL == "" {
@@ -164,7 +177,9 @@ func TestStartAuth_opensServerBrowserCommandWithAuthURL(t *testing.T) {
 func waitForFileContent(t *testing.T, path string) string {
 	t.Helper()
 	for range 100 {
-		if data, err := os.ReadFile(path); err == nil && len(data) > 0 { //fileiolint:allow poll for output from the browser process
+		data, err := os.ReadFile(path) //fileiolint:allow poll for output from the browser process
+		if err == nil &&
+			len(data) > 0 {
 			return string(data)
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -181,7 +196,10 @@ func TestStartAuth_e2e_toolsAccessibleAfterAuth(t *testing.T) {
 		{"name": "create", "description": "create thing", "inputSchema": map[string]any{"type": "object"}},
 	})
 	srv := newOAuthServer(t, t.TempDir(), "mysvc", tokenSrv.URL, mcpSrv.URL)
-	authText := toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "mysvc"})))
+	authText := toolResultText(
+		t,
+		serve(t, srv, callTool("config", map[string]any{"action": "start_auth", "server": "mysvc"})),
+	)
 	var authResult map[string]any
 	json.Unmarshal([]byte(authText), &authResult)
 	authtest.CompleteAuthorization(t, authResult["url"].(string), "test-code")
@@ -253,9 +271,11 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 		switch req["method"] {
 		case "initialize":
 			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
-				"result": map[string]any{"protocolVersion": "2024-11-05",
-					"capabilities": map[string]any{"tools": map[string]any{}},
-					"serverInfo":   map[string]any{"name": "srv", "version": "0"}}})
+				"result": map[string]any{
+					"protocolVersion": "2024-11-05",
+					"capabilities":    map[string]any{"tools": map[string]any{}},
+					"serverInfo":      map[string]any{"name": "srv", "version": "0"},
+				}})
 		case "tools/list":
 			json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, //nolint:errcheck
 				"result": map[string]any{"tools": []map[string]any{
@@ -309,7 +329,10 @@ func TestStartAuth_e2e_withStaleToken_browserTokenUsedOnFirstRequest(t *testing.
 	mu.Unlock()
 	unauthorizedAfterAuth.Store(0)
 
-	authText := toolResultText(t, serve(t, mini, callTool("config", map[string]any{"action": "start_auth", "server": "srv"})))
+	authText := toolResultText(
+		t,
+		serve(t, mini, callTool("config", map[string]any{"action": "start_auth", "server": "srv"})),
+	)
 	var authResult map[string]any
 	if err := json.Unmarshal([]byte(authText), &authResult); err != nil {
 		t.Fatalf("parse start_auth response: %v", err)

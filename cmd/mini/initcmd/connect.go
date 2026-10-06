@@ -71,10 +71,14 @@ func LoadMiniServers(configDir string) (MiniServers, error) {
 func (m MiniServers) Duplicates(entries map[string]agents.Server, selfPath string) map[string]string {
 	duplicates := map[string]string{}
 	for name, entry := range entries {
-		if name == agents.MiniKey || !entry.Candidate() || entry.Disabled || agents.IsMiniEntry(entry.Config, selfPath) {
+		if name == agents.MiniKey || !entry.Candidate() || entry.Disabled ||
+			agents.IsMiniEntry(entry.Config, selfPath) {
 			continue
 		}
-		i := slices.IndexFunc(m.written, func(sc config.ServerConfig) bool { return agents.SameServer(sc, entry.Config) })
+		i := slices.IndexFunc(
+			m.written,
+			func(sc config.ServerConfig) bool { return agents.SameServer(sc, entry.Config) },
+		)
 		if i >= 0 {
 			duplicates[name] = m.written[i].Name
 		}

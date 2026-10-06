@@ -24,7 +24,15 @@ func proxyUpstreamToolSchema(e *registry.ToolEntry) map[string]any {
 }
 
 func proxyInputSchema(e *registry.ToolEntry) map[string]any {
-	args := scopedSchema(schemaScope{Raw: e.Def.InputSchema, Server: e.Server, Tool: e.ToolName.Name(), Kind: "input", Fallback: defaultObjectSchema})
+	args := scopedSchema(
+		schemaScope{
+			Raw:      e.Def.InputSchema,
+			Server:   e.Server,
+			Tool:     e.ToolName.Name(),
+			Kind:     "input",
+			Fallback: defaultObjectSchema,
+		},
+	)
 	wrapped := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
@@ -53,7 +61,15 @@ func miniInputControlSchema() map[string]any {
 }
 
 func proxyOutputSchema(e *registry.ToolEntry) map[string]any {
-	data := scopedSchema(schemaScope{Raw: e.Def.OutputSchema, Server: e.Server, Tool: e.ToolName.Name(), Kind: "output", Fallback: defaultEmptySchema})
+	data := scopedSchema(
+		schemaScope{
+			Raw:      e.Def.OutputSchema,
+			Server:   e.Server,
+			Tool:     e.ToolName.Name(),
+			Kind:     "output",
+			Fallback: defaultEmptySchema,
+		},
+	)
 	return map[string]any{
 		"type":     "object",
 		"required": []string{"data"},

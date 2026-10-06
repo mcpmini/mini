@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/transport"
-	"golang.org/x/oauth2"
 )
 
 func TestRefreshAuthorization_deadRefreshToken_notResentUntilTokenChanges(t *testing.T) {
@@ -36,7 +37,11 @@ func TestRefreshAuthorization_deadRefreshToken_notResentUntilTokenChanges(t *tes
 		}
 	}
 	if hits := f.endpoint.Hits.Load(); hits != hitsAfterFirst {
-		t.Errorf("endpoint hits after subsequent calls = %d, want %d: a dead refresh token must not be re-sent", hits, hitsAfterFirst)
+		t.Errorf(
+			"endpoint hits after subsequent calls = %d, want %d: a dead refresh token must not be re-sent",
+			hits,
+			hitsAfterFirst,
+		)
 	}
 }
 
@@ -107,7 +112,13 @@ func TestRefreshAuthorization_newTokenFromMiniAuth_clearsDeadRefreshBlock(t *tes
 func TestRefreshAuthorization_reauthReturnsSameRefreshToken_clearsDeadRefreshBlock(t *testing.T) {
 	f := newProviderFixture(t, providerSetup{Token: storedToken(time.Time{})})
 	f.endpoint.RespondWith(http.StatusBadRequest, `{"error":"invalid_client"}`)
-	if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer stored-access"); !errors.Is(err, transport.ErrReauthRequired) {
+	if _, err := f.provider.RefreshAuthorization(
+		context.Background(),
+		"Bearer stored-access",
+	); !errors.Is(
+		err,
+		transport.ErrReauthRequired,
+	) {
 		t.Fatalf("first call: want ErrReauthRequired, got: %v", err)
 	}
 	sameRefresh := &oauth2.Token{AccessToken: "fresh-access", RefreshToken: "stored-refresh"}
@@ -139,6 +150,10 @@ func TestAuthorization_expiredTokenWithDeadRefreshToken_notResent(t *testing.T) 
 		}
 	}
 	if hits := f.endpoint.Hits.Load(); hits != hitsAfterFirst {
-		t.Errorf("endpoint hits = %d, want %d: an expired token must not re-send a dead refresh token", hits, hitsAfterFirst)
+		t.Errorf(
+			"endpoint hits = %d, want %d: an expired token must not re-send a dead refresh token",
+			hits,
+			hitsAfterFirst,
+		)
 	}
 }

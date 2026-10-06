@@ -65,7 +65,9 @@ func (s DaemonSession) Handshake(mode transport.ToolMode) {
 		Capabilities:    map[string]any{},
 		ClientInfo:      transport.ClientInfo{Name: "mini", Version: version.Version},
 	})
-	initMsg, _ := json.Marshal(transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)})
+	initMsg, _ := json.Marshal(
+		transport.Request{JSONRPC: "2.0", ID: -1, Method: "initialize", Params: json.RawMessage(params)},
+	)
 	s.Send(maybeInjectToolMode(initMsg, mode))
 	notif, _ := json.Marshal(transport.Notification{JSONRPC: "2.0", Method: transport.NotificationInitialized})
 	s.Send(notif)

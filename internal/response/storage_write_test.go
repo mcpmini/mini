@@ -67,8 +67,8 @@ func TestWriteRaw_collisionUsesAnotherNameAndPreservesBothPayloads(t *testing.T)
 func TestWriteRaw_unwritableDir(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(StoreConfig{Dir: dir, TTL: 0, BudgetMB: 100, CleanupInterval: 0})
-	os.Chmod(dir, 0500)       //nolint:errcheck
-	defer os.Chmod(dir, 0700) //nolint:errcheck
+	os.Chmod(dir, 0o500)       //nolint:errcheck
+	defer os.Chmod(dir, 0o700) //nolint:errcheck
 
 	_, err := s.WriteRaw([]byte(`{"test":true}`))
 	if err == nil {

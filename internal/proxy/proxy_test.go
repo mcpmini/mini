@@ -273,7 +273,9 @@ func TestRun_multipleRequestsAllForwarded(t *testing.T) {
 }
 
 func TestInjectCompactMode_initialize_addsFlag(t *testing.T) {
-	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{}}}`)
+	line := []byte(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{}}}`,
+	)
 	got := injectCompactMode(line)
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
@@ -287,7 +289,9 @@ func TestInjectCompactMode_initialize_addsFlag(t *testing.T) {
 }
 
 func TestInjectCompactMode_initialize_preservesExistingParams(t *testing.T) {
-	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"test"}}}`)
+	line := []byte(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","clientInfo":{"name":"test"}}}`,
+	)
 	got := injectCompactMode(line)
 	var msg struct {
 		Params map[string]json.RawMessage `json:"params"`
@@ -402,7 +406,9 @@ func TestRun_proxy_doesNotInjectFlag(t *testing.T) {
 }
 
 func TestIsNotInitialized_trueForNotInitializedError(t *testing.T) {
-	resp := []byte(`{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`)
+	resp := []byte(
+		`{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`,
+	)
 	if !isNotInitialized(resp) {
 		t.Error("expected true for not-initialized error")
 	}
@@ -460,7 +466,10 @@ func TestRun_reinitsAndRetriesOnNotInitializedError(t *testing.T) {
 			w.WriteHeader(http.StatusAccepted)
 		default:
 			if n := toolCalls.Add(1); n == 1 {
-				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`)
+				fmt.Fprint(
+					w,
+					`{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`,
+				)
 			} else {
 				fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"result":"recovered"}`)
 			}
@@ -506,7 +515,10 @@ func TestRun_noReinitLoopWhenInitializeReturnsNotInitialized(t *testing.T) {
 	var calls atomic.Int32
 	client := serveSocket(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
-		fmt.Fprint(w, `{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`)
+		fmt.Fprint(
+			w,
+			`{"jsonrpc":"2.0","id":1,"error":{"code":-32600,"message":"not initialized: send initialize first"}}`,
+		)
 	})
 
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}` + "\n")

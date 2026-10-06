@@ -26,7 +26,9 @@ func newPipelineServer(t *testing.T, toolName string, response string) (*server.
 	t.Helper()
 	srv := newTestServer(t, server.Params{})
 	fake := &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: toolName, Description: toolName, InputSchema: json.RawMessage(`{}`)}},
+		Tools: []transport.ToolDefinition{
+			{Name: toolName, Description: toolName, InputSchema: json.RawMessage(`{}`)},
+		},
 		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(response)},
 	}
 	return srv, fake
@@ -59,8 +61,11 @@ func TestExecuteInlineForSmallResponse(t *testing.T) {
 }
 
 func TestSessionProjectionOverride(t *testing.T) {
-	srv, fake := newPipelineServer(t, "getBuild",
-		`{"content":[{"type":"text","text":"{\"build_number\":1,\"status\":\"ok\",\"secret\":\"topsecret\",\"branch\":\"main\"}"}]}`)
+	srv, fake := newPipelineServer(
+		t,
+		"getBuild",
+		`{"content":[{"type":"text","text":"{\"build_number\":1,\"status\":\"ok\",\"secret\":\"topsecret\",\"branch\":\"main\"}"}]}`,
+	)
 	srv.AddConnection(context.Background(), config.ServerConfig{Name: "ci"}, fake)
 	// Set a session projection that excludes "secret"; validates configure doesn't error.
 	serve(t, srv, callTool("config", map[string]any{

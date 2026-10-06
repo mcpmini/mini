@@ -20,7 +20,12 @@ func newProxyServerWithSecretTool(t *testing.T, stringLimit int) *server.Server 
 	}
 	srv := newTestServer(t, server.Params{Config: cfg})
 	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"body\":\"` + strings.Repeat("x", 80) + `\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":1,\"secret\":\"hidden\",\"body\":\"` + strings.Repeat(
+			"x",
+			80,
+		) + `\"}"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 	return srv
 }
@@ -68,7 +73,11 @@ func TestProxy_DefaultProjection_UsesConfiguredExclusion(t *testing.T) {
 		"projection": map[string]any{"exclude": []string{"secret"}},
 	}))
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "default"}}))
+	resp := serveProxy(
+		t,
+		srv,
+		callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "default"}}),
+	)
 	text := toolResultText(t, resp)
 
 	env := parseProxyEnvelope(t, text)
@@ -102,7 +111,11 @@ func TestProxy_InvalidProjectionControl_RejectedAsToolError(t *testing.T) {
 	srv := newProxyServerWithSecretTool(t, 0)
 	defer srv.Close()
 
-	resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "bogus"}}))
+	resp := serveProxy(
+		t,
+		srv,
+		callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "bogus"}}),
+	)
 	requireRPCError(t, resp, -32602, "projection")
 }
 
@@ -120,7 +133,11 @@ func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) 
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}))
+			resp := serveProxy(
+				t,
+				srv,
+				callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "raw"}}),
+			)
 			env := parseProxyEnvelope(t, toolResultText(t, resp))
 			if env.Data["secret"] != "hidden" {
 				t.Errorf("raw call lost secret field under concurrency: %v", env.Data)
@@ -128,7 +145,11 @@ func TestProxy_ConcurrentRawAndDefaultCalls_DoNotCrossContaminate(t *testing.T) 
 		}()
 		go func() {
 			defer wg.Done()
-			resp := serveProxy(t, srv, callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "default"}}))
+			resp := serveProxy(
+				t,
+				srv,
+				callTool("svc__get_item", map[string]any{"__mini": map[string]any{"projection": "default"}}),
+			)
 			env := parseProxyEnvelope(t, toolResultText(t, resp))
 			if _, hasSecret := env.Data["secret"]; hasSecret {
 				t.Errorf("default call leaked secret field under concurrency: %v", env.Data)
@@ -144,7 +165,9 @@ func TestProxy_ToonFormat_RendersToonOutput(t *testing.T) {
 	srv := newTestServer(t, server.Params{Config: cfg})
 	defer srv.Close()
 	conn := fakeConn("list_items")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"alice\"},{\"id\":2,\"name\":\"bob\"}]"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"[{\"id\":1,\"name\":\"alice\"},{\"id\":2,\"name\":\"bob\"}]"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 
 	resp := serveProxy(t, srv, callTool("svc__list_items", map[string]any{}))
@@ -161,7 +184,9 @@ func TestProxy_DefaultProjection_PreservesLargeIntegers(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()
 	conn := fakeConn("get_item")
-	conn.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"{\"id\":9007199254740993,\"secret\":\"hidden\"}"}]}`)
+	conn.Responses["tools/call"] = json.RawMessage(
+		`{"content":[{"type":"text","text":"{\"id\":9007199254740993,\"secret\":\"hidden\"}"}]}`,
+	)
 	addProxyConn(t, srv, "svc", conn)
 
 	serveProxy(t, srv, callTool("config", map[string]any{

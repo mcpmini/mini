@@ -35,7 +35,7 @@ func newApplyFixture(t *testing.T) applyFixture {
 	}
 	f.mini = filepath.Join(f.home, "bin", "mini")
 	testutil.WriteFile(t, f.mini, "#!/bin/sh\n")
-	if err := os.Chmod(f.mini, 0700); err != nil {
+	if err := os.Chmod(f.mini, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return f
@@ -83,12 +83,29 @@ func entryNamesIn(t *testing.T, agent agents.Agent) []string {
 // stays; Codex's github uses other credentials, so it stays switched on.
 func TestApply_removesOnlyVerifiedDuplicates(t *testing.T) {
 	f := newApplyFixture(t)
-	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "github", Transport: "http", URL: "https://gh.example/mcp", Headers: map[string]string{"Authorization": "Bearer ${GH_A}"}})
-	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "linear", Transport: "http", URL: "https://linear.example/mcp"})
+	configtest.WriteServer(
+		t,
+		f.configDir,
+		config.ServerConfig{
+			Name:      "github",
+			Transport: "http",
+			URL:       "https://gh.example/mcp",
+			Headers:   map[string]string{"Authorization": "Bearer ${GH_A}"},
+		},
+	)
+	configtest.WriteServer(
+		t,
+		f.configDir,
+		config.ServerConfig{Name: "linear", Transport: "http", URL: "https://linear.example/mcp"},
+	)
 	claude := f.write(t, "Claude Code", `{"mcpServers":{
 		"github":{"type":"http","url":"https://gh.example/mcp","headers":{"Authorization":"Bearer ${GH_A}"}},
 		"linear":{"type":"http","url":"https://linear.example/mcp"}}}`)
-	codex := f.write(t, "Codex", "[mcp_servers.github]\nurl = \"https://gh.example/mcp\"\nbearer_token_env_var = \"GH_B\"\n")
+	codex := f.write(
+		t,
+		"Codex",
+		"[mcp_servers.github]\nurl = \"https://gh.example/mcp\"\nbearer_token_env_var = \"GH_B\"\n",
+	)
 	checks := map[string]error{"github": nil, "linear": errors.New("needs a login")}
 
 	results := f.apply(ConnectAndRemove, checks, claude, codex)
@@ -131,9 +148,13 @@ func TestApply_keepsDuplicatesWhenTheWrittenMiniWontServeThem(t *testing.T) {
 
 func TestApply_reportsWhetherTheAgentEndsUpWithAServingMini(t *testing.T) {
 	f := newApplyFixture(t)
-	claude := f.write(t, "Claude Code", `{"mcpServers":{"mini":{"command":"/old/mini","args":["connect"],"disabled":true}}}`)
+	claude := f.write(
+		t,
+		"Claude Code",
+		`{"mcpServers":{"mini":{"command":"/old/mini","args":["connect"],"disabled":true}}}`,
+	)
 	cursor := f.write(t, "Cursor", `{"mcpServers":{}}`)
-	if err := os.MkdirAll(f.agents["Windsurf"].Dir, 0700); err != nil {
+	if err := os.MkdirAll(f.agents["Windsurf"].Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -141,7 +162,13 @@ func TestApply_reportsWhetherTheAgentEndsUpWithAServingMini(t *testing.T) {
 
 	for i, want := range []bool{false, true, true} {
 		if results[i].MiniServes != want || results[i].Err != nil {
-			t.Errorf("%s: MiniServes = %v, err = %v; want %v", results[i].Agent.Name, results[i].MiniServes, results[i].Err, want)
+			t.Errorf(
+				"%s: MiniServes = %v, err = %v; want %v",
+				results[i].Agent.Name,
+				results[i].MiniServes,
+				results[i].Err,
+				want,
+			)
 		}
 	}
 }
@@ -150,7 +177,11 @@ func TestApply_aFailedEditReportsNothingRemoved(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "lin", Command: "lin-server"})
-	codex := f.write(t, "Codex", "[mcp_servers.lin]\ncommand = \"lin-server\"\n\n[mcp_servers]\nfiles = { command = \"files-server\" }\n")
+	codex := f.write(
+		t,
+		"Codex",
+		"[mcp_servers.lin]\ncommand = \"lin-server\"\n\n[mcp_servers]\nfiles = { command = \"files-server\" }\n",
+	)
 	before := testutil.ReadFile(t, codex.ConfigPath)
 
 	results := f.apply(ConnectAndRemove, map[string]error{"files": nil, "lin": nil}, codex)
@@ -171,7 +202,8 @@ func TestApply_disablesInCodex(t *testing.T) {
 	results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, codex)
 
 	data := string(testutil.ReadFile(t, codex.ConfigPath))
-	if !strings.Contains(data, "[mcp_servers.files]\nenabled = false\n") || !reflect.DeepEqual(results[0].Removed, []string{"files"}) {
+	if !strings.Contains(data, "[mcp_servers.files]\nenabled = false\n") ||
+		!reflect.DeepEqual(results[0].Removed, []string{"files"}) {
 		t.Errorf("result = %+v, config:\n%s\nwant files switched off", results[0], data)
 	}
 }
@@ -228,8 +260,21 @@ func TestApply_neverReplaces(t *testing.T) {
 func TestApply_comparesWithServerFilesAsWritten(t *testing.T) {
 	f := newApplyFixture(t)
 	t.Setenv("GH_TOKEN", "synthetic")
-	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "github", Transport: "http", URL: "https://gh.example/mcp", Headers: map[string]string{"Authorization": "Bearer ${GH_TOKEN}"}})
-	cursor := f.write(t, "Cursor", `{"mcpServers":{"gh":{"url":"https://gh.example/mcp","headers":{"Authorization":"Bearer ${env:GH_TOKEN}"}}}}`)
+	configtest.WriteServer(
+		t,
+		f.configDir,
+		config.ServerConfig{
+			Name:      "github",
+			Transport: "http",
+			URL:       "https://gh.example/mcp",
+			Headers:   map[string]string{"Authorization": "Bearer ${GH_TOKEN}"},
+		},
+	)
+	cursor := f.write(
+		t,
+		"Cursor",
+		`{"mcpServers":{"gh":{"url":"https://gh.example/mcp","headers":{"Authorization":"Bearer ${env:GH_TOKEN}"}}}}`,
+	)
 
 	results := f.apply(ConnectAndRemove, map[string]error{"github": nil}, cursor)
 
@@ -241,7 +286,7 @@ func TestApply_comparesWithServerFilesAsWritten(t *testing.T) {
 func TestApply_createsAMissingConfig(t *testing.T) {
 	f := newApplyFixture(t)
 	windsurf := f.agents["Windsurf"]
-	if err := os.MkdirAll(windsurf.Dir, 0700); err != nil {
+	if err := os.MkdirAll(windsurf.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -261,13 +306,13 @@ func TestApply_aFailedCreateReportsNoServingMini(t *testing.T) {
 	}
 	f := newApplyFixture(t)
 	windsurf := f.agents["Windsurf"]
-	if err := os.MkdirAll(windsurf.Dir, 0700); err != nil {
+	if err := os.MkdirAll(windsurf.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(windsurf.Dir, 0500); err != nil {
+	if err := os.Chmod(windsurf.Dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.Chmod(windsurf.Dir, 0700) }) //nolint:errcheck // only lets the temp dir be removed
+	t.Cleanup(func() { os.Chmod(windsurf.Dir, 0o700) }) //nolint:errcheck // only lets the temp dir be removed
 
 	results := f.apply(ConnectOnly, nil, windsurf)
 
@@ -279,7 +324,7 @@ func TestApply_aFailedCreateReportsNoServingMini(t *testing.T) {
 func TestApply_aConfigTheAgentWritesMeanwhileIsEdited(t *testing.T) {
 	f := newApplyFixture(t)
 	windsurf := f.agents["Windsurf"]
-	if err := os.MkdirAll(windsurf.Dir, 0700); err != nil {
+	if err := os.MkdirAll(windsurf.Dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	connect, wrote := windsurf.Connect, false
@@ -305,7 +350,11 @@ func TestApply_reportsEntriesChangedSinceTheCheck(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "lin", Command: "lin-server"})
-	cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server","args":["--edited"]},"lin":{"command":"lin-server"}}}`)
+	cursor := f.write(
+		t,
+		"Cursor",
+		`{"mcpServers":{"files":{"command":"files-server","args":["--edited"]},"lin":{"command":"lin-server"}}}`,
+	)
 
 	results := Apply(context.Background(), ApplyParams{
 		ConfigDir: f.configDir, Agents: []agents.Agent{cursor}, Choice: ConnectAndRemove, Mini: f.miniEntry(),
@@ -333,7 +382,15 @@ func TestApply_failuresAndCancel(t *testing.T) {
 		claude := f.write(t, "Claude Code", `{}`)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		results := Apply(ctx, ApplyParams{ConfigDir: f.configDir, Agents: []agents.Agent{claude}, Choice: ConnectOnly, Mini: f.miniEntry()})
+		results := Apply(
+			ctx,
+			ApplyParams{
+				ConfigDir: f.configDir,
+				Agents:    []agents.Agent{claude},
+				Choice:    ConnectOnly,
+				Mini:      f.miniEntry(),
+			},
+		)
 		if !errors.Is(results[0].Err, context.Canceled) || string(testutil.ReadFile(t, claude.ConfigPath)) != "{}" {
 			t.Errorf("result = %+v, want cancelled and untouched", results[0])
 		}
@@ -350,7 +407,10 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		results := f.apply(ConnectAndRemove, nil, codex, cursor)
 		for i, want := range []string{original, cursorOriginal} {
 			if results[i].ExistingMini != MiniEntryInactive || results[i].Backup != "" || results[i].Err != nil {
-				t.Errorf("result = %+v, want the switched-off or non-mini entry reported inactive and no edit", results[i])
+				t.Errorf(
+					"result = %+v, want the switched-off or non-mini entry reported inactive and no edit",
+					results[i],
+				)
 			}
 			if got := string(testutil.ReadFile(t, results[i].Agent.ConfigPath)); got != want {
 				t.Errorf("config:\n%s\nwant it unchanged", got)
@@ -364,7 +424,8 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			`"mini":{"command":"`+f.mini+`","args":["--config","`+f.configDir+`","connect"],"env":{"MINI_FLAG":"1"}}}}`)
 		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor)
 		data := string(testutil.ReadFile(t, cursor.ConfigPath))
-		if !reflect.DeepEqual(results[0].Removed, []string{"files"}) || !strings.Contains(data, f.mini) || !strings.Contains(data, "MINI_FLAG") {
+		if !reflect.DeepEqual(results[0].Removed, []string{"files"}) || !strings.Contains(data, f.mini) ||
+			!strings.Contains(data, "MINI_FLAG") {
 			t.Errorf("result = %+v, config:\n%s\nwant files removed and mini's entry unchanged", results[0], data)
 		}
 	})
@@ -407,7 +468,10 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		results := f.apply(ConnectAndRemove, map[string]error{"files": nil}, cursor)
 
 		if results[0].ExistingMini != MiniEntryInactive || results[0].Removed != nil {
-			t.Errorf("result = %+v, want the relative config dir reported inactive: the agent resolves it from its own directory", results[0])
+			t.Errorf(
+				"result = %+v, want the relative config dir reported inactive: the agent resolves it from its own directory",
+				results[0],
+			)
 		}
 	})
 	t.Run("a mini entry that can't start keeps the duplicates", func(t *testing.T) {
@@ -426,7 +490,11 @@ func TestApply_existingMiniEntry(t *testing.T) {
 
 		for _, result := range results {
 			if result.ExistingMini != MiniEntryInactive || result.Removed != nil {
-				t.Errorf("%s result = %+v, want an old serve entry, a moved binary or a bare name on init's PATH reported inactive and files kept", result.Agent.Name, result)
+				t.Errorf(
+					"%s result = %+v, want an old serve entry, a moved binary or a bare name on init's PATH reported inactive and files kept",
+					result.Agent.Name,
+					result,
+				)
 			}
 		}
 	})
@@ -440,17 +508,28 @@ func TestApply_existingMiniEntry(t *testing.T) {
 		before := [][]byte{testutil.ReadFile(t, codex.ConfigPath), testutil.ReadFile(t, cursor.ConfigPath)}
 
 		results := Apply(context.Background(), ApplyParams{
-			ConfigDir: f.configDir, Agents: []agents.Agent{codex, cursor}, Choice: ConnectAndRemove, Mini: f.miniEntry(),
-			Checks: map[string]error{"files": nil}, Counted: map[string][]string{"Codex": {"files"}, "Cursor": {"files"}},
+			ConfigDir: f.configDir,
+			Agents:    []agents.Agent{codex, cursor},
+			Choice:    ConnectAndRemove,
+			Mini:      f.miniEntry(),
+			Checks: map[string]error{
+				"files": nil,
+			},
+			Counted: map[string][]string{"Codex": {"files"}, "Cursor": {"files"}},
 		})
 
 		wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
 		for i, result := range results {
-			if result.ExistingMini != MiniEntryInactive || result.Removed != nil || !reflect.DeepEqual(result.Kept, wantKept) {
+			if result.ExistingMini != MiniEntryInactive || result.Removed != nil ||
+				!reflect.DeepEqual(result.Kept, wantKept) {
 				t.Errorf("%s result = %+v, want files kept because mini won't serve it", result.Agent.Name, result)
 			}
 			if result.Changed != nil {
-				t.Errorf("%s changed = %v, want none: files is as Connect counted it", result.Agent.Name, result.Changed)
+				t.Errorf(
+					"%s changed = %v, want none: files is as Connect counted it",
+					result.Agent.Name,
+					result.Changed,
+				)
 			}
 			if after := testutil.ReadFile(t, result.Agent.ConfigPath); string(after) != string(before[i]) {
 				t.Errorf("%s config changed:\n%s", result.Agent.Name, after)

@@ -174,8 +174,12 @@ func TestProjectionExcludeFields(t *testing.T) {
 	payload := `{"name":"test.txt","size":5,"created":"2026-01-01","permissions":"644","isDirectory":false}`
 	payloadJSON, _ := json.Marshal(payload)
 	fake := &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: "get_file_info", Description: "info", InputSchema: json.RawMessage(`{}`)}},
-		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)},
+		Tools: []transport.ToolDefinition{
+			{Name: "get_file_info", Description: "info", InputSchema: json.RawMessage(`{}`)},
+		},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`),
+		},
 	}
 	addEdgeConn(t, srv, config.ServerConfig{Name: "fs"}, fake)
 	serve(t, srv, callTool("config", map[string]any{
@@ -195,8 +199,12 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 	payload := `{"id":1,"title":"short","body":"` + longBody + `"}`
 	payloadJSON, _ := json.Marshal(payload)
 	fake := &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: "get_doc", Description: "doc", InputSchema: json.RawMessage(`{}`)}},
-		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`)},
+		Tools: []transport.ToolDefinition{
+			{Name: "get_doc", Description: "doc", InputSchema: json.RawMessage(`{}`)},
+		},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(payloadJSON) + `}]}`),
+		},
 	}
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
 	serve(t, srv, callTool("config", map[string]any{
@@ -236,7 +244,10 @@ func TestProjectionTruncation_fieldNameAndChars(t *testing.T) {
 func assertHealthStats(t *testing.T, srv *server.Server, svcName string, wantCalls int) {
 	t.Helper()
 	var status map[string]any
-	json.Unmarshal([]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))), &status)
+	json.Unmarshal(
+		[]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "status"})))),
+		&status,
+	)
 	servers, _ := status["servers"].(map[string]any)
 	svc, _ := servers[svcName].(map[string]any)
 	if calls, _ := svc["calls"].(float64); int(calls) != wantCalls {
@@ -256,8 +267,10 @@ func TestHealthStatsAfterCalls(t *testing.T) {
 	t.Cleanup(srv.Close)
 	const nCalls = 3
 	fake := &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
-		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`)},
+		Tools: []transport.ToolDefinition{{Name: "ping", Description: "ping", InputSchema: json.RawMessage(`{}`)}},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":"{}"}]}`),
+		},
 	}
 	addEdgeConn(t, srv, config.ServerConfig{Name: "svc"}, fake)
 	for i := 0; i < nCalls; i++ {
@@ -322,7 +335,9 @@ func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillAp
 			if err := os.Chmod(dir, 0o500); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() { os.Chmod(dir, 0o700) }) //nolint:errcheck // TempDir cleanup reports a directory it can't remove
+			t.Cleanup(
+				func() { os.Chmod(dir, 0o700) },
+			) //nolint:errcheck // TempDir cleanup reports a directory it can't remove
 		},
 	}
 	for name, breakFile := range cases {
@@ -342,13 +357,23 @@ func TestConfigureSetProjection_aFailedSaveKeepsTheLiveRuleAndSessionOnlyStillAp
 			if text := toolResultText(t, saved); !strings.Contains(text, "session_only") {
 				t.Errorf("failed save = %q, want session_only advice", text)
 			}
-			assertProjectedFields(t, toolResultText(t, postMCP(t, srv, sessionID, callGetData(3))), []string{"a"}, []string{"b"})
+			assertProjectedFields(
+				t,
+				toolResultText(t, postMCP(t, srv, sessionID, callGetData(3))),
+				[]string{"a"},
+				[]string{"b"},
+			)
 
 			sessionOnly := postMCP(t, srv, sessionID, setGetDataProjection(4, true))
 			if text := toolResultText(t, sessionOnly); strings.Contains(text, `"error"`) {
 				t.Fatalf("session_only set_projection = %s", text)
 			}
-			assertProjectedFields(t, toolResultText(t, postMCP(t, srv, sessionID, callGetData(5))), []string{"b"}, []string{"a"})
+			assertProjectedFields(
+				t,
+				toolResultText(t, postMCP(t, srv, sessionID, callGetData(5))),
+				[]string{"b"},
+				[]string{"a"},
+			)
 			if after := serverFileText(t, path); after != before {
 				t.Errorf("server file = %q, want it untouched (%q)", after, before)
 			}
@@ -479,7 +504,10 @@ func reloadResult(t *testing.T, dir string, editsAfterStart map[string]string) m
 		testutil.WriteFile(t, filepath.Join(dir, rel), content)
 	}
 	var result map[string]any
-	if err := json.Unmarshal([]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "reload"})))), &result); err != nil {
+	if err := json.Unmarshal(
+		[]byte(toolResultText(t, serve(t, srv, callTool("config", map[string]any{"action": "reload"})))),
+		&result,
+	); err != nil {
 		t.Fatalf("expected JSON from reload: %v", err)
 	}
 	return result
@@ -519,9 +547,11 @@ func TestConfigureReload_resultShape(t *testing.T) {
 			wantSourceErrors: true,
 		},
 		{
-			name:             "bad inline projection: ok=false, source_errors names the server file",
-			servers:          []config.ServerConfig{{Name: "a", Command: "echo"}},
-			files:            map[string]string{"servers/a.yaml": "command: echo\nprojections: {tool: {format: invalid}}\n"},
+			name:    "bad inline projection: ok=false, source_errors names the server file",
+			servers: []config.ServerConfig{{Name: "a", Command: "echo"}},
+			files: map[string]string{
+				"servers/a.yaml": "command: echo\nprojections: {tool: {format: invalid}}\n",
+			},
 			wantSourceErrors: true,
 			wantErrorFile:    "a.yaml",
 		},

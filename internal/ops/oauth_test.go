@@ -47,7 +47,14 @@ func TestDetectOAuth(t *testing.T) {
 
 	t.Run("bearer challenge records the marker", func(t *testing.T) {
 		dir := tempDir(t)
-		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: dir, Server: httpServer("https://example.com/mcp"), ConnErr: unauthorized("Bearer")})
+		got, err := ops.DetectOAuth(
+			ctx,
+			ops.DetectOAuthParams{
+				ConfigDir: dir,
+				Server:    httpServer("https://example.com/mcp"),
+				ConnErr:   unauthorized("Bearer"),
+			},
+		)
 		if err != nil || !got {
 			t.Fatalf("got (%v, %v), want (true, nil)", got, err)
 		}
@@ -58,7 +65,10 @@ func TestDetectOAuth(t *testing.T) {
 
 	t.Run("no challenge but a PRM document records the marker", func(t *testing.T) {
 		dir := tempDir(t)
-		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: dir, Server: httpServer(prmServer(t, true)), ConnErr: unauthorized("")})
+		got, err := ops.DetectOAuth(
+			ctx,
+			ops.DetectOAuthParams{ConfigDir: dir, Server: httpServer(prmServer(t, true)), ConnErr: unauthorized("")},
+		)
 		if err != nil || !got {
 			t.Fatalf("got (%v, %v), want (true, nil)", got, err)
 		}
@@ -69,7 +79,10 @@ func TestDetectOAuth(t *testing.T) {
 
 	t.Run("no challenge and no PRM document is not OAuth", func(t *testing.T) {
 		dir := tempDir(t)
-		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: dir, Server: httpServer(prmServer(t, false)), ConnErr: unauthorized("")})
+		got, err := ops.DetectOAuth(
+			ctx,
+			ops.DetectOAuthParams{ConfigDir: dir, Server: httpServer(prmServer(t, false)), ConnErr: unauthorized("")},
+		)
 		if err != nil || got {
 			t.Fatalf("got (%v, %v), want (false, nil)", got, err)
 		}
@@ -80,17 +93,41 @@ func TestDetectOAuth(t *testing.T) {
 
 	t.Run("non-Bearer challenge is not OAuth", func(t *testing.T) {
 		dir := tempDir(t)
-		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: dir, Server: httpServer("https://example.com/mcp"), ConnErr: unauthorized(`Basic realm="x"`)})
+		got, err := ops.DetectOAuth(
+			ctx,
+			ops.DetectOAuthParams{
+				ConfigDir: dir,
+				Server:    httpServer("https://example.com/mcp"),
+				ConnErr:   unauthorized(`Basic realm="x"`),
+			},
+		)
 		if err != nil || got || config.IsOAuthDetected(dir, "svc") {
-			t.Errorf("got (%v, %v), marker=%v, want (false, nil) and no marker", got, err, config.IsOAuthDetected(dir, "svc"))
+			t.Errorf(
+				"got (%v, %v), marker=%v, want (false, nil) and no marker",
+				got,
+				err,
+				config.IsOAuthDetected(dir, "svc"),
+			)
 		}
 	})
 
 	t.Run("a connection error that is not a 401 is not OAuth", func(t *testing.T) {
 		dir := tempDir(t)
-		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: dir, Server: httpServer("https://example.com/mcp"), ConnErr: errors.New("connection refused")})
+		got, err := ops.DetectOAuth(
+			ctx,
+			ops.DetectOAuthParams{
+				ConfigDir: dir,
+				Server:    httpServer("https://example.com/mcp"),
+				ConnErr:   errors.New("connection refused"),
+			},
+		)
 		if err != nil || got || config.IsOAuthDetected(dir, "svc") {
-			t.Errorf("got (%v, %v), marker=%v, want (false, nil) and no marker", got, err, config.IsOAuthDetected(dir, "svc"))
+			t.Errorf(
+				"got (%v, %v), marker=%v, want (false, nil) and no marker",
+				got,
+				err,
+				config.IsOAuthDetected(dir, "svc"),
+			)
 		}
 	})
 
@@ -99,7 +136,14 @@ func TestDetectOAuth(t *testing.T) {
 		if err := config.MarkOAuthDetected(dir, "svc"); err != nil {
 			t.Fatal(err)
 		}
-		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: dir, Server: httpServer("https://example.com/mcp"), ConnErr: errors.New("connection refused")})
+		got, err := ops.DetectOAuth(
+			ctx,
+			ops.DetectOAuthParams{
+				ConfigDir: dir,
+				Server:    httpServer("https://example.com/mcp"),
+				ConnErr:   errors.New("connection refused"),
+			},
+		)
 		if err != nil || !got {
 			t.Errorf("got (%v, %v), want (true, nil) from the recorded marker", got, err)
 		}
@@ -108,7 +152,14 @@ func TestDetectOAuth(t *testing.T) {
 	t.Run("marker write failure is returned", func(t *testing.T) {
 		notADir := filepath.Join(tempDir(t), "file")
 		testutil.WriteFile(t, notADir, "")
-		got, err := ops.DetectOAuth(ctx, ops.DetectOAuthParams{ConfigDir: notADir, Server: httpServer("https://example.com/mcp"), ConnErr: unauthorized("Bearer")})
+		got, err := ops.DetectOAuth(
+			ctx,
+			ops.DetectOAuthParams{
+				ConfigDir: notADir,
+				Server:    httpServer("https://example.com/mcp"),
+				ConnErr:   unauthorized("Bearer"),
+			},
+		)
 		if err == nil || got {
 			t.Errorf("got (%v, %v), want (false, error)", got, err)
 		}
@@ -120,10 +171,19 @@ func TestDetectOAuth_ineligibleServers(t *testing.T) {
 		name string
 		edit func(*config.ServerConfig)
 	}{
-		{"auth already configured", func(sc *config.ServerConfig) { sc.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2} }},
+		{
+			"auth already configured",
+			func(sc *config.ServerConfig) { sc.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2} },
+		},
 		{"stdio transport", func(sc *config.ServerConfig) { sc.Transport = "stdio" }},
-		{"static auth header", func(sc *config.ServerConfig) { sc.Headers = map[string]string{"Authorization": "Bearer tok"} }},
-		{"custom-named credential header", func(sc *config.ServerConfig) { sc.Headers = map[string]string{"X-Api-Key": "key"} }},
+		{
+			"static auth header",
+			func(sc *config.ServerConfig) { sc.Headers = map[string]string{"Authorization": "Bearer tok"} },
+		},
+		{
+			"custom-named credential header",
+			func(sc *config.ServerConfig) { sc.Headers = map[string]string{"X-Api-Key": "key"} },
+		},
 		{"added by an agent", func(sc *config.ServerConfig) { sc.AgentAdded = true }},
 	}
 	for _, tc := range cases {
@@ -131,9 +191,17 @@ func TestDetectOAuth_ineligibleServers(t *testing.T) {
 			dir := tempDir(t)
 			sc := httpServer("https://example.com/mcp")
 			tc.edit(&sc)
-			got, err := ops.DetectOAuth(context.Background(), ops.DetectOAuthParams{ConfigDir: dir, Server: sc, ConnErr: unauthorized("Bearer")})
+			got, err := ops.DetectOAuth(
+				context.Background(),
+				ops.DetectOAuthParams{ConfigDir: dir, Server: sc, ConnErr: unauthorized("Bearer")},
+			)
 			if err != nil || got || config.IsOAuthDetected(dir, "svc") {
-				t.Errorf("got (%v, %v), marker=%v, want (false, nil) and no marker", got, err, config.IsOAuthDetected(dir, "svc"))
+				t.Errorf(
+					"got (%v, %v), marker=%v, want (false, nil) and no marker",
+					got,
+					err,
+					config.IsOAuthDetected(dir, "svc"),
+				)
 			}
 		})
 	}

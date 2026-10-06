@@ -88,10 +88,12 @@ func TestLoadServerConfig_unsetVariable_leavesOnlyThatServerAsWrittenAndSaysWhy(
 	svc, _ := servers.Find("svc")
 	other, _ := servers.Find("other")
 	var unset *config.UnsetEnvError
-	if !errors.As(svc.UnsetEnv, &unset) || svc.UnsetEnv.Error() != "server svc: headers.X-Key: MINI_TEST_UNDEFINED_HEADER isn't set where mini runs" {
+	if !errors.As(svc.UnsetEnv, &unset) ||
+		svc.UnsetEnv.Error() != "server svc: headers.X-Key: MINI_TEST_UNDEFINED_HEADER isn't set where mini runs" {
 		t.Fatalf("svc = %+v, want its UnsetEnv naming the field and variable", svc)
 	}
-	if svc.Headers["X-Key"] != "${MINI_TEST_UNDEFINED_HEADER}" || svc.Headers["X-Other"] != "${MINI_TEST_DEFINED_HEADER}" {
+	if svc.Headers["X-Key"] != "${MINI_TEST_UNDEFINED_HEADER}" ||
+		svc.Headers["X-Other"] != "${MINI_TEST_DEFINED_HEADER}" {
 		t.Errorf("svc headers = %v, want them all as written", svc.Headers)
 	}
 	if other.UnsetEnv != nil || other.Headers["X-Key"] != "set" {
@@ -160,9 +162,24 @@ func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *tes
 		{"unexpanded url", "servers/svc.yaml", "url: https://example.com/${X}\n", "url"},
 		{"bad handshake timeout", "servers/svc.yaml", "handshake_timeout: invalid\n", "handshake_timeout"},
 		{"invalid name from the path", "servers/a.b.yaml", "transport: stdio\n", "invalid server name \"a.b\""},
-		{"a leftover projection file", "servers/svc.proj.yaml", "t: {exclude: [a]}\n", "move these rules under projections: in svc.yaml"},
-		{"invalid projection format", "servers/svc.yaml", "projections:\n  t:\n    format: xml\n", "projection t: format"},
-		{"inline projection of the wrong type", "servers/svc.yaml", "projections:\n  t:\n    include_only: 5\n", "cannot unmarshal"},
+		{
+			"a leftover projection file",
+			"servers/svc.proj.yaml",
+			"t: {exclude: [a]}\n",
+			"move these rules under projections: in svc.yaml",
+		},
+		{
+			"invalid projection format",
+			"servers/svc.yaml",
+			"projections:\n  t:\n    format: xml\n",
+			"projection t: format",
+		},
+		{
+			"inline projection of the wrong type",
+			"servers/svc.yaml",
+			"projections:\n  t:\n    include_only: 5\n",
+			"cannot unmarshal",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

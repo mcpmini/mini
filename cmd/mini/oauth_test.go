@@ -8,11 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"golang.org/x/oauth2"
 )
 
 func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequests(t *testing.T) {
@@ -28,8 +29,10 @@ func TestBuildAndStartConnecting_validAndDisabledOAuthServers_makeNoTokenRequest
 		oauthServerConfig("idle", "http://localhost:1", tokenEp.srv.URL, false),
 	}
 	srv := startFromConfigDir(t,
-		BuildServerParams{Cfg: &config.Config{}, ConfigDir: configDir,
-			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: servers},
+		BuildServerParams{
+			Cfg: &config.Config{}, ConfigDir: configDir,
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: servers,
+		},
 	)
 	defer srv.Close()
 	awaitConnected(t, srv, "live")
@@ -46,8 +49,10 @@ func TestBuildAndStartConnecting_oauthServerWithHandSetHeaderAndNoToken_usesHand
 	sc := oauthServerConfig("pat", mcp.srv.URL, "http://localhost:1/token", true)
 	sc.Headers = map[string]string{"Authorization": "Bearer pat-123"}
 	srv := startFromConfigDir(t,
-		BuildServerParams{Cfg: &config.Config{}, ConfigDir: t.TempDir(),
-			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc}},
+		BuildServerParams{
+			Cfg: &config.Config{}, ConfigDir: t.TempDir(),
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Servers: []config.ServerConfig{sc},
+		},
 	)
 	defer srv.Close()
 	awaitConnected(t, srv, "pat")

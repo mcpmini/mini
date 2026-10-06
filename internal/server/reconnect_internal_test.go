@@ -41,7 +41,11 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 
 	t.Run("server removed before the reconnect publishes its tools", func(t *testing.T) {
 		srv := newInternalTestServer(t)
-		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: oldTools})
+		srv.AddConnection(
+			context.Background(),
+			config.ServerConfig{Name: "svc"},
+			&transport.FakeConnection{Tools: oldTools},
+		)
 		reconnecting := srv.snapshotUpstreams()[0]
 
 		if _, err := srv.removeServerFromAgent("svc"); err != nil {
@@ -57,10 +61,18 @@ func TestPublishReconnectedTools_staleUpstreamLeavesTheRegistryAlone(t *testing.
 
 	t.Run("server replaced by a newer install", func(t *testing.T) {
 		srv := newInternalTestServer(t)
-		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: oldTools})
+		srv.AddConnection(
+			context.Background(),
+			config.ServerConfig{Name: "svc"},
+			&transport.FakeConnection{Tools: oldTools},
+		)
 		reconnecting := srv.snapshotUpstreams()[0]
 
-		srv.AddConnection(context.Background(), config.ServerConfig{Name: "svc"}, &transport.FakeConnection{Tools: newTools})
+		srv.AddConnection(
+			context.Background(),
+			config.ServerConfig{Name: "svc"},
+			&transport.FakeConnection{Tools: newTools},
+		)
 		if srv.publishReconnectedTools(reconnecting, reconnecting.conn, oldTools) {
 			t.Error("publish reported success for a replaced upstream")
 		}
@@ -75,7 +87,11 @@ func TestPublishReconnectedTools_usesReloadedAliases(t *testing.T) {
 
 	tools := []transport.ToolDefinition{{Name: "list_pull_requests", InputSchema: json.RawMessage(`{}`)}}
 	proj := map[string]*config.ProjectionConfig{"list_pull_requests": {Alias: "old_alias"}}
-	srv.AddConnection(context.Background(), config.ServerConfig{Name: "gh", Projections: proj}, &transport.FakeConnection{Tools: tools})
+	srv.AddConnection(
+		context.Background(),
+		config.ServerConfig{Name: "gh", Projections: proj},
+		&transport.FakeConnection{Tools: tools},
+	)
 
 	srv.replaceProjections(map[string]map[string]*config.ProjectionConfig{
 		"gh": {"list_pull_requests": {Alias: "new_alias"}},
@@ -109,7 +125,12 @@ func TestMarkOAuthIfRequired_secondCallSkipsRewrite(t *testing.T) {
 	sc := config.ServerConfig{Name: "svc", Transport: "http", URL: "https://example.com/mcp"}
 	connErr := fmt.Errorf("list tools: %w", &transport.UnauthorizedError{WWWAuthenticate: "Bearer"})
 
-	if err := srv.markOAuthIfRequired(context.Background(), sc, connErr); err == nil || !strings.Contains(err.Error(), "requires OAuth authorization") {
+	if err := srv.markOAuthIfRequired(
+		context.Background(),
+		sc,
+		connErr,
+	); err == nil ||
+		!strings.Contains(err.Error(), "requires OAuth authorization") {
 		t.Fatalf("first call: err = %v, want oauth-required error", err)
 	}
 
@@ -117,13 +138,16 @@ func TestMarkOAuthIfRequired_secondCallSkipsRewrite(t *testing.T) {
 	// MarkOAuthDetected again, hit this permission error, and fall back to returning
 	// the bare connErr — so the error content alone proves whether it short-circuited.
 	metaPath := config.ServerMetaPath(configDir, "svc")
-	if err := os.Chmod(metaPath, 0400); err != nil {
+	if err := os.Chmod(metaPath, 0o400); err != nil {
 		t.Fatalf("chmod marker read-only: %v", err)
 	}
-	t.Cleanup(func() { os.Chmod(metaPath, 0600) }) //nolint:errcheck
+	t.Cleanup(func() { os.Chmod(metaPath, 0o600) }) //nolint:errcheck
 
 	err := srv.markOAuthIfRequired(context.Background(), sc, connErr)
 	if err == nil || !strings.Contains(err.Error(), "requires OAuth authorization") {
-		t.Errorf("second call: err = %v, want the oauth-required error (a rewrite attempt would have failed and returned the bare connErr instead)", err)
+		t.Errorf(
+			"second call: err = %v, want the oauth-required error (a rewrite attempt would have failed and returned the bare connErr instead)",
+			err,
+		)
 	}
 }

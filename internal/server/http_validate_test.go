@@ -5,10 +5,11 @@ package server_test
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/mcpmini/mini/internal/server"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/server"
 )
 
 const testDaemonToken = "0123456789abcdef0123456789abcdef"

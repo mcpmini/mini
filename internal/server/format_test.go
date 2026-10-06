@@ -16,7 +16,11 @@ import (
 )
 
 func newSrvWithFormat(t *testing.T, format string) *server.Server {
-	return newSrvWithResponse(t, format, `[{"number":1,"title":"bug one","state":"open"},{"number":2,"title":"feat two","state":"closed"}]`)
+	return newSrvWithResponse(
+		t,
+		format,
+		`[{"number":1,"title":"bug one","state":"open"},{"number":2,"title":"feat two","state":"closed"}]`,
+	)
 }
 
 func newSrvWithResponse(t *testing.T, format string, payload string) *server.Server {
@@ -93,8 +97,12 @@ func newSrvWithConfigFormat(t *testing.T, format string) *server.Server {
 	issues := `[{"number":1,"title":"bug"},{"number":2,"title":"feat"}]`
 	issuesJSON, _ := json.Marshal(issues)
 	fake := &transport.FakeConnection{
-		Tools:     []transport.ToolDefinition{{Name: "list_issues", Description: "list", InputSchema: json.RawMessage(`{}`)}},
-		Responses: map[string]json.RawMessage{"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(issuesJSON) + `}]}`)},
+		Tools: []transport.ToolDefinition{
+			{Name: "list_issues", Description: "list", InputSchema: json.RawMessage(`{}`)},
+		},
+		Responses: map[string]json.RawMessage{
+			"tools/call": json.RawMessage(`{"content":[{"type":"text","text":` + string(issuesJSON) + `}]}`),
+		},
 	}
 	srv := newTestServer(t, server.Params{Config: cfg})
 	addEdgeConn(t, srv, config.ServerConfig{Name: "gh"}, fake)

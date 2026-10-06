@@ -3,8 +3,9 @@ package authtest
 import (
 	"testing"
 
-	"github.com/mcpmini/mini/internal/auth"
 	"golang.org/x/oauth2"
+
+	"github.com/mcpmini/mini/internal/auth"
 )
 
 type TokenFile struct {

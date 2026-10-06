@@ -93,13 +93,22 @@ func captureImport(t *testing.T, configDir, src string) []string {
 }
 
 func detect(configDir string, names []string) {
-	detectImportedOAuth(oauthDetectParams{configDir: configDir, names: names, clock: clock.System(), errOut: &bytes.Buffer{}})
+	detectImportedOAuth(
+		oauthDetectParams{configDir: configDir, names: names, clock: clock.System(), errOut: &bytes.Buffer{}},
+	)
 }
 
 func loginListing(t *testing.T, configDir string) string {
 	t.Helper()
 	out := &bytes.Buffer{}
-	runLoginStep(loginStepParams{configDir: configDir, ask: func(string) string { return "s" }, out: out, errOut: &bytes.Buffer{}})
+	runLoginStep(
+		loginStepParams{
+			configDir: configDir,
+			ask:       func(string) string { return "s" },
+			out:       out,
+			errOut:    &bytes.Buffer{},
+		},
+	)
 	return out.String()
 }
 
@@ -124,7 +133,11 @@ func TestDetectImportedOAuthMakesLoginStepListChallengedServer(t *testing.T) {
 func TestDetectImportedOAuthMarksEveryChallengedServer(t *testing.T) {
 	configDir := t.TempDir()
 	url := upstreamAnswering(t, http.StatusUnauthorized, "Bearer")
-	names := importFromMCPJSON(t, configDir, `{"a": {"type": "http", "url": "`+url+`/a"}, "b": {"type": "http", "url": "`+url+`/b"}}`)
+	names := importFromMCPJSON(
+		t,
+		configDir,
+		`{"a": {"type": "http", "url": "`+url+`/a"}, "b": {"type": "http", "url": "`+url+`/b"}}`,
+	)
 
 	detect(configDir, names)
 
@@ -163,7 +176,10 @@ func TestDetectImportedOAuthProbesOnlyKeylessHTTPServersImportedThisRun(t *testi
 	detect(configDir, names)
 
 	if got := requests.seen(); !slices.Equal(got, []string{"/plain"}) {
-		t.Errorf("upstream saw requests for %v, want only /plain: a server with a key header can't be proven to need OAuth", got)
+		t.Errorf(
+			"upstream saw requests for %v, want only /plain: a server with a key header can't be proven to need OAuth",
+			got,
+		)
 	}
 	if _, err := os.Stat(spawned); err == nil {
 		t.Error("detection started the stdio server's command")

@@ -28,14 +28,19 @@ type loadServersCase struct {
 func TestLoadServers(t *testing.T) {
 	cases := []loadServersCase{
 		{
-			name:       "leftover projection filename is a broken source while its sibling loads",
-			files:      map[string]string{"servers/orphan.proj.yaml": "bad: [yaml\n", "servers/good.yaml": "command: echo\n"},
+			name: "leftover projection filename is a broken source while its sibling loads",
+			files: map[string]string{
+				"servers/orphan.proj.yaml": "bad: [yaml\n",
+				"servers/good.yaml":        "command: echo\n",
+			},
 			wantLoaded: []string{"good"},
 			wantBroken: []string{"orphan.proj"},
 		},
 		{
-			name:       "undefined environment reference in header loads with UnsetEnv",
-			files:      map[string]string{"servers/svc.yaml": "url: https://api.example.com\nheaders:\n  Authorization: Bearer ${UNDEFINED_TOKEN_XYZ}\nprojections:\n  t: {include_only: [a]}\n"},
+			name: "undefined environment reference in header loads with UnsetEnv",
+			files: map[string]string{
+				"servers/svc.yaml": "url: https://api.example.com\nheaders:\n  Authorization: Bearer ${UNDEFINED_TOKEN_XYZ}\nprojections:\n  t: {include_only: [a]}\n",
+			},
 			wantLoaded: []string{"svc"},
 			check: func(t *testing.T, servers config.Servers) {
 				if sc, _ := servers.Find("svc"); sc.UnsetEnv == nil || sc.Projections["t"] == nil {
@@ -44,14 +49,19 @@ func TestLoadServers(t *testing.T) {
 			},
 		},
 		{
-			name:       "undefined environment reference in args breaks only that server",
-			files:      map[string]string{"servers/svc.yaml": "command: echo\nargs: [--token, \"${PROJ_TEST_TOK_XYZ}\"]\n", "servers/ok.yaml": "command: echo\n"},
+			name: "undefined environment reference in args breaks only that server",
+			files: map[string]string{
+				"servers/svc.yaml": "command: echo\nargs: [--token, \"${PROJ_TEST_TOK_XYZ}\"]\n",
+				"servers/ok.yaml":  "command: echo\n",
+			},
 			wantLoaded: []string{"ok"},
 			wantBroken: []string{"svc"},
 		},
 		{
-			name:       "undefined environment references in projections stay literal",
-			files:      map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  t:\n    include_only: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n"},
+			name: "undefined environment references in projections stay literal",
+			files: map[string]string{
+				"servers/svc.yaml": "command: echo\nprojections:\n  t:\n    include_only: [\"${PROJ_UNDEFINED_FIELD_XYZ}\"]\n",
+			},
 			wantLoaded: []string{"svc"},
 			check: func(t *testing.T, servers config.Servers) {
 				if sc, _ := servers.Find("svc"); sc.Projections["t"].IncludeOnly[0] != "${PROJ_UNDEFINED_FIELD_XYZ}" {
@@ -60,20 +70,26 @@ func TestLoadServers(t *testing.T) {
 			},
 		},
 		{
-			name:       "bad inline projection format keeps server loaded without projections",
-			files:      map[string]string{"servers/github.yaml": "command: echo\nprojections:\n  t:\n    format: bad-format\n"},
+			name: "bad inline projection format keeps server loaded without projections",
+			files: map[string]string{
+				"servers/github.yaml": "command: echo\nprojections:\n  t:\n    format: bad-format\n",
+			},
 			wantLoaded: []string{"github"},
 			check:      wantUnprojected("github", "github.yaml"),
 		},
 		{
-			name:       "invalid inline projection structure keeps server loaded without projections",
-			files:      map[string]string{"servers/svc.yaml": "command: echo\nprojections:\n  t:\n    include_only: 5\n"},
+			name: "invalid inline projection structure keeps server loaded without projections",
+			files: map[string]string{
+				"servers/svc.yaml": "command: echo\nprojections:\n  t:\n    include_only: 5\n",
+			},
 			wantLoaded: []string{"svc"},
 			check:      wantUnprojected("svc", "svc.yaml"),
 		},
 		{
-			name:       "inline projections reached through a merge key apply",
-			files:      map[string]string{"servers/merged.yaml": "base: &base\n  projections:\n    t:\n      include_only: [merged]\n<<: *base\ncommand: echo\n"},
+			name: "inline projections reached through a merge key apply",
+			files: map[string]string{
+				"servers/merged.yaml": "base: &base\n  projections:\n    t:\n      include_only: [merged]\n<<: *base\ncommand: echo\n",
+			},
 			wantLoaded: []string{"merged"},
 			check: func(t *testing.T, servers config.Servers) {
 				if sc, _ := servers.Find("merged"); sc.Projections["t"].IncludeOnly[0] != "merged" {
@@ -82,14 +98,18 @@ func TestLoadServers(t *testing.T) {
 			},
 		},
 		{
-			name:       "malformed inherited projection block remains a projection error",
-			files:      map[string]string{"servers/svc.yaml": "base: &base\n  projections: {t: {include_only: 5}}\n<<: *base\ncommand: echo\n"},
+			name: "malformed inherited projection block remains a projection error",
+			files: map[string]string{
+				"servers/svc.yaml": "base: &base\n  projections: {t: {include_only: 5}}\n<<: *base\ncommand: echo\n",
+			},
 			wantLoaded: []string{"svc"},
 			check:      wantUnprojected("svc", "svc.yaml"),
 		},
 		{
-			name:       "direct projections replace inherited projections during load",
-			files:      map[string]string{"servers/svc.yaml": "base: &base\n  projections: {t: {include_only: [merged]}, u: {include_only: [merged]}}\nprojections: {t: {include_only: [own]}}\n<<: *base\ncommand: echo\n"},
+			name: "direct projections replace inherited projections during load",
+			files: map[string]string{
+				"servers/svc.yaml": "base: &base\n  projections: {t: {include_only: [merged]}, u: {include_only: [merged]}}\nprojections: {t: {include_only: [own]}}\n<<: *base\ncommand: echo\n",
+			},
 			wantLoaded: []string{"svc"},
 			check: func(t *testing.T, servers config.Servers) {
 				sc, _ := servers.Find("svc")
@@ -110,8 +130,11 @@ func TestLoadServers(t *testing.T) {
 			wantBroken: []string{"b"},
 		},
 		{
-			name:       "invalid file name is broken under that name",
-			files:      map[string]string{"servers/good.yaml": "command: echo\n", "servers/bad.name.yaml": "command: echo\n"},
+			name: "invalid file name is broken under that name",
+			files: map[string]string{
+				"servers/good.yaml":     "command: echo\n",
+				"servers/bad.name.yaml": "command: echo\n",
+			},
 			wantLoaded: []string{"good"},
 			wantBroken: []string{"bad.name"},
 		},
@@ -137,7 +160,13 @@ func wantUnprojected(name, file string) func(*testing.T, config.Servers) {
 		t.Helper()
 		sc, _ := servers.Find(name)
 		if sc.ProjectionsErr == nil || filepath.Base(sc.ProjectionsErr.Path) != file || sc.Projections != nil {
-			t.Errorf("%s = projections %v, error %+v; want no projections and an error blaming %s", name, sc.Projections, sc.ProjectionsErr, file)
+			t.Errorf(
+				"%s = projections %v, error %+v; want no projections and an error blaming %s",
+				name,
+				sc.Projections,
+				sc.ProjectionsErr,
+				file,
+			)
 		}
 		if broken := servers.BrokenProjections(); len(broken) != 1 || broken[0].ServerName != name {
 			t.Errorf("BrokenProjections = %+v, want only %s", broken, name)
@@ -202,7 +231,7 @@ func TestLoadServers_failsWhenItCannotListTheServerFiles(t *testing.T) {
 func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "good", Command: "echo"})
-	if err := os.MkdirAll(filepath.Join(dir, "servers", "unreadable.yaml"), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "servers", "unreadable.yaml"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 
@@ -218,8 +247,16 @@ func TestLoadServers_anUnreadableFileBreaksOnlyItsServer(t *testing.T) {
 
 func TestLoadServers_anUnreadableLegacyProjectionFileIsBrokenWithoutAffectingItsServer(t *testing.T) {
 	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "svc", Command: "echo", Projections: map[string]*config.ProjectionConfig{"tool": {Exclude: []string{"secret"}}}})
-	if err := os.MkdirAll(filepath.Join(dir, "servers", "svc.proj.yaml"), 0700); err != nil {
+	configtest.WriteServer(
+		t,
+		dir,
+		config.ServerConfig{
+			Name:        "svc",
+			Command:     "echo",
+			Projections: map[string]*config.ProjectionConfig{"tool": {Exclude: []string{"secret"}}},
+		},
+	)
+	if err := os.MkdirAll(filepath.Join(dir, "servers", "svc.proj.yaml"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	servers := mustLoadServers(t, dir)
@@ -237,7 +274,11 @@ func TestLoadServers_anUnreadableLegacyProjectionFileIsBrokenWithoutAffectingIts
 func TestLoadServers_mergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "detected", Command: "echo"})
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "custom", Command: "echo", Auth: &config.AuthConfig{Type: config.AuthTypeBearer}})
+	configtest.WriteServer(
+		t,
+		dir,
+		config.ServerConfig{Name: "custom", Command: "echo", Auth: &config.AuthConfig{Type: config.AuthTypeBearer}},
+	)
 	if err := config.MarkOAuthDetected(dir, "detected"); err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +295,11 @@ func TestLoadServers_mergesKnownAuthWithoutOverridingServerAuth(t *testing.T) {
 
 func TestLoadServer_matchesLoadServersWithoutNeedingTheOtherFiles(t *testing.T) {
 	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "linear", Transport: "http", URL: "https://mcp.linear.app/mcp"})
+	configtest.WriteServer(
+		t,
+		dir,
+		config.ServerConfig{Name: "linear", Transport: "http", URL: "https://mcp.linear.app/mcp"},
+	)
 	configtest.WriteProjections(t, dir, configtest.ProjectionFile{
 		ServerName: "linear",
 		Tools:      map[string]*config.ProjectionConfig{"list_issues": {IncludeOnly: []string{"title"}}},
@@ -263,7 +308,6 @@ func TestLoadServer_matchesLoadServersWithoutNeedingTheOtherFiles(t *testing.T) 
 	testutil.WriteFile(t, filepath.Join(dir, "servers", "broken.yaml"), "bad: [yaml\n")
 
 	got, err := config.LoadServer(dir, "linear")
-
 	if err != nil {
 		t.Fatalf("LoadServer: %v", err)
 	}
@@ -287,7 +331,11 @@ func TestLoadServer_matchesLoadServersWithoutNeedingTheOtherFiles(t *testing.T) 
 
 func TestLoadServer_aNameDifferingOnlyInCaseIsNotFound(t *testing.T) {
 	dir := t.TempDir()
-	configtest.WriteServer(t, dir, config.ServerConfig{Name: "github", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"})
+	configtest.WriteServer(
+		t,
+		dir,
+		config.ServerConfig{Name: "github", Transport: "http", URL: "https://api.githubcopilot.com/mcp/"},
+	)
 
 	if sc, err := config.LoadServer(dir, "GitHub"); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("LoadServer(GitHub) = %q, %v; want fs.ErrNotExist, not github.yaml under another name", sc.Name, err)
@@ -302,12 +350,16 @@ func TestLoadServer_readsBackTheProjectionsAServerFileWasWrittenWith(t *testing.
 	configtest.WriteServer(t, dir, written)
 
 	got, err := config.LoadServer(dir, "svc")
-
 	if err != nil {
 		t.Fatalf("LoadServer: %v", err)
 	}
 	if !reflect.DeepEqual(got.Projections, written.Projections) || got.ProjectionsErr != nil {
-		t.Errorf("projections = %+v, error %+v; want %+v as written", got.Projections["t"], got.ProjectionsErr, written.Projections["t"])
+		t.Errorf(
+			"projections = %+v, error %+v; want %+v as written",
+			got.Projections["t"],
+			got.ProjectionsErr,
+			written.Projections["t"],
+		)
 	}
 }
 
@@ -322,14 +374,22 @@ func projectionRules(sc config.ServerConfig) map[string][]string {
 func TestReadUnexpandedServer(t *testing.T) {
 	configDir := t.TempDir()
 	t.Setenv("API_KEY", "synthetic")
-	testutil.WriteFile(t, config.ServerPath(configDir, "svc"), "transport: http\nurl: https://example.com/mcp\nheaders:\n  X-Api-Key: ${API_KEY}\n")
+	testutil.WriteFile(
+		t,
+		config.ServerPath(configDir, "svc"),
+		"transport: http\nurl: https://example.com/mcp\nheaders:\n  X-Api-Key: ${API_KEY}\n",
+	)
 	testutil.WriteFile(t, config.ServerPath(configDir, "broken"), "headers: [secret-token-value\n")
 
 	sc, err := config.ReadUnexpandedServer(configDir, "svc")
 	if err != nil || sc.Name != "svc" || sc.Headers["X-Api-Key"] != "${API_KEY}" {
 		t.Errorf("ReadUnexpandedServer = %+v, %v; want the reference as written", sc, err)
 	}
-	if _, err := config.ReadUnexpandedServer(configDir, "broken"); err == nil || strings.Contains(err.Error(), "secret-token-value") {
+	if _, err := config.ReadUnexpandedServer(
+		configDir,
+		"broken",
+	); err == nil ||
+		strings.Contains(err.Error(), "secret-token-value") {
 		t.Errorf("err = %v, want a parse error that doesn't quote the file", err)
 	}
 }
