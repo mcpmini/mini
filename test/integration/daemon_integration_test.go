@@ -262,6 +262,25 @@ func TestIntegrationDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 	}
 }
 
+// #322: Codex keeps the first tools/list it gets, so a cold start must answer it with a slow server's tools.
+func TestIntegrationDaemon_coldStartFirstToolsListIncludesASlowServer(t *testing.T) {
+	cfg := shortConfigDir(t)
+	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
+	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 1500}
+	faultJSON, _ := json.Marshal(fault) //nolint:errcheck // a map of strings and ints always encodes
+	writeFaultServer(
+		t,
+		faultServerParams{ConfigDir: cfg, ServerName: "slow", Fixtures: dir, FaultJSON: string(faultJSON)},
+	)
+	t.Cleanup(func() { reapDaemons(cfg) })
+
+	raw := connectProxy(t, cfg).mustCall("tools/list", map[string]any{})
+
+	if !strings.Contains(string(raw), "slow__get_item") {
+		t.Errorf("first tools/list on a cold start = %s, want the slow server's tools", raw)
+	}
+}
+
 func TestIntegrationDaemon_healthzEndpoint(t *testing.T) {
 	cfg := shortConfigDir(t)
 	startDaemon(t, cfg)

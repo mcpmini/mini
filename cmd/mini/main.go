@@ -146,6 +146,7 @@ func serveStandalone(p ServeParams) error {
 	maybeStartSessionEviction(ctx, httpSrv, srv)
 	p.Logger.Info("mini ready")
 	err := serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: stdinPipe(os.Stdin), Out: os.Stdout})
+	srv.StopWaiting()
 	shutdownHTTP(httpSrv)
 	if err != nil {
 		return fmt.Errorf("serve stdio: %w", err)

@@ -56,14 +56,18 @@ func validateServerName(name string) error {
 	return nil
 }
 
-func (s *Server) handleList(_ context.Context, raw json.RawMessage) (any, error) {
+func (s *Server) handleList(ctx context.Context, raw json.RawMessage) (any, error) {
 	var p listParams
 	if err := unmarshalOptional(raw, &p); err != nil {
 		return nil, err
 	}
-	switch {
-	case p.Tool != "" && p.Detail:
+	if p.Tool != "" && p.Detail {
 		return s.listDetail(p.Tool)
+	}
+	if err := s.waitForStartup(ctx); err != nil {
+		return nil, err
+	}
+	switch {
 	case p.Hidden:
 		return s.listHidden()
 	case p.Query != "":

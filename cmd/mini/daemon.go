@@ -114,6 +114,7 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	go httpSrv.Serve(p.Listener) //nolint:errcheck
 	go p.Srv.RunSessionEviction(ctx, 30*time.Minute)
 	<-ctx.Done()
+	p.Srv.StopWaiting()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Closing the listener unlinks the socket; a SIGKILL leaves a stale one for the next bindSocket to reclaim.

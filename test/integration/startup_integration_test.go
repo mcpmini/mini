@@ -22,6 +22,7 @@ import (
 )
 
 func TestIntegrationStartup_ServesInitializeBeforeSlowUpstreamConnects(t *testing.T) {
+	t.Parallel() // the list waits out the hung server's startup hold
 	cfg := t.TempDir()
 
 	healthyDir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})

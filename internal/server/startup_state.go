@@ -37,6 +37,28 @@ type startupFailure struct {
 	envVars []string
 }
 
+// Every field is guarded by Server.stateMu.
+type startupTracker struct {
+	startedAt  map[string]time.Time
+	toolsReady map[string]bool // set after the registry has the tools; upstreams is set before
+	failures   map[string]startupFailure
+	changed    chan struct{} // closed and replaced whenever a server's startup state changes
+}
+
+func newStartupTracker() *startupTracker {
+	return &startupTracker{
+		startedAt:  make(map[string]time.Time),
+		toolsReady: make(map[string]bool),
+		failures:   make(map[string]startupFailure),
+		changed:    make(chan struct{}),
+	}
+}
+
+func (t *startupTracker) broadcastChangeLocked() {
+	close(t.changed)
+	t.changed = make(chan struct{})
+}
+
 type startupState struct {
 	phase   startupPhase
 	failure startupFailure
@@ -69,7 +91,7 @@ func (f startupFailure) logMessage() string {
 func (s *Server) openConnectWindow(name string) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.connectStartedAt[name] = s.clock.Now()
+	s.startup.startedAt[name] = s.clock.Now()
 }
 
 func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure) {
@@ -80,29 +102,32 @@ func (s *Server) recordStartupFailure(in upstreamInstall, failure startupFailure
 	}
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.startupFailures[in.cfg.Name] = failure
+	s.startup.failures[in.cfg.Name] = failure
+	s.startup.broadcastChangeLocked()
 }
 
 func (s *Server) markToolsReady(name string) {
 	s.stateMu.Lock()
 	defer s.stateMu.Unlock()
-	s.toolsReady[name] = true
+	s.startup.toolsReady[name] = true
+	s.startup.broadcastChangeLocked()
 }
 
 func (s *Server) forgetStartupLocked(name string) {
-	delete(s.connectStartedAt, name)
-	delete(s.toolsReady, name)
-	delete(s.startupFailures, name)
+	delete(s.startup.startedAt, name)
+	delete(s.startup.toolsReady, name)
+	delete(s.startup.failures, name)
+	s.startup.broadcastChangeLocked()
 }
 
 func (s *Server) startupStateLocked(name string, now time.Time) startupState {
-	if s.toolsReady[name] {
+	if s.startup.toolsReady[name] {
 		return startupState{phase: phaseConnected}
 	}
-	if failure, ok := s.startupFailures[name]; ok {
+	if failure, ok := s.startup.failures[name]; ok {
 		return startupState{phase: phaseFailed, failure: failure}
 	}
-	if now.Before(s.connectStartedAt[name].Add(startupHold)) {
+	if now.Before(s.startup.startedAt[name].Add(startupHold)) {
 		return startupState{phase: phaseConnecting}
 	}
 	return startupState{phase: phaseDelayed}

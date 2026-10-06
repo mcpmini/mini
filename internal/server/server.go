@@ -3,7 +3,6 @@ package server
 import (
 	"log/slog"
 	"sync"
-	"time"
 
 	"github.com/mcpmini/mini/internal/auth/provider"
 	"github.com/mcpmini/mini/internal/clock"
@@ -20,9 +19,9 @@ type Server struct {
 	reg                  *registry.Registry
 	upstreams            map[string]*upstreamServer
 	configServers        map[string]bool // servers started from the config files, the only ones a config edit removes
-	connectStartedAt     map[string]time.Time
-	toolsReady           map[string]bool // set after the registry has the tools; upstreams is set before
-	startupFailures      map[string]startupFailure
+	startup              *startupTracker
+	stopWaiting          chan struct{}
+	stopWaitingOnce      sync.Once
 	projections          map[string]map[string]*config.ProjectionConfig
 	envelope             *response.Builder
 	store                *response.Store

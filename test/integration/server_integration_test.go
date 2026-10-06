@@ -260,6 +260,7 @@ func TestIntegrationProxy_toolsListAnnotationsPassthrough(t *testing.T) {
 // running when an upstream fails to connect at startup. Previously os.Exit(1)
 // was called, which prevented startup when any server was unavailable.
 func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
+	t.Parallel() // the list waits out the unreachable server's startup hold
 	cfg := t.TempDir()
 	// Valid upstream (will connect) + unreachable HTTP upstream
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
@@ -274,6 +275,7 @@ func TestIntegrationServe_unreachableUpstreamDoesNotExit(t *testing.T) {
 
 // TestIntegrationProxy_unreachableUpstreamDoesNotExit is the proxy-mode equivalent.
 func TestIntegrationProxy_unreachableUpstreamDoesNotExit(t *testing.T) {
+	t.Parallel() // the list waits out the unreachable server's startup hold
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "dead", Transport: "http", URL: "http://127.0.0.1:19998"})

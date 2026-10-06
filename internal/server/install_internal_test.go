@@ -524,3 +524,15 @@ func TestDetachAndCloseServer_aServerConfiguredAgainStartsWithoutTheOldStartupSt
 		})
 	}
 }
+
+func TestWaitForStartup_endsWhenTheRequestIsCanceled(t *testing.T) {
+	srv := newInstallTestServer(t)
+	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+	srv.openConnectWindow("svc")
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if err := srv.waitForStartup(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("waitForStartup with a canceled request = %v, want context.Canceled", err)
+	}
+}
