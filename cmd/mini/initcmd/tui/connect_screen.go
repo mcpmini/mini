@@ -132,11 +132,11 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 }
 
 func (s *connectScreen) choose() (step, tea.Cmd) {
-	if s.cursor < s.agentRows() {
+	choice, onOption := s.highlighted()
+	if !onOption {
 		s.cursor = s.agentRows()
 		return stay, nil
 	}
-	choice := s.options()[s.cursor-s.agentRows()]
 	if choice == initcmd.ConnectAndRemove && !s.checks.done {
 		return stay, nil
 	}
@@ -272,14 +272,21 @@ func mcps(n int) string {
 }
 
 func (s *connectScreen) keys() string {
-	if s.cursor < s.agentRows() {
+	choice, onOption := s.highlighted()
+	switch {
+	case !onOption:
 		return "space tick · ↑↓ move · enter continue"
-	}
-	if s.cursor-s.agentRows() < len(s.options()) && s.options()[s.cursor-s.agentRows()] == initcmd.ConnectAndRemove &&
-		!s.checks.done {
+	case choice == initcmd.ConnectAndRemove && !s.checks.done:
 		return "↑↓ move · removing waits for the server checks"
 	}
 	return "↑↓ move · enter choose"
+}
+
+func (s *connectScreen) highlighted() (choice initcmd.ConnectChoice, onOption bool) {
+	if s.cursor < s.agentRows() {
+		return choice, false
+	}
+	return s.options()[s.cursor-s.agentRows()], true
 }
 
 func (s *connectScreen) empty() bool {

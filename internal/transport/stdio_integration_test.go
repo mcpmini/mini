@@ -110,7 +110,7 @@ func TestIntegrationStdioConnection_aFailedHandshakeReturnsWhenAChildOfTheServer
 	go func() {
 		_, err := NewStdioConnection(ctx, StdioCommand{
 			Command: "sh",
-			Args:    []string{"-c", "sleep 60 & sleep 60"},
+			Args:    []string{"-c", "sleep 10 & sleep 60"},
 			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
 		})
 		returned <- err
