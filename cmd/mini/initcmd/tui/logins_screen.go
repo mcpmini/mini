@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -215,11 +216,23 @@ func (s *loginsScreen) state(status initcmd.ServerStatus) string {
 	}
 	if err, tried := s.results[status.Name]; tried {
 		if err != nil {
-			return "✗ " + err.Error()
+			return "✗ " + firstLine(err)
 		}
 		return "✓ logged in"
 	}
 	return dim.Render(s.need(status))
+}
+
+// A failed token exchange's error carries the endpoint's raw response body, often a whole HTML
+// page; its lines would push the rows below off the screen.
+func firstLine(err error) string {
+	line, _, _ := strings.Cut(ansi.Strip(err.Error()), "\n")
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, line)
 }
 
 func (s *loginsScreen) need(status initcmd.ServerStatus) string {

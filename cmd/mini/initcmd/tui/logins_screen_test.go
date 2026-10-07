@@ -164,7 +164,7 @@ func loginScreen(logins *fakeLogins, names ...string) *loginsScreen {
 	return s
 }
 
-// press sends key and delivers the screen's commands until it has nothing left to do.
+// pressAndRun sends key and delivers the screen's commands until it has nothing left to do.
 func pressAndRun(s *loginsScreen, key string) {
 	_, cmd := s.handle(press(key))
 	for cmd != nil {
@@ -252,5 +252,15 @@ func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *
 	}
 	if links := strings.Count(body, ansi.SetHyperlink(url)); links != len(wrapped) {
 		t.Errorf("%d of %d URL lines link to the whole URL", links, len(wrapped))
+	}
+}
+
+func TestLoginsScreen_aFailedLoginShowsOnlyTheFirstLineOfItsError(t *testing.T) {
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	logins.ends["linear"] <- errors.New("oauth2: cannot fetch token: 502\rBad Gateway\nResponse: <html>\n<body>\x1b[31mdown</body>")
+	pressAndRun(s, "enter")
+	if text := loginsText(s); text != "  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n> Continue →" {
+		t.Errorf("screen:\n%q\nwant the error's first line, without control characters, on linear's row", text)
 	}
 }
