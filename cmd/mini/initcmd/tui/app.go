@@ -35,8 +35,8 @@ type loader interface {
 	update(msg tea.Msg) tea.Cmd
 }
 
-// savePoint writes the picks each time the user moves forward past screen after, or finishes
-// before reaching it. Once saved, quitting keeps what was written.
+// savePoint writes the picks each time the user moves forward past screen after, and before
+// finishing if nothing was saved yet. Once saved, quitting keeps what was written.
 type savePoint struct {
 	after int
 	save  func()
@@ -54,13 +54,15 @@ type app struct {
 	height  int
 	quit    bool
 	saves   savePoint
+	// started is what the first screen asked for when it was shown, before the program ran.
+	started tea.Cmd
 }
 
 // A screen can stop being empty once it loads, so empty screens are skipped when moving, not dropped.
 func newApp(screens []screen) *app {
 	a := &app{screens: screens, at: -1}
 	if first, ok := a.next(-1, 1); ok {
-		a.show(first)
+		a.started = a.show(first)
 	}
 	return a
 }
@@ -79,7 +81,7 @@ func (a *app) next(from, direction int) (int, bool) {
 }
 
 func (a *app) Init() tea.Cmd {
-	var cmds []tea.Cmd
+	cmds := []tea.Cmd{a.started}
 	for _, s := range a.screens {
 		if l, ok := s.(loader); ok {
 			cmds = append(cmds, l.start())
@@ -128,7 +130,9 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 
 func (a *app) forward() tea.Cmd {
 	next, ok := a.next(a.at, 1)
-	if a.saves.save != nil && a.at <= a.saves.after && (!ok || next > a.saves.after) {
+	passes := a.at <= a.saves.after && (!ok || next > a.saves.after)
+	// A run that starts past the save point, on Logins, still saves its (empty) picks on finishing.
+	if a.saves.save != nil && (passes || (!ok && !a.saves.saved)) {
 		a.saves.save()
 		a.saves.saved = true
 		// What was written decides whether the screens after it have anything to show.

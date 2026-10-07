@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"slices"
@@ -8,11 +9,13 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
 )
 
@@ -197,6 +200,79 @@ func TestRun_withNothingToImport(t *testing.T) {
 		)
 		if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"sentry"}) {
 			t.Errorf("written = %v, err = %v; want sentry ticked on the catalog shown first", got, err)
+		}
+	})
+}
+
+func TestRun_aRunThatStartsOnLoginsFinishesWithItsSummary(t *testing.T) {
+	configDir := t.TempDir()
+	configtest.WriteServer(
+		t,
+		configDir,
+		config.ServerConfig{Name: "files", Command: "run", Env: []string{"ROOT=${MINI_TEST_UNSET_ROOT}"}},
+	)
+	out, err := Run(Params{Setup: setupFor(configDir), LoadCatalog: noCatalog, Program: pressing("enter")})
+	if err != nil || out.Quit || !out.Saved {
+		t.Errorf("Run = %+v, %v; want a finished run with a summary, not a quit", out, err)
+	}
+}
+
+// oauthChallenge stands in for a server that answers with a 401: the check records that it needs
+// OAuth once release is closed, or when it is cancelled.
+type oauthChallenge struct {
+	release chan struct{}
+}
+
+func (c oauthChallenge) probe(ctx context.Context, configDir string, sc config.ServerConfig) error {
+	select {
+	case <-c.release:
+	case <-ctx.Done():
+	}
+	return config.MarkOAuthDetected(configDir, sc.Name)
+}
+
+func statusOf(report initcmd.Report, name string) initcmd.Readiness {
+	i := slices.IndexFunc(report.Servers, func(s initcmd.ServerStatus) bool { return s.Name == name })
+	if i < 0 {
+		return -1
+	}
+	return report.Servers[i].Readiness
+}
+
+func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
+	plain := catalog.Catalog{Entries: []catalog.Entry{{Name: "plain", URL: "https://mcp.plain.example/mcp"}}}
+	t.Run("quitting cancels the running check first", func(t *testing.T) {
+		configDir := t.TempDir()
+		setup := setupFor(configDir)
+		setup.Probe = oauthChallenge{release: make(chan struct{})}.probe
+		var view string
+		program := func(m tea.Model) error {
+			pressing("space", "enter")(m)
+			view = ansi.Strip(m.(*app).render())
+			m.Update(press("ctrl+c"))
+			return nil
+		}
+		out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
+		if !strings.Contains(view, "plain  checking…") {
+			t.Errorf("Logins while the check ran:\n%s\nwant plain checking", view)
+		}
+		if err != nil || !out.Quit || statusOf(out.Report, "plain") != initcmd.NeedsLogin {
+			t.Errorf("out = %+v, %v; want the quit's summary read after the cancelled check recorded OAuth", out, err)
+		}
+	})
+	t.Run("finishing waits for the running check", func(t *testing.T) {
+		configDir := t.TempDir()
+		challenge := oauthChallenge{release: make(chan struct{})}
+		setup := setupFor(configDir)
+		setup.Probe = challenge.probe
+		program := func(m tea.Model) error {
+			pressing("space", "enter", "enter")(m)
+			close(challenge.release)
+			return nil
+		}
+		out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
+		if err != nil || out.Quit || statusOf(out.Report, "plain") != initcmd.NeedsLogin {
+			t.Errorf("out = %+v, %v; want the summary read after the check recorded OAuth", out, err)
 		}
 	})
 }

@@ -18,6 +18,8 @@ type Setup struct {
 	Catalog         []catalog.Entry
 	AgentsToConnect []agents.Agent
 	SelfPath        string
+	// Probe checks a written server for OAuth; tests swap it for one that doesn't connect.
+	Probe probeFunc
 }
 
 // Report is what a run did, for the summary.
@@ -83,7 +85,7 @@ func (s Setup) Write(p Plan) Report {
 }
 
 func (s Setup) NewSession() *Session {
-	return NewSession(SessionParams{ConfigDir: s.ConfigDir})
+	return NewSession(SessionParams{ConfigDir: s.ConfigDir, Probe: s.Probe})
 }
 
 // Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
