@@ -171,7 +171,9 @@ func TestPrintToolTable(t *testing.T) {
 		},
 	}
 	var out bytes.Buffer
-	printToolTable(&out, tools)
+	if err := printToolTable(&out, tools); err != nil {
+		t.Fatalf("printToolTable: %v", err)
+	}
 	got := out.String()
 	if !strings.Contains(got, "TOOL") {
 		t.Errorf("missing TOOL header: %q", got)
@@ -202,7 +204,9 @@ func TestPrintToolDetail(t *testing.T) {
 		}),
 	}
 	var out bytes.Buffer
-	printToolDetail(&out, tool)
+	if err := printToolDetail(&out, tool); err != nil {
+		t.Fatalf("printToolDetail: %v", err)
+	}
 	got := out.String()
 	if !strings.Contains(got, "send_message") {
 		t.Errorf("missing tool name: %q", got)

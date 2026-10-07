@@ -34,8 +34,7 @@ func newStatusCmd(opts *rootOptions) *cobra.Command {
 		Use:   "status",
 		Short: "Show server health",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runStatus(opts.configDir)
-			return nil
+			return runStatus(opts.configDir, cmd.OutOrStdout())
 		},
 	}
 }
@@ -60,24 +59,37 @@ func listAllServers(configDir string, out io.Writer) error {
 	}
 	warnServerProblems(os.Stderr, servers)
 	if noServers(servers) {
-		fmt.Fprintln(out, noServersConfigured)
-		return nil
+		_, err := fmt.Fprintln(out, noServersConfigured)
+		return err
 	}
-	printServerTable(out, servers.Loaded)
-	return nil
+	return printServerTable(out, servers.Loaded)
 }
 
 func noServers(servers config.Servers) bool {
 	return len(servers.Loaded) == 0 && len(servers.Broken) == 0
 }
 
-func printServerTable(out io.Writer, servers []config.ServerConfig) {
+func printServerTable(out io.Writer, servers []config.ServerConfig) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND / URL\tENABLED")
-	for _, sc := range servers {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", sc.Name, serverTransport(sc), serverTarget(sc), enabledStr(sc))
+	if _, err := fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND / URL\tENABLED"); err != nil {
+		return fmt.Errorf("write server table header: %w", err)
 	}
-	w.Flush()
+	for _, sc := range servers {
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%s\t%s\t%s\n",
+			sc.Name,
+			serverTransport(sc),
+			serverTarget(sc),
+			enabledStr(sc),
+		); err != nil {
+			return fmt.Errorf("write server table row: %w", err)
+		}
+	}
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("flush server table: %w", err)
+	}
+	return nil
 }
 
 func serverTransport(sc config.ServerConfig) string {
@@ -101,21 +113,28 @@ func enabledStr(sc config.ServerConfig) string {
 	return "no"
 }
 
-func runStatus(configDir string) {
+func runStatus(configDir string, out io.Writer) error {
 	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
-		fatalf("%v", err)
+		return err
 	}
 	if noServers(servers) {
-		fmt.Println(noServersConfigured)
-		return
+		_, err := fmt.Fprintln(out, noServersConfigured)
+		return err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	injectOAuthTokens(ctx, configDir, servers.Loaded)
 	srv := buildStatusServer(cfg, configDir)
 	defer srv.Close()
-	printStatusTable(ctx, srv, servers)
+	anyFailed, err := printStatusTable(statusTableParams{Context: ctx, Server: srv, Out: out, Servers: servers})
+	if err != nil {
+		return err
+	}
+	if anyFailed {
+		return fmt.Errorf("one or more servers are unhealthy")
+	}
+	return nil
 }
 
 func buildStatusServer(cfg *config.Config, configDir string) *server.Server {
@@ -123,20 +142,41 @@ func buildStatusServer(cfg *config.Config, configDir string) *server.Server {
 	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger})
 }
 
-func printStatusTable(ctx context.Context, srv *server.Server, servers config.Servers) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tTRANSPORT\tSTATUS\tTOOLS")
-	for _, se := range servers.Broken {
-		fmt.Fprintf(w, "%s\t%s\terror: %s\t-\n", se.ServerName, unknownTransport, singleLine(se.Err))
+type statusTableParams struct {
+	Context context.Context
+	Server  *server.Server
+	Out     io.Writer
+	Servers config.Servers
+}
+
+func printStatusTable(p statusTableParams) (bool, error) {
+	w := tabwriter.NewWriter(p.Out, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "NAME\tTRANSPORT\tSTATUS\tTOOLS"); err != nil {
+		return false, fmt.Errorf("write status table header: %w", err)
 	}
-	anyFailed := len(servers.Broken) > 0
-	for _, sc := range servers.Loaded {
-		anyFailed = printStatusRow(ctx, w, srv, sc) || anyFailed
+	for _, se := range p.Servers.Broken {
+		if _, err := fmt.Fprintf(
+			w,
+			"%s\t%s\terror: %s\t-\n",
+			se.ServerName,
+			unknownTransport,
+			singleLine(se.Err),
+		); err != nil {
+			return false, fmt.Errorf("write broken server row: %w", err)
+		}
 	}
-	w.Flush()
-	if anyFailed {
-		os.Exit(1)
+	anyFailed := len(p.Servers.Broken) > 0
+	for _, sc := range p.Servers.Loaded {
+		failed, err := printStatusRow(statusRowParams{Context: p.Context, Writer: w, Server: p.Server, Config: sc})
+		if err != nil {
+			return anyFailed, err
+		}
+		anyFailed = failed || anyFailed
 	}
+	if err := w.Flush(); err != nil {
+		return anyFailed, fmt.Errorf("flush status table: %w", err)
+	}
+	return anyFailed, nil
 }
 
 func projectionsNote(sc config.ServerConfig) string {
@@ -146,16 +186,61 @@ func projectionsNote(sc config.ServerConfig) string {
 	return ", " + singleLine(projectionsError(sc))
 }
 
-func printStatusRow(ctx context.Context, w *tabwriter.Writer, srv *server.Server, sc config.ServerConfig) bool {
-	t := serverTransport(sc)
-	if !sc.IsEnabled() {
-		fmt.Fprintf(w, "%s\t%s\tdisabled%s\t-\n", sc.Name, t, projectionsNote(sc))
-		return sc.ProjectionsErr != nil
+type statusRowParams struct {
+	Context context.Context
+	Writer  io.Writer
+	Server  *server.Server
+	Config  config.ServerConfig
+}
+
+func printStatusRow(p statusRowParams) (bool, error) {
+	if !p.Config.IsEnabled() {
+		return writeDisabledStatusRow(p)
 	}
-	if err := srv.AddUpstream(ctx, sc); err != nil {
-		fmt.Fprintf(w, "%s\t%s\terror: %s\t-\n", sc.Name, t, singleLine(err))
-		return true
+	if err := p.Server.AddUpstream(p.Context, p.Config); err != nil {
+		return writeFailedStatusRow(p, err)
 	}
-	fmt.Fprintf(w, "%s\t%s\tok%s\t%d\n", sc.Name, t, projectionsNote(sc), srv.ToolCount(sc.Name))
-	return sc.ProjectionsErr != nil
+	return writeHealthyStatusRow(p)
+}
+
+func writeDisabledStatusRow(p statusRowParams) (bool, error) {
+	_, err := fmt.Fprintf(
+		p.Writer,
+		"%s\t%s\tdisabled%s\t-\n",
+		p.Config.Name,
+		serverTransport(p.Config),
+		projectionsNote(p.Config),
+	)
+	if err != nil {
+		return false, fmt.Errorf("write disabled server row: %w", err)
+	}
+	return p.Config.ProjectionsErr != nil, nil
+}
+
+func writeFailedStatusRow(p statusRowParams, upstreamErr error) (bool, error) {
+	_, err := fmt.Fprintf(
+		p.Writer,
+		"%s\t%s\terror: %s\t-\n",
+		p.Config.Name,
+		serverTransport(p.Config),
+		singleLine(upstreamErr),
+	)
+	if err != nil {
+		return false, fmt.Errorf("write failed server row: %w", err)
+	}
+	return true, nil
+}
+
+func writeHealthyStatusRow(p statusRowParams) (bool, error) {
+	if _, err := fmt.Fprintf(
+		p.Writer,
+		"%s\t%s\tok%s\t%d\n",
+		p.Config.Name,
+		serverTransport(p.Config),
+		projectionsNote(p.Config),
+		p.Server.ToolCount(p.Config.Name),
+	); err != nil {
+		return false, fmt.Errorf("write healthy server row: %w", err)
+	}
+	return p.Config.ProjectionsErr != nil, nil
 }

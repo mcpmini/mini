@@ -112,7 +112,7 @@ func runCallCmd(configDir string, args []string, f callFlags, protected bool) {
 	defer cancel()
 
 	conn := mustDialCall(ctx, configDir, cc)
-	defer conn.Close()
+	defer conn.Close() //nolint:errcheck // The call result is authoritative; closing a killed stdio process may report its exit status.
 
 	projCfg := resolveCallProjection(cc.sc, cc.toolName)
 	projFormat := config.ProjectionFormat(projCfg)
@@ -313,7 +313,10 @@ func printCallOutput(serverName, toolName string, env *response.Envelope, mode c
 		fmt.Println(text)
 		return nil
 	}
-	b, _ := json.MarshalIndent(env, "", "  ")
+	b, err := json.MarshalIndent(env, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode JSON response: %w", err)
+	}
 	fmt.Println(string(b))
 	return nil
 }

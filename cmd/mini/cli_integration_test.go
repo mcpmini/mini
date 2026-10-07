@@ -220,6 +220,20 @@ func TestIntegrationCLI_test_unreachableServer(t *testing.T) {
 	}
 }
 
+func TestIntegrationCLI_status_unreachableServer(t *testing.T) {
+	bin := miniBin(t)
+	cfg := t.TempDir()
+	run(t, bin, cfg, "add", "dead", "--url", "http://127.0.0.1:19999")
+
+	stdout, stderr, code := run(t, bin, cfg, "status")
+	if code != 1 {
+		t.Fatalf("status with unreachable server exited %d, want 1: stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "error:") || !strings.Contains(stderr, "one or more servers are unhealthy") {
+		t.Fatalf("status output missing health row or summary: stdout=%q stderr=%q", stdout, stderr)
+	}
+}
+
 func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 	bin := miniBin(t)
 	t.Setenv("HOME", t.TempDir())
