@@ -56,14 +56,14 @@ func (s *Server) dispatchConfigureAction(ctx context.Context, p configureParams,
 	case "remove_server":
 		return s.removeServerFromAgent(p.ServerName)
 	default:
-		return s.dispatchConfigureAuthAction(p)
+		return s.dispatchConfigureAuthAction(ctx, p)
 	}
 }
 
-func (s *Server) dispatchConfigureAuthAction(p configureParams) (any, error) {
+func (s *Server) dispatchConfigureAuthAction(ctx context.Context, p configureParams) (any, error) {
 	switch p.Action {
 	case "start_auth":
-		return s.handleStartAuth(p.ServerName)
+		return s.handleStartAuth(ctx, p.ServerName)
 	case "auth_status":
 		return s.handleAuthStatus(p.ServerName)
 	default:

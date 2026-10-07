@@ -47,6 +47,7 @@ func (p *tokenProvider) Authorization(ctx context.Context) (string, error) {
 		p.reloadPersistedTokenLocked()
 	}
 	if p.shouldRefreshLocked() && !p.inProactiveBackoffLocked() {
+		//nolint:contextcheck // The provider mutex serializes rotation; persist it beyond this caller's cancellation.
 		if err := p.proactiveRefreshLocked(); err != nil {
 			return "", err
 		}
@@ -67,6 +68,7 @@ func (p *tokenProvider) RefreshAuthorization(ctx context.Context, stale string) 
 	if bearerValue(p.token) != stale {
 		return bearerValue(p.token), nil
 	}
+	//nolint:contextcheck // The provider mutex serializes rotation; persist it beyond this caller's cancellation.
 	if err := p.refreshLocked(); err != nil {
 		return "", err
 	}

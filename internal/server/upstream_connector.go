@@ -26,6 +26,7 @@ func (c *upstreamConnector) connect(ctx context.Context, in upstreamInstall) {
 		return
 	}
 	ctx, cancel := context.WithCancel(ctx)
+	//nolint:contextcheck // Caller cancellation is inherited above; connector lifetime adds owner cancellation.
 	stopOnClose := context.AfterFunc(c.lifetime, cancel)
 	c.wg.Add(1)
 	go func() {

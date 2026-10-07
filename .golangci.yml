@@ -22,6 +22,7 @@ linters:
     - ineffassign    # assigned value never used (can mask dropped errors)
     - misspell       # common English misspellings in identifiers and comments
     - gosec
+    - contextcheck
 
   settings:
     gosec:
@@ -47,7 +48,7 @@ linters:
     rules:
       # Test code intentionally uses simplified HTTP/exec APIs and unsafe assertions.
       - path: _test\.go
-        linters: [noctx, bodyclose, forcetypeassert]
+        linters: [noctx, bodyclose, forcetypeassert, contextcheck]
       # CLI and daemon entry points have no ambient request context by design.
       - path: ^cmd/
         linters: [noctx]

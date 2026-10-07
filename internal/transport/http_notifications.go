@@ -71,6 +71,7 @@ func (c *HTTPConnection) initHandshake(ctx context.Context) error {
 	if err := c.sendInitializedNotification(ctx); err != nil {
 		return err
 	}
+	//nolint:contextcheck // The connection owns future notifications beyond the handshake caller's context.
 	c.restartListener(toolsListChanged(result.Capabilities))
 	return nil
 }

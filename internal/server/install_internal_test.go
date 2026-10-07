@@ -239,7 +239,7 @@ func TestStartAuth_waitsUntilAnAddOrRemoveOfTheNameFinishes(t *testing.T) {
 	t.Cleanup(unlock)
 
 	started := make(chan struct{})
-	go func() { defer close(started); _, _ = srv.handleStartAuth("svc") }() // svc isn't saved, so it fails either way
+	go func() { defer close(started); _, _ = srv.handleStartAuth(t.Context(), "svc") }() // svc isn't saved, so it fails either way
 	waitUntil(
 		t,
 		"start_auth waits for svc or finishes",

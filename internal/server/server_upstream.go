@@ -169,6 +169,7 @@ func (s *Server) registerUpstream(ctx context.Context, conn transport.Connection
 		conn.Close()
 		return fmt.Errorf("list tools from %s: %w", in.cfg.Name, err)
 	}
+	//nolint:contextcheck // Installed upstream ownership keeps notification refreshes alive beyond this install request.
 	return s.installChecked(conn, tools, in)
 }
 

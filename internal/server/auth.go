@@ -19,7 +19,10 @@ type authFlowState struct {
 	login  *auth.BrowserLogin
 }
 
-func (s *Server) handleStartAuth(serverName string) (any, error) {
+func (s *Server) handleStartAuth(ctx context.Context, serverName string) (any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := validateServerName(serverName); err != nil {
 		return nil, err
 	}
@@ -31,15 +34,22 @@ func (s *Server) handleStartAuth(serverName string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	install := s.replacingInstall(sc)
-	flow, err := s.startPKCEFlow(serverName, sc)
+	login, err := s.startPKCEFlow(ctx, serverName, sc)
+	if err != nil {
+		return nil, err
+	}
+	authCtx, flow, err := s.registerAuthFlow(ctx, serverName, login)
 	if err != nil {
 		return nil, err
 	}
 	s.authWg.Add(1)
-	go s.runAuthFlow(flow.authCtx, install, flow.state)
-	s.maybeOpenAuthBrowser(sc, flow.authURL)
-	return authStartResponse(serverName, flow.authURL), nil
+	go s.runAuthFlow(authCtx, install, flow)
+	s.maybeOpenAuthBrowser(sc, login.AuthURL())
+	return authStartResponse(serverName, login.AuthURL()), nil
 }
 
 func (s *Server) maybeOpenAuthBrowser(sc config.ServerConfig, authURL string) {
@@ -64,24 +74,32 @@ func authStartResponse(serverName, authURL string) map[string]any {
 	}
 }
 
-type pkceFlowResult struct {
-	authURL string
-	state   *authFlowState
-	authCtx context.Context
+func (s *Server) startPKCEFlow(
+	ctx context.Context,
+	serverName string,
+	sc config.ServerConfig,
+) (*auth.BrowserLogin, error) {
+	s.cancelExistingAuthFlow(serverName)
+	params := auth.BeginLoginParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
+	login, err := auth.BeginLogin(ctx, &sc, params)
+	if err != nil {
+		return nil, err
+	}
+	return login, nil
 }
 
-func (s *Server) startPKCEFlow(serverName string, sc config.ServerConfig) (pkceFlowResult, error) {
-	s.cancelExistingAuthFlow(serverName)
-	authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	params := auth.BeginLoginParams{ConfigDir: s.configDir, ServerName: serverName, Clock: s.clock}
-	login, err := auth.BeginLogin(authCtx, &sc, params)
-	if err != nil {
-		cancel()
-		return pkceFlowResult{}, err
+func (s *Server) registerAuthFlow(
+	ctx context.Context,
+	serverName string,
+	login *auth.BrowserLogin,
+) (context.Context, *authFlowState, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, errors.Join(err, login.Close())
 	}
+	authCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Minute)
 	state := &authFlowState{cancel: cancel, login: login}
 	s.storeAuthFlow(serverName, state)
-	return pkceFlowResult{authURL: login.AuthURL(), state: state, authCtx: authCtx}, nil
+	return authCtx, state, nil
 }
 
 func (s *Server) storeAuthFlow(serverName string, state *authFlowState) {

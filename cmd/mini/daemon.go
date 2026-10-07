@@ -118,6 +118,7 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Closing the listener unlinks the socket; a SIGKILL leaves a stale one for the next bindSocket to reclaim.
+	//nolint:contextcheck // The service context is canceled; graceful shutdown needs a fresh bounded context.
 	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
 }
 
