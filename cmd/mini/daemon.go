@@ -57,7 +57,13 @@ func runDaemon(configDir string, logLevel string) {
 	logger := buildLogger(cfg, logLevel, logW)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	ln := bindSocket(socket)
+	ln, err := bindSocket(socketBindParams{Socket: socket, Chmod: os.Chmod})
+	if err != nil {
+		fatalf("%v", err)
+	}
+	if ln == nil {
+		return
+	}
 	serveDaemon(ctx, DaemonServeParams{
 		ConfigDir: configDir, Cfg: cfg, Servers: servers.Loaded, Logger: logger, Listener: ln,
 	})
@@ -120,30 +126,6 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	// Closing the listener unlinks the socket; a SIGKILL leaves a stale one for the next bindSocket to reclaim.
 	//nolint:contextcheck // The service context is canceled; graceful shutdown needs a fresh bounded context.
 	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
-}
-
-func bindSocket(socket string) net.Listener {
-	dir := filepath.Dir(socket)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		fatalf("create socket dir: %v", err)
-	}
-	// The dir's permissions are the access boundary — macOS ignores the socket file's own mode on connect.
-	_ = os.Chmod(dir, 0o700)
-	ln, err := net.Listen("unix", socket)
-	// Binding the socket is the single-winner election: if another daemon is healthy
-	// on this socket we exit; if a stale socket remains from a SIGKILL we reclaim it.
-	if err != nil {
-		if daemon.SocketHealthy(socket) {
-			os.Exit(0)
-		}
-		_ = os.Remove(socket)
-		if ln, err = net.Listen("unix", socket); err != nil {
-			fatalf("bind socket %s: %v", socket, err)
-		}
-	}
-	// Linux honors the socket file's own mode on connect; a permissive umask would otherwise leave it world-writable.
-	_ = os.Chmod(socket, 0o600)
-	return ln
 }
 
 func daemonHTTPServer(srv *server.Server) *http.Server {
