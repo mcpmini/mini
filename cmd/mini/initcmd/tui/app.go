@@ -26,8 +26,12 @@ type screen interface {
 
 const minWidth, minHeight = 60, 12
 
-// The heading, the footer's two lines, and a blank line after the heading and before the footer.
-const chromeLines = 5
+const (
+	headingLines         = 1
+	blankLinesAroundBody = 2
+	footerLines          = 2
+	chromeLines          = headingLines + blankLinesAroundBody + footerLines
+)
 
 type app struct {
 	screens []screen

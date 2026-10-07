@@ -9,7 +9,7 @@ import (
 
 type Params struct {
 	Setup initcmd.Setup
-	// Program runs the UI; tests swap it for one that drives the model directly.
+	// Program runs the UI; nil runs it in the terminal.
 	Program func(m tea.Model) error
 }
 

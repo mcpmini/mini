@@ -117,7 +117,6 @@ func printNoTerminalHelp(w io.Writer) {
 
 var errInitQuit = errors.New("init quit; nothing was written")
 
-// The full-screen init imports from every agent found, like --import, and lets the user choose.
 func runFullScreenInit(configDir string) error {
 	setup, err := unattendedRun(configDir, initFlags{importAll: true})
 	if err != nil {
