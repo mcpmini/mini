@@ -80,7 +80,7 @@ func startTerminal(t *testing.T, p terminalParams) *terminal {
 	wg.Add(2)
 	go func() { defer wg.Done(); term.copyOutput() }()
 	// The UI asks the terminal about itself; the emulator's answers go back as the terminal's.
-	go func() { defer wg.Done(); _, _ = io.Copy(f, term.screen) }() //nolint:errcheck // ends when the emulator closes
+	go func() { defer wg.Done(); _, _ = io.Copy(f, term.screen) }() //nolint:errcheck // ends when cleanup closes the answer pipe
 	go func() { term.err = cmd.Wait(); close(term.exited) }()
 	t.Cleanup(func() {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) //nolint:errcheck // the process may have exited already
