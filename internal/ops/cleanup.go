@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -23,8 +25,7 @@ func PurgeExpiredResponses(configDir string, now time.Time) (removed int, freed 
 		}
 		return 0, 0, err
 	}
-	removed, freed = purgeExpired(dir, entries, now.Add(-ttl))
-	return removed, freed, nil
+	return purgeExpired(dir, entries, now.Add(-ttl))
 }
 
 func resolveResponseDir(cfg *config.Config, configDir string) (string, time.Duration) {
@@ -39,7 +40,8 @@ func resolveResponseDir(cfg *config.Config, configDir string) (string, time.Dura
 	return dir, ttl
 }
 
-func purgeExpired(dir string, entries []os.DirEntry, cutoff time.Time) (removed int, freed int64) {
+func purgeExpired(dir string, entries []os.DirEntry, cutoff time.Time) (removed int, freed int64, err error) {
+	var errs []error
 	for _, e := range entries {
 		if shouldSkipCleanupEntry(e) {
 			continue
@@ -48,15 +50,31 @@ func purgeExpired(dir string, entries []os.DirEntry, cutoff time.Time) (removed 
 		if err != nil || info.ModTime().After(cutoff) {
 			continue
 		}
-		freed += purgeEntry(filepath.Join(dir, e.Name()), info.Size())
-		removed++
+		entryFreed, entryRemoved, err := purgeEntry(filepath.Join(dir, e.Name()), info.Size())
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if entryRemoved {
+			freed += entryFreed
+			removed++
+		}
 	}
-	return removed, freed
+	return removed, freed, errors.Join(errs...)
 }
 
-func purgeEntry(path string, size int64) int64 {
-	os.Remove(path)
-	return size
+func purgeEntry(path string, size int64) (freed int64, removed bool, err error) {
+	if err := os.Remove(path); err != nil {
+		if os.IsNotExist(err) {
+			return 0, false, nil
+		}
+		var pathErr *os.PathError
+		if errors.As(err, &pathErr) {
+			err = pathErr.Err
+		}
+		return 0, false, fmt.Errorf("remove response %q: %w", filepath.Base(path), err)
+	}
+	return size, true, nil
 }
 
 func shouldSkipCleanupEntry(e os.DirEntry) bool {
