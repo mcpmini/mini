@@ -331,17 +331,21 @@ func TestRetryStartupAfter_stopsForFailuresARetryCantFix(t *testing.T) {
 	srv := newInstallTestServer(t)
 	refused := fmt.Errorf("connect to svc: svc: %w", invoke.ErrAgentCommandNotAllowed)
 
-	if srv.retryStartupAfter("svc", refused, time.Second) {
+	if srv.retryStartupAfter(upstreamInstall{cfg: config.ServerConfig{Name: "svc"}}, refused, time.Second) {
 		t.Error("startup retries a command dangerous_allow_runtime_stdio doesn't allow, so it warns forever")
 	}
 	unset := fmt.Errorf(
 		"connect to svc: %w",
 		&config.UnsetEnvError{Field: "headers.Authorization", Names: []string{"GITHUB_TOKEN"}},
 	)
-	if srv.retryStartupAfter("svc", unset, time.Second) {
+	if srv.retryStartupAfter(upstreamInstall{cfg: config.ServerConfig{Name: "svc"}}, unset, time.Second) {
 		t.Error("startup retries a server whose environment variable isn't set, which a retry can't fix")
 	}
-	if !srv.retryStartupAfter("svc", errors.New("connection refused"), time.Second) {
+	if !srv.retryStartupAfter(
+		upstreamInstall{cfg: config.ServerConfig{Name: "svc"}},
+		errors.New("connection refused"),
+		time.Second,
+	) {
 		t.Error("startup gave up on an ordinary connect failure")
 	}
 }
@@ -462,5 +466,61 @@ func waitForChannel(t *testing.T, what string, ch <-chan struct{}) {
 	case <-ch:
 	case <-time.After(5 * time.Second):
 		t.Fatalf("timed out waiting until %s", what)
+	}
+}
+
+func TestRecordStartupFailure_aStaleAttemptDoesNotMarkAServerConfiguredAgainUnderItsName(t *testing.T) {
+	srv := newInstallTestServer(t)
+	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+	stale := srv.startupInstall(config.ServerConfig{Name: "svc"})
+	srv.detachAndCloseServer("svc")
+	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+
+	srv.recordStartupFailure(stale, startupFailure{kind: failureNeedsAuth})
+
+	srv.stateMu.RLock()
+	defer srv.stateMu.RUnlock()
+	if state := srv.startupStateLocked("svc", srv.clock.Now()); state.phase == phaseFailed {
+		t.Error("a failure from before the remove was recorded against the server configured again")
+	}
+}
+
+func TestDetachAndCloseServer_aServerConfiguredAgainStartsWithoutTheOldStartupState(t *testing.T) {
+	cases := []struct {
+		name  string
+		setUp func(*Server)
+	}{
+		{name: "was connected", setUp: func(srv *Server) {
+			if err := srv.AddConnection(
+				t.Context(),
+				config.ServerConfig{Name: "svc"},
+				&transport.FakeConnection{},
+			); err != nil {
+				t.Fatal(err)
+			}
+		}},
+		{name: "had failed", setUp: func(srv *Server) {
+			srv.recordStartupFailure(
+				srv.startupInstall(config.ServerConfig{Name: "svc"}),
+				startupFailure{kind: failureNeedsAuth},
+			)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newInstallTestServer(t)
+			srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+			srv.openConnectWindow("svc")
+			tc.setUp(srv)
+			srv.detachAndCloseServer("svc")
+			srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
+			srv.openConnectWindow("svc")
+
+			srv.stateMu.RLock()
+			defer srv.stateMu.RUnlock()
+			if state := srv.startupStateLocked("svc", srv.clock.Now()); state.phase != phaseConnecting {
+				t.Errorf("svc configured again is %s, want connecting", state.phase)
+			}
+		})
 	}
 }

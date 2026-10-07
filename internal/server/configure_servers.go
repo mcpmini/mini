@@ -139,5 +139,6 @@ func (s *Server) detachUpstream(serverName string) *upstreamServer {
 	delete(s.upstreams, serverName)
 	delete(s.projections, serverName)
 	delete(s.configServers, serverName)
+	s.forgetStartupLocked(serverName)
 	return u
 }

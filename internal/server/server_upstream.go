@@ -20,6 +20,7 @@ func (s *Server) ConnectUpstreams(ctx context.Context, servers []config.ServerCo
 		if !sc.IsEnabled() {
 			continue
 		}
+		s.openConnectWindow(sc.Name)
 		s.connector.connect(ctx, s.startupInstall(sc))
 	}
 }
@@ -61,7 +62,7 @@ func (s *Server) connectUntilRegistered(ctx context.Context, in upstreamInstall)
 			s.notifyAllSessions()
 			return
 		}
-		if !s.retryStartupAfter(in.cfg.Name, err, backoff) || !s.sleepBackoff(ctx, backoff) {
+		if !s.retryStartupAfter(in, err, backoff) || !s.sleepBackoff(ctx, backoff) {
 			return
 		}
 		backoff = nextBackoff(backoff)
@@ -75,25 +76,15 @@ func (s *Server) connectAtStartup(ctx context.Context, in upstreamInstall) error
 	return s.addUpstream(ctx, in)
 }
 
-func (s *Server) retryStartupAfter(name string, err error, backoff time.Duration) bool {
-	switch {
-	case errors.Is(err, errServerRemoved), errors.Is(err, errAlreadyRegistered):
+func (s *Server) retryStartupAfter(in upstreamInstall, err error, backoff time.Duration) bool {
+	name := in.cfg.Name
+	if errors.Is(err, errServerRemoved) || errors.Is(err, errAlreadyRegistered) {
 		s.logger.Info("startup connect abandoned", "server", name, "reason", err)
 		return false
-	case errors.Is(err, transport.ErrReauthRequired):
-		s.logger.Warn("upstream needs authorization, not retrying", "server", name, "err", err)
-		return false
-	case errors.Is(err, invoke.ErrAgentCommandNotAllowed):
-		s.logger.Warn("upstream not allowed to start, not retrying", "server", name, "err", err)
-		return false
-	case errors.As(err, new(*config.UnsetEnvError)):
-		s.logger.Warn(
-			"upstream needs an environment variable mini didn't start with, not retrying",
-			"server",
-			name,
-			"err",
-			err,
-		)
+	}
+	if failure, terminal := terminalStartupFailure(err); terminal {
+		s.logger.Warn(failure.logMessage(), "server", name, "err", err)
+		s.recordStartupFailure(in, failure)
 		return false
 	}
 	s.logger.Warn("upstream unavailable at startup, retrying", "server", name, "err", err, "backoff", backoff)
@@ -238,6 +229,7 @@ func (s *Server) installUpstreamLocked(
 	old := s.swapUpstream(sc.Name, u)
 	s.seedProjectionsIfNone(sc)
 	s.registerTools(sc, tools, old)
+	s.markToolsReady(sc.Name)
 	s.attachNotificationHandler(u, conn)
 	s.logger.Info("upstream registered", "server", sc.Name, "tools", len(tools))
 }
