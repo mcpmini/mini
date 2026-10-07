@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
@@ -16,6 +18,44 @@ func namedAgents(names ...string) []agents.Agent {
 		list = append(list, agents.Agent{Name: name, ConfigPath: "/home/u/" + name + ".json"})
 	}
 	return list
+}
+
+// fakePlan's check waits until the test releases it with the removals, or the screen cancels it.
+type fakePlan struct {
+	removable map[string][]string
+	release   chan initcmd.Removals
+	cancelled chan struct{}
+}
+
+func newFakePlan(removable map[string][]string) *fakePlan {
+	return &fakePlan{removable: removable, release: make(chan initcmd.Removals, 1), cancelled: make(chan struct{}, 1)}
+}
+
+func (f *fakePlan) HasDuplicates(agent string) bool { return len(f.removable[agent]) > 0 }
+
+func (f *fakePlan) Check(ctx context.Context) initcmd.Removals {
+	select {
+	case r := <-f.release:
+		return r
+	case <-ctx.Done():
+		f.cancelled <- struct{}{}
+		return initcmd.Removals{}
+	}
+}
+
+// checksPass releases the check with every removable entry's mini copy passing.
+func (f *fakePlan) checksPass(s *connectScreen, check tea.Cmd) {
+	f.release <- initcmd.Removals{ByAgent: f.removable}
+	s.update(check())
+}
+
+func connectScreenFor(plan *fakePlan, list []agents.Agent, withMini map[string]bool) (*connectScreen, tea.Cmd) {
+	s := newConnectScreen(connectParams{
+		agents:   list,
+		withMini: withMini,
+		plan:     func() (connectPlan, error) { return plan, nil },
+	})
+	return s, s.enter()
 }
 
 func connectText(s *connectScreen) string {
@@ -31,7 +71,7 @@ func pickedNames(s *connectScreen) []string {
 }
 
 func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
-	s := newConnectScreen(namedAgents("Claude"), nil)
+	s, _ := connectScreenFor(newFakePlan(nil), namedAgents("Claude"), nil)
 	want := "> Just connect mini\n    Adds mini next to your existing MCPs\n  Don't connect\n    Leaves Claude as it is"
 	if text := connectText(s); s.heading() != "Connect mini to Claude" || text != want {
 		t.Fatalf("%s\n%s\nwant the heading to name Claude, and:\n%s", s.heading(), text, want)
@@ -46,7 +86,7 @@ func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
 
 func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) {
 	list := namedAgents("Claude", "Codex", "Cursor", "Windsurf")
-	s := newConnectScreen(list, map[string]bool{"Windsurf": true})
+	s, _ := connectScreenFor(newFakePlan(nil), list, map[string]bool{"Windsurf": true})
 	text := connectText(s)
 	noted := strings.HasPrefix(text, "Windsurf already has a mini entry.\n\n")
 	if !noted || !strings.Contains(text, "[x] Cursor\n\n> Just connect mini") {
@@ -72,15 +112,80 @@ func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) 
 	}
 }
 
-func TestConnectScreen_isEmptyWhenEveryAgentRunsMini(t *testing.T) {
+func TestConnectScreen_isEmptyWhenEveryAgentHasMiniAndNothingToRemove(t *testing.T) {
 	list := namedAgents("Claude", "Codex")
-	if s := newConnectScreen(list, map[string]bool{"Claude": true, "Codex": true}); !s.empty() {
-		t.Error("Connect is shown although every agent already runs mini")
+	both := map[string]bool{"Claude": true, "Codex": true}
+	if s, _ := connectScreenFor(newFakePlan(nil), list, both); !s.empty() {
+		t.Error("Connect is shown although every agent already has mini and nothing to remove")
 	}
-	if s := newConnectScreen(list, map[string]bool{"Claude": true}); s.empty() {
-		t.Error("Connect is skipped although Codex doesn't run mini")
+	if s, _ := connectScreenFor(newFakePlan(map[string][]string{"Codex": {"files"}}), list, both); s.empty() {
+		t.Error("Connect is skipped although Codex has an entry mini could replace")
 	}
-	if s := newConnectScreen(nil, nil); !s.empty() {
+	if s, _ := connectScreenFor(newFakePlan(nil), nil, nil); !s.empty() {
 		t.Error("Connect is shown with no agent to connect")
+	}
+}
+
+func TestConnectScreen_removingWaitsForTheChecksThenCountsTheTickedAgents(t *testing.T) {
+	plan := newFakePlan(map[string][]string{"Claude": {"files", "notes"}, "Codex": {"github"}})
+	s, check := connectScreenFor(plan, namedAgents("Claude", "Codex"), nil)
+	if text := connectText(
+		s,
+	); !strings.Contains(
+		text,
+		"> Connect mini and remove existing MCPs\n    checking servers…",
+	) {
+		t.Fatalf("screen:\n%s\nwant removing first, highlighted, and checking", text)
+	}
+	if move, _ := s.handle(press("enter")); move != stay {
+		t.Fatalf("enter on removing while the checks run = %v, want it to wait", move)
+	}
+
+	plan.checksPass(s, check)
+	text := connectText(s)
+	count := strings.Contains(text, "Will remove 3 MCPs from existing agent configs.")
+	if !count || !strings.Contains(text, "Codex: existing MCPs will be disabled, not removed") {
+		t.Errorf("screen:\n%s\nwant 3 MCPs counted across both agents, and the Codex note", text)
+	}
+	s.handle(press("up"))
+	s.handle(press("space"))
+	text = connectText(s)
+	if !strings.Contains(text, "Will remove 2 MCPs") || strings.Contains(text, "Codex: existing") {
+		t.Errorf("screen with Codex unticked:\n%s\nwant only Claude's 2 MCPs and no Codex note", text)
+	}
+	s.handle(press("down"))
+	if move, _ := s.handle(press("enter")); move != forward || s.chosen != initcmd.ConnectAndRemove {
+		t.Fatalf("enter on removing = %v, chosen %v; want forward with removing", move, s.chosen)
+	}
+	if got := s.connectParams().Removals.ByAgent["Claude"]; strings.Join(got, ",") != "files,notes" {
+		t.Errorf("removals passed on = %v, want Claude's files and notes", got)
+	}
+}
+
+func TestConnectScreen_leavingCancelsTheRunningChecks(t *testing.T) {
+	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
+	s, _ := connectScreenFor(plan, namedAgents("Claude"), nil)
+	if move, _ := s.handle(press("esc")); move != back {
+		t.Fatalf("esc = %v, want back", move)
+	}
+	select {
+	case <-plan.cancelled:
+	default:
+		t.Error("esc returned before the running checks were cancelled")
+	}
+}
+
+func TestConnectScreen_aCheckRunFromAnEarlierVisitIsIgnored(t *testing.T) {
+	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
+	s, earlier := connectScreenFor(plan, namedAgents("Claude"), nil)
+	later := s.enter()
+	<-plan.cancelled
+	s.update(earlier())
+	if text := connectText(s); !strings.Contains(text, "checking servers…") {
+		t.Fatalf("screen:\n%s\nwant the earlier visit's result ignored while this visit's checks run", text)
+	}
+	plan.checksPass(s, later)
+	if text := connectText(s); !strings.Contains(text, "Will remove 1 MCP from") {
+		t.Errorf("screen:\n%s\nwant this visit's result counted", text)
 	}
 }

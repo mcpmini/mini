@@ -2,6 +2,7 @@ package initcmd
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -84,6 +85,19 @@ func writeAgentResult(b *strings.Builder, mini agents.MiniEntry, result AgentRes
 	case result.Backup != "":
 		fmt.Fprintf(b, "\n%s: %s backed up to %s\n", name, file, result.Backup)
 	}
+	for _, kept := range result.Kept {
+		fmt.Fprintf(b, "  %s stays in %s: %s\n", kept.Entry, name, keptReason(kept))
+	}
+	for _, entry := range result.Changed {
+		fmt.Fprintf(b, "  %s stays in %s: it changed after it was checked\n", entry, name)
+	}
+}
+
+func keptReason(kept KeptEntry) string {
+	if errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errMiniInactive) {
+		return kept.Err.Error()
+	}
+	return fmt.Sprintf("mini's %s failed its connection check: %v", kept.Server, kept.Err)
 }
 
 // JoinAnd lists names as people write them: "a", "a and b", "a, b and c".

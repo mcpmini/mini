@@ -243,3 +243,23 @@ func TestReport_failsWhenAnAgentCouldNotBeConnected(t *testing.T) {
 		t.Error("a run that connected Codex reads as failed")
 	}
 }
+
+func TestSummary_entriesRemovingLeftInPlace(t *testing.T) {
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	got := Summary(
+		Report{Agents: AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini"}}, Connected: []AgentResult{{
+			Agent:  claude,
+			Backup: "/home/u/.claude.minibackup.json",
+			Kept: []KeptEntry{
+				{Entry: "gh", Server: "github", Err: errors.New("connection refused")},
+				{Entry: "files", Server: "files", Err: errNotChecked},
+			},
+			Changed: []string{"notes"},
+		}}},
+	)
+	requireLines(t, got,
+		"  gh stays in Claude Code: mini's github failed its connection check: connection refused\n",
+		"  files stays in Claude Code: its connection wasn't checked\n",
+		"  notes stays in Claude Code: it changed after it was checked\n",
+	)
+}

@@ -67,15 +67,28 @@ var (
 	)
 )
 
-func (s Setup) Connect(ctx context.Context, list []agents.Agent, choice ConnectChoice) []AgentResult {
-	return Apply(ctx, ApplyParams{
+// ConnectParams is what the user chose on Connect.
+type ConnectParams struct {
+	Agents   []agents.Agent
+	Choice   ConnectChoice
+	Removals Removals
+}
+
+func (s Setup) Connect(ctx context.Context, p ConnectParams) []AgentResult {
+	return Apply(ctx, s.applyParams(p))
+}
+
+func (s Setup) applyParams(p ConnectParams) ApplyParams {
+	return ApplyParams{
 		ConfigDir: s.ConfigDir,
-		Agents:    list,
-		Choice:    choice,
+		Agents:    p.Agents,
+		Choice:    p.Choice,
 		Mini:      MiniCommand(s.ConfigDir),
 		SelfPath:  s.SelfPath,
+		Checks:    p.Removals.Checks,
+		Counted:   p.Removals.ByAgent,
 		Now:       clock.System().Now(),
-	})
+	}
 }
 
 // Apply connects mini to each agent in turn. A failed agent doesn't stop the others; once ctx is
