@@ -37,3 +37,16 @@ func (s *Server) NameLockCallers(name string) int {
 	}
 	return 0
 }
+
+func (s *Server) NameLockHeld(name string) bool {
+	s.serverNames.mu.Lock()
+	defer s.serverNames.mu.Unlock()
+	nl := s.serverNames.locks[name]
+	if nl == nil || nl.TryLock() {
+		if nl != nil {
+			nl.Unlock()
+		}
+		return false
+	}
+	return true
+}
