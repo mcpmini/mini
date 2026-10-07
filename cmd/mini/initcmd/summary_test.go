@@ -220,3 +220,29 @@ func TestJoinAnd(t *testing.T) {
 		}
 	}
 }
+
+func TestSummary_anAgentLeftUntickedKeepsItsHandStep(t *testing.T) {
+	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
+	got := Summary(Report{
+		Agents:    AgentConnections{Mini: mini, MiniServes: []agents.Agent{claude}, NoMini: []agents.Agent{cursor}},
+		Connected: []AgentResult{{Agent: claude, Backup: "/home/u/.claude.minibackup.json"}},
+	})
+	requireLines(t, got, "To connect mini to your agents:\n  Cursor (/home/u/.cursor/mcp.json):\n")
+	if strings.Contains(got, "Claude Code (/home/u/.claude.json)") {
+		t.Errorf("summary:\n%s\nwant no hand step for Claude Code, which was connected", got)
+	}
+}
+
+func TestReport_failsWhenAnAgentCouldNotBeConnected(t *testing.T) {
+	failed := Report{
+		Connected: []AgentResult{{Agent: agents.Agent{Name: "Codex"}, Err: errors.New("permission denied")}},
+	}
+	if !failed.Failed() {
+		t.Error("a run that couldn't connect Codex reads as finished, so init exits 0")
+	}
+	if (Report{Connected: []AgentResult{{Agent: agents.Agent{Name: "Codex"}}}}).Failed() {
+		t.Error("a run that connected Codex reads as failed")
+	}
+}

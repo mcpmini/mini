@@ -45,9 +45,12 @@ func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
 }
 
 func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) {
-	s := newConnectScreen(namedAgents("Claude", "Codex", "Cursor"), map[string]bool{"Cursor": true})
-	if text := connectText(s); !strings.Contains(text, "[x] Cursor  already runs mini\n\n> Just connect mini") {
-		t.Fatalf("screen:\n%s\nwant Cursor marked as running mini and the cursor on the first option", text)
+	list := namedAgents("Claude", "Codex", "Cursor", "Windsurf")
+	s := newConnectScreen(list, map[string]bool{"Windsurf": true})
+	text := connectText(s)
+	noted := strings.HasPrefix(text, "Windsurf already running mini.\n\n")
+	if !noted || !strings.Contains(text, "[x] Cursor  /home/u/Cursor.json\n\n> Just connect mini") {
+		t.Fatalf("screen:\n%s\nwant Windsurf noted, not listed, and the cursor on the first option", text)
 	}
 	s.handle(press("up"))
 	s.handle(press("up"))
@@ -55,11 +58,10 @@ func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) 
 	if move, _ := s.handle(press("enter")); move != stay {
 		t.Fatalf("enter on an agent row = %v, want it to move to the options", move)
 	}
-	if text := connectText(
-		s,
-	); !strings.Contains(text, "[ ] Codex ") ||
-		!strings.Contains(text, "Leaves Claude and Cursor as they are") {
-		t.Errorf("screen:\n%s\nwant Codex unticked and Don't connect naming the agents still ticked", text)
+	text = connectText(s)
+	leaves := strings.Contains(text, "Leaves Claude, Codex and Cursor as they are")
+	if !strings.Contains(text, "[ ] Codex ") || !leaves {
+		t.Errorf("screen:\n%s\nwant Codex unticked, and Don't connect naming every agent it leaves", text)
 	}
 	s.handle(press("down"))
 	if move, _ := s.handle(press("enter")); move != forward || s.chosen != initcmd.DontConnect {

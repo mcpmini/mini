@@ -330,11 +330,8 @@ func TestRun_connect(t *testing.T) {
 			claude := claudeWithServers(t)
 			before := testutil.ReadFile(t, claude.ConfigPath)
 			out := run(t, claude, keys...)
-			if after := testutil.ReadFile(
-				t,
-				claude.ConfigPath,
-			); string(after) != string(before) ||
-				out.Report.Connected != nil {
+			after := testutil.ReadFile(t, claude.ConfigPath)
+			if string(after) != string(before) || out.Report.Connected != nil {
 				t.Errorf("agent config = %s, connected = %+v; want both untouched", after, out.Report.Connected)
 			}
 		})
