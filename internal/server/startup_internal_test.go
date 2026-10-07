@@ -74,7 +74,7 @@ func TestWaitForStartup_endsWhenTheRequestIsCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	if err := srv.waitForStartup(ctx); !errors.Is(err, context.Canceled) {
+	if err := srv.waitForStartup(ctx, nil); !errors.Is(err, context.Canceled) {
 		t.Errorf("waitForStartup with a canceled request = %v, want context.Canceled", err)
 	}
 }

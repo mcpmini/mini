@@ -56,7 +56,7 @@ func validateServerName(name string) error {
 	return nil
 }
 
-func (s *Server) handleList(ctx context.Context, raw json.RawMessage) (any, error) {
+func (s *Server) handleList(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {
 	var p listParams
 	if err := unmarshalOptional(raw, &p); err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (s *Server) handleList(ctx context.Context, raw json.RawMessage) (any, erro
 	if p.Tool != "" && p.Detail {
 		return s.listDetail(p.Tool)
 	}
-	if err := s.waitForStartup(ctx); err != nil {
+	if err := s.waitForStartup(ctx, session.ended); err != nil {
 		return nil, err
 	}
 	switch {

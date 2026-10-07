@@ -6,18 +6,23 @@ import (
 	"time"
 )
 
-var errStoppedWaiting = errors.New("mini is shutting down")
+var (
+	errStoppedWaiting = errors.New("mini is shutting down")
+	errSessionEnded   = errors.New("the session ended")
+)
 
 // Codex keeps the first tools/list it gets for the whole session, so a list built before the servers
 // connect would hide their tools for good; waitForStartup holds it until no server is still connecting.
-func (s *Server) waitForStartup(ctx context.Context) error {
+func (s *Server) waitForStartup(ctx context.Context, sessionEnded <-chan struct{}) error {
 	for {
 		changed, until, connecting := s.startupWaitTarget()
 		if !connecting {
 			return nil
 		}
 		timer := s.clock.NewTimer(s.clock.Until(until))
-		err := s.awaitStartupChange(ctx, changed, timer.Chan())
+		err := s.awaitStartupChange(
+			startupWaitSignals{ctx: ctx, changed: changed, windowEnd: timer.Chan(), sessionEnded: sessionEnded},
+		)
 		timer.Stop()
 		if err != nil {
 			return err
@@ -25,14 +30,23 @@ func (s *Server) waitForStartup(ctx context.Context) error {
 	}
 }
 
-func (s *Server) awaitStartupChange(ctx context.Context, changed <-chan struct{}, windowEnd <-chan time.Time) error {
+type startupWaitSignals struct {
+	ctx          context.Context
+	changed      <-chan struct{}
+	windowEnd    <-chan time.Time
+	sessionEnded <-chan struct{}
+}
+
+func (s *Server) awaitStartupChange(w startupWaitSignals) error {
 	select {
-	case <-changed:
+	case <-w.changed:
 		return nil
-	case <-windowEnd:
+	case <-w.windowEnd:
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-w.ctx.Done():
+		return w.ctx.Err()
+	case <-w.sessionEnded:
+		return errSessionEnded
 	case <-s.stopWaiting:
 		return errStoppedWaiting
 	}
