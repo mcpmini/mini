@@ -59,7 +59,7 @@ func (u *upstreamServer) shutdown() {
 func (u *upstreamServer) shutdownAndClose() {
 	u.shutdown()
 	u.mu.Lock()
-	u.conn.Close()
+	u.conn.Close() //nolint:errcheck // Server removal has no caller to receive connection cleanup errors.
 	u.mu.Unlock()
 }
 

@@ -54,6 +54,7 @@ func (s *Server) handleStartAuth(ctx context.Context, serverName string) (any, e
 
 func (s *Server) maybeOpenAuthBrowser(sc config.ServerConfig, authURL string) {
 	if browserCmd, open := s.cfg.BrowserCommandFor(sc); open {
+		//nolint:errcheck // Browser launch is optional; handleStartAuth returns the URL for manual use.
 		_ = auth.OpenBrowser(browserCmd, authURL)
 	}
 }
@@ -118,7 +119,8 @@ func (s *Server) cancelExistingAuthFlow(serverName string) {
 	if old == nil {
 		return
 	}
-	old.login.Close() //nolint:errcheck
+	//nolint:errcheck // Close joins the callback server and currently always returns nil.
+	old.login.Close()
 	old.cancel()
 }
 

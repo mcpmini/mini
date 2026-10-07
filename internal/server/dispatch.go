@@ -37,11 +37,14 @@ func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.Ra
 }
 
 func (s *Server) callPerSession(ctx context.Context, p dispatchParams) (json.RawMessage, error) {
+	args, err := json.Marshal(transport.ToolCallParams{Name: p.Tool, Arguments: p.Params})
+	if err != nil {
+		return nil, fmt.Errorf("marshal params: %w", err)
+	}
 	conn, err := s.getOrDialSessionConn(ctx, p.Upstream, p.Session)
 	if err != nil {
 		return nil, fmt.Errorf("per_session dial: %w", err)
 	}
-	args, _ := json.Marshal(transport.ToolCallParams{Name: p.Tool, Arguments: p.Params})
 	raw, err := conn.Call(ctx, "tools/call", args)
 	if err != nil {
 		return nil, s.handleSessionConnErr(p.Upstream, p.Session, conn, err)
@@ -62,7 +65,7 @@ func (s *Server) handleSessionConnErr(
 	}
 	s.logger.Warn("per-session connection error", "server", upstream.cfg.Name, "err", err)
 	session.EvictConn(upstream.cfg.Name, conn)
-	conn.Close()
+	conn.Close() //nolint:errcheck // The call error is returned; Close only releases the evicted connection.
 	return connError{err}
 }
 
@@ -92,7 +95,7 @@ func (s *Server) checkDialedConn(
 		return conn, nil
 	}
 	session.RemoveConn(name)
-	conn.Close()
+	conn.Close() //nolint:errcheck // The removal error is returned; Close only releases the stale connection.
 	return nil, fmt.Errorf("server %q removed during dial", name)
 }
 
@@ -109,7 +112,7 @@ func (s *Server) dialPerSessionConn(
 		return nil, err
 	}
 	if _, err := conn.ListTools(ctx); err != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck // ListTools failure is returned; Close only releases the failed connection.
 		return nil, fmt.Errorf("init per_session conn: %w", err)
 	}
 	return session.GetOrSetConn(upstream.cfg.Name, conn), nil

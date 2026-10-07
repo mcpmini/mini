@@ -22,7 +22,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) serveHealthz(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck // Fixed JSON; failed writer has no fallback.
 		"ok":       true,
 		"sessions": s.sessions.count(),
 	})
@@ -186,15 +186,15 @@ func writeMCPResponse(w http.ResponseWriter, r *http.Request, p mcpResponseParam
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(p.Resp) //nolint:errcheck
+	json.NewEncoder(w).Encode(p.Resp) //nolint:errcheck // okResponse marshals results; writer failure has no fallback.
 }
 
 func writeSSEResponse(w http.ResponseWriter, resp transport.Response) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("X-Accel-Buffering", "no")
-	b, _ := json.Marshal(resp)
-	fmt.Fprintf(w, "event: message\ndata: %s\n\n", b) //nolint:errcheck
+	b, _ := json.Marshal(resp)                        //nolint:errcheck // Production Result JSON comes from okResponse.
+	fmt.Fprintf(w, "event: message\ndata: %s\n\n", b) //nolint:errcheck // Failed SSE writer has no response fallback.
 }
 
 func acceptsSSE(accept string) bool {
