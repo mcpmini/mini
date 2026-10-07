@@ -18,7 +18,6 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/daemon"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 func newDaemonCmd(opts *rootOptions) *cobra.Command {
@@ -100,8 +99,7 @@ func serveDaemon(ctx context.Context, p DaemonServeParams) error {
 		DaemonAuthToken: token,
 	})
 	defer srv.Close()
-	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: p.Listener})
-	return nil
+	return startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: p.Listener})
 }
 
 func mintDaemonToken(configDir string) (string, error) {
@@ -120,32 +118,8 @@ func ensureDaemonNotRunning(configDir string) error {
 }
 
 type DaemonHTTPParams struct {
-	Srv      *server.Server
+	Srv      daemonHTTPService
 	Listener net.Listener
-}
-
-func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
-	httpSrv := daemonHTTPServer(p.Srv)
-	go httpSrv.Serve(p.Listener) //nolint:errcheck
-	go p.Srv.RunSessionEviction(ctx, 30*time.Minute)
-	<-ctx.Done()
-	p.Srv.ReleaseStartupHolds()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	// Closing the listener unlinks the socket; a SIGKILL leaves a stale one for the next bindSocket to reclaim.
-	//nolint:contextcheck // The service context is canceled; graceful shutdown needs a fresh bounded context.
-	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
-}
-
-func daemonHTTPServer(srv *server.Server) *http.Server {
-	return &http.Server{
-		Handler:           srv,
-		ReadHeaderTimeout: 5 * time.Second,
-		// No WriteTimeout: per-call deadlines are enforced by ToolTimeout.
-		// A fixed WriteTimeout would silently truncate any tool configured
-		// with tool_timeout longer than the cap.
-		MaxHeaderBytes: 64 << 10,
-	}
 }
 
 func runDaemonStatus(configDir string) {
