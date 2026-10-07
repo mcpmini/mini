@@ -38,3 +38,13 @@ func TestIsOAuthDetected_invalidName(t *testing.T) {
 		t.Error("an invalid server name must never report as detected, even when its traversed path holds a marker")
 	}
 }
+
+func TestIsOAuthDetected_corruptMetadataDoesNotTrustPartialFields(t *testing.T) {
+	dir := t.TempDir()
+	path := config.ServerMetaPath(dir, "myserver")
+	testutil.WriteFile(t, path, `{"oauth_detected":true,"oauth_detected":0}`)
+
+	if config.IsOAuthDetected(dir, "myserver") {
+		t.Fatal("corrupt metadata must not preserve partially decoded OAuth state")
+	}
+}

@@ -68,7 +68,6 @@ type daemonHTTPShutdownParams struct {
 func shutdownDaemonHTTP(p daemonHTTPShutdownParams) error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer shutdownCancel()
-	//nolint:contextcheck // The service context is canceled; shutdown needs a fresh bounded context.
 	shutdownErr := p.Server.Shutdown(shutdownCtx)
 	var closeErr error
 	if shutdownErr != nil {

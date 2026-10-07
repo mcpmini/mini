@@ -49,6 +49,8 @@ func readServerMeta(configDir, serverName string) ServerMeta {
 		return ServerMeta{}
 	}
 	var m ServerMeta
-	json.Unmarshal(data, &m) //nolint:errcheck
+	if err := json.Unmarshal(data, &m); err != nil {
+		return ServerMeta{}
+	}
 	return m
 }

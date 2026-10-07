@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -114,7 +115,11 @@ func socketHealthServer(t *testing.T, dir, body string) {
 }
 
 func TestRunDaemonStatusNotRunning(t *testing.T) {
-	out := testutil.CaptureStdout(t, func() { runDaemonStatus(shortConfigDir(t)) })
+	var err error
+	out := testutil.CaptureStdout(t, func() { err = runDaemonStatus(shortConfigDir(t)) })
+	if err != nil {
+		t.Fatalf("runDaemonStatus() error = %v", err)
+	}
 	if out != "daemon: not running\n" {
 		t.Fatalf("stdout = %q, want not running message", out)
 	}
@@ -124,7 +129,11 @@ func TestRunDaemonStatusRunning(t *testing.T) {
 	dir := shortConfigDir(t)
 	socketHealthServer(t, dir, `{"ok":true}`)
 
-	out := testutil.CaptureStdout(t, func() { runDaemonStatus(dir) })
+	var err error
+	out := testutil.CaptureStdout(t, func() { err = runDaemonStatus(dir) })
+	if err != nil {
+		t.Fatalf("runDaemonStatus() error = %v", err)
+	}
 	if !strings.Contains(out, "daemon: running") {
 		t.Fatalf("expected running message, got %q", out)
 	}
@@ -137,9 +146,46 @@ func TestRunDaemonStatusStaleSocket(t *testing.T) {
 	dir := shortConfigDir(t)
 	sp := daemon.SocketPath(dir)
 	testutil.WriteFile(t, sp, "")
-	out := testutil.CaptureStdout(t, func() { runDaemonStatus(dir) })
+	var err error
+	out := testutil.CaptureStdout(t, func() { err = runDaemonStatus(dir) })
+	if err != nil {
+		t.Fatalf("runDaemonStatus() error = %v", err)
+	}
 	if out != "daemon: not running\n" {
 		t.Fatalf("stale socket should read as not running, got %q", out)
+	}
+}
+
+type partialReadErrorReader struct{ err error }
+
+func (r partialReadErrorReader) Read(p []byte) (int, error) {
+	return copy(p, "partial"), r.err
+}
+
+func TestConsumeDaemonStatusRejectsPartialBody(t *testing.T) {
+	wantErr := errors.New("broken response body")
+	var err error
+	out := testutil.CaptureStdout(t, func() {
+		err = consumeDaemonStatus(http.StatusOK, partialReadErrorReader{err: wantErr})
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("consumeDaemonStatus() error = %v, want wrapped read error", err)
+	}
+	if out != "" {
+		t.Fatalf("partial health body was printed as status: %q", out)
+	}
+}
+
+func TestConsumeDaemonStatusPreservesUnhealthyHTTPStatus(t *testing.T) {
+	var err error
+	out := testutil.CaptureStdout(t, func() {
+		err = consumeDaemonStatus(http.StatusServiceUnavailable, strings.NewReader("unavailable"))
+	})
+	if err != nil {
+		t.Fatalf("consumeDaemonStatus() error = %v", err)
+	}
+	if out != "daemon: unhealthy (HTTP 503) — unavailable\n" {
+		t.Fatalf("unhealthy status output = %q", out)
 	}
 }
 
@@ -178,5 +224,68 @@ func TestDaemonShutdown_boundedContextUnblocksWithHungHandler(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Shutdown with bounded context blocked past deadline — hung handler prevented exit")
+	}
+}
+
+func TestShutdownHTTPWithContextClosesActiveConnectionAfterShutdownFailure(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	srv := &http.Server{Handler: http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		close(started)
+		<-release
+		close(finished)
+	})}
+	defer srv.Close()
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- srv.Serve(ln) }()
+	defer func() {
+		close(release)
+		select {
+		case <-finished:
+		case <-time.After(time.Second):
+			t.Error("handler did not finish after release")
+		}
+	}()
+
+	requestDone := make(chan error, 1)
+	go func() {
+		resp, err := http.Get("http://" + ln.Addr().String())
+		if resp != nil {
+			resp.Body.Close()
+		}
+		requestDone <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("request handler did not start")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = shutdownHTTPWithContext(srv, ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("shutdownHTTPWithContext() error = %v, want canceled shutdown", err)
+	}
+	select {
+	case err := <-serveDone:
+		if !errors.Is(err, http.ErrServerClosed) {
+			t.Fatalf("Serve() error = %v, want server closed", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HTTP server did not stop after forced close")
+	}
+	select {
+	case err := <-requestDone:
+		if err == nil {
+			t.Fatal("active request succeeded after forced connection close")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("active request remained blocked after forced connection close")
 	}
 }

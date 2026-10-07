@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -144,5 +145,22 @@ func TestBindSocketReclaimsStaleSocket(t *testing.T) {
 	}
 	if err := ln.Close(); err != nil {
 		t.Fatalf("listener Close() error = %v", err)
+	}
+}
+
+func TestListenDaemonSocketReportsStaleRemovalFailure(t *testing.T) {
+	requireUnixSockets(t)
+	socket := filepath.Join(testutil.ShortTempDir(t), "mini.sock")
+	if err := os.Mkdir(socket, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFile(t, filepath.Join(socket, "occupied"), "stale")
+
+	ln, err := listenDaemonSocket(socket)
+	if ln != nil || err == nil || !strings.Contains(err.Error(), "remove stale socket") {
+		t.Fatalf("listenDaemonSocket() = (%v, %v), want stale removal error", ln, err)
+	}
+	if _, err := os.Stat(filepath.Join(socket, "occupied")); err != nil {
+		t.Fatalf("failed stale cleanup changed existing entry: %v", err)
 	}
 }

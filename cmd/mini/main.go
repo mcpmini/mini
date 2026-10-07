@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -105,14 +106,16 @@ func serveUntilCanceled(p serveWatchParams) error {
 	ctx, cancel := context.WithCancel(p.Ctx)
 	defer cancel()
 	output := newServeOutput(p.Out, cancel, p.In)
-	defer func() { _ = p.In.Close() }()
+	defer func() {
+		_ = p.In.Close() //nolint:errcheck // Owned input cleanup is outside the Serve result contract.
+	}()
 	done := make(chan error, 1)
 	go func() { done <- p.Serve(ctx, p.In, output) }()
 	select {
 	case err := <-done:
 		return output.result(err)
 	case <-p.Ctx.Done():
-		_ = p.In.Close()
+		_ = p.In.Close() //nolint:errcheck // Input-close errors do not turn requested cancellation into a serve failure.
 		<-done
 		return output.result(nil)
 	}
@@ -150,20 +153,28 @@ func serveStandalone(p ServeParams) error {
 	p.Logger.Info("mini ready")
 	err := serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: stdinPipe(os.Stdin), Out: os.Stdout})
 	srv.ReleaseStartupHolds()
-	shutdownHTTP(httpSrv)
+	shutdownErr := shutdownHTTP(httpSrv)
 	if err != nil {
-		return fmt.Errorf("serve stdio: %w", err)
+		return errors.Join(fmt.Errorf("serve stdio: %w", err), shutdownErr)
 	}
-	return nil
+	return shutdownErr
 }
 
-func shutdownHTTP(httpSrv *http.Server) {
+func shutdownHTTP(httpSrv *http.Server) error {
 	if httpSrv == nil {
-		return
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	httpSrv.Shutdown(ctx) //nolint:errcheck
+	return shutdownHTTPWithContext(httpSrv, ctx)
+}
+
+func shutdownHTTPWithContext(httpSrv *http.Server, ctx context.Context) error {
+	shutdownErr := httpSrv.Shutdown(ctx)
+	if shutdownErr == nil {
+		return nil
+	}
+	return errors.Join(shutdownErr, httpSrv.Close())
 }
 
 type BuildServerParams struct {

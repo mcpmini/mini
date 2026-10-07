@@ -47,7 +47,9 @@ func listenDaemonSocket(socket string) (net.Listener, error) {
 	if daemon.SocketHealthy(socket) {
 		return nil, nil
 	}
-	_ = os.Remove(socket)
+	if err := os.Remove(socket); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("remove stale socket %s: %w", socket, err)
+	}
 	ln, err = net.Listen("unix", socket)
 	if err != nil {
 		return nil, fmt.Errorf("bind socket %s: %w", socket, err)
