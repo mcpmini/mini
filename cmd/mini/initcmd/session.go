@@ -22,7 +22,8 @@ type SessionParams struct {
 }
 
 // Session writes this run's servers and removes only servers it wrote.
-// Sync, Written, WaitChecks and Close belong to one goroutine; Checking and Changed are safe from any.
+// Sync, Written, Unchecked, WaitChecks and Close belong to one goroutine; Running and Changed are
+// safe from any.
 type Session struct {
 	p       SessionParams
 	written map[string]writtenServer
@@ -127,12 +128,6 @@ func (s *Session) addMissing(want []config.ServerConfig, result *SyncResult) {
 
 func (s *Session) Written() []string {
 	return slices.Sorted(maps.Keys(s.written))
-}
-
-func (s *Session) Checking(name string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.checking[name]
 }
 
 // Changed receives after a check starts or finishes; a receive may cover several.

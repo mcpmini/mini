@@ -12,7 +12,8 @@ import (
 type checksChanged struct{}
 
 type loginsParams struct {
-	statuses func() ([]initcmd.ServerStatus, error)
+	configDir string
+	statuses  func() ([]initcmd.ServerStatus, error)
 	// checking names the servers whose OAuth check is running.
 	checking func() map[string]bool
 	changed  <-chan struct{}
@@ -110,7 +111,7 @@ func (s *loginsScreen) need(status initcmd.ServerStatus) string {
 	}
 	switch status.Readiness {
 	case initcmd.NeedsLogin:
-		return "needs a login: mini auth " + status.Name
+		return "needs a login; " + initcmd.SetupStep(s.p.configDir, status)
 	case initcmd.NeedsToken:
 		return "needs a token"
 	case initcmd.NeedsOwnApp:

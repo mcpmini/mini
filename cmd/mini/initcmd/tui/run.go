@@ -90,6 +90,7 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 	}
 	ui := screens{imports: imports, catalogs: catalogs}
 	ui.logins = newLoginsScreen(loginsParams{
+		configDir: p.Setup.ConfigDir,
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			return initcmd.ServerStatuses(p.Setup.ConfigDir, ui.catalog(*plan))
 		},

@@ -23,9 +23,10 @@ func newFakeChecks(statuses ...initcmd.ServerStatus) *fakeChecks {
 
 func (f *fakeChecks) screen() *loginsScreen {
 	return newLoginsScreen(loginsParams{
-		statuses: func() ([]initcmd.ServerStatus, error) { return f.statuses, nil },
-		checking: func() map[string]bool { return maps.Clone(f.checking) },
-		changed:  f.changed,
+		configDir: "/srv/mini-test",
+		statuses:  func() ([]initcmd.ServerStatus, error) { return f.statuses, nil },
+		checking:  func() map[string]bool { return maps.Clone(f.checking) },
+		changed:   f.changed,
 	})
 }
 
@@ -45,7 +46,7 @@ func TestLoginsScreen_listsWhatEachServerStillNeeds(t *testing.T) {
 	)
 	s := checks.screen()
 	s.enter()
-	want := "  linear  needs a login: mini auth linear\n  github  needs a token\n" +
+	want := "  linear  needs a login; run: mini --config /srv/mini-test auth linear\n  github  needs a token\n" +
 		"  asana   needs your own OAuth app\n  files   needs ROOT set"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)

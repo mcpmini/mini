@@ -91,8 +91,7 @@ func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width i
 	return "run: " + miniCommand(mini, "auth", s.Name)
 }
 
-// SetupStep is the step that finishes a catalog server needing a token or the user's own app, as
-// the summary words it.
+// SetupStep is the step that finishes a server, as the summary words it.
 func SetupStep(configDir string, s ServerStatus) string {
 	return finishStep(configDir, MiniCommand(configDir), s, 0)
 }

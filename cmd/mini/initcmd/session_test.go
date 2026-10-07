@@ -129,7 +129,7 @@ func TestSessionChecks_aChangedServerIsCheckedAgain(t *testing.T) {
 	s, _ := newTestSession(t, probe, clock.System())
 	s.Sync([]config.ServerConfig{httpServer("github", "https://catalog.example/mcp")})
 	waitStarted(t, probe)
-	for s.Checking("github") {
+	for s.Running()["github"] {
 		waitChanged(t, s)
 	}
 
@@ -214,7 +214,7 @@ func TestSessionChecks_resyncCancelsWaitsAndChecksAgain(t *testing.T) {
 	open := httpServer("open", "https://open.example/mcp")
 	s.Sync([]config.ServerConfig{open})
 	waitStarted(t, probe)
-	if !s.Checking("open") {
+	if !s.Running()["open"] {
 		t.Fatal("Checking = false while the check runs")
 	}
 
@@ -224,7 +224,7 @@ func TestSessionChecks_resyncCancelsWaitsAndChecksAgain(t *testing.T) {
 		t.Errorf("Sync returned with %d checks finished, want the cancelled one finished", finished)
 	}
 	waitStarted(t, probe)
-	if !s.Checking("open") {
+	if !s.Running()["open"] {
 		t.Error("the cancelled check wasn't started again")
 	}
 }
@@ -243,7 +243,7 @@ func TestSessionChecks_aTimedOutCheckIsDone(t *testing.T) {
 	fake.Advance(OAuthCheckTimeout)
 	waitChanged(t, s)
 
-	if s.Checking("open") {
+	if s.Running()["open"] {
 		t.Error("Checking = true after the timeout")
 	}
 	s.Sync([]config.ServerConfig{open})
@@ -261,8 +261,8 @@ func TestSessionClose_cancelsAndWaitsForChecks(t *testing.T) {
 
 	s.Close()
 
-	if _, finished := probe.counts(); finished != 1 || s.Checking("open") {
-		t.Errorf("after Close: finished = %d, checking = %v; want the check finished", finished, s.Checking("open"))
+	if _, finished := probe.counts(); finished != 1 || s.Running()["open"] {
+		t.Errorf("after Close: finished = %d, checking = %v; want the check finished", finished, s.Running()["open"])
 	}
 }
 
