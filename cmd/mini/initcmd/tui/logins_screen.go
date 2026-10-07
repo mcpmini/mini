@@ -14,9 +14,8 @@ type checksChanged struct{}
 type loginsParams struct {
 	configDir string
 	statuses  func() ([]initcmd.ServerStatus, error)
-	// checking names the servers whose OAuth check is running.
-	checking func() map[string]bool
-	changed  <-chan struct{}
+	checking  func() map[string]bool
+	changed   <-chan struct{}
 }
 
 // loginsScreen lists the configured servers that don't work yet and what each one needs.

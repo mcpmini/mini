@@ -19,7 +19,7 @@ type Params struct {
 }
 
 // Outcome is how the UI ended. Saved means the picks were written, and Report says what that did;
-// Quit means the user left early, after the save or before it.
+// Quit means the UI ended early, by the user quitting or the program failing, after the save or before it.
 type Outcome struct {
 	Quit   bool
 	Saved  bool

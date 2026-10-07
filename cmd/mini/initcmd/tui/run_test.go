@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -262,18 +263,19 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 		}
 	})
 	t.Run("finishing waits for the running check", func(t *testing.T) {
-		configDir := t.TempDir()
-		challenge := oauthChallenge{release: make(chan struct{})}
-		setup := setupFor(configDir)
-		setup.Probe = challenge.probe
-		program := func(m tea.Model) error {
-			pressing("space", "enter", "enter")(m)
-			close(challenge.release)
-			return nil
-		}
-		out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
-		if err != nil || out.Quit || statusOf(out.Report, "plain") != initcmd.NeedsLogin {
-			t.Errorf("out = %+v, %v; want the summary read after the check recorded OAuth", out, err)
-		}
+		// The check ends only at its own timeout. Time in the bubble moves once Run blocks, so a
+		// finish that waits sees the check done, and one that cancels it sees it unchecked.
+		synctest.Test(t, func(t *testing.T) {
+			setup := setupFor(t.TempDir())
+			setup.Probe = func(ctx context.Context, _ string, _ config.ServerConfig) error {
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			program := pressing("space", "enter", "enter")
+			out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
+			if err != nil || out.Quit || statusOf(out.Report, "plain") != initcmd.Ready {
+				t.Errorf("out = %+v, %v; want plain checked, so not marked as maybe needing a login", out, err)
+			}
+		})
 	})
 }
