@@ -117,7 +117,6 @@ func (s *importScreen) detail(c initcmd.Candidate, w columns) string {
 	return strings.TrimRight(strings.Join(parts, "  "), " ")
 }
 
-// An unticked row says why, so ticking it is an informed choice.
 func (s *importScreen) unpickedReason(c initcmd.Candidate) string {
 	switch {
 	case c.Picked:
@@ -127,6 +126,7 @@ func (s *importScreen) unpickedReason(c initcmd.Candidate) string {
 	}
 	reason := "another config named " + c.SharesName
 	if primary, ok := s.named(c.SharesName); ok {
+		// Two configs under one name often share a target, so the row says what sets them apart.
 		if differences := agents.ConnectionDifferences(primary.Server, c.Server); len(differences) > 0 {
 			reason += ": different " + strings.Join(differences, ", ")
 		}
@@ -134,7 +134,6 @@ func (s *importScreen) unpickedReason(c initcmd.Candidate) string {
 	return reason
 }
 
-// Two configs under one name often share a target, so the row says what sets them apart.
 func (s *importScreen) named(name string) (initcmd.Candidate, bool) {
 	i := slices.IndexFunc(s.candidates, func(c initcmd.Candidate) bool { return c.Server.Name == name })
 	if i < 0 {
@@ -143,11 +142,10 @@ func (s *importScreen) named(name string) (initcmd.Candidate, bool) {
 	return s.candidates[i], true
 }
 
-// A long command would crowd out the other columns.
-const maxTargetRunes = 40
+const maxTargetWidth = 40
 
 func target(sc config.ServerConfig) string {
-	return ansi.Truncate(fullTarget(sc), maxTargetRunes, "…")
+	return ansi.Truncate(fullTarget(sc), maxTargetWidth, "…")
 }
 
 func fullTarget(sc config.ServerConfig) string {
