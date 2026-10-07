@@ -1,6 +1,7 @@
 package bench
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,7 +33,10 @@ func collectServerCases(fixturesDir, projectionsDir string, serverDirs []os.DirE
 			continue
 		}
 		server := serverDir.Name()
-		projections, _ := loadProjectionFile(filepath.Join(projectionsDir, server+".yaml"))
+		projections, err := loadOptionalProjectionFile(filepath.Join(projectionsDir, server+".yaml"))
+		if err != nil {
+			return nil, err
+		}
 		serverCases, err := loadServerFixtures(fixturesDir, server, projections)
 		if err != nil {
 			return nil, err
@@ -40,6 +44,17 @@ func collectServerCases(fixturesDir, projectionsDir string, serverDirs []os.DirE
 		cases = append(cases, serverCases...)
 	}
 	return cases, nil
+}
+
+func loadOptionalProjectionFile(path string) (map[string]*config.ProjectionConfig, error) {
+	projections, err := loadProjectionFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load projection file %s: %w", path, err)
+	}
+	return projections, nil
 }
 
 func loadServerFixtures(fixturesDir, server string, projections map[string]*config.ProjectionConfig) ([]Case, error) {
@@ -95,7 +110,7 @@ func resolveProjection(projections map[string]*config.ProjectionConfig, tool str
 func loadProjectionFile(path string) (map[string]*config.ProjectionConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	var m map[string]*config.ProjectionConfig
 	if err := yaml.Unmarshal(data, &m); err != nil {

@@ -69,6 +69,7 @@ func applyAndMarshal(p ApplyParams) Result {
 	}
 
 	r := projection.Apply(p.Value, effective, p.Defaults)
+	//nolint:errcheck // Decoded JSON values and projection output remain JSON-compatible.
 	b, _ := json.Marshal(r.Summary)
 	return Result{Server: p.Server, Tool: p.Tool, Mode: p.Mode, Tokens: response.EstimateTokensRaw(b), Bytes: len(b)}
 }
