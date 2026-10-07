@@ -28,7 +28,8 @@ type Outcome struct {
 	Report initcmd.Report
 }
 
-// Run shows the screens and writes the picks when the user moves past Catalog.
+// Run shows the screens, writes the picks when the user moves past Catalog, and connects the agents
+// the user picked on finishing.
 func Run(p Params) (Outcome, error) {
 	plan, err := p.Setup.Plan()
 	if err != nil {
@@ -73,8 +74,11 @@ func (r *run) outcome(leftEarly bool) Outcome {
 		r.session.WaitChecks()
 	}
 	r.plan.Catalog = r.ui.catalog(r.plan)
-	// Only finishing on Connect chooses to connect, so leaving early connects nothing.
-	connected := r.p.Setup.Connect(context.Background(), r.ui.connects.picked(), r.ui.connects.chosen)
+	var connected []initcmd.AgentResult
+	// A ctrl+c queued behind the enter that chose to connect still ends the run early.
+	if !leftEarly {
+		connected = r.p.Setup.Connect(context.Background(), r.ui.connects.picked(), r.ui.connects.chosen)
+	}
 	// The report reads the agents' configs, so it follows the connect that changed them.
 	report := r.p.Setup.Report(r.plan, r.session, r.last)
 	report.Connected = connected

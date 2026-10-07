@@ -344,6 +344,7 @@ func TestRun_connect(t *testing.T) {
 	for name, keys := range map[string][]string{
 		"don't connect leaves the agent as it was":            {"enter", "down", "enter"},
 		"quitting on Connect after the save leaves the agent": {"enter", "ctrl+c"},
+		"a ctrl+c right after choosing leaves the agent":      {"enter", "enter", "ctrl+c"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			claude := claudeWithServers(t)
