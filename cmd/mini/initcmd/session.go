@@ -141,8 +141,7 @@ func (s *Session) Running() map[string]bool {
 	return maps.Clone(s.checking)
 }
 
-// Unchecked names the written servers that may need OAuth and whose check never finished, as when
-// Close cancelled it.
+// Unchecked names the written servers that may need OAuth and whose check hasn't finished.
 func (s *Session) Unchecked() []string {
 	var names []string
 	for _, sc := range s.checkTargets() {

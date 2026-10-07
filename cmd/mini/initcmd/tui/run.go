@@ -12,7 +12,7 @@ import (
 
 type Params struct {
 	Setup initcmd.Setup
-	// LoadCatalog runs in the background while the Import screen is shown.
+	// LoadCatalog may run on another goroutine while the UI is shown.
 	LoadCatalog func() (catalog.Catalog, error)
 	// Program runs the UI; nil runs it in the terminal.
 	Program func(m tea.Model) error
@@ -43,7 +43,7 @@ func Run(p Params) (Outcome, error) {
 	}
 	err = p.program()(a)
 	if !a.saves.saved {
-		return Outcome{Quit: a.quit}, err
+		return Outcome{Quit: a.quit || err != nil}, err
 	}
 	return r.outcome(a.quit || err != nil), err
 }

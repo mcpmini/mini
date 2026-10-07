@@ -62,7 +62,7 @@ func setupFor(configDir string, list ...agents.Agent) initcmd.Setup {
 	return initcmd.Setup{ConfigDir: configDir, Import: list}
 }
 
-// oauthEntry is a catalog server with bundled OAuth, so writing it starts no network check.
+// oauthEntry is a catalog server that declares OAuth, so writing it starts no network check.
 func oauthEntry(name string) catalog.Entry {
 	return catalog.Entry{Name: name, URL: "https://mcp." + name + ".example/mcp", Auth: catalog.AuthOAuth2}
 }
@@ -218,19 +218,9 @@ func TestRun_aRunThatStartsOnLoginsFinishesWithItsSummary(t *testing.T) {
 	}
 }
 
-// oauthChallenge stands in for a server that answers with a 401 once release is closed. Like a
-// real probe, a check cancelled before that records nothing.
-type oauthChallenge struct {
-	release chan struct{}
-}
-
-func (c oauthChallenge) probe(ctx context.Context, configDir string, sc config.ServerConfig) error {
-	select {
-	case <-c.release:
-		return config.MarkOAuthDetected(configDir, sc.Name)
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+func blockUntilCancelled(ctx context.Context, _ string, _ config.ServerConfig) error {
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 func statusOf(report initcmd.Report, name string) initcmd.Readiness {
@@ -246,7 +236,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 	t.Run("quitting cancels the running check, and the summary says it wasn't checked", func(t *testing.T) {
 		configDir := t.TempDir()
 		setup := setupFor(configDir)
-		setup.Probe = oauthChallenge{release: make(chan struct{})}.probe
+		setup.Probe = blockUntilCancelled
 		var view string
 		program := func(m tea.Model) error {
 			pressing("space", "enter")(m)
@@ -267,10 +257,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 		// finish that waits sees the check done, and one that cancels it sees it unchecked.
 		synctest.Test(t, func(t *testing.T) {
 			setup := setupFor(t.TempDir())
-			setup.Probe = func(ctx context.Context, _ string, _ config.ServerConfig) error {
-				<-ctx.Done()
-				return ctx.Err()
-			}
+			setup.Probe = blockUntilCancelled
 			program := pressing("space", "enter", "enter")
 			out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
 			if err != nil || out.Quit || statusOf(out.Report, "plain") != initcmd.Ready {

@@ -55,7 +55,7 @@ func RunUnattended(s Setup) Report {
 }
 
 // Plan is an import plan, the catalog servers to add, and the servers mini had when it was made.
-// The UI changes which candidates are picked and what is added before the plan is written.
+// The UI changes the picks and adds before each save.
 type Plan struct {
 	Import  ImportPlan
 	Add     []catalog.Entry
