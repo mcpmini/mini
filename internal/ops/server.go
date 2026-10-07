@@ -66,22 +66,42 @@ func forgetStateStoredByName(configDir, name string) error {
 	return nil
 }
 
+// ValidateServer reports whether AddServer would accept sc, apart from its name being taken.
+func ValidateServer(configDir string, sc config.ServerConfig) error {
+	if err := validServerName(sc.Name); err != nil {
+		return err
+	}
+	added, err := withBundledDefaults(sc)
+	if err != nil {
+		return err
+	}
+	data, err := config.EncodeServerFile(added.Config)
+	if err != nil {
+		return err
+	}
+	return config.ValidateServerFile(config.ServerPath(configDir, sc.Name), data)
+}
+
 func writeServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
+	added, err := withBundledDefaults(sc)
+	if err != nil {
+		return AddedServer{}, err
+	}
+	added.Path, err = config.CreateServerFile(configDir, added.Config)
+	if err != nil {
+		return AddedServer{}, err
+	}
+	return added, nil
+}
+
+func withBundledDefaults(sc config.ServerConfig) (AddedServer, error) {
 	written, defaultPermissions := withBundledPermissions(sc)
 	written, defaultProjections, err := withBundledProjections(written)
-	if err != nil {
-		return AddedServer{}, err
-	}
-	path, err := config.CreateServerFile(configDir, written)
-	if err != nil {
-		return AddedServer{}, err
-	}
 	return AddedServer{
 		Config:             written,
-		Path:               path,
 		DefaultPermissions: defaultPermissions,
 		DefaultProjections: defaultProjections,
-	}, nil
+	}, err
 }
 
 func validServerName(name string) error {

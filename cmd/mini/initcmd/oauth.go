@@ -34,14 +34,22 @@ func OAuthTargets(configDir string, names []string) []config.ServerConfig {
 func CheckOAuth(configDir string, servers []config.ServerConfig, clk clock.Clock) {
 	var wg sync.WaitGroup
 	for _, sc := range servers {
-		wg.Go(func() { checkOAuth(configDir, sc, clk) })
+		wg.Go(func() { checkOAuth(context.Background(), probeParams{configDir, sc, clk}, server.ProbeServer) })
 	}
 	wg.Wait()
 }
 
-func checkOAuth(configDir string, sc config.ServerConfig, clk clock.Clock) {
-	ctx, cancel := clock.WithTimeout(context.Background(), clk, OAuthCheckTimeout)
+type probeParams struct {
+	configDir string
+	server    config.ServerConfig
+	clock     clock.Clock
+}
+
+type probeFunc func(ctx context.Context, configDir string, sc config.ServerConfig) error
+
+func checkOAuth(ctx context.Context, p probeParams, probe probeFunc) {
+	ctx, cancel := clock.WithTimeout(ctx, p.clock, OAuthCheckTimeout)
 	defer cancel()
 	// Only the OAuth requirement the probe records matters; an unreachable server is left for the proxy.
-	server.ProbeServer(ctx, configDir, sc) //nolint:errcheck
+	probe(ctx, p.configDir, p.server) //nolint:errcheck
 }
