@@ -393,6 +393,111 @@ func TestRunAddImport(t *testing.T) {
 		}
 	})
 
+	t.Run("mini's own entry is never imported", func(t *testing.T) {
+		self, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		dir := t.TempDir()
+		path := filepath.Join(t.TempDir(), "claude.json")
+		testutil.WriteFile(t, path, `{"mcpServers":{
+			"svc":{"command":"run"},
+			"mini":{"command":"`+self+`","args":["connect"]}}}`)
+
+		if err := runAdd(dir, []string{"--from-claude", path}, &bytes.Buffer{}); err != nil {
+			t.Fatalf("runAdd: %v", err)
+		}
+
+		if _, err := os.Stat(config.ServerPath(dir, "mini")); !os.IsNotExist(err) {
+			t.Errorf("stat mini.yaml = %v, want it never written", err)
+		}
+		if _, err := os.Stat(config.ServerPath(dir, "svc")); err != nil {
+			t.Errorf("svc.yaml not written: %v", err)
+		}
+	})
+
+	for _, tt := range []struct {
+		name       string
+		configured string
+		reimport   string
+		wantLine   string
+		forbidden  string
+	}{
+		{
+			name:     "the same settings",
+			reimport: `{"svc":{"type":"http","url":"https://svc.example/mcp"}}`,
+			wantLine: ": svc already configured in mini",
+		},
+		{
+			name:      "different headers, whose values are never shown",
+			reimport:  `{"svc":{"type":"http","url":"https://svc.example/mcp","headers":{"Authorization":"Bearer secret-token"}}}`,
+			wantLine:  ": svc not imported, mini's config has a different headers",
+			forbidden: "secret-token",
+		},
+		{
+			name:       "the same env in another order",
+			configured: "transport: stdio\ncommand: svc-server\nenv:\n  - A=1\n  - B=2\n",
+			reimport:   `{"svc":{"command":"svc-server","env":{"B":"2","A":"1"}}}`,
+			wantLine:   ": svc already configured in mini",
+		},
+		{
+			name:       "a configured file that does not parse",
+			configured: "headers:\n  Authorization: !!int secret-token\n",
+			reimport:   `{"svc":{"type":"http","url":"https://svc.example/mcp"}}`,
+			wantLine:   ": svc not imported, could not compare it: ",
+			forbidden:  "secret-token",
+		},
+	} {
+		t.Run("a rerun with "+tt.name+" keeps the configured file", func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(t.TempDir(), "claude.json")
+			testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"type":"http","url":"https://svc.example/mcp"}}}`)
+			if err := runAdd(dir, []string{"--from-claude", path}, &bytes.Buffer{}); err != nil {
+				t.Fatal(err)
+			}
+			serverFile := config.ServerPath(dir, "svc")
+			if tt.configured != "" {
+				testutil.WriteFile(t, serverFile, tt.configured)
+			}
+			before := testutil.ReadFile(t, serverFile)
+			testutil.WriteFile(t, path, `{"mcpServers":`+tt.reimport+`}`)
+			var out bytes.Buffer
+
+			if err := runAdd(dir, []string{"--from-claude", path}, &out); err != nil {
+				t.Fatalf("rerun: %v", err)
+			}
+
+			if after := testutil.ReadFile(t, serverFile); string(after) != string(before) {
+				t.Errorf("svc.yaml %q -> %q, want it unchanged", before, after)
+			}
+			if !strings.Contains(out.String(), path+tt.wantLine) {
+				t.Errorf("output = %q, want %q", out.String(), path+tt.wantLine)
+			}
+			if tt.forbidden != "" && strings.Contains(out.String(), tt.forbidden) {
+				t.Errorf("output = %q shows %q", out.String(), tt.forbidden)
+			}
+		})
+	}
+
+	t.Run("a rerun imports only the new servers", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(t.TempDir(), "claude.json")
+		testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"command":"run"}}}`)
+		if err := runAdd(dir, []string{"--from-claude", path}, &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+		testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"command":"run"},"other":{"command":"go"}}}`)
+		var out bytes.Buffer
+
+		if err := runAdd(dir, []string{"--from-claude", path}, &out); err != nil {
+			t.Fatalf("rerun: %v", err)
+		}
+
+		if !strings.Contains(out.String(), "added other") || strings.Contains(out.String(), "added svc") {
+			t.Errorf("output = %q, want only other added", out.String())
+		}
+	})
+
 	t.Run("a config with no servers says so", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "mcp.json")
 		testutil.WriteFile(t, path, `{}`)

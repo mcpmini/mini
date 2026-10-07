@@ -32,7 +32,7 @@ func (s *Session) checkTargets() []config.ServerConfig {
 	}
 	s.mu.Unlock()
 	// Read back from disk, so bundled and already-detected auth count.
-	return OAuthTargets(s.p.ConfigDir, unchecked)
+	return oauthTargets(s.p.ConfigDir, unchecked)
 }
 
 func (s *Session) check(ctx context.Context, sc config.ServerConfig) {

@@ -240,7 +240,7 @@ func TestSessionChecks_aTimedOutCheckIsDone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fake.Advance(OAuthCheckTimeout)
+	fake.Advance(oauthCheckTimeout)
 	waitChanged(t, s)
 
 	if s.Running()["open"] {
