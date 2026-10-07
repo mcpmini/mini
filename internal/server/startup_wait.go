@@ -6,23 +6,18 @@ import (
 	"time"
 )
 
-var (
-	errStoppedWaiting = errors.New("mini is shutting down")
-	errSessionEnded   = errors.New("the session ended")
-)
+var errStoppedWaiting = errors.New("mini is shutting down")
 
 // Codex keeps the first tools/list it gets for the whole session, so a list built before the servers
 // connect would hide their tools for good; waitForStartup holds it until no server is still connecting.
-func (s *Server) waitForStartup(ctx context.Context, sessionEnded <-chan struct{}) error {
+func (s *Server) waitForStartup(ctx context.Context) error {
 	for {
 		changed, until, connecting := s.startupWaitTarget()
 		if !connecting {
 			return nil
 		}
 		timer := s.clock.NewTimer(s.clock.Until(until))
-		err := s.awaitStartupChange(
-			startupWaitSignals{ctx: ctx, changed: changed, windowEnd: timer.Chan(), sessionEnded: sessionEnded},
-		)
+		err := s.awaitStartupChange(ctx, changed, timer.Chan())
 		timer.Stop()
 		if err != nil {
 			return err
@@ -30,23 +25,16 @@ func (s *Server) waitForStartup(ctx context.Context, sessionEnded <-chan struct{
 	}
 }
 
-type startupWaitSignals struct {
-	ctx          context.Context
-	changed      <-chan struct{}
-	windowEnd    <-chan time.Time
-	sessionEnded <-chan struct{}
-}
-
-func (s *Server) awaitStartupChange(w startupWaitSignals) error {
+func (s *Server) awaitStartupChange(ctx context.Context, changed <-chan struct{}, windowEnd <-chan time.Time) error {
+	// Closing stdin doesn't end the wait: like any in-flight request, a piped tools/list still gets
+	// its answer, and an MCP client shutting down follows up with SIGTERM.
 	select {
-	case <-w.changed:
+	case <-changed:
 		return nil
-	case <-w.windowEnd:
+	case <-windowEnd:
 		return nil
-	case <-w.ctx.Done():
-		return w.ctx.Err()
-	case <-w.sessionEnded:
-		return errSessionEnded
+	case <-ctx.Done():
+		return ctx.Err()
 	case <-s.stopWaiting:
 		return errStoppedWaiting
 	}

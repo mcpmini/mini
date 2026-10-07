@@ -3,10 +3,8 @@
 package server_test
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +12,6 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 const (
@@ -48,55 +45,10 @@ func gatedUpstreamServing(t *testing.T, handler http.HandlerFunc) (url string, r
 
 type heldRequest chan string
 
-func holdProxy(t *testing.T, srv *server.Server, input []byte) heldRequest {
-	return holdWithStdinOpen(t, srv, initParams(false), input)
-}
-
-func holdCompact(t *testing.T, srv *server.Server, input []byte) heldRequest {
-	return holdWithStdinOpen(t, srv, initParams(true), input)
-}
-
-func holdWithStdinOpen(t *testing.T, srv *server.Server, init map[string]any, input []byte) heldRequest {
-	t.Helper()
-	stdin, stdinW := io.Pipe()
-	stdout, stdoutW := io.Pipe()
-	t.Cleanup(func() { stdinW.Close() })
-	go func() {
-		srv.Serve(context.Background(), stdin, stdoutW) //nolint:errcheck // the test reads the answer, not Serve's exit
-		stdoutW.Close()
-	}()
-	go func() {
-		stdinW.Write(
-			append(rpcWithID(0, "initialize", init), input...),
-		) //nolint:errcheck // a closed pipe only means the test ended
-	}()
+func inBackground(serve func() map[string]any) heldRequest {
 	held := make(heldRequest, 1)
-	go func() { held <- answerOn(stdout) }()
+	go func() { held <- responseText(serve()) }()
 	return held
-}
-
-func answerOn(stdout io.Reader) string {
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		var msg struct {
-			ID json.RawMessage `json:"id"`
-		}
-		if json.Unmarshal(scanner.Bytes(), &msg) == nil && string(msg.ID) == "1" {
-			go io.Copy(io.Discard, stdout) //nolint:errcheck // drains notifications so Serve never blocks
-			return scanner.Text()
-		}
-	}
-	return "stdout closed without an answer"
-}
-
-func rpcWithID(id int, method string, params any) []byte {
-	p, _ := json.Marshal(
-		params,
-	) //nolint:errcheck // test params are plain maps
-	req, _ := json.Marshal(
-		map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)},
-	) //nolint:errcheck // built from strings, ints and marshaled params
-	return append(req, '\n')
 }
 
 func responseText(resp map[string]any) string {
@@ -131,7 +83,7 @@ func TestProxyToolsList_heldUntilAConnectingServerIsReady(t *testing.T) {
 	url, release := gatedUpstream(t)
 	r := connectWithFakeClock(t, httpServer("svc", url))
 
-	held := holdProxy(t, r.srv, rpc("tools/list", nil))
+	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
 	r.waitUntilHeld(t, held, 0)
 	release()
 
@@ -145,7 +97,7 @@ func TestProxyToolsList_heldThroughARetryableFailureInsideTheWindow(t *testing.T
 	r := connectWithFakeClock(t, httpServer("svc", ts.URL))
 	r.waitForBackoffTimer(t)
 
-	held := holdProxy(t, r.srv, rpc("tools/list", nil))
+	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
 	r.waitUntilHeld(t, held, backoffTimer)
 	r.clock.Advance(time.Second)
 
@@ -176,7 +128,7 @@ func TestProxyToolsList_aServerThatNeverConnectsReleasesTheListAtItsWindowEnd(t 
 		t.Fatal(err)
 	}
 
-	held := holdProxy(t, r.srv, rpc("tools/list", nil))
+	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
 	r.waitUntilHeld(t, held, 0)
 	r.clock.Advance(startupHold)
 
@@ -199,7 +151,7 @@ func TestCompactDiscovery_fullListingsAreHeldWhileAServerIsConnecting(t *testing
 			url, release := gatedUpstream(t)
 			r := connectWithFakeClock(t, httpServer("svc", url))
 
-			held := holdCompact(t, r.srv, callTool("list", args))
+			held := inBackground(func() map[string]any { return serve(t, r.srv, callTool("list", args)) })
 			r.waitUntilHeld(t, held, 0)
 			release()
 
@@ -234,7 +186,7 @@ func TestProxyToolsList_closeReleasesAHeldList(t *testing.T) {
 	url, _ := gatedUpstream(t)
 	r := connectWithFakeClock(t, httpServer("svc", url))
 
-	held := holdProxy(t, r.srv, rpc("tools/list", nil))
+	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
 	r.waitUntilHeld(t, held, 0)
 	mustCloseWithin(t, r.srv, 3*time.Second)
 
@@ -248,7 +200,7 @@ func TestProxyToolsList_heldUntilTheLastConnectingServerIsReady(t *testing.T) {
 	secondURL, releaseSecond := gatedUpstream(t)
 	r := connectWithFakeClock(t, httpServer("first", firstURL), httpServer("second", secondURL))
 
-	held := holdProxy(t, r.srv, rpc("tools/list", nil))
+	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
 	r.waitUntilHeld(t, held, 0)
 	releaseFirst()
 	eventually(t, func() bool { return r.srv.ToolCount("first") > 0 })
@@ -275,7 +227,7 @@ func TestProxyToolsList_aHeldListIsReleasedWhenTheServerStopsConnecting(t *testi
 			url, release := gatedUpstreamServing(t, requireBearer)
 			r := connectWithFakeClock(t, httpServer("svc", url))
 
-			held := holdProxy(t, r.srv, rpc("tools/list", nil))
+			held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
 			r.waitUntilHeld(t, held, 0)
 			tc.stop(r, release)
 
@@ -283,16 +235,5 @@ func TestProxyToolsList_aHeldListIsReleasedWhenTheServerStopsConnecting(t *testi
 				t.Errorf("tools/list = %s, want the list", got)
 			}
 		})
-	}
-}
-
-func TestProxyToolsList_aHeldListEndsWhenTheClientClosesStdin(t *testing.T) {
-	url, _ := gatedUpstream(t)
-	r := connectWithFakeClock(t, httpServer("svc", url))
-
-	got := responseText(serveProxy(t, r.srv, rpc("tools/list", nil)))
-
-	if !strings.Contains(got, "session ended") {
-		t.Errorf("tools/list after stdin closed = %s, want it released with an error", got)
 	}
 }

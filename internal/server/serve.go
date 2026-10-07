@@ -43,7 +43,9 @@ func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, ses
 			handleScannedLineParams{ctx: ctx, rawLine: scanner.Bytes(), session: session, writeOut: writeOut, wg: &wg},
 		)
 	}
-	session.markEnded()
+	// Signal any goroutines waiting for initialization that no more messages are coming.
+	// This unblocks them so they can return an error and allow wg.Wait() to complete.
+	session.markAborted()
 	wg.Wait()
 	return scanner.Err()
 }
@@ -303,7 +305,7 @@ func (s *Server) handleToolsList(ctx context.Context, session *Session) (any, er
 	if session.toolMode() != transport.ToolModeProxy {
 		return map[string]any{"tools": s.toolSchemas}, nil
 	}
-	if err := s.waitForStartup(ctx, session.ended); err != nil {
+	if err := s.waitForStartup(ctx); err != nil {
 		return nil, err
 	}
 	return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
@@ -372,7 +374,7 @@ func (s *Server) routeStandardTool(
 ) (any, error) {
 	switch name {
 	case "list":
-		return s.handleList(ctx, args, session)
+		return s.handleList(ctx, args)
 	case "call":
 		return s.handleExecute(ctx, args, session)
 	case "perm_call":

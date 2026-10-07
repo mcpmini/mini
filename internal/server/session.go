@@ -28,16 +28,16 @@ type Session struct {
 	inFlightMu sync.Mutex
 	inFlight   map[string]context.CancelFunc
 
-	// initDone / ended implement the initialization gate.
+	// initDone / initAbort implement the initialization gate.
 	// Non-ping requests block in waitInitialized until one fires:
-	//   initDone → initialize completed successfully, proceed
-	//   ended    → connection closed before initialize arrived, return error
+	//   initDone  → initialize completed successfully, proceed
+	//   initAbort → connection closed before initialize arrived, return error
 	// Spec: "The initialization phase MUST be the first interaction between client and server."
 	// https://github.com/modelcontextprotocol/modelcontextprotocol/blob/459f1355af9ab1eec00bfa8124d10d4f1d0ab09c/docs/specification/2025-03-26/basic/lifecycle.mdx#L38
-	initDone chan struct{}
-	ended    chan struct{}
-	initOnce sync.Once
-	endOnce  sync.Once
+	initDone      chan struct{}
+	initAbort     chan struct{}
+	initOnce      sync.Once
+	initAbortOnce sync.Once
 
 	mode           atomic.Int32 // holds ToolMode; zero value = ToolModeProxy
 	modeOnce       sync.Once
@@ -93,7 +93,7 @@ func newSession(clock clock.Clock) *Session {
 		lastUsed:     clock.Now(),
 		clock:        clock,
 		initDone:     make(chan struct{}),
-		ended:        make(chan struct{}),
+		initAbort:    make(chan struct{}),
 		toolsChanged: newToolsChangedOutbox(),
 	}
 }
@@ -121,10 +121,10 @@ func (s *Session) markClientReady() {
 	}
 }
 
-// markEnded is called when the Serve loop ends or the session is evicted. It unblocks requests
-// still waiting (for initialize, or on startup) so they return and let Serve exit.
-func (s *Session) markEnded() {
-	s.endOnce.Do(func() { close(s.ended) })
+// markAborted is called when the Serve loop ends without initialization completing.
+// It unblocks waiting goroutines so they can return an error and let Serve exit.
+func (s *Session) markAborted() {
+	s.initAbortOnce.Do(func() { close(s.initAbort) })
 }
 
 // waitInitialized blocks until initialization succeeds, the serving loop ends,
@@ -138,7 +138,7 @@ func (s *Session) waitInitialized(ctx context.Context) bool {
 	select {
 	case <-s.initDone:
 		return true
-	case <-s.ended:
+	case <-s.initAbort:
 		return false
 	case <-ctx.Done():
 		return false
@@ -445,7 +445,7 @@ func (st *sessionStore) evictIdle(deadline time.Time) {
 			"idle_duration",
 			e.idleDuration.Round(time.Second),
 		)
-		e.session.markEnded()
+		e.session.markAborted() // unblock any goroutine waiting in waitInitialized
 		e.session.Close()
 	}
 }
