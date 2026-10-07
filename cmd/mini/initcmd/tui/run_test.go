@@ -18,6 +18,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func stdioAgent(name string, servers ...string) agents.Agent {
@@ -286,5 +287,56 @@ func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 	}
 	if !cancelled {
 		t.Error("Run returned while linear's login still waited on the browser")
+	}
+}
+
+func claudeWithServers(t *testing.T) agents.Agent {
+	t.Helper()
+	home := t.TempDir()
+	claude := agents.Known(home)[0]
+	testutil.WriteFile(t, claude.ConfigPath, `{"mcpServers":{"files":{"command":"files-server"}}}`)
+	return claude
+}
+
+func TestRun_connect(t *testing.T) {
+	run := func(t *testing.T, claude agents.Agent, keys ...string) Outcome {
+		t.Helper()
+		setup := setupFor(t.TempDir())
+		setup.AgentsToConnect = []agents.Agent{claude}
+		// Catalog comes first and is left with enter, which saves; then Connect is shown.
+		c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
+		out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(c), Program: pressing(keys...)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	t.Run("just connect adds mini to the agent and reports it", func(t *testing.T) {
+		claude := claudeWithServers(t)
+		out := run(t, claude, "enter", "enter")
+		config := string(testutil.ReadFile(t, claude.ConfigPath))
+		if !strings.Contains(config, `"mini"`) || !strings.Contains(config, `"files"`) {
+			t.Errorf("agent config = %s, want mini added next to files", config)
+		}
+		if len(out.Report.Connected) != 1 || out.Report.Connected[0].Backup == "" {
+			t.Errorf("connected = %+v, want Claude Code connected with a backup", out.Report.Connected)
+		}
+	})
+	for name, keys := range map[string][]string{
+		"don't connect leaves the agent as it was":            {"enter", "down", "enter"},
+		"quitting on Connect after the save leaves the agent": {"enter", "ctrl+c"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			claude := claudeWithServers(t)
+			before := testutil.ReadFile(t, claude.ConfigPath)
+			out := run(t, claude, keys...)
+			if after := testutil.ReadFile(
+				t,
+				claude.ConfigPath,
+			); string(after) != string(before) ||
+				out.Report.Connected != nil {
+				t.Errorf("agent config = %s, connected = %+v; want both untouched", after, out.Report.Connected)
+			}
+		})
 	}
 }

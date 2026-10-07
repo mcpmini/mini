@@ -31,7 +31,9 @@ type Report struct {
 	WriteErrors        []ServerError
 	Servers            []ServerStatus
 	Agents             AgentConnections
-	ReadServersErr     error
+	// Connected is nil when init connected no agent, so the summary says how to connect by hand.
+	Connected      []AgentResult
+	ReadServersErr error
 }
 
 func (r Report) Failed() bool {

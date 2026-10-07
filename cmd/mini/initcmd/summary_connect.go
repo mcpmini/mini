@@ -36,6 +36,42 @@ func writeHandConnect(b *strings.Builder, c AgentConnections) {
 	}
 }
 
+func writeConnected(b *strings.Builder, r Report) {
+	writeInactiveMini(b, r.Agents)
+	var changed []string
+	for _, result := range r.Connected {
+		writeAgentResult(b, r.Agents.Mini, result)
+		if result.Err == nil && (result.Backup != "" || result.Created) {
+			changed = append(changed, result.Agent.Name)
+		}
+	}
+	if len(changed) > 0 {
+		fmt.Fprintf(b, "\nRestart %s to start using mini.\n", JoinAnd(changed))
+	}
+}
+
+func writeAgentResult(b *strings.Builder, mini agents.MiniEntry, result AgentResult) {
+	name, file := result.Agent.Name, result.Agent.ConfigPath
+	switch {
+	case result.Err != nil:
+		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nAdd mini to %s by hand:\n%s\n",
+			name, result.Err, file, indent(handConnectStep(result.Agent, mini), "  "))
+	case result.Created:
+		fmt.Fprintf(b, "\n%s: created %s; to undo: rm %s\n", name, file, shellQuote(file))
+	case result.Backup != "":
+		fmt.Fprintf(b, "\n%s: %s backed up to %s; to undo: cp %s %s\n",
+			name, file, result.Backup, shellQuote(result.Backup), shellQuote(file))
+	}
+}
+
+// JoinAnd lists names as people write them: "a", "a and b", "a, b and c".
+func JoinAnd(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
 func writeInactiveMini(b *strings.Builder, c AgentConnections) {
 	for _, agent := range c.MiniInactive {
 		fmt.Fprintf(b, "\n%s (%s) has a mini entry that may not run these servers: it's switched off, uses another "+
