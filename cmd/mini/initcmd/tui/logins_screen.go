@@ -77,6 +77,9 @@ func (s *loginsScreen) waitWhileChecking() tea.Cmd {
 }
 
 func (s *loginsScreen) heading() string {
+	if s.err == nil && len(s.rows) == 0 {
+		return "Your servers are ready"
+	}
 	return "Finish setting up these servers"
 }
 
@@ -102,6 +105,10 @@ func (s *loginsScreen) body(int) string {
 	for _, status := range s.rows {
 		lines = append(lines, fmt.Sprintf("  %-*s  %s", width, status.Name, dim.Render(s.need(status))))
 	}
+	if len(lines) == 0 {
+		// The last check found nothing to finish, after the screen was already shown.
+		return "Every server works; nothing is left to set up."
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -113,9 +120,9 @@ func (s *loginsScreen) need(status initcmd.ServerStatus) string {
 	case initcmd.NeedsLogin:
 		return "needs a login; " + initcmd.SetupStep(s.p.configDir, status)
 	case initcmd.NeedsToken:
-		return "needs a token"
+		return needsToken
 	case initcmd.NeedsOwnApp:
-		return "needs your own OAuth app"
+		return needsOwnApp
 	case initcmd.NeedsEnv:
 		return "needs " + strings.Join(status.UnsetEnv.Names, ", ") + " set"
 	}

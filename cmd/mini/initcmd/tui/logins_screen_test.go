@@ -105,3 +105,16 @@ func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing
 		)
 	}
 }
+
+func TestLoginsScreen_saysEverythingIsReadyWhenTheLastCheckFindsNothingToFinish(t *testing.T) {
+	checks := newFakeChecks(initcmd.ServerStatus{Name: "open"})
+	checks.checking["open"] = true
+	s := checks.screen()
+	wait := s.enter()
+	delete(checks.checking, "open")
+	checks.changed <- struct{}{}
+	s.update(wait())
+	if s.heading() != "Your servers are ready" || loginsText(s) != "Every server works; nothing is left to set up." {
+		t.Errorf("%s\n%s\nwant the screen to say every server is ready, not an empty list", s.heading(), loginsText(s))
+	}
+}
