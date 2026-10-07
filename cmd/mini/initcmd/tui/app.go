@@ -81,7 +81,9 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 		}
 		a.show(a.at + 1)
 	case back:
-		a.show(max(a.at-1, 0))
+		if a.at > 0 {
+			a.show(a.at - 1)
+		}
 	}
 	return nil
 }

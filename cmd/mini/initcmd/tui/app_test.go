@@ -191,3 +191,12 @@ func TestApp_aScreenIsToldEachTimeItIsShownAgain(t *testing.T) {
 		t.Errorf("entered: first %d, second %d; want 1 and 2, once per arrival", first.entered, second.entered)
 	}
 }
+
+func TestApp_escOnTheFirstScreenLeavesItAsItWas(t *testing.T) {
+	first := &enteredScreen{fakeScreen: fakeScreen{name: "First"}}
+	a := sized(newApp([]screen{first}))
+	send(a, "esc")
+	if first.entered != 0 {
+		t.Errorf("esc on the first screen re-entered it %d times; want it untouched", first.entered)
+	}
+}
