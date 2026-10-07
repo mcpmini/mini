@@ -130,7 +130,7 @@ func (s *Server) awaitAuthAndReconnect(ctx context.Context, install upstreamInst
 		s.logger.Error("commit oauth token failed", "server", sc.Name, "err", err)
 		return
 	}
-	s.reconnectWithToken(install)
+	s.reconnectWithToken(ctx, install)
 }
 
 func (s *Server) commitTokenUnlessRemoved(install upstreamInstall, token *oauth2.Token) error {
@@ -154,9 +154,9 @@ func (s *Server) providerParamsFor(sc config.ServerConfig) provider.Params {
 	}
 }
 
-func (s *Server) reconnectWithToken(install upstreamInstall) {
+func (s *Server) reconnectWithToken(ctx context.Context, install upstreamInstall) {
 	serverName := install.cfg.Name
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	// Do not call removeServerRuntime first: if AddUpstream fails the server
 	// would be permanently gone. registerUpstream → swapUpstream replaces the

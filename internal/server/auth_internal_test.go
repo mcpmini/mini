@@ -6,7 +6,10 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
@@ -131,4 +134,63 @@ func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing
 			}
 		})
 	}
+}
+
+func TestRunAuthFlow_CloseCancelsReconnectAfterLogin(t *testing.T) {
+	srv := newInternalAuthTestServer(t)
+	t.Cleanup(srv.Close)
+	url, initializing := stalledAuthInitialize(t)
+	ctx := startCompletedAuthFlow(t, srv, config.ServerConfig{Name: "svc", Transport: "http", URL: url})
+	select {
+	case <-initializing:
+	case <-time.After(time.Second):
+		t.Fatal("OAuth reconnect did not reach upstream initialize")
+	}
+
+	closed := make(chan struct{})
+	go func() { srv.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("Close did not complete while upstream initialize remained blocked")
+	}
+	if ctx.Err() != context.Canceled {
+		t.Fatal("Close did not cancel the auth flow")
+	}
+	if got := len(srv.reg.All()); got != 0 {
+		t.Errorf("registered tools after Close = %d, want 0", got)
+	}
+	if srv.isUpstreamRegistered("svc") {
+		t.Error("server remained registered after Close")
+	}
+}
+
+func stalledAuthInitialize(t *testing.T) (string, <-chan struct{}) {
+	t.Helper()
+	initializing, release := make(chan struct{}, 1), make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		select {
+		case initializing <- struct{}{}:
+		default:
+		}
+		<-release
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	t.Cleanup(func() { close(release); upstream.Close() })
+	return upstream.URL, initializing
+}
+
+func startCompletedAuthFlow(t *testing.T, srv *Server, sc config.ServerConfig) context.Context {
+	t.Helper()
+	sc.Auth = authtest.NewTokenServer(t).AuthConfig()
+	login := authtest.StartLogin(t, sc.Auth)
+	auth.BufferCallbackCode(login, "test-auth-code")
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	flow := &authFlowState{cancel: cancel, login: login}
+	srv.storeAuthFlow(sc.Name, flow)
+	install := srv.replacingInstall(sc)
+	srv.authWg.Add(1)
+	go srv.runAuthFlow(ctx, install, flow)
+	return ctx
 }
