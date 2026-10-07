@@ -30,7 +30,6 @@ type loginsParams struct {
 }
 
 // loginsScreen lists the configured servers that don't work yet and logs in to the OAuth ones.
-// The cursor moves over the rows a login can fix, then the Continue row.
 type loginsScreen struct {
 	p        loginsParams
 	rows     []initcmd.ServerStatus
@@ -41,7 +40,8 @@ type loginsScreen struct {
 	pending  *pendingLogin
 	logins   int
 	width    int
-	// moved is true once the user moved the cursor; until then it rests on the next login to do.
+	// moved is true once the user moved the cursor since the last login ended; until then the
+	// cursor rests on the next login to do.
 	moved bool
 	// One waiting command covers every running check.
 	waiting bool
@@ -122,7 +122,7 @@ func (s *loginsScreen) waitWhileChecking() tea.Cmd {
 	}
 }
 
-// The Continue row sits at len(rows); token, app and env rows are greyed, since a login can't fix them.
+// The Continue row sits at len(rows); only a row needing a login, and no longer checking, takes the cursor.
 func (s *loginsScreen) selectable(i int) bool {
 	if i == len(s.rows) {
 		return true

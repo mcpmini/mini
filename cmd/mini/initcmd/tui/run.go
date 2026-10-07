@@ -15,7 +15,7 @@ type Params struct {
 	Setup initcmd.Setup
 	// LoadCatalog may run on another goroutine while the UI is shown.
 	LoadCatalog func() (catalog.Catalog, error)
-	// StartLogin begins a server's browser login on the Logins screen; it must not print.
+	// StartLogin begins a server's browser login; it must not print, since the UI owns the terminal.
 	StartLogin func(ctx context.Context, name string) (Login, error)
 	// Program runs the UI; nil runs it in the terminal.
 	Program func(m tea.Model) error

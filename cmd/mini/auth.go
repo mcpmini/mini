@@ -93,15 +93,14 @@ func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
 	return finishBrowserLogin(ctx, login, p)
 }
 
-// beginBrowserLogin starts the login and opens the browser. It prints nothing, since init's UI
-// owns the screen; the caller shows the URL, so a browser that doesn't open only costs a click.
+// beginBrowserLogin prints nothing, since init's UI owns the screen.
 func beginBrowserLogin(ctx context.Context, p pkceFlowParams) (*auth.BrowserLogin, error) {
 	params := auth.BeginLoginParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
 	login, err := auth.BeginLogin(ctx, p.sc, params)
 	if err != nil {
 		return nil, err
 	}
-	p.opener(login.AuthURL()) //nolint:errcheck
+	p.opener(login.AuthURL()) //nolint:errcheck // the caller shows the URL, so a failed open only costs a click
 	return login, nil
 }
 

@@ -17,7 +17,6 @@ const (
 
 type screen interface {
 	heading() string
-	// handle may start background work, whose command it returns with the step.
 	handle(key tea.KeyPressMsg) (step, tea.Cmd)
 	body(height int) string
 	// keys names the screen's own keys and what enter does there; the app adds esc and ctrl+c.
@@ -36,7 +35,6 @@ type loader interface {
 	update(msg tea.Msg) tea.Cmd
 }
 
-// A screen that wraps its own lines needs the window's width.
 type resizer interface {
 	resize(width int)
 }
