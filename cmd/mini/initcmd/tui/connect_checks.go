@@ -13,8 +13,7 @@ type connectChecked struct {
 	removals initcmd.Removals
 }
 
-// connectChecks runs Connect's connection checks in the background, one run at a time. A probe
-// can start a server's process, so cancelling waits for the run to end.
+// connectChecks runs Connect's connection checks in the background, one run at a time.
 type connectChecks struct {
 	runs     int
 	stop     context.CancelFunc
@@ -50,6 +49,6 @@ func (c *connectChecks) cancel() {
 		return
 	}
 	c.stop()
-	<-c.ended
+	<-c.ended // a probe can start a server's process, which must not outlive the screen
 	c.stop, c.ended = nil, nil
 }

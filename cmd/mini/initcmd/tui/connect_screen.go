@@ -12,15 +12,13 @@ import (
 	"github.com/mcpmini/mini/internal/agents"
 )
 
-// connectPlan is initcmd.ConnectPlan; tests swap it for one whose checks they control.
 type connectPlan interface {
 	HasDuplicates(agent string) bool
 	Check(ctx context.Context) initcmd.Removals
 }
 
 type connectParams struct {
-	agents []agents.Agent
-	// withMini names the agents that already have a mini entry, which connecting leaves as it is.
+	agents   []agents.Agent
 	withMini map[string]bool
 	plan     func() (connectPlan, error)
 }
