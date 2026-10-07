@@ -177,7 +177,10 @@ type enteredScreen struct {
 	entered int
 }
 
-func (s *enteredScreen) enter() { s.entered++ }
+func (s *enteredScreen) enter() tea.Cmd {
+	s.entered++
+	return nil
+}
 
 func TestApp_aScreenIsToldEachTimeItIsShownAgain(t *testing.T) {
 	first, second := &enteredScreen{
@@ -203,5 +206,34 @@ func TestApp_escOnTheFirstScreenLeavesItAsItWas(t *testing.T) {
 	send(a, "esc")
 	if first.entered != before {
 		t.Errorf("esc on the first screen re-entered it %d times; want it untouched", first.entered-before)
+	}
+}
+
+func TestApp_savesEachTimeTheUserMovesPastTheSavePoint(t *testing.T) {
+	saves := 0
+	a := sized(newApp([]screen{&fakeScreen{name: "Pick"}, &fakeScreen{name: "After"}}))
+	a.saves = savePoint{after: 0, save: func() { saves++ }}
+	if footer := footerOf(shown(a)); !strings.Contains(footer, "ctrl+c quit without saving") {
+		t.Errorf("footer before saving:\n%s", footer)
+	}
+	send(a, "enter")
+	if footer := footerOf(
+		shown(a),
+	); saves != 1 ||
+		!strings.Contains(footer, "ctrl+c quit (servers saved, agents untouched)") {
+		t.Errorf("after enter: saves = %d, footer:\n%s\nwant one save, and the footer saying so", saves, footer)
+	}
+	send(a, "esc", "enter")
+	if saves != 2 {
+		t.Errorf("saves = %d after going back and forward again; want 2", saves)
+	}
+}
+
+func TestApp_finishingBeforeTheSavePointSaves(t *testing.T) {
+	saves := 0
+	a := sized(newApp([]screen{&fakeScreen{name: "Pick"}, &fakeScreen{name: "Empty", nothing: true}}))
+	a.saves = savePoint{after: 1, save: func() { saves++ }}
+	if cmd := send(a, "enter"); saves != 1 || cmd == nil {
+		t.Errorf("saves = %d, cmd = %v; want the picks saved and the program ended", saves, cmd)
 	}
 }

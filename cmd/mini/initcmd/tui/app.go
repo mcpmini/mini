@@ -26,13 +26,21 @@ type screen interface {
 
 // A screen whose rows depend on earlier screens rebuilds them each time it is shown.
 type enterer interface {
-	enter()
+	enter() tea.Cmd
 }
 
 // A screen that loads in the background starts loading when the UI starts and gets every message.
 type loader interface {
 	start() tea.Cmd
-	update(msg tea.Msg)
+	update(msg tea.Msg) tea.Cmd
+}
+
+// savePoint writes the picks each time the user moves forward past screen after, or finishes
+// before reaching it. Once saved, quitting keeps what was written.
+type savePoint struct {
+	after int
+	save  func()
+	saved bool
 }
 
 const minWidth, minHeight = 60, 12
@@ -45,6 +53,7 @@ type app struct {
 	width   int
 	height  int
 	quit    bool
+	saves   savePoint
 }
 
 // A screen can stop being empty once it loads, so empty screens are skipped when moving, not dropped.
@@ -86,11 +95,13 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return a, a.handle(msg)
 	default:
+		var cmds []tea.Cmd
 		for _, s := range a.screens {
 			if l, ok := s.(loader); ok {
-				l.update(msg)
+				cmds = append(cmds, l.update(msg))
 			}
 		}
+		return a, tea.Batch(cmds...)
 	}
 	return a, nil
 }
@@ -106,24 +117,35 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 	}
 	switch a.screens[a.at].handle(key) {
 	case forward:
-		next, ok := a.next(a.at, 1)
-		if !ok {
-			return tea.Quit
-		}
-		a.show(next)
+		return a.forward()
 	case back:
 		if previous, ok := a.next(a.at, -1); ok {
-			a.show(previous)
+			return a.show(previous)
 		}
 	}
 	return nil
 }
 
-func (a *app) show(at int) {
+func (a *app) forward() tea.Cmd {
+	next, ok := a.next(a.at, 1)
+	if a.saves.save != nil && a.at <= a.saves.after && (!ok || next > a.saves.after) {
+		a.saves.save()
+		a.saves.saved = true
+		// What was written decides whether the screens after it have anything to show.
+		next, ok = a.next(a.at, 1)
+	}
+	if !ok {
+		return tea.Quit
+	}
+	return a.show(next)
+}
+
+func (a *app) show(at int) tea.Cmd {
 	a.at = at
 	if s, ok := a.screens[at].(enterer); ok {
-		s.enter()
+		return s.enter()
 	}
+	return nil
 }
 
 func (a *app) View() tea.View {
@@ -177,9 +199,16 @@ func (a *app) footer(s screen) []string {
 	if _, ok := a.next(a.at, -1); ok && filter == "" {
 		leave = append(leave, "esc back")
 	}
-	leave = append(leave, "ctrl+c quit without saving")
+	leave = append(leave, a.quitKey())
 	if keys := strings.Join(append([]string{s.keys()}, leave...), " · "); ansi.StringWidth(keys) <= a.width {
 		return append(lines, dim.Render(keys))
 	}
 	return append(lines, dim.Render(s.keys()), dim.Render(strings.Join(leave, " · ")))
+}
+
+func (a *app) quitKey() string {
+	if a.saves.saved {
+		return "ctrl+c quit (servers saved, agents untouched)"
+	}
+	return "ctrl+c quit without saving"
 }

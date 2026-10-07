@@ -115,24 +115,30 @@ func printNoTerminalHelp(w io.Writer) {
 	fmt.Fprint(w, noTerminalHelp)
 }
 
-var errInitQuit = errors.New("init quit; nothing was written")
+var (
+	errInitQuit          = errors.New("init quit; nothing was written")
+	errInitQuitAfterSave = errors.New("init quit; the servers above were saved and no agent was changed")
+)
 
 func runFullScreenInit(configDir string) error {
 	setup, err := unattendedRun(configDir, initFlags{importAll: true})
 	if err != nil {
 		return err
 	}
-	plan, quit, err := tui.Run(tui.Params{Setup: setup, LoadCatalog: publishedCatalogSource().load})
-	switch {
-	case err != nil:
+	out, err := tui.Run(tui.Params{Setup: setup, LoadCatalog: publishedCatalogSource().load})
+	if err != nil {
 		return err
-	case quit:
+	}
+	if !out.Saved {
 		return &exitError{code: 1, err: errInitQuit}
 	}
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	return printReport(setup.Write(plan))
+	if err := printReport(out.Report); err != nil || !out.Quit {
+		return err
+	}
+	return &exitError{code: 1, err: errInitQuitAfterSave}
 }
 
 func printReport(report initcmd.Report) error {

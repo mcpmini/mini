@@ -32,6 +32,8 @@ func TestIntegrationInitUI_writesTheTickedImportsAndCatalogServersAndPrintsTheSu
 	term.waitFor("Add servers from the catalog")
 	term.waitFor("[ ] sentry")
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "enter")
+	term.waitFor("sentry  needs a login: mini auth sentry")
+	term.press("enter")
 	term.waitFor("mini is set up with 2 servers")
 
 	if code := term.exitCode(); code != 0 {
@@ -64,6 +66,29 @@ func TestIntegrationInitUI_ctrlCLeavesNoServersAndRestoresTheTerminal(t *testing
 	}
 	if term.altScreen() {
 		t.Error("the terminal is still on the alternate screen after ctrl+c")
+	}
+}
+
+func TestIntegrationInitUI_ctrlCAfterCatalogKeepsTheSavedServers(t *testing.T) {
+	configDir := t.TempDir()
+	term := startTerminal(
+		t,
+		terminalParams{home: homeWithClaudeServers(t), configDir: configDir, args: []string{"init"}},
+	)
+
+	term.waitFor("[x] files")
+	term.press("enter")
+	term.waitFor("Add servers from the catalog")
+	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "enter")
+	term.waitFor("ctrl+c quit (servers saved, agents untouched)")
+	term.press("ctrl+c")
+	term.waitFor("the servers above were saved")
+
+	if code := term.exitCode(); code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if files := serverFiles(t, configDir); !slices.Equal(files, []string{"files.yaml", "notes.yaml", "sentry.yaml"}) {
+		t.Errorf("server files = %v, want everything saved on leaving Catalog", files)
 	}
 }
 
