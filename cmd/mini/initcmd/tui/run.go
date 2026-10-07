@@ -2,6 +2,8 @@
 package tui
 
 import (
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
@@ -30,29 +32,46 @@ func Run(p Params) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	session := p.Setup.NewSession()
-	defer session.Close()
-	ui := newScreens(p, &plan, session)
-	var synced initcmd.Synced
-	save := func() {
-		ui.pick(&plan)
-		result := session.Sync(plan.Servers())
-		synced = initcmd.Synced{Written: session.Written(), Failed: result.Failed}
-	}
-	a := newApp(ui.list())
-	a.saves = savePoint{after: 1, save: save}
+	r := &run{p: p, plan: plan, session: p.Setup.NewSession()}
+	defer r.session.Close()
+	r.ui = newScreens(p, &r.plan, r.session)
+	a := newApp(r.ui.list())
+	a.saves = savePoint{after: r.ui.savePoint(), save: r.save}
 	if !a.hasScreens() {
-		save()
-	} else if err := p.program()(a); err != nil {
-		return Outcome{Saved: a.saves.saved}, err
+		r.save()
+		return r.outcome(false), nil
 	}
-	if a.quit && !a.saves.saved {
-		return Outcome{Quit: true}, nil
+	err = p.program()(a)
+	if !a.saves.saved {
+		return Outcome{Quit: a.quit}, err
 	}
-	if !a.quit {
-		session.WaitChecks()
+	return r.outcome(a.quit || err != nil), err
+}
+
+type run struct {
+	p       Params
+	plan    initcmd.Plan
+	session *initcmd.Session
+	ui      screens
+	synced  initcmd.Synced
+}
+
+func (r *run) save() {
+	r.ui.pick(&r.plan)
+	result := r.session.Sync(r.plan.Servers())
+	r.synced = initcmd.Synced{Written: r.session.Written(), Failed: result.Failed}
+}
+
+// outcome reports what the last save wrote. Running checks finish first, or are cancelled when
+// the user left early, so none writes while the report reads the servers.
+func (r *run) outcome(leftEarly bool) Outcome {
+	if leftEarly {
+		r.session.Close()
+	} else {
+		r.session.WaitChecks()
 	}
-	return Outcome{Quit: a.quit, Saved: true, Report: p.Setup.Report(plan, synced)}, nil
+	r.plan.Catalog = r.ui.catalog(r.plan)
+	return Outcome{Quit: leftEarly, Saved: true, Report: r.p.Setup.Report(r.plan, r.synced)}
 }
 
 type screens struct {
@@ -75,14 +94,27 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			return initcmd.ServerStatuses(p.Setup.ConfigDir, ui.catalog(*plan))
 		},
-		checking: session.Checking,
-		changed:  session.Changed(),
+		checking: func() map[string]bool {
+			running := map[string]bool{}
+			for _, name := range session.Written() {
+				if session.Checking(name) {
+					running[name] = true
+				}
+			}
+			return running
+		},
+		changed: session.Changed(),
 	})
 	return ui
 }
 
 func (ui screens) list() []screen {
 	return []screen{ui.imports, ui.catalogs, ui.logins}
+}
+
+// The picks are written on leaving Catalog, so Logins works on configured servers.
+func (ui screens) savePoint() int {
+	return slices.Index(ui.list(), screen(ui.catalogs))
 }
 
 func (ui screens) pick(plan *initcmd.Plan) {

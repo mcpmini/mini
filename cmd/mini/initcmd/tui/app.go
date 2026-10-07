@@ -196,7 +196,7 @@ func (a *app) footer(s screen) []string {
 	}
 	var leave []string
 	// esc clears an active filter before it goes back.
-	if _, ok := a.next(a.at, -1); ok && filter == "" {
+	if a.canGoBack() && filter == "" {
 		leave = append(leave, "esc back")
 	}
 	leave = append(leave, a.quitKey())
@@ -206,8 +206,17 @@ func (a *app) footer(s screen) []string {
 	return append(lines, dim.Render(s.keys()), dim.Render(strings.Join(leave, " · ")))
 }
 
+func (a *app) canGoBack() bool {
+	_, ok := a.next(a.at, -1)
+	return ok
+}
+
 func (a *app) quitKey() string {
-	if a.saves.saved {
+	switch {
+	case a.saves.saved && a.at <= a.saves.after:
+		// Ticks changed since the save aren't written until the user moves past it again.
+		return "ctrl+c quit (keeps what was saved before)"
+	case a.saves.saved:
 		return "ctrl+c quit (servers saved, agents untouched)"
 	}
 	return "ctrl+c quit without saving"

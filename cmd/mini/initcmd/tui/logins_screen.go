@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -14,15 +13,17 @@ type checksChanged struct{}
 
 type loginsParams struct {
 	statuses func() ([]initcmd.ServerStatus, error)
-	checking func(name string) bool
+	// checking names the servers whose OAuth check is running.
+	checking func() map[string]bool
 	changed  <-chan struct{}
 }
 
 // loginsScreen lists the configured servers that don't work yet and what each one needs.
 type loginsScreen struct {
-	p    loginsParams
-	rows []initcmd.ServerStatus
-	err  error
+	p        loginsParams
+	rows     []initcmd.ServerStatus
+	checking map[string]bool
+	err      error
 	// waiting is true while a command waits for the next check to finish; one is enough.
 	waiting bool
 }
@@ -31,11 +32,14 @@ func newLoginsScreen(p loginsParams) *loginsScreen {
 	return &loginsScreen{p: p}
 }
 
+// The checks are read before the statuses: a check that finishes in between still reads as
+// running, and the change it signals refreshes the screen again.
 func (s *loginsScreen) refresh() {
+	s.checking = s.p.checking()
 	statuses, err := s.p.statuses()
 	s.rows, s.err = nil, err
 	for _, status := range statuses {
-		if status.Readiness != initcmd.Ready || s.p.checking(status.Name) {
+		if status.Readiness != initcmd.Ready || s.checking[status.Name] {
 			s.rows = append(s.rows, status)
 		}
 	}
@@ -61,7 +65,7 @@ func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 }
 
 func (s *loginsScreen) waitWhileChecking() tea.Cmd {
-	if s.waiting || !slices.ContainsFunc(s.rows, func(r initcmd.ServerStatus) bool { return s.p.checking(r.Name) }) {
+	if s.waiting || len(s.checking) == 0 {
 		return nil
 	}
 	s.waiting = true
@@ -101,7 +105,7 @@ func (s *loginsScreen) body(int) string {
 }
 
 func (s *loginsScreen) need(status initcmd.ServerStatus) string {
-	if s.p.checking(status.Name) {
+	if s.checking[status.Name] {
 		return "checking…"
 	}
 	switch status.Readiness {

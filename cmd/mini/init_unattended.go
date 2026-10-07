@@ -125,20 +125,25 @@ func runFullScreenInit(configDir string) error {
 	if err != nil {
 		return err
 	}
-	out, err := tui.Run(tui.Params{Setup: setup, LoadCatalog: publishedCatalogSource().load})
-	if err != nil {
-		return err
-	}
+	out, runErr := tui.Run(tui.Params{Setup: setup, LoadCatalog: publishedCatalogSource().load})
 	if !out.Saved {
+		if runErr != nil {
+			return runErr
+		}
 		return &exitError{code: 1, err: errInitQuit}
 	}
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	if err := printReport(out.Report); err != nil || !out.Quit {
-		return err
+	// Servers were written before the UI ended, so the summary says which, however it ended.
+	reportErr := printReport(out.Report)
+	switch {
+	case runErr != nil:
+		return runErr
+	case out.Quit:
+		return &exitError{code: 1, err: errInitQuitAfterSave}
 	}
-	return &exitError{code: 1, err: errInitQuitAfterSave}
+	return reportErr
 }
 
 func printReport(report initcmd.Report) error {

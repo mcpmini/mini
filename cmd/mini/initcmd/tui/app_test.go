@@ -223,7 +223,11 @@ func TestApp_savesEachTimeTheUserMovesPastTheSavePoint(t *testing.T) {
 		!strings.Contains(footer, "ctrl+c quit (servers saved, agents untouched)") {
 		t.Errorf("after enter: saves = %d, footer:\n%s\nwant one save, and the footer saying so", saves, footer)
 	}
-	send(a, "esc", "enter")
+	send(a, "esc")
+	if footer := footerOf(shown(a)); !strings.Contains(footer, "ctrl+c quit (keeps what was saved before)") {
+		t.Errorf("back before the save point, footer:\n%s\nwant it to say new ticks aren't saved yet", footer)
+	}
+	send(a, "enter")
 	if saves != 2 {
 		t.Errorf("saves = %d after going back and forward again; want 2", saves)
 	}

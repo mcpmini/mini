@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"maps"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ func newFakeChecks(statuses ...initcmd.ServerStatus) *fakeChecks {
 func (f *fakeChecks) screen() *loginsScreen {
 	return newLoginsScreen(loginsParams{
 		statuses: func() ([]initcmd.ServerStatus, error) { return f.statuses, nil },
-		checking: func(name string) bool { return f.checking[name] },
+		checking: func() map[string]bool { return maps.Clone(f.checking) },
 		changed:  f.changed,
 	})
 }
@@ -77,6 +78,29 @@ func TestLoginsScreen_aServerBeingCheckedSaysSoUntilTheCheckFinishes(t *testing.
 			"after the check: screen:\n%s\nnext wait = %v; want the login need and no more waiting",
 			loginsText(s),
 			next,
+		)
+	}
+}
+
+func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing.T) {
+	checks := newFakeChecks()
+	checks.checking["open"] = true
+	s := newLoginsScreen(loginsParams{
+		// The statuses were read just before the check recorded its result; it ends right after.
+		statuses: func() ([]initcmd.ServerStatus, error) {
+			delete(checks.checking, "open")
+			checks.changed <- struct{}{}
+			return []initcmd.ServerStatus{{Name: "open"}}, nil
+		},
+		checking: func() map[string]bool { return maps.Clone(checks.checking) },
+		changed:  checks.changed,
+	})
+	wait := s.enter()
+	if text := loginsText(s); !strings.Contains(text, "open  checking…") || wait == nil {
+		t.Errorf(
+			"screen:\n%s\nwait = %v; want open still listed as checking, and a wait for the change it signaled",
+			text,
+			wait,
 		)
 	}
 }
