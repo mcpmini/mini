@@ -44,6 +44,8 @@ func startTerminal(t *testing.T, p terminalParams) *terminal {
 	cmd.Env = []string{
 		"HOME=" + p.home, "CODEX_HOME=", "XDG_CONFIG_HOME=" + filepath.Join(p.home, ".config"),
 		"TERM=xterm-256color", "NO_COLOR=1", "MINI_NEW_INIT=1", "PATH=" + os.Getenv("PATH"),
+		// Nothing listens on port 1, so the fetch fails at once and init falls back to the built-in catalog.
+		"MINI_TEST_CATALOG_URL=https://127.0.0.1:1/catalog/v1.json",
 	}
 	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: termWidth, Rows: termHeight})
 	if err != nil {

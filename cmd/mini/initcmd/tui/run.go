@@ -5,12 +5,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
-	"github.com/mcpmini/mini/internal/catalog"
 )
 
 type Params struct {
-	Setup   initcmd.Setup
-	Catalog catalog.Catalog
+	Setup initcmd.Setup
+	// LoadCatalog runs in the background while the Import screen is shown.
+	LoadCatalog func() (LoadedCatalog, error)
 	// Program runs the UI; nil runs it in the terminal.
 	Program func(m tea.Model) error
 }
@@ -23,9 +23,15 @@ func Run(p Params) (plan initcmd.Plan, quit bool, err error) {
 		return initcmd.Plan{}, false, err
 	}
 	imports := newImportScreen(plan.Import.Candidates)
-	catalogs := newCatalogScreen(p.Catalog, plan.Available(p.Catalog.Entries), imports.ticked)
+	catalogs := newCatalogScreen(
+		catalogParams{load: p.LoadCatalog, offered: plan.Available, imports: imports.ticked},
+	)
+	if imports.empty() {
+		// Nothing to look at while it loads, so wait: if the catalog is empty too, no UI is shown.
+		catalogs.update(catalogs.start()())
+	}
 	a := newApp([]screen{imports, catalogs})
-	if len(a.screens) == 0 {
+	if !a.hasScreens() {
 		return plan, false, nil
 	}
 	if err := p.program()(a); err != nil || a.quit {

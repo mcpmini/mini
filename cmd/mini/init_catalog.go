@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -33,17 +34,29 @@ type catalogSource struct {
 }
 
 func publishedCatalogSource() catalogSource {
-	return catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL, warn: os.Stderr}
+	return catalogSource{client: catalog.NewFetchClient(), url: publishedCatalogURL(), warn: os.Stderr}
 }
 
 func (s catalogSource) entries() ([]catalog.Entry, error) {
+	loaded, err := s.load()
+	if loaded.Unavailable != nil {
+		fmt.Fprintf(
+			s.warn,
+			"note: using the built-in server catalog (the published one is unavailable: %v)\n",
+			loaded.Unavailable,
+		)
+	}
+	return loaded.Catalog.Entries, err
+}
+
+// load falls back to the built-in catalog and says why, without printing: the UI may own the screen.
+func (s catalogSource) load() (tui.LoadedCatalog, error) {
 	c, err := catalog.Fetch(context.Background(), s.client, s.url)
 	if err == nil {
-		return c.Entries, nil
+		return tui.LoadedCatalog{Catalog: c}, nil
 	}
-	fmt.Fprintf(s.warn, "note: using the built-in server catalog (the published one is unavailable: %v)\n", err)
-	c, err = catalog.Load()
-	return c.Entries, err
+	builtIn, loadErr := catalog.Load()
+	return tui.LoadedCatalog{Catalog: builtIn, Unavailable: err}, loadErr
 }
 
 func runCatalogStep(p catalogStepParams) error {

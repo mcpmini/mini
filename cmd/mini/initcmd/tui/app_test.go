@@ -64,7 +64,7 @@ func TestApp_movesThroughTheScreensItHasSomethingFor(t *testing.T) {
 		t.Errorf("after enter:\n%s\nwant the Last screen; the empty one is skipped", view)
 	}
 	send(a, "esc", "enter")
-	if a.at != 1 {
+	if a.at != 2 {
 		t.Fatalf("at = %d; want back on the last screen", a.at)
 	}
 	if cmd := send(a, "enter"); a.quit || cmd == nil {
@@ -187,16 +187,21 @@ func TestApp_aScreenIsToldEachTimeItIsShownAgain(t *testing.T) {
 	}
 	a := sized(newApp([]screen{first, second}))
 	send(a, "enter", "esc", "enter")
-	if first.entered != 1 || second.entered != 2 {
-		t.Errorf("entered: first %d, second %d; want 1 and 2, once per arrival", first.entered, second.entered)
+	if first.entered != 2 || second.entered != 2 {
+		t.Errorf(
+			"entered: first %d, second %d; want 2 each: the start counts as arriving",
+			first.entered,
+			second.entered,
+		)
 	}
 }
 
 func TestApp_escOnTheFirstScreenLeavesItAsItWas(t *testing.T) {
 	first := &enteredScreen{fakeScreen: fakeScreen{name: "First"}}
 	a := sized(newApp([]screen{first}))
+	before := first.entered
 	send(a, "esc")
-	if first.entered != 0 {
-		t.Errorf("esc on the first screen re-entered it %d times; want it untouched", first.entered)
+	if first.entered != before {
+		t.Errorf("esc on the first screen re-entered it %d times; want it untouched", first.entered-before)
 	}
 }

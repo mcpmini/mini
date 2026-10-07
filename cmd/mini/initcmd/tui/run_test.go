@@ -25,8 +25,10 @@ func stdioAgent(name string, servers ...string) agents.Agent {
 	}}
 }
 
+// pressing runs the background loads to completion first, as if they finished before the first key.
 func pressing(keys ...string) func(tea.Model) error {
 	return func(m tea.Model) error {
+		deliver(m, m.Init())
 		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 		for _, key := range keys {
 			m.Update(press(key))
@@ -34,6 +36,22 @@ func pressing(keys ...string) func(tea.Model) error {
 		return nil
 	}
 }
+
+func deliver(m tea.Model, cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			deliver(m, c)
+		}
+		return
+	}
+	m.Update(msg)
+}
+
+func noCatalog() (LoadedCatalog, error) { return LoadedCatalog{}, nil }
 
 func setupFor(configDir string, list ...agents.Agent) initcmd.Setup {
 	return initcmd.Setup{ConfigDir: configDir, Import: list}
@@ -52,7 +70,11 @@ func pickedNames(plan initcmd.Plan) []string {
 func TestRun_quittingReturnsNoPlanAndTouchesNothing(t *testing.T) {
 	configDir := filepath.Join(t.TempDir(), "config")
 	plan, quit, err := Run(
-		Params{Setup: setupFor(configDir, stdioAgent("Codex", "files")), Program: pressing("ctrl+c")},
+		Params{
+			Setup:       setupFor(configDir, stdioAgent("Codex", "files")),
+			LoadCatalog: noCatalog,
+			Program:     pressing("ctrl+c"),
+		},
 	)
 	if err != nil || !quit || len(plan.Import.Candidates) != 0 {
 		t.Fatalf("Run = %+v, %v, %v; want a quit with no plan", plan, quit, err)
@@ -64,8 +86,9 @@ func TestRun_quittingReturnsNoPlanAndTouchesNothing(t *testing.T) {
 
 func TestRun_finishingReturnsThePlanWithTheTicks(t *testing.T) {
 	plan, quit, err := Run(Params{
-		Setup:   setupFor(t.TempDir(), stdioAgent("Codex", "files", "notes")),
-		Program: pressing("space", "enter"),
+		Setup:       setupFor(t.TempDir(), stdioAgent("Codex", "files", "notes")),
+		LoadCatalog: noCatalog,
+		Program:     pressing("space", "enter"),
 	})
 	if err != nil || quit {
 		t.Fatalf("Run = %v, %v; want it finished", quit, err)
@@ -75,23 +98,11 @@ func TestRun_finishingReturnsThePlanWithTheTicks(t *testing.T) {
 	}
 }
 
-func TestRun_withNothingToImportShowsNoUI(t *testing.T) {
-	shown := false
-	program := func(tea.Model) error {
-		shown = true
-		return nil
-	}
-	_, quit, err := Run(Params{Setup: setupFor(t.TempDir(), stdioAgent("Codex")), Program: program})
-	if err != nil || quit || shown {
-		t.Errorf("Run: quit = %v, err = %v, UI shown = %v; want a finished run with no UI", quit, err, shown)
-	}
-}
-
 func TestRun_goingBackToTickAnImportDropsTheSameCatalogServer(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{{Name: "sentry", URL: "https://mcp.sentry.example/mcp"}}}
 	plan, quit, err := Run(Params{
-		Setup:   setupFor(t.TempDir(), stdioAgent("Codex", "sentry")),
-		Catalog: c,
+		Setup:       setupFor(t.TempDir(), stdioAgent("Codex", "sentry")),
+		LoadCatalog: fromCatalog(c),
 		// Untick the import, tick the catalog's sentry, go back, tick the import again, finish.
 		Program: pressing("space", "enter", "space", "esc", "space", "enter", "enter"),
 	})
@@ -115,8 +126,33 @@ func TestRun_theCatalogOffersOnlyServersMiniHasNot(t *testing.T) {
 		{Name: "linear", URL: "https://mcp.linear.example/mcp"},
 		{Name: "sentry", URL: "https://mcp.sentry.example/mcp"},
 	}}
-	plan, _, err := Run(Params{Setup: setupFor(configDir), Catalog: c, Program: pressing("space", "enter")})
+	plan, _, err := Run(
+		Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "enter")},
+	)
 	if err != nil || len(plan.Add) != 1 || plan.Add[0].Name != "sentry" {
 		t.Errorf("adds = %v, err = %v; want sentry: linear is configured, so the first row is sentry", plan.Add, err)
 	}
+}
+
+func TestRun_withNothingToImport(t *testing.T) {
+	c := catalog.Catalog{Entries: []catalog.Entry{{Name: "sentry", URL: "https://mcp.sentry.example/mcp"}}}
+	t.Run("and an empty catalog, no UI is shown", func(t *testing.T) {
+		shown := false
+		program := func(tea.Model) error {
+			shown = true
+			return nil
+		}
+		_, quit, err := Run(Params{Setup: setupFor(t.TempDir()), LoadCatalog: noCatalog, Program: program})
+		if err != nil || quit || shown {
+			t.Errorf("quit = %v, err = %v, UI shown = %v; want a finished run with no UI", quit, err, shown)
+		}
+	})
+	t.Run("the catalog is the first screen", func(t *testing.T) {
+		plan, _, err := Run(
+			Params{Setup: setupFor(t.TempDir()), LoadCatalog: fromCatalog(c), Program: pressing("space", "enter")},
+		)
+		if err != nil || len(plan.Add) != 1 {
+			t.Errorf("adds = %v, err = %v; want sentry ticked on the catalog shown first", plan.Add, err)
+		}
+	})
 }
