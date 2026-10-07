@@ -20,7 +20,7 @@ func (r row) matches(filter string) bool {
 	return strings.Contains(strings.ToLower(r.label), filter) || strings.Contains(strings.ToLower(r.detail), filter)
 }
 
-// list is a checkbox list. The cursor indexes the rows the filter shows.
+// The cursor indexes the rows the filter shows.
 type list struct {
 	rows      []row
 	checked   map[string]bool
@@ -67,7 +67,6 @@ func (l *list) toggle() {
 	}
 }
 
-// toggleAll ticks every row the filter shows, or unticks them when they are all ticked already.
 // Rows the filter hides keep their ticks: the user can't see them change.
 func (l *list) toggleAll() {
 	shown := l.visible()
