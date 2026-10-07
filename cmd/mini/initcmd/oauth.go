@@ -50,6 +50,6 @@ type probeFunc func(ctx context.Context, configDir string, sc config.ServerConfi
 func checkOAuth(ctx context.Context, p probeParams, probe probeFunc) {
 	ctx, cancel := clock.WithTimeout(ctx, p.clock, OAuthCheckTimeout)
 	defer cancel()
-	// Only the OAuth requirement the probe records matters; an unreachable server is left for the proxy.
-	probe(ctx, p.configDir, p.server) //nolint:errcheck
+	//nolint:errcheck // Unreachable servers are left for the proxy; OAuth checks consume auth configuration saved by the probe.
+	probe(ctx, p.configDir, p.server)
 }

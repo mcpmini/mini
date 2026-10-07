@@ -25,7 +25,7 @@ func TestRunLoginStepAllContinuesAfterFailure(t *testing.T) {
 	var authorized []string
 	runLoginStep(loginStepParams{
 		configDir: dir,
-		ask:       func(string) string { return "a" },
+		ask:       func(string) (string, error) { return "a", nil },
 		logIn:     recordAuthorization(&authorized, map[string]error{"first": errors.New("denied")}),
 		out:       out,
 		errOut:    errOut,
@@ -37,6 +37,49 @@ func TestRunLoginStepAllContinuesAfterFailure(t *testing.T) {
 		t.Errorf("error output = %q", errOut.String())
 	}
 	assertReminded(t, out.String(), []string{"first", "second"}, []string{"first"})
+}
+
+func TestRunLoginStepPickConfirmationFailureDoesNotLogin(t *testing.T) {
+	dir := loginStepConfig(t, "first", "second")
+	var authorized []string
+	confirmations := 0
+	err := runLoginStep(loginStepParams{
+		configDir: dir,
+		ask:       func(string) (string, error) { return "p", nil },
+		confirm: func(string) (bool, error) {
+			confirmations++
+			if confirmations == 1 {
+				return true, nil
+			}
+			return false, errReadInput
+		},
+		logIn: recordAuthorization(&authorized, nil),
+		out:   &bytes.Buffer{},
+	})
+	if !errors.Is(err, errReadInput) {
+		t.Fatalf("runLoginStep error = %v, want confirmation error", err)
+	}
+	if len(authorized) != 0 {
+		t.Errorf("authorized = %v, want no login callbacks", authorized)
+	}
+}
+
+func TestRunLoginStepMenuWriteFailureDoesNotAskOrLogin(t *testing.T) {
+	dir := loginStepConfig(t, "first")
+	asked := false
+	loggedIn := false
+	err := runLoginStep(loginStepParams{
+		configDir: dir,
+		ask:       func(string) (string, error) { asked = true; return "a", nil },
+		logIn: func(logInParams) (*oauth2.Token, error) {
+			loggedIn = true
+			return nil, nil
+		},
+		out: failedWriter{},
+	})
+	if err == nil || asked || loggedIn {
+		t.Errorf("runLoginStep error=%v asked=%v loggedIn=%v, want menu error before selection", err, asked, loggedIn)
+	}
 }
 
 func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
@@ -51,7 +94,7 @@ func TestRunLoginStepSkipsBundledOAuthForImportedStdioServer(t *testing.T) {
 	out := &bytes.Buffer{}
 	runLoginStep(loginStepParams{
 		configDir: dir,
-		ask:       func(string) string { called = true; return "a" },
+		ask:       func(string) (string, error) { called = true; return "a", nil },
 		logIn:     func(logInParams) (*oauth2.Token, error) { called = true; return nil, nil },
 		out:       out,
 		errOut:    &bytes.Buffer{},
@@ -74,7 +117,14 @@ func TestRunLoginStepWarnsForBrokenFileAndListsOAuthServer(t *testing.T) {
 	brokenPath := filepath.Join(dir, "servers", "broken.yaml")
 	testutil.WriteFile(t, brokenPath, "bad: [yaml\n")
 	out, errOut := &bytes.Buffer{}, &bytes.Buffer{}
-	runLoginStep(loginStepParams{configDir: dir, ask: func(string) string { return "s" }, out: out, errOut: errOut})
+	runLoginStep(loginStepParams{
+		configDir: dir,
+		ask: func(string) (string, error) {
+			return "s", nil
+		},
+		out:    out,
+		errOut: errOut,
+	})
 	if strings.Count(errOut.String(), brokenPath) != 1 {
 		t.Errorf("stderr = %q, want one warning naming %s", errOut.String(), brokenPath)
 	}
@@ -105,9 +155,14 @@ func TestRunLoginStepListingShowsReasonNextToServerName(t *testing.T) {
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "expired", Token: expired})
 	testutil.WriteFile(t, filepath.Join(dir, "internal", "corrupt.token.json"), "not json")
 	out := &bytes.Buffer{}
-	runLoginStep(
-		loginStepParams{configDir: dir, ask: func(string) string { return "s" }, out: out, errOut: &bytes.Buffer{}},
-	)
+	runLoginStep(loginStepParams{
+		configDir: dir,
+		ask: func(string) (string, error) {
+			return "s", nil
+		},
+		out:    out,
+		errOut: &bytes.Buffer{},
+	})
 	for _, want := range []string{"fresh (no token)", "expired (token expired)", "corrupt (token unreadable: "} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("listing missing %q:\n%s", want, out.String())
@@ -136,7 +191,7 @@ func TestRunLoginStepAnswers(t *testing.T) {
 			var authorized []string
 			runLoginStep(loginStepParams{
 				configDir: dir,
-				ask:       func(string) string { return tc.answer },
+				ask:       func(string) (string, error) { return tc.answer, nil },
 				confirm:   confirmAnswers(false, true),
 				logIn:     recordAuthorization(&authorized, nil),
 				out:       out,
@@ -176,7 +231,7 @@ func TestRunLoginStepOmitsServersWithUsableTokens(t *testing.T) {
 	var authorized []string
 	runLoginStep(loginStepParams{
 		configDir: dir,
-		ask:       func(string) string { return "a" },
+		ask:       func(string) (string, error) { return "a", nil },
 		logIn:     recordAuthorization(&authorized, nil),
 		out:       out,
 		errOut:    &bytes.Buffer{},
@@ -206,7 +261,7 @@ func TestRunLoginStepOmitsDisabledServers(t *testing.T) {
 	var authorized []string
 	runLoginStep(loginStepParams{
 		configDir: dir,
-		ask:       func(string) string { return "a" },
+		ask:       func(string) (string, error) { return "a", nil },
 		logIn:     recordAuthorization(&authorized, nil),
 		out:       out,
 		errOut:    &bytes.Buffer{},
@@ -229,7 +284,7 @@ func TestRunLoginStepPassesLoadedConfigAndServerToLogIn(t *testing.T) {
 	var got logInParams
 	runLoginStep(loginStepParams{
 		configDir: dir,
-		ask:       func(string) string { return "a" },
+		ask:       func(string) (string, error) { return "a", nil },
 		logIn:     func(p logInParams) (*oauth2.Token, error) { got = p; return &oauth2.Token{}, nil },
 		out:       out,
 		errOut:    &bytes.Buffer{},
@@ -264,11 +319,11 @@ func loginStepConfig(t *testing.T, names ...string) string {
 	return dir
 }
 
-func confirmAnswers(answers ...bool) func(string) bool {
-	return func(string) bool {
+func confirmAnswers(answers ...bool) func(string) (bool, error) {
+	return func(string) (bool, error) {
 		answer := answers[0]
 		answers = answers[1:]
-		return answer
+		return answer, nil
 	}
 }
 

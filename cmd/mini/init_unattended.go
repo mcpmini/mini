@@ -112,7 +112,7 @@ func isTerminal(f *os.File) bool {
 }
 
 func printNoTerminalHelp(w io.Writer) {
-	fmt.Fprint(w, noTerminalHelp)
+	printNotice(w, "%s", noTerminalHelp)
 }
 
 var (

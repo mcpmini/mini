@@ -245,7 +245,7 @@ func TestRunCatalogStepNeverReplacesAServerFileThatFailsToLoad(t *testing.T) {
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
 		loadCatalog: embeddedCatalogEntries,
-		ask:         func(string) string { return "a" },
+		ask:         func(string) (string, error) { return "a", nil },
 		out:         out,
 		errOut:      &bytes.Buffer{},
 	})
@@ -282,7 +282,7 @@ func TestRunCatalogStepStillFiltersWhenAServerFileOrItsProjectionsFailToLoad(t *
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
 		loadCatalog: embeddedCatalogEntries,
-		ask:         func(string) string { return "" },
+		ask:         func(string) (string, error) { return "", nil },
 		out:         out,
 		errOut:      errOut,
 	})
@@ -311,7 +311,7 @@ func TestSelectCatalogEntriesPrintsSetupNotesAfterPartialWrite(t *testing.T) {
 
 	err := selectCatalogEntries(catalogStepParams{
 		configDir: t.TempDir(),
-		ask:       func(string) string { return "1-2" },
+		ask:       func(string) (string, error) { return "1-2", nil },
 		out:       out,
 		errOut:    &bytes.Buffer{},
 	}, entries)
@@ -330,7 +330,7 @@ func TestRunCatalogStepWritesSelectedServerAndProjection(t *testing.T) {
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
 		loadCatalog: embeddedCatalogEntries,
-		ask:         func(string) string { return catalogNumberOf(t, out.String(), "GitHub") },
+		ask:         func(string) (string, error) { return catalogNumberOf(t, out.String(), "GitHub"), nil },
 		out:         out,
 		errOut:      &bytes.Buffer{},
 	})
@@ -364,7 +364,7 @@ func TestRunCatalogStepReportsAFailedWrite(t *testing.T) {
 	err := runCatalogStep(catalogStepParams{
 		configDir:   dir,
 		loadCatalog: embeddedCatalogEntries,
-		ask:         func(string) string { return catalogNumberOf(t, out.String(), "GitHub") },
+		ask:         func(string) (string, error) { return catalogNumberOf(t, out.String(), "GitHub"), nil },
 		out:         out,
 		errOut:      &bytes.Buffer{},
 	})
@@ -467,7 +467,7 @@ func TestSelectCatalogEntriesPrintsSetupNotesForSelectedServers(t *testing.T) {
 	configDir := t.TempDir()
 	err := selectCatalogEntries(catalogStepParams{
 		configDir: configDir,
-		ask:       func(string) string { return "1-3" },
+		ask:       func(string) (string, error) { return "1-3", nil },
 		out:       out,
 		errOut:    &bytes.Buffer{},
 	}, entries)
@@ -490,11 +490,45 @@ func TestSelectCatalogEntriesPrintsSetupNotesForSelectedServers(t *testing.T) {
 	}
 }
 
-func nextCatalogAnswer(answers *[]string) func(string) string {
-	return func(string) string {
+func nextCatalogAnswer(answers *[]string) func(string) (string, error) {
+	return func(string) (string, error) {
 		answer := (*answers)[0]
 		*answers = (*answers)[1:]
-		return answer
+		return answer, nil
+	}
+}
+
+func TestRunCatalogStepMenuWriteFailureDoesNotAskOrWrite(t *testing.T) {
+	dir := t.TempDir()
+	asked := false
+	err := runCatalogStep(catalogStepParams{
+		configDir: dir,
+		loadCatalog: func() ([]catalog.Entry, error) {
+			return []catalog.Entry{{Name: "github", Title: "GitHub", URL: "https://example.com/mcp"}}, nil
+		},
+		ask: func(string) (string, error) { asked = true; return "1", nil },
+		out: failedWriter{},
+	})
+	if err == nil || asked {
+		t.Errorf("runCatalogStep error=%v asked=%v, want menu error before asking", err, asked)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "servers", "github.yaml")); !os.IsNotExist(statErr) {
+		t.Errorf("server file stat error = %v, want no write", statErr)
+	}
+}
+
+func TestSelectCatalogEntriesAskFailureDoesNotWrite(t *testing.T) {
+	dir := t.TempDir()
+	err := selectCatalogEntries(catalogStepParams{
+		configDir: dir,
+		ask:       func(string) (string, error) { return "", errReadInput },
+		out:       &bytes.Buffer{},
+	}, []catalog.Entry{{Name: "github", URL: "https://example.com/mcp"}})
+	if !errors.Is(err, errReadInput) {
+		t.Fatalf("selectCatalogEntries error = %v, want input error", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "servers", "github.yaml")); !os.IsNotExist(statErr) {
+		t.Errorf("server file stat error = %v, want no write", statErr)
 	}
 }
 
@@ -516,7 +550,7 @@ func TestCatalogOAuthEntriesReachLoginStep(t *testing.T) {
 	var authorized []string
 	runLoginStep(loginStepParams{
 		configDir: dir,
-		ask:       func(string) string { return "a" },
+		ask:       func(string) (string, error) { return "a", nil },
 		logIn:     recordAuthorization(&authorized, nil),
 		out:       &bytes.Buffer{},
 		errOut:    &bytes.Buffer{},

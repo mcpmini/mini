@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"io"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
@@ -20,6 +19,6 @@ func detectImportedOAuth(p oauthDetectParams) {
 	if len(targets) == 0 {
 		return
 	}
-	fmt.Fprintf(p.errOut, "checking %d imported server(s) for OAuth...\n", len(targets))
+	printNotice(p.errOut, "checking %d imported server(s) for OAuth...\n", len(targets))
 	initcmd.CheckOAuth(p.configDir, targets, p.clock)
 }

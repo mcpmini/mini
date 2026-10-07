@@ -104,7 +104,7 @@ func loginListing(t *testing.T, configDir string) string {
 	runLoginStep(
 		loginStepParams{
 			configDir: configDir,
-			ask:       func(string) string { return "s" },
+			ask:       func(string) (string, error) { return "s", nil },
 			out:       out,
 			errOut:    &bytes.Buffer{},
 		},

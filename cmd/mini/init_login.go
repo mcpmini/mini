@@ -14,8 +14,8 @@ import (
 
 type loginStepParams struct {
 	configDir string
-	confirm   func(string) bool
-	ask       func(string) string
+	confirm   func(string) (bool, error)
+	ask       func(string) (string, error)
 	logIn     func(logInParams) (*oauth2.Token, error)
 	out       io.Writer
 	errOut    io.Writer
@@ -34,26 +34,32 @@ func (c loginCandidate) reason() string {
 	return c.state.String()
 }
 
-func runLoginStep(p loginStepParams) {
+func runLoginStep(p loginStepParams) error {
 	cfg, err := config.LoadMain(p.configDir)
 	if err != nil {
-		fmt.Fprintf(p.errOut, "skipping OAuth login: %v\n", err)
-		return
+		printNotice(p.errOut, "skipping OAuth login: %v\n", err)
+		return nil
 	}
 	servers, err := config.LoadServers(p.configDir)
 	if err != nil {
-		fmt.Fprintf(p.errOut, "skipping OAuth login: %v\n", err)
-		return
+		printNotice(p.errOut, "skipping OAuth login: %v\n", err)
+		return nil
 	}
 	warnServerProblems(p.errOut, servers)
 	candidates := findLoginCandidates(p.configDir, servers.Loaded)
 	if len(candidates) == 0 {
-		return
+		return nil
 	}
-	printLoginCandidates(p.out, candidates)
-	chosen := chooseLoginCandidates(p, candidates)
+	if err := printLoginCandidates(p.out, candidates); err != nil {
+		return err
+	}
+	chosen, err := chooseLoginCandidates(p, candidates)
+	if err != nil {
+		return err
+	}
 	loggedIn := logInCandidates(p, cfg, chosen)
 	printLoginReminders(p.out, notLoggedIn(candidates, loggedIn))
+	return nil
 }
 
 func findLoginCandidates(configDir string, servers []config.ServerConfig) []loginCandidate {
@@ -70,39 +76,52 @@ func findLoginCandidates(configDir string, servers []config.ServerConfig) []logi
 	return candidates
 }
 
-func printLoginCandidates(out io.Writer, candidates []loginCandidate) {
-	fmt.Fprintln(out, "OAuth login needed:")
-	for _, c := range candidates {
-		fmt.Fprintf(out, "  %s (%s)\n", c.server.Name, c.reason())
+func printLoginCandidates(out io.Writer, candidates []loginCandidate) error {
+	if _, err := fmt.Fprintln(out, "OAuth login needed:"); err != nil {
+		return err
 	}
+	for _, c := range candidates {
+		if _, err := fmt.Fprintf(out, "  %s (%s)\n", c.server.Name, c.reason()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func chooseLoginCandidates(p loginStepParams, candidates []loginCandidate) []loginCandidate {
-	choice := strings.ToLower(strings.TrimSpace(p.ask("Log in now? [a]ll / [p]ick / [s]kip")))
+func chooseLoginCandidates(p loginStepParams, candidates []loginCandidate) ([]loginCandidate, error) {
+	answer, err := p.ask("Log in now? [a]ll / [p]ick / [s]kip")
+	if err != nil {
+		return nil, err
+	}
+	choice := strings.ToLower(strings.TrimSpace(answer))
 	if choice == "a" || choice == "all" {
-		return candidates
+		return candidates, nil
 	}
 	if choice != "p" && choice != "pick" {
-		return nil
+		return nil, nil
 	}
 	return pickLoginCandidates(p.confirm, candidates)
 }
 
-func pickLoginCandidates(confirm func(string) bool, candidates []loginCandidate) []loginCandidate {
+func pickLoginCandidates(confirm func(string) (bool, error), candidates []loginCandidate) ([]loginCandidate, error) {
 	var chosen []loginCandidate
 	for _, c := range candidates {
-		if confirm("Log in to " + c.server.Name + "?") {
+		confirmed, err := confirm("Log in to " + c.server.Name + "?")
+		if err != nil {
+			return nil, err
+		}
+		if confirmed {
 			chosen = append(chosen, c)
 		}
 	}
-	return chosen
+	return chosen, nil
 }
 
 func logInCandidates(p loginStepParams, cfg *config.Config, candidates []loginCandidate) []string {
 	var loggedIn []string
 	for _, c := range candidates {
 		if _, err := p.logIn(logInParams{configDir: p.configDir, cfg: cfg, sc: &c.server, out: p.out}); err != nil {
-			fmt.Fprintf(p.errOut, "login failed for %s: %v\n", c.server.Name, err)
+			printNotice(p.errOut, "login failed for %s: %v\n", c.server.Name, err)
 			continue
 		}
 		loggedIn = append(loggedIn, c.server.Name)
@@ -124,8 +143,8 @@ func printLoginReminders(out io.Writer, names []string) {
 	if len(names) == 0 {
 		return
 	}
-	fmt.Fprintln(out, "Log in later with:")
+	printNotice(out, "Log in later with:\n")
 	for _, name := range names {
-		fmt.Fprintf(out, "  mini auth %s\n", name)
+		printNotice(out, "  mini auth %s\n", name)
 	}
 }
