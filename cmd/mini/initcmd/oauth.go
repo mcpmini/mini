@@ -12,7 +12,6 @@ import (
 
 const oauthCheckTimeout = 5 * time.Second
 
-// The login step lists an OAuth server only once a probe records that it needs OAuth.
 func oauthTargets(configDir string, names []string) []config.ServerConfig {
 	servers, err := config.LoadServers(configDir)
 	if err != nil {

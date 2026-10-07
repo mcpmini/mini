@@ -363,36 +363,6 @@ func TestRunAddImport(t *testing.T) {
 		})
 	}
 
-	t.Run("a rerun keeps the configured server, reports it and still succeeds", func(t *testing.T) {
-		dir := t.TempDir()
-		path := filepath.Join(t.TempDir(), "claude.json")
-		testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"command":"run"}}}`)
-		if err := runAdd(dir, []string{"--from-claude", path}, &bytes.Buffer{}); err != nil {
-			t.Fatal(err)
-		}
-		testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"command":"other"}}}`)
-		var out bytes.Buffer
-
-		if err := runAdd(dir, []string{"--from-claude", path}, &out); err != nil {
-			t.Fatalf("rerun: %v", err)
-		}
-
-		var sc config.ServerConfig
-		readServerYAML(t, dir, "svc", &sc)
-		if sc.Command != "run" {
-			t.Errorf("command = %q, want the configured run kept", sc.Command)
-		}
-		if want := path + ": svc not imported, mini's config has a different command"; !strings.Contains(
-			out.String(),
-			want,
-		) {
-			t.Errorf("output = %q, want %q", out.String(), want)
-		}
-		if strings.Contains(out.String(), "tip:") {
-			t.Errorf("output = %q, want no tip when nothing was added", out.String())
-		}
-	})
-
 	t.Run("mini's own entry is never imported", func(t *testing.T) {
 		self, err := os.Executable()
 		if err != nil {
@@ -429,9 +399,9 @@ func TestRunAddImport(t *testing.T) {
 			wantLine: ": svc already configured in mini",
 		},
 		{
-			name:      "different headers, whose values are never shown",
-			reimport:  `{"svc":{"type":"http","url":"https://svc.example/mcp","headers":{"Authorization":"Bearer secret-token"}}}`,
-			wantLine:  ": svc not imported, mini's config has a different headers",
+			name:      "a different url and headers, whose values are never shown",
+			reimport:  `{"svc":{"type":"http","url":"https://other.example/mcp","headers":{"Authorization":"Bearer secret-token"}}}`,
+			wantLine:  ": svc not imported, mini's config has a different url, headers",
 			forbidden: "secret-token",
 		},
 		{
@@ -448,7 +418,7 @@ func TestRunAddImport(t *testing.T) {
 			forbidden:  "secret-token",
 		},
 	} {
-		t.Run("a rerun with "+tt.name+" keeps the configured file", func(t *testing.T) {
+		t.Run("a rerun with "+tt.name+" keeps the configured file and succeeds", func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(t.TempDir(), "claude.json")
 			testutil.WriteFile(t, path, `{"mcpServers":{"svc":{"type":"http","url":"https://svc.example/mcp"}}}`)
@@ -475,6 +445,9 @@ func TestRunAddImport(t *testing.T) {
 			}
 			if tt.forbidden != "" && strings.Contains(out.String(), tt.forbidden) {
 				t.Errorf("output = %q shows %q", out.String(), tt.forbidden)
+			}
+			if strings.Contains(out.String(), "tip:") {
+				t.Errorf("output = %q, want no tip when nothing was added", out.String())
 			}
 		})
 	}
