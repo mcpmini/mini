@@ -102,16 +102,19 @@ type serveWatchParams struct {
 }
 
 func serveUntilCanceled(p serveWatchParams) error {
-	defer p.In.Close() //nolint:errcheck
+	ctx, cancel := context.WithCancel(p.Ctx)
+	defer cancel()
+	output := newServeOutput(p.Out, cancel, p.In)
+	defer func() { _ = p.In.Close() }()
 	done := make(chan error, 1)
-	go func() { done <- p.Serve(p.Ctx, p.In, p.Out) }()
+	go func() { done <- p.Serve(ctx, p.In, output) }()
 	select {
 	case err := <-done:
-		return err
+		return output.result(err)
 	case <-p.Ctx.Done():
-		p.In.Close() //nolint:errcheck
+		_ = p.In.Close()
 		<-done
-		return nil
+		return output.result(nil)
 	}
 }
 
