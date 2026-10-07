@@ -17,7 +17,8 @@ const (
 
 type screen interface {
 	heading() string
-	handle(key tea.KeyPressMsg) step
+	// handle may start background work, whose command it returns with the step.
+	handle(key tea.KeyPressMsg) (step, tea.Cmd)
 	body(height int) string
 	// keys names the screen's own keys and what enter does there; the app adds esc and ctrl+c.
 	keys() string
@@ -115,15 +116,16 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 		// The screen is hidden, so a key would act on picks the user can't see.
 		return nil
 	}
-	switch a.screens[a.at].handle(key) {
+	move, work := a.screens[a.at].handle(key)
+	switch move {
 	case forward:
-		return a.forward()
+		return tea.Batch(work, a.forward())
 	case back:
 		if previous, ok := a.next(a.at, -1); ok {
-			return a.show(previous)
+			return tea.Batch(work, a.show(previous))
 		}
 	}
-	return nil
+	return work
 }
 
 func (a *app) forward() tea.Cmd {

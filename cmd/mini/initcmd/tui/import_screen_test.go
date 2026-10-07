@@ -86,7 +86,7 @@ func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 func TestImportScreen_enterContinuesAndEscGoesBack(t *testing.T) {
 	s := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
 	for key, want := range map[string]step{"enter": forward, "esc": back, "left": back, "space": stay} {
-		if got := s.handle(press(key)); got != want {
+		if got, _ := s.handle(press(key)); got != want {
 			t.Errorf("%s = %v, want %v", key, got, want)
 		}
 	}

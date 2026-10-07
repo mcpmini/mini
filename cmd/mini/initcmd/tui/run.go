@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"context"
 	"slices"
 
 	tea "charm.land/bubbletea/v2"
@@ -14,6 +15,8 @@ type Params struct {
 	Setup initcmd.Setup
 	// LoadCatalog may run on another goroutine while the UI is shown.
 	LoadCatalog func() (catalog.Catalog, error)
+	// StartLogin begins a server's browser login on the Logins screen; it must not print.
+	StartLogin func(ctx context.Context, name string) (Login, error)
 	// Program runs the UI; nil runs it in the terminal.
 	Program func(m tea.Model) error
 }
@@ -41,6 +44,8 @@ func Run(p Params) (Outcome, error) {
 		return r.outcome(false), nil
 	}
 	err = p.program()(a)
+	// A login still waiting on the browser when the UI ends would otherwise save a token later.
+	r.ui.logins.cancelLogin()
 	if !a.saves.saved {
 		return Outcome{Quit: a.quit || err != nil}, err
 	}
@@ -88,12 +93,12 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 	}
 	ui := screens{imports: imports, catalogs: catalogs}
 	ui.logins = newLoginsScreen(loginsParams{
-		configDir: p.Setup.ConfigDir,
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			return initcmd.ServerStatuses(p.Setup.ConfigDir, ui.catalog(*plan))
 		},
-		checking: session.Running,
-		changed:  session.Changed(),
+		checking:   session.Running,
+		changed:    session.Changed(),
+		startLogin: p.StartLogin,
 	})
 	return ui
 }

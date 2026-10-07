@@ -21,15 +21,15 @@ func (s *fakeScreen) body(int) string { return s.name + " body" }
 func (s *fakeScreen) keys() string    { return "enter continue" }
 func (s *fakeScreen) empty() bool     { return s.nothing }
 
-func (s *fakeScreen) handle(key tea.KeyPressMsg) step {
+func (s *fakeScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	s.got = append(s.got, key.String())
 	switch key.String() {
 	case "enter":
-		return forward
+		return forward, nil
 	case "esc":
-		return back
+		return back, nil
 	}
-	return stay
+	return stay, nil
 }
 
 func sized(a *app) *app {

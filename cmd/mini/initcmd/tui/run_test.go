@@ -137,8 +137,8 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 	out, err := Run(Params{
 		Setup:       setupFor(configDir),
 		LoadCatalog: fromCatalog(c),
-		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, finish.
-		Program: pressing("space", "enter", "esc", "space", "down", "space", "enter", "enter"),
+		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, continue.
+		Program: pressing("space", "enter", "esc", "space", "down", "space", "enter", "down", "enter"),
 	})
 	if err != nil || out.Quit {
 		t.Fatalf("Run = %+v, %v; want it finished", out, err)

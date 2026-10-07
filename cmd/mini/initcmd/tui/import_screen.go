@@ -56,19 +56,19 @@ func (s *importScreen) heading() string {
 	return "Import servers from your agents"
 }
 
-func (s *importScreen) handle(key tea.KeyPressMsg) step {
+func (s *importScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	if s.list.handle(key) {
-		return stay
+		return stay, nil
 	}
 	switch key.String() {
 	case "a":
 		s.list.toggleAll()
 	case "enter":
-		return forward
+		return forward, nil
 	case "esc", "left", "shift+tab":
-		return back
+		return back, nil
 	}
-	return stay
+	return stay, nil
 }
 
 func (s *importScreen) body(height int) string {
