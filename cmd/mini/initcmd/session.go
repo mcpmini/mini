@@ -36,16 +36,15 @@ type Session struct {
 	checked  map[string]bool
 }
 
-// encoded is the baseline for spotting a changed config; the caller can't alter it through
-// maps or pointers it shares with config.
+// encoded is the baseline for spotting a changed config; as bytes, it can't be altered through
+// maps or pointers the caller still shares with the config.
 type writtenServer struct {
-	config  config.ServerConfig
 	encoded []byte
 }
 
 func newWrittenServer(sc config.ServerConfig) writtenServer {
 	encoded, _ := yaml.Marshal(sc) //nolint:errcheck // AddServer just encoded the same config without error
-	return writtenServer{config: sc, encoded: encoded}
+	return writtenServer{encoded: encoded}
 }
 
 func (w writtenServer) sameAs(sc config.ServerConfig) bool {
@@ -80,8 +79,8 @@ func NewSession(p SessionParams) *Session {
 	}
 }
 
-// Sync makes the servers written in this run match want, then checks the written HTTP servers
-// that may need OAuth. A server whose config changed is removed and written again; a replacement
+// Sync makes the servers written in this run match want, then starts checks on the written
+// HTTP servers that may need OAuth. A server whose config changed is removed and written again; a replacement
 // mini would reject leaves the previous config in place and is reported as failed.
 func (s *Session) Sync(want []config.ServerConfig) SyncResult {
 	s.stopChecks()
@@ -147,7 +146,7 @@ func (s *Session) Changed() <-chan struct{} {
 	return s.changed
 }
 
-// WaitChecks lets the running checks finish, for runs with nothing to show meanwhile.
+// WaitChecks blocks until the running checks finish.
 func (s *Session) WaitChecks() {
 	s.checks.wg.Wait()
 }

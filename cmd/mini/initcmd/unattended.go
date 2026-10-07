@@ -86,7 +86,7 @@ func (s Setup) NewSession() *Session {
 	return NewSession(SessionParams{ConfigDir: s.ConfigDir})
 }
 
-// Servers is what the plan writes: the picked imports, then the catalog adds they don't cover.
+// Servers is what the plan writes: the picked imports, then the catalog adds nothing configured or imported covers.
 func (p Plan) Servers() []config.ServerConfig {
 	return planAdds(p.Import.picked(), p.Add, p.written).write
 }
