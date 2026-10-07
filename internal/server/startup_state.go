@@ -119,10 +119,10 @@ func (f startupFailure) logMessage() string {
 	switch f.kind {
 	case failureNeedsAuth:
 		return "upstream needs authorization, not retrying"
-	case failureNotTrusted:
-		return "upstream not allowed to start, not retrying"
-	default:
+	case failureNeedsEnv:
 		return "upstream needs an environment variable mini didn't start with, not retrying"
+	default:
+		return "upstream not allowed to start, not retrying"
 	}
 }
 
