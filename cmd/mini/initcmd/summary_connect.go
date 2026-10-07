@@ -13,13 +13,6 @@ import (
 	"github.com/mcpmini/mini/internal/agents"
 )
 
-// HandConnectSteps is how to connect mini to each agent by hand; an agent already running mini gets no step.
-func HandConnectSteps(configDir, selfPath string, list []agents.Agent) string {
-	var b strings.Builder
-	writeHandConnect(&b, ClassifyAgents(configDir, selfPath, list))
-	return b.String()
-}
-
 func writeHandConnect(b *strings.Builder, c AgentConnections) {
 	writeInactiveMini(b, c)
 	if len(c.NoMini) == 0 {

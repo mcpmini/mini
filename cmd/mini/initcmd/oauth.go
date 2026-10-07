@@ -3,13 +3,11 @@ package initcmd
 import (
 	"context"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 const OAuthCheckTimeout = 5 * time.Second
@@ -28,15 +26,6 @@ func OAuthTargets(configDir string, names []string) []config.ServerConfig {
 		}
 	}
 	return targets
-}
-
-// CheckOAuth blocks until every probe finishes or times out.
-func CheckOAuth(configDir string, servers []config.ServerConfig, clk clock.Clock) {
-	var wg sync.WaitGroup
-	for _, sc := range servers {
-		wg.Go(func() { checkOAuth(context.Background(), probeParams{configDir, sc, clk}, server.ProbeServer) })
-	}
-	wg.Wait()
 }
 
 type probeParams struct {

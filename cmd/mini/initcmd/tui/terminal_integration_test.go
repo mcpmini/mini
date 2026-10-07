@@ -43,7 +43,7 @@ func startTerminal(t *testing.T, p terminalParams) *terminal {
 	cmd := exec.Command(testutil.Binary(t, "MINIMCP_BIN"), append([]string{"--config", p.configDir}, p.args...)...)
 	cmd.Env = []string{
 		"HOME=" + p.home, "CODEX_HOME=", "XDG_CONFIG_HOME=" + filepath.Join(p.home, ".config"),
-		"TERM=xterm-256color", "NO_COLOR=1", "MINI_NEW_INIT=1", "PATH=" + os.Getenv("PATH"),
+		"TERM=xterm-256color", "NO_COLOR=1", "PATH=" + os.Getenv("PATH"),
 		// The catalog fetch goes through Go's default proxy handling. Nothing listens on port 1, so the
 		// fetch fails at once and init falls back to the built-in catalog without reaching the network.
 		"HTTPS_PROXY=http://127.0.0.1:1",

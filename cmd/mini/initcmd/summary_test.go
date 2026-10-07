@@ -169,22 +169,6 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
-func TestHandConnectSteps(t *testing.T) {
-	f := newApplyFixture(t)
-	cursor := f.write(t, "Cursor", `{"mcpServers":{}}`)
-	windsurf := f.write(t, "Windsurf", `{"mcpServers":{"proxy":`+f.servingMini()+`}}`)
-
-	got := HandConnectSteps(f.configDir, testSelf, []agents.Agent{cursor, windsurf})
-
-	requireLines(t, got, "  Cursor ("+cursor.ConfigPath+"):\n")
-	if !strings.Contains(got, f.configDir) || strings.Contains(got, "Windsurf") {
-		t.Errorf(
-			"steps:\n%s\nwant Cursor's step running this config directory and none for Windsurf, which already runs mini",
-			got,
-		)
-	}
-}
-
 func TestSummary_connectedAgents(t *testing.T) {
 	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}
 	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}

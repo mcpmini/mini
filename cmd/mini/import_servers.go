@@ -22,18 +22,6 @@ type serverImport struct {
 	errOut    io.Writer
 }
 
-func importAgentConfig(configDir, source string, agent agents.Agent) []string {
-	imp := serverImport{configDir: configDir, source: source, out: os.Stdout, errOut: os.Stderr}
-	servers, err := agent.Read(agent.ConfigPath)
-	if err != nil {
-		printNotice(imp.errOut, "  warning: %v\n", err)
-		return nil
-	}
-	// Each failure was already warned about; init carries on either way.
-	added, _ := imp.addAll(servers)
-	return added
-}
-
 func (imp serverImport) addAll(servers map[string]agents.Server) (added []string, failed int) {
 	selfPath, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is imported like any other server
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
