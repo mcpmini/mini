@@ -274,3 +274,15 @@ func TestSummary_anAgentWhoseEntriesAllStayedStillGetsAHeading(t *testing.T) {
 	)
 	requireLines(t, got, "\nClaude Code: /home/u/.claude.json is unchanged\n  gh stays in Claude Code")
 }
+
+func TestSummary_anAgentThatAlreadyHadMiniSaysSo(t *testing.T) {
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	got := Summary(
+		Report{Agents: AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini"}}, Connected: []AgentResult{{
+			Agent:        claude,
+			ExistingMini: MiniEntryServes,
+			MiniServes:   true,
+		}}},
+	)
+	requireLines(t, got, "\nClaude Code: already has a mini entry; /home/u/.claude.json is unchanged\n")
+}

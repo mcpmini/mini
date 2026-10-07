@@ -124,6 +124,22 @@ func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) 
 	}
 }
 
+func TestConnectScreen_justConnectingAnAgentThatHasMiniSaysItChangesNothing(t *testing.T) {
+	list := namedAgents("Claude", "Codex")
+	plan := newFakePlan(map[string][]string{"Claude": {"files"}, "Codex": {"gh"}})
+	s, _ := connectScreenFor(t, plan, list, map[string]bool{"Claude": true})
+	adds := "Just connect mini\n    Adds mini next to your existing MCPs"
+	if text := connectText(s); !strings.Contains(text, adds) {
+		t.Fatalf("screen:\n%s\nwant Just connect to add mini while Codex, which lacks it, is ticked", text)
+	}
+	s.cursor = 1
+	s.handle(press("space"))
+	changesNothing := "Just connect mini\n    Changes nothing: Claude already has a mini entry."
+	if text := connectText(s); !strings.Contains(text, changesNothing) {
+		t.Errorf("screen:\n%s\nwant Just connect to say it changes nothing once only Claude is ticked", text)
+	}
+}
+
 func TestConnectScreen_isEmptyWhenEveryAgentHasMiniAndNothingToRemove(t *testing.T) {
 	list := namedAgents("Claude", "Codex")
 	both := map[string]bool{"Claude": true, "Codex": true}

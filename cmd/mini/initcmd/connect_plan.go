@@ -27,7 +27,7 @@ func (s Setup) PlanConnect() (ConnectPlan, error) {
 	for _, agent := range s.AgentsToConnect {
 		entries, err := agent.Read(agent.ConfigPath)
 		if err != nil {
-			continue // an agent with no config yet has nothing to remove
+			continue // nothing to remove from a missing config; apply reports one it can't read or parse
 		}
 		// An entry goes only when the agent ends up with a mini entry serving these servers.
 		served := params.servedAfterEdit(params.miniCheck().existingMini(entries))

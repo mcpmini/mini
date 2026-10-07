@@ -193,13 +193,28 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 	case initcmd.ConnectAndRemove:
 		return s.removeSubtitles()
 	case initcmd.ConnectOnly:
-		return []string{"Adds mini next to your existing MCPs"}
+		return s.connectOnlySubtitles()
 	}
 	var names []string
 	for _, agent := range s.listed {
 		names = append(names, agent.Name)
 	}
 	return []string{"Leaves " + withVerb(names, "as it is", "as they are")}
+}
+
+// An agent listed only for its removable MCPs already has mini, so just connecting it changes nothing.
+func (s *connectScreen) connectOnlySubtitles() []string {
+	var withMini []string
+	for _, agent := range s.picked() {
+		if !s.p.withMini[agent.Name] {
+			return []string{"Adds mini next to your existing MCPs"}
+		}
+		withMini = append(withMini, agent.Name)
+	}
+	if len(withMini) == 0 {
+		return []string{"Adds mini next to your existing MCPs"}
+	}
+	return []string{"Changes nothing: " + alreadyHaveMini(withMini)}
 }
 
 func (s *connectScreen) removeSubtitles() []string {
@@ -215,7 +230,7 @@ func (s *connectScreen) removeSubtitles() []string {
 			disabling = append(disabling, agent.Name)
 		}
 	}
-	if removed == 0 && s.anyRemovable() {
+	if removed == 0 && s.anyListedHasRemovals() {
 		return []string{"Nothing to remove from the ticked agents"}
 	}
 	if removed == 0 {
@@ -229,8 +244,7 @@ func (s *connectScreen) removeSubtitles() []string {
 	return lines
 }
 
-// anyRemovable reports whether an agent the user unticked would have lost an entry.
-func (s *connectScreen) anyRemovable() bool {
+func (s *connectScreen) anyListedHasRemovals() bool {
 	for _, agent := range s.listed {
 		if len(s.checks.removals.ByAgent[agent.Name]) > 0 {
 			return true
