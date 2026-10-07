@@ -265,3 +265,19 @@ func TestSessionClose_cancelsAndWaitsForChecks(t *testing.T) {
 		t.Errorf("after Close: finished = %d, checking = %v; want the check finished", finished, s.Checking("open"))
 	}
 }
+
+func TestSessionUnchecked_namesTheChecksThatNeverFinished(t *testing.T) {
+	probe := newFakeProbe(true)
+	s, _ := newTestSession(t, probe, clock.System())
+	s.Sync([]config.ServerConfig{httpServer("open", "https://open.example/mcp"), {Name: "local", Command: "run"}})
+	waitStarted(t, probe)
+	if running := s.Running(); !running["open"] || len(running) != 1 {
+		t.Errorf("Running = %v, want open only", running)
+	}
+
+	s.Close()
+
+	if got := s.Unchecked(); !reflect.DeepEqual(got, []string{"open"}) {
+		t.Errorf("Unchecked after Close = %v, want open: its check was cancelled", got)
+	}
+}

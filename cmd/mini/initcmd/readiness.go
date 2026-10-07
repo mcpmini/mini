@@ -17,6 +17,8 @@ const (
 	NeedsToken
 	NeedsOwnApp
 	NeedsEnv
+	// MayNeedLogin is a server whose OAuth check was cancelled before it answered.
+	MayNeedLogin
 )
 
 // ServerStatus is one enabled server and what the user still has to do before it works.

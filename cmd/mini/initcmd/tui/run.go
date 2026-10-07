@@ -53,13 +53,12 @@ type run struct {
 	plan    initcmd.Plan
 	session *initcmd.Session
 	ui      screens
-	synced  initcmd.Synced
+	last    initcmd.SyncResult
 }
 
 func (r *run) save() {
 	r.ui.pick(&r.plan)
-	result := r.session.Sync(r.plan.Servers())
-	r.synced = initcmd.Synced{Written: r.session.Written(), Failed: result.Failed}
+	r.last = r.session.Sync(r.plan.Servers())
 }
 
 // outcome reports what the last save wrote. Running checks finish first, or are cancelled when
@@ -71,7 +70,7 @@ func (r *run) outcome(leftEarly bool) Outcome {
 		r.session.WaitChecks()
 	}
 	r.plan.Catalog = r.ui.catalog(r.plan)
-	return Outcome{Quit: leftEarly, Saved: true, Report: r.p.Setup.Report(r.plan, r.synced)}
+	return Outcome{Quit: leftEarly, Saved: true, Report: r.p.Setup.Report(r.plan, r.session, r.last)}
 }
 
 type screens struct {
@@ -94,16 +93,8 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			return initcmd.ServerStatuses(p.Setup.ConfigDir, ui.catalog(*plan))
 		},
-		checking: func() map[string]bool {
-			running := map[string]bool{}
-			for _, name := range session.Written() {
-				if session.Checking(name) {
-					running[name] = true
-				}
-			}
-			return running
-		},
-		changed: session.Changed(),
+		checking: session.Running,
+		changed:  session.Changed(),
 	})
 	return ui
 }

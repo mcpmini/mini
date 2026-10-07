@@ -81,7 +81,7 @@ func (s Setup) Write(p Plan) Report {
 	session := s.NewSession()
 	result := session.Sync(p.Servers())
 	session.WaitChecks()
-	return s.Report(p, Synced{Written: session.Written(), Failed: result.Failed})
+	return s.Report(p, session, result)
 }
 
 func (s Setup) NewSession() *Session {
@@ -93,21 +93,26 @@ func (p Plan) Servers() []config.ServerConfig {
 	return planAdds(p.Import.picked(), p.Add, p.written).write
 }
 
-// Synced is what the last sync left.
-type Synced struct {
-	Written []string
-	Failed  []ServerError
-}
-
-func (s Setup) Report(p Plan, synced Synced) Report {
+// Report says what the run wrote, after the session's last sync. No check may be running: a
+// check that never finished leaves its server marked as maybe needing a login.
+func (s Setup) Report(p Plan, session *Session, last SyncResult) Report {
 	report := s.report()
 	report.Import = p.Import
 	adds := planAdds(p.Import.picked(), p.Add, p.written)
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
-	report.WriteErrors = synced.Failed
-	report.Import.keepOnly(report.Import.importedOf(synced.Written))
+	report.WriteErrors = last.Failed
+	report.Import.keepOnly(report.Import.importedOf(session.Written()))
 	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, p.Catalog)
+	markUnchecked(report.Servers, session.Unchecked())
 	return report
+}
+
+func markUnchecked(statuses []ServerStatus, unchecked []string) {
+	for i, status := range statuses {
+		if status.Readiness == Ready && slices.Contains(unchecked, status.Name) {
+			statuses[i].Readiness = MayNeedLogin
+		}
+	}
 }
 
 func (s Setup) report() Report {

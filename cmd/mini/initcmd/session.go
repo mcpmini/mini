@@ -140,6 +140,22 @@ func (s *Session) Changed() <-chan struct{} {
 	return s.changed
 }
 
+func (s *Session) Running() map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return maps.Clone(s.checking)
+}
+
+// Unchecked names the written servers that may need OAuth and whose check never finished, as when
+// Close cancelled it.
+func (s *Session) Unchecked() []string {
+	var names []string
+	for _, sc := range s.checkTargets() {
+		names = append(names, sc.Name)
+	}
+	return names
+}
+
 func (s *Session) WaitChecks() {
 	s.checks.wg.Wait()
 }

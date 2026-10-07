@@ -217,8 +217,8 @@ func TestRun_aRunThatStartsOnLoginsFinishesWithItsSummary(t *testing.T) {
 	}
 }
 
-// oauthChallenge stands in for a server that answers with a 401: the check records that it needs
-// OAuth once release is closed, or when it is cancelled.
+// oauthChallenge stands in for a server that answers with a 401 once release is closed. Like a
+// real probe, a check cancelled before that records nothing.
 type oauthChallenge struct {
 	release chan struct{}
 }
@@ -226,9 +226,10 @@ type oauthChallenge struct {
 func (c oauthChallenge) probe(ctx context.Context, configDir string, sc config.ServerConfig) error {
 	select {
 	case <-c.release:
+		return config.MarkOAuthDetected(configDir, sc.Name)
 	case <-ctx.Done():
+		return ctx.Err()
 	}
-	return config.MarkOAuthDetected(configDir, sc.Name)
 }
 
 func statusOf(report initcmd.Report, name string) initcmd.Readiness {
@@ -241,7 +242,7 @@ func statusOf(report initcmd.Report, name string) initcmd.Readiness {
 
 func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 	plain := catalog.Catalog{Entries: []catalog.Entry{{Name: "plain", URL: "https://mcp.plain.example/mcp"}}}
-	t.Run("quitting cancels the running check first", func(t *testing.T) {
+	t.Run("quitting cancels the running check, and the summary says it wasn't checked", func(t *testing.T) {
 		configDir := t.TempDir()
 		setup := setupFor(configDir)
 		setup.Probe = oauthChallenge{release: make(chan struct{})}.probe
@@ -256,8 +257,8 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 		if !strings.Contains(view, "plain  checking…") {
 			t.Errorf("Logins while the check ran:\n%s\nwant plain checking", view)
 		}
-		if err != nil || !out.Quit || statusOf(out.Report, "plain") != initcmd.NeedsLogin {
-			t.Errorf("out = %+v, %v; want the quit's summary read after the cancelled check recorded OAuth", out, err)
+		if err != nil || !out.Quit || statusOf(out.Report, "plain") != initcmd.MayNeedLogin {
+			t.Errorf("out = %+v, %v; want plain marked as maybe needing a login, not set up", out, err)
 		}
 	})
 	t.Run("finishing waits for the running check", func(t *testing.T) {
