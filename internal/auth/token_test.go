@@ -60,20 +60,6 @@ func TestTokenStateNeedsLogin(t *testing.T) {
 	}
 }
 
-func TestTokenStateStringsAreDistinct(t *testing.T) {
-	seen := map[string]auth.TokenState{}
-	for _, state := range []auth.TokenState{auth.TokenMissing, auth.TokenUnreadable, auth.TokenExpired, auth.TokenRefreshable, auth.TokenValid} {
-		text := state.String()
-		if text == "unknown token state" {
-			t.Errorf("%d has no description", state)
-		}
-		if prev, dup := seen[text]; dup {
-			t.Errorf("%v and %v share description %q", prev, state, text)
-		}
-		seen[text] = state
-	}
-}
-
 func writeCorruptToken(t *testing.T, dir, serverName string) {
 	t.Helper()
 	path := filepath.Join(dir, "internal", serverName+".token.json")

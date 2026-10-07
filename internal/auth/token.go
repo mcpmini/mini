@@ -67,22 +67,6 @@ const (
 	TokenValid
 )
 
-func (s TokenState) String() string {
-	switch s {
-	case TokenMissing:
-		return "no token"
-	case TokenUnreadable:
-		return "token unreadable"
-	case TokenExpired:
-		return "token expired"
-	case TokenRefreshable:
-		return "token expired, refreshable"
-	case TokenValid:
-		return "token valid"
-	}
-	return "unknown token state"
-}
-
 func (s TokenState) NeedsLogin() bool {
 	return s != TokenValid && s != TokenRefreshable
 }
