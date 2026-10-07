@@ -65,19 +65,10 @@ func httpServer(name, url string) config.ServerConfig {
 	return config.ServerConfig{Name: name, Transport: "http", URL: url}
 }
 
-func blockingUpstream(t *testing.T) *httptest.Server {
-	t.Helper()
-	release := make(chan struct{})
-	ts := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
-	t.Cleanup(ts.Close)
-	t.Cleanup(func() { close(release) })
-	return ts
-}
-
-func alwaysFailingUpstream(t *testing.T) *httptest.Server {
+func alwaysFailingUpstream(t *testing.T) (url string) {
 	t.Helper()
 	ts, _ := upstreamFailingFirst(t, 1<<30, pingMCPHandler)
-	return ts
+	return ts.URL
 }
 
 func TestConfigStatus_aServerFailingThenConnectingInsideItsWindowIsStartingUntilItsToolsAreReady(t *testing.T) {
@@ -103,15 +94,18 @@ func TestConfigStatus_aServerFailingThenConnectingInsideItsWindowIsStartingUntil
 
 func TestConfigStatus_aServerStillUnconnectedWhenItsWindowEndsIsDelayed(t *testing.T) {
 	cases := []struct {
-		name     string
-		upstream func(*testing.T) *httptest.Server
+		name        string
+		upstreamURL func(*testing.T) string
 	}{
-		{name: "first attempt still running", upstream: blockingUpstream},
-		{name: "retrying after failures", upstream: alwaysFailingUpstream},
+		{name: "first attempt still running", upstreamURL: func(t *testing.T) string {
+			url, _ := gatedUpstream(t)
+			return url
+		}},
+		{name: "retrying after failures", upstreamURL: alwaysFailingUpstream},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := connectWithFakeClock(t, httpServer("svc", tc.upstream(t).URL))
+			r := connectWithFakeClock(t, httpServer("svc", tc.upstreamURL(t)))
 			if got := statusOf(t, r.srv).stateOf("svc"); got != "connecting" {
 				t.Fatalf("inside its window svc is %s, want connecting", got)
 			}
@@ -200,7 +194,7 @@ func TestConfigStatus_aFailedServerThatConnectsIsConnectedOnly(t *testing.T) {
 }
 
 func TestConfigStatus_aServerRemovedDuringStartupIsNotListed(t *testing.T) {
-	r := connectWithFakeClock(t, httpServer("svc", alwaysFailingUpstream(t).URL))
+	r := connectWithFakeClock(t, httpServer("svc", alwaysFailingUpstream(t)))
 	r.waitForBackoffTimer(t)
 
 	serve(t, r.srv, callTool("config", map[string]any{"action": "remove_server", "server": "svc"}))

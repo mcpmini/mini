@@ -232,7 +232,7 @@ func (s *Server) dispatch(ctx context.Context, req transport.Request, session *S
 	case "initialize":
 		return s.handleInitialize(req.Params, session)
 	case "tools/list":
-		return s.handleToolsList(session)
+		return s.handleToolsList(ctx, session)
 	case "tools/call":
 		return s.handleToolsCall(ctx, req.Params, session)
 	case "ping":
@@ -301,11 +301,14 @@ func (s *Server) handleInitialize(params json.RawMessage, session *Session) (any
 	}, nil
 }
 
-func (s *Server) handleToolsList(session *Session) (any, error) {
-	if session.toolMode() == transport.ToolModeProxy {
-		return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
+func (s *Server) handleToolsList(ctx context.Context, session *Session) (any, error) {
+	if session.toolMode() != transport.ToolModeProxy {
+		return map[string]any{"tools": s.toolSchemas}, nil
 	}
-	return map[string]any{"tools": s.toolSchemas}, nil
+	if err := s.waitForStartup(ctx); err != nil {
+		return nil, err
+	}
+	return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
 }
 
 func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, session *Session) (any, error) {

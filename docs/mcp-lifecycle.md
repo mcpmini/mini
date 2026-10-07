@@ -156,6 +156,10 @@ it sits in the middle — surface upstream health to the *model*, which the agen
   `initialize` with zero upstreams required, connect Layer 2 in the background (in parallel,
   each time-boxed), and announce tools as they arrive via `notifications/tools/list_changed`
   (capability already advertised).
+- **Hold the first tool list while upstreams are still connecting.** Codex ignores `list_changed`
+  and keeps the first `tools/list` it gets, so mini holds `tools/list` and the compact `list`
+  until no upstream is inside its 10 s startup window (#322). An upstream that is still down after
+  its window reaches clients through `list_changed`.
 - **A per-upstream connect timeout** bounds when a server is marked degraded, so one slow
   upstream never blocks the others.
 - **Surface degraded upstreams to the model** via the Layer-1 handshake `instructions` (the one

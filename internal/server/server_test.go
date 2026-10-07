@@ -126,7 +126,7 @@ func fakeMCPHandle(w http.ResponseWriter, r *http.Request, tools []map[string]an
 	case "tools/list":
 		json.NewEncoder(w).
 			Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{"tools": tools}})
-		//nolint:errcheck
+	//nolint:errcheck
 	default:
 		json.NewEncoder(w).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": nil}) //nolint:errcheck
 	}
@@ -239,24 +239,44 @@ func serveProxy(t *testing.T, srv *server.Server, input []byte) map[string]any {
 
 func serveMode(t *testing.T, srv *server.Server, compact bool, input []byte) map[string]any {
 	t.Helper()
+	session := newTestSession(t, compact, input)
+	return session.response(t, session.run(srv))
+}
+
+type testSession struct {
+	input  []byte
+	wantID string
+}
+
+func newTestSession(t *testing.T, compact bool, input []byte) testSession {
+	t.Helper()
 	var callReq struct {
 		ID json.RawMessage `json:"id"`
 	}
 	if err := json.Unmarshal(bytes.TrimSpace(input), &callReq); err != nil || len(callReq.ID) == 0 {
 		t.Fatalf("serve: could not extract id from input: %s", input)
 	}
-	wantID := string(callReq.ID)
-
 	initRaw, _ := json.Marshal(initParams(compact))
 	initReq, _ := json.Marshal(
 		map[string]any{"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": json.RawMessage(initRaw)},
 	)
-	fullInput := append(append(initReq, '\n'), input...)
+	return testSession{input: append(append(initReq, '\n'), input...), wantID: string(callReq.ID)}
+}
+
+// No *testing.T: inBackground calls run off the test goroutine, where t.Fatal isn't allowed.
+func (ts testSession) run(srv *server.Server) []byte {
 	var out bytes.Buffer
-	done := make(chan error, 1)
-	go func() { done <- srv.Serve(context.Background(), bytes.NewReader(fullInput), &out) }()
-	<-done
-	return findResponseByID(t, out.Bytes(), wantID)
+	srv.Serve(
+		context.Background(),
+		bytes.NewReader(ts.input),
+		&out,
+	) //nolint:errcheck // response reports a session that failed
+	return out.Bytes()
+}
+
+func (ts testSession) response(t *testing.T, output []byte) map[string]any {
+	t.Helper()
+	return findResponseByID(t, output, ts.wantID)
 }
 
 func findResponseByID(t *testing.T, data []byte, wantID string) map[string]any {
