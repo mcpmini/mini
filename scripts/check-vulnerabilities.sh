@@ -2,4 +2,5 @@
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
-exec go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+GOVULNCHECK_VERSION=${GOVULNCHECK_VERSION:-latest}
+exec go run "golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION}" ./...
