@@ -18,10 +18,9 @@ type connectPlan interface {
 }
 
 type connectParams struct {
-	agents   []agents.Agent
-	withMini map[string]bool
-	plan     func() (connectPlan, error)
-	// temporaryMini is the binary agents would run when it looks temporary, else "".
+	agents        []agents.Agent
+	withMini      map[string]bool
+	plan          func() (connectPlan, error)
 	temporaryMini string
 }
 

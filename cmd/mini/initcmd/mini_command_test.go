@@ -91,3 +91,32 @@ func TestTemporaryDirs(t *testing.T) {
 		}
 	}
 }
+
+func TestTemporaryMini(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	permanentEnv := func(t *testing.T) {
+		for _, name := range []string{"TMPDIR", "GOCACHE", "HOME", "XDG_CACHE_HOME"} {
+			t.Setenv(name, t.TempDir())
+		}
+		t.Setenv("GOTMPDIR", "")
+		t.Setenv("PATH", "")
+	}
+
+	t.Run("a binary outside every temporary dir gets no warning", func(t *testing.T) {
+		permanentEnv(t)
+		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMini(); got != "" {
+			t.Errorf("TemporaryMini() = %q, want \"\" for %s", got, self)
+		}
+	})
+
+	t.Run("a binary in the temp dir is named", func(t *testing.T) {
+		permanentEnv(t)
+		t.Setenv("TMPDIR", filepath.Dir(self))
+		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMini(); got != self {
+			t.Errorf("TemporaryMini() = %q, want %s", got, self)
+		}
+	})
+}
