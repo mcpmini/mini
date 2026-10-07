@@ -5,7 +5,6 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/server"
 )
@@ -65,12 +64,6 @@ func (p ConnectPlan) Check(ctx context.Context) Removals {
 		r.ByAgent[agent], _ = params.replaceable(duplicates, true)
 	}
 	return r
-}
-
-// RemovalDisables reports whether removing an entry from the agent switches it off instead: Codex
-// keeps it in its config, disabled.
-func RemovalDisables(agent agents.Agent) bool {
-	return agent.Name == "Codex"
 }
 
 func (s Setup) probe() probeFunc {

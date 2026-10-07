@@ -84,6 +84,8 @@ func writeAgentResult(b *strings.Builder, mini agents.MiniEntry, result AgentRes
 		fmt.Fprintf(b, "\n%s: created %s\n", name, file)
 	case result.Backup != "":
 		fmt.Fprintf(b, "\n%s: %s backed up to %s\n", name, file, result.Backup)
+	case len(result.Kept) > 0 || len(result.Changed) > 0:
+		fmt.Fprintf(b, "\n%s: %s is unchanged\n", name, file)
 	}
 	for _, kept := range result.Kept {
 		fmt.Fprintf(b, "  %s stays in %s: %s\n", kept.Entry, name, keptReason(kept))

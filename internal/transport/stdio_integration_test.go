@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"os/exec"
 	"slices"
 	"testing"
 	"time"
@@ -95,4 +96,31 @@ func TestIntegrationStdioEnvironment_helper(t *testing.T) {
 		})
 	}
 	os.Exit(0)
+}
+
+func TestIntegrationStdioConnection_aFailedHandshakeReturnsWhenAChildOfTheServerHoldsStderr(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("needs sh")
+	}
+	// The server never answers, so the handshake times out and the connection is closed. Its
+	// background sleep keeps stderr open after the server itself is killed.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	returned := make(chan error, 1)
+	go func() {
+		_, err := NewStdioConnection(ctx, StdioCommand{
+			Command: "sh",
+			Args:    []string{"-c", "sleep 60 & sleep 60"},
+			Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+		returned <- err
+	}()
+	select {
+	case err := <-returned:
+		if err == nil {
+			t.Error("a server that never answers completed the handshake")
+		}
+	case <-time.After(time.Second + stdioWaitDelay + 5*time.Second):
+		t.Fatal("still waiting for the server's child, which holds its stderr")
+	}
 }

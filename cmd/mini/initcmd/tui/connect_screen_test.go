@@ -15,7 +15,9 @@ import (
 func namedAgents(names ...string) []agents.Agent {
 	var list []agents.Agent
 	for _, name := range names {
-		list = append(list, agents.Agent{Name: name, ConfigPath: "/home/u/" + name + ".json"})
+		list = append(list, agents.Agent{
+			Name: name, ConfigPath: "/home/u/" + name + ".json", RemoveDisables: name == "Codex",
+		})
 	}
 	return list
 }
@@ -55,6 +57,7 @@ func connectScreenFor(plan *fakePlan, list []agents.Agent, withMini map[string]b
 		withMini: withMini,
 		plan:     func() (connectPlan, error) { return plan, nil },
 	})
+	s.resize(200)
 	return s, s.enter()
 }
 
@@ -188,4 +191,36 @@ func TestConnectScreen_aCheckRunFromAnEarlierVisitIsIgnored(t *testing.T) {
 	if text := connectText(s); !strings.Contains(text, "Will remove 1 MCP from") {
 		t.Errorf("screen:\n%s\nwant this visit's result counted", text)
 	}
+}
+
+func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
+	t.Run("the Codex note shows only when Codex loses an entry", func(t *testing.T) {
+		plan := newFakePlan(map[string][]string{"Claude": {"files"}})
+		s, check := connectScreenFor(plan, namedAgents("Claude", "Codex"), nil)
+		plan.checksPass(s, check)
+		if text := connectText(s); strings.Contains(text, "Codex: existing") {
+			t.Errorf("screen:\n%s\nwant no Codex note: nothing in Codex is removed", text)
+		}
+	})
+	t.Run("nothing passed", func(t *testing.T) {
+		plan := newFakePlan(map[string][]string{"Claude": {"files"}})
+		s, check := connectScreenFor(plan, namedAgents("Claude"), nil)
+		plan.release <- initcmd.Removals{}
+		s.update(check())
+		want := "Nothing to remove yet: no existing MCP's mini copy passed its connection check"
+		if text := connectText(s); !strings.Contains(text, want) {
+			t.Errorf("screen:\n%s\nwant it to say nothing can be removed yet", text)
+		}
+	})
+	t.Run("a narrow window wraps the subtitle", func(t *testing.T) {
+		plan := newFakePlan(map[string][]string{"Claude": {"files"}})
+		s, check := connectScreenFor(plan, namedAgents("Claude"), nil)
+		s.resize(44)
+		plan.checksPass(s, check)
+		for _, line := range strings.Split(connectText(s), "\n") {
+			if ansi.StringWidth(line) > 44 {
+				t.Errorf("line %q is wider than the 44-column window", line)
+			}
+		}
+	})
 }

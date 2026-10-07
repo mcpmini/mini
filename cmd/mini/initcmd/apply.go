@@ -164,7 +164,7 @@ func (p ApplyParams) editedConfig(
 	result.MiniServes = p.servedAfterEdit(result.ExistingMini)
 	if p.Choice == ConnectAndRemove {
 		duplicates := mini.Duplicates(entries, p.SelfPath)
-		result.Changed = changedSince(p.Counted[agent.Name], duplicates)
+		result.Changed = changedSince(p.Counted[agent.Name], entries, duplicates)
 		result.Removed, result.Kept = p.replaceable(duplicates, result.MiniServes)
 	}
 	switch {
@@ -177,10 +177,12 @@ func (p ApplyParams) editedConfig(
 	}
 }
 
-func changedSince(counted []string, duplicates map[string]string) []string {
+// An entry the user deleted since the check is gone either way, so only one still there counts.
+func changedSince(counted []string, entries map[string]agents.Server, duplicates map[string]string) []string {
 	var changed []string
 	for _, entry := range counted {
-		if _, still := duplicates[entry]; !still {
+		_, exists := entries[entry]
+		if _, still := duplicates[entry]; exists && !still {
 			changed = append(changed, entry)
 		}
 	}

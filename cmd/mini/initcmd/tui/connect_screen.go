@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/agents"
@@ -34,6 +35,7 @@ type connectScreen struct {
 	cursor int
 	chosen initcmd.ConnectChoice
 	checks connectChecks
+	width  int
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
@@ -157,10 +159,23 @@ func (s *connectScreen) body(int) string {
 	for i, choice := range s.options() {
 		lines = append(lines, cursorMark(s.cursor == s.agentRows()+i)+optionLabel(choice))
 		for _, subtitle := range s.subtitles(choice) {
-			lines = append(lines, "    "+dim.Render(subtitle))
+			lines = append(lines, s.subtitleLines(subtitle)...)
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
+func (s *connectScreen) subtitleLines(subtitle string) []string {
+	var lines []string
+	for _, line := range strings.Split(ansi.Wrap(subtitle, max(s.width-4, 20), ""), "\n") {
+		lines = append(lines, "    "+dim.Render(line))
+	}
+	return lines
+}
+
+func (s *connectScreen) resize(width int) {
+	s.width = width
 }
 
 func optionLabel(choice initcmd.ConnectChoice) string {
@@ -191,15 +206,22 @@ func (s *connectScreen) removeSubtitles() []string {
 	if !s.checks.done {
 		return []string{"checking servers…"}
 	}
-	removed, disables := 0, false
+	removed := 0
+	var disabling []string
 	for _, agent := range s.picked() {
-		removed += len(s.checks.removals.ByAgent[agent.Name])
-		disables = disables || initcmd.RemovalDisables(agent)
+		entries := len(s.checks.removals.ByAgent[agent.Name])
+		removed += entries
+		if entries > 0 && agent.RemoveDisables {
+			disabling = append(disabling, agent.Name)
+		}
+	}
+	if removed == 0 {
+		return []string{"Nothing to remove yet: no existing MCP's mini copy passed its connection check"}
 	}
 	lines := []string{fmt.Sprintf("Will remove %d %s from existing agent configs. "+
 		"They will be backed up alongside the existing files with minibackup.<ext>", removed, mcps(removed))}
-	if disables {
-		lines = append(lines, "Codex: existing MCPs will be disabled, not removed")
+	for _, name := range disabling {
+		lines = append(lines, name+": existing MCPs will be disabled, not removed")
 	}
 	return lines
 }

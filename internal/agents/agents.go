@@ -17,6 +17,8 @@ type Agent struct {
 	Parse func(data []byte) (map[string]Server, error)
 	// A nil mini adds no entry, for an agent that already runs mini under another key.
 	Connect func(config []byte, remove []string, mini *MiniEntry) ([]byte, error)
+	// RemoveDisables: Connect switches a removed entry off instead of deleting it.
+	RemoveDisables bool
 }
 
 func Detect() []Agent {
@@ -50,7 +52,7 @@ func codex(home string) Agent {
 	}
 	return Agent{
 		Name: "Codex", ConfigPath: filepath.Join(dir, "config.toml"), Dir: dir,
-		Read: ReadCodex, Parse: ParseCodex, Connect: connectCodex,
+		Read: ReadCodex, Parse: ParseCodex, Connect: connectCodex, RemoveDisables: true,
 	}
 }
 

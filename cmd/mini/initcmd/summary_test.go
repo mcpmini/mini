@@ -263,3 +263,14 @@ func TestSummary_entriesRemovingLeftInPlace(t *testing.T) {
 		"  notes stays in Claude Code: it changed after it was checked\n",
 	)
 }
+
+func TestSummary_anAgentWhoseEntriesAllStayedStillGetsAHeading(t *testing.T) {
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	got := Summary(
+		Report{Agents: AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini"}}, Connected: []AgentResult{{
+			Agent: claude,
+			Kept:  []KeptEntry{{Entry: "gh", Server: "github", Err: errors.New("connection refused")}},
+		}}},
+	)
+	requireLines(t, got, "\nClaude Code: /home/u/.claude.json is unchanged\n  gh stays in Claude Code")
+}
