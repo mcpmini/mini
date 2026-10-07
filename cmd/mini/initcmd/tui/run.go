@@ -100,7 +100,7 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 	ui := screens{
 		imports:  imports,
 		catalogs: catalogs,
-		connects: newConnectScreen(p.Setup.AgentsToConnect, p.Setup.RunningMini()),
+		connects: newConnectScreen(p.Setup.AgentsToConnect, p.Setup.AgentsWithMini()),
 	}
 	ui.logins = newLoginsScreen(loginsParams{
 		statuses: func() ([]initcmd.ServerStatus, error) {

@@ -28,13 +28,15 @@ func ClassifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnec
 	return c
 }
 
-// RunningMini names the agents to connect whose mini entry already serves this config directory.
-func (s Setup) RunningMini() map[string]bool {
-	running := map[string]bool{}
-	for _, agent := range ClassifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect).MiniServes {
-		running[agent.Name] = true
+// AgentsWithMini names the agents to connect that already have a mini entry. That entry is the
+// user's, so connecting leaves it as it is, whether or not it serves this config directory.
+func (s Setup) AgentsWithMini() map[string]bool {
+	c := ClassifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect)
+	withMini := map[string]bool{}
+	for _, agent := range append(c.MiniServes, c.MiniInactive...) {
+		withMini[agent.Name] = true
 	}
-	return running
+	return withMini
 }
 
 func (c miniEntryCheck) existingMiniIn(agent agents.Agent) ExistingMini {

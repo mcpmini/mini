@@ -24,19 +24,18 @@ var connectOptions = []connectOption{
 // rows, shown only when there is more than one agent, then the options.
 type connectScreen struct {
 	agents []agents.Agent
-	// running are the agents whose mini entry already serves this config directory; there is
-	// nothing to connect in them.
-	running []string
-	ticked  map[string]bool
-	cursor  int
-	chosen  initcmd.ConnectChoice
+	// withMini already have a mini entry, which connecting leaves as it is.
+	withMini []string
+	ticked   map[string]bool
+	cursor   int
+	chosen   initcmd.ConnectChoice
 }
 
-func newConnectScreen(list []agents.Agent, running map[string]bool) *connectScreen {
+func newConnectScreen(list []agents.Agent, withMini map[string]bool) *connectScreen {
 	s := &connectScreen{ticked: map[string]bool{}}
 	for _, agent := range list {
-		if running[agent.Name] {
-			s.running = append(s.running, agent.Name)
+		if withMini[agent.Name] {
+			s.withMini = append(s.withMini, agent.Name)
 			continue
 		}
 		s.agents = append(s.agents, agent)
@@ -86,8 +85,8 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 
 func (s *connectScreen) body(int) string {
 	var lines []string
-	if len(s.running) > 0 {
-		lines = append(lines, dim.Render(initcmd.JoinAnd(s.running)+" already running mini."), "")
+	if len(s.withMini) > 0 {
+		lines = append(lines, dim.Render(alreadyHaveMini(s.withMini)), "")
 	}
 	width := 0
 	for _, agent := range s.agents {
@@ -128,11 +127,17 @@ func (s *connectScreen) subtitle(choice initcmd.ConnectChoice) string {
 	for _, agent := range s.agents {
 		names = append(names, agent.Name)
 	}
-	switch len(names) {
-	case 1:
+	if len(names) == 1 {
 		return "Leaves " + names[0] + " as it is"
 	}
 	return "Leaves " + initcmd.JoinAnd(names) + " as they are"
+}
+
+func alreadyHaveMini(names []string) string {
+	if len(names) == 1 {
+		return names[0] + " already has a mini entry."
+	}
+	return initcmd.JoinAnd(names) + " already have a mini entry."
 }
 
 func (s *connectScreen) keys() string {

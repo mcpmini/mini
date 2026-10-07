@@ -322,6 +322,25 @@ func TestRun_connect(t *testing.T) {
 			t.Errorf("connected = %+v, want Claude Code connected with a backup", out.Report.Connected)
 		}
 	})
+	t.Run("an agent with a mini entry already isn't offered", func(t *testing.T) {
+		claude := claudeWithServers(t)
+		testutil.WriteFile(t, claude.ConfigPath, `{"mcpServers":{"mini":{"command":"mini","args":["connect"]}}}`)
+		setup := setupFor(t.TempDir())
+		setup.AgentsToConnect = []agents.Agent{claude}
+		var view string
+		program := func(m tea.Model) error {
+			pressing("enter")(m)
+			view = ansi.Strip(m.(*app).render())
+			return nil
+		}
+		c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
+		if _, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(c), Program: program}); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(view, "Connect mini") {
+			t.Errorf("screen after Catalog:\n%s\nwant Connect skipped: Claude Code has a mini entry", view)
+		}
+	})
 	for name, keys := range map[string][]string{
 		"don't connect leaves the agent as it was":            {"enter", "down", "enter"},
 		"quitting on Connect after the save leaves the agent": {"enter", "ctrl+c"},

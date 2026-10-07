@@ -187,13 +187,11 @@ func TestSummary_connectedAgents(t *testing.T) {
 	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}
 	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
 	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
-	windsurf := agents.Agent{Name: "Windsurf", ConfigPath: "/home/u/.codeium/windsurf/mcp_config.json"}
 	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"}
 	got := Summary(Report{Agents: AgentConnections{Mini: mini}, Connected: []AgentResult{
 		{Agent: claude, Backup: "/home/u/.claude.minibackup.json"},
 		{Agent: cursor, Created: true},
 		{Agent: codex, Err: errors.New("parse config.toml: bad table")},
-		{Agent: windsurf},
 	}})
 	requireLines(t, got,
 		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json; "+
@@ -203,8 +201,8 @@ func TestSummary_connectedAgents(t *testing.T) {
 			"  [mcp_servers.mini]\n",
 		"Restart Claude Code and Cursor to start using mini.\n",
 	)
-	if strings.Contains(got, "Windsurf") || strings.Contains(got, "To connect mini to your agents") {
-		t.Errorf("summary:\n%s\nwant nothing for Windsurf, which already ran mini, and no hand steps", got)
+	if strings.Contains(got, "To connect mini to your agents") {
+		t.Errorf("summary:\n%s\nwant no hand steps: every agent was tried", got)
 	}
 }
 
