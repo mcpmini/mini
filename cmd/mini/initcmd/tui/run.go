@@ -39,6 +39,9 @@ func Run(p Params) (plan initcmd.Plan, quit bool, err error) {
 	}
 	imports.pick(plan.Import.Candidates)
 	plan.Add = catalogs.picks()
+	if entries, ok := catalogs.entries(); ok {
+		plan.Catalog = entries
+	}
 	return plan, false, nil
 }
 

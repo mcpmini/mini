@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
@@ -133,8 +132,6 @@ func runFullScreenInit(configDir string) error {
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	// The picks may come from the published catalog, which can list servers the built-in one lacks.
-	setup.Catalog = append(slices.Clone(plan.Add), setup.Catalog...)
 	return printReport(setup.Write(plan))
 }
 

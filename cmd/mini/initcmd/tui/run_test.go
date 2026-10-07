@@ -129,6 +129,9 @@ func TestRun_theCatalogOffersOnlyServersMiniHasNot(t *testing.T) {
 	plan, _, err := Run(
 		Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "enter")},
 	)
+	if !slices.Equal(plan.Catalog, c.Entries) {
+		t.Errorf("plan catalog = %v; want the loaded one, which the summary reads", plan.Catalog)
+	}
 	if err != nil || len(plan.Add) != 1 || plan.Add[0].Name != "sentry" {
 		t.Errorf("adds = %v, err = %v; want sentry: linear is configured, so the first row is sentry", plan.Add, err)
 	}

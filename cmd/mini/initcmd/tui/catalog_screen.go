@@ -31,11 +31,12 @@ type catalogScreen struct {
 	loaded  bool
 	loadErr error
 	// unavailable says why the published catalog wasn't used.
-	unavailable error
-	popular     []string
-	available   []catalog.Entry
-	checked     map[string]bool
-	list        *list
+	unavailable   error
+	popular       []string
+	loadedEntries []catalog.Entry
+	available     []catalog.Entry
+	checked       map[string]bool
+	list          *list
 }
 
 type catalogParams struct {
@@ -67,7 +68,7 @@ func (s *catalogScreen) update(msg tea.Msg) {
 	}
 	s.loaded, s.loadErr = true, loaded.err
 	c := loaded.result.Catalog
-	s.unavailable, s.popular = loaded.result.Unavailable, c.Popular
+	s.unavailable, s.popular, s.loadedEntries = loaded.result.Unavailable, c.Popular, c.Entries
 	if loaded.err == nil {
 		s.available = initcmd.GroupByCategory(s.offered(c.Entries))
 	}
@@ -124,12 +125,15 @@ func (s *catalogScreen) heading() string {
 }
 
 func (s *catalogScreen) handle(key tea.KeyPressMsg) step {
-	if s.list.handle(key) {
+	// Until the catalog arrives there is nothing to pick, and enter would skip it unseen.
+	if s.loaded && s.list.handle(key) {
 		return stay
 	}
 	switch key.String() {
 	case "enter":
-		return forward
+		if s.loaded {
+			return forward
+		}
 	case "esc", "left", "shift+tab":
 		return back
 	}
@@ -152,11 +156,19 @@ func (s *catalogScreen) body(height int) string {
 }
 
 func (s *catalogScreen) keys() string {
+	if !s.loaded {
+		return "loading the catalog"
+	}
 	return s.list.keys("space tick · / filter · enter continue")
 }
 
 func (s *catalogScreen) filterLine() string {
 	return s.list.filterLine()
+}
+
+// entries is the catalog the screen offered from, once it has loaded.
+func (s *catalogScreen) entries() ([]catalog.Entry, bool) {
+	return s.loadedEntries, s.loaded && s.loadErr == nil
 }
 
 // Until it loads the screen isn't empty: the user waits on it rather than skipping it.

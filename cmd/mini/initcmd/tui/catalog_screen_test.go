@@ -157,6 +157,17 @@ func TestCatalogScreen_loading(t *testing.T) {
 			t.Error("start after loading returned a command; want no second fetch")
 		}
 	})
+	t.Run("keys wait for the catalog, except going back", func(t *testing.T) {
+		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: noImports})
+		for key, want := range map[string]step{"enter": stay, "/": stay, "space": stay, "esc": back} {
+			if got := s.handle(press(key)); got != want {
+				t.Errorf("%s while loading = %v, want %v", key, got, want)
+			}
+		}
+		if s.list.filtering {
+			t.Error("/ while loading started a filter the arriving catalog would discard")
+		}
+	})
 	t.Run("the built-in catalog comes with a note saying why", func(t *testing.T) {
 		load := func() (LoadedCatalog, error) {
 			return LoadedCatalog{Catalog: c, Unavailable: errors.New("status 503")}, nil

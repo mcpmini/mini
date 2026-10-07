@@ -57,8 +57,10 @@ func RunUnattended(s Setup) Report {
 // Plan is an import plan, the catalog servers to add, and the servers mini had when it was made.
 // The UI changes which candidates are picked and what is added before the plan is written.
 type Plan struct {
-	Import  ImportPlan
-	Add     []catalog.Entry
+	Import ImportPlan
+	Add    []catalog.Entry
+	// Catalog says which servers need a token or the user's own app.
+	Catalog []catalog.Entry
 	written WrittenServers
 }
 
@@ -70,6 +72,7 @@ func (s Setup) Plan() (Plan, error) {
 	return Plan{
 		Import:  PlanImport(ImportParams{Agents: s.Import, Written: written, SelfPath: s.SelfPath}),
 		Add:     s.Add,
+		Catalog: s.Catalog,
 		written: written,
 	}, nil
 }
@@ -83,7 +86,7 @@ func (s Setup) Write(p Plan) Report {
 	report.WriteErrors = writeErrors
 	CheckOAuth(s.ConfigDir, OAuthTargets(s.ConfigDir, added), clock.System())
 	report.Import.keepOnly(report.Import.importedOf(added))
-	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, s.Catalog)
+	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, p.Catalog)
 	return report
 }
 
