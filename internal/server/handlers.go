@@ -85,9 +85,10 @@ func (s *Server) listHidden() (any, error) {
 }
 
 func (s *Server) listDetail(fullName string) (any, error) {
-	e, err := s.reg.Lookup(fullName)
+	server, tool, _ := strings.Cut(fullName, ".")
+	e, err := s.lookupTool(server, tool)
 	if err != nil {
-		return nil, err
+		return s.toolNotFoundError(err, server, tool)
 	}
 	m := e.Def.ToMap()
 	m["name"] = e.FullName
@@ -121,10 +122,10 @@ func (s *Server) resolveExecute(raw json.RawMessage) (executeParams, *registry.T
 	if err := validateExecuteParams(p); err != nil {
 		return executeParams{}, nil, err
 	}
-	entry, err := s.reg.Lookup(toolFullName(p.Server, p.Tool))
+	entry, err := s.lookupTool(p.Server, p.Tool)
 	if err != nil {
 		// Return p so callers can use server/tool for error formatting.
-		return p, nil, errLookup{err}
+		return p, nil, err
 	}
 	p.Tool = entry.ToolName.UpstreamName
 	return p, entry, nil
@@ -140,12 +141,18 @@ func (e errLookup) Error() string { return e.cause.Error() }
 func (e errLookup) Unwrap() error { return e.cause }
 
 func (s *Server) toolNotFoundError(err error, server, tool string) (any, error) {
+	var notReady errServerNotReady
 	var le errLookup
-	if errors.As(err, &le) {
-		env := response.BuildError("not_found", err.Error(), false, "")
-		return s.formatEnvelope(server, tool, env, nil)
+	var env *response.Envelope
+	switch {
+	case errors.As(err, &notReady):
+		env = notReady.env
+	case errors.As(err, &le):
+		env = response.BuildError("not_found", err.Error(), false, "")
+	default:
+		return nil, err
 	}
-	return nil, err
+	return s.formatEnvelope(server, tool, env, nil)
 }
 
 func (s *Server) handleExecuteProtected(ctx context.Context, raw json.RawMessage, session *Session) (any, error) {

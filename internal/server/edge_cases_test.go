@@ -181,7 +181,6 @@ func TestDiscoverDetailNotFound(t *testing.T) {
 		"tool":   "nonexistent.tool",
 		"detail": true,
 	}))
-	// Lookup failure → isError=true content with plain error text
 	assertIsErrorResult(t, resp)
 	text := toolResultText(t, resp)
 	if !strings.Contains(text, "not found") {
