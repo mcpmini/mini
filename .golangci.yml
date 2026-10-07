@@ -23,8 +23,16 @@ linters:
     - misspell       # common English misspellings in identifiers and comments
     - gosec
     - contextcheck
+    - errcheck
+    - nolintlint
 
   settings:
+    errcheck:
+      check-blank: true
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
     gosec:
       # Rule descriptions: https://github.com/securego/gosec/blob/v2.29.0/RULES.md#rules-list
       includes:
@@ -55,11 +63,11 @@ linters:
       - path: ^internal/(daemon|auth)/
         linters: [noctx]
       - path: _test\.go$
-        linters: [gosec]
+        linters: [gosec, errcheck, nolintlint]
       - path: ^(internal/testutil|internal/auth/authtest|internal/config/configtest|test/fakemcp|cmd/echomcp|tools)/
-        linters: [gosec]
+        linters: [gosec, errcheck, nolintlint]
       - path: ^internal/(clock|transport)/fake\.go$
-        linters: [gosec]
+        linters: [gosec, errcheck, nolintlint]
 
 formatters:
   enable:
