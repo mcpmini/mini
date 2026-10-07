@@ -31,32 +31,27 @@ func runUnattendedInit(configDir string, f initFlags) error {
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	report := initcmd.RunUnattended(run)
-	fmt.Print(initcmd.Summary(report))
-	if report.Failed() {
-		return &exitError{code: 1, err: errInitIncomplete}
-	}
-	return nil
+	return printReport(initcmd.RunUnattended(run))
 }
 
 // Every flag is checked before anything is written.
-func unattendedRun(configDir string, f initFlags) (initcmd.Unattended, error) {
+func unattendedRun(configDir string, f initFlags) (initcmd.Setup, error) {
 	if f.addGiven && len(nonBlankNames(f.add)) == 0 {
-		return initcmd.Unattended{}, errEmptyAdd
+		return initcmd.Setup{}, errEmptyAdd
 	}
 	entries, err := flagCatalog(f)
 	if err != nil {
-		return initcmd.Unattended{}, err
+		return initcmd.Setup{}, err
 	}
 	requested, err := requestedCatalogEntries(f, entries)
 	if err != nil {
-		return initcmd.Unattended{}, err
+		return initcmd.Setup{}, err
 	}
 	sources, err := importSources(f)
 	if err != nil {
-		return initcmd.Unattended{}, err
+		return initcmd.Setup{}, err
 	}
-	return initcmd.Unattended{
+	return initcmd.Setup{
 		ConfigDir:       configDir,
 		Import:          sources,
 		Add:             requested,
@@ -117,4 +112,12 @@ func isTerminal(f *os.File) bool {
 
 func printNoTerminalHelp(w io.Writer) {
 	fmt.Fprint(w, noTerminalHelp)
+}
+
+func printReport(report initcmd.Report) error {
+	fmt.Print(initcmd.Summary(report))
+	if report.Failed() {
+		return &exitError{code: 1, err: errInitIncomplete}
+	}
+	return nil
 }

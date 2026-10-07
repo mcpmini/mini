@@ -1,6 +1,7 @@
 package initcmd
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/mcpmini/mini/internal/agents"
@@ -10,8 +11,8 @@ import (
 	"github.com/mcpmini/mini/internal/ops"
 )
 
-// Unattended is init without the UI: it writes servers and never edits an agent or opens a browser.
-type Unattended struct {
+// Setup is what one init run imports and adds. Writing it never edits an agent or opens a browser.
+type Setup struct {
 	ConfigDir string
 	Import    []agents.Agent
 	Add       []catalog.Entry
@@ -24,7 +25,7 @@ type Unattended struct {
 // Report is what a run did, for the summary.
 type Report struct {
 	ConfigDir string
-	// Import is the plan, less the notes of servers that failed to write.
+	// Import is the plan, with notes only for the imports written and skip lines only for entries left behind.
 	Import             ImportPlan
 	AlreadyConfigured  []string
 	AddCoveredByImport []string
@@ -38,22 +39,49 @@ func (r Report) Failed() bool {
 	return len(r.WriteErrors) > 0 || len(r.Import.Unreadable) > 0 || r.ReadServersErr != nil
 }
 
-func RunUnattended(p Unattended) Report {
-	report := Report{ConfigDir: p.ConfigDir, Agents: ClassifyAgents(p.ConfigDir, p.SelfPath, p.AgentsToConnect)}
-	written, err := readWrittenServers(p.ConfigDir)
+func RunUnattended(s Setup) Report {
+	plan, err := s.Plan()
 	if err != nil {
+		report := s.report()
 		report.ReadServersErr = err
 		return report
 	}
-	report.Import = PlanImport(ImportParams{Agents: p.Import, Written: written, SelfPath: p.SelfPath})
-	adds := planAdds(report.Import.Servers, p.Add, written)
+	return s.Write(plan)
+}
+
+// Plan is an import plan and the servers mini had when it was made. The Import screen changes
+// which candidates are picked before the plan is written.
+type Plan struct {
+	Import  ImportPlan
+	written WrittenServers
+}
+
+func (s Setup) Plan() (Plan, error) {
+	written, err := readWrittenServers(s.ConfigDir)
+	if err != nil {
+		return Plan{}, err
+	}
+	return Plan{
+		Import:  PlanImport(ImportParams{Agents: s.Import, Written: written, SelfPath: s.SelfPath}),
+		written: written,
+	}, nil
+}
+
+func (s Setup) Write(p Plan) Report {
+	report := s.report()
+	report.Import = p.Import
+	adds := planAdds(p.Import.picked(), s.Add, p.written)
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
-	added, writeErrors := addServers(p.ConfigDir, adds.write)
+	added, writeErrors := addServers(s.ConfigDir, adds.write)
 	report.WriteErrors = writeErrors
-	CheckOAuth(p.ConfigDir, OAuthTargets(p.ConfigDir, added), clock.System())
-	report.Import.dropNotesOf(writeErrors)
-	report.Servers, report.ReadServersErr = ServerStatuses(p.ConfigDir, p.Catalog)
+	CheckOAuth(s.ConfigDir, OAuthTargets(s.ConfigDir, added), clock.System())
+	report.Import.keepOnly(report.Import.importedOf(added))
+	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, s.Catalog)
 	return report
+}
+
+func (s Setup) report() Report {
+	return Report{ConfigDir: s.ConfigDir, Agents: ClassifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect)}
 }
 
 type ServerError struct {
@@ -74,11 +102,50 @@ func addServers(configDir string, servers []config.ServerConfig) ([]string, []Se
 	return written, failed
 }
 
-func (plan *ImportPlan) dropNotesOf(failures []ServerError) {
-	for _, failure := range failures {
-		delete(plan.DroppedSettings, failure.Name)
-		delete(plan.StaticHeaders, failure.Name)
+func (plan ImportPlan) picked() []config.ServerConfig {
+	var servers []config.ServerConfig
+	for _, c := range plan.Candidates {
+		if c.Picked {
+			servers = append(servers, c.Server)
+		}
 	}
+	return servers
+}
+
+// A catalog add can share an unpicked candidate's name, so a written name alone doesn't mean an import.
+func (plan ImportPlan) importedOf(added []string) []Candidate {
+	var imported []Candidate
+	for _, c := range plan.Candidates {
+		if c.Picked && slices.Contains(added, c.Server.Name) {
+			imported = append(imported, c)
+		}
+	}
+	return imported
+}
+
+// The plan's notes and skips then say what this run did: a picked candidate that failed to write
+// has no notes, and the entries of a candidate the user picked aren't listed as left behind.
+func (plan *ImportPlan) keepOnly(imported []Candidate) {
+	notImported := func(name string) bool {
+		return !slices.ContainsFunc(imported, func(c Candidate) bool { return c.Server.Name == name })
+	}
+	maps.DeleteFunc(plan.DroppedSettings, func(name string, _ []string) bool { return notImported(name) })
+	maps.DeleteFunc(plan.StaticHeaders, func(name string, _ map[string]string) bool { return notImported(name) })
+	plan.Skipped = slices.DeleteFunc(plan.Skipped, func(s SkippedServer) bool {
+		entry := AgentEntry{Agent: s.Agent, Name: s.Name}
+		imports := slices.ContainsFunc(imported, func(c Candidate) bool { return slices.Contains(c.From, entry) })
+		// A second config's line says the first is imported instead; untrue once the user unticked it.
+		return imports || (s.Reason == SkipSecondConfig && !importsTheName(imported, s.Name))
+	})
+}
+
+func importsTheName(imported []Candidate, name string) bool {
+	return slices.ContainsFunc(imported, func(c Candidate) bool {
+		return slices.ContainsFunc(
+			c.From,
+			func(e AgentEntry) bool { return NormalizeName(e.Name) == NormalizeName(name) },
+		)
+	})
 }
 
 type addPlan struct {
