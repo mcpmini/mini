@@ -94,21 +94,35 @@ func TestMissingTool_aConfiguredServerThatIsNotConnectedSaysWhy(t *testing.T) {
 		}},
 	}
 	for _, tc := range cases {
-		for _, surface := range missingToolSurfaces {
-			t.Run(tc.name+"/"+surface.name, func(t *testing.T) {
-				r := tc.start(t)
+		t.Run(tc.name, func(t *testing.T) {
+			r := tc.start(t)
 
-				got := missingToolErrorOf(t, surface.call(t, r.srv))
+			got := missingToolErrorOf(
+				t,
+				serve(t, r.srv, callTool("call", map[string]any{"server": "svc", "tool": "ping"})),
+			)
 
-				if got.Error != tc.want || got.Retryable != tc.wantRetryable || got.Action != tc.wantAction {
-					t.Errorf("error = %+v, want error %q, retryable %v, action %q",
-						got, tc.want, tc.wantRetryable, tc.wantAction)
-				}
-				if !strings.Contains(got.Message, `"svc"`) {
-					t.Errorf("message %q doesn't name the server", got.Message)
-				}
-			})
-		}
+			if got.Error != tc.want || got.Retryable != tc.wantRetryable || got.Action != tc.wantAction {
+				t.Errorf("error = %+v, want error %q, retryable %v, action %q",
+					got, tc.want, tc.wantRetryable, tc.wantAction)
+			}
+			if !strings.Contains(got.Message, `"svc"`) {
+				t.Errorf("message %q doesn't name the server", got.Message)
+			}
+		})
+	}
+}
+
+func TestMissingTool_everyToolLookupReportsTheServerState(t *testing.T) {
+	for _, surface := range missingToolSurfaces {
+		t.Run(surface.name, func(t *testing.T) {
+			url, _ := gatedUpstream(t)
+			r := connectWithFakeClock(t, httpServer("svc", url))
+
+			if got := missingToolErrorOf(t, surface.call(t, r.srv)); got.Error != "server_starting" {
+				t.Errorf("error = %+v, want server_starting", got)
+			}
+		})
 	}
 }
 
