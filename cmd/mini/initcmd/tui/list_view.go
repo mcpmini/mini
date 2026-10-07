@@ -94,7 +94,6 @@ func checkbox(checked bool) string {
 	return "[ ] "
 }
 
-// widest is the width of the longest text, for lining up a column after it.
 func widest[T any](items []T, text func(T) string) int {
 	width := 0
 	for _, item := range items {
