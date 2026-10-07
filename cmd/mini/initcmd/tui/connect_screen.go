@@ -23,8 +23,7 @@ var connectOptions = []connectOption{
 // connectScreen asks which agents to connect mini to, and how. The cursor moves over the agent
 // rows, shown only when there is more than one agent, then the options.
 type connectScreen struct {
-	agents []agents.Agent
-	// withMini already have a mini entry, which connecting leaves as it is.
+	agents   []agents.Agent
 	withMini []string
 	ticked   map[string]bool
 	cursor   int
@@ -88,35 +87,25 @@ func (s *connectScreen) body(int) string {
 	if len(s.withMini) > 0 {
 		lines = append(lines, dim.Render(alreadyHaveMini(s.withMini)), "")
 	}
-	width := 0
-	for _, agent := range s.agents {
-		width = max(width, len(agent.Name))
-	}
+	width := widest(s.agents, func(agent agents.Agent) string { return agent.Name })
 	for i := range s.agentRows() {
-		lines = append(lines, s.cursorMark(i)+s.agentLine(s.agents[i], width))
+		lines = append(lines, cursorMark(i == s.cursor)+s.agentLine(s.agents[i], width))
 	}
 	if s.agentRows() > 0 {
 		lines = append(lines, "")
 	}
 	for i, option := range connectOptions {
-		lines = append(lines, s.cursorMark(s.agentRows()+i)+option.label, "    "+dim.Render(s.subtitle(option.choice)))
+		lines = append(
+			lines,
+			cursorMark(s.cursor == s.agentRows()+i)+option.label,
+			"    "+dim.Render(s.subtitle(option.choice)),
+		)
 	}
 	return strings.Join(lines, "\n")
 }
 
 func (s *connectScreen) agentLine(agent agents.Agent, width int) string {
-	box := "[ ]"
-	if s.ticked[agent.Name] {
-		box = "[x]"
-	}
-	return fmt.Sprintf("%s %-*s  %s", box, width, agent.Name, dim.Render(agent.ConfigPath))
-}
-
-func (s *connectScreen) cursorMark(i int) string {
-	if i == s.cursor {
-		return "> "
-	}
-	return "  "
+	return checkbox(s.ticked[agent.Name]) + fmt.Sprintf("%-*s  %s", width, agent.Name, dim.Render(agent.ConfigPath))
 }
 
 func (s *connectScreen) subtitle(choice initcmd.ConnectChoice) string {
