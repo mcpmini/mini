@@ -168,7 +168,10 @@ func interpolateEnv(data []byte) ([]byte, error) {
 	return []byte(result), nil
 }
 
-func DefaultConfigDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".mini")
+func DefaultConfigDir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home directory: %w", err)
+	}
+	return filepath.Join(home, ".mini"), nil
 }

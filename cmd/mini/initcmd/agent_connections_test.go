@@ -3,11 +3,27 @@
 package initcmd
 
 import (
+	"os"
 	"reflect"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/agents"
+	"github.com/mcpmini/mini/internal/config"
 )
+
+func TestExistingMini_UnknownDefaultConfigIsInactive(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := miniEntryCheck{configDir: t.TempDir(), selfPath: executable}
+	entry := agents.Server{Config: config.ServerConfig{Command: executable, Args: []string{"connect"}}}
+	if got := check.existingMini(map[string]agents.Server{"mini": entry}); got != MiniEntryInactive {
+		t.Fatalf("existingMini = %v, want inactive when its implicit config directory is unknown", got)
+	}
+}
 
 func TestClassifyAgents_byTheirMiniEntry(t *testing.T) {
 	f := newApplyFixture(t)

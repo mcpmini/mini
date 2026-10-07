@@ -63,7 +63,11 @@ func configDirArg(args []string) string {
 			return args[i+1]
 		}
 	}
-	return config.DefaultConfigDir()
+	dir, err := config.DefaultConfigDir()
+	if err != nil {
+		return ""
+	}
+	return dir
 }
 
 func sameDir(a, b string) bool {
