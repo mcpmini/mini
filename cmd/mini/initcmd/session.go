@@ -12,7 +12,6 @@ import (
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
-	"github.com/mcpmini/mini/internal/server"
 )
 
 type SessionParams struct {
@@ -64,9 +63,6 @@ type SyncResult struct {
 func NewSession(p SessionParams) *Session {
 	if p.Clock == nil {
 		p.Clock = clock.System()
-	}
-	if p.Probe == nil {
-		p.Probe = server.ProbeServer
 	}
 	return &Session{
 		p:        p,

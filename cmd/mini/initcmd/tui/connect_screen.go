@@ -215,6 +215,9 @@ func (s *connectScreen) removeSubtitles() []string {
 			disabling = append(disabling, agent.Name)
 		}
 	}
+	if removed == 0 && s.anyRemovable() {
+		return []string{"Nothing to remove from the ticked agents"}
+	}
 	if removed == 0 {
 		return []string{"Nothing to remove yet: no existing MCP's mini copy passed its connection check"}
 	}
@@ -224,6 +227,16 @@ func (s *connectScreen) removeSubtitles() []string {
 		lines = append(lines, name+": existing MCPs will be disabled, not removed")
 	}
 	return lines
+}
+
+// anyRemovable reports whether an agent the user unticked would have lost an entry.
+func (s *connectScreen) anyRemovable() bool {
+	for _, agent := range s.listed {
+		if len(s.checks.removals.ByAgent[agent.Name]) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func alreadyHaveMini(names []string) string {
@@ -247,6 +260,10 @@ func mcps(n int) string {
 func (s *connectScreen) keys() string {
 	if s.cursor < s.agentRows() {
 		return "space tick · ↑↓ move · enter continue"
+	}
+	if s.cursor-s.agentRows() < len(s.options()) && s.options()[s.cursor-s.agentRows()] == initcmd.ConnectAndRemove &&
+		!s.checks.done {
+		return "↑↓ move · removing waits for the server checks"
 	}
 	return "↑↓ move · enter choose"
 }

@@ -87,7 +87,7 @@ func (s Setup) Write(p Plan) Report {
 }
 
 func (s Setup) NewSession() *Session {
-	return NewSession(SessionParams{ConfigDir: s.ConfigDir, Probe: s.Probe})
+	return NewSession(SessionParams{ConfigDir: s.ConfigDir, Probe: s.probe()})
 }
 
 // Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
