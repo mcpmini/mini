@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 )
 
 const (
@@ -43,12 +44,25 @@ func gatedUpstreamServing(t *testing.T, handler http.HandlerFunc) (url string, r
 	return ts.URL, release
 }
 
-type heldRequest chan string
+type heldRequest struct {
+	session testSession
+	output  chan []byte
+}
 
-func inBackground(serve func() map[string]any) heldRequest {
-	held := make(heldRequest, 1)
-	go func() { held <- responseText(serve()) }()
+func inBackground(srv *server.Server, session testSession) heldRequest {
+	held := heldRequest{session: session, output: make(chan []byte, 1)}
+	go func() { held.output <- session.run(srv) }()
 	return held
+}
+
+func proxySession(t *testing.T, input []byte) testSession {
+	t.Helper()
+	return newTestSession(t, false, input)
+}
+
+func compactSession(t *testing.T, input []byte) testSession {
+	t.Helper()
+	return newTestSession(t, true, input)
 }
 
 func responseText(resp map[string]any) string {
@@ -62,8 +76,8 @@ func (r startupRetry) waitUntilHeld(t *testing.T, held heldRequest, otherTimers 
 		t.Fatalf("waiting for the request to be held: %v", err)
 	}
 	select {
-	case got := <-held:
-		t.Fatalf("answered while a server was still connecting: %s", got)
+	case output := <-held.output:
+		t.Fatalf("answered while a server was still connecting: %s", output)
 	default:
 	}
 }
@@ -71,8 +85,8 @@ func (r startupRetry) waitUntilHeld(t *testing.T, held heldRequest, otherTimers 
 func (h heldRequest) answer(t *testing.T) string {
 	t.Helper()
 	select {
-	case got := <-h:
-		return got
+	case output := <-h.output:
+		return responseText(h.session.response(t, output))
 	case <-time.After(5 * time.Second):
 		t.Fatal("held request wasn't answered within 5s")
 		return ""
@@ -83,7 +97,7 @@ func TestProxyToolsList_heldUntilAConnectingServerIsReady(t *testing.T) {
 	url, release := gatedUpstream(t)
 	r := connectWithFakeClock(t, httpServer("svc", url))
 
-	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
+	held := inBackground(r.srv, proxySession(t, rpc("tools/list", nil)))
 	r.waitUntilHeld(t, held, 0)
 	release()
 
@@ -97,7 +111,7 @@ func TestProxyToolsList_heldThroughARetryableFailureInsideTheWindow(t *testing.T
 	r := connectWithFakeClock(t, httpServer("svc", ts.URL))
 	r.waitForBackoffTimer(t)
 
-	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
+	held := inBackground(r.srv, proxySession(t, rpc("tools/list", nil)))
 	r.waitUntilHeld(t, held, backoffTimer)
 	r.clock.Advance(time.Second)
 
@@ -128,7 +142,7 @@ func TestProxyToolsList_aServerThatNeverConnectsReleasesTheListAtItsWindowEnd(t 
 		t.Fatal(err)
 	}
 
-	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
+	held := inBackground(r.srv, proxySession(t, rpc("tools/list", nil)))
 	r.waitUntilHeld(t, held, 0)
 	r.clock.Advance(startupHold)
 
@@ -151,7 +165,7 @@ func TestCompactDiscovery_fullListingsAreHeldWhileAServerIsConnecting(t *testing
 			url, release := gatedUpstream(t)
 			r := connectWithFakeClock(t, httpServer("svc", url))
 
-			held := inBackground(func() map[string]any { return serve(t, r.srv, callTool("list", args)) })
+			held := inBackground(r.srv, compactSession(t, callTool("list", args)))
 			r.waitUntilHeld(t, held, 0)
 			release()
 
@@ -186,7 +200,7 @@ func TestProxyToolsList_closeReleasesAHeldList(t *testing.T) {
 	url, _ := gatedUpstream(t)
 	r := connectWithFakeClock(t, httpServer("svc", url))
 
-	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
+	held := inBackground(r.srv, proxySession(t, rpc("tools/list", nil)))
 	r.waitUntilHeld(t, held, 0)
 	mustCloseWithin(t, r.srv, 3*time.Second)
 
@@ -200,7 +214,7 @@ func TestProxyToolsList_heldUntilTheLastConnectingServerIsReady(t *testing.T) {
 	secondURL, releaseSecond := gatedUpstream(t)
 	r := connectWithFakeClock(t, httpServer("first", firstURL), httpServer("second", secondURL))
 
-	held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
+	held := inBackground(r.srv, proxySession(t, rpc("tools/list", nil)))
 	r.waitUntilHeld(t, held, 0)
 	releaseFirst()
 	eventually(t, func() bool { return r.srv.ToolCount("first") > 0 })
@@ -227,7 +241,7 @@ func TestProxyToolsList_aHeldListIsReleasedWhenTheServerStopsConnecting(t *testi
 			url, release := gatedUpstreamServing(t, requireBearer)
 			r := connectWithFakeClock(t, httpServer("svc", url))
 
-			held := inBackground(func() map[string]any { return serveProxy(t, r.srv, rpc("tools/list", nil)) })
+			held := inBackground(r.srv, proxySession(t, rpc("tools/list", nil)))
 			r.waitUntilHeld(t, held, 0)
 			tc.stop(r, release)
 
