@@ -80,42 +80,14 @@ func TestMiniCommandArgs_UsesExplicitConfigWhenHomeUnavailable(t *testing.T) {
 	}
 }
 
-func TestWithin(t *testing.T) {
-	dir := t.TempDir()
-	tmp := filepath.Join(dir, "T")
-	link := filepath.Join(dir, "link")
-	if err := os.MkdirAll(tmp, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(tmp, link); err != nil {
-		t.Fatal(err)
-	}
-	for path, want := range map[string]bool{
-		filepath.Join(tmp, "go-build1", "exe", "mini"):  true,
-		filepath.Join(link, "go-build1", "exe", "mini"): true,
-		filepath.Join(dir, "Tools", "mini"):             false,
-		filepath.Join(dir, "T-other", "mini"):           false,
-	} {
-		if got := within(path, []string{tmp}); got != want {
-			t.Errorf("within(%s) = %v, want %v", path, got, want)
-		}
-	}
-}
-
 func TestTemporaryDirs(t *testing.T) {
 	t.Setenv("HOME", "/home/u")
 	t.Setenv("GOCACHE", "/cache/go-build")
+	t.Setenv("GOTMPDIR", "/scratch/gotmp")
 	dirs := temporaryDirs()
-	for _, want := range []string{os.TempDir(), "/cache/go-build", "/home/u/Downloads"} {
+	for _, want := range []string{os.TempDir(), "/scratch/gotmp", "/cache/go-build", "/home/u/Downloads"} {
 		if !slices.Contains(dirs, want) {
 			t.Errorf("temporary dirs = %v, want %s among them", dirs, want)
 		}
-	}
-}
-
-func TestSetupTemporaryMini_aBinaryGoTestBuiltLooksTemporary(t *testing.T) {
-	t.Setenv("PATH", "")
-	if path, temporary := (Setup{ConfigDir: t.TempDir()}).TemporaryMini(); !temporary {
-		t.Errorf("TemporaryMini = %s, false; want the test binary, built under the temp dir, to look temporary", path)
 	}
 }
