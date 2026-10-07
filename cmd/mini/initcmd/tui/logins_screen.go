@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
@@ -37,6 +38,7 @@ type loginsScreen struct {
 	results  map[string]error
 	pending  *pendingLogin
 	logins   int
+	width    int
 	// One waiting command covers every running check.
 	waiting bool
 }
@@ -172,12 +174,29 @@ func (s *loginsScreen) body(int) string {
 	var lines []string
 	for i, status := range s.rows {
 		lines = append(lines, s.cursorMark(i)+fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status)))
+		if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
+			lines = append(lines, s.urlLines(4+width)...)
+		}
 	}
 	if len(lines) == 0 {
 		// The last check cleared the final row while the screen was shown.
 		lines = append(lines, "Every server works; nothing is left to set up.", "")
 	}
 	return strings.Join(append(lines, s.cursorMark(len(s.rows))+"Continue →"), "\n")
+}
+
+// Authorize URLs run to hundreds of characters and the app cuts lines at the window's edge, so the
+// URL is wrapped onto lines of its own; each links to the whole URL where terminals support links.
+func (s *loginsScreen) urlLines(indent int) []string {
+	var lines []string
+	for _, part := range strings.Split(ansi.Hardwrap(s.pending.url, max(s.width-indent, 20), false), "\n") {
+		lines = append(lines, strings.Repeat(" ", indent)+ansi.SetHyperlink(s.pending.url)+part+ansi.ResetHyperlink())
+	}
+	return lines
+}
+
+func (s *loginsScreen) resize(width int) {
+	s.width = width
 }
 
 func (s *loginsScreen) cursorMark(i int) string {
@@ -192,7 +211,7 @@ func (s *loginsScreen) state(status initcmd.ServerStatus) string {
 		if s.pending.url == "" {
 			return "starting the login…"
 		}
-		return "waiting for the browser… " + dim.Render(s.pending.url)
+		return "waiting for the browser; if it didn't open, use this link:"
 	}
 	if err, tried := s.results[status.Name]; tried {
 		if err != nil {
@@ -221,6 +240,9 @@ func (s *loginsScreen) need(status initcmd.ServerStatus) string {
 }
 
 func (s *loginsScreen) keys() string {
+	if s.pending != nil {
+		return "esc also cancels the login"
+	}
 	if s.cursor < len(s.rows) {
 		return "↑↓ move · enter log in"
 	}

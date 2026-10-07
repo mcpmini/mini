@@ -159,6 +159,7 @@ func loginScreen(logins *fakeLogins, names ...string) *loginsScreen {
 		changed:    checks.changed,
 		startLogin: logins.start,
 	})
+	s.resize(80)
 	s.enter()
 	return s
 }
@@ -177,13 +178,13 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
-	if text := loginsText(
-		s,
-	); !strings.Contains(
-		text,
-		"> linear  waiting for the browser… https://auth.example/linear",
-	) {
-		t.Fatalf("screen:\n%s\nwant linear waiting with its URL", text)
+	want := "> linear  waiting for the browser; if it didn't open, use this link:\n" +
+		"          https://auth.example/linear\n"
+	if text := loginsText(s); !strings.Contains(text, want) {
+		t.Fatalf("screen:\n%s\nwant linear waiting with its URL below", text)
+	}
+	if _, cmd := s.handle(press("enter")); cmd != nil {
+		t.Error("enter on linear while its login is pending started it again")
 	}
 	if _, other := s.handle(press("down")); other != nil {
 		t.Fatal("moving while a login is pending started something")
@@ -222,5 +223,34 @@ func TestLoginsScreen_leavingCancelsThePendingLoginAndDropsItsResult(t *testing.
 	s.update(loginFinished{id: 1, err: context.Canceled})
 	if text := loginsText(s); !strings.Contains(text, "> linear  needs a login") {
 		t.Errorf("screen:\n%s\nwant the cancelled login's result dropped", text)
+	}
+}
+
+func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *testing.T) {
+	url := "https://auth.example/authorize?" + strings.Repeat("scope=read&", 20)
+	s := loginScreen(newFakeLogins(), "linear")
+	s.p.startLogin = func(ctx context.Context, _ string) (Login, error) {
+		return Login{URL: url, Wait: func() error { <-ctx.Done(); return ctx.Err() }}, nil
+	}
+	t.Cleanup(s.cancelLogin)
+	s.resize(40)
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+
+	body := s.body(40)
+	var wrapped []string
+	for _, line := range strings.Split(ansi.Strip(body), "\n")[1:] {
+		if strings.HasPrefix(line, "          ") {
+			wrapped = append(wrapped, strings.TrimSpace(line))
+		}
+		if width := ansi.StringWidth(line); width > 40 && !strings.HasPrefix(line, "> linear") {
+			t.Errorf("line %q is %d wide, past the 40-column window", line, width)
+		}
+	}
+	if got := strings.Join(wrapped, ""); got != url || len(wrapped) < 2 {
+		t.Errorf("wrapped URL lines = %q; want the whole URL split over several lines", wrapped)
+	}
+	if links := strings.Count(body, ansi.SetHyperlink(url)); links != len(wrapped) {
+		t.Errorf("%d of %d URL lines link to the whole URL", links, len(wrapped))
 	}
 }

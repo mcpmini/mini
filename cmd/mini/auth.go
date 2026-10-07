@@ -29,7 +29,7 @@ func newAuthCmd(opts *rootOptions) *cobra.Command {
 }
 
 func runAuth(configDir, serverName string) {
-	cfg, sc, err := loadOAuthServerAndConfig(configDir, serverName)
+	cfg, sc, err := loadOAuthServerAndConfig(configDir, serverName, os.Stderr)
 	if err != nil {
 		fatalf("%v", err)
 	}
@@ -38,8 +38,11 @@ func runAuth(configDir, serverName string) {
 	}
 }
 
-func loadOAuthServerAndConfig(configDir, serverName string) (*config.Config, *config.ServerConfig, error) {
-	cfg, sc, err := loadOneServer(configDir, serverName, os.Stderr)
+func loadOAuthServerAndConfig(
+	configDir, serverName string,
+	warnings io.Writer,
+) (*config.Config, *config.ServerConfig, error) {
+	cfg, sc, err := loadOneServer(configDir, serverName, warnings)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -76,32 +79,41 @@ func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerCo
 	return pkceFlowParams{configDir: configDir, serverName: sc.Name, opener: authOpener(cfg, *sc), sc: sc}
 }
 
+// loginTimeout bounds how long a login waits for the user to finish in the browser.
+const loginTimeout = 5 * time.Minute
+
 func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
 	defer cancel()
 	fmt.Printf("Authorizing %s...\n", p.serverName)
-	token, err := runBrowserLogin(ctx, p)
+	login, err := beginBrowserLogin(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
-		return nil, fmt.Errorf("save token: %w", err)
-	}
-	return token, nil
+	fmt.Printf("Open this URL in your browser:\n%s\n\n", login.AuthURL())
+	return finishBrowserLogin(ctx, login, p)
 }
 
-func runBrowserLogin(ctx context.Context, p pkceFlowParams) (*oauth2.Token, error) {
+// beginBrowserLogin starts the login and opens the browser. It prints nothing, since init's UI
+// owns the screen; the caller shows the URL, so a browser that doesn't open only costs a click.
+func beginBrowserLogin(ctx context.Context, p pkceFlowParams) (*auth.BrowserLogin, error) {
 	params := auth.BeginLoginParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
 	login, err := auth.BeginLogin(ctx, p.sc, params)
 	if err != nil {
 		return nil, err
 	}
+	p.opener(login.AuthURL()) //nolint:errcheck
+	return login, nil
+}
+
+func finishBrowserLogin(ctx context.Context, login *auth.BrowserLogin, p pkceFlowParams) (*oauth2.Token, error) {
 	defer login.Close() //nolint:errcheck // Close always returns nil
-	fmt.Printf("Open this URL in your browser:\n%s\n\n", login.AuthURL())
-	p.opener(login.AuthURL()) //nolint:errcheck // the URL is printed above, so a failed open only costs a click
 	token, err := login.Wait(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("auth flow: %w", err)
+	}
+	if err := auth.Save(p.configDir, p.serverName, token); err != nil {
+		return nil, fmt.Errorf("save token: %w", err)
 	}
 	return token, nil
 }

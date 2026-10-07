@@ -75,6 +75,7 @@ func (s *loginsScreen) loginFinished(msg loginFinished) {
 		return
 	}
 	s.results[s.pending.name] = msg.err
+	s.pending.cancel()
 	s.pending = nil
 	s.refresh()
 	s.cursor = s.nextToLogIn(-1)

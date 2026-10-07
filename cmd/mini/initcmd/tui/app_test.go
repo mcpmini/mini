@@ -236,3 +236,21 @@ func TestApp_finishingBeforeTheSavePointSaves(t *testing.T) {
 		t.Errorf("saves = %d, cmd = %v; want the picks saved and the program ended", saves, cmd)
 	}
 }
+
+type wrappingScreen struct {
+	fakeScreen
+	width int
+}
+
+func (s *wrappingScreen) resize(width int) { s.width = width }
+
+func TestApp_aScreenThatWrapsItsLinesLearnsEachWindowWidth(t *testing.T) {
+	later := &wrappingScreen{fakeScreen: fakeScreen{name: "Later"}}
+	a := newApp([]screen{&fakeScreen{name: "First"}, later})
+	for _, width := range []int{100, 60} {
+		a.Update(tea.WindowSizeMsg{Width: width, Height: 30})
+		if later.width != width {
+			t.Errorf("after a resize to %d, the screen not yet shown has width %d", width, later.width)
+		}
+	}
+}

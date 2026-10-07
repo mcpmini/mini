@@ -36,6 +36,19 @@ type loader interface {
 	update(msg tea.Msg) tea.Cmd
 }
 
+// A screen that wraps its own lines needs the window's width.
+type resizer interface {
+	resize(width int)
+}
+
+func (a *app) resizeScreens() {
+	for _, s := range a.screens {
+		if r, ok := s.(resizer); ok {
+			r.resize(a.width)
+		}
+	}
+}
+
 // savePoint saves the picks each time the user moves forward past screen after.
 type savePoint struct {
 	after int
@@ -93,6 +106,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
+		a.resizeScreens()
 	case tea.KeyPressMsg:
 		return a, a.handle(msg)
 	default:
