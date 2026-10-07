@@ -56,8 +56,6 @@ func holdCompact(t *testing.T, srv *server.Server, input []byte) heldRequest {
 	return holdWithStdinOpen(t, srv, initParams(true), input)
 }
 
-// The serve helpers close stdin at once, and a session whose stdin closed stops holding requests,
-// so a held request needs stdin kept open until it's answered.
 func holdWithStdinOpen(t *testing.T, srv *server.Server, init map[string]any, input []byte) heldRequest {
 	t.Helper()
 	stdin, stdinW := io.Pipe()
@@ -97,7 +95,7 @@ func rpcWithID(id int, method string, params any) []byte {
 	) //nolint:errcheck // test params are plain maps
 	req, _ := json.Marshal(
 		map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": json.RawMessage(p)},
-	) //nolint:errcheck // same
+	) //nolint:errcheck // built from strings, ints and marshaled params
 	return append(req, '\n')
 }
 
