@@ -19,12 +19,12 @@ type SessionParams struct {
 	ConfigDir string
 	Clock     clock.Clock
 	// Probe checks a server for OAuth; tests swap it for one that doesn't connect.
-	Probe func(ctx context.Context, configDir string, sc config.ServerConfig) error
+	Probe probeFunc
 }
 
 // Session writes the servers picked in this run and checks the new ones for OAuth. Only
 // servers it wrote are ever removed; servers configured before the run are never touched.
-// Sync, Written and Close belong to one goroutine; Checking and Changed are safe from any.
+// Sync, Written, WaitChecks and Close belong to one goroutine; Checking and Changed are safe from any.
 type Session struct {
 	p       SessionParams
 	written map[string]writtenServer
