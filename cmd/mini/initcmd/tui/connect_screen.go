@@ -21,6 +21,8 @@ type connectParams struct {
 	agents   []agents.Agent
 	withMini map[string]bool
 	plan     func() (connectPlan, error)
+	// temporaryMini is the binary agents would run when it looks temporary, else "".
+	temporaryMini string
 }
 
 type connectScreen struct {
@@ -146,6 +148,11 @@ func (s *connectScreen) body(int) string {
 	}
 	if s.agentRows() > 0 {
 		lines = append(lines, "")
+	}
+	if s.p.temporaryMini != "" {
+		warning := "Agents would run " + s.p.temporaryMini + ", which looks temporary. " +
+			"Move mini somewhere permanent and run mini init again."
+		lines = append(lines, ansi.Wrap(warning, max(s.width, 20), ""), "")
 	}
 	for i, choice := range s.options() {
 		lines = append(lines, cursorMark(s.cursor == s.agentRows()+i)+optionLabel(choice))

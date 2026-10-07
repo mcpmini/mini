@@ -118,10 +118,15 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 }
 
 func newConnects(setup initcmd.Setup) *connectScreen {
+	temporary, isTemporary := setup.TemporaryMini()
+	if !isTemporary {
+		temporary = ""
+	}
 	return newConnectScreen(connectParams{
-		agents:   setup.AgentsToConnect,
-		withMini: setup.AgentsWithMini(),
-		plan:     func() (connectPlan, error) { return setup.PlanConnect() },
+		temporaryMini: temporary,
+		agents:        setup.AgentsToConnect,
+		withMini:      setup.AgentsWithMini(),
+		plan:          func() (connectPlan, error) { return setup.PlanConnect() },
 	})
 }
 

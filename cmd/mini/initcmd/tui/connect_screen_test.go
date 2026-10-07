@@ -295,3 +295,19 @@ func TestConnectScreen_removingWithTheRemovableAgentsUntickedSaysSo(t *testing.T
 		t.Errorf("screen:\n%s\nwant it to say the ticked agents have nothing to remove, not that checks failed", text)
 	}
 }
+
+func TestConnectScreen_warnsWhenAgentsWouldRunATemporaryBinary(t *testing.T) {
+	s := newConnectScreen(connectParams{
+		agents:        namedAgents("Claude"),
+		plan:          func() (connectPlan, error) { return newFakePlan(nil), nil },
+		temporaryMini: "/tmp/gobuild1/exe/mini",
+	})
+	t.Cleanup(s.checks.cancelAndWait)
+	s.resize(40)
+	s.enter()
+	want := "Agents would run /tmp/gobuild1/exe/mini,\nwhich looks temporary. Move mini\n" +
+		"somewhere permanent and run mini init\nagain.\n\n> Just connect mini"
+	if text := connectText(s); !strings.HasPrefix(text, want) {
+		t.Errorf("screen:\n%s\nwant the warning wrapped to the window, above the options", text)
+	}
+}

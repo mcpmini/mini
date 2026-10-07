@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
@@ -56,4 +57,49 @@ func sameFile(a, b string) bool {
 	infoA, errA := os.Stat(a)
 	infoB, errB := os.Stat(b)
 	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
+}
+
+// TemporaryMini is the binary agents would run when it sits where files don't last: the temp
+// directory, Go's build cache (go run), or Downloads. Agents then fail once it is cleaned up.
+func (s Setup) TemporaryMini() (string, bool) {
+	path := MiniCommand(s.ConfigDir).Command
+	return path, within(path, temporaryDirs())
+}
+
+func temporaryDirs() []string {
+	dirs := []string{os.TempDir()}
+	if cache := os.Getenv("GOCACHE"); cache != "" {
+		dirs = append(dirs, cache)
+	} else if cache, err := os.UserCacheDir(); err == nil {
+		dirs = append(dirs, filepath.Join(cache, "go-build"))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, "Downloads"))
+	}
+	return dirs
+}
+
+func within(path string, dirs []string) bool {
+	path = resolved(path)
+	for _, dir := range dirs {
+		rel, err := filepath.Rel(resolved(dir), path)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// macOS reaches its temp directory through a symlink, so paths are compared once resolved, as far
+// as they exist.
+func resolved(path string) string {
+	path = filepath.Clean(path)
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		return real
+	}
+	parent := filepath.Dir(path)
+	if parent == path {
+		return path
+	}
+	return filepath.Join(resolved(parent), filepath.Base(path))
 }
