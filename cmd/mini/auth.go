@@ -79,7 +79,6 @@ func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerCo
 	return pkceFlowParams{configDir: configDir, serverName: sc.Name, opener: authOpener(cfg, *sc), sc: sc}
 }
 
-// loginTimeout bounds how long a login waits for the user to finish in the browser.
 const loginTimeout = 5 * time.Minute
 
 func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {

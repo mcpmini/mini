@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
@@ -263,4 +264,47 @@ func TestLoginsScreen_aFailedLoginShowsOnlyTheFirstLineOfItsError(t *testing.T) 
 	if text := loginsText(s); text != "  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n> Continue →" {
 		t.Errorf("screen:\n%q\nwant the error's first line, without control characters, on linear's row", text)
 	}
+}
+
+func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.T) {
+	setup := func() (*fakeChecks, *loginsScreen, tea.Cmd) {
+		checks := newFakeChecks(
+			initcmd.ServerStatus{Name: "open"},
+			initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
+			initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
+		)
+		checks.checking["open"] = true
+		s := checks.screen()
+		return checks, s, s.enter()
+	}
+	finish := func(checks *fakeChecks, s *loginsScreen, wait tea.Cmd, readiness initcmd.Readiness) {
+		delete(checks.checking, "open")
+		checks.statuses[0].Readiness = readiness
+		checks.changed <- struct{}{}
+		s.update(wait())
+	}
+	t.Run("a row above it drops out", func(t *testing.T) {
+		checks, s, wait := setup()
+		s.handle(press("down"))
+		finish(checks, s, wait, initcmd.Ready)
+		if text := loginsText(s); !strings.Contains(text, "> sentry") {
+			t.Errorf("screen:\n%s\nwant the cursor still on sentry", text)
+		}
+	})
+	t.Run("on Continue, a new login row doesn't pull it back", func(t *testing.T) {
+		checks, s, wait := setup()
+		s.handle(press("down"))
+		s.handle(press("down"))
+		finish(checks, s, wait, initcmd.NeedsLogin)
+		if text := loginsText(s); !strings.Contains(text, "> Continue →") {
+			t.Errorf("screen:\n%s\nwant the cursor still on Continue", text)
+		}
+	})
+	t.Run("unmoved, it rests on the first login to do", func(t *testing.T) {
+		checks, s, wait := setup()
+		finish(checks, s, wait, initcmd.NeedsLogin)
+		if text := loginsText(s); !strings.Contains(text, "> open") {
+			t.Errorf("screen:\n%s\nwant the cursor on open, now the first login", text)
+		}
+	})
 }

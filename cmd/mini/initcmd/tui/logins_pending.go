@@ -77,8 +77,8 @@ func (s *loginsScreen) loginFinished(msg loginFinished) {
 	s.results[s.pending.name] = msg.err
 	s.pending.cancel()
 	s.pending = nil
+	s.moved = false
 	s.refresh()
-	s.cursor = s.nextToLogIn(-1)
 }
 
 // cancelLogin stops the pending login and waits for it, so nothing it does outlives the screen.

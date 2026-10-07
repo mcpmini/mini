@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -40,6 +41,8 @@ type loginsScreen struct {
 	pending  *pendingLogin
 	logins   int
 	width    int
+	// moved is true once the user moved the cursor; until then it rests on the next login to do.
+	moved bool
 	// One waiting command covers every running check.
 	waiting bool
 }
@@ -52,8 +55,7 @@ func newLoginsScreen(p loginsParams) *loginsScreen {
 // before the statuses: a check that finishes in between still reads as running, and the change
 // it signals refreshes the screen again.
 func (s *loginsScreen) refresh() {
-	// Checks before statuses: one that finishes in between still reads as running, and the change
-	// it signals refreshes the screen again.
+	selected := s.cursorName()
 	s.checking = s.p.checking()
 	statuses, err := s.p.statuses()
 	s.rows, s.err = nil, err
@@ -63,14 +65,31 @@ func (s *loginsScreen) refresh() {
 			s.rows = append(s.rows, status)
 		}
 	}
-	if !s.selectable(s.cursor) {
-		s.cursor = s.nextToLogIn(-1)
+	// Rows come and go as checks finish, so the user's pick is found again by name.
+	s.cursor = s.nextToLogIn(-1)
+	if i := s.rowIndex(selected); s.moved && s.selectable(i) {
+		s.cursor = i
 	}
 }
 
+// cursorName is the server under the cursor, or "" on Continue.
+func (s *loginsScreen) cursorName() string {
+	if s.cursor >= 0 && s.cursor < len(s.rows) {
+		return s.rows[s.cursor].Name
+	}
+	return ""
+}
+
+func (s *loginsScreen) rowIndex(name string) int {
+	if name == "" {
+		return len(s.rows)
+	}
+	return slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.Name == name })
+}
+
 func (s *loginsScreen) enter() tea.Cmd {
+	s.moved = false
 	s.refresh()
-	s.cursor = s.nextToLogIn(-1)
 	return s.waitWhileChecking()
 }
 
@@ -82,11 +101,7 @@ func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case checksChanged:
 		s.waiting = false
-		onContinue := s.cursor == len(s.rows)
 		s.refresh()
-		if onContinue {
-			s.cursor = s.nextToLogIn(-1)
-		}
 		return s.waitWhileChecking()
 	case loginStarted:
 		return s.loginStarted(msg)
@@ -132,7 +147,7 @@ func (s *loginsScreen) nextToLogIn(from int) int {
 func (s *loginsScreen) move(direction int) {
 	for i := s.cursor + direction; i >= 0 && i <= len(s.rows); i += direction {
 		if s.selectable(i) {
-			s.cursor = i
+			s.cursor, s.moved = i, true
 			return
 		}
 	}
@@ -254,7 +269,7 @@ func (s *loginsScreen) need(status initcmd.ServerStatus) string {
 
 func (s *loginsScreen) keys() string {
 	if s.pending != nil {
-		return "esc also cancels the login"
+		return "↑↓ move · esc also cancels the login"
 	}
 	if s.cursor < len(s.rows) {
 		return "↑↓ move · enter log in"
