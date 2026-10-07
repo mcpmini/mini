@@ -170,9 +170,11 @@ func (s *notificationStream) consume(ctx context.Context, state linkState, done 
 	if err != nil {
 		return
 	}
+	//nolint:errcheck // status and scan results determine handling; Close releases the response stream.
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		//nolint:errcheck // status already rejects this stream; draining only permits connection reuse.
+		io.Copy(io.Discard, resp.Body)
 		return
 	}
 	s.scan(resp.Body)
@@ -192,6 +194,7 @@ func newDaemonStreamRequest(ctx context.Context, daemon DaemonSession, token str
 }
 
 func (s *notificationStream) scan(body io.Reader) {
+	//nolint:errcheck // the owner reconnects on scan failure; writer.Err stops retries on client write failure.
 	_ = transport.ScanSSEMessages(body, func(message json.RawMessage) error {
 		return s.forward(message)
 	})

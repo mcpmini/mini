@@ -42,7 +42,7 @@ func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, 
 		return nil, err
 	}
 	if err := c.initialize(ctx); err != nil {
-		c.Close()
+		c.Close() //nolint:errcheck // cleanup preserves the handshake failure as the constructor's reported error
 		return nil, fmt.Errorf("MCP handshake: %w", err)
 	}
 	return c, nil
@@ -131,6 +131,7 @@ func (c *StdioConnection) ListTools(ctx context.Context) ([]ToolDefinition, erro
 func (c *StdioConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
 	var params json.RawMessage
 	if cursor != "" {
+		//nolint:errcheck // cursor map contains only strings.
 		params, _ = json.Marshal(map[string]string{"cursor": cursor})
 	}
 	raw, err := c.Call(ctx, "tools/list", params)
@@ -157,8 +158,9 @@ func (c *StdioConnection) Close() error {
 	c.closeDone()
 	var closeErr error
 	c.shutdownOnce.Do(func() {
-		c.stdin.Close()
+		c.stdin.Close() //nolint:errcheck // child termination and Wait below own subprocess cleanup
 		if c.cmd.Process != nil {
+			//nolint:errcheck // an exited child may reject Kill; Wait observes its exit status.
 			c.cmd.Process.Kill()
 		}
 		closeErr = c.cmd.Wait()
@@ -172,6 +174,7 @@ func (c *StdioConnection) closeDone() {
 }
 
 func (c *StdioConnection) initialize(ctx context.Context) error {
+	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
 	params, _ := json.Marshal(newInitializeParams())
 	raw, err := c.Call(ctx, "initialize", params)
 	if err != nil {

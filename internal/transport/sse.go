@@ -149,8 +149,9 @@ type sseLineReader struct {
 
 func newSSELineReader(body io.Reader, limits sseLimits) *sseLineReader {
 	reader := bufio.NewReaderSize(body, 64<<10)
+	//nolint:errcheck // a failed Peek leaves bytes buffered; discard requires the complete BOM prefix.
 	if prefix, _ := reader.Peek(len(utf8BOM)); bytes.Equal(prefix, utf8BOM) {
-		reader.Discard(len(utf8BOM)) //nolint:errcheck
+		reader.Discard(len(utf8BOM)) //nolint:errcheck // the complete BOM prefix is already buffered
 	}
 	return &sseLineReader{reader: reader, limits: limits}
 }
@@ -178,7 +179,7 @@ func (r *sseLineReader) readLine() ([]byte, error) {
 func (r *sseLineReader) consumeOptionalLF() {
 	next, err := r.reader.Peek(1)
 	if err == nil && next[0] == '\n' {
-		r.reader.ReadByte() //nolint:errcheck
+		r.reader.ReadByte() //nolint:errcheck // Peek established that the optional LF byte is buffered
 	}
 }
 

@@ -33,7 +33,7 @@ func writeSegment(b *strings.Builder, seg string) {
 		b.WriteString(seg)
 		return
 	}
-	key, _ := json.Marshal(seg)
+	key, _ := json.Marshal(seg) //nolint:errcheck // seg is a string, which encoding/json always serializes successfully
 	b.WriteByte('[')
 	b.Write(key)
 	b.WriteByte(']')

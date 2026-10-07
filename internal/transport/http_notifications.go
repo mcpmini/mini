@@ -50,6 +50,7 @@ func (c *HTTPConnection) initializeOnce(ctx context.Context) (renewed bool, err 
 func (c *HTTPConnection) callToolsPage(ctx context.Context, cursor string) (ToolsListResult, error) {
 	var params json.RawMessage
 	if cursor != "" {
+		//nolint:errcheck // cursor map contains only strings.
 		params, _ = json.Marshal(map[string]string{"cursor": cursor})
 	}
 	raw, err := c.Call(ctx, "tools/list", params)
@@ -102,6 +103,7 @@ func (c *HTTPConnection) restartListener(listen bool) {
 }
 
 func (c *HTTPConnection) sendInitialize(ctx context.Context) (InitializeResult, error) {
+	//nolint:errcheck // fixed handshake fields contain only JSON-serializable values.
 	params, _ := json.Marshal(InitializeParams{
 		ProtocolVersion: ProtocolVersion,
 		Capabilities:    map[string]any{},
@@ -124,13 +126,16 @@ func toolsListChanged(capabilities map[string]any) bool {
 }
 
 func (c *HTTPConnection) sendInitializedNotification(ctx context.Context) error {
+	//nolint:errcheck // fixed notification fields are JSON-serializable.
 	notif, _ := json.Marshal(Notification{JSONRPC: "2.0", Method: NotificationInitialized})
 	resp, err := c.sendOneWithAuthRetry(ctx, c.client, c.buildInitializedNotifRequest(notif))
 	if err != nil {
 		return fmt.Errorf("notifications/initialized: %w", err)
 	}
+	//nolint:errcheck // status and body text determine the result; Close releases the response stream.
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		//nolint:errcheck // bounded body text is diagnostic; HTTP status remains the failure result.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		return fmt.Errorf("notifications/initialized: status %d: %s", resp.StatusCode, body)
 	}
@@ -207,6 +212,7 @@ func (c *HTTPConnection) currentAuth(ctx context.Context) string {
 	if c.authProvider == nil {
 		return ""
 	}
+	//nolint:errcheck // this read fingerprints rejection; buildStreamRequest reports request credential errors.
 	v, _ := c.authProvider.Authorization(ctx)
 	return v
 }
@@ -242,6 +248,7 @@ func (c *HTTPConnection) consumeNotificationStream(ctx context.Context) (int, er
 	if err != nil {
 		return 0, err
 	}
+	//nolint:errcheck // status and scan results determine handling; Close releases the response stream.
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return resp.StatusCode, fmt.Errorf("notification stream status %d", resp.StatusCode)

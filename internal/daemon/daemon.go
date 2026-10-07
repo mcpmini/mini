@@ -43,7 +43,7 @@ func SocketHealthy(socket string) bool {
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
+	resp.Body.Close() //nolint:errcheck // the health status is already captured; Close only releases the response stream
 	return resp.StatusCode == http.StatusOK
 }
 

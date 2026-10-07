@@ -78,6 +78,7 @@ func asURLFromWWWAuthenticate(ctx context.Context, serverURL string) (asRef, err
 		}
 		return asRef{}, nil
 	}
+	//nolint:errcheck // discovery status and headers determine the result; Close releases the response stream.
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
 		return asRef{}, nil
@@ -174,6 +175,7 @@ func fetchASURLFromPRM(ctx context.Context, prmURL string) (asRef, error) {
 		}
 		return asRef{}, fmt.Errorf("fetch protected resource metadata from %s: %w", prmURL, err)
 	}
+	//nolint:errcheck // status and metadata determine the result; Close releases the response stream.
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return asRef{}, nil
@@ -255,6 +257,7 @@ func fetchASMeta(ctx context.Context, metaURL string) (*ServerMeta, error) {
 		}
 		return nil, fmt.Errorf("fetch AS metadata from %s: %w", metaURL, err)
 	}
+	//nolint:errcheck // status and metadata determine the result; Close releases the response stream.
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
@@ -340,6 +343,7 @@ func RequiresOAuth(ctx context.Context, serverURL, wwwAuthenticate string) bool 
 	base := u.Scheme + "://" + u.Host
 	path := strings.TrimRight(u.Path, "/")
 	for _, c := range prmCandidateURLs(base, path) {
+		//nolint:errcheck // a failed candidate does not rule out another PRM discovery URL.
 		if ref, _ := fetchASURLFromPRM(ctx, c); ref.URL != "" {
 			return true
 		}

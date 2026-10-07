@@ -44,6 +44,7 @@ func startAndReap(cmd *exec.Cmd) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	//nolint:errcheck // Start determines browser launch; later exit status cannot change the login URL.
 	go func() { _ = cmd.Wait() }()
 	return nil
 }

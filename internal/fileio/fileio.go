@@ -44,7 +44,8 @@ func replaceFile(p replaceParams) (err error) {
 	}
 	defer func() {
 		if err != nil {
-			_ = os.Remove(tmp.Name()) // Cleanup failure must not hide the replacement error.
+			//nolint:errcheck // temp cleanup cannot replace the staged write or replacement error.
+			_ = os.Remove(tmp.Name())
 		}
 	}()
 	if err = stage(tmp, p.data, p.opts.Perm); err != nil {

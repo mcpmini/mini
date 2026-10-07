@@ -22,11 +22,14 @@ func acquireSpawnLock(configDir string) (release func(), err error) {
 		return nil, err
 	}
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		//nolint:errcheck // the lock acquisition error is returned; Close only releases the opened file.
 		f.Close()
 		return nil, err
 	}
 	return func() {
-		syscall.Flock(int(f.Fd()), syscall.LOCK_UN) //nolint:errcheck
-		f.Close()                                   //nolint:errcheck
+		//nolint:errcheck // socket bind remains the spawn correctness gate if unlock fails.
+		syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		//nolint:errcheck // closing the descriptor releases its OS lock; socket bind remains the correctness gate.
+		f.Close()
 	}, nil
 }

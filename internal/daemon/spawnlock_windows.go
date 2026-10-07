@@ -23,11 +23,14 @@ func acquireSpawnLock(configDir string) (release func(), err error) {
 	}
 	ol := new(windows.Overlapped)
 	if err := windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, ol); err != nil {
+		//nolint:errcheck // the lock acquisition error is returned; Close only releases the opened file.
 		f.Close()
 		return nil, err
 	}
 	return func() {
-		windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, ol) //nolint:errcheck
-		f.Close()                                                 //nolint:errcheck
+		//nolint:errcheck // socket bind remains the spawn correctness gate if unlock fails.
+		windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, ol)
+		//nolint:errcheck // closing the descriptor releases its OS lock; socket bind remains the correctness gate.
+		f.Close()
 	}, nil
 }

@@ -33,9 +33,10 @@ type ToolDefinition struct {
 func (def ToolDefinition) ToMap() map[string]any {
 	var m map[string]any
 	// Callers need to add extra keys before serializing, so we convert to a map.
-	// Cannot fail: re-serializing JSON we already deserialized from upstream.
-	raw, _ := json.Marshal(def) //nolint:errcheck
-	_ = json.Unmarshal(raw, &m) //nolint:errcheck
+	//nolint:errcheck // upstream RawMessages are decoded from valid JSON; local actions leave them empty.
+	raw, _ := json.Marshal(def)
+	//nolint:errcheck // Marshal produced valid JSON for the immediately following map decode.
+	_ = json.Unmarshal(raw, &m)
 	return m
 }
 

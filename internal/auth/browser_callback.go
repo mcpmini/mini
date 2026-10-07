@@ -68,6 +68,7 @@ func printableLoginText(value string) string {
 
 func writeLoginResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "text/html")
+	//nolint:errcheck // callback handling owns the OAuth result; this page only informs the browser.
 	fmt.Fprintf(w, "<html><body><p>%s</p></body></html>\n", html.EscapeString(message))
 	if f, ok := w.(http.Flusher); ok {
 		f.Flush()
