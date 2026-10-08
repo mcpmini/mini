@@ -93,7 +93,7 @@ func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
 	return finishBrowserLogin(ctx, login, p)
 }
 
-// beginBrowserLogin prints nothing, since init's UI owns the screen.
+// beginBrowserLogin must not print: init's UI owns the screen.
 func beginBrowserLogin(ctx context.Context, p pkceFlowParams) (*auth.BrowserLogin, error) {
 	params := auth.BeginLoginParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
 	login, err := auth.BeginLogin(ctx, p.sc, params)

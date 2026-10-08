@@ -8,7 +8,6 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
 )
 
-// startInitLogin is mini auth's login with the same timeout. While the UI owns the screen, log goes to init.log.
 func startInitLogin(configDir string) func(ctx context.Context, name string) (tui.Login, error) {
 	return func(ctx context.Context, name string) (tui.Login, error) {
 		cfg, sc, err := loadOAuthServerAndConfig(configDir, name, log.Writer())

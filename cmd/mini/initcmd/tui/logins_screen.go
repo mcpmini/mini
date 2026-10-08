@@ -29,7 +29,6 @@ type loginsParams struct {
 	startLogin func(ctx context.Context, name string) (Login, error)
 }
 
-// loginsScreen lists the configured servers that don't work yet and logs in to the OAuth ones.
 type loginsScreen struct {
 	p        loginsParams
 	rows     []initcmd.ServerStatus
@@ -40,9 +39,8 @@ type loginsScreen struct {
 	pending  *pendingLogin
 	logins   int
 	width    int
-	// moved is true once the user moved the cursor since the last login ended; until then the
-	// cursor rests on the next login to do.
-	moved bool
+	// Until the user moves it, the cursor rests on the next login to do.
+	cursorMoved bool
 	// One waiting command covers every running check.
 	waiting bool
 }
@@ -51,15 +49,15 @@ func newLoginsScreen(p loginsParams) *loginsScreen {
 	return &loginsScreen{p: p, results: map[string]error{}}
 }
 
-// A row stays once a login on it finished, so the user sees how it went. The checks are read
-// before the statuses: a check that finishes in between still reads as running, and the change
-// it signals refreshes the screen again.
 func (s *loginsScreen) refresh() {
 	selected := s.cursorName()
+	// Checks before statuses: one that finishes in between still reads as running, and the change
+	// it signals refreshes the screen again.
 	s.checking = s.p.checking()
 	statuses, err := s.p.statuses()
 	s.rows, s.err = nil, err
 	for _, status := range statuses {
+		// A tried login's row stays, so the user sees how it went.
 		_, tried := s.results[status.Name]
 		if status.Readiness != initcmd.Ready || s.checking[status.Name] || tried {
 			s.rows = append(s.rows, status)
@@ -71,7 +69,7 @@ func (s *loginsScreen) refresh() {
 	})
 	// Rows come and go as checks finish, so the user's pick is found again by name.
 	s.cursor = s.nextToLogIn(-1)
-	if i := s.rowIndex(selected); s.moved && s.selectable(i) {
+	if i := s.rowIndex(selected); s.cursorMoved && s.selectable(i) {
 		s.cursor = i
 	}
 }
@@ -92,7 +90,7 @@ func (s *loginsScreen) rowIndex(name string) int {
 }
 
 func (s *loginsScreen) enter() tea.Cmd {
-	s.moved = false
+	s.cursorMoved = false
 	s.refresh()
 	return s.waitWhileChecking()
 }
@@ -126,7 +124,7 @@ func (s *loginsScreen) waitWhileChecking() tea.Cmd {
 	}
 }
 
-// The Continue row sits at len(rows); only a row needing a login, and no longer checking, takes the cursor.
+// Continue sits at len(rows).
 func (s *loginsScreen) selectable(i int) bool {
 	if i == len(s.rows) {
 		return true
@@ -138,7 +136,6 @@ func (s *loginsScreen) selectable(i int) bool {
 	return r.Readiness == initcmd.NeedsLogin && !s.checking[r.Name]
 }
 
-// nextToLogIn is the first row after from that needs a login not tried yet, else Continue.
 func (s *loginsScreen) nextToLogIn(from int) int {
 	for i := from + 1; i < len(s.rows); i++ {
 		if _, tried := s.results[s.rows[i].Name]; s.selectable(i) && !tried {
@@ -151,7 +148,7 @@ func (s *loginsScreen) nextToLogIn(from int) int {
 func (s *loginsScreen) move(direction int) {
 	for i := s.cursor + direction; i >= 0 && i <= len(s.rows); i += direction {
 		if s.selectable(i) {
-			s.cursor, s.moved = i, true
+			s.cursor, s.cursorMoved = i, true
 			return
 		}
 	}
@@ -226,8 +223,7 @@ func (s *loginsScreen) section(status initcmd.ServerStatus) string {
 	return byHandSection
 }
 
-// Authorize URLs run to hundreds of characters and the app cuts lines at the window's edge, so the
-// URL is wrapped onto lines of its own; each links to the whole URL where terminals support links.
+// Authorize URLs run to hundreds of characters, and the app cuts lines at the window's edge.
 func (s *loginsScreen) urlLines(indent int) []string {
 	var lines []string
 	for _, part := range strings.Split(ansi.Hardwrap(s.pending.url, max(s.width-indent, 20), false), "\n") {

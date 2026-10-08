@@ -7,8 +7,7 @@ import (
 	"sync"
 )
 
-// uiLogs holds what Go's log would print while the full-screen UI owns the terminal. The file
-// is created only when something is logged, so a clean run writes none.
+// uiLogs takes Go's log output while the full-screen UI owns the terminal; a clean run writes no file.
 type uiLogs struct {
 	path string
 	mu   sync.Mutex
@@ -53,7 +52,6 @@ func (l *uiLogs) redirect() (restore func()) {
 	}
 }
 
-// written is the log file's path when the UI logged anything, for the summary to name.
 func (l *uiLogs) written() (string, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

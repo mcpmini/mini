@@ -6,14 +6,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 )
 
-// pendingLogin is the one login in progress. Its goroutine only sends to events, which has room
-// for everything it sends, so cancelling and waiting on done never blocks on the UI.
 type pendingLogin struct {
 	id     int
 	name   string
 	url    string
 	cancel context.CancelFunc
 	done   chan struct{}
+	// Sized for everything runLogin sends, so cancelling and waiting on done never blocks on the UI.
 	events chan tea.Msg
 }
 
@@ -27,7 +26,6 @@ type loginFinished struct {
 	err error
 }
 
-// One login at a time: enter on another row while one is pending does nothing.
 func (s *loginsScreen) startLogin(name string) tea.Cmd {
 	if s.pending != nil {
 		return nil
@@ -69,19 +67,19 @@ func (s *loginsScreen) loginStarted(msg loginStarted) tea.Cmd {
 	return s.pending.next
 }
 
-// A login cancelled by leaving the screen proved nothing, so its result is dropped.
 func (s *loginsScreen) loginFinished(msg loginFinished) {
+	// A login cancelled by leaving the screen proved nothing.
 	if !s.current(msg.id) {
 		return
 	}
 	s.results[s.pending.name] = msg.err
 	s.pending.cancel()
 	s.pending = nil
-	s.moved = false
+	s.cursorMoved = false
 	s.refresh()
 }
 
-// cancelLogin stops the pending login and waits for it, so nothing it does outlives the screen.
+// cancelLogin waits for the login to stop, so nothing it does outlives the screen.
 func (s *loginsScreen) cancelLogin() {
 	if s.pending == nil {
 		return
