@@ -36,11 +36,11 @@ func loginsText(s *loginsScreen) string {
 	return ansi.Strip(s.body(20))
 }
 
-func TestLoginsScreen_listsWhatEachServerStillNeeds(t *testing.T) {
+func TestLoginsScreen_listsLoginsFirstThenWhatMustBeSetUpByHand(t *testing.T) {
 	checks := newFakeChecks(
 		initcmd.ServerStatus{Name: "ready"},
-		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
 		initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken},
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
 		initcmd.ServerStatus{Name: "asana", Readiness: initcmd.NeedsOwnApp},
 		initcmd.ServerStatus{
 			Name: "files", Readiness: initcmd.NeedsEnv, UnsetEnv: &config.UnsetEnvError{Names: []string{"ROOT"}},
@@ -48,8 +48,8 @@ func TestLoginsScreen_listsWhatEachServerStillNeeds(t *testing.T) {
 	)
 	s := checks.screen()
 	s.enter()
-	want := "> linear  needs a login\n  github  needs a token\n" +
-		"  asana   needs your own OAuth app\n  files   needs ROOT set\n  Continue →"
+	want := "Log in\n> linear  needs a login\n\nSet up by hand\n  github  needs a token\n" +
+		"  asana   needs your own OAuth app\n  files   needs ROOT set\n\n  Continue →"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -202,7 +202,7 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 
 	logins.ends["sentry"] <- errors.New("access denied")
 	pressAndRun(s, "enter")
-	if text := loginsText(s); !strings.Contains(text, "  sentry  ✗ access denied\n> Continue →") {
+	if text := loginsText(s); !strings.Contains(text, "  sentry  ✗ access denied\n\n> Continue →") {
 		t.Errorf("screen:\n%s\nwant sentry's failure shown and the cursor on Continue", text)
 	}
 }
@@ -261,7 +261,7 @@ func TestLoginsScreen_aFailedLoginShowsOnlyTheFirstLineOfItsError(t *testing.T) 
 	s := loginScreen(logins, "linear")
 	logins.ends["linear"] <- errors.New("oauth2: cannot fetch token: 502\rBad Gateway\nResponse: <html>\n<body>\x1b[31mdown</body>")
 	pressAndRun(s, "enter")
-	if text := loginsText(s); text != "  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n> Continue →" {
+	if text := loginsText(s); text != "Log in\n  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n\n> Continue →" {
 		t.Errorf("screen:\n%q\nwant the error's first line, without control characters, on linear's row", text)
 	}
 }

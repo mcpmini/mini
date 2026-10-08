@@ -65,6 +65,10 @@ func (s *loginsScreen) refresh() {
 			s.rows = append(s.rows, status)
 		}
 	}
+	sections := []string{logInSection, byHandSection}
+	slices.SortStableFunc(s.rows, func(a, b initcmd.ServerStatus) int {
+		return slices.Index(sections, s.section(a)) - slices.Index(sections, s.section(b))
+	})
 	// Rows come and go as checks finish, so the user's pick is found again by name.
 	s.cursor = s.nextToLogIn(-1)
 	if i := s.rowIndex(selected); s.moved && s.selectable(i) {
@@ -188,7 +192,15 @@ func (s *loginsScreen) body(int) string {
 		width = max(width, len(status.Name))
 	}
 	var lines []string
+	section := ""
 	for i, status := range s.rows {
+		if s.section(status) != section {
+			if section != "" {
+				lines = append(lines, "")
+			}
+			section = s.section(status)
+			lines = append(lines, bold.Render(section))
+		}
 		lines = append(lines, s.cursorMark(i)+fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status)))
 		if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
 			lines = append(lines, s.urlLines(4+width)...)
@@ -196,9 +208,22 @@ func (s *loginsScreen) body(int) string {
 	}
 	if len(lines) == 0 {
 		// The last check cleared the final row while the screen was shown.
-		lines = append(lines, "Every server works; nothing is left to set up.", "")
+		lines = append(lines, "Every server works; nothing is left to set up.")
 	}
-	return strings.Join(append(lines, s.cursorMark(len(s.rows))+"Continue →"), "\n")
+	return strings.Join(append(lines, "", s.cursorMark(len(s.rows))+"Continue →"), "\n")
+}
+
+const (
+	logInSection  = "Log in"
+	byHandSection = "Set up by hand"
+)
+
+// The cursor only stops on servers it can log in to, so the rest are grouped apart from them.
+func (s *loginsScreen) section(status initcmd.ServerStatus) string {
+	if _, tried := s.results[status.Name]; tried || status.Readiness == initcmd.NeedsLogin || s.checking[status.Name] {
+		return logInSection
+	}
+	return byHandSection
 }
 
 // Authorize URLs run to hundreds of characters and the app cuts lines at the window's edge, so the
