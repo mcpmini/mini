@@ -116,7 +116,7 @@ func TestApply_removesOnlyVerifiedDuplicates(t *testing.T) {
 	if got := entryNamesIn(t, codex); !reflect.DeepEqual(got, []string{"github", "mini"}) {
 		t.Errorf("Codex entries switched on = %v, want github and mini", got)
 	}
-	wantKept := []KeptEntry{{Entry: "linear", Server: "linear", Err: checks["linear"]}}
+	wantKept := []KeptEntry{{Entry: "linear", Err: checks["linear"]}}
 	if !reflect.DeepEqual(results[0].Removed, []string{"github"}) || !reflect.DeepEqual(results[0].Kept, wantKept) {
 		t.Errorf("Claude Code result = %+v, want github removed and linear kept", results[0])
 	}
@@ -137,7 +137,7 @@ func TestApply_keepsDuplicatesWhenTheWrittenMiniWontServeThem(t *testing.T) {
 		Mini: agents.MiniEntry{Command: f.mini, Args: []string{"connect"}}, Checks: map[string]error{"files": nil},
 	})
 
-	wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
+	wantKept := []KeptEntry{{Entry: "files", Err: errMiniInactive}}
 	if results[0].Removed != nil || !reflect.DeepEqual(results[0].Kept, wantKept) {
 		t.Errorf("result = %+v, want files kept: the mini written runs the default config directory", results[0])
 	}
@@ -251,7 +251,7 @@ func TestApply_neverReplaces(t *testing.T) {
 	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, want) || results[0].Removed != nil {
 		t.Errorf("entries = %v, removed = %v; want %v and nothing removed", got, results[0].Removed, want)
 	}
-	wantKept := []KeptEntry{{Entry: "never-checked", Server: "unasked", Err: errNotChecked}}
+	wantKept := []KeptEntry{{Entry: "never-checked", Err: errNotChecked}}
 	if !reflect.DeepEqual(results[0].Kept, wantKept) {
 		t.Errorf("kept = %+v, want %+v", results[0].Kept, wantKept)
 	}
@@ -518,7 +518,7 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			Counted: map[string][]string{"Codex": {"files"}, "Cursor": {"files"}},
 		})
 
-		wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
+		wantKept := []KeptEntry{{Entry: "files", Err: errMiniInactive}}
 		for i, result := range results {
 			if result.ExistingMini != MiniEntryInactive || result.Removed != nil ||
 				!reflect.DeepEqual(result.Kept, wantKept) {

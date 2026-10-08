@@ -232,10 +232,11 @@ func (s *connectScreen) removeSubtitles() []string {
 		return []string{"Nothing to remove from the ticked agents"}
 	}
 	if removed == 0 {
-		return []string{"Nothing to remove yet: no existing MCP's mini copy passed its connection check"}
+		return []string{"Nothing to remove yet: none of your MCPs work in mini yet"}
 	}
-	lines := []string{fmt.Sprintf("Will remove %d %s from existing agent configs. "+
-		"They will be backed up alongside the existing files with minibackup.<ext>", removed, mcps(removed))}
+	lines := []string{
+		fmt.Sprintf("Removes %d %s that mini now runs; the configs are backed up first", removed, mcps(removed)),
+	}
 	for _, name := range disabling {
 		lines = append(lines, name+": existing MCPs will be disabled, not removed")
 	}

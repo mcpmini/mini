@@ -171,14 +171,14 @@ func TestConnectScreen_removingWaitsForTheChecksThenCountsTheTickedAgents(t *tes
 
 	plan.checksPass(s, check)
 	text := connectText(s)
-	count := strings.Contains(text, "Will remove 3 MCPs from existing agent configs.")
+	count := strings.Contains(text, "Removes 3 MCPs that mini now runs")
 	if !count || !strings.Contains(text, "Codex: existing MCPs will be disabled, not removed") {
 		t.Errorf("screen:\n%s\nwant 3 MCPs counted across both agents, and the Codex note", text)
 	}
 	s.handle(press("up"))
 	s.handle(press("space"))
 	text = connectText(s)
-	if !strings.Contains(text, "Will remove 2 MCPs") || strings.Contains(text, "Codex: existing") {
+	if !strings.Contains(text, "Removes 2 MCPs") || strings.Contains(text, "Codex: existing") {
 		t.Errorf("screen with Codex unticked:\n%s\nwant only Claude's 2 MCPs and no Codex note", text)
 	}
 	s.handle(press("down"))
@@ -213,7 +213,7 @@ func TestConnectScreen_aCheckRunFromAnEarlierVisitIsIgnored(t *testing.T) {
 		t.Fatalf("screen:\n%s\nwant the earlier visit's result ignored while this visit's checks run", text)
 	}
 	plan.checksPass(s, later)
-	if text := connectText(s); !strings.Contains(text, "Will remove 1 MCP from") {
+	if text := connectText(s); !strings.Contains(text, "Removes 1 MCP that") {
 		t.Errorf("screen:\n%s\nwant this visit's result counted", text)
 	}
 }
@@ -232,7 +232,7 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 		s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
 		plan.release <- initcmd.Removals{}
 		s.update(check())
-		want := "Nothing to remove yet: no existing MCP's mini copy passed its connection check"
+		want := "Nothing to remove yet: none of your MCPs work in mini yet"
 		if text := connectText(s); !strings.Contains(text, want) {
 			t.Errorf("screen:\n%s\nwant it to say nothing can be removed yet", text)
 		}
@@ -258,7 +258,7 @@ func TestConnectScreen_removingWithTheRemovableAgentsUntickedSaysSo(t *testing.T
 	s.handle(press("space"))
 	text := connectText(s)
 	if !strings.Contains(text, "Nothing to remove from the ticked agents") ||
-		strings.Contains(text, "passed its connection check") {
+		strings.Contains(text, "work in mini yet") {
 		t.Errorf("screen:\n%s\nwant it to say the ticked agents have nothing to remove, not that checks failed", text)
 	}
 }

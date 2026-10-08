@@ -101,7 +101,8 @@ func keptReason(kept KeptEntry) string {
 	if errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errMiniInactive) {
 		return kept.Err.Error()
 	}
-	return fmt.Sprintf("mini's %s failed its connection check: %v", kept.Server, kept.Err)
+	// The check's error is a protocol detail; what's left to do is in the summary's finishing steps.
+	return "it doesn't work in mini yet"
 }
 
 // JoinAnd lists names as people write them: "a", "a and b", "a, b and c".

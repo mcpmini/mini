@@ -251,14 +251,14 @@ func TestSummary_entriesRemovingLeftInPlace(t *testing.T) {
 			Agent:  claude,
 			Backup: "/home/u/.claude.minibackup.json",
 			Kept: []KeptEntry{
-				{Entry: "gh", Server: "github", Err: errors.New("connection refused")},
-				{Entry: "files", Server: "files", Err: errNotChecked},
+				{Entry: "gh", Err: errors.New("connection refused")},
+				{Entry: "files", Err: errNotChecked},
 			},
 			Changed: []string{"notes"},
 		}}},
 	)
 	requireLines(t, got,
-		"  gh stays in Claude Code: mini's github failed its connection check: connection refused\n",
+		"  gh stays in Claude Code: it doesn't work in mini yet\n",
 		"  files stays in Claude Code: its connection wasn't checked\n",
 		"  notes stays in Claude Code: it changed after it was checked\n",
 	)
@@ -269,7 +269,7 @@ func TestSummary_anAgentWhoseEntriesAllStayedStillGetsAHeading(t *testing.T) {
 	got := Summary(
 		Report{Agents: AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini"}}, Connected: []AgentResult{{
 			Agent: claude,
-			Kept:  []KeptEntry{{Entry: "gh", Server: "github", Err: errors.New("connection refused")}},
+			Kept:  []KeptEntry{{Entry: "gh", Err: errors.New("connection refused")}},
 		}}},
 	)
 	requireLines(t, got, "\nClaude Code: /home/u/.claude.json is unchanged\n  gh stays in Claude Code")
