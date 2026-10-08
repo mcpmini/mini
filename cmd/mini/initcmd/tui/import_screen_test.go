@@ -39,14 +39,14 @@ func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
 	}
 }
 
-func TestImportScreen_anUntickedRowSaysWhy(t *testing.T) {
+func TestImportScreen_onlyASwitchedOffRowSaysWhyItIsUnticked(t *testing.T) {
 	switchedOff := candidate("notes", "https://notes.example.com/mcp", false, "Codex")
 	switchedOff.Reason = initcmd.SkipSwitchedOff
 	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
-	second.Reason, second.SharesName = initcmd.SkipSecondConfig, "github"
+	second.Reason = initcmd.SkipSecondConfig
 	text := screenText(newImportScreen([]initcmd.Candidate{second, switchedOff}))
 	for _, want := range []string{
-		"github-2  gh.example.com/mcp     Cursor\n      another config named github\n",
+		"github-2  gh.example.com/mcp     Cursor\n  [ ] notes",
 		"notes     notes.example.com/mcp  Codex\n      switched off in Codex",
 	} {
 		if !strings.Contains(text, want) {
@@ -89,19 +89,6 @@ func TestImportScreen_enterContinuesAndEscGoesBack(t *testing.T) {
 		if got := s.handle(press(key)); got != want {
 			t.Errorf("%s = %v, want %v", key, got, want)
 		}
-	}
-}
-
-func TestImportScreen_aSecondConfigSaysWhatDiffersFromTheFirst(t *testing.T) {
-	first := candidate("github", "https://gh.example.com/mcp", true, "Claude Code")
-	first.Server.Headers = map[string]string{"X-Team": "one"}
-	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
-	second.Reason, second.SharesName = initcmd.SkipSecondConfig, "github"
-	second.Server.Headers = map[string]string{"X-Team": "two"}
-	if text := screenText(newImportScreen([]initcmd.Candidate{first, second})); !strings.Contains(
-		text, "another config named github: different headers",
-	) {
-		t.Errorf("screen:\n%s\nwant the second config's row to name the headers as the difference", text)
 	}
 }
 

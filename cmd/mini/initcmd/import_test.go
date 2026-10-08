@@ -356,25 +356,23 @@ func TestPlanImport_offersWhatItLeavesOutUnpicked(t *testing.T) {
 		from   []AgentEntry
 		picked bool
 		reason SkipReason
-		shares string
 	}
 	var got []row
 	for _, c := range plan.Candidates {
 		got = append(
 			got,
-			row{name: c.Server.Name, from: c.From, picked: c.Picked, reason: c.Reason, shares: c.SharesName},
+			row{name: c.Server.Name, from: c.From, picked: c.Picked, reason: c.Reason},
 		)
 	}
 	want := []row{
-		{name: "github", from: []AgentEntry{{"Claude Code", "github"}}, picked: true, reason: SkipNone, shares: ""},
+		{name: "github", from: []AgentEntry{{"Claude Code", "github"}}, picked: true, reason: SkipNone},
 		{
 			name:   "github-3",
 			from:   []AgentEntry{{"Codex", "github"}},
 			picked: false,
 			reason: SkipSecondConfig,
-			shares: "github",
 		},
-		{name: "notes", from: []AgentEntry{{"Codex", "notes"}}, picked: false, reason: SkipSwitchedOff, shares: ""},
+		{name: "notes", from: []AgentEntry{{"Codex", "notes"}}, picked: false, reason: SkipSwitchedOff},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf(
@@ -386,7 +384,7 @@ func TestPlanImport_offersWhatItLeavesOutUnpicked(t *testing.T) {
 	}
 }
 
-func TestPlanImport_aSecondConfigSharesTheNameItsSuffixComesFrom(t *testing.T) {
+func TestPlanImport_aSecondConfigIsSuffixedFromItsOwnName(t *testing.T) {
 	x, y := remoteEntry("https://gh.example.com/mcp", "${X}"), remoteEntry("https://gh.example.com/mcp", "${Y}")
 	plan := planFor([]agents.Agent{
 		agentWith("Claude Code", map[string]agents.Server{"gh": y}),
@@ -394,7 +392,10 @@ func TestPlanImport_aSecondConfigSharesTheNameItsSuffixComesFrom(t *testing.T) {
 		agentWith("Cursor", map[string]agents.Server{"gh": x}),
 	}, "github")
 	i := slices.IndexFunc(plan.Candidates, func(c Candidate) bool { return c.Server.Name == "gh-2" })
-	if i < 0 || plan.Candidates[i].SharesName != "gh" {
-		t.Errorf("candidates = %+v; want gh-2 sharing gh, not the github mini already has", plan.Candidates)
+	if i < 0 {
+		t.Errorf(
+			"candidates = %+v; want gh-2, suffixed from gh rather than the github mini already has",
+			plan.Candidates,
+		)
 	}
 }
