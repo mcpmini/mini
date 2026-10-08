@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -198,7 +197,14 @@ func executeRaw(ctx context.Context, conn transport.Connection, cc callContext) 
 }
 
 func executeProjected(ctx context.Context, conn transport.Connection, cc callContext, mode callOutput) {
-	store := openCallStore(cc.cfg, cc.configDir, cc.clock)
+	store, err := openCallStore(cc.cfg, cc.configDir, cc.clock)
+	if err != nil {
+		if closeErr := conn.Close(); closeErr != nil {
+			err = fmt.Errorf("%w (close upstream: %w)", err, closeErr)
+		}
+		exitOnCallError(err)
+		return
+	}
 	defer store.Close()
 
 	result, err := invoke.Invoke(ctx, buildInvokeParams(conn, cc, store))
@@ -207,9 +213,14 @@ func executeProjected(ctx context.Context, conn transport.Connection, cc callCon
 	exitOnCallError(printCallOutput(cc.serverName, cc.toolName, result.Envelope, mode))
 }
 
-func openCallStore(cfg *config.Config, configDir string, clock clock.Clock) *response.Store {
+func openCallStore(cfg *config.Config, configDir string, clock clock.Clock) (*response.Store, error) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	return mustCallStore(cfg, configDir, logger, clock)
+	return newCallStore(callStoreParams{
+		Config:    cfg,
+		ConfigDir: configDir,
+		Logger:    logger,
+		Clock:     clock,
+	})
 }
 
 func buildInvokeParams(conn transport.Connection, cc callContext, store *response.Store) invoke.InvokeParams {
@@ -289,18 +300,6 @@ func resolveCallProjection(sc *config.ServerConfig, toolName string) *config.Pro
 		return p
 	}
 	return sc.Projections["*"]
-}
-
-func mustCallStore(cfg *config.Config, configDir string, logger *slog.Logger, clock clock.Clock) *response.Store {
-	sc := response.StoreConfigFrom(cfg, configDir)
-	sc.Clock = clock
-	store, err := response.NewStore(sc)
-	if err != nil {
-		logger.Warn("could not open response store, using temp dir", "err", err)
-		sc.Dir = filepath.Join(os.TempDir(), "mini-responses")
-		store, _ = response.NewStore(sc)
-	}
-	return store
 }
 
 func printCallOutput(serverName, toolName string, env *response.Envelope, mode callOutput) error {
