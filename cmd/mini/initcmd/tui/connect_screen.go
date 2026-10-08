@@ -108,17 +108,18 @@ func (s *connectScreen) subtitle(choice initcmd.ConnectChoice) string {
 	for _, agent := range s.agents {
 		names = append(names, agent.Name)
 	}
-	if len(names) == 1 {
-		return "Leaves " + names[0] + " as it is"
-	}
-	return "Leaves " + initcmd.JoinAnd(names) + " as they are"
+	return "Leaves " + withVerb(names, "as it is", "as they are")
 }
 
 func alreadyHaveMini(names []string) string {
+	return withVerb(names, "already has a mini entry.", "already have a mini entry.")
+}
+
+func withVerb(names []string, one, many string) string {
 	if len(names) == 1 {
-		return names[0] + " already has a mini entry."
+		return names[0] + " " + one
 	}
-	return initcmd.JoinAnd(names) + " already have a mini entry."
+	return initcmd.JoinAnd(names) + " " + many
 }
 
 func (s *connectScreen) keys() string {
