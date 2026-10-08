@@ -77,7 +77,11 @@ func (s *importScreen) body(height int) string {
 }
 
 func (s *importScreen) keys() string {
-	return "space tick · a all · / filter · enter continue"
+	return s.list.keys("space tick · a all · / filter · enter continue")
+}
+
+func (s *importScreen) filterLine() string {
+	return s.list.filterLine()
 }
 
 func (s *importScreen) empty() bool {

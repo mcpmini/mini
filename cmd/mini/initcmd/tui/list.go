@@ -84,6 +84,17 @@ func (l *list) setFilter(filter string) {
 	l.cursor, l.offset = 0, 0
 }
 
+// keys replaces the screen's keys while a filter is typed, and adds how to clear one that is kept.
+func (l *list) keys(screenKeys string) string {
+	switch {
+	case l.filtering:
+		return "type to filter · ↑↓ move · enter done · esc clear"
+	case l.filter != "":
+		return screenKeys + " · esc clear filter"
+	}
+	return screenKeys
+}
+
 // In filter mode the list takes every key, so typed characters never act as commands.
 func (l *list) handle(key tea.KeyPressMsg) bool {
 	if l.filtering {
