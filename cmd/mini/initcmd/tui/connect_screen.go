@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -86,9 +85,8 @@ func (s *connectScreen) body(int) string {
 	if len(s.withMini) > 0 {
 		lines = append(lines, dim.Render(alreadyHaveMini(s.withMini)), "")
 	}
-	width := widest(s.agents, func(agent agents.Agent) string { return agent.Name })
 	for i := range s.agentRows() {
-		lines = append(lines, cursorMark(i == s.cursor)+s.agentLine(s.agents[i], width))
+		lines = append(lines, cursorMark(i == s.cursor)+checkbox(s.ticked[s.agents[i].Name])+s.agents[i].Name)
 	}
 	if s.agentRows() > 0 {
 		lines = append(lines, "")
@@ -101,10 +99,6 @@ func (s *connectScreen) body(int) string {
 		)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func (s *connectScreen) agentLine(agent agents.Agent, width int) string {
-	return checkbox(s.ticked[agent.Name]) + fmt.Sprintf("%-*s  %s", width, agent.Name, dim.Render(agent.ConfigPath))
 }
 
 func (s *connectScreen) subtitle(choice initcmd.ConnectChoice) string {

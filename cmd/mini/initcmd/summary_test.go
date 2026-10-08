@@ -194,9 +194,8 @@ func TestSummary_connectedAgents(t *testing.T) {
 		{Agent: codex, Err: errors.New("parse config.toml: bad table")},
 	}})
 	requireLines(t, got,
-		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json; "+
-			"to undo: cp /home/u/.claude.minibackup.json /home/u/.claude.json\n",
-		"Cursor: created /home/u/.cursor/mcp.json; to undo: rm /home/u/.cursor/mcp.json\n",
+		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json\n",
+		"Cursor: created /home/u/.cursor/mcp.json\n",
 		"Couldn't connect Codex: parse config.toml: bad table\nAdd mini to /home/u/.codex/config.toml by hand:\n"+
 			"  [mcp_servers.mini]\n",
 		"Restart Claude Code and Cursor to start using mini.\n",

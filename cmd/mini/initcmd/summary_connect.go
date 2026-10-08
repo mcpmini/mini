@@ -81,10 +81,9 @@ func writeAgentResult(b *strings.Builder, mini agents.MiniEntry, result AgentRes
 		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nAdd mini to %s by hand:\n%s\n",
 			name, result.Err, file, indent(handConnectStep(result.Agent, mini), "  "))
 	case result.Created:
-		fmt.Fprintf(b, "\n%s: created %s; to undo: rm %s\n", name, file, shellQuote(file))
+		fmt.Fprintf(b, "\n%s: created %s\n", name, file)
 	case result.Backup != "":
-		fmt.Fprintf(b, "\n%s: %s backed up to %s; to undo: cp %s %s\n",
-			name, file, result.Backup, shellQuote(result.Backup), shellQuote(file))
+		fmt.Fprintf(b, "\n%s: %s backed up to %s\n", name, file, result.Backup)
 	}
 }
 
