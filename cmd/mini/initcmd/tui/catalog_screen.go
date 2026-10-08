@@ -3,8 +3,11 @@ package tui
 import (
 	"net/url"
 	"slices"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/catalog"
@@ -45,6 +48,16 @@ func (s *catalogScreen) enter() {
 		}
 	}
 	s.list = newList(s.rows(shown), s.checked)
+	s.list.header = row{label: "SERVER", detail: pad("URL", s.hostWidth()) + "  SETUP"}
+}
+
+// Measured over every catalog server, not just those shown, so the columns don't shift as Import changes.
+func (s *catalogScreen) hostWidth() int {
+	width := len("URL")
+	for _, e := range s.available {
+		width = max(width, ansi.StringWidth(host(e.URL)))
+	}
+	return width
 }
 
 func (s *catalogScreen) shown() []catalog.Entry {
@@ -56,22 +69,19 @@ func (s *catalogScreen) rows(shown []catalog.Entry) []row {
 	var rows []row
 	for _, name := range s.popular {
 		if i := slices.IndexFunc(shown, func(e catalog.Entry) bool { return e.Name == name }); i >= 0 {
-			r := entryRow(shown[i], "Popular")
+			r := s.entryRow(shown[i], "Popular")
 			r.repeated = true
 			rows = append(rows, r)
 		}
 	}
 	for _, e := range shown {
-		rows = append(rows, entryRow(e, e.Category))
+		rows = append(rows, s.entryRow(e, e.Category))
 	}
 	return rows
 }
 
-func entryRow(e catalog.Entry, section string) row {
-	detail := host(e.URL)
-	if setup := setupLabel(e.Auth); setup != "" {
-		detail += "  " + setup
-	}
+func (s *catalogScreen) entryRow(e catalog.Entry, section string) row {
+	detail := strings.TrimRight(pad(host(e.URL), s.hostWidth())+"  "+setup(e.Auth), " ")
 	return row{key: e.Name, label: e.Name, detail: detail, section: section, search: e.Title + " " + e.Description}
 }
 
@@ -83,12 +93,14 @@ func host(rawURL string) string {
 	return rawURL
 }
 
-func setupLabel(auth string) string {
+func setup(auth string) string {
 	switch auth {
+	case catalog.AuthOAuth2:
+		return "browser login"
 	case catalog.AuthToken:
-		return "needs a token"
+		return "API token"
 	case catalog.AuthOAuth2App:
-		return "needs your own OAuth app"
+		return "your own OAuth app"
 	}
 	return ""
 }
