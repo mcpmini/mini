@@ -102,6 +102,12 @@ func TestCatalogScreen_filtersByDescription(t *testing.T) {
 	if text := catalogText(s); strings.Count(text, "[ ] github") != 1 || strings.Contains(text, "linear") {
 		t.Errorf("screen:\n%s\nwant only github, once, matched by its description", text)
 	}
+	if line, keys := ansi.Strip(
+		s.filterLine(),
+	), s.keys(); line != "/pull_" ||
+		!strings.HasPrefix(keys, "type to filter") {
+		t.Errorf("filter line %q, keys %q; want the typed filter and how to end it, for the footer", line, keys)
+	}
 }
 
 func TestCatalogScreen_aServerTickedOnImportIsHiddenAndLosesItsCatalogTick(t *testing.T) {

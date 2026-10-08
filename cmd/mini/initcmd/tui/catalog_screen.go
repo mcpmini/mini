@@ -115,7 +115,11 @@ func (s *catalogScreen) body(height int) string {
 }
 
 func (s *catalogScreen) keys() string {
-	return "space tick · / filter · enter continue"
+	return s.list.keys("space tick · / filter · enter continue")
+}
+
+func (s *catalogScreen) filterLine() string {
+	return s.list.filterLine()
 }
 
 func (s *catalogScreen) empty() bool {

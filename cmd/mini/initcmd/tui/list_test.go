@@ -227,7 +227,7 @@ func TestList_sections(t *testing.T) {
 	t.Run("the filter lists a repeated row once and matches text the row doesn't show", func(t *testing.T) {
 		l := newList(sectionRows(), map[string]bool{})
 		typeKeys(l, "/", "w", "i", "k", "i")
-		if view := plainView(l, 20); view != "filter: wiki_\nProject management\n> [ ] notion" {
+		if view := plainView(l, 20); view != "Project management\n> [ ] notion" {
 			t.Errorf("view:\n%s\nwant notion once, under its category", view)
 		}
 	})
