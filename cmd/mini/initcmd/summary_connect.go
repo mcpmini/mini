@@ -58,8 +58,7 @@ func writeConnected(b *strings.Builder, r Report) {
 	}
 }
 
-// notTried are the agents still without mini that init didn't try to connect: the user unticked
-// them. Those it tried and failed already got their step with the error.
+// An agent init tried and failed to connect already got its hand step, with the error.
 func notTried(r Report) []agents.Agent {
 	var left []agents.Agent
 	for _, agent := range r.Agents.NoMini {

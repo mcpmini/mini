@@ -19,7 +19,6 @@ var connectOptions = []connectOption{
 	{initcmd.DontConnect, "Don't connect"},
 }
 
-// connectScreen asks which agents to connect mini to, and how.
 type connectScreen struct {
 	agents   []agents.Agent
 	withMini []string

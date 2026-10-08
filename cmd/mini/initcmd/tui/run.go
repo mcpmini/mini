@@ -28,8 +28,7 @@ type Outcome struct {
 	Report initcmd.Report
 }
 
-// Run shows the screens, writes the picks when the user moves past Catalog, and connects the agents
-// the user picked on finishing.
+// Run shows the screens, saves the picks on leaving Catalog, and connects the picked agents on finishing.
 func Run(p Params) (Outcome, error) {
 	plan, err := p.Setup.Plan()
 	if err != nil {

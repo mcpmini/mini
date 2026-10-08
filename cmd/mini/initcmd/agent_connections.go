@@ -28,8 +28,8 @@ func ClassifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnec
 	return c
 }
 
-// AgentsWithMini names the agents to connect that already have a mini entry. That entry is the
-// user's, so connecting leaves it as it is, whether or not it serves this config directory.
+// AgentsWithMini names the agents to connect that already have a mini entry; connecting leaves
+// that entry alone, whatever config directory it serves.
 func (s Setup) AgentsWithMini() map[string]bool {
 	c := ClassifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect)
 	withMini := map[string]bool{}

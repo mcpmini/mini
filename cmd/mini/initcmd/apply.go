@@ -67,7 +67,6 @@ var (
 	)
 )
 
-// Connect applies Connect's choice to the agents the user ticked.
 func (s Setup) Connect(ctx context.Context, list []agents.Agent, choice ConnectChoice) []AgentResult {
 	return Apply(ctx, ApplyParams{
 		ConfigDir: s.ConfigDir,
