@@ -116,3 +116,34 @@ func TestImportScreen_aLongCommandLeavesRoomForTheOtherColumns(t *testing.T) {
 		t.Errorf("screen:\n%s\nwant the command cut short so the agents column stays in line", text)
 	}
 }
+
+func TestImportScreen_eachHeadingSitsAboveItsColumnEvenWhenTheColumnIsNarrower(t *testing.T) {
+	s := newImportScreen([]initcmd.Candidate{
+		candidate("a", "https://x.io", true, "Codex"),
+		candidate("b", "https://y.io", true, "Cursor"),
+	})
+	lines := strings.Split(ansi.Strip(s.body(20)), "\n")
+	header, row := lines[0], lines[1]
+	for heading, cell := range map[string]string{"SERVER": "a", "COMMAND / URL": "x.io", "FROM": "Codex"} {
+		if strings.Index(header, heading) != strings.Index(row, cell) {
+			t.Errorf("header %q and row %q: %s doesn't start where %s does", header, row, cell, heading)
+		}
+	}
+}
+
+func TestImportScreen_theHeaderStaysAboveTheRowsAsTheyScroll(t *testing.T) {
+	var candidates []initcmd.Candidate
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		candidates = append(candidates, candidate(name, "https://"+name+".example.com/mcp", true, "Codex", "Cursor"))
+	}
+	s := newImportScreen(candidates)
+	for range 4 {
+		s.handle(press("down"))
+	}
+	lines := strings.Split(ansi.Strip(s.body(3)), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(strings.TrimSpace(lines[0]), "SERVER") ||
+		!strings.HasPrefix(lines[2], "> [x] e") {
+		t.Errorf("body at height 3:\n%s\nwant the header, then rows ending at the cursor on e",
+			strings.Join(lines, "\n"))
+	}
+}

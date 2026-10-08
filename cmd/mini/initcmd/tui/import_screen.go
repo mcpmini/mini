@@ -29,11 +29,12 @@ func newImportScreen(candidates []initcmd.Candidate) *importScreen {
 		rows = append(rows, row{
 			key:      c.Server.Name,
 			label:    c.Server.Name,
-			detail:   s.detail(c, widths),
+			detail:   s.columnText(target(c.Server), agentList(c), widths),
 			subtitle: s.unpickedReason(c),
 		})
 	}
 	s.list = newList(rows, checked)
+	s.list.header = row{label: "SERVER", detail: s.columnText(targetHeading, agentsHeading, widths)}
 	return s
 }
 
@@ -92,27 +93,24 @@ func (s *importScreen) pick(candidates []initcmd.Candidate) {
 type columns struct {
 	target int
 	agents int
-	auth   int
 }
 
+const targetHeading, agentsHeading = "COMMAND / URL", "FROM"
+
 func (s *importScreen) columnWidths() columns {
-	var w columns
+	w := columns{target: ansi.StringWidth(targetHeading), agents: ansi.StringWidth(agentsHeading)}
 	for _, c := range s.candidates {
 		w.target = max(w.target, ansi.StringWidth(target(c.Server)))
 		w.agents = max(w.agents, ansi.StringWidth(agentList(c)))
-		w.auth = max(w.auth, ansi.StringWidth(authKind(c.Server)))
 	}
 	return w
 }
 
 // The agents column is dropped when every server comes from one agent: the heading names it.
-func (s *importScreen) detail(c initcmd.Candidate, w columns) string {
-	parts := []string{pad(target(c.Server), w.target)}
+func (s *importScreen) columnText(target, agents string, w columns) string {
+	parts := []string{pad(target, w.target)}
 	if len(s.agents) > 1 {
-		parts = append(parts, pad(agentList(c), w.agents))
-	}
-	if w.auth > 0 {
-		parts = append(parts, pad(authKind(c.Server), w.auth))
+		parts = append(parts, pad(agents, w.agents))
 	}
 	return strings.TrimRight(strings.Join(parts, "  "), " ")
 }
@@ -164,14 +162,4 @@ func pad(s string, width int) string {
 
 func agentList(c initcmd.Candidate) string {
 	return strings.Join(agentsOf([]initcmd.Candidate{c}), ", ")
-}
-
-func authKind(sc config.ServerConfig) string {
-	switch {
-	case sc.Auth != nil && sc.Auth.Type == config.AuthTypeOAuth2:
-		return "oauth"
-	case len(sc.Headers) > 0:
-		return "headers"
-	}
-	return ""
 }

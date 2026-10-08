@@ -13,9 +13,29 @@ var (
 )
 
 func (l *list) view(height int) string {
+	if l.header.label != "" {
+		height--
+	}
 	lines, cursorLine, cursorHeight := l.lines()
 	l.scrollTo(cursorLine, cursorHeight, height)
-	return strings.Join(lines[l.offset:min(l.offset+height, len(lines))], "\n")
+	shown := strings.Join(lines[l.offset:min(l.offset+height, len(lines))], "\n")
+	if l.header.label != "" {
+		shown = l.headerLine() + "\n" + shown
+	}
+	return shown
+}
+
+func (l *list) headerLine() string {
+	line := fmt.Sprintf("%-*s  %s", l.labelWidth(), l.header.label, l.header.detail)
+	return "      " + bold.Render(strings.TrimRight(line, " "))
+}
+
+func (l *list) labelWidth() int {
+	width := len(l.header.label)
+	for _, r := range l.rows {
+		width = max(width, len(r.label))
+	}
+	return width
 }
 
 func (l *list) scrollTo(line, rowHeight, height int) {
@@ -29,10 +49,7 @@ func (l *list) scrollTo(line, rowHeight, height int) {
 }
 
 func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
-	width := 0
-	for _, r := range l.rows {
-		width = max(width, len(r.label))
-	}
+	width := l.labelWidth()
 	for i, r := range l.rows {
 		if i == l.cursor {
 			cursorLine, cursorHeight = len(lines), 1

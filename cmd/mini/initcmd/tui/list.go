@@ -17,6 +17,8 @@ type list struct {
 	checked map[string]bool
 	cursor  int
 	offset  int
+	// header names the columns; it stays above the rows as they scroll. No label means no header.
+	header row
 }
 
 func newList(rows []row, checked map[string]bool) *list {
