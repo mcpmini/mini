@@ -22,6 +22,7 @@ go run ./tools/clocklint .
 go run ./tools/testkind .
 go run ./tools/fileiolint .
 testbin=$(mktemp -d)
-while IFS= read -r line; do export "$line"; done < <(scripts/test-bins.sh "$testbin")
+scripts/test-bins.sh "$testbin" > "$testbin/env"
+while IFS= read -r line; do export "$line"; done < "$testbin/env"
 go test -race -tags test ./...
 go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...

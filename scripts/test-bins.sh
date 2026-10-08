@@ -8,6 +8,7 @@ if [[ $# -ne 1 ]]; then
   exit 2
 fi
 dir=$(cd "$1" && pwd)
+cd "$(dirname "$0")/.."
 
 go build -o "$dir/echomcp" ./cmd/echomcp >&2
 go build -race -tags test -ldflags "-X github.com/mcpmini/mini/internal/version.buildRevision=integration-test" -o "$dir/mini" ./cmd/mini >&2
