@@ -42,6 +42,9 @@ func Fetch(ctx context.Context, client *http.Client, url string) (Catalog, error
 	if err := validatePopular(doc.Catalog); err != nil {
 		return Catalog{}, err
 	}
+	if err := validateCategoryOrder(doc.Catalog); err != nil {
+		return Catalog{}, err
+	}
 	return validated(withoutUnknownAuth(doc.Catalog))
 }
 
@@ -53,7 +56,16 @@ func withoutUnknownAuth(c Catalog) Catalog {
 		return unknown
 	})
 	c.Popular = slices.DeleteFunc(c.Popular, func(name string) bool { return skipped[name] })
+	c.CategoryOrder = withoutEmptyCategories(c.CategoryOrder, c.Entries)
 	return c
+}
+
+func withoutEmptyCategories(order []string, entries []Entry) []string {
+	present := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		present[entry.Category] = true
+	}
+	return slices.DeleteFunc(order, func(category string) bool { return !present[category] })
 }
 
 func download(ctx context.Context, client *http.Client, url string) ([]byte, error) {

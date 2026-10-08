@@ -21,8 +21,9 @@ type document struct {
 }
 
 type Catalog struct {
-	Entries []Entry  `json:"entries"`
-	Popular []string `json:"popular"`
+	Entries       []Entry  `json:"entries"`
+	Popular       []string `json:"popular"`
+	CategoryOrder []string `json:"category_order"`
 }
 
 type Entry struct {
@@ -72,7 +73,50 @@ func validated(c Catalog) (Catalog, error) {
 	if err := validatePopular(c); err != nil {
 		return Catalog{}, err
 	}
+	if err := validateCategoryOrder(c); err != nil {
+		return Catalog{}, err
+	}
+	c.Entries = orderedByCategory(c.Entries, c.CategoryOrder)
 	return c, nil
+}
+
+func validateCategoryOrder(c Catalog) error {
+	categories := make(map[string]bool, len(c.Entries))
+	for _, entry := range c.Entries {
+		categories[entry.Category] = true
+	}
+	seen := make(map[string]bool, len(c.CategoryOrder))
+	for _, category := range c.CategoryOrder {
+		if !categories[category] {
+			return fmt.Errorf("catalog category_order: %q is not a category of any server", category)
+		}
+		if seen[category] {
+			return fmt.Errorf("catalog category_order: %q is listed twice", category)
+		}
+		seen[category] = true
+	}
+	return nil
+}
+
+// orderedByCategory keeps entries stable within a category; categories not in order follow it by first appearance.
+func orderedByCategory(entries []Entry, order []string) []Entry {
+	ranks := categoryRanks(entries, order)
+	return slices.SortedStableFunc(slices.Values(entries), func(a, b Entry) int {
+		return cmp.Compare(ranks[a.Category], ranks[b.Category])
+	})
+}
+
+func categoryRanks(entries []Entry, order []string) map[string]int {
+	ranks := make(map[string]int, len(order))
+	for i, category := range order {
+		ranks[category] = i
+	}
+	for _, entry := range entries {
+		if _, ok := ranks[entry.Category]; !ok {
+			ranks[entry.Category] = len(ranks)
+		}
+	}
+	return ranks
 }
 
 func validatePopular(c Catalog) error {
