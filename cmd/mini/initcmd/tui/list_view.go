@@ -13,31 +13,56 @@ var (
 )
 
 func (l *list) view(height int) string {
-	l.scrollTo(height)
-	lines := l.lines()
-	return strings.Join(lines[l.offset:min(l.offset+height, len(lines))], "\n")
+	if l.header.label != "" {
+		height--
+	}
+	lines, cursorLine, cursorHeight := l.lines()
+	l.scrollTo(cursorLine, cursorHeight, height)
+	shown := strings.Join(lines[l.offset:min(l.offset+height, len(lines))], "\n")
+	if l.header.label != "" {
+		shown = l.headerLine() + "\n" + shown
+	}
+	return shown
 }
 
-func (l *list) scrollTo(height int) {
-	if l.cursor < l.offset {
-		l.offset = l.cursor
+func (l *list) headerLine() string {
+	line := fmt.Sprintf("%-*s  %s", l.labelWidth(), l.header.label, l.header.detail)
+	return "      " + bold.Render(strings.TrimRight(line, " "))
+}
+
+func (l *list) labelWidth() int {
+	width := len(l.header.label)
+	for _, r := range l.rows {
+		width = max(width, len(r.label))
 	}
-	if l.cursor >= l.offset+height {
-		l.offset = l.cursor - height + 1
+	return width
+}
+
+func (l *list) scrollTo(line, rowHeight, height int) {
+	if line < l.offset {
+		l.offset = line
+	}
+	if line+rowHeight > l.offset+height {
+		l.offset = line + rowHeight - height
 	}
 	l.offset = max(l.offset, 0)
 }
 
-func (l *list) lines() []string {
-	width := 0
-	for _, r := range l.rows {
-		width = max(width, len(r.label))
-	}
-	var lines []string
+func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
+	width := l.labelWidth()
 	for i, r := range l.rows {
+		if i == l.cursor {
+			cursorLine, cursorHeight = len(lines), 1
+		}
 		lines = append(lines, l.line(r, i == l.cursor, width))
+		if r.subtitle != "" {
+			lines = append(lines, "      "+dim.Render(r.subtitle))
+			if i == l.cursor {
+				cursorHeight++
+			}
+		}
 	}
-	return lines
+	return lines, cursorLine, cursorHeight
 }
 
 func (l *list) line(r row, atCursor bool, width int) string {

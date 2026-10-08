@@ -8,6 +8,8 @@ type row struct {
 	key    string
 	label  string
 	detail string
+	// subtitle is a dim line under the row; it never scrolls out of view with the cursor on it.
+	subtitle string
 }
 
 type list struct {
@@ -15,6 +17,8 @@ type list struct {
 	checked map[string]bool
 	cursor  int
 	offset  int
+	// header names the columns; it stays above the rows as they scroll. No label means no header.
+	header row
 }
 
 func newList(rows []row, checked map[string]bool) *list {
