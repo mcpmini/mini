@@ -18,11 +18,10 @@ func (s *Session) startChecks() {
 	for _, sc := range targets {
 		s.checks.wg.Go(func() { s.check(ctx, sc) })
 	}
-	// stopChecks showed every check finished; the restarted ones are running again.
+	// stopChecks cleared every check, so watchers must hear these run again.
 	s.notifyChanged()
 }
 
-// Checks the servers as loaded, so bundled and already-detected auth count.
 func (s *Session) checkTargets() []config.ServerConfig {
 	var unchecked []string
 	s.mu.Lock()
@@ -32,6 +31,7 @@ func (s *Session) checkTargets() []config.ServerConfig {
 		}
 	}
 	s.mu.Unlock()
+	// Read back from disk, so bundled and already-detected auth count.
 	return OAuthTargets(s.p.ConfigDir, unchecked)
 }
 

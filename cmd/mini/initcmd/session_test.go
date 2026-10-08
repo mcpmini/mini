@@ -23,17 +23,16 @@ func httpServer(name, url string) config.ServerConfig {
 	return config.ServerConfig{Name: name, Transport: "http", URL: url}
 }
 
-// fakeProbe records which servers were probed; when blocking, a probe lasts until it is cancelled.
 type fakeProbe struct {
-	blocking bool
-	started  chan string
-	mu       sync.Mutex
-	probed   []string
-	finished int
+	blocksUntilCancelled bool
+	started              chan string
+	mu                   sync.Mutex
+	probed               []string
+	finished             int
 }
 
 func newFakeProbe(blocking bool) *fakeProbe {
-	return &fakeProbe{blocking: blocking, started: make(chan string, 10)}
+	return &fakeProbe{blocksUntilCancelled: blocking, started: make(chan string, 10)}
 }
 
 func (f *fakeProbe) probe(ctx context.Context, _ string, sc config.ServerConfig) error {
@@ -41,7 +40,7 @@ func (f *fakeProbe) probe(ctx context.Context, _ string, sc config.ServerConfig)
 	f.probed = append(f.probed, sc.Name)
 	f.mu.Unlock()
 	f.started <- sc.Name
-	if f.blocking {
+	if f.blocksUntilCancelled {
 		<-ctx.Done()
 	}
 	f.mu.Lock()

@@ -74,7 +74,7 @@ func (s Setup) Plan() (Plan, error) {
 	}, nil
 }
 
-// Write is a whole run with nothing shown meanwhile: one sync, its OAuth checks, and the report.
+// Write is a run with no UI: one sync, its OAuth checks, then the report.
 func (s Setup) Write(p Plan) Report {
 	session := s.NewSession()
 	result := session.Sync(p.Servers())
@@ -86,12 +86,12 @@ func (s Setup) NewSession() *Session {
 	return NewSession(SessionParams{ConfigDir: s.ConfigDir})
 }
 
-// Servers is what the plan writes: the picked imports, then the catalog adds nothing configured or imported covers.
+// Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
 func (p Plan) Servers() []config.ServerConfig {
 	return planAdds(p.Import.picked(), p.Add, p.written).write
 }
 
-// Synced is the state the last sync left: every server written in this run, and what failed.
+// Synced is what the last sync left.
 type Synced struct {
 	Written []string
 	Failed  []ServerError

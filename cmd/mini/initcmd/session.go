@@ -18,12 +18,10 @@ import (
 type SessionParams struct {
 	ConfigDir string
 	Clock     clock.Clock
-	// Probe checks a server for OAuth; tests swap it for one that doesn't connect.
-	Probe probeFunc
+	Probe     probeFunc
 }
 
-// Session writes the servers picked in this run and checks the new ones for OAuth. Only
-// servers it wrote are ever removed; servers configured before the run are never touched.
+// Session writes this run's servers and removes only servers it wrote.
 // Sync, Written, WaitChecks and Close belong to one goroutine; Checking and Changed are safe from any.
 type Session struct {
 	p       SessionParams
@@ -36,9 +34,8 @@ type Session struct {
 	checked  map[string]bool
 }
 
-// encoded is the baseline for spotting a changed config; as bytes, it can't be altered through
-// maps or pointers the caller still shares with the config.
 type writtenServer struct {
+	// Bytes, not the config: the caller still shares its maps and pointers.
 	encoded []byte
 }
 
@@ -79,9 +76,8 @@ func NewSession(p SessionParams) *Session {
 	}
 }
 
-// Sync makes the servers written in this run match want, then starts checks on the written
-// HTTP servers that may need OAuth. A server whose config changed is removed and written again; a replacement
-// mini would reject leaves the previous config in place and is reported as failed.
+// Sync makes this run's servers match want. A changed config that mini would reject leaves the
+// previous one in place, reported as failed.
 func (s *Session) Sync(want []config.ServerConfig) SyncResult {
 	s.stopChecks()
 	var result SyncResult
@@ -133,8 +129,6 @@ func (s *Session) Written() []string {
 	return slices.Sorted(maps.Keys(s.written))
 }
 
-// Checking reports whether name's OAuth check is still running; until it finishes, whether the
-// server needs a login isn't known.
 func (s *Session) Checking(name string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -146,12 +140,11 @@ func (s *Session) Changed() <-chan struct{} {
 	return s.changed
 }
 
-// WaitChecks blocks until the running checks finish.
 func (s *Session) WaitChecks() {
 	s.checks.wg.Wait()
 }
 
-// Close cancels the running checks and waits for them, so nothing is written after it returns.
+// Close cancels the running checks and waits, so nothing is written after it returns.
 func (s *Session) Close() {
 	s.stopChecks()
 }
