@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
@@ -24,7 +25,7 @@ func startInitLogin(configDir string) func(ctx context.Context, name string) (tu
 		wait := func() error {
 			defer cancel()
 			_, err := finishBrowserLogin(ctx, login, p)
-			if err != nil {
+			if err != nil && !errors.Is(err, context.Canceled) {
 				// The screen shows the error's first line; a token endpoint's response body follows it.
 				log.Printf("login to %s failed: %v", name, err)
 			}

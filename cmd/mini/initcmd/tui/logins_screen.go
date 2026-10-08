@@ -269,7 +269,7 @@ func (s *loginsScreen) need(status initcmd.ServerStatus) string {
 
 func (s *loginsScreen) keys() string {
 	if s.pending != nil {
-		return "↑↓ move · esc also cancels the login"
+		return "↑↓ move"
 	}
 	if s.cursor < len(s.rows) {
 		return "↑↓ move · enter log in"

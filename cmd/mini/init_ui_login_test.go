@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -46,10 +48,14 @@ func TestStartInitLogin_aCompletedLoginSavesTheToken(t *testing.T) {
 	}
 }
 
-func TestStartInitLogin_aCancelledLoginSavesNothing(t *testing.T) {
+func TestStartInitLogin_aCancelledLoginSavesAndLogsNothing(t *testing.T) {
 	tokenServer := authtest.NewTokenServer(t)
 	dir := oauthServerIn(t, tokenServer)
 	browserThat(t, func(string) {})
+	var logged bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logged)
+	t.Cleanup(func() { log.SetOutput(previous) })
 	ctx, cancel := context.WithCancel(t.Context())
 
 	login, err := startInitLogin(dir)(ctx, "svc")
@@ -62,6 +68,9 @@ func TestStartInitLogin_aCancelledLoginSavesNothing(t *testing.T) {
 	}
 	if _, err := auth.Load(dir, "svc"); !auth.IsNotFound(err) {
 		t.Errorf("token after a cancelled login: %v, want none", err)
+	}
+	if logged.Len() > 0 {
+		t.Errorf("logged %q; a login the user cancelled isn't a failure worth a log line", logged.String())
 	}
 }
 
