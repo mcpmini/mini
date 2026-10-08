@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"strings"
 	"testing"
@@ -264,6 +265,21 @@ func TestLoginsScreen_aFailedLoginShowsOnlyTheFirstLineOfItsError(t *testing.T) 
 	if text := loginsText(s); text != "Log in\n  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n\n> Continue →" {
 		t.Errorf("screen:\n%q\nwant the error's first line, without control characters, on linear's row", text)
 	}
+}
+
+func TestLoginsScreen_aTimedOutLoginSaysSoAndCanBeTriedAgain(t *testing.T) {
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	logins.ends["linear"] <- fmt.Errorf("auth flow: %w", context.DeadlineExceeded)
+	pressAndRun(s, "enter")
+	s.handle(press("up"))
+	if text := loginsText(s); !strings.Contains(text, "> linear  ✗ timed out; enter to try again") {
+		t.Errorf("screen:\n%s\nwant the timeout said plainly, with the cursor able to go back to linear", text)
+	}
+	if _, retry := s.handle(press("enter")); retry == nil {
+		t.Error("enter on the timed-out row started no login")
+	}
+	t.Cleanup(s.cancelLogin)
 }
 
 func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.T) {

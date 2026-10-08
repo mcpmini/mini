@@ -82,26 +82,35 @@ func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerCo
 const loginTimeout = 5 * time.Minute
 
 func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
-	defer cancel()
 	fmt.Printf("Authorizing %s...\n", p.serverName)
-	login, err := beginBrowserLogin(ctx, p)
+	login, err := startBrowserLogin(context.Background(), p)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Open this URL in your browser:\n%s\n\n", login.AuthURL())
-	return finishBrowserLogin(ctx, login, p)
+	fmt.Printf("Open this URL in your browser:\n%s\n\n", login.url)
+	return login.wait()
 }
 
-// beginBrowserLogin must not print: init's UI owns the screen.
-func beginBrowserLogin(ctx context.Context, p pkceFlowParams) (*auth.BrowserLogin, error) {
+// browserLogin is a login waiting on the browser; wait ends it and saves the token.
+type browserLogin struct {
+	url  string
+	wait func() (*oauth2.Token, error)
+}
+
+func startBrowserLogin(ctx context.Context, p pkceFlowParams) (browserLogin, error) {
+	ctx, cancel := context.WithTimeout(ctx, loginTimeout)
 	params := auth.BeginLoginParams{ConfigDir: p.configDir, ServerName: p.serverName, Clock: clock.System()}
 	login, err := auth.BeginLogin(ctx, p.sc, params)
 	if err != nil {
-		return nil, err
+		cancel()
+		return browserLogin{}, err
 	}
 	p.opener(login.AuthURL()) //nolint:errcheck // the caller shows the URL, so a failed open only costs a click
-	return login, nil
+	wait := func() (*oauth2.Token, error) {
+		defer cancel()
+		return finishBrowserLogin(ctx, login, p)
+	}
+	return browserLogin{url: login.AuthURL(), wait: wait}, nil
 }
 
 func finishBrowserLogin(ctx context.Context, login *auth.BrowserLogin, p pkceFlowParams) (*oauth2.Token, error) {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -251,6 +252,9 @@ func (s *loginsScreen) state(status initcmd.ServerStatus) string {
 		return "waiting for the browser; if it didn't open, use this link:"
 	}
 	if err, tried := s.results[status.Name]; tried {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return "✗ timed out; enter to try again"
+		}
 		if err != nil {
 			return "✗ " + firstLine(err)
 		}
