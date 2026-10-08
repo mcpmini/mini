@@ -85,26 +85,56 @@ func footerOf(view string) string {
 	return strings.Join(lines[len(lines)-2:], "\n")
 }
 
-func TestApp_footerNamesEnterEscAndCtrlCWithinTheNarrowestWindow(t *testing.T) {
+func TestApp_footerNamesEnterEscAndCtrlCOnOneLine(t *testing.T) {
 	imports := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
 	a := sized(newApp([]screen{imports, &fakeScreen{name: "Last"}}))
-	first := footerOf(shown(a))
+	first := shown(a)
 	send(a, "enter")
 	second := shown(a)
-	if strings.Contains(first, "esc") || !strings.Contains(first, "enter continue") ||
-		!strings.Contains(first, "ctrl+c quit without saving") {
-		t.Errorf("first screen's footer = %q, want enter and ctrl+c, and no esc (it does nothing there)", first)
+	lastLine := func(view string) string { return view[strings.LastIndex(view, "\n")+1:] }
+	if footer := lastLine(first); strings.Contains(footer, "esc") || !strings.Contains(footer, "enter continue") ||
+		!strings.Contains(footer, "ctrl+c quit without saving") {
+		t.Errorf("first screen's last line = %q, want enter and ctrl+c, and no esc (it does nothing there)", footer)
 	}
-	if !strings.Contains(footerOf(second), "esc back") {
-		t.Errorf("second screen's footer = %q, want esc back", footerOf(second))
-	}
-	for _, line := range strings.Split(first, "\n") {
-		if len([]rune(line)) > minWidth {
-			t.Errorf("footer line %q is wider than the %d columns the UI draws in", line, minWidth)
-		}
+	if footer := lastLine(second); !strings.Contains(footer, "enter continue · esc back · ctrl+c") {
+		t.Errorf("second screen's last line = %q, want its keys, esc back and ctrl+c together", footer)
 	}
 	if lines := strings.Count(second, "\n") + 1; lines != 30 {
 		t.Errorf("view has %d lines, want the window's 30 so the footer sits at the bottom", lines)
+	}
+}
+
+func TestApp_inTheNarrowestWindowTheKeysSplitInsteadOfBeingCut(t *testing.T) {
+	imports := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	a := newApp([]screen{imports})
+	a.Update(tea.WindowSizeMsg{Width: minWidth, Height: minHeight})
+	footer := footerOf(shown(a))
+	if !strings.Contains(footer, "enter continue\nctrl+c quit without saving") || strings.Contains(footer, "…") {
+		t.Errorf("footer:\n%s\nwant the keys on one line and ctrl+c on the next, nothing cut", footer)
+	}
+}
+
+func TestApp_aFilterSitsJustAboveTheKeysAndEscClearsItInsteadOfGoingBack(t *testing.T) {
+	imports := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	a := sized(newApp([]screen{&fakeScreen{name: "First"}, imports}))
+	send(a, "enter", "/", "g")
+	if footer := footerOf(
+		shown(a),
+	); !strings.HasPrefix(footer, "/g_\ntype to filter") ||
+		strings.Contains(footer, "esc back") {
+		t.Errorf("footer while typing:\n%s\nwant the filter, then its keys, and no esc back", footer)
+	}
+	send(a, "enter")
+	if footer := footerOf(
+		shown(a),
+	); !strings.HasPrefix(footer, "/g\n") ||
+		!strings.Contains(footer, "esc clear filter") ||
+		strings.Contains(footer, "esc back") {
+		t.Errorf("footer with the filter kept:\n%s\nwant the filter above keys that say esc clears it", footer)
+	}
+	send(a, "esc", "esc")
+	if a.at != 0 {
+		t.Errorf("at = %d after esc twice; want the first esc to clear the filter and the second to go back", a.at)
 	}
 }
 

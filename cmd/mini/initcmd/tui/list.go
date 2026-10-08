@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -12,11 +15,19 @@ type row struct {
 	subtitle string
 }
 
+func (r row) matches(filter string) bool {
+	filter = strings.ToLower(filter)
+	return strings.Contains(strings.ToLower(r.label), filter) || strings.Contains(strings.ToLower(r.detail), filter)
+}
+
+// The cursor indexes the rows the filter shows.
 type list struct {
-	rows    []row
-	checked map[string]bool
-	cursor  int
-	offset  int
+	rows      []row
+	checked   map[string]bool
+	cursor    int
+	offset    int
+	filter    string
+	filtering bool
 	// header names the columns; it stays above the rows as they scroll. No label means no header.
 	header row
 }
@@ -25,15 +36,29 @@ func newList(rows []row, checked map[string]bool) *list {
 	return &list{rows: rows, checked: checked}
 }
 
+func (l *list) visible() []row {
+	if l.filter == "" {
+		return l.rows
+	}
+	var shown []row
+	for _, r := range l.rows {
+		if r.matches(l.filter) {
+			shown = append(shown, r)
+		}
+	}
+	return shown
+}
+
 func (l *list) current() (row, bool) {
-	if l.cursor >= len(l.rows) {
+	shown := l.visible()
+	if l.cursor >= len(shown) {
 		return row{}, false
 	}
-	return l.rows[l.cursor], true
+	return shown[l.cursor], true
 }
 
 func (l *list) move(step int) {
-	l.cursor = min(max(l.cursor+step, 0), max(len(l.rows)-1, 0))
+	l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
 }
 
 func (l *list) toggle() {
@@ -42,18 +67,40 @@ func (l *list) toggle() {
 	}
 }
 
-// toggleAll ticks every row, or unticks them all when they are all ticked already.
+// Rows the filter hides keep their ticks: the user can't see them change.
 func (l *list) toggleAll() {
+	shown := l.visible()
 	all := true
-	for _, r := range l.rows {
+	for _, r := range shown {
 		all = all && l.checked[r.key]
 	}
-	for _, r := range l.rows {
+	for _, r := range shown {
 		l.checked[r.key] = !all
 	}
 }
 
+func (l *list) setFilter(filter string) {
+	l.filter = filter
+	l.cursor, l.offset = 0, 0
+}
+
+// keys replaces the screen's keys while a filter is typed, and adds how to clear one that is kept.
+func (l *list) keys(screenKeys string) string {
+	switch {
+	case l.filtering:
+		return "type to filter · ↑↓ move · enter done · esc clear"
+	case l.filter != "":
+		return screenKeys + " · esc clear filter"
+	}
+	return screenKeys
+}
+
+// In filter mode the list takes every key, so typed characters never act as commands.
 func (l *list) handle(key tea.KeyPressMsg) bool {
+	if l.filtering {
+		l.handleFilterKey(key)
+		return true
+	}
 	switch key.String() {
 	case "up":
 		l.move(-1)
@@ -61,8 +108,38 @@ func (l *list) handle(key tea.KeyPressMsg) bool {
 		l.move(1)
 	case "space":
 		l.toggle()
+	case "/":
+		l.filtering = true
+	case "esc":
+		if l.filter == "" {
+			return false
+		}
+		l.setFilter("")
 	default:
 		return false
 	}
 	return true
+}
+
+func (l *list) handleFilterKey(key tea.KeyPressMsg) {
+	switch key.String() {
+	case "enter":
+		l.filtering = false
+	case "esc":
+		l.filtering = false
+		l.setFilter("")
+	case "backspace":
+		if l.filter != "" {
+			_, size := utf8.DecodeLastRuneInString(l.filter)
+			l.setFilter(l.filter[:len(l.filter)-size])
+		}
+	case "up":
+		l.move(-1)
+	case "down":
+		l.move(1)
+	default:
+		if key.Text != "" {
+			l.setFilter(l.filter + key.Text)
+		}
+	}
 }

@@ -13,16 +13,24 @@ var (
 )
 
 func (l *list) view(height int) string {
+	var shown []string
 	if l.header.label != "" {
-		height--
+		shown = append(shown, l.headerLine())
 	}
+	height -= len(shown)
 	lines, cursorLine, cursorHeight := l.lines()
 	l.scrollTo(cursorLine, cursorHeight, height)
-	shown := strings.Join(lines[l.offset:min(l.offset+height, len(lines))], "\n")
-	if l.header.label != "" {
-		shown = l.headerLine() + "\n" + shown
+	return strings.Join(append(shown, lines[l.offset:min(l.offset+height, len(lines))]...), "\n")
+}
+
+func (l *list) filterLine() string {
+	switch {
+	case l.filtering:
+		return "/" + l.filter + "_"
+	case l.filter != "":
+		return dim.Render("/" + l.filter)
 	}
-	return shown
+	return ""
 }
 
 func (l *list) headerLine() string {
@@ -50,7 +58,7 @@ func (l *list) scrollTo(line, rowHeight, height int) {
 
 func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
 	width := l.labelWidth()
-	for i, r := range l.rows {
+	for i, r := range l.visible() {
 		if i == l.cursor {
 			cursorLine, cursorHeight = len(lines), 1
 		}

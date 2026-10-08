@@ -26,12 +26,7 @@ type screen interface {
 
 const minWidth, minHeight = 60, 12
 
-const (
-	headingLines         = 1
-	blankLinesAroundBody = 2
-	footerLines          = 2
-	chromeLines          = headingLines + blankLinesAroundBody + footerLines
-)
+const headingLines, blankLinesAroundBody = 1, 2
 
 type app struct {
 	screens []screen
@@ -97,9 +92,11 @@ func (a *app) render() string {
 		return "Make the window larger"
 	}
 	s := a.screens[a.at]
-	body := s.body(a.height - chromeLines)
-	padding := strings.Repeat("\n", max(a.height-chromeLines-strings.Count(body, "\n")-1, 0))
-	return a.fit(bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + dim.Render(a.footer(s)))
+	footer := a.footer(s)
+	bodyHeight := a.height - headingLines - blankLinesAroundBody - len(footer)
+	body := s.body(bodyHeight)
+	padding := strings.Repeat("\n", max(bodyHeight-strings.Count(body, "\n")-1, 0))
+	return a.fit(bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + strings.Join(footer, "\n"))
 }
 
 func (a *app) tooSmall() bool {
@@ -115,11 +112,29 @@ func (a *app) fit(view string) string {
 	return strings.Join(lines, "\n")
 }
 
-// Two lines, so the footer fits the narrowest window the UI draws in.
-func (a *app) footer(s screen) string {
+func filterLine(s screen) string {
+	if f, ok := s.(interface{ filterLine() string }); ok {
+		return f.filterLine()
+	}
+	return ""
+}
+
+// Like less and vim, a filter sits just above the keys; the keys split over two lines only when
+// one would be cut at the window's edge.
+func (a *app) footer(s screen) []string {
+	var lines []string
+	filter := filterLine(s)
+	if filter != "" {
+		lines = append(lines, filter)
+	}
 	var leave []string
-	if a.at > 0 {
+	// esc clears an active filter before it goes back.
+	if a.at > 0 && filter == "" {
 		leave = append(leave, "esc back")
 	}
-	return s.keys() + "\n" + strings.Join(append(leave, "ctrl+c quit without saving"), " · ")
+	leave = append(leave, "ctrl+c quit without saving")
+	if keys := strings.Join(append([]string{s.keys()}, leave...), " · "); ansi.StringWidth(keys) <= a.width {
+		return append(lines, dim.Render(keys))
+	}
+	return append(lines, dim.Render(s.keys()), dim.Render(strings.Join(leave, " · ")))
 }
