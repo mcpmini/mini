@@ -131,7 +131,7 @@ func TestConfigAddServer_runsTheServerAsARestartWould(t *testing.T) {
 		t.TempDir(),
 		"server-github",
 	) // a GitHub command, so the add installs GitHub's bundled projection
-	if err := os.Symlink(requireEchoMCP(t), githubCommand); err != nil {
+	if err := os.Symlink(testutil.Binary(t, "ECHOMCP_BIN"), githubCommand); err != nil {
 		t.Fatal(err)
 	}
 
@@ -146,17 +146,6 @@ func TestConfigAddServer_runsTheServerAsARestartWould(t *testing.T) {
 		!slices.Equal(rules, saved) {
 		t.Errorf("live projection rules %v, want the saved server file's %v", rules, saved)
 	}
-}
-
-func requireEchoMCP(t *testing.T) string {
-	t.Helper()
-	bin := os.Getenv("ECHOMCP_BIN")
-	if bin == "" {
-		t.Fatal(
-			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
-		)
-	}
-	return bin
 }
 
 func readProjectionRuleNames(t *testing.T, path string) []string {

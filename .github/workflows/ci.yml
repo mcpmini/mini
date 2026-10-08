@@ -60,8 +60,7 @@ jobs:
       - name: Build test helpers
         run: |
           testbin=$(mktemp -d)
-          go build -o "$testbin/echomcp" ./cmd/echomcp
-          echo "ECHOMCP_BIN=$testbin/echomcp" >> "$GITHUB_ENV"
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
 
       - name: Unit tests
         run: go test -race -tags test -timeout 120s ./...
@@ -82,8 +81,7 @@ jobs:
       - name: Build test helpers
         run: |
           testbin=$(mktemp -d)
-          go build -o "$testbin/echomcp" ./cmd/echomcp
-          echo "ECHOMCP_BIN=$testbin/echomcp" >> "$GITHUB_ENV"
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
 
       - name: Integration tests
         run: go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...

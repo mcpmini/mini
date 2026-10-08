@@ -6,12 +6,12 @@ import (
 	"context"
 	"io"
 	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/auth/authtest"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func newInternalAuthTestServer(t *testing.T) *Server {
@@ -101,12 +101,7 @@ func TestRunAuthFlow_staleCleanupPreservesNewerFlow(t *testing.T) {
 }
 
 func TestRunAuthFlow_loginCompletingAfterRemoveServerDoesNotReinstall(t *testing.T) {
-	echomcp := os.Getenv("ECHOMCP_BIN")
-	if echomcp == "" {
-		t.Fatal(
-			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
-		)
-	}
+	echomcp := testutil.Binary(t, "ECHOMCP_BIN")
 	for _, tc := range []struct {
 		name      string
 		remove    bool

@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync/atomic"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestDial_privateAddress(t *testing.T) {
@@ -76,12 +76,7 @@ func TestDial_agentAddedCommand(t *testing.T) {
 		{name: "dangerous_allow_runtime_stdio still runs an agent's command", agentAdded: true, allowStdio: true},
 		{name: "a command the user added runs", allowStdio: false},
 	}
-	echomcp := os.Getenv("ECHOMCP_BIN")
-	if echomcp == "" {
-		t.Fatal(
-			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
-		)
-	}
+	echomcp := testutil.Binary(t, "ECHOMCP_BIN")
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			conn, err := Dial(t.Context(), DialParams{

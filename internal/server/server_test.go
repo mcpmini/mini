@@ -24,8 +24,6 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-var echomcpBin = os.Getenv("ECHOMCP_BIN")
-
 func TestMain(m *testing.M) {
 	if os.Getenv("MINI_HELPER_PROCESS") == "1" {
 		runEnvEchoServer()

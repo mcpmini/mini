@@ -14,6 +14,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/server"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestListDirectoryNonEmpty(t *testing.T) {
@@ -97,7 +98,7 @@ func assertAddServer(t *testing.T, srv *server.Server) {
 	t.Helper()
 	resp := serve(t, srv, callTool("config", map[string]any{
 		"action": "add_server",
-		"config": map[string]any{"name": "dynamic_echo", "command": echomcpBin},
+		"config": map[string]any{"name": "dynamic_echo", "command": testutil.Binary(t, "ECHOMCP_BIN")},
 	}))
 	text := toolResultText(t, resp)
 	var result map[string]any
@@ -136,11 +137,6 @@ func assertRemoveServer(t *testing.T, srv *server.Server) {
 }
 
 func TestAddRemoveServer(t *testing.T) {
-	if echomcpBin == "" {
-		t.Fatal(
-			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
-		)
-	}
 	cfg := config.DefaultConfig()
 	cfg.DangerousAllowRuntimeStdio = true
 	srv := newTestServer(t, server.Params{Config: cfg})

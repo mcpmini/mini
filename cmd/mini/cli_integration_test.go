@@ -17,19 +17,7 @@ import (
 
 func miniBin(t *testing.T) string {
 	t.Helper()
-	bin := os.Getenv("MINIMCP_BIN")
-	if bin == "" {
-		// Try building it on the fly if running from the source tree.
-		tmp := t.TempDir()
-		out := filepath.Join(tmp, "mini")
-		cmd := exec.Command("go", "build", "-o", out, ".")
-		cmd.Dir = "."
-		if b, err := cmd.CombinedOutput(); err != nil {
-			t.Skipf("could not build mini: %v\n%s", err, b)
-		}
-		return out
-	}
-	return bin
+	return testutil.Binary(t, "MINIMCP_BIN")
 }
 
 func run(t *testing.T, bin, configDir string, args ...string) (stdout, stderr string, code int) {
@@ -396,7 +384,10 @@ func TestIntegrationCLI_add_stdioCommand(t *testing.T) {
 //   - "a1b2c3d+dirty"      — hash, dirty tree
 //   - "v1.2.3 (a1b2c3d)"  — release tag with hash
 //   - "dev"                — no VCS info, which is what builds from a git worktree get
-var versionPattern = regexp.MustCompile(`^(dev|[0-9a-f]{7}(\+dirty)?|v[0-9]+\.[0-9]+\.[0-9]+[^ ]* \([0-9a-f]{7}\))$`)
+//   - "integration-test"   — the revision scripts/test-bins.sh stamps into the test binary
+var versionPattern = regexp.MustCompile(
+	`^(dev|integration-test|[0-9a-f]{7}(\+dirty)?|v[0-9]+\.[0-9]+\.[0-9]+[^ ]* \([0-9a-f]{7}\))$`,
+)
 
 func TestIntegrationCLI_version(t *testing.T) {
 	bin := miniBin(t)

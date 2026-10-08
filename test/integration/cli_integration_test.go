@@ -24,8 +24,8 @@ func TestIntegrationCLIVersion(t *testing.T) {
 		if code != 0 {
 			t.Errorf("%v exited %d", args, code)
 		}
-		if v := strings.TrimSpace(stdout); v != expectedVersion {
-			t.Errorf("%v output %q, want %q", args, v, expectedVersion)
+		if v := strings.TrimSpace(stdout); v != stampedVersion {
+			t.Errorf("%v output %q, want %q", args, v, stampedVersion)
 		}
 	}
 }
