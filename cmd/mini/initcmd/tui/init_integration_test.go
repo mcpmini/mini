@@ -80,7 +80,7 @@ func TestIntegrationInitUI_ctrlCAfterCatalogKeepsTheSavedServers(t *testing.T) {
 	term.press("enter")
 	term.waitFor("Add servers from the catalog")
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "enter")
-	term.waitFor("ctrl+c quit (servers saved, agents untouched)")
+	term.waitFor("Finish setting up these servers")
 	term.press("ctrl+c")
 	term.waitFor("the servers above were saved")
 

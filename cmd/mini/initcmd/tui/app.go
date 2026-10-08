@@ -203,7 +203,7 @@ func (a *app) footer(s screen) []string {
 	if a.canGoBack() && filter == "" {
 		leave = append(leave, "esc back")
 	}
-	leave = append(leave, a.quitKey())
+	leave = append(leave, "ctrl+c quit")
 	if keys := strings.Join(append([]string{s.keys()}, leave...), " · "); ansi.StringWidth(keys) <= a.width {
 		return append(lines, dim.Render(keys))
 	}
@@ -213,15 +213,4 @@ func (a *app) footer(s screen) []string {
 func (a *app) canGoBack() bool {
 	_, ok := a.next(a.at, -1)
 	return ok
-}
-
-func (a *app) quitKey() string {
-	switch {
-	case a.saves.saved && a.at <= a.saves.after:
-		// Ticks changed since the save aren't written until the user moves past it again.
-		return "ctrl+c quit (keeps what was saved before)"
-	case a.saves.saved:
-		return "ctrl+c quit (servers saved, agents untouched)"
-	}
-	return "ctrl+c quit without saving"
 }
