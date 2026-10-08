@@ -7,13 +7,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
-	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/ops"
@@ -30,33 +28,23 @@ type catalogStepParams struct {
 type catalogSource struct {
 	client *http.Client
 	url    string
-	warn   io.Writer
 }
 
 func publishedCatalogSource() catalogSource {
-	return catalogSource{client: catalog.NewFetchClient(), url: publishedCatalogURL(), warn: os.Stderr}
+	return catalogSource{client: catalog.NewFetchClient(), url: publishedCatalogURL()}
 }
 
 func (s catalogSource) entries() ([]catalog.Entry, error) {
-	loaded, err := s.load()
-	if loaded.Unavailable != nil {
-		fmt.Fprintf(
-			s.warn,
-			"note: using the built-in server catalog (the published one is unavailable: %v)\n",
-			loaded.Unavailable,
-		)
-	}
-	return loaded.Catalog.Entries, err
+	c, err := s.load()
+	return c.Entries, err
 }
 
-// load falls back to the built-in catalog and says why, without printing: the UI may own the screen.
-func (s catalogSource) load() (tui.LoadedCatalog, error) {
-	c, err := catalog.Fetch(context.Background(), s.client, s.url)
-	if err == nil {
-		return tui.LoadedCatalog{Catalog: c}, nil
+// Any fetch failure, a document this build can't read included, quietly falls back to the built-in catalog.
+func (s catalogSource) load() (catalog.Catalog, error) {
+	if c, err := catalog.Fetch(context.Background(), s.client, s.url); err == nil {
+		return c, nil
 	}
-	builtIn, loadErr := catalog.Load()
-	return tui.LoadedCatalog{Catalog: builtIn, Unavailable: err}, loadErr
+	return catalog.Load()
 }
 
 func runCatalogStep(p catalogStepParams) error {

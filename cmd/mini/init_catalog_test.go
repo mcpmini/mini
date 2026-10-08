@@ -132,33 +132,41 @@ func TestCatalogSourcePrefersPublishedCatalog(t *testing.T) {
 	tests := []struct {
 		name      string
 		status    int
+		body      string
 		wantNames []string
-		wantNote  bool
 	}{
-		{name: "published catalog", status: http.StatusOK, wantNames: []string{"remote"}, wantNote: false},
+		{name: "published catalog", status: http.StatusOK, body: published, wantNames: []string{"remote"}},
 		{
 			name:      "fetch fails",
 			status:    http.StatusInternalServerError,
+			body:      published,
 			wantNames: embeddedCatalogNames(t),
-			wantNote:  true,
+		},
+		{
+			name:      "published document changed shape",
+			status:    http.StatusOK,
+			body:      `{"schema_version":2,"servers":{"remote":"https://remote.example/mcp"}}`,
+			wantNames: embeddedCatalogNames(t),
+		},
+		{
+			name:      "published document isn't JSON",
+			status:    http.StatusOK,
+			body:      "<html>",
+			wantNames: embeddedCatalogNames(t),
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
-				w.Write([]byte(published)) //nolint:errcheck
+				w.Write([]byte(tt.body)) //nolint:errcheck
 			}))
 			t.Cleanup(srv.Close)
-			var warn bytes.Buffer
 
-			entries, err := catalogSource{client: srv.Client(), url: srv.URL, warn: &warn}.entries()
+			entries, err := catalogSource{client: srv.Client(), url: srv.URL}.entries()
 
 			if err != nil || !reflect.DeepEqual(catalogNames(entries), tt.wantNames) {
 				t.Errorf("entries = %v, %v; want %v", catalogNames(entries), err, tt.wantNames)
-			}
-			if gotNote := strings.Contains(warn.String(), "built-in server catalog"); gotNote != tt.wantNote {
-				t.Errorf("note printed = %v, want %v (%q)", gotNote, tt.wantNote, warn.String())
 			}
 		})
 	}

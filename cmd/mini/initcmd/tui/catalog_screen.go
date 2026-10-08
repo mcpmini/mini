@@ -11,27 +11,19 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// LoadedCatalog is the catalog to offer. Unavailable says why it isn't the published one.
-type LoadedCatalog struct {
-	Catalog     catalog.Catalog
-	Unavailable error
-}
-
 type catalogLoaded struct {
-	result LoadedCatalog
-	err    error
+	catalog catalog.Catalog
+	err     error
 }
 
 type catalogScreen struct {
-	load func() (LoadedCatalog, error)
+	load func() (catalog.Catalog, error)
 	// offered drops the servers mini already has.
 	offered func([]catalog.Entry) []catalog.Entry
 	// imports is what the Import screen has ticked; a catalog server it covers is hidden.
-	imports func() []config.ServerConfig
-	loaded  bool
-	loadErr error
-	// unavailable says why the published catalog wasn't used.
-	unavailable   error
+	imports       func() []config.ServerConfig
+	loaded        bool
+	loadErr       error
 	popular       []string
 	loadedEntries []catalog.Entry
 	available     []catalog.Entry
@@ -40,7 +32,7 @@ type catalogScreen struct {
 }
 
 type catalogParams struct {
-	load    func() (LoadedCatalog, error)
+	load    func() (catalog.Catalog, error)
 	offered func([]catalog.Entry) []catalog.Entry
 	imports func() []config.ServerConfig
 }
@@ -56,8 +48,8 @@ func (s *catalogScreen) start() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		result, err := s.load()
-		return catalogLoaded{result: result, err: err}
+		c, err := s.load()
+		return catalogLoaded{catalog: c, err: err}
 	}
 }
 
@@ -67,8 +59,8 @@ func (s *catalogScreen) update(msg tea.Msg) {
 		return
 	}
 	s.loaded, s.loadErr = true, loaded.err
-	c := loaded.result.Catalog
-	s.unavailable, s.popular, s.loadedEntries = loaded.result.Unavailable, c.Popular, c.Entries
+	c := loaded.catalog
+	s.popular, s.loadedEntries = c.Popular, c.Entries
 	if loaded.err == nil {
 		s.available = initcmd.GroupByCategory(s.offered(c.Entries))
 	}
@@ -148,9 +140,6 @@ func (s *catalogScreen) body(height int) string {
 		return "The catalog couldn't be loaded: " + s.loadErr.Error()
 	case len(s.available) == 0:
 		return "mini already has every server in the catalog."
-	case s.unavailable != nil:
-		note := "Showing the built-in catalog: the published one is unavailable (" + s.unavailable.Error() + ")"
-		return dim.Render(note) + "\n\n" + s.list.view(height-2)
 	}
 	return s.list.view(height)
 }

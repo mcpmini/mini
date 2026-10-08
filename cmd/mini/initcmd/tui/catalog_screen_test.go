@@ -52,8 +52,8 @@ func loadedScreen(c catalog.Catalog, imports func() []config.ServerConfig) *cata
 	return s
 }
 
-func fromCatalog(c catalog.Catalog) func() (LoadedCatalog, error) {
-	return func() (LoadedCatalog, error) { return LoadedCatalog{Catalog: c}, nil }
+func fromCatalog(c catalog.Catalog) func() (catalog.Catalog, error) {
+	return func() (catalog.Catalog, error) { return c, nil }
 }
 
 func catalogText(s *catalogScreen) string {
@@ -168,20 +168,8 @@ func TestCatalogScreen_loading(t *testing.T) {
 			t.Error("/ while loading started a filter the arriving catalog would discard")
 		}
 	})
-	t.Run("the built-in catalog comes with a note saying why", func(t *testing.T) {
-		load := func() (LoadedCatalog, error) {
-			return LoadedCatalog{Catalog: c, Unavailable: errors.New("status 503")}, nil
-		}
-		s := newCatalogScreen(catalogParams{load: load, offered: offerAll, imports: noImports})
-		s.update(s.start()())
-		if text := catalogText(s); !strings.HasPrefix(
-			text, "Showing the built-in catalog: the published one is unavailable (status 503)\n\n",
-		) || !strings.Contains(text, "[ ] linear") {
-			t.Errorf("screen:\n%s\nwant the note above the servers", text)
-		}
-	})
 	t.Run("a catalog that can't be loaded says so", func(t *testing.T) {
-		load := func() (LoadedCatalog, error) { return LoadedCatalog{}, errors.New("bad document") }
+		load := func() (catalog.Catalog, error) { return catalog.Catalog{}, errors.New("bad document") }
 		s := newCatalogScreen(catalogParams{load: load, offered: offerAll, imports: noImports})
 		s.update(s.start()())
 		if text := catalogText(s); text != "The catalog couldn't be loaded: bad document" || s.empty() {

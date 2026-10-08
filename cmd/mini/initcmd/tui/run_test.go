@@ -51,7 +51,7 @@ func deliver(m tea.Model, cmd tea.Cmd) {
 	m.Update(msg)
 }
 
-func noCatalog() (LoadedCatalog, error) { return LoadedCatalog{}, nil }
+func noCatalog() (catalog.Catalog, error) { return catalog.Catalog{}, nil }
 
 func setupFor(configDir string, list ...agents.Agent) initcmd.Setup {
 	return initcmd.Setup{ConfigDir: configDir, Import: list}

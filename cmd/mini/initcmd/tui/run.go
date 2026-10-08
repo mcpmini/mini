@@ -5,12 +5,13 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/internal/catalog"
 )
 
 type Params struct {
 	Setup initcmd.Setup
 	// LoadCatalog runs in the background while the Import screen is shown.
-	LoadCatalog func() (LoadedCatalog, error)
+	LoadCatalog func() (catalog.Catalog, error)
 	// Program runs the UI; nil runs it in the terminal.
 	Program func(m tea.Model) error
 }
