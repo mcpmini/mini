@@ -50,22 +50,23 @@ func Fetch(ctx context.Context, client *http.Client, url string) (Catalog, error
 
 func withoutUnknownAuth(c Catalog) Catalog {
 	skipped := make(map[string]bool)
-	emptiedCategories := make(map[string]bool)
 	c.Entries = slices.DeleteFunc(c.Entries, func(entry Entry) bool {
 		unknown := !slices.Contains(knownAuthValues, entry.Auth)
 		skipped[entry.Name] = skipped[entry.Name] || unknown
-		emptiedCategories[entry.Category] = emptiedCategories[entry.Category] || unknown
 		return unknown
 	})
 	c.Popular = slices.DeleteFunc(c.Popular, func(name string) bool { return skipped[name] })
-	remaining := make(map[string]bool, len(c.Entries))
-	for _, entry := range c.Entries {
-		remaining[entry.Category] = true
-	}
-	c.CategoryOrder = slices.DeleteFunc(c.CategoryOrder, func(category string) bool {
-		return emptiedCategories[category] && !remaining[category]
-	})
+	c.CategoryOrder = withoutEmptyCategories(c.CategoryOrder, c.Entries)
 	return c
+}
+
+// withoutEmptyCategories relies on the raw document having been validated: every listed category had an entry, so one with no entry left was emptied by pruning.
+func withoutEmptyCategories(order []string, entries []Entry) []string {
+	present := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		present[entry.Category] = true
+	}
+	return slices.DeleteFunc(order, func(category string) bool { return !present[category] })
 }
 
 func download(ctx context.Context, client *http.Client, url string) ([]byte, error) {
