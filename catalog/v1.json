@@ -12,7 +12,7 @@
     {"name": "supabase", "title": "Supabase", "url": "https://mcp.supabase.com/mcp", "description": "Manage projects, run SQL, and inspect tables and logs", "category": "Developer tools", "auth": "oauth2"},
     {"name": "prisma", "title": "Prisma Postgres", "url": "https://mcp.prisma.io/mcp", "description": "Create and manage Prisma Postgres databases and run queries", "category": "Developer tools", "auth": "oauth2"},
     {"name": "sentry", "title": "Sentry", "url": "https://mcp.sentry.dev/mcp", "description": "Search issues, read stack traces, and triage errors", "category": "Observability", "auth": "oauth2"},
-    {"name": "datadog", "title": "Datadog", "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp", "description": "Query logs, metrics, traces, monitors, and dashboards (US1 region)", "category": "Observability", "auth": "oauth2"},
+    {"name": "datadog", "title": "Datadog", "url": "https://mcp.datadoghq.com/v1/mcp", "description": "Query logs, metrics, traces, monitors, and dashboards (US1 region)", "category": "Observability", "auth": "oauth2"},
     {"name": "grafana", "title": "Grafana Cloud", "url": "https://mcp.grafana.com/mcp", "description": "Query dashboards, alerts, and data sources", "category": "Observability", "auth": "oauth2"},
     {"name": "newrelic", "title": "New Relic", "url": "https://mcp.newrelic.com/mcp/", "description": "Query telemetry with NRQL and inspect alerts and entities", "category": "Observability", "auth": "oauth2"},
     {"name": "pagerduty", "title": "PagerDuty", "url": "https://mcp.pagerduty.com/mcp", "description": "View and manage incidents, services, schedules, and on-call", "category": "Observability", "auth": "token", "setup_url": "https://support.pagerduty.com/main/docs/api-access-keys"},
