@@ -18,6 +18,7 @@ type Setup struct {
 	Catalog         []catalog.Entry
 	AgentsToConnect []agents.Agent
 	SelfPath        string
+	Probe           probeFunc
 }
 
 // Report is what a run did, for the summary.
@@ -53,7 +54,6 @@ func RunUnattended(s Setup) Report {
 }
 
 // Plan is an import plan, the catalog servers to add, and the servers mini had when it was made.
-// The UI changes which candidates are picked and what is added before the plan is written.
 type Plan struct {
 	Import  ImportPlan
 	Add     []catalog.Entry
@@ -79,11 +79,11 @@ func (s Setup) Write(p Plan) Report {
 	session := s.NewSession()
 	result := session.Sync(p.Servers())
 	session.WaitChecks()
-	return s.Report(p, Synced{Written: session.Written(), Failed: result.Failed})
+	return s.Report(p, session, result)
 }
 
 func (s Setup) NewSession() *Session {
-	return NewSession(SessionParams{ConfigDir: s.ConfigDir})
+	return NewSession(SessionParams{ConfigDir: s.ConfigDir, Probe: s.Probe})
 }
 
 // Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
@@ -91,21 +91,26 @@ func (p Plan) Servers() []config.ServerConfig {
 	return planAdds(p.Import.picked(), p.Add, p.written).write
 }
 
-// Synced is what the last sync left.
-type Synced struct {
-	Written []string
-	Failed  []ServerError
-}
-
-func (s Setup) Report(p Plan, synced Synced) Report {
+// Report reads the servers, so no check may still be running; one that never finished marks its
+// server as maybe needing a login.
+func (s Setup) Report(p Plan, session *Session, last SyncResult) Report {
 	report := s.report()
 	report.Import = p.Import
 	adds := planAdds(p.Import.picked(), p.Add, p.written)
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
-	report.WriteErrors = synced.Failed
-	report.Import.keepOnly(report.Import.importedOf(synced.Written))
+	report.WriteErrors = last.Failed
+	report.Import.keepOnly(report.Import.importedOf(session.Written()))
 	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, p.Catalog)
+	markUnchecked(report.Servers, session.Unchecked())
 	return report
+}
+
+func markUnchecked(statuses []ServerStatus, unchecked []string) {
+	for i, status := range statuses {
+		if status.Readiness == Ready && slices.Contains(unchecked, status.Name) {
+			statuses[i].Readiness = MayNeedLogin
+		}
+	}
 }
 
 func (s Setup) report() Report {

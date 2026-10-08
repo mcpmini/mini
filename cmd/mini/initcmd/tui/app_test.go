@@ -93,7 +93,7 @@ func TestApp_footerNamesEnterEscAndCtrlCOnOneLine(t *testing.T) {
 	second := shown(a)
 	lastLine := func(view string) string { return view[strings.LastIndex(view, "\n")+1:] }
 	if footer := lastLine(first); strings.Contains(footer, "esc") || !strings.Contains(footer, "enter continue") ||
-		!strings.Contains(footer, "ctrl+c quit without saving") {
+		!strings.Contains(footer, "ctrl+c quit") {
 		t.Errorf("first screen's last line = %q, want enter and ctrl+c, and no esc (it does nothing there)", footer)
 	}
 	if footer := lastLine(second); !strings.Contains(footer, "enter continue · esc back · ctrl+c") {
@@ -104,12 +104,17 @@ func TestApp_footerNamesEnterEscAndCtrlCOnOneLine(t *testing.T) {
 	}
 }
 
+type longKeysScreen struct{ fakeScreen }
+
+func (s *longKeysScreen) keys() string {
+	return "space tick · a all · / filter · enter continue · ↑↓ move"
+}
+
 func TestApp_inTheNarrowestWindowTheKeysSplitInsteadOfBeingCut(t *testing.T) {
-	imports := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
-	a := newApp([]screen{imports})
+	a := newApp([]screen{&longKeysScreen{fakeScreen{name: "Pick"}}})
 	a.Update(tea.WindowSizeMsg{Width: minWidth, Height: minHeight})
 	footer := footerOf(shown(a))
-	if !strings.Contains(footer, "enter continue\nctrl+c quit without saving") || strings.Contains(footer, "…") {
+	if !strings.Contains(footer, "↑↓ move\nctrl+c quit") || strings.Contains(footer, "…") {
 		t.Errorf("footer:\n%s\nwant the keys on one line and ctrl+c on the next, nothing cut", footer)
 	}
 }
@@ -177,7 +182,10 @@ type enteredScreen struct {
 	entered int
 }
 
-func (s *enteredScreen) enter() { s.entered++ }
+func (s *enteredScreen) enter() tea.Cmd {
+	s.entered++
+	return nil
+}
 
 func TestApp_aScreenIsToldEachTimeItIsShownAgain(t *testing.T) {
 	first, second := &enteredScreen{
@@ -203,5 +211,28 @@ func TestApp_escOnTheFirstScreenLeavesItAsItWas(t *testing.T) {
 	send(a, "esc")
 	if first.entered != before {
 		t.Errorf("esc on the first screen re-entered it %d times; want it untouched", first.entered-before)
+	}
+}
+
+func TestApp_savesEachTimeTheUserMovesPastTheSavePoint(t *testing.T) {
+	saves := 0
+	a := sized(newApp([]screen{&fakeScreen{name: "Pick"}, &fakeScreen{name: "After"}}))
+	a.saves = savePoint{after: 0, save: func() { saves++ }}
+	send(a, "enter")
+	if saves != 1 {
+		t.Errorf("saves = %d after enter; want 1", saves)
+	}
+	send(a, "esc", "enter")
+	if saves != 2 {
+		t.Errorf("saves = %d after going back and forward again; want 2", saves)
+	}
+}
+
+func TestApp_finishingBeforeTheSavePointSaves(t *testing.T) {
+	saves := 0
+	a := sized(newApp([]screen{&fakeScreen{name: "Pick"}, &fakeScreen{name: "Empty", nothing: true}}))
+	a.saves = savePoint{after: 1, save: func() { saves++ }}
+	if cmd := send(a, "enter"); saves != 1 || cmd == nil {
+		t.Errorf("saves = %d, cmd = %v; want the picks saved and the program ended", saves, cmd)
 	}
 }

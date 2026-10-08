@@ -85,12 +85,13 @@ func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width i
 		return fmt.Sprintf("needs your own OAuth app: register one at %s with redirect URI %s, then add to %s:%s"+
 			"  auth:%s    type: oauth2%s    client_id: <your app's client ID>%sand run: %s",
 			s.SetupURL, auth.ResolvedCallbackURI(nil), file, more, more, more, more, miniCommand(mini, "auth", s.Name))
+	case MayNeedLogin:
+		return "wasn't checked for a login; if it asks for one, run: " + miniCommand(mini, "auth", s.Name)
 	}
 	return "run: " + miniCommand(mini, "auth", s.Name)
 }
 
-// SetupStep is the step that finishes a catalog server needing a token or the user's own app, as
-// the summary words it.
+// SetupStep words a server's finishing step as the summary does.
 func SetupStep(configDir string, s ServerStatus) string {
 	return finishStep(configDir, MiniCommand(configDir), s, 0)
 }

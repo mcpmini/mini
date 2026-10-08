@@ -27,17 +27,19 @@ func TestSummary_servers(t *testing.T) {
 			{Name: "github", Readiness: NeedsToken, SetupURL: "https://github.example.com/tokens"},
 			{Name: "asana", Readiness: NeedsOwnApp, SetupURL: "https://asana.example.com/apps"},
 			{Name: "notion", Readiness: NeedsLogin},
+			{Name: "plain", Readiness: MayNeedLogin},
 			{Name: "files", Readiness: Ready},
 		}})
 		requireLines(
 			t,
 			got,
-			"mini is set up with 4 servers, 3 still need finishing:\n",
+			"mini is set up with 5 servers, 4 still need finishing:\n",
 			"  github  needs a token: create one at https://github.example.com/tokens, then add to /cfg/servers/github.yaml:\n",
 			"  asana   needs your own OAuth app: register one at https://asana.example.com/apps",
 			"client_id: <your app's client ID>",
 			"and run: mini --config '/srv/my mini' auth asana\n",
 			"  notion  run: mini --config '/srv/my mini' auth notion\n",
+			"  plain   wasn't checked for a login; if it asks for one, run: mini --config '/srv/my mini' auth plain\n",
 		)
 		if strings.Contains(got, "files") {
 			t.Errorf("a ready server is listed:\n%s", got)

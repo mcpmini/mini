@@ -26,13 +26,20 @@ type screen interface {
 
 // A screen whose rows depend on earlier screens rebuilds them each time it is shown.
 type enterer interface {
-	enter()
+	enter() tea.Cmd
 }
 
 // A screen that loads in the background starts loading when the UI starts and gets every message.
 type loader interface {
 	start() tea.Cmd
-	update(msg tea.Msg)
+	update(msg tea.Msg) tea.Cmd
+}
+
+// savePoint saves the picks each time the user moves forward past screen after.
+type savePoint struct {
+	after int
+	save  func()
+	saved bool
 }
 
 const minWidth, minHeight = 60, 12
@@ -40,18 +47,20 @@ const minWidth, minHeight = 60, 12
 const headingLines, blankLinesAroundBody = 1, 2
 
 type app struct {
-	screens []screen
-	at      int
-	width   int
-	height  int
-	quit    bool
+	screens        []screen
+	at             int
+	width          int
+	height         int
+	quit           bool
+	saves          savePoint
+	firstScreenCmd tea.Cmd
 }
 
 // A screen can stop being empty once it loads, so empty screens are skipped when moving, not dropped.
 func newApp(screens []screen) *app {
 	a := &app{screens: screens, at: -1}
 	if first, ok := a.next(-1, 1); ok {
-		a.show(first)
+		a.firstScreenCmd = a.show(first)
 	}
 	return a
 }
@@ -70,7 +79,7 @@ func (a *app) next(from, direction int) (int, bool) {
 }
 
 func (a *app) Init() tea.Cmd {
-	var cmds []tea.Cmd
+	cmds := []tea.Cmd{a.firstScreenCmd}
 	for _, s := range a.screens {
 		if l, ok := s.(loader); ok {
 			cmds = append(cmds, l.start())
@@ -86,11 +95,13 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return a, a.handle(msg)
 	default:
+		var cmds []tea.Cmd
 		for _, s := range a.screens {
 			if l, ok := s.(loader); ok {
-				l.update(msg)
+				cmds = append(cmds, l.update(msg))
 			}
 		}
+		return a, tea.Batch(cmds...)
 	}
 	return a, nil
 }
@@ -106,24 +117,37 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 	}
 	switch a.screens[a.at].handle(key) {
 	case forward:
-		next, ok := a.next(a.at, 1)
-		if !ok {
-			return tea.Quit
-		}
-		a.show(next)
+		return a.forward()
 	case back:
 		if previous, ok := a.next(a.at, -1); ok {
-			a.show(previous)
+			return a.show(previous)
 		}
 	}
 	return nil
 }
 
-func (a *app) show(at int) {
+func (a *app) forward() tea.Cmd {
+	next, ok := a.next(a.at, 1)
+	passes := a.at <= a.saves.after && (!ok || next > a.saves.after)
+	// A run that starts on Logins, past the save point, still saves before finishing.
+	if a.saves.save != nil && (passes || (!ok && !a.saves.saved)) {
+		a.saves.save()
+		a.saves.saved = true
+		// Saving can empty or fill the screens after it.
+		next, ok = a.next(a.at, 1)
+	}
+	if !ok {
+		return tea.Quit
+	}
+	return a.show(next)
+}
+
+func (a *app) show(at int) tea.Cmd {
 	a.at = at
 	if s, ok := a.screens[at].(enterer); ok {
-		s.enter()
+		return s.enter()
 	}
+	return nil
 }
 
 func (a *app) View() tea.View {
@@ -174,12 +198,17 @@ func (a *app) footer(s screen) []string {
 	}
 	var leave []string
 	// esc clears an active filter before it goes back.
-	if _, ok := a.next(a.at, -1); ok && filter == "" {
+	if a.canGoBack() && filter == "" {
 		leave = append(leave, "esc back")
 	}
-	leave = append(leave, "ctrl+c quit without saving")
+	leave = append(leave, "ctrl+c quit")
 	if keys := strings.Join(append([]string{s.keys()}, leave...), " · "); ansi.StringWidth(keys) <= a.width {
 		return append(lines, dim.Render(keys))
 	}
 	return append(lines, dim.Render(s.keys()), dim.Render(strings.Join(leave, " · ")))
+}
+
+func (a *app) canGoBack() bool {
+	_, ok := a.next(a.at, -1)
+	return ok
 }

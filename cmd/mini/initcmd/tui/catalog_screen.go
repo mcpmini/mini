@@ -53,10 +53,10 @@ func (s *catalogScreen) start() tea.Cmd {
 	}
 }
 
-func (s *catalogScreen) update(msg tea.Msg) {
+func (s *catalogScreen) update(msg tea.Msg) tea.Cmd {
 	loaded, ok := msg.(catalogLoaded)
 	if !ok {
-		return
+		return nil
 	}
 	s.loaded, s.loadErr = true, loaded.err
 	c := loaded.catalog
@@ -65,11 +65,12 @@ func (s *catalogScreen) update(msg tea.Msg) {
 		s.available = initcmd.GroupByCategory(s.offered(c.Entries))
 	}
 	s.enter()
+	return nil
 }
 
 // enter rebuilds the rows, since going back to Import may have ticked a server the catalog has.
 // The Import row wins: the catalog's tick on that server is dropped.
-func (s *catalogScreen) enter() {
+func (s *catalogScreen) enter() tea.Cmd {
 	shown := s.shown()
 	for name := range s.checked {
 		if !slices.ContainsFunc(shown, func(e catalog.Entry) bool { return e.Name == name }) {
@@ -78,6 +79,7 @@ func (s *catalogScreen) enter() {
 	}
 	s.list = newList(s.rows(shown), s.checked)
 	s.list.header = row{label: "SERVER", detail: "URL"}
+	return nil
 }
 
 func (s *catalogScreen) shown() []catalog.Entry {
@@ -111,6 +113,11 @@ func host(rawURL string) string {
 	}
 	return rawURL
 }
+
+const (
+	needsToken  = "needs a token"
+	needsOwnApp = "needs your own OAuth app"
+)
 
 func (s *catalogScreen) heading() string {
 	return "Add servers from the catalog"
