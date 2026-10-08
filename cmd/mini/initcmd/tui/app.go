@@ -35,8 +35,7 @@ type loader interface {
 	update(msg tea.Msg) tea.Cmd
 }
 
-// savePoint writes the picks each time the user moves forward past screen after, and before
-// finishing if nothing was saved yet. Once saved, quitting keeps what was written.
+// savePoint saves the picks each time the user moves forward past screen after.
 type savePoint struct {
 	after int
 	save  func()
@@ -48,21 +47,20 @@ const minWidth, minHeight = 60, 12
 const headingLines, blankLinesAroundBody = 1, 2
 
 type app struct {
-	screens []screen
-	at      int
-	width   int
-	height  int
-	quit    bool
-	saves   savePoint
-	// started is what the first screen asked for when it was shown, before the program ran.
-	started tea.Cmd
+	screens        []screen
+	at             int
+	width          int
+	height         int
+	quit           bool
+	saves          savePoint
+	firstScreenCmd tea.Cmd
 }
 
 // A screen can stop being empty once it loads, so empty screens are skipped when moving, not dropped.
 func newApp(screens []screen) *app {
 	a := &app{screens: screens, at: -1}
 	if first, ok := a.next(-1, 1); ok {
-		a.started = a.show(first)
+		a.firstScreenCmd = a.show(first)
 	}
 	return a
 }
@@ -81,7 +79,7 @@ func (a *app) next(from, direction int) (int, bool) {
 }
 
 func (a *app) Init() tea.Cmd {
-	cmds := []tea.Cmd{a.started}
+	cmds := []tea.Cmd{a.firstScreenCmd}
 	for _, s := range a.screens {
 		if l, ok := s.(loader); ok {
 			cmds = append(cmds, l.start())
@@ -131,11 +129,11 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 func (a *app) forward() tea.Cmd {
 	next, ok := a.next(a.at, 1)
 	passes := a.at <= a.saves.after && (!ok || next > a.saves.after)
-	// A run that starts past the save point, on Logins, still saves its (empty) picks on finishing.
+	// A run that starts on Logins, past the save point, still saves before finishing.
 	if a.saves.save != nil && (passes || (!ok && !a.saves.saved)) {
 		a.saves.save()
 		a.saves.saved = true
-		// What was written decides whether the screens after it have anything to show.
+		// Saving can empty or fill the screens after it.
 		next, ok = a.next(a.at, 1)
 	}
 	if !ok {

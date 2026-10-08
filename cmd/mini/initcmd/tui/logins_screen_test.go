@@ -87,7 +87,6 @@ func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing
 	checks := newFakeChecks()
 	checks.checking["open"] = true
 	s := newLoginsScreen(loginsParams{
-		// The statuses were read just before the check recorded its result; it ends right after.
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			delete(checks.checking, "open")
 			checks.changed <- struct{}{}

@@ -132,7 +132,7 @@ func runFullScreenInit(configDir string) error {
 		}
 		return &exitError{code: 1, err: errInitQuit}
 	}
-	// Servers were written before the UI ended, so the summary says which, however it ended.
+	// The servers are already written, so the summary prints however the UI ended.
 	reportErr := printReport(out.Report)
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)

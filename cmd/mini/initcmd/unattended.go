@@ -18,8 +18,7 @@ type Setup struct {
 	Catalog         []catalog.Entry
 	AgentsToConnect []agents.Agent
 	SelfPath        string
-	// Probe checks a written server for OAuth; tests swap it for one that doesn't connect.
-	Probe probeFunc
+	Probe           probeFunc
 }
 
 // Report is what a run did, for the summary.
@@ -55,7 +54,6 @@ func RunUnattended(s Setup) Report {
 }
 
 // Plan is an import plan, the catalog servers to add, and the servers mini had when it was made.
-// The UI changes the picks and adds before each save.
 type Plan struct {
 	Import  ImportPlan
 	Add     []catalog.Entry
@@ -93,8 +91,8 @@ func (p Plan) Servers() []config.ServerConfig {
 	return planAdds(p.Import.picked(), p.Add, p.written).write
 }
 
-// Report says what the run wrote, after the session's last sync. No check may be running: a
-// check that never finished leaves its server marked as maybe needing a login.
+// Report reads the servers, so no check may still be running; one that never finished marks its
+// server as maybe needing a login.
 func (s Setup) Report(p Plan, session *Session, last SyncResult) Report {
 	report := s.report()
 	report.Import = p.Import

@@ -91,7 +91,7 @@ func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width i
 	return "run: " + miniCommand(mini, "auth", s.Name)
 }
 
-// SetupStep is the step that finishes a server, as the summary words it.
+// SetupStep words a server's finishing step as the summary does.
 func SetupStep(configDir string, s ServerStatus) string {
 	return finishStep(configDir, MiniCommand(configDir), s, 0)
 }

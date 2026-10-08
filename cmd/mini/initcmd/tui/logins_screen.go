@@ -18,13 +18,12 @@ type loginsParams struct {
 	changed   <-chan struct{}
 }
 
-// loginsScreen lists the configured servers that don't work yet and what each one needs.
 type loginsScreen struct {
 	p        loginsParams
 	rows     []initcmd.ServerStatus
 	checking map[string]bool
 	err      error
-	// waiting is true while a command waits for the next check to finish; one is enough.
+	// One waiting command covers every running check.
 	waiting bool
 }
 
@@ -32,9 +31,9 @@ func newLoginsScreen(p loginsParams) *loginsScreen {
 	return &loginsScreen{p: p}
 }
 
-// The checks are read before the statuses: a check that finishes in between still reads as
-// running, and the change it signals refreshes the screen again.
 func (s *loginsScreen) refresh() {
+	// Checks before statuses: one that finishes in between still reads as running, and the change
+	// it signals refreshes the screen again.
 	s.checking = s.p.checking()
 	statuses, err := s.p.statuses()
 	s.rows, s.err = nil, err
@@ -54,7 +53,6 @@ func (s *loginsScreen) start() tea.Cmd {
 	return nil
 }
 
-// Each check that finishes can change a row, so the screen waits for the next one while any run.
 func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 	if _, ok := msg.(checksChanged); !ok {
 		return nil
@@ -105,7 +103,7 @@ func (s *loginsScreen) body(int) string {
 		lines = append(lines, fmt.Sprintf("  %-*s  %s", width, status.Name, dim.Render(s.need(status))))
 	}
 	if len(lines) == 0 {
-		// The last check found nothing to finish, after the screen was already shown.
+		// The last check cleared the final row while the screen was shown.
 		return "Every server works; nothing is left to set up."
 	}
 	return strings.Join(lines, "\n")

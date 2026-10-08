@@ -18,8 +18,7 @@ type Params struct {
 	Program func(m tea.Model) error
 }
 
-// Outcome is how the UI ended. Saved means the picks were written, and Report says what that did;
-// Quit means the UI ended early, by the user quitting or the program failing, after the save or before it.
+// Outcome is how the UI ended. Quit covers the program failing too, before or after the save.
 type Outcome struct {
 	Quit   bool
 	Saved  bool
@@ -61,9 +60,8 @@ func (r *run) save() {
 	r.last = r.session.Sync(r.plan.Servers())
 }
 
-// outcome reports what the last save wrote. Running checks finish first, or are cancelled when
-// the user left early, so none writes while the report reads the servers.
 func (r *run) outcome(leftEarly bool) Outcome {
+	// No check may write while the report reads the servers.
 	if leftEarly {
 		r.session.Close()
 	} else {
@@ -115,7 +113,6 @@ func (ui screens) pick(plan *initcmd.Plan) {
 	plan.Catalog = ui.catalog(*plan)
 }
 
-// The catalog the user picked from, once it loaded; until then, the one the plan started with.
 func (ui screens) catalog(plan initcmd.Plan) []catalog.Entry {
 	if entries, ok := ui.catalogs.entries(); ok {
 		return entries
