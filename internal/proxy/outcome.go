@@ -74,7 +74,17 @@ func classifyResponse(resp *http.Response, body []byte) forwardOutcome {
 			),
 		}
 	}
-	out := readForwardResponse(resp)
+	return classifySuccessfulResponse(resp, body)
+}
+
+func classifySuccessfulResponse(resp *http.Response, body []byte) forwardOutcome {
+	out, err := readForwardResponse(resp)
+	if err != nil {
+		return forwardOutcome{
+			kind: outcomeOther,
+			resp: daemonErrorResponse(body, "read daemon response: "+err.Error()),
+		}
+	}
 	if isNotInitialized(out) {
 		return forwardOutcome{kind: outcomeNotInitialized, resp: out}
 	}
@@ -101,10 +111,10 @@ func newDaemonRequest(sess DaemonSession, body []byte) (*http.Request, error) {
 	return req, nil
 }
 
-func readForwardResponse(resp *http.Response) []byte {
+func readForwardResponse(resp *http.Response) ([]byte, error) {
 	if resp.StatusCode == http.StatusAccepted {
-		return nil // notification — no response expected
+		return nil, nil
 	}
-	result, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
-	return bytes.TrimSpace(result)
+	result, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	return bytes.TrimSpace(result), err
 }
