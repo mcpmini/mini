@@ -31,7 +31,7 @@ type catalogSource struct {
 }
 
 func publishedCatalogSource() catalogSource {
-	return catalogSource{client: catalog.NewFetchClient(), url: publishedCatalogURL()}
+	return catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL}
 }
 
 func (s catalogSource) entries() ([]catalog.Entry, error) {
