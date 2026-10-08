@@ -124,7 +124,7 @@ func TestImportScreen_eachHeadingSitsAboveItsColumnEvenWhenTheColumnIsNarrower(t
 	})
 	lines := strings.Split(ansi.Strip(s.body(20)), "\n")
 	header, row := lines[0], lines[1]
-	for heading, cell := range map[string]string{"SERVER": "a", "COMMAND / URL": "x.io", "FROM": "Codex"} {
+	for heading, cell := range map[string]string{"SERVER": "[x]", "COMMAND / URL": "x.io", "FROM": "Codex"} {
 		if strings.Index(header, heading) != strings.Index(row, cell) {
 			t.Errorf("header %q and row %q: %s doesn't start where %s does", header, row, cell, heading)
 		}

@@ -7,6 +7,11 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+const (
+	unticked = "[ ] "
+	ticked   = "[x] "
+)
+
 var (
 	dim  = lipgloss.NewStyle().Faint(true)
 	bold = lipgloss.NewStyle().Bold(true)
@@ -34,12 +39,13 @@ func (l *list) filterLine() string {
 }
 
 func (l *list) headerLine() string {
-	line := fmt.Sprintf("%-*s  %s", l.labelWidth(), l.header.label, l.header.detail)
-	return "      " + bold.Render(strings.TrimRight(line, " "))
+	line := fmt.Sprintf("%-*s  %s", len(unticked)+l.labelWidth(), l.header.label, l.header.detail)
+	return "  " + bold.Render(strings.TrimRight(line, " "))
 }
 
 func (l *list) labelWidth() int {
-	width := len(l.header.label)
+	// The first heading starts over the checkbox, so only what it overhangs widens the label column.
+	width := len(l.header.label) - len(unticked)
 	for _, r := range l.rows {
 		width = max(width, len(r.label))
 	}
@@ -84,12 +90,12 @@ func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
 }
 
 func (l *list) line(r row, atCursor bool, width int) string {
-	cursor, box := "  ", "[ ] "
+	cursor, box := "  ", unticked
 	if atCursor {
 		cursor = "> "
 	}
 	if l.checked[r.key] {
-		box = "[x] "
+		box = ticked
 	}
 	line := cursor + box + fmt.Sprintf("%-*s", width, r.label)
 	if r.detail != "" {

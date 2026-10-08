@@ -59,11 +59,10 @@ func TestCatalogScreen_listsPopularThenEachCategoryInCatalogOrder(t *testing.T) 
 	c := testCatalog()
 	text := catalogText(newCatalogScreen(c, c.Entries, noImports))
 	want := []string{
-		"      SERVER  URL                 SETUP\nPopular\n> [ ] github  api.github.example  API token\n",
-		"Project management\n  [ ] linear  mcp.linear.example  browser login\n" +
-			"  [ ] asana   mcp.asana.example   your own OAuth app\n",
-		"Observability\n  [ ] sentry  mcp.sentry.example  browser login\n",
-		"Developer tools\n  [ ] github  api.github.example  API token",
+		"  SERVER      URL\nPopular\n> [ ] github  api.github.example\n",
+		"Project management\n  [ ] linear  mcp.linear.example\n  [ ] asana   mcp.asana.example\n",
+		"Observability\n  [ ] sentry  mcp.sentry.example\n",
+		"Developer tools\n  [ ] github  api.github.example",
 	}
 	for _, part := range want {
 		if !strings.Contains(text, part) {
