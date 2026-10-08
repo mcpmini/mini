@@ -60,7 +60,6 @@ func withoutUnknownAuth(c Catalog) Catalog {
 	return c
 }
 
-// withoutEmptyCategories relies on the raw document having been validated: every listed category had an entry, so one with no entry left was emptied by pruning.
 func withoutEmptyCategories(order []string, entries []Entry) []string {
 	present := make(map[string]bool, len(entries))
 	for _, entry := range entries {
