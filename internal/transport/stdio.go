@@ -36,6 +36,7 @@ type StdioCommand struct {
 }
 
 func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, error) {
+	//nolint:contextcheck // The subprocess survives initialization; failed handshakes close it before returning.
 	c, err := startSubprocess(p)
 	if err != nil {
 		return nil, err

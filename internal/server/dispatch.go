@@ -31,6 +31,7 @@ func (s *Server) dispatchRawCall(ctx context.Context, p dispatchParams) (json.Ra
 		return s.callPerSession(ctx, p)
 	}
 	raw, err := p.Upstream.callTool(ctx, p.Tool, p.Params)
+	//nolint:contextcheck // Recovery belongs to the shared upstream and must survive one request's cancellation.
 	s.maybeReconnect(p.Upstream, err)
 	return raw, err
 }
