@@ -27,95 +27,33 @@ import (
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
+// stampedVersion is the revision scripts/test-bins.sh stamps into the mini binary.
+const stampedVersion = "integration-test"
+
 var (
-	miniBin         string
-	fakemcpBin      string
-	fixturesDir     string
-	expectedVersion string
+	miniBin     string
+	fakemcpBin  string
+	fixturesDir string
 )
 
 func TestMain(m *testing.M) {
-	root := moduleRoot()
-	fixturesDir = filepath.Join(root, "benchmarks", "fixtures")
+	fixturesDir = filepath.Join(moduleRoot(), "benchmarks", "fixtures")
 
 	var err error
-	expectedVersion, err = gitVersion(root)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "git version: %v\n", err)
-		os.Exit(1)
+	miniBin, err = testutil.BinaryFromEnv("MINIMCP_BIN")
+	if err == nil {
+		fakemcpBin, err = testutil.BinaryFromEnv("FAKEMCP_BIN")
 	}
-	miniBin, err = buildBin(buildBinParams{
-		root: root, name: "mini", pkg: "./cmd/mini",
-		ldflags: "-X github.com/mcpmini/mini/internal/version.buildRevision=" + expectedVersion,
-	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "build mini: %v\n", err)
-		os.Exit(1)
-	}
-	fakemcpBin, err = buildBin(buildBinParams{root: root, name: "fakemcp", pkg: "./test/fakemcp"})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "build fakemcp: %v\n", err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	os.Exit(m.Run())
 }
 
-// gitVersion computes the revision string injected into the mini binary via
-// -ldflags, so TestIntegrationCLI_version can assert on it exactly.
-func gitVersion(root string) (string, error) {
-	rev, err := gitOutput(root, "rev-parse", "--short=7", "HEAD")
-	if err != nil {
-		return "", err
-	}
-	status, err := gitOutput(root, "status", "--porcelain", "--untracked-files=no")
-	if err != nil {
-		return "", err
-	}
-	if status != "" {
-		rev += "+dirty"
-	}
-	return rev, nil
-}
-
-func gitOutput(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
 func moduleRoot() string {
 	_, thisFile, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(thisFile), "..", "..")
-}
-
-type buildBinParams struct {
-	root    string
-	name    string
-	pkg     string
-	ldflags string
-}
-
-func buildBin(p buildBinParams) (string, error) {
-	tmp, err := os.MkdirTemp("", "mini-inttest-*")
-	if err != nil {
-		return "", err
-	}
-	out := filepath.Join(tmp, p.name)
-	args := []string{"build", "-tags", "integration", "-o", out}
-	if p.ldflags != "" {
-		args = append(args, "-ldflags", p.ldflags)
-	}
-	args = append(args, p.pkg)
-	cmd := exec.Command("go", args...)
-	cmd.Dir = p.root
-	if b, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("%w\n%s", err, b)
-	}
-	return out, nil
 }
 
 func cliArgs(configDir string, args []string) []string {

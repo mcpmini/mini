@@ -22,7 +22,6 @@ go run ./tools/clocklint .
 go run ./tools/testkind .
 go run ./tools/fileiolint .
 testbin=$(mktemp -d)
-go build -o "$testbin/echomcp" ./cmd/echomcp
-export ECHOMCP_BIN="$testbin/echomcp"
+while IFS= read -r line; do export "$line"; done < <(scripts/test-bins.sh "$testbin")
 go test -race -tags test ./...
 go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...

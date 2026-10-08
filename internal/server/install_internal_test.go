@@ -27,6 +27,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/invoke"
+	"github.com/mcpmini/mini/internal/testutil"
 	"github.com/mcpmini/mini/internal/transport"
 )
 
@@ -172,12 +173,7 @@ func TestAddServerFromAgent_aFailedAddStopsAnInstallStartedMeanwhile(t *testing.
 }
 
 func TestAddServerFromAgent_stopsAnInstallStartedForTheNamesEarlierServer(t *testing.T) {
-	echomcp := os.Getenv("ECHOMCP_BIN")
-	if echomcp == "" {
-		t.Fatal(
-			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
-		)
-	}
+	echomcp := testutil.Binary(t, "ECHOMCP_BIN")
 	srv := newInstallTestServer(t)
 	srv.cfg.DangerousAllowRuntimeStdio = true
 	startedForTheEarlierServer := srv.replacingInstall(config.ServerConfig{Name: "svc", Command: "earlier"})
@@ -273,12 +269,7 @@ func TestChangeSavedServer_keepsSetProjectionOutUntilTheChangeFinishes(t *testin
 }
 
 func TestAddServerFromAgent_aTokenRefreshForTheNamesEarlierServerLeavesNoToken(t *testing.T) {
-	echomcp := os.Getenv("ECHOMCP_BIN")
-	if echomcp == "" {
-		t.Fatal(
-			"ECHOMCP_BIN not set; run check.sh or: go build -o /tmp/echomcp ./cmd/echomcp && ECHOMCP_BIN=/tmp/echomcp go test ...",
-		)
-	}
+	echomcp := testutil.Binary(t, "ECHOMCP_BIN")
 	srv := newInstallTestServer(t)
 	srv.cfg.DangerousAllowRuntimeStdio = true
 	finishRefresh, refreshed := startTokenRefresh(t, srv)

@@ -17,7 +17,7 @@ type fixtureChecker struct {
 }
 
 func TestIntegrationStructlintCheckAndFix(t *testing.T) {
-	binary := buildStructlint(t)
+	binary := testutil.Binary(t, "STRUCTLINT_BIN")
 	dir := fixtureModule(t, "package fixture\ntype Quad struct{A,B,C,D int}\n")
 	checker := fixtureChecker{binary: binary, dir: dir, tags: "fixture"}
 	tagged := "//go:build fixture\npackage fixture\nvar _ = Quad{1,2,3,4}\n"
@@ -45,7 +45,7 @@ func TestIntegrationStructlintCheckAndFix(t *testing.T) {
 }
 
 func TestIntegrationStructlintUnfixableLiteralRemainsAnError(t *testing.T) {
-	binary := buildStructlint(t)
+	binary := testutil.Binary(t, "STRUCTLINT_BIN")
 	source := "package fixture\nfunc effect() int { return 2 }\nvar _ = struct{A,_,C,D int}{1,effect(),3,4}\n"
 	dir := fixtureModule(t, source)
 	checker := fixtureChecker{binary: binary, dir: dir}
@@ -60,7 +60,7 @@ func TestIntegrationStructlintUnfixableLiteralRemainsAnError(t *testing.T) {
 }
 
 func TestIntegrationStructlintFixPreservesNestedEvaluationOrder(t *testing.T) {
-	binary := buildStructlint(t)
+	binary := testutil.Binary(t, "STRUCTLINT_BIN")
 	source := `package main
 import "fmt"
 type Quad struct{A,B,C,D int}
@@ -76,16 +76,6 @@ func main() { fmt.Print(Outer{Quad{effect(1),effect(2),effect(3),effect(4)},effe
 	if before != "1234567{{1 2 3 4} 5 6 7}" || after != before {
 		t.Fatalf("evaluation changed: before %q, after %q", before, after)
 	}
-}
-
-func buildStructlint(t *testing.T) string {
-	t.Helper()
-	binary := filepath.Join(t.TempDir(), "structlint")
-	cmd := exec.CommandContext(t.Context(), "go", "build", "-o", binary, ".")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build structlint: %v\n%s", err, output)
-	}
-	return binary
 }
 
 func fixtureModule(t *testing.T, source string) string {
