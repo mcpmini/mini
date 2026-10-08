@@ -239,3 +239,50 @@ func TestFetchPopular_rejectsUnknownAndRepeatedIDsBeforeSkippingAuth(t *testing.
 		})
 	}
 }
+
+func TestFetchCategoryOrder_loadsWhenUnknownAuthEmptiesListedCategory(t *testing.T) {
+	data := catalogWithCategoryOrder(t, []string{"Future", "Dev"},
+		validEntry(func(e map[string]any) { e["name"], e["category"] = "known", "Dev" }),
+		validEntry(func(e map[string]any) { e["name"], e["category"], e["auth"] = "future", "Future", "future-kind" }),
+	)
+	srv, client := catalogServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := w.Write(data); err != nil {
+			t.Errorf("write catalog: %v", err)
+		}
+	})
+	c, err := Fetch(context.Background(), client, srv.URL)
+	if err != nil {
+		t.Fatalf("Fetch error = %v, want the catalog to load", err)
+	}
+	if !slices.Equal(c.CategoryOrder, []string{"Dev"}) || len(c.Entries) != 1 || c.Entries[0].Name != "known" {
+		t.Fatalf("Fetch = %+v, want category_order [Dev] and the one known entry", c)
+	}
+}
+
+func TestFetchCategoryOrder_rejectsUnknownAndRepeatedCategoriesBeforeSkippingAuth(t *testing.T) {
+	entries := []map[string]any{
+		validEntry(func(e map[string]any) { e["name"] = "known" }),
+		validEntry(func(e map[string]any) { e["name"], e["category"], e["auth"] = "future", "Future", "future-kind" }),
+	}
+	for _, tt := range []struct {
+		name  string
+		order []string
+		want  string
+	}{
+		{"unknown", []string{"Missing"}, "is not a category of any server"},
+		{"duplicate skipped category", []string{"Future", "Future"}, "is listed twice"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data := catalogWithCategoryOrder(t, tt.order, entries...)
+			srv, client := catalogServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				if _, err := w.Write(data); err != nil {
+					t.Errorf("write catalog: %v", err)
+				}
+			})
+			_, err := Fetch(context.Background(), client, srv.URL)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Fetch error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
