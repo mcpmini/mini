@@ -59,6 +59,7 @@ func RunUnattended(s Setup) Report {
 type Plan struct {
 	Import  ImportPlan
 	Add     []catalog.Entry
+	Catalog []catalog.Entry
 	written WrittenServers
 }
 
@@ -70,6 +71,7 @@ func (s Setup) Plan() (Plan, error) {
 	return Plan{
 		Import:  PlanImport(ImportParams{Agents: s.Import, Written: written, SelfPath: s.SelfPath}),
 		Add:     s.Add,
+		Catalog: s.Catalog,
 		written: written,
 	}, nil
 }
@@ -83,7 +85,7 @@ func (s Setup) Write(p Plan) Report {
 	report.WriteErrors = writeErrors
 	CheckOAuth(s.ConfigDir, OAuthTargets(s.ConfigDir, added), clock.System())
 	report.Import.keepOnly(report.Import.importedOf(added))
-	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, s.Catalog)
+	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, p.Catalog)
 	return report
 }
 

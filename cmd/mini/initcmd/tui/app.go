@@ -29,6 +29,12 @@ type enterer interface {
 	enter()
 }
 
+// A screen that loads in the background starts loading when the UI starts and gets every message.
+type loader interface {
+	start() tea.Cmd
+	update(msg tea.Msg)
+}
+
 const minWidth, minHeight = 60, 12
 
 const headingLines, blankLinesAroundBody = 1, 2
@@ -41,18 +47,36 @@ type app struct {
 	quit    bool
 }
 
+// A screen can stop being empty once it loads, so empty screens are skipped when moving, not dropped.
 func newApp(screens []screen) *app {
-	a := &app{}
-	for _, s := range screens {
-		if !s.empty() {
-			a.screens = append(a.screens, s)
-		}
+	a := &app{screens: screens, at: -1}
+	if first, ok := a.next(-1, 1); ok {
+		a.show(first)
 	}
 	return a
 }
 
+func (a *app) hasScreens() bool {
+	return a.at >= 0
+}
+
+func (a *app) next(from, direction int) (int, bool) {
+	for i := from + direction; i >= 0 && i < len(a.screens); i += direction {
+		if !a.screens[i].empty() {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
 func (a *app) Init() tea.Cmd {
-	return nil
+	var cmds []tea.Cmd
+	for _, s := range a.screens {
+		if l, ok := s.(loader); ok {
+			cmds = append(cmds, l.start())
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -61,6 +85,12 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width, a.height = msg.Width, msg.Height
 	case tea.KeyPressMsg:
 		return a, a.handle(msg)
+	default:
+		for _, s := range a.screens {
+			if l, ok := s.(loader); ok {
+				l.update(msg)
+			}
+		}
 	}
 	return a, nil
 }
@@ -76,13 +106,14 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 	}
 	switch a.screens[a.at].handle(key) {
 	case forward:
-		if a.at == len(a.screens)-1 {
+		next, ok := a.next(a.at, 1)
+		if !ok {
 			return tea.Quit
 		}
-		a.show(a.at + 1)
+		a.show(next)
 	case back:
-		if a.at > 0 {
-			a.show(a.at - 1)
+		if previous, ok := a.next(a.at, -1); ok {
+			a.show(previous)
 		}
 	}
 	return nil
@@ -143,7 +174,7 @@ func (a *app) footer(s screen) []string {
 	}
 	var leave []string
 	// esc clears an active filter before it goes back.
-	if a.at > 0 && filter == "" {
+	if _, ok := a.next(a.at, -1); ok && filter == "" {
 		leave = append(leave, "esc back")
 	}
 	leave = append(leave, "ctrl+c quit without saving")

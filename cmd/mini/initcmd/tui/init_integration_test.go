@@ -30,6 +30,7 @@ func TestIntegrationInitUI_writesTheTickedImportsAndCatalogServersAndPrintsTheSu
 	term.waitFor("[x] files")
 	term.press("space", "enter")
 	term.waitFor("Add servers from the catalog")
+	term.waitFor("[ ] sentry")
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "enter")
 	term.waitFor("mini is set up with 2 servers")
 

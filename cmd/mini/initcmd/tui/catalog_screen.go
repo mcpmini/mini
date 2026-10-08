@@ -11,28 +11,60 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-type catalogScreen struct {
-	popular   []string
-	available []catalog.Entry
-	// imports is what the Import screen has ticked; a catalog server it covers is hidden.
-	imports func() []config.ServerConfig
-	checked map[string]bool
-	list    *list
+type catalogLoaded struct {
+	catalog catalog.Catalog
+	err     error
 }
 
-func newCatalogScreen(
-	c catalog.Catalog,
-	available []catalog.Entry,
-	imports func() []config.ServerConfig,
-) *catalogScreen {
-	s := &catalogScreen{
-		popular:   c.Popular,
-		available: initcmd.GroupByCategory(available),
-		imports:   imports,
-		checked:   map[string]bool{},
-	}
+type catalogScreen struct {
+	load func() (catalog.Catalog, error)
+	// offered drops the servers mini already has.
+	offered func([]catalog.Entry) []catalog.Entry
+	// imports is what the Import screen has ticked; a catalog server it covers is hidden.
+	imports       func() []config.ServerConfig
+	loaded        bool
+	loadErr       error
+	popular       []string
+	loadedEntries []catalog.Entry
+	available     []catalog.Entry
+	checked       map[string]bool
+	list          *list
+}
+
+type catalogParams struct {
+	load    func() (catalog.Catalog, error)
+	offered func([]catalog.Entry) []catalog.Entry
+	imports func() []config.ServerConfig
+}
+
+func newCatalogScreen(p catalogParams) *catalogScreen {
+	s := &catalogScreen{load: p.load, offered: p.offered, imports: p.imports, checked: map[string]bool{}}
 	s.enter()
 	return s
+}
+
+func (s *catalogScreen) start() tea.Cmd {
+	if s.loaded {
+		return nil
+	}
+	return func() tea.Msg {
+		c, err := s.load()
+		return catalogLoaded{catalog: c, err: err}
+	}
+}
+
+func (s *catalogScreen) update(msg tea.Msg) {
+	loaded, ok := msg.(catalogLoaded)
+	if !ok {
+		return
+	}
+	s.loaded, s.loadErr = true, loaded.err
+	c := loaded.catalog
+	s.popular, s.loadedEntries = c.Popular, c.Entries
+	if loaded.err == nil {
+		s.available = initcmd.GroupByCategory(s.offered(c.Entries))
+	}
+	s.enter()
 }
 
 // enter rebuilds the rows, since going back to Import may have ticked a server the catalog has.
@@ -85,12 +117,15 @@ func (s *catalogScreen) heading() string {
 }
 
 func (s *catalogScreen) handle(key tea.KeyPressMsg) step {
-	if s.list.handle(key) {
+	// Until the catalog arrives there is nothing to pick, and enter would skip it unseen.
+	if s.loaded && s.list.handle(key) {
 		return stay
 	}
 	switch key.String() {
 	case "enter":
-		return forward
+		if s.loaded {
+			return forward
+		}
 	case "esc", "left", "shift+tab":
 		return back
 	}
@@ -98,10 +133,21 @@ func (s *catalogScreen) handle(key tea.KeyPressMsg) step {
 }
 
 func (s *catalogScreen) body(height int) string {
+	switch {
+	case !s.loaded:
+		return "loading…"
+	case s.loadErr != nil:
+		return "The catalog couldn't be loaded: " + s.loadErr.Error()
+	case len(s.available) == 0:
+		return "mini already has every server in the catalog."
+	}
 	return s.list.view(height)
 }
 
 func (s *catalogScreen) keys() string {
+	if !s.loaded {
+		return "loading the catalog"
+	}
 	return s.list.keys("space tick · / filter · enter continue")
 }
 
@@ -109,8 +155,14 @@ func (s *catalogScreen) filterLine() string {
 	return s.list.filterLine()
 }
 
+// entries is the catalog the screen offered from, once it has loaded.
+func (s *catalogScreen) entries() ([]catalog.Entry, bool) {
+	return s.loadedEntries, s.loaded && s.loadErr == nil
+}
+
+// Until it loads the screen isn't empty: the user waits on it rather than skipping it.
 func (s *catalogScreen) empty() bool {
-	return len(s.available) == 0
+	return s.loaded && s.loadErr == nil && len(s.shown()) == 0
 }
 
 func (s *catalogScreen) picks() []catalog.Entry {

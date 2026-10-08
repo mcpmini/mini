@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -29,21 +28,23 @@ type catalogStepParams struct {
 type catalogSource struct {
 	client *http.Client
 	url    string
-	warn   io.Writer
 }
 
 func publishedCatalogSource() catalogSource {
-	return catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL, warn: os.Stderr}
+	return catalogSource{client: catalog.NewFetchClient(), url: catalog.PublishedURL}
 }
 
 func (s catalogSource) entries() ([]catalog.Entry, error) {
-	c, err := catalog.Fetch(context.Background(), s.client, s.url)
-	if err == nil {
-		return c.Entries, nil
-	}
-	fmt.Fprintf(s.warn, "note: using the built-in server catalog (the published one is unavailable: %v)\n", err)
-	c, err = catalog.Load()
+	c, err := s.load()
 	return c.Entries, err
+}
+
+// Any fetch failure, a document this build can't read included, quietly falls back to the built-in catalog.
+func (s catalogSource) load() (catalog.Catalog, error) {
+	if c, err := catalog.Fetch(context.Background(), s.client, s.url); err == nil {
+		return c, nil
+	}
+	return catalog.Load()
 }
 
 func runCatalogStep(p catalogStepParams) error {

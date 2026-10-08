@@ -122,11 +122,7 @@ func runFullScreenInit(configDir string) error {
 	if err != nil {
 		return err
 	}
-	builtIn, err := catalog.Load()
-	if err != nil {
-		return err
-	}
-	plan, quit, err := tui.Run(tui.Params{Setup: setup, Catalog: builtIn})
+	plan, quit, err := tui.Run(tui.Params{Setup: setup, LoadCatalog: publishedCatalogSource().load})
 	switch {
 	case err != nil:
 		return err
