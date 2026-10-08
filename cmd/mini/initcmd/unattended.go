@@ -6,9 +6,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/catalog"
-	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
-	"github.com/mcpmini/mini/internal/ops"
 )
 
 // Setup is what one init run imports and adds. Writing it never edits an agent or opens a browser.
@@ -76,15 +74,36 @@ func (s Setup) Plan() (Plan, error) {
 	}, nil
 }
 
+// Write is a run with no UI: one sync, its OAuth checks, then the report.
 func (s Setup) Write(p Plan) Report {
+	session := s.NewSession()
+	result := session.Sync(p.Servers())
+	session.WaitChecks()
+	return s.Report(p, Synced{Written: session.Written(), Failed: result.Failed})
+}
+
+func (s Setup) NewSession() *Session {
+	return NewSession(SessionParams{ConfigDir: s.ConfigDir})
+}
+
+// Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
+func (p Plan) Servers() []config.ServerConfig {
+	return planAdds(p.Import.picked(), p.Add, p.written).write
+}
+
+// Synced is what the last sync left.
+type Synced struct {
+	Written []string
+	Failed  []ServerError
+}
+
+func (s Setup) Report(p Plan, synced Synced) Report {
 	report := s.report()
 	report.Import = p.Import
 	adds := planAdds(p.Import.picked(), p.Add, p.written)
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
-	added, writeErrors := addServers(s.ConfigDir, adds.write)
-	report.WriteErrors = writeErrors
-	CheckOAuth(s.ConfigDir, OAuthTargets(s.ConfigDir, added), clock.System())
-	report.Import.keepOnly(report.Import.importedOf(added))
+	report.WriteErrors = synced.Failed
+	report.Import.keepOnly(report.Import.importedOf(synced.Written))
 	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, p.Catalog)
 	return report
 }
@@ -96,19 +115,6 @@ func (s Setup) report() Report {
 type ServerError struct {
 	Name string
 	Err  error
-}
-
-func addServers(configDir string, servers []config.ServerConfig) ([]string, []ServerError) {
-	var written []string
-	var failed []ServerError
-	for _, sc := range servers {
-		if _, err := ops.AddServer(configDir, sc); err != nil {
-			failed = append(failed, ServerError{Name: sc.Name, Err: err})
-			continue
-		}
-		written = append(written, sc.Name)
-	}
-	return written, failed
 }
 
 func (plan ImportPlan) picked() []config.ServerConfig {
