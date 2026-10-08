@@ -160,7 +160,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 	t.Run("keys wait for the catalog, except going back", func(t *testing.T) {
 		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: noImports})
 		for key, want := range map[string]step{"enter": stay, "/": stay, "space": stay, "esc": back} {
-			if got := s.handle(press(key)); got != want {
+			if got, _ := s.handle(press(key)); got != want {
 				t.Errorf("%s while loading = %v, want %v", key, got, want)
 			}
 		}

@@ -21,15 +21,15 @@ func (s *fakeScreen) body(int) string { return s.name + " body" }
 func (s *fakeScreen) keys() string    { return "enter continue" }
 func (s *fakeScreen) empty() bool     { return s.nothing }
 
-func (s *fakeScreen) handle(key tea.KeyPressMsg) step {
+func (s *fakeScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	s.got = append(s.got, key.String())
 	switch key.String() {
 	case "enter":
-		return forward
+		return forward, nil
 	case "esc":
-		return back
+		return back, nil
 	}
-	return stay
+	return stay, nil
 }
 
 func sized(a *app) *app {
@@ -234,5 +234,23 @@ func TestApp_finishingBeforeTheSavePointSaves(t *testing.T) {
 	a.saves = savePoint{after: 1, save: func() { saves++ }}
 	if cmd := send(a, "enter"); saves != 1 || cmd == nil {
 		t.Errorf("saves = %d, cmd = %v; want the picks saved and the program ended", saves, cmd)
+	}
+}
+
+type wrappingScreen struct {
+	fakeScreen
+	width int
+}
+
+func (s *wrappingScreen) resize(width int) { s.width = width }
+
+func TestApp_aScreenThatWrapsItsLinesLearnsEachWindowWidth(t *testing.T) {
+	later := &wrappingScreen{fakeScreen: fakeScreen{name: "Later"}}
+	a := newApp([]screen{&fakeScreen{name: "First"}, later})
+	for _, width := range []int{100, 60} {
+		a.Update(tea.WindowSizeMsg{Width: width, Height: 30})
+		if later.width != width {
+			t.Errorf("after a resize to %d, the screen not yet shown has width %d", width, later.width)
+		}
 	}
 }

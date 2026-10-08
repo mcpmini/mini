@@ -137,8 +137,8 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 	out, err := Run(Params{
 		Setup:       setupFor(configDir),
 		LoadCatalog: fromCatalog(c),
-		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, finish.
-		Program: pressing("space", "enter", "esc", "space", "down", "space", "enter", "enter"),
+		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, continue.
+		Program: pressing("space", "enter", "esc", "space", "down", "space", "enter", "down", "enter"),
 	})
 	if err != nil || out.Quit {
 		t.Fatalf("Run = %+v, %v; want it finished", out, err)
@@ -265,4 +265,26 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
+	cancelled := false
+	startLogin := func(ctx context.Context, _ string) (Login, error) {
+		<-ctx.Done()
+		cancelled = true
+		return Login{}, ctx.Err()
+	}
+	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
+	out, err := Run(Params{
+		Setup:       setupFor(t.TempDir()),
+		LoadCatalog: fromCatalog(c),
+		StartLogin:  startLogin,
+		Program:     pressing("space", "enter", "enter", "ctrl+c"),
+	})
+	if err != nil || !out.Quit {
+		t.Fatalf("Run = %+v, %v; want a quit", out, err)
+	}
+	if !cancelled {
+		t.Error("Run returned while linear's login still waited on the browser")
+	}
 }

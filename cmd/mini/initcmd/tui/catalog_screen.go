@@ -123,20 +123,20 @@ func (s *catalogScreen) heading() string {
 	return "Add servers from the catalog"
 }
 
-func (s *catalogScreen) handle(key tea.KeyPressMsg) step {
+func (s *catalogScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	// Until the catalog arrives there is nothing to pick, and enter would skip it unseen.
 	if s.loaded && s.list.handle(key) {
-		return stay
+		return stay, nil
 	}
 	switch key.String() {
 	case "enter":
 		if s.loaded {
-			return forward
+			return forward, nil
 		}
 	case "esc", "left", "shift+tab":
-		return back
+		return back, nil
 	}
-	return stay
+	return stay, nil
 }
 
 func (s *catalogScreen) body(height int) string {

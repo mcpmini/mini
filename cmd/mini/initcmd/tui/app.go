@@ -17,7 +17,7 @@ const (
 
 type screen interface {
 	heading() string
-	handle(key tea.KeyPressMsg) step
+	handle(key tea.KeyPressMsg) (step, tea.Cmd)
 	body(height int) string
 	// keys names the screen's own keys and what enter does there; the app adds esc and ctrl+c.
 	keys() string
@@ -33,6 +33,18 @@ type enterer interface {
 type loader interface {
 	start() tea.Cmd
 	update(msg tea.Msg) tea.Cmd
+}
+
+type resizer interface {
+	resize(width int)
+}
+
+func (a *app) resizeScreens() {
+	for _, s := range a.screens {
+		if r, ok := s.(resizer); ok {
+			r.resize(a.width)
+		}
+	}
 }
 
 // savePoint saves the picks each time the user moves forward past screen after.
@@ -92,6 +104,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
+		a.resizeScreens()
 	case tea.KeyPressMsg:
 		return a, a.handle(msg)
 	default:
@@ -115,15 +128,16 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 		// The screen is hidden, so a key would act on picks the user can't see.
 		return nil
 	}
-	switch a.screens[a.at].handle(key) {
+	move, work := a.screens[a.at].handle(key)
+	switch move {
 	case forward:
-		return a.forward()
+		return tea.Batch(work, a.forward())
 	case back:
 		if previous, ok := a.next(a.at, -1); ok {
-			return a.show(previous)
+			return tea.Batch(work, a.show(previous))
 		}
 	}
-	return nil
+	return work
 }
 
 func (a *app) forward() tea.Cmd {

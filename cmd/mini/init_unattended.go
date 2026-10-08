@@ -125,7 +125,22 @@ func runFullScreenInit(configDir string) error {
 	if err != nil {
 		return err
 	}
-	out, runErr := tui.Run(tui.Params{Setup: setup, LoadCatalog: publishedCatalogSource().load})
+	logs := newUILogs(configDir)
+	restore := logs.redirect()
+	out, runErr := tui.Run(tui.Params{
+		Setup:       setup,
+		LoadCatalog: publishedCatalogSource().load,
+		StartLogin:  startInitLogin(configDir),
+	})
+	restore()
+	err = reportFullScreenInit(configDir, out, runErr)
+	if path, ok := logs.written(); ok {
+		fmt.Fprintf(os.Stderr, "mini: messages logged during setup are in %s\n", path)
+	}
+	return err
+}
+
+func reportFullScreenInit(configDir string, out tui.Outcome, runErr error) error {
 	if !out.Saved {
 		if runErr != nil {
 			return runErr
