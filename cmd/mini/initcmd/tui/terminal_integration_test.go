@@ -4,7 +4,6 @@ package tui
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -17,30 +16,11 @@ import (
 
 	"github.com/charmbracelet/x/vt"
 	"github.com/creack/pty"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 const termWidth, termHeight = 100, 30
-
-var miniBin string
-
-// The binary is built once for every test in the package; a build failure fails them all.
-func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "mini-tui-e2e-")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	miniBin = filepath.Join(dir, "mini")
-	build := exec.Command("go", "build", "-race", "-tags", "test", "-o", miniBin, "github.com/mcpmini/mini/cmd/mini")
-	build.Stderr = os.Stderr
-	if err := build.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "build mini: %v\n", err)
-		os.Exit(1)
-	}
-	code := m.Run()
-	_ = os.RemoveAll(dir) //nolint:errcheck // a leftover temp dir doesn't change the result
-	os.Exit(code)
-}
 
 type terminal struct {
 	t      *testing.T
@@ -60,7 +40,7 @@ type terminalParams struct {
 
 func startTerminal(t *testing.T, p terminalParams) *terminal {
 	t.Helper()
-	cmd := exec.Command(miniBin, append([]string{"--config", p.configDir}, p.args...)...)
+	cmd := exec.Command(testutil.Binary(t, "MINIMCP_BIN"), append([]string{"--config", p.configDir}, p.args...)...)
 	cmd.Env = []string{
 		"HOME=" + p.home, "CODEX_HOME=", "XDG_CONFIG_HOME=" + filepath.Join(p.home, ".config"),
 		"TERM=xterm-256color", "NO_COLOR=1", "MINI_NEW_INIT=1", "PATH=" + os.Getenv("PATH"),
