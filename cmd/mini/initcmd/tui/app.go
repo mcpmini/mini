@@ -24,6 +24,11 @@ type screen interface {
 	empty() bool
 }
 
+// A screen whose rows depend on earlier screens rebuilds them each time it is shown.
+type enterer interface {
+	enter()
+}
+
 const minWidth, minHeight = 60, 12
 
 const headingLines, blankLinesAroundBody = 1, 2
@@ -74,11 +79,20 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 		if a.at == len(a.screens)-1 {
 			return tea.Quit
 		}
-		a.at++
+		a.show(a.at + 1)
 	case back:
-		a.at = max(a.at-1, 0)
+		if a.at > 0 {
+			a.show(a.at - 1)
+		}
 	}
 	return nil
+}
+
+func (a *app) show(at int) {
+	a.at = at
+	if s, ok := a.screens[at].(enterer); ok {
+		s.enter()
+	}
 }
 
 func (a *app) View() tea.View {

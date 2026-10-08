@@ -199,3 +199,46 @@ func TestList_scrollingKeepsTheCursorRowsSubtitleShown(t *testing.T) {
 		t.Errorf("view (%d lines):\n%s\nwant 5 lines ending with server-04 and its subtitle", len(lines), view)
 	}
 }
+
+func sectionRows() []row {
+	return []row{
+		{key: "notion", label: "notion", section: "Popular", repeated: true},
+		{key: "linear", label: "linear", section: "Project management"},
+		{key: "notion", label: "notion", section: "Project management", search: "docs and wikis"},
+		{key: "sentry", label: "sentry", section: "Observability"},
+	}
+}
+
+func TestList_sections(t *testing.T) {
+	t.Run("each section is headed once, above its rows", func(t *testing.T) {
+		view := plainView(newList(sectionRows(), map[string]bool{}), 20)
+		want := "Popular\n> [ ] notion\n\nProject management\n  [ ] linear\n  [ ] notion\n\nObservability\n  [ ] sentry"
+		if view != want {
+			t.Errorf("view:\n%s\nwant:\n%s", view, want)
+		}
+	})
+	t.Run("a repeated row shares its tick", func(t *testing.T) {
+		l := newList(sectionRows(), map[string]bool{})
+		typeKeys(l, "space")
+		if view := plainView(l, 20); strings.Count(view, "[x] notion") != 2 {
+			t.Errorf("view:\n%s\nwant notion ticked under both headings", view)
+		}
+	})
+	t.Run("the filter lists a repeated row once and matches text the row doesn't show", func(t *testing.T) {
+		l := newList(sectionRows(), map[string]bool{})
+		typeKeys(l, "/", "w", "i", "k", "i")
+		if view := plainView(l, 20); view != "Project management\n> [ ] notion" {
+			t.Errorf("view:\n%s\nwant notion once, under its category", view)
+		}
+	})
+	t.Run("scrolling up to a section's first row shows its heading", func(t *testing.T) {
+		l := newList(sectionRows(), map[string]bool{})
+		for _, key := range []string{"down", "down", "down", "up", "up"} {
+			typeKeys(l, key)
+			plainView(l, 3)
+		}
+		if view := plainView(l, 3); !strings.HasPrefix(view, "Project management\n> [ ] linear") {
+			t.Errorf("view:\n%s\nwant the heading above linear", view)
+		}
+	})
+}

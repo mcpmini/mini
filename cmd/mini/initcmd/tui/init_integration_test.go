@@ -19,7 +19,7 @@ func homeWithClaudeServers(t *testing.T) string {
 	return home
 }
 
-func TestIntegrationInitUI_importsTheTickedServersAndPrintsTheSummary(t *testing.T) {
+func TestIntegrationInitUI_writesTheTickedImportsAndCatalogServersAndPrintsTheSummary(t *testing.T) {
 	configDir := t.TempDir()
 	term := startTerminal(
 		t,
@@ -29,13 +29,15 @@ func TestIntegrationInitUI_importsTheTickedServersAndPrintsTheSummary(t *testing
 	term.waitFor("Import servers from Claude Code")
 	term.waitFor("[x] files")
 	term.press("space", "enter")
-	term.waitFor("mini is set up with 1 server")
+	term.waitFor("Add servers from the catalog")
+	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "enter")
+	term.waitFor("mini is set up with 2 servers")
 
 	if code := term.exitCode(); code != 0 {
 		t.Errorf("exit code = %d, want 0; screen:\n%s", code, term.text())
 	}
-	if files := serverFiles(t, configDir); !slices.Equal(files, []string{"notes.yaml"}) {
-		t.Errorf("server files = %v, want notes only: files was unticked", files)
+	if files := serverFiles(t, configDir); !slices.Equal(files, []string{"notes.yaml", "sentry.yaml"}) {
+		t.Errorf("server files = %v, want notes and the catalog's sentry: files was unticked", files)
 	}
 	if term.altScreen() {
 		t.Error("the terminal is still on the alternate screen after init")

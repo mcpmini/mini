@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
-	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -30,7 +29,7 @@ func newImportScreen(candidates []initcmd.Candidate) *importScreen {
 			key:      c.Server.Name,
 			label:    c.Server.Name,
 			detail:   s.columnText(target(c.Server), agentList(c), widths),
-			subtitle: s.unpickedReason(c),
+			subtitle: unpickedReason(c),
 		})
 	}
 	s.list = newList(rows, checked)
@@ -88,6 +87,16 @@ func (s *importScreen) empty() bool {
 	return len(s.candidates) == 0
 }
 
+func (s *importScreen) ticked() []config.ServerConfig {
+	var servers []config.ServerConfig
+	for _, c := range s.candidates {
+		if s.list.checked[c.Server.Name] {
+			servers = append(servers, c.Server)
+		}
+	}
+	return servers
+}
+
 func (s *importScreen) pick(candidates []initcmd.Candidate) {
 	for i := range candidates {
 		candidates[i].Picked = s.list.checked[candidates[i].Server.Name]
@@ -119,29 +128,11 @@ func (s *importScreen) columnText(target, agents string, w columns) string {
 	return strings.TrimRight(strings.Join(parts, "  "), " ")
 }
 
-func (s *importScreen) unpickedReason(c initcmd.Candidate) string {
-	switch {
-	case c.Picked:
-		return ""
-	case c.Reason == initcmd.SkipSwitchedOff:
+func unpickedReason(c initcmd.Candidate) string {
+	if !c.Picked && c.Reason == initcmd.SkipSwitchedOff {
 		return "switched off in " + agentList(c)
 	}
-	reason := "another config named " + c.SharesName
-	if primary, ok := s.named(c.SharesName); ok {
-		// Two configs under one name often share a target, so the row says what sets them apart.
-		if differences := agents.ConnectionDifferences(primary.Server, c.Server); len(differences) > 0 {
-			reason += ": different " + strings.Join(differences, ", ")
-		}
-	}
-	return reason
-}
-
-func (s *importScreen) named(name string) (initcmd.Candidate, bool) {
-	i := slices.IndexFunc(s.candidates, func(c initcmd.Candidate) bool { return c.Server.Name == name })
-	if i < 0 {
-		return initcmd.Candidate{}, false
-	}
-	return s.candidates[i], true
+	return ""
 }
 
 const maxTargetWidth = 40

@@ -39,6 +39,11 @@ func (r Report) Failed() bool {
 	return len(r.WriteErrors) > 0 || len(r.Import.Unreadable) > 0 || r.ReadServersErr != nil
 }
 
+// Available is the catalog servers mini doesn't have yet.
+func (p Plan) Available(entries []catalog.Entry) []catalog.Entry {
+	return AvailableEntries(entries, p.written)
+}
+
 func RunUnattended(s Setup) Report {
 	plan, err := s.Plan()
 	if err != nil {
@@ -49,10 +54,11 @@ func RunUnattended(s Setup) Report {
 	return s.Write(plan)
 }
 
-// Plan is an import plan and the servers mini had when it was made. The Import screen changes
-// which candidates are picked before the plan is written.
+// Plan is an import plan, the catalog servers to add, and the servers mini had when it was made.
+// The UI changes which candidates are picked and what is added before the plan is written.
 type Plan struct {
 	Import  ImportPlan
+	Add     []catalog.Entry
 	written WrittenServers
 }
 
@@ -63,6 +69,7 @@ func (s Setup) Plan() (Plan, error) {
 	}
 	return Plan{
 		Import:  PlanImport(ImportParams{Agents: s.Import, Written: written, SelfPath: s.SelfPath}),
+		Add:     s.Add,
 		written: written,
 	}, nil
 }
@@ -70,7 +77,7 @@ func (s Setup) Plan() (Plan, error) {
 func (s Setup) Write(p Plan) Report {
 	report := s.report()
 	report.Import = p.Import
-	adds := planAdds(p.Import.picked(), s.Add, p.written)
+	adds := planAdds(p.Import.picked(), p.Add, p.written)
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
 	added, writeErrors := addServers(s.ConfigDir, adds.write)
 	report.WriteErrors = writeErrors

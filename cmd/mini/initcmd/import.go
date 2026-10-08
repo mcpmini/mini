@@ -33,8 +33,6 @@ type Candidate struct {
 	Picked bool
 	// Reason is why an unpicked candidate isn't picked: SkipSwitchedOff or SkipSecondConfig.
 	Reason SkipReason
-	// SharesName is the name in use that a suffixed candidate would otherwise have had.
-	SharesName string
 }
 
 // AgentEntry is where a candidate was found: an agent and the name the entry has there.
@@ -187,16 +185,14 @@ func (plan *ImportPlan) add(g *serverGroup, taken takenNames) bool {
 
 func (plan *ImportPlan) offer(g *serverGroup, taken takenNames) {
 	name, ok := taken.firstFree(g)
-	var shares string
 	if !ok {
-		name, shares, ok = taken.suffixed(g)
+		name, ok = taken.suffixed(g)
 	}
 	if !ok {
 		return
 	}
 	plan.addCandidate(g, name, taken, false)
 	c := &plan.Candidates[len(plan.Candidates)-1]
-	c.SharesName = shares
 	c.Reason = SkipSecondConfig
 	if !g.enabled() {
 		c.Reason = SkipSwitchedOff
@@ -224,18 +220,18 @@ func (t takenNames) firstFree(g *serverGroup) (string, bool) {
 	return "", false
 }
 
-func (t takenNames) suffixed(g *serverGroup) (name, base string, ok bool) {
+func (t takenNames) suffixed(g *serverGroup) (string, bool) {
 	i := slices.IndexFunc(g.entries, func(e agentEntry) bool {
 		name := NormalizeName(e.name)
 		return name != "" && !t.inMini[name]
 	})
 	if i < 0 { // every name is mini's, and mini's copy wins
-		return "", "", false
+		return "", false
 	}
-	base = NormalizeName(g.entries[i].name)
+	base := NormalizeName(g.entries[i].name)
 	for n := 2; ; n++ {
 		if name := fmt.Sprintf("%s-%d", base, n); !t.inMini[name] && !t.imported[name] {
-			return name, base, true
+			return name, true
 		}
 	}
 }
