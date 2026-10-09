@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,8 +27,7 @@ func newDaemonCmd(opts *rootOptions) *cobra.Command {
 		Use:   "daemon",
 		Short: "Run as a shared background daemon (HTTP)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runDaemon(opts.configDir, logLevel)
-			return nil
+			return runDaemon(opts.configDir, logLevel)
 		},
 	}
 	cmd.Flags().StringVar(&logLevel, "log-level", "", "log level (debug|info|warn|error)")
@@ -46,29 +46,37 @@ func newDaemonStatusCmd(opts *rootOptions) *cobra.Command {
 	}
 }
 
-func runDaemon(configDir string, logLevel string) {
-	if err := daemon.CheckSocketPath(configDir); err != nil {
-		fatalf("%v", err)
+func runDaemon(configDir string, logLevel string) error {
+	cfg, servers, err := loadDaemonConfig(configDir)
+	if err != nil {
+		return err
 	}
-	cfg, servers := loadDaemonConfig(configDir)
-	socket := ensureDaemonNotRunning(configDir)
 	logW := daemon.OpenCappedLog(filepath.Join(configDir, "internal", "daemon", "daemon.log"))
 	defer logW.Close()
 	logger := buildLogger(cfg, logLevel, logW)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	ln := bindSocket(socket)
-	serveDaemon(ctx, DaemonServeParams{
+	ln, err := bindSocket(socketBindParams{Socket: daemon.SocketPath(configDir), Chmod: os.Chmod})
+	if err != nil || ln == nil {
+		return err
+	}
+	return serveDaemon(ctx, DaemonServeParams{
 		ConfigDir: configDir, Cfg: cfg, Servers: servers.Loaded, Logger: logger, Listener: ln,
 	})
 }
 
-func loadDaemonConfig(configDir string) (*config.Config, config.Servers) {
+func loadDaemonConfig(configDir string) (*config.Config, config.Servers, error) {
+	if err := daemon.CheckSocketPath(configDir); err != nil {
+		return nil, config.Servers{}, err
+	}
 	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
-		fatalf("%v", err)
+		return nil, config.Servers{}, err
 	}
-	return cfg, servers
+	if err := ensureDaemonNotRunning(configDir); err != nil {
+		return nil, config.Servers{}, err
+	}
+	return cfg, servers, nil
 }
 
 type DaemonServeParams struct {
@@ -79,29 +87,36 @@ type DaemonServeParams struct {
 	Listener  net.Listener
 }
 
-func serveDaemon(ctx context.Context, p DaemonServeParams) {
-	token := mintDaemonToken(p.ConfigDir)
+func serveDaemon(ctx context.Context, p DaemonServeParams) error {
+	token, err := mintDaemonToken(p.ConfigDir)
+	if err != nil {
+		if closeErr := p.Listener.Close(); closeErr != nil {
+			return errors.Join(err, fmt.Errorf("close daemon socket listener: %w", closeErr))
+		}
+		return err
+	}
 	srv := buildAndStart(ctx, BuildServerParams{
 		Cfg: p.Cfg, ConfigDir: p.ConfigDir, Logger: p.Logger, Servers: p.Servers,
 		DaemonAuthToken: token,
 	})
 	defer srv.Close()
 	startDaemonHTTP(ctx, DaemonHTTPParams{Srv: srv, Listener: p.Listener})
+	return nil
 }
 
-func mintDaemonToken(configDir string) string {
+func mintDaemonToken(configDir string) (string, error) {
 	token, err := daemon.EnsureToken(configDir)
 	if err != nil {
-		fatalf("write daemon token: %v", err)
+		return "", fmt.Errorf("write daemon token: %w", err)
 	}
-	return token
+	return token, nil
 }
 
-func ensureDaemonNotRunning(configDir string) string {
+func ensureDaemonNotRunning(configDir string) error {
 	if daemon.Running(configDir) {
-		fatalf("daemon already running (socket: %s)", daemon.SocketPath(configDir))
+		return fmt.Errorf("daemon already running (socket: %s)", daemon.SocketPath(configDir))
 	}
-	return daemon.SocketPath(configDir)
+	return nil
 }
 
 type DaemonHTTPParams struct {
@@ -120,30 +135,6 @@ func startDaemonHTTP(ctx context.Context, p DaemonHTTPParams) {
 	// Closing the listener unlinks the socket; a SIGKILL leaves a stale one for the next bindSocket to reclaim.
 	//nolint:contextcheck // The service context is canceled; graceful shutdown needs a fresh bounded context.
 	httpSrv.Shutdown(shutdownCtx) //nolint:errcheck
-}
-
-func bindSocket(socket string) net.Listener {
-	dir := filepath.Dir(socket)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		fatalf("create socket dir: %v", err)
-	}
-	// The dir's permissions are the access boundary — macOS ignores the socket file's own mode on connect.
-	_ = os.Chmod(dir, 0o700)
-	ln, err := net.Listen("unix", socket)
-	// Binding the socket is the single-winner election: if another daemon is healthy
-	// on this socket we exit; if a stale socket remains from a SIGKILL we reclaim it.
-	if err != nil {
-		if daemon.SocketHealthy(socket) {
-			os.Exit(0)
-		}
-		_ = os.Remove(socket)
-		if ln, err = net.Listen("unix", socket); err != nil {
-			fatalf("bind socket %s: %v", socket, err)
-		}
-	}
-	// Linux honors the socket file's own mode on connect; a permissive umask would otherwise leave it world-writable.
-	_ = os.Chmod(socket, 0o600)
-	return ln
 }
 
 func daemonHTTPServer(srv *server.Server) *http.Server {
