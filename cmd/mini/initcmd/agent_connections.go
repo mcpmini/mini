@@ -40,8 +40,10 @@ func ClassifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnec
 func (s Setup) AgentsWithMini() map[string]bool {
 	c := ClassifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect)
 	withMini := map[string]bool{}
-	for _, agent := range append(c.MiniServes, c.MiniInactive...) {
-		withMini[agent.Name] = true
+	for _, agent := range s.AgentsToConnect {
+		if c.hasMini(agent) {
+			withMini[agent.Name] = true
+		}
 	}
 	return withMini
 }
