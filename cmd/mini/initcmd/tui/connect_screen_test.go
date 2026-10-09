@@ -324,3 +324,21 @@ func TestConnectScreen_aTemporaryBinaryIsWarnedAboutAndNotConnectedByDefault(t *
 		})
 	}
 }
+
+func TestConnectScreen_aTemporaryBinaryNoAgentWouldRunIsNotWarnedAbout(t *testing.T) {
+	s := newConnectScreen(connectParams{
+		agents:            namedAgents("Claude"),
+		withMini:          map[string]bool{"Claude": true},
+		plan:              func() (connectPlan, error) { return newFakePlan(map[string][]string{"Claude": {"github"}}), nil },
+		temporaryMiniPath: "/tmp/gobuild1/exe/mini",
+	})
+	t.Cleanup(s.checks.cancelAndWait)
+	s.resize(40)
+	s.enter()
+	if text := connectText(
+		s,
+	); strings.Contains(text, "/tmp/gobuild1") ||
+		!strings.HasPrefix(text, "> Connect mini and remove") {
+		t.Errorf("screen:\n%s\nwant no warning and the first option highlighted: Claude keeps its own mini entry", text)
+	}
+}

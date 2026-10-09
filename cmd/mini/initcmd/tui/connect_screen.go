@@ -64,7 +64,7 @@ func (s *connectScreen) rebuild() {
 func (s *connectScreen) enter() tea.Cmd {
 	s.rebuild()
 	s.cursor = s.agentRows()
-	if s.p.temporaryMiniPath != "" {
+	if s.wouldWriteTemporaryMini() {
 		// Apply never rewrites an agent's mini entry, so connecting now couldn't be fixed by a later init.
 		s.cursor += slices.Index(s.options(), initcmd.DontConnect)
 	}
@@ -176,12 +176,21 @@ func (s *connectScreen) resize(width int) {
 }
 
 func (s *connectScreen) temporaryWarning() []string {
-	if s.p.temporaryMiniPath == "" {
+	if !s.wouldWriteTemporaryMini() {
 		return nil
 	}
 	warning := "Agents would run " + s.p.temporaryMiniPath + ", a temporary copy that gets cleaned up. " +
 		"Install mini somewhere permanent, then run mini init from there."
 	return []string{ansi.Wrap(warning, max(s.width, 20), ""), ""}
+}
+
+// An agent that already has mini keeps its entry, so only one without gets the temporary path.
+func (s *connectScreen) wouldWriteTemporaryMini() bool {
+	return s.p.temporaryMiniPath != "" &&
+		slices.ContainsFunc(
+			s.listed,
+			func(agent agents.Agent) bool { return s.ticked[agent.Name] && !s.p.withMini[agent.Name] },
+		)
 }
 
 func optionLabel(choice initcmd.ConnectChoice) string {

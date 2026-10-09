@@ -220,17 +220,38 @@ func TestJoinAnd(t *testing.T) {
 	}
 }
 
-func TestSummary_aTemporaryMiniGetsNoHandStepThatWouldNameIt(t *testing.T) {
+func TestSummary_aTemporaryMiniIsNeverTheStepToConnect(t *testing.T) {
 	mini := agents.MiniEntry{Command: "/tmp/go-build1/exe/mini", Args: []string{"connect"}}
-	for _, c := range []AgentConnections{
-		{Mini: mini, TemporaryMini: mini.Command, NoMini: []agents.Agent{{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}}},
-		{Mini: mini, TemporaryMini: mini.Command},
+	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
+	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"}
+	temporary := func(c AgentConnections) AgentConnections {
+		c.Mini, c.TemporaryMini = mini, mini.Command
+		return c
+	}
+	for name, r := range map[string]Report{
+		"an agent to connect by hand": {Agents: temporary(AgentConnections{NoMini: []agents.Agent{cursor}})},
+		"no agent found":              {Agents: temporary(AgentConnections{})},
+		"an agent whose mini entry may not run these servers": {
+			Agents: temporary(AgentConnections{MiniInactive: []agents.Agent{cursor}}),
+		},
+		"an agent left unticked after connecting anyway": {
+			Agents:    temporary(AgentConnections{NoMini: []agents.Agent{cursor, codex}}),
+			Connected: []AgentResult{{Agent: codex, Backup: "/home/u/.codex/config.minibackup.toml"}},
+		},
+		"an agent that failed to connect": {
+			Agents:    temporary(AgentConnections{NoMini: []agents.Agent{cursor}}),
+			Connected: []AgentResult{{Agent: cursor, Err: errors.New("permission denied")}},
+		},
 	} {
-		got := Summary(Report{Agents: c})
-		requireLines(t, got, "To connect mini to your agents, install it somewhere permanent and run mini init "+
-			"from there; /tmp/go-build1/exe/mini gets cleaned up.\n")
-		if strings.Count(got, mini.Command) != 1 {
-			t.Errorf("summary:\n%s\nwant the temporary binary named only as the one to replace", got)
+		got := Summary(r)
+		for _, line := range strings.Split(got, "\n") {
+			if strings.Contains(line, mini.Command) && !strings.HasSuffix(line, "install it somewhere permanent and "+
+				"run mini init from there; /tmp/go-build1/exe/mini gets cleaned up.") {
+				t.Errorf("%s: summary:\n%s\nwant the temporary binary named only as the one to replace", name, got)
+			}
+		}
+		if !strings.Contains(got, "install it somewhere permanent") {
+			t.Errorf("%s: summary:\n%s\nwant the step to install mini", name, got)
 		}
 	}
 }

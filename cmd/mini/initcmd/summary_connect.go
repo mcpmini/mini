@@ -25,24 +25,39 @@ func writeHandConnect(b *strings.Builder, c AgentConnections) {
 	if len(c.NoMini) == 0 && (len(c.MiniServes) > 0 || len(c.MiniInactive) > 0) {
 		return
 	}
+	writeConnectSteps(b, c, c.NoMini)
+}
+
+func writeConnectSteps(b *strings.Builder, c AgentConnections, list []agents.Agent) {
 	switch {
 	case c.TemporaryMini != "":
-		// An agent's mini entry is never rewritten, so a step naming this binary couldn't be undone by init.
-		fmt.Fprintf(
-			b,
-			"\nTo connect mini to your agents, install it somewhere permanent and run mini init from there; "+
-				"%s gets cleaned up.\n",
-			c.TemporaryMini,
-		)
-	case len(c.NoMini) == 0:
+		fmt.Fprintf(b, "\nTo connect mini to %s, %s.\n", agentsPhrase(list), c.installFirst())
+	case len(list) == 0:
 		fmt.Fprintf(
 			b,
 			"\nTo connect mini to your agent, add it to its MCP config:\n%s\n",
 			indent(jsonSnippet(c.Mini), "  "),
 		)
 	default:
-		writeHandSteps(b, c.NoMini, c.Mini)
+		writeHandSteps(b, list, c.Mini)
 	}
+}
+
+// An agent's mini entry is never rewritten, so a step naming a binary that gets cleaned up
+// couldn't be undone by init.
+func (c AgentConnections) installFirst() string {
+	return "install it somewhere permanent and run mini init from there; " + c.TemporaryMini + " gets cleaned up"
+}
+
+func agentsPhrase(list []agents.Agent) string {
+	if len(list) == 0 {
+		return "your agents"
+	}
+	names := make([]string, len(list))
+	for i, agent := range list {
+		names[i] = agent.Name
+	}
+	return JoinAnd(names)
 }
 
 func writeHandSteps(b *strings.Builder, list []agents.Agent, mini agents.MiniEntry) {
@@ -62,7 +77,7 @@ func writeConnected(b *strings.Builder, r Report) {
 		}
 	}
 	if left := notTried(r); len(left) > 0 {
-		writeHandSteps(b, left, r.Agents.Mini)
+		writeConnectSteps(b, r.Agents, left)
 	}
 	if len(changed) > 0 {
 		fmt.Fprintf(b, "\nRestart %s to start using mini.\n", JoinAnd(changed))
@@ -84,9 +99,11 @@ func notTried(r Report) []agents.Agent {
 	return left
 }
 
-func writeAgentResult(b *strings.Builder, r Report, result AgentResult) {
+func writeAgentHeading(b *strings.Builder, r Report, result AgentResult) {
 	name, file, mini := result.Agent.Name, result.Agent.ConfigPath, r.Agents.Mini
 	switch {
+	case result.Err != nil && r.Agents.TemporaryMini != "":
+		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nTo connect it, %s.\n", name, result.Err, r.Agents.installFirst())
 	case result.Err != nil:
 		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nAdd mini to %s by hand:\n%s\n",
 			name, result.Err, file, indent(handConnectStep(result.Agent, mini), "  "))
@@ -97,6 +114,11 @@ func writeAgentResult(b *strings.Builder, r Report, result AgentResult) {
 	case result.ExistingMini != NoMiniEntry:
 		fmt.Fprintf(b, "\n%s: already has a mini entry; %s is unchanged\n", name, file)
 	}
+}
+
+func writeAgentResult(b *strings.Builder, r Report, result AgentResult) {
+	writeAgentHeading(b, r, result)
+	name := result.Agent.Name
 	if len(result.Removed) > 0 {
 		fmt.Fprintf(b, "  %s %s, which mini runs now\n", removedVerb(result.Agent), JoinAnd(result.Removed))
 	}
@@ -143,8 +165,8 @@ func JoinAnd(names []string) string {
 func writeInactiveMini(b *strings.Builder, c AgentConnections) {
 	for _, agent := range c.MiniInactive {
 		fmt.Fprintf(b, "\n%s (%s) has a mini entry that may not run these servers: it's switched off, uses another "+
-			"config directory, or doesn't name mini by absolute path. To use them, have it run: %s\n",
-			agent.Name, agent.ConfigPath, shellCommand(c.Mini))
+			"config directory, or doesn't name mini by absolute path. To use them, %s\n",
+			agent.Name, agent.ConfigPath, c.inactiveStep())
 	}
 }
 
@@ -198,4 +220,11 @@ func shellQuote(s string) string {
 
 func indent(s, prefix string) string {
 	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
+}
+
+func (c AgentConnections) inactiveStep() string {
+	if c.TemporaryMini != "" {
+		return c.installFirst() + "."
+	}
+	return "have it run: " + shellCommand(c.Mini)
 }
