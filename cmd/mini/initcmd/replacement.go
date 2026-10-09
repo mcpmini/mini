@@ -9,16 +9,16 @@ import (
 )
 
 type replacementRule struct {
-	mini      miniEntryCheck
-	miniToAdd agents.MiniEntry
-	checks    map[string]error
+	entryCheck miniEntryCheck
+	miniToAdd  agents.MiniEntry
+	checks     map[string]error
 }
 
 func (s Setup) replacementRule(checks map[string]error) replacementRule {
 	return replacementRule{
-		mini:      miniEntryCheck{configDir: s.ConfigDir, selfPath: s.SelfPath},
-		miniToAdd: MiniCommand(s.ConfigDir),
-		checks:    checks,
+		entryCheck: miniEntryCheck{configDir: s.ConfigDir, selfPath: s.SelfPath},
+		miniToAdd:  MiniCommand(s.ConfigDir),
+		checks:     checks,
 	}
 }
 
@@ -28,7 +28,7 @@ func (r replacementRule) servedAfterEdit(existing ExistingMini) bool {
 	if existing != NoMiniEntry {
 		return existing == MiniEntryServes
 	}
-	return r.mini.serves(
+	return r.entryCheck.serves(
 		agents.Server{Config: config.ServerConfig{Command: r.miniToAdd.Command, Args: r.miniToAdd.Args}},
 	)
 }

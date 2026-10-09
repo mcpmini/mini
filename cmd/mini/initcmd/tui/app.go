@@ -37,6 +37,7 @@ type enterer interface {
 	enter() tea.Cmd
 }
 
+// A screen that loads in the background starts loading when the UI starts.
 type loader interface {
 	start() tea.Cmd
 }

@@ -91,11 +91,12 @@ func (f applyFixture) applyWith(ctx context.Context, in applyInput) []AgentResul
 		in.miniOverride = f.miniEntry()
 	}
 	return apply(ctx, applyParams{
+		configDir: f.configDir, selfPath: testSelf,
 		agents: in.agents, choice: in.choice, counted: in.removals.ByAgent,
 		rule: replacementRule{
-			mini:      miniEntryCheck{configDir: f.configDir, selfPath: testSelf},
-			miniToAdd: in.miniOverride,
-			checks:    in.removals.Checks,
+			entryCheck: miniEntryCheck{configDir: f.configDir, selfPath: testSelf},
+			miniToAdd:  in.miniOverride,
+			checks:     in.removals.Checks,
 		},
 		now: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC),
 	})

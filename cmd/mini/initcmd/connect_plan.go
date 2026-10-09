@@ -33,7 +33,7 @@ func (s Setup) PlanConnect() (ConnectPlan, error) {
 			continue // nothing to remove from a missing config; apply reports one it can't read or parse
 		}
 		a := agentDuplicates{
-			existing:   rule.mini.existingMini(entries),
+			existing:   rule.entryCheck.existingMini(entries),
 			duplicates: mini.Duplicates(entries, s.SelfPath),
 		}
 		if rule.mayRemove(a.existing, a.duplicates) {

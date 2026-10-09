@@ -23,10 +23,12 @@ const (
 )
 
 type applyParams struct {
-	agents []agents.Agent
-	choice ConnectChoice
-	// counted is what Connect said it would remove, per agent name. An entry that no longer
-	// matches at apply changed since, and is left alone and reported.
+	configDir string
+	selfPath  string
+	agents    []agents.Agent
+	choice    ConnectChoice
+	// counted is what Connect said it would remove, per agent name. An entry that is no longer a
+	// duplicate at apply changed since, and is left alone and reported.
 	counted map[string][]string
 	rule    replacementRule
 	now     time.Time
@@ -72,11 +74,13 @@ type ConnectParams struct {
 
 func (s Setup) connectAgents(ctx context.Context, p ConnectParams) []AgentResult {
 	return apply(ctx, applyParams{
-		agents:  p.Agents,
-		choice:  p.Choice,
-		counted: p.Removals.ByAgent,
-		rule:    s.replacementRule(p.Removals.Checks),
-		now:     clock.System().Now(),
+		configDir: s.ConfigDir,
+		selfPath:  s.SelfPath,
+		agents:    p.Agents,
+		choice:    p.Choice,
+		counted:   p.Removals.ByAgent,
+		rule:      s.replacementRule(p.Removals.Checks),
+		now:       clock.System().Now(),
 	})
 }
 
@@ -85,7 +89,7 @@ func apply(ctx context.Context, p applyParams) []AgentResult {
 	if p.choice == DontConnect {
 		return nil
 	}
-	mini, err := loadMiniServers(p.rule.mini.configDir)
+	mini, err := loadMiniServers(p.configDir)
 	var results []AgentResult
 	for _, agent := range p.agents {
 		switch {
@@ -148,10 +152,10 @@ func (p applyParams) editedConfig(
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", agent.ConfigPath, err)
 	}
-	result.ExistingMini = p.rule.mini.existingMini(entries)
+	result.ExistingMini = p.rule.entryCheck.existingMini(entries)
 	result.MiniServes = p.rule.servedAfterEdit(result.ExistingMini)
 	if p.choice == ConnectAndRemove {
-		duplicates := mini.Duplicates(entries, p.rule.mini.selfPath)
+		duplicates := mini.Duplicates(entries, p.selfPath)
 		result.Changed = changedSince(p.counted[agent.Name], entries, duplicates)
 		result.Removed, result.Kept = p.removals(agent.Name, result.ExistingMini, duplicates)
 	}
