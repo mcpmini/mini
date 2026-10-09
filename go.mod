@@ -1,6 +1,6 @@
 module github.com/mcpmini/mini
 
-go 1.27.1
+go 1.27.2
 
 require (
 	charm.land/bubbletea/v2 v2.0.10
@@ -13,7 +13,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.2
 	golang.org/x/exp/typeparams v0.0.0-20261005173118-76772065c9b0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sys v0.48.0
 	golang.org/x/tools v0.51.0
