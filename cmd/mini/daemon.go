@@ -39,8 +39,7 @@ func newDaemonStatusCmd(opts *rootOptions) *cobra.Command {
 		Use:   "status",
 		Short: "Show whether the daemon is running",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runDaemonStatus(opts.configDir)
-			return nil
+			return runDaemonStatus(opts.configDir)
 		},
 	}
 }
@@ -51,7 +50,7 @@ func runDaemon(configDir string, logLevel string) error {
 		return err
 	}
 	logW := daemon.OpenCappedLog(filepath.Join(configDir, "internal", "daemon", "daemon.log"))
-	defer logW.Close()
+	defer logW.Close() //nolint:errcheck // Capped log writes are direct diagnostics; daemon shutdown does not promise durable logs.
 	logger := buildLogger(cfg, logLevel, logW)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -122,17 +121,25 @@ type DaemonHTTPParams struct {
 	Listener net.Listener
 }
 
-func runDaemonStatus(configDir string) {
+func runDaemonStatus(configDir string) error {
 	resp, err := daemon.SocketClient(daemon.SocketPath(configDir), 2*time.Second).Get("http://localhost/healthz")
 	if err != nil {
 		fmt.Println("daemon: not running")
-		return
+		return nil
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("daemon: unhealthy (HTTP %d) — %s\n", resp.StatusCode, body)
-		return
+	defer resp.Body.Close() //nolint:errcheck // The health-read result takes precedence over response cleanup errors.
+	return consumeDaemonStatus(resp.StatusCode, resp.Body)
+}
+
+func consumeDaemonStatus(status int, bodyReader io.Reader) error {
+	body, err := io.ReadAll(bodyReader)
+	if err != nil {
+		return fmt.Errorf("read daemon health response: %w", err)
+	}
+	if status != http.StatusOK {
+		fmt.Printf("daemon: unhealthy (HTTP %d) — %s\n", status, body)
+		return nil
 	}
 	fmt.Printf("daemon: running — %s\n", body)
+	return nil
 }

@@ -40,7 +40,7 @@ func (w *serveOutput) ResponseFailed(err error) {
 
 func (w *serveOutput) cancelAndUnblockServe() {
 	w.cancel()
-	_ = w.in.Close()
+	_ = w.in.Close() //nolint:errcheck // Preserve the original output failure during teardown.
 }
 
 func (w *serveOutput) result(serveErr error) error {
