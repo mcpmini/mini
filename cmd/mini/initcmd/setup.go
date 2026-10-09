@@ -79,8 +79,7 @@ func (s Setup) Plan() (Plan, error) {
 	}, nil
 }
 
-// Write is a whole run with nothing shown meanwhile: one save, its OAuth checks, and the report.
-// It connects no agent.
+// Write is a run with no UI: one save, its OAuth checks, then the report. It connects no agent.
 func (s Setup) Write(p Plan) Report {
 	run := s.Start(p)
 	run.Save()

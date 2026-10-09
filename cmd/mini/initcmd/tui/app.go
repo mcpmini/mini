@@ -247,6 +247,6 @@ func (a *app) footer(s screen) []string {
 }
 
 func (a *app) canGoBack() bool {
-	// next would refresh screens, which a frame must not do; empty answers from the last read.
+	// next refreshes screens, which a frame must not do.
 	return slices.ContainsFunc(a.screens[:a.at], func(s screen) bool { return !s.empty() })
 }

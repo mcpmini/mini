@@ -53,7 +53,6 @@ func (r *Run) Close() {
 	r.session.Close()
 }
 
-// A check that never finished leaves its server marked as maybe needing a login.
 func (r *Run) report() Report {
 	p := r.Plan
 	report := r.setup.report()
@@ -63,6 +62,7 @@ func (r *Run) report() Report {
 	report.WriteErrors = r.last.Failed
 	report.Import.keepOnly(report.Import.importedOf(r.session.Written()))
 	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, p.Catalog)
+	// A check that never finished leaves its server marked as maybe needing a login.
 	markUnchecked(report.Servers, r.session.Unchecked())
 	return report
 }

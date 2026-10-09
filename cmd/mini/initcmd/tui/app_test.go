@@ -11,7 +11,7 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
-// showScreen reads the screen's rows and enters it, as the app does when it moves onto the screen.
+// The app refreshes a screen before entering it.
 func showScreen(s interface {
 	refresher
 	enterer

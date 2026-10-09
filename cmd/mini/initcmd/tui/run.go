@@ -34,23 +34,23 @@ func Run(p Params) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	r := &flow{p: p, run: p.Setup.Start(plan)}
-	defer r.run.Close()
-	r.ui = newScreens(p, r.run)
-	a := newApp(r.ui.list())
-	a.saves = savePoint{after: r.ui.savePoint(), save: r.save}
+	f := &flow{p: p, run: p.Setup.Start(plan)}
+	defer f.run.Close()
+	f.ui = newScreens(p, f.run)
+	a := newApp(f.ui.list())
+	a.saves = savePoint{after: f.ui.savePoint(), save: f.save}
 	if !a.hasScreens() {
-		r.save()
-		return r.outcome(false), nil
+		f.save()
+		return f.outcome(false), nil
 	}
 	err = p.program()(a)
 	// A login still waiting on the browser when the UI ends would otherwise save a token later.
-	r.ui.logins.cancelLogin()
-	r.ui.connects.checks.cancelAndWait()
+	f.ui.logins.cancelLogin()
+	f.ui.connects.checks.cancelAndWait()
 	if !a.saves.saved {
 		return Outcome{Quit: a.quit || err != nil}, err
 	}
-	return r.outcome(a.quit || err != nil), err
+	return f.outcome(a.quit || err != nil), err
 }
 
 type flow struct {
@@ -59,19 +59,19 @@ type flow struct {
 	ui  screens
 }
 
-func (r *flow) save() {
-	r.ui.pick(&r.run.Plan)
-	r.run.Save()
+func (f *flow) save() {
+	f.ui.pick(&f.run.Plan)
+	f.run.Save()
 }
 
-func (r *flow) outcome(leftEarly bool) Outcome {
-	r.run.Plan.Catalog = r.ui.catalog(r.run.Plan)
+func (f *flow) outcome(leftEarly bool) Outcome {
+	f.run.Plan.Catalog = f.ui.catalog(f.run.Plan)
 	// A ctrl+c queued behind the enter that chose to connect still ends the run early.
 	out := Outcome{Quit: leftEarly, Saved: true}
 	if leftEarly {
-		out.Report = r.run.Abandon()
+		out.Report = f.run.Abandon()
 	} else {
-		out.Report = r.run.Finish(context.Background(), r.ui.connects.chosenConnect())
+		out.Report = f.run.Finish(context.Background(), f.ui.connects.chosenConnect())
 	}
 	out.Report.Import.DropOfferedSkips()
 	return out
