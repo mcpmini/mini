@@ -58,7 +58,7 @@ func (c *connectChecks) cancel() {
 func (c *connectChecks) cancelAndWait() {
 	c.cancel()
 	for _, ended := range c.stopping {
-		<-ended // a probe can start a server's process, which must not outlive init
+		<-ended // a probe can start a server's process, which init kills before it exits
 	}
 	c.stopping = nil
 }
