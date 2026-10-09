@@ -22,8 +22,8 @@ func (s Setup) replacementRule(checks map[string]error) replacementRule {
 	}
 }
 
-// servedAfterEdit: the agent ends up with a mini entry serving the servers checked here, its own
-// or the one init writes.
+// A duplicate goes only when the agent ends up with a mini entry serving the servers checked here:
+// its own, or the one init writes.
 func (r replacementRule) servedAfterEdit(existing ExistingMini) bool {
 	if existing != NoMiniEntry {
 		return existing == MiniEntryServes
