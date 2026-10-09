@@ -15,6 +15,7 @@ linters:
     - nilerr         # returning nil error when a non-nil error was just checked
     - forcetypeassert # unchecked type assertions that can panic
     - durationcheck  # two time.Duration values multiplied together (almost always a bug)
+    - gocritic
 
     # Hygiene
     - bodyclose      # unclosed HTTP response bodies
@@ -27,6 +28,32 @@ linters:
     - nolintlint
 
   settings:
+    gocritic:
+      disable-all: true
+      # Check descriptions: https://go-critic.com/overview.html
+      enabled-checks:
+        - appendAssign
+        - argOrder
+        - badCall
+        - badCond
+        - badSorting
+        - badSyncOnceFunc
+        - caseOrder
+        - deferInLoop
+        - dupArg
+        - dupBranchBody
+        - dupCase
+        - dupSubExpr
+        - exitAfterDefer
+        - externalErrorReassign
+        - offBy1
+        - rangeAppendAll
+        - returnAfterHttpError
+        - sloppyLen
+        - sortSlice
+        - truncateCmp
+        - uncheckedInlineErr
+        - weakCond
     errcheck:
       check-blank: true
     nolintlint:
