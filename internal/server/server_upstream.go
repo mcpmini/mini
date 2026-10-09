@@ -166,7 +166,7 @@ func (s *Server) IsReconnecting(serverName string) bool {
 func (s *Server) registerUpstream(ctx context.Context, conn transport.Connection, in upstreamInstall) error {
 	tools, err := conn.ListTools(ctx)
 	if err != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck // ListTools failure is returned; Close only releases the unregistered connection.
 		return fmt.Errorf("list tools from %s: %w", in.cfg.Name, err)
 	}
 	//nolint:contextcheck // Installed upstream ownership keeps notification refreshes alive beyond this install request.
@@ -189,7 +189,7 @@ func (s *Server) installChecked(conn transport.Connection, tools []transport.Too
 	s.serverOpMu.Lock()
 	defer s.serverOpMu.Unlock()
 	if err := s.checkInstallLocked(in); err != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck // The install rejection is returned; Close only releases the unregistered connection.
 		return err
 	}
 	if in.keepLiveProjections {

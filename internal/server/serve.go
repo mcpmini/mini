@@ -145,7 +145,7 @@ func (s *Server) handleLine(ctx context.Context, line []byte, session *Session) 
 		return errorResponse(req.ID, transport.CodeInvalidRequest, "jsonrpc must be \"2.0\""), true
 	}
 	if req.ID == nil {
-		s.dispatch(ctx, req, session) //nolint:errcheck
+		s.dispatch(ctx, req, session) //nolint:errcheck // Notifications have no response channel for dispatch errors.
 		return transport.Response{}, false
 	}
 	return s.handleRequest(ctx, req, session)

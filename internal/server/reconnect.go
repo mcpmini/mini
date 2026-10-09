@@ -116,7 +116,7 @@ func (s *Server) listToolsForReconnect(
 	defer cancel()
 	tools, err := conn.ListTools(ctx)
 	if err != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck // ListTools failure is returned and logged; Close only releases the failed connection.
 		err = s.markOAuthIfRequired(ctx, u.cfg, err)
 		s.logger.Warn("reconnect list tools failed", "server", u.cfg.Name, "err", err)
 	}
@@ -130,7 +130,7 @@ func (s *Server) swapConn(u *upstreamServer, conn transport.Connection, tools []
 	}
 	s.attachNotificationHandler(u, conn)
 	if old != nil {
-		old.Close()
+		old.Close() //nolint:errcheck // The replacement is installed; Close only releases the stale connection.
 	}
 	if !s.publishReconnectedTools(u, conn, tools) {
 		return false
@@ -168,7 +168,7 @@ func swapReconnectConn(u *upstreamServer, conn transport.Connection) (transport.
 	defer u.mu.Unlock()
 	select {
 	case <-u.ctx.Done():
-		conn.Close()
+		conn.Close() //nolint:errcheck // Cancellation rejects this connection; Close only releases it.
 		return nil, nil, false
 	default:
 	}

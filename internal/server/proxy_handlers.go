@@ -260,24 +260,41 @@ func parseReadArgs(raw json.RawMessage) (file, filter string, err error) {
 }
 
 func (s *Server) validateStorePath(path string) error {
+	return validateStorePathWith(validateStorePathParams{
+		StoreDir: s.store.Dir(),
+		Path:     path,
+		Resolve:  resolveSymlinks,
+	})
+}
+
+type validateStorePathParams struct {
+	StoreDir string
+	Path     string
+	Resolve  func(string) (string, error)
+}
+
+func validateStorePathWith(p validateStorePathParams) error {
 	// EvalSymlinks on both sides prevents a symlink inside the store from escaping
 	// confinement; on macOS, TempDir itself is a symlink (/var/... → /private/var/...).
-	storeDir := resolveSymlinks(s.store.Dir())
-	abs := resolveSymlinks(path)
+	storeDir, err := p.Resolve(p.StoreDir)
+	if err != nil {
+		return fmt.Errorf("%w: read: resolve response directory: %w", errInvalidParams, err)
+	}
+	abs, err := p.Resolve(p.Path)
+	if err != nil {
+		return fmt.Errorf("%w: read: resolve response path: %w", errInvalidParams, err)
+	}
 	if !strings.HasPrefix(abs, storeDir+string(filepath.Separator)) {
 		return fmt.Errorf("%w: read: path must be within mini response directory", errInvalidParams)
 	}
 	return nil
 }
 
-// Falls back to filepath.Abs for paths that do not exist yet (agent-provided paths
-// that haven't been created, or files cleaned up between validation and read).
-func resolveSymlinks(path string) string {
+func resolveSymlinks(path string) (string, error) {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
-		return resolved
+		return resolved, nil
 	}
-	abs, _ := filepath.Abs(path)
-	return abs
+	return filepath.Abs(path)
 }
 
 func parseProxyToolName(name string) (server, tool string, err error) {

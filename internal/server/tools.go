@@ -131,7 +131,7 @@ func schema(properties map[string]any) json.RawMessage {
 		"type":       "object",
 		"properties": properties,
 	}
-	b, _ := json.Marshal(s)
+	b, _ := json.Marshal(s) //nolint:errcheck // All callers pass fixed JSON-compatible schemas.
 	return b
 }
 

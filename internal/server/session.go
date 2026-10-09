@@ -197,7 +197,7 @@ func (s *Session) GetOrSetConn(serverName string, conn transport.Connection) tra
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if existing := s.conns[serverName]; existing != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck // The existing connection wins; Close only releases the redundant dial result.
 		return existing
 	}
 	s.conns[serverName] = conn
@@ -210,7 +210,7 @@ func (s *Session) RemoveConn(serverName string) {
 	delete(s.conns, serverName)
 	s.mu.Unlock()
 	if conn != nil {
-		conn.Close()
+		conn.Close() //nolint:errcheck // The connection is removed; Close only releases the removed session resource.
 	}
 	// Also clear the dialOnce so the next call attempts a fresh dial rather
 	// than reusing the now-broken connection stored in the old dialOnce entry.
@@ -238,7 +238,7 @@ func (s *Session) EvictConn(serverName string, conn transport.Connection) {
 func (s *Session) Close() {
 	s.mu.Lock()
 	for _, conn := range s.conns {
-		conn.Close()
+		conn.Close() //nolint:errcheck // Session shutdown has no caller to receive connection cleanup errors.
 	}
 	s.conns = make(map[string]transport.Connection)
 	s.mu.Unlock()
