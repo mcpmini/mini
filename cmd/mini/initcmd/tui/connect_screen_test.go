@@ -67,7 +67,7 @@ func connectScreenFor(
 	})
 	s.resize(200)
 	t.Cleanup(s.checks.cancelAndWait)
-	return s, s.enter()
+	return s, showScreen(s)
 }
 
 func connectText(s *connectScreen) string {
@@ -206,7 +206,7 @@ func TestConnectScreen_leavingDoesNotWaitForTheChecksToStop(t *testing.T) {
 			agents: namedAgents("Claude"),
 			plan:   func() (connectPlan, error) { return stuck, nil },
 		})
-		s.enter()
+		showScreen(s)
 		left := make(chan step, 1)
 		go func() {
 			move, _ := s.handle(press("esc"))
@@ -239,7 +239,7 @@ func (p *stuckPlan) Check(context.Context) initcmd.Removals {
 func TestConnectScreen_aCheckRunFromAnEarlierVisitIsIgnored(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
 	s, earlier := connectScreenFor(t, plan, namedAgents("Claude"), nil)
-	later := s.enter()
+	later := showScreen(s)
 	<-plan.cancelled
 	s.update(earlier())
 	if text := connectText(s); !strings.Contains(text, "checking servers…") {
@@ -314,9 +314,9 @@ func TestConnectScreen_aShortWindowKeepsTheNoteInView(t *testing.T) {
 			withMini: map[string]bool{"Codex": true},
 			plan:     func() (connectPlan, error) { return plan, nil },
 		})
-		t.Cleanup(s.checks.cancel)
+		t.Cleanup(s.checks.cancelAndWait)
 		s.resize(60)
-		plan.checksPass(s, s.enter())
+		plan.checksPass(s, showScreen(s))
 		return s
 	}
 

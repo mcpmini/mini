@@ -3,22 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io"
-	"os"
-
-	"github.com/charmbracelet/x/term"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
-	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
-	"github.com/mcpmini/mini/internal/agents"
-	"github.com/mcpmini/mini/internal/catalog"
 )
-
-const noTerminalHelp = `mini init asks questions, so it needs a terminal. Without one, say what to set up:
-  mini init --import             import the servers of every agent found
-  mini init --from AGENT|PATH    import the servers of one agent or config file
-  mini init --add NAME,...       add servers from the catalog
-`
 
 var errInitIncomplete = errors.New("init didn't finish everything; see above")
 
@@ -27,139 +14,14 @@ func (f initFlags) unattended() bool {
 }
 
 func runUnattendedInit(configDir string, f initFlags) error {
-	run, err := unattendedRun(configDir, f)
+	setup, err := setupFromFlags(configDir, f)
 	if err != nil {
 		return err
 	}
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
 	}
-	return printReport(initcmd.RunUnattended(run))
-}
-
-// Every flag is checked before anything is written.
-func unattendedRun(configDir string, f initFlags) (initcmd.Setup, error) {
-	if f.addGiven && len(nonBlankNames(f.add)) == 0 {
-		return initcmd.Setup{}, errEmptyAdd
-	}
-	entries, err := flagCatalog(f)
-	if err != nil {
-		return initcmd.Setup{}, err
-	}
-	requested, err := requestedCatalogEntries(f, entries)
-	if err != nil {
-		return initcmd.Setup{}, err
-	}
-	sources, err := importSources(f)
-	if err != nil {
-		return initcmd.Setup{}, err
-	}
-	return initcmd.Setup{
-		ConfigDir:       configDir,
-		Import:          sources,
-		Add:             requested,
-		Catalog:         entries,
-		AgentsToConnect: agentsToConnect(),
-		SelfPath:        selfPath(),
-	}, nil
-}
-
-func selfPath() string {
-	path, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is recognized by its command name alone
-	return path
-}
-
-func agentsToConnect() []agents.Agent {
-	home, _ := os.UserHomeDir() //nolint:errcheck // without a home there are no agents to show how to connect
-	return initcmd.ConnectableAgents(knownAgentsIn(home))
-}
-
-func knownAgentsIn(home string) []agents.Agent {
-	if home == "" {
-		return nil
-	}
-	return agents.Known(home)
-}
-
-func flagCatalog(f initFlags) ([]catalog.Entry, error) {
-	if f.addGiven {
-		return publishedCatalogSource().entries()
-	}
-	// Without --add the catalog only says which servers need a token or an app, so no fetch.
-	c, err := catalog.Load()
-	return c.Entries, err
-}
-
-func importSources(f initFlags) ([]agents.Agent, error) {
-	switch {
-	case f.importAll:
-		return agents.Detect(), nil
-	case f.from == "":
-		return nil, nil
-	}
-	source, err := resolveFromSource(f.from)
-	if err != nil {
-		return nil, err
-	}
-	// The user named this source, so it fails the run before anything is written.
-	if _, err := source.Read(source.ConfigPath); err != nil {
-		return nil, err
-	}
-	return []agents.Agent{source}, nil
-}
-
-func isTerminal(f *os.File) bool {
-	return term.IsTerminal(f.Fd())
-}
-
-func printNoTerminalHelp(w io.Writer) {
-	printNotice(w, "%s", noTerminalHelp)
-}
-
-var (
-	errInitQuit          = errors.New("init quit; nothing was written")
-	errInitQuitAfterSave = errors.New("init quit; the servers above were saved and no agent was changed")
-)
-
-func runFullScreenInit(configDir string) error {
-	setup, err := unattendedRun(configDir, initFlags{importAll: true})
-	if err != nil {
-		return err
-	}
-	logs := newUILogs(configDir)
-	restore := logs.redirect()
-	out, runErr := tui.Run(tui.Params{
-		Setup:       setup,
-		LoadCatalog: publishedCatalogSource().load,
-		StartLogin:  startInitLogin(configDir),
-	})
-	restore()
-	err = reportFullScreenInit(configDir, out, runErr)
-	if path, ok := logs.written(); ok {
-		fmt.Fprintf(os.Stderr, "mini: messages logged during setup are in %s\n", path)
-	}
-	return err
-}
-
-func reportFullScreenInit(configDir string, out tui.Outcome, runErr error) error {
-	if !out.Saved {
-		if runErr != nil {
-			return runErr
-		}
-		return &exitError{code: 1, err: errInitQuit}
-	}
-	// The servers are already written, so the summary prints however the UI ended.
-	reportErr := printReport(out.Report)
-	if err := createConfigDirs(configDir); err != nil {
-		return fmt.Errorf("create config dirs: %w", err)
-	}
-	switch {
-	case runErr != nil:
-		return runErr
-	case out.Quit:
-		return &exitError{code: 1, err: errInitQuitAfterSave}
-	}
-	return reportErr
+	return printReport(initcmd.RunUnattended(setup))
 }
 
 func printReport(report initcmd.Report) error {

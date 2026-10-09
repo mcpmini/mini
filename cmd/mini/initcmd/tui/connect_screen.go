@@ -40,8 +40,7 @@ func newConnectScreen(p connectParams) *connectScreen {
 	return &connectScreen{p: p, ticked: map[string]bool{}}
 }
 
-// Saved servers and logins change what removing would do, so each visit reads the agents again.
-func (s *connectScreen) rebuild() {
+func (s *connectScreen) refresh() {
 	plan, err := s.p.plan()
 	if err != nil {
 		// Apply loads the same servers and reports the error for each agent; until then nothing is removable.
@@ -62,7 +61,6 @@ func (s *connectScreen) rebuild() {
 }
 
 func (s *connectScreen) enter() tea.Cmd {
-	s.rebuild()
 	s.cursor, s.scroll = s.agentRows(), scroll{}
 	return s.checks.start(s.plan)
 }
@@ -302,7 +300,6 @@ func (s *connectScreen) highlighted() (choice initcmd.ConnectChoice, onOption bo
 }
 
 func (s *connectScreen) empty() bool {
-	s.rebuild()
 	return len(s.listed) == 0
 }
 

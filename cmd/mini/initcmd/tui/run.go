@@ -34,55 +34,47 @@ func Run(p Params) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	r := &run{p: p, plan: plan, session: p.Setup.NewSession()}
-	defer r.session.Close()
-	r.ui = newScreens(p, &r.plan, r.session)
-	a := newApp(r.ui.list())
-	a.saves = savePoint{after: r.ui.savePoint(), save: r.save}
+	f := &flow{p: p, run: p.Setup.Start(plan)}
+	defer f.run.Close()
+	f.ui = newScreens(p, f.run)
+	a := newApp(f.ui.list())
+	a.saves = savePoint{after: f.ui.savePoint(), save: f.save}
 	if !a.hasScreens() {
-		r.save()
-		return r.outcome(false), nil
+		f.save()
+		return f.outcome(false), nil
 	}
 	err = p.program()(a)
 	// A login still waiting on the browser when the UI ends would otherwise save a token later.
-	r.ui.logins.cancelLogin()
-	r.ui.connects.checks.cancelAndWait()
+	f.ui.logins.cancelLogin()
+	f.ui.connects.checks.cancelAndWait()
 	if !a.saves.saved {
 		return Outcome{Quit: a.quit || err != nil}, err
 	}
-	return r.outcome(a.quit || err != nil), err
+	return f.outcome(a.quit || err != nil), err
 }
 
-type run struct {
-	p       Params
-	plan    initcmd.Plan
-	session *initcmd.Session
-	ui      screens
-	last    initcmd.SyncResult
+type flow struct {
+	p   Params
+	run *initcmd.Run
+	ui  screens
 }
 
-func (r *run) save() {
-	r.ui.pick(&r.plan)
-	r.last = r.session.Sync(r.plan.Servers())
+func (f *flow) save() {
+	f.ui.pick(&f.run.Plan)
+	f.run.Save()
 }
 
-func (r *run) outcome(leftEarly bool) Outcome {
-	// No check may write while the report reads the servers.
-	if leftEarly {
-		r.session.Close()
-	} else {
-		r.session.WaitChecks()
-	}
-	r.plan.Catalog = r.ui.catalog(r.plan)
-	var connected []initcmd.AgentResult
+func (f *flow) outcome(leftEarly bool) Outcome {
+	f.run.Plan.Catalog = f.ui.catalog(f.run.Plan)
 	// A ctrl+c queued behind the enter that chose to connect still ends the run early.
-	if !leftEarly {
-		connected = r.p.Setup.Connect(context.Background(), r.ui.connects.chosenConnect())
+	out := Outcome{Quit: leftEarly, Saved: true}
+	if leftEarly {
+		out.Report = f.run.Abandon()
+	} else {
+		out.Report = f.run.Finish(context.Background(), f.ui.connects.chosenConnect())
 	}
-	// The report reads the agents' configs, so it follows the connect that changed them.
-	report := r.p.Setup.Report(r.plan, r.session, r.last)
-	report.Connected = connected
-	return Outcome{Quit: leftEarly, Saved: true, Report: report}
+	out.Report.Import.DropOfferedSkips()
+	return out
 }
 
 type screens struct {
@@ -92,7 +84,8 @@ type screens struct {
 	connects *connectScreen
 }
 
-func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens {
+func newScreens(p Params, run *initcmd.Run) screens {
+	plan := &run.Plan
 	imports := newImportScreen(plan.Import.Candidates)
 	catalogs := newCatalogScreen(
 		catalogParams{load: p.LoadCatalog, offered: plan.Available, imports: imports.ticked},
@@ -110,8 +103,8 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			return initcmd.ServerStatuses(p.Setup.ConfigDir, ui.catalog(*plan))
 		},
-		checking:   session.Running,
-		changed:    session.Changed(),
+		checking:   run.Checking,
+		changed:    run.ChecksChanged(),
 		startLogin: p.StartLogin,
 	})
 	return ui

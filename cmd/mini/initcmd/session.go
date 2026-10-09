@@ -14,17 +14,17 @@ import (
 	"github.com/mcpmini/mini/internal/ops"
 )
 
-type SessionParams struct {
+type sessionParams struct {
 	ConfigDir string
 	Clock     clock.Clock
 	Probe     probeFunc
 }
 
-// Session writes this run's servers and removes only servers it wrote.
+// Only servers this run wrote are ever removed; servers the user had before are never touched.
 // Sync, Written, Unchecked, WaitChecks and Close belong to one goroutine; Running and Changed are
 // safe from any.
-type Session struct {
-	p       SessionParams
+type session struct {
+	p       sessionParams
 	written map[string]writtenServer
 	checks  checkRun
 	changed chan struct{}
@@ -54,17 +54,17 @@ type checkRun struct {
 	wg     sync.WaitGroup
 }
 
-type SyncResult struct {
+type syncResult struct {
 	Added   []string
 	Removed []string
 	Failed  []ServerError
 }
 
-func NewSession(p SessionParams) *Session {
+func newSession(p sessionParams) *session {
 	if p.Clock == nil {
 		p.Clock = clock.System()
 	}
-	return &Session{
+	return &session{
 		p:        p,
 		written:  map[string]writtenServer{},
 		changed:  make(chan struct{}, 1),
@@ -75,16 +75,16 @@ func NewSession(p SessionParams) *Session {
 
 // Sync makes this run's servers match want. A changed config that mini would reject leaves the
 // previous one in place, reported as failed.
-func (s *Session) Sync(want []config.ServerConfig) SyncResult {
+func (s *session) Sync(want []config.ServerConfig) syncResult {
 	s.stopChecks()
-	var result SyncResult
+	var result syncResult
 	s.removeUnwanted(want, &result)
 	s.addMissing(want, &result)
 	s.startChecks()
 	return result
 }
 
-func (s *Session) removeUnwanted(want []config.ServerConfig, result *SyncResult) {
+func (s *session) removeUnwanted(want []config.ServerConfig, result *syncResult) {
 	for _, name := range slices.Sorted(maps.Keys(s.written)) {
 		i := slices.IndexFunc(want, func(sc config.ServerConfig) bool { return sc.Name == name })
 		if i >= 0 && s.written[name].sameAs(want[i]) {
@@ -108,7 +108,7 @@ func (s *Session) removeUnwanted(want []config.ServerConfig, result *SyncResult)
 	}
 }
 
-func (s *Session) addMissing(want []config.ServerConfig, result *SyncResult) {
+func (s *session) addMissing(want []config.ServerConfig, result *syncResult) {
 	for _, sc := range want {
 		if _, ok := s.written[sc.Name]; ok {
 			continue
@@ -122,23 +122,22 @@ func (s *Session) addMissing(want []config.ServerConfig, result *SyncResult) {
 	}
 }
 
-func (s *Session) Written() []string {
+func (s *session) Written() []string {
 	return slices.Sorted(maps.Keys(s.written))
 }
 
-// Changed receives after a check starts or finishes; a receive may cover several.
-func (s *Session) Changed() <-chan struct{} {
+func (s *session) Changed() <-chan struct{} {
 	return s.changed
 }
 
-func (s *Session) Running() map[string]bool {
+func (s *session) Running() map[string]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return maps.Clone(s.checking)
 }
 
 // Unchecked names the written servers that may need OAuth and whose check hasn't finished.
-func (s *Session) Unchecked() []string {
+func (s *session) Unchecked() []string {
 	var names []string
 	for _, sc := range s.checkTargets() {
 		names = append(names, sc.Name)
@@ -146,11 +145,11 @@ func (s *Session) Unchecked() []string {
 	return names
 }
 
-func (s *Session) WaitChecks() {
+func (s *session) WaitChecks() {
 	s.checks.wg.Wait()
 }
 
 // Close cancels the running checks and waits, so nothing is written after it returns.
-func (s *Session) Close() {
+func (s *session) Close() {
 	s.stopChecks()
 }

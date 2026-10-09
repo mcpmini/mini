@@ -1,0 +1,80 @@
+package main
+
+import (
+	"os"
+
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/internal/agents"
+	"github.com/mcpmini/mini/internal/catalog"
+)
+
+// Every flag is checked before anything is written.
+func setupFromFlags(configDir string, f initFlags) (initcmd.Setup, error) {
+	if f.addGiven && len(nonBlankNames(f.add)) == 0 {
+		return initcmd.Setup{}, errEmptyAdd
+	}
+	entries, err := flagCatalog(f)
+	if err != nil {
+		return initcmd.Setup{}, err
+	}
+	requested, err := requestedCatalogEntries(f, entries)
+	if err != nil {
+		return initcmd.Setup{}, err
+	}
+	sources, err := importSources(f)
+	if err != nil {
+		return initcmd.Setup{}, err
+	}
+	return initcmd.Setup{
+		ConfigDir:       configDir,
+		Import:          sources,
+		Add:             requested,
+		Catalog:         entries,
+		AgentsToConnect: agentsToConnect(),
+		SelfPath:        selfPath(),
+	}, nil
+}
+
+func selfPath() string {
+	path, _ := os.Executable() //nolint:errcheck // without it, mini's own entry is recognized by its command name alone
+	return path
+}
+
+func agentsToConnect() []agents.Agent {
+	home, _ := os.UserHomeDir() //nolint:errcheck // without a home there are no agents to show how to connect
+	return initcmd.ConnectableAgents(knownAgentsIn(home))
+}
+
+func knownAgentsIn(home string) []agents.Agent {
+	if home == "" {
+		return nil
+	}
+	return agents.Known(home)
+}
+
+func flagCatalog(f initFlags) ([]catalog.Entry, error) {
+	if f.addGiven {
+		return publishedCatalogSource().entries()
+	}
+	// Without --add the catalog only says which servers need a token or an app, so no fetch.
+	c, err := catalog.Load()
+	return c.Entries, err
+}
+
+func importSources(f initFlags) ([]agents.Agent, error) {
+	switch {
+	case f.importAll:
+		return agents.Detect(), nil
+	case f.from == "":
+		return nil, nil
+	}
+	source, err := resolveFromSource(f.from)
+	if err != nil {
+		return nil, err
+	}
+	// The user named this source, so it fails the run before anything is written.
+	if _, err := source.Read(source.ConfigPath); err != nil {
+		return nil, err
+	}
+	return []agents.Agent{source}, nil
+}

@@ -1,6 +1,7 @@
 package initcmd
 
 import (
+	"context"
 	"maps"
 	"slices"
 
@@ -78,43 +79,20 @@ func (s Setup) Plan() (Plan, error) {
 	}, nil
 }
 
-// Write is a run with no UI: one sync, its OAuth checks, then the report.
+// Write is a run with no UI: one save, its OAuth checks, then the report. It connects no agent.
 func (s Setup) Write(p Plan) Report {
-	session := s.NewSession()
-	result := session.Sync(p.Servers())
-	session.WaitChecks()
-	return s.Report(p, session, result)
+	run := s.Start(p)
+	run.Save()
+	return run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
 }
 
-func (s Setup) NewSession() *Session {
-	return NewSession(SessionParams{ConfigDir: s.ConfigDir, Probe: s.probe()})
+func (s Setup) newSession() *session {
+	return newSession(sessionParams{ConfigDir: s.ConfigDir, Probe: s.probe()})
 }
 
 // Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
 func (p Plan) Servers() []config.ServerConfig {
 	return planAdds(p.Import.picked(), p.Add, p.written).write
-}
-
-// Report reads the servers, so no check may still be running; one that never finished marks its
-// server as maybe needing a login.
-func (s Setup) Report(p Plan, session *Session, last SyncResult) Report {
-	report := s.report()
-	report.Import = p.Import
-	adds := planAdds(p.Import.picked(), p.Add, p.written)
-	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
-	report.WriteErrors = last.Failed
-	report.Import.keepOnly(report.Import.importedOf(session.Written()))
-	report.Servers, report.ReadServersErr = ServerStatuses(s.ConfigDir, p.Catalog)
-	markUnchecked(report.Servers, session.Unchecked())
-	return report
-}
-
-func markUnchecked(statuses []ServerStatus, unchecked []string) {
-	for i, status := range statuses {
-		if status.Readiness == Ready && slices.Contains(unchecked, status.Name) {
-			statuses[i].Readiness = MayNeedLogin
-		}
-	}
 }
 
 func (s Setup) report() Report {
@@ -160,6 +138,15 @@ func (plan *ImportPlan) keepOnly(imported []Candidate) {
 		imports := slices.ContainsFunc(imported, func(c Candidate) bool { return slices.Contains(c.From, entry) })
 		// A second config's line says the first is imported instead; untrue once the user unticked it.
 		return imports || (s.Reason == SkipSecondConfig && !importsTheName(imported, s.Name))
+	})
+}
+
+// DropOfferedSkips is for a summary shown after the Import screen: each entry a candidate offered
+// was a row there, so the user already chose to leave it out.
+func (plan *ImportPlan) DropOfferedSkips() {
+	plan.Skipped = slices.DeleteFunc(plan.Skipped, func(s SkippedServer) bool {
+		entry := AgentEntry{Agent: s.Agent, Name: s.Name}
+		return slices.ContainsFunc(plan.Candidates, func(c Candidate) bool { return slices.Contains(c.From, entry) })
 	})
 }
 

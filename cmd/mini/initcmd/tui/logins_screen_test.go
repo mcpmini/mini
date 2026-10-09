@@ -49,7 +49,7 @@ func TestLoginsScreen_listsLoginsFirstThenWhatMustBeSetUpByHand(t *testing.T) {
 		},
 	)
 	s := checks.screen()
-	s.enter()
+	showScreen(s)
 	want := "Log in\n> linear  needs a login\n\nSet up by hand\n  github  needs a token\n" +
 		"  asana   needs your own OAuth app\n  files   needs ROOT set\n\n  Continue →"
 	if text := loginsText(s); text != want {
@@ -58,7 +58,9 @@ func TestLoginsScreen_listsLoginsFirstThenWhatMustBeSetUpByHand(t *testing.T) {
 }
 
 func TestLoginsScreen_isEmptyWhenEveryServerWorks(t *testing.T) {
-	if s := newFakeChecks(initcmd.ServerStatus{Name: "ready"}).screen(); !s.empty() {
+	s := newFakeChecks(initcmd.ServerStatus{Name: "ready"}).screen()
+	s.refresh()
+	if !s.empty() {
 		t.Errorf("screen:\n%s\nwant it empty, so it is skipped", loginsText(s))
 	}
 }
@@ -67,11 +69,11 @@ func TestLoginsScreen_aServerBeingCheckedSaysSoUntilTheCheckFinishes(t *testing.
 	checks := newFakeChecks(initcmd.ServerStatus{Name: "open"})
 	checks.checking["open"] = true
 	s := checks.screen()
-	wait := s.enter()
+	wait := showScreen(s)
 	if text := loginsText(s); !strings.Contains(text, "  open  checking…") || wait == nil {
 		t.Fatalf("screen:\n%s\nwait = %v; want open checking and a wait for the result", text, wait)
 	}
-	if again := s.enter(); again != nil {
+	if again := showScreen(s); again != nil {
 		t.Error("entering again started a second wait; one is enough")
 	}
 
@@ -99,7 +101,7 @@ func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing
 		checking: func() map[string]bool { return maps.Clone(checks.checking) },
 		changed:  checks.changed,
 	})
-	wait := s.enter()
+	wait := showScreen(s)
 	if text := loginsText(s); !strings.Contains(text, "open  checking…") || wait == nil {
 		t.Errorf(
 			"screen:\n%s\nwait = %v; want open still listed as checking, and a wait for the change it signaled",
@@ -113,7 +115,7 @@ func TestLoginsScreen_saysEverythingIsReadyWhenTheLastCheckFindsNothingToFinish(
 	checks := newFakeChecks(initcmd.ServerStatus{Name: "open"})
 	checks.checking["open"] = true
 	s := checks.screen()
-	wait := s.enter()
+	wait := showScreen(s)
 	delete(checks.checking, "open")
 	checks.changed <- struct{}{}
 	s.update(wait())
@@ -163,7 +165,7 @@ func loginScreen(logins *fakeLogins, names ...string) *loginsScreen {
 		startLogin: logins.start,
 	})
 	s.resize(80)
-	s.enter()
+	showScreen(s)
 	return s
 }
 
@@ -292,7 +294,7 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 		)
 		checks.checking["open"] = true
 		s := checks.screen()
-		return checks, s, s.enter()
+		return checks, s, showScreen(s)
 	}
 	finish := func(checks *fakeChecks, s *loginsScreen, wait tea.Cmd, readiness initcmd.Readiness) {
 		delete(checks.checking, "open")
@@ -374,4 +376,19 @@ func stripMarks(lines []string) []string {
 		stripped = append(stripped, strings.TrimPrefix(strings.TrimPrefix(line, "> "), "  "))
 	}
 	return stripped
+}
+
+func TestLoginsScreen_showingItAgainPutsTheCursorOnTheNextLogin(t *testing.T) {
+	s := loginScreen(newFakeLogins("linear", "sentry"), "linear", "sentry")
+	s.handle(press("down"))
+	s.handle(press("down"))
+
+	showScreen(s)
+
+	if got := s.cursorName(); got != "linear" {
+		t.Errorf("cursor on %q after showing Logins again, want linear: it rests on the next login to do", got)
+	}
+	if s.refresh(); s.cursorName() != "linear" {
+		t.Errorf("cursor moved to %q when the rows were read again, want it to stay on linear", s.cursorName())
+	}
 }

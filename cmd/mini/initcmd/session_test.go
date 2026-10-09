@@ -55,10 +55,10 @@ func (f *fakeProbe) counts() (probed []string, finished int) {
 	return slices.Clone(f.probed), f.finished
 }
 
-func newTestSession(t *testing.T, probe *fakeProbe, c clock.Clock) (*Session, string) {
+func newTestSession(t *testing.T, probe *fakeProbe, c clock.Clock) (*session, string) {
 	t.Helper()
 	dir := t.TempDir()
-	s := NewSession(SessionParams{ConfigDir: dir, Clock: c, Probe: probe.probe})
+	s := newSession(sessionParams{ConfigDir: dir, Clock: c, Probe: probe.probe})
 	t.Cleanup(s.Close)
 	return s, dir
 }
@@ -74,7 +74,7 @@ func waitStarted(t *testing.T, probe *fakeProbe) string {
 	}
 }
 
-func waitChanged(t *testing.T, s *Session) {
+func waitChanged(t *testing.T, s *session) {
 	t.Helper()
 	select {
 	case <-s.Changed():

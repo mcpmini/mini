@@ -117,6 +117,26 @@ func TestRun_finishingWritesTheTicksAndReportsThem(t *testing.T) {
 	}
 }
 
+func TestRun_theSummarySkipsNothingTheImportScreenShowed(t *testing.T) {
+	githubRunning := func(agent, command string) agents.Agent {
+		entries := map[string]agents.Server{"github": {Config: config.ServerConfig{Command: command}}}
+		return agents.Agent{Name: agent, ConfigPath: agent, Read: func(string) (map[string]agents.Server, error) {
+			return entries, nil
+		}}
+	}
+	out, err := Run(Params{
+		Setup:       setupFor(t.TempDir(), githubRunning("Claude Code", "gh-one"), githubRunning("Codex", "gh-two")),
+		LoadCatalog: noCatalog,
+		Program:     pressing("enter"),
+	})
+	if err != nil || len(out.Report.Import.Candidates) < 2 {
+		t.Fatalf("Run = %+v, %v; want github and an unticked github-2", out, err)
+	}
+	if skipped := out.Report.Import.Skipped; len(skipped) != 0 {
+		t.Errorf("skipped = %+v; want none: the user saw github-2 on Import and left it unticked", skipped)
+	}
+}
+
 func TestRun_goingBackToTickAnImportDropsTheSameCatalogServer(t *testing.T) {
 	configDir := t.TempDir()
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("sentry")}}
