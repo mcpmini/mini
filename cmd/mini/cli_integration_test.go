@@ -9,9 +9,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/internal/fileio"
 	"github.com/mcpmini/mini/internal/testutil"
 )
 
@@ -235,7 +237,7 @@ func TestIntegrationCLI_status_unreachableServer(t *testing.T) {
 }
 
 func TestIntegrationCLI_init_createsStructure(t *testing.T) {
-	bin := permanentMini(t)
+	bin := outsideTheTempDir(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CODEX_HOME", "")
 	cfg := t.TempDir()
@@ -252,25 +254,20 @@ func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(stdout, `"connect"`) {
-		t.Errorf("init output should include connect arg in install snippet, got: %q", stdout)
+	want := `"connect"`
+	if runtime.GOOS == "darwin" && fileio.Within(bin, "/tmp") {
+		want = "install mini somewhere permanent" // with TMPDIR under /tmp, no copy of mini is permanent
+	}
+	if !strings.Contains(stdout, want) {
+		t.Errorf("init output should include %s, got: %q", want, stdout)
 	}
 }
 
-// permanentMini copies the binary somewhere init doesn't count as temporary: the user cache dir,
-// since a temp dir under /tmp on macOS would still count.
-func permanentMini(t *testing.T) string {
+// outsideTheTempDir copies the binary out of the temp dir init counts as temporary, and gives
+// the run a temp dir of its own.
+func outsideTheTempDir(t *testing.T) string {
 	t.Helper()
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err := os.MkdirTemp(cache, "mini-test-")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck // a leftover copy in the cache does no harm
-	bin := filepath.Join(dir, "mini")
+	bin := filepath.Join(t.TempDir(), "mini")
 	testutil.WriteFile(t, bin, string(testutil.ReadFile(t, miniBin(t))))
 	if err := os.Chmod(bin, 0o755); err != nil {
 		t.Fatal(err)

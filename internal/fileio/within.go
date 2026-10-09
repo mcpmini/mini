@@ -1,6 +1,7 @@
 package fileio
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -13,21 +14,27 @@ func Within(path, dir string) bool {
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+// Each part resolves before the next applies, as the OS walks a path: link/.. is the parent of
+// link's target, even when what follows doesn't exist yet.
 func resolved(path string) string {
-	// Symlinks resolve before ".." is applied, as the OS does: link/.. is link's target's parent.
-	if target, err := filepath.EvalSymlinks(path); err == nil {
-		return absolute(target)
+	if !filepath.IsAbs(path) {
+		if wd, err := os.Getwd(); err == nil {
+			path = wd + string(filepath.Separator) + path
+		}
 	}
-	parent := filepath.Dir(path)
-	if parent == path {
-		return absolute(path)
+	volume := filepath.VolumeName(path)
+	current := volume + string(filepath.Separator)
+	for _, part := range strings.Split(path[len(volume):], string(filepath.Separator)) {
+		switch part {
+		case "", ".":
+		case "..":
+			current = filepath.Dir(current)
+		default:
+			current = filepath.Join(current, part)
+			if target, err := filepath.EvalSymlinks(current); err == nil {
+				current = target
+			}
+		}
 	}
-	return filepath.Join(resolved(parent), filepath.Base(path))
-}
-
-func absolute(path string) string {
-	if abs, err := filepath.Abs(path); err == nil {
-		return abs
-	}
-	return path
+	return current
 }

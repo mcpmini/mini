@@ -45,7 +45,9 @@ func writeConnectSteps(b *strings.Builder, c AgentConnections, list []agents.Age
 
 // InstallPermanently is the step for a mini that gets cleaned up. An agent's mini entry is never
 // rewritten, so a step naming that binary couldn't be undone by init.
-const InstallPermanently = "install mini somewhere permanent and run mini init from there"
+const InstallPermanently = installSomewherePermanent + " and run mini init from there"
+
+const installSomewherePermanent = "install mini somewhere permanent"
 
 func (c AgentConnections) installFirst() string {
 	return InstallPermanently + "; " + c.TemporaryMini + " gets cleaned up"
@@ -89,8 +91,8 @@ func writeConnected(b *strings.Builder, r Report) {
 		writeConnectSteps(b, r.Agents, left)
 	}
 	if len(gotMini) > 0 && r.Agents.TemporaryMini != "" {
-		fmt.Fprintf(b, "\nThe mini entry in %s runs %s, which gets cleaned up: install mini somewhere permanent and "+
-			"point the entry at it.\n", JoinAnd(gotMini), r.Agents.TemporaryMini)
+		fmt.Fprintf(b, "\nThe mini entry in %s runs %s, which gets cleaned up: %s and point the entry at it.\n",
+			JoinAnd(gotMini), r.Agents.TemporaryMini, installSomewherePermanent)
 	}
 	if len(changed) > 0 {
 		fmt.Fprintf(b, "\nRestart %s to start using mini.\n", JoinAnd(changed))
@@ -115,7 +117,7 @@ func notTried(r Report) []agents.Agent {
 func writeAgentHeading(b *strings.Builder, r Report, result AgentResult) {
 	name, file, mini := result.Agent.Name, result.Agent.ConfigPath, r.Agents.Mini
 	switch {
-	case result.Err != nil && r.Agents.TemporaryMini != "":
+	case result.Err != nil && r.Agents.TemporaryMini != "" && result.ExistingMini == NoMiniEntry:
 		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nTo connect it, %s.\n", name, result.Err, r.Agents.installFirst())
 	case result.Err != nil:
 		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nAdd mini to %s by hand:\n%s\n",
@@ -237,7 +239,7 @@ func indent(s, prefix string) string {
 
 func (c AgentConnections) inactiveStep() string {
 	if c.TemporaryMini != "" {
-		return "install mini somewhere permanent and have it run that copy; " + c.TemporaryMini + " gets cleaned up."
+		return installSomewherePermanent + " and have it run that copy; " + c.TemporaryMini + " gets cleaned up."
 	}
 	return "have it run: " + shellCommand(c.Mini)
 }

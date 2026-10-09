@@ -340,3 +340,40 @@ func TestConnectScreen_aTemporaryBinaryNoAgentWouldRunIsNotWarnedAbout(t *testin
 		t.Errorf("screen:\n%s\nwant no warning and the first option highlighted: Claude keeps its own mini entry", text)
 	}
 }
+
+func TestConnectScreen_withATemporaryBinary(t *testing.T) {
+	screen := func(t *testing.T) *connectScreen {
+		s := newConnectScreen(connectParams{
+			agents:            namedAgents("Claude", "Codex"),
+			withMini:          map[string]bool{"Codex": true},
+			plan:              func() (connectPlan, error) { return newFakePlan(map[string][]string{"Codex": {"github"}}), nil },
+			temporaryMiniPath: "/tmp/gobuild1/exe/mini",
+		})
+		t.Cleanup(s.checks.cancelAndWait)
+		s.resize(60)
+		s.enter()
+		return s
+	}
+
+	t.Run("enter on an agent row goes back to Don't connect", func(t *testing.T) {
+		s := screen(t)
+		for s.cursor > 0 {
+			s.handle(press("up"))
+		}
+		s.handle(press("enter"))
+		if text := connectText(s); !strings.Contains(text, "> Don't connect") {
+			t.Errorf("screen:\n%s\nwant Don't connect highlighted after enter on an agent row", text)
+		}
+	})
+
+	t.Run("unticking the only agent that would get it drops the warning", func(t *testing.T) {
+		s := screen(t)
+		for s.cursor > 0 {
+			s.handle(press("up"))
+		}
+		s.handle(press("space"))
+		if text := connectText(s); strings.Contains(text, "/tmp/gobuild1") {
+			t.Errorf("screen:\n%s\nwant no warning: only Codex is ticked, and it keeps its own mini entry", text)
+		}
+	})
+}

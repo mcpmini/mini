@@ -63,12 +63,16 @@ func (s *connectScreen) rebuild() {
 
 func (s *connectScreen) enter() tea.Cmd {
 	s.rebuild()
-	s.cursor = s.agentRows()
+	s.cursor = s.firstOption()
+	return s.checks.start(s.plan)
+}
+
+func (s *connectScreen) firstOption() int {
 	if s.wouldWriteTemporaryMini() {
 		// Apply never rewrites an agent's mini entry, so connecting now couldn't be fixed by a later init.
-		s.cursor += slices.Index(s.options(), initcmd.DontConnect)
+		return s.agentRows() + slices.Index(s.options(), initcmd.DontConnect)
 	}
-	return s.checks.start(s.plan)
+	return s.agentRows()
 }
 
 func (s *connectScreen) start() tea.Cmd {
@@ -130,7 +134,7 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 func (s *connectScreen) choose() (step, tea.Cmd) {
 	choice, onOption := s.highlighted()
 	if !onOption {
-		s.cursor = s.agentRows()
+		s.cursor = s.firstOption()
 		return stay, nil
 	}
 	if choice == initcmd.ConnectAndRemove && !s.checks.done {
@@ -186,11 +190,11 @@ func (s *connectScreen) temporaryWarning() []string {
 
 // An agent that already has mini keeps its entry, so only one without gets the temporary path.
 func (s *connectScreen) wouldWriteTemporaryMini() bool {
-	return s.p.temporaryMiniPath != "" &&
-		slices.ContainsFunc(
-			s.listed,
-			func(agent agents.Agent) bool { return s.ticked[agent.Name] && !s.p.withMini[agent.Name] },
-		)
+	return s.p.temporaryMiniPath != "" && s.addsMiniEntry()
+}
+
+func (s *connectScreen) addsMiniEntry() bool {
+	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool { return !s.p.withMini[agent.Name] })
 }
 
 func optionLabel(choice initcmd.ConnectChoice) string {
@@ -216,8 +220,7 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 // An agent listed only for its removable MCPs already has mini, so just connecting it changes nothing.
 func (s *connectScreen) connectOnlySubtitles() []string {
 	names := initcmd.AgentNames(s.picked())
-	lacksMini := func(name string) bool { return !s.p.withMini[name] }
-	if len(names) == 0 || slices.ContainsFunc(names, lacksMini) {
+	if len(names) == 0 || s.addsMiniEntry() {
 		return []string{"Adds mini next to your existing MCPs"}
 	}
 	return []string{"Changes nothing: " + alreadyHaveMini(names)}

@@ -302,6 +302,15 @@ func TestSummary_anAgentThatKeptItsOwnMiniIsNotToldToRepointIt(t *testing.T) {
 	if strings.Contains(got, mini.Command) {
 		t.Errorf("summary:\n%s\nwant no mention of the temporary binary: Codex kept its own mini entry", got)
 	}
+	got = Summary(Report{
+		Agents: AgentConnections{Mini: mini, TemporaryMini: mini.Command, MiniServes: []agents.Agent{codex}},
+		Connected: []AgentResult{{
+			Agent: codex, ExistingMini: MiniEntryServes, Err: errors.New("permission denied"),
+		}},
+	})
+	if strings.Contains(got, "install mini somewhere permanent") {
+		t.Errorf("summary:\n%s\nwant no install step for Codex, which kept its own mini entry", got)
+	}
 }
 
 func TestSummary_anAgentLeftUntickedKeepsItsHandStep(t *testing.T) {

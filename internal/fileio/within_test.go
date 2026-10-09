@@ -41,6 +41,8 @@ func TestWithin(t *testing.T) {
 		{"a symlink inside that points out", filepath.Join(escape, "outside"), false},
 		{"dot-dot out of the dir", inner + "/../outside", false},
 		{"dot-dot after a symlink that points out", inner + "/hop/../secret", false},
+		{"dot-dot after a symlink that points out, to a file not created yet", inner + "/hop/../notyet", false},
+		{"a relative path", "relative/mini", false},
 	} {
 		if got := Within(tc.path, inner); got != tc.want {
 			t.Errorf("%s: Within(%s) = %v, want %v", tc.name, tc.path, got, tc.want)
