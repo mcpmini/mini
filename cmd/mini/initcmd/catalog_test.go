@@ -24,7 +24,7 @@ func TestAvailableEntries(t *testing.T) {
 			{Name: "notion", URL: "https://notion.example.com/mcp", Category: "Dev"},
 		}
 		servers := []config.ServerConfig{{Name: "GitHub"}, {Name: "my-linear", URL: "https://LINEAR.example.com/mcp/"}}
-		if names := entryNames(AvailableEntries(entries, servers)); !reflect.DeepEqual(names, []string{"notion"}) {
+		if names := entryNames(availableEntries(entries, servers)); !reflect.DeepEqual(names, []string{"notion"}) {
 			t.Errorf("available = %v, want only notion", names)
 		}
 	})
@@ -35,7 +35,7 @@ func TestAvailableEntries(t *testing.T) {
 			{Name: "b", Category: "Data"},
 			{Name: "a", Category: "Dev"},
 		}
-		available := AvailableEntries(entries, []config.ServerConfig{{Name: "taken"}})
+		available := availableEntries(entries, []config.ServerConfig{{Name: "taken"}})
 		if names := entryNames(available); !reflect.DeepEqual(names, []string{"c", "b", "a"}) {
 			t.Errorf("available = %v, want [c b a]", names)
 		}
