@@ -1,7 +1,9 @@
 package initcmd
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -244,35 +246,42 @@ func TestReport_failsWhenAnAgentCouldNotBeConnected(t *testing.T) {
 	}
 }
 
-func TestSummary_entriesRemovingLeftInPlace(t *testing.T) {
+func TestSummary_saysWhatRemovingTookOutAndWhyTheRestStayed(t *testing.T) {
 	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
-	got := Summary(
-		Report{Agents: AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini"}}, Connected: []AgentResult{{
-			Agent:  claude,
-			Backup: "/home/u/.claude.minibackup.json",
+	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect", "--config", "/home/u/m"}}
+	got := Summary(Report{
+		Servers: []ServerStatus{{Name: "linear", Readiness: NeedsLogin}, {Name: "github"}, {Name: "slow"}},
+		Agents:  AgentConnections{Mini: mini},
+		Connected: []AgentResult{{
+			Agent:   claude,
+			Backup:  "/home/u/.claude.minibackup.json",
+			Removed: []string{"github", "notion"},
 			Kept: []KeptEntry{
-				{Entry: "gh", Err: errors.New("connection refused")},
-				{Entry: "files", Err: errNotChecked},
+				{Entry: "lin", Server: "linear", Err: errors.New("401 unauthorized")},
+				{Entry: "npx-slow", Server: "slow", Err: fmt.Errorf("initialize: %w", context.DeadlineExceeded)},
+				{Entry: "gh", Server: "github", Err: errors.New("connection refused")},
+				{Entry: "files", Server: "files", Err: errNotChecked},
 			},
 			Changed: []string{"notes"},
-		}}},
-	)
+		}},
+	})
 	requireLines(t, got,
-		"  gh stays in Claude Code: it doesn't work in mini yet\n",
+		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json\n"+
+			"  removed github and notion, which mini runs now\n",
+		"  lin stays in Claude Code: it works in mini once you finish linear above\n",
+		"  npx-slow stays in Claude Code: mini's check timed out; mini --config /home/u/m test tries again\n",
+		"  gh stays in Claude Code: mini couldn't connect to it; mini --config /home/u/m test shows why\n",
 		"  files stays in Claude Code: its connection wasn't checked\n",
 		"  notes stays in Claude Code: it changed after it was checked\n",
 	)
 }
 
-func TestSummary_anAgentWhoseEntriesAllStayedStillGetsAHeading(t *testing.T) {
-	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
-	got := Summary(
-		Report{Agents: AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini"}}, Connected: []AgentResult{{
-			Agent: claude,
-			Kept:  []KeptEntry{{Entry: "gh", Err: errors.New("connection refused")}},
-		}}},
-	)
-	requireLines(t, got, "\nClaude Code: /home/u/.claude.json is unchanged\n  gh stays in Claude Code")
+func TestSummary_anAgentThatSwitchesRemovedEntriesOffSaysSo(t *testing.T) {
+	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml", RemoveDisables: true}
+	got := Summary(Report{Connected: []AgentResult{{
+		Agent: codex, Backup: "/home/u/.codex/config.minibackup.toml", Removed: []string{"github"},
+	}}})
+	requireLines(t, got, "  switched off github, which mini runs now\n")
 }
 
 func TestSummary_anAgentThatAlreadyHadMiniSaysSo(t *testing.T) {

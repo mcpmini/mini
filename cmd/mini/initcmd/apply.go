@@ -55,8 +55,9 @@ type AgentResult struct {
 // KeptEntry is an agent entry mini duplicates but didn't replace: mini's copy failed its
 // connection check or was never checked, or the agent's mini entry won't serve it.
 type KeptEntry struct {
-	Entry string
-	Err   error
+	Entry  string
+	Server string
+	Err    error
 }
 
 var (
@@ -201,7 +202,7 @@ func (p ApplyParams) replaceable(duplicates map[string]string, served bool) ([]s
 	var kept []KeptEntry
 	for _, entry := range slices.Sorted(maps.Keys(duplicates)) {
 		if err := p.keepReason(duplicates[entry], served); err != nil {
-			kept = append(kept, KeptEntry{Entry: entry, Err: err})
+			kept = append(kept, KeptEntry{Entry: entry, Server: duplicates[entry], Err: err})
 		} else {
 			remove = append(remove, entry)
 		}

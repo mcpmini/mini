@@ -1,6 +1,7 @@
 package initcmd
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -46,7 +47,7 @@ func writeConnected(b *strings.Builder, r Report) {
 	writeInactiveMini(b, r.Agents)
 	var changed []string
 	for _, result := range r.Connected {
-		writeAgentResult(b, r.Agents.Mini, result)
+		writeAgentResult(b, r, result)
 		if result.Err == nil && (result.Backup != "" || result.Created) {
 			changed = append(changed, result.Agent.Name)
 		}
@@ -74,8 +75,8 @@ func notTried(r Report) []agents.Agent {
 	return left
 }
 
-func writeAgentResult(b *strings.Builder, mini agents.MiniEntry, result AgentResult) {
-	name, file := result.Agent.Name, result.Agent.ConfigPath
+func writeAgentResult(b *strings.Builder, r Report, result AgentResult) {
+	name, file, mini := result.Agent.Name, result.Agent.ConfigPath, r.Agents.Mini
 	switch {
 	case result.Err != nil:
 		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nAdd mini to %s by hand:\n%s\n",
@@ -86,23 +87,40 @@ func writeAgentResult(b *strings.Builder, mini agents.MiniEntry, result AgentRes
 		fmt.Fprintf(b, "\n%s: %s backed up to %s\n", name, file, result.Backup)
 	case result.ExistingMini != NoMiniEntry:
 		fmt.Fprintf(b, "\n%s: already has a mini entry; %s is unchanged\n", name, file)
-	case len(result.Kept) > 0 || len(result.Changed) > 0:
-		fmt.Fprintf(b, "\n%s: %s is unchanged\n", name, file)
+	}
+	if len(result.Removed) > 0 {
+		fmt.Fprintf(b, "  %s %s, which mini runs now\n", removedVerb(result.Agent), JoinAnd(result.Removed))
 	}
 	for _, kept := range result.Kept {
-		fmt.Fprintf(b, "  %s stays in %s: %s\n", kept.Entry, name, keptReason(kept))
+		fmt.Fprintf(b, "  %s stays in %s: %s\n", kept.Entry, name, keptReason(r, kept))
 	}
 	for _, entry := range result.Changed {
 		fmt.Fprintf(b, "  %s stays in %s: it changed after it was checked\n", entry, name)
 	}
 }
 
-func keptReason(kept KeptEntry) string {
-	if errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errMiniInactive) {
-		return kept.Err.Error()
+func removedVerb(agent agents.Agent) string {
+	if agent.RemoveDisables {
+		return "switched off"
 	}
-	// The check's error is a protocol detail; what's left to do is in the summary's finishing steps.
-	return "it doesn't work in mini yet"
+	return "removed"
+}
+
+// The check's error is a protocol detail, so the reason says what the user can do next.
+func keptReason(r Report, kept KeptEntry) string {
+	switch {
+	case errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errMiniInactive):
+		return kept.Err.Error()
+	case r.needsFinishing(kept.Server):
+		return "it works in mini once you finish " + kept.Server + " above"
+	case errors.Is(kept.Err, context.DeadlineExceeded):
+		return "mini's check timed out; " + miniCommand(r.Agents.Mini, "test") + " tries again"
+	}
+	return "mini couldn't connect to it; " + miniCommand(r.Agents.Mini, "test") + " shows why"
+}
+
+func (r Report) needsFinishing(server string) bool {
+	return slices.ContainsFunc(r.Servers, func(s ServerStatus) bool { return s.Name == server && s.Readiness != Ready })
 }
 
 // JoinAnd lists names as people write them: "a", "a and b", "a, b and c".
