@@ -43,21 +43,27 @@ func writeConnectSteps(b *strings.Builder, c AgentConnections, list []agents.Age
 	}
 }
 
-// An agent's mini entry is never rewritten, so a step naming a binary that gets cleaned up
-// couldn't be undone by init.
+// InstallPermanently is the step for a mini that gets cleaned up. An agent's mini entry is never
+// rewritten, so a step naming that binary couldn't be undone by init.
+const InstallPermanently = "install mini somewhere permanent and run mini init from there"
+
 func (c AgentConnections) installFirst() string {
-	return "install it somewhere permanent and run mini init from there; " + c.TemporaryMini + " gets cleaned up"
+	return InstallPermanently + "; " + c.TemporaryMini + " gets cleaned up"
 }
 
 func agentsPhrase(list []agents.Agent) string {
 	if len(list) == 0 {
 		return "your agents"
 	}
-	names := make([]string, len(list))
-	for i, agent := range list {
-		names[i] = agent.Name
+	return JoinAnd(AgentNames(list))
+}
+
+func AgentNames(list []agents.Agent) []string {
+	var names []string
+	for _, agent := range list {
+		names = append(names, agent.Name)
 	}
-	return JoinAnd(names)
+	return names
 }
 
 func writeHandSteps(b *strings.Builder, list []agents.Agent, mini agents.MiniEntry) {
@@ -78,6 +84,10 @@ func writeConnected(b *strings.Builder, r Report) {
 	}
 	if left := notTried(r); len(left) > 0 {
 		writeConnectSteps(b, r.Agents, left)
+	}
+	if len(changed) > 0 && r.Agents.TemporaryMini != "" {
+		fmt.Fprintf(b, "\nThe mini entry in %s runs %s, which gets cleaned up: install mini somewhere permanent and "+
+			"point the entry at it.\n", JoinAnd(changed), r.Agents.TemporaryMini)
 	}
 	if len(changed) > 0 {
 		fmt.Fprintf(b, "\nRestart %s to start using mini.\n", JoinAnd(changed))

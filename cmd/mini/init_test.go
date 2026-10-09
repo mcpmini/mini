@@ -1,3 +1,5 @@
+//go:build test
+
 package main
 
 import (
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/testutil"
 )
@@ -231,6 +234,7 @@ func TestImportAgentConfig_ImportsOnlyNewServers(t *testing.T) {
 }
 
 func TestInitImportsCodexAndNamesWhatMiniDoesNotCarryOver(t *testing.T) {
+	initcmd.UseTemporaryDirs(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")
@@ -390,6 +394,7 @@ func TestImportSources(t *testing.T) {
 }
 
 func TestInitImportWritesEachConfigOnceAndLeavesTheAgentsAlone(t *testing.T) {
+	initcmd.UseTemporaryDirs(t)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("CODEX_HOME", "")

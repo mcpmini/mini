@@ -180,7 +180,7 @@ func (s *connectScreen) temporaryWarning() []string {
 		return nil
 	}
 	warning := "Agents would run " + s.p.temporaryMiniPath + ", a temporary copy that gets cleaned up. " +
-		"Install mini somewhere permanent, then run mini init from there."
+		"To connect them, " + initcmd.InstallPermanently + "."
 	return []string{ansi.Wrap(warning, max(s.width, 20), ""), ""}
 }
 
@@ -210,25 +210,17 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 	case initcmd.ConnectOnly:
 		return s.connectOnlySubtitles()
 	}
-	return []string{"Leaves " + withVerb(agentNames(s.listed), "as it is", "as they are")}
+	return []string{"Leaves " + withVerb(initcmd.AgentNames(s.listed), "as it is", "as they are")}
 }
 
 // An agent listed only for its removable MCPs already has mini, so just connecting it changes nothing.
 func (s *connectScreen) connectOnlySubtitles() []string {
-	names := agentNames(s.picked())
+	names := initcmd.AgentNames(s.picked())
 	lacksMini := func(name string) bool { return !s.p.withMini[name] }
 	if len(names) == 0 || slices.ContainsFunc(names, lacksMini) {
 		return []string{"Adds mini next to your existing MCPs"}
 	}
 	return []string{"Changes nothing: " + alreadyHaveMini(names)}
-}
-
-func agentNames(list []agents.Agent) []string {
-	var names []string
-	for _, agent := range list {
-		names = append(names, agent.Name)
-	}
-	return names
 }
 
 func (s *connectScreen) removeSubtitles() []string {

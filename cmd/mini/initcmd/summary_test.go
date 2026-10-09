@@ -1,9 +1,13 @@
+//go:build test
+
 package initcmd
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -170,6 +174,7 @@ func TestShellQuote(t *testing.T) {
 }
 
 func TestHandConnectSteps(t *testing.T) {
+	UseTemporaryDirs(t)
 	f := newApplyFixture(t)
 	cursor := f.write(t, "Cursor", `{"mcpServers":{}}`)
 	windsurf := f.write(t, "Windsurf", `{"mcpServers":{"proxy":`+f.servingMini()+`}}`)
@@ -245,15 +250,43 @@ func TestSummary_aTemporaryMiniIsNeverTheStepToConnect(t *testing.T) {
 	} {
 		got := Summary(r)
 		for _, line := range strings.Split(got, "\n") {
-			if strings.Contains(line, mini.Command) && !strings.HasSuffix(line, "install it somewhere permanent and "+
-				"run mini init from there; /tmp/go-build1/exe/mini gets cleaned up.") {
+			replacing := strings.HasSuffix(line, InstallPermanently+"; /tmp/go-build1/exe/mini gets cleaned up.") ||
+				strings.HasSuffix(
+					line,
+					"/tmp/go-build1/exe/mini, which gets cleaned up: install mini somewhere permanent "+
+						"and point the entry at it.",
+				)
+			if strings.Contains(line, mini.Command) && !replacing {
 				t.Errorf("%s: summary:\n%s\nwant the temporary binary named only as the one to replace", name, got)
 			}
 		}
-		if !strings.Contains(got, "install it somewhere permanent") {
+		if !strings.Contains(got, "install mini somewhere permanent") {
 			t.Errorf("%s: summary:\n%s\nwant the step to install mini", name, got)
 		}
 	}
+}
+
+func TestSummary_connectingATemporaryMiniAnywaySaysWhichEntryToFix(t *testing.T) {
+	mini := agents.MiniEntry{Command: "/tmp/go-build1/exe/mini", Args: []string{"connect"}}
+	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"}
+	got := Summary(Report{
+		Agents:    AgentConnections{Mini: mini, TemporaryMini: mini.Command, NoMini: []agents.Agent{codex}},
+		Connected: []AgentResult{{Agent: codex, Backup: "/home/u/.codex/config.minibackup.toml"}},
+	})
+	requireLines(t, got, "The mini entry in Codex runs /tmp/go-build1/exe/mini, which gets cleaned up: "+
+		"install mini somewhere permanent and point the entry at it.\n")
+}
+
+func TestHandConnectSteps_aTemporaryMiniGetsTheStepToInstallIt(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	UseTemporaryDirs(t, filepath.Dir(self))
+	f := newApplyFixture(t)
+	cursor := f.write(t, "Cursor", `{"mcpServers":{}}`)
+	got := HandConnectSteps(f.configDir, testSelf, []agents.Agent{cursor})
+	requireLines(t, got, "To connect mini to Cursor, "+InstallPermanently+"; "+self+" gets cleaned up.\n")
 }
 
 func TestSummary_anAgentLeftUntickedKeepsItsHandStep(t *testing.T) {

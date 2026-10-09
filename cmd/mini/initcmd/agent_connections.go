@@ -16,6 +16,7 @@ type AgentConnections struct {
 
 func ClassifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnections {
 	c := AgentConnections{Mini: MiniCommand(configDir)}
+	c.TemporaryMini = temporaryMini(c.Mini.Command)
 	check := miniEntryCheck{configDir: configDir, selfPath: selfPath}
 	for _, agent := range list {
 		switch check.existingMiniIn(agent) {

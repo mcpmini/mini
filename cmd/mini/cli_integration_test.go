@@ -235,7 +235,7 @@ func TestIntegrationCLI_status_unreachableServer(t *testing.T) {
 }
 
 func TestIntegrationCLI_init_createsStructure(t *testing.T) {
-	bin := miniBin(t)
+	bin := permanentMini(t)
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CODEX_HOME", "")
 	cfg := t.TempDir()
@@ -255,6 +255,20 @@ func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 	if !strings.Contains(stdout, `"connect"`) {
 		t.Errorf("init output should include connect arg in install snippet, got: %q", stdout)
 	}
+}
+
+// permanentMini copies the binary out of the temp dir init would warn about, and gives the run a
+// temp dir of its own; a mini under /tmp on macOS still counts as temporary.
+func permanentMini(t *testing.T) string {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "mini")
+	testutil.WriteFile(t, bin, string(testutil.ReadFile(t, miniBin(t))))
+	if err := os.Chmod(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("GOTMPDIR", "")
+	return bin
 }
 
 func writeClaudeConfigFile(t *testing.T) string {

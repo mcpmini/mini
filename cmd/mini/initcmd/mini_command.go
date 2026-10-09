@@ -63,12 +63,11 @@ func sameFile(a, b string) bool {
 // TemporaryMiniPath is the mini binary agents would run when it sits somewhere that gets cleaned
 // up, else ""; agents break once it's gone.
 func (s Setup) TemporaryMiniPath() string {
-	path := MiniCommand(s.ConfigDir).Command
-	dirs := temporaryDirs
-	if s.TemporaryDirs != nil {
-		dirs = s.TemporaryDirs
-	}
-	for _, dir := range dirs() {
+	return temporaryMini(MiniCommand(s.ConfigDir).Command)
+}
+
+func temporaryMini(path string) string {
+	for _, dir := range temporaryDirs() {
 		if fileio.Within(path, dir) {
 			return path
 		}
@@ -76,7 +75,10 @@ func (s Setup) TemporaryMiniPath() string {
 	return ""
 }
 
-func temporaryDirs() []string {
+// The test binary is built in the temp dir, so tests choose which dirs count.
+var temporaryDirs = systemTemporaryDirs
+
+func systemTemporaryDirs() []string {
 	dirs := []string{os.TempDir()}
 	if runtime.GOOS == "darwin" {
 		dirs = append(dirs, "/tmp") // macOS's TempDir is per user; reboots clear the shared /tmp

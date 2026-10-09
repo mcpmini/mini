@@ -314,7 +314,7 @@ func TestConnectScreen_aTemporaryBinaryIsWarnedAboutAndNotConnectedByDefault(t *
 			s.resize(40)
 			s.enter()
 			want := "Agents would run /tmp/gobuild1/exe/mini,\na temporary copy that gets cleaned up.\n" +
-				"Install mini somewhere permanent, then\nrun mini init from there.\n\n"
+				"To connect them, install mini somewhere\npermanent and run mini init from there.\n\n"
 			if text := connectText(s); !strings.HasPrefix(text, want) || !strings.Contains(text, "> Don't connect") {
 				t.Errorf(
 					"screen:\n%s\nwant the warning wrapped to the window, above the options, and Don't connect highlighted",

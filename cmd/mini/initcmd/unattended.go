@@ -19,8 +19,6 @@ type Setup struct {
 	AgentsToConnect []agents.Agent
 	SelfPath        string
 	Probe           probeFunc
-	// TemporaryDirs lists where files get cleaned up; nil means the system's.
-	TemporaryDirs func() []string
 }
 
 // Report is what a run did, for the summary.

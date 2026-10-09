@@ -1,3 +1,5 @@
+//go:build test
+
 package initcmd
 
 import (
@@ -90,7 +92,7 @@ func TestTemporaryDirs(t *testing.T) {
 		if runtime.GOOS == "darwin" {
 			wants = append(wants, "/tmp")
 		}
-		dirs := temporaryDirs()
+		dirs := systemTemporaryDirs()
 		for _, want := range wants {
 			if !slices.Contains(dirs, want) {
 				t.Errorf("temporary dirs = %v, want %s among them", dirs, want)
@@ -105,7 +107,7 @@ func TestTemporaryDirs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if dirs, want := temporaryDirs(), filepath.Join(cache, "go-build"); !slices.Contains(dirs, want) {
+		if dirs, want := systemTemporaryDirs(), filepath.Join(cache, "go-build"); !slices.Contains(dirs, want) {
 			t.Errorf("temporary dirs = %v, want %s among them", dirs, want)
 		}
 	})
@@ -125,8 +127,8 @@ func TestTemporaryMiniPath(t *testing.T) {
 		{"a binary outside every temporary dir gets no warning", []string{t.TempDir()}, ""},
 		{"a binary in a temporary dir is named", []string{t.TempDir(), filepath.Dir(self)}, self},
 	} {
-		setup := Setup{ConfigDir: t.TempDir(), TemporaryDirs: func() []string { return tc.dirs }}
-		if got := setup.TemporaryMiniPath(); got != tc.want {
+		UseTemporaryDirs(t, tc.dirs...)
+		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMiniPath(); got != tc.want {
 			t.Errorf("%s: TemporaryMiniPath() = %q, want %q", tc.name, got, tc.want)
 		}
 	}
