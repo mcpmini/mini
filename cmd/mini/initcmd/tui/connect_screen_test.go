@@ -48,7 +48,6 @@ func (f *fakePlan) Check(ctx context.Context) initcmd.Removals {
 	}
 }
 
-// checksPass releases the check with every removable entry's mini copy passing.
 func (f *fakePlan) checksPass(s *connectScreen, check tea.Cmd) {
 	f.release <- initcmd.Removals{ByAgent: f.removable}
 	s.update(check())
@@ -232,7 +231,7 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 		s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
 		plan.release <- initcmd.Removals{}
 		s.update(check())
-		want := "Nothing to remove yet: none of your MCPs work in mini yet"
+		want := "Nothing to remove: none of your MCPs work in mini yet"
 		if text := connectText(s); !strings.Contains(text, want) {
 			t.Errorf("screen:\n%s\nwant it to say nothing can be removed yet", text)
 		}

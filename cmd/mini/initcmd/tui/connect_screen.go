@@ -2,7 +2,7 @@ package tui
 
 import (
 	"context"
-	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -24,24 +24,22 @@ type connectParams struct {
 }
 
 type connectScreen struct {
-	p    connectParams
-	plan connectPlan
-	// listed are the agents connecting can change; noted already have mini and nothing to remove.
-	listed []agents.Agent
-	noted  []string
-	ticked map[string]bool
-	cursor int
-	chosen initcmd.ConnectChoice
-	checks connectChecks
-	width  int
+	p                connectParams
+	plan             connectPlan
+	listed           []agents.Agent
+	alreadyConnected []string
+	ticked           map[string]bool
+	cursor           int
+	chosen           initcmd.ConnectChoice
+	checks           connectChecks
+	width            int
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
 	return &connectScreen{p: p, ticked: map[string]bool{}}
 }
 
-// Servers saved or logged in to since the last visit change what removing would do, so the
-// agents are read again each time.
+// Saved servers and logins change what removing would do, so each visit reads the agents again.
 func (s *connectScreen) rebuild() {
 	plan, err := s.p.plan()
 	if err != nil {
@@ -49,10 +47,10 @@ func (s *connectScreen) rebuild() {
 		plan = initcmd.ConnectPlan{}
 	}
 	s.plan = plan
-	s.listed, s.noted = nil, nil
+	s.listed, s.alreadyConnected = nil, nil
 	for _, agent := range s.p.agents {
 		if s.p.withMini[agent.Name] && !s.plan.HasDuplicates(agent.Name) {
-			s.noted = append(s.noted, agent.Name)
+			s.alreadyConnected = append(s.alreadyConnected, agent.Name)
 			continue
 		}
 		if _, seen := s.ticked[agent.Name]; !seen {
@@ -87,12 +85,7 @@ func (s *connectScreen) options() []initcmd.ConnectChoice {
 }
 
 func (s *connectScreen) removable() bool {
-	for _, agent := range s.listed {
-		if s.plan.HasDuplicates(agent.Name) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.listed, func(agent agents.Agent) bool { return s.plan.HasDuplicates(agent.Name) })
 }
 
 func (s *connectScreen) agentRows() int {
@@ -145,8 +138,8 @@ func (s *connectScreen) choose() (step, tea.Cmd) {
 
 func (s *connectScreen) body(int) string {
 	var lines []string
-	if len(s.noted) > 0 {
-		lines = append(lines, dim.Render(alreadyHaveMini(s.noted)), "")
+	if len(s.alreadyConnected) > 0 {
+		lines = append(lines, dim.Render(alreadyHaveMini(s.alreadyConnected)), "")
 	}
 	for i := range s.agentRows() {
 		lines = append(lines, cursorMark(i == s.cursor)+checkbox(s.ticked[s.listed[i].Name])+s.listed[i].Name)
@@ -193,26 +186,25 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 	case initcmd.ConnectOnly:
 		return s.connectOnlySubtitles()
 	}
-	var names []string
-	for _, agent := range s.listed {
-		names = append(names, agent.Name)
-	}
-	return []string{"Leaves " + withVerb(names, "as it is", "as they are")}
+	return []string{"Leaves " + withVerb(agentNames(s.listed), "as it is", "as they are")}
 }
 
 // An agent listed only for its removable MCPs already has mini, so just connecting it changes nothing.
 func (s *connectScreen) connectOnlySubtitles() []string {
-	var withMini []string
-	for _, agent := range s.picked() {
-		if !s.p.withMini[agent.Name] {
-			return []string{"Adds mini next to your existing MCPs"}
-		}
-		withMini = append(withMini, agent.Name)
-	}
-	if len(withMini) == 0 {
+	names := agentNames(s.picked())
+	lacksMini := func(name string) bool { return !s.p.withMini[name] }
+	if len(names) == 0 || slices.ContainsFunc(names, lacksMini) {
 		return []string{"Adds mini next to your existing MCPs"}
 	}
-	return []string{"Changes nothing: " + alreadyHaveMini(withMini)}
+	return []string{"Changes nothing: " + alreadyHaveMini(names)}
+}
+
+func agentNames(list []agents.Agent) []string {
+	var names []string
+	for _, agent := range list {
+		names = append(names, agent.Name)
+	}
+	return names
 }
 
 func (s *connectScreen) removeSubtitles() []string {
@@ -232,10 +224,10 @@ func (s *connectScreen) removeSubtitles() []string {
 		return []string{"Nothing to remove from the ticked agents"}
 	}
 	if removed == 0 {
-		return []string{"Nothing to remove yet: none of your MCPs work in mini yet"}
+		return []string{"Nothing to remove: none of your MCPs work in mini yet"}
 	}
 	lines := []string{
-		fmt.Sprintf("Removes %d %s that mini now runs; the configs are backed up first", removed, mcps(removed)),
+		"Removes " + initcmd.Plural(removed, "MCP") + " that mini now runs; the configs are backed up first",
 	}
 	for _, name := range disabling {
 		lines = append(lines, name+": existing MCPs will be disabled, not removed")
@@ -244,12 +236,9 @@ func (s *connectScreen) removeSubtitles() []string {
 }
 
 func (s *connectScreen) anyListedHasRemovals() bool {
-	for _, agent := range s.listed {
-		if len(s.checks.removals.ByAgent[agent.Name]) > 0 {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(s.listed, func(agent agents.Agent) bool {
+		return len(s.checks.removals.ByAgent[agent.Name]) > 0
+	})
 }
 
 func alreadyHaveMini(names []string) string {
@@ -261,13 +250,6 @@ func withVerb(names []string, one, many string) string {
 		return names[0] + " " + one
 	}
 	return initcmd.JoinAnd(names) + " " + many
-}
-
-func mcps(n int) string {
-	if n == 1 {
-		return "MCP"
-	}
-	return "MCPs"
 }
 
 func (s *connectScreen) keys() string {

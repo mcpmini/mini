@@ -53,7 +53,7 @@ func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
 	case len(r.Servers) == 0:
 		fmt.Fprintln(b, "mini has no servers yet.")
 	case unfinished == 0:
-		fmt.Fprintf(b, "mini is set up with %s.\n", plural(len(r.Servers), "server"))
+		fmt.Fprintf(b, "mini is set up with %s.\n", Plural(len(r.Servers), "server"))
 	default:
 		verb := "need"
 		if unfinished == 1 {
@@ -62,7 +62,7 @@ func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
 		fmt.Fprintf(
 			b,
 			"mini is set up with %s, %d still %s finishing:\n",
-			plural(len(r.Servers), "server"),
+			Plural(len(r.Servers), "server"),
 			unfinished,
 			verb,
 		)
@@ -214,7 +214,8 @@ func nameWidth(statuses []ServerStatus) int {
 	return width
 }
 
-func plural(n int, noun string) string {
+// Plural counts a noun that takes a plain s: "1 server", "2 servers".
+func Plural(n int, noun string) string {
 	if n == 1 {
 		return "1 " + noun
 	}

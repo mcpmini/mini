@@ -176,11 +176,10 @@ func (p ApplyParams) editedConfig(
 	}
 }
 
-// An entry the user deleted since the check is gone either way, so only one still there counts.
 func changedSince(counted []string, entries map[string]agents.Server, duplicates map[string]string) []string {
 	var changed []string
 	for _, entry := range counted {
-		_, exists := entries[entry]
+		_, exists := entries[entry] // one the user deleted since the check is gone either way
 		if _, still := duplicates[entry]; exists && !still {
 			changed = append(changed, entry)
 		}

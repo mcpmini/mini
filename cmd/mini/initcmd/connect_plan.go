@@ -29,7 +29,6 @@ func (s Setup) PlanConnect() (ConnectPlan, error) {
 		if err != nil {
 			continue // nothing to remove from a missing config; apply reports one it can't read or parse
 		}
-		// An entry goes only when the agent ends up with a mini entry serving these servers.
 		served := params.servedAfterEdit(params.miniCheck().existingMini(entries))
 		if duplicates := mini.Duplicates(entries, s.SelfPath); served && len(duplicates) > 0 {
 			p.duplicates[agent.Name] = duplicates
