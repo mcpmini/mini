@@ -20,7 +20,7 @@ type sessionParams struct {
 	Probe     probeFunc
 }
 
-// session writes this run's servers and checks the new ones for OAuth; it removes only servers it wrote.
+// Only servers this run wrote are ever removed; servers the user had before are never touched.
 // Sync, Written, Unchecked, WaitChecks and Close belong to one goroutine; Running and Changed are
 // safe from any.
 type session struct {

@@ -11,12 +11,12 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
-// The app refreshes a screen before entering it.
-func showScreen(s interface {
+type showableScreen interface {
 	refresher
 	enterer
-},
-) tea.Cmd {
+}
+
+func showScreen(s showableScreen) tea.Cmd {
 	s.refresh()
 	return s.enter()
 }

@@ -33,7 +33,6 @@ type refresher interface {
 	refresh()
 }
 
-// A screen that starts over each time it is shown.
 type enterer interface {
 	enter() tea.Cmd
 }
