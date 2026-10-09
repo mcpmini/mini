@@ -192,7 +192,7 @@ func (s *loginsScreen) body(height int) string {
 		first, last = len(lines), len(lines)
 	}
 	lines = append(lines, cursorMark(s.cursor == len(s.rows))+"Continue →")
-	return strings.Join(s.scroll.cut(lines, first, last-first+1, height), "\n")
+	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
 }
 
 // first and last bound the cursor's block: its section heading, its row and the lines under it.

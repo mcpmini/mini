@@ -164,7 +164,7 @@ func (s *connectScreen) rowLines(height int) []string {
 			last = len(lines) - 1
 		}
 	}
-	return s.scroll.cut(lines, first, last-first+1, height)
+	return s.scroll.cut(lines, first, last, height)
 }
 
 func (s *connectScreen) noteLines() []string {

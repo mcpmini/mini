@@ -18,8 +18,8 @@ func (l *list) view(height int) string {
 		shown = append(shown, l.headerLine())
 	}
 	height -= len(shown)
-	lines, cursorLine, cursorHeight := l.lines()
-	return strings.Join(append(shown, l.scroll.cut(lines, cursorLine, cursorHeight, height)...), "\n")
+	lines, first, last := l.lines()
+	return strings.Join(append(shown, l.scroll.cut(lines, first, last, height)...), "\n")
 }
 
 func (l *list) filterLine() string {
@@ -42,7 +42,7 @@ func (l *list) labelWidth() int {
 	return max(len(l.header.label)-len(checkbox(false)), widest(l.rows, func(r row) string { return r.label }))
 }
 
-func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
+func (l *list) lines() (lines []string, first, last int) {
 	width := l.labelWidth()
 	section := ""
 	for i, r := range l.visible() {
@@ -54,19 +54,16 @@ func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {
 			lines = append(lines, bold.Render(r.section))
 			section = r.section
 		}
-		if i == l.cursor {
-			// The block starts at the heading, so scrolling up to a section's first row shows its heading.
-			cursorLine, cursorHeight = start, len(lines)-start+1
-		}
 		lines = append(lines, l.line(r, i == l.cursor, width))
 		if r.subtitle != "" {
 			lines = append(lines, "      "+dim.Render(r.subtitle))
-			if i == l.cursor {
-				cursorHeight++
-			}
+		}
+		if i == l.cursor {
+			// The block starts at the heading, so scrolling up to a section's first row shows its heading.
+			first, last = start, len(lines)-1
 		}
 	}
-	return lines, cursorLine, cursorHeight
+	return lines, first, last
 }
 
 func cursorMark(atCursor bool) string {
