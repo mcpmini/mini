@@ -26,25 +26,30 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 }
 
 func (s *Server) serveLoop(ctx context.Context, in io.Reader, out io.Writer, session *Session) error {
-	writeOut, waitNotify := newSerializedWriter(out), func() {}
-	if notifyCh, ok := session.openToolsChangedStream(); ok {
-		writeOut, waitNotify = startNotifyForwarder(out, notifyCh)
-		defer func() {
-			session.closeToolsChangedStream(notifyCh)
-			waitNotify()
-		}()
-	} else {
-		defer waitNotify()
-	}
+	serveCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	writer := newSerializedWriter(out, cancel)
+	writer.observeResponseFailure(out)
+	stopNotifications := startSessionNotifyForwarder(session, writer.Write)
+	scanErr := s.scanServeInput(serveCtx, in, session, writer)
+	stopNotifications()
+	return errors.Join(writer.Err(), scanErr)
+}
+
+func (s *Server) scanServeInput(ctx context.Context, in io.Reader, session *Session, writer *serializedWriter) error {
 	var wg sync.WaitGroup
 	scanner := transport.NewScanner(in)
 	for scanner.Scan() {
+		if writer.Err() != nil || ctx.Err() != nil {
+			break
+		}
 		s.handleScannedLine(
-			handleScannedLineParams{ctx: ctx, rawLine: scanner.Bytes(), session: session, writeOut: writeOut, wg: &wg},
+			handleScannedLineParams{
+				ctx: ctx, rawLine: scanner.Bytes(), session: session,
+				writeOut: writer.Write, wg: &wg,
+			},
 		)
 	}
-	// Signal any goroutines waiting for initialization that no more messages are coming.
-	// This unblocks them so they can return an error and allow wg.Wait() to complete.
 	session.markAborted()
 	wg.Wait()
 	return scanner.Err()
@@ -123,32 +128,6 @@ func peekRequestID(line []byte) json.RawMessage {
 		return nil
 	}
 	return peek.ID
-}
-
-// startNotifyForwarder launches a goroutine that writes notifications from ch to out.
-// The returned wait function returns after the session-owned channel is closed and drained.
-func startNotifyForwarder(out io.Writer, ch chan json.RawMessage) (func(any), func()) {
-	writeOut := newSerializedWriter(out)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for n := range ch {
-			writeOut(n)
-		}
-	}()
-	return writeOut, func() {
-		wg.Wait()
-	}
-}
-
-func newSerializedWriter(out io.Writer) func(any) {
-	var mu sync.Mutex
-	return func(v any) {
-		mu.Lock()
-		writeJSON(out, v) //nolint:errcheck
-		mu.Unlock()
-	}
 }
 
 var (
@@ -447,13 +426,4 @@ func mustJSON(v any) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return string(b)
-}
-
-func writeJSON(w io.Writer, v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(w, "%s\n", b)
-	return err
 }

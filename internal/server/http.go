@@ -131,7 +131,9 @@ func (s *Server) writeNotifications(
 			if !open {
 				return
 			}
-			fmt.Fprintf(w, "event: message\ndata: %s\n\n", notification) //nolint:errcheck
+			if _, err := fmt.Fprintf(w, "event: message\ndata: %s\n\n", notification); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}

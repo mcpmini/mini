@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -11,6 +12,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/server"
 )
 
 type blockReader struct {
@@ -143,6 +147,43 @@ func TestServeUntilCanceled_unrelatedReadErrorPropagates(t *testing.T) {
 		t.Errorf("expected %v, got %v", want, err)
 	}
 }
+
+func TestServeUntilCanceled_outputFailureClosesPipeAndJoinsServe(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	want := errors.New("stdout failed")
+	srv := server.New(server.Params{
+		Config: &config.Config{}, ConfigDir: t.TempDir(),
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	defer srv.Close()
+	result := make(chan error, 1)
+	go func() {
+		result <- serveUntilCanceled(serveWatchParams{Ctx: ctx, Serve: srv.Serve, In: pr, Out: failingServeWriter{want}})
+	}()
+	const initialize = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}` + "\n"
+	_, writeErr := io.WriteString(pw, initialize)
+	if writeErr != nil {
+		t.Fatalf("write initialize request: %v", writeErr)
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, want) {
+			t.Fatalf("serveUntilCanceled error = %v, want failure cause %v", err, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("serveUntilCanceled did not close the input pipe and join Serve")
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("parent context canceled: %v", ctx.Err())
+	}
+}
+
+type failingServeWriter struct{ err error }
+
+func (w failingServeWriter) Write([]byte) (int, error) { return 0, w.err }
 
 var errStdinSentinel = errors.New("stdin read error")
 
