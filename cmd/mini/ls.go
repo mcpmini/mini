@@ -24,8 +24,7 @@ func listServerTools(configDir, serverName string, out io.Writer) error {
 		return err
 	}
 	defer cleanup()
-	printToolTable(out, tools)
-	return nil
+	return printToolTable(out, tools)
 }
 
 type toolDetailParams struct {
@@ -43,8 +42,7 @@ func listToolDetail(p toolDetailParams) error {
 	defer cleanup()
 	for _, t := range tools {
 		if t.Name == p.ToolName {
-			printToolDetail(p.Out, t)
-			return nil
+			return printToolDetail(p.Out, t)
 		}
 	}
 	return fmt.Errorf("tool %q not found on server %q", p.ToolName, p.ServerName)
@@ -59,10 +57,14 @@ func fetchTools(configDir, serverName string) ([]transport.ToolDefinition, func(
 	tools, err := conn.ListTools(ctx)
 	if err != nil {
 		cancel()
-		conn.Close() //nolint:errcheck
+		conn.Close() //nolint:errcheck // Preserve the ListTools error; closing a killed stdio process may report its exit status.
 		return nil, nil, fmt.Errorf("list tools: %w", err)
 	}
-	return tools, func() { cancel(); conn.Close() }, nil //nolint:errcheck
+	return tools, func() {
+		cancel()
+		//nolint:errcheck // Tools are already read; closing a killed stdio process may report its exit status.
+		conn.Close()
+	}, nil
 }
 
 func dialServer(configDir, serverName string) (transport.Connection, error) {
@@ -82,37 +84,55 @@ func dialServer(configDir, serverName string) (transport.Connection, error) {
 	return conn, nil
 }
 
-func printToolTable(out io.Writer, tools []transport.ToolDefinition) {
+func printToolTable(out io.Writer, tools []transport.ToolDefinition) error {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TOOL\tDESCRIPTION")
+	if _, err := fmt.Fprintln(w, "TOOL\tDESCRIPTION"); err != nil {
+		return fmt.Errorf("write tool table header: %w", err)
+	}
 	for _, t := range tools {
 		args := parseArgDefs(t.InputSchema)
 		sig := formatSignature(t.Name, args)
 		desc := firstLine(t.Description)
-		fmt.Fprintf(w, "%s\t%s\n", sig, desc)
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", sig, desc); err != nil {
+			return fmt.Errorf("write tool table row: %w", err)
+		}
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("flush tool table: %w", err)
+	}
+	return nil
 }
 
-func printToolDetail(out io.Writer, t transport.ToolDefinition) {
-	fmt.Fprintln(out, t.Name)
+func printToolDetail(out io.Writer, t transport.ToolDefinition) error {
+	if _, err := fmt.Fprintln(out, t.Name); err != nil {
+		return fmt.Errorf("write tool name: %w", err)
+	}
 	if t.Description != "" {
-		fmt.Fprintln(out, "  "+strings.ReplaceAll(t.Description, "\n", "\n  "))
+		if _, err := fmt.Fprintln(out, "  "+strings.ReplaceAll(t.Description, "\n", "\n  ")); err != nil {
+			return fmt.Errorf("write tool description: %w", err)
+		}
 	}
 	args := parseArgDefs(t.InputSchema)
 	if len(args) == 0 {
-		return
+		return nil
 	}
-	fmt.Fprintln(out)
+	if _, err := fmt.Fprintln(out); err != nil {
+		return fmt.Errorf("write tool detail separator: %w", err)
+	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, a := range args {
 		req := "optional"
 		if a.Required {
 			req = "required"
 		}
-		fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", a.Name, a.Type, req, a.Description)
+		if _, err := fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", a.Name, a.Type, req, a.Description); err != nil {
+			return fmt.Errorf("write tool argument row: %w", err)
+		}
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("flush tool detail: %w", err)
+	}
+	return nil
 }
 
 type argDef struct {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"slices"
 	"text/tabwriter"
 	"time"
@@ -31,20 +30,26 @@ func newTestCmd(opts *rootOptions) *cobra.Command {
 		Use:   "test",
 		Short: "CI-safe health check (exits 1 on any failure)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			runTest(opts.configDir, timeout)
-			return nil
+			return runTest(opts.configDir, timeout, cmd.OutOrStdout())
 		},
 	}
 	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Second, "per-upstream connect timeout")
 	return cmd
 }
 
-func runTest(configDir string, timeout time.Duration) {
+func runTest(configDir string, timeout time.Duration, out io.Writer) error {
 	ctx := context.Background()
-	srv, servers := buildTestServer(ctx, configDir)
+	srv, servers, err := buildTestServer(ctx, configDir)
+	if err != nil {
+		return err
+	}
 	defer srv.Close()
+	if !slices.ContainsFunc(servers.Loaded, config.ServerConfig.IsEnabled) && !servers.HasProblems() {
+		_, err := fmt.Fprintln(out, emptyTestMessage(servers.Loaded))
+		return err
+	}
 	results := brokenServerResults(servers.Broken)
-	printTestResults(append(results, checkServers(ctx, srv, servers.Loaded, timeout)...))
+	return printTestResults(out, append(results, checkServers(ctx, srv, servers.Loaded, timeout)...))
 }
 
 func emptyTestMessage(servers []config.ServerConfig) string {
@@ -54,18 +59,14 @@ func emptyTestMessage(servers []config.ServerConfig) string {
 	return "no enabled servers"
 }
 
-func buildTestServer(ctx context.Context, configDir string) (*server.Server, config.Servers) {
+func buildTestServer(ctx context.Context, configDir string) (*server.Server, config.Servers, error) {
 	cfg, servers, err := loadConfig(configDir)
 	if err != nil {
-		fatalf("%v", err)
+		return nil, config.Servers{}, err
 	}
 	injectOAuthTokens(ctx, configDir, servers.Loaded)
-	if !slices.ContainsFunc(servers.Loaded, config.ServerConfig.IsEnabled) && !servers.HasProblems() {
-		fmt.Println(emptyTestMessage(servers.Loaded))
-		os.Exit(0)
-	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), servers
+	return server.New(server.Params{Config: cfg, ConfigDir: configDir, Logger: logger}), servers, nil
 }
 
 func brokenServerResults(broken []config.SourceError) []upstreamResult {
@@ -136,32 +137,40 @@ func countResults(results []upstreamResult) (passed, failed int) {
 	return
 }
 
-func printTestResults(results []upstreamResult) {
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+func printTestResults(out io.Writer, results []upstreamResult) error {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, r := range results {
-		writeTestRow(w, r)
+		if err := writeTestRow(w, r); err != nil {
+			return err
+		}
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		return fmt.Errorf("flush test results: %w", err)
+	}
 	passed, failed := countResults(results)
-	fmt.Printf("\n%d passed, %d failed\n", passed, failed)
-	if failed > 0 {
-		os.Exit(1)
+	if _, err := fmt.Fprintf(out, "\n%d passed, %d failed\n", passed, failed); err != nil {
+		return fmt.Errorf("write test result summary: %w", err)
 	}
+	if failed > 0 {
+		return fmt.Errorf("%d server(s) failed", failed)
+	}
+	return nil
 }
 
-func writeTestRow(w *tabwriter.Writer, r upstreamResult) {
+func writeTestRow(w *tabwriter.Writer, r upstreamResult) error {
 	if r.err != nil {
-		fmt.Fprintf(w, "FAIL\t%s\t%s\t%s\n", r.name, displayTransport(r.transport), singleLine(r.err))
-	} else {
-		fmt.Fprintf(
-			w,
-			"PASS\t%s\t%s\t%d tools\t(%s)\n",
-			r.name,
-			displayTransport(r.transport),
-			r.tools,
-			r.elapsed.Round(time.Millisecond),
-		)
+		_, err := fmt.Fprintf(w, "FAIL\t%s\t%s\t%s\n", r.name, displayTransport(r.transport), singleLine(r.err))
+		return err
 	}
+	_, err := fmt.Fprintf(
+		w,
+		"PASS\t%s\t%s\t%d tools\t(%s)\n",
+		r.name,
+		displayTransport(r.transport),
+		r.tools,
+		r.elapsed.Round(time.Millisecond),
+	)
+	return err
 }
 
 func displayTransport(transport string) string {
