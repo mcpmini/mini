@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"text/tabwriter"
 	"time"
 
@@ -194,53 +195,19 @@ type statusRowParams struct {
 }
 
 func printStatusRow(p statusRowParams) (bool, error) {
-	if !p.Config.IsEnabled() {
-		return writeDisabledStatusRow(p)
+	status, tools := "disabled"+projectionsNote(p.Config), "-"
+	failed := p.Config.ProjectionsErr != nil
+	if p.Config.IsEnabled() {
+		if err := p.Server.AddUpstream(p.Context, p.Config); err != nil {
+			status, failed = "error: "+singleLine(err), true
+		} else {
+			status = "ok" + projectionsNote(p.Config)
+			tools = strconv.Itoa(p.Server.ToolCount(p.Config.Name))
+		}
 	}
-	if err := p.Server.AddUpstream(p.Context, p.Config); err != nil {
-		return writeFailedStatusRow(p, err)
-	}
-	return writeHealthyStatusRow(p)
-}
-
-func writeDisabledStatusRow(p statusRowParams) (bool, error) {
-	_, err := fmt.Fprintf(
-		p.Writer,
-		"%s\t%s\tdisabled%s\t-\n",
-		p.Config.Name,
-		serverTransport(p.Config),
-		projectionsNote(p.Config),
-	)
+	_, err := fmt.Fprintf(p.Writer, "%s\t%s\t%s\t%s\n", p.Config.Name, serverTransport(p.Config), status, tools)
 	if err != nil {
-		return false, fmt.Errorf("write disabled server row: %w", err)
+		return failed, fmt.Errorf("write status row: %w", err)
 	}
-	return p.Config.ProjectionsErr != nil, nil
-}
-
-func writeFailedStatusRow(p statusRowParams, upstreamErr error) (bool, error) {
-	_, err := fmt.Fprintf(
-		p.Writer,
-		"%s\t%s\terror: %s\t-\n",
-		p.Config.Name,
-		serverTransport(p.Config),
-		singleLine(upstreamErr),
-	)
-	if err != nil {
-		return false, fmt.Errorf("write failed server row: %w", err)
-	}
-	return true, nil
-}
-
-func writeHealthyStatusRow(p statusRowParams) (bool, error) {
-	if _, err := fmt.Fprintf(
-		p.Writer,
-		"%s\t%s\tok%s\t%d\n",
-		p.Config.Name,
-		serverTransport(p.Config),
-		projectionsNote(p.Config),
-		p.Server.ToolCount(p.Config.Name),
-	); err != nil {
-		return false, fmt.Errorf("write healthy server row: %w", err)
-	}
-	return p.Config.ProjectionsErr != nil, nil
+	return failed, nil
 }
