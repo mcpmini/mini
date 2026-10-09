@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -172,7 +173,7 @@ func (a *app) View() tea.View {
 
 func (a *app) render() string {
 	if a.tooSmall() {
-		return "Make the window larger"
+		return a.askToEnlarge()
 	}
 	s := a.screens[a.at]
 	footer := a.footer(s)
@@ -180,6 +181,17 @@ func (a *app) render() string {
 	body := s.body(bodyHeight)
 	padding := strings.Repeat("\n", max(bodyHeight-strings.Count(body, "\n")-1, 0))
 	return a.fit(bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + strings.Join(footer, "\n"))
+}
+
+func (a *app) askToEnlarge() string {
+	message := lipgloss.JoinVertical(
+		lipgloss.Center,
+		bold.Render("Window too small"),
+		"Make it larger",
+		"",
+		dim.Render("even mini can't make things this small"),
+	)
+	return a.fit(lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, message))
 }
 
 func (a *app) tooSmall() bool {
