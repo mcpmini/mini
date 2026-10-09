@@ -207,7 +207,7 @@ func TestRemoveServerFromAgent_anAddOfTheNameWaitsUntilTheRemoveFinishes(t *test
 	t.Cleanup(resume) // closing the server needs authMu, even when the test stops early
 	removed := make(chan struct{})
 	go func() { defer close(removed); _, _ = srv.removeServerFromAgent("svc") }() // the outcome checked is the add's
-	waitUntil(t, "the remove holds svc", func() bool { return srv.NameLockCallers("svc") == 1 })
+	waitUntil(t, "the remove holds svc", func() bool { return srv.NameLockHeld("svc") })
 
 	added := make(chan struct{})
 	go func() {
@@ -282,7 +282,7 @@ func TestAddServerFromAgent_aTokenRefreshForTheNamesEarlierServerLeavesNoToken(t
 		_, err := srv.addServerFromAgent(context.Background(), &config.ServerConfig{Name: "svc", Command: echomcp})
 		added <- err
 	}()
-	waitUntil(t, "the add holds svc", func() bool { return srv.NameLockCallers("svc") == 1 })
+	waitUntil(t, "the add holds svc", func() bool { return srv.NameLockHeld("svc") })
 	finishRefresh()
 	waitForChannel(t, "the refresh saves its token", refreshed)
 	resume()
@@ -363,7 +363,7 @@ func TestRemoveServerFromAgent_aTokenRefreshFinishingMidRemoveLeavesNoToken(t *t
 	t.Cleanup(resume) // closing the server needs authMu, even when the test stops early
 	removed := make(chan struct{})
 	go func() { defer close(removed); _, _ = srv.removeServerFromAgent("svc") }()
-	waitUntil(t, "the remove holds svc", func() bool { return srv.NameLockCallers("svc") == 1 })
+	waitUntil(t, "the remove holds svc", func() bool { return srv.NameLockHeld("svc") })
 	finishRefresh()
 	waitForChannel(t, "the refresh saves its token", refreshed)
 	resume()
