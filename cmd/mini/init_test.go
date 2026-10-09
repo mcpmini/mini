@@ -442,3 +442,14 @@ func filesUnder(t *testing.T, root string) map[string]string {
 	}
 	return files
 }
+
+func TestIsTerminalRejectsNullDevice(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if isTerminal(f) {
+		t.Fatal("null device was classified as an interactive terminal")
+	}
+}
