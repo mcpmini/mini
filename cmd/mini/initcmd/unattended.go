@@ -31,11 +31,15 @@ type Report struct {
 	WriteErrors        []ServerError
 	Servers            []ServerStatus
 	Agents             AgentConnections
-	ReadServersErr     error
+	// Connected holds the agents init tried to connect. Nil means it tried none, and the summary
+	// says how to connect each agent by hand.
+	Connected      []AgentResult
+	ReadServersErr error
 }
 
 func (r Report) Failed() bool {
-	return len(r.WriteErrors) > 0 || len(r.Import.Unreadable) > 0 || r.ReadServersErr != nil
+	return len(r.WriteErrors) > 0 || len(r.Import.Unreadable) > 0 || r.ReadServersErr != nil ||
+		slices.ContainsFunc(r.Connected, func(result AgentResult) bool { return result.Err != nil })
 }
 
 // Available is the catalog servers mini doesn't have yet.

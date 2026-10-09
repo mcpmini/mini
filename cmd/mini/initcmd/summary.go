@@ -20,7 +20,11 @@ func Summary(r Report) string {
 	writeStaticHeaders(&b, r)
 	writeSkipped(&b, r)
 	writeFailures(&b, r)
-	writeHandConnect(&b, r.Agents)
+	if r.Connected == nil {
+		writeHandConnect(&b, r.Agents)
+	} else {
+		writeConnected(&b, r)
+	}
 	return b.String()
 }
 

@@ -185,10 +185,7 @@ func (s *loginsScreen) body(int) string {
 	if s.err != nil {
 		return "mini's servers couldn't be read: " + s.err.Error()
 	}
-	width := 0
-	for _, status := range s.rows {
-		width = max(width, len(status.Name))
-	}
+	width := widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
 	var lines []string
 	section := ""
 	for i, status := range s.rows {
@@ -199,7 +196,7 @@ func (s *loginsScreen) body(int) string {
 			section = s.section(status)
 			lines = append(lines, bold.Render(section))
 		}
-		lines = append(lines, s.cursorMark(i)+fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status)))
+		lines = append(lines, cursorMark(i == s.cursor)+fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status)))
 		if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
 			lines = append(lines, s.urlLines(4+width)...)
 		}
@@ -208,7 +205,7 @@ func (s *loginsScreen) body(int) string {
 		// The last check cleared the final row while the screen was shown.
 		lines = append(lines, "Every server works; nothing is left to set up.")
 	}
-	return strings.Join(append(lines, "", s.cursorMark(len(s.rows))+"Continue →"), "\n")
+	return strings.Join(append(lines, "", cursorMark(s.cursor == len(s.rows))+"Continue →"), "\n")
 }
 
 const (
@@ -235,13 +232,6 @@ func (s *loginsScreen) urlLines(indent int) []string {
 
 func (s *loginsScreen) resize(width int) {
 	s.width = width
-}
-
-func (s *loginsScreen) cursorMark(i int) string {
-	if i == s.cursor {
-		return "> "
-	}
-	return "  "
 }
 
 func (s *loginsScreen) state(status initcmd.ServerStatus) string {

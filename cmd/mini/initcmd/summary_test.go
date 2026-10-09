@@ -182,3 +182,64 @@ func TestHandConnectSteps(t *testing.T) {
 		)
 	}
 }
+
+func TestSummary_connectedAgents(t *testing.T) {
+	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
+	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"}
+	got := Summary(Report{Agents: AgentConnections{Mini: mini}, Connected: []AgentResult{
+		{Agent: claude, Backup: "/home/u/.claude.minibackup.json"},
+		{Agent: cursor, Created: true},
+		{Agent: codex, Err: errors.New("parse config.toml: bad table")},
+	}})
+	requireLines(t, got,
+		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json\n",
+		"Cursor: created /home/u/.cursor/mcp.json\n",
+		"Couldn't connect Codex: parse config.toml: bad table\nAdd mini to /home/u/.codex/config.toml by hand:\n"+
+			"  [mcp_servers.mini]\n",
+		"Restart Claude Code and Cursor to start using mini.\n",
+	)
+	if strings.Contains(got, "To connect mini to your agents") {
+		t.Errorf("summary:\n%s\nwant no hand steps: every agent was tried", got)
+	}
+}
+
+func TestJoinAnd(t *testing.T) {
+	for want, names := range map[string][]string{
+		"":           nil,
+		"a":          {"a"},
+		"a and b":    {"a", "b"},
+		"a, b and c": {"a", "b", "c"},
+	} {
+		if got := JoinAnd(names); got != want {
+			t.Errorf("JoinAnd(%q) = %q, want %q", names, got, want)
+		}
+	}
+}
+
+func TestSummary_anAgentLeftUntickedKeepsItsHandStep(t *testing.T) {
+	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
+	got := Summary(Report{
+		Agents:    AgentConnections{Mini: mini, MiniServes: []agents.Agent{claude}, NoMini: []agents.Agent{cursor}},
+		Connected: []AgentResult{{Agent: claude, Backup: "/home/u/.claude.minibackup.json"}},
+	})
+	requireLines(t, got, "To connect mini to your agents:\n  Cursor (/home/u/.cursor/mcp.json):\n")
+	if strings.Contains(got, "Claude Code (/home/u/.claude.json)") {
+		t.Errorf("summary:\n%s\nwant no hand step for Claude Code, which was connected", got)
+	}
+}
+
+func TestReport_failsWhenAnAgentCouldNotBeConnected(t *testing.T) {
+	failed := Report{
+		Connected: []AgentResult{{Agent: agents.Agent{Name: "Codex"}, Err: errors.New("permission denied")}},
+	}
+	if !failed.Failed() {
+		t.Error("a run that couldn't connect Codex reads as finished, so init exits 0")
+	}
+	if (Report{Connected: []AgentResult{{Agent: agents.Agent{Name: "Codex"}}}}).Failed() {
+		t.Error("a run that connected Codex reads as failed")
+	}
+}

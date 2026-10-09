@@ -28,7 +28,7 @@ type Outcome struct {
 	Report initcmd.Report
 }
 
-// Run shows the screens and writes the picks when the user moves past Catalog.
+// Run shows the screens, saves the picks on leaving Catalog, and connects the picked agents on finishing.
 func Run(p Params) (Outcome, error) {
 	plan, err := p.Setup.Plan()
 	if err != nil {
@@ -73,13 +73,22 @@ func (r *run) outcome(leftEarly bool) Outcome {
 		r.session.WaitChecks()
 	}
 	r.plan.Catalog = r.ui.catalog(r.plan)
-	return Outcome{Quit: leftEarly, Saved: true, Report: r.p.Setup.Report(r.plan, r.session, r.last)}
+	var connected []initcmd.AgentResult
+	// A ctrl+c queued behind the enter that chose to connect still ends the run early.
+	if !leftEarly {
+		connected = r.p.Setup.Connect(context.Background(), r.ui.connects.picked(), r.ui.connects.chosen)
+	}
+	// The report reads the agents' configs, so it follows the connect that changed them.
+	report := r.p.Setup.Report(r.plan, r.session, r.last)
+	report.Connected = connected
+	return Outcome{Quit: leftEarly, Saved: true, Report: report}
 }
 
 type screens struct {
 	imports  *importScreen
 	catalogs *catalogScreen
 	logins   *loginsScreen
+	connects *connectScreen
 }
 
 func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens {
@@ -91,7 +100,11 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 		// Nothing to look at while it loads, so wait: if the catalog is empty too, Catalog is skipped.
 		catalogs.update(catalogs.start()())
 	}
-	ui := screens{imports: imports, catalogs: catalogs}
+	ui := screens{
+		imports:  imports,
+		catalogs: catalogs,
+		connects: newConnectScreen(p.Setup.AgentsToConnect, p.Setup.AgentsWithMini()),
+	}
 	ui.logins = newLoginsScreen(loginsParams{
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			return initcmd.ServerStatuses(p.Setup.ConfigDir, ui.catalog(*plan))
@@ -104,7 +117,7 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 }
 
 func (ui screens) list() []screen {
-	return []screen{ui.imports, ui.catalogs, ui.logins}
+	return []screen{ui.imports, ui.catalogs, ui.logins, ui.connects}
 }
 
 // The picks are written on leaving Catalog, so Logins works on configured servers.

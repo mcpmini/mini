@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mcpmini/mini/internal/agents"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -65,6 +66,17 @@ var (
 		"the agent's mini entry may not run these servers: it's switched off, uses another config directory, or doesn't start mini connect by absolute path",
 	)
 )
+
+func (s Setup) Connect(ctx context.Context, list []agents.Agent, choice ConnectChoice) []AgentResult {
+	return Apply(ctx, ApplyParams{
+		ConfigDir: s.ConfigDir,
+		Agents:    list,
+		Choice:    choice,
+		Mini:      MiniCommand(s.ConfigDir),
+		SelfPath:  s.SelfPath,
+		Now:       clock.System().Now(),
+	})
+}
 
 // Apply connects mini to each agent in turn. A failed agent doesn't stop the others; once ctx is
 // cancelled no further agent is edited.

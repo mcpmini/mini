@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/testutil"
@@ -19,12 +20,10 @@ func homeWithClaudeServers(t *testing.T) string {
 	return home
 }
 
-func TestIntegrationInitUI_writesTheTickedImportsAndCatalogServersAndPrintsTheSummary(t *testing.T) {
+func TestIntegrationInitUI_writesTheTickedServersConnectsTheAgentAndPrintsTheSummary(t *testing.T) {
 	configDir := t.TempDir()
-	term := startTerminal(
-		t,
-		terminalParams{home: homeWithClaudeServers(t), configDir: configDir, args: []string{"init"}},
-	)
+	home := homeWithClaudeServers(t)
+	term := startTerminal(t, terminalParams{home: home, configDir: configDir, args: []string{"init"}})
 
 	term.waitFor("Import servers from Claude Code")
 	term.waitFor("[x] files")
@@ -34,7 +33,10 @@ func TestIntegrationInitUI_writesTheTickedImportsAndCatalogServersAndPrintsTheSu
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "enter")
 	term.waitFor("sentry  needs a login")
 	term.press("down", "enter")
+	term.waitFor("Connect mini to Claude Code")
+	term.press("enter")
 	term.waitFor("mini is set up with 2 servers")
+	term.waitFor("Restart Claude Code to start using mini.")
 
 	if code := term.exitCode(); code != 0 {
 		t.Errorf("exit code = %d, want 0; screen:\n%s", code, term.text())
@@ -44,6 +46,14 @@ func TestIntegrationInitUI_writesTheTickedImportsAndCatalogServersAndPrintsTheSu
 	}
 	if term.altScreen() {
 		t.Error("the terminal is still on the alternate screen after init")
+	}
+	agentConfig := string(testutil.ReadFile(t, filepath.Join(home, ".claude.json")))
+	if !strings.Contains(agentConfig, `"mini"`) || !strings.Contains(agentConfig, `"files"`) {
+		t.Errorf(".claude.json = %s\nwant a mini entry added next to the existing servers", agentConfig)
+	}
+	backup := string(testutil.ReadFile(t, filepath.Join(home, ".claude.minibackup.json")))
+	if strings.Contains(backup, `"mini"`) {
+		t.Errorf("backup = %s, want the config as it was before init", backup)
 	}
 }
 
