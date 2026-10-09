@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -9,6 +10,19 @@ import (
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/testutil"
 )
+
+func TestDefaultConfigDir_RequiresUserHome(t *testing.T) {
+	if runtime.GOOS == "plan9" {
+		t.Skip("Plan 9 resolves home from $home, not HOME or USERPROFILE")
+	}
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	dir, err := config.DefaultConfigDir()
+	if err == nil || dir != "" || !strings.Contains(err.Error(), "resolve user home directory") {
+		t.Fatalf("DefaultConfigDir() = (%q, %v), want empty path and home resolution error", dir, err)
+	}
+}
 
 func mustLoadOneServer(t *testing.T, dir string) config.ServerConfig {
 	t.Helper()

@@ -53,11 +53,28 @@ func TestMiniCommandArgs(t *testing.T) {
 		func(string) (string, error) { return "", errors.New("not found") },
 	}
 	t.Setenv("HOME", t.TempDir())
-	if got := lookup.miniCommand(config.DefaultConfigDir()).Args; !reflect.DeepEqual(got, []string{"connect"}) {
+	defaultDir, err := config.DefaultConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lookup.miniCommand(defaultDir).Args; !reflect.DeepEqual(got, []string{"connect"}) {
 		t.Errorf("args for the default config dir = %v, want [connect]", got)
 	}
 	other := t.TempDir()
 	if got := lookup.miniCommand(other).Args; !reflect.DeepEqual(got, []string{"--config", other, "connect"}) {
 		t.Errorf("args for another config dir = %v, want --config %s connect", got, other)
+	}
+}
+
+func TestMiniCommandArgs_UsesExplicitConfigWhenHomeUnavailable(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	dir := t.TempDir()
+	lookup := binaryLookup{
+		func() (string, error) { return "/opt/mini", nil },
+		func(string) (string, error) { return "", errors.New("not found") },
+	}
+	if got := lookup.miniCommand(dir).Args; !reflect.DeepEqual(got, []string{"--config", dir, "connect"}) {
+		t.Fatalf("args = %v, want --config %s connect", got, dir)
 	}
 }
