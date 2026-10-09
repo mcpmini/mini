@@ -243,6 +243,10 @@ func TestSummary_aTemporaryMiniIsNeverTheStepToConnect(t *testing.T) {
 			Agents:    temporary(AgentConnections{NoMini: []agents.Agent{cursor, codex}}),
 			Connected: []AgentResult{{Agent: codex, Backup: "/home/u/.codex/config.minibackup.toml"}},
 		},
+		"an agent that failed before its entry was read": {
+			Agents:    temporary(AgentConnections{NoMini: []agents.Agent{cursor}}),
+			Connected: []AgentResult{{Agent: cursor, Err: context.Canceled}},
+		},
 		"an agent that failed to connect": {
 			Agents:    temporary(AgentConnections{NoMini: []agents.Agent{cursor}}),
 			Connected: []AgentResult{{Agent: cursor, Err: errors.New("permission denied")}},
@@ -308,8 +312,8 @@ func TestSummary_anAgentThatKeptItsOwnMiniIsNotToldToRepointIt(t *testing.T) {
 			Agent: codex, ExistingMini: MiniEntryServes, Err: errors.New("permission denied"),
 		}},
 	})
-	if strings.Contains(got, "install mini somewhere permanent") {
-		t.Errorf("summary:\n%s\nwant no install step for Codex, which kept its own mini entry", got)
+	if strings.Contains(got, "install mini somewhere permanent") || strings.Contains(got, mini.Command) {
+		t.Errorf("summary:\n%s\nwant no step for Codex, which has its own mini entry", got)
 	}
 }
 

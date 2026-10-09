@@ -117,7 +117,9 @@ func notTried(r Report) []agents.Agent {
 func writeAgentHeading(b *strings.Builder, r Report, result AgentResult) {
 	name, file, mini := result.Agent.Name, result.Agent.ConfigPath, r.Agents.Mini
 	switch {
-	case result.Err != nil && r.Agents.TemporaryMini != "" && result.ExistingMini == NoMiniEntry:
+	case result.Err != nil && r.Agents.hasMini(result.Agent):
+		fmt.Fprintf(b, "\nCouldn't connect %s: %v\n", name, result.Err)
+	case result.Err != nil && r.Agents.TemporaryMini != "":
 		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nTo connect it, %s.\n", name, result.Err, r.Agents.installFirst())
 	case result.Err != nil:
 		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nAdd mini to %s by hand:\n%s\n",
