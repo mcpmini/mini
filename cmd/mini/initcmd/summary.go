@@ -95,11 +95,6 @@ func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width i
 	return "run: " + miniCommand(mini, "auth", s.Name)
 }
 
-// SetupStep words a server's finishing step as the summary does.
-func SetupStep(configDir string, s ServerStatus) string {
-	return finishStep(configDir, MiniCommand(configDir), s, 0)
-}
-
 // TokenEnvVar is the variable the token setup step tells the user to hold a server's token in.
 func TokenEnvVar(serverName string) string {
 	return strings.ToUpper(strings.ReplaceAll(serverName, "-", "_")) + "_TOKEN"

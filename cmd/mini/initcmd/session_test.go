@@ -208,6 +208,19 @@ func TestSessionChecks_onlyWrittenHTTPServersWithoutCredentials(t *testing.T) {
 	}
 }
 
+func TestSessionChecks_aBrokenUnrelatedServerFileDoesNotStopTheChecks(t *testing.T) {
+	probe := newFakeProbe(false)
+	s, dir := newTestSession(t, probe, clock.System())
+	testutil.WriteFile(t, config.ServerPath(dir, "broken"), "transport: [unclosed\n")
+
+	s.Sync([]config.ServerConfig{httpServer("open", "https://open.example/mcp")})
+	s.Close()
+
+	if probed, _ := probe.counts(); !reflect.DeepEqual(probed, []string{"open"}) {
+		t.Errorf("probed = %v, want open checked despite the broken servers/broken.yaml", probed)
+	}
+}
+
 func TestSessionChecks_resyncCancelsWaitsAndChecksAgain(t *testing.T) {
 	probe := newFakeProbe(true)
 	s, _ := newTestSession(t, probe, clock.System())
@@ -240,7 +253,7 @@ func TestSessionChecks_aTimedOutCheckIsDone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fake.Advance(OAuthCheckTimeout)
+	fake.Advance(oauthCheckTimeout)
 	waitChanged(t, s)
 
 	if s.Running()["open"] {
