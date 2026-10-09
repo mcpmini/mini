@@ -5,7 +5,8 @@ import (
 	"slices"
 )
 
-// Run is one init run, from its first save to its report.
+// Run is one init run, from its first save to its report. Checking and ChecksChanged are safe from
+// any goroutine; the other methods belong to one.
 type Run struct {
 	Plan    Plan
 	setup   Setup
