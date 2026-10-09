@@ -62,7 +62,7 @@ func (t resourceTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		return t.base.RoundTrip(req)
 	}
 	body, err := io.ReadAll(req.Body)
-	req.Body.Close() //nolint:errcheck // the body is consumed below; the read error is authoritative and Close releases its source
+	req.Body.Close() //nolint:errcheck // the read error is authoritative; this source is no longer used
 	if err != nil {
 		return nil, err
 	}

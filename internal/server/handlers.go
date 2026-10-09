@@ -90,7 +90,10 @@ func (s *Server) listDetail(fullName string) (any, error) {
 	if err != nil {
 		return s.toolNotFoundError(err, server, tool)
 	}
-	m := e.Def.ToMap()
+	m, err := e.Def.ToMap()
+	if err != nil {
+		return nil, fmt.Errorf("tool %q: %w", e.FullName, err)
+	}
 	m["name"] = e.FullName
 	m["server"] = e.Server
 	m["permission"] = e.Permission

@@ -68,7 +68,7 @@ func listenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, e
 func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener) (*BrowserLogin, error) {
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
-		listener.Close() //nolint:errcheck // no server owns this listener yet, so close it before returning the address-type error
+		listener.Close() //nolint:errcheck // cleanup must not replace the address-type error
 		return nil, fmt.Errorf("oauth callback listener has unexpected address type %T", listener.Addr())
 	}
 	cfg, verifier, state := buildPKCEConfig(ac, tcpAddr.Port)
@@ -163,9 +163,7 @@ func (l *BrowserLogin) reportServeFailure(err error) {
 	}
 }
 
-// http.Server.Close only flags a Serve goroutine that has not started yet; that goroutine closes the
-// listener when it runs, so the port is free only once it has exited.
 func (l *BrowserLogin) stopServing() {
-	l.server.Close() //nolint:errcheck // Serve owns listener closure; stopServing joins it before returning
+	l.server.Close() //nolint:errcheck // Close can precede Serve starting; joining Serve ensures the listener is closed
 	l.serving.Wait()
 }
