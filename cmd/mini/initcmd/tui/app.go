@@ -189,7 +189,8 @@ func (a *app) askToEnlarge() string {
 		bold.Render("Window too small"),
 		"Make it larger",
 		"",
-		dim.Render("even mini can't make things this small"),
+		dim.Render("even mini can't make"),
+		dim.Render("things this small"),
 	)
 	return a.fit(lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, message))
 }
