@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"testing/synctest"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -65,7 +66,7 @@ func connectScreenFor(
 		plan:     func() (connectPlan, error) { return plan, nil },
 	})
 	s.resize(200)
-	t.Cleanup(s.checks.cancel)
+	t.Cleanup(s.checks.cancelAndWait)
 	return s, s.enter()
 }
 
@@ -184,7 +185,7 @@ func TestConnectScreen_removingWaitsForTheChecksThenCountsTheTickedAgents(t *tes
 	if move, _ := s.handle(press("enter")); move != forward || s.chosen != initcmd.ConnectAndRemove {
 		t.Fatalf("enter on removing = %v, chosen %v; want forward with removing", move, s.chosen)
 	}
-	if got := s.connectParams().Removals.ByAgent["Claude"]; strings.Join(got, ",") != "files,notes" {
+	if got := s.chosenConnect().Removals.ByAgent["Claude"]; strings.Join(got, ",") != "files,notes" {
 		t.Errorf("removals passed on = %v, want Claude's files and notes", got)
 	}
 }
@@ -195,11 +196,44 @@ func TestConnectScreen_leavingCancelsTheRunningChecks(t *testing.T) {
 	if move, _ := s.handle(press("esc")); move != back {
 		t.Fatalf("esc = %v, want back", move)
 	}
-	select {
-	case <-plan.cancelled:
-	default:
-		t.Error("esc returned before the running checks were cancelled")
-	}
+	<-plan.cancelled
+}
+
+func TestConnectScreen_leavingDoesNotWaitForTheChecksToStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		stuck := &stuckPlan{unblock: make(chan struct{})}
+		s := newConnectScreen(connectParams{
+			agents: namedAgents("Claude"),
+			plan:   func() (connectPlan, error) { return stuck, nil },
+		})
+		s.enter()
+		left := make(chan step, 1)
+		go func() {
+			move, _ := s.handle(press("esc"))
+			left <- move
+		}()
+		synctest.Wait()
+		select {
+		case move := <-left:
+			if move != back {
+				t.Errorf("esc = %v, want back", move)
+			}
+		default:
+			t.Error("esc waited for a check that hadn't stopped yet")
+		}
+		close(stuck.unblock)
+		s.checks.cancelAndWait()
+	})
+}
+
+// stuckPlan's check ignores cancellation, as a server that is slow to close does.
+type stuckPlan struct{ unblock chan struct{} }
+
+func (*stuckPlan) HasDuplicates(string) bool { return true }
+
+func (p *stuckPlan) Check(context.Context) initcmd.Removals {
+	<-p.unblock
+	return initcmd.Removals{}
 }
 
 func TestConnectScreen_aCheckRunFromAnEarlierVisitIsIgnored(t *testing.T) {

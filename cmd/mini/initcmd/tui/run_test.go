@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -398,6 +400,31 @@ func TestRun_connectAndRemove(t *testing.T) {
 		if got := out.Report.Connected; len(got) != 1 || strings.Join(got[0].Removed, ",") != "files" {
 			t.Errorf("connected = %+v, want files removed from Claude Code", got)
 		}
+	})
+	t.Run("quitting while the checks run returns only once they stopped", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			configDir := t.TempDir()
+			configtest.WriteServer(t, configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+			setup := setupFor(configDir)
+			setup.AgentsToConnect = []agents.Agent{claudeWithServers(t)}
+			var stopped atomic.Bool
+			setup.Probe = func(ctx context.Context, _ string, _ config.ServerConfig) error {
+				<-ctx.Done()
+				time.Sleep(time.Second) // closing the probed server's process
+				stopped.Store(true)
+				return ctx.Err()
+			}
+			quitWhileChecking := func(m tea.Model) error {
+				m.Update(press("ctrl+c"))
+				return nil
+			}
+			if _, err := Run(Params{Setup: setup, LoadCatalog: noCatalog, Program: quitWhileChecking}); err != nil {
+				t.Fatal(err)
+			}
+			if !stopped.Load() {
+				t.Error("Run returned while a check's server was still closing")
+			}
+		})
 	})
 	t.Run("an entry whose mini copy failed its check stays", func(t *testing.T) {
 		claude, out := run(t, errors.New("connection refused"))

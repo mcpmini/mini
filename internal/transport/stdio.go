@@ -49,7 +49,10 @@ func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, 
 	return c, nil
 }
 
-const stdioWaitDelay = 2 * time.Second
+// The server's own stderr is drained within milliseconds of the kill; only a child that outlives
+// it keeps the pipe open longer, and what it writes once the server is gone doesn't matter, so the
+// delay only bounds how long closing stalls.
+const stdioWaitDelay = 500 * time.Millisecond
 
 func startSubprocess(p StdioCommand) (*StdioConnection, error) {
 	// background context: stdio MCP connections are long-running

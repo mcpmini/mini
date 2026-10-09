@@ -285,6 +285,6 @@ func (s *connectScreen) picked() []agents.Agent {
 	return picked
 }
 
-func (s *connectScreen) connectParams() initcmd.ConnectParams {
+func (s *connectScreen) chosenConnect() initcmd.ConnectParams {
 	return initcmd.ConnectParams{Agents: s.picked(), Choice: s.chosen, Removals: s.checks.removals}
 }

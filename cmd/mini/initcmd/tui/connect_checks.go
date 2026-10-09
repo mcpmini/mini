@@ -18,6 +18,7 @@ type connectChecks struct {
 	runs     int
 	stop     context.CancelFunc
 	ended    chan struct{}
+	stopping []chan struct{}
 	done     bool
 	removals initcmd.Removals
 }
@@ -44,11 +45,20 @@ func (c *connectChecks) finished(msg connectChecked) {
 	}
 }
 
+// Closing a probed server can take a moment, so leaving Connect doesn't wait for it; Run does.
 func (c *connectChecks) cancel() {
 	if c.stop == nil {
 		return
 	}
 	c.stop()
-	<-c.ended // a probe can start a server's process, which must not outlive the screen
+	c.stopping = append(c.stopping, c.ended)
 	c.stop, c.ended = nil, nil
+}
+
+func (c *connectChecks) cancelAndWait() {
+	c.cancel()
+	for _, ended := range c.stopping {
+		<-ended // a probe can start a server's process, which must not outlive init
+	}
+	c.stopping = nil
 }
