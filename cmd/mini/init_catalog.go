@@ -20,7 +20,7 @@ import (
 type catalogStepParams struct {
 	configDir   string
 	loadCatalog func() ([]catalog.Entry, error)
-	ask         func(string) string
+	ask         func(string) (string, error)
 	out         io.Writer
 	errOut      io.Writer
 }
@@ -60,7 +60,9 @@ func runCatalogStep(p catalogStepParams) error {
 	if len(available) == 0 {
 		return nil
 	}
-	printCatalogEntries(p.out, available)
+	if err := printCatalogEntries(p.out, available); err != nil {
+		return err
+	}
 	return selectCatalogEntries(p, available)
 }
 
@@ -74,15 +76,19 @@ func availableCatalogEntries(entries []catalog.Entry, servers []config.ServerCon
 	return initcmd.GroupByCategory(initcmd.AvailableEntries(entries, servers))
 }
 
-func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
-	fmt.Fprintln(out, "Available MCP servers:")
+func printCatalogEntries(out io.Writer, entries []catalog.Entry) error {
+	if _, err := fmt.Fprintln(out, "Available MCP servers:"); err != nil {
+		return err
+	}
 	category := ""
 	for i, entry := range entries {
 		if entry.Category != category {
 			category = entry.Category
-			fmt.Fprintf(out, "  %s:\n", category)
+			if _, err := fmt.Fprintf(out, "  %s:\n", category); err != nil {
+				return err
+			}
 		}
-		fmt.Fprintf(
+		if _, err := fmt.Fprintf(
 			out,
 			"    %d. %s [%s] - %s%s\n",
 			i+1,
@@ -90,8 +96,11 @@ func printCatalogEntries(out io.Writer, entries []catalog.Entry) {
 			entryHost(entry.URL),
 			entry.Description,
 			authLabel(entry.Auth),
-		)
+		); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func authLabel(auth string) string {
@@ -116,12 +125,13 @@ func entryHost(rawURL string) string {
 
 func selectCatalogEntries(p catalogStepParams, entries []catalog.Entry) error {
 	for {
-		indexes, err := parseCatalogSelection(
-			p.ask("Select servers (numbers, ranges, a = all, empty = none)"),
-			len(entries),
-		)
+		answer, err := p.ask("Select servers (numbers, ranges, a = all, empty = none)")
 		if err != nil {
-			fmt.Fprintln(p.errOut, "invalid selection:", err)
+			return err
+		}
+		indexes, err := parseCatalogSelection(answer, len(entries))
+		if err != nil {
+			printNotice(p.errOut, "invalid selection: %v\n", err)
 			continue
 		}
 		written, err := writeCatalogEntries(p, entries, indexes)
@@ -142,7 +152,7 @@ func printSetupNotes(p catalogStepParams, entries []catalog.Entry, indexes []int
 		default:
 			continue
 		}
-		fmt.Fprintf(p.out, "%s %s\n", e.Name, initcmd.SetupStep(p.configDir, status))
+		printNotice(p.out, "%s %s\n", e.Name, initcmd.SetupStep(p.configDir, status))
 	}
 }
 
@@ -203,7 +213,7 @@ func writeCatalogEntries(p catalogStepParams, entries []catalog.Entry, indexes [
 	for _, index := range indexes {
 		added, err := ops.AddServer(p.configDir, initcmd.CatalogServer(entries[index]))
 		if errors.Is(err, ops.ErrAlreadyConfigured) {
-			fmt.Fprintf(p.out, "  %s already configured in mini\n", entries[index].Name)
+			printNotice(p.out, "  %s already configured in mini\n", entries[index].Name)
 			continue
 		}
 		if err != nil {

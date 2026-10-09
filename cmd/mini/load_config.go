@@ -41,7 +41,7 @@ func loadOneServer(configDir, name string, warnings io.Writer) (*config.Config, 
 
 func warnServerProblems(out io.Writer, servers config.Servers) {
 	for _, se := range servers.Broken {
-		fmt.Fprintf(out, "warning: skipping server %s: %v\n", se.ServerName, se.Err)
+		printNotice(out, "warning: skipping server %s: %v\n", se.ServerName, se.Err)
 	}
 	for _, se := range servers.BrokenProjections() {
 		warnUnprojected(out, se)
@@ -49,5 +49,5 @@ func warnServerProblems(out io.Writer, servers config.Servers) {
 }
 
 func warnUnprojected(out io.Writer, se config.SourceError) {
-	fmt.Fprintf(out, "warning: skipping the projections of server %s: %v\n", se.ServerName, se.Err)
+	printNotice(out, "warning: skipping the projections of server %s: %v\n", se.ServerName, se.Err)
 }

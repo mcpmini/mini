@@ -82,7 +82,8 @@ func catalogEntryFor(sc config.ServerConfig, entries []catalog.Entry) (catalog.E
 
 // A refreshable token needs no login; ReadTokenState already counts it as usable.
 func needsLogin(configDir, name string) bool {
-	state, _ := auth.ReadTokenState(configDir, name) // nolint: errcheck // unreadable reads as needing a login
+	//nolint:errcheck // Unreadable token state conservatively requires login.
+	state, _ := auth.ReadTokenState(configDir, name)
 	return state.NeedsLogin()
 }
 

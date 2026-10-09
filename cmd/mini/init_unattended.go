@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 
+	"github.com/charmbracelet/x/term"
+
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
 	"github.com/mcpmini/mini/internal/agents"
@@ -107,12 +109,11 @@ func importSources(f initFlags) ([]agents.Agent, error) {
 }
 
 func isTerminal(f *os.File) bool {
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return term.IsTerminal(f.Fd())
 }
 
 func printNoTerminalHelp(w io.Writer) {
-	fmt.Fprint(w, noTerminalHelp)
+	printNotice(w, "%s", noTerminalHelp)
 }
 
 var (

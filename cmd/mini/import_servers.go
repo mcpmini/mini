@@ -26,7 +26,7 @@ func importAgentConfig(configDir, source string, agent agents.Agent) []string {
 	imp := serverImport{configDir: configDir, source: source, out: os.Stdout, errOut: os.Stderr}
 	servers, err := agent.Read(agent.ConfigPath)
 	if err != nil {
-		fmt.Fprintf(imp.errOut, "  warning: %v\n", err)
+		printNotice(imp.errOut, "  warning: %v\n", err)
 		return nil
 	}
 	// Each failure was already warned about; init carries on either way.
@@ -42,7 +42,7 @@ func (imp serverImport) addAll(servers map[string]agents.Server) (added []string
 			continue
 		}
 		if reason := notImportedReason(server); reason != "" {
-			fmt.Fprintf(imp.out, "  %s: %s %s\n", imp.source, name, reason)
+			printNotice(imp.out, "  %s: %s %s\n", imp.source, name, reason)
 			continue
 		}
 		switch err := imp.add(server.Config); {
@@ -70,13 +70,13 @@ func notImportedReason(server agents.Server) string {
 func (imp serverImport) reportCaveats(name string, server agents.Server) {
 	path := config.ServerPath(imp.configDir, name)
 	if ignored := server.IgnoredRunSettings; len(ignored) > 0 {
-		fmt.Fprintf(imp.out, "  %s: %s\n", imp.source, initcmd.IgnoredSettingsNote(name, ignored, path))
+		printNotice(imp.out, "  %s: %s\n", imp.source, initcmd.IgnoredSettingsNote(name, ignored, path))
 	}
 	for _, note := range initcmd.StaticHeaderNotes(name, server.UnusedEnvHeaders, path) {
-		fmt.Fprintf(imp.out, "  %s: %s\n", imp.source, note)
+		printNotice(imp.out, "  %s: %s\n", imp.source, note)
 	}
 	if err := config.UnsetEnvRefs(server.Config); err != nil {
-		fmt.Fprintf(imp.out, "  %s: %s imported, but %v; set it, or edit %s\n", imp.source, name, err, path)
+		printNotice(imp.out, "  %s: %s imported, but %v; set it, or edit %s\n", imp.source, name, err, path)
 	}
 }
 
@@ -87,7 +87,7 @@ func (imp serverImport) add(sc config.ServerConfig) error {
 		return err
 	}
 	if err != nil {
-		fmt.Fprintf(imp.errOut, "  warning: %v\n", err)
+		printNotice(imp.errOut, "  warning: %v\n", err)
 		return err
 	}
 	printAdded(imp.out, added)
@@ -96,12 +96,12 @@ func (imp serverImport) add(sc config.ServerConfig) error {
 
 func printAdded(w io.Writer, added ops.AddedServer) {
 	if added.DefaultProjections {
-		fmt.Fprintf(w, "added %s → %s (with default projections)\n", added.Config.Name, added.Path)
+		printNotice(w, "added %s → %s (with default projections)\n", added.Config.Name, added.Path)
 	} else {
-		fmt.Fprintf(w, "added %s → %s\n", added.Config.Name, added.Path)
+		printNotice(w, "added %s → %s\n", added.Config.Name, added.Path)
 	}
 	if added.DefaultPermissions {
-		fmt.Fprintf(w, "applied default permissions → %s\n", added.Path)
+		printNotice(w, "applied default permissions → %s\n", added.Path)
 	}
 }
 
@@ -111,11 +111,11 @@ func (imp serverImport) reportConfigured(imported config.ServerConfig) {
 	differences, err := configuredDifferences(imp.configDir, imported)
 	switch {
 	case err != nil:
-		fmt.Fprintf(imp.out, "  %s: %s not imported, %v\n", imp.source, imported.Name, err)
+		printNotice(imp.out, "  %s: %s not imported, %v\n", imp.source, imported.Name, err)
 	case len(differences) == 0:
-		fmt.Fprintf(imp.out, "  %s: %s already configured in mini\n", imp.source, imported.Name)
+		printNotice(imp.out, "  %s: %s already configured in mini\n", imp.source, imported.Name)
 	default:
-		fmt.Fprintf(imp.out, "  %s: %s not imported, mini's config has a different %s (edit %s to change it)\n",
+		printNotice(imp.out, "  %s: %s not imported, mini's config has a different %s (edit %s to change it)\n",
 			imp.source, imported.Name, strings.Join(differences, ", "), path)
 	}
 }

@@ -68,8 +68,7 @@ func runInitCommand(configDir string, f initFlags) error {
 	case os.Getenv("MINI_NEW_INIT") == "1":
 		return runFullScreenInit(configDir)
 	}
-	runInit(configDir)
-	return nil
+	return runInit(configDir)
 }
 
 func addInitFlags(cmd *cobra.Command, f *initFlags) {
@@ -79,19 +78,27 @@ func addInitFlags(cmd *cobra.Command, f *initFlags) {
 	cmd.Flags().StringSliceVar(&f.add, "add", nil, "catalog servers to add, without asking (comma-separated names)")
 }
 
-func runInit(configDir string) {
+func runInit(configDir string) error {
 	p := prompter{in: bufio.NewScanner(os.Stdin), out: os.Stderr}
 	if err := createConfigDirs(configDir); err != nil {
-		fatalf("create config dirs: %v", err)
+		return fmt.Errorf("create config dirs: %w", err)
 	}
 	fmt.Printf("config directory: %s\n", configDir)
-	imported := importDetected(configDir, p.confirm)
+	imported, err := importDetected(configDir, p.confirm)
+	if err != nil {
+		return err
+	}
 	detectImportedOAuth(
 		oauthDetectParams{configDir: configDir, names: imported, clock: clock.System(), errOut: os.Stderr},
 	)
-	runInitCatalogSelection(catalogStepParams{configDir: configDir, ask: p.ask})
-	runLoginStep(newLoginStepParams(configDir, p))
+	if err := runInitCatalogSelection(catalogStepParams{configDir: configDir, ask: p.ask}); err != nil {
+		return err
+	}
+	if err := runLoginStep(newLoginStepParams(configDir, p)); err != nil {
+		return err
+	}
 	printHandConnectSteps(configDir)
+	return nil
 }
 
 func newLoginStepParams(configDir string, p prompter) loginStepParams {
@@ -105,34 +112,40 @@ func newLoginStepParams(configDir string, p prompter) loginStepParams {
 	}
 }
 
-func runInitCatalogSelection(p catalogStepParams) {
+func runInitCatalogSelection(p catalogStepParams) error {
 	p.loadCatalog, p.out, p.errOut = publishedCatalogSource().entries, os.Stdout, os.Stderr
-	if err := runCatalogStep(p); err != nil {
-		fatalf("catalog: %v", err)
-	}
+	return runCatalogStep(p)
 }
 
-func importDetected(configDir string, prompt func(string) bool) []string {
+func importDetected(configDir string, prompt func(string) (bool, error)) ([]string, error) {
 	detected := agents.Detect()
 	if len(detected) == 0 {
 		fmt.Println("no agent configs detected")
-		return nil
+		return nil, nil
 	}
 	var names []string
 	for _, a := range detected {
-		names = append(names, importAgentIfConfirmed(configDir, a, prompt)...)
+		imported, err := importAgentIfConfirmed(configDir, a, prompt)
+		if err != nil {
+			return names, err
+		}
+		names = append(names, imported...)
 	}
-	return names
+	return names, nil
 }
 
-func importAgentIfConfirmed(configDir string, a agents.Agent, prompt func(string) bool) []string {
+func importAgentIfConfirmed(configDir string, a agents.Agent, prompt func(string) (bool, error)) ([]string, error) {
 	q := fmt.Sprintf("import MCP servers from %s (%s)?", a.Name, a.ConfigPath)
-	if !prompt(q) {
-		return nil
+	ok, err := prompt(q)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
 	}
 	names := importAgentConfig(configDir, a.Name, a)
 	fmt.Printf("  imported %d server(s) from %s\n", len(names), a.Name)
-	return names
+	return names, nil
 }
 
 var fromClientNames = map[string]string{
@@ -188,15 +201,21 @@ type prompter struct {
 	out io.Writer
 }
 
-func (p prompter) ask(question string) string {
-	fmt.Fprintf(p.out, "%s: ", question)
-	if !p.in.Scan() {
-		return ""
+func (p prompter) ask(question string) (string, error) {
+	if _, err := fmt.Fprintf(p.out, "%s: ", question); err != nil {
+		return "", err
 	}
-	return strings.TrimSpace(p.in.Text())
+	if !p.in.Scan() {
+		return "", p.in.Err()
+	}
+	return strings.TrimSpace(p.in.Text()), nil
 }
 
-func (p prompter) confirm(question string) bool {
-	answer := strings.ToLower(p.ask(question + " [y/N]"))
-	return answer == "y" || answer == "yes"
+func (p prompter) confirm(question string) (bool, error) {
+	answer, err := p.ask(question + " [y/N]")
+	if err != nil {
+		return false, err
+	}
+	answer = strings.ToLower(answer)
+	return answer == "y" || answer == "yes", nil
 }

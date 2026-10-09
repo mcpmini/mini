@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -53,7 +55,7 @@ func newTestPrompter(input string) (prompter, *bytes.Buffer) {
 func TestPrompterAsk(t *testing.T) {
 	t.Run("trims the answer", func(t *testing.T) {
 		p, out := newTestPrompter("  hello \n")
-		if got := p.ask("Q"); got != "hello" {
+		if got, err := p.ask("Q"); got != "hello" || err != nil {
 			t.Errorf("ask = %q, want hello", got)
 		}
 		if out.String() != "Q: " {
@@ -62,8 +64,24 @@ func TestPrompterAsk(t *testing.T) {
 	})
 	t.Run("empty on EOF", func(t *testing.T) {
 		p, _ := newTestPrompter("")
-		if got := p.ask("Q"); got != "" {
+		if got, err := p.ask("Q"); got != "" || err != nil {
 			t.Errorf("ask at EOF = %q, want empty", got)
+		}
+	})
+	t.Run("writer failure does not read input", func(t *testing.T) {
+		reader := &countingReader{Reader: strings.NewReader("answer\n")}
+		p := prompter{in: bufio.NewScanner(reader), out: failedWriter{}}
+		if answer, err := p.ask("Q"); answer != "" || err == nil {
+			t.Errorf("ask = %q, %v, want writer error", answer, err)
+		}
+		if reader.reads != 0 {
+			t.Errorf("read input %d times after prompt write failed", reader.reads)
+		}
+	})
+	t.Run("scanner failure is returned", func(t *testing.T) {
+		p := prompter{in: bufio.NewScanner(errorReader{}), out: &bytes.Buffer{}}
+		if answer, err := p.ask("Q"); answer != "" || !errors.Is(err, errReadInput) {
+			t.Errorf("ask = %q, %v, want input read error", answer, err)
 		}
 	})
 }
@@ -74,16 +92,47 @@ func TestPrompterConfirm(t *testing.T) {
 		"n\n": false, "\n": false, "": false, "yep\n": false,
 	} {
 		p, _ := newTestPrompter(input)
-		if got := p.confirm("Q"); got != want {
+		if got, err := p.confirm("Q"); got != want || err != nil {
 			t.Errorf("confirm(%q) = %v, want %v", input, got, want)
 		}
 	}
 	p, out := newTestPrompter("y\n")
-	p.confirm("Import?")
+	_, _ = p.confirm("Import?")
 	if out.String() != "Import? [y/N]: " {
 		t.Errorf("confirm prompt = %q, want %q", out.String(), "Import? [y/N]: ")
 	}
 }
+
+func TestImportAgentIfConfirmedReturnsPromptError(t *testing.T) {
+	_, err := importAgentIfConfirmed(t.TempDir(), claudeCodeAt("/path/to/agent.json"), func(string) (bool, error) {
+		return false, errReadInput
+	})
+	if !errors.Is(err, errReadInput) {
+		t.Fatalf("importAgentIfConfirmed error = %v, want prompt error", err)
+	}
+}
+
+var errReadInput = errors.New("input read failed")
+
+type failedWriter struct{}
+
+func (failedWriter) Write([]byte) (int, error) { return 0, errors.New("output write failed") }
+
+type countingReader struct {
+	*strings.Reader
+	reads int
+}
+
+func (r *countingReader) Read(p []byte) (int, error) {
+	r.reads++
+	return r.Reader.Read(p)
+}
+
+type errorReader struct{}
+
+func (errorReader) Read([]byte) (int, error) { return 0, errReadInput }
+
+var _ io.Reader = errorReader{}
 
 func TestImportAgentConfig_NeverReplacesAConfiguredServer(t *testing.T) {
 	tests := []struct {
@@ -392,4 +441,15 @@ func filesUnder(t *testing.T, root string) map[string]string {
 		t.Fatal(err)
 	}
 	return files
+}
+
+func TestIsTerminalRejectsNullDevice(t *testing.T) {
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if isTerminal(f) {
+		t.Fatal("null device was classified as an interactive terminal")
+	}
 }

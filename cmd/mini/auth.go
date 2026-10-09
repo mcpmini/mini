@@ -82,12 +82,12 @@ func pkceFlowParamsFor(configDir string, cfg *config.Config, sc *config.ServerCo
 const loginTimeout = 5 * time.Minute
 
 func doPKCEFlow(p pkceFlowParams) (*oauth2.Token, error) {
-	fmt.Printf("Authorizing %s...\n", p.serverName)
+	printNotice(os.Stdout, "Authorizing %s...\n", p.serverName)
 	login, err := startBrowserLogin(context.Background(), p)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Open this URL in your browser:\n%s\n\n", login.url)
+	printNotice(os.Stdout, "Open this URL in your browser:\n%s\n\n", login.url)
 	return login.wait()
 }
 
@@ -138,9 +138,9 @@ func authOpener(cfg *config.Config, sc config.ServerConfig) func(string) error {
 
 func printAuthResult(out io.Writer, name string, expiry time.Time) {
 	if expiry.IsZero() {
-		fmt.Fprintf(out, "authorized %s (no expiry)\n", name)
+		printNotice(out, "authorized %s (no expiry)\n", name)
 	} else {
-		fmt.Fprintf(out, "authorized %s (expires %s)\n", name, expiry.Format(time.RFC3339))
+		printNotice(out, "authorized %s (expires %s)\n", name, expiry.Format(time.RFC3339))
 	}
 }
 
@@ -163,7 +163,7 @@ func injectToken(ctx context.Context, configDir string, sc *config.ServerConfig)
 		return
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mini: load token for %s: %v\n", sc.Name, err)
+		printNotice(os.Stderr, "mini: load token for %s: %v\n", sc.Name, err)
 		return
 	}
 	t, err = ensureValidToken(ctx, configDir, sc, t)
@@ -183,7 +183,7 @@ func ensureValidToken(
 		return t, nil
 	}
 	if t.RefreshToken == "" {
-		fmt.Fprintf(os.Stderr, "mini: token for %s is expired — run: mini auth %s\n", sc.Name, sc.Name)
+		printNotice(os.Stderr, "mini: token for %s is expired — run: mini auth %s\n", sc.Name, sc.Name)
 		return nil, fmt.Errorf("expired")
 	}
 	return refreshAndSaveToken(ctx, configDir, sc, t)
@@ -196,16 +196,16 @@ func refreshAndSaveToken(
 	t *oauth2.Token,
 ) (*oauth2.Token, error) {
 	if err := auth.ApplyResourceURL(sc); err != nil {
-		fmt.Fprintf(os.Stderr, "mini: resolve resource URL for %s: %v\n", sc.Name, err)
+		printNotice(os.Stderr, "mini: resolve resource URL for %s: %v\n", sc.Name, err)
 		return nil, err
 	}
 	refreshed, err := auth.Refresh(ctx, sc.Auth, t)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", sc.Name, sc.Name)
+		printNotice(os.Stderr, "mini: refresh token for %s failed — run: mini auth %s\n", sc.Name, sc.Name)
 		return nil, err
 	}
 	if saveErr := auth.Save(configDir, sc.Name, refreshed); saveErr != nil {
-		fmt.Fprintf(os.Stderr, "mini: save refreshed token for %s: %v\n", sc.Name, saveErr)
+		printNotice(os.Stderr, "mini: save refreshed token for %s: %v\n", sc.Name, saveErr)
 	}
 	return refreshed, nil
 }

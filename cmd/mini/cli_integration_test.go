@@ -454,3 +454,27 @@ func TestIntegrationCLI_add_protectedTool(t *testing.T) {
 		t.Errorf("YAML should contain both protected tools, got: %s", yaml)
 	}
 }
+
+func TestIntegrationCLI_init_nullDeviceRejectedBeforeWriting(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	f, err := os.OpenFile(os.DevNull, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	cfg := filepath.Join(t.TempDir(), "config")
+	cmd := exec.Command(miniBin(t), "--config", cfg, "init")
+	cmd.Stdin, cmd.Stdout = f, f
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	var exit *exec.ExitError
+	if err := cmd.Run(); !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("init error = %v, want exit 1", err)
+	}
+	if !strings.Contains(stderr.String(), "needs a terminal") {
+		t.Fatalf("missing terminal guidance: %s", stderr.String())
+	}
+	if _, err := os.Stat(cfg); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("init changed config before rejecting the terminal: %v", err)
+	}
+}

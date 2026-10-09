@@ -183,13 +183,13 @@ func importFromFlag(p addParams) error {
 		return err
 	}
 	if len(servers) == 0 {
-		fmt.Fprintf(p.out, "no MCP servers found in %s\n", src.path)
+		printNotice(p.out, "no MCP servers found in %s\n", src.path)
 		return nil
 	}
 	imp := serverImport{configDir: p.configDir, source: src.path, out: p.out, errOut: p.errOut}
 	added, failed := imp.addAll(servers)
 	if len(added) > 0 {
-		fmt.Fprintln(p.out, src.tip)
+		printNotice(p.out, "%s\n", src.tip)
 	}
 	if failed > 0 {
 		return fmt.Errorf("%d of %d servers in %s could not be added", failed, len(servers), src.path)
@@ -239,7 +239,7 @@ func runRemove(configDir string, args []string, out io.Writer) error {
 	if err := ops.RemoveServer(configDir, name); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "removed %s\n", name)
+	printNotice(out, "removed %s\n", name)
 	return nil
 }
 
@@ -255,7 +255,7 @@ func parseHeaders(pairs []string) map[string]string {
 func connectAndAuthorizeIfNeeded(configDir, name string, out io.Writer) {
 	scp, err := loadServerConfigForAdd(configDir, name)
 	if err != nil {
-		fmt.Fprintf(out, "warning: could not reload config to check for required auth: %v\n", err)
+		printNotice(out, "warning: could not reload config to check for required auth: %v\n", err)
 		return
 	}
 	if scp == nil {
@@ -301,11 +301,11 @@ func probeAndReload(configDir string, sc config.ServerConfig, out io.Writer) con
 	}
 	switch {
 	case connectErr == nil:
-		fmt.Fprintf(out, "connected to %s\n", sc.Name)
+		printNotice(out, "connected to %s\n", sc.Name)
 	case reloaded.Auth != nil && reloaded.Auth.Type == config.AuthTypeOAuth2:
 		// authorizeServer reports this case next; "could not connect" here would be misleading.
 	default:
-		fmt.Fprintf(out, "note: could not connect to %s yet; run `mini test` to retry\n", sc.Name)
+		printNotice(out, "note: could not connect to %s yet; run `mini test` to retry\n", sc.Name)
 	}
 	return *reloaded
 }
@@ -325,11 +325,11 @@ type authorizeParams struct {
 func authorizeServer(p authorizeParams) {
 	cfg, err := config.LoadMain(p.configDir)
 	if err != nil {
-		fmt.Fprintf(p.out, "warning: reload config for auth: %v\n", err)
+		printNotice(p.out, "warning: reload config for auth: %v\n", err)
 		return
 	}
-	fmt.Fprintf(p.out, "%s requires OAuth authorization\n", p.name)
+	printNotice(p.out, "%s requires OAuth authorization\n", p.name)
 	if _, err := logIn(logInParams{configDir: p.configDir, cfg: cfg, sc: &p.sc, out: p.out}); err != nil {
-		fmt.Fprintf(p.out, "note: automatic authorization failed (%v); run `mini auth %s` to retry\n", err, p.name)
+		printNotice(p.out, "note: automatic authorization failed (%v); run `mini auth %s` to retry\n", err, p.name)
 	}
 }
