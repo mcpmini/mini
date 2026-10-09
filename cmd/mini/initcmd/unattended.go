@@ -44,7 +44,7 @@ func (r Report) Failed() bool {
 
 // Available is the catalog servers mini doesn't have yet.
 func (p Plan) Available(entries []catalog.Entry) []catalog.Entry {
-	return AvailableEntries(entries, p.written)
+	return availableEntries(entries, p.written)
 }
 
 func RunUnattended(s Setup) Report {
@@ -189,14 +189,13 @@ func planAdds(imports []config.ServerConfig, add []catalog.Entry, written Writte
 		case imported.Has(entry):
 			p.coveredByImport = append(p.coveredByImport, entry.Name)
 		default:
-			p.write = append(p.write, CatalogServer(entry))
+			p.write = append(p.write, catalogServer(entry))
 		}
 	}
 	return p
 }
 
-// CatalogServer is the server config written for a catalog entry.
-func CatalogServer(entry catalog.Entry) config.ServerConfig {
+func catalogServer(entry catalog.Entry) config.ServerConfig {
 	sc := config.ServerConfig{Name: entry.Name, Transport: "http", URL: entry.URL}
 	if entry.Auth == catalog.AuthOAuth2 && !sc.HasBundledAuth() {
 		sc.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2}

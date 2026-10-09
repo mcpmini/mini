@@ -295,3 +295,50 @@ func TestConnectScreen_removingWithTheRemovableAgentsUntickedSaysSo(t *testing.T
 		t.Errorf("screen:\n%s\nwant it to say the ticked agents have nothing to remove, not that checks failed", text)
 	}
 }
+
+func TestConnectScreen_aShortWindowKeepsTheCursorsOptionInView(t *testing.T) {
+	plan := newFakePlan(nil)
+	s, _ := connectScreenFor(t, plan, namedAgents("Claude", "Codex", "Cursor", "Windsurf", "Zed"), nil)
+	s.handle(press("down"))
+	lines := strings.Split(ansi.Strip(s.body(7)), "\n")
+	if len(lines) > 7 || lines[len(lines)-2] != "> Don't connect" {
+		t.Errorf("body at height 7:\n%s\nwant at most 7 lines ending with Don't connect and its subtitle",
+			strings.Join(lines, "\n"))
+	}
+}
+
+func TestConnectScreen_aShortWindowKeepsTheNoteInView(t *testing.T) {
+	screenWith := func(t *testing.T, plan *fakePlan) *connectScreen {
+		s := newConnectScreen(connectParams{
+			agents:   namedAgents("Claude", "Codex"),
+			withMini: map[string]bool{"Codex": true},
+			plan:     func() (connectPlan, error) { return plan, nil },
+		})
+		t.Cleanup(s.checks.cancel)
+		s.resize(60)
+		plan.checksPass(s, s.enter())
+		return s
+	}
+
+	t.Run("in view while it fits", func(t *testing.T) {
+		s := screenWith(t, newFakePlan(nil))
+		if text := ansi.Strip(s.body(8)); !strings.HasPrefix(text, "Codex already has a mini entry.") ||
+			!strings.Contains(text, "> Just connect mini") {
+			t.Errorf("body at height 8:\n%s\nwant the note above the cursor's option", text)
+		}
+	})
+
+	t.Run("kept above the scrolled rows when the rows don't fit", func(t *testing.T) {
+		s := screenWith(t, newFakePlan(map[string][]string{"Claude": {"files"}}))
+		for _, key := range []string{"", "down", "down", "up"} {
+			if key != "" {
+				s.handle(press(key))
+			}
+			text := ansi.Strip(s.body(5))
+			if !strings.HasPrefix(text, "Codex already has a mini entry.\n\n") || !strings.Contains(text, "> ") ||
+				strings.Count(text, "\n") > 4 {
+				t.Errorf("body at height 5 after %q:\n%s\nwant the note and the cursor row", key, text)
+			}
+		}
+	})
+}

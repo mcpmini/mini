@@ -23,8 +23,8 @@ func GroupByCategory(entries []catalog.Entry) []catalog.Entry {
 	})
 }
 
-// AvailableEntries are the catalog servers not configured yet, by name or URL, in catalog order.
-func AvailableEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
+// availableEntries are the catalog servers not configured yet, by name or URL, in catalog order.
+func availableEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
 	return slices.DeleteFunc(slices.Clone(entries), NewConfiguredKeys(servers).Has)
 }
 

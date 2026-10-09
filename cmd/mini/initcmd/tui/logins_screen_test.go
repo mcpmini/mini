@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -323,4 +324,54 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 			t.Errorf("screen:\n%s\nwant the cursor on open, now the first login", text)
 		}
 	})
+}
+
+func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
+	logins := newFakeLogins("linear", "sentry", "notion")
+	s := loginScreen(logins, "linear", "sentry", "notion")
+	s.resize(30)
+	s.handle(press("down"))
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+	t.Cleanup(s.cancelLogin)
+	all := strings.Split(ansi.Strip(s.body(0)), "\n")
+	if len(all) < 5 || !strings.HasPrefix(all[2], "> sentry") {
+		t.Fatalf(
+			"full body:\n%s\nwant sentry's row after the heading, its URL wrapped over two lines",
+			strings.Join(all, "\n"),
+		)
+	}
+	sentryAndURL := strings.Join(all[2:5], "\n")
+
+	if body := ansi.Strip(s.body(3)); body != sentryAndURL {
+		t.Errorf("body at height 3:\n%s\nwant sentry's row and its whole URL:\n%s", body, sentryAndURL)
+	}
+	if body := ansi.Strip(s.body(2)); body != strings.Join(all[2:4], "\n") {
+		t.Errorf("body at height 2:\n%s\nwant sentry's row kept when its URL doesn't fit", body)
+	}
+}
+
+func TestLoginsScreen_movingUpMovesTheCursorBeforeTheView(t *testing.T) {
+	names := []string{"s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"}
+	s := loginScreen(newFakeLogins(names...), names...)
+	s.resize(60)
+	for range names {
+		s.handle(press("down"))
+		s.body(4)
+	}
+	before := strings.Split(ansi.Strip(s.body(4)), "\n")
+	s.handle(press("up"))
+	after := strings.Split(ansi.Strip(s.body(4)), "\n")
+	if !slices.Equal(stripMarks(before), stripMarks(after)) || !strings.HasPrefix(after[1], "> s8") {
+		t.Errorf("view before up:\n%s\nafter:\n%s\nwant the same rows, the cursor one up on s8",
+			strings.Join(before, "\n"), strings.Join(after, "\n"))
+	}
+}
+
+func stripMarks(lines []string) []string {
+	var stripped []string
+	for _, line := range lines {
+		stripped = append(stripped, strings.TrimPrefix(strings.TrimPrefix(line, "> "), "  "))
+	}
+	return stripped
 }

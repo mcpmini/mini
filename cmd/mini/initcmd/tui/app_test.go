@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -147,7 +148,7 @@ func TestApp_aSmallWindowShowsOnlyAskToEnlarge(t *testing.T) {
 	a := newApp([]screen{&fakeScreen{name: "First"}})
 	for _, size := range []tea.WindowSizeMsg{{Width: 59, Height: 30}, {Width: 100, Height: 11}} {
 		a.Update(size)
-		if got := shown(a); got != "Make the window larger" {
+		if got := shown(a); !strings.Contains(got, "Window too small") || !strings.Contains(got, "Make it larger") {
 			t.Errorf("%dx%d renders %q", size.Width, size.Height, got)
 		}
 	}
@@ -158,6 +159,23 @@ func TestApp_aSmallWindowShowsOnlyAskToEnlarge(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 60, Height: 12})
 	if got := shown(a); !strings.HasPrefix(got, "First") {
 		t.Errorf("60x12 renders %q, want the screen", got)
+	}
+}
+
+func TestApp_theAskToEnlargeSitsInTheMiddleOfTheWindow(t *testing.T) {
+	a := newApp([]screen{&fakeScreen{name: "First"}})
+	a.Update(tea.WindowSizeMsg{Width: 50, Height: 10})
+	lines := strings.Split(shown(a), "\n")
+	row := slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, "Window too small") })
+	if len(lines) != 10 || row < 2 || row > 4 {
+		t.Fatalf("view:\n%s\nwant 10 lines with the message starting near the middle", strings.Join(lines, "\n"))
+	}
+	for _, text := range []string{"Window too small", "Make it larger"} {
+		line := lines[slices.IndexFunc(lines, func(line string) bool { return strings.Contains(line, text) })]
+		left := len(line) - len(strings.TrimLeft(line, " "))
+		if want := (50 - len(text)) / 2; left < want-1 || left > want+1 {
+			t.Errorf("%q starts at column %d, want about %d: each line is centered", text, left, want)
+		}
 	}
 }
 

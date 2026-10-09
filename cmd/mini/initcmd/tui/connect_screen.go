@@ -33,6 +33,7 @@ type connectScreen struct {
 	chosen           initcmd.ConnectChoice
 	checks           connectChecks
 	width            int
+	scroll           scroll
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
@@ -62,7 +63,7 @@ func (s *connectScreen) rebuild() {
 
 func (s *connectScreen) enter() tea.Cmd {
 	s.rebuild()
-	s.cursor = s.agentRows()
+	s.cursor, s.scroll = s.agentRows(), scroll{}
 	return s.checks.start(s.plan)
 }
 
@@ -136,24 +137,54 @@ func (s *connectScreen) choose() (step, tea.Cmd) {
 	return forward, nil
 }
 
-func (s *connectScreen) body(int) string {
-	var lines []string
-	if len(s.alreadyConnected) > 0 {
-		lines = append(lines, dim.Render(alreadyHaveMini(s.alreadyConnected)), "")
+// The cursor never reaches the note, so it stays above the scrolled rows instead of scrolling
+// away for good on a short window.
+func (s *connectScreen) body(height int) string {
+	header := s.noteLines()
+	if height > 0 {
+		header = header[:min(len(header), height-1)]
+		height -= len(header)
 	}
+	return strings.Join(append(header, s.rowLines(height)...), "\n")
+}
+
+func (s *connectScreen) rowLines(height int) []string {
+	lines, first := s.agentLines()
+	last := first
+	for i, choice := range s.options() {
+		atCursor := s.cursor == s.agentRows()+i
+		if atCursor {
+			first = len(lines)
+		}
+		lines = append(lines, cursorMark(atCursor)+optionLabel(choice))
+		for _, subtitle := range s.subtitles(choice) {
+			lines = append(lines, s.subtitleLines(subtitle)...)
+		}
+		if atCursor {
+			last = len(lines) - 1
+		}
+	}
+	return s.scroll.cut(lines, first, last, height)
+}
+
+func (s *connectScreen) noteLines() []string {
+	if len(s.alreadyConnected) == 0 {
+		return nil
+	}
+	return []string{dim.Render(alreadyHaveMini(s.alreadyConnected)), ""}
+}
+
+func (s *connectScreen) agentLines() (lines []string, cursorLine int) {
 	for i := range s.agentRows() {
+		if i == s.cursor {
+			cursorLine = len(lines)
+		}
 		lines = append(lines, cursorMark(i == s.cursor)+checkbox(s.ticked[s.listed[i].Name])+s.listed[i].Name)
 	}
 	if s.agentRows() > 0 {
 		lines = append(lines, "")
 	}
-	for i, choice := range s.options() {
-		lines = append(lines, cursorMark(s.cursor == s.agentRows()+i)+optionLabel(choice))
-		for _, subtitle := range s.subtitles(choice) {
-			lines = append(lines, s.subtitleLines(subtitle)...)
-		}
-	}
-	return strings.Join(lines, "\n")
+	return lines, cursorLine
 }
 
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
