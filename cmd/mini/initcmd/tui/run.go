@@ -46,6 +46,7 @@ func Run(p Params) (Outcome, error) {
 	err = p.program()(a)
 	// A login still waiting on the browser when the UI ends would otherwise save a token later.
 	r.ui.logins.cancelLogin()
+	r.ui.connects.checks.cancelAndWait()
 	if !a.saves.saved {
 		return Outcome{Quit: a.quit || err != nil}, err
 	}
@@ -76,7 +77,7 @@ func (r *run) outcome(leftEarly bool) Outcome {
 	var connected []initcmd.AgentResult
 	// A ctrl+c queued behind the enter that chose to connect still ends the run early.
 	if !leftEarly {
-		connected = r.p.Setup.Connect(context.Background(), r.ui.connects.picked(), r.ui.connects.chosen)
+		connected = r.p.Setup.Connect(context.Background(), r.ui.connects.chosenConnect())
 	}
 	// The report reads the agents' configs, so it follows the connect that changed them.
 	report := r.p.Setup.Report(r.plan, r.session, r.last)
@@ -103,7 +104,7 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 	ui := screens{
 		imports:  imports,
 		catalogs: catalogs,
-		connects: newConnectScreen(p.Setup.AgentsToConnect, p.Setup.AgentsWithMini()),
+		connects: newConnects(p.Setup),
 	}
 	ui.logins = newLoginsScreen(loginsParams{
 		statuses: func() ([]initcmd.ServerStatus, error) {
@@ -114,6 +115,14 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 		startLogin: p.StartLogin,
 	})
 	return ui
+}
+
+func newConnects(setup initcmd.Setup) *connectScreen {
+	return newConnectScreen(connectParams{
+		agents:   setup.AgentsToConnect,
+		withMini: setup.AgentsWithMini(),
+		plan:     func() (connectPlan, error) { return setup.PlanConnect() },
+	})
 }
 
 func (ui screens) list() []screen {

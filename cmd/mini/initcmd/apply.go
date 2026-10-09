@@ -67,15 +67,28 @@ var (
 	)
 )
 
-func (s Setup) Connect(ctx context.Context, list []agents.Agent, choice ConnectChoice) []AgentResult {
-	return Apply(ctx, ApplyParams{
+// ConnectParams is what the user chose on Connect.
+type ConnectParams struct {
+	Agents   []agents.Agent
+	Choice   ConnectChoice
+	Removals Removals
+}
+
+func (s Setup) Connect(ctx context.Context, p ConnectParams) []AgentResult {
+	return Apply(ctx, s.applyParams(p))
+}
+
+func (s Setup) applyParams(p ConnectParams) ApplyParams {
+	return ApplyParams{
 		ConfigDir: s.ConfigDir,
-		Agents:    list,
-		Choice:    choice,
+		Agents:    p.Agents,
+		Choice:    p.Choice,
 		Mini:      MiniCommand(s.ConfigDir),
 		SelfPath:  s.SelfPath,
+		Checks:    p.Removals.Checks,
+		Counted:   p.Removals.ByAgent,
 		Now:       clock.System().Now(),
-	})
+	}
 }
 
 // Apply connects mini to each agent in turn. A failed agent doesn't stop the others; once ctx is
@@ -151,7 +164,7 @@ func (p ApplyParams) editedConfig(
 	result.MiniServes = p.servedAfterEdit(result.ExistingMini)
 	if p.Choice == ConnectAndRemove {
 		duplicates := mini.Duplicates(entries, p.SelfPath)
-		result.Changed = changedSince(p.Counted[agent.Name], duplicates)
+		result.Changed = changedSince(p.Counted[agent.Name], entries, duplicates)
 		result.Removed, result.Kept = p.replaceable(duplicates, result.MiniServes)
 	}
 	switch {
@@ -164,10 +177,11 @@ func (p ApplyParams) editedConfig(
 	}
 }
 
-func changedSince(counted []string, duplicates map[string]string) []string {
+func changedSince(counted []string, entries map[string]agents.Server, duplicates map[string]string) []string {
 	var changed []string
 	for _, entry := range counted {
-		if _, still := duplicates[entry]; !still {
+		_, exists := entries[entry] // one the user deleted since the check is gone either way
+		if _, still := duplicates[entry]; exists && !still {
 			changed = append(changed, entry)
 		}
 	}

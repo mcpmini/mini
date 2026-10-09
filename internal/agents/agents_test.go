@@ -104,8 +104,10 @@ func connectRemovesOnlyNamed(t *testing.T, agent Agent) {
 	if !reflect.DeepEqual(got["notes"], notesBefore) {
 		t.Errorf("notes = %#v, want it unchanged from %#v", got["notes"], notesBefore)
 	}
-	if files, present := got["files"]; present && !files.Disabled {
-		t.Errorf("files = %#v, want it removed or switched off", files)
+	files, present := got["files"]
+	if switchedOff := present && files.Disabled; switchedOff != agent.RemoveDisables || (present && !switchedOff) {
+		t.Errorf("files = %#v, present %v; want it switched off if RemoveDisables (%v), else gone",
+			files, present, agent.RemoveDisables)
 	}
 	if m, present := got[MiniKey]; !present || m.Disabled {
 		t.Errorf("mini = %#v (present %v), want present and enabled", m, present)

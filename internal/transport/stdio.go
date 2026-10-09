@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mcpmini/mini/internal/version"
 )
@@ -48,6 +49,11 @@ func NewStdioConnection(ctx context.Context, p StdioCommand) (*StdioConnection, 
 	return c, nil
 }
 
+// The server's own stderr is drained within milliseconds of the kill; only a child that outlives
+// it keeps the pipe open longer, and what it writes once the server is gone doesn't matter, so the
+// delay only bounds how long closing stalls.
+const stdioWaitDelay = 500 * time.Millisecond
+
 func startSubprocess(p StdioCommand) (*StdioConnection, error) {
 	// background context: stdio MCP connections are long-running
 	cmd := exec.CommandContext(context.Background(), p.Command, p.Args...)
@@ -59,6 +65,9 @@ func startSubprocess(p StdioCommand) (*StdioConnection, error) {
 		return nil, err
 	}
 	cmd.Stderr = &prefixWriter{logger: p.Logger, prefix: "[" + p.Command + "] "}
+	// Kill reaches only the server's own process. A child it started (sh -c, npx) can hold stderr
+	// open, and Wait would block until that child exits too.
+	cmd.WaitDelay = stdioWaitDelay
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", p.Command, err)
 	}

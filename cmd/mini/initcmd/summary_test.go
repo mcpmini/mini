@@ -1,7 +1,9 @@
 package initcmd
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -242,4 +244,54 @@ func TestReport_failsWhenAnAgentCouldNotBeConnected(t *testing.T) {
 	if (Report{Connected: []AgentResult{{Agent: agents.Agent{Name: "Codex"}}}}).Failed() {
 		t.Error("a run that connected Codex reads as failed")
 	}
+}
+
+func TestSummary_saysWhatRemovingTookOutAndWhyTheRestStayed(t *testing.T) {
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect", "--config", "/home/u/m"}}
+	got := Summary(Report{
+		Servers: []ServerStatus{{Name: "linear", Readiness: NeedsLogin}, {Name: "github"}, {Name: "slow"}},
+		Agents:  AgentConnections{Mini: mini},
+		Connected: []AgentResult{{
+			Agent:   claude,
+			Backup:  "/home/u/.claude.minibackup.json",
+			Removed: []string{"github", "notion"},
+			Kept: []KeptEntry{
+				{Entry: "lin", Server: "linear", Err: errors.New("401 unauthorized")},
+				{Entry: "npx-slow", Server: "slow", Err: fmt.Errorf("initialize: %w", context.DeadlineExceeded)},
+				{Entry: "gh", Server: "github", Err: errors.New("connection refused")},
+				{Entry: "files", Server: "files", Err: errNotChecked},
+			},
+			Changed: []string{"notes"},
+		}},
+	})
+	requireLines(t, got,
+		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json\n"+
+			"  removed github and notion, which mini runs now\n",
+		"  lin stays in Claude Code: it works in mini once you finish linear above\n",
+		"  npx-slow stays in Claude Code: mini's check timed out; mini --config /home/u/m test tries again\n",
+		"  gh stays in Claude Code: mini couldn't connect to it; mini --config /home/u/m test shows why\n",
+		"  files stays in Claude Code: its connection wasn't checked\n",
+		"  notes stays in Claude Code: it changed after it was checked\n",
+	)
+}
+
+func TestSummary_anAgentThatSwitchesRemovedEntriesOffSaysSo(t *testing.T) {
+	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml", RemoveDisables: true}
+	got := Summary(Report{Connected: []AgentResult{{
+		Agent: codex, Backup: "/home/u/.codex/config.minibackup.toml", Removed: []string{"github"},
+	}}})
+	requireLines(t, got, "  switched off github, which mini runs now\n")
+}
+
+func TestSummary_anAgentThatAlreadyHadMiniSaysSo(t *testing.T) {
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	got := Summary(
+		Report{Agents: AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini"}}, Connected: []AgentResult{{
+			Agent:        claude,
+			ExistingMini: MiniEntryServes,
+			MiniServes:   true,
+		}}},
+	)
+	requireLines(t, got, "\nClaude Code: already has a mini entry; /home/u/.claude.json is unchanged\n")
 }

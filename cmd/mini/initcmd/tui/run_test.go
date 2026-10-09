@@ -2,12 +2,15 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -356,4 +359,81 @@ func TestRun_connect(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pressingAndDelivering also runs the command each key returns, as the program would, so
+// background work a screen starts finishes before the next key.
+func pressingAndDelivering(keys ...string) func(tea.Model) error {
+	return func(m tea.Model) error {
+		deliver(m, m.Init())
+		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		for _, key := range keys {
+			_, cmd := m.Update(press(key))
+			deliver(m, cmd)
+		}
+		return nil
+	}
+}
+
+func TestRun_connectAndRemove(t *testing.T) {
+	run := func(t *testing.T, check error) (agents.Agent, Outcome) {
+		t.Helper()
+		configDir := t.TempDir()
+		configtest.WriteServer(t, configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+		claude := claudeWithServers(t)
+		setup := setupFor(configDir)
+		setup.AgentsToConnect = []agents.Agent{claude}
+		setup.Probe = func(context.Context, string, config.ServerConfig) error { return check }
+		// Nothing to import or add, so Connect is the first screen; enter picks the first option.
+		out, err := Run(Params{Setup: setup, LoadCatalog: noCatalog, Program: pressingAndDelivering("enter")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return claude, out
+	}
+	t.Run("an entry whose mini copy passed its check is replaced by mini", func(t *testing.T) {
+		claude, out := run(t, nil)
+		config := string(testutil.ReadFile(t, claude.ConfigPath))
+		if strings.Contains(config, `"files"`) || !strings.Contains(config, `"mini"`) {
+			t.Errorf("agent config = %s, want files replaced by mini", config)
+		}
+		if got := out.Report.Connected; len(got) != 1 || strings.Join(got[0].Removed, ",") != "files" {
+			t.Errorf("connected = %+v, want files removed from Claude Code", got)
+		}
+	})
+	t.Run("quitting while the checks run returns only once they stopped", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			configDir := t.TempDir()
+			configtest.WriteServer(t, configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+			setup := setupFor(configDir)
+			setup.AgentsToConnect = []agents.Agent{claudeWithServers(t)}
+			var stopped atomic.Bool
+			setup.Probe = func(ctx context.Context, _ string, _ config.ServerConfig) error {
+				<-ctx.Done()
+				time.Sleep(time.Second) // closing the probed server's process
+				stopped.Store(true)
+				return ctx.Err()
+			}
+			quitWhileChecking := func(m tea.Model) error {
+				m.Update(press("ctrl+c"))
+				return nil
+			}
+			if _, err := Run(Params{Setup: setup, LoadCatalog: noCatalog, Program: quitWhileChecking}); err != nil {
+				t.Fatal(err)
+			}
+			if !stopped.Load() {
+				t.Error("Run returned while a check's server was still closing")
+			}
+		})
+	})
+	t.Run("an entry whose mini copy failed its check stays", func(t *testing.T) {
+		claude, out := run(t, errors.New("connection refused"))
+		config := string(testutil.ReadFile(t, claude.ConfigPath))
+		if !strings.Contains(config, `"files"`) || !strings.Contains(config, `"mini"`) {
+			t.Errorf("agent config = %s, want files kept next to mini", config)
+		}
+		if got := out.Report.Connected; len(got) != 1 || len(got[0].Kept) != 1 {
+			t.Errorf("connected = %+v, want files kept with the check's error", got)
+		}
+	})
 }
