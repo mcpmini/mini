@@ -102,7 +102,7 @@ func removedVerb(agent agents.Agent) string {
 // The check's error is a protocol detail, so the reason says what the user can do next.
 func keptReason(r Report, kept KeptEntry) string {
 	switch {
-	case errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errNotShown) || errors.Is(kept.Err, errMiniInactive):
+	case errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errNotCounted) || errors.Is(kept.Err, errMiniInactive):
 		return kept.Err.Error()
 	case r.needsFinishing(kept.Server):
 		return "it works in mini once you finish " + kept.Server + " above"

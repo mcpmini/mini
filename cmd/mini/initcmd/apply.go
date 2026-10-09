@@ -59,7 +59,7 @@ const inactiveMiniReasons = "it's switched off, uses another config directory, "
 
 var (
 	errNotChecked   = errors.New("its connection wasn't checked")
-	errNotShown     = errors.New("it wasn't listed for removal")
+	errNotCounted   = errors.New("it wasn't among the MCPs you chose to remove")
 	errMiniInactive = errors.New("the agent's mini entry may not run these servers: " + inactiveMiniReasons)
 )
 
@@ -80,6 +80,7 @@ func (s Setup) connectAgents(ctx context.Context, p ConnectParams) []AgentResult
 	})
 }
 
+// A failed agent doesn't stop the others; once ctx is cancelled no further agent is edited.
 func apply(ctx context.Context, p applyParams) []AgentResult {
 	if p.choice == DontConnect {
 		return nil
@@ -172,11 +173,11 @@ func (p applyParams) removals(
 	removable, kept := p.rule.splitDuplicates(existing, duplicates)
 	var remove []string
 	for _, entry := range removable {
-		// The user agreed only to what Connect listed; an entry removable since then stays.
+		// The user agreed only to what Connect counted; an entry removable since then stays.
 		if slices.Contains(p.counted[agent], entry) {
 			remove = append(remove, entry)
 		} else {
-			kept = append(kept, KeptEntry{Entry: entry, Server: duplicates[entry], Err: errNotShown})
+			kept = append(kept, KeptEntry{Entry: entry, Server: duplicates[entry], Err: errNotCounted})
 		}
 	}
 	slices.SortFunc(kept, func(a, b KeptEntry) int { return strings.Compare(a.Entry, b.Entry) })

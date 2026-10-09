@@ -245,7 +245,7 @@ func TestSummary_saysWhatRemovingTookOutAndWhyTheRestStayed(t *testing.T) {
 				{Entry: "npx-slow", Server: "slow", Err: fmt.Errorf("initialize: %w", context.DeadlineExceeded)},
 				{Entry: "gh", Server: "github", Err: errors.New("connection refused")},
 				{Entry: "files", Server: "files", Err: errNotChecked},
-				{Entry: "docs", Server: "docs", Err: errNotShown},
+				{Entry: "docs", Server: "docs", Err: errNotCounted},
 			},
 			Changed: []string{"notes"},
 		}},
@@ -257,7 +257,7 @@ func TestSummary_saysWhatRemovingTookOutAndWhyTheRestStayed(t *testing.T) {
 		"  npx-slow stays in Claude Code: mini's check timed out; mini --config /home/u/m test tries again\n",
 		"  gh stays in Claude Code: mini couldn't connect to it; mini --config /home/u/m test shows why\n",
 		"  files stays in Claude Code: its connection wasn't checked\n",
-		"  docs stays in Claude Code: it wasn't listed for removal\n",
+		"  docs stays in Claude Code: it wasn't among the MCPs you chose to remove\n",
 		"  notes stays in Claude Code: it changed after it was checked\n",
 	)
 }
