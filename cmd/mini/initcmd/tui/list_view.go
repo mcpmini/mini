@@ -19,8 +19,7 @@ func (l *list) view(height int) string {
 	}
 	height -= len(shown)
 	lines, cursorLine, cursorHeight := l.lines()
-	l.scrollTo(cursorLine, cursorHeight, height)
-	return strings.Join(append(shown, lines[l.offset:min(l.offset+height, len(lines))]...), "\n")
+	return strings.Join(append(shown, l.scroll.cut(lines, cursorLine, cursorHeight, height)...), "\n")
 }
 
 func (l *list) filterLine() string {
@@ -41,16 +40,6 @@ func (l *list) headerLine() string {
 func (l *list) labelWidth() int {
 	// The first heading starts over the checkbox, so only what it overhangs widens the label column.
 	return max(len(l.header.label)-len(checkbox(false)), widest(l.rows, func(r row) string { return r.label }))
-}
-
-func (l *list) scrollTo(line, rowHeight, height int) {
-	if line < l.offset {
-		l.offset = line
-	}
-	if line+rowHeight > l.offset+height {
-		l.offset = line + rowHeight - height
-	}
-	l.offset = max(l.offset, 0)
 }
 
 func (l *list) lines() (lines []string, cursorLine, cursorHeight int) {

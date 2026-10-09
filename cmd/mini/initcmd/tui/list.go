@@ -34,7 +34,7 @@ type list struct {
 	rows      []row
 	checked   map[string]bool
 	cursor    int
-	offset    int
+	scroll    scroll
 	filter    string
 	filtering bool
 	// header names the columns; it stays above the rows as they scroll. No label means no header.
@@ -90,7 +90,7 @@ func (l *list) toggleAll() {
 
 func (l *list) setFilter(filter string) {
 	l.filter = filter
-	l.cursor, l.offset = 0, 0
+	l.cursor, l.scroll = 0, scroll{}
 }
 
 // keys replaces the screen's keys while a filter is typed, and adds how to clear one that is kept.

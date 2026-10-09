@@ -40,6 +40,7 @@ type loginsScreen struct {
 	pending  *pendingLogin
 	logins   int
 	width    int
+	scroll   scroll
 	// Until the user moves it, the cursor rests on the next login to do.
 	cursorMoved bool
 	// One waiting command covers every running check.
@@ -181,31 +182,57 @@ func (s *loginsScreen) heading() string {
 	return "Finish setting up these servers"
 }
 
-func (s *loginsScreen) body(int) string {
+func (s *loginsScreen) body(height int) string {
 	if s.err != nil {
 		return "mini's servers couldn't be read: " + s.err.Error()
 	}
 	width := widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
 	var lines []string
-	section := ""
+	first, last, section := 0, 0, ""
 	for i, status := range s.rows {
-		if s.section(status) != section {
-			if section != "" {
-				lines = append(lines, "")
-			}
-			section = s.section(status)
-			lines = append(lines, bold.Render(section))
+		start := len(lines)
+		lines, section = s.withSectionHeading(lines, section, status)
+		if i == s.cursor {
+			first = start
 		}
-		lines = append(lines, cursorMark(i == s.cursor)+fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status)))
-		if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
-			lines = append(lines, s.urlLines(4+width)...)
+		lines = append(lines, s.rowLines(status, i, width)...)
+		if i == s.cursor {
+			last = len(lines) - 1
 		}
 	}
 	if len(lines) == 0 {
 		// The last check cleared the final row while the screen was shown.
 		lines = append(lines, "Every server works; nothing is left to set up.")
 	}
-	return strings.Join(append(lines, "", cursorMark(s.cursor == len(s.rows))+"Continue →"), "\n")
+	lines = append(lines, "")
+	if s.cursor == len(s.rows) {
+		first, last = len(lines), len(lines)
+	}
+	lines = append(lines, cursorMark(s.cursor == len(s.rows))+"Continue →")
+	return strings.Join(s.scroll.cut(lines, first, last-first+1, height), "\n")
+}
+
+func (s *loginsScreen) rowLines(status initcmd.ServerStatus, i, width int) []string {
+	lines := []string{cursorMark(i == s.cursor) + fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status))}
+	if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
+		lines = append(lines, s.urlLines(4+width)...)
+	}
+	return lines
+}
+
+func (s *loginsScreen) withSectionHeading(
+	lines []string,
+	current string,
+	status initcmd.ServerStatus,
+) ([]string, string) {
+	next := s.section(status)
+	if next == current {
+		return lines, current
+	}
+	if current != "" {
+		lines = append(lines, "")
+	}
+	return append(lines, bold.Render(next)), next
 }
 
 const (
