@@ -1,26 +1,36 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/mcpmini/mini/internal/registry"
 )
 
-func buildProxyToolSchemas(entries []*registry.ToolEntry) []map[string]any {
+func buildProxyToolSchemas(entries []*registry.ToolEntry) ([]map[string]any, error) {
 	out := []map[string]any{miniConfigSchema(), miniReadSchema()}
 	for _, e := range entries {
-		out = append(out, proxyUpstreamToolSchema(e))
+		schema, err := proxyUpstreamToolSchema(e)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, schema)
 	}
-	return out
+	return out, nil
 }
 
-func proxyUpstreamToolSchema(e *registry.ToolEntry) map[string]any {
-	m := e.Def.ToMap()
+func proxyUpstreamToolSchema(e *registry.ToolEntry) (map[string]any, error) {
+	m, err := e.Def.ToMap()
+	if err != nil {
+		return nil, fmt.Errorf("tool %q: %w", e.FullName, err)
+	}
 	m["name"] = e.Server + "__" + e.ToolName.Name()
 	m["inputSchema"] = proxyInputSchema(e)
 	m["outputSchema"] = proxyOutputSchema(e)
-	return m
+	return m, nil
 }
 
 func proxyInputSchema(e *registry.ToolEntry) map[string]any {
@@ -127,11 +137,13 @@ func scopedSchema(s schemaScope) map[string]any {
 }
 
 func parseSchema(raw json.RawMessage, fallback func() map[string]any) map[string]any {
-	if len(raw) == 0 {
+	if !json.Valid(raw) {
 		return fallback()
 	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
 	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil || m == nil {
+	if err := decoder.Decode(&m); err != nil || m == nil {
 		return fallback()
 	}
 	return m
@@ -161,8 +173,15 @@ func hasNonEmptyRequired(schema map[string]any) bool {
 }
 
 func hasPositiveMinProperties(schema map[string]any) bool {
-	n, ok := schema["minProperties"].(float64)
-	return ok && n > 0
+	switch n := schema["minProperties"].(type) {
+	case json.Number:
+		value, err := n.Float64()
+		return value > 0 && (err == nil || errors.Is(err, strconv.ErrRange))
+	case float64:
+		return n > 0
+	default:
+		return false
+	}
 }
 
 func hasComposingKeyword(schema map[string]any) bool {

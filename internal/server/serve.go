@@ -308,7 +308,11 @@ func (s *Server) handleToolsList(ctx context.Context, session *Session) (any, er
 	if err := s.waitForStartup(ctx); err != nil {
 		return nil, err
 	}
-	return map[string]any{"tools": buildProxyToolSchemas(s.reg.AllFull())}, nil
+	schemas, err := buildProxyToolSchemas(s.reg.AllFull())
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"tools": schemas}, nil
 }
 
 func (s *Server) handleToolsCall(ctx context.Context, params json.RawMessage, session *Session) (any, error) {

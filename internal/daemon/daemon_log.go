@@ -57,11 +57,12 @@ func (c *cappedLog) rotate() {
 		c.written = 0
 		return
 	}
-	c.f.Close()
+	c.f.Close() //nolint:errcheck // daemon logs are bounded diagnostics, so rotation continues if closing the old file fails
+	//nolint:errcheck // rotation bounds diagnostics; failed rename can let the new file truncate the current log.
 	os.Rename(
 		c.path,
 		c.path+".old",
-	) //nolint:errcheck — rotation is best-effort; if rename fails the .old file is overwritten
+	)
 	f, err := os.OpenFile(c.path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		f = os.Stderr // last resort: don't crash if log dir becomes unwritable

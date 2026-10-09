@@ -244,7 +244,8 @@ func (m forwardedMessage) mustForwardSync() bool {
 
 func daemonErrorResponse(body []byte, msg string) []byte {
 	var req requestID
-	json.Unmarshal(body, &req) //nolint:errcheck
+	//nolint:errcheck // Preserve any decoded ID for the daemon error; the guards below reject missing identifiers.
+	json.Unmarshal(body, &req)
 	if req.ID == nil || req.JSONRPC == "" {
 		return nil // notification — no id to reply to
 	}
@@ -257,6 +258,7 @@ func marshalErrorResponse(id json.RawMessage, msg string) []byte {
 		"id":      id,
 		"error":   map[string]any{"code": -32603, "message": msg},
 	}
+	//nolint:errcheck // fixed response fields and the parsed request ID are JSON-serializable.
 	b, _ := json.Marshal(resp)
 	return b
 }

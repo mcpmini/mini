@@ -77,8 +77,7 @@ func download(ctx context.Context, client *http.Client, url string) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	// Closing only releases the connection; whatever was read or returned is already decided.
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close() //nolint:errcheck // status and body-read results determine the fetch outcome; Close releases the response stream
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch catalog: status %d", resp.StatusCode)
 	}

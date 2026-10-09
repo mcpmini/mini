@@ -121,6 +121,7 @@ var ssrfPrivateRanges = func() []*net.IPNet {
 	}
 	nets := make([]*net.IPNet, 0, len(cidrs))
 	for _, c := range cidrs {
+		//nolint:errcheck // c is a fixed source literal defining the SSRF private-range policy.
 		_, n, _ := net.ParseCIDR(c)
 		nets = append(nets, n)
 	}
@@ -128,6 +129,7 @@ var ssrfPrivateRanges = func() []*net.IPNet {
 }()
 
 var nat64Prefix = func() *net.IPNet {
+	//nolint:errcheck // fixed source literal defines the NAT64 translation prefix.
 	_, n, _ := net.ParseCIDR("64:ff9b::/96")
 	return n
 }()

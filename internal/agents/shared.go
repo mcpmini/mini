@@ -23,7 +23,7 @@ func ReadConfigFile(path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close() //nolint:errcheck // ReadAll reports source read failures; Close only releases the imported config file
 	data, err := io.ReadAll(io.LimitReader(f, maxImportConfigBytes+1))
 	if err != nil {
 		return nil, err

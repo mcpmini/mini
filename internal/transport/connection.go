@@ -1,9 +1,11 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 type ConnectionError struct{ Err error }
@@ -30,13 +32,18 @@ type ToolDefinition struct {
 	Execution    json.RawMessage `json:"execution,omitempty"`
 }
 
-func (def ToolDefinition) ToMap() map[string]any {
+func (def ToolDefinition) ToMap() (map[string]any, error) {
+	raw, err := json.Marshal(def)
+	if err != nil {
+		return nil, fmt.Errorf("encode tool definition: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
 	var m map[string]any
-	// Callers need to add extra keys before serializing, so we convert to a map.
-	// Cannot fail: re-serializing JSON we already deserialized from upstream.
-	raw, _ := json.Marshal(def) //nolint:errcheck
-	_ = json.Unmarshal(raw, &m) //nolint:errcheck
-	return m
+	if err := decoder.Decode(&m); err != nil {
+		return nil, fmt.Errorf("decode tool definition: %w", err)
+	}
+	return m, nil
 }
 
 // Connection abstracts a connection to an upstream MCP server.

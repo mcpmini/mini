@@ -53,6 +53,7 @@ type RegistrationResult struct {
 // Register performs RFC 7591 dynamic client registration, requesting
 // token_endpoint_auth_method "none" (public client with PKCE).
 func Register(ctx context.Context, registrationURL, callbackURI string) (RegistrationResult, error) {
+	//nolint:errcheck // registration fields are fixed strings and string slices.
 	body, _ := json.Marshal(registrationRequest{
 		ClientName:              "mini",
 		RedirectURIs:            []string{callbackURI},
@@ -66,6 +67,7 @@ func Register(ctx context.Context, registrationURL, callbackURI string) (Registr
 	if err != nil {
 		return RegistrationResult{}, err
 	}
+	//nolint:errcheck // registration status and body determine the result; Close releases the response stream.
 	defer resp.Body.Close()
 	return parseRegistrationResponse(resp, registrationURL)
 }

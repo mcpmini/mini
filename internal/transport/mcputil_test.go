@@ -40,7 +40,10 @@ func TestToMap_includesOptionalFields(t *testing.T) {
 		Icons:        json.RawMessage(`{"url":"http://example.com/icon.png"}`),
 		Execution:    json.RawMessage(`{"timeout":30}`),
 	}
-	m := d.ToMap()
+	m, err := d.ToMap()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, key := range []string{"title", "outputSchema", "_meta", "icons", "execution"} {
 		if _, ok := m[key]; !ok {
 			t.Errorf("ToMap() missing key %q", key)
@@ -54,10 +57,40 @@ func TestToMap_excludesAbsentOptionalFields(t *testing.T) {
 		Description: "test tool",
 		InputSchema: json.RawMessage(`{}`),
 	}
-	m := d.ToMap()
+	m, err := d.ToMap()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, key := range []string{"title", "outputSchema", "_meta", "icons", "execution"} {
 		if _, ok := m[key]; ok {
 			t.Errorf("ToMap() should omit absent key %q", key)
 		}
+	}
+}
+
+func TestToMap_preservesNumbers(t *testing.T) {
+	for _, number := range []string{"9007199254740993", "1e400"} {
+		t.Run(number, func(t *testing.T) {
+			d := ToolDefinition{InputSchema: json.RawMessage(`{"const":` + number + `}`)}
+			m, err := d.ToMap()
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw, err := json.Marshal(m["inputSchema"])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != string(d.InputSchema) {
+				t.Fatalf("schema changed: got %s, want %s", raw, d.InputSchema)
+			}
+		})
+	}
+}
+
+func TestToMap_rejectsInvalidJSON(t *testing.T) {
+	d := ToolDefinition{InputSchema: json.RawMessage(`{"type":`)}
+	m, err := d.ToMap()
+	if err == nil || m != nil {
+		t.Fatalf("expected an error without a partial definition, got %v, %v", m, err)
 	}
 }

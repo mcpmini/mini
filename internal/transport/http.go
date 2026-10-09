@@ -261,6 +261,7 @@ func (c *HTTPConnection) doPost(ctx context.Context, rpcReq Request) (postResult
 	if err != nil {
 		return postResult{sentAuth: sentAuth}, &ConnectionError{Err: fmt.Errorf("http %s: %w", rpcReq.Method, err)}
 	}
+	//nolint:errcheck // processResponse determines the result; Close releases the response stream.
 	defer resp.Body.Close()
 	result, err := c.processResponse(resp, rpcReq, sentSessionID)
 	result.sentAuth = sentAuth
@@ -354,6 +355,7 @@ func (c *HTTPConnection) storeSessionID(sessionID string) {
 }
 
 func (c *HTTPConnection) httpErrorResult(resp *http.Response, method string, sentSessionID string) (postResult, error) {
+	//nolint:errcheck // bounded body text is diagnostic; HTTP status remains the failure result.
 	errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	if isRetryableStatus(resp.StatusCode) {
 		return postResult{
@@ -449,7 +451,7 @@ func (c *HTTPConnection) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp.Body.Close()
+	resp.Body.Close() //nolint:errcheck // the server status is checked below; Close releases the response stream
 	if resp.StatusCode >= 500 {
 		return fmt.Errorf("server error: %d", resp.StatusCode)
 	}

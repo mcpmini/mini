@@ -34,6 +34,7 @@ func classifyForward(sess DaemonSession, body []byte) forwardOutcome {
 	if err != nil {
 		return classifyDoError(body, err)
 	}
+	//nolint:errcheck // classifyResponse determines the outcome; Close releases the response stream.
 	defer resp.Body.Close()
 	return classifyResponse(resp, body)
 }
@@ -60,11 +61,13 @@ func isDialError(err error) bool {
 
 func classifyResponse(resp *http.Response, body []byte) forwardOutcome {
 	if resp.StatusCode == http.StatusUnauthorized {
-		io.Copy(io.Discard, resp.Body) //nolint:errcheck
+		//nolint:errcheck // the 401 determines retry; draining only permits connection reuse.
+		io.Copy(io.Discard, resp.Body)
 		return forwardOutcome{kind: outcomeUnauthorized, resp: daemonErrorResponse(body, "daemon unauthorized")}
 	}
 	if resp.StatusCode >= 400 {
 		// Request reached daemon; can't prove it didn't execute → outcomeOther (never retried).
+		//nolint:errcheck // bounded body text is diagnostic; HTTP status remains the failure result.
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		return forwardOutcome{
 			kind: outcomeOther,

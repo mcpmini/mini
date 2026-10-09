@@ -41,7 +41,7 @@ func BeginLogin(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams
 		return nil, err
 	}
 	if err := ResolveEndpoints(ctx, sc, p); err != nil {
-		listener.Close() //nolint:errcheck // nothing was served on it; the resolve error is the one to report
+		listener.Close() //nolint:errcheck // listener cleanup cannot replace the endpoint-resolution error returned to the caller
 		return nil, fmt.Errorf("resolve oauth endpoints: %w", err)
 	}
 	login, err := StartBrowserLogin(sc.Auth, listener)
@@ -68,7 +68,7 @@ func listenCallback(ctx context.Context, ac *config.AuthConfig) (net.Listener, e
 func StartBrowserLogin(ac *config.AuthConfig, listener net.Listener) (*BrowserLogin, error) {
 	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
 	if !ok {
-		listener.Close() //nolint:errcheck
+		listener.Close() //nolint:errcheck // cleanup must not replace the address-type error
 		return nil, fmt.Errorf("oauth callback listener has unexpected address type %T", listener.Addr())
 	}
 	cfg, verifier, state := buildPKCEConfig(ac, tcpAddr.Port)
@@ -163,9 +163,7 @@ func (l *BrowserLogin) reportServeFailure(err error) {
 	}
 }
 
-// http.Server.Close only flags a Serve goroutine that has not started yet; that goroutine closes the
-// listener when it runs, so the port is free only once it has exited.
 func (l *BrowserLogin) stopServing() {
-	l.server.Close() //nolint:errcheck
+	l.server.Close() //nolint:errcheck // Close can precede Serve starting; joining Serve ensures the listener is closed
 	l.serving.Wait()
 }
