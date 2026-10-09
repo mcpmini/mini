@@ -56,7 +56,6 @@ func (c miniEntryCheck) existingMiniIn(agent agents.Agent) ExistingMini {
 	return c.existingMini(entries)
 }
 
-// An apply that failed early never read the agent's entry, so this asks the classification.
 func (c AgentConnections) hasMini(agent agents.Agent) bool {
 	sameAgent := func(a agents.Agent) bool { return a.Name == agent.Name }
 	return slices.ContainsFunc(c.MiniServes, sameAgent) || slices.ContainsFunc(c.MiniInactive, sameAgent)
