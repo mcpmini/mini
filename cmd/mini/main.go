@@ -276,6 +276,11 @@ func resolveLogLevel(cfg *config.Config, override string) slog.Level {
 	return level
 }
 
+func printNotice(out io.Writer, format string, args ...any) {
+	//nolint:errcheck // Notice delivery does not change saved configuration or returned operation errors.
+	_, _ = fmt.Fprintf(out, format, args...)
+}
+
 func fatalf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "mini: "+format+"\n", args...)
 	os.Exit(1)
