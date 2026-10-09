@@ -93,7 +93,7 @@ func (s *loginsScreen) rowIndex(name string) int {
 
 func (s *loginsScreen) enter() tea.Cmd {
 	s.cursorMoved = false
-	s.refresh()
+	s.cursor = s.nextToLogIn(-1)
 	return s.waitWhileChecking()
 }
 
@@ -325,6 +325,5 @@ func (s *loginsScreen) keys() string {
 }
 
 func (s *loginsScreen) empty() bool {
-	s.refresh()
 	return s.err == nil && len(s.rows) == 0
 }

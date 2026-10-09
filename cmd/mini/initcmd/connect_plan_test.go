@@ -50,7 +50,7 @@ func TestSetupConnect_reportsAnEntryThatChangedSinceConnectCountedIt(t *testing.
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	claude := f.write(t, "Claude Code", `{"mcpServers":{"files":{"command":"files-server-v2"}}}`)
-	results := Setup{ConfigDir: f.configDir}.Connect(context.Background(), ConnectParams{
+	results := Setup{ConfigDir: f.configDir}.connectAgents(context.Background(), ConnectParams{
 		Agents: []agents.Agent{claude},
 		Choice: ConnectAndRemove,
 		Removals: Removals{
@@ -67,7 +67,7 @@ func TestSetupConnect_anEntryDeletedSinceConnectCountedItIsNotReported(t *testin
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	claude := f.write(t, "Claude Code", `{"mcpServers":{}}`)
-	results := Setup{ConfigDir: f.configDir}.Connect(context.Background(), ConnectParams{
+	results := Setup{ConfigDir: f.configDir}.connectAgents(context.Background(), ConnectParams{
 		Agents: []agents.Agent{claude},
 		Choice: ConnectAndRemove,
 		Removals: Removals{

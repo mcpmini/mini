@@ -11,6 +11,16 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
+// showScreen reads the screen's rows and enters it, as the app does when it moves onto the screen.
+func showScreen(s interface {
+	refresher
+	enterer
+},
+) tea.Cmd {
+	s.refresh()
+	return s.enter()
+}
+
 type fakeScreen struct {
 	name    string
 	nothing bool
@@ -219,6 +229,36 @@ func TestApp_aScreenIsToldEachTimeItIsShownAgain(t *testing.T) {
 			first.entered,
 			second.entered,
 		)
+	}
+}
+
+type refreshedScreen struct {
+	fakeScreen
+	refreshes int
+}
+
+func (s *refreshedScreen) refresh() {
+	s.refreshes++
+}
+
+func TestApp_drawingReadsNoScreenAgain(t *testing.T) {
+	first := &refreshedScreen{fakeScreen: fakeScreen{name: "First"}}
+	second := &refreshedScreen{fakeScreen: fakeScreen{name: "Second"}}
+	a := sized(newApp([]screen{first, second}))
+	send(a, "enter")
+	if second.refreshes == 0 {
+		t.Fatal("moving onto Second didn't read its rows")
+	}
+	before := first.refreshes + second.refreshes
+
+	view := shown(a)
+	shown(a)
+
+	if after := first.refreshes + second.refreshes; after != before {
+		t.Errorf("drawing read the screens %d more times; want none: a frame must not reload files", after-before)
+	}
+	if footer := footerOf(view); !strings.Contains(footer, "esc back") {
+		t.Errorf("footer:\n%s\nwant esc back: First has rows", footer)
 	}
 }
 

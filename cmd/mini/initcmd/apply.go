@@ -74,7 +74,7 @@ type ConnectParams struct {
 	Removals Removals
 }
 
-func (s Setup) Connect(ctx context.Context, p ConnectParams) []AgentResult {
+func (s Setup) connectAgents(ctx context.Context, p ConnectParams) []AgentResult {
 	return Apply(ctx, s.applyParams(p))
 }
 

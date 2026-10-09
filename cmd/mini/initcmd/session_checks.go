@@ -6,7 +6,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func (s *Session) startChecks() {
+func (s *session) startChecks() {
 	targets := s.checkTargets()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.checks.cancel = cancel
@@ -22,7 +22,7 @@ func (s *Session) startChecks() {
 	s.notifyChanged()
 }
 
-func (s *Session) checkTargets() []config.ServerConfig {
+func (s *session) checkTargets() []config.ServerConfig {
 	var unchecked []string
 	s.mu.Lock()
 	for name := range s.written {
@@ -35,7 +35,7 @@ func (s *Session) checkTargets() []config.ServerConfig {
 	return oauthTargets(s.p.ConfigDir, unchecked)
 }
 
-func (s *Session) check(ctx context.Context, sc config.ServerConfig) {
+func (s *session) check(ctx context.Context, sc config.ServerConfig) {
 	checkOAuth(ctx, probeParams{configDir: s.p.ConfigDir, server: sc, clock: s.p.Clock}, s.p.Probe)
 	s.mu.Lock()
 	delete(s.checking, sc.Name)
@@ -47,14 +47,14 @@ func (s *Session) check(ctx context.Context, sc config.ServerConfig) {
 	s.notifyChanged()
 }
 
-func (s *Session) notifyChanged() {
+func (s *session) notifyChanged() {
 	select {
 	case s.changed <- struct{}{}:
 	default:
 	}
 }
 
-func (s *Session) stopChecks() {
+func (s *session) stopChecks() {
 	if s.checks.cancel != nil {
 		s.checks.cancel()
 	}

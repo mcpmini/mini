@@ -3,11 +3,14 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"github.com/charmbracelet/x/term"
 
 	"github.com/spf13/cobra"
 
@@ -115,4 +118,18 @@ func createConfigDirs(configDir string) error {
 		}
 	}
 	return nil
+}
+
+const noTerminalHelp = `mini init asks questions, so it needs a terminal. Without one, say what to set up:
+  mini init --import             import the servers of every agent found
+  mini init --from AGENT|PATH    import the servers of one agent or config file
+  mini init --add NAME,...       add servers from the catalog
+`
+
+func isTerminal(f *os.File) bool {
+	return term.IsTerminal(f.Fd())
+}
+
+func printNoTerminalHelp(w io.Writer) {
+	printNotice(w, "%s", noTerminalHelp)
 }

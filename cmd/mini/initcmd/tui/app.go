@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -22,10 +23,17 @@ type screen interface {
 	body(height int) string
 	// keys names the screen's own keys and what enter does there; the app adds esc and ctrl+c.
 	keys() string
+	// empty answers from what the screen last read, so drawing a frame never reads files.
 	empty() bool
 }
 
-// A screen whose rows depend on earlier screens rebuilds them each time it is shown.
+// A screen whose rows depend on what earlier screens wrote reads them again each time the app
+// moves past or onto it.
+type refresher interface {
+	refresh()
+}
+
+// A screen that starts over each time it is shown.
 type enterer interface {
 	enter() tea.Cmd
 }
@@ -84,6 +92,9 @@ func (a *app) hasScreens() bool {
 
 func (a *app) next(from, direction int) (int, bool) {
 	for i := from + direction; i >= 0 && i < len(a.screens); i += direction {
+		if r, ok := a.screens[i].(refresher); ok {
+			r.refresh()
+		}
 		if !a.screens[i].empty() {
 			return i, true
 		}
@@ -236,6 +247,6 @@ func (a *app) footer(s screen) []string {
 }
 
 func (a *app) canGoBack() bool {
-	_, ok := a.next(a.at, -1)
-	return ok
+	// next would refresh screens, which a frame must not do; empty answers from the last read.
+	return slices.ContainsFunc(a.screens[:a.at], func(s screen) bool { return !s.empty() })
 }
