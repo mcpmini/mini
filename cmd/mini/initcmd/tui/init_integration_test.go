@@ -34,16 +34,16 @@ func TestIntegrationInitUI_writesTheTickedServersConnectsTheAgentAndPrintsTheSum
 	term.waitFor("sentry  needs a login")
 	term.press("down", "enter")
 	term.waitFor("Connect mini to Claude Code")
+	term.waitFor("> Don't connect")
 	if screen := strings.Join(
 		strings.Fields(term.text()),
-		"",
+		" ",
 	); !strings.Contains(
 		screen,
-		"atemporarycopythatgetscleanedup",
+		"a temporary copy that gets cleaned up",
 	) {
 		t.Errorf("Connect screen:\n%s\nwant the warning: the test puts TMPDIR around its mini", term.text())
 	}
-	term.waitFor("> Don't connect")
 	term.press("up")
 	term.waitFor("> Just connect mini")
 	term.press("enter")

@@ -63,7 +63,7 @@ func deliver(m tea.Model, cmd tea.Cmd) {
 func noCatalog() (catalog.Catalog, error) { return catalog.Catalog{}, nil }
 
 func setupFor(configDir string, list ...agents.Agent) initcmd.Setup {
-	return initcmd.Setup{ConfigDir: configDir, Import: list}
+	return initcmd.Setup{ConfigDir: configDir, Import: list, TemporaryDirs: func() []string { return nil }}
 }
 
 // oauthEntry is a catalog server that declares OAuth, so writing it starts no network check.
@@ -301,16 +301,9 @@ func claudeWithServers(t *testing.T) agents.Agent {
 	return claude
 }
 
-// The test binary sits in the temp dir, where Connect warns and highlights Don't connect.
-func permanentMini(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
-	t.Setenv("GOTMPDIR", "")
-}
-
 func TestRun_connect(t *testing.T) {
 	run := func(t *testing.T, claude agents.Agent, keys ...string) Outcome {
 		t.Helper()
-		permanentMini(t)
 		setup := setupFor(t.TempDir())
 		setup.AgentsToConnect = []agents.Agent{claude}
 		// Catalog comes first and is left with enter, which saves; then Connect is shown.
@@ -382,10 +375,32 @@ func pressingAndDelivering(keys ...string) func(tea.Model) error {
 	}
 }
 
+func TestRun_aTemporaryMiniIsLeftUnconnectedAndTheSummarySaysWhy(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	claude := claudeWithServers(t)
+	setup := setupFor(t.TempDir())
+	setup.AgentsToConnect = []agents.Agent{claude}
+	setup.TemporaryDirs = func() []string { return []string{filepath.Dir(self)} }
+	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
+	out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(c), Program: pressing("enter", "enter")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config := string(testutil.ReadFile(t, claude.ConfigPath)); strings.Contains(config, `"mini"`) {
+		t.Errorf("agent config = %s, want it left alone: enter on Connect chooses Don't connect", config)
+	}
+	if summary := initcmd.Summary(out.Report); !strings.Contains(summary, "install it somewhere permanent") ||
+		strings.Contains(summary, "claude mcp add") {
+		t.Errorf("summary:\n%s\nwant the step to install mini, not a hand step naming the temporary binary", summary)
+	}
+}
+
 func TestRun_connectAndRemove(t *testing.T) {
 	run := func(t *testing.T, check error) (agents.Agent, Outcome) {
 		t.Helper()
-		permanentMini(t)
 		configDir := t.TempDir()
 		configtest.WriteServer(t, configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 		claude := claudeWithServers(t)

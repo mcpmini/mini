@@ -10,6 +10,8 @@ type AgentConnections struct {
 	MiniInactive []agents.Agent
 	// Mini is the entry the agents should run.
 	Mini agents.MiniEntry
+	// TemporaryMini is Mini's binary when it gets cleaned up, else "".
+	TemporaryMini string
 }
 
 func ClassifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnections {

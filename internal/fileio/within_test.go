@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestWithin(t *testing.T) {
@@ -20,6 +22,14 @@ func TestWithin(t *testing.T) {
 	if err := os.Symlink(dir, escape); err != nil {
 		t.Fatal(err)
 	}
+	outsideSub := filepath.Join(dir, "other", "sub")
+	if err := os.MkdirAll(outsideSub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	testutil.WriteFile(t, filepath.Join(dir, "other", "secret"), "")
+	if err := os.Symlink(outsideSub, filepath.Join(inner, "hop")); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name, path string
 		want       bool
@@ -30,6 +40,7 @@ func TestWithin(t *testing.T) {
 		{"a sibling sharing the name's prefix", filepath.Join(dir, "T-other", "mini"), false},
 		{"a symlink inside that points out", filepath.Join(escape, "outside"), false},
 		{"dot-dot out of the dir", inner + "/../outside", false},
+		{"dot-dot after a symlink that points out", inner + "/hop/../secret", false},
 	} {
 		if got := Within(tc.path, inner); got != tc.want {
 			t.Errorf("%s: Within(%s) = %v, want %v", tc.name, tc.path, got, tc.want)

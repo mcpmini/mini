@@ -22,18 +22,27 @@ func HandConnectSteps(configDir, selfPath string, list []agents.Agent) string {
 
 func writeHandConnect(b *strings.Builder, c AgentConnections) {
 	writeInactiveMini(b, c)
-	if len(c.NoMini) == 0 {
-		if len(c.MiniServes) > 0 || len(c.MiniInactive) > 0 {
-			return
-		}
+	if len(c.NoMini) == 0 && (len(c.MiniServes) > 0 || len(c.MiniInactive) > 0) {
+		return
+	}
+	switch {
+	case c.TemporaryMini != "":
+		// An agent's mini entry is never rewritten, so a step naming this binary couldn't be undone by init.
+		fmt.Fprintf(
+			b,
+			"\nTo connect mini to your agents, install it somewhere permanent and run mini init from there; "+
+				"%s gets cleaned up.\n",
+			c.TemporaryMini,
+		)
+	case len(c.NoMini) == 0:
 		fmt.Fprintf(
 			b,
 			"\nTo connect mini to your agent, add it to its MCP config:\n%s\n",
 			indent(jsonSnippet(c.Mini), "  "),
 		)
-		return
+	default:
+		writeHandSteps(b, c.NoMini, c.Mini)
 	}
-	writeHandSteps(b, c.NoMini, c.Mini)
 }
 
 func writeHandSteps(b *strings.Builder, list []agents.Agent, mini agents.MiniEntry) {

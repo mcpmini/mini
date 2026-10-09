@@ -64,7 +64,11 @@ func sameFile(a, b string) bool {
 // up, else ""; agents break once it's gone.
 func (s Setup) TemporaryMiniPath() string {
 	path := MiniCommand(s.ConfigDir).Command
-	for _, dir := range temporaryDirs() {
+	dirs := temporaryDirs
+	if s.TemporaryDirs != nil {
+		dirs = s.TemporaryDirs
+	}
+	for _, dir := range dirs() {
 		if fileio.Within(path, dir) {
 			return path
 		}

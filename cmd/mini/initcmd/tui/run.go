@@ -82,6 +82,7 @@ func (r *run) outcome(leftEarly bool) Outcome {
 	// The report reads the agents' configs, so it follows the connect that changed them.
 	report := r.p.Setup.Report(r.plan, r.session, r.last)
 	report.Connected = connected
+	report.Agents.TemporaryMini = r.ui.connects.p.temporaryMiniPath
 	return Outcome{Quit: leftEarly, Saved: true, Report: report}
 }
 

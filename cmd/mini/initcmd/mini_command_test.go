@@ -116,26 +116,18 @@ func TestTemporaryMiniPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	permanentEnv := func(t *testing.T) {
-		for _, name := range []string{"TMPDIR", "GOCACHE", "HOME", "XDG_CACHE_HOME"} {
-			t.Setenv(name, t.TempDir())
+	t.Setenv("PATH", "")
+	for _, tc := range []struct {
+		name string
+		dirs []string
+		want string
+	}{
+		{"a binary outside every temporary dir gets no warning", []string{t.TempDir()}, ""},
+		{"a binary in a temporary dir is named", []string{t.TempDir(), filepath.Dir(self)}, self},
+	} {
+		setup := Setup{ConfigDir: t.TempDir(), TemporaryDirs: func() []string { return tc.dirs }}
+		if got := setup.TemporaryMiniPath(); got != tc.want {
+			t.Errorf("%s: TemporaryMiniPath() = %q, want %q", tc.name, got, tc.want)
 		}
-		t.Setenv("GOTMPDIR", "")
-		t.Setenv("PATH", "")
 	}
-
-	t.Run("a binary outside every temporary dir gets no warning", func(t *testing.T) {
-		permanentEnv(t)
-		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMiniPath(); got != "" {
-			t.Errorf("TemporaryMiniPath() = %q, want \"\" for %s", got, self)
-		}
-	})
-
-	t.Run("a binary in the temp dir is named", func(t *testing.T) {
-		permanentEnv(t)
-		t.Setenv("TMPDIR", filepath.Dir(self))
-		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMiniPath(); got != self {
-			t.Errorf("TemporaryMiniPath() = %q, want %s", got, self)
-		}
-	})
 }

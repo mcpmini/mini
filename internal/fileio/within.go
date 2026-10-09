@@ -14,15 +14,20 @@ func Within(path, dir string) bool {
 }
 
 func resolved(path string) string {
-	if abs, err := filepath.Abs(path); err == nil {
-		path = abs
-	}
+	// Symlinks resolve before ".." is applied, as the OS does: link/.. is link's target's parent.
 	if target, err := filepath.EvalSymlinks(path); err == nil {
-		return target
+		return absolute(target)
 	}
 	parent := filepath.Dir(path)
 	if parent == path {
-		return path
+		return absolute(path)
 	}
 	return filepath.Join(resolved(parent), filepath.Base(path))
+}
+
+func absolute(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
 }

@@ -220,6 +220,21 @@ func TestJoinAnd(t *testing.T) {
 	}
 }
 
+func TestSummary_aTemporaryMiniGetsNoHandStepThatWouldNameIt(t *testing.T) {
+	mini := agents.MiniEntry{Command: "/tmp/go-build1/exe/mini", Args: []string{"connect"}}
+	for _, c := range []AgentConnections{
+		{Mini: mini, TemporaryMini: mini.Command, NoMini: []agents.Agent{{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}}},
+		{Mini: mini, TemporaryMini: mini.Command},
+	} {
+		got := Summary(Report{Agents: c})
+		requireLines(t, got, "To connect mini to your agents, install it somewhere permanent and run mini init "+
+			"from there; /tmp/go-build1/exe/mini gets cleaned up.\n")
+		if strings.Count(got, mini.Command) != 1 {
+			t.Errorf("summary:\n%s\nwant the temporary binary named only as the one to replace", got)
+		}
+	}
+}
+
 func TestSummary_anAgentLeftUntickedKeepsItsHandStep(t *testing.T) {
 	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}
 	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
