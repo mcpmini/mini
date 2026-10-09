@@ -186,9 +186,19 @@ func (s *loginsScreen) body(height int) string {
 	if s.err != nil {
 		return "mini's servers couldn't be read: " + s.err.Error()
 	}
+	lines, first, last := s.serverLines()
+	lines = append(lines, "")
+	if s.cursor == len(s.rows) {
+		first, last = len(lines), len(lines)
+	}
+	lines = append(lines, cursorMark(s.cursor == len(s.rows))+"Continue →")
+	return strings.Join(s.scroll.cut(lines, first, last-first+1, height), "\n")
+}
+
+// first and last bound the cursor's block: its section heading, its row and the lines under it.
+func (s *loginsScreen) serverLines() (lines []string, first, last int) {
 	width := widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
-	var lines []string
-	first, last, section := 0, 0, ""
+	section := ""
 	for i, status := range s.rows {
 		start := len(lines)
 		lines, section = s.withSectionHeading(lines, section, status)
@@ -204,12 +214,7 @@ func (s *loginsScreen) body(height int) string {
 		// The last check cleared the final row while the screen was shown.
 		lines = append(lines, "Every server works; nothing is left to set up.")
 	}
-	lines = append(lines, "")
-	if s.cursor == len(s.rows) {
-		first, last = len(lines), len(lines)
-	}
-	lines = append(lines, cursorMark(s.cursor == len(s.rows))+"Continue →")
-	return strings.Join(s.scroll.cut(lines, first, last-first+1, height), "\n")
+	return lines, first, last
 }
 
 func (s *loginsScreen) rowLines(status initcmd.ServerStatus, i, width int) []string {

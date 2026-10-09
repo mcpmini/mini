@@ -6,8 +6,8 @@ type scroll struct {
 	offset int
 }
 
-// cut shows height lines with the block of rows lines from first in view; a block taller than the
-// window keeps its first line, the cursor's row.
+// cut shows height lines with the block of rows lines from first in view. A block taller than the
+// window keeps its first line, so callers start the block at the line that must stay visible.
 func (sc *scroll) cut(lines []string, first, rows, height int) []string {
 	if height <= 0 || len(lines) <= height {
 		sc.offset = 0
