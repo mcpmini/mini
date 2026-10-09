@@ -16,6 +16,7 @@ linters:
     - forcetypeassert # unchecked type assertions that can panic
     - durationcheck  # two time.Duration values multiplied together (almost always a bug)
     - gocritic
+    - makezero
 
     # Hygiene
     - bodyclose      # unclosed HTTP response bodies
