@@ -40,11 +40,12 @@ type terminalParams struct {
 
 func startTerminal(t *testing.T, p terminalParams) *terminal {
 	t.Helper()
-	cmd := exec.Command(testutil.Binary(t, "MINIMCP_BIN"), append([]string{"--config", p.configDir}, p.args...)...)
+	bin := testutil.Binary(t, "MINIMCP_BIN")
+	cmd := exec.Command(bin, append([]string{"--config", p.configDir}, p.args...)...)
 	cmd.Env = []string{
 		"HOME=" + p.home, "CODEX_HOME=", "XDG_CONFIG_HOME=" + filepath.Join(p.home, ".config"),
 		"TERM=xterm-256color", "NO_COLOR=1", "MINI_NEW_INIT=1", "PATH=" + os.Getenv("PATH"),
-		"TMPDIR=" + os.Getenv("TMPDIR"),
+		"TMPDIR=" + filepath.Dir(bin), // so init sees its mini as temporary wherever the test binaries were built
 		// The catalog fetch goes through Go's default proxy handling. Nothing listens on port 1, so the
 		// fetch fails at once and init falls back to the built-in catalog without reaching the network.
 		"HTTPS_PROXY=http://127.0.0.1:1",

@@ -29,7 +29,7 @@ func TestWithin(t *testing.T) {
 		{"the dir itself", inner, false},
 		{"a sibling sharing the name's prefix", filepath.Join(dir, "T-other", "mini"), false},
 		{"a symlink inside that points out", filepath.Join(escape, "outside"), false},
-		{"dot-dot out of the dir", filepath.Join(inner, "..", "outside"), false},
+		{"dot-dot out of the dir", inner + "/../outside", false},
 	} {
 		if got := Within(tc.path, inner); got != tc.want {
 			t.Errorf("%s: Within(%s) = %v, want %v", tc.name, tc.path, got, tc.want)

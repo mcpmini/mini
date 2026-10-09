@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/config"
@@ -59,10 +60,9 @@ func sameFile(a, b string) bool {
 	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
 }
 
-// TemporaryMini is the binary agents would run when it sits where files don't last: the temp
-// directory, where go run builds, Go's build cache, or Downloads; else "". Agents fail once it
-// is cleaned up.
-func (s Setup) TemporaryMini() string {
+// TemporaryMiniPath is the mini binary agents would run when it sits somewhere that gets cleaned
+// up, else ""; agents break once it's gone.
+func (s Setup) TemporaryMiniPath() string {
 	path := MiniCommand(s.ConfigDir).Command
 	for _, dir := range temporaryDirs() {
 		if fileio.Within(path, dir) {
@@ -74,6 +74,9 @@ func (s Setup) TemporaryMini() string {
 
 func temporaryDirs() []string {
 	dirs := []string{os.TempDir()}
+	if runtime.GOOS == "darwin" {
+		dirs = append(dirs, "/tmp") // macOS's TempDir is per user; reboots clear the shared /tmp
+	}
 	if gotmp := os.Getenv("GOTMPDIR"); gotmp != "" {
 		dirs = append(dirs, gotmp)
 	}

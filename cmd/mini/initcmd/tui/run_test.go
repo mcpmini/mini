@@ -301,9 +301,16 @@ func claudeWithServers(t *testing.T) agents.Agent {
 	return claude
 }
 
+// The test binary sits in the temp dir, where Connect warns and highlights Don't connect.
+func permanentMini(t *testing.T) {
+	t.Setenv("TMPDIR", t.TempDir())
+	t.Setenv("GOTMPDIR", "")
+}
+
 func TestRun_connect(t *testing.T) {
 	run := func(t *testing.T, claude agents.Agent, keys ...string) Outcome {
 		t.Helper()
+		permanentMini(t)
 		setup := setupFor(t.TempDir())
 		setup.AgentsToConnect = []agents.Agent{claude}
 		// Catalog comes first and is left with enter, which saves; then Connect is shown.
@@ -378,6 +385,7 @@ func pressingAndDelivering(keys ...string) func(tea.Model) error {
 func TestRun_connectAndRemove(t *testing.T) {
 	run := func(t *testing.T, check error) (agents.Agent, Outcome) {
 		t.Helper()
+		permanentMini(t)
 		configDir := t.TempDir()
 		configtest.WriteServer(t, configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 		claude := claudeWithServers(t)

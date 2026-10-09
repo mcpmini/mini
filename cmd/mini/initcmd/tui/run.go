@@ -119,10 +119,10 @@ func newScreens(p Params, plan *initcmd.Plan, session *initcmd.Session) screens 
 
 func newConnects(setup initcmd.Setup) *connectScreen {
 	return newConnectScreen(connectParams{
-		temporaryMini: setup.TemporaryMini(),
-		agents:        setup.AgentsToConnect,
-		withMini:      setup.AgentsWithMini(),
-		plan:          func() (connectPlan, error) { return setup.PlanConnect() },
+		agents:            setup.AgentsToConnect,
+		withMini:          setup.AgentsWithMini(),
+		plan:              func() (connectPlan, error) { return setup.PlanConnect() },
+		temporaryMiniPath: setup.TemporaryMiniPath(),
 	})
 }
 

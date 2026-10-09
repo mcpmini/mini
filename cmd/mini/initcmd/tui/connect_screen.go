@@ -18,10 +18,10 @@ type connectPlan interface {
 }
 
 type connectParams struct {
-	agents        []agents.Agent
-	withMini      map[string]bool
-	plan          func() (connectPlan, error)
-	temporaryMini string
+	agents            []agents.Agent
+	withMini          map[string]bool
+	plan              func() (connectPlan, error)
+	temporaryMiniPath string
 }
 
 type connectScreen struct {
@@ -64,6 +64,10 @@ func (s *connectScreen) rebuild() {
 func (s *connectScreen) enter() tea.Cmd {
 	s.rebuild()
 	s.cursor = s.agentRows()
+	if s.p.temporaryMiniPath != "" {
+		// Apply never rewrites an agent's mini entry, so connecting now couldn't be fixed by a later init.
+		s.cursor += slices.Index(s.options(), initcmd.DontConnect)
+	}
 	return s.checks.start(s.plan)
 }
 
@@ -148,11 +152,7 @@ func (s *connectScreen) body(int) string {
 	if s.agentRows() > 0 {
 		lines = append(lines, "")
 	}
-	if s.p.temporaryMini != "" {
-		warning := "Agents would run " + s.p.temporaryMini + ", which looks temporary. " +
-			"Move mini somewhere permanent and run mini init again."
-		lines = append(lines, ansi.Wrap(warning, max(s.width, 20), ""), "")
-	}
+	lines = append(lines, s.temporaryWarning()...)
 	for i, choice := range s.options() {
 		lines = append(lines, cursorMark(s.cursor == s.agentRows()+i)+optionLabel(choice))
 		for _, subtitle := range s.subtitles(choice) {
@@ -173,6 +173,15 @@ func (s *connectScreen) subtitleLines(subtitle string) []string {
 
 func (s *connectScreen) resize(width int) {
 	s.width = width
+}
+
+func (s *connectScreen) temporaryWarning() []string {
+	if s.p.temporaryMiniPath == "" {
+		return nil
+	}
+	warning := "Agents would run " + s.p.temporaryMiniPath + ", a temporary copy that gets cleaned up. " +
+		"Install mini somewhere permanent, then run mini init from there."
+	return []string{ansi.Wrap(warning, max(s.width, 20), ""), ""}
 }
 
 func optionLabel(choice initcmd.ConnectChoice) string {

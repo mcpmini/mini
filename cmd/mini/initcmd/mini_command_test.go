@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"testing"
 
@@ -81,18 +82,36 @@ func TestMiniCommandArgs_UsesExplicitConfigWhenHomeUnavailable(t *testing.T) {
 }
 
 func TestTemporaryDirs(t *testing.T) {
-	t.Setenv("HOME", "/home/u")
-	t.Setenv("GOCACHE", "/cache/go-build")
-	t.Setenv("GOTMPDIR", "/scratch/gotmp")
-	dirs := temporaryDirs()
-	for _, want := range []string{os.TempDir(), "/scratch/gotmp", "/cache/go-build", "/home/u/Downloads"} {
-		if !slices.Contains(dirs, want) {
+	t.Run("Go's settings and Downloads count", func(t *testing.T) {
+		t.Setenv("HOME", "/home/u")
+		t.Setenv("GOCACHE", "/cache/go-build")
+		t.Setenv("GOTMPDIR", "/scratch/gotmp")
+		wants := []string{os.TempDir(), "/scratch/gotmp", "/cache/go-build", "/home/u/Downloads"}
+		if runtime.GOOS == "darwin" {
+			wants = append(wants, "/tmp")
+		}
+		dirs := temporaryDirs()
+		for _, want := range wants {
+			if !slices.Contains(dirs, want) {
+				t.Errorf("temporary dirs = %v, want %s among them", dirs, want)
+			}
+		}
+	})
+	t.Run("without GOCACHE, Go's default build cache counts", func(t *testing.T) {
+		t.Setenv("HOME", "/home/u")
+		t.Setenv("XDG_CACHE_HOME", "")
+		t.Setenv("GOCACHE", "")
+		cache, err := os.UserCacheDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if dirs, want := temporaryDirs(), filepath.Join(cache, "go-build"); !slices.Contains(dirs, want) {
 			t.Errorf("temporary dirs = %v, want %s among them", dirs, want)
 		}
-	}
+	})
 }
 
-func TestTemporaryMini(t *testing.T) {
+func TestTemporaryMiniPath(t *testing.T) {
 	self, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -107,16 +126,16 @@ func TestTemporaryMini(t *testing.T) {
 
 	t.Run("a binary outside every temporary dir gets no warning", func(t *testing.T) {
 		permanentEnv(t)
-		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMini(); got != "" {
-			t.Errorf("TemporaryMini() = %q, want \"\" for %s", got, self)
+		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMiniPath(); got != "" {
+			t.Errorf("TemporaryMiniPath() = %q, want \"\" for %s", got, self)
 		}
 	})
 
 	t.Run("a binary in the temp dir is named", func(t *testing.T) {
 		permanentEnv(t)
 		t.Setenv("TMPDIR", filepath.Dir(self))
-		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMini(); got != self {
-			t.Errorf("TemporaryMini() = %q, want %s", got, self)
+		if got := (Setup{ConfigDir: t.TempDir()}).TemporaryMiniPath(); got != self {
+			t.Errorf("TemporaryMiniPath() = %q, want %s", got, self)
 		}
 	})
 }

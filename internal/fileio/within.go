@@ -13,13 +13,12 @@ func Within(path, dir string) bool {
 	return err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// A path that doesn't exist yet keeps its missing tail and resolves the rest.
 func resolved(path string) string {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	if real, err := filepath.EvalSymlinks(path); err == nil {
-		return real
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		return target
 	}
 	parent := filepath.Dir(path)
 	if parent == path {

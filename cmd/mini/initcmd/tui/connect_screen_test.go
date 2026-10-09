@@ -296,18 +296,31 @@ func TestConnectScreen_removingWithTheRemovableAgentsUntickedSaysSo(t *testing.T
 	}
 }
 
-func TestConnectScreen_warnsWhenAgentsWouldRunATemporaryBinary(t *testing.T) {
-	s := newConnectScreen(connectParams{
-		agents:        namedAgents("Claude"),
-		plan:          func() (connectPlan, error) { return newFakePlan(nil), nil },
-		temporaryMini: "/tmp/gobuild1/exe/mini",
-	})
-	t.Cleanup(s.checks.cancelAndWait)
-	s.resize(40)
-	s.enter()
-	want := "Agents would run /tmp/gobuild1/exe/mini,\nwhich looks temporary. Move mini\n" +
-		"somewhere permanent and run mini init\nagain.\n\n> Just connect mini"
-	if text := connectText(s); !strings.HasPrefix(text, want) {
-		t.Errorf("screen:\n%s\nwant the warning wrapped to the window, above the options", text)
+func TestConnectScreen_aTemporaryBinaryIsWarnedAboutAndNotConnectedByDefault(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		removable map[string][]string
+	}{
+		{"with nothing to remove", nil},
+		{"with entries to remove", map[string][]string{"Claude": {"github"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newConnectScreen(connectParams{
+				agents:            namedAgents("Claude"),
+				plan:              func() (connectPlan, error) { return newFakePlan(tc.removable), nil },
+				temporaryMiniPath: "/tmp/gobuild1/exe/mini",
+			})
+			t.Cleanup(s.checks.cancelAndWait)
+			s.resize(40)
+			s.enter()
+			want := "Agents would run /tmp/gobuild1/exe/mini,\na temporary copy that gets cleaned up.\n" +
+				"Install mini somewhere permanent, then\nrun mini init from there.\n\n"
+			if text := connectText(s); !strings.HasPrefix(text, want) || !strings.Contains(text, "> Don't connect") {
+				t.Errorf(
+					"screen:\n%s\nwant the warning wrapped to the window, above the options, and Don't connect highlighted",
+					text,
+				)
+			}
+		})
 	}
 }
