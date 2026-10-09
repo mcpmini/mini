@@ -154,7 +154,7 @@ func TestSummary_howToConnectByHand(t *testing.T) {
 	}
 	got = Summary(Report{Agents: AgentConnections{Mini: mini, MiniInactive: list[2:]}})
 	requireLines(t, got, "Cursor (/home/u/.cursor/mcp.json) has a mini entry that may not run these servers: "+
-		"it's switched off, uses another config directory, or doesn't name mini by absolute path. "+
+		"it's switched off, uses another config directory, or doesn't start mini connect by absolute path. "+
 		"To use them, have it run: '/Users/u/My Apps/mini' connect\n")
 	if strings.Contains(got, "To connect mini") {
 		t.Errorf("the only agent has a mini entry, but the summary adds a generic step:\n%s", got)
@@ -245,6 +245,7 @@ func TestSummary_saysWhatRemovingTookOutAndWhyTheRestStayed(t *testing.T) {
 				{Entry: "npx-slow", Server: "slow", Err: fmt.Errorf("initialize: %w", context.DeadlineExceeded)},
 				{Entry: "gh", Server: "github", Err: errors.New("connection refused")},
 				{Entry: "files", Server: "files", Err: errNotChecked},
+				{Entry: "docs", Server: "docs", Err: errNotShown},
 			},
 			Changed: []string{"notes"},
 		}},
@@ -256,6 +257,7 @@ func TestSummary_saysWhatRemovingTookOutAndWhyTheRestStayed(t *testing.T) {
 		"  npx-slow stays in Claude Code: mini's check timed out; mini --config /home/u/m test tries again\n",
 		"  gh stays in Claude Code: mini couldn't connect to it; mini --config /home/u/m test shows why\n",
 		"  files stays in Claude Code: its connection wasn't checked\n",
+		"  docs stays in Claude Code: it wasn't listed for removal\n",
 		"  notes stays in Claude Code: it changed after it was checked\n",
 	)
 }

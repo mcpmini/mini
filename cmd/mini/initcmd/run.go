@@ -18,9 +18,11 @@ func (s Setup) Start(p Plan) *Run {
 	return &Run{Plan: p, setup: s, session: s.newSession()}
 }
 
-// Save writes the plan's servers and starts checking the new ones for OAuth.
-func (r *Run) Save() {
+// Save writes the plan's servers and starts checking the new ones for OAuth. It returns the servers
+// it removed, credentials included, so a login done for them no longer applies.
+func (r *Run) Save() (removed []string) {
 	r.last = r.session.Sync(r.Plan.Servers())
+	return r.last.Removed
 }
 
 // Checking names the servers whose OAuth check is still running.

@@ -12,7 +12,7 @@ type AgentConnections struct {
 	Mini agents.MiniEntry
 }
 
-func ClassifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnections {
+func classifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnections {
 	c := AgentConnections{Mini: MiniCommand(configDir)}
 	check := miniEntryCheck{configDir: configDir, selfPath: selfPath}
 	for _, agent := range list {
@@ -31,7 +31,7 @@ func ClassifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnec
 // AgentsWithMini names the agents to connect that already have a mini entry; connecting leaves
 // that entry alone, whatever config directory it serves.
 func (s Setup) AgentsWithMini() map[string]bool {
-	c := ClassifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect)
+	c := classifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect)
 	withMini := map[string]bool{}
 	for _, agent := range append(c.MiniServes, c.MiniInactive...) {
 		withMini[agent.Name] = true

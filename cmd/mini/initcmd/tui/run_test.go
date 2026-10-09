@@ -57,7 +57,8 @@ func deliver(m tea.Model, cmd tea.Cmd) {
 		}
 		return
 	}
-	m.Update(msg)
+	_, next := m.Update(msg)
+	deliver(m, next)
 }
 
 func noCatalog() (catalog.Catalog, error) { return catalog.Catalog{}, nil }
@@ -456,4 +457,34 @@ func TestRun_connectAndRemove(t *testing.T) {
 			t.Errorf("connected = %+v, want files kept with the check's error", got)
 		}
 	})
+}
+
+func TestRun_aLoginDoesntOutliveTheServerItWasFor(t *testing.T) {
+	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear"), oauthEntry("sentry")}}
+	startLogin := func(context.Context, string) (Login, error) {
+		return Login{URL: "https://auth.example/linear", Wait: func() error { return nil }}, nil
+	}
+	var screen string
+	// Log in to linear; back, swap it for sentry, save; back, tick linear again, save.
+	keys := []string{"space", "enter", "enter", "esc", "space", "down", "space", "enter", "esc", "up", "space", "enter"}
+	program := func(m tea.Model) error {
+		deliver(m, m.Init())
+		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		for _, key := range keys {
+			_, cmd := m.Update(press(key))
+			deliver(m, cmd)
+		}
+		screen = shown(m.(*app))
+		return nil
+	}
+
+	if _, err := Run(Params{
+		Setup: setupFor(t.TempDir()), LoadCatalog: fromCatalog(c), StartLogin: startLogin, Program: program,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(screen, "linear  needs a login") {
+		t.Errorf("Logins:\n%s\nwant linear needing a login: unticking it deleted its credentials", screen)
+	}
 }

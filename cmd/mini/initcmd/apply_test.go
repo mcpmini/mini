@@ -3,6 +3,7 @@ package initcmd
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -56,10 +57,44 @@ func (f applyFixture) miniEntry() agents.MiniEntry {
 	return agents.MiniEntry{Command: f.mini, Args: []string{"--config", f.configDir, "connect"}}
 }
 
+// apply runs as if Connect showed every duplicate the agents have now as one to remove.
 func (f applyFixture) apply(choice ConnectChoice, checks map[string]error, list ...agents.Agent) []AgentResult {
-	return Apply(context.Background(), ApplyParams{
-		ConfigDir: f.configDir, Agents: list, Choice: choice, Mini: f.miniEntry(), SelfPath: testSelf,
-		Checks: checks, Now: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC),
+	return f.applyWith(
+		context.Background(),
+		applyInput{agents: list, choice: choice, removals: Removals{Checks: checks, ByAgent: f.shown(list)}},
+	)
+}
+
+func (f applyFixture) shown(list []agents.Agent) map[string][]string {
+	mini, err := loadMiniServers(f.configDir)
+	shown := map[string][]string{}
+	for _, agent := range list {
+		if entries, readErr := agent.Read(agent.ConfigPath); err == nil && readErr == nil {
+			shown[agent.Name] = slices.Sorted(maps.Keys(mini.Duplicates(entries, testSelf)))
+		}
+	}
+	return shown
+}
+
+type applyInput struct {
+	agents       []agents.Agent
+	choice       ConnectChoice
+	removals     Removals
+	miniOverride agents.MiniEntry
+}
+
+func (f applyFixture) applyWith(ctx context.Context, in applyInput) []AgentResult {
+	if in.miniOverride.Command == "" {
+		in.miniOverride = f.miniEntry()
+	}
+	return apply(ctx, applyParams{
+		agents: in.agents, choice: in.choice, counted: in.removals.ByAgent,
+		rule: replacementRule{
+			mini:      miniEntryCheck{configDir: f.configDir, selfPath: testSelf},
+			miniToAdd: in.miniOverride,
+			checks:    in.removals.Checks,
+		},
+		now: time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC),
 	})
 }
 
@@ -132,9 +167,10 @@ func TestApply_keepsDuplicatesWhenTheWrittenMiniWontServeThem(t *testing.T) {
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	cursor := f.write(t, "Cursor", `{"mcpServers":{"files":{"command":"files-server"}}}`)
 
-	results := Apply(context.Background(), ApplyParams{
-		ConfigDir: f.configDir, Agents: []agents.Agent{cursor}, Choice: ConnectAndRemove,
-		Mini: agents.MiniEntry{Command: f.mini, Args: []string{"connect"}}, Checks: map[string]error{"files": nil},
+	results := f.applyWith(context.Background(), applyInput{
+		agents: []agents.Agent{cursor}, choice: ConnectAndRemove,
+		miniOverride: agents.MiniEntry{Command: f.mini, Args: []string{"connect"}},
+		removals:     Removals{Checks: map[string]error{"files": nil}},
 	})
 
 	wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
@@ -356,10 +392,12 @@ func TestApply_reportsEntriesChangedSinceTheCheck(t *testing.T) {
 		`{"mcpServers":{"files":{"command":"files-server","args":["--edited"]},"lin":{"command":"lin-server"}}}`,
 	)
 
-	results := Apply(context.Background(), ApplyParams{
-		ConfigDir: f.configDir, Agents: []agents.Agent{cursor}, Choice: ConnectAndRemove, Mini: f.miniEntry(),
-		Checks:  map[string]error{"files": nil, "lin": errors.New("unreachable")},
-		Counted: map[string][]string{"Cursor": {"files", "lin"}},
+	results := f.applyWith(context.Background(), applyInput{
+		agents: []agents.Agent{cursor}, choice: ConnectAndRemove,
+		removals: Removals{
+			Checks:  map[string]error{"files": nil, "lin": errors.New("unreachable")},
+			ByAgent: map[string][]string{"Cursor": {"files", "lin"}},
+		},
 	})
 
 	if !reflect.DeepEqual(results[0].Changed, []string{"files"}) || results[0].Removed != nil {
@@ -382,15 +420,7 @@ func TestApply_failuresAndCancel(t *testing.T) {
 		claude := f.write(t, "Claude Code", `{}`)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		results := Apply(
-			ctx,
-			ApplyParams{
-				ConfigDir: f.configDir,
-				Agents:    []agents.Agent{claude},
-				Choice:    ConnectOnly,
-				Mini:      f.miniEntry(),
-			},
-		)
+		results := f.applyWith(ctx, applyInput{agents: []agents.Agent{claude}, choice: ConnectOnly})
 		if !errors.Is(results[0].Err, context.Canceled) || string(testutil.ReadFile(t, claude.ConfigPath)) != "{}" {
 			t.Errorf("result = %+v, want cancelled and untouched", results[0])
 		}
@@ -507,15 +537,13 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			`"other-mini":{"command":"`+f.mini+`","args":["--config","/srv/other-mini","connect"]}}}`)
 		before := [][]byte{testutil.ReadFile(t, codex.ConfigPath), testutil.ReadFile(t, cursor.ConfigPath)}
 
-		results := Apply(context.Background(), ApplyParams{
-			ConfigDir: f.configDir,
-			Agents:    []agents.Agent{codex, cursor},
-			Choice:    ConnectAndRemove,
-			Mini:      f.miniEntry(),
-			Checks: map[string]error{
-				"files": nil,
+		results := f.applyWith(context.Background(), applyInput{
+			agents: []agents.Agent{codex, cursor},
+			choice: ConnectAndRemove,
+			removals: Removals{
+				Checks:  map[string]error{"files": nil},
+				ByAgent: map[string][]string{"Codex": {"files"}, "Cursor": {"files"}},
 			},
-			Counted: map[string][]string{"Codex": {"files"}, "Cursor": {"files"}},
 		})
 
 		wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
@@ -536,4 +564,25 @@ func TestApply_existingMiniEntry(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestApply_aMiniServerChangedAfterItsCheckRemovesNoEntryConnectDidntShow(t *testing.T) {
+	f := newApplyFixture(t)
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "server-a"})
+	cursor := f.write(t, "Cursor", `{"mcpServers":{"old":{"command":"server-a"},"other":{"command":"server-b"}}}`)
+	shown := f.shown([]agents.Agent{cursor})
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "server-b"})
+
+	results := f.applyWith(context.Background(), applyInput{
+		agents: []agents.Agent{cursor}, choice: ConnectAndRemove,
+		removals: Removals{Checks: map[string]error{"files": nil}, ByAgent: shown},
+	})
+
+	wantKept := []KeptEntry{{Entry: "other", Server: "files", Err: errNotShown}}
+	if results[0].Removed != nil || !reflect.DeepEqual(results[0].Kept, wantKept) {
+		t.Errorf("result = %+v, want other kept: Connect showed only old", results[0])
+	}
+	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, []string{"mini", "old", "other"}) {
+		t.Errorf("entries = %v, want both kept and mini added", got)
+	}
 }

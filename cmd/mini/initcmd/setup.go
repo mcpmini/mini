@@ -96,7 +96,7 @@ func (p Plan) Servers() []config.ServerConfig {
 }
 
 func (s Setup) report() Report {
-	return Report{ConfigDir: s.ConfigDir, Agents: ClassifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect)}
+	return Report{ConfigDir: s.ConfigDir, Agents: classifyAgents(s.ConfigDir, s.SelfPath, s.AgentsToConnect)}
 }
 
 type ServerError struct {
