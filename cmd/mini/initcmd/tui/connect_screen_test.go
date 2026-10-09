@@ -335,10 +335,8 @@ func TestConnectScreen_aTemporaryBinaryNoAgentWouldRunIsNotWarnedAbout(t *testin
 	t.Cleanup(s.checks.cancelAndWait)
 	s.resize(40)
 	s.enter()
-	if text := connectText(
-		s,
-	); strings.Contains(text, "/tmp/gobuild1") ||
-		!strings.HasPrefix(text, "> Connect mini and remove") {
+	text := connectText(s)
+	if strings.Contains(text, "/tmp/gobuild1") || !strings.HasPrefix(text, "> Connect mini and remove") {
 		t.Errorf("screen:\n%s\nwant no warning and the first option highlighted: Claude keeps its own mini entry", text)
 	}
 }

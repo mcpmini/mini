@@ -75,19 +75,22 @@ func writeHandSteps(b *strings.Builder, list []agents.Agent, mini agents.MiniEnt
 
 func writeConnected(b *strings.Builder, r Report) {
 	writeInactiveMini(b, r.Agents)
-	var changed []string
+	var changed, gotMini []string
 	for _, result := range r.Connected {
 		writeAgentResult(b, r, result)
 		if result.Err == nil && (result.Backup != "" || result.Created) {
 			changed = append(changed, result.Agent.Name)
+			if result.ExistingMini == NoMiniEntry {
+				gotMini = append(gotMini, result.Agent.Name)
+			}
 		}
 	}
 	if left := notTried(r); len(left) > 0 {
 		writeConnectSteps(b, r.Agents, left)
 	}
-	if len(changed) > 0 && r.Agents.TemporaryMini != "" {
+	if len(gotMini) > 0 && r.Agents.TemporaryMini != "" {
 		fmt.Fprintf(b, "\nThe mini entry in %s runs %s, which gets cleaned up: install mini somewhere permanent and "+
-			"point the entry at it.\n", JoinAnd(changed), r.Agents.TemporaryMini)
+			"point the entry at it.\n", JoinAnd(gotMini), r.Agents.TemporaryMini)
 	}
 	if len(changed) > 0 {
 		fmt.Fprintf(b, "\nRestart %s to start using mini.\n", JoinAnd(changed))
@@ -234,7 +237,7 @@ func indent(s, prefix string) string {
 
 func (c AgentConnections) inactiveStep() string {
 	if c.TemporaryMini != "" {
-		return c.installFirst() + "."
+		return "install mini somewhere permanent and have it run that copy; " + c.TemporaryMini + " gets cleaned up."
 	}
 	return "have it run: " + shellCommand(c.Mini)
 }

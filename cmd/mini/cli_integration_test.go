@@ -257,11 +257,20 @@ func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 	}
 }
 
-// permanentMini copies the binary out of the temp dir init would warn about, and gives the run a
-// temp dir of its own; a mini under /tmp on macOS still counts as temporary.
+// permanentMini copies the binary somewhere init doesn't count as temporary: the user cache dir,
+// since a temp dir under /tmp on macOS would still count.
 func permanentMini(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "mini")
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.MkdirTemp(cache, "mini-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) }) //nolint:errcheck // a leftover copy in the cache does no harm
+	bin := filepath.Join(dir, "mini")
 	testutil.WriteFile(t, bin, string(testutil.ReadFile(t, miniBin(t))))
 	if err := os.Chmod(bin, 0o755); err != nil {
 		t.Fatal(err)

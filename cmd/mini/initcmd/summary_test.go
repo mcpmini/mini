@@ -250,7 +250,7 @@ func TestSummary_aTemporaryMiniIsNeverTheStepToConnect(t *testing.T) {
 	} {
 		got := Summary(r)
 		for _, line := range strings.Split(got, "\n") {
-			replacing := strings.HasSuffix(line, InstallPermanently+"; /tmp/go-build1/exe/mini gets cleaned up.") ||
+			replacing := strings.HasSuffix(line, "; /tmp/go-build1/exe/mini gets cleaned up.") ||
 				strings.HasSuffix(
 					line,
 					"/tmp/go-build1/exe/mini, which gets cleaned up: install mini somewhere permanent "+
@@ -287,6 +287,21 @@ func TestHandConnectSteps_aTemporaryMiniGetsTheStepToInstallIt(t *testing.T) {
 	cursor := f.write(t, "Cursor", `{"mcpServers":{}}`)
 	got := HandConnectSteps(f.configDir, testSelf, []agents.Agent{cursor})
 	requireLines(t, got, "To connect mini to Cursor, "+InstallPermanently+"; "+self+" gets cleaned up.\n")
+}
+
+func TestSummary_anAgentThatKeptItsOwnMiniIsNotToldToRepointIt(t *testing.T) {
+	mini := agents.MiniEntry{Command: "/tmp/go-build1/exe/mini", Args: []string{"connect"}}
+	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"}
+	got := Summary(Report{
+		Agents: AgentConnections{Mini: mini, TemporaryMini: mini.Command, MiniServes: []agents.Agent{codex}},
+		Connected: []AgentResult{{
+			Agent: codex, ExistingMini: MiniEntryServes, Backup: "/home/u/.codex/config.minibackup.toml",
+			Removed: []string{"github"},
+		}},
+	})
+	if strings.Contains(got, mini.Command) {
+		t.Errorf("summary:\n%s\nwant no mention of the temporary binary: Codex kept its own mini entry", got)
+	}
 }
 
 func TestSummary_anAgentLeftUntickedKeepsItsHandStep(t *testing.T) {
