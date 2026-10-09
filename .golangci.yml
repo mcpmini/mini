@@ -64,7 +64,7 @@ linters:
         linters: [noctx]
       - path: _test\.go$
         linters: [gosec, errcheck, nolintlint]
-      - path: ^(internal/testutil|internal/auth/authtest|internal/config/configtest|test/fakemcp|cmd/echomcp|tools)/
+      - path: ^(internal/testutil|internal/auth/authtest|internal/config/configtest|test/fakemcp|cmd/echomcp)/
         linters: [gosec, errcheck, nolintlint]
       - path: ^internal/(clock|transport)/fake\.go$
         linters: [gosec, errcheck, nolintlint]
