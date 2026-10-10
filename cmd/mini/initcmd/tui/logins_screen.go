@@ -299,7 +299,7 @@ func (s *loginsScreen) linkLines(indent int) []string {
 	}
 	var lines []string
 	for _, line := range strings.Split(ansi.Hardwrap(s.pending.url, max(s.width-indent, 20), false), "\n") {
-		lines = append(lines, strings.Repeat(" ", indent)+line)
+		lines = append(lines, strings.Repeat(" ", indent)+ansi.SetHyperlink(s.pending.url)+line+ansi.ResetHyperlink())
 	}
 	return lines
 }
@@ -381,6 +381,9 @@ func withNotice(notice, keys string) string {
 }
 
 func (s *loginsScreen) keys() string {
+	if s.pending != nil && s.pending.url == "" {
+		return "↑↓ move · esc cancel login · tab continue"
+	}
 	if s.pending != nil {
 		return withNotice(s.notice, "↑↓ move · c copy link · esc cancel login · tab continue")
 	}

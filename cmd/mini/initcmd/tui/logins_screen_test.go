@@ -513,7 +513,7 @@ func TestLoginsScreen_aCopyThatCantBeConfirmedAsksTheTerminalAndShowsTheWholeLin
 			}
 			_, cmd := a.Update(press("c"))
 			terminalCopy := s.update(cmd())
-			if terminalCopy == nil || !strings.HasPrefix(a.keys(s), "asked the terminal to copy the link · ") {
+			if terminalCopy == nil || !strings.HasPrefix(a.keys(s), "asked the terminal to copy · ") {
 				t.Errorf("command %v, keys %q; want the terminal asked, and the footer not claiming it worked",
 					terminalCopy, a.keys(s))
 			}
@@ -521,6 +521,19 @@ func TestLoginsScreen_aCopyThatCantBeConfirmedAsksTheTerminalAndShowsTheWholeLin
 				t.Errorf("screen after c:\n%s\nwant the whole link shown to select by hand", text)
 			}
 		})
+	}
+}
+
+func TestLoginsScreen_cIsOfferedOnlyOnceTheLoginHasALink(t *testing.T) {
+	s := loginScreen(newFakeLogins("linear"), "linear")
+	_, cmd := s.handle(press("enter"))
+	t.Cleanup(s.cancelLogin)
+	if strings.Contains(s.keys(), "copy") {
+		t.Errorf("keys before the link arrives = %q, want no copy: there is nothing to copy yet", s.keys())
+	}
+	s.update(cmd())
+	if !strings.Contains(s.keys(), "c copy link") {
+		t.Errorf("keys once the link arrived = %q, want c copy link", s.keys())
 	}
 }
 

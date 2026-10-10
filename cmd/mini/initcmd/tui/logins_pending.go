@@ -116,6 +116,6 @@ func (s *loginsScreen) linkCopied(msg linkCopied) tea.Cmd {
 		s.notice = "✓ link copied"
 		return nil
 	}
-	s.notice, s.pending.revealed = "asked the terminal to copy the link", true
+	s.notice, s.pending.revealed = "asked the terminal to copy", true
 	return tea.SetClipboard(s.pending.url)
 }
