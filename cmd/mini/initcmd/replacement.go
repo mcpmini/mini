@@ -35,36 +35,31 @@ func (r replacementRule) servedAfterEdit(existing ExistingMini) bool {
 
 func (r replacementRule) splitDuplicates(existing ExistingMini, duplicates map[string]string) ([]string, []KeptEntry) {
 	if !r.servedAfterEdit(existing) {
-		return nil, keepAll(duplicates, errMiniInactive)
+		return split(duplicates, func(string) error { return errMiniInactive })
 	}
-	return r.splitByCheck(duplicates)
+	return split(duplicates, r.checkError)
 }
 
 func (r replacementRule) mayRemove(existing ExistingMini, duplicates map[string]string) bool {
 	return len(duplicates) > 0 && r.servedAfterEdit(existing)
 }
 
-func (r replacementRule) splitByCheck(duplicates map[string]string) ([]string, []KeptEntry) {
+func (r replacementRule) checkError(server string) error {
+	if err, checked := r.checks[server]; checked {
+		return err
+	}
+	return errNotChecked
+}
+
+func split(duplicates map[string]string, reason func(server string) error) ([]string, []KeptEntry) {
 	var remove []string
 	var kept []KeptEntry
 	for _, entry := range slices.Sorted(maps.Keys(duplicates)) {
-		err, checked := r.checks[duplicates[entry]]
-		if !checked {
-			err = errNotChecked
-		}
-		if err != nil {
+		if err := reason(duplicates[entry]); err != nil {
 			kept = append(kept, KeptEntry{Entry: entry, Server: duplicates[entry], Err: err})
 		} else {
 			remove = append(remove, entry)
 		}
 	}
 	return remove, kept
-}
-
-func keepAll(duplicates map[string]string, reason error) []KeptEntry {
-	var kept []KeptEntry
-	for _, entry := range slices.Sorted(maps.Keys(duplicates)) {
-		kept = append(kept, KeptEntry{Entry: entry, Server: duplicates[entry], Err: reason})
-	}
-	return kept
 }
