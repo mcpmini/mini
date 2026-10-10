@@ -11,7 +11,8 @@ type linkState struct {
 }
 
 type daemonLink struct {
-	mu         sync.Mutex
+	mu sync.Mutex
+	// read without mu: a request that starts during Resolve must keep its old generation so recover won't resolve again
 	state      atomic.Pointer[linkState]
 	resolveErr error // set when Resolve() fails; cleared on next successful resolve
 }
@@ -23,7 +24,6 @@ func newDaemonLink(token string) *daemonLink {
 }
 
 func (d *daemonLink) snapshot() linkState {
-	// no d.mu: a request that starts during Resolve must keep its old generation so recover won't resolve again
 	return *d.state.Load()
 }
 
