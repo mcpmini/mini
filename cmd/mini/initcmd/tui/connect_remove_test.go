@@ -74,29 +74,33 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 		s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
 		plan.release <- initcmd.Removals{}
 		s.update(check())
-		want := "Claude:  adding mini, nothing to remove"
-		if text := connectText(s); !strings.Contains(text, want) {
+		want := "Nothing to remove: none of these MCPs work in mini yet"
+		if text := connectText(s); !strings.Contains(text, want) || strings.Contains(text, "backed up") {
 			t.Errorf("screen:\n%s\nwant it to say nothing can be removed yet", text)
 		}
 	})
 	t.Run("nothing passed for an agent that has mini", func(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"files"}, "Codex": {"github"}})
 		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Claude": true})
-		plan.release <- initcmd.Removals{}
+		plan.release <- initcmd.Removals{ByAgent: map[string][]string{"Codex": {"github"}}}
 		s.update(check())
 		if text := connectText(s); !strings.Contains(text, "Claude:  mini already connected, nothing to remove") {
 			t.Errorf("screen:\n%s\nwant Claude told nothing changes for it", text)
 		}
 	})
 	t.Run("a narrow window wraps the subtitle", func(t *testing.T) {
-		plan := newFakePlan(map[string][]string{"Claude": {"files"}})
+		plan := newFakePlan(map[string][]string{"Claude": {"files", "notes", "calendar", "drive"}})
 		s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
 		s.resize(44, 30)
 		plan.checksPass(s, check)
-		for _, line := range strings.Split(connectText(s), "\n") {
+		lines := strings.Split(linesUnder(s, initcmd.ConnectAndRemove), "\n")
+		for _, line := range lines {
 			if ansi.StringWidth(line) > 44 {
 				t.Errorf("line %q is wider than the 44-column window", line)
 			}
+		}
+		if last := lines[len(lines)-1]; len(lines) < 3 || !strings.HasPrefix(last, "    ") {
+			t.Errorf("lines:\n%s\nwant Claude's line wrapped, its rest indented under it", strings.Join(lines, "\n"))
 		}
 	})
 }

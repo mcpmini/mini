@@ -172,11 +172,14 @@ func (s *connectScreen) addedLines() []string {
 	return strings.Split(ansi.Wrap(text, max(s.width, 20), ""), "\n")
 }
 
-// Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
+// Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap, keeping
+// their own indent.
 func (s *connectScreen) subtitleLines(subtitle string) []string {
+	text := strings.TrimLeft(subtitle, " ")
+	indent := "  " + subtitle[:len(subtitle)-len(text)]
 	var lines []string
-	for _, line := range strings.Split(ansi.Wrap(subtitle, max(s.width-2, 20), ""), "\n") {
-		lines = append(lines, "  "+dim.Render(line))
+	for _, line := range strings.Split(ansi.Wrap(text, max(s.width-len(indent), 20), ""), "\n") {
+		lines = append(lines, indent+dim.Render(line))
 	}
 	return lines
 }
@@ -203,6 +206,9 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 	case initcmd.ConnectAndRemove:
 		if !s.checks.done {
 			return []string{"checking servers…"}
+		}
+		if !s.anyPickedRemoves() {
+			return []string{"Nothing to remove: none of these MCPs work in mini yet"}
 		}
 		return append([]string{"The configs are backed up first"}, s.agentLines(s.removeLine)...)
 	case initcmd.ConnectOnly:
@@ -233,6 +239,12 @@ func (s *connectScreen) agentLines(line func(agent agents.Agent, picked bool) st
 		lines = append(lines, fmt.Sprintf("  %-*s  %s", width, r.agent.Name+":", line(r.agent, r.picked)))
 	}
 	return lines
+}
+
+func (s *connectScreen) anyPickedRemoves() bool {
+	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool {
+		return len(s.checks.removals.ByAgent[agent.Name]) > 0
+	})
 }
 
 func (s *connectScreen) removeLine(agent agents.Agent, picked bool) string {
