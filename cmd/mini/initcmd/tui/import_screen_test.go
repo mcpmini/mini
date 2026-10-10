@@ -19,7 +19,7 @@ func candidate(name, url string, picked bool, agents ...string) initcmd.Candidat
 }
 
 func screenText(s *importScreen) string {
-	return ansi.Strip(s.heading() + "\n" + s.body(20))
+	return ansi.Strip(s.heading() + "\n" + s.body(20, true))
 }
 
 func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
@@ -58,7 +58,7 @@ func TestImportScreen_onlyASwitchedOffRowSaysWhyItIsUnticked(t *testing.T) {
 func TestImportScreen_oneAgentIsNamedInTheHeadingInsteadOfAColumn(t *testing.T) {
 	s := newImportScreen([]initcmd.Candidate{candidate("linear", "https://linear.example.com/mcp", true, "Cursor")})
 	if text := screenText(s); !strings.HasPrefix(text, "Import servers from Cursor\n") ||
-		strings.Contains(s.body(20), "Cursor") {
+		strings.Contains(s.body(20, true), "Cursor") {
 		t.Errorf("screen:\n%s\nwant Cursor named in the heading only", text)
 	}
 }
@@ -83,30 +83,23 @@ func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 	}
 }
 
-func TestImportScreen_enterTicksTheRowAndContinuesFromContinue(t *testing.T) {
+func TestImportScreen_enterAndSpaceTickTheRowAndDownPastItLeavesTheList(t *testing.T) {
 	s := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
-	for key, want := range map[string]step{"enter": stay, "esc": back, "left": stay, "space": stay} {
-		if got, _ := s.handle(press(key)); got != want {
-			t.Errorf("%s = %v, want %v", key, got, want)
+	for _, key := range []string{"enter", "space"} {
+		if got, _ := s.handle(press(key)); got != handled {
+			t.Errorf("%s = %v, want handled", key, got)
 		}
 	}
 	if got := len(s.ticked()); got != 1 {
 		t.Errorf("ticked %d after enter then space, want github ticked again", got)
 	}
-	s.handle(press("down"))
-	if text := screenText(s); !strings.HasSuffix(text, "\n> Continue") {
-		t.Errorf("screen:\n%s\nwant the cursor on Continue after moving past the last row", text)
+	for _, key := range []string{"esc", "left", "tab"} {
+		if got, _ := s.handle(press(key)); got != unhandled {
+			t.Errorf("%s = %v, want it left to the app", key, got)
+		}
 	}
-	if got, _ := s.handle(press("enter")); got != forward {
-		t.Errorf("enter on Continue = %v, want forward", got)
-	}
-}
-
-func TestImportScreen_onContinueTheFooterNamesUpBackToTheRows(t *testing.T) {
-	s := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
-	s.handle(press("tab"))
-	if keys := s.keys(); !strings.HasPrefix(keys, "↑ move") {
-		t.Errorf("keys on Continue = %q, want ↑ named: it is the only way back to the rows", keys)
+	if got, _ := s.handle(press("down")); got != pastLastRow {
+		t.Errorf("down on the last row = %v, want past the last row", got)
 	}
 }
 
@@ -127,7 +120,7 @@ func TestImportScreen_eachHeadingSitsAboveItsColumnEvenWhenTheColumnIsNarrower(t
 		candidate("a", "https://x.io", true, "Codex"),
 		candidate("b", "https://y.io", true, "Cursor"),
 	})
-	lines := strings.Split(ansi.Strip(s.body(20)), "\n")
+	lines := strings.Split(ansi.Strip(s.body(20, true)), "\n")
 	header, row := lines[0], lines[1]
 	for heading, cell := range map[string]string{"SERVER": "[x]", "COMMAND / URL": "x.io", "FROM": "Codex"} {
 		if strings.Index(header, heading) != strings.Index(row, cell) {
@@ -145,10 +138,10 @@ func TestImportScreen_theHeaderStaysAboveTheRowsAsTheyScroll(t *testing.T) {
 	for range 4 {
 		s.handle(press("down"))
 	}
-	lines := strings.Split(ansi.Strip(s.body(5)), "\n")
-	if len(lines) != 5 || !strings.HasPrefix(strings.TrimSpace(lines[0]), "SERVER") ||
+	lines := strings.Split(ansi.Strip(s.body(3, true)), "\n")
+	if len(lines) != 3 || !strings.HasPrefix(strings.TrimSpace(lines[0]), "SERVER") ||
 		!strings.HasPrefix(lines[2], "> [x] e") {
-		t.Errorf("body at height 5:\n%s\nwant the header, then rows ending at the cursor on e, then Continue",
+		t.Errorf("body at height 3:\n%s\nwant the header, then rows ending at the cursor on e",
 			strings.Join(lines, "\n"))
 	}
 }

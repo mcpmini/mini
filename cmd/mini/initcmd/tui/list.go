@@ -21,7 +21,6 @@ type list struct {
 	rows    []row
 	checked map[string]bool
 	cursor  int
-	actions actions
 	scroll  scroll
 	filter  textFilter
 	// header names the columns; it stays above the rows as they scroll. No label means no header.
@@ -29,7 +28,7 @@ type list struct {
 }
 
 func newList(rows []row, checked map[string]bool) *list {
-	return &list{rows: rows, checked: checked, actions: newActions()}
+	return &list{rows: rows, checked: checked}
 }
 
 func (l *list) visible() []row {
@@ -53,20 +52,16 @@ func (l *list) current() (row, bool) {
 	return shown[l.cursor], true
 }
 
-// Moving down past the last row reaches the actions.
-func (l *list) move(step int) {
-	switch {
-	case l.actions.active:
-		l.actions.move(step)
-	case step > 0 && l.cursor >= len(l.visible())-1:
-		l.actions.reach()
-	default:
-		l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
+func (l *list) move(step int) reply {
+	if step > 0 && l.cursor >= len(l.visible())-1 {
+		return pastLastRow
 	}
+	l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
+	return handled
 }
 
 func (l *list) toggle() {
-	if r, ok := l.current(); ok && !l.actions.active {
+	if r, ok := l.current(); ok {
 		l.checked[r.key] = !l.checked[r.key]
 	}
 }
@@ -84,40 +79,31 @@ func (l *list) toggleAll() {
 }
 
 func (l *list) filterChanged() {
-	l.cursor, l.actions.active, l.scroll = 0, false, scroll{}
+	l.cursor, l.scroll = 0, scroll{}
 }
 
 func (l *list) keys(screenKeys string) string {
 	return l.filter.keys(screenKeys)
 }
 
-// handle reports whether the list took the key; enter on an action is left to the screen.
-func (l *list) handle(key tea.KeyPressMsg) bool {
+func (l *list) handle(key tea.KeyPressMsg) reply {
 	if l.filter.handle(key, l) {
-		return true
+		return handled
 	}
 	switch key.String() {
 	case "up", "down":
-		l.moveKey(key.String())
-	case "space":
+		return l.moveKey(key.String())
+	case "space", "enter":
 		l.toggle()
-	case "enter":
-		if l.actions.active {
-			return false
-		}
-		l.toggle()
-	case "tab":
-		l.actions.reach()
-	default:
-		return false
+		return handled
 	}
-	return true
+	return unhandled
 }
 
-func (l *list) moveKey(key string) {
-	if key == "up" {
-		l.move(-1)
-		return
-	}
-	l.move(1)
+func (l *list) moveKey(key string) reply {
+	return l.move(direction(key))
+}
+
+func (l *list) focusable() bool {
+	return len(l.visible()) > 0
 }

@@ -56,34 +56,27 @@ func (s *importScreen) heading() string {
 	return "Import servers from your agents"
 }
 
-func (s *importScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
-	if s.list.handle(key) {
-		return stay, nil
+func (s *importScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
+	if r := s.list.handle(key); r != unhandled {
+		return r, nil
 	}
-	switch key.String() {
-	case "a":
+	if key.String() == "a" {
 		s.list.toggleAll()
-	case "enter":
-		return s.list.actions.step(), nil
-	case "esc":
-		return back, nil
+		return handled, nil
 	}
-	return stay, nil
+	return unhandled, nil
 }
 
-func (s *importScreen) offerBack(back bool) {
-	s.list.actions.offerBack(back)
-}
-
-func (s *importScreen) body(height int) string {
-	return s.list.view(height)
+func (s *importScreen) body(height int, focused bool) string {
+	return s.list.view(height, focused)
 }
 
 func (s *importScreen) keys() string {
-	if s.list.actions.active {
-		return s.list.keys(s.list.actions.keys(len(s.list.visible()) > 0))
-	}
 	return s.list.keys("space/enter tick · a all · tab continue · / filter")
+}
+
+func (s *importScreen) focusable() bool {
+	return s.list.focusable()
 }
 
 func (s *importScreen) filterLine() string {

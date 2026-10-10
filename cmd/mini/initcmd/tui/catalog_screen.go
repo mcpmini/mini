@@ -32,7 +32,6 @@ type catalogScreen struct {
 	checked       map[string]bool
 	grid          *catalogGrid
 	width, height int
-	back          bool
 }
 
 type catalogParams struct {
@@ -83,16 +82,7 @@ func (s *catalogScreen) enter() tea.Cmd {
 	}
 	s.grid = newCatalogGrid(s.sections(shown), s.checked)
 	s.grid.resize(s.width, s.height)
-	s.grid.actions.offerBack(s.back)
-	if s.loaded && !s.offersEntries() {
-		s.grid.actions.reach()
-	}
 	return nil
-}
-
-func (s *catalogScreen) offerBack(back bool) {
-	s.back = back
-	s.grid.actions.offerBack(back)
 }
 
 func (s *catalogScreen) resize(width, height int) {
@@ -154,55 +144,29 @@ func (s *catalogScreen) heading() string {
 	return "Add servers from the catalog"
 }
 
-func (s *catalogScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
-	// Until the catalog arrives there is nothing to pick, and enter would skip it unseen.
-	if !s.offersEntries() {
-		return s.handleWithoutGrid(key)
-	}
-	if s.grid.handle(key) {
-		return stay, nil
-	}
-	switch key.String() {
-	case "enter":
-		return s.grid.actions.step(), nil
-	case "esc":
-		return back, nil
-	}
-	return stay, nil
+func (s *catalogScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
+	return s.grid.handle(key), nil
 }
 
-// Until the catalog loads there is nothing to act on; once it fails or offers nothing new, only
-// the actions under the message are left.
-func (s *catalogScreen) handleWithoutGrid(key tea.KeyPressMsg) (step, tea.Cmd) {
-	switch key.String() {
-	case "up", "down":
-		if s.loaded {
-			s.grid.actions.moveWithin(direction(key.String()))
-		}
-	case "enter":
-		if s.loaded {
-			return s.grid.actions.step(), nil
-		}
-	case "esc":
-		return back, nil
-	}
-	return stay, nil
+// Until the catalog arrives there is nothing to pick, and Continue would skip it unseen.
+func (s *catalogScreen) waiting() bool {
+	return !s.loaded
 }
 
-func (s *catalogScreen) body(height int) string {
+func (s *catalogScreen) focusable() bool {
+	return s.offersEntries() && s.grid.focusable()
+}
+
+func (s *catalogScreen) body(height int, focused bool) string {
 	switch {
 	case !s.loaded:
 		return "loading…"
 	case s.loadErr != nil:
-		return s.withActions("The catalog couldn't be loaded: " + s.loadErr.Error())
+		return "The catalog couldn't be loaded: " + s.loadErr.Error()
 	case len(s.available) == 0:
-		return s.withActions("mini already has every server in the catalog.")
+		return "mini already has every server in the catalog."
 	}
-	return s.grid.view(height)
-}
-
-func (s *catalogScreen) withActions(message string) string {
-	return s.grid.actions.withMessage(message)
+	return s.grid.view(height, focused)
 }
 
 func (s *catalogScreen) offersEntries() bool {
@@ -210,14 +174,9 @@ func (s *catalogScreen) offersEntries() bool {
 }
 
 func (s *catalogScreen) keys() string {
-	if !s.loaded {
-		return "loading the catalog"
-	}
 	switch {
-	case !s.offersEntries():
-		return s.grid.actions.keys(false)
-	case s.grid.actions.active:
-		return s.grid.keys(s.grid.actions.keys(true))
+	case !s.loaded:
+		return "loading the catalog"
 	case s.grid.isGrid():
 		return s.grid.keys("↑↓←→ move · space/enter tick · tab continue · / filter")
 	}

@@ -29,17 +29,15 @@ type connectScreen struct {
 	listed           []agents.Agent
 	alreadyConnected []string
 	ticked           map[string]bool
-	// cursor is the agent under the cursor until it reaches the choices, which are the screen's actions.
-	cursor  int
-	actions actions
-	chosen  initcmd.ConnectChoice
-	checks  connectChecks
-	width   int
-	scroll  scroll
+	cursor           int
+	chosen           initcmd.ConnectChoice
+	checks           connectChecks
+	width            int
+	scroll           scroll
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
-	return &connectScreen{p: p, ticked: map[string]bool{}, actions: newActions()}
+	return &connectScreen{p: p, ticked: map[string]bool{}}
 }
 
 func (s *connectScreen) refresh() {
@@ -60,18 +58,16 @@ func (s *connectScreen) refresh() {
 		}
 		s.listed = append(s.listed, agent)
 	}
-	var labels []string
-	for _, choice := range s.options() {
-		labels = append(labels, optionLabel(choice))
-	}
-	s.actions.setChoices(labels)
 }
 
 func (s *connectScreen) enter() tea.Cmd {
-	// The cursor starts on the first choice, so up from it goes to the last agent.
+	// The app starts the cursor on the first choice, so up from it goes to the last agent.
 	s.cursor, s.scroll = max(s.agentRows()-1, 0), scroll{}
-	s.actions.reach()
 	return s.checks.start(s.plan)
+}
+
+func (s *connectScreen) leave() {
+	s.checks.cancel()
 }
 
 func (s *connectScreen) update(msg tea.Msg) tea.Cmd {
@@ -106,113 +102,50 @@ func (s *connectScreen) heading() string {
 	return "Connect mini to your agents"
 }
 
-func (s *connectScreen) offerBack(back bool) {
-	s.actions.offerBack(back)
-}
-
-func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
+func (s *connectScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
 	switch key.String() {
-	case "up", "down":
-		s.move(direction(key.String()))
-	case "tab":
-		s.actions.reach()
-	case "space":
+	case "up":
+		s.cursor = max(s.cursor-1, 0)
+	case "down":
+		if s.cursor == s.agentRows()-1 {
+			return pastLastRow, nil
+		}
+		s.cursor++
+	case "space", "enter":
 		s.tick()
 	case "a":
 		s.tickAll()
-	case "enter":
-		return s.choose()
-	case "esc":
-		return s.goBack()
-	}
-	return stay, nil
-}
-
-// Going back cancels the server checks, which only a later visit restarts, so with nowhere to go
-// back to they keep running.
-func (s *connectScreen) goBack() (step, tea.Cmd) {
-	if !s.actions.back {
-		return stay, nil
-	}
-	s.checks.cancel()
-	return back, nil
-}
-
-// move goes from the last agent to the choices and back; with one agent there are only the choices.
-func (s *connectScreen) move(step int) {
-	switch {
-	case s.agentRows() == 0:
-		s.actions.moveWithin(step)
-	case s.actions.active:
-		s.actions.move(step)
-	case step > 0 && s.cursor == s.agentRows()-1:
-		s.actions.reach()
 	default:
-		s.cursor = max(s.cursor+step, 0)
+		return unhandled, nil
 	}
+	return handled, nil
+}
+
+func (s *connectScreen) focusable() bool {
+	return s.agentRows() > 0
 }
 
 func (s *connectScreen) tick() {
-	if !s.actions.active {
-		name := s.listed[s.cursor].Name
-		s.ticked[name] = !s.ticked[name]
-	}
+	name := s.listed[s.cursor].Name
+	s.ticked[name] = !s.ticked[name]
 }
 
 func (s *connectScreen) tickAll() {
-	// With one agent there are no checkboxes, so there is nothing the user could see change.
-	if s.agentRows() == 0 {
-		return
-	}
 	all := !slices.ContainsFunc(s.listed, func(agent agents.Agent) bool { return !s.ticked[agent.Name] })
 	for _, agent := range s.listed {
 		s.ticked[agent.Name] = !all
 	}
 }
 
-func (s *connectScreen) choose() (step, tea.Cmd) {
-	if s.actions.onBack() {
-		return s.goBack()
+func (s *connectScreen) choices() []string {
+	var labels []string
+	for _, choice := range s.options() {
+		labels = append(labels, optionLabel(choice))
 	}
-	choice, onOption := s.highlighted()
-	if !onOption {
-		s.tick()
-		return stay, nil
-	}
-	if choice == initcmd.ConnectAndRemove && !s.checks.done {
-		return stay, nil
-	}
-	s.checks.cancel()
-	s.chosen = choice
-	return forward, nil
+	return labels
 }
 
-// The cursor never reaches the note, so it stays above the scrolled rows instead of scrolling
-// away for good on a short window.
-func (s *connectScreen) body(height int) string {
-	header := s.noteLines()
-	if height > 0 {
-		header = header[:min(len(header), height-1)]
-		height -= len(header)
-	}
-	return strings.Join(append(header, s.rowLines(height)...), "\n")
-}
-
-func (s *connectScreen) rowLines(height int) []string {
-	lines, first := s.agentLines()
-	last := first
-	actions, actionFirst, actionLast := s.actions.lines(s.choiceSubtitles)
-	if s.agentRows() == 0 {
-		// With one agent the choices open the screen; the blank line would only push them down.
-		actions, actionFirst, actionLast = actions[1:], actionFirst-1, actionLast-1
-	}
-	if s.actions.active {
-		first, last = len(lines)+actionFirst, len(lines)+actionLast
-	}
-	return s.scroll.cut(append(lines, actions...), first, last, height)
-}
-
-func (s *connectScreen) choiceSubtitles(choice int) []string {
+func (s *connectScreen) choiceLines(choice int) []string {
 	var lines []string
 	for _, subtitle := range s.subtitles(s.options()[choice]) {
 		lines = append(lines, s.subtitleLines(subtitle)...)
@@ -220,16 +153,39 @@ func (s *connectScreen) choiceSubtitles(choice int) []string {
 	return lines
 }
 
+func (s *connectScreen) choose(i int) (chosen bool) {
+	choice := s.options()[i]
+	// Removing needs the checks' results; until they arrive its lines say it is checking.
+	if choice == initcmd.ConnectAndRemove && !s.checks.done {
+		return false
+	}
+	s.chosen = choice
+	return true
+}
+
+// The cursor never reaches the note, so it stays above the scrolled rows instead of scrolling
+// away for good on a short window.
+func (s *connectScreen) body(height int, focused bool) string {
+	header := s.noteLines()
+	if len(header) > 0 && s.agentRows() > 0 {
+		header = append(header, "")
+	}
+	header = header[:min(len(header), max(height-1, 0))]
+	lines, cursorLine := s.agentLines(focused)
+	rows := s.scroll.cut(lines, cursorLine, cursorLine, height-len(header))
+	return strings.Join(append(header, rows...), "\n")
+}
+
 func (s *connectScreen) noteLines() []string {
 	if len(s.alreadyConnected) == 0 {
 		return nil
 	}
-	return []string{dim.Render(alreadyHaveMini(s.alreadyConnected)), ""}
+	return []string{dim.Render(alreadyHaveMini(s.alreadyConnected))}
 }
 
-func (s *connectScreen) agentLines() (lines []string, cursorLine int) {
+func (s *connectScreen) agentLines(focused bool) (lines []string, cursorLine int) {
 	for i := range s.agentRows() {
-		onAgent := !s.actions.active && i == s.cursor
+		onAgent := focused && i == s.cursor
 		if onAgent {
 			cursorLine = len(lines)
 		}
@@ -335,21 +291,7 @@ func withVerb(names []string, one, many string) string {
 }
 
 func (s *connectScreen) keys() string {
-	if !s.actions.active {
-		return "↑↓ move · space/enter tick · a all · tab choices"
-	}
-	keys := s.actions.keys(s.agentRows() > 0)
-	if choice, onOption := s.highlighted(); onOption && choice == initcmd.ConnectAndRemove && !s.checks.done {
-		keys = "↑↓ move · removing waits for the server checks"
-	}
-	return keys
-}
-
-func (s *connectScreen) highlighted() (choice initcmd.ConnectChoice, onOption bool) {
-	if !s.actions.active || s.actions.onBack() {
-		return choice, false
-	}
-	return s.options()[s.actions.at], true
+	return "↑↓ move · space/enter tick · a all · tab choices"
 }
 
 func (s *connectScreen) empty() bool {

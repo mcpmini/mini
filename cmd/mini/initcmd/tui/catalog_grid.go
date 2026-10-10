@@ -31,7 +31,6 @@ type catalogGrid struct {
 	sections       []gridSection
 	checked        map[string]bool
 	at             gridSpot
-	actions        actions
 	open           int
 	filter         textFilter
 	width          int
@@ -40,7 +39,7 @@ type catalogGrid struct {
 }
 
 func newCatalogGrid(sections []gridSection, checked map[string]bool) *catalogGrid {
-	g := &catalogGrid{sections: sections, checked: checked, actions: newActions()}
+	g := &catalogGrid{sections: sections, checked: checked}
 	g.at = g.firstEntry()
 	return g
 }
@@ -78,7 +77,7 @@ func (g *catalogGrid) firstEntry() gridSpot {
 
 func (g *catalogGrid) current() (gridEntry, bool) {
 	shown := g.shown()
-	if g.actions.active || g.at.section >= len(shown) || g.at.entry < 0 {
+	if g.at.section >= len(shown) || g.at.entry < 0 {
 		return gridEntry{}, false
 	}
 	entries := shown[g.at.section].entries
@@ -88,44 +87,36 @@ func (g *catalogGrid) current() (gridEntry, bool) {
 	return entries[g.at.entry], true
 }
 
-// handle reports whether the grid took the key; enter on an action is left to the screen.
-func (g *catalogGrid) handle(key tea.KeyPressMsg) bool {
+func (g *catalogGrid) handle(key tea.KeyPressMsg) reply {
 	if g.filter.handle(key, g) {
-		return true
+		return handled
 	}
 	switch key.String() {
 	case "up", "down", "left", "right":
-		g.moveKey(key.String())
-	case "tab":
-		g.actions.reach()
+		return g.moveKey(key.String())
 	case "space", "enter":
-		return g.activate(key.String())
-	default:
-		return false
+		g.activate()
+		return handled
 	}
-	return true
+	return unhandled
 }
 
 func (g *catalogGrid) filterChanged() {
-	g.at, g.actions.active, g.scroll = g.firstEntry(), false, scroll{}
+	g.at, g.scroll = g.firstEntry(), scroll{}
 	g.settle()
 }
 
-func (g *catalogGrid) activate(key string) bool {
-	if g.actions.active {
-		return key != "enter"
-	}
+func (g *catalogGrid) activate() {
 	if g.at.entry < 0 {
 		// A filter shows every matching category open, so a heading has nothing to open.
 		if g.filter.text == "" {
 			g.toggleOpen(g.at.section)
 		}
-		return true
+		return
 	}
 	if e, ok := g.current(); ok {
 		g.checked[e.key] = !g.checked[e.key]
 	}
-	return true
 }
 
 func (g *catalogGrid) toggleOpen(section int) {
@@ -136,34 +127,35 @@ func (g *catalogGrid) toggleOpen(section int) {
 	g.open = section
 }
 
-func (g *catalogGrid) moveKey(key string) {
-	if g.actions.active {
-		if key == "up" || key == "down" {
-			g.actions.move(direction(key))
-		}
-		return
+func (g *catalogGrid) moveKey(key string) reply {
+	if !g.focusable() {
+		return handled
 	}
 	columns := g.columns()
 	col, row, _ := g.locate(columns)
-	switch key {
-	case "up", "down":
-		g.moveVertically(columns[col], row, direction(key))
-	case "left", "right":
-		g.moveAcross(columns, col, row, direction(key))
+	if key == "up" || key == "down" {
+		return g.moveVertically(columns[col], row, direction(key))
 	}
+	g.moveAcross(columns, col, row, direction(key))
+	return handled
 }
 
 // moveVertically steps to the next row the cursor can rest on; past the last it reaches Continue.
-func (g *catalogGrid) moveVertically(column []gridCell, row, step int) {
+func (g *catalogGrid) moveVertically(column []gridCell, row, step int) reply {
 	for r := row + step; r >= 0 && r < len(column); r += step {
 		if column[r].selectable {
 			g.at = column[r].spot
-			return
+			return handled
 		}
 	}
 	if step > 0 {
-		g.actions.reach()
+		return pastLastRow
 	}
+	return handled
+}
+
+func (g *catalogGrid) focusable() bool {
+	return len(g.shown()) > 0
 }
 
 func (g *catalogGrid) moveAcross(columns [][]gridCell, col, row, step int) {

@@ -9,20 +9,24 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-type step int
+type reply int
 
 const (
-	stay step = iota
-	forward
-	back
+	handled reply = iota
+	unhandled
+	pastLastRow
 )
 
+// A screen is one step of the wizard and draws only its own rows; the app draws Continue and Back
+// under every screen and moves between them.
 type screen interface {
 	heading() string
-	handle(key tea.KeyPressMsg) (step, tea.Cmd)
-	body(height int) string
-	// keys names the screen's own keys and what enter does there; the app adds esc and ctrl+c.
+	// handle gets keys only while the cursor is on the screen's rows; tab and esc it leaves
+	// unhandled go to the app.
+	handle(key tea.KeyPressMsg) (reply, tea.Cmd)
+	body(height int, focused bool) string
 	keys() string
+	focusable() bool
 	// empty answers from what the screen last read, so drawing a frame never reads files.
 	empty() bool
 }
@@ -35,6 +39,14 @@ type refresher interface {
 
 type enterer interface {
 	enter() tea.Cmd
+}
+
+type leaver interface {
+	leave()
+}
+
+type waiter interface {
+	waiting() bool
 }
 
 // A screen that loads in the background starts loading when the UI starts.
@@ -78,6 +90,7 @@ type app struct {
 	quit           bool
 	saves          savePoint
 	firstScreenCmd tea.Cmd
+	nav            navigation
 }
 
 // A screen can stop being empty once it loads, so empty screens are skipped when moving, not dropped.
@@ -115,10 +128,11 @@ func (a *app) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Any message can empty the screens before this one, so Back is offered again after each.
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd := a.update(msg)
-	a.offerBack()
+	if a.hasScreens() {
+		a.clampNavigationCursor()
+	}
 	return a, cmd
 }
 
@@ -141,10 +155,8 @@ func (a *app) update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-func (a *app) offerBack() {
-	if s, ok := a.screens[a.at].(backOfferer); ok {
-		s.offerBack(a.canGoBack())
-	}
+func (a *app) current() screen {
+	return a.screens[a.at]
 }
 
 func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
@@ -152,20 +164,50 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 		a.quit = true
 		return tea.Quit
 	}
-	if a.tooSmall() {
+	switch {
+	case a.tooSmall():
 		// The screen is hidden, so a key would act on picks the user can't see.
 		return nil
-	}
-	move, work := a.screens[a.at].handle(key)
-	switch move {
-	case forward:
-		return tea.Batch(work, a.forward())
-	case back:
-		if previous, ok := a.next(a.at, -1); ok {
-			return tea.Batch(work, a.show(previous))
+	case a.waiting():
+		if key.String() == "esc" {
+			return a.back()
 		}
+		return nil
+	case a.onNavigation():
+		return a.handleNavigation(key)
+	}
+	return a.handleScreen(key)
+}
+
+func (a *app) handleScreen(key tea.KeyPressMsg) tea.Cmd {
+	r, work := a.current().handle(key)
+	switch {
+	case r == pastLastRow, r == unhandled && key.String() == "tab":
+		a.reachNavigation()
+	case r == unhandled && key.String() == "esc":
+		return tea.Batch(work, a.back())
 	}
 	return work
+}
+
+func (a *app) waiting() bool {
+	w, ok := a.current().(waiter)
+	return ok && w.waiting()
+}
+
+func (a *app) back() tea.Cmd {
+	previous, ok := a.next(a.at, -1)
+	if !ok {
+		return nil
+	}
+	a.leave()
+	return a.show(previous)
+}
+
+func (a *app) leave() {
+	if l, ok := a.current().(leaver); ok {
+		l.leave()
+	}
 }
 
 func (a *app) forward() tea.Cmd {
@@ -178,6 +220,7 @@ func (a *app) forward() tea.Cmd {
 		// Saving can empty or fill the screens after it.
 		next, ok = a.next(a.at, 1)
 	}
+	a.leave()
 	if !ok {
 		return tea.Quit
 	}
@@ -185,12 +228,20 @@ func (a *app) forward() tea.Cmd {
 }
 
 func (a *app) show(at int) tea.Cmd {
-	a.at = at
-	a.offerBack()
+	a.moveTo(at)
 	if s, ok := a.screens[at].(enterer); ok {
 		return s.enter()
 	}
 	return nil
+}
+
+func (a *app) moveTo(at int) {
+	a.at = at
+	a.nav = navigation{}
+	// Picking a choice is what a choosing screen is for.
+	if _, choosing := a.current().(chooser); choosing {
+		a.nav.focus = focusNavigation
+	}
 }
 
 func (a *app) View() tea.View {
@@ -203,12 +254,32 @@ func (a *app) render() string {
 	if a.tooSmall() {
 		return a.askToEnlarge()
 	}
-	s := a.screens[a.at]
+	s := a.current()
 	footer := a.footer(s)
 	bodyHeight := a.height - headingLines - blankLinesAroundBody - len(footer)
-	body := s.body(bodyHeight)
+	body := a.body(bodyHeight)
 	padding := strings.Repeat("\n", max(bodyHeight-strings.Count(body, "\n")-1, 0))
 	return a.fit(bold.Render(s.heading()) + "\n\n" + body + padding + "\n\n" + strings.Join(footer, "\n"))
+}
+
+func (a *app) body(height int) string {
+	if a.waiting() {
+		return a.current().body(height, false)
+	}
+	nav, first, last := a.navigationLines()
+	var lines []string
+	if body := a.current().body(max(height-len(nav), 1), !a.onNavigation()); body != "" {
+		lines = strings.Split(body, "\n")
+	} else {
+		// With nothing above them, the leading blank line would only push the rows down.
+		nav, first, last = nav[1:], first-1, last-1
+	}
+	if first < 0 {
+		first, last = 0, 0
+	} else {
+		first, last = len(lines)+first, len(lines)+last
+	}
+	return strings.Join(a.nav.scroll.cut(append(lines, nav...), first, last, height), "\n")
 }
 
 func (a *app) askToEnlarge() string {
@@ -252,15 +323,23 @@ func (a *app) footer(s screen) []string {
 		lines = append(lines, filter)
 	}
 	var leave []string
-	// esc clears an active filter before it goes back.
-	if a.canGoBack() && filter == "" {
+	// On the screen's rows esc clears an active filter before it goes back.
+	if a.canGoBack() && (filter == "" || a.onNavigation()) {
 		leave = append(leave, "esc back")
 	}
 	leave = append(leave, "ctrl+c quit")
-	if keys := strings.Join(append([]string{s.keys()}, leave...), " · "); ansi.StringWidth(keys) <= a.width {
-		return append(lines, dim.Render(keys))
+	keys := a.keys(s)
+	if all := strings.Join(append([]string{keys}, leave...), " · "); ansi.StringWidth(all) <= a.width {
+		return append(lines, dim.Render(all))
 	}
-	return append(lines, dim.Render(s.keys()), dim.Render(strings.Join(leave, " · ")))
+	return append(lines, dim.Render(keys), dim.Render(strings.Join(leave, " · ")))
+}
+
+func (a *app) keys(s screen) string {
+	if a.onNavigation() && !a.waiting() {
+		return a.navigationKeys()
+	}
+	return s.keys()
 }
 
 func (a *app) canGoBack() bool {

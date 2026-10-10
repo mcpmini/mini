@@ -37,7 +37,7 @@ func press(name string) tea.KeyPressMsg {
 }
 
 func plainView(l *list, height int) string {
-	return ansi.Strip(l.view(height))
+	return ansi.Strip(l.view(height, true))
 }
 
 func typeKeys(l *list, names ...string) {
@@ -146,11 +146,11 @@ func TestList_filter(t *testing.T) {
 	t.Run("esc after enter clears the applied filter", func(t *testing.T) {
 		l := newList(serverRows(), map[string]bool{})
 		typeKeys(l, "/", "g", "enter")
-		if !l.handle(press("esc")) || l.filter.text != "" {
+		if l.handle(press("esc")) != handled || l.filter.text != "" {
 			t.Errorf("filter = %q; want esc taken by the list and the filter cleared", l.filter.text)
 		}
-		if l.handle(press("esc")) {
-			t.Error("esc with no filter was taken by the list; want it left for the screen")
+		if l.handle(press("esc")) != unhandled {
+			t.Error("esc with no filter was taken by the list; want it left for the app")
 		}
 	})
 	t.Run("backspace removes the last character", func(t *testing.T) {
@@ -194,9 +194,9 @@ func TestList_scrollingKeepsTheCursorRowsSubtitleShown(t *testing.T) {
 	for range 4 {
 		l.handle(press("down"))
 	}
-	view := plainView(l, 7)
-	if lines := strings.Split(view, "\n"); len(lines) != 7 ||
-		!strings.HasSuffix(view, "> [ ] server-04\n      why server-04\n\n  Continue") {
-		t.Errorf("view (%d lines):\n%s\nwant 7 lines: server-04 and its subtitle above Continue", len(lines), view)
+	view := plainView(l, 5)
+	if lines := strings.Split(view, "\n"); len(lines) != 5 ||
+		!strings.HasSuffix(view, "> [ ] server-04\n      why server-04") {
+		t.Errorf("view (%d lines):\n%s\nwant 5 lines ending with server-04 and its subtitle", len(lines), view)
 	}
 }
