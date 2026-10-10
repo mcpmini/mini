@@ -267,8 +267,14 @@ func TestConnectScreen_saysWhichMCPsWereAddedToMini(t *testing.T) {
 			s.resize(200, 30)
 			showScreen(s)
 			text := connectText(s)
-			if tc.want == "" && strings.Contains(text, "added to mini") || !strings.HasPrefix(text, tc.want) {
-				t.Errorf("screen:\n%s\nwant it to start with %q", text, tc.want)
+			if tc.want == "" {
+				if strings.Contains(text, "added to mini") {
+					t.Errorf("screen:\n%s\nwant no added line: nothing was added", text)
+				}
+				return
+			}
+			if !strings.HasPrefix(text, tc.want+"\n\n") {
+				t.Errorf("screen:\n%s\nwant it to start with %q and a blank line", text, tc.want)
 			}
 		})
 	}
@@ -319,6 +325,25 @@ func TestConnectScreen_everyAgentFitsAnOrdinaryWindowWithItsChoices(t *testing.T
 		if !strings.Contains(view, "[x] "+agent.Name) {
 			t.Errorf("view at 80x24:\n%s\nwant every agent's row, %s's too", view, agent.Name)
 		}
+	}
+}
+
+func TestConnectScreen_aShortWindowCutsTheAddedNoteAndKeepsTheCursorOnTheAgents(t *testing.T) {
+	var names []string
+	for i := range 30 {
+		names = append(names, fmt.Sprintf("server-%02d", i))
+	}
+	s := newConnectScreen(connectParams{
+		agents: namedAgents("Claude", "Codex"),
+		plan:   func() (connectPlan, error) { return newFakePlan(nil), nil },
+		added:  func() []string { return names },
+	})
+	t.Cleanup(s.checks.cancelAndWait)
+	s.resize(minWidth, 30)
+	showScreen(s)
+	body := strings.Split(ansi.Strip(s.body(4, true)), "\n")
+	if len(body) > 4 || !strings.HasSuffix(body[2], "…") || !strings.Contains(body[3], "[x] Codex") {
+		t.Errorf("body in 4 lines:\n%s\nwant the note cut with …, then the cursor's agent", strings.Join(body, "\n"))
 	}
 }
 

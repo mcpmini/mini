@@ -154,7 +154,12 @@ func (s *connectScreen) body(height int, focused bool) string {
 	if !s.focusable() {
 		return strings.Join(note, "\n")
 	}
-	note = note[:min(len(note), max(height-1, 0))]
+	if keep := max(height-1, 0); len(note) > keep {
+		note = note[:keep]
+		if keep > 0 {
+			note[keep-1] += "…"
+		}
+	}
 	return strings.Join(append(note, s.agents.view(height-len(note), focused)), "\n")
 }
 
