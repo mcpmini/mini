@@ -1,0 +1,91 @@
+name: CI shard
+
+on:
+  push:
+    branches: [exp-shard]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Repo convention checks
+        run: |
+          go run ./tools/funclen .
+          go run ./tools/params .
+          go run ./tools/returns .
+          go run ./tools/clocklint .
+          go run ./tools/testkind .
+          GOFLAGS="${GOFLAGS:-} -tags=integration,test" go run ./tools/structlint ./...
+      - name: Vet
+        run: go vet -tags integration,test ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.14.0
+      - name: Vulnerability check
+        run: ./scripts/check-vulnerabilities.sh
+
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build test helpers
+        run: |
+          testbin=$(mktemp -d)
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
+      - name: Unit tests
+        run: go test -race -tags test -timeout 120s ./... -skip TestDeliver_singleFlightOnResolveFailure
+
+  integration-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build test helpers (race mini)
+        run: |
+          testbin=$(mktemp -d)
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
+      - name: Integration tests, CLI group
+        run: go test -race -tags integration,test -run '^TestIntegrationCLI' -timeout 180s ./...
+
+  integration-daemon-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build test helpers (race mini)
+        run: |
+          testbin=$(mktemp -d)
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
+      - name: Integration tests, holds and daemon group
+        run: go test -race -tags integration,test -run '^TestIntegration(Proxy|Startup|Serve|Daemon|HTTP|Concurrency)' -timeout 180s ./...
+
+  integration-rest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build test helpers (race mini)
+        run: |
+          testbin=$(mktemp -d)
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
+      - name: Integration tests, remaining groups
+        run: go test -race -tags integration,test -run '^TestIntegration' -skip '^TestIntegration(CLI|Proxy|Startup|Serve|Daemon|HTTP|Concurrency)' -timeout 180s ./...
