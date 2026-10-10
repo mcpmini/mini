@@ -16,6 +16,7 @@ jobs:
           go-version-file: go.mod
       - name: Build test helpers
         run: |
+          mkdir -p bins
           scripts/test-bins.sh bins
           go build -tags test -ldflags "-X github.com/mcpmini/mini/internal/version.buildRevision=integration-test" -o bins/mini-norace ./cmd/mini
       - uses: actions/upload-artifact@v4
