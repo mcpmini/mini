@@ -13,6 +13,7 @@ linters:
     - staticcheck    # SA2xxx sync misuse, SA4xxx dead code, and broader quality
     - errorlint      # errors formatted with %v instead of %w in fmt.Errorf
     - nilerr         # returning nil error when a non-nil error was just checked
+    - nilnesserr
     - forcetypeassert # unchecked type assertions that can panic
     - durationcheck  # two time.Duration values multiplied together (almost always a bug)
     - gocritic
