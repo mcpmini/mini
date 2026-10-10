@@ -256,24 +256,27 @@ func TestLoginsScreen_leavingCancelsTheWaitingLogin(t *testing.T) {
 
 func TestLoginsScreen_aLongLoginURLShowsItsHostAndLinksToTheWholeURL(t *testing.T) {
 	url := "https://auth.example/authorize?" + strings.Repeat("scope=read&", 20)
-	s := loginScreen(newFakeLogins(), "linear")
-	s.p.startLogin = func(ctx context.Context, _ string) (Login, error) {
-		return Login{URL: url, Wait: func() error { <-ctx.Done(); return ctx.Err() }}, nil
-	}
-	t.Cleanup(s.cancelLogin)
-	s.resize(40, 30)
-	_, cmd := s.handle(press("enter"))
-	s.update(cmd())
+	for _, name := range []string{"linear", strings.Repeat("n", 34)} {
+		t.Run(fmt.Sprintf("%d-character name", len(name)), func(t *testing.T) {
+			s := loginScreen(newFakeLogins(), name)
+			s.p.startLogin = func(ctx context.Context, _ string) (Login, error) {
+				return Login{URL: url, Wait: func() error { <-ctx.Done(); return ctx.Err() }}, nil
+			}
+			t.Cleanup(s.cancelLogin)
+			s.resize(40, 30)
+			_, cmd := s.handle(press("enter"))
+			s.update(cmd())
 
-	body := s.body(40, true)
-	lines := strings.Split(ansi.Strip(body), "\n")
-	link := lines[2]
-	if !strings.HasPrefix(strings.TrimSpace(link), "auth.example/authorize?scope") || !strings.HasSuffix(link, "…") ||
-		ansi.StringWidth(link) > 40 {
-		t.Errorf("link line %q; want the host first, the rest cut to the 40-column window", link)
-	}
-	if !strings.Contains(body, ansi.SetHyperlink(url)) {
-		t.Error("the link line doesn't link to the whole URL")
+			body := s.body(40, true)
+			link := strings.Split(ansi.Strip(body), "\n")[2]
+			if !strings.HasPrefix(strings.TrimSpace(link), "auth.example") || !strings.HasSuffix(link, "…") ||
+				ansi.StringWidth(link) > 40 {
+				t.Errorf("link line %q; want the whole host first, the rest cut to the 40-column window", link)
+			}
+			if !strings.Contains(body, ansi.SetHyperlink(url)) {
+				t.Error("the link line doesn't link to the whole URL")
+			}
+		})
 	}
 }
 

@@ -208,7 +208,7 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
 		return handled, s.copyLink()
 	case "esc":
 		// On the rows, esc cancels a waiting login before it goes back, so a slip doesn't leave the screen.
-		if s.pending != nil {
+		if s.takesEsc() {
 			s.cancelLogin()
 			return handled, nil
 		}
@@ -317,6 +317,8 @@ func (s *loginsScreen) linkLine(indent int) string {
 	if err == nil {
 		host = len(u.Host)
 	}
+	// A long server name moves the link left rather than let the app cut its host at the edge.
+	indent = max(min(indent, s.width-host-1), 2)
 	shown := ansi.Truncate(text, max(s.width-indent, host+1), "…")
 	return strings.Repeat(" ", indent) + ansi.SetHyperlink(s.pending.url) + shown + ansi.ResetHyperlink()
 }
