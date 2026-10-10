@@ -51,7 +51,7 @@ func TestLoginsScreen_listsLoginsFirstThenWhatMustBeSetUpByHand(t *testing.T) {
 	s := checks.screen()
 	showScreen(s)
 	want := "Log in\n> linear  needs a login\n\nSet up by hand\n  github  needs a token\n" +
-		"  asana   needs your own OAuth app\n  files   needs ROOT set\n\n  Continue →"
+		"  asana   needs your own OAuth app\n  files   needs ROOT set\n\n  Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -120,7 +120,7 @@ func TestLoginsScreen_saysEverythingIsReadyWhenTheLastCheckFindsNothingToFinish(
 	checks.changed <- struct{}{}
 	s.update(wait())
 	if s.heading() != "Your servers are ready" ||
-		loginsText(s) != "Every server works; nothing is left to set up.\n\n> Continue →" {
+		loginsText(s) != "Every server works; nothing is left to set up.\n\n> Continue" {
 		t.Errorf("%s\n%s\nwant the screen to say every server is ready, not an empty list", s.heading(), loginsText(s))
 	}
 }
@@ -206,7 +206,7 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 
 	logins.ends["sentry"] <- errors.New("access denied")
 	pressAndRun(s, "enter")
-	if text := loginsText(s); !strings.Contains(text, "  sentry  ✗ access denied\n\n> Continue →") {
+	if text := loginsText(s); !strings.Contains(text, "  sentry  ✗ access denied\n\n> Continue") {
 		t.Errorf("screen:\n%s\nwant sentry's failure shown and the cursor on Continue", text)
 	}
 }
@@ -265,7 +265,7 @@ func TestLoginsScreen_aFailedLoginShowsOnlyTheFirstLineOfItsError(t *testing.T) 
 	s := loginScreen(logins, "linear")
 	logins.ends["linear"] <- errors.New("oauth2: cannot fetch token: 502\rBad Gateway\nResponse: <html>\n<body>\x1b[31mdown</body>")
 	pressAndRun(s, "enter")
-	if text := loginsText(s); text != "Log in\n  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n\n> Continue →" {
+	if text := loginsText(s); text != "Log in\n  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n\n> Continue" {
 		t.Errorf("screen:\n%q\nwant the error's first line, without control characters, on linear's row", text)
 	}
 }
@@ -315,7 +315,7 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 		s.handle(press("down"))
 		s.handle(press("down"))
 		finish(checks, s, wait, initcmd.NeedsLogin)
-		if text := loginsText(s); !strings.Contains(text, "> Continue →") {
+		if text := loginsText(s); !strings.Contains(text, "> Continue") {
 			t.Errorf("screen:\n%s\nwant the cursor still on Continue", text)
 		}
 	})
@@ -399,7 +399,7 @@ func TestLoginsScreen_backFollowsContinue(t *testing.T) {
 	showScreen(s)
 	s.handle(press("tab"))
 	s.handle(press("down"))
-	if text := loginsText(s); !strings.HasSuffix(text, "  Continue →\n> ← Back") {
+	if text := loginsText(s); !strings.HasSuffix(text, "  Continue\n> Back") {
 		t.Fatalf("screen:\n%s\nwant the cursor on Back, under Continue", text)
 	}
 	if move, _ := s.handle(press("enter")); move != back {
@@ -415,7 +415,53 @@ func TestLoginsScreen_aReadErrorShowsTheActionsTheCursorCanReach(t *testing.T) {
 	s.offerBack(true)
 	showScreen(s)
 	s.handle(press("down"))
-	if text := loginsText(s); !strings.HasSuffix(text, "permission denied\n\n  Continue →\n> ← Back") {
+	if text := loginsText(s); !strings.HasSuffix(text, "permission denied\n\n  Continue\n> Back") {
 		t.Errorf("screen:\n%s\nwant the error above the actions, with the cursor on Back", text)
+	}
+}
+
+func TestLoginsScreen_tabJumpsToContinueAndBackToTheServerItLeft(t *testing.T) {
+	s := newFakeChecks(
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
+	).screen()
+	showScreen(s)
+	s.handle(press("down"))
+	s.handle(press("tab"))
+	if text := loginsText(s); !strings.HasSuffix(text, "> Continue") {
+		t.Fatalf("screen after tab:\n%s\nwant the cursor on Continue", text)
+	}
+	s.handle(press("tab"))
+	if text := loginsText(s); !strings.Contains(text, "> sentry") {
+		t.Errorf("screen after tab again:\n%s\nwant the cursor back on sentry", text)
+	}
+}
+
+func TestLoginsScreen_theCursorStaysOnBackWhenTheRowsRefresh(t *testing.T) {
+	f := newFakeChecks(initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin})
+	s := f.screen()
+	s.offerBack(true)
+	showScreen(s)
+	s.handle(press("tab"))
+	s.handle(press("down"))
+	f.statuses = append(f.statuses, initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin})
+	s.refresh()
+	if text := loginsText(s); !strings.HasSuffix(text, "> Back") {
+		t.Errorf("screen after a row appeared:\n%s\nwant the cursor still on Back", text)
+	}
+}
+
+func TestLoginsScreen_aServerNamedBackIsNotTheBackAction(t *testing.T) {
+	f := newFakeChecks(
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "Back", Readiness: initcmd.NeedsLogin},
+	)
+	s := f.screen()
+	s.offerBack(true)
+	showScreen(s)
+	s.handle(press("down"))
+	s.refresh()
+	if text := loginsText(s); !strings.Contains(text, "> Back  ") {
+		t.Errorf("screen after a refresh:\n%s\nwant the cursor still on the server named Back, not the action", text)
 	}
 }

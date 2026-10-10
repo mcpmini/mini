@@ -35,6 +35,7 @@ type connectScreen struct {
 	width            int
 	scroll           scroll
 	back             bool
+	tab              tabReturn
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
@@ -121,7 +122,7 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	case "down":
 		s.cursor = min(s.cursor+1, s.rows()-1)
 	case "tab":
-		s.cursor = s.agentRows()
+		s.cursor = s.tab.toggle(s.cursor, s.agentRows(), func(row int) bool { return row < s.agentRows() })
 	case "space":
 		s.tick()
 	case "a":
@@ -201,9 +202,13 @@ func (s *connectScreen) rowLines(height int) []string {
 	if s.back {
 		at := -1
 		if s.onBack() {
-			at, first, last = 0, len(lines)+1, len(lines)+1
+			at = 0
 		}
-		lines = append(lines, actionLines([]string{backLabel}, at)...)
+		actions, cursorLine := actionLines([]string{backLabel}, at)
+		if cursorLine >= 0 {
+			first, last = len(lines)+cursorLine, len(lines)+cursorLine
+		}
+		lines = append(lines, actions...)
 	}
 	return s.scroll.cut(lines, first, last, height)
 }

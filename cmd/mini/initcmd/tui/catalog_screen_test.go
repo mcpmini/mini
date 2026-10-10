@@ -157,7 +157,7 @@ func TestCatalogScreen_continueFollowsTheServersAndEnterThereMovesOn(t *testing.
 	t.Run("tab", func(t *testing.T) {
 		s := loadedScreen(testCatalog(), noImports)
 		pressAll(s, "tab")
-		if text := catalogText(s); !strings.HasSuffix(text, "\n> Continue →") {
+		if text := catalogText(s); !strings.HasSuffix(text, "\n> Continue") {
 			t.Errorf("screen:\n%s\nwant the cursor on Continue, right under the servers", text)
 		}
 		if got := pressAll(s, "enter"); got != forward {
@@ -257,7 +257,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 		s := newCatalogScreen(catalogParams{load: load, offered: offerAll, imports: noImports})
 		s.update(s.start()())
 		s.offerBack(true)
-		want := "The catalog couldn't be loaded: bad document\n\n> Continue →\n  ← Back"
+		want := "The catalog couldn't be loaded: bad document\n\n> Continue\n  Back"
 		if text := catalogText(s); text != want || s.empty() {
 			t.Errorf("screen %q, empty = %v; want the error shown above the actions", text, s.empty())
 		}
@@ -370,7 +370,7 @@ func TestCatalogScreen_backFollowsContinueOnEveryVisit(t *testing.T) {
 	s.offerBack(true)
 	s.enter()
 	pressAll(s, "tab", "down")
-	if text := catalogText(s); !strings.HasSuffix(text, "  Continue →\n> ← Back") {
+	if text := catalogText(s); !strings.HasSuffix(text, "  Continue\n> Back") {
 		t.Fatalf("screen:\n%s\nwant Back under Continue after the grid was rebuilt", text)
 	}
 	if got := pressAll(s, "enter"); got != back {

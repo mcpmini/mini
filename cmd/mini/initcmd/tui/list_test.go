@@ -196,7 +196,7 @@ func TestList_scrollingKeepsTheCursorRowsSubtitleShown(t *testing.T) {
 	}
 	view := plainView(l, 7)
 	if lines := strings.Split(view, "\n"); len(lines) != 7 ||
-		!strings.HasSuffix(view, "> [ ] server-04\n      why server-04\n\n  Continue →") {
+		!strings.HasSuffix(view, "> [ ] server-04\n      why server-04\n\n  Continue") {
 		t.Errorf("view (%d lines):\n%s\nwant 7 lines: server-04 and its subtitle above Continue", len(lines), view)
 	}
 }

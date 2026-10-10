@@ -94,7 +94,7 @@ func TestImportScreen_enterTicksTheRowAndContinuesFromContinue(t *testing.T) {
 		t.Errorf("ticked %d after enter then space, want github ticked again", got)
 	}
 	s.handle(press("down"))
-	if text := screenText(s); !strings.HasSuffix(text, "\n> Continue →") {
+	if text := screenText(s); !strings.HasSuffix(text, "\n> Continue") {
 		t.Errorf("screen:\n%s\nwant the cursor on Continue after moving past the last row", text)
 	}
 	if got, _ := s.handle(press("enter")); got != forward {

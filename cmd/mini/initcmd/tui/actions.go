@@ -1,8 +1,8 @@
 package tui
 
 const (
-	continueLabel = "Continue →"
-	backLabel     = "← Back"
+	continueLabel = "Continue"
+	backLabel     = "Back"
 )
 
 // A screen the app can go back from offers Back under Continue; the first screen offers only Continue.
@@ -24,13 +24,41 @@ func actionStep(label string) step {
 	return forward
 }
 
-// actionLines puts a blank line above the actions; at is the action under the cursor, or -1.
-func actionLines(labels []string, at int) []string {
-	lines := []string{""}
+// actionLines puts a blank line above the actions. at is the action under the cursor, or -1;
+// cursorLine is its line, or -1, for a screen to keep in view as it scrolls.
+func actionLines(labels []string, at int) (lines []string, cursorLine int) {
+	lines, cursorLine = []string{""}, -1
 	for i, label := range labels {
+		if i == at {
+			cursorLine = len(lines)
+		}
 		lines = append(lines, cursorMark(i == at)+label)
 	}
-	return lines
+	return lines, cursorLine
+}
+
+func actionKeys(labels []string) string {
+	if len(labels) == 1 {
+		return "enter continue"
+	}
+	return "↑↓ move · enter choose"
+}
+
+// tabReturn is tab on a screen whose cursor counts rows then actions: from the rows it jumps to
+// the first action, and from the actions back to the row it left.
+type tabReturn struct {
+	row int
+}
+
+func (t *tabReturn) toggle(cursor, firstAction int, rowSelectable func(int) bool) int {
+	switch {
+	case cursor < firstAction:
+		t.row = cursor
+		return firstAction
+	case rowSelectable(t.row):
+		return t.row
+	}
+	return cursor
 }
 
 // actions are the rows a screen ends with, right under its content. The cursor reaches them by
@@ -86,5 +114,10 @@ func (a *actions) lines() []string {
 	if a.active {
 		at = a.at
 	}
-	return actionLines(a.labels, at)
+	lines, _ := actionLines(a.labels, at)
+	return lines
+}
+
+func (a *actions) keys() string {
+	return actionKeys(a.labels)
 }

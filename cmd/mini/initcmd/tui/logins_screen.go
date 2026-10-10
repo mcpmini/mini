@@ -42,6 +42,7 @@ type loginsScreen struct {
 	width    int
 	scroll   scroll
 	back     bool
+	tab      tabReturn
 	// Until the user moves it, the cursor rests on the next login to do.
 	cursorMoved bool
 	// One waiting command covers every running check.
@@ -77,20 +78,26 @@ func (s *loginsScreen) refresh() {
 	}
 }
 
-// cursorName is the server or action under the cursor; no server name can match an action's label.
+// actionMark starts an action's name in cursorName: server names can't contain it, so a server
+// called "back" never stands for the Back action.
+const actionMark = "/"
+
+// cursorName is the server or action under the cursor.
 func (s *loginsScreen) cursorName() string {
 	if s.cursor >= 0 && s.cursor < len(s.rows) {
 		return s.rows[s.cursor].Name
 	}
 	if action := s.cursor - len(s.rows); action >= 0 && action < len(s.actionLabels()) {
-		return s.actionLabels()[action]
+		return actionMark + s.actionLabels()[action]
 	}
 	return ""
 }
 
 func (s *loginsScreen) rowIndex(name string) int {
-	if action := slices.Index(s.actionLabels(), name); action >= 0 {
-		return len(s.rows) + action
+	if label, ok := strings.CutPrefix(name, actionMark); ok {
+		if action := slices.Index(s.actionLabels(), label); action >= 0 {
+			return len(s.rows) + action
+		}
 	}
 	return slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.Name == name })
 }
@@ -177,7 +184,7 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	case "down":
 		s.move(1)
 	case "tab":
-		s.cursor, s.cursorMoved = len(s.rows), true
+		s.cursor, s.cursorMoved = s.tab.toggle(s.cursor, len(s.rows), s.selectable), true
 	case "enter":
 		if s.cursor >= len(s.rows) {
 			s.cancelLogin()
@@ -199,21 +206,15 @@ func (s *loginsScreen) heading() string {
 }
 
 func (s *loginsScreen) body(height int) string {
+	actions, cursorLine := actionLines(s.actionLabels(), s.cursor-len(s.rows))
 	if s.err != nil {
-		lines := append([]string{"mini's servers couldn't be read: " + s.err.Error()}, s.actionLines()...)
-		return strings.Join(lines, "\n")
+		return strings.Join(append([]string{"mini's servers couldn't be read: " + s.err.Error()}, actions...), "\n")
 	}
 	lines, first, last := s.serverLines()
-	if s.cursor >= len(s.rows) {
-		first = len(lines) + 1 + s.cursor - len(s.rows)
-		last = first
+	if cursorLine >= 0 {
+		first, last = len(lines)+cursorLine, len(lines)+cursorLine
 	}
-	lines = append(lines, s.actionLines()...)
-	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
-}
-
-func (s *loginsScreen) actionLines() []string {
-	return actionLines(s.actionLabels(), s.cursor-len(s.rows))
+	return strings.Join(s.scroll.cut(append(lines, actions...), first, last, height), "\n")
 }
 
 // first and last bound the cursor's block: its section heading, its row and the lines under it.
@@ -342,7 +343,7 @@ func (s *loginsScreen) keys() string {
 	if s.cursor < len(s.rows) {
 		return "↑↓ move · enter log in · tab continue"
 	}
-	return "↑↓ move · enter choose"
+	return actionKeys(s.actionLabels())
 }
 
 func (s *loginsScreen) empty() bool {

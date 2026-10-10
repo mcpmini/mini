@@ -173,7 +173,9 @@ func (s *catalogScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 func (s *catalogScreen) handleWithoutGrid(key tea.KeyPressMsg) (step, tea.Cmd) {
 	switch key.String() {
 	case "up", "down":
-		s.grid.actions.moveWithin(direction(key.String()))
+		if s.loaded {
+			s.grid.actions.moveWithin(direction(key.String()))
+		}
 	case "enter":
 		if s.loaded {
 			return s.grid.actions.step(), nil
@@ -197,7 +199,8 @@ func (s *catalogScreen) body(height int) string {
 }
 
 func (s *catalogScreen) withActions(message string) string {
-	return strings.Join(append([]string{message}, actionLines(s.grid.actions.labels, s.grid.actions.at)...), "\n")
+	actions, _ := actionLines(s.grid.actions.labels, s.grid.actions.at)
+	return strings.Join(append([]string{message}, actions...), "\n")
 }
 
 func (s *catalogScreen) keys() string {
@@ -206,9 +209,9 @@ func (s *catalogScreen) keys() string {
 	}
 	switch {
 	case s.loadErr != nil || len(s.available) == 0:
-		return "↑↓ move · enter choose"
+		return s.grid.actions.keys()
 	case s.grid.actions.active:
-		return s.grid.keys("↑↓ move · enter choose")
+		return s.grid.keys(s.grid.actions.keys())
 	case s.grid.isGrid():
 		return s.grid.keys("↑↓←→ move · space/enter tick · tab continue · / filter")
 	}

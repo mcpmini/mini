@@ -324,7 +324,7 @@ func TestApp_everyScreenButTheFirstEndsWithBack(t *testing.T) {
 		t.Errorf("first screen:\n%s\nwant no Back: there is nothing to go back to", view)
 	}
 	send(a, "tab", "enter")
-	if view := shown(a); !strings.Contains(view, "Continue →\n  ← Back") {
+	if view := shown(a); !strings.Contains(view, "Continue\n  Back") {
 		t.Fatalf("second screen:\n%s\nwant Back under Continue", view)
 	}
 	send(a, "tab", "down", "enter")
