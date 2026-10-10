@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -316,15 +318,28 @@ func TestDeliver_boundedWhenRespawnedDaemonStaysDead(t *testing.T) {
 	}
 }
 
+type refusingTransport struct {
+	calls              atomic.Int32
+	n                  int32
+	everyRequestDialed chan struct{}
+}
+
+func (tr *refusingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	if tr.calls.Add(1) == tr.n {
+		close(tr.everyRequestDialed)
+	}
+	return nil, &net.OpError{Op: "dial", Net: "unix", Err: syscall.ECONNREFUSED}
+}
+
 func TestDeliver_singleFlightOnResolveFailure(t *testing.T) {
 	const n = 8
-	sock := newSockPath(t)
-	client := daemon.SocketClient(sock, 0)
+	transport := &refusingTransport{n: n, everyRequestDialed: make(chan struct{})}
+	client := &http.Client{Transport: transport}
 
 	var resolveCalls atomic.Int32
 	reresolve := func() (string, error) {
+		<-transport.everyRequestDialed
 		resolveCalls.Add(1)
-		time.Sleep(50 * time.Millisecond) // simulate slow spawn that fails
 		return "", fmt.Errorf("daemon down")
 	}
 
@@ -350,12 +365,12 @@ func TestDeliver_singleFlightOnResolveFailure(t *testing.T) {
 			t.Fatalf("Run: %v", err)
 		}
 	case <-timeoutAfter():
-		t.Fatal("Run did not return — single-flight not holding on resolve failure")
+		t.Fatal("Run did not return — requests may be blocked behind an in-flight Resolve")
 	}
-	if got := resolveCalls.Load(); got > 3 {
-		t.Errorf("Resolve calls = %d with %d goroutines; single-flight should prevent N×timeout stacking", got, n)
+	if got := resolveCalls.Load(); got != 1 {
+		t.Errorf("Resolve calls = %d with %d goroutines, want 1 (single-flight)", got, n)
 	}
-	if !strings.Contains(out.String(), `"error"`) {
-		t.Errorf("expected error responses on exhaustion, got: %q", out.String())
+	if got := strings.Count(out.String(), `"error"`); got != n {
+		t.Errorf("error responses = %d, want %d (one per request): %q", got, n, out.String())
 	}
 }

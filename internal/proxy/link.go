@@ -1,6 +1,9 @@
 package proxy
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 type linkState struct {
 	token      string
@@ -8,28 +11,30 @@ type linkState struct {
 }
 
 type daemonLink struct {
-	mu         sync.Mutex
-	state      linkState
+	mu sync.Mutex
+	// read without mu: a request that starts during Resolve must keep its old generation so recover won't resolve again
+	state      atomic.Pointer[linkState]
 	resolveErr error // set when Resolve() fails; cleared on next successful resolve
 }
 
 func newDaemonLink(token string) *daemonLink {
-	return &daemonLink{state: linkState{token: token}}
+	d := &daemonLink{}
+	d.state.Store(&linkState{token: token})
+	return d
 }
 
 func (d *daemonLink) snapshot() linkState {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.state
+	return *d.state.Load()
 }
 
 func (d *daemonLink) recover(failedGen uint64, resolver *DaemonResolver) (linkState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.state.generation != failedGen || resolver == nil {
+	current := d.snapshot()
+	if current.generation != failedGen || resolver == nil {
 		// a concurrent caller already recovered, or self-healing is off;
 		// propagate any resolve error so callers fail fast instead of retrying
-		return d.state, d.resolveErr
+		return current, d.resolveErr
 	}
 	// Many callers can hit a dead daemon at once; holding the lock across
 	// Resolve means the first one respawns and bumps the generation
@@ -37,10 +42,13 @@ func (d *daemonLink) recover(failedGen uint64, resolver *DaemonResolver) (linkSt
 	d.resolveErr = nil
 	t, err := resolver.Resolve()
 	if err != nil {
-		d.state.generation++ // bump so subsequent callers skip Resolve and fail fast
+		// bump so callers holding the failed generation skip Resolve and fail fast
+		next := linkState{token: current.token, generation: current.generation + 1}
+		d.state.Store(&next)
 		d.resolveErr = err
-		return d.state, err
+		return next, err
 	}
-	d.state = linkState{token: t, generation: d.state.generation + 1}
-	return d.state, nil
+	next := linkState{token: t, generation: current.generation + 1}
+	d.state.Store(&next)
+	return next, nil
 }
