@@ -28,7 +28,7 @@ func TestConnectPlan_removesOnlyWhatMiniWillServeAndWhatPassedItsCheck(t *testin
 			return nil
 		},
 	}
-	plan, err := setup.PlanConnect()
+	plan, err := setup.planConnect(f.configDir)
 	if err != nil {
 		t.Fatal(err)
 	}

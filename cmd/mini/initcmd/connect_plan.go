@@ -10,9 +10,10 @@ import (
 // ConnectPlan is what Connect knows before its connection checks: mini's servers and, per agent,
 // the entries removing would replace if their mini copy passes its check.
 type ConnectPlan struct {
-	setup  Setup
-	mini   miniServers
-	agents map[string]agentDuplicates
+	setup      Setup
+	serversDir string
+	mini       miniServers
+	agents     map[string]agentDuplicates
 }
 
 type agentDuplicates struct {
@@ -20,12 +21,17 @@ type agentDuplicates struct {
 	duplicates map[string]string
 }
 
-func (s Setup) PlanConnect() (ConnectPlan, error) {
-	mini, err := loadMiniServers(s.ConfigDir)
+// PlanConnect reads the staged servers: what removing replaces is what mini will have once Finish commits.
+func (r *Run) PlanConnect() (ConnectPlan, error) {
+	return r.setup.planConnect(r.stage.dir)
+}
+
+func (s Setup) planConnect(serversDir string) (ConnectPlan, error) {
+	mini, err := loadMiniServers(serversDir)
 	if err != nil {
 		return ConnectPlan{}, err
 	}
-	p := ConnectPlan{setup: s, mini: mini, agents: map[string]agentDuplicates{}}
+	p := ConnectPlan{setup: s, serversDir: serversDir, mini: mini, agents: map[string]agentDuplicates{}}
 	rule := s.replacementRule(nil)
 	for _, agent := range s.AgentsToConnect {
 		entries, err := agent.Read(agent.ConfigPath)
@@ -60,7 +66,7 @@ type Removals struct {
 func (p ConnectPlan) Check(ctx context.Context) Removals {
 	r := Removals{ByAgent: map[string][]string{}}
 	r.Checks = p.mini.Check(ctx, checkParams{
-		configDir: p.setup.ConfigDir,
+		configDir: p.serversDir,
 		servers:   duplicatedServers(p.allDuplicates()...),
 		clock:     clock.System(),
 		probe:     p.setup.probe(),

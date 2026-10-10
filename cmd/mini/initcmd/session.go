@@ -21,7 +21,7 @@ type sessionParams struct {
 }
 
 // Only servers this run wrote are ever removed; servers the user had before are never touched.
-// Sync, Written, Unchecked, WaitChecks and Close belong to one goroutine; Running and Changed are
+// Sync, Written, WaitChecks and Close belong to one goroutine; Running and Changed are
 // safe from any.
 type session struct {
 	p       sessionParams
@@ -134,15 +134,6 @@ func (s *session) Running() map[string]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return maps.Clone(s.checking)
-}
-
-// Unchecked names the written servers that may need OAuth and whose check hasn't finished.
-func (s *session) Unchecked() []string {
-	var names []string
-	for _, sc := range s.checkTargets() {
-		names = append(names, sc.Name)
-	}
-	return names
 }
 
 func (s *session) WaitChecks() {

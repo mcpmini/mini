@@ -81,7 +81,7 @@ func TestIntegrationInitUI_ctrlCLeavesNoServersAndRestoresTheTerminal(t *testing
 	}
 }
 
-func TestIntegrationInitUI_ctrlCAfterCatalogKeepsTheSavedServers(t *testing.T) {
+func TestIntegrationInitUI_ctrlCAfterCatalogWritesNothing(t *testing.T) {
 	configDir := t.TempDir()
 	term := startTerminal(
 		t,
@@ -94,13 +94,13 @@ func TestIntegrationInitUI_ctrlCAfterCatalogKeepsTheSavedServers(t *testing.T) {
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "tab", "enter")
 	term.waitFor("Finish setting up these servers")
 	term.press("ctrl+c")
-	term.waitFor("the servers above were saved")
+	term.waitFor("nothing was written")
 
 	if code := term.exitCode(); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
-	if files := serverFiles(t, configDir); !slices.Equal(files, []string{"files.yaml", "notes.yaml", "sentry.yaml"}) {
-		t.Errorf("server files = %v, want everything saved on leaving Catalog", files)
+	if files := serverFiles(t, configDir); len(files) > 0 {
+		t.Errorf("server files = %v, want none: leaving Catalog only stages the picks", files)
 	}
 }
 

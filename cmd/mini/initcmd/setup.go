@@ -81,13 +81,19 @@ func (s Setup) Plan() (Plan, error) {
 
 // Write is a run with no UI: one save, its OAuth checks, then the report. It connects no agent.
 func (s Setup) Write(p Plan) Report {
-	run := s.Start(p)
+	run, err := s.Start(p)
+	if err != nil {
+		report := s.report()
+		report.ReadServersErr = err
+		return report
+	}
+	defer run.Close()
 	run.Save()
 	return run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
 }
 
-func (s Setup) newSession() *session {
-	return newSession(sessionParams{ConfigDir: s.ConfigDir, Probe: s.probe()})
+func (s Setup) newSession(dir string) *session {
+	return newSession(sessionParams{ConfigDir: dir, Probe: s.probe()})
 }
 
 // Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
