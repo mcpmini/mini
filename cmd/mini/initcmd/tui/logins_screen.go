@@ -207,7 +207,7 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
 	case "c":
 		return handled, s.copyLink()
 	case "esc":
-		// A waiting login is cancelled before esc goes back, so a slip doesn't leave the screen.
+		// On the rows, esc cancels a waiting login before it goes back, so a slip doesn't leave the screen.
 		if s.pending != nil {
 			s.cancelLogin()
 			return handled, nil
@@ -257,7 +257,7 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 func (s *loginsScreen) rowLines(status initcmd.ServerStatus, atCursor bool, width int) []string {
 	lines := []string{cursorMark(atCursor) + fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status))}
 	if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
-		lines = append(lines, s.linkLine(4+width))
+		lines = append(lines, s.linkLines(4+width)...)
 	}
 	return lines
 }
@@ -292,6 +292,18 @@ func (s *loginsScreen) section(status initcmd.ServerStatus) string {
 
 // Authorize URLs run to hundreds of characters, so the link shows its host and as much of the path as
 // fits: the host is what tells the user which server they are signing in to. c copies the whole URL.
+// The app cuts lines at the window's edge, so the whole link wraps to stay selectable.
+func (s *loginsScreen) linkLines(indent int) []string {
+	if !s.pending.revealed {
+		return []string{s.linkLine(indent)}
+	}
+	var lines []string
+	for _, line := range strings.Split(ansi.Hardwrap(s.pending.url, max(s.width-indent, 20), false), "\n") {
+		lines = append(lines, strings.Repeat(" ", indent)+line)
+	}
+	return lines
+}
+
 func (s *loginsScreen) linkLine(indent int) string {
 	u, err := url.Parse(s.pending.url)
 	text := s.pending.url
@@ -359,6 +371,13 @@ func (s *loginsScreen) need(status initcmd.ServerStatus) string {
 		return "needs " + strings.Join(status.UnsetEnv.Names, ", ") + " set"
 	}
 	return ""
+}
+
+func withNotice(notice, keys string) string {
+	if notice == "" {
+		return keys
+	}
+	return notice + " · " + keys
 }
 
 func (s *loginsScreen) keys() string {

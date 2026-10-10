@@ -501,24 +501,52 @@ func TestLoginsScreen_cCopiesTheWholeLinkAndTheFooterSaysSo(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_withNoClipboardToolTheTerminalIsAskedToCopy(t *testing.T) {
-	s, a := waitingLogin(t, func(string) error { return errNoClipboardTool })
-	_, cmd := a.Update(press("c"))
-	terminalCopy := s.update(cmd())
-	if terminalCopy == nil || !strings.HasPrefix(a.keys(s), "asked the terminal to copy the link · ") {
-		t.Errorf(
-			"command %v, keys %q; want the terminal asked, and the footer not claiming it worked",
-			terminalCopy,
-			a.keys(s),
-		)
+func TestLoginsScreen_aCopyThatCantBeConfirmedAsksTheTerminalAndShowsTheWholeLink(t *testing.T) {
+	for name, err := range map[string]error{
+		"no clipboard tool": errNoClipboardTool,
+		"a failing tool":    errors.New("xclip: exit status 1"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, a := waitingLogin(t, func(string) error { return err })
+			if strings.Contains(framedText(a), "https://") {
+				t.Fatalf("screen before c:\n%s\nwant only the short link", framedText(a))
+			}
+			_, cmd := a.Update(press("c"))
+			terminalCopy := s.update(cmd())
+			if terminalCopy == nil || !strings.HasPrefix(a.keys(s), "asked the terminal to copy the link · ") {
+				t.Errorf("command %v, keys %q; want the terminal asked, and the footer not claiming it worked",
+					terminalCopy, a.keys(s))
+			}
+			if text := framedText(a); !strings.Contains(text, "https://auth.example/linear") {
+				t.Errorf("screen after c:\n%s\nwant the whole link shown to select by hand", text)
+			}
+		})
 	}
 }
 
-func TestLoginsScreen_aFailedCopySaysWhy(t *testing.T) {
-	s, a := waitingLogin(t, func(string) error { return errors.New("pbcopy: exit status 1\nmore") })
+func TestLoginsScreen_theWholeLinkWrapsWithinTheWindow(t *testing.T) {
+	s, a := waitingLogin(t, func(string) error { return errNoClipboardTool })
+	long := "https://auth.example/authorize?state=" + strings.Repeat("x", 100)
+	s.pending.url = long
+	s.resize(minWidth, 30)
 	deliver(a, send(a, "c"))
-	if keys := a.keys(s); !strings.HasPrefix(keys, "couldn't copy the link: pbcopy: exit status 1 · ") {
-		t.Errorf("keys = %q, want the first line of the error", keys)
+	var joined strings.Builder
+	for _, line := range strings.Split(ansi.Strip(s.body(30, false)), "\n") {
+		if strings.Contains(line, "linear") {
+			continue
+		}
+		if ansi.StringWidth(line) > minWidth {
+			t.Errorf(
+				"line %q is %d wide, want at most %d: the app cuts it at the edge",
+				line,
+				ansi.StringWidth(line),
+				minWidth,
+			)
+		}
+		joined.WriteString(strings.TrimSpace(line))
+	}
+	if !strings.Contains(joined.String(), long) {
+		t.Errorf("body:\n%s\nwant the whole link across its lines", s.body(30, false))
 	}
 }
 

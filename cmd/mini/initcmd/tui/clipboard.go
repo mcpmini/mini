@@ -14,15 +14,19 @@ var errNoClipboardTool = errors.New("no clipboard tool found")
 // A clipboard tool that hangs, such as xclip with no X server to reach, would leave the copy unanswered.
 const clipboardTimeout = 2 * time.Second
 
+func copyLinkToClipboard(link string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
+	defer cancel()
+	return copyToClipboard(ctx, link)
+}
+
 // copyToClipboard runs the platform's own clipboard tool, so the copy reports whether it worked;
 // a terminal asked to copy over its escape codes never says.
-func copyToClipboard(text string) error {
+func copyToClipboard(ctx context.Context, text string) error {
 	path, args, ok := findClipboardTool()
 	if !ok {
 		return errNoClipboardTool
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), clipboardTimeout)
-	defer cancel()
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Stdin = strings.NewReader(text)
 	return cmd.Run()

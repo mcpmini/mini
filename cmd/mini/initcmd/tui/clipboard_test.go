@@ -24,7 +24,7 @@ func TestCopyToClipboard_givesTheTextToThePlatformsTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir)
-	if err := copyToClipboard("https://auth.example/linear"); err != nil {
+	if err := copyToClipboard(t.Context(), "https://auth.example/linear"); err != nil {
 		t.Fatalf("copy: %v", err)
 	}
 	if got := testutil.ReadFile(t, out); string(got) != "https://auth.example/linear" {
@@ -34,7 +34,7 @@ func TestCopyToClipboard_givesTheTextToThePlatformsTool(t *testing.T) {
 
 func TestCopyToClipboard_withNoToolSaysSo(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	if err := copyToClipboard("x"); !errors.Is(err, errNoClipboardTool) {
+	if err := copyToClipboard(t.Context(), "x"); !errors.Is(err, errNoClipboardTool) {
 		t.Errorf("copy = %v, want errNoClipboardTool so the terminal is asked instead", err)
 	}
 }

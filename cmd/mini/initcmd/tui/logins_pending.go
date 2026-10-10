@@ -2,17 +2,18 @@ package tui
 
 import (
 	"context"
-	"errors"
 
 	tea "charm.land/bubbletea/v2"
 )
 
 type pendingLogin struct {
-	id     int
-	name   string
-	url    string
-	cancel context.CancelFunc
-	done   chan struct{}
+	id   int
+	name string
+	url  string
+	// revealed shows the whole link once a copy can't confirm it worked, so it can be selected by hand.
+	revealed bool
+	cancel   context.CancelFunc
+	done     chan struct{}
 	// Sized for everything runLogin sends, so cancelling and waiting on done never blocks on the UI.
 	events chan tea.Msg
 }
@@ -105,27 +106,16 @@ func (s *loginsScreen) copyLink() tea.Cmd {
 	}
 }
 
-// Without a clipboard tool, as over SSH, the terminal is asked to copy instead; it never says whether
-// it did, so the notice doesn't claim it.
+// Without a working clipboard tool, as over SSH, the terminal is asked to copy instead. It never says
+// whether it did, so the notice doesn't claim it and the whole link is shown to select by hand.
 func (s *loginsScreen) linkCopied(msg linkCopied) tea.Cmd {
 	if !s.current(msg.id) {
 		return nil
 	}
-	switch {
-	case errors.Is(msg.err, errNoClipboardTool):
-		s.notice = "asked the terminal to copy the link"
-		return tea.SetClipboard(s.pending.url)
-	case msg.err != nil:
-		s.notice = "couldn't copy the link: " + firstLine(msg.err)
-	default:
+	if msg.err == nil {
 		s.notice = "✓ link copied"
+		return nil
 	}
-	return nil
-}
-
-func withNotice(notice, keys string) string {
-	if notice == "" {
-		return keys
-	}
-	return notice + " · " + keys
+	s.notice, s.pending.revealed = "asked the terminal to copy the link", true
+	return tea.SetClipboard(s.pending.url)
 }
