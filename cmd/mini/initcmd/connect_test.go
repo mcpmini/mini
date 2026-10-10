@@ -103,10 +103,9 @@ func TestMiniServersCheck(t *testing.T) {
 	got := mini.Check(
 		context.Background(),
 		checkParams{
-			configDir: configDir,
-			servers:   []string{"up", "down", "missing"},
-			clock:     clock.System(),
-			probe:     probe,
+			servers: []string{"up", "down", "missing"},
+			clock:   clock.System(),
+			probe:   probe,
 		},
 	)
 
@@ -129,7 +128,7 @@ func TestMiniServersCheck_hungServerTimesOut(t *testing.T) {
 	}
 	done := make(chan map[string]error, 1)
 	go func() {
-		done <- mini.Check(context.Background(), checkParams{configDir: configDir, servers: []string{"hung"}, clock: fake, probe: probe})
+		done <- mini.Check(context.Background(), checkParams{servers: []string{"hung"}, clock: fake, probe: probe})
 	}()
 
 	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {

@@ -8,11 +8,13 @@ import (
 	"io/fs"
 	"os"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
 func TestRun(t *testing.T) {
@@ -86,17 +88,52 @@ func TestRun(t *testing.T) {
 
 func mustStart(t *testing.T, setup Setup, p Plan) *Run {
 	t.Helper()
-	run, err := setup.Start(p)
-	if err != nil {
-		t.Fatal(err)
-	}
+	run := setup.Start(p)
 	t.Cleanup(run.Close)
 	return run
 }
 
 func assertNoStage(t *testing.T, run *Run) {
 	t.Helper()
-	if _, err := os.Stat(run.StageDir()); !errors.Is(err, fs.ErrNotExist) {
-		t.Errorf("stage %s: %v, want it removed", run.StageDir(), err)
+	if _, err := os.Stat(run.stage.dir); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("stage %s: %v, want it removed", run.stage.dir, err)
+	}
+}
+
+func TestRunPlanConnect_checksEachServerWhereItsLoginIsSaved(t *testing.T) {
+	f := newApplyFixture(t)
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
+	entries := `"files":{"command":"files-server"},"notes":{"type":"http","url":"https://notes.example/mcp"}`
+	claude := f.write(t, "Claude Code", `{"mcpServers":{`+entries+`}}`)
+	var mu sync.Mutex
+	probedIn := map[string]string{}
+	setup := Setup{
+		ConfigDir:       f.configDir,
+		Add:             []catalog.Entry{{Name: "notes", URL: "https://notes.example/mcp"}},
+		AgentsToConnect: []agents.Agent{claude},
+		Probe: func(_ context.Context, configDir string, sc config.ServerConfig) error {
+			mu.Lock()
+			defer mu.Unlock()
+			probedIn[sc.Name] = configDir
+			return nil
+		},
+	}
+	run := mustStart(t, setup, Plan{Add: setup.Add})
+	run.Save()
+	plan, err := run.PlanConnect()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	plan.Check(context.Background())
+
+	mu.Lock()
+	defer mu.Unlock()
+	if probedIn["files"] != f.configDir {
+		t.Errorf("files checked in %q, want mini's config dir: a token refreshed by the check must outlive a quit",
+			probedIn["files"])
+	}
+	if probedIn["notes"] != run.stage.dir {
+		t.Errorf("notes checked in %q, want the stage, which holds it until Finish", probedIn["notes"])
 	}
 }

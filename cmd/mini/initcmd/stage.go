@@ -1,167 +1,108 @@
 package initcmd
 
 import (
-	"bytes"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 
+	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/fileio"
 )
 
-// stage is a copy of mini's config that a run writes to, so neither mini nor its daemon sees the
-// run's servers or logins until commit.
+// stage holds the servers a run adds, and their logins, so neither mini nor its daemon sees them
+// until commit. Servers mini already has stay where they are: a token refreshed while probing one
+// must reach mini even when the run quits.
 type stage struct {
 	configDir string
 	dir       string
-	copied map[string][]byte
 }
 
-// Probes and logins read mini's settings and the existing servers' credentials, so those are copied too.
-var stagedFiles = []string{
-	"config.yaml",
-	"servers/*.yaml",
-	"internal/*.token.json",
-	"internal/*.dcr.json",
-	"internal/*.meta.json",
+var errAddedOutsideInit = errors.New("added to mini outside init while it ran; kept that version")
+
+func newStage(configDir string) *stage {
+	// Beside mini's own tokens, so a stage a crash leaves behind is no more exposed than they are.
+	return &stage{configDir: configDir, dir: filepath.Join(configDir, "internal", "init-stage-"+rand.Text())}
 }
 
-var (
-	errChangedOutsideInit = errors.New("changed outside init while it ran; kept that version")
-	errKeptNewer          = errors.New("kept the newer copy in the config dir")
-)
-
-func newStage(configDir string) (*stage, error) {
-	// Outside the config dir, so a run that quits leaves it as it found it, even one that didn't exist.
-	dir, err := os.MkdirTemp("", "mini-init-")
-	if err != nil {
-		return nil, fmt.Errorf("create init stage: %w", err)
-	}
-	s := &stage{configDir: configDir, dir: dir, copied: map[string][]byte{}}
-	if err := errors.Join(s.makeDirs(), s.copyIn()); err != nil {
-		return nil, errors.Join(err, s.discard())
-	}
-	return s, nil
-}
-
-func (s *stage) makeDirs() error {
+// create waits for the first save, so a run that quits before it leaves the config dir as it found it.
+func (s *stage) create() error {
 	for _, sub := range []string{"servers", "internal"} {
-		if err := os.Mkdir(filepath.Join(s.dir, sub), 0o700); err != nil {
+		if err := os.MkdirAll(filepath.Join(s.dir, sub), 0o700); err != nil {
 			return fmt.Errorf("create init stage: %w", err)
 		}
 	}
-	return nil
+	// Probes and logins in the stage read mini's settings.
+	settings, exists, err := readIfExists(filepath.Join(s.configDir, "config.yaml"))
+	if err != nil || !exists {
+		return err
+	}
+	return writeFile(filepath.Join(s.dir, "config.yaml"), settings)
 }
 
-func (s *stage) copyIn() error {
-	paths, err := stagedPaths(s.configDir)
+// commit moves each named server into mini, its login and state first, so a daemon that sees the
+// server finds its login already there.
+func (s *stage) commit(names []string) (committed []string, failed []ServerError) {
+	for _, name := range names {
+		if err := s.commitServer(name); err != nil {
+			failed = append(failed, ServerError{Name: name, Err: err})
+			continue
+		}
+		committed = append(committed, name)
+	}
+	return committed, failed
+}
+
+func (s *stage) commitServer(name string) error {
+	if config.ServerFileExists(s.configDir, name) {
+		return errAddedOutsideInit
+	}
+	staged, mini := serverState(s.dir, name), serverState(s.configDir, name)
+	for i := range staged {
+		if err := replaceOrRemove(mini[i], staged[i]); err != nil {
+			return err
+		}
+	}
+	data, err := os.ReadFile(config.ServerPath(s.dir, name))
 	if err != nil {
 		return err
 	}
-	for _, rel := range paths {
-		data, err := os.ReadFile(filepath.Join(s.configDir, rel))
-		if err != nil {
-			return fmt.Errorf("copy %s: %w", rel, err)
-		}
-		if err := writeStaged(filepath.Join(s.dir, rel), data); err != nil {
-			return err
-		}
-		s.copied[rel] = data
-	}
-	return nil
-}
-
-// commit writes each file the run changed into the config dir. A file changed there since the copy
-// keeps its version: the run's change would overwrite what someone else just did.
-func (s *stage) commit() []ServerError {
-	paths, err := stagedPaths(s.dir)
-	if err != nil {
-		return []ServerError{{Name: "init", Err: err}}
-	}
-	var failed []ServerError
-	// Sorted, internal/ goes before servers/: a daemon that sees a new server finds its login already there.
-	for _, rel := range union(paths, slices.Collect(maps.Keys(s.copied))) {
-		if err := s.commitFile(rel); err != nil && !errors.Is(err, errKeptNewer) {
-			failed = append(failed, ServerError{Name: serverOf(rel), Err: err})
-		}
-	}
-	return failed
-}
-
-func (s *stage) commitFile(rel string) error {
-	staged, inStage, err := readIfExists(filepath.Join(s.dir, rel))
-	if err != nil {
-		return err
-	}
-	copied, wasCopied := s.copied[rel]
-	if inStage == wasCopied && bytes.Equal(staged, copied) {
-		return nil
-	}
-	path := filepath.Join(s.configDir, rel)
-	unchanged := func() error { return s.unchangedSinceCopy(rel) }
-	if !inStage {
-		if err := unchanged(); err != nil {
-			return err
-		}
-		return removeIfExists(path)
-	}
+	path := config.ServerPath(s.configDir, name)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	return fileio.ReplaceFile(path, staged, fileio.ReplaceOptions{Perm: 0o600, BeforeRename: unchanged})
+	// Created, not replaced: a server added since the check above is someone else's.
+	return fileio.CreateFile(path, data, 0o600)
 }
 
-func (s *stage) unchangedSinceCopy(rel string) error {
-	current, exists, err := readIfExists(filepath.Join(s.configDir, rel))
-	if err != nil {
+func serverState(configDir, name string) []string {
+	return append(auth.CredentialPaths(configDir, name), config.ServerMetaPath(configDir, name))
+}
+
+// A file the stage lacks is removed too: mini may still hold a token from an earlier server of the same name.
+func replaceOrRemove(path, from string) error {
+	data, staged, err := readIfExists(from)
+	switch {
+	case err != nil:
 		return err
+	case !staged:
+		return removeIfExists(path)
 	}
-	copied, wasCopied := s.copied[rel]
-	if exists != wasCopied || !bytes.Equal(current, copied) {
-		// Only a server file's change is worth reporting; a token the daemon refreshed is just newer.
-		if strings.HasPrefix(rel, "servers/") {
-			return errChangedOutsideInit
-		}
-		return errKeptNewer
-	}
-	return nil
+	return writeFile(path, data)
 }
 
 func (s *stage) discard() error {
 	return os.RemoveAll(s.dir)
 }
 
-func stagedPaths(root string) ([]string, error) {
-	var paths []string
-	for _, pattern := range stagedFiles {
-		matches, err := filepath.Glob(filepath.Join(root, pattern))
-		if err != nil {
-			return nil, err
-		}
-		for _, match := range matches {
-			rel, err := filepath.Rel(root, match)
-			if err != nil {
-				return nil, err
-			}
-			paths = append(paths, filepath.ToSlash(rel))
-		}
-	}
-	return paths, nil
-}
-
-func writeStaged(path string, data []byte) error {
+func writeFile(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("stage %s: %w", path, err)
+		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("stage %s: %w", path, err)
-	}
-	return nil
+	return fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0o600})
 }
 
 func readIfExists(path string) ([]byte, bool, error) {
@@ -180,15 +121,4 @@ func removeIfExists(path string) error {
 		return err
 	}
 	return nil
-}
-
-func union(a, b []string) []string {
-	all := slices.Concat(a, b)
-	slices.Sort(all)
-	return slices.Compact(all)
-}
-
-func serverOf(rel string) string {
-	name, _, _ := strings.Cut(filepath.Base(rel), ".")
-	return name
 }

@@ -81,12 +81,7 @@ func (s Setup) Plan() (Plan, error) {
 
 // Write is a run with no UI: one save, its OAuth checks, then the report. It connects no agent.
 func (s Setup) Write(p Plan) Report {
-	run, err := s.Start(p)
-	if err != nil {
-		report := s.report()
-		report.ReadServersErr = err
-		return report
-	}
+	run := s.Start(p)
 	defer run.Close()
 	run.Save()
 	return run.Finish(context.Background(), ConnectParams{Choice: DontConnect})

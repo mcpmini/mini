@@ -42,27 +42,39 @@ func isDir(path string) bool {
 }
 
 // miniServers holds mini's enabled servers twice: as written, to compare with agent entries
-// (which hold ${VAR} unexpanded), and as loaded, to connect to.
+// (which hold ${VAR} unexpanded), and as loaded, to connect to from the config dir that holds them.
 type miniServers struct {
-	written []config.ServerConfig
-	loaded  map[string]config.ServerConfig
+	written    []config.ServerConfig
+	loaded     map[string]config.ServerConfig
+	configDirs map[string]string
 }
 
-func loadMiniServers(configDir string) (miniServers, error) {
+// loadMiniServers reads the servers of each config dir; a run's stage is read with mini's.
+func loadMiniServers(configDirs ...string) (miniServers, error) {
+	mini := miniServers{loaded: map[string]config.ServerConfig{}, configDirs: map[string]string{}}
+	for _, configDir := range configDirs {
+		if err := mini.load(configDir); err != nil {
+			return miniServers{}, err
+		}
+	}
+	return mini, nil
+}
+
+func (m *miniServers) load(configDir string) error {
 	servers, err := config.LoadServers(configDir)
 	if err != nil {
-		return miniServers{}, err
+		return err
 	}
-	mini := miniServers{loaded: map[string]config.ServerConfig{}}
 	for _, sc := range servers.Loaded {
 		written, err := config.ReadUnexpandedServer(configDir, sc.Name)
 		if !sc.IsEnabled() || err != nil { // a server left out here only keeps its duplicates in the agents
 			continue
 		}
-		mini.written = append(mini.written, written)
-		mini.loaded[sc.Name] = sc
+		m.written = append(m.written, written)
+		m.loaded[sc.Name] = sc
+		m.configDirs[sc.Name] = configDir
 	}
-	return mini, nil
+	return nil
 }
 
 // Duplicates pairs each agent entry init may replace with the mini server it duplicates. Entries
@@ -87,10 +99,9 @@ func (m miniServers) Duplicates(entries map[string]agents.Server, selfPath strin
 }
 
 type checkParams struct {
-	configDir string
-	servers   []string
-	clock     clock.Clock
-	probe     probeFunc
+	servers []string
+	clock   clock.Clock
+	probe   probeFunc
 }
 
 // Check connects to the named servers concurrently. A server passes when its error is nil; one
@@ -102,7 +113,7 @@ func (m miniServers) Check(ctx context.Context, p checkParams) map[string]error 
 	for _, name := range p.servers {
 		if sc, ok := m.loaded[name]; ok {
 			wg.Go(func() {
-				err := p.check(ctx, sc)
+				err := p.check(ctx, m.configDirs[name], sc)
 				mu.Lock()
 				defer mu.Unlock()
 				results[name] = err
@@ -113,10 +124,10 @@ func (m miniServers) Check(ctx context.Context, p checkParams) map[string]error 
 	return results
 }
 
-func (p checkParams) check(ctx context.Context, sc config.ServerConfig) error {
+func (p checkParams) check(ctx context.Context, configDir string, sc config.ServerConfig) error {
 	probeCtx, cancel := clock.WithTimeout(ctx, p.clock, connectCheckTimeout)
 	defer cancel()
-	return p.probe(probeCtx, p.configDir, sc)
+	return p.probe(probeCtx, configDir, sc)
 }
 
 // duplicatedServers lists the mini servers that Connect must check: those some agent entry duplicates.

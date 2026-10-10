@@ -36,10 +36,7 @@ func Run(p Params) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	run, err := p.Setup.Start(plan)
-	if err != nil {
-		return Outcome{}, err
-	}
+	run := p.Setup.Start(plan)
 	f := &flow{run: run}
 	defer f.run.Close()
 	f.ui = newScreens(p, f.run)
@@ -101,12 +98,12 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	}
 	ui.logins = newLoginsScreen(loginsParams{
 		statuses: func() ([]initcmd.ServerStatus, error) {
-			return initcmd.ServerStatuses(run.StageDir(), ui.catalog(*plan))
+			return run.ServerStatuses(ui.catalog(*plan))
 		},
 		checking: run.Checking,
 		changed:  run.ChecksChanged(),
 		startLogin: func(ctx context.Context, name string) (Login, error) {
-			return p.StartLogin(ctx, run.StageDir(), name)
+			return p.StartLogin(ctx, run.ConfigDirFor(name), name)
 		},
 		copy: copyLinkToClipboard,
 	})

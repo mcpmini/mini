@@ -5,44 +5,72 @@ import (
 	"log"
 	"slices"
 
+	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// Run is one init run, from its first save to its report. It saves to a stage, and only Finish
-// commits it to mini. Checking and ChecksChanged are safe from any goroutine; the other methods
-// belong to one.
+// Run is one init run, from its first save to its report. The servers it adds wait in a stage until
+// Finish commits them to mini. Checking and ChecksChanged are safe from any goroutine; the other
+// methods belong to one.
 type Run struct {
-	Plan    Plan
-	setup   Setup
-	stage   *stage
-	session *session
-	last    syncResult
-	commit  []ServerError
+	Plan      Plan
+	setup     Setup
+	stage     *stage
+	staged    bool
+	session   *session
+	last      syncResult
+	committed []string
+	commit    []ServerError
 }
 
-func (s Setup) Start(p Plan) (*Run, error) {
-	st, err := newStage(s.ConfigDir)
-	if err != nil {
-		return nil, err
-	}
-	return &Run{Plan: p, setup: s, stage: st, session: s.newSession(st.dir)}, nil
-}
-
-// StageDir is where the run saves until Finish commits it; a login saved there is committed too.
-func (r *Run) StageDir() string {
-	return r.stage.dir
+func (s Setup) Start(p Plan) *Run {
+	st := newStage(s.ConfigDir)
+	return &Run{Plan: p, setup: s, stage: st, session: s.newSession(st.dir)}
 }
 
 // Save stages the plan's servers and starts checking the new ones for OAuth. It returns the servers
 // it removed, credentials included, so a login done for them no longer applies.
 func (r *Run) Save() (removed []string) {
+	if !r.staged {
+		if err := r.stage.create(); err != nil {
+			r.last = syncResult{Failed: failedAll(r.Plan.Servers(), err)}
+			return nil
+		}
+		r.staged = true
+	}
 	r.last = r.session.Sync(r.Plan.Servers())
 	return r.last.Removed
 }
 
-// Added names the servers this run added to mini, less any unticked since.
+func failedAll(servers []config.ServerConfig, err error) []ServerError {
+	var failed []ServerError
+	for _, sc := range servers {
+		failed = append(failed, ServerError{Name: sc.Name, Err: err})
+	}
+	return failed
+}
+
+// Added names the servers this run adds to mini, less any unticked since.
 func (r *Run) Added() []string {
 	return r.session.Written()
+}
+
+// ConfigDirFor is where a server's login is saved: the stage for one this run adds, mini for the rest.
+func (r *Run) ConfigDirFor(server string) string {
+	if slices.Contains(r.session.Written(), server) {
+		return r.stage.dir
+	}
+	return r.setup.ConfigDir
+}
+
+// ServerStatuses are mini's servers with the ones this run adds.
+func (r *Run) ServerStatuses(entries []catalog.Entry) ([]ServerStatus, error) {
+	inMini, err := ServerStatuses(r.setup.ConfigDir, entries)
+	if err != nil || !r.staged {
+		return inMini, err
+	}
+	added, err := ServerStatuses(r.stage.dir, entries)
+	return append(inMini, added...), err
 }
 
 // Checking names the servers whose OAuth check is still running.
@@ -55,11 +83,11 @@ func (r *Run) ChecksChanged() <-chan struct{} {
 	return r.session.Changed()
 }
 
-// Finish lets the checks end, commits the stage, and connects the agents before reporting: the
-// report reads both the servers and the agents' configs.
+// Finish lets the checks end, commits the staged servers, and connects the agents before
+// reporting: the report reads both the servers and the agents' configs.
 func (r *Run) Finish(ctx context.Context, connect ConnectParams) Report {
 	r.session.WaitChecks()
-	r.commit = r.stage.commit()
+	r.committed, r.commit = r.stage.commit(r.session.Written())
 	r.discardStage()
 	connected := r.setup.connectAgents(ctx, connect)
 	report := r.report()
@@ -86,13 +114,7 @@ func (r *Run) report() Report {
 	adds := planAdds(p.Import.picked(), p.Add, p.written)
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
 	report.WriteErrors = slices.Concat(r.last.Failed, r.commit)
-	report.Import.keepOnly(report.Import.importedOf(r.committed()))
+	report.Import.keepOnly(report.Import.importedOf(r.committed))
 	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, p.Catalog)
 	return report
-}
-
-func (r *Run) committed() []string {
-	return slices.DeleteFunc(r.session.Written(), func(name string) bool {
-		return !config.ServerFileExists(r.setup.ConfigDir, name)
-	})
 }

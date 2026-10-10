@@ -95,12 +95,17 @@ func DeleteCredentials(configDir, serverName string) error {
 		return fmt.Errorf("invalid server name: %q", serverName)
 	}
 	var errs []error
-	for _, path := range []string{tokenPath(configDir, serverName), registrationPath(configDir, serverName)} {
+	for _, path := range CredentialPaths(configDir, serverName) {
 		if err := os.Remove(path); err != nil && !IsNotFound(err) {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// CredentialPaths are the files holding a server's login: its token and its registered client.
+func CredentialPaths(configDir, serverName string) []string {
+	return []string{tokenPath(configDir, serverName), registrationPath(configDir, serverName)}
 }
 
 func tokenPath(configDir, serverName string) string {

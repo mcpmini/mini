@@ -10,10 +10,9 @@ import (
 // ConnectPlan is what Connect knows before its connection checks: mini's servers and, per agent,
 // the entries removing would replace if their mini copy passes its check.
 type ConnectPlan struct {
-	setup      Setup
-	serversDir string
-	mini       miniServers
-	agents     map[string]agentDuplicates
+	setup  Setup
+	mini   miniServers
+	agents map[string]agentDuplicates
 }
 
 type agentDuplicates struct {
@@ -21,17 +20,21 @@ type agentDuplicates struct {
 	duplicates map[string]string
 }
 
-// PlanConnect reads the staged servers: what removing replaces is what mini will have once Finish commits.
+// PlanConnect reads the staged servers with mini's: removing replaces entries with what mini will
+// have once Finish commits.
 func (r *Run) PlanConnect() (ConnectPlan, error) {
-	return r.setup.planConnect(r.stage.dir)
+	if !r.staged {
+		return r.setup.planConnect(r.setup.ConfigDir)
+	}
+	return r.setup.planConnect(r.setup.ConfigDir, r.stage.dir)
 }
 
-func (s Setup) planConnect(serversDir string) (ConnectPlan, error) {
-	mini, err := loadMiniServers(serversDir)
+func (s Setup) planConnect(configDirs ...string) (ConnectPlan, error) {
+	mini, err := loadMiniServers(configDirs...)
 	if err != nil {
 		return ConnectPlan{}, err
 	}
-	p := ConnectPlan{setup: s, serversDir: serversDir, mini: mini, agents: map[string]agentDuplicates{}}
+	p := ConnectPlan{setup: s, mini: mini, agents: map[string]agentDuplicates{}}
 	rule := s.replacementRule(nil)
 	for _, agent := range s.AgentsToConnect {
 		entries, err := agent.Read(agent.ConfigPath)
@@ -66,10 +69,9 @@ type Removals struct {
 func (p ConnectPlan) Check(ctx context.Context) Removals {
 	r := Removals{ByAgent: map[string][]string{}}
 	r.Checks = p.mini.Check(ctx, checkParams{
-		configDir: p.serversDir,
-		servers:   duplicatedServers(p.allDuplicates()...),
-		clock:     clock.System(),
-		probe:     p.setup.probe(),
+		servers: duplicatedServers(p.allDuplicates()...),
+		clock:   clock.System(),
+		probe:   p.setup.probe(),
 	})
 	rule := p.setup.replacementRule(r.Checks)
 	for agent, a := range p.agents {
