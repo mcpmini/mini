@@ -108,6 +108,7 @@ func (g *catalogGrid) handle(key tea.KeyPressMsg) bool {
 
 func (g *catalogGrid) filterChanged() {
 	g.at, g.actions.active, g.scroll = g.firstEntry(), false, scroll{}
+	g.settle()
 }
 
 func (g *catalogGrid) activate(key string) bool {

@@ -31,6 +31,7 @@ type catalogScreen struct {
 	available     []catalog.Entry
 	checked       map[string]bool
 	grid          *catalogGrid
+	width, height int
 }
 
 type catalogParams struct {
@@ -79,15 +80,13 @@ func (s *catalogScreen) enter() tea.Cmd {
 			delete(s.checked, name)
 		}
 	}
-	grid := newCatalogGrid(s.sections(shown), s.checked)
-	if s.grid != nil {
-		grid.width, grid.sectionsHeight = s.grid.width, s.grid.sectionsHeight
-	}
-	s.grid = grid
+	s.grid = newCatalogGrid(s.sections(shown), s.checked)
+	s.grid.resize(s.width, s.height)
 	return nil
 }
 
 func (s *catalogScreen) resize(width, height int) {
+	s.width, s.height = width, height
 	s.grid.resize(width, height)
 }
 

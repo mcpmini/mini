@@ -121,8 +121,8 @@ func columnWidth(column []gridCell) int {
 	return width
 }
 
-// locate finds the cursor's cell. A cursor a resized layout no longer shows stands on the nearest
-// row it can rest on; settle moves it there.
+// locate finds the cursor's cell. A cursor the layout no longer shows stands on the nearest row it
+// can rest on; settle moves it there.
 func (g *catalogGrid) locate(columns [][]gridCell) (col, row int, at gridSpot) {
 	for c, column := range columns {
 		for r, cell := range column {
@@ -141,7 +141,7 @@ func (g *catalogGrid) locate(columns [][]gridCell) (col, row int, at gridSpot) {
 	return 0, 0, g.firstEntry()
 }
 
-// settle runs on resize, so drawing a frame never moves the cursor.
+// settle runs whenever what the layout shows changes, so drawing a frame never moves the cursor.
 func (g *catalogGrid) settle() {
 	_, _, g.at = g.locate(g.columns())
 }
@@ -190,8 +190,10 @@ func (g *catalogGrid) detail() string {
 	if !ok {
 		return ""
 	}
-	// The host comes before the description, which can run past the window's edge.
-	parts := slices.DeleteFunc([]string{e.title, e.host, e.description}, func(p string) bool { return p == "" })
+	// The app cuts lines at the window's edge: the host comes before the description, and the
+	// title gives way, so the host always shows.
+	title := ansi.Truncate(e.title, max(g.width-ansi.StringWidth("  "+" · "+e.host), 1), "…")
+	parts := slices.DeleteFunc([]string{title, e.host, e.description}, func(p string) bool { return p == "" })
 	return "  " + dim.Render(strings.Join(parts, " · "))
 }
 

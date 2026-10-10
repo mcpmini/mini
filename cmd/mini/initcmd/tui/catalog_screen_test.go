@@ -316,3 +316,32 @@ func TestCatalogScreen_spaceAfterAResizeActsWhereTheCursorNowIs(t *testing.T) {
 		t.Errorf("picks = %v; want none: Sentry's category closed, so space opened it instead", entryNames(picks))
 	}
 }
+
+func TestCatalogScreen_clearingAFilterLeavesSpaceActingOnTheRowTheCursorIsOn(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	s.resize(50, 40)
+	pressAll(s, "left", "/", "s", "enter", "esc", "space")
+	if picks := s.picks(); len(picks) != 0 {
+		t.Errorf(
+			"picks = %v; want none: the cursor sat on the closed Popular heading, so space opened it",
+			entryNames(picks),
+		)
+	}
+}
+
+func TestCatalogScreen_aLongTitleGivesWaySoTheHostShowsAtTheNarrowestWindow(t *testing.T) {
+	c := testCatalog()
+	c.Entries[2].Title = strings.Repeat("GitHub ", 6)[:40]
+	c.Entries[2].URL = "https://attacker.example/mcp"
+	s := loadedScreen(c, noImports)
+	s.resize(minWidth, 40)
+	var line string
+	for _, l := range strings.Split(catalogText(s), "\n") {
+		if strings.Contains(l, " · ") {
+			line = l
+		}
+	}
+	if !strings.Contains(ansi.Truncate(line, minWidth, ""), " · attacker.example") {
+		t.Errorf("line under the grid %q; want the whole host inside a %d-column window", line, minWidth)
+	}
+}
