@@ -18,10 +18,11 @@ func (l *list) view(height int) string {
 		shown = append(shown, l.headerLine())
 	}
 	// The actions stay in view however far the rows scroll.
-	height -= len(shown) + len(l.actions.lines())
+	actions, _ := l.actions.lines()
+	height -= len(shown) + len(actions)
 	lines, first, last := l.lines()
 	shown = append(shown, l.scroll.cut(lines, first, last, height)...)
-	return strings.Join(append(shown, l.actions.lines()...), "\n")
+	return strings.Join(append(shown, actions...), "\n")
 }
 
 func (l *list) filterLine() string {

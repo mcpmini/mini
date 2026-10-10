@@ -41,7 +41,7 @@ type loginsScreen struct {
 	logins   int
 	width    int
 	scroll   scroll
-	back     bool
+	actions  actions
 	// Until the user moves it, the cursor rests on the next login to do.
 	cursorMoved bool
 	// One waiting command covers every running check.
@@ -49,7 +49,7 @@ type loginsScreen struct {
 }
 
 func newLoginsScreen(p loginsParams) *loginsScreen {
-	return &loginsScreen{p: p, results: map[string]error{}}
+	return &loginsScreen{p: p, results: map[string]error{}, actions: newActions()}
 }
 
 func (s *loginsScreen) refresh() {
@@ -70,44 +70,36 @@ func (s *loginsScreen) refresh() {
 	slices.SortStableFunc(s.rows, func(a, b initcmd.ServerStatus) int {
 		return slices.Index(sections, s.section(a)) - slices.Index(sections, s.section(b))
 	})
-	// Rows come and go as checks finish, so the user's pick is found again by name.
-	s.cursor = s.nextToLogIn(-1)
-	if i := s.rowIndex(selected); s.cursorMoved && s.selectable(i) {
-		s.cursor = i
+	if s.actions.active && s.cursorMoved {
+		return
 	}
+	// Rows come and go as checks finish, so the user's pick is found again by name.
+	i := slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.Name == selected })
+	if !s.cursorMoved || !s.selectable(i) {
+		s.restOnNextLogin()
+		return
+	}
+	s.cursor = i
 }
 
-// actionMark starts an action's name in cursorName: server names can't contain it, so a server
-// called "back" never stands for the Back action.
-const actionMark = "/"
-
-// cursorName is the server or action under the cursor.
 func (s *loginsScreen) cursorName() string {
 	if s.cursor >= 0 && s.cursor < len(s.rows) {
 		return s.rows[s.cursor].Name
 	}
-	if action := s.cursor - len(s.rows); action >= 0 && action < len(s.actionLabels()) {
-		return actionMark + s.actionLabels()[action]
-	}
 	return ""
 }
 
-func (s *loginsScreen) rowIndex(name string) int {
-	if label, ok := strings.CutPrefix(name, actionMark); ok {
-		if action := slices.Index(s.actionLabels(), label); action >= 0 {
-			return len(s.rows) + action
-		}
+// restOnNextLogin puts the cursor on the first login left to do, or on Continue once none is.
+func (s *loginsScreen) restOnNextLogin() {
+	s.cursor = s.nextToLogIn(-1)
+	s.actions.active = false
+	if s.cursor == len(s.rows) {
+		s.actions.reach()
 	}
-	return slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.Name == name })
-}
-
-// The actions follow the rows: Continue sits at len(rows), and Back after it.
-func (s *loginsScreen) actionLabels() []string {
-	return actionLabels(s.back)
 }
 
 func (s *loginsScreen) offerBack(back bool) {
-	s.back = back
+	s.actions.offerBack(back)
 }
 
 func (s *loginsScreen) forget(servers []string) {
@@ -118,7 +110,7 @@ func (s *loginsScreen) forget(servers []string) {
 
 func (s *loginsScreen) enter() tea.Cmd {
 	s.cursorMoved = false
-	s.cursor = s.nextToLogIn(-1)
+	s.restOnNextLogin()
 	return s.waitWhileChecking()
 }
 
@@ -148,10 +140,7 @@ func (s *loginsScreen) waitWhileChecking() tea.Cmd {
 }
 
 func (s *loginsScreen) selectable(i int) bool {
-	if i >= len(s.rows) {
-		return i < len(s.rows)+len(s.actionLabels())
-	}
-	if i < 0 {
+	if i < 0 || i >= len(s.rows) {
 		return false
 	}
 	r := s.rows[i]
@@ -167,13 +156,50 @@ func (s *loginsScreen) nextToLogIn(from int) int {
 	return len(s.rows)
 }
 
+// move steps over the rows the cursor can't log in to; past the last server it reaches the actions.
 func (s *loginsScreen) move(direction int) {
-	for i := s.cursor + direction; i >= 0 && i < len(s.rows)+len(s.actionLabels()); i += direction {
+	s.cursorMoved = true
+	if s.actions.active {
+		s.moveFromActions(direction)
+		return
+	}
+	for i := s.cursor + direction; i >= 0 && i < len(s.rows); i += direction {
 		if s.selectable(i) {
-			s.cursor, s.cursorMoved = i, true
+			s.cursor = i
 			return
 		}
 	}
+	if direction > 0 {
+		s.actions.reach()
+	}
+}
+
+// Up from Continue returns to the server the cursor left, or the last one it can rest on.
+func (s *loginsScreen) moveFromActions(direction int) {
+	returnTo := s.cursor
+	if !s.selectable(returnTo) {
+		returnTo = s.lastToLogIn()
+	}
+	if direction < 0 && s.actions.at == 0 && returnTo < 0 {
+		return
+	}
+	s.actions.move(direction)
+	if !s.actions.active {
+		s.cursor = returnTo
+	}
+}
+
+func (s *loginsScreen) lastToLogIn() int {
+	for i := len(s.rows) - 1; i >= 0; i-- {
+		if s.selectable(i) {
+			return i
+		}
+	}
+	return -1
+}
+
+func (s *loginsScreen) onServer(i int) bool {
+	return !s.actions.active && i == s.cursor
 }
 
 func (s *loginsScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
@@ -183,11 +209,12 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	case "down":
 		s.move(1)
 	case "tab":
-		s.cursor, s.cursorMoved = len(s.rows), true
+		s.actions.reach()
+		s.cursorMoved = true
 	case "enter":
-		if s.cursor >= len(s.rows) {
+		if s.actions.active {
 			s.cancelLogin()
-			return actionStep(s.actionLabels()[s.cursor-len(s.rows)]), nil
+			return s.actions.step(), nil
 		}
 		return stay, s.startLogin(s.rows[s.cursor].Name)
 	case "esc":
@@ -206,9 +233,9 @@ func (s *loginsScreen) heading() string {
 
 func (s *loginsScreen) body(height int) string {
 	if s.err != nil {
-		return withActions("mini's servers couldn't be read: "+s.err.Error(), s.actionLabels(), s.cursor-len(s.rows))
+		return s.actions.withMessage("mini's servers couldn't be read: " + s.err.Error())
 	}
-	actions, cursorLine := actionLines(s.actionLabels(), s.cursor-len(s.rows))
+	actions, cursorLine := s.actions.lines()
 	lines, first, last := s.serverLines()
 	if cursorLine >= 0 {
 		first, last = len(lines)+cursorLine, len(lines)+cursorLine
@@ -223,11 +250,11 @@ func (s *loginsScreen) serverLines() (lines []string, first, last int) {
 	for i, status := range s.rows {
 		start := len(lines)
 		lines, section = s.withSectionHeading(lines, section, status)
-		if i == s.cursor {
+		if s.onServer(i) {
 			first = start
 		}
 		lines = append(lines, s.rowLines(status, i, width)...)
-		if i == s.cursor {
+		if s.onServer(i) {
 			last = len(lines) - 1
 		}
 	}
@@ -239,7 +266,7 @@ func (s *loginsScreen) serverLines() (lines []string, first, last int) {
 }
 
 func (s *loginsScreen) rowLines(status initcmd.ServerStatus, i, width int) []string {
-	lines := []string{cursorMark(i == s.cursor) + fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status))}
+	lines := []string{cursorMark(s.onServer(i)) + fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status))}
 	if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
 		lines = append(lines, s.urlLines(4+width)...)
 	}
@@ -339,10 +366,10 @@ func (s *loginsScreen) keys() string {
 	if s.pending != nil {
 		return "↑↓ move"
 	}
-	if s.cursor < len(s.rows) {
+	if !s.actions.active {
 		return "↑↓ move · enter log in · tab continue"
 	}
-	return actionKeys(s.actionLabels())
+	return s.actions.keys(s.lastToLogIn() >= 0)
 }
 
 func (s *loginsScreen) empty() bool {

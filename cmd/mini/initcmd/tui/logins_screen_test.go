@@ -123,6 +123,9 @@ func TestLoginsScreen_saysEverythingIsReadyWhenTheLastCheckFindsNothingToFinish(
 		loginsText(s) != "Every server works; nothing is left to set up.\n\n> Continue" {
 		t.Errorf("%s\n%s\nwant the screen to say every server is ready, not an empty list", s.heading(), loginsText(s))
 	}
+	if keys := s.keys(); keys != "enter continue" {
+		t.Errorf("keys = %q, want only enter: no server is left for ↑ to reach", keys)
+	}
 }
 
 // fakeLogins starts a login per name; each one waits until the test ends it or the screen cancels it.
@@ -428,9 +431,13 @@ func TestLoginsScreen_theCursorStaysOnBackWhenTheRowsRefresh(t *testing.T) {
 	s.handle(press("tab"))
 	s.handle(press("down"))
 	f.statuses = append(f.statuses, initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin})
+	f.checking["linear"] = true
 	s.refresh()
 	if text := loginsText(s); !strings.HasSuffix(text, "> Back") {
-		t.Errorf("screen after a row appeared:\n%s\nwant the cursor still on Back", text)
+		t.Errorf(
+			"screen after a row appeared and the one above Continue started a check:\n%s\nwant the cursor still on Back",
+			text,
+		)
 	}
 }
 
@@ -449,18 +456,24 @@ func TestLoginsScreen_aServerNamedBackIsNotTheBackAction(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_tabJumpsToContinueAndUpReturnsToTheServers(t *testing.T) {
+func TestLoginsScreen_tabJumpsToContinueAndUpReturnsToTheServerItLeft(t *testing.T) {
 	s := newFakeChecks(
 		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
 		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
 	).screen()
 	showScreen(s)
 	s.handle(press("tab"))
-	if text := loginsText(s); !strings.HasSuffix(text, "> Continue") {
-		t.Fatalf("screen after tab:\n%s\nwant the cursor on Continue", text)
+	if text := loginsText(s); !strings.HasSuffix(text, "> Continue") || !strings.HasPrefix(s.keys(), "↑ move") {
+		t.Fatalf("screen after tab:\n%s\nkeys %q; want the cursor on Continue and ↑ named", text, s.keys())
 	}
 	s.handle(press("up"))
+	if text := loginsText(s); !strings.Contains(text, "> linear") {
+		t.Errorf("screen after up:\n%s\nwant the cursor back on linear, as the list and catalog screens do", text)
+	}
+	s.handle(press("down"))
+	s.handle(press("down"))
+	s.handle(press("up"))
 	if text := loginsText(s); !strings.Contains(text, "> sentry") {
-		t.Errorf("screen after up:\n%s\nwant the cursor on the last server", text)
+		t.Errorf("screen after down past sentry and up:\n%s\nwant the cursor back on sentry", text)
 	}
 }

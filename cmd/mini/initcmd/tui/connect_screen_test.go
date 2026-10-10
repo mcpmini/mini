@@ -132,7 +132,7 @@ func TestConnectScreen_justConnectingAnAgentThatHasMiniSaysItChangesNothing(t *t
 	if text := connectText(s); !strings.Contains(text, adds) {
 		t.Fatalf("screen:\n%s\nwant Just connect to add mini while Codex, which lacks it, is ticked", text)
 	}
-	s.cursor = 1
+	s.handle(press("up"))
 	s.handle(press("space"))
 	changesNothing := "Just connect mini\n  Changes nothing: Claude already has a mini entry."
 	if text := connectText(s); !strings.Contains(text, changesNothing) {
@@ -346,7 +346,9 @@ func TestConnectScreen_aShortWindowKeepsTheNoteInView(t *testing.T) {
 func TestConnectScreen_aTicksEveryAgentAndBackFollowsTheChoices(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
 	s.offerBack(true)
-	s.cursor = 0
+	for range 2 {
+		s.handle(press("up"))
+	}
 	s.handle(press("a"))
 	if got := pickedNames(s); len(got) != 0 {
 		t.Errorf("picked after a = %v, want none: every agent was ticked", got)
@@ -377,7 +379,7 @@ func TestConnectScreen_aWithOneAgentLeavesItTicked(t *testing.T) {
 
 func TestConnectScreen_tabJumpsToTheFirstChoice(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
-	s.cursor = 1
+	s.handle(press("up"))
 	for range 2 {
 		s.handle(press("tab"))
 		if choice, onOption := s.highlighted(); !onOption || choice != initcmd.ConnectOnly {

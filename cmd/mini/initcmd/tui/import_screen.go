@@ -81,7 +81,7 @@ func (s *importScreen) body(height int) string {
 
 func (s *importScreen) keys() string {
 	if s.list.actions.active {
-		return s.list.keys(s.list.actions.keys())
+		return s.list.keys(s.list.actions.keys(len(s.list.visible()) > 0))
 	}
 	return s.list.keys("space/enter tick · a all · tab continue · / filter")
 }

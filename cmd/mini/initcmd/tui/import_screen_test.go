@@ -102,6 +102,14 @@ func TestImportScreen_enterTicksTheRowAndContinuesFromContinue(t *testing.T) {
 	}
 }
 
+func TestImportScreen_onContinueTheFooterNamesUpBackToTheRows(t *testing.T) {
+	s := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	s.handle(press("tab"))
+	if keys := s.keys(); !strings.HasPrefix(keys, "↑ move") {
+		t.Errorf("keys on Continue = %q, want ↑ named: it is the only way back to the rows", keys)
+	}
+}
+
 func TestImportScreen_aLongCommandLeavesRoomForTheOtherColumns(t *testing.T) {
 	long := initcmd.Candidate{
 		Server: config.ServerConfig{Name: "files", Command: "npx", Args: []string{"-y", strings.Repeat("server-", 12)}},

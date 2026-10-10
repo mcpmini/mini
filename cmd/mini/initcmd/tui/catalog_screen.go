@@ -84,6 +84,9 @@ func (s *catalogScreen) enter() tea.Cmd {
 	s.grid = newCatalogGrid(s.sections(shown), s.checked)
 	s.grid.resize(s.width, s.height)
 	s.grid.actions.offerBack(s.back)
+	if s.loaded && !s.offersEntries() {
+		s.grid.actions.reach()
+	}
 	return nil
 }
 
@@ -153,7 +156,7 @@ func (s *catalogScreen) heading() string {
 
 func (s *catalogScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	// Until the catalog arrives there is nothing to pick, and enter would skip it unseen.
-	if !s.loaded || s.loadErr != nil || len(s.available) == 0 {
+	if !s.offersEntries() {
 		return s.handleWithoutGrid(key)
 	}
 	if s.grid.handle(key) {
@@ -199,7 +202,11 @@ func (s *catalogScreen) body(height int) string {
 }
 
 func (s *catalogScreen) withActions(message string) string {
-	return withActions(message, s.grid.actions.labels, s.grid.actions.at)
+	return s.grid.actions.withMessage(message)
+}
+
+func (s *catalogScreen) offersEntries() bool {
+	return s.loaded && s.loadErr == nil && len(s.available) > 0
 }
 
 func (s *catalogScreen) keys() string {
@@ -207,10 +214,10 @@ func (s *catalogScreen) keys() string {
 		return "loading the catalog"
 	}
 	switch {
-	case s.loadErr != nil || len(s.available) == 0:
-		return s.grid.actions.keys()
+	case !s.offersEntries():
+		return s.grid.actions.keys(false)
 	case s.grid.actions.active:
-		return s.grid.keys(s.grid.actions.keys())
+		return s.grid.keys(s.grid.actions.keys(true))
 	case s.grid.isGrid():
 		return s.grid.keys("↑↓←→ move · space/enter tick · tab continue · / filter")
 	}

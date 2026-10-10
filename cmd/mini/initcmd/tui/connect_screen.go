@@ -29,16 +29,17 @@ type connectScreen struct {
 	listed           []agents.Agent
 	alreadyConnected []string
 	ticked           map[string]bool
-	cursor           int
-	chosen           initcmd.ConnectChoice
-	checks           connectChecks
-	width            int
-	scroll           scroll
-	back             bool
+	// cursor is the agent under the cursor until it reaches the choices, which are the screen's actions.
+	cursor  int
+	actions actions
+	chosen  initcmd.ConnectChoice
+	checks  connectChecks
+	width   int
+	scroll  scroll
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
-	return &connectScreen{p: p, ticked: map[string]bool{}}
+	return &connectScreen{p: p, ticked: map[string]bool{}, actions: newActions()}
 }
 
 func (s *connectScreen) refresh() {
@@ -59,10 +60,17 @@ func (s *connectScreen) refresh() {
 		}
 		s.listed = append(s.listed, agent)
 	}
+	var labels []string
+	for _, choice := range s.options() {
+		labels = append(labels, optionLabel(choice))
+	}
+	s.actions.setChoices(labels)
 }
 
 func (s *connectScreen) enter() tea.Cmd {
-	s.cursor, s.scroll = s.agentRows(), scroll{}
+	// The cursor starts on the first choice, so up from it goes to the last agent.
+	s.cursor, s.scroll = max(s.agentRows()-1, 0), scroll{}
+	s.actions.reach()
 	return s.checks.start(s.plan)
 }
 
@@ -99,29 +107,15 @@ func (s *connectScreen) heading() string {
 }
 
 func (s *connectScreen) offerBack(back bool) {
-	s.back = back
-}
-
-// The choices are the screen's actions, and Back follows them.
-func (s *connectScreen) rows() int {
-	if s.back {
-		return s.agentRows() + len(s.options()) + 1
-	}
-	return s.agentRows() + len(s.options())
-}
-
-func (s *connectScreen) onBack() bool {
-	return s.back && s.cursor == s.rows()-1
+	s.actions.offerBack(back)
 }
 
 func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	switch key.String() {
-	case "up":
-		s.cursor = max(s.cursor-1, 0)
-	case "down":
-		s.cursor = min(s.cursor+1, s.rows()-1)
+	case "up", "down":
+		s.move(direction(key.String()))
 	case "tab":
-		s.cursor = s.agentRows()
+		s.actions.reach()
 	case "space":
 		s.tick()
 	case "a":
@@ -135,8 +129,22 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	return stay, nil
 }
 
+// move goes from the last agent to the choices and back; with one agent there are only the choices.
+func (s *connectScreen) move(step int) {
+	switch {
+	case s.agentRows() == 0:
+		s.actions.moveWithin(step)
+	case s.actions.active:
+		s.actions.move(step)
+	case step > 0 && s.cursor == s.agentRows()-1:
+		s.actions.reach()
+	default:
+		s.cursor = max(s.cursor+step, 0)
+	}
+}
+
 func (s *connectScreen) tick() {
-	if s.cursor < s.agentRows() {
+	if !s.actions.active {
 		name := s.listed[s.cursor].Name
 		s.ticked[name] = !s.ticked[name]
 	}
@@ -154,7 +162,7 @@ func (s *connectScreen) tickAll() {
 }
 
 func (s *connectScreen) choose() (step, tea.Cmd) {
-	if s.onBack() {
+	if s.actions.onBack() {
 		s.checks.cancel()
 		return back, nil
 	}
@@ -186,7 +194,7 @@ func (s *connectScreen) rowLines(height int) []string {
 	lines, first := s.agentLines()
 	last := first
 	for i, choice := range s.options() {
-		atCursor := s.cursor == s.agentRows()+i
+		atCursor := s.actions.atCursor(i)
 		if atCursor {
 			first = len(lines)
 		}
@@ -198,21 +206,13 @@ func (s *connectScreen) rowLines(height int) []string {
 			last = len(lines) - 1
 		}
 	}
-	if s.back {
-		back, cursorLine := s.backLines()
-		if cursorLine >= 0 {
-			first, last = len(lines)+cursorLine, len(lines)+cursorLine
+	if s.actions.back {
+		if s.actions.onBack() && s.actions.active {
+			first, last = len(lines)+1, len(lines)+1
 		}
-		lines = append(lines, back...)
+		lines = append(lines, "", cursorMark(s.actions.onBack() && s.actions.active)+backLabel)
 	}
 	return s.scroll.cut(lines, first, last, height)
-}
-
-func (s *connectScreen) backLines() ([]string, int) {
-	if s.onBack() {
-		return actionLines([]string{backLabel}, 0)
-	}
-	return actionLines([]string{backLabel}, -1)
 }
 
 func (s *connectScreen) noteLines() []string {
@@ -224,10 +224,11 @@ func (s *connectScreen) noteLines() []string {
 
 func (s *connectScreen) agentLines() (lines []string, cursorLine int) {
 	for i := range s.agentRows() {
-		if i == s.cursor {
+		onAgent := !s.actions.active && i == s.cursor
+		if onAgent {
 			cursorLine = len(lines)
 		}
-		lines = append(lines, cursorMark(i == s.cursor)+checkbox(s.ticked[s.listed[i].Name])+s.listed[i].Name)
+		lines = append(lines, cursorMark(onAgent)+checkbox(s.ticked[s.listed[i].Name])+s.listed[i].Name)
 	}
 	if s.agentRows() > 0 {
 		lines = append(lines, "")
@@ -332,10 +333,10 @@ func withVerb(names []string, one, many string) string {
 }
 
 func (s *connectScreen) keys() string {
-	if s.cursor < s.agentRows() {
+	if !s.actions.active {
 		return "↑↓ move · space/enter tick · a all · tab choices"
 	}
-	keys := "↑↓ move · enter choose"
+	keys := s.actions.keys(s.agentRows() > 0)
 	if choice, onOption := s.highlighted(); onOption && choice == initcmd.ConnectAndRemove && !s.checks.done {
 		keys = "↑↓ move · removing waits for the server checks"
 	}
@@ -343,10 +344,10 @@ func (s *connectScreen) keys() string {
 }
 
 func (s *connectScreen) highlighted() (choice initcmd.ConnectChoice, onOption bool) {
-	if s.cursor < s.agentRows() || s.onBack() {
+	if !s.actions.active || s.actions.onBack() {
 		return choice, false
 	}
-	return s.options()[s.cursor-s.agentRows()], true
+	return s.options()[s.actions.at], true
 }
 
 func (s *connectScreen) empty() bool {
