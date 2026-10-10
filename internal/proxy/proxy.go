@@ -38,20 +38,6 @@ func (s DaemonSession) Send(body []byte) []byte {
 	return classifyForward(s, body).resp
 }
 
-type Forwarder struct {
-	session  DaemonSession
-	resolver *DaemonResolver
-	link     *daemonLink
-	toolMode transport.ToolMode
-	clock    clock.Clock
-}
-
-func (f *Forwarder) sessionAt(state linkState) DaemonSession {
-	s := f.session
-	s.token = state.token
-	return s
-}
-
 func Run(p RunParams) error {
 	return runWithLimit(p, maxConcurrentForwards)
 }
