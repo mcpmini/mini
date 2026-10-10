@@ -132,7 +132,8 @@ func (g *catalogGrid) entryCells(section int, s gridSection, indent string) []gr
 			text = indent + dim.Render(g.mark(e)+e.title)
 		}
 		spot := gridSpot{section: section, entry: i}
-		cells = append(cells, gridCell{text: text, spot: spot, selectable: e.state == entryOffered})
+		// Marked entries hold the cursor too, so a long run of them scrolls into view.
+		cells = append(cells, gridCell{text: text, spot: spot, selectable: true})
 	}
 	return cells
 }
@@ -184,9 +185,9 @@ func (g *catalogGrid) view(height int, focused bool) string {
 	columns := g.columns()
 	col, row, _ := g.locate(columns)
 	lines := joinColumns(columns, col, row, focused)
-	first, last := 0, 0
-	if !g.isGrid() {
-		first, last = row, lastBeforeNextSelectable(columns[0], row)
+	first, last := row, row
+	if g.isGrid() {
+		first, last = 0, 0
 	}
 	detail := ""
 	if focused {
@@ -195,16 +196,6 @@ func (g *catalogGrid) view(height int, focused bool) string {
 	under := g.linesUnderSections(detail)
 	lines = g.scroll.cut(lines, first, last, height-len(under))
 	return strings.Join(append(lines, under...), "\n")
-}
-
-// Entries mini runs can't hold the cursor, so they scroll into view with the row above them.
-func lastBeforeNextSelectable(column []gridCell, row int) int {
-	for r := row + 1; r < len(column); r++ {
-		if column[r].selectable {
-			return r - 1
-		}
-	}
-	return len(column) - 1
 }
 
 func joinColumns(columns [][]gridCell, col, row int, showCursor bool) []string {

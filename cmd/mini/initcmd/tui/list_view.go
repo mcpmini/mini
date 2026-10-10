@@ -40,36 +40,36 @@ func (l *list) labelWidth() int {
 
 func (l *list) lines(focused bool) (lines []string, first, last int) {
 	width := l.labelWidth()
-	visible := l.visible()
-	for i, r := range visible {
+	tickable := len(l.visible())
+	rows := slices.Concat(l.visible(), l.matching(l.untickable))
+	for i, r := range rows {
 		start := len(lines)
-		lines = append(lines, l.line(r, focused && i == l.cursor, width))
-		if r.subtitle != "" {
-			lines = append(lines, "      "+dim.Render(r.subtitle))
-		}
+		lines = append(lines, l.rowLines(r, i >= tickable, focused && i == l.cursor, width)...)
 		if i == l.cursor {
 			first, last = start, len(lines)-1
 		}
 	}
-	lines = append(lines, l.untickableLines(width)...)
-	// The cursor never reaches the untickable rows, so they come into view with the last row.
-	if l.cursor == len(visible)-1 {
+	if len(rows) == tickable {
+		return lines, first, last
+	}
+	lines = append(lines, "", cursorMark(false)+" "+dim.Render(inMiniLegend))
+	// The legend can't hold the cursor, so it comes into view with the last row.
+	if l.cursor == len(rows)-1 {
 		last = len(lines) - 1
 	}
 	return lines, first, last
 }
 
-func (l *list) untickableLines(width int) []string {
-	untickable := l.matching(l.untickable)
-	if len(untickable) == 0 {
-		return nil
-	}
-	var lines []string
-	for _, r := range untickable {
+func (l *list) rowLines(r row, untickable, atCursor bool, width int) []string {
+	if untickable {
 		line := strings.TrimRight(fmt.Sprintf("%-*s  %s", width, r.label, r.detail), " ")
-		lines = append(lines, cursorMark(false)+dim.Render(inMiniMark+line))
+		return []string{cursorMark(atCursor) + dim.Render(inMiniMark+line)}
 	}
-	return append(lines, "", cursorMark(false)+" "+dim.Render(inMiniLegend))
+	lines := []string{l.line(r, atCursor, width)}
+	if r.subtitle != "" {
+		lines = append(lines, "      "+dim.Render(r.subtitle))
+	}
+	return lines
 }
 
 func cursorMark(atCursor bool) string {

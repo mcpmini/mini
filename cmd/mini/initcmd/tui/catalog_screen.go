@@ -109,14 +109,8 @@ func (s *catalogScreen) offered() []catalog.Entry {
 func (s *catalogScreen) sections() []gridSection {
 	imported := initcmd.NewConfiguredKeys(s.importTicked())
 	entry := func(e catalog.Entry) gridEntry { return catalogGridEntry(e, s.state(e, imported)) }
-	popular := gridSection{title: "Popular", repeated: true}
-	for _, name := range s.popular {
-		if i := slices.IndexFunc(s.byCategory, func(e catalog.Entry) bool { return e.Name == name }); i >= 0 {
-			popular.entries = append(popular.entries, entry(s.byCategory[i]))
-		}
-	}
 	var sections []gridSection
-	if len(popular.entries) > 0 {
+	if popular := s.popularSection(entry); len(popular.entries) > 0 {
 		sections = append(sections, popular)
 	}
 	for _, e := range s.byCategory {
@@ -126,6 +120,21 @@ func (s *catalogScreen) sections() []gridSection {
 		last := &sections[len(sections)-1]
 		last.entries = append(last.entries, entry(e))
 	}
+	sortCategoriesByTitle(sections)
+	return sections
+}
+
+func (s *catalogScreen) popularSection(entry func(catalog.Entry) gridEntry) gridSection {
+	popular := gridSection{title: "Popular", repeated: true}
+	for _, name := range s.popular {
+		if i := slices.IndexFunc(s.byCategory, func(e catalog.Entry) bool { return e.Name == name }); i >= 0 {
+			popular.entries = append(popular.entries, entry(s.byCategory[i]))
+		}
+	}
+	return popular
+}
+
+func sortCategoriesByTitle(sections []gridSection) {
 	for i := range sections {
 		if !sections[i].repeated {
 			slices.SortStableFunc(sections[i].entries, func(a, b gridEntry) int {
@@ -133,7 +142,6 @@ func (s *catalogScreen) sections() []gridSection {
 			})
 		}
 	}
-	return sections
 }
 
 func catalogGridEntry(e catalog.Entry, state entryState) gridEntry {

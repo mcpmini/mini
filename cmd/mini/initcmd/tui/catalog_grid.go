@@ -121,8 +121,11 @@ func (g *catalogGrid) toggleAll() {
 	var keys []string
 	for _, column := range g.columns() {
 		for _, cell := range column {
-			if cell.selectable && cell.spot.entry >= 0 {
-				keys = append(keys, shown[cell.spot.section].entries[cell.spot.entry].key)
+			if !cell.selectable || cell.spot.entry < 0 {
+				continue
+			}
+			if e := shown[cell.spot.section].entries[cell.spot.entry]; e.state == entryOffered {
+				keys = append(keys, e.key)
 			}
 		}
 	}
@@ -142,7 +145,7 @@ func (g *catalogGrid) activate() {
 		}
 		return
 	}
-	if e, ok := g.current(); ok {
+	if e, ok := g.current(); ok && e.state == entryOffered {
 		g.checked[e.key] = !g.checked[e.key]
 	}
 }

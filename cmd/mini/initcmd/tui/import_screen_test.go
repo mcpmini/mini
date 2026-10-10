@@ -172,30 +172,33 @@ func TestImportScreen_serversMiniRunsFollowTheCandidatesMarkedAndCantBeTicked(t 
 	if text := ansi.Strip(s.body(20, true)); text != want {
 		t.Fatalf("body:\n%s\nwant:\n%s", text, want)
 	}
-	for _, key := range []string{"a", "space"} {
+	if got, _ := s.handle(press("down")); got == pastLastRow {
+		t.Fatal("down from notes left the list, want the cursor on github's row")
+	}
+	for _, key := range []string{"space", "a", "a"} {
 		s.handle(press(key))
 	}
-	if got, _ := s.handle(press("down")); got != pastLastRow {
-		t.Errorf("down from notes = %v, want past the last row: github's row can't hold the cursor", got)
-	}
 	if picks := s.ticked(); len(picks) != 1 || picks[0].Name != "notes" {
-		t.Errorf("ticked = %v, want only notes: a and space never reach github", picks)
+		t.Errorf("ticked = %v after space on github then a twice, want only notes: github can't be ticked", picks)
 	}
 }
 
-func TestImportScreen_theServersMiniRunsScrollIntoViewWithTheLastRow(t *testing.T) {
-	var candidates []initcmd.Candidate
+func TestImportScreen_theCursorScrollsThroughMoreServersMiniRunsThanFit(t *testing.T) {
+	var inMini []initcmd.Candidate
 	for i := range 12 {
-		name := fmt.Sprintf("s%02d", i)
-		candidates = append(candidates, candidate(name, "https://"+name+".example.com/mcp", true, "Codex"))
+		name := fmt.Sprintf("m%02d", i)
+		inMini = append(inMini, candidate(name, "https://"+name+".example.com/mcp", false, "Codex"))
 	}
-	s := withInMini(candidates, candidate("github", "https://gh.example.com/mcp", false, "Codex"))
-	for range len(candidates) - 1 {
+	s := withInMini([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")}, inMini...)
+	for range len(inMini) {
 		s.handle(press("down"))
 	}
-	if text := ansi.Strip(s.body(10, true)); !strings.Contains(text, "> [x] s11") ||
-		!strings.Contains(text, "✓  github") || !strings.Contains(text, "✓ already in mini") {
-		t.Errorf("body with the cursor on the last row:\n%s\nwant github and the legend shown below s11", text)
+	if text := ansi.Strip(s.body(10, true)); !strings.Contains(text, ">  ✓  m11") ||
+		!strings.Contains(text, "✓ already in mini") {
+		t.Errorf("body with the cursor on the last row:\n%s\nwant m11 under the cursor and the legend below", text)
+	}
+	if got, _ := s.handle(press("down")); got != pastLastRow {
+		t.Errorf("down from the last row = %v, want past the last row", got)
 	}
 }
 
@@ -217,9 +220,9 @@ func TestImportScreen_theFilterNarrowsTheServersMiniRunsToo(t *testing.T) {
 	for _, key := range []string{"/", "g", "i", "t", "enter"} {
 		s.handle(press(key))
 	}
-	if text := ansi.Strip(s.body(20, true)); strings.Contains(text, "notes") || !strings.Contains(text, "✓  github") ||
-		strings.Contains(text, "> ") {
-		t.Errorf("body with filter git:\n%s\nwant only github, with no cursor on it", text)
+	text := ansi.Strip(s.body(20, true))
+	if strings.Contains(text, "notes") || !strings.Contains(text, ">  ✓  github") {
+		t.Errorf("body with filter git:\n%s\nwant only github, under the cursor", text)
 	}
 }
 
