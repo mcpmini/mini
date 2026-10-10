@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"slices"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -106,7 +104,6 @@ func (g *catalogGrid) handle(key tea.KeyPressMsg) reply {
 	return unhandled
 }
 
-// Entries the filter hides keep their ticks: the user can't see them change.
 func (g *catalogGrid) toggleAll() {
 	var keys []string
 	for _, s := range g.shown() {
@@ -114,10 +111,7 @@ func (g *catalogGrid) toggleAll() {
 			keys = append(keys, e.key)
 		}
 	}
-	all := !slices.ContainsFunc(keys, func(key string) bool { return !g.checked[key] })
-	for _, key := range keys {
-		g.checked[key] = !all
-	}
+	toggleAll(g.checked, keys)
 }
 
 func (g *catalogGrid) filterChanged() {
@@ -173,8 +167,9 @@ func (g *catalogGrid) moveVertically(column []gridCell, row, step int) reply {
 	return handled
 }
 
+// A filter that matches nothing still holds the cursor, so the keys that edit or clear it reach it.
 func (g *catalogGrid) focusable() bool {
-	return len(g.shown()) > 0
+	return len(g.shown()) > 0 || g.filter.active()
 }
 
 func (g *catalogGrid) moveAcross(columns [][]gridCell, col, row, step int) {
@@ -205,13 +200,6 @@ func (g *catalogGrid) openOrClose(step int) {
 		}
 		g.at.entry = -1
 	}
-}
-
-func direction(key string) int {
-	if key == "up" || key == "left" {
-		return -1
-	}
-	return 1
 }
 
 func nearestSelectable(column []gridCell, row int) (int, bool) {

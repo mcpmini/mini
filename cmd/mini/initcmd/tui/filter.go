@@ -82,6 +82,10 @@ func (f *textFilter) typingKey(key tea.KeyPressMsg) (changed, move bool) {
 	return false, false
 }
 
+func (f *textFilter) active() bool {
+	return f.typing || f.text != ""
+}
+
 func (f *textFilter) set(text string) bool {
 	changed := f.text != text
 	f.text = text

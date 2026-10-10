@@ -107,7 +107,7 @@ func TestCatalogScreen_gridShowsPopularThenEachCategoryAlphabetically(t *testing
 }
 
 func TestCatalogScreen_aWindowTooSmallForTheGridOpensOneCategoryAtATime(t *testing.T) {
-	for name, size := range map[string][2]int{"narrow": {50, 40}, "short": {120, 14}} {
+	for name, size := range map[string][2]int{"narrow": {50, 40}, "short": {120, 6}} {
 		t.Run(name, func(t *testing.T) {
 			s := loadedScreen(testCatalog(), noImports)
 			s.resize(size[0], size[1])

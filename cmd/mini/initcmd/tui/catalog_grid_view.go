@@ -14,16 +14,11 @@ const (
 	columnGap   = 5
 	// Below the sections: a blank line and the entry under the cursor.
 	linesUnderSections = 2
-	// The app's footer at its tallest: a filter line, and keys wrapped onto two lines.
-	tallestFooter = 3
 )
 
-// The layout follows the window, not the frame: the footer grows a line when its keys wrap and
-// Back comes and goes, and a layout picked from the height left over would switch with them.
-func (g *catalogGrid) resize(width, windowHeight int) {
+func (g *catalogGrid) resize(width, rowsHeight int) {
 	g.width = width
-	g.sectionsHeight = windowHeight - headingLines - blankLinesAroundBody - tallestFooter - tallestNavigation -
-		linesUnderSections
+	g.sectionsHeight = rowsHeight - linesUnderSections
 	g.settle()
 }
 

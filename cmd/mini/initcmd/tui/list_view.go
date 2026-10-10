@@ -74,9 +74,18 @@ func widest[T any](items []T, text func(T) string) int {
 }
 
 func (l *list) line(r row, atCursor bool, width int) string {
-	line := cursorMark(atCursor) + checkbox(l.checked[r.key]) + fmt.Sprintf("%-*s", width, r.label)
-	if r.detail != "" {
-		line += "  " + dim.Render(r.detail)
+	if r.detail == "" {
+		return cursorMark(atCursor) + checkbox(l.checked[r.key]) + r.label
 	}
-	return line
+	return cursorMark(
+		atCursor,
+	) + checkbox(
+		l.checked[r.key],
+	) + fmt.Sprintf(
+		"%-*s",
+		width,
+		r.label,
+	) + "  " + dim.Render(
+		r.detail,
+	)
 }

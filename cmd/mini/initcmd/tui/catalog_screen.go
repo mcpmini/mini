@@ -23,15 +23,15 @@ type catalogScreen struct {
 	// offered drops the servers mini already has.
 	offered func([]catalog.Entry) []catalog.Entry
 	// imports is what the Import screen has ticked; a catalog server it covers is hidden.
-	imports       func() []config.ServerConfig
-	loaded        bool
-	loadErr       error
-	popular       []string
-	loadedEntries []catalog.Entry
-	available     []catalog.Entry
-	checked       map[string]bool
-	grid          *catalogGrid
-	width, height int
+	imports           func() []config.ServerConfig
+	loaded            bool
+	loadErr           error
+	popular           []string
+	loadedEntries     []catalog.Entry
+	available         []catalog.Entry
+	checked           map[string]bool
+	grid              *catalogGrid
+	width, rowsHeight int
 }
 
 type catalogParams struct {
@@ -81,13 +81,13 @@ func (s *catalogScreen) enter() tea.Cmd {
 		}
 	}
 	s.grid = newCatalogGrid(s.sections(shown), s.checked)
-	s.grid.resize(s.width, s.height)
+	s.grid.resize(s.width, s.rowsHeight)
 	return nil
 }
 
-func (s *catalogScreen) resize(width, height int) {
-	s.width, s.height = width, height
-	s.grid.resize(width, height)
+func (s *catalogScreen) resize(width, rowsHeight int) {
+	s.width, s.rowsHeight = width, rowsHeight
+	s.grid.resize(width, rowsHeight)
 }
 
 func (s *catalogScreen) shown() []catalog.Entry {

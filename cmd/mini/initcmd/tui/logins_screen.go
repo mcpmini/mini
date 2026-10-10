@@ -44,7 +44,7 @@ type loginsScreen struct {
 	// Until the user moves it, the cursor rests on the next login to do.
 	cursorMoved bool
 	// One waiting command covers every running check.
-	waiting bool
+	waitingOnChecks bool
 }
 
 func newLoginsScreen(p loginsParams) *loginsScreen {
@@ -124,7 +124,7 @@ func (s *loginsScreen) enter() tea.Cmd {
 func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case checksChanged:
-		s.waiting = false
+		s.waitingOnChecks = false
 		s.refresh()
 		return s.waitWhileChecking()
 	case loginStarted:
@@ -136,10 +136,10 @@ func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 }
 
 func (s *loginsScreen) waitWhileChecking() tea.Cmd {
-	if s.waiting || len(s.checking) == 0 {
+	if s.waitingOnChecks || len(s.checking) == 0 {
 		return nil
 	}
-	s.waiting = true
+	s.waitingOnChecks = true
 	return func() tea.Msg {
 		<-s.p.changed
 		return checksChanged{}

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -22,7 +24,9 @@ type list struct {
 	checked map[string]bool
 	cursor  int
 	scroll  scroll
-	filter  textFilter
+	// filterable lets / start a filter; a short list, like Connect's agents, has no need of one.
+	filterable bool
+	filter     textFilter
 	// header names the columns; it stays above the rows as they scroll. No label means no header.
 	header row
 }
@@ -66,15 +70,20 @@ func (l *list) toggle() {
 	}
 }
 
-// Rows the filter hides keep their ticks: the user can't see them change.
 func (l *list) toggleAll() {
-	shown := l.visible()
-	all := true
-	for _, r := range shown {
-		all = all && l.checked[r.key]
+	var keys []string
+	for _, r := range l.visible() {
+		keys = append(keys, r.key)
 	}
-	for _, r := range shown {
-		l.checked[r.key] = !all
+	toggleAll(l.checked, keys)
+}
+
+// toggleAll ticks every key the user can see, or unticks them all when they are all ticked. Rows a
+// filter hides keep their ticks: the user can't see them change.
+func toggleAll(checked map[string]bool, shown []string) {
+	all := !slices.ContainsFunc(shown, func(key string) bool { return !checked[key] })
+	for _, key := range shown {
+		checked[key] = !all
 	}
 }
 
@@ -87,7 +96,7 @@ func (l *list) keys(screenKeys string) string {
 }
 
 func (l *list) handle(key tea.KeyPressMsg) reply {
-	if l.filter.handle(key, l) {
+	if l.filterable && l.filter.handle(key, l) {
 		return handled
 	}
 	switch key.String() {
@@ -104,6 +113,7 @@ func (l *list) moveKey(key string) reply {
 	return l.move(direction(key))
 }
 
+// A filter that matches nothing still holds the cursor, so the keys that edit or clear it reach it.
 func (l *list) focusable() bool {
-	return len(l.visible()) > 0
+	return len(l.visible()) > 0 || l.filter.active()
 }

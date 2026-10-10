@@ -29,15 +29,15 @@ type connectScreen struct {
 	listed           []agents.Agent
 	alreadyConnected []string
 	ticked           map[string]bool
-	cursor           int
-	chosen           initcmd.ConnectChoice
-	checks           connectChecks
-	width            int
-	scroll           scroll
+	// agents is the checklist of agents, shown only when there are several to choose from.
+	agents *list
+	chosen initcmd.ConnectChoice
+	checks connectChecks
+	width  int
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
-	return &connectScreen{p: p, ticked: map[string]bool{}}
+	return &connectScreen{p: p, ticked: map[string]bool{}, agents: newList(nil, nil)}
 }
 
 func (s *connectScreen) refresh() {
@@ -58,11 +58,18 @@ func (s *connectScreen) refresh() {
 		}
 		s.listed = append(s.listed, agent)
 	}
+	var rows []row
+	if len(s.listed) > 1 {
+		for _, agent := range s.listed {
+			rows = append(rows, row{key: agent.Name, label: agent.Name})
+		}
+	}
+	s.agents = newList(rows, s.ticked)
 }
 
 func (s *connectScreen) enter() tea.Cmd {
 	// The app starts the cursor on the first choice, so up from it goes to the last agent.
-	s.cursor, s.scroll = max(s.agentRows()-1, 0), scroll{}
+	s.agents.cursor, s.agents.scroll = max(len(s.agents.rows)-1, 0), scroll{}
 	return s.checks.start(s.plan)
 }
 
@@ -88,13 +95,6 @@ func (s *connectScreen) removable() bool {
 	return slices.ContainsFunc(s.listed, func(agent agents.Agent) bool { return s.plan.HasDuplicates(agent.Name) })
 }
 
-func (s *connectScreen) agentRows() int {
-	if len(s.listed) > 1 {
-		return len(s.listed)
-	}
-	return 0
-}
-
 func (s *connectScreen) heading() string {
 	if len(s.listed) == 1 {
 		return "Connect mini to " + s.listed[0].Name
@@ -103,38 +103,18 @@ func (s *connectScreen) heading() string {
 }
 
 func (s *connectScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
-	switch key.String() {
-	case "up":
-		s.cursor = max(s.cursor-1, 0)
-	case "down":
-		if s.cursor == s.agentRows()-1 {
-			return pastLastRow, nil
-		}
-		s.cursor++
-	case "space", "enter":
-		s.tick()
-	case "a":
-		s.tickAll()
-	default:
-		return unhandled, nil
+	if r := s.agents.handle(key); r != unhandled {
+		return r, nil
 	}
-	return handled, nil
+	if key.String() == "a" {
+		s.agents.toggleAll()
+		return handled, nil
+	}
+	return unhandled, nil
 }
 
 func (s *connectScreen) focusable() bool {
-	return s.agentRows() > 0
-}
-
-func (s *connectScreen) tick() {
-	name := s.listed[s.cursor].Name
-	s.ticked[name] = !s.ticked[name]
-}
-
-func (s *connectScreen) tickAll() {
-	all := !slices.ContainsFunc(s.listed, func(agent agents.Agent) bool { return !s.ticked[agent.Name] })
-	for _, agent := range s.listed {
-		s.ticked[agent.Name] = !all
-	}
+	return s.agents.focusable()
 }
 
 func (s *connectScreen) choices() []string {
@@ -167,13 +147,14 @@ func (s *connectScreen) choose(i int) (chosen bool) {
 // away for good on a short window.
 func (s *connectScreen) body(height int, focused bool) string {
 	header := s.noteLines()
-	if len(header) > 0 && s.agentRows() > 0 {
+	if len(header) > 0 && s.focusable() {
 		header = append(header, "")
 	}
 	header = header[:min(len(header), max(height-1, 0))]
-	lines, cursorLine := s.agentLines(focused)
-	rows := s.scroll.cut(lines, cursorLine, cursorLine, height-len(header))
-	return strings.Join(append(header, rows...), "\n")
+	if !s.focusable() {
+		return strings.Join(header, "\n")
+	}
+	return strings.Join(append(header, s.agents.view(height-len(header), focused)), "\n")
 }
 
 func (s *connectScreen) noteLines() []string {
@@ -181,17 +162,6 @@ func (s *connectScreen) noteLines() []string {
 		return nil
 	}
 	return []string{dim.Render(alreadyHaveMini(s.alreadyConnected))}
-}
-
-func (s *connectScreen) agentLines(focused bool) (lines []string, cursorLine int) {
-	for i := range s.agentRows() {
-		onAgent := focused && i == s.cursor
-		if onAgent {
-			cursorLine = len(lines)
-		}
-		lines = append(lines, cursorMark(onAgent)+checkbox(s.ticked[s.listed[i].Name])+s.listed[i].Name)
-	}
-	return lines, cursorLine
 }
 
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.

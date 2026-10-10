@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/catalog"
 )
 
@@ -188,4 +189,50 @@ func longCatalog(entries int) catalog.Catalog {
 		})
 	}
 	return c
+}
+
+func TestNavigation_aFilterThatMatchesNothingKeepsItsKeys(t *testing.T) {
+	t.Run("on Import, the first screen", func(t *testing.T) {
+		imports := newImportScreen(
+			[]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")},
+		)
+		a := inApp(100, 30, imports, &fakeScreen{name: "After"})
+		send(a, "/", "z", "backspace", "x")
+		if a.at != 0 || imports.list.filter.text != "x" {
+			t.Fatalf("at %d, filter %q after /z, backspace, x; want the filter edited to x on Import",
+				a.at, imports.list.filter.text)
+		}
+		send(a, "enter", "esc")
+		if view := shown(a); a.at != 0 || imports.list.filter.active() || !strings.Contains(view, "> [x] github") {
+			t.Errorf("view after enter and esc:\n%s\nwant the filter cleared and the cursor back on github", view)
+		}
+	})
+	t.Run("on Catalog, esc clears it instead of going back", func(t *testing.T) {
+		s := loadedScreen(testCatalog(), noImports)
+		a := inApp(120, 40, &fakeScreen{name: "Import"}, s)
+		send(a, "enter", "/", "q", "q", "esc")
+		if a.at != 1 || s.grid.filter.active() {
+			t.Errorf("at %d, filter %q; want Catalog kept with the filter cleared", a.at, s.grid.filter.text)
+		}
+	})
+}
+
+func TestNavigation_aKeyOnContinueKeepsTheCursorThereWhenRowsAppear(t *testing.T) {
+	s := &finishingScreen{fakeScreen: fakeScreen{name: "Logins", hasRows: true}, done: true}
+	a := inApp(100, 30, &fakeScreen{name: "Before"}, s)
+	send(a, "enter", "down", "up")
+	s.done = false
+	if view := shown(a); !strings.Contains(view, "> Continue") {
+		t.Errorf("view after a new login appeared:\n%s\nwant the cursor still on Continue, where the user put it", view)
+	}
+}
+
+func TestNavigation_upOnContinueWithNoRowsLeavesTheCursorThereWhenRowsAppear(t *testing.T) {
+	s := &fakeScreen{name: "Logins"}
+	a := inApp(100, 30, &fakeScreen{name: "Before"}, s)
+	send(a, "enter", "up")
+	s.hasRows = true
+	if view := shown(a); !strings.Contains(view, "> Continue") {
+		t.Errorf("view after rows appeared:\n%s\nwant the cursor still on Continue: up found no row to go to", view)
+	}
 }

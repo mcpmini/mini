@@ -33,6 +33,7 @@ func newImportScreen(candidates []initcmd.Candidate) *importScreen {
 		})
 	}
 	s.list = newList(rows, checked)
+	s.list.filterable = true
 	s.list.header = row{label: "SERVER", detail: s.columnText(targetHeading, agentsHeading, widths)}
 	return s
 }

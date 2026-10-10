@@ -17,6 +17,14 @@ const (
 	pastLastRow
 )
 
+// direction is the step an arrow key takes along a list or across the grid.
+func direction(key string) int {
+	if key == "up" || key == "left" {
+		return -1
+	}
+	return 1
+}
+
 // A screen is one step of the wizard and draws only its own rows; the app draws Continue and Back
 // under every screen and moves between them.
 type screen interface {
@@ -59,14 +67,25 @@ type listener interface {
 	update(msg tea.Msg) tea.Cmd
 }
 
+// A screen that lays its rows out learns the width and the height they get.
 type resizer interface {
-	resize(width, height int)
+	resize(width, rowsHeight int)
+}
+
+// The app's footer at its tallest: a filter line, and keys wrapped onto two lines.
+const tallestFooter = 3
+
+// rowsHeight is what a screen's rows get with the footer and navigation at their tallest: the
+// footer grows a line when its keys wrap and Back comes and goes, and a layout picked from the
+// height left over would switch with them.
+func (a *app) rowsHeight() int {
+	return a.height - headingLines - blankLinesAroundBody - tallestFooter - tallestNavigation
 }
 
 func (a *app) resizeScreens() {
 	for _, s := range a.screens {
 		if r, ok := s.(resizer); ok {
-			r.resize(a.width, a.height)
+			r.resize(a.width, a.rowsHeight())
 		}
 	}
 }

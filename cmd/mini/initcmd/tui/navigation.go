@@ -72,7 +72,10 @@ func (a *app) reachNavigation() {
 	a.nav.focus, a.nav.at = focusNavigation, 0
 }
 
+// A key on the navigation makes it the user's choice, so a row that appears later doesn't take the
+// cursor from it.
 func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
+	a.nav.focus = focusNavigation
 	switch key.String() {
 	case "up":
 		a.moveUpNavigation()
@@ -89,11 +92,12 @@ func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
 }
 
 func (a *app) moveUpNavigation() {
-	if a.nav.at > 0 {
+	switch {
+	case a.nav.at > 0:
 		a.nav.at--
-		return
+	case a.current().focusable():
+		a.nav.focus = focusRows
 	}
-	a.nav.focus = focusRows
 }
 
 func (a *app) act() tea.Cmd {
