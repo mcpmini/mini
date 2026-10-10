@@ -22,7 +22,7 @@ type finisher interface {
 type focus int
 
 const (
-	// Until the user moves the cursor, a finished screen starts it on the navigation.
+	// Until the user moves the cursor onto or off the navigation, a finished screen starts it there.
 	focusUnmoved focus = iota
 	focusRows
 	focusNavigation

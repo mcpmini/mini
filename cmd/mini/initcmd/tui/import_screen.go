@@ -66,7 +66,7 @@ func (s *importScreen) body(height int, focused bool) string {
 }
 
 func (s *importScreen) keys() string {
-	return s.list.keys("space/enter tick · a all · tab continue · / filter")
+	return s.list.keys("↑↓ move · space/enter tick · a all · tab continue · / filter")
 }
 
 func (s *importScreen) focusable() bool {
