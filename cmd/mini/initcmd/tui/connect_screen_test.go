@@ -115,7 +115,7 @@ func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) 
 	list := namedAgents("Claude", "Codex", "Cursor", "Windsurf")
 	s, _ := connectScreenFor(t, newFakePlan(nil), list, map[string]bool{"Windsurf": true})
 	text := connectText(s)
-	marked := "[x] Cursor\n   ✓  Windsurf\n\n   ✓ already connected\n\n> Just connect mini"
+	marked := "[x] Cursor\n   ✓  Windsurf  already connected\n\n> Just connect mini"
 	if !strings.Contains(text, marked) {
 		t.Fatalf(
 			"screen:\n%s\nwant Windsurf marked connected under the others and the cursor on the first option",
@@ -344,7 +344,7 @@ func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *te
 	t.Cleanup(s.checks.cancelAndWait)
 	s.resize(60, 30)
 	plan.checksPass(s, showScreen(s))
-	want := "   ✓  Codex\n\n   ✓ already connected\n\n> Just connect mini"
+	want := "   ✓  Codex  already connected\n\n> Just connect mini"
 	if text := ansi.Strip(
 		framed(s, false).body(8),
 	); !strings.HasPrefix(text, want) ||
@@ -358,6 +358,22 @@ func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *te
 	}
 	if s.keys() != "↑↓ move · tab choices" {
 		t.Errorf("keys = %q, want no tick keys: Codex can't be ticked", s.keys())
+	}
+}
+
+func TestConnectScreen_withNoAgentTickedOffersOnlyDontConnect(t *testing.T) {
+	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
+	a := framed(s, false)
+	send(a, "up", "a", "tab")
+	if got := s.choices(); len(got) != 1 || got[0] != optionLabel(initcmd.DontConnect) {
+		t.Fatalf("choices with nothing ticked = %v, want only Don't connect: connecting would change nothing", got)
+	}
+	if cmd := send(a, "enter"); cmd == nil || s.chosen != initcmd.DontConnect {
+		t.Errorf("enter = %v, chosen %v; want the app to finish with Don't connect", cmd, s.chosen)
+	}
+	send(a, "up", "space")
+	if got := s.choices(); len(got) != 2 {
+		t.Errorf("choices with Codex ticked again = %v, want Just connect back", got)
 	}
 }
 

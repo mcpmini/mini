@@ -22,7 +22,7 @@ func (r row) matches(filter string) bool {
 type list struct {
 	rows       []row
 	untickable []row
-	// legend explains the mark on the untickable rows, under them.
+	// legend explains the mark on the untickable rows, under them; rows that say why in their detail need none.
 	legend  string
 	checked map[string]bool
 	cursor  int

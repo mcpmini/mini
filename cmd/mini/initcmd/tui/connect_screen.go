@@ -65,10 +65,10 @@ func (s *connectScreen) refresh() {
 		}
 	}
 	for _, name := range s.alreadyConnected {
-		connected = append(connected, row{key: name, label: name})
+		connected = append(connected, row{key: name, label: name, detail: "already connected"})
 	}
 	s.agents = newList(rows, s.ticked)
-	s.agents.untickable, s.agents.legend = connected, connectedLegend
+	s.agents.untickable = connected
 }
 
 func (s *connectScreen) enter() tea.Cmd {
@@ -89,6 +89,9 @@ func (s *connectScreen) update(msg tea.Msg) tea.Cmd {
 }
 
 func (s *connectScreen) options() []initcmd.ConnectChoice {
+	if len(s.picked()) == 0 {
+		return []initcmd.ConnectChoice{initcmd.DontConnect}
+	}
 	if s.removable() {
 		return []initcmd.ConnectChoice{initcmd.ConnectAndRemove, initcmd.ConnectOnly, initcmd.DontConnect}
 	}
