@@ -410,7 +410,7 @@ func TestConnectScreen_aTicksEveryAgentAndBackFollowsTheChoices(t *testing.T) {
 	if got := pickedNames(s); strings.Join(got, ",") != "Claude,Codex" {
 		t.Errorf("picked after a again = %v, want both", got)
 	}
-	if text := framedText(a); !strings.HasSuffix(text, "Leaves Claude and Codex as they are\n\n  Back") {
+	if text := framedText(a); !strings.HasSuffix(text, "Leaves Claude and Codex as they are\n  Back") {
 		t.Errorf("screen:\n%s\nwant Back under the last choice", text)
 	}
 	if send(a, "tab", "down", "down", "enter"); a.at != 0 {
