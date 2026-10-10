@@ -11,6 +11,10 @@ on:
       - '**.md'
       - '.claude/**'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -66,8 +70,26 @@ jobs:
         run: go test -race -tags test -timeout 120s ./...
 
   integration:
-    runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      # Each test name must match exactly one shard. The rest shard is the catch-all for
+      # tests that no named shard selects, so new tests run without a workflow edit.
+      matrix:
+        shard:
+          - name: cli
+            run: '^TestIntegrationCLI'
+            skip: '^$'
+          - name: daemon
+            run: '^TestIntegrationDaemon'
+            skip: '^$'
+          - name: proxy-http
+            run: '^TestIntegration(Proxy|Startup|Serve|Server|HTTP|Concurrency)'
+            skip: '^$'
+          - name: rest
+            run: '^TestIntegration'
+            skip: '^TestIntegration(CLI|Daemon|Proxy|Startup|Serve|Server|HTTP|Concurrency)'
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -75,16 +97,13 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build
-        run: go build ./...
-
       - name: Build test helpers
         run: |
           testbin=$(mktemp -d)
           scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
 
-      - name: Integration tests
-        run: go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...
+      - name: Integration tests (${{ matrix.shard.name }})
+        run: go test -race -tags integration,test -run "${{ matrix.shard.run }}" -skip "${{ matrix.shard.skip }}" -timeout 180s ./...
 
   ci:
     runs-on: ubuntu-latest
