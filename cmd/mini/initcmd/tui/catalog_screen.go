@@ -23,15 +23,15 @@ type catalogScreen struct {
 	// offered drops the servers mini already has.
 	offered func([]catalog.Entry) []catalog.Entry
 	// imports is what the Import screen has ticked; a catalog server it covers is hidden.
-	imports       func() []config.ServerConfig
-	loaded        bool
-	loadErr       error
-	popular       []string
-	loadedEntries []catalog.Entry
-	available     []catalog.Entry
-	checked       map[string]bool
-	grid          *catalogGrid
-	width, height int
+	imports           func() []config.ServerConfig
+	loaded            bool
+	loadErr           error
+	popular           []string
+	loadedEntries     []catalog.Entry
+	available         []catalog.Entry
+	checked           map[string]bool
+	grid              *catalogGrid
+	width, rowsHeight int
 }
 
 type catalogParams struct {
@@ -81,13 +81,13 @@ func (s *catalogScreen) enter() tea.Cmd {
 		}
 	}
 	s.grid = newCatalogGrid(s.sections(shown), s.checked)
-	s.grid.resize(s.width, s.height)
+	s.grid.resize(s.width, s.rowsHeight)
 	return nil
 }
 
-func (s *catalogScreen) resize(width, height int) {
-	s.width, s.height = width, height
-	s.grid.resize(width, height)
+func (s *catalogScreen) resize(width, rowsHeight int) {
+	s.width, s.rowsHeight = width, rowsHeight
+	s.grid.resize(width, rowsHeight)
 }
 
 func (s *catalogScreen) shown() []catalog.Entry {
@@ -144,36 +144,20 @@ func (s *catalogScreen) heading() string {
 	return "Add servers from the catalog"
 }
 
-func (s *catalogScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
-	// Until the catalog arrives there is nothing to pick, and enter would skip it unseen.
-	if !s.loaded || s.loadErr != nil || len(s.available) == 0 {
-		return s.handleWithoutGrid(key)
-	}
-	if s.grid.handle(key) {
-		return stay, nil
-	}
-	switch key.String() {
-	case "enter":
-		return forward, nil
-	case "esc":
-		return back, nil
-	}
-	return stay, nil
+func (s *catalogScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
+	return s.grid.handle(key), nil
 }
 
-func (s *catalogScreen) handleWithoutGrid(key tea.KeyPressMsg) (step, tea.Cmd) {
-	switch key.String() {
-	case "enter":
-		if s.loaded {
-			return forward, nil
-		}
-	case "esc":
-		return back, nil
-	}
-	return stay, nil
+// Until the catalog arrives there is nothing to pick, and Continue would skip it unseen.
+func (s *catalogScreen) waiting() bool {
+	return !s.loaded
 }
 
-func (s *catalogScreen) body(height int) string {
+func (s *catalogScreen) focusable() bool {
+	return s.offersEntries() && s.grid.focusable()
+}
+
+func (s *catalogScreen) body(height int, focused bool) string {
 	switch {
 	case !s.loaded:
 		return "loading…"
@@ -182,22 +166,21 @@ func (s *catalogScreen) body(height int) string {
 	case len(s.available) == 0:
 		return "mini already has every server in the catalog."
 	}
-	return s.grid.view(height)
+	return s.grid.view(height, focused)
+}
+
+func (s *catalogScreen) offersEntries() bool {
+	return s.loaded && s.loadErr == nil && len(s.available) > 0
 }
 
 func (s *catalogScreen) keys() string {
-	if !s.loaded {
-		return "loading the catalog"
-	}
 	switch {
-	case s.loadErr != nil || len(s.available) == 0:
-		return "enter continue"
-	case s.grid.actions.active:
-		return s.grid.keys("enter continue · ↑ back to the list")
+	case !s.loaded:
+		return "loading the catalog"
 	case s.grid.isGrid():
-		return s.grid.keys("↑↓←→ move · space/enter tick · tab continue · / filter")
+		return s.grid.keys("↑↓←→ move · space/enter tick · a all · tab continue · / filter")
 	}
-	return s.grid.keys("↑↓ move · space/enter tick or open · tab continue · / filter")
+	return s.grid.keys("↑↓ move · space/enter tick or open · a all · tab continue · / filter")
 }
 
 func (s *catalogScreen) filterLine() string {

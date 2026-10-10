@@ -34,7 +34,7 @@ func Run(p Params) (Outcome, error) {
 	if err != nil {
 		return Outcome{}, err
 	}
-	f := &flow{p: p, run: p.Setup.Start(plan)}
+	f := &flow{run: p.Setup.Start(plan)}
 	defer f.run.Close()
 	f.ui = newScreens(p, f.run)
 	a := newApp(f.ui.list())
@@ -54,7 +54,6 @@ func Run(p Params) (Outcome, error) {
 }
 
 type flow struct {
-	p   Params
 	run *initcmd.Run
 	ui  screens
 }

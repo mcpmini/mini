@@ -18,7 +18,7 @@ type textFilter struct {
 // moves it while the filter is typed.
 type filterTarget interface {
 	filterChanged()
-	moveKey(key string)
+	moveKey(key string) reply
 }
 
 // handle takes every key while the filter is typed, and / and esc otherwise. Esc is taken only
@@ -30,6 +30,7 @@ func (f *textFilter) handle(key tea.KeyPressMsg, t filterTarget) bool {
 			t.filterChanged()
 		}
 		if move {
+			// A typed filter keeps the cursor on the rows, never past the last onto Continue.
 			t.moveKey(key.String())
 		}
 		return true
@@ -79,6 +80,16 @@ func (f *textFilter) typingKey(key tea.KeyPressMsg) (changed, move bool) {
 		}
 	}
 	return false, false
+}
+
+func (f *textFilter) active() bool {
+	return f.typing || f.text != ""
+}
+
+// holdsCursor is whether a screen with this filter keeps the cursor: a filter that matches nothing
+// still does, so the keys that edit or clear it reach it.
+func (f *textFilter) holdsCursor(hasRows bool) bool {
+	return hasRows || f.active()
 }
 
 func (f *textFilter) set(text string) bool {

@@ -35,7 +35,7 @@ func (f *fakeChecks) screen() *loginsScreen {
 }
 
 func loginsText(s *loginsScreen) string {
-	return ansi.Strip(s.body(20))
+	return framedText(framed(s, false))
 }
 
 func TestLoginsScreen_listsLoginsFirstThenWhatMustBeSetUpByHand(t *testing.T) {
@@ -51,7 +51,7 @@ func TestLoginsScreen_listsLoginsFirstThenWhatMustBeSetUpByHand(t *testing.T) {
 	s := checks.screen()
 	showScreen(s)
 	want := "Log in\n> linear  needs a login\n\nSet up by hand\n  github  needs a token\n" +
-		"  asana   needs your own OAuth app\n  files   needs ROOT set\n\n  Continue →"
+		"  asana   needs your own OAuth app\n  files   needs ROOT set\n\n  Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -120,8 +120,11 @@ func TestLoginsScreen_saysEverythingIsReadyWhenTheLastCheckFindsNothingToFinish(
 	checks.changed <- struct{}{}
 	s.update(wait())
 	if s.heading() != "Your servers are ready" ||
-		loginsText(s) != "Every server works; nothing is left to set up.\n\n> Continue →" {
+		loginsText(s) != "Every server works; nothing is left to set up.\n\n> Continue" {
 		t.Errorf("%s\n%s\nwant the screen to say every server is ready, not an empty list", s.heading(), loginsText(s))
+	}
+	if keys := framed(s, false).keys(s); keys != "enter continue" {
+		t.Errorf("keys = %q, want only enter: no server is left for ↑ to reach", keys)
 	}
 }
 
@@ -206,7 +209,7 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 
 	logins.ends["sentry"] <- errors.New("access denied")
 	pressAndRun(s, "enter")
-	if text := loginsText(s); !strings.Contains(text, "  sentry  ✗ access denied\n\n> Continue →") {
+	if text := loginsText(s); !strings.Contains(text, "  sentry  ✗ access denied\n\n> Continue") {
 		t.Errorf("screen:\n%s\nwant sentry's failure shown and the cursor on Continue", text)
 	}
 }
@@ -217,8 +220,8 @@ func TestLoginsScreen_leavingCancelsThePendingLoginAndDropsItsResult(t *testing.
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 
-	if move, _ := s.handle(press("esc")); move != back {
-		t.Fatalf("esc = %v, want back", move)
+	if a := framed(s, true); send(a, "esc") != nil || a.at != 0 {
+		t.Fatalf("at = %d after esc, want back on the screen before", a.at)
 	}
 	select {
 	case <-logins.cancelled:
@@ -242,7 +245,7 @@ func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 
-	body := s.body(40)
+	body := s.body(40, true)
 	var wrapped []string
 	for _, line := range strings.Split(ansi.Strip(body), "\n")[1:] {
 		if strings.HasPrefix(line, "          ") {
@@ -265,7 +268,7 @@ func TestLoginsScreen_aFailedLoginShowsOnlyTheFirstLineOfItsError(t *testing.T) 
 	s := loginScreen(logins, "linear")
 	logins.ends["linear"] <- errors.New("oauth2: cannot fetch token: 502\rBad Gateway\nResponse: <html>\n<body>\x1b[31mdown</body>")
 	pressAndRun(s, "enter")
-	if text := loginsText(s); text != "Log in\n  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n\n> Continue →" {
+	if text := loginsText(s); text != "Log in\n  linear  ✗ oauth2: cannot fetch token: 502Bad Gateway\n\n> Continue" {
 		t.Errorf("screen:\n%q\nwant the error's first line, without control characters, on linear's row", text)
 	}
 }
@@ -275,11 +278,12 @@ func TestLoginsScreen_aTimedOutLoginSaysSoAndCanBeTriedAgain(t *testing.T) {
 	s := loginScreen(logins, "linear")
 	logins.ends["linear"] <- fmt.Errorf("auth flow: %w", context.DeadlineExceeded)
 	pressAndRun(s, "enter")
-	s.handle(press("up"))
-	if text := loginsText(s); !strings.Contains(text, "> linear  ✗ timed out; enter to try again") {
+	a := framed(s, false)
+	send(a, "up")
+	if text := framedText(a); !strings.Contains(text, "> linear  ✗ timed out; enter to try again") {
 		t.Errorf("screen:\n%s\nwant the timeout said plainly, with the cursor able to go back to linear", text)
 	}
-	if _, retry := s.handle(press("enter")); retry == nil {
+	if retry := send(a, "enter"); retry == nil {
 		t.Error("enter on the timed-out row started no login")
 	}
 	t.Cleanup(s.cancelLogin)
@@ -312,10 +316,10 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 	})
 	t.Run("on Continue, a new login row doesn't pull it back", func(t *testing.T) {
 		checks, s, wait := setup()
-		s.handle(press("down"))
-		s.handle(press("down"))
+		a := framed(s, false)
+		send(a, "down", "down")
 		finish(checks, s, wait, initcmd.NeedsLogin)
-		if text := loginsText(s); !strings.Contains(text, "> Continue →") {
+		if text := framedText(a); !strings.Contains(text, "> Continue") {
 			t.Errorf("screen:\n%s\nwant the cursor still on Continue", text)
 		}
 	})
@@ -336,7 +340,7 @@ func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 	t.Cleanup(s.cancelLogin)
-	all := strings.Split(ansi.Strip(s.body(0)), "\n")
+	all := strings.Split(ansi.Strip(s.body(0, true)), "\n")
 	if len(all) < 5 || !strings.HasPrefix(all[2], "> sentry") {
 		t.Fatalf(
 			"full body:\n%s\nwant sentry's row after the heading, its URL wrapped over two lines",
@@ -345,10 +349,10 @@ func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 	}
 	sentryAndURL := strings.Join(all[2:5], "\n")
 
-	if body := ansi.Strip(s.body(3)); body != sentryAndURL {
+	if body := ansi.Strip(s.body(3, true)); body != sentryAndURL {
 		t.Errorf("body at height 3:\n%s\nwant sentry's row and its whole URL:\n%s", body, sentryAndURL)
 	}
-	if body := ansi.Strip(s.body(2)); body != strings.Join(all[2:4], "\n") {
+	if body := ansi.Strip(s.body(2, true)); body != strings.Join(all[2:4], "\n") {
 		t.Errorf("body at height 2:\n%s\nwant sentry's row kept when its URL doesn't fit", body)
 	}
 }
@@ -357,15 +361,15 @@ func TestLoginsScreen_movingUpMovesTheCursorBeforeTheView(t *testing.T) {
 	names := []string{"s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"}
 	s := loginScreen(newFakeLogins(names...), names...)
 	s.resize(60, 30)
-	for range names {
+	for range names[1:] {
 		s.handle(press("down"))
-		s.body(4)
+		s.body(4, true)
 	}
-	before := strings.Split(ansi.Strip(s.body(4)), "\n")
+	before := strings.Split(ansi.Strip(s.body(4, true)), "\n")
 	s.handle(press("up"))
-	after := strings.Split(ansi.Strip(s.body(4)), "\n")
-	if !slices.Equal(stripMarks(before), stripMarks(after)) || !strings.HasPrefix(after[1], "> s8") {
-		t.Errorf("view before up:\n%s\nafter:\n%s\nwant the same rows, the cursor one up on s8",
+	after := strings.Split(ansi.Strip(s.body(4, true)), "\n")
+	if !slices.Equal(stripMarks(before), stripMarks(after)) || !strings.HasPrefix(after[2], "> s7") {
+		t.Errorf("view before up:\n%s\nafter:\n%s\nwant the same rows, the cursor one up on s7",
 			strings.Join(before, "\n"), strings.Join(after, "\n"))
 	}
 }
@@ -390,5 +394,81 @@ func TestLoginsScreen_showingItAgainPutsTheCursorOnTheNextLogin(t *testing.T) {
 	}
 	if s.refresh(); s.cursorName() != "linear" {
 		t.Errorf("cursor moved to %q when the rows were read again, want it to stay on linear", s.cursorName())
+	}
+}
+
+func TestLoginsScreen_aReadErrorLeavesOnlyTheNavigation(t *testing.T) {
+	s := newLoginsScreen(loginsParams{
+		statuses: func() ([]initcmd.ServerStatus, error) { return nil, errors.New("permission denied") },
+		checking: func() map[string]bool { return nil },
+	})
+	showScreen(s)
+	a := framed(s, true)
+	send(a, "down")
+	if text := framedText(a); !strings.HasSuffix(text, "permission denied\n\n  Continue\n> Back") {
+		t.Errorf("screen:\n%s\nwant the error above Continue and Back, with the cursor on Back", text)
+	}
+}
+
+func TestLoginsScreen_tabJumpsToContinueAndUpReturnsToTheServerItLeft(t *testing.T) {
+	s := newFakeChecks(
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
+	).screen()
+	showScreen(s)
+	a := framed(s, false)
+	send(a, "tab")
+	if text := framedText(a); !strings.HasSuffix(text, "> Continue") || !strings.HasPrefix(a.keys(s), "↑ move") {
+		t.Fatalf("screen after tab:\n%s\nkeys %q; want the cursor on Continue and ↑ named", text, a.keys(s))
+	}
+	send(a, "up")
+	if text := framedText(a); !strings.Contains(text, "> linear") {
+		t.Errorf("screen after up:\n%s\nwant the cursor back on linear", text)
+	}
+	send(a, "down", "down", "up")
+	if text := framedText(a); !strings.Contains(text, "> sentry") {
+		t.Errorf("screen after down past sentry and up:\n%s\nwant the cursor back on sentry", text)
+	}
+}
+
+func TestLoginsScreen_upFromContinueFindsTheServerItLeftAfterARowAboveGoes(t *testing.T) {
+	f := newFakeChecks(
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "notion", Readiness: initcmd.NeedsLogin},
+	)
+	s := f.screen()
+	showScreen(s)
+	a := framed(s, false)
+	send(a, "down", "tab")
+	f.statuses = f.statuses[1:]
+	s.refresh()
+	send(a, "up")
+	if text := framedText(a); !strings.Contains(text, "> sentry") {
+		t.Errorf("screen after linear went and up from Continue:\n%s\nwant the cursor back on sentry", text)
+	}
+}
+
+func TestLoginsScreen_onContinueTheLastLoginsResultStaysInView(t *testing.T) {
+	var names []string
+	for i := range 12 {
+		names = append(names, fmt.Sprintf("srv%02d", i))
+	}
+	logins := newFakeLogins(names...)
+	s := loginScreen(logins, names...)
+	for i, name := range names {
+		var err error
+		if i == len(names)-1 {
+			err = errors.New("access denied")
+		}
+		logins.ends[name] <- err
+		pressAndRun(s, "enter")
+	}
+	a := framed(s, false)
+	if body := ansi.Strip(
+		a.body(8),
+	); !strings.Contains(body, "srv11  ✗ access denied") ||
+		!strings.Contains(body, "> Continue") {
+		t.Errorf("body at height 8:\n%s\nwant the failed srv11 in view above Continue", body)
 	}
 }

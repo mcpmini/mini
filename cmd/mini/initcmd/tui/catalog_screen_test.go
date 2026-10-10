@@ -56,8 +56,8 @@ func loadedScreen(c catalog.Catalog, imports func() []config.ServerConfig) *cata
 	return s
 }
 
-func pressAll(s *catalogScreen, keys ...string) step {
-	var last step
+func pressAll(s *catalogScreen, keys ...string) reply {
+	var last reply
 	for _, key := range keys {
 		last, _ = s.handle(press(key))
 		catalogText(s)
@@ -70,7 +70,7 @@ func fromCatalog(c catalog.Catalog) func() (catalog.Catalog, error) {
 }
 
 func catalogText(s *catalogScreen) string {
-	return ansi.Strip(s.body(30))
+	return ansi.Strip(s.body(30, true))
 }
 
 func entryNames(entries []catalog.Entry) []string {
@@ -107,7 +107,7 @@ func TestCatalogScreen_gridShowsPopularThenEachCategoryAlphabetically(t *testing
 }
 
 func TestCatalogScreen_aWindowTooSmallForTheGridOpensOneCategoryAtATime(t *testing.T) {
-	for name, size := range map[string][2]int{"narrow": {50, 40}, "short": {120, 14}} {
+	for name, size := range map[string][2]int{"narrow": {50, 40}, "short": {120, 6}} {
 		t.Run(name, func(t *testing.T) {
 			s := loadedScreen(testCatalog(), noImports)
 			s.resize(size[0], size[1])
@@ -147,23 +147,31 @@ func TestCatalogScreen_ticksBecomeThePicksOncePerServer(t *testing.T) {
 	}
 }
 
-func TestCatalogScreen_continueFollowsTheServersAndEnterThereMovesOn(t *testing.T) {
-	t.Run("down past the last server", func(t *testing.T) {
-		s := loadedScreen(testCatalog(), noImports)
-		if got := pressAll(s, "down", "down", "down", "enter"); got != forward || len(s.picks()) != 0 {
-			t.Errorf("enter after moving past GitHub = %v, picks %v; want forward with nothing ticked", got, s.picks())
-		}
-	})
-	t.Run("tab", func(t *testing.T) {
-		s := loadedScreen(testCatalog(), noImports)
-		pressAll(s, "tab")
-		if text := catalogText(s); !strings.HasSuffix(text, "\n> Continue →") {
-			t.Errorf("screen:\n%s\nwant the cursor on Continue, right under the servers", text)
-		}
-		if got := pressAll(s, "enter"); got != forward {
-			t.Errorf("enter on Continue = %v, want forward", got)
-		}
-	})
+func TestCatalogScreen_downPastTheLastServerLeavesTheGrid(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	if got := pressAll(s, "down"); got != handled {
+		t.Fatalf("down from Popular's GitHub = %v, want handled: Developer tools' GitHub is below", got)
+	}
+	if got := pressAll(s, "down"); got != pastLastRow || len(s.picks()) != 0 {
+		t.Errorf("down past the column's last server = %v, picks %v; want past the last row with nothing ticked",
+			got, s.picks())
+	}
+	if got := pressAll(s, "tab"); got != unhandled {
+		t.Errorf("tab = %v, want it left to the app", got)
+	}
+}
+
+func TestCatalogScreen_upFromContinueReturnsToTheServerTheCursorLeft(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	a := inApp(120, 40, s)
+	send(a, "right", "tab")
+	if view := shown(a); strings.Contains(view, "> [ ] Asana") || !strings.Contains(view, "> Continue") {
+		t.Fatalf("view after tab:\n%s\nwant the cursor on Continue and none in the grid", view)
+	}
+	send(a, "up")
+	if view := shown(a); !strings.Contains(view, "> [ ] Asana") || strings.Contains(view, "> Continue") {
+		t.Errorf("view after up:\n%s\nwant the cursor back on Asana", view)
+	}
 }
 
 func TestCatalogScreen_theLineUnderTheGridShowsTheHostWithinTheWindowWhateverTheDescription(t *testing.T) {
@@ -243,21 +251,29 @@ func TestCatalogScreen_loading(t *testing.T) {
 	})
 	t.Run("keys wait for the catalog, except going back", func(t *testing.T) {
 		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: noImports})
-		for key, want := range map[string]step{"enter": stay, "/": stay, "space": stay, "esc": back} {
-			if got, _ := s.handle(press(key)); got != want {
-				t.Errorf("%s while loading = %v, want %v", key, got, want)
-			}
+		a := inApp(100, 30, &fakeScreen{name: "Import", hasRows: true}, s)
+		send(a, "tab", "enter", "enter", "/", "space")
+		if view := shown(a); a.at != 1 || strings.Contains(view, continueLabel) || s.grid.filter.typing {
+			t.Errorf(
+				"view after keys while loading:\n%s\nwant the loading screen kept, no Continue to skip it, no filter",
+				view,
+			)
 		}
-		if s.grid.filter.typing {
-			t.Error("/ while loading started a filter the arriving catalog would discard")
+		send(a, "esc")
+		if a.at != 0 {
+			t.Errorf("at = %d after esc while loading, want back on Import", a.at)
 		}
 	})
 	t.Run("a catalog that can't be loaded says so", func(t *testing.T) {
 		load := func() (catalog.Catalog, error) { return catalog.Catalog{}, errors.New("bad document") }
 		s := newCatalogScreen(catalogParams{load: load, offered: offerAll, imports: noImports})
 		s.update(s.start()())
-		if text := catalogText(s); text != "The catalog couldn't be loaded: bad document" || s.empty() {
-			t.Errorf("screen %q, empty = %v; want the error shown", text, s.empty())
+		if text := catalogText(
+			s,
+		); text != "The catalog couldn't be loaded: bad document" || s.empty() ||
+			s.focusable() {
+			t.Errorf("screen %q, empty = %v, focusable = %v; want the error, shown, with nothing to pick",
+				text, s.empty(), s.focusable())
 		}
 	})
 	t.Run("is empty once every server is configured or imported", func(t *testing.T) {
@@ -296,14 +312,6 @@ func TestCatalogScreen_aResizeToCollapsibleKeepsTheCursorInTheSameCategory(t *te
 	s.resize(50, 40)
 	if text := catalogText(s); !strings.Contains(text, "> ▸ Observability") {
 		t.Errorf("screen after narrowing:\n%s\nwant the cursor on Sentry's closed category", text)
-	}
-}
-
-func TestCatalogScreen_upFromContinueReturnsToTheServerTheCursorLeft(t *testing.T) {
-	s := loadedScreen(testCatalog(), noImports)
-	pressAll(s, "right", "tab", "up")
-	if text := catalogText(s); !strings.Contains(text, "> [ ] Asana") || strings.Contains(text, "> Continue") {
-		t.Errorf("screen:\n%s\nwant the cursor back on Asana", text)
 	}
 }
 
@@ -354,5 +362,31 @@ func TestCatalogScreen_arrowsWhileFilteringLeaveTheOpenCategoryAsItWas(t *testin
 	pressAll(s, "/", "s", "enter", "down", "right", "esc")
 	if text := catalogText(s); !strings.Contains(text, "▾ Popular") || strings.Contains(text, "▾ Project management") {
 		t.Errorf("screen after clearing the filter:\n%s\nwant Popular still the open category", text)
+	}
+}
+
+func TestCatalogScreen_aTicksEveryServerTheFilterShowsThenUnticksThem(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	pressAll(s, "/", "s", "enter", "a")
+	if got := entryNames(s.picks()); !slices.Equal(got, []string{"asana", "sentry", "github"}) ||
+		strings.Contains(catalogText(s), "[ ]") {
+		t.Fatalf("picks after a with filter s = %v, want asana, sentry and github: every server it shows", got)
+	}
+	pressAll(s, "esc", "a")
+	if got := entryNames(s.picks()); len(got) != 4 {
+		t.Fatalf("picks after a with no filter = %v, want all four", got)
+	}
+	pressAll(s, "a")
+	if got := s.picks(); len(got) != 0 {
+		t.Errorf("picks after a again = %v, want none", entryNames(got))
+	}
+}
+
+func TestCatalogScreen_aInTheCollapsibleLayoutTicksOnlyTheOpenCategory(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	s.resize(50, 40)
+	pressAll(s, "a")
+	if got := entryNames(s.picks()); !slices.Equal(got, []string{"github"}) {
+		t.Errorf("picks after a = %v, want only github: Popular is the one category open", got)
 	}
 }

@@ -33,6 +33,7 @@ func newImportScreen(candidates []initcmd.Candidate) *importScreen {
 		})
 	}
 	s.list = newList(rows, checked)
+	s.list.filterable = true
 	s.list.header = row{label: "SERVER", detail: s.columnText(targetHeading, agentsHeading, widths)}
 	return s
 }
@@ -56,30 +57,20 @@ func (s *importScreen) heading() string {
 	return "Import servers from your agents"
 }
 
-func (s *importScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
-	if s.list.handle(key) {
-		return stay, nil
-	}
-	switch key.String() {
-	case "a":
-		s.list.toggleAll()
-	case "enter":
-		return forward, nil
-	case "esc", "left", "shift+tab":
-		return back, nil
-	}
-	return stay, nil
+func (s *importScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
+	return s.list.handle(key), nil
 }
 
-func (s *importScreen) body(height int) string {
-	return s.list.view(height)
+func (s *importScreen) body(height int, focused bool) string {
+	return s.list.view(height, focused)
 }
 
 func (s *importScreen) keys() string {
-	if s.list.actions.active {
-		return s.list.keys("enter continue · ↑ back to the list")
-	}
-	return s.list.keys("space/enter tick · a all · tab continue · / filter")
+	return s.list.keys("↑↓ move · space/enter tick · a all · tab continue · / filter")
+}
+
+func (s *importScreen) focusable() bool {
+	return s.list.focusable()
 }
 
 func (s *importScreen) filterLine() string {

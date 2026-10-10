@@ -12,16 +12,14 @@ var (
 	bold = lipgloss.NewStyle().Bold(true)
 )
 
-func (l *list) view(height int) string {
+func (l *list) view(height int, focused bool) string {
 	var shown []string
 	if l.header.label != "" {
 		shown = append(shown, l.headerLine())
 	}
-	// The actions stay in view however far the rows scroll.
-	height -= len(shown) + len(l.actions.lines())
-	lines, first, last := l.lines()
-	shown = append(shown, l.scroll.cut(lines, first, last, height)...)
-	return strings.Join(append(shown, l.actions.lines()...), "\n")
+	lines, first, last := l.lines(focused)
+	shown = append(shown, l.scroll.cut(lines, first, last, height-len(shown))...)
+	return strings.Join(shown, "\n")
 }
 
 func (l *list) filterLine() string {
@@ -38,11 +36,11 @@ func (l *list) labelWidth() int {
 	return max(len(l.header.label)-len(checkbox(false)), widest(l.rows, func(r row) string { return r.label }))
 }
 
-func (l *list) lines() (lines []string, first, last int) {
+func (l *list) lines(focused bool) (lines []string, first, last int) {
 	width := l.labelWidth()
 	for i, r := range l.visible() {
 		start := len(lines)
-		lines = append(lines, l.line(r, i == l.cursor && !l.actions.active, width))
+		lines = append(lines, l.line(r, focused && i == l.cursor, width))
 		if r.subtitle != "" {
 			lines = append(lines, "      "+dim.Render(r.subtitle))
 		}
@@ -76,9 +74,18 @@ func widest[T any](items []T, text func(T) string) int {
 }
 
 func (l *list) line(r row, atCursor bool, width int) string {
-	line := cursorMark(atCursor) + checkbox(l.checked[r.key]) + fmt.Sprintf("%-*s", width, r.label)
-	if r.detail != "" {
-		line += "  " + dim.Render(r.detail)
+	if r.detail == "" {
+		return cursorMark(atCursor) + checkbox(l.checked[r.key]) + r.label
 	}
-	return line
+	return cursorMark(
+		atCursor,
+	) + checkbox(
+		l.checked[r.key],
+	) + fmt.Sprintf(
+		"%-*s",
+		width,
+		r.label,
+	) + "  " + dim.Render(
+		r.detail,
+	)
 }

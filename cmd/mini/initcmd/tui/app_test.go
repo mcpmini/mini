@@ -24,27 +24,35 @@ func showScreen(s showableScreen) tea.Cmd {
 type fakeScreen struct {
 	name    string
 	nothing bool
+	hasRows bool
 	got     []string
 }
 
-func (s *fakeScreen) heading() string { return s.name }
-func (s *fakeScreen) body(int) string { return s.name + " body" }
-func (s *fakeScreen) keys() string    { return "enter continue" }
-func (s *fakeScreen) empty() bool     { return s.nothing }
+func (s *fakeScreen) heading() string       { return s.name }
+func (s *fakeScreen) body(int, bool) string { return s.name + " body" }
+func (s *fakeScreen) keys() string          { return "space tick · tab continue" }
+func (s *fakeScreen) empty() bool           { return s.nothing }
+func (s *fakeScreen) focusable() bool       { return s.hasRows }
 
-func (s *fakeScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
+func (s *fakeScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
 	s.got = append(s.got, key.String())
 	switch key.String() {
-	case "enter":
-		return forward, nil
-	case "esc":
-		return back, nil
+	case "space":
+		return handled, nil
+	case "down":
+		return pastLastRow, nil
 	}
-	return stay, nil
+	return unhandled, nil
 }
 
 func sized(a *app) *app {
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	return a
+}
+
+func inApp(width, height int, screens ...screen) *app {
+	a := newApp(screens)
+	a.Update(tea.WindowSizeMsg{Width: width, Height: height})
 	return a
 }
 
@@ -110,7 +118,7 @@ func TestApp_footerNamesEnterEscAndCtrlCOnOneLine(t *testing.T) {
 			footer,
 		)
 	}
-	if footer := lastLine(second); !strings.Contains(footer, "enter continue · esc back · ctrl+c") {
+	if footer := lastLine(second); !strings.Contains(footer, "↑↓ move · enter choose · esc back · ctrl+c") {
 		t.Errorf("second screen's last line = %q, want its keys, esc back and ctrl+c together", footer)
 	}
 	if lines := strings.Count(second, "\n") + 1; lines != 30 {
@@ -125,7 +133,7 @@ func (s *longKeysScreen) keys() string {
 }
 
 func TestApp_inTheNarrowestWindowTheKeysSplitInsteadOfBeingCut(t *testing.T) {
-	a := newApp([]screen{&longKeysScreen{fakeScreen{name: "Pick"}}})
+	a := newApp([]screen{&longKeysScreen{fakeScreen{name: "Pick", hasRows: true}}})
 	a.Update(tea.WindowSizeMsg{Width: minWidth, Height: minHeight})
 	footer := footerOf(shown(a))
 	if !strings.Contains(footer, "↑↓ move\nctrl+c quit") || strings.Contains(footer, "…") {
@@ -151,9 +159,11 @@ func TestApp_aFilterSitsJustAboveTheKeysAndEscClearsItInsteadOfGoingBack(t *test
 		strings.Contains(footer, "esc back") {
 		t.Errorf("footer with the filter kept:\n%s\nwant the filter above keys that say esc clears it", footer)
 	}
-	send(a, "esc", "esc")
-	if a.at != 0 {
-		t.Errorf("at = %d after esc twice; want the first esc to clear the filter and the second to go back", a.at)
+	if send(a, "esc"); a.at != 1 || strings.Contains(footerOf(shown(a)), "/g") {
+		t.Fatalf("at = %d after esc on a kept filter; want the filter cleared and the screen kept", a.at)
+	}
+	if send(a, "esc"); a.at != 0 {
+		t.Errorf("at = %d after esc with no filter; want back on the first screen", a.at)
 	}
 }
 
@@ -313,5 +323,39 @@ func TestApp_aScreenThatWrapsItsLinesLearnsEachWindowWidth(t *testing.T) {
 		if later.width != width {
 			t.Errorf("after a resize to %d, the screen not yet shown has width %d", width, later.width)
 		}
+	}
+}
+
+func TestApp_everyScreenButTheFirstEndsWithBack(t *testing.T) {
+	first := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	second := newImportScreen([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")})
+	a := sized(newApp([]screen{first, second}))
+	if view := shown(a); strings.Contains(view, backLabel) {
+		t.Errorf("first screen:\n%s\nwant no Back: there is nothing to go back to", view)
+	}
+	send(a, "tab", "enter")
+	if view := shown(a); !strings.Contains(view, "Continue\n  Back") {
+		t.Fatalf("second screen:\n%s\nwant Back under Continue", view)
+	}
+	send(a, "tab", "down", "enter")
+	if view := shown(a); !strings.Contains(view, "github") {
+		t.Errorf("after enter on Back:\n%s\nwant the first screen again", view)
+	}
+}
+
+type checkFinished struct{}
+
+func TestApp_backGoesAwayWhenTheScreensBeforeEmptyWhileShown(t *testing.T) {
+	logins := &fakeScreen{name: "logins"}
+	last := newImportScreen([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")})
+	a := sized(newApp([]screen{logins, last}))
+	send(a, "enter")
+	if view := shown(a); !strings.Contains(view, "Continue\n  Back") {
+		t.Fatalf("second screen:\n%s\nwant Back while the first screen has rows", view)
+	}
+	logins.nothing = true
+	a.Update(checkFinished{})
+	if view := shown(a); strings.Contains(view, backLabel) || strings.Contains(view, "esc back") {
+		t.Errorf("after the first screen emptied:\n%s\nwant no Back: there is nothing left to go back to", view)
 	}
 }

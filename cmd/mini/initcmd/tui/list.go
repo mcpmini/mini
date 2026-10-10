@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -21,15 +23,16 @@ type list struct {
 	rows    []row
 	checked map[string]bool
 	cursor  int
-	actions actions
 	scroll  scroll
-	filter  textFilter
+	// filterable lets / start a filter; a short list, like Connect's agents, has no need of one.
+	filterable bool
+	filter     textFilter
 	// header names the columns; it stays above the rows as they scroll. No label means no header.
 	header row
 }
 
 func newList(rows []row, checked map[string]bool) *list {
-	return &list{rows: rows, checked: checked, actions: newActions("Continue →")}
+	return &list{rows: rows, checked: checked}
 }
 
 func (l *list) visible() []row {
@@ -53,71 +56,66 @@ func (l *list) current() (row, bool) {
 	return shown[l.cursor], true
 }
 
-// Moving down past the last row reaches the actions.
-func (l *list) move(step int) {
-	switch {
-	case l.actions.active:
-		l.actions.move(step)
-	case step > 0 && l.cursor >= len(l.visible())-1:
-		l.actions.reach()
-	default:
-		l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
+func (l *list) move(step int) reply {
+	if step > 0 && l.cursor >= len(l.visible())-1 {
+		return pastLastRow
 	}
+	l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
+	return handled
 }
 
 func (l *list) toggle() {
-	if r, ok := l.current(); ok && !l.actions.active {
+	if r, ok := l.current(); ok {
 		l.checked[r.key] = !l.checked[r.key]
 	}
 }
 
-// Rows the filter hides keep their ticks: the user can't see them change.
 func (l *list) toggleAll() {
-	shown := l.visible()
-	all := true
-	for _, r := range shown {
-		all = all && l.checked[r.key]
+	var keys []string
+	for _, r := range l.visible() {
+		keys = append(keys, r.key)
 	}
-	for _, r := range shown {
-		l.checked[r.key] = !all
+	toggleAll(l.checked, keys)
+}
+
+// toggleAll ticks every key the user can see, or unticks them all when they are all ticked. Rows a
+// filter hides keep their ticks: the user can't see them change.
+func toggleAll(checked map[string]bool, shown []string) {
+	all := !slices.ContainsFunc(shown, func(key string) bool { return !checked[key] })
+	for _, key := range shown {
+		checked[key] = !all
 	}
 }
 
 func (l *list) filterChanged() {
-	l.cursor, l.actions.active, l.scroll = 0, false, scroll{}
+	l.cursor, l.scroll = 0, scroll{}
 }
 
 func (l *list) keys(screenKeys string) string {
 	return l.filter.keys(screenKeys)
 }
 
-// handle reports whether the list took the key; enter on an action is left to the screen.
-func (l *list) handle(key tea.KeyPressMsg) bool {
-	if l.filter.handle(key, l) {
-		return true
+func (l *list) handle(key tea.KeyPressMsg) reply {
+	if l.filterable && l.filter.handle(key, l) {
+		return handled
 	}
 	switch key.String() {
 	case "up", "down":
-		l.moveKey(key.String())
-	case "space":
+		return l.moveKey(key.String())
+	case "space", "enter":
 		l.toggle()
-	case "enter":
-		if l.actions.active {
-			return false
-		}
-		l.toggle()
-	case "tab":
-		l.actions.toggle()
-	default:
-		return false
+		return handled
+	case "a":
+		l.toggleAll()
+		return handled
 	}
-	return true
+	return unhandled
 }
 
-func (l *list) moveKey(key string) {
-	if key == "up" {
-		l.move(-1)
-		return
-	}
-	l.move(1)
+func (l *list) moveKey(key string) reply {
+	return l.move(direction(key))
+}
+
+func (l *list) focusable() bool {
+	return l.filter.holdsCursor(len(l.visible()) > 0)
 }

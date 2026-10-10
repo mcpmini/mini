@@ -12,17 +12,13 @@ import (
 const (
 	gridColumns = 3
 	columnGap   = 5
-	// Below the sections: a blank line, the entry under the cursor, a blank line and Continue.
-	linesUnderSections = 4
-	// The app's footer at its tallest: a filter line, and keys wrapped onto two lines.
-	tallestFooter = 3
+	// Below the sections: a blank line and the entry under the cursor.
+	linesUnderSections = 2
 )
 
-// The layout follows the window, not the frame: the footer grows a line when its keys wrap, and a
-// layout picked from the height left over would switch whenever the keys it shows do.
-func (g *catalogGrid) resize(width, windowHeight int) {
+func (g *catalogGrid) resize(width, rowsHeight int) {
 	g.width = width
-	g.sectionsHeight = windowHeight - headingLines - blankLinesAroundBody - tallestFooter - linesUnderSections
+	g.sectionsHeight = rowsHeight - linesUnderSections
 	g.settle()
 }
 
@@ -146,17 +142,20 @@ func (g *catalogGrid) settle() {
 	_, _, g.at = g.locate(g.columns())
 }
 
-func (g *catalogGrid) view(height int) string {
+func (g *catalogGrid) view(height int, focused bool) string {
 	columns := g.columns()
 	col, row, _ := g.locate(columns)
-	lines := joinColumns(columns, col, row, !g.actions.active)
+	lines := joinColumns(columns, col, row, focused)
 	first, last := row, row
 	if g.isGrid() {
 		first, last = 0, 0
 	}
 	lines = g.scroll.cut(lines, first, last, height-linesUnderSections)
-	lines = append(lines, "", g.detail())
-	return strings.Join(append(lines, g.actions.lines()...), "\n")
+	detail := ""
+	if focused {
+		detail = g.detail()
+	}
+	return strings.Join(append(lines, "", detail), "\n")
 }
 
 func joinColumns(columns [][]gridCell, col, row int, showCursor bool) []string {
