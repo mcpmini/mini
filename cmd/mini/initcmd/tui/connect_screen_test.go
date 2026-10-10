@@ -65,7 +65,7 @@ func connectScreenFor(
 		withMini: withMini,
 		plan:     func() (connectPlan, error) { return plan, nil },
 	})
-	s.resize(200)
+	s.resize(200, 30)
 	t.Cleanup(s.checks.cancelAndWait)
 	return s, showScreen(s)
 }
@@ -273,7 +273,7 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 	t.Run("a narrow window wraps the subtitle", func(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"files"}})
 		s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
-		s.resize(44)
+		s.resize(44, 30)
 		plan.checksPass(s, check)
 		for _, line := range strings.Split(connectText(s), "\n") {
 			if ansi.StringWidth(line) > 44 {
@@ -315,7 +315,7 @@ func TestConnectScreen_aShortWindowKeepsTheNoteInView(t *testing.T) {
 			plan:     func() (connectPlan, error) { return plan, nil },
 		})
 		t.Cleanup(s.checks.cancelAndWait)
-		s.resize(60)
+		s.resize(60, 30)
 		plan.checksPass(s, showScreen(s))
 		return s
 	}

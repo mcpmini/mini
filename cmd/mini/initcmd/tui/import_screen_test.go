@@ -83,12 +83,22 @@ func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 	}
 }
 
-func TestImportScreen_enterContinuesAndEscGoesBack(t *testing.T) {
+func TestImportScreen_enterTicksTheRowAndContinuesFromContinue(t *testing.T) {
 	s := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
-	for key, want := range map[string]step{"enter": forward, "esc": back, "left": back, "space": stay} {
+	for key, want := range map[string]step{"enter": stay, "esc": back, "left": back, "space": stay} {
 		if got, _ := s.handle(press(key)); got != want {
 			t.Errorf("%s = %v, want %v", key, got, want)
 		}
+	}
+	if got := len(s.ticked()); got != 1 {
+		t.Errorf("ticked %d after enter then space, want github ticked again", got)
+	}
+	s.handle(press("down"))
+	if text := screenText(s); !strings.HasSuffix(text, "\n> Continue →") {
+		t.Errorf("screen:\n%s\nwant the cursor on Continue after moving past the last row", text)
+	}
+	if got, _ := s.handle(press("enter")); got != forward {
+		t.Errorf("enter on Continue = %v, want forward", got)
 	}
 }
 
@@ -127,10 +137,10 @@ func TestImportScreen_theHeaderStaysAboveTheRowsAsTheyScroll(t *testing.T) {
 	for range 4 {
 		s.handle(press("down"))
 	}
-	lines := strings.Split(ansi.Strip(s.body(3)), "\n")
-	if len(lines) != 3 || !strings.HasPrefix(strings.TrimSpace(lines[0]), "SERVER") ||
+	lines := strings.Split(ansi.Strip(s.body(5)), "\n")
+	if len(lines) != 5 || !strings.HasPrefix(strings.TrimSpace(lines[0]), "SERVER") ||
 		!strings.HasPrefix(lines[2], "> [x] e") {
-		t.Errorf("body at height 3:\n%s\nwant the header, then rows ending at the cursor on e",
+		t.Errorf("body at height 5:\n%s\nwant the header, then rows ending at the cursor on e, then Continue",
 			strings.Join(lines, "\n"))
 	}
 }

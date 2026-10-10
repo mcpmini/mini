@@ -190,7 +190,7 @@ func (s *connectScreen) subtitleLines(subtitle string) []string {
 	return lines
 }
 
-func (s *connectScreen) resize(width int) {
+func (s *connectScreen) resize(width, _ int) {
 	s.width = width
 }
 

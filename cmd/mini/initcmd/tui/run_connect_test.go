@@ -32,7 +32,7 @@ func TestRun_connect(t *testing.T) {
 		t.Helper()
 		setup := setupFor(t.TempDir())
 		setup.AgentsToConnect = []agents.Agent{claude}
-		// Catalog comes first and is left with enter, which saves; then Connect is shown.
+		// Catalog comes first and is left from Continue, which saves; then Connect is shown.
 		c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
 		out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(c), Program: pressing(keys...)})
 		if err != nil {
@@ -42,7 +42,7 @@ func TestRun_connect(t *testing.T) {
 	}
 	t.Run("just connect adds mini to the agent and reports it", func(t *testing.T) {
 		claude := claudeWithServers(t)
-		out := run(t, claude, "enter", "enter")
+		out := run(t, claude, "tab", "enter", "enter")
 		config := string(testutil.ReadFile(t, claude.ConfigPath))
 		if !strings.Contains(config, `"mini"`) || !strings.Contains(config, `"files"`) {
 			t.Errorf("agent config = %s, want mini added next to files", config)
@@ -58,7 +58,7 @@ func TestRun_connect(t *testing.T) {
 		setup.AgentsToConnect = []agents.Agent{claude}
 		var view string
 		program := func(m tea.Model) error {
-			pressing("enter")(m)
+			pressing("tab", "enter")(m)
 			view = ansi.Strip(m.(*app).render())
 			return nil
 		}
@@ -71,9 +71,9 @@ func TestRun_connect(t *testing.T) {
 		}
 	})
 	for name, keys := range map[string][]string{
-		"don't connect leaves the agent as it was":            {"enter", "down", "enter"},
-		"quitting on Connect after the save leaves the agent": {"enter", "ctrl+c"},
-		"a ctrl+c right after choosing leaves the agent":      {"enter", "enter", "ctrl+c"},
+		"don't connect leaves the agent as it was":            {"tab", "enter", "down", "enter"},
+		"quitting on Connect after the save leaves the agent": {"tab", "enter", "ctrl+c"},
+		"a ctrl+c right after choosing leaves the agent":      {"tab", "enter", "enter", "ctrl+c"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			claude := claudeWithServers(t)
@@ -93,8 +93,9 @@ func pressingAndDelivering(keys ...string) func(tea.Model) error {
 	return func(m tea.Model) error {
 		deliver(m, m.Init())
 		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		m.View()
 		for _, key := range keys {
-			_, cmd := m.Update(press(key))
+			cmd := pressKey(m, key)
 			deliver(m, cmd)
 		}
 		return nil
@@ -178,9 +179,10 @@ func TestRun_goingBackToUntickAnImportLowersWhatConnectRemoves(t *testing.T) {
 	program := func(m tea.Model) error {
 		deliver(m, m.Init())
 		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		m.View()
 		// Import both and reach Connect; back, untick files, return to Connect.
-		for _, key := range []string{"enter", "esc", "space", "enter"} {
-			_, cmd := m.Update(press(key))
+		for _, key := range []string{"tab", "enter", "esc", "up", "space", "tab", "enter"} {
+			cmd := pressKey(m, key)
 			deliver(m, cmd)
 		}
 		connect = shown(m.(*app))
