@@ -141,7 +141,7 @@ func (g *catalogGrid) entryCells(section int, s gridSection, indent string) []gr
 func (g *catalogGrid) mark(e gridEntry) string {
 	switch e.state {
 	case entryInMini:
-		return inMiniMark
+		return doneMark
 	case entryWillImport:
 		return willImportMark
 	}

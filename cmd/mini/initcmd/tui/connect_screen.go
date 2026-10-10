@@ -72,7 +72,7 @@ func (s *connectScreen) refresh() {
 }
 
 func (s *connectScreen) enter() tea.Cmd {
-	// The app starts the cursor on the first choice, so up from it goes to the last agent.
+	// The app starts the cursor on the first choice, so up from it goes to the last row.
 	s.agents.cursor, s.agents.scroll = max(s.agents.cursorRows()-1, 0), scroll{}
 	return s.checks.start(s.plan)
 }

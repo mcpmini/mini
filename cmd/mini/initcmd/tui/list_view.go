@@ -63,7 +63,7 @@ func (l *list) lines(focused bool) (lines []string, first, last int) {
 func (l *list) rowLines(r row, untickable, atCursor bool, width int) []string {
 	if untickable {
 		line := strings.TrimRight(fmt.Sprintf("%-*s  %s", width, r.label, r.detail), " ")
-		return []string{cursorMark(atCursor) + dim.Render(inMiniMark+line)}
+		return []string{cursorMark(atCursor) + dim.Render(doneMark+line)}
 	}
 	lines := []string{l.line(r, atCursor, width)}
 	if r.subtitle != "" {
@@ -85,7 +85,7 @@ func legendLine(legend string) string {
 }
 
 const (
-	inMiniMark      = " ✓  "
+	doneMark        = " ✓  "
 	inMiniLegend    = "✓ already in mini"
 	connectedLegend = "✓ already connected"
 )
