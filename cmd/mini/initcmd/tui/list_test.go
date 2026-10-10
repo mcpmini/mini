@@ -23,6 +23,10 @@ func press(name string) tea.KeyPressMsg {
 		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "left":
 		return tea.KeyPressMsg{Code: tea.KeyLeft}
+	case "right":
+		return tea.KeyPressMsg{Code: tea.KeyRight}
+	case "tab":
+		return tea.KeyPressMsg{Code: tea.KeyTab}
 	case "backspace":
 		return tea.KeyPressMsg{Code: tea.KeyBackspace}
 	case "ctrl+c":
@@ -112,10 +116,10 @@ func TestList_filter(t *testing.T) {
 		checked := map[string]bool{}
 		l := newList(serverRows(), checked)
 		typeKeys(l, "/", "space")
-		if l.filter != " " || checked["linear"] {
+		if l.filter.text != " " || checked["linear"] {
 			t.Errorf(
 				"filter = %q, checked = %v; want a space typed into the filter and nothing ticked",
-				l.filter,
+				l.filter.text,
 				checked,
 			)
 		}
@@ -123,11 +127,11 @@ func TestList_filter(t *testing.T) {
 	t.Run("enter keeps the filter and leaves filter mode", func(t *testing.T) {
 		l := newList(serverRows(), map[string]bool{})
 		typeKeys(l, "/", "g", "i", "t", "enter", "space")
-		if l.filtering || l.filter != "git" || !l.checked["github"] {
+		if l.filter.typing || l.filter.text != "git" || !l.checked["github"] {
 			t.Errorf(
 				"filtering = %v, filter = %q, checked = %v; want filter git kept and github ticked",
-				l.filtering,
-				l.filter,
+				l.filter.typing,
+				l.filter.text,
 				l.checked,
 			)
 		}
@@ -135,15 +139,15 @@ func TestList_filter(t *testing.T) {
 	t.Run("esc clears the filter", func(t *testing.T) {
 		l := newList(serverRows(), map[string]bool{})
 		typeKeys(l, "/", "g", "esc")
-		if l.filtering || l.filter != "" || len(l.visible()) != len(serverRows()) {
-			t.Errorf("filtering = %v, filter = %q; want every row back", l.filtering, l.filter)
+		if l.filter.typing || l.filter.text != "" || len(l.visible()) != len(serverRows()) {
+			t.Errorf("filtering = %v, filter = %q; want every row back", l.filter.typing, l.filter.text)
 		}
 	})
 	t.Run("esc after enter clears the applied filter", func(t *testing.T) {
 		l := newList(serverRows(), map[string]bool{})
 		typeKeys(l, "/", "g", "enter")
-		if !l.handle(press("esc")) || l.filter != "" {
-			t.Errorf("filter = %q; want esc taken by the list and the filter cleared", l.filter)
+		if !l.handle(press("esc")) || l.filter.text != "" {
+			t.Errorf("filter = %q; want esc taken by the list and the filter cleared", l.filter.text)
 		}
 		if l.handle(press("esc")) {
 			t.Error("esc with no filter was taken by the list; want it left for the screen")
@@ -152,8 +156,8 @@ func TestList_filter(t *testing.T) {
 	t.Run("backspace removes the last character", func(t *testing.T) {
 		l := newList(serverRows(), map[string]bool{})
 		typeKeys(l, "/", "g", "é", "backspace")
-		if l.filter != "g" {
-			t.Errorf("filter = %q, want g", l.filter)
+		if l.filter.text != "g" {
+			t.Errorf("filter = %q, want g", l.filter.text)
 		}
 	})
 }
@@ -190,55 +194,9 @@ func TestList_scrollingKeepsTheCursorRowsSubtitleShown(t *testing.T) {
 	for range 4 {
 		l.handle(press("down"))
 	}
-	view := plainView(l, 5)
-	if lines := strings.Split(
-		view,
-		"\n",
-	); len(lines) != 5 ||
-		!strings.HasSuffix(view, "> [ ] server-04\n      why server-04") {
-		t.Errorf("view (%d lines):\n%s\nwant 5 lines ending with server-04 and its subtitle", len(lines), view)
+	view := plainView(l, 7)
+	if lines := strings.Split(view, "\n"); len(lines) != 7 ||
+		!strings.HasSuffix(view, "> [ ] server-04\n      why server-04\n\n  Continue →") {
+		t.Errorf("view (%d lines):\n%s\nwant 7 lines: server-04 and its subtitle above Continue", len(lines), view)
 	}
-}
-
-func sectionRows() []row {
-	return []row{
-		{key: "notion", label: "notion", section: "Popular", repeated: true},
-		{key: "linear", label: "linear", section: "Project management"},
-		{key: "notion", label: "notion", section: "Project management", search: "docs and wikis"},
-		{key: "sentry", label: "sentry", section: "Observability"},
-	}
-}
-
-func TestList_sections(t *testing.T) {
-	t.Run("each section is headed once, above its rows", func(t *testing.T) {
-		view := plainView(newList(sectionRows(), map[string]bool{}), 20)
-		want := "Popular\n> [ ] notion\n\nProject management\n  [ ] linear\n  [ ] notion\n\nObservability\n  [ ] sentry"
-		if view != want {
-			t.Errorf("view:\n%s\nwant:\n%s", view, want)
-		}
-	})
-	t.Run("a repeated row shares its tick", func(t *testing.T) {
-		l := newList(sectionRows(), map[string]bool{})
-		typeKeys(l, "space")
-		if view := plainView(l, 20); strings.Count(view, "[x] notion") != 2 {
-			t.Errorf("view:\n%s\nwant notion ticked under both headings", view)
-		}
-	})
-	t.Run("the filter lists a repeated row once and matches text the row doesn't show", func(t *testing.T) {
-		l := newList(sectionRows(), map[string]bool{})
-		typeKeys(l, "/", "w", "i", "k", "i")
-		if view := plainView(l, 20); view != "Project management\n> [ ] notion" {
-			t.Errorf("view:\n%s\nwant notion once, under its category", view)
-		}
-	})
-	t.Run("scrolling up to a section's first row shows its heading", func(t *testing.T) {
-		l := newList(sectionRows(), map[string]bool{})
-		for _, key := range []string{"down", "down", "down", "up", "up"} {
-			typeKeys(l, key)
-			plainView(l, 3)
-		}
-		if view := plainView(l, 3); !strings.HasPrefix(view, "Project management\n> [ ] linear") {
-			t.Errorf("view:\n%s\nwant the heading above linear", view)
-		}
-	})
 }

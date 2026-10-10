@@ -264,7 +264,7 @@ func (s *loginsScreen) urlLines(indent int) []string {
 	return lines
 }
 
-func (s *loginsScreen) resize(width int) {
+func (s *loginsScreen) resize(width, _ int) {
 	s.width = width
 }
 

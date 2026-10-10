@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"cmp"
 	"net/url"
 	"slices"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -28,7 +30,7 @@ type catalogScreen struct {
 	loadedEntries []catalog.Entry
 	available     []catalog.Entry
 	checked       map[string]bool
-	list          *list
+	grid          *catalogGrid
 }
 
 type catalogParams struct {
@@ -77,9 +79,16 @@ func (s *catalogScreen) enter() tea.Cmd {
 			delete(s.checked, name)
 		}
 	}
-	s.list = newList(s.rows(shown), s.checked)
-	s.list.header = row{label: "SERVER", detail: "URL"}
+	grid := newCatalogGrid(s.sections(shown), s.checked)
+	if s.grid != nil {
+		grid.width, grid.sectionsHeight = s.grid.width, s.grid.sectionsHeight
+	}
+	s.grid = grid
 	return nil
+}
+
+func (s *catalogScreen) resize(width, height int) {
+	s.grid.resize(width, height)
 }
 
 func (s *catalogScreen) shown() []catalog.Entry {
@@ -87,26 +96,39 @@ func (s *catalogScreen) shown() []catalog.Entry {
 	return slices.DeleteFunc(slices.Clone(s.available), covered.Has)
 }
 
-func (s *catalogScreen) rows(shown []catalog.Entry) []row {
-	var rows []row
+// Popular keeps the catalog's ranking; every other section is alphabetical, so a name is easy to find.
+func (s *catalogScreen) sections(shown []catalog.Entry) []gridSection {
+	popular := gridSection{title: "Popular", repeated: true}
 	for _, name := range s.popular {
 		if i := slices.IndexFunc(shown, func(e catalog.Entry) bool { return e.Name == name }); i >= 0 {
-			r := entryRow(shown[i], "Popular")
-			r.repeated = true
-			rows = append(rows, r)
+			popular.entries = append(popular.entries, catalogGridEntry(shown[i]))
 		}
 	}
-	for _, e := range shown {
-		rows = append(rows, entryRow(e, e.Category))
+	var sections []gridSection
+	if len(popular.entries) > 0 {
+		sections = append(sections, popular)
 	}
-	return rows
+	for _, e := range shown {
+		if len(sections) == 0 || sections[len(sections)-1].title != e.Category {
+			sections = append(sections, gridSection{title: e.Category})
+		}
+		last := &sections[len(sections)-1]
+		last.entries = append(last.entries, catalogGridEntry(e))
+	}
+	for i := range sections {
+		if !sections[i].repeated {
+			slices.SortStableFunc(sections[i].entries, func(a, b gridEntry) int {
+				return strings.Compare(strings.ToLower(a.title), strings.ToLower(b.title))
+			})
+		}
+	}
+	return sections
 }
 
-func entryRow(e catalog.Entry, section string) row {
-	return row{key: e.Name, label: e.Name, detail: host(e.URL), section: section, search: e.Title + " " + e.Description}
+func catalogGridEntry(e catalog.Entry) gridEntry {
+	return gridEntry{key: e.Name, title: cmp.Or(e.Title, e.Name), host: host(e.URL), description: e.Description}
 }
 
-// The host sits next to every fetched name, so a catalog entry can't pass itself off as another service.
 func host(rawURL string) string {
 	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
 		return u.Host
@@ -125,15 +147,28 @@ func (s *catalogScreen) heading() string {
 
 func (s *catalogScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	// Until the catalog arrives there is nothing to pick, and enter would skip it unseen.
-	if s.loaded && s.list.handle(key) {
+	if !s.loaded || s.loadErr != nil || len(s.available) == 0 {
+		return s.handleWithoutGrid(key)
+	}
+	if s.grid.handle(key) {
 		return stay, nil
 	}
+	switch key.String() {
+	case "enter":
+		return forward, nil
+	case "esc":
+		return back, nil
+	}
+	return stay, nil
+}
+
+func (s *catalogScreen) handleWithoutGrid(key tea.KeyPressMsg) (step, tea.Cmd) {
 	switch key.String() {
 	case "enter":
 		if s.loaded {
 			return forward, nil
 		}
-	case "esc", "left", "shift+tab":
+	case "esc":
 		return back, nil
 	}
 	return stay, nil
@@ -148,18 +183,26 @@ func (s *catalogScreen) body(height int) string {
 	case len(s.available) == 0:
 		return "mini already has every server in the catalog."
 	}
-	return s.list.view(height)
+	return s.grid.view(height)
 }
 
 func (s *catalogScreen) keys() string {
 	if !s.loaded {
 		return "loading the catalog"
 	}
-	return s.list.keys("space tick · / filter · enter continue")
+	switch {
+	case s.loadErr != nil || len(s.available) == 0:
+		return "enter continue"
+	case s.grid.onContinue:
+		return s.grid.keys("enter continue · ↑ back to the list")
+	case s.grid.isGrid():
+		return s.grid.keys("↑↓←→ move · space/enter tick · tab continue · / filter")
+	}
+	return s.grid.keys("↑↓ move · space/enter tick or open · tab continue · / filter")
 }
 
 func (s *catalogScreen) filterLine() string {
-	return s.list.filterLine()
+	return s.grid.filter.line()
 }
 
 // entries is the catalog the screen offered from, once it has loaded.

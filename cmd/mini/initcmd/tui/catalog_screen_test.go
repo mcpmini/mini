@@ -17,22 +17,25 @@ func testCatalog() catalog.Catalog {
 		Entries: []catalog.Entry{
 			{
 				Name:     "linear",
+				Title:    "Linear",
 				URL:      "https://mcp.linear.example/mcp",
 				Category: "Project management",
 				Auth:     catalog.AuthOAuth2,
 			},
 			{
 				Name:     "sentry",
+				Title:    "Sentry",
 				URL:      "https://mcp.sentry.example/mcp",
 				Category: "Observability",
 				Auth:     catalog.AuthOAuth2,
 			},
 			{
-				Name: "github", URL: "https://api.github.example/mcp", Category: "Developer tools",
+				Name: "github", Title: "GitHub", URL: "https://api.github.example/mcp", Category: "Developer tools",
 				Auth: catalog.AuthToken, Description: "Repositories and pull requests",
 			},
 			{
 				Name:     "asana",
+				Title:    "Asana",
 				URL:      "https://mcp.asana.example/mcp",
 				Category: "Project management",
 				Auth:     catalog.AuthOAuth2App,
@@ -49,7 +52,17 @@ func offerAll(entries []catalog.Entry) []catalog.Entry { return entries }
 func loadedScreen(c catalog.Catalog, imports func() []config.ServerConfig) *catalogScreen {
 	s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: imports})
 	s.update(s.start()())
+	s.resize(120, 40)
 	return s
+}
+
+func pressAll(s *catalogScreen, keys ...string) step {
+	var last step
+	for _, key := range keys {
+		last, _ = s.handle(press(key))
+		catalogText(s)
+	}
+	return last
 }
 
 func fromCatalog(c catalog.Catalog) func() (catalog.Catalog, error) {
@@ -68,41 +81,100 @@ func entryNames(entries []catalog.Entry) []string {
 	return names
 }
 
-func TestCatalogScreen_listsPopularThenEachCategoryInCatalogOrder(t *testing.T) {
-	c := testCatalog()
-	text := catalogText(loadedScreen(c, noImports))
+func TestCatalogScreen_gridShowsPopularThenEachCategoryAlphabetically(t *testing.T) {
+	text := catalogText(loadedScreen(testCatalog(), noImports))
 	want := []string{
-		"  SERVER      URL\nPopular\n> [ ] github  api.github.example\n",
-		"Project management\n  [ ] linear  mcp.linear.example\n  [ ] asana   mcp.asana.example\n",
-		"Observability\n  [ ] sentry  mcp.sentry.example\n",
-		"Developer tools\n  [ ] github  api.github.example",
+		"  Popular",
+		"> [ ] GitHub",
+		"Project management",
+		"Observability",
+		"Developer tools",
 	}
 	for _, part := range want {
 		if !strings.Contains(text, part) {
 			t.Errorf("screen missing %q:\n%s", part, text)
 		}
 	}
-	order := []int{
-		strings.Index(
-			text,
-			"Project management",
-		),
-		strings.Index(text, "Observability"),
-		strings.Index(text, "Developer tools"),
+	if !strings.Contains(text, "Popular") || !strings.HasPrefix(strings.TrimLeft(text, " "), "Popular") {
+		t.Errorf("screen:\n%s\nwant Popular first", text)
 	}
-	if !slices.IsSorted(order) {
-		t.Errorf("screen:\n%s\nwant categories in the order the catalog first lists them", text)
+	if strings.Index(text, "Asana") > strings.Index(text, "Linear") {
+		t.Errorf("screen:\n%s\nwant Asana before Linear: categories list their servers by name", text)
+	}
+	if lines := strings.Split(text, "\n"); !strings.Contains(lines[0], "Project management") {
+		t.Errorf("first line %q; want the categories side by side", lines[0])
+	}
+}
+
+func TestCatalogScreen_aWindowTooSmallForTheGridOpensOneCategoryAtATime(t *testing.T) {
+	for name, size := range map[string][2]int{"narrow": {50, 40}, "short": {120, 14}} {
+		t.Run(name, func(t *testing.T) {
+			s := loadedScreen(testCatalog(), noImports)
+			s.resize(size[0], size[1])
+			text := catalogText(s)
+			if !strings.Contains(text, "▾ Popular\n>   [ ] GitHub") || !strings.Contains(text, "▸ Project management") {
+				t.Fatalf("screen:\n%s\nwant Popular open and the other categories closed", text)
+			}
+			for _, key := range []string{"down", "space"} {
+				s.handle(press(key))
+			}
+			text = catalogText(s)
+			if !strings.Contains(text, "▸ Popular") || !strings.Contains(text, "▾ Project management\n    [ ] Asana") {
+				t.Errorf("screen after opening Project management:\n%s\nwant it open and Popular closed", text)
+			}
+		})
+	}
+}
+
+func TestCatalogScreen_aClosedCategorySaysHowManyOfItsServersAreTicked(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	s.resize(50, 40)
+	pressAll(s, "space", "up", "space")
+	if text := catalogText(s); !strings.Contains(text, "▸ Popular  1 ticked") {
+		t.Errorf("screen:\n%s\nwant the closed Popular to say GitHub is ticked", text)
 	}
 }
 
 func TestCatalogScreen_ticksBecomeThePicksOncePerServer(t *testing.T) {
-	c := testCatalog()
-	s := loadedScreen(c, noImports)
-	for _, key := range []string{"space", "down", "down", "space"} {
-		s.handle(press(key))
-	}
+	s := loadedScreen(testCatalog(), noImports)
+	// GitHub under Popular, then right to Asana under Project management.
+	pressAll(s, "space", "right", "enter")
 	if got := entryNames(s.picks()); !slices.Equal(got, []string{"asana", "github"}) {
-		t.Errorf("picks = %v, want asana and github (ticked under Popular), once each", got)
+		t.Errorf("picks = %v, want asana and github, once each", got)
+	}
+	if text := catalogText(s); strings.Count(text, "[x] GitHub") != 2 {
+		t.Errorf("screen:\n%s\nwant GitHub ticked under Popular and Developer tools", text)
+	}
+}
+
+func TestCatalogScreen_continueFollowsTheServersAndEnterThereMovesOn(t *testing.T) {
+	t.Run("down past the last server", func(t *testing.T) {
+		s := loadedScreen(testCatalog(), noImports)
+		if got := pressAll(s, "down", "down", "down", "enter"); got != forward || len(s.picks()) != 0 {
+			t.Errorf("enter after moving past GitHub = %v, picks %v; want forward with nothing ticked", got, s.picks())
+		}
+	})
+	t.Run("tab", func(t *testing.T) {
+		s := loadedScreen(testCatalog(), noImports)
+		pressAll(s, "tab")
+		if text := catalogText(s); !strings.HasSuffix(text, "\n> Continue →") {
+			t.Errorf("screen:\n%s\nwant the cursor on Continue, right under the servers", text)
+		}
+		if got := pressAll(s, "enter"); got != forward {
+			t.Errorf("enter on Continue = %v, want forward", got)
+		}
+	})
+}
+
+func TestCatalogScreen_theLineUnderTheGridNamesTheHostOfTheServerUnderTheCursor(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	want := "GitHub · Repositories and pull requests · api.github.example"
+	if text := catalogText(s); !strings.Contains(text, want) {
+		t.Errorf(
+			"screen:\n%s\nwant %q: the grid shows only names, so the host shows for the server space ticks",
+			text,
+			want,
+		)
 	}
 }
 
@@ -112,7 +184,7 @@ func TestCatalogScreen_filtersByDescription(t *testing.T) {
 	for _, key := range []string{"/", "p", "u", "l", "l"} {
 		s.handle(press(key))
 	}
-	if text := catalogText(s); strings.Count(text, "[ ] github") != 1 || strings.Contains(text, "linear") {
+	if text := catalogText(s); strings.Count(text, "[ ] GitHub") != 1 || strings.Contains(text, "Linear") {
 		t.Errorf("screen:\n%s\nwant only github, once, matched by its description", text)
 	}
 	if line, keys := ansi.Strip(
@@ -132,7 +204,7 @@ func TestCatalogScreen_aServerTickedOnImportIsHiddenAndLosesItsCatalogTick(t *te
 	imported = []config.ServerConfig{{Name: "gh", URL: "https://api.github.example/mcp/"}}
 	s.enter()
 
-	if text := catalogText(s); strings.Contains(text, "github") {
+	if text := catalogText(s); strings.Contains(text, "GitHub") {
 		t.Errorf("screen:\n%s\nwant github hidden: the imported gh is the same URL", text)
 	}
 	imported = nil
@@ -150,7 +222,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 			t.Errorf("before loading: screen %q, empty = %v; want loading… and not empty", text, s.empty())
 		}
 		s.update(s.start()())
-		if text := catalogText(s); !strings.Contains(text, "[ ] linear") {
+		if text := catalogText(s); !strings.Contains(text, "[ ] GitHub") {
 			t.Errorf("after loading:\n%s\nwant the catalog's servers", text)
 		}
 		if s.start() != nil {
@@ -164,7 +236,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 				t.Errorf("%s while loading = %v, want %v", key, got, want)
 			}
 		}
-		if s.list.filtering {
+		if s.grid.filter.typing {
 			t.Error("/ while loading started a filter the arriving catalog would discard")
 		}
 	})
@@ -188,4 +260,37 @@ func TestCatalogScreen_loading(t *testing.T) {
 			)
 		}
 	})
+}
+
+func TestCatalogScreen_collapsibleArrowsOpenAndCloseTheCategoryUnderTheCursor(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	s.resize(50, 40)
+	pressAll(s, "left")
+	if text := catalogText(s); !strings.HasPrefix(text, "> ▸ Popular") {
+		t.Fatalf("screen after ←:\n%s\nwant Popular closed with the cursor on its heading", text)
+	}
+	pressAll(s, "down", "right")
+	if text := catalogText(s); !strings.Contains(text, "> ▾ Project management\n    [ ] Asana") {
+		t.Errorf("screen after ↓ →:\n%s\nwant Project management open under the cursor", text)
+	}
+}
+
+func TestCatalogScreen_aResizeToCollapsibleKeepsTheCursorInTheSameCategory(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	pressAll(s, "right", "right")
+	if text := catalogText(s); !strings.Contains(text, "> [ ] Sentry") {
+		t.Fatalf("screen:\n%s\nwant the cursor on Sentry, two columns across", text)
+	}
+	s.resize(50, 40)
+	if text := catalogText(s); !strings.Contains(text, "> ▸ Observability") {
+		t.Errorf("screen after narrowing:\n%s\nwant the cursor on Sentry's closed category", text)
+	}
+}
+
+func TestCatalogScreen_upFromContinueReturnsToTheServerTheCursorLeft(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	pressAll(s, "right", "tab", "up")
+	if text := catalogText(s); !strings.Contains(text, "> [ ] Asana") || strings.Contains(text, "> Continue") {
+		t.Errorf("screen:\n%s\nwant the cursor back on Asana", text)
+	}
 }

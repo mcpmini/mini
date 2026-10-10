@@ -48,13 +48,13 @@ type listener interface {
 }
 
 type resizer interface {
-	resize(width int)
+	resize(width, height int)
 }
 
 func (a *app) resizeScreens() {
 	for _, s := range a.screens {
 		if r, ok := s.(resizer); ok {
-			r.resize(a.width)
+			r.resize(a.width, a.height)
 		}
 	}
 }

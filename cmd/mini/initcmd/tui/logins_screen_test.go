@@ -164,7 +164,7 @@ func loginScreen(logins *fakeLogins, names ...string) *loginsScreen {
 		changed:    checks.changed,
 		startLogin: logins.start,
 	})
-	s.resize(80)
+	s.resize(80, 30)
 	showScreen(s)
 	return s
 }
@@ -238,7 +238,7 @@ func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *
 		return Login{URL: url, Wait: func() error { <-ctx.Done(); return ctx.Err() }}, nil
 	}
 	t.Cleanup(s.cancelLogin)
-	s.resize(40)
+	s.resize(40, 30)
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 
@@ -331,7 +331,7 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 	logins := newFakeLogins("linear", "sentry", "notion")
 	s := loginScreen(logins, "linear", "sentry", "notion")
-	s.resize(30)
+	s.resize(30, 30)
 	s.handle(press("down"))
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
@@ -356,7 +356,7 @@ func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 func TestLoginsScreen_movingUpMovesTheCursorBeforeTheView(t *testing.T) {
 	names := []string{"s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"}
 	s := loginScreen(newFakeLogins(names...), names...)
-	s.resize(60)
+	s.resize(60, 30)
 	for range names {
 		s.handle(press("down"))
 		s.body(4)

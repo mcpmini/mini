@@ -3,7 +3,6 @@ package tui
 import (
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -14,29 +13,24 @@ type row struct {
 	detail string
 	// subtitle is a dim line under the row; it never scrolls out of view with the cursor on it.
 	subtitle string
-	// section is the heading the row is listed under; consecutive rows share one heading.
-	section string
-	// search is text the filter matches that the row doesn't show.
-	search string
-	// repeated marks a row listed again under another section; the filter shows each row once.
-	repeated bool
 }
 
 func (r row) matches(filter string) bool {
 	filter = strings.ToLower(filter)
-	return slices.ContainsFunc([]string{r.label, r.detail, r.search}, func(text string) bool {
+	return slices.ContainsFunc([]string{r.label, r.detail}, func(text string) bool {
 		return strings.Contains(strings.ToLower(text), filter)
 	})
 }
 
 // The cursor indexes the rows the filter shows.
 type list struct {
-	rows      []row
-	checked   map[string]bool
-	cursor    int
-	scroll    scroll
-	filter    string
-	filtering bool
+	rows    []row
+	checked map[string]bool
+	cursor  int
+	// onContinue puts the cursor on the Continue row under the rows; enter there is the screen's.
+	onContinue bool
+	scroll     scroll
+	filter     textFilter
 	// header names the columns; it stays above the rows as they scroll. No label means no header.
 	header row
 }
@@ -46,12 +40,12 @@ func newList(rows []row, checked map[string]bool) *list {
 }
 
 func (l *list) visible() []row {
-	if l.filter == "" {
+	if l.filter.text == "" {
 		return l.rows
 	}
 	var shown []row
 	for _, r := range l.rows {
-		if !r.repeated && r.matches(l.filter) {
+		if r.matches(l.filter.text) {
 			shown = append(shown, r)
 		}
 	}
@@ -66,11 +60,22 @@ func (l *list) current() (row, bool) {
 	return shown[l.cursor], true
 }
 
+// Moving down past the last row reaches Continue, and up from Continue returns to the rows.
 func (l *list) move(step int) {
-	l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
+	switch {
+	case l.onContinue:
+		l.onContinue = step > 0
+	case step > 0 && l.cursor >= len(l.visible())-1:
+		l.onContinue = true
+	default:
+		l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
+	}
 }
 
 func (l *list) toggle() {
+	if l.onContinue {
+		return
+	}
 	if r, ok := l.current(); ok {
 		l.checked[r.key] = !l.checked[r.key]
 	}
@@ -88,67 +93,61 @@ func (l *list) toggleAll() {
 	}
 }
 
-func (l *list) setFilter(filter string) {
-	l.filter = filter
-	l.cursor, l.scroll = 0, scroll{}
+func (l *list) filterChanged() {
+	l.cursor, l.onContinue, l.scroll = 0, false, scroll{}
 }
 
-// keys replaces the screen's keys while a filter is typed, and adds how to clear one that is kept.
 func (l *list) keys(screenKeys string) string {
-	switch {
-	case l.filtering:
-		return "type to filter · ↑↓ move · enter done · esc clear"
-	case l.filter != "":
-		return screenKeys + " · esc clear filter"
-	}
-	return screenKeys
+	return l.filter.keys(screenKeys)
 }
 
-// In filter mode the list takes every key, so typed characters never act as commands.
 func (l *list) handle(key tea.KeyPressMsg) bool {
-	if l.filtering {
-		l.handleFilterKey(key)
+	if l.filter.typing {
+		changed, move := l.filter.typingKey(key)
+		if changed {
+			l.filterChanged()
+		}
+		if move {
+			l.moveBy(key)
+		}
 		return true
 	}
-	switch key.String() {
-	case "up":
-		l.move(-1)
-	case "down":
-		l.move(1)
+	return l.moveBy(key) || l.act(key.String())
+}
+
+// act reports whether the list took the key; enter on Continue is left to the screen.
+func (l *list) act(key string) bool {
+	switch key {
 	case "space":
 		l.toggle()
-	case "/":
-		l.filtering = true
-	case "esc":
-		if l.filter == "" {
+	case "enter":
+		if l.onContinue {
 			return false
 		}
-		l.setFilter("")
+		l.toggle()
+	case "tab":
+		l.onContinue = !l.onContinue
+	case "/":
+		l.filter.typing, l.onContinue = true, false
+	case "esc":
+		if !l.filter.set("") {
+			return false
+		}
+		l.filterChanged()
 	default:
 		return false
 	}
 	return true
 }
 
-func (l *list) handleFilterKey(key tea.KeyPressMsg) {
+func (l *list) moveBy(key tea.KeyPressMsg) bool {
 	switch key.String() {
-	case "enter":
-		l.filtering = false
-	case "esc":
-		l.filtering = false
-		l.setFilter("")
-	case "backspace":
-		if l.filter != "" {
-			_, size := utf8.DecodeLastRuneInString(l.filter)
-			l.setFilter(l.filter[:len(l.filter)-size])
-		}
 	case "up":
 		l.move(-1)
 	case "down":
 		l.move(1)
 	default:
-		if key.Text != "" {
-			l.setFilter(l.filter + key.Text)
-		}
+		return false
 	}
+	return true
 }

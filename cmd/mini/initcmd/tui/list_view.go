@@ -17,19 +17,17 @@ func (l *list) view(height int) string {
 	if l.header.label != "" {
 		shown = append(shown, l.headerLine())
 	}
-	height -= len(shown)
+	height -= len(shown) + linesUnderRows
 	lines, first, last := l.lines()
-	return strings.Join(append(shown, l.scroll.cut(lines, first, last, height)...), "\n")
+	shown = append(shown, l.scroll.cut(lines, first, last, height)...)
+	return strings.Join(append(shown, "", cursorMark(l.onContinue)+"Continue →"), "\n")
 }
 
+// Under the rows: a blank line and Continue, which stay in view however far the rows scroll.
+const linesUnderRows = 2
+
 func (l *list) filterLine() string {
-	switch {
-	case l.filtering:
-		return "/" + l.filter + "_"
-	case l.filter != "":
-		return dim.Render("/" + l.filter)
-	}
-	return ""
+	return l.filter.line()
 }
 
 func (l *list) headerLine() string {
@@ -44,22 +42,13 @@ func (l *list) labelWidth() int {
 
 func (l *list) lines() (lines []string, first, last int) {
 	width := l.labelWidth()
-	section := ""
 	for i, r := range l.visible() {
-		if r.section != section && len(lines) > 0 {
-			lines = append(lines, "")
-		}
 		start := len(lines)
-		if r.section != section {
-			lines = append(lines, bold.Render(r.section))
-			section = r.section
-		}
-		lines = append(lines, l.line(r, i == l.cursor, width))
+		lines = append(lines, l.line(r, i == l.cursor && !l.onContinue, width))
 		if r.subtitle != "" {
 			lines = append(lines, "      "+dim.Render(r.subtitle))
 		}
 		if i == l.cursor {
-			// The block starts at the heading, so scrolling up to a section's first row shows its heading.
 			first, last = start, len(lines)-1
 		}
 	}

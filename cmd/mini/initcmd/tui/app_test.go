@@ -100,12 +100,15 @@ func TestApp_footerNamesEnterEscAndCtrlCOnOneLine(t *testing.T) {
 	imports := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
 	a := sized(newApp([]screen{imports, &fakeScreen{name: "Last"}}))
 	first := shown(a)
-	send(a, "enter")
+	send(a, "tab", "enter")
 	second := shown(a)
 	lastLine := func(view string) string { return view[strings.LastIndex(view, "\n")+1:] }
-	if footer := lastLine(first); strings.Contains(footer, "esc") || !strings.Contains(footer, "enter continue") ||
+	if footer := lastLine(first); strings.Contains(footer, "esc") || !strings.Contains(footer, "tab continue") ||
 		!strings.Contains(footer, "ctrl+c quit") {
-		t.Errorf("first screen's last line = %q, want enter and ctrl+c, and no esc (it does nothing there)", footer)
+		t.Errorf(
+			"first screen's last line = %q, want tab continue and ctrl+c, and no esc (it does nothing there)",
+			footer,
+		)
 	}
 	if footer := lastLine(second); !strings.Contains(footer, "enter continue · esc back · ctrl+c") {
 		t.Errorf("second screen's last line = %q, want its keys, esc back and ctrl+c together", footer)
@@ -300,7 +303,7 @@ type wrappingScreen struct {
 	width int
 }
 
-func (s *wrappingScreen) resize(width int) { s.width = width }
+func (s *wrappingScreen) resize(width, _ int) { s.width = width }
 
 func TestApp_aScreenThatWrapsItsLinesLearnsEachWindowWidth(t *testing.T) {
 	later := &wrappingScreen{fakeScreen: fakeScreen{name: "Later"}}

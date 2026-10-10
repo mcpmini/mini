@@ -35,11 +35,20 @@ func pressing(keys ...string) func(tea.Model) error {
 	return func(m tea.Model) error {
 		deliver(m, m.Init())
 		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		m.View()
 		for _, key := range keys {
-			m.Update(press(key))
+			pressKey(m, key)
 		}
 		return nil
 	}
+}
+
+// pressKey sends a key and draws the frame after it, as the program does: some screens move
+// in the layout their last frame drew.
+func pressKey(m tea.Model, key string) tea.Cmd {
+	_, cmd := m.Update(press(key))
+	m.View()
+	return cmd
 }
 
 func deliver(m tea.Model, cmd tea.Cmd) {
@@ -101,7 +110,7 @@ func TestRun_finishingWritesTheTicksAndReportsThem(t *testing.T) {
 	out, err := Run(Params{
 		Setup:       setupFor(configDir, stdioAgent("Codex", "files", "notes")),
 		LoadCatalog: noCatalog,
-		Program:     pressing("space", "enter"),
+		Program:     pressing("space", "tab", "enter"),
 	})
 	if err != nil || out.Quit || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished and saved", out, err)
@@ -124,7 +133,7 @@ func TestRun_theSummarySkipsNothingTheImportScreenShowed(t *testing.T) {
 	out, err := Run(Params{
 		Setup:       setupFor(t.TempDir(), githubRunning("Claude Code", "gh-one"), githubRunning("Codex", "gh-two")),
 		LoadCatalog: noCatalog,
-		Program:     pressing("enter"),
+		Program:     pressing("tab", "enter"),
 	})
 	if err != nil || len(out.Report.Import.Candidates) < 2 {
 		t.Fatalf("Run = %+v, %v; want github and an unticked github-2", out, err)
@@ -141,7 +150,7 @@ func TestRun_goingBackToTickAnImportDropsTheSameCatalogServer(t *testing.T) {
 		Setup:       setupFor(configDir, stdioAgent("Codex", "sentry")),
 		LoadCatalog: fromCatalog(c),
 		// Untick the import, tick the catalog's sentry, go back, tick the import again, finish.
-		Program: pressing("space", "enter", "space", "esc", "space", "enter", "enter"),
+		Program: pressing("space", "tab", "enter", "space", "esc", "up", "space", "tab", "enter", "enter"),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +168,7 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 		Setup:       setupFor(configDir),
 		LoadCatalog: fromCatalog(c),
 		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, continue.
-		Program: pressing("space", "enter", "esc", "space", "down", "space", "enter", "down", "enter"),
+		Program: pressing("space", "tab", "enter", "esc", "space", "down", "space", "tab", "enter", "down", "enter"),
 	})
 	if err != nil || out.Quit {
 		t.Fatalf("Run = %+v, %v; want it finished", out, err)
@@ -173,7 +182,11 @@ func TestRun_quittingAfterCatalogKeepsWhatWasWritten(t *testing.T) {
 	configDir := t.TempDir()
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
 	out, err := Run(
-		Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "enter", "ctrl+c")},
+		Params{
+			Setup:       setupFor(configDir),
+			LoadCatalog: fromCatalog(c),
+			Program:     pressing("space", "tab", "enter", "ctrl+c"),
+		},
 	)
 	if err != nil || !out.Quit || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want a quit after saving", out, err)
@@ -192,7 +205,9 @@ func TestRun_theCatalogOffersOnlyServersMiniHasNot(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear"), oauthEntry("sentry")}}
-	_, err := Run(Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "enter")})
+	_, err := Run(
+		Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "tab", "enter")},
+	)
 	if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"linear", "sentry"}) {
 		t.Errorf(
 			"written = %v, err = %v; want sentry added: linear is configured, so the first row is sentry",
@@ -218,7 +233,7 @@ func TestRun_withNothingToImport(t *testing.T) {
 		configDir := t.TempDir()
 		c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("sentry")}}
 		_, err := Run(
-			Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "enter")},
+			Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "tab", "enter")},
 		)
 		if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"sentry"}) {
 			t.Errorf("written = %v, err = %v; want sentry ticked on the catalog shown first", got, err)
@@ -260,7 +275,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 		setup.Probe = blockUntilCancelled
 		var view string
 		program := func(m tea.Model) error {
-			pressing("space", "enter")(m)
+			pressing("space", "tab", "enter")(m)
 			view = ansi.Strip(m.(*app).render())
 			m.Update(press("ctrl+c"))
 			return nil
@@ -279,7 +294,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			setup := setupFor(t.TempDir())
 			setup.Probe = blockUntilCancelled
-			program := pressing("space", "enter", "enter")
+			program := pressing("space", "tab", "enter", "enter")
 			out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
 			if err != nil || out.Quit || statusOf(out.Report, "plain") != initcmd.Ready {
 				t.Errorf("out = %+v, %v; want plain checked, so not marked as maybe needing a login", out, err)
@@ -300,7 +315,7 @@ func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 		Setup:       setupFor(t.TempDir()),
 		LoadCatalog: fromCatalog(c),
 		StartLogin:  startLogin,
-		Program:     pressing("space", "enter", "enter", "ctrl+c"),
+		Program:     pressing("space", "tab", "enter", "enter", "ctrl+c"),
 	})
 	if err != nil || !out.Quit {
 		t.Fatalf("Run = %+v, %v; want a quit", out, err)
@@ -317,12 +332,29 @@ func TestRun_aLoginDoesntOutliveTheServerItWasFor(t *testing.T) {
 	}
 	var screen string
 	// Log in to linear; back, swap it for sentry, save; back, tick linear again, save.
-	keys := []string{"space", "enter", "enter", "esc", "space", "down", "space", "enter", "esc", "up", "space", "enter"}
+	keys := []string{
+		"space",
+		"tab",
+		"enter",
+		"enter",
+		"esc",
+		"space",
+		"down",
+		"space",
+		"tab",
+		"enter",
+		"esc",
+		"up",
+		"space",
+		"tab",
+		"enter",
+	}
 	program := func(m tea.Model) error {
 		deliver(m, m.Init())
 		m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+		m.View()
 		for _, key := range keys {
-			_, cmd := m.Update(press(key))
+			cmd := pressKey(m, key)
 			deliver(m, cmd)
 		}
 		screen = shown(m.(*app))

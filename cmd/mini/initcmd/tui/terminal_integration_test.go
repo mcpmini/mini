@@ -121,6 +121,7 @@ var keyBytes = map[string]string{
 	"ctrl+c": "\x03",
 	"down":   "\x1b[B",
 	"up":     "\x1b[A",
+	"tab":    "\t",
 }
 
 func (term *terminal) press(keys ...string) {
