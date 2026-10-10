@@ -465,3 +465,23 @@ func TestLoginsScreen_aServerNamedBackIsNotTheBackAction(t *testing.T) {
 		t.Errorf("screen after a refresh:\n%s\nwant the cursor still on the server named Back, not the action", text)
 	}
 }
+
+func TestLoginsScreen_tabReturnsToTheSameServerAfterChecksDropRows(t *testing.T) {
+	f := newFakeChecks(
+		initcmd.ServerStatus{Name: "aaa", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "bbb", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "ccc", Readiness: initcmd.NeedsLogin},
+	)
+	s := f.screen()
+	s.offerBack(true)
+	showScreen(s)
+	s.handle(press("down"))
+	s.handle(press("down"))
+	s.handle(press("tab"))
+	f.statuses = f.statuses[2:]
+	s.refresh()
+	s.handle(press("tab"))
+	if text := loginsText(s); !strings.Contains(text, "> ccc") {
+		t.Errorf("screen after tab back:\n%s\nwant the cursor on ccc: the rows above it were dropped", text)
+	}
+}

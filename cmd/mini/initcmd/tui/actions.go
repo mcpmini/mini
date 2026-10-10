@@ -1,5 +1,7 @@
 package tui
 
+import "strings"
+
 const (
 	continueLabel = "Continue"
 	backLabel     = "Back"
@@ -44,21 +46,10 @@ func actionKeys(labels []string) string {
 	return "↑↓ move · enter choose"
 }
 
-// tabReturn is tab on a screen whose cursor counts rows then actions: from the rows it jumps to
-// the first action, and from the actions back to the row it left.
-type tabReturn struct {
-	row int
-}
-
-func (t *tabReturn) toggle(cursor, firstAction int, rowSelectable func(int) bool) int {
-	switch {
-	case cursor < firstAction:
-		t.row = cursor
-		return firstAction
-	case rowSelectable(t.row):
-		return t.row
-	}
-	return cursor
+// withActions is a screen with only a message to show above its actions.
+func withActions(message string, labels []string, at int) string {
+	actions, _ := actionLines(labels, at)
+	return strings.Join(append([]string{message}, actions...), "\n")
 }
 
 // actions are the rows a screen ends with, right under its content. The cursor reaches them by

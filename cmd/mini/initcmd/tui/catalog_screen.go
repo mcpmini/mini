@@ -199,8 +199,7 @@ func (s *catalogScreen) body(height int) string {
 }
 
 func (s *catalogScreen) withActions(message string) string {
-	actions, _ := actionLines(s.grid.actions.labels, s.grid.actions.at)
-	return strings.Join(append([]string{message}, actions...), "\n")
+	return withActions(message, s.grid.actions.labels, s.grid.actions.at)
 }
 
 func (s *catalogScreen) keys() string {

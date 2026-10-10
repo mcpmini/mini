@@ -35,7 +35,7 @@ type connectScreen struct {
 	width            int
 	scroll           scroll
 	back             bool
-	tab              tabReturn
+	tabbedFrom       int
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
@@ -122,7 +122,7 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	case "down":
 		s.cursor = min(s.cursor+1, s.rows()-1)
 	case "tab":
-		s.cursor = s.tab.toggle(s.cursor, s.agentRows(), func(row int) bool { return row < s.agentRows() })
+		s.tab()
 	case "space":
 		s.tick()
 	case "a":
@@ -134,6 +134,17 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 		return back, nil
 	}
 	return stay, nil
+}
+
+// tab jumps from an agent to the choices, and back to that agent; the agents don't change on screen.
+func (s *connectScreen) tab() {
+	if s.cursor < s.agentRows() {
+		s.tabbedFrom, s.cursor = s.cursor, s.agentRows()
+		return
+	}
+	if s.agentRows() > 0 {
+		s.cursor = s.tabbedFrom
+	}
 }
 
 func (s *connectScreen) tick() {
@@ -330,16 +341,17 @@ func withVerb(names []string, one, many string) string {
 }
 
 func (s *connectScreen) keys() string {
-	choice, onOption := s.highlighted()
-	switch {
-	case s.onBack():
-		return "↑↓ move · enter choose"
-	case !onOption:
+	if s.cursor < s.agentRows() {
 		return "↑↓ move · space/enter tick · a all · tab choices"
-	case choice == initcmd.ConnectAndRemove && !s.checks.done:
-		return "↑↓ move · removing waits for the server checks"
 	}
-	return "↑↓ move · enter choose"
+	keys := "↑↓ move · enter choose"
+	if choice, onOption := s.highlighted(); onOption && choice == initcmd.ConnectAndRemove && !s.checks.done {
+		keys = "↑↓ move · removing waits for the server checks"
+	}
+	if s.agentRows() > 0 {
+		keys += " · tab agents"
+	}
+	return keys
 }
 
 func (s *connectScreen) highlighted() (choice initcmd.ConnectChoice, onOption bool) {
