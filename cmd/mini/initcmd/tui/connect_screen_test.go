@@ -377,6 +377,19 @@ func TestConnectScreen_withNoAgentTickedOffersOnlyDontConnect(t *testing.T) {
 	}
 }
 
+func TestConnectScreen_aLoneAgentLeftAfterGoingBackIsConnectedThoughItWasUnticked(t *testing.T) {
+	plan := newFakePlan(map[string][]string{"Codex": {"github"}})
+	s, _ := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Codex": true})
+	a := framed(s, false)
+	send(a, "up", "up", "space")
+	delete(plan.removable, "Codex")
+	s.refresh()
+	if got := pickedNames(s); strings.Join(got, ",") != "Claude" || len(s.choices()) != 2 {
+		t.Errorf("picked %v, choices %v once only Claude is left; want Claude, which has no checkbox to tick again",
+			got, s.choices())
+	}
+}
+
 func TestConnectScreen_aTicksEveryAgentAndBackFollowsTheChoices(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
 	a := framed(s, true)

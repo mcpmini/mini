@@ -187,7 +187,7 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 func (s *connectScreen) connectOnlySubtitles() []string {
 	names := agentNames(s.picked())
 	lacksMini := func(name string) bool { return !s.p.withMini[name] }
-	if len(names) == 0 || slices.ContainsFunc(names, lacksMini) {
+	if slices.ContainsFunc(names, lacksMini) {
 		return []string{"Adds mini next to your existing MCPs"}
 	}
 	return []string{"Changes nothing: " + alreadyHaveMini(names)}
@@ -258,6 +258,10 @@ func (s *connectScreen) empty() bool {
 }
 
 func (s *connectScreen) picked() []agents.Agent {
+	// A lone agent has no checkbox, so a tick it lost while it had one can't be put back.
+	if len(s.listed) == 1 {
+		return s.listed
+	}
 	var picked []agents.Agent
 	for _, agent := range s.listed {
 		if s.ticked[agent.Name] {
