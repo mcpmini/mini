@@ -328,7 +328,7 @@ func TestConnectScreen_everyAgentFitsAnOrdinaryWindowWithItsChoices(t *testing.T
 	}
 }
 
-func TestConnectScreen_aShortWindowCutsTheAddedNoteAndKeepsTheCursorOnTheAgents(t *testing.T) {
+func TestConnectScreen_theAddedNoteIsNeverCut(t *testing.T) {
 	var names []string
 	for i := range 30 {
 		names = append(names, fmt.Sprintf("server-%02d", i))
@@ -341,9 +341,19 @@ func TestConnectScreen_aShortWindowCutsTheAddedNoteAndKeepsTheCursorOnTheAgents(
 	t.Cleanup(s.checks.cancelAndWait)
 	s.resize(minWidth, 30)
 	showScreen(s)
-	body := strings.Split(ansi.Strip(s.body(4, true)), "\n")
-	if len(body) > 4 || !strings.HasSuffix(body[2], "…") || !strings.Contains(body[3], "[x] Codex") {
-		t.Errorf("body in 4 lines:\n%s\nwant the note cut with …, then the cursor's agent", strings.Join(body, "\n"))
+	body := ansi.Strip(s.body(4, true))
+	if !strings.Contains(body, "server-29") || strings.Contains(body, "…") {
+		t.Errorf("body with 4 lines to fill:\n%s\nwant every added MCP, wrapped, none cut", body)
+	}
+	a := framed(s, true)
+	a.width, a.height = minWidth, minHeight
+	if view := shown(a); strings.Count(view, "\n")+1 != minHeight || !strings.Contains(footerOf(view), "ctrl+c") {
+		t.Errorf(
+			"view at %dx%d:\n%s\nwant it to fill the window with the footer still at the bottom",
+			minWidth,
+			minHeight,
+			view,
+		)
 	}
 }
 

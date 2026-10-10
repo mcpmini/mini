@@ -145,7 +145,6 @@ func (s *connectScreen) choose(i int) (chosen bool) {
 	return true
 }
 
-// The note on what mini gained stays above the agents, which scroll under it on a short window.
 func (s *connectScreen) body(height int, focused bool) string {
 	note := s.addedLines()
 	if len(note) > 0 && s.focusable() {
@@ -154,13 +153,7 @@ func (s *connectScreen) body(height int, focused bool) string {
 	if !s.focusable() {
 		return strings.Join(note, "\n")
 	}
-	if keep := max(height-1, 0); len(note) > keep {
-		note = note[:keep]
-		if keep > 0 {
-			note[keep-1] += "…"
-		}
-	}
-	return strings.Join(append(note, s.agents.view(height-len(note), focused)), "\n")
+	return strings.Join(append(note, s.agents.view(max(height-len(note), 1), focused)), "\n")
 }
 
 func (s *connectScreen) addedLines() []string {
