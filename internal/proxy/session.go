@@ -97,6 +97,7 @@ func (s *proxySession) recoverForwarding(
 		return state, false
 	}
 	if message != forwardedMessageInitialize {
+		// daemon accepts duplicate initialize, so concurrent recoveries may each replay the handshake
 		s.daemonAt(next).Handshake(s.toolMode)
 		s.restoreLifecycle(next)
 	}
