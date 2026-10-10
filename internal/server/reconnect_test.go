@@ -104,7 +104,7 @@ func waitForReconnect(t *testing.T, fakeClock *clock.Fake, srv *server.Server, s
 	t.Helper()
 	reconnected := make(chan struct{})
 	srv.SetReconnectHook(svc, func() { close(reconnected) })
-	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
+	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
 		t.Fatalf("waiting for reconnect timer: %v", err)
 	}
 	fakeClock.Advance(time.Second)

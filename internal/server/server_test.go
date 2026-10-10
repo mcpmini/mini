@@ -73,6 +73,9 @@ func envEchoWrite(id any, result any) {
 	fmt.Fprintf(os.Stdout, "%s\n", b)
 }
 
+// Every server's response store keeps one cleanup timer pending on the server's clock.
+const responseCleanupTimer = 1
+
 func newTestServer(t *testing.T, p server.Params) *server.Server {
 	t.Helper()
 	if p.Config == nil {

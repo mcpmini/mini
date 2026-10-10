@@ -405,7 +405,7 @@ func TestProjectionReload_ctxCancelStopsPoller(t *testing.T) {
 		defer close(done)
 		e.srv.RunConfigReload(ctx, nil)
 	}()
-	if err := e.clock.BlockUntilContext(t.Context(), 2); err != nil {
+	if err := e.clock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
 		t.Fatal("poll ticker not registered:", err)
 	}
 
