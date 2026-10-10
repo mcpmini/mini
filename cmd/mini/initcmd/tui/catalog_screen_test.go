@@ -345,3 +345,14 @@ func TestCatalogScreen_aLongTitleGivesWaySoTheHostShowsAtTheNarrowestWindow(t *t
 		t.Errorf("line under the grid %q; want the whole host inside a %d-column window", line, minWidth)
 	}
 }
+
+func TestCatalogScreen_arrowsWhileFilteringLeaveTheOpenCategoryAsItWas(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	s.resize(50, 40)
+	// "s" leaves Project management, Observability and Developer tools: → on Observability's
+	// heading, second among the matches, then clear.
+	pressAll(s, "/", "s", "enter", "down", "right", "esc")
+	if text := catalogText(s); !strings.Contains(text, "▾ Popular") || strings.Contains(text, "▾ Project management") {
+		t.Errorf("screen after clearing the filter:\n%s\nwant Popular still the open category", text)
+	}
+}

@@ -139,7 +139,7 @@ func (g *catalogGrid) toggleOpen(section int) {
 func (g *catalogGrid) moveKey(key string) {
 	if g.actions.active {
 		if key == "up" || key == "down" {
-			g.actions.move(map[string]int{"up": -1, "down": 1}[key])
+			g.actions.move(direction(key))
 		}
 		return
 	}
@@ -147,9 +147,9 @@ func (g *catalogGrid) moveKey(key string) {
 	col, row, _ := g.locate(columns)
 	switch key {
 	case "up", "down":
-		g.moveVertically(columns[col], row, map[string]int{"up": -1, "down": 1}[key])
+		g.moveVertically(columns[col], row, direction(key))
 	case "left", "right":
-		g.moveAcross(columns, col, row, map[string]int{"left": -1, "right": 1}[key])
+		g.moveAcross(columns, col, row, direction(key))
 	}
 }
 
@@ -183,16 +183,24 @@ func (g *catalogGrid) moveAcross(columns [][]gridCell, col, row, step int) {
 // openOrClose is → and ← in the collapsible layout: → opens the section under the cursor, ← closes
 // it and leaves the cursor on its heading.
 func (g *catalogGrid) openOrClose(step int) {
-	if step > 0 {
-		if g.at.entry < 0 {
-			g.open = g.at.section
+	// A filter shows every matching category open, and numbers its sections among the matches only.
+	filtered := g.filter.text != ""
+	switch {
+	case step > 0 && g.at.entry < 0 && !filtered:
+		g.open = g.at.section
+	case step < 0:
+		if g.open == g.at.section && !filtered {
+			g.open = -1
 		}
-		return
+		g.at.entry = -1
 	}
-	if g.open == g.at.section {
-		g.open = -1
+}
+
+func direction(key string) int {
+	if key == "up" || key == "left" {
+		return -1
 	}
-	g.at.entry = -1
+	return 1
 }
 
 func nearestSelectable(column []gridCell, row int) (int, bool) {
