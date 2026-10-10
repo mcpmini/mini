@@ -19,10 +19,9 @@ type catalogLoaded struct {
 }
 
 type catalogScreen struct {
-	load   func() (catalog.Catalog, error)
-	inMini func(catalog.Entry) bool
-	// imports is what the Import screen has ticked; a catalog server it covers will be imported.
-	imports           func() []config.ServerConfig
+	load              func() (catalog.Catalog, error)
+	inMini            func(catalog.Entry) bool
+	importTicked      func() []config.ServerConfig
 	loaded            bool
 	loadErr           error
 	popular           []string
@@ -34,13 +33,13 @@ type catalogScreen struct {
 }
 
 type catalogParams struct {
-	load    func() (catalog.Catalog, error)
-	inMini  func(catalog.Entry) bool
-	imports func() []config.ServerConfig
+	load         func() (catalog.Catalog, error)
+	inMini       func(catalog.Entry) bool
+	importTicked func() []config.ServerConfig
 }
 
 func newCatalogScreen(p catalogParams) *catalogScreen {
-	s := &catalogScreen{load: p.load, inMini: p.inMini, imports: p.imports, checked: map[string]bool{}}
+	s := &catalogScreen{load: p.load, inMini: p.inMini, importTicked: p.importTicked, checked: map[string]bool{}}
 	s.enter()
 	return s
 }
@@ -89,7 +88,6 @@ func (s *catalogScreen) resize(width, rowsHeight int) {
 	s.grid.resize(width, rowsHeight)
 }
 
-// Every catalog server is shown; only one mini doesn't run or import yet can be ticked.
 func (s *catalogScreen) state(e catalog.Entry, imported initcmd.ConfiguredKeys) entryState {
 	switch {
 	case s.inMini(e):
@@ -101,7 +99,7 @@ func (s *catalogScreen) state(e catalog.Entry, imported initcmd.ConfiguredKeys) 
 }
 
 func (s *catalogScreen) offered() []catalog.Entry {
-	imported := initcmd.NewConfiguredKeys(s.imports())
+	imported := initcmd.NewConfiguredKeys(s.importTicked())
 	return slices.DeleteFunc(slices.Clone(s.byCategory), func(e catalog.Entry) bool {
 		return s.state(e, imported) != entryOffered
 	})
@@ -109,7 +107,7 @@ func (s *catalogScreen) offered() []catalog.Entry {
 
 // Popular keeps the catalog's ranking; every other section is alphabetical, so a name is easy to find.
 func (s *catalogScreen) sections() []gridSection {
-	imported := initcmd.NewConfiguredKeys(s.imports())
+	imported := initcmd.NewConfiguredKeys(s.importTicked())
 	entry := func(e catalog.Entry) gridEntry { return catalogGridEntry(e, s.state(e, imported)) }
 	popular := gridSection{title: "Popular", repeated: true}
 	for _, name := range s.popular {

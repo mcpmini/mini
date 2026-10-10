@@ -20,12 +20,11 @@ func (r row) matches(filter string) bool {
 
 // The cursor indexes the rows the filter shows.
 type list struct {
-	rows []row
-	// fixed rows can't be ticked; they follow the rows, and the cursor never rests on them.
-	fixed   []row
-	checked map[string]bool
-	cursor  int
-	scroll  scroll
+	rows       []row
+	untickable []row
+	checked    map[string]bool
+	cursor     int
+	scroll     scroll
 	// filterable lets / start a filter; a short list, like Connect's agents, has no need of one.
 	filterable bool
 	filter     textFilter

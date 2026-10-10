@@ -15,7 +15,6 @@ import (
 // and what it leaves in the agents.
 type ImportPlan struct {
 	Candidates []Candidate
-	// InMini is the agent entries mini already runs, under mini's name for each.
 	InMini     []InMiniServer
 	Skipped    []SkippedServer
 	Unreadable []UnreadableAgent
@@ -159,7 +158,6 @@ func (p ImportParams) candidatesIn(plan *ImportPlan, agent string, servers map[s
 	return candidates
 }
 
-// An agent's entry for mini itself is left out with no summary line: there's nothing to do about it.
 func (p ImportParams) isMini(e agentEntry) bool {
 	return NormalizeName(e.name) == agents.MiniKey || agents.IsMiniEntry(e.server.Config, p.SelfPath)
 }

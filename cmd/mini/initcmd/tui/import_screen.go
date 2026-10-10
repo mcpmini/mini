@@ -14,11 +14,9 @@ import (
 
 type importScreen struct {
 	candidates []initcmd.Candidate
-	// inMini is the servers mini already runs that the agents have too, shown so their absence
-	// from the candidates isn't a mystery.
-	inMini []initcmd.Candidate
-	agents []string
-	list   *list
+	inMini     []initcmd.Candidate
+	agents     []string
+	list       *list
 }
 
 func newImportScreen(plan initcmd.ImportPlan) *importScreen {
@@ -34,7 +32,7 @@ func newImportScreen(plan initcmd.ImportPlan) *importScreen {
 	}
 	s.list = newList(s.rows(s.candidates, widths), checked)
 	s.list.filterable = true
-	s.list.fixed = s.rows(s.inMini, widths)
+	s.list.untickable = s.rows(s.inMini, widths)
 	s.list.header = row{label: "SERVER", detail: s.columnText(targetHeading, agentsHeading, widths)}
 	return s
 }

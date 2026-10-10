@@ -54,7 +54,7 @@ func inMiniNamed(names ...string) func(catalog.Entry) bool {
 }
 
 func loadedScreen(c catalog.Catalog, imports func() []config.ServerConfig) *catalogScreen {
-	s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, imports: imports})
+	s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, importTicked: imports})
 	s.update(s.start()())
 	s.resize(120, 40)
 	return s
@@ -245,7 +245,7 @@ func TestCatalogScreen_aServerTickedOnImportIsMarkedWillImportAndLosesItsCatalog
 
 func TestCatalogScreen_aServerMiniRunsIsMarkedAndTheCursorPassesOverIt(t *testing.T) {
 	s := newCatalogScreen(
-		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("asana"), imports: noImports},
+		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("asana"), importTicked: noImports},
 	)
 	s.update(s.start()())
 	s.resize(120, 40)
@@ -269,7 +269,7 @@ func TestCatalogScreen_aServerMiniRunsIsMarkedAndTheCursorPassesOverIt(t *testin
 func TestCatalogScreen_withEveryServerInMiniOrImportedIsSkipped(t *testing.T) {
 	imported := func() []config.ServerConfig { return []config.ServerConfig{{Name: "linear"}, {Name: "sentry"}} }
 	s := newCatalogScreen(catalogParams{
-		load: fromCatalog(testCatalog()), inMini: inMiniNamed("github", "asana"), imports: imported,
+		load: fromCatalog(testCatalog()), inMini: inMiniNamed("github", "asana"), importTicked: imported,
 	})
 	s.update(s.start()())
 	if !s.empty() {
@@ -280,7 +280,7 @@ func TestCatalogScreen_withEveryServerInMiniOrImportedIsSkipped(t *testing.T) {
 func TestCatalogScreen_loading(t *testing.T) {
 	c := testCatalog()
 	t.Run("shows loading until the catalog arrives, and isn't skipped meanwhile", func(t *testing.T) {
-		s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, importTicked: noImports})
 		if text := catalogText(s); text != "loading…" || s.empty() {
 			t.Errorf("before loading: screen %q, empty = %v; want loading… and not empty", text, s.empty())
 		}
@@ -293,7 +293,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 		}
 	})
 	t.Run("keys wait for the catalog, except going back", func(t *testing.T) {
-		s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, importTicked: noImports})
 		a := inApp(100, 30, &fakeScreen{name: "Import", hasRows: true}, s)
 		send(a, "tab", "enter", "enter", "/", "space")
 		if view := shown(a); a.at != 1 || strings.Contains(view, continueLabel) || s.grid.filter.typing {
@@ -309,7 +309,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 	})
 	t.Run("a catalog that can't be loaded says so", func(t *testing.T) {
 		load := func() (catalog.Catalog, error) { return catalog.Catalog{}, errors.New("bad document") }
-		s := newCatalogScreen(catalogParams{load: load, inMini: noneInMini, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: load, inMini: noneInMini, importTicked: noImports})
 		s.update(s.start()())
 		if text := catalogText(
 			s,
@@ -424,7 +424,7 @@ func TestCatalogScreen_aInTheCollapsibleLayoutTicksOnlyTheOpenCategory(t *testin
 
 func TestCatalogScreen_theCursorStartsOnTheFirstServerThatCanBeTicked(t *testing.T) {
 	s := newCatalogScreen(
-		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("github"), imports: noImports},
+		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("github"), importTicked: noImports},
 	)
 	s.update(s.start()())
 	s.resize(120, 40)
@@ -436,7 +436,7 @@ func TestCatalogScreen_theCursorStartsOnTheFirstServerThatCanBeTicked(t *testing
 
 func TestCatalogScreen_aClosedCategoryCountsOnlyTheServersThatCanBeTicked(t *testing.T) {
 	s := newCatalogScreen(
-		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("asana"), imports: noImports},
+		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("asana"), importTicked: noImports},
 	)
 	s.update(s.start()())
 	s.resize(50, 40)

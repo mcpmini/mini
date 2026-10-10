@@ -34,7 +34,7 @@ func (l *list) headerLine() string {
 
 func (l *list) labelWidth() int {
 	// The first heading starts over the checkbox, so only what it overhangs widens the label column.
-	labels := widest(slices.Concat(l.rows, l.fixed), func(r row) string { return r.label })
+	labels := widest(slices.Concat(l.rows, l.untickable), func(r row) string { return r.label })
 	return max(len(l.header.label)-len(checkbox(false)), labels)
 }
 
@@ -50,20 +50,19 @@ func (l *list) lines(focused bool) (lines []string, first, last int) {
 			first, last = start, len(lines)-1
 		}
 	}
-	return append(lines, l.fixedLines(width)...), first, last
+	return append(lines, l.untickableLines(width)...), first, last
 }
 
-func (l *list) fixedLines(width int) []string {
-	fixed := l.matching(l.fixed)
-	if len(fixed) == 0 {
+func (l *list) untickableLines(width int) []string {
+	untickable := l.matching(l.untickable)
+	if len(untickable) == 0 {
 		return nil
 	}
 	var lines []string
-	for _, r := range fixed {
+	for _, r := range untickable {
 		line := strings.TrimRight(fmt.Sprintf("%-*s  %s", width, r.label, r.detail), " ")
 		lines = append(lines, cursorMark(false)+dim.Render(inMiniMark+line))
 	}
-	// The legend's mark lines up with the marks above it.
 	return append(lines, "", cursorMark(false)+" "+dim.Render(inMiniLegend))
 }
 
@@ -74,7 +73,6 @@ func cursorMark(atCursor bool) string {
 	return "  "
 }
 
-// inMiniMark stands where a checkbox would, as wide, on a server mini already runs.
 const (
 	inMiniMark   = " ✓  "
 	inMiniLegend = "✓ already in mini"

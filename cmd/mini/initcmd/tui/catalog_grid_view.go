@@ -22,8 +22,6 @@ func (g *catalogGrid) resize(width, rowsHeight int) {
 	g.settle()
 }
 
-// linesUnderSections are a blank line, the legend when an entry wears a mark, and the entry under
-// the cursor.
 func (g *catalogGrid) linesUnderSections(detail string) []string {
 	if legend := g.legend(); legend != "" {
 		return []string{"", cursorMark(false) + " " + dim.Render(legend), detail}
