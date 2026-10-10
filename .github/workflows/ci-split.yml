@@ -1,16 +1,7 @@
-name: CI
+name: CI split
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - '.claude/**'
-  pull_request:
-    paths-ignore:
-      - '**.md'
-      - '.claude/**'
 
 jobs:
   lint:
@@ -18,11 +9,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-
       - name: Repo convention checks
         run: |
           go run ./tools/funclen .
@@ -31,17 +20,12 @@ jobs:
           go run ./tools/clocklint .
           go run ./tools/testkind .
           GOFLAGS="${GOFLAGS:-} -tags=integration,test" go run ./tools/structlint ./...
-
       - name: Vet
-        # go vet ./... doesn't run against all tags by default
-        # specifying the tags here runs it over all the prod code AND the tests
         run: go vet -tags integration,test ./...
-
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.14.0
-
       - name: Vulnerability check
         run: ./scripts/check-vulnerabilities.sh
 
@@ -50,19 +34,15 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-
       - name: Build
         run: go build ./...
-
       - name: Build test helpers
         run: |
           testbin=$(mktemp -d)
           scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
-
       - name: Unit tests
         run: go test -race -tags test -timeout 120s ./...
 
@@ -71,29 +51,45 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-
-      - name: Build
-        run: go build ./...
-
-      - name: Build test helpers
+      - name: Build test helpers (non-race mini)
         run: |
-          testbin=$(mktemp -d)
-          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
-
+          d=$(mktemp -d)
+          go build -o "$d/echomcp" ./cmd/echomcp
+          go build -tags test -ldflags "-X github.com/mcpmini/mini/internal/version.buildRevision=integration-test" -o "$d/mini" ./cmd/mini
+          go build -tags integration -o "$d/fakemcp" ./test/fakemcp
+          go build -o "$d/structlint" ./tools/structlint
+          echo "ECHOMCP_BIN=$d/echomcp" >> "$GITHUB_ENV"
+          echo "MINIMCP_BIN=$d/mini" >> "$GITHUB_ENV"
+          echo "FAKEMCP_BIN=$d/fakemcp" >> "$GITHUB_ENV"
+          echo "STRUCTLINT_BIN=$d/structlint" >> "$GITHUB_ENV"
       - name: Integration tests
         run: go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...
 
-  ci:
+  integration-race:
     runs-on: ubuntu-latest
-    needs: [lint, unit, integration]
-    if: always()
+    timeout-minutes: 10
     steps:
-      - name: All checks passed
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build test helpers (race mini)
         run: |
-          if [[ "${{ needs.lint.result }}" != "success" || "${{ needs.unit.result }}" != "success" || "${{ needs.integration.result }}" != "success" ]]; then
-            exit 1
-          fi
+          testbin=$(mktemp -d)
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
+      - name: Startup probe
+        run: |
+          d=$(mktemp -d)
+          go build -race -tags test -o "$d/mini-race" ./cmd/mini
+          go build -tags test -o "$d/mini-plain" ./cmd/mini
+          for b in mini-plain mini-race; do
+            for i in 1 2 3; do
+              s=$(date +%s%N); "$d/$b" --version >/dev/null; e=$(date +%s%N)
+              echo "$b run$i $(( (e - s) / 1000000 ))ms"
+            done
+          done
+      - name: Integration tests
+        run: go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...

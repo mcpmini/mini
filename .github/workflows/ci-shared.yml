@@ -1,0 +1,117 @@
+name: CI shared
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build test helpers
+        run: |
+          scripts/test-bins.sh bins
+          go build -tags test -ldflags "-X github.com/mcpmini/mini/internal/version.buildRevision=integration-test" -o bins/mini-norace ./cmd/mini
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test-bins
+          path: bins
+          retention-days: 1
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Repo convention checks
+        run: |
+          go run ./tools/funclen .
+          go run ./tools/params .
+          go run ./tools/returns .
+          go run ./tools/clocklint .
+          go run ./tools/testkind .
+          GOFLAGS="${GOFLAGS:-} -tags=integration,test" go run ./tools/structlint ./...
+      - name: Vet
+        run: go vet -tags integration,test ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.14.0
+      - name: Vulnerability check
+        run: ./scripts/check-vulnerabilities.sh
+
+  unit:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-bins
+          path: bins
+      - name: Use shared test helpers
+        run: |
+          chmod +x bins/echomcp bins/mini bins/fakemcp bins/structlint
+          echo "ECHOMCP_BIN=$GITHUB_WORKSPACE/bins/echomcp" >> "$GITHUB_ENV"
+          echo "MINIMCP_BIN=$GITHUB_WORKSPACE/bins/mini" >> "$GITHUB_ENV"
+          echo "FAKEMCP_BIN=$GITHUB_WORKSPACE/bins/fakemcp" >> "$GITHUB_ENV"
+          echo "STRUCTLINT_BIN=$GITHUB_WORKSPACE/bins/structlint" >> "$GITHUB_ENV"
+      - name: Unit tests
+        run: go test -race -tags test -timeout 120s ./...
+
+  integration:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-bins
+          path: bins
+      - name: Use shared test helpers (non-race mini)
+        run: |
+          chmod +x bins/echomcp bins/mini-norace bins/fakemcp bins/structlint
+          echo "ECHOMCP_BIN=$GITHUB_WORKSPACE/bins/echomcp" >> "$GITHUB_ENV"
+          echo "MINIMCP_BIN=$GITHUB_WORKSPACE/bins/mini-norace" >> "$GITHUB_ENV"
+          echo "FAKEMCP_BIN=$GITHUB_WORKSPACE/bins/fakemcp" >> "$GITHUB_ENV"
+          echo "STRUCTLINT_BIN=$GITHUB_WORKSPACE/bins/structlint" >> "$GITHUB_ENV"
+      - name: Integration tests
+        run: go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...
+
+  integration-race:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: test-bins
+          path: bins
+      - name: Use shared test helpers (race mini)
+        run: |
+          chmod +x bins/echomcp bins/mini bins/fakemcp bins/structlint
+          echo "ECHOMCP_BIN=$GITHUB_WORKSPACE/bins/echomcp" >> "$GITHUB_ENV"
+          echo "MINIMCP_BIN=$GITHUB_WORKSPACE/bins/mini" >> "$GITHUB_ENV"
+          echo "FAKEMCP_BIN=$GITHUB_WORKSPACE/bins/fakemcp" >> "$GITHUB_ENV"
+          echo "STRUCTLINT_BIN=$GITHUB_WORKSPACE/bins/structlint" >> "$GITHUB_ENV"
+      - name: Integration tests
+        run: go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...
