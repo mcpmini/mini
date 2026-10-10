@@ -18,6 +18,7 @@ linters:
     - durationcheck  # two time.Duration values multiplied together (almost always a bug)
     - gocritic
     - makezero
+    - asasalint
 
     # Hygiene
     - bodyclose      # unclosed HTTP response bodies
