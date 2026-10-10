@@ -1,56 +1,20 @@
 //go:build test
 
-package auth_test
+package auth
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
+	"slices"
 	"testing"
-	"time"
-
-	"github.com/mcpmini/mini/internal/auth"
 )
 
-func TestOpenBrowser_withCmd_noError(t *testing.T) {
-	if err := auth.OpenBrowser("true", "http://example.com"); err != nil {
-		t.Errorf("OpenBrowser with 'true': %v", err)
-	}
-}
-
-// TestOpenBrowser_urlPassedAsArg verifies the URL is passed as a separate
-// shell argument, not interpolated into the command string. This matters when
-// the URL contains shell metacharacters (e.g. &, $, ()).
-func TestOpenBrowser_urlPassedAsArg(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Unix-only: shell quoting behavior")
-	}
-	dir := t.TempDir()
-	script := filepath.Join(dir, "capture.sh")
-	outFile := script + ".out"
-	os.WriteFile(
-		script,
-		[]byte(`#!/bin/sh
-printf '%s' "$1" > "$0.tmp"
-mv "$0.tmp" "$0.out"
-`),
-		0o700,
-	) //nolint:errcheck //fileiolint:allow browser command must be executable
-
+func TestUnixBrowserCommand_URLRemainsSeparateFromShellCommand(t *testing.T) {
+	browserCmd := `browser --profile "work profile"`
 	url := "http://example.com?a=1&b=$(echo injected)&c=hello world"
-	if err := auth.OpenBrowser(script, url); err != nil {
-		t.Fatalf("OpenBrowser: %v", err)
-	}
 
-	const attempts = 200 // 200 × 10ms = 2s max for subprocess to write output
-	for range attempts {
-		if data, err := os.ReadFile(outFile); err == nil { //fileiolint:allow poll for output from the browser process
-			if string(data) != url {
-				t.Errorf("captured URL = %q, want %q", string(data), url)
-			}
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	cmd := unixBrowserCommand(browserCmd, url)
+
+	want := []string{"sh", "-c", browserCmd + ` "$1"`, "--", url}
+	if !slices.Equal(cmd.Args, want) {
+		t.Fatalf("browser arguments = %q, want %q", cmd.Args, want)
 	}
-	t.Error("timed out waiting for browser command to write output")
 }
