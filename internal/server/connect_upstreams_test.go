@@ -3,7 +3,6 @@
 package server_test
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -62,30 +61,10 @@ func hungHTTPServer(t *testing.T) *httptest.Server {
 func TestConnectUpstreams_NotifiesLiveSessionOfLateUpstream(t *testing.T) {
 	mcp := newMCPTestServer(t, pingTools)
 	srv := newConnectTestServer(t)
-	defer srv.Close()
+	agent := openAgent(t, srv)
 
-	pr, pw := io.Pipe()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var out bytes.Buffer
-	serveDone := make(chan error, 1)
-	go func() { serveDone <- srv.Serve(ctx, pr, &out) }()
-
-	pw.Write(rpc("initialize", initParams(true)))            //nolint:errcheck
-	pw.Write(notification("notifications/initialized", nil)) //nolint:errcheck
-
-	srv.ConnectUpstreams(ctx, []config.ServerConfig{{Name: "dynamic", Transport: "http", URL: mcp.URL}})
-	eventually(t, func() bool { return srv.ToolCount("dynamic") > 0 })
-
-	pw.Close()
-	if err := <-serveDone; err != nil {
-		t.Fatalf("Serve: %v", err)
-	}
-
-	msgs := parseMessages(out.Bytes())
-	if !hasNotification(msgs, "notifications/tools/list_changed") {
-		t.Errorf("expected notifications/tools/list_changed after late ConnectUpstreams; got: %v", msgs)
-	}
+	srv.ConnectUpstreams(t.Context(), []config.ServerConfig{{Name: "dynamic", Transport: "http", URL: mcp.URL}})
+	agent.waitForLine("notifications/tools/list_changed")
 }
 
 func TestConnectUpstreams_CleanShutdownWithHungUpstream(t *testing.T) {
