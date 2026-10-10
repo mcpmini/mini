@@ -96,7 +96,7 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	ui := screens{
 		imports:  imports,
 		catalogs: catalogs,
-		connects: newConnects(p.Setup),
+		connects: newConnects(p.Setup, run.Written),
 	}
 	ui.logins = newLoginsScreen(loginsParams{
 		statuses: func() ([]initcmd.ServerStatus, error) {
@@ -110,11 +110,12 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	return ui
 }
 
-func newConnects(setup initcmd.Setup) *connectScreen {
+func newConnects(setup initcmd.Setup, written func() []string) *connectScreen {
 	return newConnectScreen(connectParams{
 		agents:   setup.AgentsToConnect,
 		withMini: setup.AgentsWithMini(),
 		plan:     func() (connectPlan, error) { return setup.PlanConnect() },
+		added:    written,
 	})
 }
 

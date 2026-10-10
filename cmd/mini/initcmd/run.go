@@ -25,6 +25,11 @@ func (r *Run) Save() (removed []string) {
 	return r.last.Removed
 }
 
+// Written names the servers this run added to mini and still has.
+func (r *Run) Written() []string {
+	return r.session.Written()
+}
+
 // Checking names the servers whose OAuth check is still running.
 func (r *Run) Checking() map[string]bool {
 	return r.session.Running()
