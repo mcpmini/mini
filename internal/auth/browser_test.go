@@ -26,11 +26,14 @@ func TestOpenBrowser_urlPassedAsArg(t *testing.T) {
 		t.Skip("Unix-only: shell quoting behavior")
 	}
 	dir := t.TempDir()
-	outFile := filepath.Join(dir, "captured.txt")
 	script := filepath.Join(dir, "capture.sh")
+	outFile := script + ".out"
 	os.WriteFile(
 		script,
-		[]byte("#!/bin/sh\nprintf '%s' \"$1\" > "+outFile+"\n"),
+		[]byte(`#!/bin/sh
+printf '%s' "$1" > "$0.tmp"
+mv "$0.tmp" "$0.out"
+`),
 		0o700,
 	) //nolint:errcheck //fileiolint:allow browser command must be executable
 
