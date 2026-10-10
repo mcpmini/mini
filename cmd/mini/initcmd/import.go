@@ -15,6 +15,7 @@ import (
 // and what it leaves in the agents.
 type ImportPlan struct {
 	Candidates []Candidate
+	InMini     []InMiniServer
 	Skipped    []SkippedServer
 	Unreadable []UnreadableAgent
 	// DroppedSettings holds, per imported server, the agent settings mini doesn't carry over.
@@ -33,6 +34,12 @@ type Candidate struct {
 	Picked bool
 	// Reason is why an unpicked candidate isn't picked: SkipSwitchedOff or SkipSecondConfig.
 	Reason SkipReason
+}
+
+// InMiniServer is a server mini runs that agents have too: mini's config, and where it was found.
+type InMiniServer struct {
+	Server config.ServerConfig
+	From   []AgentEntry
 }
 
 // AgentEntry is where a candidate was found: an agent and the name the entry has there.
@@ -109,6 +116,7 @@ func PlanImport(p ImportParams) ImportPlan {
 		plan.offer(g, taken)
 	}
 	slices.SortFunc(plan.Candidates, func(a, b Candidate) int { return strings.Compare(a.Server.Name, b.Server.Name) })
+	slices.SortFunc(plan.InMini, func(a, b InMiniServer) int { return strings.Compare(a.Server.Name, b.Server.Name) })
 	return plan
 }
 
@@ -132,7 +140,11 @@ func (p ImportParams) candidatesIn(plan *ImportPlan, agent string, servers map[s
 	var candidates []agentEntry
 	for _, name := range slices.Sorted(maps.Keys(servers)) {
 		e := agentEntry{agent: agent, name: name, server: servers[name]}
-		if !p.newToMini(e) {
+		if p.isMini(e) {
+			continue
+		}
+		if written, ok := p.Written.same(e.server.Config); ok {
+			plan.foundInMini(written, AgentEntry{Agent: agent, Name: name})
 			continue
 		}
 		if !e.server.Candidate() {
@@ -146,10 +158,17 @@ func (p ImportParams) candidatesIn(plan *ImportPlan, agent string, servers map[s
 	return candidates
 }
 
-// Left out with no summary line: there's nothing for the user to do about these.
-func (p ImportParams) newToMini(e agentEntry) bool {
-	return NormalizeName(e.name) != agents.MiniKey && !agents.IsMiniEntry(e.server.Config, p.SelfPath) &&
-		!p.Written.hasSame(e.server.Config)
+func (p ImportParams) isMini(e agentEntry) bool {
+	return NormalizeName(e.name) == agents.MiniKey || agents.IsMiniEntry(e.server.Config, p.SelfPath)
+}
+
+func (plan *ImportPlan) foundInMini(written config.ServerConfig, from AgentEntry) {
+	i := slices.IndexFunc(plan.InMini, func(s InMiniServer) bool { return s.Server.Name == written.Name })
+	if i < 0 {
+		plan.InMini = append(plan.InMini, InMiniServer{Server: written})
+		i = len(plan.InMini) - 1
+	}
+	plan.InMini[i].From = append(plan.InMini[i].From, from)
 }
 
 // One server under several names is imported once: twice would expose its tools twice.

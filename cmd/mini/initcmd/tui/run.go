@@ -85,9 +85,9 @@ type screens struct {
 
 func newScreens(p Params, run *initcmd.Run) screens {
 	plan := &run.Plan
-	imports := newImportScreen(plan.Import.Candidates)
+	imports := newImportScreen(plan.Import)
 	catalogs := newCatalogScreen(
-		catalogParams{load: p.LoadCatalog, offered: plan.Available, imports: imports.ticked},
+		catalogParams{load: p.LoadCatalog, inMini: plan.InMini, importTicked: imports.ticked},
 	)
 	if imports.empty() {
 		// Nothing to look at while it loads, so wait: if the catalog is empty too, Catalog is skipped.

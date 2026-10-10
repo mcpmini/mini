@@ -18,9 +18,12 @@ func (r row) matches(filter string) bool {
 	return matchesFilter(filter, r.label, r.detail)
 }
 
-// The cursor indexes the rows the filter shows.
+// The cursor indexes the rows the filter shows, then the untickable ones it shows.
 type list struct {
-	rows    []row
+	rows       []row
+	untickable []row
+	// legend explains the mark on the untickable rows, under them; rows that say why in their detail need none.
+	legend  string
 	checked map[string]bool
 	cursor  int
 	scroll  scroll
@@ -36,11 +39,15 @@ func newList(rows []row, checked map[string]bool) *list {
 }
 
 func (l *list) visible() []row {
+	return l.matching(l.rows)
+}
+
+func (l *list) matching(rows []row) []row {
 	if l.filter.text == "" {
-		return l.rows
+		return rows
 	}
 	var shown []row
-	for _, r := range l.rows {
+	for _, r := range rows {
 		if r.matches(l.filter.text) {
 			shown = append(shown, r)
 		}
@@ -56,11 +63,16 @@ func (l *list) current() (row, bool) {
 	return shown[l.cursor], true
 }
 
+// The cursor stops on untickable rows too, so a long run of them scrolls into view.
+func (l *list) cursorRows() int {
+	return len(l.visible()) + len(l.matching(l.untickable))
+}
+
 func (l *list) move(step int) reply {
-	if step > 0 && l.cursor >= len(l.visible())-1 {
+	if step > 0 && l.cursor >= l.cursorRows()-1 {
 		return pastLastRow
 	}
-	l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
+	l.cursor = min(max(l.cursor+step, 0), max(l.cursorRows()-1, 0))
 	return handled
 }
 
@@ -117,5 +129,5 @@ func (l *list) moveKey(key string) reply {
 }
 
 func (l *list) focusable() bool {
-	return l.filter.holdsCursor(len(l.visible()) > 0)
+	return l.filter.holdsCursor(l.cursorRows() > 0)
 }

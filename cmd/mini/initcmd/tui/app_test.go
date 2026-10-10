@@ -105,7 +105,7 @@ func footerOf(view string) string {
 }
 
 func TestApp_footerNamesEnterEscAndCtrlCOnOneLine(t *testing.T) {
-	imports := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	imports := importScreenFor([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
 	a := sized(newApp([]screen{imports, &fakeScreen{name: "Last"}}))
 	first := shown(a)
 	send(a, "tab", "enter")
@@ -142,7 +142,7 @@ func TestApp_inTheNarrowestWindowTheKeysSplitInsteadOfBeingCut(t *testing.T) {
 }
 
 func TestApp_aFilterSitsJustAboveTheKeysAndEscClearsItInsteadOfGoingBack(t *testing.T) {
-	imports := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	imports := importScreenFor([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
 	a := sized(newApp([]screen{&fakeScreen{name: "First"}, imports}))
 	send(a, "enter", "/", "g")
 	if footer := footerOf(
@@ -327,8 +327,8 @@ func TestApp_aScreenThatWrapsItsLinesLearnsEachWindowWidth(t *testing.T) {
 }
 
 func TestApp_everyScreenButTheFirstEndsWithBack(t *testing.T) {
-	first := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
-	second := newImportScreen([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")})
+	first := importScreenFor([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	second := importScreenFor([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")})
 	a := sized(newApp([]screen{first, second}))
 	if view := shown(a); strings.Contains(view, backLabel) {
 		t.Errorf("first screen:\n%s\nwant no Back: there is nothing to go back to", view)
@@ -347,7 +347,7 @@ type checkFinished struct{}
 
 func TestApp_backGoesAwayWhenTheScreensBeforeEmptyWhileShown(t *testing.T) {
 	logins := &fakeScreen{name: "logins"}
-	last := newImportScreen([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")})
+	last := importScreenFor([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")})
 	a := sized(newApp([]screen{logins, last}))
 	send(a, "enter")
 	if view := shown(a); !strings.Contains(view, "Continue\n  Back") {

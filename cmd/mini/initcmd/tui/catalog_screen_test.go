@@ -47,10 +47,14 @@ func testCatalog() catalog.Catalog {
 
 func noImports() []config.ServerConfig { return nil }
 
-func offerAll(entries []catalog.Entry) []catalog.Entry { return entries }
+func noneInMini(catalog.Entry) bool { return false }
+
+func inMiniNamed(names ...string) func(catalog.Entry) bool {
+	return func(e catalog.Entry) bool { return slices.Contains(names, e.Name) }
+}
 
 func loadedScreen(c catalog.Catalog, imports func() []config.ServerConfig) *catalogScreen {
-	s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: imports})
+	s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, importTicked: imports})
 	s.update(s.start()())
 	s.resize(120, 40)
 	return s
@@ -215,29 +219,10 @@ func TestCatalogScreen_filtersByDescription(t *testing.T) {
 	}
 }
 
-func TestCatalogScreen_aServerTickedOnImportIsHiddenAndLosesItsCatalogTick(t *testing.T) {
-	c := testCatalog()
-	var imported []config.ServerConfig
-	s := loadedScreen(c, func() []config.ServerConfig { return imported })
-	s.handle(press("space"))
-
-	imported = []config.ServerConfig{{Name: "gh", URL: "https://api.github.example/mcp/"}}
-	s.enter()
-
-	if text := catalogText(s); strings.Contains(text, "GitHub") {
-		t.Errorf("screen:\n%s\nwant github hidden: the imported gh is the same URL", text)
-	}
-	imported = nil
-	s.enter()
-	if picks := s.picks(); len(picks) != 0 {
-		t.Errorf("picks = %v; want github's catalog tick dropped once the Import row won", entryNames(picks))
-	}
-}
-
 func TestCatalogScreen_loading(t *testing.T) {
 	c := testCatalog()
 	t.Run("shows loading until the catalog arrives, and isn't skipped meanwhile", func(t *testing.T) {
-		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, importTicked: noImports})
 		if text := catalogText(s); text != "loading…" || s.empty() {
 			t.Errorf("before loading: screen %q, empty = %v; want loading… and not empty", text, s.empty())
 		}
@@ -250,7 +235,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 		}
 	})
 	t.Run("keys wait for the catalog, except going back", func(t *testing.T) {
-		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, importTicked: noImports})
 		a := inApp(100, 30, &fakeScreen{name: "Import", hasRows: true}, s)
 		send(a, "tab", "enter", "enter", "/", "space")
 		if view := shown(a); a.at != 1 || strings.Contains(view, continueLabel) || s.grid.filter.typing {
@@ -266,7 +251,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 	})
 	t.Run("a catalog that can't be loaded says so", func(t *testing.T) {
 		load := func() (catalog.Catalog, error) { return catalog.Catalog{}, errors.New("bad document") }
-		s := newCatalogScreen(catalogParams{load: load, offered: offerAll, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: load, inMini: noneInMini, importTicked: noImports})
 		s.update(s.start()())
 		if text := catalogText(
 			s,
@@ -274,18 +259,6 @@ func TestCatalogScreen_loading(t *testing.T) {
 			s.focusable() {
 			t.Errorf("screen %q, empty = %v, focusable = %v; want the error, shown, with nothing to pick",
 				text, s.empty(), s.focusable())
-		}
-	})
-	t.Run("is empty once every server is configured or imported", func(t *testing.T) {
-		imported := func() []config.ServerConfig { return []config.ServerConfig{{Name: "linear"}, {Name: "sentry"}} }
-		offered := func([]catalog.Entry) []catalog.Entry { return c.Entries[:2] }
-		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offered, imports: imported})
-		s.update(s.start()())
-		if !s.empty() {
-			t.Errorf(
-				"screen:\n%s\nwant it empty: mini lacks only linear and sentry, and both are imported",
-				catalogText(s),
-			)
 		}
 	})
 }

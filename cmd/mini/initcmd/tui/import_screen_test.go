@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -18,12 +19,16 @@ func candidate(name, url string, picked bool, agents ...string) initcmd.Candidat
 	return c
 }
 
+func importScreenFor(candidates []initcmd.Candidate) *importScreen {
+	return newImportScreen(initcmd.ImportPlan{Candidates: candidates})
+}
+
 func screenText(s *importScreen) string {
 	return ansi.Strip(s.heading() + "\n" + s.body(20, true))
 }
 
 func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
-	s := newImportScreen([]initcmd.Candidate{
+	s := importScreenFor([]initcmd.Candidate{
 		candidate("github", "https://gh.example.com/mcp", true, "Claude Code", "Codex"),
 		candidate("github-2", "https://gh.example.com/mcp", false, "Codex"),
 	})
@@ -44,7 +49,7 @@ func TestImportScreen_onlyASwitchedOffRowSaysWhyItIsUnticked(t *testing.T) {
 	switchedOff.Reason = initcmd.SkipSwitchedOff
 	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
 	second.Reason = initcmd.SkipSecondConfig
-	text := screenText(newImportScreen([]initcmd.Candidate{second, switchedOff}))
+	text := screenText(importScreenFor([]initcmd.Candidate{second, switchedOff}))
 	for _, want := range []string{
 		"github-2  gh.example.com/mcp     Cursor\n  [ ] notes",
 		"notes     notes.example.com/mcp  Codex\n      switched off in Codex",
@@ -56,7 +61,7 @@ func TestImportScreen_onlyASwitchedOffRowSaysWhyItIsUnticked(t *testing.T) {
 }
 
 func TestImportScreen_oneAgentIsNamedInTheHeadingInsteadOfAColumn(t *testing.T) {
-	s := newImportScreen([]initcmd.Candidate{candidate("linear", "https://linear.example.com/mcp", true, "Cursor")})
+	s := importScreenFor([]initcmd.Candidate{candidate("linear", "https://linear.example.com/mcp", true, "Cursor")})
 	if text := screenText(s); !strings.HasPrefix(text, "Import servers from Cursor\n") ||
 		strings.Contains(s.body(20, true), "Cursor") {
 		t.Errorf("screen:\n%s\nwant Cursor named in the heading only", text)
@@ -68,7 +73,7 @@ func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 		candidate("github", "https://gh.example.com/mcp", true, "Codex"),
 		candidate("notes", "https://notes.example.com/mcp", false, "Codex"),
 	}
-	s := newImportScreen(candidates)
+	s := importScreenFor(candidates)
 	for _, key := range []string{"space", "down", "space"} {
 		s.handle(press(key))
 	}
@@ -84,7 +89,7 @@ func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 }
 
 func TestImportScreen_enterAndSpaceTickTheRowAndDownPastItLeavesTheList(t *testing.T) {
-	s := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	s := importScreenFor([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
 	for _, key := range []string{"enter", "space"} {
 		if got, _ := s.handle(press(key)); got != handled {
 			t.Errorf("%s = %v, want handled", key, got)
@@ -109,14 +114,14 @@ func TestImportScreen_aLongCommandLeavesRoomForTheOtherColumns(t *testing.T) {
 		From:   []initcmd.AgentEntry{{Agent: "Codex", Name: "files"}},
 	}
 	other := candidate("notes", "https://notes.example.com/mcp", true, "Cursor")
-	text := screenText(newImportScreen([]initcmd.Candidate{long, other}))
+	text := screenText(importScreenFor([]initcmd.Candidate{long, other}))
 	if !strings.Contains(text, "…  Codex") {
 		t.Errorf("screen:\n%s\nwant the command cut short so the agents column stays in line", text)
 	}
 }
 
 func TestImportScreen_eachHeadingSitsAboveItsColumnEvenWhenTheColumnIsNarrower(t *testing.T) {
-	s := newImportScreen([]initcmd.Candidate{
+	s := importScreenFor([]initcmd.Candidate{
 		candidate("a", "https://x.io", true, "Codex"),
 		candidate("b", "https://y.io", true, "Cursor"),
 	})
@@ -134,7 +139,7 @@ func TestImportScreen_theHeaderStaysAboveTheRowsAsTheyScroll(t *testing.T) {
 	for _, name := range []string{"a", "b", "c", "d", "e"} {
 		candidates = append(candidates, candidate(name, "https://"+name+".example.com/mcp", true, "Codex", "Cursor"))
 	}
-	s := newImportScreen(candidates)
+	s := importScreenFor(candidates)
 	for range 4 {
 		s.handle(press("down"))
 	}
@@ -143,5 +148,87 @@ func TestImportScreen_theHeaderStaysAboveTheRowsAsTheyScroll(t *testing.T) {
 		!strings.HasPrefix(lines[2], "> [x] e") {
 		t.Errorf("body at height 3:\n%s\nwant the header, then rows ending at the cursor on e",
 			strings.Join(lines, "\n"))
+	}
+}
+
+func withInMini(candidates []initcmd.Candidate, inMini ...initcmd.Candidate) *importScreen {
+	plan := initcmd.ImportPlan{Candidates: candidates}
+	for _, c := range inMini {
+		plan.InMini = append(plan.InMini, initcmd.InMiniServer{Server: c.Server, From: c.From})
+	}
+	return newImportScreen(plan)
+}
+
+func TestImportScreen_serversMiniRunsFollowTheCandidatesMarkedAndCantBeTicked(t *testing.T) {
+	s := withInMini(
+		[]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")},
+		candidate("github", "https://gh.example.com/mcp", false, "Codex", "Claude Code"),
+	)
+	want := "  SERVER      COMMAND / URL          FROM\n" +
+		"> [x] notes   notes.example.com/mcp  Codex\n" +
+		"   ✓  github  gh.example.com/mcp     Codex, Claude Code\n" +
+		"\n" +
+		"   ✓ already in mini"
+	if text := ansi.Strip(s.body(20, true)); text != want {
+		t.Fatalf("body:\n%s\nwant:\n%s", text, want)
+	}
+	if got, _ := s.handle(press("down")); got == pastLastRow {
+		t.Fatal("down from notes left the list, want the cursor on github's row")
+	}
+	for _, key := range []string{"space", "a", "a"} {
+		s.handle(press(key))
+	}
+	if picks := s.ticked(); len(picks) != 1 || picks[0].Name != "notes" {
+		t.Errorf("ticked = %v after space on github then a twice, want only notes: github can't be ticked", picks)
+	}
+}
+
+func TestImportScreen_theCursorScrollsThroughMoreServersMiniRunsThanFit(t *testing.T) {
+	var inMini []initcmd.Candidate
+	for i := range 12 {
+		name := fmt.Sprintf("m%02d", i)
+		inMini = append(inMini, candidate(name, "https://"+name+".example.com/mcp", false, "Codex"))
+	}
+	s := withInMini([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")}, inMini...)
+	for range len(inMini) {
+		s.handle(press("down"))
+	}
+	if text := ansi.Strip(s.body(10, true)); !strings.Contains(text, ">  ✓  m11") ||
+		!strings.Contains(text, "✓ already in mini") {
+		t.Errorf("body with the cursor on the last row:\n%s\nwant m11 under the cursor and the legend below", text)
+	}
+	if got, _ := s.handle(press("down")); got != pastLastRow {
+		t.Errorf("down from the last row = %v, want past the last row", got)
+	}
+}
+
+func TestImportScreen_theFilterNarrowsTheServersMiniRunsToo(t *testing.T) {
+	s := withInMini(
+		[]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")},
+		candidate("github", "https://gh.example.com/mcp", false, "Codex"),
+	)
+	for _, key := range []string{"/", "n", "o", "enter"} {
+		s.handle(press(key))
+	}
+	if text := ansi.Strip(
+		s.body(20, true),
+	); strings.Contains(text, "github") ||
+		strings.Contains(text, "already in mini") {
+		t.Errorf("body with filter no:\n%s\nwant github and its legend hidden", text)
+	}
+	s.handle(press("esc"))
+	for _, key := range []string{"/", "g", "i", "t", "enter"} {
+		s.handle(press(key))
+	}
+	text := ansi.Strip(s.body(20, true))
+	if strings.Contains(text, "notes") || !strings.Contains(text, ">  ✓  github") {
+		t.Errorf("body with filter git:\n%s\nwant only github, under the cursor", text)
+	}
+}
+
+func TestImportScreen_withOnlyServersMiniRunsIsSkipped(t *testing.T) {
+	s := withInMini(nil, candidate("github", "https://gh.example.com/mcp", false, "Codex"))
+	if !s.empty() {
+		t.Error("Import is shown with nothing to tick; want it skipped like any screen with nothing to pick")
 	}
 }

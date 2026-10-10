@@ -122,10 +122,10 @@ func TestNavigation_aScreenWithChoicesStartsOnThemAndMovesOnOnceOneIsMade(t *tes
 	s := &choosingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}}
 	a := inApp(100, 30, &fakeScreen{name: "Before"}, s)
 	send(a, "enter")
-	want := "> Keep\n  why Keep\n  Drop\n  why Drop\n\n  Back"
+	want := "> Keep\n  why Keep\n  Drop\n  why Drop\n  Back"
 	if view := shown(a); !strings.Contains(view, want) {
 		t.Fatalf(
-			"view:\n%s\nwant the choices with their lines, the cursor on the first, and Back apart:\n%s",
+			"view:\n%s\nwant the choices with their lines, the cursor on the first, and Back right under them:\n%s",
 			view,
 			want,
 		)
@@ -193,7 +193,7 @@ func longCatalog(entries int) catalog.Catalog {
 
 func TestNavigation_aFilterThatMatchesNothingKeepsItsKeys(t *testing.T) {
 	t.Run("on Import, the first screen", func(t *testing.T) {
-		imports := newImportScreen(
+		imports := importScreenFor(
 			[]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")},
 		)
 		a := inApp(100, 30, imports, &fakeScreen{name: "After"})

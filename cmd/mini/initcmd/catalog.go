@@ -23,11 +23,6 @@ func GroupByCategory(entries []catalog.Entry) []catalog.Entry {
 	})
 }
 
-// availableEntries are the catalog servers not configured yet, by name or URL, in catalog order.
-func availableEntries(entries []catalog.Entry, servers []config.ServerConfig) []catalog.Entry {
-	return slices.DeleteFunc(slices.Clone(entries), NewConfiguredKeys(servers).Has)
-}
-
 // ConfiguredKeys matches a catalog server to a configured one by name or by URL, so a server
 // configured under another name isn't offered twice.
 type ConfiguredKeys map[string]bool

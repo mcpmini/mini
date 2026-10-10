@@ -31,6 +31,10 @@ func readWrittenServers(configDir string) (WrittenServers, error) {
 	return written, nil
 }
 
-func (w WrittenServers) hasSame(sc config.ServerConfig) bool {
-	return slices.ContainsFunc(w, func(written config.ServerConfig) bool { return agents.SameServer(written, sc) })
+func (w WrittenServers) same(sc config.ServerConfig) (config.ServerConfig, bool) {
+	i := slices.IndexFunc(w, func(written config.ServerConfig) bool { return agents.SameServer(written, sc) })
+	if i < 0 {
+		return config.ServerConfig{}, false
+	}
+	return w[i], true
 }

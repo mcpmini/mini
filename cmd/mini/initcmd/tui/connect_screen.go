@@ -29,7 +29,7 @@ type connectScreen struct {
 	listed           []agents.Agent
 	alreadyConnected []string
 	ticked           map[string]bool
-	// agents is the checklist of agents, shown only when there are several to choose from.
+	// agents ticks the agents to connect when there are several, and marks those already connected.
 	agents *list
 	chosen initcmd.ConnectChoice
 	checks connectChecks
@@ -58,18 +58,22 @@ func (s *connectScreen) refresh() {
 		}
 		s.listed = append(s.listed, agent)
 	}
-	var rows []row
+	var rows, connected []row
 	if len(s.listed) > 1 {
 		for _, agent := range s.listed {
 			rows = append(rows, row{key: agent.Name, label: agent.Name})
 		}
 	}
+	for _, name := range s.alreadyConnected {
+		connected = append(connected, row{key: name, label: name, detail: "already connected"})
+	}
 	s.agents = newList(rows, s.ticked)
+	s.agents.untickable = connected
 }
 
 func (s *connectScreen) enter() tea.Cmd {
-	// The app starts the cursor on the first choice, so up from it goes to the last agent.
-	s.agents.cursor, s.agents.scroll = max(len(s.agents.rows)-1, 0), scroll{}
+	// The app starts the cursor on the first choice, so up from it goes to the last row.
+	s.agents.cursor, s.agents.scroll = max(s.agents.cursorRows()-1, 0), scroll{}
 	return s.checks.start(s.plan)
 }
 
@@ -132,29 +136,18 @@ func (s *connectScreen) choose(i int) (chosen bool) {
 	if choice == initcmd.ConnectAndRemove && !s.checks.done {
 		return false
 	}
+	if choice != initcmd.DontConnect && len(s.picked()) == 0 {
+		return false
+	}
 	s.chosen = choice
 	return true
 }
 
-// The cursor never reaches the note, so it stays above the scrolled rows instead of scrolling
-// away for good on a short window.
 func (s *connectScreen) body(height int, focused bool) string {
-	header := s.noteLines()
-	if len(header) > 0 && s.focusable() {
-		header = append(header, "")
-	}
-	header = header[:min(len(header), max(height-1, 0))]
 	if !s.focusable() {
-		return strings.Join(header, "\n")
+		return ""
 	}
-	return strings.Join(append(header, s.agents.view(height-len(header), focused)), "\n")
-}
-
-func (s *connectScreen) noteLines() []string {
-	if len(s.alreadyConnected) == 0 {
-		return nil
-	}
-	return []string{dim.Render(alreadyHaveMini(s.alreadyConnected))}
+	return s.agents.view(height, focused)
 }
 
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
@@ -177,10 +170,13 @@ func optionLabel(choice initcmd.ConnectChoice) string {
 	case initcmd.ConnectOnly:
 		return "Just connect mini"
 	}
-	return "Don't connect"
+	return "I'll connect mini later"
 }
 
 func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
+	if choice != initcmd.DontConnect && len(s.picked()) == 0 {
+		return []string{"Tick the agents above to connect mini to them"}
+	}
 	switch choice {
 	case initcmd.ConnectAndRemove:
 		return s.removeSubtitles()
@@ -194,7 +190,7 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 func (s *connectScreen) connectOnlySubtitles() []string {
 	names := agentNames(s.picked())
 	lacksMini := func(name string) bool { return !s.p.withMini[name] }
-	if len(names) == 0 || slices.ContainsFunc(names, lacksMini) {
+	if slices.ContainsFunc(names, lacksMini) {
 		return []string{"Adds mini next to your existing MCPs"}
 	}
 	return []string{"Changes nothing: " + alreadyHaveMini(names)}
@@ -254,6 +250,9 @@ func withVerb(names []string, one, many string) string {
 }
 
 func (s *connectScreen) keys() string {
+	if len(s.agents.rows) == 0 {
+		return "↑↓ move · tab choices"
+	}
 	return "↑↓ move · space/enter tick · a all · tab choices"
 }
 
@@ -262,6 +261,10 @@ func (s *connectScreen) empty() bool {
 }
 
 func (s *connectScreen) picked() []agents.Agent {
+	// A lone agent has no checkbox, so a tick it lost while it had one can't be put back.
+	if len(s.listed) == 1 {
+		return s.listed
+	}
 	var picked []agents.Agent
 	for _, agent := range s.listed {
 		if s.ticked[agent.Name] {

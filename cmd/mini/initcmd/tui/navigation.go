@@ -120,10 +120,6 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 		if choosing && !a.onBack(i) {
 			under = c.choiceLines(i)
 		}
-		// Back would read as one more line under the choice above it.
-		if a.onBack(i) && len(lines) > i+1 {
-			lines = append(lines, "")
-		}
 		atCursor := a.onNavigation() && a.nav.at == i
 		start := len(lines)
 		lines = append(append(lines, cursorMark(atCursor)+label), under...)
