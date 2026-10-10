@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -179,6 +180,22 @@ func TestImportScreen_serversMiniRunsFollowTheCandidatesMarkedAndCantBeTicked(t 
 	}
 	if picks := s.ticked(); len(picks) != 1 || picks[0].Name != "notes" {
 		t.Errorf("ticked = %v, want only notes: a and space never reach github", picks)
+	}
+}
+
+func TestImportScreen_theServersMiniRunsScrollIntoViewWithTheLastRow(t *testing.T) {
+	var candidates []initcmd.Candidate
+	for i := range 12 {
+		name := fmt.Sprintf("s%02d", i)
+		candidates = append(candidates, candidate(name, "https://"+name+".example.com/mcp", true, "Codex"))
+	}
+	s := withInMini(candidates, candidate("github", "https://gh.example.com/mcp", false, "Codex"))
+	for range len(candidates) - 1 {
+		s.handle(press("down"))
+	}
+	if text := ansi.Strip(s.body(10, true)); !strings.Contains(text, "> [x] s11") ||
+		!strings.Contains(text, "✓  github") || !strings.Contains(text, "✓ already in mini") {
+		t.Errorf("body with the cursor on the last row:\n%s\nwant github and the legend shown below s11", text)
 	}
 }
 

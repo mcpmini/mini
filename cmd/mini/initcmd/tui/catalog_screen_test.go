@@ -266,6 +266,34 @@ func TestCatalogScreen_aServerMiniRunsIsMarkedAndTheCursorPassesOverIt(t *testin
 	}
 }
 
+func TestCatalogScreen_aServerMiniRunsUnderTheCursorScrollsIntoViewWithIt(t *testing.T) {
+	s := newCatalogScreen(
+		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("linear"), importTicked: noImports},
+	)
+	s.update(s.start()())
+	s.resize(50, 6)
+	pressAll(s, "down", "right", "down")
+	if text := ansi.Strip(s.body(6, true)); !strings.Contains(text, "> ") || !strings.Contains(text, "✓  Linear") {
+		t.Errorf("body with the cursor on Asana:\n%s\nwant Linear, which the cursor can't reach, shown under it", text)
+	}
+}
+
+func TestCatalogScreen_aFilterMatchingOnlyServersMiniRunsDrawsNoCursor(t *testing.T) {
+	s := newCatalogScreen(
+		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("asana"), importTicked: noImports},
+	)
+	s.update(s.start()())
+	for _, width := range []int{120, 50} {
+		s.resize(width, 40)
+		pressAll(s, "/", "a", "s", "a", "n", "enter")
+		if text := catalogText(s); strings.Contains(text, "> ") || !strings.Contains(text, "✓  Asana") {
+			t.Errorf("screen %d wide with filter asan:\n%s\nwant Asana marked and no cursor: nothing can hold it",
+				width, text)
+		}
+		pressAll(s, "esc")
+	}
+}
+
 func TestCatalogScreen_withEveryServerInMiniOrImportedIsSkipped(t *testing.T) {
 	imported := func() []config.ServerConfig { return []config.ServerConfig{{Name: "linear"}, {Name: "sentry"}} }
 	s := newCatalogScreen(catalogParams{

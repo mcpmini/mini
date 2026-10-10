@@ -40,7 +40,8 @@ func (l *list) labelWidth() int {
 
 func (l *list) lines(focused bool) (lines []string, first, last int) {
 	width := l.labelWidth()
-	for i, r := range l.visible() {
+	visible := l.visible()
+	for i, r := range visible {
 		start := len(lines)
 		lines = append(lines, l.line(r, focused && i == l.cursor, width))
 		if r.subtitle != "" {
@@ -50,7 +51,12 @@ func (l *list) lines(focused bool) (lines []string, first, last int) {
 			first, last = start, len(lines)-1
 		}
 	}
-	return append(lines, l.untickableLines(width)...), first, last
+	lines = append(lines, l.untickableLines(width)...)
+	// The cursor never reaches the untickable rows, so they come into view with the last row.
+	if l.cursor == len(visible)-1 {
+		last = len(lines) - 1
+	}
+	return lines, first, last
 }
 
 func (l *list) untickableLines(width int) []string {
