@@ -4,9 +4,6 @@ on:
   push:
     branches: [exp-shard]
 
-env:
-  GORACE: atexit_sleep_ms=0
-
 jobs:
   lint:
     runs-on: ubuntu-latest
