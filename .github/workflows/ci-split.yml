@@ -2,6 +2,8 @@ name: CI split
 
 on:
   workflow_dispatch:
+  push:
+    branches: [exp-split]
 
 jobs:
   lint:
