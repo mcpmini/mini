@@ -332,3 +332,20 @@ func TestApp_everyScreenButTheFirstEndsWithBack(t *testing.T) {
 		t.Errorf("after enter on Back:\n%s\nwant the first screen again", view)
 	}
 }
+
+type checkFinished struct{}
+
+func TestApp_backGoesAwayWhenTheScreensBeforeEmptyWhileShown(t *testing.T) {
+	logins := &fakeScreen{name: "logins"}
+	last := newImportScreen([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")})
+	a := sized(newApp([]screen{logins, last}))
+	send(a, "enter")
+	if view := shown(a); !strings.Contains(view, "Continue\n  Back") {
+		t.Fatalf("second screen:\n%s\nwant Back while the first screen has rows", view)
+	}
+	logins.nothing = true
+	a.Update(checkFinished{})
+	if view := shown(a); strings.Contains(view, backLabel) || strings.Contains(view, "esc back") {
+		t.Errorf("after the first screen emptied:\n%s\nwant no Back: there is nothing left to go back to", view)
+	}
+}

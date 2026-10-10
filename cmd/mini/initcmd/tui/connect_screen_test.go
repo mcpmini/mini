@@ -193,10 +193,23 @@ func TestConnectScreen_removingWaitsForTheChecksThenCountsTheTickedAgents(t *tes
 func TestConnectScreen_leavingCancelsTheRunningChecks(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
 	s, _ := connectScreenFor(t, plan, namedAgents("Claude"), nil)
+	s.offerBack(true)
 	if move, _ := s.handle(press("esc")); move != back {
 		t.Fatalf("esc = %v, want back", move)
 	}
 	<-plan.cancelled
+}
+
+func TestConnectScreen_escWithNothingToGoBackToKeepsTheChecksRunning(t *testing.T) {
+	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
+	s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
+	if move, _ := s.handle(press("esc")); move != stay {
+		t.Fatalf("esc = %v, want stay: there is no screen to go back to", move)
+	}
+	plan.checksPass(s, check)
+	if move, _ := s.handle(press("enter")); move != forward || s.chosen != initcmd.ConnectAndRemove {
+		t.Errorf("enter on removing after esc = %v, chosen %v; want the checks to have finished", move, s.chosen)
+	}
 }
 
 func TestConnectScreen_leavingDoesNotWaitForTheChecksToStop(t *testing.T) {
@@ -207,6 +220,7 @@ func TestConnectScreen_leavingDoesNotWaitForTheChecksToStop(t *testing.T) {
 			plan:   func() (connectPlan, error) { return stuck, nil },
 		})
 		showScreen(s)
+		s.offerBack(true)
 		left := make(chan step, 1)
 		go func() {
 			move, _ := s.handle(press("esc"))

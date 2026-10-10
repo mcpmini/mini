@@ -115,13 +115,20 @@ func (a *app) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// Any message can empty the screens before this one, so Back is offered again after each.
 func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cmd := a.update(msg)
+	a.offerBack()
+	return a, cmd
+}
+
+func (a *app) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width, a.height = msg.Width, msg.Height
 		a.resizeScreens()
 	case tea.KeyPressMsg:
-		return a, a.handle(msg)
+		return a.handle(msg)
 	default:
 		var cmds []tea.Cmd
 		for _, s := range a.screens {
@@ -129,9 +136,15 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, l.update(msg))
 			}
 		}
-		return a, tea.Batch(cmds...)
+		return tea.Batch(cmds...)
 	}
-	return a, nil
+	return nil
+}
+
+func (a *app) offerBack() {
+	if s, ok := a.screens[a.at].(backOfferer); ok {
+		s.offerBack(a.canGoBack())
+	}
 }
 
 func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
@@ -173,9 +186,7 @@ func (a *app) forward() tea.Cmd {
 
 func (a *app) show(at int) tea.Cmd {
 	a.at = at
-	if s, ok := a.screens[at].(backOfferer); ok {
-		s.offerBack(a.canGoBack())
-	}
+	a.offerBack()
 	if s, ok := a.screens[at].(enterer); ok {
 		return s.enter()
 	}

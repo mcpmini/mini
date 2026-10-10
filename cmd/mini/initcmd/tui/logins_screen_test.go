@@ -477,3 +477,21 @@ func TestLoginsScreen_tabJumpsToContinueAndUpReturnsToTheServerItLeft(t *testing
 		t.Errorf("screen after down past sentry and up:\n%s\nwant the cursor back on sentry", text)
 	}
 }
+
+func TestLoginsScreen_upFromContinueFindsTheServerItLeftAfterARowAboveGoes(t *testing.T) {
+	f := newFakeChecks(
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "notion", Readiness: initcmd.NeedsLogin},
+	)
+	s := f.screen()
+	showScreen(s)
+	s.handle(press("down"))
+	s.handle(press("tab"))
+	f.statuses = f.statuses[1:]
+	s.refresh()
+	s.handle(press("up"))
+	if text := loginsText(s); !strings.Contains(text, "> sentry") {
+		t.Errorf("screen after linear went and up from Continue:\n%s\nwant the cursor back on sentry", text)
+	}
+}

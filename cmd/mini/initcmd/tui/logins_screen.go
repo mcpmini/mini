@@ -70,16 +70,21 @@ func (s *loginsScreen) refresh() {
 	slices.SortStableFunc(s.rows, func(a, b initcmd.ServerStatus) int {
 		return slices.Index(sections, s.section(a)) - slices.Index(sections, s.section(b))
 	})
-	if s.actions.active && s.cursorMoved {
-		return
-	}
-	// Rows come and go as checks finish, so the user's pick is found again by name.
-	i := slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.Name == selected })
-	if !s.cursorMoved || !s.selectable(i) {
+	s.follow(selected)
+}
+
+// Rows come and go as checks finish, so the user's pick is found again by name; on the actions
+// the cursor stays put, and up still returns to the server it left.
+func (s *loginsScreen) follow(name string) {
+	i := slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.Name == name })
+	switch {
+	case s.cursorMoved && s.actions.active:
+		s.cursor = i
+	case s.cursorMoved && s.selectable(i):
+		s.cursor = i
+	default:
 		s.restOnNextLogin()
-		return
 	}
-	s.cursor = i
 }
 
 func (s *loginsScreen) cursorName() string {
@@ -235,10 +240,10 @@ func (s *loginsScreen) body(height int) string {
 	if s.err != nil {
 		return s.actions.withMessage("mini's servers couldn't be read: " + s.err.Error())
 	}
-	actions, cursorLine := s.actions.lines()
+	actions, onAction, _ := s.actions.lines(nil)
 	lines, first, last := s.serverLines()
-	if cursorLine >= 0 {
-		first, last = len(lines)+cursorLine, len(lines)+cursorLine
+	if onAction >= 0 {
+		first, last = len(lines)+onAction, len(lines)+onAction
 	}
 	return strings.Join(s.scroll.cut(append(lines, actions...), first, last, height), "\n")
 }

@@ -76,22 +76,32 @@ func (a *actions) atCursor(i int) bool {
 	return a.active && a.at == i
 }
 
-// lines puts a blank line above the actions. cursorLine is the line under the cursor, or -1, for a
-// screen to keep in view as it scrolls.
-func (a *actions) lines() (lines []string, cursorLine int) {
-	lines, cursorLine = []string{""}, -1
+// lines draws the actions under a blank line, each choice with the lines under(i) puts below it;
+// under may be nil. first and last bound the cursor's action and its lines, or are -1, for a screen
+// to keep in view as it scrolls.
+func (a *actions) lines(under func(choice int) []string) (lines []string, first, last int) {
+	lines, first, last = []string{""}, -1, -1
 	for i, label := range a.labels() {
-		if a.atCursor(i) {
-			cursorLine = len(lines)
+		var below []string
+		if under != nil && i < len(a.choices) {
+			below = under(i)
 		}
-		lines = append(lines, cursorMark(a.atCursor(i))+label)
+		// Back would read as one more line under the choice above it.
+		if i == len(a.choices) && len(lines) > i+1 {
+			lines = append(lines, "")
+		}
+		start := len(lines)
+		lines = append(append(lines, cursorMark(a.atCursor(i))+label), below...)
+		if a.atCursor(i) {
+			first, last = start, len(lines)-1
+		}
 	}
-	return lines, cursorLine
+	return lines, first, last
 }
 
 // withMessage is a screen with only a message to show above its actions.
 func (a *actions) withMessage(message string) string {
-	lines, _ := a.lines()
+	lines, _, _ := a.lines(nil)
 	return strings.Join(append([]string{message}, lines...), "\n")
 }
 

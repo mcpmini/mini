@@ -123,10 +123,19 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	case "enter":
 		return s.choose()
 	case "esc":
-		s.checks.cancel()
-		return back, nil
+		return s.goBack()
 	}
 	return stay, nil
+}
+
+// Going back cancels the server checks, which only a later visit restarts, so with nowhere to go
+// back to they keep running.
+func (s *connectScreen) goBack() (step, tea.Cmd) {
+	if !s.actions.back {
+		return stay, nil
+	}
+	s.checks.cancel()
+	return back, nil
 }
 
 // move goes from the last agent to the choices and back; with one agent there are only the choices.
@@ -163,8 +172,7 @@ func (s *connectScreen) tickAll() {
 
 func (s *connectScreen) choose() (step, tea.Cmd) {
 	if s.actions.onBack() {
-		s.checks.cancel()
-		return back, nil
+		return s.goBack()
 	}
 	choice, onOption := s.highlighted()
 	if !onOption {
@@ -193,26 +201,23 @@ func (s *connectScreen) body(height int) string {
 func (s *connectScreen) rowLines(height int) []string {
 	lines, first := s.agentLines()
 	last := first
-	for i, choice := range s.options() {
-		atCursor := s.actions.atCursor(i)
-		if atCursor {
-			first = len(lines)
-		}
-		lines = append(lines, cursorMark(atCursor)+optionLabel(choice))
-		for _, subtitle := range s.subtitles(choice) {
-			lines = append(lines, s.subtitleLines(subtitle)...)
-		}
-		if atCursor {
-			last = len(lines) - 1
-		}
+	actions, actionFirst, actionLast := s.actions.lines(s.choiceSubtitles)
+	if s.agentRows() == 0 {
+		// With one agent the choices open the screen; the blank line would only push them down.
+		actions, actionFirst, actionLast = actions[1:], actionFirst-1, actionLast-1
 	}
-	if s.actions.back {
-		if s.actions.onBack() && s.actions.active {
-			first, last = len(lines)+1, len(lines)+1
-		}
-		lines = append(lines, "", cursorMark(s.actions.onBack() && s.actions.active)+backLabel)
+	if s.actions.active {
+		first, last = len(lines)+actionFirst, len(lines)+actionLast
 	}
-	return s.scroll.cut(lines, first, last, height)
+	return s.scroll.cut(append(lines, actions...), first, last, height)
+}
+
+func (s *connectScreen) choiceSubtitles(choice int) []string {
+	var lines []string
+	for _, subtitle := range s.subtitles(s.options()[choice]) {
+		lines = append(lines, s.subtitleLines(subtitle)...)
+	}
+	return lines
 }
 
 func (s *connectScreen) noteLines() []string {
@@ -229,9 +234,6 @@ func (s *connectScreen) agentLines() (lines []string, cursorLine int) {
 			cursorLine = len(lines)
 		}
 		lines = append(lines, cursorMark(onAgent)+checkbox(s.ticked[s.listed[i].Name])+s.listed[i].Name)
-	}
-	if s.agentRows() > 0 {
-		lines = append(lines, "")
 	}
 	return lines, cursorLine
 }

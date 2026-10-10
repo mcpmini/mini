@@ -156,7 +156,7 @@ func (g *catalogGrid) view(height int) string {
 	}
 	lines = g.scroll.cut(lines, first, last, height-linesUnderSections)
 	lines = append(lines, "", g.detail())
-	actions, _ := g.actions.lines()
+	actions, _, _ := g.actions.lines(nil)
 	return strings.Join(append(lines, actions...), "\n")
 }
 

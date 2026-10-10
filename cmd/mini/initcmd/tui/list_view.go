@@ -18,7 +18,7 @@ func (l *list) view(height int) string {
 		shown = append(shown, l.headerLine())
 	}
 	// The actions stay in view however far the rows scroll.
-	actions, _ := l.actions.lines()
+	actions, _, _ := l.actions.lines(nil)
 	height -= len(shown) + len(actions)
 	lines, first, last := l.lines()
 	shown = append(shown, l.scroll.cut(lines, first, last, height)...)
