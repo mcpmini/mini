@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"unicode"
@@ -28,6 +29,7 @@ type loginsParams struct {
 	checking   func() map[string]bool
 	changed    <-chan struct{}
 	startLogin func(ctx context.Context, name string) (Login, error)
+	copy       func(text string) error
 }
 
 type loginsScreen struct {
@@ -38,9 +40,11 @@ type loginsScreen struct {
 	cursor   int
 	results  map[string]error
 	pending  *pendingLogin
-	logins   int
-	width    int
-	scroll   scroll
+	// notice says how the last copy went, until the next key.
+	notice string
+	logins int
+	width  int
+	scroll scroll
 	// Until the user moves it, the cursor rests on the next login to do.
 	cursorMoved bool
 	// One waiting command covers every running check.
@@ -105,6 +109,10 @@ func (s *loginsScreen) finished() bool {
 	return s.nextToLogIn() < 0
 }
 
+func (s *loginsScreen) takesEsc() bool {
+	return s.pending != nil
+}
+
 func (s *loginsScreen) leave() {
 	s.cancelLogin()
 }
@@ -123,6 +131,8 @@ func (s *loginsScreen) enter() tea.Cmd {
 
 func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 	switch msg := msg.(type) {
+	case linkCopied:
+		return s.linkCopied(msg)
 	case checksChanged:
 		s.waitingOnChecks = false
 		s.refresh()
@@ -188,11 +198,20 @@ func (s *loginsScreen) move(direction int) reply {
 }
 
 func (s *loginsScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
+	s.notice = ""
 	switch key.String() {
 	case "up", "down":
 		return s.move(direction(key.String())), nil
 	case "enter":
 		return handled, s.startLogin(s.rows[s.cursor].Name)
+	case "c":
+		return handled, s.copyLink()
+	case "esc":
+		// A waiting login is cancelled before esc goes back, so a slip doesn't leave the screen.
+		if s.pending != nil {
+			s.cancelLogin()
+			return handled, nil
+		}
 	}
 	return unhandled, nil
 }
@@ -238,7 +257,7 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 func (s *loginsScreen) rowLines(status initcmd.ServerStatus, atCursor bool, width int) []string {
 	lines := []string{cursorMark(atCursor) + fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status))}
 	if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
-		lines = append(lines, s.urlLines(4+width)...)
+		lines = append(lines, s.linkLine(4+width))
 	}
 	return lines
 }
@@ -271,13 +290,23 @@ func (s *loginsScreen) section(status initcmd.ServerStatus) string {
 	return byHandSection
 }
 
-// Authorize URLs run to hundreds of characters, and the app cuts lines at the window's edge.
-func (s *loginsScreen) urlLines(indent int) []string {
-	var lines []string
-	for _, part := range strings.Split(ansi.Hardwrap(s.pending.url, max(s.width-indent, 20), false), "\n") {
-		lines = append(lines, strings.Repeat(" ", indent)+ansi.SetHyperlink(s.pending.url)+part+ansi.ResetHyperlink())
+// Authorize URLs run to hundreds of characters, so the link shows its host and as much of the path as
+// fits: the host is what tells the user which server they are signing in to. c copies the whole URL.
+func (s *loginsScreen) linkLine(indent int) string {
+	u, err := url.Parse(s.pending.url)
+	text := s.pending.url
+	if err == nil && u.Host != "" {
+		text = u.Host + u.EscapedPath()
+		if u.RawQuery != "" {
+			text += "?" + u.RawQuery
+		}
 	}
-	return lines
+	host := len(text)
+	if err == nil {
+		host = len(u.Host)
+	}
+	shown := ansi.Truncate(text, max(s.width-indent, host+1), "…")
+	return strings.Repeat(" ", indent) + ansi.SetHyperlink(s.pending.url) + shown + ansi.ResetHyperlink()
 }
 
 func (s *loginsScreen) resize(width, _ int) {
@@ -334,7 +363,7 @@ func (s *loginsScreen) need(status initcmd.ServerStatus) string {
 
 func (s *loginsScreen) keys() string {
 	if s.pending != nil {
-		return "↑↓ move · tab continue"
+		return withNotice(s.notice, "↑↓ move · c copy link · esc cancel login · tab continue")
 	}
 	return "↑↓ move · enter log in · tab continue"
 }

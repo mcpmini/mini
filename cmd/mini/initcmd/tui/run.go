@@ -105,6 +105,7 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		checking:   run.Checking,
 		changed:    run.ChecksChanged(),
 		startLogin: p.StartLogin,
+		copy:       copyToClipboard,
 	})
 	return ui
 }

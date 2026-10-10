@@ -81,6 +81,10 @@ func (s *importScreen) keys() string {
 	return s.list.keys("↑↓ move · space/enter tick · a all · tab continue · / filter")
 }
 
+func (s *importScreen) takesEsc() bool {
+	return s.list.filter.active()
+}
+
 func (s *importScreen) focusable() bool {
 	return s.list.focusable()
 }

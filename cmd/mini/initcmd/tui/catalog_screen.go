@@ -175,6 +175,10 @@ func (s *catalogScreen) waiting() bool {
 	return !s.loaded
 }
 
+func (s *catalogScreen) takesEsc() bool {
+	return s.grid.filter.active()
+}
+
 func (s *catalogScreen) focusable() bool {
 	return s.offersEntries() && s.grid.focusable()
 }

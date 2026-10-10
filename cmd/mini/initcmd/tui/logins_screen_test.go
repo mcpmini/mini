@@ -187,7 +187,7 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 	want := "> linear  waiting for the browser; if it didn't open, use this link:\n" +
-		"          https://auth.example/linear\n"
+		"          auth.example/linear\n"
 	if text := loginsText(s); !strings.Contains(text, want) {
 		t.Fatalf("screen:\n%s\nwant linear waiting with its URL below", text)
 	}
@@ -214,27 +214,47 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_leavingCancelsThePendingLoginAndDropsItsResult(t *testing.T) {
+func TestLoginsScreen_escCancelsTheWaitingLoginAndStays(t *testing.T) {
 	logins := newFakeLogins("linear")
 	s := loginScreen(logins, "linear")
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 
-	if a := framed(s, true); send(a, "esc") != nil || a.at != 0 {
-		t.Fatalf("at = %d after esc, want back on the screen before", a.at)
+	a := framed(s, true)
+	if send(a, "esc"); a.at != 1 {
+		t.Fatalf("at = %d after esc on a waiting login, want Logins kept", a.at)
 	}
 	select {
 	case <-logins.cancelled:
 	default:
-		t.Fatal("esc returned before the pending login was cancelled")
+		t.Fatal("esc returned before the waiting login was cancelled")
 	}
 	s.update(loginFinished{id: 1, err: context.Canceled})
-	if text := loginsText(s); !strings.Contains(text, "> linear  needs a login") {
+	if text := framedText(a); !strings.Contains(text, "> linear  needs a login") {
 		t.Errorf("screen:\n%s\nwant the cancelled login's result dropped", text)
+	}
+	if send(a, "esc"); a.at != 0 {
+		t.Errorf("at = %d after esc with no login waiting, want back on the screen before", a.at)
 	}
 }
 
-func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *testing.T) {
+func TestLoginsScreen_leavingCancelsTheWaitingLogin(t *testing.T) {
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+	a := framed(s, true)
+	if send(a, "tab", "down", "enter"); a.at != 0 {
+		t.Fatalf("at = %d after enter on Back, want the screen before", a.at)
+	}
+	select {
+	case <-logins.cancelled:
+	default:
+		t.Error("Back left Logins with its login still waiting")
+	}
+}
+
+func TestLoginsScreen_aLongLoginURLShowsItsHostAndLinksToTheWholeURL(t *testing.T) {
 	url := "https://auth.example/authorize?" + strings.Repeat("scope=read&", 20)
 	s := loginScreen(newFakeLogins(), "linear")
 	s.p.startLogin = func(ctx context.Context, _ string) (Login, error) {
@@ -246,20 +266,14 @@ func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *
 	s.update(cmd())
 
 	body := s.body(40, true)
-	var wrapped []string
-	for _, line := range strings.Split(ansi.Strip(body), "\n")[1:] {
-		if strings.HasPrefix(line, "          ") {
-			wrapped = append(wrapped, strings.TrimSpace(line))
-		}
-		if width := ansi.StringWidth(line); width > 40 && !strings.HasPrefix(line, "> linear") {
-			t.Errorf("line %q is %d wide, past the 40-column window", line, width)
-		}
+	lines := strings.Split(ansi.Strip(body), "\n")
+	link := lines[2]
+	if !strings.HasPrefix(strings.TrimSpace(link), "auth.example/authorize?scope") || !strings.HasSuffix(link, "…") ||
+		ansi.StringWidth(link) > 40 {
+		t.Errorf("link line %q; want the host first, the rest cut to the 40-column window", link)
 	}
-	if got := strings.Join(wrapped, ""); got != url || len(wrapped) < 2 {
-		t.Errorf("wrapped URL lines = %q; want the whole URL split over several lines", wrapped)
-	}
-	if links := strings.Count(body, ansi.SetHyperlink(url)); links != len(wrapped) {
-		t.Errorf("%d of %d URL lines link to the whole URL", links, len(wrapped))
+	if !strings.Contains(body, ansi.SetHyperlink(url)) {
+		t.Error("the link line doesn't link to the whole URL")
 	}
 }
 
@@ -332,7 +346,7 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 	})
 }
 
-func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
+func TestLoginsScreen_aShortWindowKeepsThePendingLoginsLinkInView(t *testing.T) {
 	logins := newFakeLogins("linear", "sentry", "notion")
 	s := loginScreen(logins, "linear", "sentry", "notion")
 	s.resize(30, 30)
@@ -340,20 +354,10 @@ func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 	t.Cleanup(s.cancelLogin)
-	all := strings.Split(ansi.Strip(s.body(0, true)), "\n")
-	if len(all) < 5 || !strings.HasPrefix(all[2], "> sentry") {
-		t.Fatalf(
-			"full body:\n%s\nwant sentry's row after the heading, its URL wrapped over two lines",
-			strings.Join(all, "\n"),
-		)
-	}
-	sentryAndURL := strings.Join(all[2:5], "\n")
-
-	if body := ansi.Strip(s.body(3, true)); body != sentryAndURL {
-		t.Errorf("body at height 3:\n%s\nwant sentry's row and its whole URL:\n%s", body, sentryAndURL)
-	}
-	if body := ansi.Strip(s.body(2, true)); body != strings.Join(all[2:4], "\n") {
-		t.Errorf("body at height 2:\n%s\nwant sentry's row kept when its URL doesn't fit", body)
+	body := strings.Split(ansi.Strip(s.body(2, true)), "\n")
+	if len(body) != 2 || !strings.HasPrefix(body[0], "> sentry") ||
+		strings.TrimSpace(body[1]) != "auth.example/sentry" {
+		t.Errorf("body at height 2:\n%s\nwant sentry's row and its link", strings.Join(body, "\n"))
 	}
 }
 
@@ -470,5 +474,76 @@ func TestLoginsScreen_onContinueTheLastLoginsResultStaysInView(t *testing.T) {
 	); !strings.Contains(body, "srv11  ✗ access denied") ||
 		!strings.Contains(body, "> Continue") {
 		t.Errorf("body at height 8:\n%s\nwant the failed srv11 in view above Continue", body)
+	}
+}
+
+func waitingLogin(t *testing.T, copy func(string) error) (*loginsScreen, *app) {
+	t.Helper()
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	s.p.copy = copy
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+	t.Cleanup(s.cancelLogin)
+	return s, framed(s, false)
+}
+
+func TestLoginsScreen_cCopiesTheWholeLinkAndTheFooterSaysSo(t *testing.T) {
+	var copied string
+	s, a := waitingLogin(t, func(text string) error { copied = text; return nil })
+	deliver(a, send(a, "c"))
+	if copied != "https://auth.example/linear" || !strings.HasPrefix(a.keys(s), "✓ link copied · ") {
+		t.Fatalf("copied %q, keys %q; want the whole URL copied and the footer saying so", copied, a.keys(s))
+	}
+	send(a, "up")
+	if strings.Contains(a.keys(s), "copied") {
+		t.Errorf("keys after another key = %q, want the notice gone", a.keys(s))
+	}
+}
+
+func TestLoginsScreen_withNoClipboardToolTheTerminalIsAskedToCopy(t *testing.T) {
+	s, a := waitingLogin(t, func(string) error { return errNoClipboardTool })
+	_, cmd := a.Update(press("c"))
+	terminalCopy := s.update(cmd())
+	if terminalCopy == nil || !strings.HasPrefix(a.keys(s), "asked the terminal to copy the link · ") {
+		t.Errorf(
+			"command %v, keys %q; want the terminal asked, and the footer not claiming it worked",
+			terminalCopy,
+			a.keys(s),
+		)
+	}
+}
+
+func TestLoginsScreen_aFailedCopySaysWhy(t *testing.T) {
+	s, a := waitingLogin(t, func(string) error { return errors.New("pbcopy: exit status 1\nmore") })
+	deliver(a, send(a, "c"))
+	if keys := a.keys(s); !strings.HasPrefix(keys, "couldn't copy the link: pbcopy: exit status 1 · ") {
+		t.Errorf("keys = %q, want the first line of the error", keys)
+	}
+}
+
+func TestLoginsScreen_aCopyThatFinishesAfterItsLoginEndedSaysNothing(t *testing.T) {
+	s, a := waitingLogin(t, func(string) error { return errNoClipboardTool })
+	_, cmd := a.Update(press("c"))
+	copied := cmd()
+	send(a, "esc")
+	if terminalCopy := s.update(copied); terminalCopy != nil || strings.Contains(a.keys(s), "copy") {
+		t.Errorf("command %v, keys %q; want nothing for a login that is no longer waiting", terminalCopy, a.keys(s))
+	}
+}
+
+func TestLoginsScreen_whileALoginWaitsTheFooterGivesEscOneMeaning(t *testing.T) {
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+	t.Cleanup(s.cancelLogin)
+	a := framed(s, true)
+	a.width, a.height = 120, 30
+	if footer := footerOf(
+		shown(a),
+	); !strings.Contains(footer, "esc cancel login") ||
+		strings.Contains(footer, "esc back") {
+		t.Errorf("footer:\n%s\nwant esc named once, as cancelling the login", footer)
 	}
 }
