@@ -4,6 +4,9 @@ on:
   push:
     branches: [exp-shard]
 
+env:
+  GORACE: atexit_sleep_ms=0
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -45,7 +48,7 @@ jobs:
       - name: Unit tests
         run: go test -race -tags test -timeout 120s ./... -skip TestDeliver_singleFlightOnResolveFailure
 
-  integration-cli:
+  integration-cli-a:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -57,8 +60,23 @@ jobs:
         run: |
           testbin=$(mktemp -d)
           scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
-      - name: Integration tests, CLI group
-        run: go test -race -tags integration,test -run '^TestIntegrationCLI' -timeout 180s ./...
+      - name: Integration tests, CLI group A
+        run: go test -race -tags integration,test -run '^TestIntegrationCLI[^C]' -timeout 180s ./...
+
+  integration-cli-b:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build test helpers (race mini)
+        run: |
+          testbin=$(mktemp -d)
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
+      - name: Integration tests, CLI group B
+        run: go test -race -tags integration,test -run '^TestIntegrationCLI(Call|PermCall)' -timeout 180s ./...
 
   integration-daemon-http:
     runs-on: ubuntu-latest
