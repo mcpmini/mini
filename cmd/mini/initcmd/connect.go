@@ -41,19 +41,19 @@ func isDir(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// MiniServers holds mini's enabled servers twice: as written, to compare with agent entries
+// miniServers holds mini's enabled servers twice: as written, to compare with agent entries
 // (which hold ${VAR} unexpanded), and as loaded, to connect to.
-type MiniServers struct {
+type miniServers struct {
 	written []config.ServerConfig
 	loaded  map[string]config.ServerConfig
 }
 
-func LoadMiniServers(configDir string) (MiniServers, error) {
+func loadMiniServers(configDir string) (miniServers, error) {
 	servers, err := config.LoadServers(configDir)
 	if err != nil {
-		return MiniServers{}, err
+		return miniServers{}, err
 	}
-	mini := MiniServers{loaded: map[string]config.ServerConfig{}}
+	mini := miniServers{loaded: map[string]config.ServerConfig{}}
 	for _, sc := range servers.Loaded {
 		written, err := config.ReadUnexpandedServer(configDir, sc.Name)
 		if !sc.IsEnabled() || err != nil { // a server left out here only keeps its duplicates in the agents
@@ -68,7 +68,7 @@ func LoadMiniServers(configDir string) (MiniServers, error) {
 // Duplicates pairs each agent entry init may replace with the mini server it duplicates. Entries
 // that are switched off, weren't importable, or run mini are never replaced. Tool limits and
 // approval settings aren't carried into mini; a replaced entry keeps them only in the backup.
-func (m MiniServers) Duplicates(entries map[string]agents.Server, selfPath string) map[string]string {
+func (m miniServers) Duplicates(entries map[string]agents.Server, selfPath string) map[string]string {
 	duplicates := map[string]string{}
 	for name, entry := range entries {
 		if name == agents.MiniKey || !entry.Candidate() || entry.Disabled ||
@@ -86,20 +86,20 @@ func (m MiniServers) Duplicates(entries map[string]agents.Server, selfPath strin
 	return duplicates
 }
 
-type CheckParams struct {
-	ConfigDir string
-	Servers   []string
-	Clock     clock.Clock
-	Probe     func(ctx context.Context, configDir string, sc config.ServerConfig) error
+type checkParams struct {
+	configDir string
+	servers   []string
+	clock     clock.Clock
+	probe     probeFunc
 }
 
 // Check connects to the named servers concurrently. A server passes when its error is nil; one
 // missing from the result was never checked and counts as failed.
-func (m MiniServers) Check(ctx context.Context, p CheckParams) map[string]error {
+func (m miniServers) Check(ctx context.Context, p checkParams) map[string]error {
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	results := make(map[string]error, len(p.Servers))
-	for _, name := range p.Servers {
+	results := make(map[string]error, len(p.servers))
+	for _, name := range p.servers {
 		if sc, ok := m.loaded[name]; ok {
 			wg.Go(func() {
 				err := p.check(ctx, sc)
@@ -113,14 +113,14 @@ func (m MiniServers) Check(ctx context.Context, p CheckParams) map[string]error 
 	return results
 }
 
-func (p CheckParams) check(ctx context.Context, sc config.ServerConfig) error {
-	probeCtx, cancel := clock.WithTimeout(ctx, p.Clock, connectCheckTimeout)
+func (p checkParams) check(ctx context.Context, sc config.ServerConfig) error {
+	probeCtx, cancel := clock.WithTimeout(ctx, p.clock, connectCheckTimeout)
 	defer cancel()
-	return p.Probe(probeCtx, p.ConfigDir, sc)
+	return p.probe(probeCtx, p.configDir, sc)
 }
 
-// DuplicatedServers lists the mini servers that Connect must check: those some agent entry duplicates.
-func DuplicatedServers(duplicates ...map[string]string) []string {
+// duplicatedServers lists the mini servers that Connect must check: those some agent entry duplicates.
+func duplicatedServers(duplicates ...map[string]string) []string {
 	var names []string
 	for _, d := range duplicates {
 		for name := range maps.Values(d) {

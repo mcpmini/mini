@@ -91,14 +91,16 @@ func (s *loginsScreen) rowIndex(name string) int {
 	return slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.Name == name })
 }
 
+func (s *loginsScreen) forget(servers []string) {
+	for _, name := range servers {
+		delete(s.results, name)
+	}
+}
+
 func (s *loginsScreen) enter() tea.Cmd {
 	s.cursorMoved = false
 	s.cursor = s.nextToLogIn(-1)
 	return s.waitWhileChecking()
-}
-
-func (s *loginsScreen) start() tea.Cmd {
-	return nil
 }
 
 func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {

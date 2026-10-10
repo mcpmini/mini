@@ -59,7 +59,7 @@ func TestMiniServersDuplicates(t *testing.T) {
 	configDir := t.TempDir()
 	configtest.WriteServer(t, configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	configtest.WriteServer(t, configDir, config.ServerConfig{Name: "off", Command: "off-server", Enabled: new(false)})
-	mini, err := LoadMiniServers(configDir)
+	mini, err := loadMiniServers(configDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestMiniServersCheck(t *testing.T) {
 	configtest.WriteServer(t, configDir, config.ServerConfig{Name: "up", Command: "up-server"})
 	configtest.WriteServer(t, configDir, config.ServerConfig{Name: "down", Command: "down-server"})
 	configtest.WriteServer(t, configDir, config.ServerConfig{Name: "unasked", Command: "unasked-server"})
-	mini, err := LoadMiniServers(configDir)
+	mini, err := loadMiniServers(configDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,11 +102,11 @@ func TestMiniServersCheck(t *testing.T) {
 
 	got := mini.Check(
 		context.Background(),
-		CheckParams{
-			ConfigDir: configDir,
-			Servers:   []string{"up", "down", "missing"},
-			Clock:     clock.System(),
-			Probe:     probe,
+		checkParams{
+			configDir: configDir,
+			servers:   []string{"up", "down", "missing"},
+			clock:     clock.System(),
+			probe:     probe,
 		},
 	)
 
@@ -118,7 +118,7 @@ func TestMiniServersCheck(t *testing.T) {
 func TestMiniServersCheck_hungServerTimesOut(t *testing.T) {
 	configDir := t.TempDir()
 	configtest.WriteServer(t, configDir, config.ServerConfig{Name: "hung", Command: "hung-server"})
-	mini, err := LoadMiniServers(configDir)
+	mini, err := loadMiniServers(configDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestMiniServersCheck_hungServerTimesOut(t *testing.T) {
 	}
 	done := make(chan map[string]error, 1)
 	go func() {
-		done <- mini.Check(context.Background(), CheckParams{ConfigDir: configDir, Servers: []string{"hung"}, Clock: fake, Probe: probe})
+		done <- mini.Check(context.Background(), checkParams{configDir: configDir, servers: []string{"hung"}, clock: fake, probe: probe})
 	}()
 
 	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {

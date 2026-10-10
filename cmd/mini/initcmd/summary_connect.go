@@ -102,7 +102,7 @@ func removedVerb(agent agents.Agent) string {
 // The check's error is a protocol detail, so the reason says what the user can do next.
 func keptReason(r Report, kept KeptEntry) string {
 	switch {
-	case errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errMiniInactive):
+	case errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errNotCounted) || errors.Is(kept.Err, errMiniInactive):
 		return kept.Err.Error()
 	case r.needsFinishing(kept.Server):
 		return "it works in mini once you finish " + kept.Server + " above"
@@ -126,9 +126,8 @@ func JoinAnd(names []string) string {
 
 func writeInactiveMini(b *strings.Builder, c AgentConnections) {
 	for _, agent := range c.MiniInactive {
-		fmt.Fprintf(b, "\n%s (%s) has a mini entry that may not run these servers: it's switched off, uses another "+
-			"config directory, or doesn't name mini by absolute path. To use them, have it run: %s\n",
-			agent.Name, agent.ConfigPath, shellCommand(c.Mini))
+		fmt.Fprintf(b, "\n%s (%s) has a mini entry that may not run these servers: %s. To use them, have it run: %s\n",
+			agent.Name, agent.ConfigPath, inactiveMiniReasons, shellCommand(c.Mini))
 	}
 }
 

@@ -61,7 +61,7 @@ type flow struct {
 
 func (f *flow) save() {
 	f.ui.pick(&f.run.Plan)
-	f.run.Save()
+	f.ui.logins.forget(f.run.Save())
 }
 
 func (f *flow) outcome(leftEarly bool) Outcome {

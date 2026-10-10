@@ -37,9 +37,13 @@ type enterer interface {
 	enter() tea.Cmd
 }
 
-// A screen that loads in the background starts loading when the UI starts and gets every message.
+// A screen that loads in the background starts loading when the UI starts.
 type loader interface {
 	start() tea.Cmd
+}
+
+// A screen that waits on background work gets every background message, whether it is shown or not.
+type listener interface {
 	update(msg tea.Msg) tea.Cmd
 }
 
@@ -121,7 +125,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		var cmds []tea.Cmd
 		for _, s := range a.screens {
-			if l, ok := s.(loader); ok {
+			if l, ok := s.(listener); ok {
 				cmds = append(cmds, l.update(msg))
 			}
 		}

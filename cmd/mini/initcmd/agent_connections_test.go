@@ -35,7 +35,7 @@ func TestClassifyAgents_byTheirMiniEntry(t *testing.T) {
 	windsurf := f.write(t, "Windsurf", `{"mcpServers":{"proxy":`+f.servingMini()+`}}`)
 	claude := f.write(t, "Claude Code", `{"mcpServers":{}}`)
 
-	c := ClassifyAgents(f.configDir, testSelf, []agents.Agent{cursor, windsurf, claude})
+	c := classifyAgents(f.configDir, testSelf, []agents.Agent{cursor, windsurf, claude})
 
 	for _, group := range []struct {
 		name string

@@ -65,10 +65,6 @@ func (s *connectScreen) enter() tea.Cmd {
 	return s.checks.start(s.plan)
 }
 
-func (s *connectScreen) start() tea.Cmd {
-	return nil
-}
-
 func (s *connectScreen) update(msg tea.Msg) tea.Cmd {
 	if msg, ok := msg.(connectChecked); ok {
 		s.checks.finished(msg)
