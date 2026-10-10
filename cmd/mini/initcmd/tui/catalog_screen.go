@@ -178,9 +178,9 @@ func (s *catalogScreen) keys() string {
 	case !s.loaded:
 		return "loading the catalog"
 	case s.grid.isGrid():
-		return s.grid.keys("↑↓←→ move · space/enter tick · tab continue · / filter")
+		return s.grid.keys("↑↓←→ move · space/enter tick · a all · tab continue · / filter")
 	}
-	return s.grid.keys("↑↓ move · space/enter tick or open · tab continue · / filter")
+	return s.grid.keys("↑↓ move · space/enter tick or open · a all · tab continue · / filter")
 }
 
 func (s *catalogScreen) filterLine() string {

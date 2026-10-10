@@ -364,3 +364,20 @@ func TestCatalogScreen_arrowsWhileFilteringLeaveTheOpenCategoryAsItWas(t *testin
 		t.Errorf("screen after clearing the filter:\n%s\nwant Popular still the open category", text)
 	}
 }
+
+func TestCatalogScreen_aTicksEveryServerTheFilterShowsThenUnticksThem(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	pressAll(s, "/", "s", "enter", "a")
+	if got := entryNames(s.picks()); !slices.Equal(got, []string{"asana", "sentry", "github"}) ||
+		strings.Contains(catalogText(s), "[ ]") {
+		t.Fatalf("picks after a with filter s = %v, want asana, sentry and github: every server it shows", got)
+	}
+	pressAll(s, "esc", "a")
+	if got := entryNames(s.picks()); len(got) != 4 {
+		t.Fatalf("picks after a with no filter = %v, want all four", got)
+	}
+	pressAll(s, "a")
+	if got := s.picks(); len(got) != 0 {
+		t.Errorf("picks after a again = %v, want none", entryNames(got))
+	}
+}

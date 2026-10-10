@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -97,8 +99,25 @@ func (g *catalogGrid) handle(key tea.KeyPressMsg) reply {
 	case "space", "enter":
 		g.activate()
 		return handled
+	case "a":
+		g.toggleAll()
+		return handled
 	}
 	return unhandled
+}
+
+// Entries the filter hides keep their ticks: the user can't see them change.
+func (g *catalogGrid) toggleAll() {
+	var keys []string
+	for _, s := range g.shown() {
+		for _, e := range s.entries {
+			keys = append(keys, e.key)
+		}
+	}
+	all := !slices.ContainsFunc(keys, func(key string) bool { return !g.checked[key] })
+	for _, key := range keys {
+		g.checked[key] = !all
+	}
 }
 
 func (g *catalogGrid) filterChanged() {
