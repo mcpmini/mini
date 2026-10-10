@@ -35,7 +35,6 @@ type connectScreen struct {
 	width            int
 	scroll           scroll
 	back             bool
-	tabbedFrom       int
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
@@ -122,7 +121,7 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	case "down":
 		s.cursor = min(s.cursor+1, s.rows()-1)
 	case "tab":
-		s.tab()
+		s.cursor = s.agentRows()
 	case "space":
 		s.tick()
 	case "a":
@@ -134,17 +133,6 @@ func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 		return back, nil
 	}
 	return stay, nil
-}
-
-// tab jumps from an agent to the choices, and back to that agent; the agents don't change on screen.
-func (s *connectScreen) tab() {
-	if s.cursor < s.agentRows() {
-		s.tabbedFrom, s.cursor = s.cursor, s.agentRows()
-		return
-	}
-	if s.agentRows() > 0 {
-		s.cursor = s.tabbedFrom
-	}
 }
 
 func (s *connectScreen) tick() {
@@ -211,17 +199,20 @@ func (s *connectScreen) rowLines(height int) []string {
 		}
 	}
 	if s.back {
-		at := -1
-		if s.onBack() {
-			at = 0
-		}
-		actions, cursorLine := actionLines([]string{backLabel}, at)
+		back, cursorLine := s.backLines()
 		if cursorLine >= 0 {
 			first, last = len(lines)+cursorLine, len(lines)+cursorLine
 		}
-		lines = append(lines, actions...)
+		lines = append(lines, back...)
 	}
 	return s.scroll.cut(lines, first, last, height)
+}
+
+func (s *connectScreen) backLines() ([]string, int) {
+	if s.onBack() {
+		return actionLines([]string{backLabel}, 0)
+	}
+	return actionLines([]string{backLabel}, -1)
 }
 
 func (s *connectScreen) noteLines() []string {
@@ -347,9 +338,6 @@ func (s *connectScreen) keys() string {
 	keys := "↑↓ move · enter choose"
 	if choice, onOption := s.highlighted(); onOption && choice == initcmd.ConnectAndRemove && !s.checks.done {
 		keys = "↑↓ move · removing waits for the server checks"
-	}
-	if s.agentRows() > 0 {
-		keys += " · tab agents"
 	}
 	return keys
 }

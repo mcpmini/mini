@@ -107,7 +107,7 @@ func (l *list) handle(key tea.KeyPressMsg) bool {
 		}
 		l.toggle()
 	case "tab":
-		l.actions.toggle()
+		l.actions.reach()
 	default:
 		return false
 	}

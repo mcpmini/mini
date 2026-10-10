@@ -42,8 +42,6 @@ type loginsScreen struct {
 	width    int
 	scroll   scroll
 	back     bool
-	// tabbedFrom is the server tab left for the actions, found again by name as rows come and go.
-	tabbedFrom string
 	// Until the user moves it, the cursor rests on the next login to do.
 	cursorMoved bool
 	// One waiting command covers every running check.
@@ -185,7 +183,7 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	case "down":
 		s.move(1)
 	case "tab":
-		s.tab()
+		s.cursor, s.cursorMoved = len(s.rows), true
 	case "enter":
 		if s.cursor >= len(s.rows) {
 			s.cancelLogin()
@@ -197,17 +195,6 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 		return back, nil
 	}
 	return stay, nil
-}
-
-// tab jumps from a server to Continue, and back to that server if it is still listed.
-func (s *loginsScreen) tab() {
-	if s.cursor < len(s.rows) {
-		s.tabbedFrom, s.cursor, s.cursorMoved = s.rows[s.cursor].Name, len(s.rows), true
-		return
-	}
-	if i := s.rowIndex(s.tabbedFrom); i >= 0 && i < len(s.rows) && s.selectable(i) {
-		s.cursor = i
-	}
 }
 
 func (s *loginsScreen) heading() string {

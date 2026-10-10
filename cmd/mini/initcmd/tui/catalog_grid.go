@@ -97,7 +97,7 @@ func (g *catalogGrid) handle(key tea.KeyPressMsg) bool {
 	case "up", "down", "left", "right":
 		g.moveKey(key.String())
 	case "tab":
-		g.actions.toggle()
+		g.actions.reach()
 	case "space", "enter":
 		return g.activate(key.String())
 	default:

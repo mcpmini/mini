@@ -53,7 +53,7 @@ func withActions(message string, labels []string, at int) string {
 }
 
 // actions are the rows a screen ends with, right under its content. The cursor reaches them by
-// moving down past the content's last row, or with tab.
+// moving down past the content's last row, or with tab on any screen; up returns to the content.
 type actions struct {
 	labels []string
 	at     int
@@ -86,14 +86,6 @@ func (a *actions) moveWithin(step int) {
 
 func (a *actions) reach() {
 	a.active, a.at = true, 0
-}
-
-func (a *actions) toggle() {
-	if a.active {
-		a.active = false
-		return
-	}
-	a.reach()
 }
 
 func (a *actions) step() step {

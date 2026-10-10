@@ -420,23 +420,6 @@ func TestLoginsScreen_aReadErrorShowsTheActionsTheCursorCanReach(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_tabJumpsToContinueAndBackToTheServerItLeft(t *testing.T) {
-	s := newFakeChecks(
-		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
-	).screen()
-	showScreen(s)
-	s.handle(press("down"))
-	s.handle(press("tab"))
-	if text := loginsText(s); !strings.HasSuffix(text, "> Continue") {
-		t.Fatalf("screen after tab:\n%s\nwant the cursor on Continue", text)
-	}
-	s.handle(press("tab"))
-	if text := loginsText(s); !strings.Contains(text, "> sentry") {
-		t.Errorf("screen after tab again:\n%s\nwant the cursor back on sentry", text)
-	}
-}
-
 func TestLoginsScreen_theCursorStaysOnBackWhenTheRowsRefresh(t *testing.T) {
 	f := newFakeChecks(initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin})
 	s := f.screen()
@@ -466,22 +449,18 @@ func TestLoginsScreen_aServerNamedBackIsNotTheBackAction(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_tabReturnsToTheSameServerAfterChecksDropRows(t *testing.T) {
-	f := newFakeChecks(
-		initcmd.ServerStatus{Name: "aaa", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "bbb", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "ccc", Readiness: initcmd.NeedsLogin},
-	)
-	s := f.screen()
-	s.offerBack(true)
+func TestLoginsScreen_tabJumpsToContinueAndUpReturnsToTheServers(t *testing.T) {
+	s := newFakeChecks(
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
+	).screen()
 	showScreen(s)
-	s.handle(press("down"))
-	s.handle(press("down"))
 	s.handle(press("tab"))
-	f.statuses = f.statuses[2:]
-	s.refresh()
-	s.handle(press("tab"))
-	if text := loginsText(s); !strings.Contains(text, "> ccc") {
-		t.Errorf("screen after tab back:\n%s\nwant the cursor on ccc: the rows above it were dropped", text)
+	if text := loginsText(s); !strings.HasSuffix(text, "> Continue") {
+		t.Fatalf("screen after tab:\n%s\nwant the cursor on Continue", text)
+	}
+	s.handle(press("up"))
+	if text := loginsText(s); !strings.Contains(text, "> sentry") {
+		t.Errorf("screen after up:\n%s\nwant the cursor on the last server", text)
 	}
 }

@@ -375,15 +375,13 @@ func TestConnectScreen_aWithOneAgentLeavesItTicked(t *testing.T) {
 	}
 }
 
-func TestConnectScreen_tabJumpsToTheChoicesAndBackToTheAgentItLeft(t *testing.T) {
+func TestConnectScreen_tabJumpsToTheFirstChoice(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
 	s.cursor = 1
-	s.handle(press("tab"))
-	if choice, onOption := s.highlighted(); !onOption || choice != initcmd.ConnectOnly {
-		t.Fatalf("after tab: choice %v, on an option %v; want Just connect", choice, onOption)
-	}
-	s.handle(press("tab"))
-	if s.cursor != 1 {
-		t.Errorf("cursor after tab again = %d, want 1: back on Codex", s.cursor)
+	for range 2 {
+		s.handle(press("tab"))
+		if choice, onOption := s.highlighted(); !onOption || choice != initcmd.ConnectOnly {
+			t.Fatalf("after tab: choice %v, on an option %v; want Just connect", choice, onOption)
+		}
 	}
 }
