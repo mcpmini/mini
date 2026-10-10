@@ -21,8 +21,7 @@ type connectParams struct {
 	agents   []agents.Agent
 	withMini map[string]bool
 	plan     func() (connectPlan, error)
-	// added names the servers this run put in mini, which every connected agent now gets.
-	added func() []string
+	added    func() []string
 }
 
 type connectScreen struct {
@@ -169,8 +168,7 @@ func (s *connectScreen) addedLines() []string {
 	return strings.Split(ansi.Wrap(text, max(s.width, 20), ""), "\n")
 }
 
-// Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap, keeping
-// their own indent.
+// Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
 func (s *connectScreen) subtitleLines(subtitle string) []string {
 	text := strings.TrimLeft(subtitle, " ")
 	indent := "  " + subtitle[:len(subtitle)-len(text)]
@@ -207,16 +205,14 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 		if !s.anyPickedRemoves() {
 			return []string{"Nothing to remove: none of these MCPs work in mini yet"}
 		}
-		return append([]string{"The configs are backed up first"}, s.agentLines(s.removeLine)...)
+		return append([]string{"The configs are backed up first"}, s.tickedAgentLines(s.removeLine)...)
 	case initcmd.ConnectOnly:
-		return s.agentLines(s.connectLine)
+		return s.tickedAgentLines(s.connectLine)
 	}
 	return []string{"Leaves " + withVerb(agentNames(s.listed), "as it is", "as they are")}
 }
 
-// agentLines says what a choice does to each ticked agent, one line for agents it treats alike.
-// Agents already connected say so on their own rows, and no choice changes them.
-func (s *connectScreen) agentLines(line func(agent agents.Agent) string) []string {
+func (s *connectScreen) tickedAgentLines(line func(agent agents.Agent) string) []string {
 	var says []string
 	alike := map[string][]string{}
 	for _, agent := range s.picked() {

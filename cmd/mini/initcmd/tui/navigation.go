@@ -117,7 +117,6 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 	lines, first, last = []string{""}, -1, -1
 	for i, label := range a.labels() {
 		var under []string
-		// Only the choice under the cursor explains itself, so the rows above keep their room.
 		if choosing && !a.onBack(i) && i == a.nav.at {
 			under = c.choiceLines(i)
 		}

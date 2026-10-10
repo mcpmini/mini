@@ -89,7 +89,6 @@ func connectText(s *connectScreen) string {
 	return framedText(framed(s, false))
 }
 
-// linesUnder is what a choice says once the cursor is on it.
 func linesUnder(s *connectScreen, choice initcmd.ConnectChoice) string {
 	i := slices.Index(s.options(), choice)
 	if i < 0 {

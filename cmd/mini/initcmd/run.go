@@ -25,8 +25,8 @@ func (r *Run) Save() (removed []string) {
 	return r.last.Removed
 }
 
-// Written names the servers this run added to mini and still has.
-func (r *Run) Written() []string {
+// Added names the servers this run added to mini, less any unticked since.
+func (r *Run) Added() []string {
 	return r.session.Written()
 }
 
