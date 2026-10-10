@@ -24,7 +24,11 @@ func openWithCmd(browserCmd, url string) error {
 		}
 		return startAndReap(exec.Command(parts[0], append(parts[1:], url)...))
 	}
-	return startAndReap(exec.Command("sh", "-c", browserCmd+` "$1"`, "--", url))
+	return startAndReap(unixBrowserCommand(browserCmd, url))
+}
+
+func unixBrowserCommand(browserCmd, url string) *exec.Cmd {
+	return exec.Command("sh", "-c", browserCmd+` "$1"`, "--", url)
 }
 
 func openPlatformDefault(url string) error {
