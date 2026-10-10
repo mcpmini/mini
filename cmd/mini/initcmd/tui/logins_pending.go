@@ -88,3 +88,32 @@ func (s *loginsScreen) cancelLogin() {
 	<-s.pending.done
 	s.pending = nil
 }
+
+type linkCopied struct {
+	id  int
+	err error
+}
+
+func (s *loginsScreen) copyLink() tea.Cmd {
+	if s.pending == nil || s.pending.url == "" {
+		return nil
+	}
+	id, link := s.pending.id, s.pending.url
+	return func() tea.Msg {
+		return linkCopied{id: id, err: s.p.copy(link)}
+	}
+}
+
+// Without a working clipboard tool, as over SSH, the terminal is asked to copy instead. It never says
+// whether it did, so the notice doesn't claim it.
+func (s *loginsScreen) linkCopied(msg linkCopied) tea.Cmd {
+	if !s.current(msg.id) {
+		return nil
+	}
+	if msg.err == nil {
+		s.notice = "✓ link copied"
+		return nil
+	}
+	s.notice = "asked the terminal to copy"
+	return tea.SetClipboard(s.pending.url)
+}

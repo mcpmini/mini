@@ -53,6 +53,20 @@ type leaver interface {
 	leave()
 }
 
+// A screen that takes esc for itself, as Logins does to cancel a login, names it in its own keys.
+type escTaker interface {
+	takesEsc() bool
+}
+
+// On the screen's rows esc clears an active filter, or does what the screen takes it for, before it goes back.
+func (a *app) screenTakesEsc() bool {
+	if a.onNavigation() {
+		return false
+	}
+	t, ok := a.current().(escTaker)
+	return filterLine(a.current()) != "" || ok && t.takesEsc()
+}
+
 type waiter interface {
 	waiting() bool
 }
@@ -342,8 +356,7 @@ func (a *app) footer(s screen) []string {
 		lines = append(lines, filter)
 	}
 	var leave []string
-	// On the screen's rows esc clears an active filter before it goes back.
-	if a.canGoBack() && (filter == "" || a.onNavigation()) {
+	if a.canGoBack() && !a.screenTakesEsc() {
 		leave = append(leave, "esc back")
 	}
 	leave = append(leave, "ctrl+c quit")

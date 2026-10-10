@@ -214,23 +214,43 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_leavingCancelsThePendingLoginAndDropsItsResult(t *testing.T) {
+func TestLoginsScreen_escCancelsTheWaitingLoginAndStays(t *testing.T) {
 	logins := newFakeLogins("linear")
 	s := loginScreen(logins, "linear")
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 
-	if a := framed(s, true); send(a, "esc") != nil || a.at != 0 {
-		t.Fatalf("at = %d after esc, want back on the screen before", a.at)
+	a := framed(s, true)
+	if send(a, "esc"); a.at != 1 {
+		t.Fatalf("at = %d after esc on a waiting login, want Logins kept", a.at)
 	}
 	select {
 	case <-logins.cancelled:
 	default:
-		t.Fatal("esc returned before the pending login was cancelled")
+		t.Fatal("esc returned before the waiting login was cancelled")
 	}
 	s.update(loginFinished{id: 1, err: context.Canceled})
-	if text := loginsText(s); !strings.Contains(text, "> linear  needs a login") {
+	if text := framedText(a); !strings.Contains(text, "> linear  needs a login") {
 		t.Errorf("screen:\n%s\nwant the cancelled login's result dropped", text)
+	}
+	if send(a, "esc"); a.at != 0 {
+		t.Errorf("at = %d after esc with no login waiting, want back on the screen before", a.at)
+	}
+}
+
+func TestLoginsScreen_leavingCancelsTheWaitingLogin(t *testing.T) {
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+	a := framed(s, true)
+	if send(a, "tab", "down", "enter"); a.at != 0 {
+		t.Fatalf("at = %d after enter on Back, want the screen before", a.at)
+	}
+	select {
+	case <-logins.cancelled:
+	default:
+		t.Error("Back left Logins with its login still waiting")
 	}
 }
 
@@ -470,5 +490,85 @@ func TestLoginsScreen_onContinueTheLastLoginsResultStaysInView(t *testing.T) {
 	); !strings.Contains(body, "srv11  ✗ access denied") ||
 		!strings.Contains(body, "> Continue") {
 		t.Errorf("body at height 8:\n%s\nwant the failed srv11 in view above Continue", body)
+	}
+}
+
+func waitingLogin(t *testing.T, copy func(string) error) (*loginsScreen, *app) {
+	t.Helper()
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	s.p.copy = copy
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+	t.Cleanup(s.cancelLogin)
+	return s, framed(s, false)
+}
+
+func TestLoginsScreen_cCopiesTheWholeLinkAndTheFooterSaysSo(t *testing.T) {
+	var copied string
+	s, a := waitingLogin(t, func(text string) error { copied = text; return nil })
+	deliver(a, send(a, "c"))
+	if copied != "https://auth.example/linear" || !strings.HasPrefix(a.keys(s), "✓ link copied · ") {
+		t.Fatalf("copied %q, keys %q; want the whole URL copied and the footer saying so", copied, a.keys(s))
+	}
+	send(a, "up")
+	if strings.Contains(a.keys(s), "copied") {
+		t.Errorf("keys after another key = %q, want the notice gone", a.keys(s))
+	}
+}
+
+func TestLoginsScreen_aCopyThatCantBeConfirmedAsksTheTerminal(t *testing.T) {
+	for name, err := range map[string]error{
+		"no clipboard tool": errNoClipboardTool,
+		"a failing tool":    errors.New("xclip: exit status 1"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, a := waitingLogin(t, func(string) error { return err })
+			_, cmd := a.Update(press("c"))
+			terminalCopy := s.update(cmd())
+			if terminalCopy == nil || !strings.HasPrefix(a.keys(s), "asked the terminal to copy · ") {
+				t.Errorf("command %v, keys %q; want the terminal asked, and the footer not claiming it worked",
+					terminalCopy, a.keys(s))
+			}
+		})
+	}
+}
+
+func TestLoginsScreen_cIsOfferedOnlyOnceTheLoginHasALink(t *testing.T) {
+	s := loginScreen(newFakeLogins("linear"), "linear")
+	_, cmd := s.handle(press("enter"))
+	t.Cleanup(s.cancelLogin)
+	if strings.Contains(s.keys(), "copy") {
+		t.Errorf("keys before the link arrives = %q, want no copy: there is nothing to copy yet", s.keys())
+	}
+	s.update(cmd())
+	if !strings.Contains(s.keys(), "c copy link") {
+		t.Errorf("keys once the link arrived = %q, want c copy link", s.keys())
+	}
+}
+
+func TestLoginsScreen_aCopyThatFinishesAfterItsLoginEndedSaysNothing(t *testing.T) {
+	s, a := waitingLogin(t, func(string) error { return errNoClipboardTool })
+	_, cmd := a.Update(press("c"))
+	copied := cmd()
+	send(a, "esc")
+	if terminalCopy := s.update(copied); terminalCopy != nil || strings.Contains(a.keys(s), "copy") {
+		t.Errorf("command %v, keys %q; want nothing for a login that is no longer waiting", terminalCopy, a.keys(s))
+	}
+}
+
+func TestLoginsScreen_whileALoginWaitsTheFooterGivesEscOneMeaning(t *testing.T) {
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+	t.Cleanup(s.cancelLogin)
+	a := framed(s, true)
+	a.width, a.height = 120, 30
+	if footer := footerOf(
+		shown(a),
+	); !strings.Contains(footer, "esc cancel login") ||
+		strings.Contains(footer, "esc back") {
+		t.Errorf("footer:\n%s\nwant esc named once, as cancelling the login", footer)
 	}
 }
