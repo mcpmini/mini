@@ -406,3 +406,16 @@ func TestLoginsScreen_backFollowsContinue(t *testing.T) {
 		t.Errorf("enter on Back = %v, want back", move)
 	}
 }
+
+func TestLoginsScreen_aReadErrorShowsTheActionsTheCursorCanReach(t *testing.T) {
+	s := newLoginsScreen(loginsParams{
+		statuses: func() ([]initcmd.ServerStatus, error) { return nil, errors.New("permission denied") },
+		checking: func() map[string]bool { return nil },
+	})
+	s.offerBack(true)
+	showScreen(s)
+	s.handle(press("down"))
+	if text := loginsText(s); !strings.HasSuffix(text, "permission denied\n\n  Continue →\n> ← Back") {
+		t.Errorf("screen:\n%s\nwant the error above the actions, with the cursor on Back", text)
+	}
+}

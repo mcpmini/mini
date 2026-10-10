@@ -168,11 +168,15 @@ func (s *catalogScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	return stay, nil
 }
 
+// Until the catalog loads there is nothing to act on; once it fails or offers nothing new, only
+// the actions under the message are left.
 func (s *catalogScreen) handleWithoutGrid(key tea.KeyPressMsg) (step, tea.Cmd) {
 	switch key.String() {
+	case "up", "down":
+		s.grid.actions.moveWithin(direction(key.String()))
 	case "enter":
 		if s.loaded {
-			return forward, nil
+			return s.grid.actions.step(), nil
 		}
 	case "esc":
 		return back, nil
@@ -185,11 +189,15 @@ func (s *catalogScreen) body(height int) string {
 	case !s.loaded:
 		return "loading…"
 	case s.loadErr != nil:
-		return "The catalog couldn't be loaded: " + s.loadErr.Error()
+		return s.withActions("The catalog couldn't be loaded: " + s.loadErr.Error())
 	case len(s.available) == 0:
-		return "mini already has every server in the catalog."
+		return s.withActions("mini already has every server in the catalog.")
 	}
 	return s.grid.view(height)
+}
+
+func (s *catalogScreen) withActions(message string) string {
+	return strings.Join(append([]string{message}, actionLines(s.grid.actions.labels, s.grid.actions.at)...), "\n")
 }
 
 func (s *catalogScreen) keys() string {
@@ -198,7 +206,7 @@ func (s *catalogScreen) keys() string {
 	}
 	switch {
 	case s.loadErr != nil || len(s.available) == 0:
-		return "enter continue"
+		return "↑↓ move · enter choose"
 	case s.grid.actions.active:
 		return s.grid.keys("↑↓ move · enter choose")
 	case s.grid.isGrid():

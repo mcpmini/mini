@@ -355,7 +355,7 @@ func TestConnectScreen_aTicksEveryAgentAndBackFollowsTheChoices(t *testing.T) {
 	if got := pickedNames(s); strings.Join(got, ",") != "Claude,Codex" {
 		t.Errorf("picked after a again = %v, want both", got)
 	}
-	if text := connectText(s); !strings.HasSuffix(text, "Leaves Claude and Codex as they are\n  ← Back") {
+	if text := connectText(s); !strings.HasSuffix(text, "Leaves Claude and Codex as they are\n\n  ← Back") {
 		t.Errorf("screen:\n%s\nwant Back under the last choice", text)
 	}
 	for _, key := range []string{"tab", "down", "down"} {
@@ -363,5 +363,14 @@ func TestConnectScreen_aTicksEveryAgentAndBackFollowsTheChoices(t *testing.T) {
 	}
 	if move, _ := s.handle(press("enter")); move != back {
 		t.Errorf("enter on Back = %v, want back", move)
+	}
+}
+
+func TestConnectScreen_aWithOneAgentLeavesItTicked(t *testing.T) {
+	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
+	s.handle(press("a"))
+	if move, _ := s.handle(press("enter")); move != forward || strings.Join(pickedNames(s), ",") != "Claude" {
+		t.Errorf("enter after a = %v, picked %v; want Just connect for Claude: one agent shows no checkbox to untick",
+			move, pickedNames(s))
 	}
 }

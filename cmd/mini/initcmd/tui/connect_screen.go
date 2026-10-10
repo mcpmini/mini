@@ -143,6 +143,10 @@ func (s *connectScreen) tick() {
 }
 
 func (s *connectScreen) tickAll() {
+	// With one agent there are no checkboxes, so there is nothing the user could see change.
+	if s.agentRows() == 0 {
+		return
+	}
 	all := !slices.ContainsFunc(s.listed, func(agent agents.Agent) bool { return !s.ticked[agent.Name] })
 	for _, agent := range s.listed {
 		s.ticked[agent.Name] = !all
@@ -195,10 +199,11 @@ func (s *connectScreen) rowLines(height int) []string {
 		}
 	}
 	if s.back {
+		at := -1
 		if s.onBack() {
-			first, last = len(lines), len(lines)
+			at, first, last = 0, len(lines)+1, len(lines)+1
 		}
-		lines = append(lines, cursorMark(s.onBack())+backLabel)
+		lines = append(lines, actionLines([]string{backLabel}, at)...)
 	}
 	return s.scroll.cut(lines, first, last, height)
 }

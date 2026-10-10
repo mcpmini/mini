@@ -200,15 +200,20 @@ func (s *loginsScreen) heading() string {
 
 func (s *loginsScreen) body(height int) string {
 	if s.err != nil {
-		return "mini's servers couldn't be read: " + s.err.Error()
+		lines := append([]string{"mini's servers couldn't be read: " + s.err.Error()}, s.actionLines()...)
+		return strings.Join(lines, "\n")
 	}
 	lines, first, last := s.serverLines()
 	if s.cursor >= len(s.rows) {
 		first = len(lines) + 1 + s.cursor - len(s.rows)
 		last = first
 	}
-	lines = append(lines, actionLines(s.actionLabels(), s.cursor-len(s.rows))...)
+	lines = append(lines, s.actionLines()...)
 	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
+}
+
+func (s *loginsScreen) actionLines() []string {
+	return actionLines(s.actionLabels(), s.cursor-len(s.rows))
 }
 
 // first and last bound the cursor's block: its section heading, its row and the lines under it.

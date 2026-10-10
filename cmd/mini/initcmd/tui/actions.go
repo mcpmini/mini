@@ -60,6 +60,11 @@ func (a *actions) move(step int) {
 	}
 }
 
+// moveWithin steps through the actions of a screen that has nothing else to move to.
+func (a *actions) moveWithin(step int) {
+	a.at = min(max(a.at+step, 0), len(a.labels)-1)
+}
+
 func (a *actions) reach() {
 	a.active, a.at = true, 0
 }

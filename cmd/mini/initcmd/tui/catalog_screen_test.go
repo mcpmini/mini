@@ -256,8 +256,16 @@ func TestCatalogScreen_loading(t *testing.T) {
 		load := func() (catalog.Catalog, error) { return catalog.Catalog{}, errors.New("bad document") }
 		s := newCatalogScreen(catalogParams{load: load, offered: offerAll, imports: noImports})
 		s.update(s.start()())
-		if text := catalogText(s); text != "The catalog couldn't be loaded: bad document" || s.empty() {
-			t.Errorf("screen %q, empty = %v; want the error shown", text, s.empty())
+		s.offerBack(true)
+		want := "The catalog couldn't be loaded: bad document\n\n> Continue →\n  ← Back"
+		if text := catalogText(s); text != want || s.empty() {
+			t.Errorf("screen %q, empty = %v; want the error shown above the actions", text, s.empty())
+		}
+		if got, _ := s.handle(press("down")); got != stay {
+			t.Fatalf("down = %v, want stay", got)
+		}
+		if got, _ := s.handle(press("enter")); got != back {
+			t.Errorf("enter on Back = %v, want back", got)
 		}
 	})
 	t.Run("is empty once every server is configured or imported", func(t *testing.T) {
