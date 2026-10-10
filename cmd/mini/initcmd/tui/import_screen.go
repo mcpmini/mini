@@ -32,7 +32,7 @@ func newImportScreen(plan initcmd.ImportPlan) *importScreen {
 	}
 	s.list = newList(s.rows(s.candidates, widths), checked)
 	s.list.filterable = true
-	s.list.untickable = s.rows(s.inMini, widths)
+	s.list.untickable, s.list.legend = s.rows(s.inMini, widths), inMiniLegend
 	s.list.header = row{label: "SERVER", detail: s.columnText(targetHeading, agentsHeading, widths)}
 	return s
 }

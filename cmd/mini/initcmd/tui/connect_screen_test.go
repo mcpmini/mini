@@ -115,12 +115,15 @@ func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) 
 	list := namedAgents("Claude", "Codex", "Cursor", "Windsurf")
 	s, _ := connectScreenFor(t, newFakePlan(nil), list, map[string]bool{"Windsurf": true})
 	text := connectText(s)
-	noted := strings.HasPrefix(text, "Windsurf already has a mini entry.\n\n")
-	if !noted || !strings.Contains(text, "[x] Cursor\n\n> Just connect mini") {
-		t.Fatalf("screen:\n%s\nwant Windsurf noted, not listed, and the cursor on the first option", text)
+	marked := "[x] Cursor\n   ✓  Windsurf\n\n   ✓ already connected\n\n> Just connect mini"
+	if !strings.Contains(text, marked) {
+		t.Fatalf(
+			"screen:\n%s\nwant Windsurf marked connected under the others and the cursor on the first option",
+			text,
+		)
 	}
 	a := framed(s, false)
-	send(a, "up", "up", "enter")
+	send(a, "up", "space", "up", "up", "enter")
 	text = framedText(a)
 	leaves := strings.Contains(text, "Leaves Claude, Codex and Cursor as they are")
 	if !strings.Contains(text, "> [ ] Codex\n") || !leaves {
@@ -331,7 +334,7 @@ func TestConnectScreen_aShortWindowKeepsTheCursorsOptionInView(t *testing.T) {
 	}
 }
 
-func TestConnectScreen_theNoteSitsAboveTheChoicesWhileItFits(t *testing.T) {
+func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *testing.T) {
 	plan := newFakePlan(nil)
 	s := newConnectScreen(connectParams{
 		agents:   namedAgents("Claude", "Codex"),
@@ -341,13 +344,20 @@ func TestConnectScreen_theNoteSitsAboveTheChoicesWhileItFits(t *testing.T) {
 	t.Cleanup(s.checks.cancelAndWait)
 	s.resize(60, 30)
 	plan.checksPass(s, showScreen(s))
+	want := "   ✓  Codex\n\n   ✓ already connected\n\n> Just connect mini"
 	if text := ansi.Strip(
 		framed(s, false).body(8),
-	); !strings.HasPrefix(
-		text,
-		"Codex already has a mini entry.\n\n> Just connect mini",
-	) {
-		t.Errorf("body at height 8:\n%s\nwant the note, a blank line, then the cursor's choice", text)
+	); !strings.HasPrefix(text, want) ||
+		s.heading() != "Connect mini to Claude" {
+		t.Errorf(
+			"%s\n%s\nwant the heading to name Claude, and Codex marked above the choices:\n%s",
+			s.heading(),
+			text,
+			want,
+		)
+	}
+	if s.keys() != "↑↓ move · tab choices" {
+		t.Errorf("keys = %q, want no tick keys: Codex can't be ticked", s.keys())
 	}
 }
 

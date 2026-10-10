@@ -22,9 +22,11 @@ func (r row) matches(filter string) bool {
 type list struct {
 	rows       []row
 	untickable []row
-	checked    map[string]bool
-	cursor     int
-	scroll     scroll
+	// legend explains the mark on the untickable rows, under them.
+	legend  string
+	checked map[string]bool
+	cursor  int
+	scroll  scroll
 	// filterable lets / start a filter; a short list, like Connect's agents, has no need of one.
 	filterable bool
 	filter     textFilter

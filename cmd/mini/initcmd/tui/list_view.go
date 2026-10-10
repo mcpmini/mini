@@ -52,7 +52,7 @@ func (l *list) lines(focused bool) (lines []string, first, last int) {
 	if len(rows) == tickable {
 		return lines, first, last
 	}
-	lines = append(lines, "", legendLine(inMiniLegend))
+	lines = append(lines, "", legendLine(l.legend))
 	// The legend can't hold the cursor, so it comes into view with the last row.
 	if l.cursor == len(rows)-1 {
 		last = len(lines) - 1
@@ -85,8 +85,9 @@ func legendLine(legend string) string {
 }
 
 const (
-	inMiniMark   = " ✓  "
-	inMiniLegend = "✓ already in mini"
+	inMiniMark      = " ✓  "
+	inMiniLegend    = "✓ already in mini"
+	connectedLegend = "✓ already connected"
 )
 
 func checkbox(checked bool) string {
