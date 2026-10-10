@@ -78,7 +78,7 @@ jobs:
       - name: Integration tests, CLI group B
         run: go test -race -tags integration,test -run '^TestIntegrationCLI(Call|PermCall)' -timeout 180s ./...
 
-  integration-daemon-http:
+  integration-daemon:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -90,8 +90,23 @@ jobs:
         run: |
           testbin=$(mktemp -d)
           scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
-      - name: Integration tests, holds and daemon group
-        run: go test -race -tags integration,test -run '^TestIntegration(Proxy|Startup|Serve|Daemon|HTTP|Concurrency)' -timeout 180s ./...
+      - name: Integration tests, daemon group
+        run: go test -race -tags integration,test -run '^TestIntegrationDaemon' -timeout 180s ./...
+
+  integration-proxy-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build test helpers (race mini)
+        run: |
+          testbin=$(mktemp -d)
+          scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
+      - name: Integration tests, proxy, startup, HTTP and concurrency group
+        run: go test -race -tags integration,test -run '^TestIntegration(Proxy|Startup|Serve|HTTP|Concurrency)' -timeout 180s ./...
 
   integration-rest:
     runs-on: ubuntu-latest
