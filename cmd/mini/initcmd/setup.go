@@ -43,9 +43,9 @@ func (r Report) Failed() bool {
 		slices.ContainsFunc(r.Connected, func(result AgentResult) bool { return result.Err != nil })
 }
 
-// Available is the catalog servers mini doesn't have yet.
-func (p Plan) Available(entries []catalog.Entry) []catalog.Entry {
-	return availableEntries(entries, p.written)
+// InMini reports whether mini already runs a catalog server, under its name or at its URL.
+func (p Plan) InMini(entry catalog.Entry) bool {
+	return NewConfiguredKeys(p.written).Has(entry)
 }
 
 func RunUnattended(s Setup) Report {

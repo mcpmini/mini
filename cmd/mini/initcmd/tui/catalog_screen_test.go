@@ -47,10 +47,14 @@ func testCatalog() catalog.Catalog {
 
 func noImports() []config.ServerConfig { return nil }
 
-func offerAll(entries []catalog.Entry) []catalog.Entry { return entries }
+func noneInMini(catalog.Entry) bool { return false }
+
+func inMiniNamed(names ...string) func(catalog.Entry) bool {
+	return func(e catalog.Entry) bool { return slices.Contains(names, e.Name) }
+}
 
 func loadedScreen(c catalog.Catalog, imports func() []config.ServerConfig) *catalogScreen {
-	s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: imports})
+	s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, imports: imports})
 	s.update(s.start()())
 	s.resize(120, 40)
 	return s
@@ -215,7 +219,7 @@ func TestCatalogScreen_filtersByDescription(t *testing.T) {
 	}
 }
 
-func TestCatalogScreen_aServerTickedOnImportIsHiddenAndLosesItsCatalogTick(t *testing.T) {
+func TestCatalogScreen_aServerTickedOnImportIsMarkedWillImportAndLosesItsCatalogTick(t *testing.T) {
 	c := testCatalog()
 	var imported []config.ServerConfig
 	s := loadedScreen(c, func() []config.ServerConfig { return imported })
@@ -224,8 +228,13 @@ func TestCatalogScreen_aServerTickedOnImportIsHiddenAndLosesItsCatalogTick(t *te
 	imported = []config.ServerConfig{{Name: "gh", URL: "https://api.github.example/mcp/"}}
 	s.enter()
 
-	if text := catalogText(s); strings.Contains(text, "GitHub") {
-		t.Errorf("screen:\n%s\nwant github hidden: the imported gh is the same URL", text)
+	text := catalogText(s)
+	if strings.Count(text, " +  GitHub") != 2 || !strings.Contains(text, "+ will import") ||
+		strings.Contains(text, "[x]") {
+		t.Errorf("screen:\n%s\nwant GitHub marked will import in both places, explained, and ticked nowhere", text)
+	}
+	if picks := s.picks(); len(picks) != 0 {
+		t.Errorf("picks = %v; want none: the imported gh is the same URL", entryNames(picks))
 	}
 	imported = nil
 	s.enter()
@@ -234,10 +243,44 @@ func TestCatalogScreen_aServerTickedOnImportIsHiddenAndLosesItsCatalogTick(t *te
 	}
 }
 
+func TestCatalogScreen_aServerMiniRunsIsMarkedAndTheCursorPassesOverIt(t *testing.T) {
+	s := newCatalogScreen(
+		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("asana"), imports: noImports},
+	)
+	s.update(s.start()())
+	s.resize(120, 40)
+	text := catalogText(s)
+	if !strings.Contains(text, " ✓  Asana") || !strings.Contains(text, "✓ already in mini") ||
+		strings.Contains(text, "will import") {
+		t.Fatalf("screen:\n%s\nwant Asana marked already in mini and only that explained", text)
+	}
+	pressAll(s, "right", "a")
+	if text := catalogText(s); !strings.Contains(text, "> [x] Linear") {
+		t.Errorf(
+			"screen after → and a:\n%s\nwant the cursor past Asana onto Linear, and a ticking what can be ticked",
+			text,
+		)
+	}
+	if got := entryNames(s.picks()); slices.Contains(got, "asana") {
+		t.Errorf("picks = %v; want no asana: mini already runs it", got)
+	}
+}
+
+func TestCatalogScreen_withEveryServerInMiniOrImportedIsSkipped(t *testing.T) {
+	imported := func() []config.ServerConfig { return []config.ServerConfig{{Name: "linear"}, {Name: "sentry"}} }
+	s := newCatalogScreen(catalogParams{
+		load: fromCatalog(testCatalog()), inMini: inMiniNamed("github", "asana"), imports: imported,
+	})
+	s.update(s.start()())
+	if !s.empty() {
+		t.Errorf("screen:\n%s\nwant it skipped: nothing is left to tick", catalogText(s))
+	}
+}
+
 func TestCatalogScreen_loading(t *testing.T) {
 	c := testCatalog()
 	t.Run("shows loading until the catalog arrives, and isn't skipped meanwhile", func(t *testing.T) {
-		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, imports: noImports})
 		if text := catalogText(s); text != "loading…" || s.empty() {
 			t.Errorf("before loading: screen %q, empty = %v; want loading… and not empty", text, s.empty())
 		}
@@ -250,7 +293,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 		}
 	})
 	t.Run("keys wait for the catalog, except going back", func(t *testing.T) {
-		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offerAll, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: fromCatalog(c), inMini: noneInMini, imports: noImports})
 		a := inApp(100, 30, &fakeScreen{name: "Import", hasRows: true}, s)
 		send(a, "tab", "enter", "enter", "/", "space")
 		if view := shown(a); a.at != 1 || strings.Contains(view, continueLabel) || s.grid.filter.typing {
@@ -266,7 +309,7 @@ func TestCatalogScreen_loading(t *testing.T) {
 	})
 	t.Run("a catalog that can't be loaded says so", func(t *testing.T) {
 		load := func() (catalog.Catalog, error) { return catalog.Catalog{}, errors.New("bad document") }
-		s := newCatalogScreen(catalogParams{load: load, offered: offerAll, imports: noImports})
+		s := newCatalogScreen(catalogParams{load: load, inMini: noneInMini, imports: noImports})
 		s.update(s.start()())
 		if text := catalogText(
 			s,
@@ -274,18 +317,6 @@ func TestCatalogScreen_loading(t *testing.T) {
 			s.focusable() {
 			t.Errorf("screen %q, empty = %v, focusable = %v; want the error, shown, with nothing to pick",
 				text, s.empty(), s.focusable())
-		}
-	})
-	t.Run("is empty once every server is configured or imported", func(t *testing.T) {
-		imported := func() []config.ServerConfig { return []config.ServerConfig{{Name: "linear"}, {Name: "sentry"}} }
-		offered := func([]catalog.Entry) []catalog.Entry { return c.Entries[:2] }
-		s := newCatalogScreen(catalogParams{load: fromCatalog(c), offered: offered, imports: imported})
-		s.update(s.start()())
-		if !s.empty() {
-			t.Errorf(
-				"screen:\n%s\nwant it empty: mini lacks only linear and sentry, and both are imported",
-				catalogText(s),
-			)
 		}
 	})
 }
@@ -388,5 +419,29 @@ func TestCatalogScreen_aInTheCollapsibleLayoutTicksOnlyTheOpenCategory(t *testin
 	pressAll(s, "a")
 	if got := entryNames(s.picks()); !slices.Equal(got, []string{"github"}) {
 		t.Errorf("picks after a = %v, want only github: Popular is the one category open", got)
+	}
+}
+
+func TestCatalogScreen_theCursorStartsOnTheFirstServerThatCanBeTicked(t *testing.T) {
+	s := newCatalogScreen(
+		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("github"), imports: noImports},
+	)
+	s.update(s.start()())
+	s.resize(120, 40)
+	pressAll(s, "space")
+	if got := entryNames(s.picks()); len(got) != 1 || got[0] == "github" {
+		t.Errorf("picks after space = %v; want one server ticked, not github: mini runs it", got)
+	}
+}
+
+func TestCatalogScreen_aClosedCategoryCountsOnlyTheServersThatCanBeTicked(t *testing.T) {
+	s := newCatalogScreen(
+		catalogParams{load: fromCatalog(testCatalog()), inMini: inMiniNamed("asana"), imports: noImports},
+	)
+	s.update(s.start()())
+	s.resize(50, 40)
+	pressAll(s, "down", "space", "a", "left")
+	if text := catalogText(s); !strings.Contains(text, "▸ Project management  1 ticked") {
+		t.Errorf("screen after a:\n%s\nwant Project management counting Linear only: mini runs Asana", text)
 	}
 }

@@ -187,6 +187,16 @@ func TestImportScreen_theFilterNarrowsTheServersMiniRunsToo(t *testing.T) {
 		[]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")},
 		candidate("github", "https://gh.example.com/mcp", false, "Codex"),
 	)
+	for _, key := range []string{"/", "n", "o", "enter"} {
+		s.handle(press(key))
+	}
+	if text := ansi.Strip(
+		s.body(20, true),
+	); strings.Contains(text, "github") ||
+		strings.Contains(text, "already in mini") {
+		t.Errorf("body with filter no:\n%s\nwant github and its legend hidden", text)
+	}
+	s.handle(press("esc"))
 	for _, key := range []string{"/", "g", "i", "t", "enter"} {
 		s.handle(press(key))
 	}

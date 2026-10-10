@@ -1,12 +1,23 @@
 package tui
 
 import (
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
 )
 
 type gridEntry struct {
 	key, title, host, description string
+	state                         entryState
 }
+
+type entryState int
+
+const (
+	entryOffered entryState = iota
+	entryInMini
+	entryWillImport
+)
 
 func (e gridEntry) matches(filter string) bool {
 	return matchesFilter(filter, e.key, e.title, e.host, e.description)
@@ -68,8 +79,8 @@ func (g *catalogGrid) shown() []gridSection {
 
 func (g *catalogGrid) firstEntry() gridSpot {
 	for i, s := range g.shown() {
-		if len(s.entries) > 0 {
-			return gridSpot{section: i}
+		if j := slices.IndexFunc(s.entries, func(e gridEntry) bool { return e.state == entryOffered }); j >= 0 {
+			return gridSpot{section: i, entry: j}
 		}
 	}
 	return gridSpot{entry: -1}
@@ -172,7 +183,13 @@ func (g *catalogGrid) moveVertically(column []gridCell, row, step int) reply {
 }
 
 func (g *catalogGrid) focusable() bool {
-	return g.filter.holdsCursor(len(g.shown()) > 0)
+	return g.filter.holdsCursor(g.hasSelectable())
+}
+
+func (g *catalogGrid) hasSelectable() bool {
+	return slices.ContainsFunc(g.columns(), func(column []gridCell) bool {
+		return slices.ContainsFunc(column, func(cell gridCell) bool { return cell.selectable })
+	})
 }
 
 func (g *catalogGrid) moveAcross(columns [][]gridCell, col, row, step int) {

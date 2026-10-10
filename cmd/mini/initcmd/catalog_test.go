@@ -1,43 +1,26 @@
 package initcmd
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func entryNames(entries []catalog.Entry) []string {
-	var names []string
-	for _, entry := range entries {
-		names = append(names, entry.Name)
+func TestPlan_InMini_matchesAConfiguredServerByNameOrURL(t *testing.T) {
+	plan := Plan{
+		written: []config.ServerConfig{{Name: "GitHub"}, {Name: "my-linear", URL: "https://LINEAR.example.com/mcp/"}},
 	}
-	return names
-}
-
-func TestAvailableEntries(t *testing.T) {
-	t.Run("filters configured names and URLs", func(t *testing.T) {
-		entries := []catalog.Entry{
-			{Name: "github", URL: "https://github.example.com/mcp", Category: "Dev"},
-			{Name: "linear", URL: "https://linear.example.com/mcp", Category: "Dev"},
-			{Name: "notion", URL: "https://notion.example.com/mcp", Category: "Dev"},
+	for _, tt := range []struct {
+		entry catalog.Entry
+		want  bool
+	}{
+		{catalog.Entry{Name: "github", URL: "https://github.example.com/mcp"}, true},
+		{catalog.Entry{Name: "linear", URL: "https://linear.example.com/mcp"}, true},
+		{catalog.Entry{Name: "notion", URL: "https://notion.example.com/mcp"}, false},
+	} {
+		if got := plan.InMini(tt.entry); got != tt.want {
+			t.Errorf("InMini(%s) = %v, want %v", tt.entry.Name, got, tt.want)
 		}
-		servers := []config.ServerConfig{{Name: "GitHub"}, {Name: "my-linear", URL: "https://LINEAR.example.com/mcp/"}}
-		if names := entryNames(availableEntries(entries, servers)); !reflect.DeepEqual(names, []string{"notion"}) {
-			t.Errorf("available = %v, want only notion", names)
-		}
-	})
-	t.Run("keeps catalog order after filtering", func(t *testing.T) {
-		entries := []catalog.Entry{
-			{Name: "c", Category: "Dev"},
-			{Name: "taken", Category: "Configured"},
-			{Name: "b", Category: "Data"},
-			{Name: "a", Category: "Dev"},
-		}
-		available := availableEntries(entries, []config.ServerConfig{{Name: "taken"}})
-		if names := entryNames(available); !reflect.DeepEqual(names, []string{"c", "b", "a"}) {
-			t.Errorf("available = %v, want [c b a]", names)
-		}
-	})
+	}
 }

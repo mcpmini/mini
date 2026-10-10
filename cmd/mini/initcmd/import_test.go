@@ -227,7 +227,11 @@ func TestPlanImport_minisOwnEntryIsNotListedAsInMini(t *testing.T) {
 		SelfPath: testSelf,
 	})
 	if len(plan.InMini) != 0 || len(plan.Candidates) != 0 {
-		t.Errorf("in mini = %+v, candidates = %+v; want neither: the entry is mini itself", plan.InMini, plan.Candidates)
+		t.Errorf(
+			"in mini = %+v, candidates = %+v; want neither: the entry is mini itself",
+			plan.InMini,
+			plan.Candidates,
+		)
 	}
 }
 

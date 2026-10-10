@@ -10,16 +10,42 @@ import (
 )
 
 const (
-	gridColumns = 3
-	columnGap   = 5
-	// Below the sections: a blank line and the entry under the cursor.
-	linesUnderSections = 2
+	gridColumns      = 3
+	columnGap        = 5
+	willImportMark   = " +  "
+	willImportLegend = "+ will import"
 )
 
 func (g *catalogGrid) resize(width, rowsHeight int) {
 	g.width = width
-	g.sectionsHeight = rowsHeight - linesUnderSections
+	g.sectionsHeight = rowsHeight - len(g.linesUnderSections(""))
 	g.settle()
+}
+
+// linesUnderSections are a blank line, the legend when an entry wears a mark, and the entry under
+// the cursor.
+func (g *catalogGrid) linesUnderSections(detail string) []string {
+	if legend := g.legend(); legend != "" {
+		return []string{"", cursorMark(false) + " " + dim.Render(legend), detail}
+	}
+	return []string{"", detail}
+}
+
+func (g *catalogGrid) legend() string {
+	var parts []string
+	if g.anyEntry(entryInMini) {
+		parts = append(parts, inMiniLegend)
+	}
+	if g.anyEntry(entryWillImport) {
+		parts = append(parts, willImportLegend)
+	}
+	return strings.Join(parts, "   ")
+}
+
+func (g *catalogGrid) anyEntry(state entryState) bool {
+	return slices.ContainsFunc(g.sections, func(s gridSection) bool {
+		return slices.ContainsFunc(s.entries, func(e gridEntry) bool { return e.state == state })
+	})
 }
 
 type gridCell struct {
@@ -103,10 +129,24 @@ func (g *catalogGrid) collapsibleHeading(s gridSection, open bool) string {
 func (g *catalogGrid) entryCells(section int, s gridSection, indent string) []gridCell {
 	cells := make([]gridCell, 0, len(s.entries))
 	for i, e := range s.entries {
-		text := indent + checkbox(g.checked[e.key]) + e.title
-		cells = append(cells, gridCell{text: text, spot: gridSpot{section: section, entry: i}, selectable: true})
+		text := indent + g.mark(e) + e.title
+		if e.state != entryOffered {
+			text = indent + dim.Render(g.mark(e)+e.title)
+		}
+		spot := gridSpot{section: section, entry: i}
+		cells = append(cells, gridCell{text: text, spot: spot, selectable: e.state == entryOffered})
 	}
 	return cells
+}
+
+func (g *catalogGrid) mark(e gridEntry) string {
+	switch e.state {
+	case entryInMini:
+		return inMiniMark
+	case entryWillImport:
+		return willImportMark
+	}
+	return checkbox(g.checked[e.key])
 }
 
 func columnWidth(column []gridCell) int {
@@ -150,12 +190,13 @@ func (g *catalogGrid) view(height int, focused bool) string {
 	if g.isGrid() {
 		first, last = 0, 0
 	}
-	lines = g.scroll.cut(lines, first, last, height-linesUnderSections)
 	detail := ""
 	if focused {
 		detail = g.detail()
 	}
-	return strings.Join(append(lines, "", detail), "\n")
+	under := g.linesUnderSections(detail)
+	lines = g.scroll.cut(lines, first, last, height-len(under))
+	return strings.Join(append(lines, under...), "\n")
 }
 
 func joinColumns(columns [][]gridCell, col, row int, showCursor bool) []string {

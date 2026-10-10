@@ -19,16 +19,15 @@ type catalogLoaded struct {
 }
 
 type catalogScreen struct {
-	load func() (catalog.Catalog, error)
-	// offered drops the servers mini already has.
-	offered func([]catalog.Entry) []catalog.Entry
-	// imports is what the Import screen has ticked; a catalog server it covers is hidden.
+	load   func() (catalog.Catalog, error)
+	inMini func(catalog.Entry) bool
+	// imports is what the Import screen has ticked; a catalog server it covers will be imported.
 	imports           func() []config.ServerConfig
 	loaded            bool
 	loadErr           error
 	popular           []string
 	loadedEntries     []catalog.Entry
-	available         []catalog.Entry
+	byCategory        []catalog.Entry
 	checked           map[string]bool
 	grid              *catalogGrid
 	width, rowsHeight int
@@ -36,12 +35,12 @@ type catalogScreen struct {
 
 type catalogParams struct {
 	load    func() (catalog.Catalog, error)
-	offered func([]catalog.Entry) []catalog.Entry
+	inMini  func(catalog.Entry) bool
 	imports func() []config.ServerConfig
 }
 
 func newCatalogScreen(p catalogParams) *catalogScreen {
-	s := &catalogScreen{load: p.load, offered: p.offered, imports: p.imports, checked: map[string]bool{}}
+	s := &catalogScreen{load: p.load, inMini: p.inMini, imports: p.imports, checked: map[string]bool{}}
 	s.enter()
 	return s
 }
@@ -65,7 +64,7 @@ func (s *catalogScreen) update(msg tea.Msg) tea.Cmd {
 	c := loaded.catalog
 	s.popular, s.loadedEntries = c.Popular, c.Entries
 	if loaded.err == nil {
-		s.available = initcmd.GroupByCategory(s.offered(c.Entries))
+		s.byCategory = initcmd.GroupByCategory(c.Entries)
 	}
 	s.enter()
 	return nil
@@ -74,13 +73,13 @@ func (s *catalogScreen) update(msg tea.Msg) tea.Cmd {
 // enter rebuilds the rows, since going back to Import may have ticked a server the catalog has.
 // The Import row wins: the catalog's tick on that server is dropped.
 func (s *catalogScreen) enter() tea.Cmd {
-	shown := s.shown()
+	offered := s.offered()
 	for name := range s.checked {
-		if !slices.ContainsFunc(shown, func(e catalog.Entry) bool { return e.Name == name }) {
+		if !slices.ContainsFunc(offered, func(e catalog.Entry) bool { return e.Name == name }) {
 			delete(s.checked, name)
 		}
 	}
-	s.grid = newCatalogGrid(s.sections(shown), s.checked)
+	s.grid = newCatalogGrid(s.sections(), s.checked)
 	s.grid.resize(s.width, s.rowsHeight)
 	return nil
 }
@@ -90,29 +89,44 @@ func (s *catalogScreen) resize(width, rowsHeight int) {
 	s.grid.resize(width, rowsHeight)
 }
 
-func (s *catalogScreen) shown() []catalog.Entry {
-	covered := initcmd.NewConfiguredKeys(s.imports())
-	return slices.DeleteFunc(slices.Clone(s.available), covered.Has)
+// Every catalog server is shown; only one mini doesn't run or import yet can be ticked.
+func (s *catalogScreen) state(e catalog.Entry, imported initcmd.ConfiguredKeys) entryState {
+	switch {
+	case s.inMini(e):
+		return entryInMini
+	case imported.Has(e):
+		return entryWillImport
+	}
+	return entryOffered
+}
+
+func (s *catalogScreen) offered() []catalog.Entry {
+	imported := initcmd.NewConfiguredKeys(s.imports())
+	return slices.DeleteFunc(slices.Clone(s.byCategory), func(e catalog.Entry) bool {
+		return s.state(e, imported) != entryOffered
+	})
 }
 
 // Popular keeps the catalog's ranking; every other section is alphabetical, so a name is easy to find.
-func (s *catalogScreen) sections(shown []catalog.Entry) []gridSection {
+func (s *catalogScreen) sections() []gridSection {
+	imported := initcmd.NewConfiguredKeys(s.imports())
+	entry := func(e catalog.Entry) gridEntry { return catalogGridEntry(e, s.state(e, imported)) }
 	popular := gridSection{title: "Popular", repeated: true}
 	for _, name := range s.popular {
-		if i := slices.IndexFunc(shown, func(e catalog.Entry) bool { return e.Name == name }); i >= 0 {
-			popular.entries = append(popular.entries, catalogGridEntry(shown[i]))
+		if i := slices.IndexFunc(s.byCategory, func(e catalog.Entry) bool { return e.Name == name }); i >= 0 {
+			popular.entries = append(popular.entries, entry(s.byCategory[i]))
 		}
 	}
 	var sections []gridSection
 	if len(popular.entries) > 0 {
 		sections = append(sections, popular)
 	}
-	for _, e := range shown {
+	for _, e := range s.byCategory {
 		if len(sections) == 0 || sections[len(sections)-1].title != e.Category {
 			sections = append(sections, gridSection{title: e.Category})
 		}
 		last := &sections[len(sections)-1]
-		last.entries = append(last.entries, catalogGridEntry(e))
+		last.entries = append(last.entries, entry(e))
 	}
 	for i := range sections {
 		if !sections[i].repeated {
@@ -124,8 +138,10 @@ func (s *catalogScreen) sections(shown []catalog.Entry) []gridSection {
 	return sections
 }
 
-func catalogGridEntry(e catalog.Entry) gridEntry {
-	return gridEntry{key: e.Name, title: cmp.Or(e.Title, e.Name), host: host(e.URL), description: e.Description}
+func catalogGridEntry(e catalog.Entry, state entryState) gridEntry {
+	return gridEntry{
+		key: e.Name, title: cmp.Or(e.Title, e.Name), host: host(e.URL), description: e.Description, state: state,
+	}
 }
 
 func host(rawURL string) string {
@@ -163,14 +179,14 @@ func (s *catalogScreen) body(height int, focused bool) string {
 		return "loading…"
 	case s.loadErr != nil:
 		return "The catalog couldn't be loaded: " + s.loadErr.Error()
-	case len(s.available) == 0:
-		return "mini already has every server in the catalog."
+	case len(s.byCategory) == 0:
+		return "The catalog lists no servers."
 	}
 	return s.grid.view(height, focused)
 }
 
 func (s *catalogScreen) offersEntries() bool {
-	return s.loaded && s.loadErr == nil && len(s.available) > 0
+	return s.loaded && s.loadErr == nil && len(s.byCategory) > 0
 }
 
 func (s *catalogScreen) keys() string {
@@ -194,9 +210,9 @@ func (s *catalogScreen) entries() ([]catalog.Entry, bool) {
 
 // Until it loads the screen isn't empty: the user waits on it rather than skipping it.
 func (s *catalogScreen) empty() bool {
-	return s.loaded && s.loadErr == nil && len(s.shown()) == 0
+	return s.loaded && s.loadErr == nil && len(s.offered()) == 0
 }
 
 func (s *catalogScreen) picks() []catalog.Entry {
-	return slices.DeleteFunc(s.shown(), func(e catalog.Entry) bool { return !s.checked[e.Name] })
+	return slices.DeleteFunc(s.offered(), func(e catalog.Entry) bool { return !s.checked[e.Name] })
 }
