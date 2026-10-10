@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -11,13 +9,7 @@ type gridEntry struct {
 }
 
 func (e gridEntry) matches(filter string) bool {
-	filter = strings.ToLower(filter)
-	for _, text := range []string{e.key, e.title, e.host, e.description} {
-		if strings.Contains(strings.ToLower(text), filter) {
-			return true
-		}
-	}
-	return false
+	return matchesFilter(filter, e.key, e.title, e.host, e.description)
 }
 
 type gridSection struct {
@@ -39,7 +31,7 @@ type catalogGrid struct {
 	sections       []gridSection
 	checked        map[string]bool
 	at             gridSpot
-	onContinue     bool
+	actions        actions
 	open           int
 	filter         textFilter
 	width          int
@@ -48,7 +40,7 @@ type catalogGrid struct {
 }
 
 func newCatalogGrid(sections []gridSection, checked map[string]bool) *catalogGrid {
-	g := &catalogGrid{sections: sections, checked: checked}
+	g := &catalogGrid{sections: sections, checked: checked, actions: newActions("Continue →")}
 	g.at = g.firstEntry()
 	return g
 }
@@ -86,7 +78,7 @@ func (g *catalogGrid) firstEntry() gridSpot {
 
 func (g *catalogGrid) current() (gridEntry, bool) {
 	shown := g.shown()
-	if g.onContinue || g.at.section >= len(shown) || g.at.entry < 0 {
+	if g.actions.active || g.at.section >= len(shown) || g.at.entry < 0 {
 		return gridEntry{}, false
 	}
 	entries := shown[g.at.section].entries
@@ -96,32 +88,18 @@ func (g *catalogGrid) current() (gridEntry, bool) {
 	return entries[g.at.entry], true
 }
 
-// handle reports whether the grid took the key; enter on Continue is left to the screen.
+// handle reports whether the grid took the key; enter on an action is left to the screen.
 func (g *catalogGrid) handle(key tea.KeyPressMsg) bool {
-	if g.filter.typing {
-		changed, move := g.filter.typingKey(key)
-		if changed {
-			g.filterChanged()
-		}
-		if move {
-			g.move(key.String())
-		}
+	if g.filter.handle(key, g) {
 		return true
 	}
 	switch key.String() {
 	case "up", "down", "left", "right":
-		g.move(key.String())
+		g.moveKey(key.String())
 	case "tab":
-		g.onContinue = !g.onContinue
+		g.actions.toggle()
 	case "space", "enter":
 		return g.activate(key.String())
-	case "/":
-		g.filter.typing, g.onContinue = true, false
-	case "esc":
-		if !g.filter.set("") {
-			return false
-		}
-		g.filterChanged()
 	default:
 		return false
 	}
@@ -129,15 +107,18 @@ func (g *catalogGrid) handle(key tea.KeyPressMsg) bool {
 }
 
 func (g *catalogGrid) filterChanged() {
-	g.at, g.onContinue, g.scroll = g.firstEntry(), false, scroll{}
+	g.at, g.actions.active, g.scroll = g.firstEntry(), false, scroll{}
 }
 
 func (g *catalogGrid) activate(key string) bool {
-	if g.onContinue {
+	if g.actions.active {
 		return key != "enter"
 	}
 	if g.at.entry < 0 {
-		g.toggleOpen(g.at.section)
+		// A filter shows every matching category open, so a heading has nothing to open.
+		if g.filter.text == "" {
+			g.toggleOpen(g.at.section)
+		}
 		return true
 	}
 	if e, ok := g.current(); ok {
@@ -154,13 +135,15 @@ func (g *catalogGrid) toggleOpen(section int) {
 	g.open = section
 }
 
-func (g *catalogGrid) move(key string) {
-	if g.onContinue {
-		g.onContinue = key != "up"
+func (g *catalogGrid) moveKey(key string) {
+	if g.actions.active {
+		if key == "up" || key == "down" {
+			g.actions.move(map[string]int{"up": -1, "down": 1}[key])
+		}
 		return
 	}
 	columns := g.columns()
-	col, row := g.locate(columns)
+	col, row, _ := g.locate(columns)
 	switch key {
 	case "up", "down":
 		g.moveVertically(columns[col], row, map[string]int{"up": -1, "down": 1}[key])
@@ -178,7 +161,7 @@ func (g *catalogGrid) moveVertically(column []gridCell, row, step int) {
 		}
 	}
 	if step > 0 {
-		g.onContinue = true
+		g.actions.reach()
 	}
 }
 

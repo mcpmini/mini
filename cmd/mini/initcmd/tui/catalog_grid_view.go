@@ -23,6 +23,7 @@ const (
 func (g *catalogGrid) resize(width, windowHeight int) {
 	g.width = width
 	g.sectionsHeight = windowHeight - headingLines - blankLinesAroundBody - tallestFooter - linesUnderSections
+	g.settle()
 }
 
 type gridCell struct {
@@ -120,38 +121,42 @@ func columnWidth(column []gridCell) int {
 	return width
 }
 
-// locate finds the cursor's cell. A cursor the layout no longer shows, after a resize or a
-// section closing, moves to the nearest row it can rest on.
-func (g *catalogGrid) locate(columns [][]gridCell) (col, row int) {
+// locate finds the cursor's cell. A cursor a resized layout no longer shows stands on the nearest
+// row it can rest on; settle moves it there.
+func (g *catalogGrid) locate(columns [][]gridCell) (col, row int, at gridSpot) {
 	for c, column := range columns {
 		for r, cell := range column {
 			if cell.selectable && cell.spot == g.at {
-				return c, r
+				return c, r, cell.spot
 			}
 		}
 	}
 	for c, column := range columns {
 		for r, cell := range column {
 			if cell.selectable && cell.spot.section == g.at.section {
-				g.at = cell.spot
-				return c, r
+				return c, r, cell.spot
 			}
 		}
 	}
-	g.at = g.firstEntry()
-	return 0, 0
+	return 0, 0, g.firstEntry()
+}
+
+// settle runs on resize, so drawing a frame never moves the cursor.
+func (g *catalogGrid) settle() {
+	_, _, g.at = g.locate(g.columns())
 }
 
 func (g *catalogGrid) view(height int) string {
 	columns := g.columns()
-	col, row := g.locate(columns)
-	lines := joinColumns(columns, col, row, !g.onContinue)
+	col, row, _ := g.locate(columns)
+	lines := joinColumns(columns, col, row, !g.actions.active)
 	first, last := row, row
 	if g.isGrid() {
 		first, last = 0, 0
 	}
 	lines = g.scroll.cut(lines, first, last, height-linesUnderSections)
-	return strings.Join(append(lines, "", g.detail(), "", cursorMark(g.onContinue)+"Continue →"), "\n")
+	lines = append(lines, "", g.detail())
+	return strings.Join(append(lines, g.actions.lines()...), "\n")
 }
 
 func joinColumns(columns [][]gridCell, col, row int, showCursor bool) []string {
@@ -185,7 +190,8 @@ func (g *catalogGrid) detail() string {
 	if !ok {
 		return ""
 	}
-	parts := slices.DeleteFunc([]string{e.title, e.description, e.host}, func(p string) bool { return p == "" })
+	// The host comes before the description, which can run past the window's edge.
+	parts := slices.DeleteFunc([]string{e.title, e.host, e.description}, func(p string) bool { return p == "" })
 	return "  " + dim.Render(strings.Join(parts, " · "))
 }
 

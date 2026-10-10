@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
@@ -11,6 +12,49 @@ import (
 type textFilter struct {
 	text   string
 	typing bool
+}
+
+// filterTarget is what a filter narrows: it resets its cursor when the text changes, and still
+// moves it while the filter is typed.
+type filterTarget interface {
+	filterChanged()
+	moveKey(key string)
+}
+
+// handle takes every key while the filter is typed, and / and esc otherwise. Esc is taken only
+// when it clears a filter, so with none it can go back.
+func (f *textFilter) handle(key tea.KeyPressMsg, t filterTarget) bool {
+	if f.typing {
+		changed, move := f.typingKey(key)
+		if changed {
+			t.filterChanged()
+		}
+		if move {
+			t.moveKey(key.String())
+		}
+		return true
+	}
+	switch key.String() {
+	case "/":
+		f.typing = true
+		return true
+	case "esc":
+		if f.set("") {
+			t.filterChanged()
+			return true
+		}
+	}
+	return false
+}
+
+func matchesFilter(filter string, texts ...string) bool {
+	filter = strings.ToLower(filter)
+	for _, text := range texts {
+		if strings.Contains(strings.ToLower(text), filter) {
+			return true
+		}
+	}
+	return false
 }
 
 // typingKey handles a key while the filter is typed. It reports whether the text changed, and

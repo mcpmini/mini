@@ -193,7 +193,7 @@ func (s *catalogScreen) keys() string {
 	switch {
 	case s.loadErr != nil || len(s.available) == 0:
 		return "enter continue"
-	case s.grid.onContinue:
+	case s.grid.actions.active:
 		return s.grid.keys("enter continue · ↑ back to the list")
 	case s.grid.isGrid():
 		return s.grid.keys("↑↓←→ move · space/enter tick · tab continue · / filter")

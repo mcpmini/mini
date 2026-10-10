@@ -1,9 +1,6 @@
 package tui
 
 import (
-	"slices"
-	"strings"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -16,10 +13,7 @@ type row struct {
 }
 
 func (r row) matches(filter string) bool {
-	filter = strings.ToLower(filter)
-	return slices.ContainsFunc([]string{r.label, r.detail}, func(text string) bool {
-		return strings.Contains(strings.ToLower(text), filter)
-	})
+	return matchesFilter(filter, r.label, r.detail)
 }
 
 // The cursor indexes the rows the filter shows.
@@ -27,16 +21,15 @@ type list struct {
 	rows    []row
 	checked map[string]bool
 	cursor  int
-	// onContinue puts the cursor on the Continue row under the rows; enter there is the screen's.
-	onContinue bool
-	scroll     scroll
-	filter     textFilter
+	actions actions
+	scroll  scroll
+	filter  textFilter
 	// header names the columns; it stays above the rows as they scroll. No label means no header.
 	header row
 }
 
 func newList(rows []row, checked map[string]bool) *list {
-	return &list{rows: rows, checked: checked}
+	return &list{rows: rows, checked: checked, actions: newActions("Continue →")}
 }
 
 func (l *list) visible() []row {
@@ -60,23 +53,20 @@ func (l *list) current() (row, bool) {
 	return shown[l.cursor], true
 }
 
-// Moving down past the last row reaches Continue, and up from Continue returns to the rows.
+// Moving down past the last row reaches the actions.
 func (l *list) move(step int) {
 	switch {
-	case l.onContinue:
-		l.onContinue = step > 0
+	case l.actions.active:
+		l.actions.move(step)
 	case step > 0 && l.cursor >= len(l.visible())-1:
-		l.onContinue = true
+		l.actions.reach()
 	default:
 		l.cursor = min(max(l.cursor+step, 0), max(len(l.visible())-1, 0))
 	}
 }
 
 func (l *list) toggle() {
-	if l.onContinue {
-		return
-	}
-	if r, ok := l.current(); ok {
+	if r, ok := l.current(); ok && !l.actions.active {
 		l.checked[r.key] = !l.checked[r.key]
 	}
 }
@@ -94,60 +84,40 @@ func (l *list) toggleAll() {
 }
 
 func (l *list) filterChanged() {
-	l.cursor, l.onContinue, l.scroll = 0, false, scroll{}
+	l.cursor, l.actions.active, l.scroll = 0, false, scroll{}
 }
 
 func (l *list) keys(screenKeys string) string {
 	return l.filter.keys(screenKeys)
 }
 
+// handle reports whether the list took the key; enter on an action is left to the screen.
 func (l *list) handle(key tea.KeyPressMsg) bool {
-	if l.filter.typing {
-		changed, move := l.filter.typingKey(key)
-		if changed {
-			l.filterChanged()
-		}
-		if move {
-			l.moveBy(key)
-		}
+	if l.filter.handle(key, l) {
 		return true
 	}
-	return l.moveBy(key) || l.act(key.String())
-}
-
-// act reports whether the list took the key; enter on Continue is left to the screen.
-func (l *list) act(key string) bool {
-	switch key {
+	switch key.String() {
+	case "up", "down":
+		l.moveKey(key.String())
 	case "space":
 		l.toggle()
 	case "enter":
-		if l.onContinue {
+		if l.actions.active {
 			return false
 		}
 		l.toggle()
 	case "tab":
-		l.onContinue = !l.onContinue
-	case "/":
-		l.filter.typing, l.onContinue = true, false
-	case "esc":
-		if !l.filter.set("") {
-			return false
-		}
-		l.filterChanged()
+		l.actions.toggle()
 	default:
 		return false
 	}
 	return true
 }
 
-func (l *list) moveBy(key tea.KeyPressMsg) bool {
-	switch key.String() {
-	case "up":
+func (l *list) moveKey(key string) {
+	if key == "up" {
 		l.move(-1)
-	case "down":
-		l.move(1)
-	default:
-		return false
+		return
 	}
-	return true
+	l.move(1)
 }

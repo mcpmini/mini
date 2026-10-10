@@ -76,7 +76,7 @@ func (s *importScreen) body(height int) string {
 }
 
 func (s *importScreen) keys() string {
-	if s.list.onContinue {
+	if s.list.actions.active {
 		return s.list.keys("enter continue · ↑ back to the list")
 	}
 	return s.list.keys("space/enter tick · a all · tab continue · / filter")

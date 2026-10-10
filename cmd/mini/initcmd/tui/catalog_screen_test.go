@@ -166,15 +166,27 @@ func TestCatalogScreen_continueFollowsTheServersAndEnterThereMovesOn(t *testing.
 	})
 }
 
-func TestCatalogScreen_theLineUnderTheGridNamesTheHostOfTheServerUnderTheCursor(t *testing.T) {
-	s := loadedScreen(testCatalog(), noImports)
-	want := "GitHub · Repositories and pull requests · api.github.example"
-	if text := catalogText(s); !strings.Contains(text, want) {
-		t.Errorf(
-			"screen:\n%s\nwant %q: the grid shows only names, so the host shows for the server space ticks",
-			text,
-			want,
-		)
+func TestCatalogScreen_theLineUnderTheGridShowsTheHostWithinTheWindowWhateverTheDescription(t *testing.T) {
+	c := testCatalog()
+	c.Entries[2].Description = strings.Repeat("Repositories and pull requests, ", 4)
+	s := loadedScreen(c, noImports)
+	s.resize(80, 40)
+	var line string
+	for _, l := range strings.Split(catalogText(s), "\n") {
+		if strings.Contains(l, "GitHub ·") {
+			line = l
+		}
+	}
+	// The app cuts every line at the window's edge; the host must sit before the cut.
+	if cut := ansi.Truncate(
+		line,
+		80,
+		"",
+	); !strings.HasPrefix(
+		strings.TrimSpace(cut),
+		"GitHub · api.github.example · ",
+	) {
+		t.Errorf("line under the grid %q; want the host right after the name, so an 80-column window shows it", line)
 	}
 }
 
@@ -292,5 +304,15 @@ func TestCatalogScreen_upFromContinueReturnsToTheServerTheCursorLeft(t *testing.
 	pressAll(s, "right", "tab", "up")
 	if text := catalogText(s); !strings.Contains(text, "> [ ] Asana") || strings.Contains(text, "> Continue") {
 		t.Errorf("screen:\n%s\nwant the cursor back on Asana", text)
+	}
+}
+
+func TestCatalogScreen_spaceAfterAResizeActsWhereTheCursorNowIs(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	pressAll(s, "right", "right")
+	s.resize(50, 40)
+	s.handle(press("space"))
+	if picks := s.picks(); len(picks) != 0 {
+		t.Errorf("picks = %v; want none: Sentry's category closed, so space opened it instead", entryNames(picks))
 	}
 }

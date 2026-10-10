@@ -17,14 +17,12 @@ func (l *list) view(height int) string {
 	if l.header.label != "" {
 		shown = append(shown, l.headerLine())
 	}
-	height -= len(shown) + linesUnderRows
+	// The actions stay in view however far the rows scroll.
+	height -= len(shown) + len(l.actions.lines())
 	lines, first, last := l.lines()
 	shown = append(shown, l.scroll.cut(lines, first, last, height)...)
-	return strings.Join(append(shown, "", cursorMark(l.onContinue)+"Continue →"), "\n")
+	return strings.Join(append(shown, l.actions.lines()...), "\n")
 }
-
-// Under the rows: a blank line and Continue, which stay in view however far the rows scroll.
-const linesUnderRows = 2
 
 func (l *list) filterLine() string {
 	return l.filter.line()
@@ -44,7 +42,7 @@ func (l *list) lines() (lines []string, first, last int) {
 	width := l.labelWidth()
 	for i, r := range l.visible() {
 		start := len(lines)
-		lines = append(lines, l.line(r, i == l.cursor && !l.onContinue, width))
+		lines = append(lines, l.line(r, i == l.cursor && !l.actions.active, width))
 		if r.subtitle != "" {
 			lines = append(lines, "      "+dim.Render(r.subtitle))
 		}
