@@ -20,7 +20,6 @@ func TestCopyToClipboard_givesTheTextToThePlatformsTool(t *testing.T) {
 	out := filepath.Join(dir, "copied")
 	fakeClipboardTool(t, dir, clipboardTools()[0][0], "exec /bin/cat > "+out)
 	t.Setenv("PATH", dir)
-	t.Setenv("SSH_CONNECTION", "")
 	if err := copyToClipboard(t.Context(), "https://auth.example/linear"); err != nil {
 		t.Fatalf("copy: %v", err)
 	}
@@ -55,24 +54,10 @@ func TestCopyToClipboard_aFailingToolGivesTheNextOneATurn(t *testing.T) {
 	fakeClipboardTool(t, dir, tools[0][0], "exit 1")
 	fakeClipboardTool(t, dir, tools[1][0], "exec /bin/cat > "+out)
 	t.Setenv("PATH", dir)
-	t.Setenv("SSH_CONNECTION", "")
 	if err := copyToClipboard(t.Context(), "https://auth.example/linear"); err != nil {
 		t.Fatalf("copy: %v, want the second tool to copy", err)
 	}
 	if got := testutil.ReadFile(t, out); string(got) != "https://auth.example/linear" {
 		t.Errorf("second tool got %q, want the whole URL", got)
-	}
-}
-
-func TestCopyToClipboard_overSSHLeavesTheCopyToTheTerminal(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the fake tool is a shell script")
-	}
-	dir := t.TempDir()
-	fakeClipboardTool(t, dir, clipboardTools()[0][0], "exec /bin/cat > /dev/null")
-	t.Setenv("PATH", dir)
-	t.Setenv("SSH_CONNECTION", "10.0.0.1 50000 10.0.0.2 22")
-	if err := copyToClipboard(t.Context(), "x"); !errors.Is(err, errNoClipboardTool) {
-		t.Errorf("copy over SSH = %v, want errNoClipboardTool: the tool would fill the remote clipboard", err)
 	}
 }

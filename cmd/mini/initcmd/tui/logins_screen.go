@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"slices"
 	"strings"
 	"unicode"
@@ -257,7 +256,7 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 func (s *loginsScreen) rowLines(status initcmd.ServerStatus, atCursor bool, width int) []string {
 	lines := []string{cursorMark(atCursor) + fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status))}
 	if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
-		lines = append(lines, s.linkLines(4+width)...)
+		lines = append(lines, s.urlLines(4+width)...)
 	}
 	return lines
 }
@@ -292,35 +291,13 @@ func (s *loginsScreen) section(status initcmd.ServerStatus) string {
 
 // Authorize URLs run to hundreds of characters, so the link shows its host and as much of the path as
 // fits: the host is what tells the user which server they are signing in to. c copies the whole URL.
-// The app cuts lines at the window's edge, so the whole link wraps to stay selectable.
-func (s *loginsScreen) linkLines(indent int) []string {
-	if !s.pending.revealed {
-		return []string{s.linkLine(indent)}
-	}
+// Authorize URLs run to hundreds of characters, and the app cuts lines at the window's edge.
+func (s *loginsScreen) urlLines(indent int) []string {
 	var lines []string
-	for _, line := range strings.Split(ansi.Hardwrap(s.pending.url, max(s.width-indent, 20), false), "\n") {
-		lines = append(lines, strings.Repeat(" ", indent)+ansi.SetHyperlink(s.pending.url)+line+ansi.ResetHyperlink())
+	for _, part := range strings.Split(ansi.Hardwrap(s.pending.url, max(s.width-indent, 20), false), "\n") {
+		lines = append(lines, strings.Repeat(" ", indent)+ansi.SetHyperlink(s.pending.url)+part+ansi.ResetHyperlink())
 	}
 	return lines
-}
-
-func (s *loginsScreen) linkLine(indent int) string {
-	u, err := url.Parse(s.pending.url)
-	text := s.pending.url
-	if err == nil && u.Host != "" {
-		text = u.Host + u.EscapedPath()
-		if u.RawQuery != "" {
-			text += "?" + u.RawQuery
-		}
-	}
-	host := len(text)
-	if err == nil {
-		host = len(u.Host)
-	}
-	// A long server name moves the link left rather than let the app cut its host at the edge.
-	indent = max(min(indent, s.width-host-1), 2)
-	shown := ansi.Truncate(text, max(s.width-indent, host+1), "…")
-	return strings.Repeat(" ", indent) + ansi.SetHyperlink(s.pending.url) + shown + ansi.ResetHyperlink()
 }
 
 func (s *loginsScreen) resize(width, _ int) {

@@ -187,7 +187,7 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 	want := "> linear  waiting for the browser; if it didn't open, use this link:\n" +
-		"          auth.example/linear\n"
+		"          https://auth.example/linear\n"
 	if text := loginsText(s); !strings.Contains(text, want) {
 		t.Fatalf("screen:\n%s\nwant linear waiting with its URL below", text)
 	}
@@ -254,29 +254,32 @@ func TestLoginsScreen_leavingCancelsTheWaitingLogin(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_aLongLoginURLShowsItsHostAndLinksToTheWholeURL(t *testing.T) {
+func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *testing.T) {
 	url := "https://auth.example/authorize?" + strings.Repeat("scope=read&", 20)
-	for _, name := range []string{"linear", strings.Repeat("n", 34)} {
-		t.Run(fmt.Sprintf("%d-character name", len(name)), func(t *testing.T) {
-			s := loginScreen(newFakeLogins(), name)
-			s.p.startLogin = func(ctx context.Context, _ string) (Login, error) {
-				return Login{URL: url, Wait: func() error { <-ctx.Done(); return ctx.Err() }}, nil
-			}
-			t.Cleanup(s.cancelLogin)
-			s.resize(40, 30)
-			_, cmd := s.handle(press("enter"))
-			s.update(cmd())
+	s := loginScreen(newFakeLogins(), "linear")
+	s.p.startLogin = func(ctx context.Context, _ string) (Login, error) {
+		return Login{URL: url, Wait: func() error { <-ctx.Done(); return ctx.Err() }}, nil
+	}
+	t.Cleanup(s.cancelLogin)
+	s.resize(40, 30)
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
 
-			body := s.body(40, true)
-			link := strings.Split(ansi.Strip(body), "\n")[2]
-			if !strings.HasPrefix(strings.TrimSpace(link), "auth.example") || !strings.HasSuffix(link, "…") ||
-				ansi.StringWidth(link) > 40 {
-				t.Errorf("link line %q; want the whole host first, the rest cut to the 40-column window", link)
-			}
-			if !strings.Contains(body, ansi.SetHyperlink(url)) {
-				t.Error("the link line doesn't link to the whole URL")
-			}
-		})
+	body := s.body(40, true)
+	var wrapped []string
+	for _, line := range strings.Split(ansi.Strip(body), "\n")[1:] {
+		if strings.HasPrefix(line, "          ") {
+			wrapped = append(wrapped, strings.TrimSpace(line))
+		}
+		if width := ansi.StringWidth(line); width > 40 && !strings.HasPrefix(line, "> linear") {
+			t.Errorf("line %q is %d wide, past the 40-column window", line, width)
+		}
+	}
+	if got := strings.Join(wrapped, ""); got != url || len(wrapped) < 2 {
+		t.Errorf("wrapped URL lines = %q; want the whole URL split over several lines", wrapped)
+	}
+	if links := strings.Count(body, ansi.SetHyperlink(url)); links != len(wrapped) {
+		t.Errorf("%d of %d URL lines link to the whole URL", links, len(wrapped))
 	}
 }
 
@@ -349,7 +352,7 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 	})
 }
 
-func TestLoginsScreen_aShortWindowKeepsThePendingLoginsLinkInView(t *testing.T) {
+func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 	logins := newFakeLogins("linear", "sentry", "notion")
 	s := loginScreen(logins, "linear", "sentry", "notion")
 	s.resize(30, 30)
@@ -357,10 +360,20 @@ func TestLoginsScreen_aShortWindowKeepsThePendingLoginsLinkInView(t *testing.T) 
 	_, cmd := s.handle(press("enter"))
 	s.update(cmd())
 	t.Cleanup(s.cancelLogin)
-	body := strings.Split(ansi.Strip(s.body(2, true)), "\n")
-	if len(body) != 2 || !strings.HasPrefix(body[0], "> sentry") ||
-		strings.TrimSpace(body[1]) != "auth.example/sentry" {
-		t.Errorf("body at height 2:\n%s\nwant sentry's row and its link", strings.Join(body, "\n"))
+	all := strings.Split(ansi.Strip(s.body(0, true)), "\n")
+	if len(all) < 5 || !strings.HasPrefix(all[2], "> sentry") {
+		t.Fatalf(
+			"full body:\n%s\nwant sentry's row after the heading, its URL wrapped over two lines",
+			strings.Join(all, "\n"),
+		)
+	}
+	sentryAndURL := strings.Join(all[2:5], "\n")
+
+	if body := ansi.Strip(s.body(3, true)); body != sentryAndURL {
+		t.Errorf("body at height 3:\n%s\nwant sentry's row and its whole URL:\n%s", body, sentryAndURL)
+	}
+	if body := ansi.Strip(s.body(2, true)); body != strings.Join(all[2:4], "\n") {
+		t.Errorf("body at height 2:\n%s\nwant sentry's row kept when its URL doesn't fit", body)
 	}
 }
 
@@ -504,24 +517,18 @@ func TestLoginsScreen_cCopiesTheWholeLinkAndTheFooterSaysSo(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_aCopyThatCantBeConfirmedAsksTheTerminalAndShowsTheWholeLink(t *testing.T) {
+func TestLoginsScreen_aCopyThatCantBeConfirmedAsksTheTerminal(t *testing.T) {
 	for name, err := range map[string]error{
 		"no clipboard tool": errNoClipboardTool,
 		"a failing tool":    errors.New("xclip: exit status 1"),
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, a := waitingLogin(t, func(string) error { return err })
-			if strings.Contains(framedText(a), "https://") {
-				t.Fatalf("screen before c:\n%s\nwant only the short link", framedText(a))
-			}
 			_, cmd := a.Update(press("c"))
 			terminalCopy := s.update(cmd())
 			if terminalCopy == nil || !strings.HasPrefix(a.keys(s), "asked the terminal to copy · ") {
 				t.Errorf("command %v, keys %q; want the terminal asked, and the footer not claiming it worked",
 					terminalCopy, a.keys(s))
-			}
-			if text := framedText(a); !strings.Contains(text, "https://auth.example/linear") {
-				t.Errorf("screen after c:\n%s\nwant the whole link shown to select by hand", text)
 			}
 		})
 	}
@@ -537,32 +544,6 @@ func TestLoginsScreen_cIsOfferedOnlyOnceTheLoginHasALink(t *testing.T) {
 	s.update(cmd())
 	if !strings.Contains(s.keys(), "c copy link") {
 		t.Errorf("keys once the link arrived = %q, want c copy link", s.keys())
-	}
-}
-
-func TestLoginsScreen_theWholeLinkWrapsWithinTheWindow(t *testing.T) {
-	s, a := waitingLogin(t, func(string) error { return errNoClipboardTool })
-	long := "https://auth.example/authorize?state=" + strings.Repeat("x", 100)
-	s.pending.url = long
-	s.resize(minWidth, 30)
-	deliver(a, send(a, "c"))
-	var joined strings.Builder
-	for _, line := range strings.Split(ansi.Strip(s.body(30, false)), "\n") {
-		if strings.Contains(line, "linear") {
-			continue
-		}
-		if ansi.StringWidth(line) > minWidth {
-			t.Errorf(
-				"line %q is %d wide, want at most %d: the app cuts it at the edge",
-				line,
-				ansi.StringWidth(line),
-				minWidth,
-			)
-		}
-		joined.WriteString(strings.TrimSpace(line))
-	}
-	if !strings.Contains(joined.String(), long) {
-		t.Errorf("body:\n%s\nwant the whole link across its lines", s.body(30, false))
 	}
 }
 

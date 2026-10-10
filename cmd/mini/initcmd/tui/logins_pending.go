@@ -7,13 +7,11 @@ import (
 )
 
 type pendingLogin struct {
-	id   int
-	name string
-	url  string
-	// revealed shows the whole link once a copy can't confirm it worked, so it can be selected by hand.
-	revealed bool
-	cancel   context.CancelFunc
-	done     chan struct{}
+	id     int
+	name   string
+	url    string
+	cancel context.CancelFunc
+	done   chan struct{}
 	// Sized for everything runLogin sends, so cancelling and waiting on done never blocks on the UI.
 	events chan tea.Msg
 }
@@ -107,7 +105,7 @@ func (s *loginsScreen) copyLink() tea.Cmd {
 }
 
 // Without a working clipboard tool, as over SSH, the terminal is asked to copy instead. It never says
-// whether it did, so the notice doesn't claim it and the whole link is shown to select by hand.
+// whether it did, so the notice doesn't claim it.
 func (s *loginsScreen) linkCopied(msg linkCopied) tea.Cmd {
 	if !s.current(msg.id) {
 		return nil
@@ -116,6 +114,6 @@ func (s *loginsScreen) linkCopied(msg linkCopied) tea.Cmd {
 		s.notice = "✓ link copied"
 		return nil
 	}
-	s.notice, s.pending.revealed = "asked the terminal to copy", true
+	s.notice = "asked the terminal to copy"
 	return tea.SetClipboard(s.pending.url)
 }

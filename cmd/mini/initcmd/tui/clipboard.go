@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -24,10 +23,6 @@ func copyLinkToClipboard(link string) error {
 // copyToClipboard runs the platform's own clipboard tools in turn, so the copy reports whether it
 // worked; a terminal asked to copy over its escape codes never says.
 func copyToClipboard(ctx context.Context, text string) error {
-	// Over SSH the tools would fill the remote machine's clipboard, not the user's.
-	if os.Getenv("SSH_CONNECTION") != "" {
-		return errNoClipboardTool
-	}
 	err := errNoClipboardTool
 	for _, tool := range clipboardTools() {
 		path, lookErr := exec.LookPath(tool[0])
