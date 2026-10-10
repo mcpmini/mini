@@ -98,7 +98,7 @@ func pickedNames(s *connectScreen) []string {
 
 func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
-	want := "> Just connect mini\n  Adds mini next to your existing MCPs\n  Don't connect\n  Leaves Claude as it is"
+	want := "> Just connect mini\n  Adds mini next to your existing MCPs\n  I'll connect mini later\n  Leaves Claude as it is"
 	if text := connectText(s); s.heading() != "Connect mini to Claude" || text != want {
 		t.Fatalf("%s\n%s\nwant the heading to name Claude, and:\n%s", s.heading(), text, want)
 	}
@@ -128,12 +128,16 @@ func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) 
 	leaves := strings.Contains(text, "Leaves Claude, Codex and Cursor as they are")
 	if !strings.Contains(text, "> [ ] Codex\n") || !leaves {
 		t.Errorf(
-			"screen:\n%s\nwant the cursor on Codex, unticked by enter, and Don't connect naming every agent it leaves",
+			"screen:\n%s\nwant the cursor on Codex, unticked by enter, and I'll connect mini later naming every agent it leaves",
 			text,
 		)
 	}
 	if cmd := send(a, "tab", "down", "enter"); cmd == nil || s.chosen != initcmd.DontConnect {
-		t.Errorf("enter on Don't connect = %v, chosen %v; want the app to finish with Don't connect", cmd, s.chosen)
+		t.Errorf(
+			"enter on I'll connect mini later = %v, chosen %v; want the app to finish with I'll connect mini later",
+			cmd,
+			s.chosen,
+		)
 	}
 	if got := pickedNames(s); strings.Join(got, ",") != "Claude,Cursor" {
 		t.Errorf("picked = %v, want Claude and Cursor", got)
@@ -328,8 +332,8 @@ func TestConnectScreen_aShortWindowKeepsTheCursorsOptionInView(t *testing.T) {
 	a := framed(s, false)
 	send(a, "down")
 	lines := strings.Split(ansi.Strip(a.body(7)), "\n")
-	if len(lines) > 7 || lines[len(lines)-2] != "> Don't connect" {
-		t.Errorf("body at height 7:\n%s\nwant at most 7 lines ending with Don't connect and its subtitle",
+	if len(lines) > 7 || lines[len(lines)-2] != "> I'll connect mini later" {
+		t.Errorf("body at height 7:\n%s\nwant at most 7 lines ending with I'll connect mini later and its subtitle",
 			strings.Join(lines, "\n"))
 	}
 }
@@ -361,19 +365,24 @@ func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *te
 	}
 }
 
-func TestConnectScreen_withNoAgentTickedOffersOnlyDontConnect(t *testing.T) {
+func TestConnectScreen_withNoAgentTickedTheConnectChoicesSayToTickOne(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
 	a := framed(s, false)
 	send(a, "up", "a", "tab")
-	if got := s.choices(); len(got) != 1 || got[0] != optionLabel(initcmd.DontConnect) {
-		t.Fatalf("choices with nothing ticked = %v, want only Don't connect: connecting would change nothing", got)
+	want := "> Just connect mini\n  Tick the agents above to connect mini to them\n  I'll connect mini later"
+	if text := framedText(a); !strings.Contains(text, want) {
+		t.Fatalf("screen with nothing ticked:\n%s\nwant every choice, the connect one saying to tick an agent:\n%s",
+			text, want)
 	}
-	if cmd := send(a, "enter"); cmd == nil || s.chosen != initcmd.DontConnect {
-		t.Errorf("enter = %v, chosen %v; want the app to finish with Don't connect", cmd, s.chosen)
+	if cmd := send(a, "enter"); cmd != nil || s.chosen == initcmd.ConnectOnly {
+		t.Errorf(
+			"enter on Just connect = %v, chosen %v; want the screen kept: there is no agent to connect",
+			cmd,
+			s.chosen,
+		)
 	}
-	send(a, "up", "space")
-	if got := s.choices(); len(got) != 2 {
-		t.Errorf("choices with Codex ticked again = %v, want Just connect back", got)
+	if cmd := send(a, "down", "enter"); cmd == nil || s.chosen != initcmd.DontConnect {
+		t.Errorf("enter on later = %v, chosen %v; want the app to finish with I'll connect mini later", cmd, s.chosen)
 	}
 }
 

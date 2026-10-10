@@ -89,9 +89,6 @@ func (s *connectScreen) update(msg tea.Msg) tea.Cmd {
 }
 
 func (s *connectScreen) options() []initcmd.ConnectChoice {
-	if len(s.picked()) == 0 {
-		return []initcmd.ConnectChoice{initcmd.DontConnect}
-	}
 	if s.removable() {
 		return []initcmd.ConnectChoice{initcmd.ConnectAndRemove, initcmd.ConnectOnly, initcmd.DontConnect}
 	}
@@ -139,6 +136,9 @@ func (s *connectScreen) choose(i int) (chosen bool) {
 	if choice == initcmd.ConnectAndRemove && !s.checks.done {
 		return false
 	}
+	if choice != initcmd.DontConnect && len(s.picked()) == 0 {
+		return false
+	}
 	s.chosen = choice
 	return true
 }
@@ -170,10 +170,13 @@ func optionLabel(choice initcmd.ConnectChoice) string {
 	case initcmd.ConnectOnly:
 		return "Just connect mini"
 	}
-	return "Don't connect"
+	return "I'll connect mini later"
 }
 
 func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
+	if choice != initcmd.DontConnect && len(s.picked()) == 0 {
+		return []string{"Tick the agents above to connect mini to them"}
+	}
 	switch choice {
 	case initcmd.ConnectAndRemove:
 		return s.removeSubtitles()
