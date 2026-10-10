@@ -21,6 +21,7 @@ type connectParams struct {
 	agents   []agents.Agent
 	withMini map[string]bool
 	plan     func() (connectPlan, error)
+	added    func() []string
 }
 
 type connectScreen struct {
@@ -96,7 +97,7 @@ func (s *connectScreen) options() []initcmd.ConnectChoice {
 }
 
 func (s *connectScreen) removable() bool {
-	return slices.ContainsFunc(s.listed, func(agent agents.Agent) bool { return s.plan.HasDuplicates(agent.Name) })
+	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool { return s.plan.HasDuplicates(agent.Name) })
 }
 
 func (s *connectScreen) heading() string {
@@ -144,17 +145,36 @@ func (s *connectScreen) choose(i int) (chosen bool) {
 }
 
 func (s *connectScreen) body(height int, focused bool) string {
-	if !s.focusable() {
-		return ""
+	note := s.addedLines()
+	if len(note) > 0 && s.focusable() {
+		note = append(note, "")
 	}
-	return s.agents.view(height, focused)
+	if !s.focusable() {
+		return strings.Join(note, "\n")
+	}
+	return strings.Join(append(note, s.agents.view(max(height-len(note), 1), focused)), "\n")
+}
+
+func (s *connectScreen) addedLines() []string {
+	added := s.p.added()
+	if len(added) == 0 {
+		return nil
+	}
+	verb := " were added to mini: "
+	if len(added) == 1 {
+		verb = " was added to mini: "
+	}
+	text := initcmd.Plural(len(added), "MCP") + verb + strings.Join(added, ", ")
+	return strings.Split(ansi.Wrap(text, max(s.width, 20), ""), "\n")
 }
 
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
 func (s *connectScreen) subtitleLines(subtitle string) []string {
+	text := strings.TrimLeft(subtitle, " ")
+	indent := "  " + subtitle[:len(subtitle)-len(text)]
 	var lines []string
-	for _, line := range strings.Split(ansi.Wrap(subtitle, max(s.width-2, 20), ""), "\n") {
-		lines = append(lines, "  "+dim.Render(line))
+	for _, line := range strings.Split(ansi.Wrap(text, max(s.width-len(indent), 20), ""), "\n") {
+		lines = append(lines, indent+dim.Render(line))
 	}
 	return lines
 }
@@ -179,21 +199,65 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 	}
 	switch choice {
 	case initcmd.ConnectAndRemove:
-		return s.removeSubtitles()
+		if !s.checks.done {
+			return []string{"checking servers…"}
+		}
+		if !s.anyPickedRemoves() {
+			return []string{"Nothing to remove: none of these MCPs work in mini yet"}
+		}
+		return append([]string{"The configs are backed up first"}, s.tickedAgentLines(s.removeLine)...)
 	case initcmd.ConnectOnly:
-		return s.connectOnlySubtitles()
+		return s.tickedAgentLines(s.connectLine)
 	}
 	return []string{"Leaves " + withVerb(agentNames(s.listed), "as it is", "as they are")}
 }
 
-// An agent listed only for its removable MCPs already has mini, so just connecting it changes nothing.
-func (s *connectScreen) connectOnlySubtitles() []string {
-	names := agentNames(s.picked())
-	lacksMini := func(name string) bool { return !s.p.withMini[name] }
-	if slices.ContainsFunc(names, lacksMini) {
-		return []string{"Adds mini next to your existing MCPs"}
+func (s *connectScreen) tickedAgentLines(line func(agent agents.Agent) string) []string {
+	var says []string
+	alike := map[string][]string{}
+	for _, agent := range s.picked() {
+		text := line(agent)
+		if _, seen := alike[text]; !seen {
+			says = append(says, text)
+		}
+		alike[text] = append(alike[text], agent.Name)
 	}
-	return []string{"Changes nothing: " + alreadyHaveMini(names)}
+	var lines []string
+	for _, text := range says {
+		lines = append(lines, "  "+initcmd.JoinAnd(alike[text])+": "+text)
+	}
+	return lines
+}
+
+func (s *connectScreen) anyPickedRemoves() bool {
+	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool {
+		return len(s.checks.removals.ByAgent[agent.Name]) > 0
+	})
+}
+
+func (s *connectScreen) removeLine(agent agents.Agent) string {
+	entries := s.checks.removals.ByAgent[agent.Name]
+	verb := "removing "
+	if agent.RemoveDisables {
+		verb = "disabling "
+	}
+	hasMini := s.p.withMini[agent.Name]
+	switch {
+	case len(entries) > 0 && hasMini:
+		return verb + strings.Join(entries, ", ")
+	case len(entries) > 0:
+		return "adding mini, " + verb + strings.Join(entries, ", ")
+	case hasMini:
+		return "mini already connected, nothing to remove"
+	}
+	return "adding mini, nothing to remove"
+}
+
+func (s *connectScreen) connectLine(agent agents.Agent) string {
+	if s.p.withMini[agent.Name] {
+		return "mini already connected, nothing changes"
+	}
+	return "adding mini, leaving existing MCPs"
 }
 
 func agentNames(list []agents.Agent) []string {
@@ -202,44 +266,6 @@ func agentNames(list []agents.Agent) []string {
 		names = append(names, agent.Name)
 	}
 	return names
-}
-
-func (s *connectScreen) removeSubtitles() []string {
-	if !s.checks.done {
-		return []string{"checking servers…"}
-	}
-	removed := 0
-	var disabling []string
-	for _, agent := range s.picked() {
-		entries := len(s.checks.removals.ByAgent[agent.Name])
-		removed += entries
-		if entries > 0 && agent.RemoveDisables {
-			disabling = append(disabling, agent.Name)
-		}
-	}
-	if removed == 0 && s.anyListedHasRemovals() {
-		return []string{"Nothing to remove from the ticked agents"}
-	}
-	if removed == 0 {
-		return []string{"Nothing to remove: none of your MCPs work in mini yet"}
-	}
-	lines := []string{
-		"Removes " + initcmd.Plural(removed, "MCP") + " that mini now runs; the configs are backed up first",
-	}
-	for _, name := range disabling {
-		lines = append(lines, name+": existing MCPs will be disabled, not removed")
-	}
-	return lines
-}
-
-func (s *connectScreen) anyListedHasRemovals() bool {
-	return slices.ContainsFunc(s.listed, func(agent agents.Agent) bool {
-		return len(s.checks.removals.ByAgent[agent.Name]) > 0
-	})
-}
-
-func alreadyHaveMini(names []string) string {
-	return withVerb(names, "already has a mini entry.", "already have a mini entry.")
 }
 
 func withVerb(names []string, one, many string) string {

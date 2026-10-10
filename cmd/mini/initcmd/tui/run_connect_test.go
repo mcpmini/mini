@@ -195,8 +195,11 @@ func TestRun_goingBackToUntickAnImportLowersWhatConnectRemoves(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(connect, "Removes 1 MCP that") {
-		t.Errorf("Connect:\n%s\nwant 1 MCP counted: files was unticked on Import", connect)
+	if !strings.Contains(connect, "1 MCP was added to mini: notes") {
+		t.Errorf("Connect:\n%s\nwant notes named as added: files was unticked on Import", connect)
+	}
+	if !strings.Contains(connect, "removing notes") || strings.Contains(connect, "removing files") {
+		t.Errorf("Connect:\n%s\nwant only notes removed: files was unticked on Import", connect)
 	}
 	config := string(testutil.ReadFile(t, claude.ConfigPath))
 	if !strings.Contains(config, `"files"`) || strings.Contains(config, `"notes"`) {

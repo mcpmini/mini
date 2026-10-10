@@ -117,7 +117,7 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 	lines, first, last = []string{""}, -1, -1
 	for i, label := range a.labels() {
 		var under []string
-		if choosing && !a.onBack(i) {
+		if choosing && !a.onBack(i) && i == a.nav.at {
 			under = c.choiceLines(i)
 		}
 		atCursor := a.onNavigation() && a.nav.at == i
