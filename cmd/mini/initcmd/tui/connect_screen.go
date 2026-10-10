@@ -34,6 +34,7 @@ type connectScreen struct {
 	checks           connectChecks
 	width            int
 	scroll           scroll
+	back             bool
 }
 
 func newConnectScreen(p connectParams) *connectScreen {
@@ -97,30 +98,65 @@ func (s *connectScreen) heading() string {
 	return "Connect mini to your agents"
 }
 
+func (s *connectScreen) offerBack(back bool) {
+	s.back = back
+}
+
+// The choices are the screen's actions, and Back follows them.
+func (s *connectScreen) rows() int {
+	if s.back {
+		return s.agentRows() + len(s.options()) + 1
+	}
+	return s.agentRows() + len(s.options())
+}
+
+func (s *connectScreen) onBack() bool {
+	return s.back && s.cursor == s.rows()-1
+}
+
 func (s *connectScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	switch key.String() {
 	case "up":
 		s.cursor = max(s.cursor-1, 0)
 	case "down":
-		s.cursor = min(s.cursor+1, s.agentRows()+len(s.options())-1)
+		s.cursor = min(s.cursor+1, s.rows()-1)
+	case "tab":
+		s.cursor = s.agentRows()
 	case "space":
-		if s.cursor < s.agentRows() {
-			name := s.listed[s.cursor].Name
-			s.ticked[name] = !s.ticked[name]
-		}
+		s.tick()
+	case "a":
+		s.tickAll()
 	case "enter":
 		return s.choose()
-	case "esc", "left", "shift+tab":
+	case "esc":
 		s.checks.cancel()
 		return back, nil
 	}
 	return stay, nil
 }
 
+func (s *connectScreen) tick() {
+	if s.cursor < s.agentRows() {
+		name := s.listed[s.cursor].Name
+		s.ticked[name] = !s.ticked[name]
+	}
+}
+
+func (s *connectScreen) tickAll() {
+	all := !slices.ContainsFunc(s.listed, func(agent agents.Agent) bool { return !s.ticked[agent.Name] })
+	for _, agent := range s.listed {
+		s.ticked[agent.Name] = !all
+	}
+}
+
 func (s *connectScreen) choose() (step, tea.Cmd) {
+	if s.onBack() {
+		s.checks.cancel()
+		return back, nil
+	}
 	choice, onOption := s.highlighted()
 	if !onOption {
-		s.cursor = s.agentRows()
+		s.tick()
 		return stay, nil
 	}
 	if choice == initcmd.ConnectAndRemove && !s.checks.done {
@@ -158,6 +194,12 @@ func (s *connectScreen) rowLines(height int) []string {
 			last = len(lines) - 1
 		}
 	}
+	if s.back {
+		if s.onBack() {
+			first, last = len(lines), len(lines)
+		}
+		lines = append(lines, cursorMark(s.onBack())+backLabel)
+	}
 	return s.scroll.cut(lines, first, last, height)
 }
 
@@ -184,8 +226,8 @@ func (s *connectScreen) agentLines() (lines []string, cursorLine int) {
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
 func (s *connectScreen) subtitleLines(subtitle string) []string {
 	var lines []string
-	for _, line := range strings.Split(ansi.Wrap(subtitle, max(s.width-4, 20), ""), "\n") {
-		lines = append(lines, "    "+dim.Render(line))
+	for _, line := range strings.Split(ansi.Wrap(subtitle, max(s.width-2, 20), ""), "\n") {
+		lines = append(lines, "  "+dim.Render(line))
 	}
 	return lines
 }
@@ -280,8 +322,10 @@ func withVerb(names []string, one, many string) string {
 func (s *connectScreen) keys() string {
 	choice, onOption := s.highlighted()
 	switch {
+	case s.onBack():
+		return "↑↓ move · enter choose"
 	case !onOption:
-		return "space tick · ↑↓ move · enter continue"
+		return "↑↓ move · space/enter tick · a all · tab choices"
 	case choice == initcmd.ConnectAndRemove && !s.checks.done:
 		return "↑↓ move · removing waits for the server checks"
 	}
@@ -289,7 +333,7 @@ func (s *connectScreen) keys() string {
 }
 
 func (s *connectScreen) highlighted() (choice initcmd.ConnectChoice, onOption bool) {
-	if s.cursor < s.agentRows() {
+	if s.cursor < s.agentRows() || s.onBack() {
 		return choice, false
 	}
 	return s.options()[s.cursor-s.agentRows()], true

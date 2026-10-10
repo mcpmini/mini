@@ -32,6 +32,7 @@ type catalogScreen struct {
 	checked       map[string]bool
 	grid          *catalogGrid
 	width, height int
+	back          bool
 }
 
 type catalogParams struct {
@@ -82,7 +83,13 @@ func (s *catalogScreen) enter() tea.Cmd {
 	}
 	s.grid = newCatalogGrid(s.sections(shown), s.checked)
 	s.grid.resize(s.width, s.height)
+	s.grid.actions.offerBack(s.back)
 	return nil
+}
+
+func (s *catalogScreen) offerBack(back bool) {
+	s.back = back
+	s.grid.actions.offerBack(back)
 }
 
 func (s *catalogScreen) resize(width, height int) {
@@ -154,7 +161,7 @@ func (s *catalogScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	}
 	switch key.String() {
 	case "enter":
-		return forward, nil
+		return s.grid.actions.step(), nil
 	case "esc":
 		return back, nil
 	}
@@ -193,7 +200,7 @@ func (s *catalogScreen) keys() string {
 	case s.loadErr != nil || len(s.available) == 0:
 		return "enter continue"
 	case s.grid.actions.active:
-		return s.grid.keys("enter continue · ↑ back to the list")
+		return s.grid.keys("↑↓ move · enter choose")
 	case s.grid.isGrid():
 		return s.grid.keys("↑↓←→ move · space/enter tick · tab continue · / filter")
 	}

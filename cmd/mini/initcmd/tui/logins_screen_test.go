@@ -392,3 +392,17 @@ func TestLoginsScreen_showingItAgainPutsTheCursorOnTheNextLogin(t *testing.T) {
 		t.Errorf("cursor moved to %q when the rows were read again, want it to stay on linear", s.cursorName())
 	}
 }
+
+func TestLoginsScreen_backFollowsContinue(t *testing.T) {
+	s := newFakeChecks(initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin}).screen()
+	s.offerBack(true)
+	showScreen(s)
+	s.handle(press("tab"))
+	s.handle(press("down"))
+	if text := loginsText(s); !strings.HasSuffix(text, "  Continue →\n> ← Back") {
+		t.Fatalf("screen:\n%s\nwant the cursor on Back, under Continue", text)
+	}
+	if move, _ := s.handle(press("enter")); move != back {
+		t.Errorf("enter on Back = %v, want back", move)
+	}
+}

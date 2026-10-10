@@ -41,6 +41,7 @@ type loginsScreen struct {
 	logins   int
 	width    int
 	scroll   scroll
+	back     bool
 	// Until the user moves it, the cursor rests on the next login to do.
 	cursorMoved bool
 	// One waiting command covers every running check.
@@ -76,19 +77,31 @@ func (s *loginsScreen) refresh() {
 	}
 }
 
-// cursorName is the server under the cursor, or "" on Continue.
+// cursorName is the server or action under the cursor; no server name can match an action's label.
 func (s *loginsScreen) cursorName() string {
 	if s.cursor >= 0 && s.cursor < len(s.rows) {
 		return s.rows[s.cursor].Name
+	}
+	if action := s.cursor - len(s.rows); action >= 0 && action < len(s.actionLabels()) {
+		return s.actionLabels()[action]
 	}
 	return ""
 }
 
 func (s *loginsScreen) rowIndex(name string) int {
-	if name == "" {
-		return len(s.rows)
+	if action := slices.Index(s.actionLabels(), name); action >= 0 {
+		return len(s.rows) + action
 	}
 	return slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.Name == name })
+}
+
+// The actions follow the rows: Continue sits at len(rows), and Back after it.
+func (s *loginsScreen) actionLabels() []string {
+	return actionLabels(s.back)
+}
+
+func (s *loginsScreen) offerBack(back bool) {
+	s.back = back
 }
 
 func (s *loginsScreen) forget(servers []string) {
@@ -128,12 +141,11 @@ func (s *loginsScreen) waitWhileChecking() tea.Cmd {
 	}
 }
 
-// Continue sits at len(rows).
 func (s *loginsScreen) selectable(i int) bool {
-	if i == len(s.rows) {
-		return true
+	if i >= len(s.rows) {
+		return i < len(s.rows)+len(s.actionLabels())
 	}
-	if i < 0 || i > len(s.rows) {
+	if i < 0 {
 		return false
 	}
 	r := s.rows[i]
@@ -150,7 +162,7 @@ func (s *loginsScreen) nextToLogIn(from int) int {
 }
 
 func (s *loginsScreen) move(direction int) {
-	for i := s.cursor + direction; i >= 0 && i <= len(s.rows); i += direction {
+	for i := s.cursor + direction; i >= 0 && i < len(s.rows)+len(s.actionLabels()); i += direction {
 		if s.selectable(i) {
 			s.cursor, s.cursorMoved = i, true
 			return
@@ -164,13 +176,15 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 		s.move(-1)
 	case "down":
 		s.move(1)
+	case "tab":
+		s.cursor, s.cursorMoved = len(s.rows), true
 	case "enter":
-		if s.cursor == len(s.rows) {
+		if s.cursor >= len(s.rows) {
 			s.cancelLogin()
-			return forward, nil
+			return actionStep(s.actionLabels()[s.cursor-len(s.rows)]), nil
 		}
 		return stay, s.startLogin(s.rows[s.cursor].Name)
-	case "esc", "left", "shift+tab":
+	case "esc":
 		s.cancelLogin()
 		return back, nil
 	}
@@ -189,11 +203,11 @@ func (s *loginsScreen) body(height int) string {
 		return "mini's servers couldn't be read: " + s.err.Error()
 	}
 	lines, first, last := s.serverLines()
-	lines = append(lines, "")
-	if s.cursor == len(s.rows) {
-		first, last = len(lines), len(lines)
+	if s.cursor >= len(s.rows) {
+		first = len(lines) + 1 + s.cursor - len(s.rows)
+		last = first
 	}
-	lines = append(lines, cursorMark(s.cursor == len(s.rows))+"Continue →")
+	lines = append(lines, actionLines(s.actionLabels(), s.cursor-len(s.rows))...)
 	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
 }
 
@@ -321,9 +335,9 @@ func (s *loginsScreen) keys() string {
 		return "↑↓ move"
 	}
 	if s.cursor < len(s.rows) {
-		return "↑↓ move · enter log in"
+		return "↑↓ move · enter log in · tab continue"
 	}
-	return "↑↓ move · enter continue"
+	return "↑↓ move · enter choose"
 }
 
 func (s *loginsScreen) empty() bool {

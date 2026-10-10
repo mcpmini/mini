@@ -29,7 +29,7 @@ type list struct {
 }
 
 func newList(rows []row, checked map[string]bool) *list {
-	return &list{rows: rows, checked: checked, actions: newActions("Continue →")}
+	return &list{rows: rows, checked: checked, actions: newActions()}
 }
 
 func (l *list) visible() []row {

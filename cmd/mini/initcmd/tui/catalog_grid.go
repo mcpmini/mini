@@ -40,7 +40,7 @@ type catalogGrid struct {
 }
 
 func newCatalogGrid(sections []gridSection, checked map[string]bool) *catalogGrid {
-	g := &catalogGrid{sections: sections, checked: checked, actions: newActions("Continue →")}
+	g := &catalogGrid{sections: sections, checked: checked, actions: newActions()}
 	g.at = g.firstEntry()
 	return g
 }

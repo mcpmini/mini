@@ -315,3 +315,20 @@ func TestApp_aScreenThatWrapsItsLinesLearnsEachWindowWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestApp_everyScreenButTheFirstEndsWithBack(t *testing.T) {
+	first := newImportScreen([]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")})
+	second := newImportScreen([]initcmd.Candidate{candidate("notes", "https://notes.example.com/mcp", true, "Codex")})
+	a := sized(newApp([]screen{first, second}))
+	if view := shown(a); strings.Contains(view, backLabel) {
+		t.Errorf("first screen:\n%s\nwant no Back: there is nothing to go back to", view)
+	}
+	send(a, "tab", "enter")
+	if view := shown(a); !strings.Contains(view, "Continue →\n  ← Back") {
+		t.Fatalf("second screen:\n%s\nwant Back under Continue", view)
+	}
+	send(a, "tab", "down", "enter")
+	if view := shown(a); !strings.Contains(view, "github") {
+		t.Errorf("after enter on Back:\n%s\nwant the first screen again", view)
+	}
+}

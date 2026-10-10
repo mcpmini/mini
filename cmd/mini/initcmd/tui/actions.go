@@ -1,5 +1,38 @@
 package tui
 
+const (
+	continueLabel = "Continue →"
+	backLabel     = "← Back"
+)
+
+// A screen the app can go back from offers Back under Continue; the first screen offers only Continue.
+type backOfferer interface {
+	offerBack(back bool)
+}
+
+func actionLabels(back bool) []string {
+	if back {
+		return []string{continueLabel, backLabel}
+	}
+	return []string{continueLabel}
+}
+
+func actionStep(label string) step {
+	if label == backLabel {
+		return back
+	}
+	return forward
+}
+
+// actionLines puts a blank line above the actions; at is the action under the cursor, or -1.
+func actionLines(labels []string, at int) []string {
+	lines := []string{""}
+	for i, label := range labels {
+		lines = append(lines, cursorMark(i == at)+label)
+	}
+	return lines
+}
+
 // actions are the rows a screen ends with, right under its content. The cursor reaches them by
 // moving down past the content's last row, or with tab.
 type actions struct {
@@ -8,8 +41,13 @@ type actions struct {
 	active bool
 }
 
-func newActions(labels ...string) actions {
-	return actions{labels: labels}
+func newActions() actions {
+	return actions{labels: actionLabels(false)}
+}
+
+func (a *actions) offerBack(back bool) {
+	a.labels = actionLabels(back)
+	a.at = min(a.at, len(a.labels)-1)
 }
 
 // move steps through the actions; up from the first returns the cursor to the content.
@@ -34,11 +72,14 @@ func (a *actions) toggle() {
 	a.reach()
 }
 
-// lines puts a blank line between the content and the actions.
+func (a *actions) step() step {
+	return actionStep(a.labels[a.at])
+}
+
 func (a *actions) lines() []string {
-	lines := []string{""}
-	for i, label := range a.labels {
-		lines = append(lines, cursorMark(a.active && i == a.at)+label)
+	at := -1
+	if a.active {
+		at = a.at
 	}
-	return lines
+	return actionLines(a.labels, at)
 }

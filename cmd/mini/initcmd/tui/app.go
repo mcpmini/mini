@@ -173,6 +173,9 @@ func (a *app) forward() tea.Cmd {
 
 func (a *app) show(at int) tea.Cmd {
 	a.at = at
+	if s, ok := a.screens[at].(backOfferer); ok {
+		s.offerBack(a.canGoBack())
+	}
 	if s, ok := a.screens[at].(enterer); ok {
 		return s.enter()
 	}

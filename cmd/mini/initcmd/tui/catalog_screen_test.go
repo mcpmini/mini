@@ -356,3 +356,16 @@ func TestCatalogScreen_arrowsWhileFilteringLeaveTheOpenCategoryAsItWas(t *testin
 		t.Errorf("screen after clearing the filter:\n%s\nwant Popular still the open category", text)
 	}
 }
+
+func TestCatalogScreen_backFollowsContinueOnEveryVisit(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	s.offerBack(true)
+	s.enter()
+	pressAll(s, "tab", "down")
+	if text := catalogText(s); !strings.HasSuffix(text, "  Continue →\n> ← Back") {
+		t.Fatalf("screen:\n%s\nwant Back under Continue after the grid was rebuilt", text)
+	}
+	if got := pressAll(s, "enter"); got != back {
+		t.Errorf("enter on Back = %v, want back", got)
+	}
+}

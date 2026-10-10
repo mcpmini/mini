@@ -64,11 +64,15 @@ func (s *importScreen) handle(key tea.KeyPressMsg) (step, tea.Cmd) {
 	case "a":
 		s.list.toggleAll()
 	case "enter":
-		return forward, nil
-	case "esc", "left", "shift+tab":
+		return s.list.actions.step(), nil
+	case "esc":
 		return back, nil
 	}
 	return stay, nil
+}
+
+func (s *importScreen) offerBack(back bool) {
+	s.list.actions.offerBack(back)
 }
 
 func (s *importScreen) body(height int) string {
@@ -77,7 +81,7 @@ func (s *importScreen) body(height int) string {
 
 func (s *importScreen) keys() string {
 	if s.list.actions.active {
-		return s.list.keys("enter continue · ↑ back to the list")
+		return s.list.keys("↑↓ move · enter choose")
 	}
 	return s.list.keys("space/enter tick · a all · tab continue · / filter")
 }
