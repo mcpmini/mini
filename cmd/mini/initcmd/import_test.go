@@ -196,16 +196,38 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 	}
 }
 
-func TestPlanImport_aServerMiniHasUnderAnotherNameIsLeftOut(t *testing.T) {
+func TestPlanImport_aServerMiniHasIsListedUnderMinisNameWithEveryAgentItIsIn(t *testing.T) {
 	entry := remoteEntry("https://example.com/mcp", "${A}")
 	configured := entry.Config
 	configured.Name = "gh"
 	plan := PlanImport(ImportParams{
-		Agents:  []agents.Agent{agentWith("Claude Code", map[string]agents.Server{"github": entry})},
+		Agents: []agents.Agent{
+			agentWith("Claude Code", map[string]agents.Server{"github": entry}),
+			agentWith("Codex", map[string]agents.Server{"gh": entry}),
+		},
 		Written: []config.ServerConfig{configured},
 	})
 	if len(plan.picked()) != 0 || len(plan.Skipped) != 0 {
-		t.Errorf("plan = %+v, want nothing: mini already has this server as gh", plan)
+		t.Errorf("plan = %+v, want nothing to import or skip: mini already has this server as gh", plan)
+	}
+	want := []InMiniServer{{
+		Server: configured,
+		From:   []AgentEntry{{Agent: "Claude Code", Name: "github"}, {Agent: "Codex", Name: "gh"}},
+	}}
+	if !reflect.DeepEqual(plan.InMini, want) {
+		t.Errorf("in mini = %+v, want gh found in both agents", plan.InMini)
+	}
+}
+
+func TestPlanImport_minisOwnEntryIsNotListedAsInMini(t *testing.T) {
+	mini := agents.Server{Config: config.ServerConfig{Name: "mini", Command: testSelf, Args: []string{"connect"}}}
+	plan := PlanImport(ImportParams{
+		Agents:   []agents.Agent{agentWith("Claude Code", map[string]agents.Server{"mini": mini})},
+		Written:  []config.ServerConfig{{Name: "mini", Command: testSelf, Args: []string{"connect"}}},
+		SelfPath: testSelf,
+	})
+	if len(plan.InMini) != 0 || len(plan.Candidates) != 0 {
+		t.Errorf("in mini = %+v, candidates = %+v; want neither: the entry is mini itself", plan.InMini, plan.Candidates)
 	}
 }
 

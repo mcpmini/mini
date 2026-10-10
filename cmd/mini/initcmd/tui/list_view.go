@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -33,7 +34,8 @@ func (l *list) headerLine() string {
 
 func (l *list) labelWidth() int {
 	// The first heading starts over the checkbox, so only what it overhangs widens the label column.
-	return max(len(l.header.label)-len(checkbox(false)), widest(l.rows, func(r row) string { return r.label }))
+	labels := widest(slices.Concat(l.rows, l.fixed), func(r row) string { return r.label })
+	return max(len(l.header.label)-len(checkbox(false)), labels)
 }
 
 func (l *list) lines(focused bool) (lines []string, first, last int) {
@@ -48,7 +50,21 @@ func (l *list) lines(focused bool) (lines []string, first, last int) {
 			first, last = start, len(lines)-1
 		}
 	}
-	return lines, first, last
+	return append(lines, l.fixedLines(width)...), first, last
+}
+
+func (l *list) fixedLines(width int) []string {
+	fixed := l.matching(l.fixed)
+	if len(fixed) == 0 {
+		return nil
+	}
+	var lines []string
+	for _, r := range fixed {
+		line := strings.TrimRight(fmt.Sprintf("%-*s  %s", width, r.label, r.detail), " ")
+		lines = append(lines, cursorMark(false)+dim.Render(inMiniMark+line))
+	}
+	// The legend's mark lines up with the marks above it.
+	return append(lines, "", cursorMark(false)+" "+dim.Render(inMiniLegend))
 }
 
 func cursorMark(atCursor bool) string {
@@ -57,6 +73,12 @@ func cursorMark(atCursor bool) string {
 	}
 	return "  "
 }
+
+// inMiniMark stands where a checkbox would, as wide, on a server mini already runs.
+const (
+	inMiniMark   = " ✓  "
+	inMiniLegend = "✓ already in mini"
+)
 
 func checkbox(checked bool) string {
 	if checked {

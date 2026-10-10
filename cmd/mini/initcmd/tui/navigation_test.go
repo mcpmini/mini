@@ -193,7 +193,7 @@ func longCatalog(entries int) catalog.Catalog {
 
 func TestNavigation_aFilterThatMatchesNothingKeepsItsKeys(t *testing.T) {
 	t.Run("on Import, the first screen", func(t *testing.T) {
-		imports := newImportScreen(
+		imports := importScreenFor(
 			[]initcmd.Candidate{candidate("github", "https://gh.example.com/mcp", true, "Codex")},
 		)
 		a := inApp(100, 30, imports, &fakeScreen{name: "After"})

@@ -14,17 +14,34 @@ import (
 
 type importScreen struct {
 	candidates []initcmd.Candidate
-	agents     []string
-	list       *list
+	// inMini is the servers mini already runs that the agents have too, shown so their absence
+	// from the candidates isn't a mystery.
+	inMini []initcmd.Candidate
+	agents []string
+	list   *list
 }
 
-func newImportScreen(candidates []initcmd.Candidate) *importScreen {
-	s := &importScreen{candidates: candidates, agents: agentsOf(candidates)}
+func newImportScreen(plan initcmd.ImportPlan) *importScreen {
+	s := &importScreen{candidates: plan.Candidates}
+	for _, server := range plan.InMini {
+		s.inMini = append(s.inMini, initcmd.Candidate{Server: server.Server, From: server.From})
+	}
+	s.agents = agentsOf(slices.Concat(s.candidates, s.inMini))
 	checked := map[string]bool{}
-	var rows []row
 	widths := s.columnWidths()
-	for _, c := range candidates {
+	for _, c := range s.candidates {
 		checked[c.Server.Name] = c.Picked
+	}
+	s.list = newList(s.rows(s.candidates, widths), checked)
+	s.list.filterable = true
+	s.list.fixed = s.rows(s.inMini, widths)
+	s.list.header = row{label: "SERVER", detail: s.columnText(targetHeading, agentsHeading, widths)}
+	return s
+}
+
+func (s *importScreen) rows(candidates []initcmd.Candidate, widths columns) []row {
+	var rows []row
+	for _, c := range candidates {
 		rows = append(rows, row{
 			key:      c.Server.Name,
 			label:    c.Server.Name,
@@ -32,10 +49,7 @@ func newImportScreen(candidates []initcmd.Candidate) *importScreen {
 			subtitle: unpickedReason(c),
 		})
 	}
-	s.list = newList(rows, checked)
-	s.list.filterable = true
-	s.list.header = row{label: "SERVER", detail: s.columnText(targetHeading, agentsHeading, widths)}
-	return s
+	return rows
 }
 
 func agentsOf(candidates []initcmd.Candidate) []string {
@@ -106,7 +120,7 @@ const targetHeading, agentsHeading = "COMMAND / URL", "FROM"
 
 func (s *importScreen) columnWidths() columns {
 	w := columns{target: ansi.StringWidth(targetHeading), agents: ansi.StringWidth(agentsHeading)}
-	for _, c := range s.candidates {
+	for _, c := range slices.Concat(s.candidates, s.inMini) {
 		w.target = max(w.target, ansi.StringWidth(target(c.Server)))
 		w.agents = max(w.agents, ansi.StringWidth(agentList(c)))
 	}

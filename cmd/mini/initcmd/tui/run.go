@@ -85,7 +85,7 @@ type screens struct {
 
 func newScreens(p Params, run *initcmd.Run) screens {
 	plan := &run.Plan
-	imports := newImportScreen(plan.Import.Candidates)
+	imports := newImportScreen(plan.Import)
 	catalogs := newCatalogScreen(
 		catalogParams{load: p.LoadCatalog, offered: plan.Available, imports: imports.ticked},
 	)

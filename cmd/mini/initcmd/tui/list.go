@@ -20,7 +20,9 @@ func (r row) matches(filter string) bool {
 
 // The cursor indexes the rows the filter shows.
 type list struct {
-	rows    []row
+	rows []row
+	// fixed rows can't be ticked; they follow the rows, and the cursor never rests on them.
+	fixed   []row
 	checked map[string]bool
 	cursor  int
 	scroll  scroll
@@ -36,11 +38,15 @@ func newList(rows []row, checked map[string]bool) *list {
 }
 
 func (l *list) visible() []row {
+	return l.matching(l.rows)
+}
+
+func (l *list) matching(rows []row) []row {
 	if l.filter.text == "" {
-		return l.rows
+		return rows
 	}
 	var shown []row
-	for _, r := range l.rows {
+	for _, r := range rows {
 		if r.matches(l.filter.text) {
 			shown = append(shown, r)
 		}
