@@ -19,8 +19,6 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-const responseCleanupTimer = 1
-
 const statusNotRetriedByTransport = http.StatusInternalServerError
 
 var pingTools = []map[string]any{

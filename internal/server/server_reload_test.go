@@ -220,8 +220,7 @@ func TestServerReload_leavesAServerWithNoConfigFileAlone(t *testing.T) {
 
 func (e *serverReloadEnv) waitForRetryBackoff() {
 	e.t.Helper()
-	const responseStoreCleanupTimer = 1
-	if err := e.clock.BlockUntilContext(e.t.Context(), responseStoreCleanupTimer+1); err != nil {
+	if err := e.clock.BlockUntilContext(e.t.Context(), responseCleanupTimer+1); err != nil {
 		e.t.Fatal("startup retry never started its backoff:", err)
 	}
 }

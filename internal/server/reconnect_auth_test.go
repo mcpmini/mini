@@ -41,7 +41,7 @@ func TestReconnect_detectsOAuthRequirement(t *testing.T) {
 	errOnCall = true
 	assertEnvelopeOK(t, srv, "svc", "ping", false)
 
-	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
+	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
 		t.Fatalf("waiting for reconnect timer: %v", err)
 	}
 	fakeClock.Advance(time.Second)
@@ -74,7 +74,6 @@ func TestReconnect_reauthErrorDoesNotStartReconnect(t *testing.T) {
 }
 
 func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
-	const responseCleanupPlusBackoffTimers = 2
 	var tokenHits atomic.Int32
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tokenHits.Add(1)
@@ -105,14 +104,14 @@ func TestReconnect_transientTokenRefreshKeepsLoop(t *testing.T) {
 	errOnCall = true
 	assertEnvelopeOK(t, srv, "svc", "ping", false)
 
-	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupPlusBackoffTimers); err != nil {
+	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
 		t.Fatalf("waiting for first reconnect timer: %v", err)
 	}
 	fakeClock.Advance(time.Second)
 
 	loopCtx, loopCancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer loopCancel()
-	if err := fakeClock.BlockUntilContext(loopCtx, responseCleanupPlusBackoffTimers); err != nil {
+	if err := fakeClock.BlockUntilContext(loopCtx, responseCleanupTimer+1); err != nil {
 		t.Fatalf("reconnect loop stopped after transient token refresh failure: %v", err)
 	}
 	if !srv.IsReconnecting("svc") {
@@ -152,7 +151,7 @@ func TestReconnect_reauthDialFailureStopsLoop(t *testing.T) {
 		close(stopped)
 	}()
 
-	if err := fakeClock.BlockUntilContext(t.Context(), 1); err != nil {
+	if err := fakeClock.BlockUntilContext(t.Context(), responseCleanupTimer+1); err != nil {
 		t.Fatalf("waiting for reconnect timer: %v", err)
 	}
 	fakeClock.Advance(time.Second)
