@@ -52,7 +52,7 @@ func (l *list) lines(focused bool) (lines []string, first, last int) {
 	if len(rows) == tickable {
 		return lines, first, last
 	}
-	lines = append(lines, "", cursorMark(false)+" "+dim.Render(inMiniLegend))
+	lines = append(lines, "", legendLine(inMiniLegend))
 	// The legend can't hold the cursor, so it comes into view with the last row.
 	if l.cursor == len(rows)-1 {
 		last = len(lines) - 1
@@ -77,6 +77,11 @@ func cursorMark(atCursor bool) string {
 		return "> "
 	}
 	return "  "
+}
+
+// A legend starts one column in, so its marks line up under the marks on the rows.
+func legendLine(legend string) string {
+	return cursorMark(false) + " " + dim.Render(legend)
 }
 
 const (

@@ -24,7 +24,7 @@ func (g *catalogGrid) resize(width, rowsHeight int) {
 
 func (g *catalogGrid) linesUnderSections(detail string) []string {
 	if legend := g.legend(); legend != "" {
-		return []string{"", cursorMark(false) + " " + dim.Render(legend), detail}
+		return []string{"", legendLine(legend), detail}
 	}
 	return []string{"", detail}
 }
