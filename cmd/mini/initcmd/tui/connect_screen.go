@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -152,10 +151,10 @@ func (s *connectScreen) body(height int, focused bool) string {
 	if len(note) > 0 && s.focusable() {
 		note = append(note, "")
 	}
-	note = note[:min(len(note), max(height-1, 0))]
 	if !s.focusable() {
 		return strings.Join(note, "\n")
 	}
+	note = note[:min(len(note), max(height-1, 0))]
 	return strings.Join(append(note, s.agents.view(height-len(note), focused)), "\n")
 }
 
@@ -217,26 +216,21 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 	return []string{"Leaves " + withVerb(agentNames(s.listed), "as it is", "as they are")}
 }
 
-// agentLines says what a choice does to each agent it reaches: the picked ones, then those
-// already connected, which keep getting mini's servers whatever is chosen.
-func (s *connectScreen) agentLines(line func(agent agents.Agent, picked bool) string) []string {
-	type shown struct {
-		agent  agents.Agent
-		picked bool
-	}
-	var reached []shown
+// agentLines says what a choice does to each ticked agent, one line for agents it treats alike.
+// Agents already connected say so on their own rows, and no choice changes them.
+func (s *connectScreen) agentLines(line func(agent agents.Agent) string) []string {
+	var says []string
+	alike := map[string][]string{}
 	for _, agent := range s.picked() {
-		reached = append(reached, shown{agent, true})
-	}
-	for _, agent := range s.p.agents {
-		if slices.Contains(s.alreadyConnected, agent.Name) {
-			reached = append(reached, shown{agent, false})
+		text := line(agent)
+		if _, seen := alike[text]; !seen {
+			says = append(says, text)
 		}
+		alike[text] = append(alike[text], agent.Name)
 	}
-	width := widest(reached, func(r shown) string { return r.agent.Name + ":" })
 	var lines []string
-	for _, r := range reached {
-		lines = append(lines, fmt.Sprintf("  %-*s  %s", width, r.agent.Name+":", line(r.agent, r.picked)))
+	for _, text := range says {
+		lines = append(lines, "  "+initcmd.JoinAnd(alike[text])+": "+text)
 	}
 	return lines
 }
@@ -247,7 +241,7 @@ func (s *connectScreen) anyPickedRemoves() bool {
 	})
 }
 
-func (s *connectScreen) removeLine(agent agents.Agent, picked bool) string {
+func (s *connectScreen) removeLine(agent agents.Agent) string {
 	entries := s.checks.removals.ByAgent[agent.Name]
 	verb := "removing "
 	if agent.RemoveDisables {
@@ -255,8 +249,6 @@ func (s *connectScreen) removeLine(agent agents.Agent, picked bool) string {
 	}
 	hasMini := s.p.withMini[agent.Name]
 	switch {
-	case !picked:
-		return "mini already connected, nothing changes"
 	case len(entries) > 0 && hasMini:
 		return verb + strings.Join(entries, ", ")
 	case len(entries) > 0:
@@ -267,11 +259,11 @@ func (s *connectScreen) removeLine(agent agents.Agent, picked bool) string {
 	return "adding mini, nothing to remove"
 }
 
-func (s *connectScreen) connectLine(agent agents.Agent, _ bool) string {
+func (s *connectScreen) connectLine(agent agents.Agent) string {
 	if s.p.withMini[agent.Name] {
 		return "mini already connected, nothing changes"
 	}
-	return "adding mini, leaving its existing MCPs"
+	return "adding mini, leaving existing MCPs"
 }
 
 func agentNames(list []agents.Agent) []string {

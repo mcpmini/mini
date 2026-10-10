@@ -28,8 +28,8 @@ func TestConnectScreen_removingWaitsForTheChecksThenCountsTheTickedAgents(t *tes
 
 	plan.checksPass(s, check)
 	want := "The configs are backed up first\n" +
-		"    Claude:  adding mini, removing files, notes\n" +
-		"    Codex:   adding mini, disabling github"
+		"    Claude: adding mini, removing files, notes\n" +
+		"    Codex: adding mini, disabling github"
 	if text := connectText(s); !strings.Contains(text, want) {
 		t.Errorf("screen:\n%s\nwant each agent's entries named, Codex's disabled:\n%s", text, want)
 	}
@@ -55,7 +55,7 @@ func TestConnectScreen_aCheckRunFromAnEarlierVisitIsIgnored(t *testing.T) {
 		t.Fatalf("screen:\n%s\nwant the earlier visit's result ignored while this visit's checks run", text)
 	}
 	plan.checksPass(s, later)
-	if text := connectText(s); !strings.Contains(text, "Claude:  adding mini, removing files") {
+	if text := connectText(s); !strings.Contains(text, "Claude: adding mini, removing files") {
 		t.Errorf("screen:\n%s\nwant this visit's result shown", text)
 	}
 }
@@ -65,7 +65,7 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"files"}})
 		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), nil)
 		plan.checksPass(s, check)
-		if text := connectText(s); !strings.Contains(text, "Codex:   adding mini, nothing to remove") {
+		if text := connectText(s); !strings.Contains(text, "Codex: adding mini, nothing to remove") {
 			t.Errorf("screen:\n%s\nwant Codex to only gain mini", text)
 		}
 	})
@@ -84,7 +84,7 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Claude": true})
 		plan.release <- initcmd.Removals{ByAgent: map[string][]string{"Codex": {"github"}}}
 		s.update(check())
-		if text := connectText(s); !strings.Contains(text, "Claude:  mini already connected, nothing to remove") {
+		if text := connectText(s); !strings.Contains(text, "Claude: mini already connected, nothing to remove") {
 			t.Errorf("screen:\n%s\nwant Claude told nothing changes for it", text)
 		}
 	})
@@ -123,7 +123,7 @@ func TestConnectScreen_removingFromAnAgentThatHasMiniOnlyRemoves(t *testing.T) {
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}, "Codex": {"github"}})
 	s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Claude": true})
 	plan.checksPass(s, check)
-	if text := connectText(s); !strings.Contains(text, "Claude:  removing files\n") {
+	if text := connectText(s); !strings.Contains(text, "Claude: removing files\n") {
 		t.Errorf("screen:\n%s\nwant Claude's entry removed without adding mini again", text)
 	}
 }
