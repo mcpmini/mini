@@ -103,14 +103,7 @@ func (s *connectScreen) heading() string {
 }
 
 func (s *connectScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
-	if r := s.agents.handle(key); r != unhandled {
-		return r, nil
-	}
-	if key.String() == "a" {
-		s.agents.toggleAll()
-		return handled, nil
-	}
-	return unhandled, nil
+	return s.agents.handle(key), nil
 }
 
 func (s *connectScreen) focusable() bool {

@@ -448,3 +448,27 @@ func TestLoginsScreen_upFromContinueFindsTheServerItLeftAfterARowAboveGoes(t *te
 		t.Errorf("screen after linear went and up from Continue:\n%s\nwant the cursor back on sentry", text)
 	}
 }
+
+func TestLoginsScreen_onContinueTheLastLoginsResultStaysInView(t *testing.T) {
+	var names []string
+	for i := range 12 {
+		names = append(names, fmt.Sprintf("srv%02d", i))
+	}
+	logins := newFakeLogins(names...)
+	s := loginScreen(logins, names...)
+	for i, name := range names {
+		var err error
+		if i == len(names)-1 {
+			err = errors.New("access denied")
+		}
+		logins.ends[name] <- err
+		pressAndRun(s, "enter")
+	}
+	a := framed(s, false)
+	if body := ansi.Strip(
+		a.body(8),
+	); !strings.Contains(body, "srv11  ✗ access denied") ||
+		!strings.Contains(body, "> Continue") {
+		t.Errorf("body at height 8:\n%s\nwant the failed srv11 in view above Continue", body)
+	}
+}

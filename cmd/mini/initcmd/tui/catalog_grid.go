@@ -104,11 +104,15 @@ func (g *catalogGrid) handle(key tea.KeyPressMsg) reply {
 	return unhandled
 }
 
+// a ticks what the layout shows: in the collapsible one, the open category's servers only.
 func (g *catalogGrid) toggleAll() {
+	shown := g.shown()
 	var keys []string
-	for _, s := range g.shown() {
-		for _, e := range s.entries {
-			keys = append(keys, e.key)
+	for _, column := range g.columns() {
+		for _, cell := range column {
+			if cell.selectable && cell.spot.entry >= 0 {
+				keys = append(keys, shown[cell.spot.section].entries[cell.spot.entry].key)
+			}
 		}
 	}
 	toggleAll(g.checked, keys)
@@ -167,9 +171,8 @@ func (g *catalogGrid) moveVertically(column []gridCell, row, step int) reply {
 	return handled
 }
 
-// A filter that matches nothing still holds the cursor, so the keys that edit or clear it reach it.
 func (g *catalogGrid) focusable() bool {
-	return len(g.shown()) > 0 || g.filter.active()
+	return g.filter.holdsCursor(len(g.shown()) > 0)
 }
 
 func (g *catalogGrid) moveAcross(columns [][]gridCell, col, row, step int) {

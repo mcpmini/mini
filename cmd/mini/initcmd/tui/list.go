@@ -105,6 +105,9 @@ func (l *list) handle(key tea.KeyPressMsg) reply {
 	case "space", "enter":
 		l.toggle()
 		return handled
+	case "a":
+		l.toggleAll()
+		return handled
 	}
 	return unhandled
 }
@@ -113,7 +116,6 @@ func (l *list) moveKey(key string) reply {
 	return l.move(direction(key))
 }
 
-// A filter that matches nothing still holds the cursor, so the keys that edit or clear it reach it.
 func (l *list) focusable() bool {
-	return len(l.visible()) > 0 || l.filter.active()
+	return l.filter.holdsCursor(len(l.visible()) > 0)
 }

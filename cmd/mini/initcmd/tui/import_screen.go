@@ -58,14 +58,7 @@ func (s *importScreen) heading() string {
 }
 
 func (s *importScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
-	if r := s.list.handle(key); r != unhandled {
-		return r, nil
-	}
-	if key.String() == "a" {
-		s.list.toggleAll()
-		return handled, nil
-	}
-	return unhandled, nil
+	return s.list.handle(key), nil
 }
 
 func (s *importScreen) body(height int, focused bool) string {

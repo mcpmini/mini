@@ -155,10 +155,12 @@ func (s *loginsScreen) selectable(i int) bool {
 }
 
 func (s *loginsScreen) nextToLogIn() int {
-	return slices.IndexFunc(s.rows, func(r initcmd.ServerStatus) bool {
-		_, tried := s.results[r.Name]
-		return !tried && r.Readiness == initcmd.NeedsLogin && !s.checking[r.Name]
-	})
+	for i, r := range s.rows {
+		if _, tried := s.results[r.Name]; s.selectable(i) && !tried {
+			return i
+		}
+	}
+	return -1
 }
 
 func (s *loginsScreen) lastToLogIn() int {
@@ -217,12 +219,12 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 	for i, status := range s.rows {
 		start := len(lines)
 		lines, section = s.withSectionHeading(lines, section, status)
-		atCursor := focused && i == s.cursor
-		if atCursor {
+		// The cursor's server stays in view while the cursor is on Continue, so a login's result shows.
+		if i == s.cursor {
 			first = start
 		}
-		lines = append(lines, s.rowLines(status, atCursor, width)...)
-		if atCursor {
+		lines = append(lines, s.rowLines(status, focused && i == s.cursor, width)...)
+		if i == s.cursor {
 			last = len(lines) - 1
 		}
 	}

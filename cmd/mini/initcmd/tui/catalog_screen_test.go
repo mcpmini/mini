@@ -381,3 +381,12 @@ func TestCatalogScreen_aTicksEveryServerTheFilterShowsThenUnticksThem(t *testing
 		t.Errorf("picks after a again = %v, want none", entryNames(got))
 	}
 }
+
+func TestCatalogScreen_aInTheCollapsibleLayoutTicksOnlyTheOpenCategory(t *testing.T) {
+	s := loadedScreen(testCatalog(), noImports)
+	s.resize(50, 40)
+	pressAll(s, "a")
+	if got := entryNames(s.picks()); !slices.Equal(got, []string{"github"}) {
+		t.Errorf("picks after a = %v, want only github: Popular is the one category open", got)
+	}
+}

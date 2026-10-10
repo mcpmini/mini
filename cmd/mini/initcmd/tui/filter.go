@@ -86,6 +86,12 @@ func (f *textFilter) active() bool {
 	return f.typing || f.text != ""
 }
 
+// holdsCursor is whether a screen with this filter keeps the cursor: a filter that matches nothing
+// still does, so the keys that edit or clear it reach it.
+func (f *textFilter) holdsCursor(hasRows bool) bool {
+	return hasRows || f.active()
+}
+
 func (f *textFilter) set(text string) bool {
 	changed := f.text != text
 	f.text = text
