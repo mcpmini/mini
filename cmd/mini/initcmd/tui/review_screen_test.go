@@ -14,12 +14,12 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-func reviewWith(added []string, earlier, offered []screen) *reviewScreen {
+func reviewWith(added []string, endingInstead, offering []screen) *reviewScreen {
 	s := newReviewScreen(reviewParams{
-		added:     func() []string { return added },
-		configDir: "/example/mini",
-		earlier:   earlier,
-		offered:   offered,
+		added:         func() []string { return added },
+		configDir:     "/example/mini",
+		endingInstead: endingInstead,
+		offering:      offering,
 	})
 	s.resize(200, 20)
 	return s
@@ -93,7 +93,6 @@ func TestRun_noAgentsWithANoAuthPickReachesReview(t *testing.T) {
 	})
 }
 
-// reviewAfterNoAuthPick ticks a no-auth server in Catalog and continues through Logins to Review.
 // The probe ends sentry's check at once, so Logins empties and Continue reaches Review.
 func reviewAfterNoAuthPick(t *testing.T, configDir string, onReview func(m tea.Model)) Outcome {
 	t.Helper()

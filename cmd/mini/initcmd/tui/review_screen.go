@@ -10,15 +10,12 @@ import (
 )
 
 type reviewParams struct {
-	added     func() []string
-	configDir string
-	// earlier are the screens Review follows; while one of them still shows, Review is skipped.
-	earlier []screen
-	// offered are the screens that offer servers; when none offers any, there is nothing to review.
-	offered []screen
+	added         func() []string
+	configDir     string
+	endingInstead []screen
+	offering      []screen
 }
 
-// reviewScreen is the last screen of a run that doesn't connect an agent. It has no rows of its own.
 type reviewScreen struct {
 	p     reviewParams
 	width int
@@ -61,7 +58,7 @@ func (s *reviewScreen) resize(width, _ int) {
 }
 
 func (s *reviewScreen) empty() bool {
-	return anyShown(s.p.earlier) || !anyShown(s.p.offered)
+	return anyShown(s.p.endingInstead) || !anyShown(s.p.offering)
 }
 
 func anyShown(list []screen) bool {

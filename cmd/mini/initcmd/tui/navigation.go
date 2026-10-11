@@ -66,7 +66,7 @@ func (a *app) forwardLabels() []string {
 	return []string{continueLabel}
 }
 
-// A run's last screen has no Continue: past the save point, it says whether to save and finish.
+// Before the save point, saving can still open Logins, so only a screen past it knows it is last.
 func (a *app) endsRun() bool {
 	_, hasNext := a.nextShown(a.at, 1)
 	return a.saves.save != nil && a.at > a.saves.after && !hasNext
