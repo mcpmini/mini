@@ -37,7 +37,14 @@ func newFakePlan(removable map[string][]string) *fakePlan {
 
 func (f *fakePlan) HasDuplicates(agent string) bool { return len(f.removable[agent]) > 0 }
 
-func (f *fakePlan) DuplicatedServers(agent string) []string { return f.removable[agent] }
+func (f *fakePlan) DuplicatedServers(agents ...string) []string {
+	var names []string
+	for _, agent := range agents {
+		names = append(names, f.removable[agent]...)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
 
 func (f *fakePlan) Check(ctx context.Context) initcmd.Removals {
 	select {
@@ -249,7 +256,7 @@ type stuckPlan struct{ unblock chan struct{} }
 
 func (*stuckPlan) HasDuplicates(string) bool { return true }
 
-func (*stuckPlan) DuplicatedServers(string) []string { return []string{"files"} }
+func (*stuckPlan) DuplicatedServers(...string) []string { return []string{"files"} }
 
 func (p *stuckPlan) Check(context.Context) initcmd.Removals {
 	<-p.unblock

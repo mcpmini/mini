@@ -15,7 +15,7 @@ import (
 
 type connectPlan interface {
 	HasDuplicates(agent string) bool
-	DuplicatedServers(agent string) []string
+	DuplicatedServers(agents ...string) []string
 	Check(ctx context.Context) initcmd.Removals
 }
 
@@ -172,15 +172,11 @@ func (s *connectScreen) unavailableBecause(choice initcmd.ConnectChoice) string 
 }
 
 func (s *connectScreen) nothingWorksYet() string {
-	var names []string
+	var picked []string
 	for _, agent := range s.picked() {
-		for _, name := range s.plan.DuplicatedServers(agent.Name) {
-			if !slices.Contains(names, name) {
-				names = append(names, name)
-			}
-		}
+		picked = append(picked, agent.Name)
 	}
-	slices.Sort(names)
+	names := s.plan.DuplicatedServers(picked...)
 	verb := "don't"
 	if len(names) == 1 {
 		verb = "doesn't"

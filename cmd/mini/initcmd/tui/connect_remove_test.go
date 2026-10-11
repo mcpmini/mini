@@ -76,15 +76,11 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 		s.update(check())
 		want := "Nothing will be removed: linear and sentry don't work in mini yet."
 		if text := connectText(s); !strings.Contains(text, want) || strings.Contains(text, "backed up") {
-			t.Errorf("screen:\n%s\nwant it to name linear and sentry once each, and not Cursor's datadog", text)
+			t.Errorf("screen:\n%s\nwant it to name linear and sentry, and not Cursor's datadog", text)
 		}
 		s.ticked["Codex"] = false
-		if text := connectText(
-			s,
-		); !strings.Contains(
-			text,
-			"Nothing will be removed: linear doesn't work in mini yet.",
-		) {
+		want = "Nothing will be removed: linear doesn't work in mini yet."
+		if text := connectText(s); !strings.Contains(text, want) {
 			t.Errorf("screen with only Claude ticked:\n%s\nwant only linear named", text)
 		}
 	})

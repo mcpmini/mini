@@ -58,9 +58,14 @@ func (p ConnectPlan) HasDuplicates(agent string) bool {
 	return ok
 }
 
-// DuplicatedServers names the mini servers whose copies in the agent removing could replace.
-func (p ConnectPlan) DuplicatedServers(agent string) []string {
-	return duplicatedServers(p.agents[agent].duplicates)
+// DuplicatedServers names, once each and sorted, the mini servers that have a copy in any of the
+// agents' configs.
+func (p ConnectPlan) DuplicatedServers(agents ...string) []string {
+	var duplicates []map[string]string
+	for _, agent := range agents {
+		duplicates = append(duplicates, p.agents[agent].duplicates)
+	}
+	return duplicatedServers(duplicates...)
 }
 
 // Removals is what removing would do once the checks ran: each mini server's check, and per agent
