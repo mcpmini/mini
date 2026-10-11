@@ -7,11 +7,12 @@ import (
 )
 
 type pendingLogin struct {
-	id     int
-	name   string
-	url    string
-	cancel context.CancelFunc
-	done   chan struct{}
+	id        int
+	name      string
+	configDir string
+	url       string
+	cancel    context.CancelFunc
+	done      chan struct{}
 	// Sized for everything runLogin sends, so cancelling and waiting on done never blocks on the UI.
 	events chan tea.Msg
 }
@@ -35,6 +36,9 @@ func (s *loginsScreen) startLogin(name string) tea.Cmd {
 	login := &pendingLogin{
 		id: s.logins, name: name, cancel: cancel, done: make(chan struct{}), events: make(chan tea.Msg, 2),
 	}
+	if s.p.configDirFor != nil {
+		login.configDir = s.p.configDirFor(name)
+	}
 	s.pending = login
 	go s.runLogin(ctx, login)
 	return login.next
@@ -42,7 +46,7 @@ func (s *loginsScreen) startLogin(name string) tea.Cmd {
 
 func (s *loginsScreen) runLogin(ctx context.Context, login *pendingLogin) {
 	defer close(login.done)
-	started, err := s.p.startLogin(ctx, login.name)
+	started, err := s.p.startLogin(ctx, login.configDir, login.name)
 	if err != nil {
 		login.events <- loginFinished{id: login.id, err: err}
 		return

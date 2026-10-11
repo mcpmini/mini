@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"slices"
+	"strings"
 
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
@@ -66,7 +67,9 @@ func (r *Run) ServerStatuses(entries []catalog.Entry) ([]ServerStatus, error) {
 		return inMini, err
 	}
 	added, err := ServerStatuses(r.stage.dir, entries)
-	return append(inMini, added...), err
+	all := slices.Concat(inMini, added)
+	slices.SortFunc(all, func(a, b ServerStatus) int { return strings.Compare(a.Name, b.Name) })
+	return all, err
 }
 
 // Checking names the servers whose OAuth check is still running.

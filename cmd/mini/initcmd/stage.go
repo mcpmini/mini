@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/fileio"
+	"github.com/mcpmini/mini/internal/ops"
 )
 
 // stage holds the servers a run adds, and their logins, so neither mini nor its daemon sees them
@@ -90,7 +90,7 @@ func (s *stage) commitServer(name string) error {
 	if taken, err := serverNameTaken(s.configDir, name); err != nil || taken {
 		return cmp.Or(err, errAddedOutsideInit)
 	}
-	staged, mini := serverState(s.dir, name), serverState(s.configDir, name)
+	staged, mini := ops.ServerStatePaths(s.dir, name), ops.ServerStatePaths(s.configDir, name)
 	for i := range staged {
 		if err := replaceOrRemove(mini[i], staged[i]); err != nil {
 			return err
@@ -104,8 +104,13 @@ func (s *stage) commitServer(name string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	// Created, not replaced: a server added since the check above is someone else's.
-	return fileio.CreateFile(path, data, 0o600)
+	// Created, not replaced: a server added in the moment since the name check is someone else's. Its
+	// login may already be overwritten; holding a lock across mini's commands would be the only cure.
+	err = fileio.CreateFile(path, data, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return errAddedOutsideInit
+	}
+	return err
 }
 
 func serverNameTaken(configDir, name string) (bool, error) {
@@ -119,10 +124,6 @@ func serverNameTaken(configDir, name string) (bool, error) {
 	return slices.ContainsFunc(entries, func(e os.DirEntry) bool {
 		return strings.EqualFold(e.Name(), name+".yaml")
 	}), nil
-}
-
-func serverState(configDir, name string) []string {
-	return append(auth.CredentialPaths(configDir, name), config.ServerMetaPath(configDir, name))
 }
 
 // A file the stage lacks is removed too: mini may still hold a token from an earlier server of the same name.

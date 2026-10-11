@@ -61,6 +61,27 @@ func TestRun(t *testing.T) {
 		}
 	})
 
+	t.Run("a server added outside init while it ran is reported, not imported", func(t *testing.T) {
+		setup := Setup{
+			ConfigDir: t.TempDir(),
+			Add:       []catalog.Entry{{Name: "notes", URL: "https://notes.example/mcp"}},
+			Probe:     newFakeProbe(false).probe,
+		}
+		run := mustStart(t, setup, Plan{Add: setup.Add})
+		run.Save()
+		configtest.WriteServer(
+			t,
+			setup.ConfigDir,
+			config.ServerConfig{Name: "notes", URL: "https://theirs.example/mcp"},
+		)
+
+		report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
+
+		if len(report.WriteErrors) != 1 || !errors.Is(report.WriteErrors[0].Err, errAddedOutsideInit) {
+			t.Errorf("write errors = %v, want notes reported as added outside init", report.WriteErrors)
+		}
+	})
+
 	t.Run("finishing commits the saved servers to mini", func(t *testing.T) {
 		setup := Setup{
 			ConfigDir: t.TempDir(),

@@ -142,7 +142,7 @@ func newFakeLogins(names ...string) *fakeLogins {
 	return f
 }
 
-func (f *fakeLogins) start(ctx context.Context, name string) (Login, error) {
+func (f *fakeLogins) start(ctx context.Context, _, name string) (Login, error) {
 	wait := func() error {
 		select {
 		case err := <-f.ends[name]:
@@ -257,7 +257,7 @@ func TestLoginsScreen_leavingCancelsTheWaitingLogin(t *testing.T) {
 func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *testing.T) {
 	url := "https://auth.example/authorize?" + strings.Repeat("scope=read&", 20)
 	s := loginScreen(newFakeLogins(), "linear")
-	s.p.startLogin = func(ctx context.Context, _ string) (Login, error) {
+	s.p.startLogin = func(ctx context.Context, _, _ string) (Login, error) {
 		return Login{URL: url, Wait: func() error { <-ctx.Done(); return ctx.Err() }}, nil
 	}
 	t.Cleanup(s.cancelLogin)

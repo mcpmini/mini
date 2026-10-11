@@ -27,8 +27,10 @@ type loginsParams struct {
 	statuses   func() ([]initcmd.ServerStatus, error)
 	checking   func() map[string]bool
 	changed    <-chan struct{}
-	startLogin func(ctx context.Context, name string) (Login, error)
-	copy       func(text string) error
+	startLogin func(ctx context.Context, configDir, name string) (Login, error)
+	// configDirFor runs on the UI goroutine, which the run belongs to; the login runs on its own.
+	configDirFor func(name string) string
+	copy         func(text string) error
 }
 
 type loginsScreen struct {

@@ -100,12 +100,11 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			return run.ServerStatuses(ui.catalog(*plan))
 		},
-		checking: run.Checking,
-		changed:  run.ChecksChanged(),
-		startLogin: func(ctx context.Context, name string) (Login, error) {
-			return p.StartLogin(ctx, run.ConfigDirFor(name), name)
-		},
-		copy: copyLinkToClipboard,
+		checking:     run.Checking,
+		changed:      run.ChecksChanged(),
+		startLogin:   p.StartLogin,
+		configDirFor: run.ConfigDirFor,
+		copy:         copyLinkToClipboard,
 	})
 	return ui
 }

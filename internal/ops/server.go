@@ -56,12 +56,19 @@ func RemoveServer(configDir, name string) error {
 	return nil
 }
 
+// ServerStatePaths are the files mini keeps for a server beside its config: its login and what it detected.
+func ServerStatePaths(configDir, name string) []string {
+	return append(auth.CredentialPaths(configDir, name), config.ServerMetaPath(configDir, name))
+}
+
 func forgetStateStoredByName(configDir, name string) error {
-	if err := os.Remove(config.ServerMetaPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("forget %s state: %w", name, err)
+	if err := validServerName(name); err != nil {
+		return err
 	}
-	if err := auth.DeleteCredentials(configDir, name); err != nil {
-		return fmt.Errorf("forget %s credentials: %w", name, err)
+	for _, path := range ServerStatePaths(configDir, name) {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("forget %s state: %w", name, err)
+		}
 	}
 	return nil
 }
