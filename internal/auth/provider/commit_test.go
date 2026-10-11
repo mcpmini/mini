@@ -64,8 +64,8 @@ func TestCommitAuthorizedToken_existingProvider_servesFromMemoryAfterFileRemoved
 		AccessToken: "browser-access", RefreshToken: "browser-r",
 		Expiry: f.clock.Now().Add(time.Hour),
 	}
-	if err := f.registry.CommitAuthorizedToken(params, browserTok); err != nil {
-		t.Fatalf("CommitAuthorizedToken: %v", err)
+	if commitErr := f.registry.CommitAuthorizedToken(params, browserTok); commitErr != nil {
+		t.Fatalf("CommitAuthorizedToken: %v", commitErr)
 	}
 	after, err := f.registry.GetOrCreate(params)
 	if err != nil {
@@ -103,8 +103,8 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 	}
 	refreshDone := make(chan error, 1)
 	go func() {
-		_, err := prov.RefreshAuthorization(context.Background(), "Bearer stored-access")
-		refreshDone <- err
+		_, refreshErr := prov.RefreshAuthorization(context.Background(), "Bearer stored-access")
+		refreshDone <- refreshErr
 	}()
 	select {
 	case <-rawReceived:
@@ -118,11 +118,11 @@ func TestCommitAuthorizedToken_duringRefresh_browserTokenWins(t *testing.T) {
 		})
 	}()
 	release()
-	if err := <-refreshDone; err != nil {
-		t.Fatalf("refresh: %v", err)
+	if refreshErr := <-refreshDone; refreshErr != nil {
+		t.Fatalf("refresh: %v", refreshErr)
 	}
-	if err := <-commitDone; err != nil {
-		t.Fatalf("commit: %v", err)
+	if commitErr := <-commitDone; commitErr != nil {
+		t.Fatalf("commit: %v", commitErr)
 	}
 	got, err := prov.Authorization(context.Background())
 	if err != nil {
@@ -197,15 +197,15 @@ func TestCommitAuthorizedToken_saveFails_providerUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	internal := f.dir + "/internal"
-	if err := os.Chmod(internal, 0o500); err != nil {
-		t.Fatal(err)
+	if chmodErr := os.Chmod(internal, 0o500); chmodErr != nil {
+		t.Fatal(chmodErr)
 	}
 	t.Cleanup(func() { os.Chmod(internal, 0o700) }) //nolint:errcheck
 
-	if err := f.registry.CommitAuthorizedToken(
+	if commitErr := f.registry.CommitAuthorizedToken(
 		params,
 		&oauth2.Token{AccessToken: "browser-access", RefreshToken: "browser-refresh"},
-	); err == nil {
+	); commitErr == nil {
 		t.Fatal("expected CommitAuthorizedToken to fail when persist is denied")
 	}
 	os.Chmod(internal, 0o700) //nolint:errcheck
@@ -240,7 +240,10 @@ func TestCommitAuthorizedToken_differentServerURL_rejected(t *testing.T) {
 	}
 	moved := params
 	moved.ServerURL = "https://b.example.com/mcp"
-	if err := f.registry.CommitAuthorizedToken(moved, &oauth2.Token{AccessToken: "browser-access"}); err == nil {
+	if commitErr := f.registry.CommitAuthorizedToken(
+		moved,
+		&oauth2.Token{AccessToken: "browser-access"},
+	); commitErr == nil {
 		t.Fatal("commit for different server URL must be rejected")
 	}
 	got, err := p.Authorization(context.Background())
@@ -307,8 +310,8 @@ func TestCommitAuthorizedToken_externalReregistration_usesNewRegistrationCredent
 		RefreshToken: "browser-refresh",
 		Expiry:       f.clock.Now().Add(time.Hour),
 	}
-	if err := f.registry.CommitAuthorizedToken(params, browserTok); err != nil {
-		t.Fatalf("CommitAuthorizedToken: %v", err)
+	if commitErr := f.registry.CommitAuthorizedToken(params, browserTok); commitErr != nil {
+		t.Fatalf("CommitAuthorizedToken: %v", commitErr)
 	}
 
 	reg2 := &auth.Registration{

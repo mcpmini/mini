@@ -40,9 +40,9 @@ func BeginLogin(ctx context.Context, sc *config.ServerConfig, p BeginLoginParams
 	if err != nil {
 		return nil, err
 	}
-	if err := ResolveEndpoints(ctx, sc, p); err != nil {
+	if resolveErr := ResolveEndpoints(ctx, sc, p); resolveErr != nil {
 		listener.Close() //nolint:errcheck // listener cleanup cannot replace the endpoint-resolution error returned to the caller
-		return nil, fmt.Errorf("resolve oauth endpoints: %w", err)
+		return nil, fmt.Errorf("resolve oauth endpoints: %w", resolveErr)
 	}
 	login, err := StartBrowserLogin(sc.Auth, listener)
 	if err != nil {
