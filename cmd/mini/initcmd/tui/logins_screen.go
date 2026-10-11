@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/internal/config"
 )
 
 // Login is a browser login that has started: the browser is opening URL, and Wait blocks until the
@@ -36,6 +37,7 @@ type loginsParams struct {
 type loginsScreen struct {
 	p        loginsParams
 	rows     []initcmd.ServerStatus
+	byHand   []initcmd.ServerStatus
 	checking map[string]bool
 	err      error
 	cursor   int
@@ -62,19 +64,22 @@ func (s *loginsScreen) refresh() {
 	// it signals refreshes the screen again.
 	s.checking = s.p.checking()
 	statuses, err := s.p.statuses()
-	s.rows, s.err = nil, err
+	s.rows, s.byHand, s.err = nil, nil, err
 	for _, status := range statuses {
-		// A tried login's row stays, so the user sees how it went.
-		_, tried := s.results[status.Name]
-		if status.Readiness != initcmd.Ready || s.checking[status.Name] || tried {
+		switch {
+		case s.isLoginRow(status):
 			s.rows = append(s.rows, status)
+		case status.Readiness != initcmd.Ready:
+			s.byHand = append(s.byHand, status)
 		}
 	}
-	sections := []string{logInSection, byHandSection}
-	slices.SortStableFunc(s.rows, func(a, b initcmd.ServerStatus) int {
-		return slices.Index(sections, s.section(a)) - slices.Index(sections, s.section(b))
-	})
 	s.follow(selected)
+}
+
+// A tried login's row stays, so the user sees how it went.
+func (s *loginsScreen) isLoginRow(status initcmd.ServerStatus) bool {
+	_, tried := s.results[status.Name]
+	return tried || s.checking[status.Name] || status.Readiness == initcmd.NeedsLogin
 }
 
 // Rows come and go as checks finish, so the user's pick is found again by name.
@@ -218,27 +223,56 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
 }
 
 func (s *loginsScreen) heading() string {
-	if s.err == nil && len(s.rows) == 0 {
-		return "Your servers are ready"
+	switch {
+	case len(s.rows) > 0 || s.err != nil:
+		return "Log in to your MCPs (optional)"
+	case len(s.byHand) > 0:
+		return "Finish setting up these MCPs later"
 	}
-	return "Finish setting up these servers"
+	return "Your servers are ready"
 }
 
 func (s *loginsScreen) body(height int, focused bool) string {
 	if s.err != nil {
 		return "mini's servers couldn't be read: " + s.err.Error()
 	}
-	lines, first, last := s.serverLines(focused)
-	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
+	rows, first, last := s.serverLines(focused)
+	return strings.Join(s.scroll.cut(append(rows, s.byHandList()...), first, last, height), "\n")
 }
 
-// first and last bound the cursor's block: its section heading, its row and the lines under it.
+func (s *loginsScreen) byHandList() []string {
+	if len(s.byHand) == 0 {
+		return nil
+	}
+	var lines []string
+	if len(s.rows) > 0 {
+		lines = append(lines, "")
+	}
+	text := "Browser login isn't available for these MCPs, so you will need to configure them manually later:"
+	if len(s.byHand) == 1 {
+		text = "Browser login isn't available for this MCP, so you will need to configure it manually later:"
+	}
+	lines = append(lines, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
+	width := widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
+	for _, status := range s.byHand {
+		lines = append(lines, fmt.Sprintf("  %-*s  %s", width, status.Name, dim.Render(s.requirement(status))))
+	}
+	return lines
+}
+
+// Only a missing OAuth app is named; any other reason would be a guess, so it points at the file.
+func (s *loginsScreen) requirement(status initcmd.ServerStatus) string {
+	if status.Readiness == initcmd.NeedsOwnApp {
+		return "requires a custom OAuth app"
+	}
+	return "requires manual configuration, edit " + config.ServerPath(s.p.configDirFor(status.Name), status.Name)
+}
+
+// first and last bound the cursor's block: its row and the lines under it.
 func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last int) {
 	width := widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
-	section := ""
 	for i, status := range s.rows {
 		start := len(lines)
-		lines, section = s.withSectionHeading(lines, section, status)
 		// The cursor's server stays in view while the cursor is on Continue, so a login's result shows.
 		if i == s.cursor {
 			first = start
@@ -248,7 +282,7 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 			last = len(lines) - 1
 		}
 	}
-	if len(lines) == 0 {
+	if len(lines) == 0 && len(s.byHand) == 0 {
 		// The last check cleared the final row while the screen was shown.
 		lines = append(lines, "Every server works; nothing is left to set up.")
 	}
@@ -256,43 +290,46 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 }
 
 func (s *loginsScreen) rowLines(status initcmd.ServerStatus, atCursor bool, width int) []string {
-	lines := []string{cursorMark(atCursor) + fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status))}
+	lines := []string{cursorMark(atCursor) + s.rowText(status, atCursor, width)}
 	if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
 		lines = append(lines, s.urlLines(4+width)...)
 	}
 	return lines
 }
 
-func (s *loginsScreen) withSectionHeading(
-	lines []string,
-	current string,
-	status initcmd.ServerStatus,
-) ([]string, string) {
-	next := s.section(status)
-	if next == current {
-		return lines, current
+func (s *loginsScreen) rowText(status initcmd.ServerStatus, atCursor bool, width int) string {
+	state, hint := s.state(status), ""
+	if atCursor {
+		hint = s.hint(status)
 	}
-	if current != "" {
-		lines = append(lines, "")
+	if state == "" && hint == "" {
+		return status.Name
 	}
-	return append(lines, bold.Render(next)), next
+	if hint != "" && state != "" {
+		// A failed login's error can run past the window, and the app would cut the hint after it.
+		room := s.width - len("> ") - width - len("  ") - len("  ") - len(hint)
+		state = ansi.Truncate(state, max(room, 1), "…") + "  "
+	}
+	if hint != "" {
+		hint = dim.Render(hint)
+	}
+	return fmt.Sprintf("%-*s  %s%s", width, status.Name, state, hint)
 }
 
-const (
-	logInSection  = "Log in"
-	byHandSection = "Set up by hand"
-)
-
-// The cursor only stops on servers it can log in to, so the rest are grouped apart from them.
-func (s *loginsScreen) section(status initcmd.ServerStatus) string {
-	if _, tried := s.results[status.Name]; tried || status.Readiness == initcmd.NeedsLogin || s.checking[status.Name] {
-		return logInSection
+func (s *loginsScreen) hint(status initcmd.ServerStatus) string {
+	if s.pending != nil {
+		return ""
 	}
-	return byHandSection
+	err, tried := s.results[status.Name]
+	if !tried {
+		return "press enter to log in"
+	}
+	if err != nil {
+		return "press enter to try again"
+	}
+	return ""
 }
 
-// Authorize URLs run to hundreds of characters, so the link shows its host and as much of the path as
-// fits: the host is what tells the user which server they are signing in to. c copies the whole URL.
 // Authorize URLs run to hundreds of characters, and the app cuts lines at the window's edge.
 func (s *loginsScreen) urlLines(indent int) []string {
 	var lines []string
@@ -315,14 +352,17 @@ func (s *loginsScreen) state(status initcmd.ServerStatus) string {
 	}
 	if err, tried := s.results[status.Name]; tried {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return "✗ timed out; enter to try again"
+			return "✗ login timed out"
 		}
 		if err != nil {
-			return "✗ " + firstLine(err)
+			return "✗ login failed: " + firstLine(err)
 		}
 		return "✓ logged in"
 	}
-	return dim.Render(s.need(status))
+	if s.checking[status.Name] {
+		return dim.Render("checking…")
+	}
+	return ""
 }
 
 // A failed token exchange's error carries the endpoint's raw response body, often a whole HTML
@@ -335,23 +375,6 @@ func firstLine(err error) string {
 		}
 		return r
 	}, line)
-}
-
-func (s *loginsScreen) need(status initcmd.ServerStatus) string {
-	if s.checking[status.Name] {
-		return "checking…"
-	}
-	switch status.Readiness {
-	case initcmd.NeedsLogin:
-		return "needs a login"
-	case initcmd.NeedsToken:
-		return needsToken
-	case initcmd.NeedsOwnApp:
-		return needsOwnApp
-	case initcmd.NeedsEnv:
-		return "needs " + strings.Join(status.UnsetEnv.Names, ", ") + " set"
-	}
-	return ""
 }
 
 func withNotice(notice, keys string) string {
@@ -368,9 +391,9 @@ func (s *loginsScreen) keys() string {
 	if s.pending != nil {
 		return withNotice(s.notice, "↑↓ move · c copy link · esc cancel login · tab continue")
 	}
-	return "↑↓ move · enter log in · tab continue"
+	return "↑↓ move · enter open browser · tab continue"
 }
 
 func (s *loginsScreen) empty() bool {
-	return s.err == nil && len(s.rows) == 0
+	return s.err == nil && len(s.rows) == 0 && len(s.byHand) == 0
 }

@@ -157,11 +157,6 @@ func host(rawURL string) string {
 	return rawURL
 }
 
-const (
-	needsToken  = "needs a token"
-	needsOwnApp = "needs your own OAuth app"
-)
-
 func (s *catalogScreen) heading() string {
 	return "Which popular MCPs would you like to add?"
 }

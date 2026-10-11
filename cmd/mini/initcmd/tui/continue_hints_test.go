@@ -112,7 +112,7 @@ func TestContinueHints_loginsNamesConnectOnlyWhenContinueOpensIt(t *testing.T) {
 	})
 	t.Run("with no agent to connect", func(t *testing.T) {
 		view := screenAfter(t, setupFor(configWithAServerToFinish(t)), fromCatalog(c), "tab", "enter")
-		if !strings.HasPrefix(view, "Finish setting up these servers") || continueLine(view) != "> Continue" {
+		if !strings.HasPrefix(view, "Finish setting up these MCPs later") || continueLine(view) != "> Continue" {
 			t.Errorf("view:\n%s\nwant Logins with a plain Continue", view)
 		}
 	})
