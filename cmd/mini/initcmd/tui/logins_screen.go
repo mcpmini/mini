@@ -228,6 +228,9 @@ func (s *loginsScreen) heading() string {
 	if s.empty() {
 		return "Your servers are ready"
 	}
+	if s.err != nil {
+		return "Log in to your MCPs (optional)"
+	}
 	return "Finish setting up these MCPs later"
 }
 
@@ -236,36 +239,30 @@ func (s *loginsScreen) body(height int, focused bool) string {
 		return "mini's servers couldn't be read: " + s.err.Error()
 	}
 	intro := s.byHandIntro()
-	lines, first, last := s.serverLines(focused)
-	rowsHeight := height
-	if height > 0 {
-		rowsHeight = max(height-len(intro), 1)
+	rows, first, last := s.serverLines(focused)
+	if len(s.rows) > 0 {
+		first, last = first+len(intro), last+len(intro)
 	}
-	return strings.Join(append(intro, s.scroll.cut(lines, first, last, rowsHeight)...), "\n")
+	return strings.Join(s.scroll.cut(append(intro, rows...), first, last, height), "\n")
 }
 
-// byHandIntro sits above the scrolled rows, so it stays in view however the rows scroll.
 func (s *loginsScreen) byHandIntro() []string {
 	if len(s.byHand) == 0 {
 		return nil
 	}
+	them := "these"
+	if len(s.byHand) == 1 {
+		them = "it"
+	}
 	text := fmt.Sprintf(
-		"Browser login isn't available for %s. You will need to configure these manually later.",
-		andList(s.byHand),
+		"Browser login isn't available for %s. You will need to configure %s manually later.",
+		initcmd.JoinAnd(s.byHand), them,
 	)
 	lines := strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")
 	if len(s.rows) > 0 {
 		lines = append(lines, "")
 	}
 	return lines
-}
-
-func andList(names []string) string {
-	last := len(names) - 1
-	if last == 0 {
-		return names[0]
-	}
-	return strings.Join(names[:last], ", ") + " and " + names[last]
 }
 
 // first and last bound the cursor's block: its row and the lines under it.
@@ -309,7 +306,8 @@ func (s *loginsScreen) rowText(status initcmd.ServerStatus, width int) string {
 }
 
 func (s *loginsScreen) hint(status initcmd.ServerStatus) string {
-	if s.checking[status.Name] || (s.pending != nil && s.pending.name == status.Name) {
+	// Enter starts no login while another waits.
+	if s.checking[status.Name] || s.pending != nil {
 		return ""
 	}
 	err, tried := s.results[status.Name]

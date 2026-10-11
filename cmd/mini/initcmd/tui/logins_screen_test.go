@@ -88,7 +88,7 @@ func TestLoginsScreen_byHandServersAreNamedInOneSentenceAndAreNotRows(t *testing
 		{
 			"one",
 			[]string{"github"},
-			"Browser login isn't available for github. You will need to configure these manually later.",
+			"Browser login isn't available for github. You will need to configure it manually later.",
 		},
 		{
 			"two",
@@ -128,7 +128,7 @@ func TestLoginsScreen_onlyByHandServersLeaveAHeadingAndTheSentenceWithContinue(t
 	s := loginScreenWithStatuses(newFakeLogins(), initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken})
 	s.resize(200, 30)
 	a := framed(s, false)
-	want := "Browser login isn't available for github. You will need to configure these manually later.\n\n> Continue"
+	want := "Browser login isn't available for github. You will need to configure it manually later.\n\n> Continue"
 	if text := framedText(a); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -459,7 +459,7 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 	})
 }
 
-func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLAndTheByHandSentenceInView(t *testing.T) {
+func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 	logins := newFakeLogins("linear", "sentry", "notion")
 	s := loginScreenWithStatuses(logins,
 		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
@@ -474,26 +474,42 @@ func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLAndTheByHandSentenceIn
 	t.Cleanup(s.cancelLogin)
 	all := strings.Split(ansi.Strip(s.body(0, true)), "\n")
 	sentry := slices.IndexFunc(all, func(line string) bool { return strings.HasPrefix(line, "> sentry") })
-	blank := slices.Index(all, "")
-	if !strings.HasPrefix(all[0], "Browser login isn't available") || blank < 0 || sentry != blank+2 {
-		t.Fatalf(
-			"full body:\n%s\nwant the by-hand sentence, a blank line, linear, then sentry",
-			strings.Join(all, "\n"),
-		)
+	if sentry < 0 || sentry+3 > len(all) {
+		t.Fatalf("full body:\n%s\nwant sentry's row with its URL wrapped under it", strings.Join(all, "\n"))
 	}
-	intro := all[:blank+1]
+	if body, want := ansi.Strip(s.body(3, true)), strings.Join(all[sentry:sentry+3], "\n"); body != want {
+		t.Errorf("body at height 3:\n%s\nwant sentry's row and its whole URL:\n%s", body, want)
+	}
+	if body, want := ansi.Strip(s.body(2, true)), strings.Join(all[sentry:sentry+2], "\n"); body != want {
+		t.Errorf("body at height 2:\n%s\nwant sentry's row kept when its URL doesn't fit:\n%s", body, want)
+	}
+}
 
-	withURL := strings.Join(append(slices.Clone(intro), all[sentry:sentry+3]...), "\n")
-	if body := ansi.Strip(s.body(len(intro)+3, true)); body != withURL {
-		t.Errorf(
-			"body with room for 3 rows:\n%s\nwant the sentence, then sentry's row and its whole URL:\n%s",
-			body,
-			withURL,
+func TestLoginsScreen_manyByHandServersScrollAwaySoTheCursorsRowFits(t *testing.T) {
+	statuses := []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLogin}}
+	for i := range 20 {
+		statuses = append(
+			statuses,
+			initcmd.ServerStatus{Name: fmt.Sprintf("token%d", i), Readiness: initcmd.NeedsToken},
 		)
 	}
-	rowKept := strings.Join(append(slices.Clone(intro), all[sentry:sentry+2]...), "\n")
-	if body := ansi.Strip(s.body(len(intro)+2, true)); body != rowKept {
-		t.Errorf("body with room for 2 rows:\n%s\nwant the sentence and sentry's row kept:\n%s", body, rowKept)
+	s := loginScreenWithStatuses(newFakeLogins(), statuses...)
+	s.resize(60, 12)
+	body := strings.Split(ansi.Strip(s.body(4, true)), "\n")
+	if len(body) > 4 || !slices.Contains(body, "> linear") {
+		t.Errorf("body at height 4:\n%s\nwant at most 4 lines with linear's row in view", strings.Join(body, "\n"))
+	}
+}
+
+func TestLoginsScreen_whileALoginWaitsNoOtherRowOffersEnter(t *testing.T) {
+	logins := newFakeLogins("linear", "sentry")
+	s := loginScreen(logins, "linear", "sentry")
+	_, cmd := s.handle(press("enter"))
+	s.update(cmd())
+	t.Cleanup(s.cancelLogin)
+	s.handle(press("down"))
+	if text := loginsText(s); !strings.Contains(text, "> sentry") || strings.Contains(text, "press enter") {
+		t.Errorf("screen:\n%s\nwant the cursor on sentry with no hint: enter starts nothing while linear waits", text)
 	}
 }
 
@@ -559,6 +575,9 @@ func TestLoginsScreen_aReadErrorLeavesOnlyTheNavigation(t *testing.T) {
 	send(a, "down")
 	if text := framedText(a); !strings.HasSuffix(text, "permission denied\n\n  Continue\n> Back") {
 		t.Errorf("screen:\n%s\nwant the error above Continue and Back, with the cursor on Back", text)
+	}
+	if heading := s.heading(); heading != "Log in to your MCPs (optional)" {
+		t.Errorf("heading = %q, want the screen's own heading, not one about servers it couldn't read", heading)
 	}
 }
 
