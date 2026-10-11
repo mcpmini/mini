@@ -300,8 +300,8 @@ func TestAuthorization_newerStoredTokenInWindow_usedWithoutRefreshing(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Authorization(context.Background()); err != nil {
-		t.Fatal(err)
+	if _, authorizationErr := p.Authorization(context.Background()); authorizationErr != nil {
+		t.Fatal(authorizationErr)
 	}
 	clk.Advance(6 * time.Minute)
 	t2 := &oauth2.Token{AccessToken: "t2-access", RefreshToken: "t2-refresh", Expiry: clk.Now().Add(30 * time.Minute)}

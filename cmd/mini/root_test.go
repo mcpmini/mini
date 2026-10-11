@@ -54,15 +54,15 @@ func TestMissingDefaultConfigRequiresExplicitDirectory(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot determine default config directory; pass --config DIR") {
 		t.Fatalf("ls without --config error = %v, want explicit config guidance", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".mini")); !os.IsNotExist(err) {
-		t.Fatalf("working-directory .mini stat error = %v, want no directory created", err)
+	if _, statErr := os.Stat(filepath.Join(dir, ".mini")); !os.IsNotExist(statErr) {
+		t.Fatalf("working-directory .mini stat error = %v, want no directory created", statErr)
 	}
-	if err := run("--config", filepath.Join(dir, "selected"), "ls"); err != nil {
-		t.Fatalf("ls with explicit --config: %v", err)
+	if commandErr := run("--config", filepath.Join(dir, "selected"), "ls"); commandErr != nil {
+		t.Fatalf("ls with explicit --config: %v", commandErr)
 	}
 	for _, args := range [][]string{{"help"}, {"--help"}, {"version"}, {"--version"}} {
-		if err := run(args...); err != nil {
-			t.Errorf("%v: %v", args, err)
+		if commandErr := run(args...); commandErr != nil {
+			t.Errorf("%v: %v", args, commandErr)
 		}
 	}
 	err = run("--config", dir, "call", "server", "tool", "--json", "--raw")

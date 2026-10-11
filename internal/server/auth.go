@@ -34,8 +34,8 @@ func (s *Server) handleStartAuth(ctx context.Context, serverName string) (any, e
 	if err != nil {
 		return nil, err
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	if contextErr := ctx.Err(); contextErr != nil {
+		return nil, contextErr
 	}
 	install := s.replacingInstall(sc)
 	login, err := s.startPKCEFlow(ctx, serverName, sc)

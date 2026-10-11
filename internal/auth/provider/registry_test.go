@@ -57,7 +57,7 @@ func TestProviderRegistry_changedServerURL_rejectedAndOriginalKept(t *testing.T)
 	}
 	changed := params
 	changed.ServerURL = "https://other.example.com/mcp"
-	if _, err := registry.GetOrCreate(changed); err == nil {
+	if _, registryErr := registry.GetOrCreate(changed); registryErr == nil {
 		t.Fatal("incompatible provider identity was accepted")
 	}
 	again, err := registry.GetOrCreate(params)
@@ -266,11 +266,11 @@ func TestProviderRegistry_forget(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := old.Authorization(context.Background()); err != nil {
-				t.Fatal(err)
+			if _, authorizationErr := old.Authorization(context.Background()); authorizationErr != nil {
+				t.Fatal(authorizationErr)
 			}
-			if err := auth.DeleteCredentials(dir, "srv"); err != nil {
-				t.Fatal(err)
+			if deleteErr := auth.DeleteCredentials(dir, "srv"); deleteErr != nil {
+				t.Fatal(deleteErr)
 			}
 
 			registry.Forget("srv")

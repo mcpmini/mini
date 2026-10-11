@@ -254,11 +254,11 @@ func TestShutdownHTTPWithContextClosesActiveConnectionAfterShutdownFailure(t *te
 
 	requestDone := make(chan error, 1)
 	go func() {
-		resp, err := http.Get("http://" + ln.Addr().String())
+		resp, requestErr := http.Get("http://" + ln.Addr().String())
 		if resp != nil {
 			resp.Body.Close()
 		}
-		requestDone <- err
+		requestDone <- requestErr
 	}()
 	select {
 	case <-started:

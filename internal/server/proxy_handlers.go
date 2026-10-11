@@ -221,8 +221,8 @@ func (s *Server) handleRead(ctx context.Context, raw json.RawMessage) (any, erro
 		return nil, err
 	}
 	file = s.resolveReadPath(file)
-	if err := s.validateStorePath(file); err != nil {
-		return nil, err
+	if validationErr := s.validateStorePath(file); validationErr != nil {
+		return nil, validationErr
 	}
 	b, err := os.ReadFile(file)
 	if err != nil {

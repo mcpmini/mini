@@ -31,6 +31,9 @@ linters:
     - nolintlint
 
   settings:
+    govet:
+      enable:
+        - shadow
     gocritic:
       disable-all: true
       # Check descriptions: https://go-critic.com/overview.html

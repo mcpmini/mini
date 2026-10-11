@@ -144,13 +144,13 @@ func TestSummary_howToConnectByHand(t *testing.T) {
 		Summary(Report{Agents: AgentConnections{Mini: mini}}),
 		"To connect mini to your agent, add it to its MCP config:\n",
 	)
-	if got := Summary(
+	if summary := Summary(
 		Report{Agents: AgentConnections{Mini: mini, MiniServes: list[:1]}},
 	); strings.Contains(
-		got,
+		summary,
 		"To connect mini",
 	) {
-		t.Errorf("every agent already has mini, but the summary shows how to connect one:\n%s", got)
+		t.Errorf("every agent already has mini, but the summary shows how to connect one:\n%s", summary)
 	}
 	got = Summary(Report{Agents: AgentConnections{Mini: mini, MiniInactive: list[2:]}})
 	requireLines(t, got, "Cursor (/home/u/.cursor/mcp.json) has a mini entry that may not run these servers: "+

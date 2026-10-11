@@ -120,8 +120,8 @@ func runStatus(configDir string, out io.Writer) error {
 		return err
 	}
 	if noServers(servers) {
-		_, err := fmt.Fprintln(out, noServersConfigured)
-		return err
+		_, writeErr := fmt.Fprintln(out, noServersConfigured)
+		return writeErr
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

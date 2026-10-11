@@ -70,11 +70,11 @@ func TestPurgeExpiredContinuesAfterDeleteFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Remove(blockedPath); err != nil {
-		t.Fatal(err)
+	if removeErr := os.Remove(blockedPath); removeErr != nil {
+		t.Fatal(removeErr)
 	}
-	if err := os.Mkdir(blockedPath, 0o700); err != nil {
-		t.Fatal(err)
+	if mkdirErr := os.Mkdir(blockedPath, 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
 	}
 	testutil.WriteFile(t, filepath.Join(blockedPath, "child"), "private contents")
 

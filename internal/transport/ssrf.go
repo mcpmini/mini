@@ -82,8 +82,8 @@ func dialSSRFSafe(ctx context.Context, d *net.Dialer, network, addr string) (net
 		return nil, err
 	}
 	if ip := net.ParseIP(host); ip != nil {
-		if err := validatePrivateIP(host, ip); err != nil {
-			return nil, fmt.Errorf("connection blocked: %w", err)
+		if validationErr := validatePrivateIP(host, ip); validationErr != nil {
+			return nil, fmt.Errorf("connection blocked: %w", validationErr)
 		}
 		return d.DialContext(ctx, network, addr)
 	}

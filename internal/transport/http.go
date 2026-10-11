@@ -444,8 +444,8 @@ func (c *HTTPConnection) Health(ctx context.Context) error {
 	for k, v := range c.headers {
 		req.Header.Set(k, v)
 	}
-	if _, err := c.applyAuthProvider(ctx, req); err != nil {
-		return err
+	if _, authErr := c.applyAuthProvider(ctx, req); authErr != nil {
+		return authErr
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {

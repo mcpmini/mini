@@ -38,8 +38,8 @@ func loadMainConfig(dir string) (*Config, error) {
 	if data == nil {
 		return cfg, nil
 	}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
+	if parseErr := yaml.Unmarshal(data, cfg); parseErr != nil {
+		return nil, fmt.Errorf("parse config: %w", parseErr)
 	}
 	responseDir, err := expandEnvValue("response_dir", cfg.ResponseDir)
 	if err != nil {

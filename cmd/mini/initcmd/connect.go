@@ -26,7 +26,7 @@ func ConnectableAgents(known []agents.Agent) []agents.Agent {
 		switch {
 		case agent.ConfigPath == "":
 		case err == nil:
-			if _, err := agent.Read(agent.ConfigPath); err == nil {
+			if _, readErr := agent.Read(agent.ConfigPath); readErr == nil {
 				connectable = append(connectable, agent)
 			}
 		case errors.Is(err, fs.ErrNotExist) && isDir(agent.Dir):

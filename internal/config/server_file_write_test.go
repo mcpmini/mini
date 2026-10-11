@@ -16,15 +16,15 @@ func TestServerFile_aSavedProjectionKeepsTheLayoutMiniCreatedTheFileIn(t *testin
 		t.Fatal(err)
 	}
 
-	if _, err := SaveServerProjection(
+	if _, saveErr := SaveServerProjection(
 		ServerProjectionParams{
 			ConfigDir:  dir,
 			ServerName: "svc",
 			Tool:       "list",
 			Projection: &ProjectionConfig{Exclude: []string{"secret"}},
 		},
-	); err != nil {
-		t.Fatal(err)
+	); saveErr != nil {
+		t.Fatal(saveErr)
 	}
 
 	sc.Projections = map[string]*ProjectionConfig{"list": {Exclude: []string{"secret"}}}

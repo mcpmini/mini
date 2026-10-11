@@ -28,9 +28,9 @@ func SaveServerProjection(p ServerProjectionParams) (*ProjectionConfig, error) {
 	edit := projectionEdit{path: path, tool: p.Tool, requested: p.Projection}
 	var saved *ProjectionConfig
 	_, err = fileio.EditFile(fileio.EditParams{Path: path, Edit: func(data []byte) ([]byte, error) {
-		edited, rule, err := edit.apply(data)
+		edited, rule, applyErr := edit.apply(data)
 		saved = rule
-		return edited, err
+		return edited, applyErr
 	}})
 	if err != nil {
 		return nil, err

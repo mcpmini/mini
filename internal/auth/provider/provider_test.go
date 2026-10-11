@@ -98,8 +98,8 @@ func TestRefreshAuthorization_saveFails_keepsRotatedTokenInMemory(t *testing.T) 
 
 	f.endpoint.AccessToken, f.endpoint.RefreshToken = "second-access", "second-refresh"
 	os.Chmod(internal, 0o700) //nolint:errcheck
-	if _, err := f.provider.RefreshAuthorization(context.Background(), "Bearer new-access"); err != nil {
-		t.Fatalf("second refresh: %v", err)
+	if _, refreshErr := f.provider.RefreshAuthorization(context.Background(), "Bearer new-access"); refreshErr != nil {
+		t.Fatalf("second refresh: %v", refreshErr)
 	}
 	f.endpoint.Mu.Lock()
 	lastRefresh := f.endpoint.LastRefresh
@@ -139,8 +139,8 @@ func TestRefreshAuthorization_newerStoredToken_usedWithoutRefreshing(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := prov.Authorization(context.Background()); err != nil {
-		t.Fatal(err)
+	if _, authorizationErr := prov.Authorization(context.Background()); authorizationErr != nil {
+		t.Fatal(authorizationErr)
 	}
 	external := &oauth2.Token{AccessToken: "external-access", RefreshToken: "external-refresh"}
 	authtest.SaveToken(t, authtest.TokenFile{ConfigDir: dir, ServerName: "srv", Token: external})
@@ -216,15 +216,15 @@ func TestRefreshAuthorization_callerCancelled_stillPersistsRotatedToken(t *testi
 	ctx, cancel := context.WithCancel(context.Background())
 	refreshDone := make(chan error, 1)
 	go func() {
-		_, err := p.RefreshAuthorization(ctx, "Bearer old-access")
-		refreshDone <- err
+		_, refreshErr := p.RefreshAuthorization(ctx, "Bearer old-access")
+		refreshDone <- refreshErr
 	}()
 	<-received
 	cancel()
 	release()
 
-	if err := <-refreshDone; err != nil {
-		t.Fatalf("RefreshAuthorization: %v", err)
+	if refreshErr := <-refreshDone; refreshErr != nil {
+		t.Fatalf("RefreshAuthorization: %v", refreshErr)
 	}
 	got, err := p.Authorization(context.Background())
 	if err != nil {
@@ -340,17 +340,17 @@ func TestRefreshAuthorization_saveFailsAfterEarlierSave_keepsNewestTokenOnReload
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); err != nil {
-		t.Fatalf("refresh 1: %v", err)
+	if _, refreshErr := p.RefreshAuthorization(context.Background(), "Bearer stored-access"); refreshErr != nil {
+		t.Fatalf("refresh 1: %v", refreshErr)
 	}
 	endpoint.AccessToken, endpoint.RefreshToken = "t3-access", "t3-refresh"
 	internal := dir + "/internal"
-	if err := os.Chmod(internal, 0o500); err != nil {
-		t.Fatal(err)
+	if chmodErr := os.Chmod(internal, 0o500); chmodErr != nil {
+		t.Fatal(chmodErr)
 	}
 	t.Cleanup(func() { os.Chmod(internal, 0o700) }) //nolint:errcheck
-	if _, err := p.RefreshAuthorization(context.Background(), "Bearer t2-access"); err != nil {
-		t.Fatalf("refresh 2: %v", err)
+	if _, refreshErr := p.RefreshAuthorization(context.Background(), "Bearer t2-access"); refreshErr != nil {
+		t.Fatalf("refresh 2: %v", refreshErr)
 	}
 	os.Chmod(internal, 0o700) //nolint:errcheck
 	endpoint.AccessToken, endpoint.RefreshToken = "t4-access", "t4-refresh"
@@ -394,8 +394,8 @@ func TestRefreshAuthorization_externalLoginWithNewRegistration_usesNewClientCred
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := p.Authorization(context.Background()); err != nil {
-		t.Fatal(err)
+	if _, authorizationErr := p.Authorization(context.Background()); authorizationErr != nil {
+		t.Fatal(authorizationErr)
 	}
 
 	authtest.SaveRegistration(t, authtest.RegistrationFile{
