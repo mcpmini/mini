@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, exp-buildcache]
     paths-ignore:
       - '**.md'
       - '.claude/**'
@@ -97,6 +97,14 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+
+      - name: Restore go build cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}-
 
       - name: Build test helpers
         run: |
