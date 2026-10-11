@@ -73,13 +73,11 @@ func (a *app) onBack(at int) bool {
 	return a.canGoBack() && at == len(a.labels())-1
 }
 
-// Back and Continue are never disabled, so only a chooser's choices can be.
 func (a *app) disabledChoice(i int) bool {
 	d, ok := a.current().(disabler)
 	return ok && !a.onBack(i) && d.disabled(i)
 }
 
-// enabledLabel finds the first label from `from` in direction step that the cursor may rest on.
 func (a *app) enabledLabel(from, step int) (int, bool) {
 	for i, n := from, len(a.labels()); i >= 0 && i < n; i += step {
 		if !a.disabledChoice(i) {
@@ -89,7 +87,6 @@ func (a *app) enabledLabel(from, step int) (int, bool) {
 	return 0, false
 }
 
-// The cursor moves to the next enabled label below a disabled one, or the nearest one above if none is below.
 func (a *app) settleNavigationCursor() {
 	if !a.disabledChoice(a.nav.at) {
 		return

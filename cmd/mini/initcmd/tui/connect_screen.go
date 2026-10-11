@@ -37,7 +37,6 @@ type connectScreen struct {
 	width  int
 }
 
-// subtitle is a line under a choice; bold marks the one that must be read before choosing.
 type subtitle struct {
 	text string
 	bold bool
@@ -159,7 +158,6 @@ func (s *connectScreen) waitingOnChecks(choice initcmd.ConnectChoice) bool {
 	return choice == initcmd.ConnectAndRemove && !s.checks.done
 }
 
-// unavailableBecause is the line saying why a choice can't be picked yet, or "" when it can be.
 func (s *connectScreen) unavailableBecause(choice initcmd.ConnectChoice) string {
 	if choice != initcmd.DontConnect && len(s.picked()) == 0 {
 		return "Tick the agents above to connect mini to them"
@@ -254,7 +252,6 @@ func (s *connectScreen) connectOnlySubtitles() []subtitle {
 	return subtitles
 }
 
-// removalSubtitles names each picked agent that loses entries, padding the names so the verbs line up.
 func (s *connectScreen) removalSubtitles() []subtitle {
 	var removing []agents.Agent
 	for _, agent := range s.picked() {
