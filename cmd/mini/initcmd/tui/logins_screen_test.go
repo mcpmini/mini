@@ -54,9 +54,9 @@ func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequ
 	showScreen(s)
 	want := "> linear  press enter to log in\n\n" +
 		"Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
-		"  github  requires an access token\n" +
-		"  asana   requires your own OAuth app\n" +
-		"  files   requires ROOT\n\n  Continue"
+		"  github  requires manual configuration, edit testconfig/servers/github.yaml\n" +
+		"  asana   requires a custom OAuth app\n" +
+		"  files   requires manual configuration, edit testconfig/servers/files.yaml\n\n  Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -92,14 +92,14 @@ func TestLoginsScreen_byHandServersAreListedBelowTheLoginRowsAndAreNotRows(t *te
 			"one",
 			[]string{"github"},
 			"Browser login isn't available for this MCP, so you will need to configure it manually later:\n" +
-				"  github  requires an access token",
+				"  github  requires manual configuration, edit testconfig/servers/github.yaml",
 		},
 		{
 			"two",
 			[]string{"github", "asana"},
 			"Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
-				"  github  requires an access token\n" +
-				"  asana   requires an access token",
+				"  github  requires manual configuration, edit testconfig/servers/github.yaml\n" +
+				"  asana   requires manual configuration, edit testconfig/servers/asana.yaml",
 		},
 	}
 	for _, tc := range cases {
@@ -130,7 +130,7 @@ func TestLoginsScreen_onlyByHandServersLeaveAHeadingAndTheListWithContinue(t *te
 	s.resize(200, 30)
 	a := framed(s, false)
 	want := "Browser login isn't available for this MCP, so you will need to configure it manually later:\n" +
-		"  github  requires an access token\n\n> Continue"
+		"  github  requires manual configuration, edit testconfig/servers/github.yaml\n\n> Continue"
 	if text := framedText(a); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}

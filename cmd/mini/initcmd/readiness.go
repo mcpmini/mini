@@ -104,17 +104,3 @@ func hasCredential(sc config.ServerConfig) bool {
 func hasOwnApp(sc config.ServerConfig) bool {
 	return !holdsPlaceholder(sc) && sc.Auth != nil && sc.Auth.ClientID != ""
 }
-
-func (s ServerStatus) Requirement() string {
-	switch s.Readiness {
-	case NeedsToken:
-		return "requires an access token"
-	case NeedsOwnApp:
-		return "requires your own OAuth app"
-	case NeedsEnv:
-		return "requires " + JoinAnd(s.UnsetEnv.Names)
-	case NeedsLogin:
-		return "requires a login"
-	}
-	return ""
-}
