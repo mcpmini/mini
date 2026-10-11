@@ -19,6 +19,7 @@ func callSetupWithPerms(t *testing.T, fixtures map[string]string, permissions *c
 }
 
 func TestIntegrationCLICall_ProtectedTool_RequiresPermCall(t *testing.T) {
+	t.Parallel()
 	cfg := callSetupWithPerms(t, map[string]string{"create_item": `{"id":1}`},
 		&config.PermissionsConfig{Protected: []string{"create_item"}})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "create_item")
@@ -31,6 +32,7 @@ func TestIntegrationCLICall_ProtectedTool_RequiresPermCall(t *testing.T) {
 }
 
 func TestIntegrationCLICall_PermCallBypassesProtection(t *testing.T) {
+	t.Parallel()
 	cfg := callSetupWithPerms(t, map[string]string{"create_item": `{"id":1}`},
 		&config.PermissionsConfig{Protected: []string{"create_item"}})
 	stdout, _, code := runCLI(t, cfg, "perm-call", "svc", "create_item")
@@ -49,6 +51,7 @@ func TestIntegrationCLICall_PermCallBypassesProtection(t *testing.T) {
 }
 
 func TestIntegrationCLICall_HiddenTool_NotFound(t *testing.T) {
+	t.Parallel()
 	cfg := callSetupWithPerms(t, map[string]string{"secret_tool": `{"id":1}`},
 		&config.PermissionsConfig{Hidden: []string{"secret_tool"}})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "secret_tool")
@@ -61,6 +64,7 @@ func TestIntegrationCLICall_HiddenTool_NotFound(t *testing.T) {
 }
 
 func TestIntegrationCLICall_DefaultProtected_RequiresPermCall(t *testing.T) {
+	t.Parallel()
 	cfg := callSetupWithPerms(t, map[string]string{"any_tool": `{"id":1}`},
 		&config.PermissionsConfig{Default: "protected"})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "any_tool")
@@ -77,6 +81,7 @@ func TestIntegrationCLICall_DefaultProtected_RequiresPermCall(t *testing.T) {
 }
 
 func TestIntegrationCLICall_DefaultHidden_NotFound(t *testing.T) {
+	t.Parallel()
 	cfg := callSetupWithPerms(t, map[string]string{"any_tool": `{"id":1}`},
 		&config.PermissionsConfig{Default: "hidden"})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "any_tool")
