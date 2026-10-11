@@ -212,8 +212,7 @@ func (a *app) current() screen {
 
 func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 	if key.String() == "ctrl+c" {
-		a.quit = true
-		return tea.Quit
+		return a.quitWithoutSaving()
 	}
 	switch {
 	case a.tooSmall():
@@ -228,6 +227,11 @@ func (a *app) handle(key tea.KeyPressMsg) tea.Cmd {
 		return a.handleNavigation(key)
 	}
 	return a.handleScreen(key)
+}
+
+func (a *app) quitWithoutSaving() tea.Cmd {
+	a.quit = true
+	return tea.Quit
 }
 
 func (a *app) handleScreen(key tea.KeyPressMsg) tea.Cmd {

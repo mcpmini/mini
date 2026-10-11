@@ -170,7 +170,7 @@ func (s *connectScreen) unavailableBecause(choice initcmd.ConnectChoice) string 
 }
 
 func (s *connectScreen) body(height int, focused bool) string {
-	note := s.addedLines()
+	note := addedNote(s.p.added(), s.width)
 	if len(note) > 0 && s.focusable() {
 		note = append(note, "")
 	}
@@ -180,13 +180,12 @@ func (s *connectScreen) body(height int, focused bool) string {
 	return strings.Join(append(note, s.agents.view(max(height-len(note), 1), focused)), "\n")
 }
 
-func (s *connectScreen) addedLines() []string {
-	added := s.p.added()
+func addedNote(added []string, width int) []string {
 	if len(added) == 0 {
 		return nil
 	}
 	text := initcmd.Plural(len(added), "MCP") + " will be added to mini: " + strings.Join(added, ", ")
-	return strings.Split(ansi.Wrap(text, max(s.width, 20), ""), "\n")
+	return strings.Split(ansi.Wrap(text, max(width, 20), ""), "\n")
 }
 
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.

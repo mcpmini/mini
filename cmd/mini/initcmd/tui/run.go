@@ -78,6 +78,7 @@ type screens struct {
 	catalogs *catalogScreen
 	logins   *loginsScreen
 	connects *connectScreen
+	review   *reviewScreen
 }
 
 func newScreens(p Params, run *initcmd.Run) screens {
@@ -96,6 +97,12 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		connects: newConnects(p.Setup, run),
 	}
 	ui.logins = newLogins(p, run, ui.catalog)
+	ui.review = newReviewScreen(reviewParams{
+		added:     run.Added,
+		configDir: p.Setup.ConfigDir,
+		earlier:   []screen{ui.logins, ui.connects},
+		offered:   []screen{ui.imports, ui.catalogs},
+	})
 	return ui
 }
 
@@ -120,7 +127,7 @@ func newConnects(setup initcmd.Setup, run *initcmd.Run) *connectScreen {
 }
 
 func (ui screens) list() []screen {
-	return []screen{ui.imports, ui.catalogs, ui.logins, ui.connects}
+	return []screen{ui.imports, ui.catalogs, ui.logins, ui.connects, ui.review}
 }
 
 // The picks are staged on leaving Catalog, so Logins works on configured servers.

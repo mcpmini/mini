@@ -3,8 +3,10 @@ package tui
 import tea "charm.land/bubbletea/v2"
 
 const (
-	continueLabel = "Continue"
-	backLabel     = "Back"
+	continueLabel          = "Continue"
+	backLabel              = "Back"
+	saveAndFinishLabel     = "Save and finish"
+	exitWithoutSavingLabel = "Exit without saving"
 	// The rows under a screen with no choices of its own: a blank line, Continue and Back.
 	tallestNavigation = 3
 )
@@ -47,14 +49,27 @@ type navigation struct {
 }
 
 func (a *app) labels() []string {
-	labels := []string{continueLabel}
-	if c, ok := a.current().(chooser); ok {
-		labels = c.choices()
-	}
+	labels := a.forwardLabels()
 	if a.canGoBack() {
 		return append(labels[:len(labels):len(labels)], backLabel)
 	}
 	return labels
+}
+
+func (a *app) forwardLabels() []string {
+	if c, ok := a.current().(chooser); ok {
+		return c.choices()
+	}
+	if a.endsRun() {
+		return []string{saveAndFinishLabel, exitWithoutSavingLabel}
+	}
+	return []string{continueLabel}
+}
+
+// A run's last screen has no Continue: past the save point, it says whether to save and finish.
+func (a *app) endsRun() bool {
+	_, hasNext := a.nextShown(a.at, 1)
+	return a.saves.save != nil && a.at > a.saves.after && !hasNext
 }
 
 func (a *app) onNavigation() bool {
@@ -140,6 +155,9 @@ func (a *app) act() tea.Cmd {
 	}
 	if c, ok := a.current().(chooser); ok && !c.choose(a.nav.at) {
 		return nil
+	}
+	if a.labels()[a.nav.at] == exitWithoutSavingLabel {
+		return a.quitWithoutSaving()
 	}
 	return a.forward()
 }
