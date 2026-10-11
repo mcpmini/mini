@@ -35,6 +35,7 @@ func (r *Run) Save() (removed []string) {
 		r.last = syncResult{Failed: failedAll(r.Plan.Servers(), err)}
 		return nil
 	}
+	r.stage.touch()
 	r.last = r.session.Sync(r.Plan.Servers())
 	return r.last.Removed
 }

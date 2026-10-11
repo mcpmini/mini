@@ -32,7 +32,7 @@ func AddServer(configDir string, sc config.ServerConfig) (AddedServer, error) {
 	if err != nil {
 		return AddedServer{}, err
 	}
-	if err := forgetStateStoredByName(configDir, sc.Name); err != nil {
+	if err := ForgetServerState(configDir, sc.Name); err != nil {
 		return AddedServer{}, errors.Join(err, os.Remove(added.Path))
 	}
 	return added, nil
@@ -47,7 +47,7 @@ func RemoveServer(configDir, name string) error {
 		return fmt.Errorf("remove %s: %w", path, fs.ErrNotExist)
 	}
 	// The server file goes last: if cleanup fails, the server stays configured and the remove can be retried.
-	if err := forgetStateStoredByName(configDir, name); err != nil {
+	if err := ForgetServerState(configDir, name); err != nil {
 		return err
 	}
 	if err := os.Remove(path); err != nil {
@@ -61,7 +61,9 @@ func ServerStatePaths(configDir, name string) []string {
 	return append(auth.CredentialPaths(configDir, name), config.ServerMetaPath(configDir, name))
 }
 
-func forgetStateStoredByName(configDir, name string) error {
+// ForgetServerState removes a server's login and detected state, so a new server of the same name
+// starts clean.
+func ForgetServerState(configDir, name string) error {
 	for _, path := range ServerStatePaths(configDir, name) {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("forget %s state: %w", name, err)

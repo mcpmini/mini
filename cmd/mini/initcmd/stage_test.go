@@ -141,6 +141,22 @@ func TestStage(t *testing.T) {
 		}
 	})
 
+	t.Run("a stage its run still saves to isn't swept, however old it was", func(t *testing.T) {
+		configDir := t.TempDir()
+		inUse := newTestStage(t, configDir)
+		dayAgo := time.Now().Add(-staleStageAge - time.Minute)
+		if err := os.Chtimes(inUse.dir, dayAgo, dayAgo); err != nil {
+			t.Fatal(err)
+		}
+
+		inUse.touch()
+		newTestStage(t, configDir)
+
+		if _, err := os.Stat(inUse.dir); err != nil {
+			t.Errorf("stage in use: %v, want it kept", err)
+		}
+	})
+
 	t.Run("a server name taken in another case keeps mini's login", func(t *testing.T) {
 		configDir := t.TempDir()
 		s := newTestStage(t, configDir)

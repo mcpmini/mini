@@ -26,6 +26,8 @@ type stage struct {
 	configDir string
 	dir       string
 	created   bool
+	// madeDirs are the config dir and internal/ when create made them, deepest first.
+	madeDirs []string
 }
 
 var errAddedOutsideInit = errors.New("added to mini outside init while it ran; kept that version")
@@ -41,6 +43,7 @@ func (s *stage) create() error {
 		return nil
 	}
 	sweepStaleStages(s.configDir)
+	s.noteMissingDirs()
 	for _, sub := range []string{"servers", "internal"} {
 		if err := os.MkdirAll(filepath.Join(s.dir, sub), 0o700); err != nil {
 			return fmt.Errorf("create init stage: %w", err)
@@ -53,6 +56,23 @@ func (s *stage) create() error {
 	}
 	s.created = err == nil
 	return err
+}
+
+// A quit then leaves a config dir that didn't exist as missing as it found it.
+func (s *stage) noteMissingDirs() {
+	for _, dir := range []string{filepath.Join(s.configDir, "internal"), s.configDir} {
+		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+			s.madeDirs = append(s.madeDirs, dir)
+		}
+	}
+}
+
+// touch keeps a stage in use from looking stale to another run's sweep.
+func (s *stage) touch() {
+	now := clock.System().Now()
+	if err := os.Chtimes(s.dir, now, now); err != nil {
+		log.Printf("init: touch %s: %v", s.dir, err)
+	}
 }
 
 // A run killed before it could discard its stage leaves it behind, logins included; no run lasts a day.
@@ -90,27 +110,38 @@ func (s *stage) commitServer(name string) error {
 	if taken, err := serverNameTaken(s.configDir, name); err != nil || taken {
 		return cmp.Or(err, errAddedOutsideInit)
 	}
-	staged, mini := ops.ServerStatePaths(s.dir, name), ops.ServerStatePaths(s.configDir, name)
-	for i := range staged {
-		if err := replaceOrRemove(mini[i], staged[i]); err != nil {
-			return err
-		}
-	}
-	data, err := os.ReadFile(config.ServerPath(s.dir, name))
+	sc, err := config.ReadUnexpandedServer(s.dir, name)
 	if err != nil {
 		return err
 	}
-	path := config.ServerPath(s.configDir, name)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
+	// Mini may still hold a login from an earlier server of the same name.
+	if err := ops.ForgetServerState(s.configDir, name); err != nil {
+		return err
+	}
+	if err := s.copyState(name); err != nil {
+		return err
 	}
 	// Created, not replaced: a server added in the moment since the name check is someone else's. Its
 	// login may already be overwritten; holding a lock across mini's commands would be the only cure.
-	err = fileio.CreateFile(path, data, 0o600)
+	_, err = config.CreateServerFile(s.configDir, sc)
 	if errors.Is(err, fs.ErrExist) {
 		return errAddedOutsideInit
 	}
 	return err
+}
+
+func (s *stage) copyState(name string) error {
+	staged, mini := ops.ServerStatePaths(s.dir, name), ops.ServerStatePaths(s.configDir, name)
+	for i := range staged {
+		data, exists, err := readIfExists(staged[i])
+		if err == nil && exists {
+			err = writeFile(mini[i], data)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func serverNameTaken(configDir, name string) (bool, error) {
@@ -126,20 +157,14 @@ func serverNameTaken(configDir, name string) (bool, error) {
 	}), nil
 }
 
-// A file the stage lacks is removed too: mini may still hold a token from an earlier server of the same name.
-func replaceOrRemove(path, from string) error {
-	data, staged, err := readIfExists(from)
-	switch {
-	case err != nil:
-		return err
-	case !staged:
-		return removeIfExists(path)
-	}
-	return writeFile(path, data)
-}
-
 func (s *stage) discard() error {
-	return os.RemoveAll(s.dir)
+	if err := os.RemoveAll(s.dir); err != nil {
+		return err
+	}
+	for _, dir := range s.madeDirs {
+		os.Remove(dir) //nolint:errcheck // fails only when something else now lives there, which then stays
+	}
+	return nil
 }
 
 func writeFile(path string, data []byte) error {
@@ -158,11 +183,4 @@ func readIfExists(path string) ([]byte, bool, error) {
 		return nil, false, err
 	}
 	return data, true, nil
-}
-
-func removeIfExists(path string) error {
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
-	}
-	return nil
 }

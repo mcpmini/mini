@@ -179,7 +179,7 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 }
 
 func TestRun_quittingAfterCatalogWritesNothing(t *testing.T) {
-	configDir := t.TempDir()
+	configDir := filepath.Join(t.TempDir(), "config")
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
 	out, err := Run(
 		Params{
@@ -191,8 +191,8 @@ func TestRun_quittingAfterCatalogWritesNothing(t *testing.T) {
 	if err != nil || out.Saved {
 		t.Fatalf("Run = %+v, %v; want a quit with nothing saved", out, err)
 	}
-	if got := writtenNames(t, configDir); len(got) > 0 {
-		t.Errorf("written = %v, want nothing: linear was only staged", got)
+	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+		t.Errorf("config dir after quitting: %v, want it still missing: linear was only staged", err)
 	}
 }
 
