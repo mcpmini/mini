@@ -25,10 +25,10 @@ func TestIntegrationInitUI_writesTheTickedServersConnectsTheAgentAndPrintsTheSum
 	home := homeWithClaudeServers(t)
 	term := startTerminal(t, terminalParams{home: home, configDir: configDir, args: []string{"init"}})
 
-	term.waitFor("Import servers from Claude Code")
+	term.waitFor("Select which MCP servers you want to import from Claude Code")
 	term.waitFor("[x] files")
 	term.press("space", "tab", "enter")
-	term.waitFor("Add servers from the catalog")
+	term.waitFor("Which popular MCPs would you like to add?")
 	term.waitFor("[ ] Sentry")
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "tab", "enter")
 	term.waitFor("sentry  needs a login")
@@ -90,7 +90,7 @@ func TestIntegrationInitUI_ctrlCAfterCatalogWritesNothing(t *testing.T) {
 
 	term.waitFor("[x] files")
 	term.press("tab", "enter")
-	term.waitFor("Add servers from the catalog")
+	term.waitFor("Which popular MCPs would you like to add?")
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "tab", "enter")
 	term.waitFor("Finish setting up these servers")
 	term.press("ctrl+c")

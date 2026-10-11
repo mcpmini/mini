@@ -30,6 +30,7 @@ type catalogScreen struct {
 	checked           map[string]bool
 	grid              *catalogGrid
 	width, rowsHeight int
+	hinted
 }
 
 type catalogParams struct {
@@ -163,7 +164,7 @@ const (
 )
 
 func (s *catalogScreen) heading() string {
-	return "Add servers from the catalog"
+	return "Which popular MCPs would you like to add?"
 }
 
 func (s *catalogScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {

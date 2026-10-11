@@ -13,7 +13,7 @@ const (
 	gridColumns      = 3
 	columnGap        = 5
 	willImportMark   = " +  "
-	willImportLegend = "+ will import"
+	willImportLegend = "+ will import from your existing agents"
 )
 
 func (g *catalogGrid) resize(width, rowsHeight int) {

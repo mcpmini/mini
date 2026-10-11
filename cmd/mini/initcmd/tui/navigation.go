@@ -19,6 +19,23 @@ type finisher interface {
 	finished() bool
 }
 
+// A screen with no choices of its own may say what Continue leads to.
+type hinter interface {
+	continueHint() string
+}
+
+// hinted gives a screen the hint newScreens sets; a screen built without one says nothing.
+type hinted struct {
+	hint func() string
+}
+
+func (h hinted) continueHint() string {
+	if h.hint == nil {
+		return ""
+	}
+	return h.hint()
+}
+
 type focus int
 
 const (
@@ -122,12 +139,26 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 		}
 		atCursor := a.onNavigation() && a.nav.at == i
 		start := len(lines)
-		lines = append(append(lines, cursorMark(atCursor)+label), under...)
+		lines = append(append(lines, cursorMark(atCursor)+a.navigationText(label, choosing)), under...)
 		if atCursor {
 			first, last = start, len(lines)-1
 		}
 	}
 	return lines, first, last
+}
+
+func (a *app) navigationText(label string, choosing bool) string {
+	if choosing || label != continueLabel {
+		return label
+	}
+	h, ok := a.current().(hinter)
+	if !ok {
+		return label
+	}
+	if hint := h.continueHint(); hint != "" {
+		return label + "   " + dim.Render(hint)
+	}
+	return label
 }
 
 func (a *app) navigationKeys() string {

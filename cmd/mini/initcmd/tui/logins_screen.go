@@ -50,6 +50,7 @@ type loginsScreen struct {
 	cursorMoved bool
 	// One waiting command covers every running check.
 	waitingOnChecks bool
+	hinted
 }
 
 func newLoginsScreen(p loginsParams) *loginsScreen {

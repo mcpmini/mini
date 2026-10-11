@@ -240,3 +240,45 @@ func TestNavigation_upOnContinueWithNoRowsLeavesTheCursorThereWhenRowsAppear(t *
 		t.Errorf("view after rows appeared:\n%s\nwant the cursor still on Continue: up found no row to go to", view)
 	}
 }
+
+type hintedScreen struct {
+	fakeScreen
+	hint string
+}
+
+func (s *hintedScreen) continueHint() string { return s.hint }
+
+// continueLine is the row that holds Continue, with its cursor mark.
+func continueLine(view string) string {
+	for _, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(strings.TrimPrefix(strings.TrimPrefix(line, "> "), "  "), continueLabel) {
+			return line
+		}
+	}
+	return ""
+}
+
+func TestNavigation_aScreenWithoutChoicesPutsItsHintAfterContinue(t *testing.T) {
+	t.Run("with a hint", func(t *testing.T) {
+		a := inApp(100, 30, &hintedScreen{fakeScreen: fakeScreen{name: "Pick"}, hint: "browse popular MCPs"})
+		if line := continueLine(shown(a)); line != "> Continue   browse popular MCPs" {
+			t.Errorf("Continue line = %q, want the hint after three spaces", line)
+		}
+	})
+	t.Run("with an empty hint", func(t *testing.T) {
+		a := inApp(100, 30, &hintedScreen{fakeScreen: fakeScreen{name: "Pick"}})
+		if line := continueLine(shown(a)); line != "> Continue" {
+			t.Errorf("Continue line = %q, want plain Continue", line)
+		}
+	})
+	t.Run("off the cursor, the hint keeps the Continue row's mark", func(t *testing.T) {
+		a := inApp(
+			100,
+			30,
+			&hintedScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}, hint: "browse popular MCPs"},
+		)
+		if line := continueLine(shown(a)); line != "  Continue   browse popular MCPs" {
+			t.Errorf("Continue line = %q, want the unmarked row with the hint", line)
+		}
+	})
+}
