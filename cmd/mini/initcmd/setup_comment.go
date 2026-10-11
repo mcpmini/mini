@@ -9,16 +9,23 @@ import (
 	"github.com/mcpmini/mini/internal/catalog"
 )
 
-// setupComment is the commented-out config a written catalog server needs from the user, so
-// finishing it is an edit in its file: init can't get the token or app for them.
+// Init can't get a token or OAuth app for the user, so the config they need goes in the file, commented out.
 func (p Plan) setupComment(name string) string {
 	return planAdds(p.Import.picked(), p.Add, p.written).setupComments[name]
 }
 
-// setupCommentIn reports whether a server file holds the setup comment init writes for entry.
+// A user who deleted part of the block gets the summary's full step instead.
 func setupCommentIn(data []byte, entry catalog.Entry) bool {
-	first, _, _ := strings.Cut(credentialComment(entry), "\n")
-	return first != "" && bytes.Contains(data, []byte("# "+first))
+	comment := credentialComment(entry)
+	if comment == "" {
+		return false
+	}
+	for line := range strings.SplitSeq(comment, "\n") {
+		if !bytes.Contains(data, []byte(strings.TrimRight("# "+line, " "))) {
+			return false
+		}
+	}
+	return true
 }
 
 func credentialComment(entry catalog.Entry) string {

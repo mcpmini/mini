@@ -271,6 +271,17 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(configDir, "linear"))), "#") {
 		t.Error("linear.yaml has a comment, want none: its login needs nothing written by hand")
 	}
+	t.Run("a file missing part of its steps falls back to the summary's", func(t *testing.T) {
+		path := config.ServerPath(configDir, "github")
+		edited := strings.Replace(string(testutil.ReadFile(t, path)), "# headers:\n", "", 1)
+		testutil.WriteFile(t, path, edited)
+		statuses, err := ServerStatuses(configDir, setup.Catalog)
+		i := slices.IndexFunc(statuses, func(s ServerStatus) bool { return s.Name == "github" })
+		if err != nil || i < 0 || statuses[i].StepsInFile {
+			t.Errorf("statuses = %+v, %v; want github's steps not counted once headers: is gone", statuses, err)
+		}
+		testutil.WriteFile(t, path, github)
+	})
 	t.Run("github works once uncommented", func(t *testing.T) {
 		if sc := uncommented(t, configDir, "github"); sc.Headers["Authorization"] != "Bearer <your token>" {
 			t.Errorf("headers = %v, want the Authorization header", sc.Headers)

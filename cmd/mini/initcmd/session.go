@@ -18,10 +18,9 @@ import (
 )
 
 type sessionParams struct {
-	ConfigDir string
-	Clock     clock.Clock
-	Probe     probeFunc
-	// SetupComment, when set, names what a newly written server still needs from the user.
+	ConfigDir    string
+	Clock        clock.Clock
+	Probe        probeFunc
 	SetupComment func(name string) string
 }
 
@@ -132,22 +131,25 @@ func (s *session) add(sc config.ServerConfig) error {
 	if err != nil || s.p.SetupComment == nil {
 		return err
 	}
-	comment := s.p.SetupComment(sc.Name)
-	if comment == "" {
-		return nil
-	}
-	data, err := os.ReadFile(added.Path)
-	if err == nil {
-		data, err = config.PrependServerComment(data, comment)
-	}
-	if err == nil {
-		err = fileio.ReplaceFile(added.Path, data, fileio.ReplaceOptions{Perm: 0o600})
-	}
-	// Without its comment the server still works as written; only the hint is lost.
-	if err != nil {
-		log.Printf("init: add setup comment to %s: %v", added.Path, err)
+	if comment := s.p.SetupComment(sc.Name); comment != "" {
+		// Without its comment the server still works as written; only the hint is lost.
+		if err := prependSetupComment(added.Path, comment); err != nil {
+			log.Printf("init: add setup comment to %s: %v", added.Path, err)
+		}
 	}
 	return nil
+}
+
+func prependSetupComment(path, comment string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	data, err = config.PrependServerComment(data, comment)
+	if err != nil {
+		return err
+	}
+	return fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0o600})
 }
 
 func (s *session) Written() []string {

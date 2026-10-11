@@ -160,8 +160,7 @@ type addPlan struct {
 	write             []config.ServerConfig
 	alreadyConfigured []string
 	coveredByImport   []string
-	// setupComments holds, by name, the steps each written catalog server still needs from the user.
-	setupComments map[string]string
+	setupComments     map[string]string
 }
 
 func planAdds(imports []config.ServerConfig, add []catalog.Entry, written WrittenServers) addPlan {

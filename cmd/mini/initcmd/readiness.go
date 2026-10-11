@@ -22,10 +22,9 @@ const (
 
 // ServerStatus is one enabled server and what the user still has to do before it works.
 type ServerStatus struct {
-	Name      string
-	Readiness Readiness
-	SetupURL  string
-	// StepsInFile is set when the server's file opens with the steps that finish it.
+	Name        string
+	Readiness   Readiness
+	SetupURL    string
 	StepsInFile bool
 	UnsetEnv    *config.UnsetEnvError
 }
@@ -54,9 +53,9 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 	}
 	if entry, ok := catalogEntryFor(sc, entries); ok {
 		status.SetupURL = entry.SetupURL
-		//nolint:errcheck // an unreadable file only loses the shorter summary step
-		data, _ := os.ReadFile(config.ServerPath(configDir, sc.Name))
-		status.StepsInFile = setupCommentIn(data, entry)
+		if data, err := os.ReadFile(config.ServerPath(configDir, sc.Name)); err == nil {
+			status.StepsInFile = setupCommentIn(data, entry)
+		}
 		switch {
 		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
 			status.Readiness = NeedsToken
