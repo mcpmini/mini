@@ -25,16 +25,22 @@ func checkDepth(depth int) error {
 }
 
 func validateDepth(v Value, depth int) error {
-	if v.Kind != KindObject && v.Kind != KindArray {
+	switch payload := v.payload.(type) {
+	case objectValue:
+		if err := checkDepth(depth); err != nil {
+			return err
+		}
+		return validateFieldsDepth(payload, depth+1)
+	case arrayValue:
+		if err := checkDepth(depth); err != nil {
+			return err
+		}
+		return validateItemsDepth(payload, depth+1)
+	case nullValue, boolValue, numberValue, stringValue:
+		return nil
+	default:
 		return nil
 	}
-	if err := checkDepth(depth); err != nil {
-		return err
-	}
-	if v.Kind == KindObject {
-		return validateFieldsDepth(v.Fields, depth+1)
-	}
-	return validateItemsDepth(v.Items, depth+1)
 }
 
 func validateFieldsDepth(fields []Field, depth int) error {
@@ -61,15 +67,15 @@ func Encode(v Value) (string, error) {
 	if err := validateDepth(v, 0); err != nil {
 		return "", err
 	}
-	switch v.Kind {
-	case KindNull, KindBool, KindNumber, KindString:
+	switch payload := v.payload.(type) {
+	case nullValue, boolValue, numberValue, stringValue:
 		return encodePrimitive(v)
-	case KindObject:
-		return encodeRootObject(v.Fields)
-	case KindArray:
-		return encodeRootArray(v.Items)
+	case objectValue:
+		return encodeRootObject(payload)
+	case arrayValue:
+		return encodeRootArray(payload)
 	default:
-		return "", fmt.Errorf("toon: unknown kind %d", v.Kind)
+		return "", fmt.Errorf("toon: unknown kind %d", v.kind())
 	}
 }
 
@@ -85,7 +91,7 @@ func encodeRootArray(items []Value) (string, error) {
 }
 
 func encodeRootObject(fields []Field) (string, error) {
-	v := Value{Kind: KindObject, Fields: fields}
+	v := Value{payload: objectValue(fields)}
 	if cols, ok := keyedTabularCols(v); ok {
 		var sb strings.Builder
 		if err := writeKeyedTabular(&sb, "", v, cols, 1); err != nil {
@@ -127,11 +133,11 @@ func writeFieldBody(sb *strings.Builder, f Field, depth int) error {
 	if err := validateUTF8(f.Key); err != nil {
 		return err
 	}
-	if f.Val.Kind == KindArray {
+	if f.Val.kind() == KindArray {
 		ctx := arrayCtx{Key: encodeKey(f.Key), ItemDepth: depth + 1, AllowTabular: true, FieldEmpty: true}
-		return writeArray(sb, f.Val.Items, ctx)
+		return writeArray(sb, f.Val.items(), ctx)
 	}
-	if f.Val.Kind == KindObject {
+	if f.Val.kind() == KindObject {
 		if cols, ok := keyedTabularCols(f.Val); ok {
 			return writeKeyedTabular(sb, encodeKey(f.Key), f.Val, cols, depth+1)
 		}
@@ -146,11 +152,11 @@ func writeFieldBody(sb *strings.Builder, f Field, depth int) error {
 }
 
 func writeFieldValue(sb *strings.Builder, v Value, depth int) error {
-	if v.Kind == KindObject {
+	if v.kind() == KindObject {
 		if err := appendString(sb, "\n"); err != nil {
 			return err
 		}
-		return writeFields(sb, v.Fields, depth+1)
+		return writeFields(sb, v.fields(), depth+1)
 	}
 	s, err := encodePrimitive(v)
 	if err != nil {
@@ -177,32 +183,41 @@ func appendString(sb *strings.Builder, s string) error {
 }
 
 func encodePrimitive(v Value) (string, error) {
-	switch v.Kind {
-	case KindNull:
+	switch payload := v.payload.(type) {
+	case nullValue:
 		return "null", nil
-	case KindBool:
-		return encodeBool(v.Bool), nil
-	case KindNumber:
-		s, err := encodeNum(v)
-		if err != nil {
-			return "", err
-		}
-		if len(s) > maxEncodeBytes {
-			return "", errEncodeTooLarge
-		}
-		return s, nil
-	case KindString:
-		if err := validateUTF8(v.Str); err != nil {
-			return "", err
-		}
-		s := encodeString(v.Str)
-		if len(s) > maxEncodeBytes {
-			return "", errEncodeTooLarge
-		}
-		return s, nil
-	default:
-		return "", fmt.Errorf("toon: unknown kind %d", v.Kind)
+	case boolValue:
+		return encodeBool(bool(payload)), nil
+	case numberValue:
+		return encodeNumber(payload)
+	case stringValue:
+		return encodeText(payload)
+	case objectValue, arrayValue:
+		return "", fmt.Errorf("toon: kind %d is not primitive", v.kind())
 	}
+	return "", fmt.Errorf("toon: unknown kind %d", v.kind())
+}
+
+func encodeNumber(n numberValue) (string, error) {
+	s, err := encodeNum(n)
+	if err != nil {
+		return "", err
+	}
+	if len(s) > maxEncodeBytes {
+		return "", errEncodeTooLarge
+	}
+	return s, nil
+}
+
+func encodeText(text stringValue) (string, error) {
+	if err := validateUTF8(string(text)); err != nil {
+		return "", err
+	}
+	s := encodeString(string(text))
+	if len(s) > maxEncodeBytes {
+		return "", errEncodeTooLarge
+	}
+	return s, nil
 }
 
 func encodeBool(b bool) string {

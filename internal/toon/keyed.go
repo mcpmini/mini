@@ -6,7 +6,7 @@ import (
 )
 
 func keyedTabularCols(v Value) ([]tabularCol, bool) {
-	if len(v.Fields) < 2 {
+	if len(v.fields()) < 2 {
 		return nil, false
 	}
 	entries := entryValues(v)
@@ -31,8 +31,8 @@ func keyedTabularCols(v Value) ([]tabularCol, bool) {
 }
 
 func entryValues(v Value) []Value {
-	vals := make([]Value, len(v.Fields))
-	for i, f := range v.Fields {
+	vals := make([]Value, len(v.fields()))
+	for i, f := range v.fields() {
 		vals[i] = f.Val
 	}
 	return vals
@@ -42,11 +42,11 @@ func writeKeyedTabular(sb *strings.Builder, key string, obj Value, cols []tabula
 	if err := checkDepth(entryDepth); err != nil {
 		return err
 	}
-	if err := writeKeyedHeader(sb, key, len(obj.Fields), cols); err != nil {
+	if err := writeKeyedHeader(sb, key, len(obj.fields()), cols); err != nil {
 		return err
 	}
 	indent := strings.Repeat(indentUnit, entryDepth)
-	for _, f := range obj.Fields {
+	for _, f := range obj.fields() {
 		if err := writeKeyedEntry(sb, indent, f, cols); err != nil {
 			return err
 		}

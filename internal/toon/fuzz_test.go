@@ -38,7 +38,7 @@ func FuzzEncodeFromJSON(f *testing.F) {
 			}
 			t.Fatalf("Encode failed on FromJSON-accepted input %q: %v", data, err)
 		}
-		emptyRootObject := v.Kind == KindObject && len(v.Fields) == 0
+		emptyRootObject := v.kind() == KindObject && len(v.fields()) == 0
 		if out == "" && !emptyRootObject {
 			t.Fatalf("empty output for non-empty input %q", data)
 		}
