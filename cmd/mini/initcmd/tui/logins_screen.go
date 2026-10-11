@@ -306,7 +306,6 @@ func (s *loginsScreen) rowText(status initcmd.ServerStatus, width int) string {
 }
 
 func (s *loginsScreen) hint(status initcmd.ServerStatus) string {
-	// Enter starts no login while another waits.
 	if s.checking[status.Name] || s.pending != nil {
 		return ""
 	}

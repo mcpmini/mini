@@ -530,7 +530,6 @@ func TestLoginsScreen_movingUpMovesTheCursorBeforeTheView(t *testing.T) {
 	}
 }
 
-// rowsWithoutHints drops the hint under the cursor's row, which moves with the cursor.
 func rowsWithoutHints(body string) []string {
 	var rows []string
 	for _, line := range strings.Split(ansi.Strip(body), "\n") {
