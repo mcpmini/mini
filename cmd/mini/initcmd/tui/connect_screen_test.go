@@ -253,8 +253,8 @@ func TestConnectScreen_saysWhichMCPsWereAddedToMini(t *testing.T) {
 		want  string
 	}{
 		{"none", nil, ""},
-		{"one", []string{"github"}, "1 MCP was added to mini: github"},
-		{"several", []string{"asana", "github", "notion"}, "3 MCPs were added to mini: asana, github, notion"},
+		{"one", []string{"github"}, "1 MCP will be added to mini: github"},
+		{"several", []string{"asana", "github", "notion"}, "3 MCPs will be added to mini: asana, github, notion"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newConnectScreen(connectParams{
@@ -268,7 +268,7 @@ func TestConnectScreen_saysWhichMCPsWereAddedToMini(t *testing.T) {
 			text := connectText(s)
 			if tc.want == "" {
 				if strings.Contains(text, "added to mini") {
-					t.Errorf("screen:\n%s\nwant no added line: nothing was added", text)
+					t.Errorf("screen:\n%s\nwant no added line: nothing will be added", text)
 				}
 				return
 			}

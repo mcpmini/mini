@@ -28,9 +28,10 @@ func newFakeChecks(statuses ...initcmd.ServerStatus) *fakeChecks {
 
 func (f *fakeChecks) screen() *loginsScreen {
 	return newLoginsScreen(loginsParams{
-		statuses: func() ([]initcmd.ServerStatus, error) { return f.statuses, nil },
-		checking: func() map[string]bool { return maps.Clone(f.checking) },
-		changed:  f.changed,
+		configDirFor: func(string) string { return "testconfig" },
+		statuses:     func() ([]initcmd.ServerStatus, error) { return f.statuses, nil },
+		checking:     func() map[string]bool { return maps.Clone(f.checking) },
+		changed:      f.changed,
 	})
 }
 
@@ -93,6 +94,7 @@ func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing
 	checks := newFakeChecks()
 	checks.checking["open"] = true
 	s := newLoginsScreen(loginsParams{
+		configDirFor: func(string) string { return "testconfig" },
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			delete(checks.checking, "open")
 			checks.changed <- struct{}{}
@@ -162,10 +164,11 @@ func loginScreen(logins *fakeLogins, names ...string) *loginsScreen {
 	}
 	checks := newFakeChecks(statuses...)
 	s := newLoginsScreen(loginsParams{
-		statuses:   func() ([]initcmd.ServerStatus, error) { return checks.statuses, nil },
-		checking:   func() map[string]bool { return nil },
-		changed:    checks.changed,
-		startLogin: logins.start,
+		configDirFor: func(string) string { return "testconfig" },
+		statuses:     func() ([]initcmd.ServerStatus, error) { return checks.statuses, nil },
+		checking:     func() map[string]bool { return nil },
+		changed:      checks.changed,
+		startLogin:   logins.start,
 	})
 	s.resize(80, 30)
 	showScreen(s)
@@ -419,8 +422,9 @@ func TestLoginsScreen_showingItAgainPutsTheCursorOnTheNextLogin(t *testing.T) {
 
 func TestLoginsScreen_aReadErrorLeavesOnlyTheNavigation(t *testing.T) {
 	s := newLoginsScreen(loginsParams{
-		statuses: func() ([]initcmd.ServerStatus, error) { return nil, errors.New("permission denied") },
-		checking: func() map[string]bool { return nil },
+		configDirFor: func(string) string { return "testconfig" },
+		statuses:     func() ([]initcmd.ServerStatus, error) { return nil, errors.New("permission denied") },
+		checking:     func() map[string]bool { return nil },
 	})
 	showScreen(s)
 	a := framed(s, true)

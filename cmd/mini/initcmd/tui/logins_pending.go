@@ -34,10 +34,8 @@ func (s *loginsScreen) startLogin(name string) tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.logins++
 	login := &pendingLogin{
-		id: s.logins, name: name, cancel: cancel, done: make(chan struct{}), events: make(chan tea.Msg, 2),
-	}
-	if s.p.configDirFor != nil {
-		login.configDir = s.p.configDirFor(name)
+		id: s.logins, name: name, configDir: s.p.configDirFor(name),
+		cancel: cancel, done: make(chan struct{}), events: make(chan tea.Msg, 2),
 	}
 	s.pending = login
 	go s.runLogin(ctx, login)

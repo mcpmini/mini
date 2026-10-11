@@ -22,9 +22,8 @@ type Params struct {
 	Program func(m tea.Model) error
 }
 
-// Outcome is how the UI ended. Quit covers the program failing too; nothing is saved then.
+// Outcome is how the UI ended. A run that quits or fails saves nothing.
 type Outcome struct {
-	Quit   bool
 	Saved  bool
 	Report initcmd.Report
 }
@@ -51,8 +50,8 @@ func Run(p Params) (Outcome, error) {
 	f.ui.logins.cancelLogin()
 	f.ui.connects.checks.cancelAndWait()
 	// A ctrl+c queued behind the enter that chose to connect still ends the run early.
-	if quit := a.quit || err != nil; quit || !a.saves.saved {
-		return Outcome{Quit: quit}, err
+	if a.quit || err != nil || !a.saves.saved {
+		return Outcome{}, err
 	}
 	return f.finish(), nil
 }
@@ -96,17 +95,19 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		catalogs: catalogs,
 		connects: newConnects(p.Setup, run),
 	}
-	ui.logins = newLoginsScreen(loginsParams{
-		statuses: func() ([]initcmd.ServerStatus, error) {
-			return run.ServerStatuses(ui.catalog(*plan))
-		},
+	ui.logins = newLogins(p, run, ui.catalog)
+	return ui
+}
+
+func newLogins(p Params, run *initcmd.Run, catalog func(initcmd.Plan) []catalog.Entry) *loginsScreen {
+	return newLoginsScreen(loginsParams{
+		statuses:     func() ([]initcmd.ServerStatus, error) { return run.ServerStatuses(catalog(run.Plan)) },
 		checking:     run.Checking,
 		changed:      run.ChecksChanged(),
 		startLogin:   p.StartLogin,
 		configDirFor: run.ConfigDirFor,
 		copy:         copyLinkToClipboard,
 	})
-	return ui
 }
 
 func newConnects(setup initcmd.Setup, run *initcmd.Run) *connectScreen {

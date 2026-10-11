@@ -62,9 +62,6 @@ func ServerStatePaths(configDir, name string) []string {
 }
 
 func forgetStateStoredByName(configDir, name string) error {
-	if err := validServerName(name); err != nil {
-		return err
-	}
 	for _, path := range ServerStatePaths(configDir, name) {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("forget %s state: %w", name, err)

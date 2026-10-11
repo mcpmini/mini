@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func TestRun(t *testing.T) {
@@ -79,6 +81,20 @@ func TestRun(t *testing.T) {
 
 		if len(report.WriteErrors) != 1 || !errors.Is(report.WriteErrors[0].Err, errAddedOutsideInit) {
 			t.Errorf("write errors = %v, want notes reported as added outside init", report.WriteErrors)
+		}
+	})
+
+	t.Run("a stage that can't be created reports every server as failed", func(t *testing.T) {
+		configDir := filepath.Join(t.TempDir(), "config")
+		testutil.WriteFile(t, configDir, "a file where the config dir should be")
+		setup := Setup{ConfigDir: configDir, Add: []catalog.Entry{{Name: "notes", URL: "https://notes.example/mcp"}}}
+		run := mustStart(t, setup, Plan{Add: setup.Add})
+		run.Save()
+
+		report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
+
+		if len(report.WriteErrors) != 1 || report.WriteErrors[0].Name != "notes" {
+			t.Errorf("write errors = %v, want notes failed", report.WriteErrors)
 		}
 	})
 

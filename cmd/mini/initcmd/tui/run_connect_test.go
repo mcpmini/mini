@@ -195,7 +195,7 @@ func TestRun_goingBackToUntickAnImportLowersWhatConnectRemoves(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(connect, "1 MCP was added to mini: notes") {
+	if !strings.Contains(connect, "1 MCP will be added to mini: notes") {
 		t.Errorf("Connect:\n%s\nwant notes named as added: files was unticked on Import", connect)
 	}
 	if !strings.Contains(connect, "removing notes") || strings.Contains(connect, "removing files") {

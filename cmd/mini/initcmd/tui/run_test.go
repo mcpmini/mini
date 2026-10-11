@@ -97,7 +97,7 @@ func TestRun_quittingBeforeCatalogWritesNothing(t *testing.T) {
 		LoadCatalog: noCatalog,
 		Program:     pressing("ctrl+c"),
 	})
-	if err != nil || !out.Quit || out.Saved {
+	if err != nil || out.Saved {
 		t.Fatalf("Run = %+v, %v; want a quit with nothing saved", out, err)
 	}
 	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
@@ -112,7 +112,7 @@ func TestRun_finishingWritesTheTicksAndReportsThem(t *testing.T) {
 		LoadCatalog: noCatalog,
 		Program:     pressing("space", "tab", "enter"),
 	})
-	if err != nil || out.Quit || !out.Saved {
+	if err != nil || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished and saved", out, err)
 	}
 	if got := writtenNames(t, configDir); !slices.Equal(got, []string{"notes"}) {
@@ -170,7 +170,7 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, continue.
 		Program: pressing("space", "tab", "enter", "esc", "space", "down", "space", "tab", "enter", "down", "enter"),
 	})
-	if err != nil || out.Quit {
+	if err != nil || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished", out, err)
 	}
 	if got := writtenNames(t, configDir); !slices.Equal(got, []string{"sentry"}) {
@@ -188,7 +188,7 @@ func TestRun_quittingAfterCatalogWritesNothing(t *testing.T) {
 			Program:     pressing("space", "tab", "enter", "ctrl+c"),
 		},
 	)
-	if err != nil || !out.Quit || out.Saved {
+	if err != nil || out.Saved {
 		t.Fatalf("Run = %+v, %v; want a quit with nothing saved", out, err)
 	}
 	if got := writtenNames(t, configDir); len(got) > 0 {
@@ -225,7 +225,7 @@ func TestRun_withNothingToImport(t *testing.T) {
 			return nil
 		}
 		out, err := Run(Params{Setup: setupFor(t.TempDir()), LoadCatalog: noCatalog, Program: program})
-		if err != nil || out.Quit || shown {
+		if err != nil || !out.Saved || shown {
 			t.Errorf("out = %+v, err = %v, UI shown = %v; want a finished run with no UI", out, err, shown)
 		}
 	})
@@ -249,7 +249,7 @@ func TestRun_aRunThatStartsOnLoginsFinishesWithItsSummary(t *testing.T) {
 		config.ServerConfig{Name: "files", Command: "run", Env: []string{"ROOT=${MINI_TEST_UNSET_ROOT}"}},
 	)
 	out, err := Run(Params{Setup: setupFor(configDir), LoadCatalog: noCatalog, Program: pressing("enter")})
-	if err != nil || out.Quit || !out.Saved {
+	if err != nil || !out.Saved {
 		t.Errorf("Run = %+v, %v; want a finished run with a summary, not a quit", out, err)
 	}
 }
@@ -277,7 +277,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 			setup.Probe = blockUntilCancelled
 			program := pressing("space", "tab", "enter", "enter")
 			out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
-			if err != nil || out.Quit || statusOf(out.Report, "plain") != initcmd.Ready {
+			if err != nil || !out.Saved || statusOf(out.Report, "plain") != initcmd.Ready {
 				t.Errorf("out = %+v, %v; want plain checked, so not marked as maybe needing a login", out, err)
 			}
 		})
@@ -298,7 +298,7 @@ func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 		StartLogin:  startLogin,
 		Program:     pressing("space", "tab", "enter", "enter", "ctrl+c"),
 	})
-	if err != nil || !out.Quit {
+	if err != nil || out.Saved {
 		t.Fatalf("Run = %+v, %v; want a quit", out, err)
 	}
 	if !cancelled {
@@ -381,7 +381,7 @@ func TestRun_aLoginReachesMiniOnlyWhenTheRunFinishes(t *testing.T) {
 	out, err := Run(
 		Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), StartLogin: startLogin, Program: program},
 	)
-	if err != nil || out.Quit {
+	if err != nil || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished", out, err)
 	}
 	if savedBeforeFinish {
