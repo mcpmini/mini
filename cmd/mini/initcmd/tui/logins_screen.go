@@ -247,9 +247,9 @@ func (s *loginsScreen) byHandIntro() []string {
 	if len(s.byHand) == 0 {
 		return nil
 	}
-	text := "These MCPs don't support browser login, so you will need to configure them manually later:"
+	text := "Browser login isn't available for these MCPs, so you will need to configure them manually later:"
 	if len(s.byHand) == 1 {
-		text = "This MCP doesn't support browser login, so you will need to configure it manually later:"
+		text = "Browser login isn't available for this MCP, so you will need to configure it manually later:"
 	}
 	lines := strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")
 	width := widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })

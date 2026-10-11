@@ -52,7 +52,7 @@ func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequ
 	s := checks.screen()
 	s.resize(120, 30)
 	showScreen(s)
-	want := "These MCPs don't support browser login, so you will need to configure them manually later:\n" +
+	want := "Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
 		"  github  requires an access token\n" +
 		"  asana   requires your own OAuth app\n" +
 		"  files   requires ROOT\n\n" +
@@ -91,13 +91,13 @@ func TestLoginsScreen_byHandServersAreListedAboveTheLoginRowsAndAreNotRows(t *te
 		{
 			"one",
 			[]string{"github"},
-			"This MCP doesn't support browser login, so you will need to configure it manually later:\n" +
+			"Browser login isn't available for this MCP, so you will need to configure it manually later:\n" +
 				"  github  requires an access token",
 		},
 		{
 			"two",
 			[]string{"github", "asana"},
-			"These MCPs don't support browser login, so you will need to configure them manually later:\n" +
+			"Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
 				"  github  requires an access token\n" +
 				"  asana   requires an access token",
 		},
@@ -129,7 +129,7 @@ func TestLoginsScreen_onlyByHandServersLeaveAHeadingAndTheListWithContinue(t *te
 	s := loginScreenWithStatuses(newFakeLogins(), initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken})
 	s.resize(200, 30)
 	a := framed(s, false)
-	want := "This MCP doesn't support browser login, so you will need to configure it manually later:\n" +
+	want := "Browser login isn't available for this MCP, so you will need to configure it manually later:\n" +
 		"  github  requires an access token\n\n> Continue"
 	if text := framedText(a); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
@@ -408,7 +408,6 @@ func TestLoginsScreen_aLongLoginErrorIsCutSoTheRetryHintFits(t *testing.T) {
 	logins.ends["linear"] <- errors.New(`token exchange failed: 400 Bad Request: {"error":"invalid_grant"}`)
 	pressAndRun(s, "enter")
 	a := framed(s, false)
-	a.width = 80
 	send(a, "up")
 	row := strings.Split(framedText(a), "\n")[0]
 	if !strings.HasPrefix(row, "> linear  ✗ login failed: token") ||
