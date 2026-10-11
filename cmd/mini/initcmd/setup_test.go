@@ -292,6 +292,23 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 			t.Errorf("auth = %+v, want the app's client ID", sc.Auth)
 		}
 	})
+	t.Run("an uncommented placeholder is no credential until replaced", func(t *testing.T) {
+		statuses, err := ServerStatuses(configDir, setup.Catalog)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]Readiness{"github": NeedsToken, "asana": NeedsOwnApp}
+		for _, status := range statuses {
+			if r, ok := want[status.Name]; ok && status.Readiness != r {
+				t.Errorf(
+					"%s readiness = %v, want %v: mini would send the placeholder",
+					status.Name,
+					status.Readiness,
+					r,
+				)
+			}
+		}
+	})
 }
 
 func TestRunUnattended_anImportThatCoversACatalogAddGetsNoSetupComment(t *testing.T) {

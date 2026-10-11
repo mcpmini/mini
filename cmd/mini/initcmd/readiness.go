@@ -2,8 +2,10 @@ package initcmd
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
@@ -60,7 +62,7 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
 			status.Readiness = NeedsToken
 			return status
-		case entry.Auth == catalog.AuthOAuth2App && (sc.Auth == nil || sc.Auth.ClientID == ""):
+		case entry.Auth == catalog.AuthOAuth2App && !hasOwnApp(sc):
 			status.Readiness = NeedsOwnApp
 			return status
 		}
@@ -91,5 +93,11 @@ func needsLogin(configDir, name string) bool {
 }
 
 func hasCredential(sc config.ServerConfig) bool {
-	return len(sc.Headers) > 0 || (sc.Auth != nil && sc.Auth.Token != "")
+	headerSet := len(sc.Headers) > 0 && !slices.ContainsFunc(slices.Collect(maps.Values(sc.Headers)),
+		func(v string) bool { return strings.Contains(v, tokenPlaceholder) })
+	return headerSet || (sc.Auth != nil && sc.Auth.Token != "")
+}
+
+func hasOwnApp(sc config.ServerConfig) bool {
+	return sc.Auth != nil && sc.Auth.ClientID != "" && sc.Auth.ClientID != clientIDPlaceholder
 }

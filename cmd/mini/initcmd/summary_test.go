@@ -35,8 +35,8 @@ func TestSummary_servers(t *testing.T) {
 			t,
 			got,
 			"mini is set up with 4 servers, 3 still need finishing:\n",
-			"  github  needs a token: create one at https://github.example.com/tokens, then add to /cfg/servers/github.yaml:\n",
-			"  asana   needs your own OAuth app: register one at https://asana.example.com/apps",
+			"  github  needs a token: create a token at https://github.example.com/tokens, then add to /cfg/servers/github.yaml:\n",
+			"  asana   needs your own OAuth app: register an OAuth app at https://asana.example.com/apps",
 			"client_id: <your app's client ID>",
 			"and run: mini --config '/srv/my mini' auth asana\n",
 			"  notion  run: mini --config '/srv/my mini' auth notion\n",
@@ -69,7 +69,7 @@ func TestSummary_servers(t *testing.T) {
 			[]byte(lines[0][indent:]+"\n"+lines[1][indent:]),
 			&sc,
 		); err != nil ||
-			sc.Headers["Authorization"] != "Bearer ${GITHUB_TOKEN}" {
+			sc.Headers["Authorization"] != "Bearer <your token>" {
 			t.Errorf("step %q parses to %+v, %v; want the Authorization header", lines, sc.Headers, err)
 		}
 	})

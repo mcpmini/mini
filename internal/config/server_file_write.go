@@ -68,13 +68,14 @@ func PrependServerComment(data []byte, comment string) ([]byte, error) {
 		return nil, err
 	}
 	doc.HeadComment = strings.Join(slices.DeleteFunc(
-		[]string{commentLines(comment), doc.HeadComment},
+		[]string{CommentLines(comment), doc.HeadComment},
 		func(c string) bool { return c == "" },
 	), "\n")
 	return encodeServerYAML(doc)
 }
 
-func commentLines(text string) string {
+// CommentLines is text as YAML comment lines, as PrependServerComment writes them.
+func CommentLines(text string) string {
 	lines := strings.Split(text, "\n")
 	for i, line := range lines {
 		lines[i] = strings.TrimRight("# "+line, " ")
