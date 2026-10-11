@@ -19,6 +19,7 @@ import (
 )
 
 func TestIntegrationCLIVersion(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"version"}, {"--version"}} {
 		stdout, _, code := runCLI(t, t.TempDir(), args...)
 		if code != 0 {
@@ -31,6 +32,7 @@ func TestIntegrationCLIVersion(t *testing.T) {
 }
 
 func TestIntegrationCLIUnknownCommand(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "boguscommand")
 	if code != 2 {
 		t.Errorf("unknown command should exit 2, got %d", code)
@@ -38,6 +40,7 @@ func TestIntegrationCLIUnknownCommand(t *testing.T) {
 }
 
 func TestIntegrationCLIRmMissingName_ExitsTwo(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "rm")
 	if code != 2 {
 		t.Errorf("rm with no NAME should exit 2, got %d", code)
@@ -45,6 +48,7 @@ func TestIntegrationCLIRmMissingName_ExitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLIAuthMissingName_ExitsTwo(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "auth")
 	if code != 2 {
 		t.Errorf("auth with no server name should exit 2, got %d", code)
@@ -52,6 +56,7 @@ func TestIntegrationCLIAuthMissingName_ExitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLILsTooManyArgs_ExitsTwo(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "ls", "a", "b", "c")
 	if code != 2 {
 		t.Errorf("ls with 3 args should exit 2, got %d", code)
@@ -59,6 +64,7 @@ func TestIntegrationCLILsTooManyArgs_ExitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLIConnectInvalidConfig(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), "not: valid: yaml: :::")
 	_, _, code := runCLI(t, cfg, "status")
@@ -68,6 +74,7 @@ func TestIntegrationCLIConnectInvalidConfig(t *testing.T) {
 }
 
 func TestIntegrationCLI_ls_Empty(t *testing.T) {
+	t.Parallel()
 	stdout, _, code := runCLI(t, t.TempDir(), "ls")
 	if code != 0 {
 		t.Errorf("ls with empty config should exit 0, got %d", code)
@@ -78,6 +85,7 @@ func TestIntegrationCLI_ls_Empty(t *testing.T) {
 }
 
 func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -98,6 +106,7 @@ func TestIntegrationCLI_ls_ServerListsTools(t *testing.T) {
 }
 
 func TestIntegrationCLI_aBrokenServerFileOnlyAffectsThatServer(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(
 		t,
@@ -139,6 +148,7 @@ func writeInvalidProjection(t *testing.T, configDir, serverName string) {
 }
 
 func TestIntegrationCLI_test_reportsEachServerOnceWhateverFailedToLoad(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	fixtures := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: fixtures})
@@ -181,6 +191,7 @@ func testRowsFor(stdout, server string) [][]string {
 }
 
 func TestIntegrationCLI_test_failsForBrokenProjectionsEvenWithNoServerToCheck(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	disabled := false
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "off", Command: "echo", Enabled: &disabled})
@@ -194,6 +205,7 @@ func TestIntegrationCLI_test_failsForBrokenProjectionsEvenWithNoServerToCheck(t 
 }
 
 func TestIntegrationCLI_ls_ToolDetail(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -211,6 +223,7 @@ func TestIntegrationCLI_ls_ToolDetail(t *testing.T) {
 }
 
 func TestIntegrationCLI_ls_UnknownServer(t *testing.T) {
+	t.Parallel()
 	_, stderr, code := runCLI(t, t.TempDir(), "ls", "ghost")
 	if code == 0 {
 		t.Error("ls with unknown server should exit non-zero")
@@ -221,6 +234,7 @@ func TestIntegrationCLI_ls_UnknownServer(t *testing.T) {
 }
 
 func TestIntegrationCLI_ls_UnknownTool(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -235,6 +249,7 @@ func TestIntegrationCLI_ls_UnknownTool(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_ThenLs(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	stdout, _, code := runCLI(t, cfg, "ls")
@@ -244,6 +259,7 @@ func TestIntegrationCLI_add_ThenLs(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_UrlCreatesFile(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	if code != 0 {
@@ -255,6 +271,7 @@ func TestIntegrationCLI_add_UrlCreatesFile(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_CommandCreatesFile(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	_, _, code := runCLI(
 		t,
@@ -276,6 +293,7 @@ func TestIntegrationCLI_add_CommandCreatesFile(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_InvalidName(t *testing.T) {
+	t.Parallel()
 	_, stderr, code := runCLI(t, t.TempDir(), "add", "bad/name", "--url", "http://example.com", "--no-connect")
 	if code == 0 || !strings.Contains(stderr, "invalid server name") {
 		t.Errorf("expected non-zero exit + 'invalid server name', got code=%d stderr=%q", code, stderr)
@@ -283,6 +301,7 @@ func TestIntegrationCLI_add_InvalidName(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_NoURLOrCommand(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "add", "myserver")
 	if code == 0 {
 		t.Error("add with no URL or command should exit non-zero")
@@ -290,6 +309,7 @@ func TestIntegrationCLI_add_NoURLOrCommand(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_Protected(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	_, _, code := runCLI(
 		t,
@@ -312,6 +332,7 @@ func TestIntegrationCLI_add_Protected(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_Header(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	_, _, code := runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp",
 		"--header", "Authorization=Bearer tok", "--header", "X-Custom=val", "--no-connect")
@@ -325,6 +346,7 @@ func TestIntegrationCLI_add_Header(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_FromClaude(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	claudeConfig := writeClaudeConfig(t, map[string]any{
 		"command": "npx",
@@ -340,6 +362,7 @@ func TestIntegrationCLI_add_FromClaude(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_FromClaudeCodeImportsOnlyUserServers(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	server := map[string]any{
 		"command": "npx",
@@ -359,6 +382,7 @@ func TestIntegrationCLI_add_FromClaudeCodeImportsOnlyUserServers(t *testing.T) {
 }
 
 func TestIntegrationCLI_configFlagMayFollowSubcommand(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 
@@ -375,6 +399,7 @@ func TestIntegrationCLI_configFlagMayFollowSubcommand(t *testing.T) {
 }
 
 func TestIntegrationCLI_addHelp_ShowsFlags(t *testing.T) {
+	t.Parallel()
 	cmd := exec.Command(miniBin, "add", "--help")
 	var out strings.Builder
 	cmd.Stdout = &out
@@ -387,6 +412,7 @@ func TestIntegrationCLI_addHelp_ShowsFlags(t *testing.T) {
 }
 
 func TestIntegrationCLI_rm_Server(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	_, _, code := runCLI(t, cfg, "rm", "myserver")
@@ -400,6 +426,7 @@ func TestIntegrationCLI_rm_Server(t *testing.T) {
 }
 
 func TestIntegrationCLI_rm_Nonexistent(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "rm", "ghost")
 	if code == 0 {
 		t.Error("rm of nonexistent server should exit non-zero")
@@ -407,6 +434,7 @@ func TestIntegrationCLI_rm_Nonexistent(t *testing.T) {
 }
 
 func TestIntegrationCLI_status_Empty(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "status")
 	if code != 0 {
 		t.Errorf("status with no servers should exit 0, got %d", code)
@@ -414,6 +442,7 @@ func TestIntegrationCLI_status_Empty(t *testing.T) {
 }
 
 func TestIntegrationCLI_status_LiveServer(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"get_item":   `{"id":1}`,
@@ -434,6 +463,7 @@ func TestIntegrationCLI_status_LiveServer(t *testing.T) {
 }
 
 func TestIntegrationCLI_status_Unreachable(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "bad", Command: "/nonexistent_binary_xyz"})
 	_, _, code := runCLI(t, cfg, "status")
@@ -443,6 +473,7 @@ func TestIntegrationCLI_status_Unreachable(t *testing.T) {
 }
 
 func TestIntegrationCLI_status_failsWhenAServersProjectionsFailToLoad(t *testing.T) {
+	t.Parallel()
 	disabled := false
 	cases := map[string]struct {
 		enabled *bool
@@ -591,6 +622,7 @@ func TestIntegrationCLI_init_fromWithOAuthServer_listsTheLoginBeforeHowToConnect
 }
 
 func TestIntegrationCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	fixtureConfig := config.DefaultConfig()
@@ -613,6 +645,7 @@ func TestIntegrationCLI_cleanup_DeletesExpiredFiles(t *testing.T) {
 }
 
 func TestIntegrationCLI_cleanup_RetainsNonExpiredFiles(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	fixtureConfig := config.DefaultConfig()
@@ -630,6 +663,7 @@ func TestIntegrationCLI_cleanup_RetainsNonExpiredFiles(t *testing.T) {
 }
 
 func TestIntegrationCLI_cleanup_Exits0(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "cleanup")
 	if code != 0 {
 		t.Errorf("cleanup with no responses dir should exit 0, got %d", code)
@@ -637,6 +671,7 @@ func TestIntegrationCLI_cleanup_Exits0(t *testing.T) {
 }
 
 func TestIntegrationCLI_auth_ServerNotFound(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "auth", "nonexistent")
 	if code == 0 {
 		t.Error("auth for nonexistent server should exit non-zero")
@@ -644,6 +679,7 @@ func TestIntegrationCLI_auth_ServerNotFound(t *testing.T) {
 }
 
 func TestIntegrationCLI_auth_NoOAuth2Config(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	runCLI(t, cfg, "add", "myserver", "--url", "http://example.com/mcp", "--no-connect")
 	_, stderr, code := runCLI(t, cfg, "auth", "myserver")
@@ -656,6 +692,7 @@ func TestIntegrationCLI_auth_NoOAuth2Config(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_DetectsOAuthAndStartsAuthorization(t *testing.T) {
+	t.Parallel()
 	unauthorized := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		w.WriteHeader(http.StatusUnauthorized)
