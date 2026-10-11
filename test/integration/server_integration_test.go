@@ -16,6 +16,7 @@ import (
 )
 
 func TestIntegrationServer_initialize(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	raw := startServer(t, cfg).mustCall("initialize", map[string]any{
@@ -37,6 +38,7 @@ func TestIntegrationServer_initialize(t *testing.T) {
 }
 
 func TestIntegrationServer_toolsList(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	raw := startServer(t, cfg).mustCall("tools/list", nil)
@@ -60,6 +62,7 @@ func TestIntegrationServer_toolsList(t *testing.T) {
 }
 
 func TestIntegrationServer_listUpstreamTools(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	text := startServer(t, cfg).listTools("github")
@@ -71,6 +74,7 @@ func TestIntegrationServer_listUpstreamTools(t *testing.T) {
 }
 
 func TestIntegrationServer_execReturnsResponse(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	text := startServer(t, cfg).execTool("github", "list_pull_requests", nil)
@@ -80,6 +84,7 @@ func TestIntegrationServer_execReturnsResponse(t *testing.T) {
 }
 
 func TestIntegrationServer_execWithProjection(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	configtest.WriteProjections(t, cfg, configtest.ProjectionFile{
@@ -102,6 +107,7 @@ func TestIntegrationServer_execWithProjection(t *testing.T) {
 }
 
 func TestIntegrationServer_execUnknownTool(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
@@ -118,6 +124,7 @@ func TestIntegrationServer_execUnknownTool(t *testing.T) {
 }
 
 func TestIntegrationServer_execUnknownServer(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	raw := startServer(t, cfg).mustCall("tools/call", map[string]any{
 		"name":      "call",
@@ -172,6 +179,7 @@ func startProxyServerWithUnreachable(t *testing.T, configDir string, unreachable
 // TestIntegrationProxy_initialize verifies that proxy mode responds to initialize and
 // returns config and read in tools/list.
 func TestIntegrationProxy_initialize(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	raw := startProxyServer(t, cfg).mustCall("tools/list", nil)
@@ -202,6 +210,7 @@ func TestIntegrationProxy_initialize(t *testing.T) {
 // TestIntegrationProxy_callUpstreamTool verifies that a proxy-mode tool call routes
 // correctly to the upstream and returns a result.
 func TestIntegrationProxy_callUpstreamTool(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	client := startProxyServer(t, cfg)
@@ -219,6 +228,7 @@ func TestIntegrationProxy_callUpstreamTool(t *testing.T) {
 }
 
 func TestIntegrationProxy_toolsListAnnotationsPassthrough(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
 		"do_thing":        `{"ok":true}`,
@@ -324,6 +334,7 @@ func execGitHubToolIsError(t *testing.T, client *mcpClient, execName, tool strin
 }
 
 func TestIntegrationServer_protectedToolRequiresExecProtected(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeGitHubServer(t, cfg, &config.PermissionsConfig{Protected: []string{"list_pull_requests"}})
 	client := startServer(t, cfg)
@@ -336,6 +347,7 @@ func TestIntegrationServer_protectedToolRequiresExecProtected(t *testing.T) {
 }
 
 func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{
 		ServerName: "github",
@@ -354,6 +366,7 @@ func TestIntegrationServer_hiddenToolNotListed(t *testing.T) {
 }
 
 func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: filepath.Join(fixturesDir, "github")})
 	client := startServer(t, cfg)
@@ -372,6 +385,7 @@ func TestIntegrationServer_configureProjectionOverride(t *testing.T) {
 }
 
 func TestIntegrationServer_listAllTools(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	for _, srv := range []string{"alpha", "beta"} {
 		writeFakeServer(t, cfg, fakeServerParams{
@@ -392,6 +406,7 @@ func TestIntegrationServer_listAllTools(t *testing.T) {
 }
 
 func TestIntegrationServer_multipleUpstreams(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	for _, srv := range []string{"alpha", "beta"} {
 		writeFakeServer(t, cfg, fakeServerParams{

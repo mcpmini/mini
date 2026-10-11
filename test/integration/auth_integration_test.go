@@ -10,6 +10,7 @@ import (
 )
 
 func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
+	t.Parallel()
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{
@@ -31,6 +32,7 @@ func TestIntegrationAuth_bearerTokenSentToUpstream(t *testing.T) {
 }
 
 func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
+	t.Parallel()
 	f, gotKey := authCapturingMCP(t, "X-Api-Key")
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{
@@ -53,6 +55,7 @@ func TestIntegrationAuth_apiKeySentToUpstream(t *testing.T) {
 }
 
 func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
+	t.Parallel()
 	f, gotHeader := authCapturingMCP(t, "X-Custom-Key")
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{
@@ -71,6 +74,7 @@ func TestIntegrationAuth_staticHeaderForwarded(t *testing.T) {
 }
 
 func TestIntegrationAuth_noTokenNoAuthHeader(t *testing.T) {
+	t.Parallel()
 	f, gotAuth := authCapturingMCP(t, "Authorization")
 	cfg := t.TempDir()
 	configtest.WriteServer(t, cfg, config.ServerConfig{Name: "svc", Transport: "sse", URL: f.srv.URL})

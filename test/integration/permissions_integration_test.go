@@ -11,6 +11,7 @@ import (
 )
 
 func TestIntegrationPermissions_defaultProtected(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -41,6 +42,7 @@ func TestIntegrationPermissions_defaultProtected(t *testing.T) {
 }
 
 func TestIntegrationPermissions_defaultHidden(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -64,6 +66,7 @@ func TestIntegrationPermissions_defaultHidden(t *testing.T) {
 }
 
 func TestIntegrationPermissions_hiddenBeatsDefaultProtected(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"protected_tool": `{"id":1}`, "hidden_tool": `{"id":2}`})
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -83,6 +86,7 @@ func TestIntegrationPermissions_hiddenBeatsDefaultProtected(t *testing.T) {
 }
 
 func TestIntegrationPermissions_listHiddenShowsHiddenTools(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"open_tool": `{"id":1}`, "secret_tool": `{"id":2}`})
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -114,6 +118,7 @@ func TestIntegrationPermissions_listHiddenShowsHiddenTools(t *testing.T) {
 }
 
 func TestIntegrationPermissions_disableListHidden(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"secret_tool": `{"id":2}`})
 	writeFakeServer(t, cfg, fakeServerParams{

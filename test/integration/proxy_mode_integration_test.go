@@ -19,6 +19,7 @@ func proxySetup(t *testing.T, fixtures map[string]string) *mcpClient {
 }
 
 func TestIntegrationProxyMode_BasicCall_WrapsInData(t *testing.T) {
+	t.Parallel()
 	c := proxySetup(t, map[string]string{"get_item": `{"id":1,"name":"widget"}`})
 	pr := c.execProxyTool("svc__get_item", map[string]any{}, nil)
 	if pr.Mini != nil {
@@ -31,6 +32,7 @@ func TestIntegrationProxyMode_BasicCall_WrapsInData(t *testing.T) {
 }
 
 func TestIntegrationProxyMode_ArrayRoot_WrapsInData(t *testing.T) {
+	t.Parallel()
 	c := proxySetup(t, map[string]string{"list_items": `[{"id":1},{"id":2},{"id":3}]`})
 	pr := c.execProxyTool("svc__list_items", map[string]any{}, nil)
 	items, ok := pr.Data.([]any)
@@ -40,6 +42,7 @@ func TestIntegrationProxyMode_ArrayRoot_WrapsInData(t *testing.T) {
 }
 
 func TestIntegrationProxyMode_NullResult_WrapsAsDataNull(t *testing.T) {
+	t.Parallel()
 	c := proxySetup(t, map[string]string{"get_nothing": `null`})
 	raw, isErr := c.execProxyToolAllowError("svc__get_nothing", map[string]any{}, nil)
 	if isErr {
@@ -51,6 +54,7 @@ func TestIntegrationProxyMode_NullResult_WrapsAsDataNull(t *testing.T) {
 }
 
 func TestIntegrationProxyMode_ArgsReachUpstream(t *testing.T) {
+	t.Parallel()
 	c := proxySetup(t, map[string]string{"echo": `{"echo":"default","other":"unchanged"}`})
 	pr := c.execProxyTool("svc__echo", map[string]any{"echo": "from-agent"}, nil)
 	m, ok := pr.Data.(map[string]any)
@@ -64,6 +68,7 @@ func TestIntegrationProxyMode_ArgsReachUpstream(t *testing.T) {
 // This test covers the one thing that table doesn't: __mini.projection:"raw"
 // bypassing exclusion entirely.
 func TestIntegrationProxyMode_RawProjectionBypassesExclusion(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`})
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -88,6 +93,7 @@ func TestIntegrationProxyMode_RawProjectionBypassesExclusion(t *testing.T) {
 }
 
 func TestIntegrationProxyMode_LegacyFlatCall_Rejected(t *testing.T) {
+	t.Parallel()
 	c := proxySetup(t, map[string]string{"get_item": `{"id":1}`})
 	text, isErr := c.execProxyToolRaw("svc__get_item", map[string]any{"id": 1})
 	if !isErr {
