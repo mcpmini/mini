@@ -36,7 +36,7 @@ type loginsParams struct {
 type loginsScreen struct {
 	p        loginsParams
 	rows     []initcmd.ServerStatus
-	byHand   []string
+	byHand   []initcmd.ServerStatus
 	checking map[string]bool
 	err      error
 	cursor   int
@@ -69,7 +69,7 @@ func (s *loginsScreen) refresh() {
 		case s.isLoginRow(status):
 			s.rows = append(s.rows, status)
 		case status.Readiness != initcmd.Ready:
-			s.byHand = append(s.byHand, status.Name)
+			s.byHand = append(s.byHand, status)
 		}
 	}
 	s.follow(selected)
@@ -247,15 +247,15 @@ func (s *loginsScreen) byHandIntro() []string {
 	if len(s.byHand) == 0 {
 		return nil
 	}
-	them := "these"
+	text := "These MCPs don't support browser login, so you will need to configure them manually later:"
 	if len(s.byHand) == 1 {
-		them = "it"
+		text = "This MCP doesn't support browser login, so you will need to configure it manually later:"
 	}
-	text := fmt.Sprintf(
-		"Browser login isn't available for %s. You will need to configure %s manually later.",
-		initcmd.JoinAnd(s.byHand), them,
-	)
 	lines := strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")
+	width := widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
+	for _, status := range s.byHand {
+		lines = append(lines, fmt.Sprintf("  %-*s  %s", width, status.Name, dim.Render(status.Requirement())))
+	}
 	if len(s.rows) > 0 {
 		lines = append(lines, "")
 	}
@@ -284,22 +284,25 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 }
 
 func (s *loginsScreen) rowLines(status initcmd.ServerStatus, atCursor bool, width int) []string {
-	lines := []string{cursorMark(atCursor) + s.rowText(status, width)}
+	lines := []string{cursorMark(atCursor) + s.rowText(status, atCursor, width)}
 	if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
 		lines = append(lines, s.urlLines(4+width)...)
-	}
-	if hint := s.hint(status); atCursor && hint != "" {
-		lines = append(lines, cursorMark(false)+dim.Render(hint))
 	}
 	return lines
 }
 
-func (s *loginsScreen) rowText(status initcmd.ServerStatus, width int) string {
-	state := s.state(status)
-	if state == "" {
+func (s *loginsScreen) rowText(status initcmd.ServerStatus, atCursor bool, width int) string {
+	var after []string
+	if state := s.state(status); state != "" {
+		after = append(after, state)
+	}
+	if hint := s.hint(status); atCursor && hint != "" {
+		after = append(after, dim.Render(hint))
+	}
+	if len(after) == 0 {
 		return status.Name
 	}
-	return fmt.Sprintf("%-*s  %s", width, status.Name, state)
+	return fmt.Sprintf("%-*s  %s", width, status.Name, strings.Join(after, "  "))
 }
 
 func (s *loginsScreen) hint(status initcmd.ServerStatus) string {

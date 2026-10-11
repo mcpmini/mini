@@ -39,7 +39,7 @@ func loginsText(s *loginsScreen) string {
 	return framedText(framed(s, false))
 }
 
-func TestLoginsScreen_listsOnlyLoginRowsAndNamesTheByHandServersInOneSentence(t *testing.T) {
+func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequire(t *testing.T) {
 	checks := newFakeChecks(
 		initcmd.ServerStatus{Name: "ready"},
 		initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken},
@@ -52,8 +52,11 @@ func TestLoginsScreen_listsOnlyLoginRowsAndNamesTheByHandServersInOneSentence(t 
 	s := checks.screen()
 	s.resize(120, 30)
 	showScreen(s)
-	want := "Browser login isn't available for github, asana and files. You will need to configure these manually later.\n\n" +
-		"> linear\n  press enter to log in\n\n  Continue"
+	want := "These MCPs don't support browser login, so you will need to configure them manually later:\n" +
+		"  github  requires an access token\n" +
+		"  asana   requires your own OAuth app\n" +
+		"  files   requires ROOT\n\n" +
+		"> linear  press enter to log in\n\n  Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -64,7 +67,7 @@ func TestLoginsScreen_listsOnlyLoginRowsAndNamesTheByHandServersInOneSentence(t 
 
 func TestLoginsScreen_theCursorsUntriedRowAloneGetsAHint(t *testing.T) {
 	s := loginScreen(newFakeLogins(), "linear", "sentry")
-	want := "> linear\n  press enter to log in\n  sentry\n\n  Continue"
+	want := "> linear  press enter to log in\n  sentry\n\n  Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -79,26 +82,24 @@ func TestLoginsScreen_withTheCursorOnContinueNoRowGetsAHint(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_byHandServersAreNamedInOneSentenceAndAreNotRows(t *testing.T) {
+func TestLoginsScreen_byHandServersAreListedAboveTheLoginRowsAndAreNotRows(t *testing.T) {
 	cases := []struct {
-		name     string
-		byHand   []string
-		sentence string
+		name   string
+		byHand []string
+		list   string
 	}{
 		{
 			"one",
 			[]string{"github"},
-			"Browser login isn't available for github. You will need to configure it manually later.",
+			"This MCP doesn't support browser login, so you will need to configure it manually later:\n" +
+				"  github  requires an access token",
 		},
 		{
 			"two",
 			[]string{"github", "asana"},
-			"Browser login isn't available for github and asana. You will need to configure these manually later.",
-		},
-		{
-			"three",
-			[]string{"github", "asana", "files"},
-			"Browser login isn't available for github, asana and files. You will need to configure these manually later.",
+			"These MCPs don't support browser login, so you will need to configure them manually later:\n" +
+				"  github  requires an access token\n" +
+				"  asana   requires an access token",
 		},
 	}
 	for _, tc := range cases {
@@ -110,11 +111,11 @@ func TestLoginsScreen_byHandServersAreNamedInOneSentenceAndAreNotRows(t *testing
 			s := loginScreenWithStatuses(newFakeLogins(), statuses...)
 			s.resize(200, 30)
 			a := framed(s, false)
-			if text := framedText(a); !strings.HasPrefix(text, tc.sentence+"\n\n> linear") {
-				t.Fatalf("screen:\n%s\nwant the sentence above the login rows", text)
+			if text := framedText(a); !strings.HasPrefix(text, tc.list+"\n\n> linear") {
+				t.Fatalf("screen:\n%s\nwant the list above the login rows", text)
 			}
 			send(a, "down")
-			if text := framedText(a); text != tc.sentence+"\n\n  linear\n\n> Continue" {
+			if text := framedText(a); text != tc.list+"\n\n  linear\n\n> Continue" {
 				t.Errorf(
 					"screen after down:\n%s\nwant the by-hand servers out of the cursor's reach, Continue next",
 					text,
@@ -124,11 +125,12 @@ func TestLoginsScreen_byHandServersAreNamedInOneSentenceAndAreNotRows(t *testing
 	}
 }
 
-func TestLoginsScreen_onlyByHandServersLeaveAHeadingAndTheSentenceWithContinue(t *testing.T) {
+func TestLoginsScreen_onlyByHandServersLeaveAHeadingAndTheListWithContinue(t *testing.T) {
 	s := loginScreenWithStatuses(newFakeLogins(), initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken})
 	s.resize(200, 30)
 	a := framed(s, false)
-	want := "Browser login isn't available for github. You will need to configure it manually later.\n\n> Continue"
+	want := "This MCP doesn't support browser login, so you will need to configure it manually later:\n" +
+		"  github  requires an access token\n\n> Continue"
 	if text := framedText(a); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -167,7 +169,7 @@ func TestLoginsScreen_aServerBeingCheckedSaysSoUntilTheCheckFinishes(t *testing.
 	delete(checks.checking, "open")
 	checks.statuses[0].Readiness = initcmd.NeedsLogin
 	checks.changed <- struct{}{}
-	if next := s.update(wait()); next != nil || !strings.Contains(loginsText(s), "> open\n  press enter to log in") {
+	if next := s.update(wait()); next != nil || !strings.Contains(loginsText(s), "> open  press enter to log in") {
 		t.Errorf(
 			"after the check: screen:\n%s\nnext wait = %v; want the login need and no more waiting",
 			loginsText(s),
@@ -296,7 +298,7 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 
 	logins.ends["linear"] <- nil
 	s.update(s.pending.next())
-	if text := loginsText(s); !strings.Contains(text, "  linear  ✓ logged in\n> sentry\n  press enter to log in") {
+	if text := loginsText(s); !strings.Contains(text, "  linear  ✓ logged in\n> sentry  press enter to log in") {
 		t.Errorf("screen:\n%s\nwant linear done with no hint, and the cursor on sentry, the next to log in", text)
 	}
 
@@ -323,7 +325,7 @@ func TestLoginsScreen_escCancelsTheWaitingLoginAndStays(t *testing.T) {
 		t.Fatal("esc returned before the waiting login was cancelled")
 	}
 	s.update(loginFinished{id: 1, err: context.Canceled})
-	if text := framedText(a); !strings.Contains(text, "> linear\n  press enter to log in") {
+	if text := framedText(a); !strings.Contains(text, "> linear  press enter to log in") {
 		t.Errorf("screen:\n%s\nwant the cancelled login's result dropped", text)
 	}
 	if send(a, "esc"); a.at != 0 {
@@ -387,16 +389,16 @@ func TestLoginsScreen_aFailedLoginShowsOnlyTheFirstLineOfItsError(t *testing.T) 
 	}
 }
 
-func TestLoginsScreen_aFailedLoginSaysToTryAgainUnderItsRow(t *testing.T) {
+func TestLoginsScreen_aFailedLoginSaysToTryAgainOnItsRow(t *testing.T) {
 	logins := newFakeLogins("linear")
 	s := loginScreen(logins, "linear")
 	logins.ends["linear"] <- errors.New("access denied")
 	pressAndRun(s, "enter")
 	a := framed(s, false)
 	send(a, "up")
-	want := "> linear  ✗ login failed: access denied\n  press enter to try again"
+	want := "> linear  ✗ login failed: access denied  press enter to try again"
 	if text := framedText(a); !strings.Contains(text, want) {
-		t.Errorf("screen:\n%s\nwant the failure under linear's row, and the retry hint under it", text)
+		t.Errorf("screen:\n%s\nwant the failure on linear's row, then the retry hint", text)
 	}
 }
 
@@ -407,8 +409,8 @@ func TestLoginsScreen_aTimedOutLoginSaysSoAndCanBeTriedAgain(t *testing.T) {
 	pressAndRun(s, "enter")
 	a := framed(s, false)
 	send(a, "up")
-	if text := framedText(a); !strings.Contains(text, "> linear  ✗ login timed out\n  press enter to try again") {
-		t.Errorf("screen:\n%s\nwant the timeout said plainly, with the retry hint under linear", text)
+	if text := framedText(a); !strings.Contains(text, "> linear  ✗ login timed out  press enter to try again") {
+		t.Errorf("screen:\n%s\nwant the timeout said plainly, with the retry hint on linear's row", text)
 	}
 	if retry := send(a, "enter"); retry == nil {
 		t.Error("enter on the timed-out row started no login")
@@ -496,7 +498,8 @@ func TestLoginsScreen_manyByHandServersScrollAwaySoTheCursorsRowFits(t *testing.
 	s := loginScreenWithStatuses(newFakeLogins(), statuses...)
 	s.resize(60, 12)
 	body := strings.Split(ansi.Strip(s.body(4, true)), "\n")
-	if len(body) > 4 || !slices.Contains(body, "> linear") {
+	if len(body) > 4 ||
+		!slices.ContainsFunc(body, func(line string) bool { return strings.HasPrefix(line, "> linear") }) {
 		t.Errorf("body at height 4:\n%s\nwant at most 4 lines with linear's row in view", strings.Join(body, "\n"))
 	}
 }
@@ -524,7 +527,7 @@ func TestLoginsScreen_movingUpMovesTheCursorBeforeTheView(t *testing.T) {
 	before := rowsWithoutHints(s.body(4, true))
 	s.handle(press("up"))
 	after := rowsWithoutHints(s.body(4, true))
-	if !slices.Equal(stripMarks(before), stripMarks(after)) || !strings.HasPrefix(after[1], "> s7") {
+	if !slices.Equal(stripMarks(before), stripMarks(after)) || !strings.HasPrefix(after[2], "> s7") {
 		t.Errorf("view before up:\n%s\nafter:\n%s\nwant the same rows, the cursor one up on s7",
 			strings.Join(before, "\n"), strings.Join(after, "\n"))
 	}
@@ -533,9 +536,8 @@ func TestLoginsScreen_movingUpMovesTheCursorBeforeTheView(t *testing.T) {
 func rowsWithoutHints(body string) []string {
 	var rows []string
 	for _, line := range strings.Split(ansi.Strip(body), "\n") {
-		if !strings.Contains(line, "press enter") {
-			rows = append(rows, line)
-		}
+		row, _, _ := strings.Cut(line, "  press enter")
+		rows = append(rows, row)
 	}
 	return rows
 }

@@ -348,7 +348,7 @@ func TestRun_aLoginDoesntOutliveTheServerItWasFor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(screen, "linear\n  press enter to log in") {
+	if !strings.Contains(screen, "linear  press enter to log in") {
 		t.Errorf("Logins:\n%s\nwant linear needing a login: unticking it deleted its credentials", screen)
 	}
 }
