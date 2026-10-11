@@ -63,7 +63,6 @@ func writeServersHeadline(b *strings.Builder, r Report) {
 	switch {
 	case len(r.Added) > 0:
 		fmt.Fprintf(b, "Added %s to mini: %s\n", Plural(len(r.Added), "server"), strings.Join(r.Added, ", "))
-	case r.ReadServersErr != nil:
 	default:
 		fmt.Fprintln(b, "No servers were added to mini.")
 	}

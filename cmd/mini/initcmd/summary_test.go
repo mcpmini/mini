@@ -96,11 +96,20 @@ func TestSummary_servers(t *testing.T) {
 	t.Run("nothing added says so", func(t *testing.T) {
 		requireLines(t, plainSummary(Report{}), "No servers were added to mini.\n")
 	})
-	t.Run("servers that can't be read aren't called none", func(t *testing.T) {
+	t.Run("a read error still says what this run added, then the error", func(t *testing.T) {
 		got := plainSummary(Report{ReadServersErr: errors.New("permission denied")})
-		if strings.Contains(got, "No servers were added") {
-			t.Errorf("summary says nothing was added although it couldn't read mini's servers:\n%s", got)
-		}
+		requireLines(t, got, "No servers were added to mini.\n", "\nCould not read mini's servers: permission denied\n")
+	})
+	t.Run("a server missing several variables is told to set them", func(t *testing.T) {
+		unset := &config.UnsetEnvError{Field: "env", Names: []string{"A_TOKEN", "B_TOKEN"}}
+		got := plainSummary(
+			Report{ConfigDir: "/cfg", Servers: []ServerStatus{{Name: "s", Readiness: NeedsEnv, UnsetEnv: unset}}},
+		)
+		requireLines(
+			t,
+			got,
+			"  s  requires A_TOKEN and B_TOKEN  set them where mini runs (used in env), or edit /cfg/servers/s.yaml\n",
+		)
 	})
 }
 
