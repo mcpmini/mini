@@ -17,15 +17,20 @@ func (p Plan) setupComment(name string) string {
 
 // The placeholders the steps leave for the user; a value still holding one is no credential yet.
 const (
-	tokenPlaceholder    = "<your token>"
-	clientIDPlaceholder = "<your app's client ID>"
+	tokenPlaceholder        = "<your token>"
+	clientIDPlaceholder     = "<your app's client ID>"
+	clientSecretPlaceholder = "<your app's client secret>"
 )
 
-// A user who deleted part of the block gets the summary's full step instead.
+// A user who deleted part of the block gets the summary's full step instead; one who uncommented it
+// with a placeholder left in still has the steps at hand.
 func setupCommentIn(data []byte, entry catalog.Entry) bool {
 	comment := credentialComment(entry)
 	if comment == "" {
 		return false
+	}
+	if placeholderIn(data) {
+		return true
 	}
 	for line := range strings.SplitSeq(config.CommentLines(comment), "\n") {
 		if !bytes.Contains(data, []byte(line)) {
@@ -58,8 +63,19 @@ func credentialSteps(authKind, setupURL string) (intro string, block []string) {
 				"auth:",
 				"    type: oauth2",
 				"    client_id: " + clientIDPlaceholder,
-				"    client_secret: <your app's client secret>",
+				"    client_secret: " + clientSecretPlaceholder,
 			}
 	}
 	return "", nil
+}
+
+func placeholderIn(data []byte) bool {
+	for _, placeholder := range []string{tokenPlaceholder, clientIDPlaceholder, clientSecretPlaceholder} {
+		for line := range strings.SplitSeq(string(data), "\n") {
+			if strings.Contains(line, placeholder) && !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				return true
+			}
+		}
+	}
+	return false
 }

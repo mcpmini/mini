@@ -2,7 +2,6 @@ package initcmd
 
 import (
 	"errors"
-	"maps"
 	"os"
 	"slices"
 	"strings"
@@ -93,11 +92,18 @@ func needsLogin(configDir, name string) bool {
 }
 
 func hasCredential(sc config.ServerConfig) bool {
-	headerSet := len(sc.Headers) > 0 && !slices.ContainsFunc(slices.Collect(maps.Values(sc.Headers)),
-		func(v string) bool { return strings.Contains(v, tokenPlaceholder) })
-	return headerSet || (sc.Auth != nil && sc.Auth.Token != "")
+	if sc.Auth != nil && sc.Auth.Token != "" {
+		return true
+	}
+	for _, value := range sc.Headers {
+		if strings.Contains(value, tokenPlaceholder) {
+			return false
+		}
+	}
+	return len(sc.Headers) > 0
 }
 
 func hasOwnApp(sc config.ServerConfig) bool {
-	return sc.Auth != nil && sc.Auth.ClientID != "" && sc.Auth.ClientID != clientIDPlaceholder
+	return sc.Auth != nil && sc.Auth.ClientID != "" && sc.Auth.ClientID != clientIDPlaceholder &&
+		sc.Auth.ClientSecret != clientSecretPlaceholder
 }

@@ -299,14 +299,23 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 		}
 		want := map[string]Readiness{"github": NeedsToken, "asana": NeedsOwnApp}
 		for _, status := range statuses {
-			if r, ok := want[status.Name]; ok && status.Readiness != r {
-				t.Errorf(
-					"%s readiness = %v, want %v: mini would send the placeholder",
-					status.Name,
-					status.Readiness,
-					r,
-				)
+			if r, ok := want[status.Name]; ok && (status.Readiness != r || !status.StepsInFile) {
+				t.Errorf("%s = %+v, want %v with its steps still in the file: mini would send the placeholder",
+					status.Name, status, r)
 			}
+		}
+	})
+	t.Run("an app with its client ID but the secret's placeholder isn't finished", func(t *testing.T) {
+		path := config.ServerPath(configDir, "asana")
+		testutil.WriteFile(
+			t,
+			path,
+			strings.Replace(string(testutil.ReadFile(t, path)), clientIDPlaceholder, "app-123", 1),
+		)
+		statuses, err := ServerStatuses(configDir, setup.Catalog)
+		i := slices.IndexFunc(statuses, func(s ServerStatus) bool { return s.Name == "asana" })
+		if err != nil || i < 0 || statuses[i].Readiness != NeedsOwnApp {
+			t.Errorf("statuses = %+v, %v; want asana still needing its app: the secret is a placeholder", statuses, err)
 		}
 	})
 }

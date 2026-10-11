@@ -83,14 +83,23 @@ func TestPrependServerComment(t *testing.T) {
 			t.Fatalf("PrependServerComment = %q, %v; want %q", got, err, want)
 		}
 	})
-	t.Run("the comment survives a later key change", func(t *testing.T) {
+	t.Run("the comment survives a projection saved later", func(t *testing.T) {
+		dir := t.TempDir()
 		data, err := PrependServerComment([]byte("url: https://x.example/mcp\n"), "a hint")
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, err := ReplaceServerKey(data, "transport", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "http"})
-		if err != nil || !strings.Contains(string(got), "# a hint") {
-			t.Errorf("after ReplaceServerKey = %q, %v; want the hint kept", got, err)
+		testutil.WriteFileBytes(t, ServerPath(dir, "svc"), data)
+
+		_, err = SaveServerProjection(ServerProjectionParams{
+			ConfigDir: dir, ServerName: "svc", Tool: "list", Projection: &ProjectionConfig{Exclude: []string{"x"}},
+		})
+
+		if got := string(
+			testutil.ReadFile(t, ServerPath(dir, "svc")),
+		); err != nil ||
+			!strings.HasPrefix(got, "# a hint\n") {
+			t.Errorf("after SaveServerProjection = %q, %v; want the hint kept at the top", got, err)
 		}
 	})
 }
