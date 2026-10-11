@@ -3,17 +3,20 @@
 package initcmd
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func configuredNames(t *testing.T, configDir string) []string {
@@ -226,4 +229,72 @@ func TestRunUnattended_aCatalogAddIsntCreditedWithASwitchedOffConfigOfTheSameNam
 		t.Errorf("skipped = %+v, dropped settings = %v; want Codex's notion named as switched off "+
 			"and no cwd note for the catalog's notion", report.Import.Skipped, report.Import.DroppedSettings)
 	}
+}
+
+func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *testing.T) {
+	configDir := t.TempDir()
+	setup := Setup{ConfigDir: configDir, Add: []catalog.Entry{
+		{
+			Name:     "github",
+			URL:      "https://github.example/mcp",
+			Auth:     catalog.AuthToken,
+			SetupURL: "https://github.example/tokens",
+		},
+		{
+			Name:     "asana",
+			URL:      "https://asana.example/mcp",
+			Auth:     catalog.AuthOAuth2App,
+			SetupURL: "https://asana.example/apps",
+		},
+		{Name: "linear", URL: "https://linear.example/mcp", Auth: catalog.AuthOAuth2},
+	}}
+	setup.Catalog = setup.Add
+	setup.Probe = func(context.Context, string, config.ServerConfig) error { return nil }
+
+	report := RunUnattended(setup)
+
+	if len(report.WriteErrors) > 0 {
+		t.Fatalf("write errors: %v", report.WriteErrors)
+	}
+	github := string(testutil.ReadFile(t, config.ServerPath(configDir, "github")))
+	if !strings.Contains(github, "# Create a token at https://github.example/tokens, then uncomment:") {
+		t.Errorf("github.yaml:\n%s\nwant the token step as a comment", github)
+	}
+	if i := slices.IndexFunc(report.Servers, func(s ServerStatus) bool { return s.Name == "github" }); i < 0 ||
+		report.Servers[i].Readiness != NeedsToken {
+		t.Errorf("servers = %+v, want github needing a token: a commented-out header is no token", report.Servers)
+	}
+	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(configDir, "linear"))), "#") {
+		t.Error("linear.yaml has a comment, want none: its login needs nothing written by hand")
+	}
+	for _, name := range []string{"github", "asana"} {
+		t.Run(name+" works once uncommented", func(t *testing.T) {
+			sc := uncommented(t, configDir, name)
+			if name == "github" && sc.Headers["Authorization"] != "Bearer <your token>" {
+				t.Errorf("headers = %v, want the Authorization header", sc.Headers)
+			}
+			if name == "asana" && (sc.Auth == nil || sc.Auth.ClientID == "") {
+				t.Errorf("auth = %+v, want the app's client ID", sc.Auth)
+			}
+		})
+	}
+}
+
+// uncommented removes the "# " the setup comment's lines start with, as a user would, and loads the result.
+func uncommented(t *testing.T, configDir, name string) config.ServerConfig {
+	t.Helper()
+	path := config.ServerPath(configDir, name)
+	var lines []string
+	for line := range strings.SplitSeq(string(testutil.ReadFile(t, path)), "\n") {
+		if strings.HasPrefix(line, "# ") && !strings.HasSuffix(line, "uncomment:") {
+			line = strings.TrimPrefix(line, "# ")
+		}
+		lines = append(lines, line)
+	}
+	testutil.WriteFile(t, path, strings.Join(lines, "\n"))
+	sc, err := config.LoadServer(configDir, name)
+	if err != nil {
+		t.Fatalf("%s uncommented doesn't load: %v\n%s", name, err, strings.Join(lines, "\n"))
+	}
+	return sc
 }

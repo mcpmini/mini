@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -67,6 +68,29 @@ func TestReplaceServerKey(t *testing.T) {
 			if _, err := ReplaceServerKey([]byte(data), "url", value); err == nil {
 				t.Errorf("ReplaceServerKey(%q) succeeded, want an error", data)
 			}
+		}
+	})
+}
+
+func TestPrependServerComment(t *testing.T) {
+	t.Run("adds the lines as comments before the keys, keeping comments already there", func(t *testing.T) {
+		got, err := PrependServerComment(
+			[]byte("url: https://x.example/mcp # kept\n"),
+			"uncomment:\nheaders:\n    A: b",
+		)
+		want := "# uncomment:\n# headers:\n#     A: b\n\nurl: https://x.example/mcp # kept\n"
+		if err != nil || string(got) != want {
+			t.Fatalf("PrependServerComment = %q, %v; want %q", got, err, want)
+		}
+	})
+	t.Run("the comment survives a later key change", func(t *testing.T) {
+		data, err := PrependServerComment([]byte("url: https://x.example/mcp\n"), "a hint")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := ReplaceServerKey(data, "transport", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "http"})
+		if err != nil || !strings.Contains(string(got), "# a hint") {
+			t.Errorf("after ReplaceServerKey = %q, %v; want the hint kept", got, err)
 		}
 	})
 }

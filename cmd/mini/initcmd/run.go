@@ -23,7 +23,11 @@ type Run struct {
 
 func (s Setup) Start(p Plan) *Run {
 	st := newStage(s.ConfigDir)
-	return &Run{Plan: p, setup: s, stage: st, session: s.newSession(st.dir)}
+	r := &Run{Plan: p, setup: s, stage: st}
+	// Read at each save: the screens change the plan after Start.
+	comment := func(name string) string { return r.Plan.setupComment(name) }
+	r.session = newSession(sessionParams{ConfigDir: st.dir, Probe: s.probe(), SetupComment: comment})
+	return r
 }
 
 // Save stages the plan's servers and starts checking the new ones for OAuth. It returns the servers

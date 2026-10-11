@@ -87,10 +87,6 @@ func (s Setup) Write(p Plan) Report {
 	return run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
 }
 
-func (s Setup) newSession(dir string) *session {
-	return newSession(sessionParams{ConfigDir: dir, Probe: s.probe()})
-}
-
 // Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
 func (p Plan) Servers() []config.ServerConfig {
 	return planAdds(p.Import.picked(), p.Add, p.written).write

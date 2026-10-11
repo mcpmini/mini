@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -19,14 +21,19 @@ func EncodeServerFile(sc ServerConfig) ([]byte, error) {
 
 // CreateServerFile refuses to replace an existing file (fs.ErrExist) and to write one that wouldn't load.
 func CreateServerFile(configDir string, sc ServerConfig) (string, error) {
-	if err := checkServerName(sc.Name, "the request"); err != nil {
-		return "", err
-	}
-	path := ServerPath(configDir, sc.Name)
 	data, err := EncodeServerFile(sc)
 	if err != nil {
 		return "", err
 	}
+	return CreateServerFileData(configDir, sc.Name, data)
+}
+
+// CreateServerFileData is CreateServerFile for a file already written, comments and all.
+func CreateServerFileData(configDir, name string, data []byte) (string, error) {
+	if err := checkServerName(name, "the request"); err != nil {
+		return "", err
+	}
+	path := ServerPath(configDir, name)
 	if err := ValidateServerFile(path, data); err != nil {
 		return "", err
 	}
@@ -52,6 +59,27 @@ func ReplaceServerKey(data []byte, key string, value *yaml.Node) ([]byte, error)
 		setMappingValue(doc.Content[0], key, value)
 	}
 	return encodeServerYAML(doc)
+}
+
+// PrependServerComment adds comment lines at the top of a server file, each prefixed with "# ".
+func PrependServerComment(data []byte, comment string) ([]byte, error) {
+	doc, err := parseServerDocument(data)
+	if err != nil {
+		return nil, err
+	}
+	doc.HeadComment = strings.Join(slices.DeleteFunc(
+		[]string{commentLines(comment), doc.HeadComment},
+		func(c string) bool { return c == "" },
+	), "\n")
+	return encodeServerYAML(doc)
+}
+
+func commentLines(text string) string {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight("# "+line, " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func parseServerDocument(data []byte) (*yaml.Node, error) {
