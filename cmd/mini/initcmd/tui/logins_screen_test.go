@@ -52,11 +52,11 @@ func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequ
 	s := checks.screen()
 	s.resize(120, 30)
 	showScreen(s)
-	want := "Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
+	want := "> linear  press enter to log in\n\n" +
+		"Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
 		"  github  requires an access token\n" +
 		"  asana   requires your own OAuth app\n" +
-		"  files   requires ROOT\n\n" +
-		"> linear  press enter to log in\n\n  Continue"
+		"  files   requires ROOT\n\n  Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -82,7 +82,7 @@ func TestLoginsScreen_withTheCursorOnContinueNoRowGetsAHint(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_byHandServersAreListedAboveTheLoginRowsAndAreNotRows(t *testing.T) {
+func TestLoginsScreen_byHandServersAreListedBelowTheLoginRowsAndAreNotRows(t *testing.T) {
 	cases := []struct {
 		name   string
 		byHand []string
@@ -111,11 +111,11 @@ func TestLoginsScreen_byHandServersAreListedAboveTheLoginRowsAndAreNotRows(t *te
 			s := loginScreenWithStatuses(newFakeLogins(), statuses...)
 			s.resize(200, 30)
 			a := framed(s, false)
-			if text := framedText(a); !strings.HasPrefix(text, tc.list+"\n\n> linear") {
-				t.Fatalf("screen:\n%s\nwant the list above the login rows", text)
+			if text := framedText(a); !strings.HasPrefix(text, "> linear  press enter to log in\n\n"+tc.list+"\n\n") {
+				t.Fatalf("screen:\n%s\nwant the list below the login rows", text)
 			}
 			send(a, "down")
-			if text := framedText(a); text != tc.list+"\n\n  linear\n\n> Continue" {
+			if text := framedText(a); text != "  linear\n\n"+tc.list+"\n\n> Continue" {
 				t.Errorf(
 					"screen after down:\n%s\nwant the by-hand servers out of the cursor's reach, Continue next",
 					text,
@@ -502,7 +502,7 @@ func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 	}
 }
 
-func TestLoginsScreen_manyByHandServersScrollAwaySoTheCursorsRowFits(t *testing.T) {
+func TestLoginsScreen_manyByHandServersAreCutSoTheRowsAndContinueFit(t *testing.T) {
 	statuses := []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLogin}}
 	for i := range 20 {
 		statuses = append(
@@ -511,11 +511,12 @@ func TestLoginsScreen_manyByHandServersScrollAwaySoTheCursorsRowFits(t *testing.
 		)
 	}
 	s := loginScreenWithStatuses(newFakeLogins(), statuses...)
-	s.resize(60, 12)
-	body := strings.Split(ansi.Strip(s.body(4, true)), "\n")
-	if len(body) > 4 ||
-		!slices.ContainsFunc(body, func(line string) bool { return strings.HasPrefix(line, "> linear") }) {
-		t.Errorf("body at height 4:\n%s\nwant at most 4 lines with linear's row in view", strings.Join(body, "\n"))
+	a := framed(s, false)
+	a.height = minHeight
+	view := ansi.Strip(a.render())
+	if strings.Count(view, "\n") >= minHeight || !strings.Contains(view, "> linear") ||
+		!strings.Contains(view, "  Continue") {
+		t.Errorf("view at height %d:\n%s\nwant linear's row and Continue in view, the list cut", minHeight, view)
 	}
 }
 

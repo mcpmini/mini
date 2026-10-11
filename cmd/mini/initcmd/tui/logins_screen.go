@@ -235,29 +235,26 @@ func (s *loginsScreen) body(height int, focused bool) string {
 	if s.err != nil {
 		return "mini's servers couldn't be read: " + s.err.Error()
 	}
-	intro := s.byHandIntro()
 	rows, first, last := s.serverLines(focused)
-	if len(s.rows) > 0 {
-		first, last = first+len(intro), last+len(intro)
-	}
-	return strings.Join(s.scroll.cut(append(intro, rows...), first, last, height), "\n")
+	return strings.Join(s.scroll.cut(append(rows, s.byHandList()...), first, last, height), "\n")
 }
 
-func (s *loginsScreen) byHandIntro() []string {
+func (s *loginsScreen) byHandList() []string {
 	if len(s.byHand) == 0 {
 		return nil
+	}
+	var lines []string
+	if len(s.rows) > 0 {
+		lines = append(lines, "")
 	}
 	text := "Browser login isn't available for these MCPs, so you will need to configure them manually later:"
 	if len(s.byHand) == 1 {
 		text = "Browser login isn't available for this MCP, so you will need to configure it manually later:"
 	}
-	lines := strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")
+	lines = append(lines, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
 	width := widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
 	for _, status := range s.byHand {
 		lines = append(lines, fmt.Sprintf("  %-*s  %s", width, status.Name, dim.Render(status.Requirement())))
-	}
-	if len(s.rows) > 0 {
-		lines = append(lines, "")
 	}
 	return lines
 }
