@@ -572,7 +572,7 @@ func TestIntegrationCLI_init_fromWithOAuthServer_listsTheLoginBeforeHowToConnect
 		t.Fatalf("init exit = %d, stdout:\n%s", code, stdout)
 	}
 	markers := []string{
-		"The following servers require manual configuration to add to mini:",
+		"These servers need one more step before they work:",
 		// The test binary is never the mini on PATH, so commands name it by its full path.
 		"imported-server  requires a login  run: " + miniBin + " --config ",
 		"auth imported-server\n",

@@ -41,7 +41,7 @@ func TestSummary_servers(t *testing.T) {
 			t,
 			got,
 			"Added 4 servers to mini: github, asana, notion, files\n\n"+
-				"The following servers require manual configuration to add to mini:\n",
+				"These servers need one more step before they work:\n",
 			"  github  requires an access token  create a token at https://github.example.com/tokens, then add to /cfg/servers/github.yaml:\n",
 			"  asana   requires an OAuth app     register an OAuth app at https://asana.example.com/apps",
 			"client_id: <your app's client ID>",

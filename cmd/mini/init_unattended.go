@@ -12,7 +12,7 @@ import (
 
 var errInitIncomplete = errors.New("init didn't finish everything; see above")
 
-// lipgloss.Fprint drops these styles when stdout isn't a terminal, NO_COLOR is set or TERM=dumb.
+// lipgloss.Fprint drops these styles when stdout isn't a terminal or TERM=dumb, and the color under NO_COLOR.
 func summaryStyle() initcmd.SummaryStyle {
 	warning := lipgloss.NewStyle().Bold(true)
 	code := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))

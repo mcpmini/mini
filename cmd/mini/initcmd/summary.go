@@ -76,7 +76,7 @@ func writeUnfinished(b *strings.Builder, r Report, style SummaryStyle) {
 	}
 	nameW, requirementW := nameWidth(unfinished), requirementWidth(unfinished)
 	layout := stepLayout{column: strings.Repeat(" ", 2+nameW+2+requirementW+2), style: style}
-	fmt.Fprintln(b, "\nThe following servers require manual configuration to add to mini:")
+	fmt.Fprintln(b, "\nThese servers need one more step before they work:")
 	for _, s := range unfinished {
 		fmt.Fprintf(b, "  %-*s  %-*s  %s\n", nameW, s.Name, requirementW, s.requirement(), r.finishStep(s, layout))
 	}
@@ -112,16 +112,7 @@ func (r Report) finishStep(s ServerStatus, layout stepLayout) string {
 	login := layout.style.code(miniCommand(r.Agents, "auth", s.Name))
 	switch {
 	case s.Readiness == NeedsEnv:
-		them := "them"
-		if len(s.UnsetEnv.Names) == 1 {
-			them = "it"
-		}
-		return fmt.Sprintf(
-			"set %s where mini runs (used in %s), or edit %s",
-			them,
-			s.UnsetEnv.Field,
-			layout.style.code(file),
-		)
+		return envStep(s.UnsetEnv, layout.style.code(file))
 	case s.Readiness == NeedsLogin:
 		return "run: " + login
 	case s.StepsInFile && s.Readiness == NeedsOwnApp:
@@ -268,4 +259,12 @@ func Plural(n int, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+func envStep(unset *config.UnsetEnvError, file string) string {
+	them := "them"
+	if len(unset.Names) == 1 {
+		them = "it"
+	}
+	return fmt.Sprintf("set %s where mini runs (used in %s), or edit %s", them, unset.Field, file)
 }

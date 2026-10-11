@@ -20,6 +20,21 @@ import (
 )
 
 func TestRun(t *testing.T) {
+	t.Run("finishing reports the servers it committed", func(t *testing.T) {
+		setup := Setup{
+			ConfigDir: t.TempDir(),
+			Add:       []catalog.Entry{{Name: "notes", URL: "https://notes.example/mcp"}},
+			Probe:     newFakeProbe(false).probe,
+		}
+		configtest.WriteServer(t, setup.ConfigDir, config.ServerConfig{Name: "files", URL: "https://files.example/mcp"})
+		run := mustStart(t, setup, Plan{Add: setup.Add})
+		run.Save()
+		report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
+		if !slices.Equal(report.Added, []string{"notes"}) {
+			t.Errorf("Added = %v, want only notes: files was in mini before the run", report.Added)
+		}
+	})
+
 	t.Run("closing stops the OAuth checks and leaves mini as it was", func(t *testing.T) {
 		probe := newFakeProbe(true)
 		setup := Setup{

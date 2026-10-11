@@ -71,7 +71,7 @@ env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 		}
 	}
 	for _, want := range []string{
-		"The following servers require manual configuration to add to mini:",
+		"These servers need one more step before they work:",
 		"search  requires SEARCH_TOKEN  set it where mini runs (used in headers.Authorization), or edit " +
 			filepath.Join(configDir, "servers", "search.yaml"),
 		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
