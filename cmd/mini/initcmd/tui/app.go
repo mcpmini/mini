@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -39,8 +38,8 @@ type screen interface {
 	empty() bool
 }
 
-// A screen whose rows depend on what earlier screens wrote reads them again each time the app
-// moves past or onto it.
+// A screen whose rows depend on what earlier screens wrote reads them again whenever the app looks
+// for the next screen to show.
 type refresher interface {
 	refresh()
 }
@@ -111,6 +110,10 @@ type savePoint struct {
 	saved bool
 }
 
+func (p savePoint) crossedBy(from, to int) bool {
+	return p.save != nil && from <= p.after && to > p.after
+}
+
 const minWidth, minHeight = 60, 12
 
 const headingLines, blankLinesAroundBody = 1, 2
@@ -140,10 +143,24 @@ func (a *app) hasScreens() bool {
 }
 
 func (a *app) next(from, direction int) (int, bool) {
+	a.refreshUpToNext(from, direction)
+	return a.nextShown(from, direction)
+}
+
+func (a *app) refreshUpToNext(from, direction int) {
 	for i := from + direction; i >= 0 && i < len(a.screens); i += direction {
 		if r, ok := a.screens[i].(refresher); ok {
 			r.refresh()
 		}
+		if !a.screens[i].empty() {
+			return
+		}
+	}
+}
+
+// nextShown answers from what each screen last read, so a frame can ask it.
+func (a *app) nextShown(from, direction int) (int, bool) {
+	for i := from + direction; i >= 0 && i < len(a.screens); i += direction {
 		if !a.screens[i].empty() {
 			return i, true
 		}
@@ -245,9 +262,12 @@ func (a *app) leave() {
 
 func (a *app) forward() tea.Cmd {
 	next, ok := a.next(a.at, 1)
-	passes := a.at <= a.saves.after && (!ok || next > a.saves.after)
+	to := next
+	if !ok {
+		to = len(a.screens)
+	}
 	// A run that starts on Logins, past the save point, still saves before finishing.
-	if a.saves.save != nil && (passes || (!ok && !a.saves.saved)) {
+	if a.saves.crossedBy(a.at, to) || (a.saves.save != nil && !ok && !a.saves.saved) {
 		a.saves.save()
 		a.saves.saved = true
 		// Saving can empty or fill the screens after it.
@@ -262,6 +282,8 @@ func (a *app) forward() tea.Cmd {
 
 func (a *app) show(at int) tea.Cmd {
 	a.moveTo(at)
+	// The Continue row names the next screen from its empty(), which only a refresh brings up to date.
+	a.refreshUpToNext(at, 1)
 	if s, ok := a.screens[at].(enterer); ok {
 		return s.enter()
 	}
@@ -375,6 +397,6 @@ func (a *app) keys(s screen) string {
 }
 
 func (a *app) canGoBack() bool {
-	// next refreshes screens, which a frame must not do.
-	return slices.ContainsFunc(a.screens[:a.at], func(s screen) bool { return !s.empty() })
+	_, ok := a.nextShown(a.at, -1)
+	return ok
 }

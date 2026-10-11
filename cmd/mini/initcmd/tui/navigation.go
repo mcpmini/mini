@@ -19,6 +19,11 @@ type finisher interface {
 	finished() bool
 }
 
+// A screen Continue can open says what opening it does, for the Continue row before it.
+type destination interface {
+	arrivalHint() string
+}
+
 type focus int
 
 const (
@@ -122,12 +127,34 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 		}
 		atCursor := a.onNavigation() && a.nav.at == i
 		start := len(lines)
-		lines = append(append(lines, cursorMark(atCursor)+label), under...)
+		lines = append(append(lines, cursorMark(atCursor)+a.navigationText(label)), under...)
 		if atCursor {
 			first, last = start, len(lines)-1
 		}
 	}
 	return lines, first, last
+}
+
+func (a *app) navigationText(label string) string {
+	if label != continueLabel {
+		return label
+	}
+	if hint := a.arrivalHint(); hint != "" {
+		return label + "   " + dim.Render(hint)
+	}
+	return label
+}
+
+// When Continue crosses the save point, the next screen depends on what the save writes, so no hint could be relied on.
+func (a *app) arrivalHint() string {
+	next, ok := a.nextShown(a.at, 1)
+	if !ok || a.saves.crossedBy(a.at, next) {
+		return ""
+	}
+	if d, ok := a.screens[next].(destination); ok {
+		return d.arrivalHint()
+	}
+	return ""
 }
 
 func (a *app) navigationKeys() string {

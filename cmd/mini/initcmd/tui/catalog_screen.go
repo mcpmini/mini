@@ -163,7 +163,7 @@ const (
 )
 
 func (s *catalogScreen) heading() string {
-	return "Add servers from the catalog"
+	return "Which popular MCPs would you like to add?"
 }
 
 func (s *catalogScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
@@ -221,4 +221,11 @@ func (s *catalogScreen) empty() bool {
 
 func (s *catalogScreen) picks() []catalog.Entry {
 	return slices.DeleteFunc(s.offered(), func(e catalog.Entry) bool { return !s.checked[e.Name] })
+}
+
+func (s *catalogScreen) arrivalHint() string {
+	if s.loadErr != nil {
+		return ""
+	}
+	return "browse popular MCPs"
 }

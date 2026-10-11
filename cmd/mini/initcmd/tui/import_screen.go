@@ -64,9 +64,9 @@ func agentsOf(candidates []initcmd.Candidate) []string {
 
 func (s *importScreen) heading() string {
 	if len(s.agents) == 1 {
-		return "Import servers from " + s.agents[0]
+		return "Select which MCP servers you want to import from " + s.agents[0]
 	}
-	return "Import servers from your agents"
+	return "Select which MCP servers you want to import from your agents"
 }
 
 func (s *importScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {

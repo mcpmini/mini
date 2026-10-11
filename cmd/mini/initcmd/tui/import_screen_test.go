@@ -34,7 +34,7 @@ func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
 	})
 	text := screenText(s)
 	for _, want := range []string{
-		"Import servers from your agents",
+		"Select which MCP servers you want to import from your agents",
 		"> [x] github    gh.example.com/mcp  Claude Code, Codex",
 		"  [ ] github-2  gh.example.com/mcp  Codex",
 	} {
@@ -62,7 +62,7 @@ func TestImportScreen_onlyASwitchedOffRowSaysWhyItIsUnticked(t *testing.T) {
 
 func TestImportScreen_oneAgentIsNamedInTheHeadingInsteadOfAColumn(t *testing.T) {
 	s := importScreenFor([]initcmd.Candidate{candidate("linear", "https://linear.example.com/mcp", true, "Cursor")})
-	if text := screenText(s); !strings.HasPrefix(text, "Import servers from Cursor\n") ||
+	if text := screenText(s); !strings.HasPrefix(text, "Select which MCP servers you want to import from Cursor\n") ||
 		strings.Contains(s.body(20, true), "Cursor") {
 		t.Errorf("screen:\n%s\nwant Cursor named in the heading only", text)
 	}

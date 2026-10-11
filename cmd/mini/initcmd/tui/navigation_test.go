@@ -240,3 +240,55 @@ func TestNavigation_upOnContinueWithNoRowsLeavesTheCursorThereWhenRowsAppear(t *
 		t.Errorf("view after rows appeared:\n%s\nwant the cursor still on Continue: up found no row to go to", view)
 	}
 }
+
+type destinationScreen struct {
+	fakeScreen
+	hint string
+}
+
+func (s *destinationScreen) arrivalHint() string { return s.hint }
+
+func destinationHinting(hint string) *destinationScreen {
+	return &destinationScreen{fakeScreen: fakeScreen{name: hint}, hint: hint}
+}
+
+func continueLine(view string) string {
+	for _, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(strings.TrimPrefix(strings.TrimPrefix(line, "> "), "  "), continueLabel) {
+			return line
+		}
+	}
+	return ""
+}
+
+func TestNavigation_continueNamesTheScreenItOpens(t *testing.T) {
+	pick := func() *fakeScreen { return &fakeScreen{name: "Pick"} }
+	skipped := destinationHinting("skipped")
+	skipped.nothing = true
+	for name, tc := range map[string]struct {
+		screens []screen
+		want    string
+	}{
+		"the next screen's hint after three spaces": {[]screen{pick(), destinationHinting("browse")}, "> Continue   browse"},
+		"past an empty screen":                      {[]screen{pick(), skipped, destinationHinting("connect")}, "> Continue   connect"},
+		"a next screen with no hint":                {[]screen{pick(), pick()}, "> Continue"},
+		"the last screen":                           {[]screen{pick()}, "> Continue"},
+		"off the cursor, with the row's mark": {
+			[]screen{&fakeScreen{name: "Pick", hasRows: true}, destinationHinting("browse")}, "  Continue   browse",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if line := continueLine(shown(inApp(100, 30, tc.screens...))); line != tc.want {
+				t.Errorf("Continue line = %q, want %q", line, tc.want)
+			}
+		})
+	}
+}
+
+func TestNavigation_continueNamesNothingPastTheSavePoint(t *testing.T) {
+	a := inApp(100, 30, &fakeScreen{name: "Pick"}, destinationHinting("browse"))
+	a.saves = savePoint{after: 0, save: func() {}}
+	if line := continueLine(shown(a)); line != "> Continue" {
+		t.Errorf("Continue line = %q, want no hint: what follows depends on the save", line)
+	}
+}

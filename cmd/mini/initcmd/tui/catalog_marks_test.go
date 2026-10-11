@@ -20,7 +20,7 @@ func TestCatalogScreen_aServerTickedOnImportIsMarkedWillImportAndLosesItsCatalog
 	s.enter()
 
 	text := catalogText(s)
-	if strings.Count(text, " +  GitHub") != 2 || !strings.Contains(text, "+ will import") ||
+	if strings.Count(text, " +  GitHub") != 2 || !strings.Contains(text, "+ will import from your existing agents") ||
 		strings.Contains(text, "[x]") {
 		t.Errorf("screen:\n%s\nwant GitHub marked will import in both places, explained, and ticked nowhere", text)
 	}
