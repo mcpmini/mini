@@ -88,7 +88,7 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"linear"}, "Codex": {"sentry", "linear"}})
 		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), nil)
 		s.p.statuses = func() ([]initcmd.ServerStatus, error) {
-			return []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLogin}, {Name: "sentry"}}, nil
+			return []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLoginState{}}, {Name: "sentry"}}, nil
 		}
 		plan.release <- initcmd.Removals{}
 		s.update(check())

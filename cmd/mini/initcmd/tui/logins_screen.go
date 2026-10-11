@@ -69,7 +69,7 @@ func (s *loginsScreen) refresh() {
 		switch {
 		case s.isLoginRow(status):
 			s.rows = append(s.rows, status)
-		case status.Readiness != initcmd.Ready:
+		case !status.Ready():
 			s.byHand = append(s.byHand, status)
 		}
 	}
@@ -79,7 +79,7 @@ func (s *loginsScreen) refresh() {
 // A tried login's row stays, so the user sees how it went.
 func (s *loginsScreen) isLoginRow(status initcmd.ServerStatus) bool {
 	_, tried := s.results[status.Name]
-	return tried || s.checking[status.Name] || status.Readiness == initcmd.NeedsLogin
+	return tried || s.checking[status.Name] || status.NeedsLogin()
 }
 
 // Rows come and go as checks finish, so the user's pick is found again by name.
@@ -167,7 +167,7 @@ func (s *loginsScreen) selectable(i int) bool {
 		return false
 	}
 	r := s.rows[i]
-	return r.Readiness == initcmd.NeedsLogin && !s.checking[r.Name]
+	return r.NeedsLogin() && !s.checking[r.Name]
 }
 
 func (s *loginsScreen) nextToLogIn() int {

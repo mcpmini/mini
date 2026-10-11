@@ -52,9 +52,9 @@ func reviewOf(
 func TestReview_listsEachAddedServerWithWhatItStillNeeds(t *testing.T) {
 	s := reviewOf([]initcmd.ServerStatus{
 		{Name: "canva"},
-		{Name: "sentry", Readiness: initcmd.NeedsLogin},
-		{Name: "asana", Readiness: initcmd.NeedsOwnApp},
-		{Name: "github", Readiness: initcmd.NeedsToken},
+		{Name: "sentry", Readiness: initcmd.NeedsLoginState{}},
+		{Name: "asana", Readiness: initcmd.NeedsOwnAppState{}},
+		{Name: "github", Readiness: initcmd.NeedsTokenState{}},
 		{Name: "linear"},
 	}, map[string]bool{"linear": true}, nil, []screen{&fakeScreen{}})
 	want := "5 MCPs will be added to mini:\n" +
@@ -73,7 +73,7 @@ func TestReview_aFinishedCheckUpdatesTheServersState(t *testing.T) {
 	checking := map[string]bool{"linear": true}
 	s := reviewOf(statuses, checking, nil, []screen{&fakeScreen{}})
 	delete(checking, "linear")
-	statuses[0].Readiness = initcmd.NeedsLogin
+	statuses[0].Readiness = initcmd.NeedsLoginState{}
 	s.update(checksChanged{})
 	if body := ansi.Strip(
 		s.body(10, false),
@@ -116,7 +116,7 @@ func TestHomeRelative_shortensOnlyPathsUnderHome(t *testing.T) {
 
 func TestReview_aLongStepWrapsUnderItsColumn(t *testing.T) {
 	s := reviewOf(
-		[]initcmd.ServerStatus{{Name: "github", Readiness: initcmd.NeedsToken}},
+		[]initcmd.ServerStatus{{Name: "github", Readiness: initcmd.NeedsTokenState{}}},
 		nil,
 		nil,
 		[]screen{&fakeScreen{}},

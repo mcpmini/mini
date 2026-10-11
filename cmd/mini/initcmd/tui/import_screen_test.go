@@ -46,9 +46,9 @@ func TestImportScreen_listsEachCandidateTickedAsThePlanPicks(t *testing.T) {
 
 func TestImportScreen_onlyASwitchedOffRowSaysWhyItIsUnticked(t *testing.T) {
 	switchedOff := candidate("notes", "https://notes.example.com/mcp", false, "Codex")
-	switchedOff.Reason = initcmd.SkipSwitchedOff
+	switchedOff.InitialDisposition = initcmd.OriginallyDisabled
 	second := candidate("github-2", "https://gh.example.com/mcp", false, "Cursor")
-	second.Reason = initcmd.SkipSecondConfig
+	second.InitialDisposition = initcmd.DuplicateConfig
 	text := screenText(importScreenFor([]initcmd.Candidate{second, switchedOff}))
 	for _, want := range []string{
 		"github-2  gh.example.com/mcp     Cursor\n  [ ] notes",
@@ -73,6 +73,7 @@ func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 		candidate("github", "https://gh.example.com/mcp", true, "Codex"),
 		candidate("notes", "https://notes.example.com/mcp", false, "Codex"),
 	}
+	candidates[1].InitialDisposition = initcmd.OriginallyDisabled
 	s := importScreenFor(candidates)
 	for _, key := range []string{"space", "down", "space"} {
 		s.handle(press(key))
@@ -80,6 +81,10 @@ func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 	s.pick(candidates)
 	if candidates[0].Picked || !candidates[1].Picked {
 		t.Errorf("picks = %v, %v; want github unticked and notes ticked", candidates[0].Picked, candidates[1].Picked)
+	}
+	if candidates[0].InitialDisposition != initcmd.SelectedByDefault ||
+		candidates[1].InitialDisposition != initcmd.OriginallyDisabled {
+		t.Fatalf("selection changed provenance: %+v", candidates)
 	}
 	s.handle(press("a"))
 	s.pick(candidates)

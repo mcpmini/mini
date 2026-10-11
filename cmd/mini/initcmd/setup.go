@@ -138,7 +138,8 @@ func (plan *ImportPlan) keepOnly(imported []Candidate) {
 		entry := AgentEntry{Agent: s.Agent, Name: s.Name}
 		imports := slices.ContainsFunc(imported, func(c Candidate) bool { return slices.Contains(c.From, entry) })
 		// A second config's line says the first is imported instead; untrue once the user unticked it.
-		return imports || (s.Reason == SkipSecondConfig && !importsTheName(imported, s.Name))
+		_, second := s.Cause.(SecondConfigSkip)
+		return imports || (second && !importsTheName(imported, s.Name))
 	})
 }
 

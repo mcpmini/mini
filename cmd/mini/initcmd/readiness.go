@@ -1,6 +1,7 @@
 package initcmd
 
 import (
+	"errors"
 	"slices"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -8,20 +9,51 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-type Readiness int
+//sumtype:decl
+type Readiness interface {
+	readiness()
+}
 
-const (
-	Ready Readiness = iota
-	NeedsLogin
-	NeedsToken
-	NeedsOwnApp
-	NeedsEnv
+type (
+	ReadyState       struct{}
+	NeedsLoginState  struct{}
+	NeedsTokenState  struct{}
+	NeedsOwnAppState struct{}
+	NeedsEnvState    struct {
+		Names []string
+		Field string
+	}
 )
+
+func (ReadyState) readiness()       {}
+func (NeedsLoginState) readiness()  {}
+func (NeedsTokenState) readiness()  {}
+func (NeedsOwnAppState) readiness() {}
+func (NeedsEnvState) readiness()    {}
 
 // ServerStatus is one enabled server and what the user still has to do before it works.
 type ServerStatus struct {
 	Name      string
 	Readiness Readiness
+}
+
+// Ready treats an absent readiness as the default ready state.
+func (s ServerStatus) Ready() bool {
+	if s.Readiness == nil {
+		return true
+	}
+	_, ready := s.Readiness.(ReadyState)
+	return ready
+}
+
+func (s ServerStatus) NeedsLogin() bool {
+	_, needs := s.Readiness.(NeedsLoginState)
+	return needs
+}
+
+func (s ServerStatus) NeedsOwnApp() bool {
+	_, needs := s.Readiness.(NeedsOwnAppState)
+	return needs
 }
 
 // ServerStatuses judges every enabled server as mini would load it. Catalog entries say which
@@ -41,23 +73,23 @@ func ServerStatuses(configDir string, entries []catalog.Entry) ([]ServerStatus, 
 }
 
 func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.Entry) ServerStatus {
-	status := ServerStatus{Name: sc.Name}
+	status := ServerStatus{Name: sc.Name, Readiness: ReadyState{}}
 	if sc.UnsetEnv != nil {
-		status.Readiness = NeedsEnv
+		status.Readiness = envReadiness(sc.UnsetEnv)
 		return status
 	}
 	if entry, ok := catalogEntryFor(sc, entries); ok {
 		switch {
 		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
-			status.Readiness = NeedsToken
+			status.Readiness = NeedsTokenState{}
 			return status
 		case entry.Auth == catalog.AuthOAuth2App && !hasOwnApp(sc):
-			status.Readiness = NeedsOwnApp
+			status.Readiness = NeedsOwnAppState{}
 			return status
 		}
 	}
 	if sc.UsesOAuthLogin() && needsLogin(configDir, sc.Name) {
-		status.Readiness = NeedsLogin
+		status.Readiness = NeedsLoginState{}
 	}
 	return status
 }
@@ -92,13 +124,21 @@ func hasOwnApp(sc config.ServerConfig) bool {
 // Step says what the server still needs, naming only a login or a custom OAuth app; for anything
 // else, env vars included, the step is the server's file, to keep init's output simple.
 func (s ServerStatus) Step(file, login string) string {
-	switch s.Readiness {
-	case Ready:
+	switch s.Readiness.(type) {
+	case ReadyState, nil:
 		return ""
-	case NeedsLogin:
+	case NeedsLoginState:
 		return "requires a login, run: " + login
-	case NeedsOwnApp:
+	case NeedsOwnAppState:
 		return "requires a custom OAuth app, edit " + file
 	}
 	return "requires manual configuration, edit " + file
+}
+
+func envReadiness(err error) NeedsEnvState {
+	var unset *config.UnsetEnvError
+	if errors.As(err, &unset) && unset != nil {
+		return NeedsEnvState{Names: unset.Names, Field: unset.Field}
+	}
+	return NeedsEnvState{}
 }

@@ -50,10 +50,10 @@ func loginsText(s *loginsScreen) string {
 func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequire(t *testing.T) {
 	checks := newFakeChecks(
 		initcmd.ServerStatus{Name: "ready"},
-		initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken},
-		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "asana", Readiness: initcmd.NeedsOwnApp},
-		initcmd.ServerStatus{Name: "files", Readiness: initcmd.NeedsEnv},
+		initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsTokenState{}},
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLoginState{}},
+		initcmd.ServerStatus{Name: "asana", Readiness: initcmd.NeedsOwnAppState{}},
+		initcmd.ServerStatus{Name: "files", Readiness: initcmd.NeedsEnvState{}},
 	)
 	s := checks.screen()
 	s.resize(120, 30)
@@ -110,9 +110,9 @@ func TestLoginsScreen_byHandServersAreListedBelowTheLoginRowsAndAreNotRows(t *te
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			statuses := []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLogin}}
+			statuses := []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLoginState{}}}
 			for _, name := range tc.byHand {
-				statuses = append(statuses, initcmd.ServerStatus{Name: name, Readiness: initcmd.NeedsToken})
+				statuses = append(statuses, initcmd.ServerStatus{Name: name, Readiness: initcmd.NeedsTokenState{}})
 			}
 			s := loginScreenWithStatuses(newFakeLogins(), statuses...)
 			s.resize(200, 30)
@@ -132,7 +132,10 @@ func TestLoginsScreen_byHandServersAreListedBelowTheLoginRowsAndAreNotRows(t *te
 }
 
 func TestLoginsScreen_onlyByHandServersLeaveAHeadingAndTheListWithContinue(t *testing.T) {
-	s := loginScreenWithStatuses(newFakeLogins(), initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken})
+	s := loginScreenWithStatuses(
+		newFakeLogins(),
+		initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsTokenState{}},
+	)
 	s.resize(200, 30)
 	a := framed(s, false)
 	want := "Browser login isn't available for this MCP, so you will need to configure it manually later:\n" +
@@ -173,7 +176,7 @@ func TestLoginsScreen_aServerBeingCheckedSaysSoUntilTheCheckFinishes(t *testing.
 	}
 
 	delete(checks.checking, "open")
-	checks.statuses[0].Readiness = initcmd.NeedsLogin
+	checks.statuses[0].Readiness = initcmd.NeedsLoginState{}
 	checks.changed <- struct{}{}
 	if next := s.update(wait()); next != nil || !strings.Contains(loginsText(s), "> open  press enter to log in") {
 		t.Errorf(
@@ -255,7 +258,7 @@ func (f *fakeLogins) start(ctx context.Context, _, name string) (Login, error) {
 func loginScreen(logins *fakeLogins, names ...string) *loginsScreen {
 	var statuses []initcmd.ServerStatus
 	for _, name := range names {
-		statuses = append(statuses, initcmd.ServerStatus{Name: name, Readiness: initcmd.NeedsLogin})
+		statuses = append(statuses, initcmd.ServerStatus{Name: name, Readiness: initcmd.NeedsLoginState{}})
 	}
 	return loginScreenWithStatuses(logins, statuses...)
 }
@@ -445,8 +448,8 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 	setup := func() (*fakeChecks, *loginsScreen, tea.Cmd) {
 		checks := newFakeChecks(
 			initcmd.ServerStatus{Name: "open"},
-			initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
-			initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
+			initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLoginState{}},
+			initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLoginState{}},
 		)
 		checks.checking["open"] = true
 		s := checks.screen()
@@ -461,7 +464,7 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 	t.Run("a row above it drops out", func(t *testing.T) {
 		checks, s, wait := setup()
 		s.handle(press("down"))
-		finish(checks, s, wait, initcmd.Ready)
+		finish(checks, s, wait, initcmd.ReadyState{})
 		if text := loginsText(s); !strings.Contains(text, "> sentry") {
 			t.Errorf("screen:\n%s\nwant the cursor still on sentry", text)
 		}
@@ -470,14 +473,14 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 		checks, s, wait := setup()
 		a := framed(s, false)
 		send(a, "down", "down")
-		finish(checks, s, wait, initcmd.NeedsLogin)
+		finish(checks, s, wait, initcmd.NeedsLoginState{})
 		if text := framedText(a); !strings.Contains(text, "> Continue") {
 			t.Errorf("screen:\n%s\nwant the cursor still on Continue", text)
 		}
 	})
 	t.Run("unmoved, it rests on the first login to do", func(t *testing.T) {
 		checks, s, wait := setup()
-		finish(checks, s, wait, initcmd.NeedsLogin)
+		finish(checks, s, wait, initcmd.NeedsLoginState{})
 		if text := loginsText(s); !strings.Contains(text, "> open") {
 			t.Errorf("screen:\n%s\nwant the cursor on open, now the first login", text)
 		}
@@ -487,10 +490,10 @@ func TestLoginsScreen_theCursorStaysOnTheUsersPickWhenACheckFinishes(t *testing.
 func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 	logins := newFakeLogins("linear", "sentry", "notion")
 	s := loginScreenWithStatuses(logins,
-		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "notion", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken},
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLoginState{}},
+		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLoginState{}},
+		initcmd.ServerStatus{Name: "notion", Readiness: initcmd.NeedsLoginState{}},
+		initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsTokenState{}},
 	)
 	s.resize(30, 30)
 	s.handle(press("down"))
@@ -511,11 +514,11 @@ func TestLoginsScreen_aShortWindowKeepsThePendingLoginsURLInView(t *testing.T) {
 }
 
 func TestLoginsScreen_manyByHandServersAreCutSoTheRowsAndContinueFit(t *testing.T) {
-	statuses := []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLogin}}
+	statuses := []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLoginState{}}}
 	for i := range 20 {
 		statuses = append(
 			statuses,
-			initcmd.ServerStatus{Name: fmt.Sprintf("token%d", i), Readiness: initcmd.NeedsToken},
+			initcmd.ServerStatus{Name: fmt.Sprintf("token%d", i), Readiness: initcmd.NeedsTokenState{}},
 		)
 	}
 	s := loginScreenWithStatuses(newFakeLogins(), statuses...)
@@ -609,8 +612,8 @@ func TestLoginsScreen_aReadErrorLeavesOnlyTheNavigation(t *testing.T) {
 
 func TestLoginsScreen_tabJumpsToContinueAndUpReturnsToTheServerItLeft(t *testing.T) {
 	s := newFakeChecks(
-		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLoginState{}},
+		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLoginState{}},
 	).screen()
 	showScreen(s)
 	a := framed(s, false)
@@ -630,9 +633,9 @@ func TestLoginsScreen_tabJumpsToContinueAndUpReturnsToTheServerItLeft(t *testing
 
 func TestLoginsScreen_upFromContinueFindsTheServerItLeftAfterARowAboveGoes(t *testing.T) {
 	f := newFakeChecks(
-		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLogin},
-		initcmd.ServerStatus{Name: "notion", Readiness: initcmd.NeedsLogin},
+		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLoginState{}},
+		initcmd.ServerStatus{Name: "sentry", Readiness: initcmd.NeedsLoginState{}},
+		initcmd.ServerStatus{Name: "notion", Readiness: initcmd.NeedsLoginState{}},
 	)
 	s := f.screen()
 	showScreen(s)
