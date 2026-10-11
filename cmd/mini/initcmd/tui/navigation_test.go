@@ -339,9 +339,9 @@ func TestNavigation_aDisabledChoiceIsDimTakesTheCursorAndIsNeverChosen(t *testin
 }
 
 func TestNavigation_aScreenOpensOnItsFirstEnabledChoice(t *testing.T) {
-	_, a := disablingAt(0)
-	send(a, "enter")
-	if view := shown(a); !strings.Contains(view, "> Drop") {
+	s := &disablingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}, off: map[int]bool{0: true}}
+	// The first frame is drawn before any message arrives, so opening alone must place the cursor.
+	if view := shown(framed(s, false)); !strings.Contains(view, "> Drop") {
 		t.Errorf("view:\n%s\nwant the cursor on Drop: Keep is disabled", view)
 	}
 }

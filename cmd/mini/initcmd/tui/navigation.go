@@ -105,16 +105,14 @@ func (a *app) reachNavigation() {
 // cursor from it.
 func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
 	a.nav.focus = focusNavigation
-	if key.String() == "up" || key.String() == "down" || key.String() == "tab" {
-		a.nav.moved = true
-	}
 	switch key.String() {
 	case "up":
+		a.nav.moved = true
 		a.moveUpNavigation()
 	case "down":
-		a.nav.at = min(a.nav.at+1, len(a.labels())-1)
+		a.nav.moved, a.nav.at = true, min(a.nav.at+1, len(a.labels())-1)
 	case "tab":
-		a.nav.at = 0
+		a.nav.moved, a.nav.at = true, 0
 	case "enter":
 		return a.act()
 	case "esc":

@@ -45,14 +45,8 @@ func TestCatalogScreen_aServerMiniRunsIsMarkedAndCantBeTicked(t *testing.T) {
 		strings.Contains(text, "will import") {
 		t.Fatalf("screen:\n%s\nwant Asana marked already in mini and only that explained", text)
 	}
-	if detail, legend := strings.Index(
-		text,
-		" · ",
-	), strings.Index(
-		text,
-		"✓ already in mini",
-	); detail < 0 ||
-		detail > legend {
+	detail, legend := strings.Index(text, " · "), strings.Index(text, "✓ already in mini")
+	if detail < 0 || detail > legend {
 		t.Errorf("screen:\n%s\nwant the cursor's server described above the legend", text)
 	}
 	pressAll(s, "right", "space", "a")
