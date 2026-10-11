@@ -97,7 +97,7 @@ func serverTransport(sc config.ServerConfig) string {
 	if sc.Transport == "" {
 		return "stdio"
 	}
-	return sc.Transport
+	return string(sc.Transport)
 }
 
 func serverTarget(sc config.ServerConfig) string {

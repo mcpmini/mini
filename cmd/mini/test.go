@@ -18,7 +18,7 @@ import (
 
 type upstreamResult struct {
 	name      string
-	transport string
+	transport config.TransportKind
 	tools     int
 	elapsed   time.Duration
 	err       error
@@ -173,9 +173,9 @@ func writeTestRow(w *tabwriter.Writer, r upstreamResult) error {
 	return err
 }
 
-func displayTransport(transport string) string {
+func displayTransport(transport config.TransportKind) string {
 	if transport == "" {
 		return "stdio"
 	}
-	return transport
+	return string(transport)
 }

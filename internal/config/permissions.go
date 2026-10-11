@@ -24,8 +24,8 @@ func listedTool(names []string, toolName string) bool {
 	})
 }
 
-func defaultPermissionLevel(level string) PermissionLevel {
-	switch PermissionLevel(level) {
+func defaultPermissionLevel(level PermissionLevel) PermissionLevel {
+	switch level {
 	case PermProtected:
 		return PermProtected
 	case PermHidden:

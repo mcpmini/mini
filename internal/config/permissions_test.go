@@ -18,7 +18,7 @@ func TestPermissionsLevelFor(t *testing.T) {
 		{
 			name: "hidden match wins case-insensitively",
 			perm: &PermissionsConfig{
-				Default:   string(PermOpen),
+				Default:   PermOpen,
 				Hidden:    []string{"DeleteRepo"},
 				Protected: []string{"DeleteRepo"},
 			},
@@ -28,7 +28,7 @@ func TestPermissionsLevelFor(t *testing.T) {
 		{
 			name: "protected match wins case-insensitively",
 			perm: &PermissionsConfig{
-				Default:   string(PermOpen),
+				Default:   PermOpen,
 				Protected: []string{"AdminTool"},
 			},
 			toolName: "admintool",
@@ -37,7 +37,7 @@ func TestPermissionsLevelFor(t *testing.T) {
 		{
 			name: "hidden default is applied",
 			perm: &PermissionsConfig{
-				Default: string(PermHidden),
+				Default: PermHidden,
 			},
 			toolName: "anything",
 			want:     PermHidden,
@@ -45,7 +45,7 @@ func TestPermissionsLevelFor(t *testing.T) {
 		{
 			name: "protected default is applied",
 			perm: &PermissionsConfig{
-				Default: string(PermProtected),
+				Default: PermProtected,
 			},
 			toolName: "anything",
 			want:     PermProtected,

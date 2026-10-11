@@ -31,14 +31,16 @@ func ParseTimeoutSpec(spec string, def time.Duration) (TimeoutSpec, error) {
 	return TimeoutSpec{Duration: d, Enabled: true}, nil
 }
 
+type ResponseFormat string
+
 const (
-	FormatJSON = "json"
-	FormatToon = "toon"
+	FormatJSON ResponseFormat = "json"
+	FormatToon ResponseFormat = "toon"
 )
 
 // EffectiveFormat returns the first non-empty of explicit, projection, and
 // global, in that priority order, defaulting to FormatJSON.
-func EffectiveFormat(explicit, projection, global string) string {
+func EffectiveFormat(explicit, projection, global ResponseFormat) ResponseFormat {
 	switch {
 	case explicit != "":
 		return explicit
@@ -52,7 +54,7 @@ func EffectiveFormat(explicit, projection, global string) string {
 }
 
 // ProjectionFormat returns p.Format, or "" if p is nil.
-func ProjectionFormat(p *ProjectionConfig) string {
+func ProjectionFormat(p *ProjectionConfig) ResponseFormat {
 	if p == nil {
 		return ""
 	}
@@ -61,7 +63,7 @@ func ProjectionFormat(p *ProjectionConfig) string {
 
 // ValidResponseFormat reports whether format is a recognized response_format
 // or projection format value.
-func ValidResponseFormat(format string) error {
+func ValidResponseFormat(format ResponseFormat) error {
 	switch format {
 	case "", FormatJSON, FormatToon:
 		return nil
@@ -106,7 +108,7 @@ type Config struct {
 	// ResponseFormat controls how tool results are rendered to agents.
 	// "json" (default) returns the full envelope. "toon" encodes the same
 	// envelope as TOON — useful for agents that handle plain text better.
-	ResponseFormat string `yaml:"response_format"`
+	ResponseFormat ResponseFormat `yaml:"response_format"`
 
 	// LogLevel: debug, info, warn, error. Default: info.
 	LogLevel string `yaml:"log_level"`
@@ -134,9 +136,12 @@ type Config struct {
 	DisableAuthBrowserOpen bool `yaml:"disable_auth_browser_open,omitempty"`
 }
 
-// SessionModePerSession is the session_mode value that gives each session its own upstream connection.
-// The default (empty string or "shared") pools connections across sessions.
-const SessionModePerSession = "per_session"
+type SessionMode string
+
+const (
+	SessionModeShared     SessionMode = "shared"
+	SessionModePerSession SessionMode = "per_session"
+)
 
 var DefaultContentFields = []string{
 	"body", "description", "text", "readme", "content", "message", "summary", "patch",
@@ -154,6 +159,15 @@ func DefaultConfig() *Config {
 	}
 }
 
+type TransportKind string
+
+const (
+	TransportStdio      TransportKind = "stdio"
+	TransportHTTP       TransportKind = "http"
+	TransportSSE        TransportKind = "sse"
+	TransportStreamable TransportKind = "streamable"
+)
+
 // ServerConfig describes one upstream MCP server.
 type ServerConfig struct {
 	// Name is never read from a server file: on disk, the file name servers/<name>.yaml names the server.
@@ -167,7 +181,7 @@ type ServerConfig struct {
 	Env []string `yaml:"env,omitempty"`
 
 	// Transport type: "stdio" (default), "sse", "streamable".
-	Transport string `yaml:"transport,omitempty"`
+	Transport TransportKind `yaml:"transport,omitempty"`
 
 	// URL for SSE/streamable transport.
 	URL string `yaml:"url,omitempty"`
@@ -211,7 +225,7 @@ type ServerConfig struct {
 	// SessionMode controls upstream connection sharing:
 	//   "shared" (default) — one connection pooled across all sessions (stateless APIs)
 	//   "per_session"      — one connection per session (Playwright, Puppeteer, Memory)
-	SessionMode string `yaml:"session_mode,omitempty"`
+	SessionMode SessionMode `yaml:"session_mode,omitempty"`
 
 	// Enabled defaults to true.
 	Enabled *bool `yaml:"enabled,omitempty"`
@@ -230,22 +244,24 @@ func (sc ServerConfig) IsEnabled() bool {
 
 func (sc ServerConfig) IsHTTPTransport() bool {
 	switch sc.Transport {
-	case "http", "sse", "streamable":
+	case TransportHTTP, TransportSSE, TransportStreamable:
 		return true
 	}
 	return false
 }
 
+type AuthKind string
+
 const (
-	AuthTypeAPIKey = "apikey"
-	AuthTypeBearer = "bearer"
-	AuthTypeOAuth2 = "oauth2"
+	AuthTypeAPIKey AuthKind = "apikey"
+	AuthTypeBearer AuthKind = "bearer"
+	AuthTypeOAuth2 AuthKind = "oauth2"
 )
 
 // AuthConfig describes how to authenticate with an upstream server.
 type AuthConfig struct {
 	// Type: AuthTypeAPIKey, AuthTypeBearer, or AuthTypeOAuth2
-	Type string `yaml:"type"`
+	Type AuthKind `yaml:"type"`
 
 	// For apikey/bearer: the token value or env var reference (${MY_TOKEN})
 	Token string `yaml:"token,omitempty"`
@@ -296,7 +312,7 @@ func (a *AuthConfig) HeaderName() string {
 // PermissionsConfig defines tool access tiers for a server.
 type PermissionsConfig struct {
 	// Default tier for tools not explicitly listed: "open" (default) or "protected"
-	Default string `yaml:"default"`
+	Default PermissionLevel `yaml:"default"`
 
 	// Protected tools require execute_protected + human approval.
 	Protected []string `yaml:"protected"`
@@ -327,5 +343,5 @@ type ProjectionConfig struct {
 	StringLimits map[string]int `yaml:"string_limits,omitempty" json:"string_limits,omitempty"`
 	DepthLimit   int            `yaml:"depth_limit,omitempty"    json:"depth_limit,omitempty"`
 	StripMarkup  bool           `yaml:"strip_markup,omitempty"   json:"strip_markup,omitempty"`
-	Format       string         `yaml:"format,omitempty"         json:"format,omitempty"`
+	Format       ResponseFormat `yaml:"format,omitempty"         json:"format,omitempty"`
 }

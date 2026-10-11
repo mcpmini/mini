@@ -36,9 +36,9 @@ func SameServer(a, b config.ServerConfig) bool {
 	return len(ConnectionDifferences(a, b)) == 0
 }
 
-func transportOrStdio(transport string) string {
+func transportOrStdio(transport config.TransportKind) config.TransportKind {
 	if transport == "" {
-		return "stdio"
+		return config.TransportStdio
 	}
 	return transport
 }

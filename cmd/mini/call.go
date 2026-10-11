@@ -276,11 +276,11 @@ func readParamBytes(arg string) ([]byte, error) {
 	return io.ReadAll(os.Stdin)
 }
 
-func resolveCallOutput(f callFlags, projFormat, cfgFormat string) callOutput {
+func resolveCallOutput(f callFlags, projFormat, cfgFormat config.ResponseFormat) callOutput {
 	if f.raw {
 		return callOutputRaw
 	}
-	explicit := ""
+	var explicit config.ResponseFormat
 	if f.toon {
 		explicit = config.FormatToon
 	} else if f.json {

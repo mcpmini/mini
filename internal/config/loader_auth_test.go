@@ -319,7 +319,7 @@ func TestServerConfig_UsesOAuthLogin(t *testing.T) {
 	}
 }
 
-func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType, wantClientID string) {
+func assertAuthConfig(t *testing.T, sc config.ServerConfig, wantType config.AuthKind, wantClientID string) {
 	t.Helper()
 	if sc.Auth == nil {
 		t.Fatal("expected auth config to be loaded")

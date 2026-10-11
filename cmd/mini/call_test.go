@@ -15,8 +15,8 @@ func TestResolveCallOutput(t *testing.T) {
 	cases := []struct {
 		name       string
 		f          callFlags
-		projFormat string
-		cfgFormat  string
+		projFormat config.ResponseFormat
+		cfgFormat  config.ResponseFormat
 		want       callOutput
 	}{
 		{name: "raw flag", f: callFlags{raw: true}, projFormat: "", cfgFormat: "", want: callOutputRaw},
@@ -156,7 +156,7 @@ func TestCallPermissionError(t *testing.T) {
 		}
 	})
 	t.Run("hidden default wins", func(t *testing.T) {
-		perm := &config.PermissionsConfig{Default: string(config.PermHidden)}
+		perm := &config.PermissionsConfig{Default: config.PermHidden}
 		code, _, blocked := callPermissionError(perm, "anything", true)
 		if !blocked || code != 1 {
 			t.Fatalf("expected hidden default block, got blocked=%v code=%d", blocked, code)

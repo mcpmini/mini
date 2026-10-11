@@ -7,12 +7,15 @@ import (
 	"sort"
 )
 
+type format int
+
 const (
-	fmtPassthrough = iota
+	fmtPassthrough format = iota
 	fmtProjected
 	fmtToon
-	numFormats = 3
 )
+
+const numFormats = 3
 
 var fmtLabel = [numFormats]string{"passthrough", "projected", "toon"}
 

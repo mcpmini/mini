@@ -15,7 +15,7 @@ import (
 	"github.com/mcpmini/mini/internal/transport"
 )
 
-func newSrvWithFormat(t *testing.T, format string) *server.Server {
+func newSrvWithFormat(t *testing.T, format config.ResponseFormat) *server.Server {
 	return newSrvWithResponse(
 		t,
 		format,
@@ -23,7 +23,7 @@ func newSrvWithFormat(t *testing.T, format string) *server.Server {
 	)
 }
 
-func newSrvWithResponse(t *testing.T, format string, payload string) *server.Server {
+func newSrvWithResponse(t *testing.T, format config.ResponseFormat, payload string) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseFormat = format
@@ -90,7 +90,7 @@ func TestJSONFormatDefault(t *testing.T) {
 	}
 }
 
-func newSrvWithConfigFormat(t *testing.T, format string) *server.Server {
+func newSrvWithConfigFormat(t *testing.T, format config.ResponseFormat) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseFormat = format
@@ -218,7 +218,7 @@ func toolErrFakeConn() *transport.FakeConnection {
 	}
 }
 
-func newSrvConfigDirAndToolErr(t *testing.T, globalFormat string) *server.Server {
+func newSrvConfigDirAndToolErr(t *testing.T, globalFormat config.ResponseFormat) *server.Server {
 	t.Helper()
 	cfg := config.DefaultConfig()
 	cfg.ResponseFormat = globalFormat
