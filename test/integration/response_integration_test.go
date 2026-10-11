@@ -14,6 +14,7 @@ import (
 )
 
 func TestIntegrationResponse_inlineSmallResponse(t *testing.T) {
+	t.Parallel()
 	e := quickServer(t, map[string]string{"get_item": `{"id":1,"name":"small"}`}).execEnvelope("svc", "get_item", nil)
 	if e.Error != "" {
 		t.Fatalf("expected ok=true, got: %+v", e)
@@ -24,6 +25,7 @@ func TestIntegrationResponse_inlineSmallResponse(t *testing.T) {
 }
 
 func TestIntegrationResponse_projectedResponseWrittenToRawFile(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -53,6 +55,7 @@ func TestIntegrationResponse_projectedResponseWrittenToRawFile(t *testing.T) {
 }
 
 func TestIntegrationResponse_responseFileIsValidJSON(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -84,6 +87,7 @@ func TestIntegrationResponse_responseFileIsValidJSON(t *testing.T) {
 }
 
 func TestIntegrationResponse_okFalseOnUpstreamError(t *testing.T) {
+	t.Parallel()
 	e := quickServer(t, map[string]string{
 		"failing_tool": `{"__mcp_error": "service unavailable"}`,
 	}).execEnvelope("svc", "failing_tool", nil)
@@ -94,6 +98,7 @@ func TestIntegrationResponse_okFalseOnUpstreamError(t *testing.T) {
 }
 
 func TestIntegrationResponse_execOkField(t *testing.T) {
+	t.Parallel()
 	e := quickServer(t, map[string]string{"get_item": `{"id":1}`}).execEnvelope("svc", "get_item", nil)
 	if e.Error != "" {
 		t.Errorf("expected ok=true on successful call, got: %+v", e)

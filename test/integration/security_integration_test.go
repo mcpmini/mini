@@ -16,6 +16,7 @@ func noSSRFClient(t *testing.T) *mcpClient {
 }
 
 func TestIntegrationSecurity_SSRFBlocks0000(t *testing.T) {
+	t.Parallel()
 	isErr, _ := addServerViaRPC(t, noSSRFClient(t), "x", "http://0.0.0.0/mcp")
 	if !isErr {
 		t.Error("expected SSRF error for 0.0.0.0")
@@ -23,6 +24,7 @@ func TestIntegrationSecurity_SSRFBlocks0000(t *testing.T) {
 }
 
 func TestIntegrationSecurity_SSRFBlocksIPv6Mapped(t *testing.T) {
+	t.Parallel()
 	isErr, _ := addServerViaRPC(t, noSSRFClient(t), "x", "http://[::ffff:127.0.0.1]/mcp")
 	if !isErr {
 		t.Error("expected SSRF error for IPv4-mapped IPv6")
@@ -30,6 +32,7 @@ func TestIntegrationSecurity_SSRFBlocksIPv6Mapped(t *testing.T) {
 }
 
 func TestIntegrationSecurity_oversizedClaudeConfig(t *testing.T) {
+	t.Parallel()
 	_, _, code := runCLI(t, t.TempDir(), "add", "--from-claude", writeOversizedFile(t, 64<<20))
 	if code == 0 {
 		t.Error("add --from-claude with oversized file should exit non-zero")
@@ -37,6 +40,7 @@ func TestIntegrationSecurity_oversizedClaudeConfig(t *testing.T) {
 }
 
 func TestIntegrationSecurity_timeoutNoReconnect(t *testing.T) {
+	t.Parallel()
 	// A tool_timeout that fires should return an error but NOT trigger a reconnect
 	// (reconnect is only for connection errors, not context cancellations)
 	client := faultServer(t,
@@ -59,6 +63,7 @@ func TestIntegrationSecurity_timeoutNoReconnect(t *testing.T) {
 }
 
 func TestIntegrationSecurity_PermissionCaseMismatch(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"MyTool": `{"id":1}`})
 	writeFakeServer(t, cfg, fakeServerParams{

@@ -78,6 +78,7 @@ func decodeEnvironment(t *testing.T, raw json.RawMessage) map[string]string {
 }
 
 func TestIntegrationStdioEnvironment_helper(t *testing.T) {
+	t.Parallel()
 	if !slices.Contains(os.Args, "mini-env-helper") {
 		return
 	}
@@ -99,6 +100,7 @@ func TestIntegrationStdioEnvironment_helper(t *testing.T) {
 }
 
 func TestIntegrationStdioConnection_aFailedHandshakeReturnsWhenAChildOfTheServerHoldsStderr(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("needs sh")
 	}
