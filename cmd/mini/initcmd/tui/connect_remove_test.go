@@ -66,14 +66,26 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 			t.Errorf("screen:\n%s\nwant Claude's removal only: Codex has nothing mini replaces", text)
 		}
 	})
-	t.Run("nothing passed", func(t *testing.T) {
-		plan := newFakePlan(map[string][]string{"Claude": {"files"}})
-		s, check := connectScreenFor(t, plan, namedAgents("Claude"), nil)
+	t.Run("nothing passed names the ticked agents' MCPs that don't work yet", func(t *testing.T) {
+		plan := newFakePlan(
+			map[string][]string{"Claude": {"linear"}, "Codex": {"sentry", "linear"}, "Cursor": {"datadog"}},
+		)
+		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex", "Cursor"), nil)
+		s.ticked["Cursor"] = false
 		plan.release <- initcmd.Removals{}
 		s.update(check())
-		want := "None of these MCPs work in mini yet, so nothing will be removed."
+		want := "Nothing will be removed: linear and sentry don't work in mini yet."
 		if text := connectText(s); !strings.Contains(text, want) || strings.Contains(text, "backed up") {
-			t.Errorf("screen:\n%s\nwant it to say nothing can be removed yet", text)
+			t.Errorf("screen:\n%s\nwant it to name linear and sentry once each, and not Cursor's datadog", text)
+		}
+		s.ticked["Codex"] = false
+		if text := connectText(
+			s,
+		); !strings.Contains(
+			text,
+			"Nothing will be removed: linear doesn't work in mini yet.",
+		) {
+			t.Errorf("screen with only Claude ticked:\n%s\nwant only linear named", text)
 		}
 	})
 	t.Run("an agent that has mini and nothing to remove gets no line", func(t *testing.T) {

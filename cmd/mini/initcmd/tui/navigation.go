@@ -97,15 +97,19 @@ func (a *app) disabledChoice(i int) bool {
 }
 
 func (a *app) settleDefaultChoice() {
-	if a.nav.moved || !a.disabledChoice(a.nav.at) {
-		return
+	if !a.nav.moved && a.disabledChoice(a.nav.at) {
+		a.nav.at = a.firstEnabledLabel()
 	}
+}
+
+// Jumping to the choices lands where enter does something.
+func (a *app) firstEnabledLabel() int {
 	for i := range a.labels() {
 		if !a.disabledChoice(i) {
-			a.nav.at = i
-			return
+			return i
 		}
 	}
+	return 0
 }
 
 // Back goes away under the cursor when the screens before this one empty.
@@ -114,7 +118,7 @@ func (a *app) clampNavigationCursor() {
 }
 
 func (a *app) reachNavigation() {
-	a.nav.focus, a.nav.at = focusNavigation, 0
+	a.nav.focus, a.nav.at = focusNavigation, a.firstEnabledLabel()
 }
 
 // A key on the navigation makes it the user's choice, so a row that appears later doesn't take the
@@ -128,7 +132,7 @@ func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
 	case "down":
 		a.nav.moved, a.nav.at = true, min(a.nav.at+1, len(a.labels())-1)
 	case "tab":
-		a.nav.moved, a.nav.at = true, 0
+		a.nav.moved, a.nav.at = true, a.firstEnabledLabel()
 	case "enter":
 		return a.act()
 	case "esc":

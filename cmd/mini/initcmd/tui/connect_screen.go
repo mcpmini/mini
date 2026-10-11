@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 
 type connectPlan interface {
 	HasDuplicates(agent string) bool
+	DuplicatedServers(agent string) []string
 	Check(ctx context.Context) initcmd.Removals
 }
 
@@ -164,9 +166,26 @@ func (s *connectScreen) unavailableBecause(choice initcmd.ConnectChoice) string 
 		return "Nothing to remove from the ticked agents."
 	}
 	if s.checks.done && len(s.picksWithRemovals()) == 0 {
-		return "None of these MCPs work in mini yet, so nothing will be removed."
+		return s.nothingWorksYet()
 	}
 	return ""
+}
+
+func (s *connectScreen) nothingWorksYet() string {
+	var names []string
+	for _, agent := range s.picked() {
+		for _, name := range s.plan.DuplicatedServers(agent.Name) {
+			if !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	slices.Sort(names)
+	verb := "don't"
+	if len(names) == 1 {
+		verb = "doesn't"
+	}
+	return fmt.Sprintf("Nothing will be removed: %s %s work in mini yet.", initcmd.JoinAnd(names), verb)
 }
 
 func (s *connectScreen) body(height int, focused bool) string {

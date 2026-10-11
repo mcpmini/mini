@@ -362,6 +362,29 @@ func TestNavigation_theUntouchedDefaultLeavesAChoiceThatBecomesDisabled(t *testi
 	}
 }
 
+func TestNavigation_tabAndDownPastTheRowsLandOnTheFirstEnabledChoice(t *testing.T) {
+	for _, key := range []string{"tab", "down"} {
+		t.Run(key, func(t *testing.T) {
+			s := &disablingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}, off: map[int]bool{0: true}}
+			a := framed(s, false)
+			// The user went down to the choices and back up, so the cursor no longer follows the default.
+			a.nav.focus, a.nav.moved = focusRows, true
+			send(a, key)
+			if view := shown(a); !strings.Contains(view, "> Drop") {
+				t.Errorf("view after %s:\n%s\nwant the cursor on Drop: enter does nothing on disabled Keep", key, view)
+			}
+		})
+	}
+}
+
+func TestNavigation_tabOnTheChoicesReturnsToTheFirstEnabledChoice(t *testing.T) {
+	_, a := disablingAt(0)
+	send(a, "enter", "down", "tab")
+	if view := shown(a); !strings.Contains(view, "> Drop") {
+		t.Errorf("view after tab from Park:\n%s\nwant the cursor on Drop, not disabled Keep", view)
+	}
+}
+
 func TestNavigation_upFromTheFirstChoiceReturnsToTheRows(t *testing.T) {
 	_, a := disablingAt(0)
 	send(a, "enter", "up")
