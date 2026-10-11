@@ -84,7 +84,7 @@ func TestContinueHints_importNamesNoCatalogThatFailedToLoad(t *testing.T) {
 func TestContinueHints_catalogNamesNothingItsSaveCouldChange(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("sentry")}}
 	for name, setup := range map[string]initcmd.Setup{
-		"an OAuth pick":                 setupFor(t.TempDir()),
+		"an OAuth pick":                 connectingSetup(t.TempDir(), stdioAgent("Codex")),
 		"a configured server to finish": connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex")),
 	} {
 		t.Run(name, func(t *testing.T) {

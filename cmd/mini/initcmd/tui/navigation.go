@@ -156,7 +156,7 @@ func (a *app) arrivalHint() string {
 		return ""
 	}
 	next += a.at + 1
-	if a.saves.save != nil && a.at <= a.saves.after && next > a.saves.after {
+	if a.saves.crossedBy(a.at, next) {
 		return ""
 	}
 	if d, ok := a.screens[next].(destination); ok {

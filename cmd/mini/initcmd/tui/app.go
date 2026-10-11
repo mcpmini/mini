@@ -39,8 +39,8 @@ type screen interface {
 	empty() bool
 }
 
-// A screen whose rows depend on what earlier screens wrote reads them again each time the app
-// moves past or onto it, or onto a screen before it.
+// A screen whose rows depend on what earlier screens wrote reads them again whenever the app looks
+// for the next screen to show.
 type refresher interface {
 	refresh()
 }
@@ -109,6 +109,10 @@ type savePoint struct {
 	after int
 	save  func()
 	saved bool
+}
+
+func (p savePoint) crossedBy(from, to int) bool {
+	return p.save != nil && from <= p.after && to > p.after
 }
 
 const minWidth, minHeight = 60, 12
@@ -245,9 +249,12 @@ func (a *app) leave() {
 
 func (a *app) forward() tea.Cmd {
 	next, ok := a.next(a.at, 1)
-	passes := a.at <= a.saves.after && (!ok || next > a.saves.after)
+	to := next
+	if !ok {
+		to = len(a.screens)
+	}
 	// A run that starts on Logins, past the save point, still saves before finishing.
-	if a.saves.save != nil && (passes || (!ok && !a.saves.saved)) {
+	if a.saves.crossedBy(a.at, to) || (a.saves.save != nil && !ok && !a.saves.saved) {
 		a.saves.save()
 		a.saves.saved = true
 		// Saving can empty or fill the screens after it.
