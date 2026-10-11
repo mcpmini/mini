@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"slices"
-
 	tea "charm.land/bubbletea/v2"
 )
 
@@ -151,12 +149,8 @@ func (a *app) navigationText(label string) string {
 
 // Past the save point the next screen depends on what the save writes, so no hint there could be relied on.
 func (a *app) arrivalHint() string {
-	next := slices.IndexFunc(a.screens[a.at+1:], func(s screen) bool { return !s.empty() })
-	if next < 0 {
-		return ""
-	}
-	next += a.at + 1
-	if a.saves.crossedBy(a.at, next) {
+	next, ok := a.nextShown(a.at, 1)
+	if !ok || a.saves.crossedBy(a.at, next) {
 		return ""
 	}
 	if d, ok := a.screens[next].(destination); ok {

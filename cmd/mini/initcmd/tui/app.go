@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -144,10 +143,24 @@ func (a *app) hasScreens() bool {
 }
 
 func (a *app) next(from, direction int) (int, bool) {
+	a.refreshUpToNext(from, direction)
+	return a.nextShown(from, direction)
+}
+
+func (a *app) refreshUpToNext(from, direction int) {
 	for i := from + direction; i >= 0 && i < len(a.screens); i += direction {
 		if r, ok := a.screens[i].(refresher); ok {
 			r.refresh()
 		}
+		if !a.screens[i].empty() {
+			return
+		}
+	}
+}
+
+// nextShown answers from what each screen last read, so a frame can ask it.
+func (a *app) nextShown(from, direction int) (int, bool) {
+	for i := from + direction; i >= 0 && i < len(a.screens); i += direction {
 		if !a.screens[i].empty() {
 			return i, true
 		}
@@ -270,7 +283,7 @@ func (a *app) forward() tea.Cmd {
 func (a *app) show(at int) tea.Cmd {
 	a.moveTo(at)
 	// The Continue row names the next screen from its empty(), which only a refresh brings up to date.
-	a.next(at, 1)
+	a.refreshUpToNext(at, 1)
 	if s, ok := a.screens[at].(enterer); ok {
 		return s.enter()
 	}
@@ -384,6 +397,6 @@ func (a *app) keys(s screen) string {
 }
 
 func (a *app) canGoBack() bool {
-	// next refreshes screens, which a frame must not do.
-	return slices.ContainsFunc(a.screens[:a.at], func(s screen) bool { return !s.empty() })
+	_, ok := a.nextShown(a.at, -1)
+	return ok
 }
