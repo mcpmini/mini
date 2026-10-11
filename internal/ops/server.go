@@ -64,10 +64,11 @@ func ServerStatePaths(configDir, name string) []string {
 // ForgetServerState removes a server's login and detected state, so a new server of the same name
 // starts clean.
 func ForgetServerState(configDir, name string) error {
-	for _, path := range ServerStatePaths(configDir, name) {
-		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("forget %s state: %w", name, err)
-		}
+	if err := auth.DeleteCredentials(configDir, name); err != nil {
+		return fmt.Errorf("forget %s credentials: %w", name, err)
+	}
+	if err := os.Remove(config.ServerMetaPath(configDir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("forget %s state: %w", name, err)
 	}
 	return nil
 }

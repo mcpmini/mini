@@ -236,7 +236,7 @@ func TestAddServer(t *testing.T) {
 
 		_, err := ops.AddServer(dir, config.ServerConfig{Name: "stuck", Command: "run"})
 
-		if err == nil || !strings.Contains(err.Error(), "forget stuck state") {
+		if err == nil || !strings.Contains(err.Error(), "forget stuck credentials") {
 			t.Fatalf("err = %v, want the credential cleanup error", err)
 		}
 		if fileExists(filepath.Join(dir, "servers", "stuck.yaml")) {

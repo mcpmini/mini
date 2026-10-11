@@ -94,15 +94,21 @@ func sweepStaleStages(configDir string) {
 
 // commit moves each named server into mini, its login and state first, so a daemon that sees the
 // server finds its login already there.
-func (s *stage) commit(names []string) (committed []string, failed []ServerError) {
+func (s *stage) commit(names []string) commitResult {
+	var result commitResult
 	for _, name := range names {
 		if err := s.commitServer(name); err != nil {
-			failed = append(failed, ServerError{Name: name, Err: err})
+			result.failed = append(result.failed, ServerError{Name: name, Err: err})
 			continue
 		}
-		committed = append(committed, name)
+		result.committed = append(result.committed, name)
 	}
-	return committed, failed
+	return result
+}
+
+type commitResult struct {
+	committed []string
+	failed    []ServerError
 }
 
 func (s *stage) commitServer(name string) error {

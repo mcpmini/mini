@@ -59,7 +59,8 @@ func TestStage(t *testing.T) {
 		s := newTestStage(t, configDir)
 		stageServer(t, s, "linear")
 
-		committed, failed := s.commit([]string{"linear"})
+		result := s.commit([]string{"linear"})
+		committed, failed := result.committed, result.failed
 
 		if !slices.Equal(committed, []string{"linear"}) || len(failed) > 0 {
 			t.Fatalf("commit = %v, %v; want linear committed", committed, failed)
@@ -85,7 +86,7 @@ func TestStage(t *testing.T) {
 		s := newTestStage(t, configDir)
 		stageServer(t, s, "linear")
 
-		if _, failed := s.commit([]string{"linear"}); len(failed) > 0 {
+		if failed := s.commit([]string{"linear"}).failed; len(failed) > 0 {
 			t.Fatalf("commit failed: %v", failed)
 		}
 
@@ -101,7 +102,8 @@ func TestStage(t *testing.T) {
 		testutil.WriteFile(t, filepath.Join(configDir, "servers", "linear.yaml"), "url: https://theirs.example/mcp\n")
 		testutil.WriteFile(t, filepath.Join(configDir, "internal", "linear.token.json"), `{"access_token":"theirs"}`)
 
-		committed, failed := s.commit([]string{"linear"})
+		result := s.commit([]string{"linear"})
+		committed, failed := result.committed, result.failed
 
 		if len(committed) > 0 || len(failed) != 1 || !errors.Is(failed[0].Err, errAddedOutsideInit) {
 			t.Errorf("commit = %v, %v; want linear reported as added outside init", committed, failed)
@@ -165,7 +167,7 @@ func TestStage(t *testing.T) {
 		theirs := filepath.Join(configDir, "internal", "Linear.token.json")
 		testutil.WriteFile(t, theirs, `{"access_token":"theirs"}`)
 
-		_, failed := s.commit([]string{"linear"})
+		failed := s.commit([]string{"linear"}).failed
 
 		if len(failed) != 1 || !errors.Is(failed[0].Err, errAddedOutsideInit) {
 			t.Errorf("failed = %v, want linear reported as added outside init", failed)

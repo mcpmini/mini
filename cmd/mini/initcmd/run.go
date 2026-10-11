@@ -14,13 +14,11 @@ import (
 // Finish commits them to mini. Checking and ChecksChanged are safe from any goroutine; the other
 // methods belong to one.
 type Run struct {
-	Plan         Plan
-	setup        Setup
-	stage        *stage
-	session      *session
-	last         syncResult
-	committed    []string
-	commitFailed []ServerError
+	Plan    Plan
+	setup   Setup
+	stage   *stage
+	session *session
+	last    syncResult
 }
 
 func (s Setup) Start(p Plan) *Run {
@@ -87,10 +85,10 @@ func (r *Run) ChecksChanged() <-chan struct{} {
 // reporting: the report reads both the servers and the agents' configs.
 func (r *Run) Finish(ctx context.Context, connect ConnectParams) Report {
 	r.session.WaitChecks()
-	r.committed, r.commitFailed = r.stage.commit(r.session.Written())
+	committed := r.stage.commit(r.session.Written())
 	r.discardStage()
 	connected := r.setup.connectAgents(ctx, connect)
-	report := r.report()
+	report := r.report(committed)
 	report.Connected = connected
 	return report
 }
@@ -107,14 +105,14 @@ func (r *Run) discardStage() {
 	}
 }
 
-func (r *Run) report() Report {
+func (r *Run) report(c commitResult) Report {
 	p := r.Plan
 	report := r.setup.report()
 	report.Import = p.Import
 	adds := planAdds(p.Import.picked(), p.Add, p.written)
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
-	report.WriteErrors = slices.Concat(r.last.Failed, r.commitFailed)
-	report.Import.keepOnly(report.Import.importedOf(r.committed))
+	report.WriteErrors = slices.Concat(r.last.Failed, c.failed)
+	report.Import.keepOnly(report.Import.importedOf(c.committed))
 	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, p.Catalog)
 	return report
 }
