@@ -3,6 +3,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -17,13 +18,13 @@ import (
 
 func continueAfter(t *testing.T, setup initcmd.Setup, c catalog.Catalog, keys ...string) string {
 	t.Helper()
-	return continueLine(screenAfter(t, setup, c, keys...))
+	return continueLine(screenAfter(t, setup, fromCatalog(c), keys...))
 }
 
-func screenAfter(t *testing.T, setup initcmd.Setup, c catalog.Catalog, keys ...string) string {
+func screenAfter(t *testing.T, setup initcmd.Setup, load func() (catalog.Catalog, error), keys ...string) string {
 	t.Helper()
 	var view string
-	_, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(c), Program: func(m tea.Model) error {
+	_, err := Run(Params{Setup: setup, LoadCatalog: load, Program: func(m tea.Model) error {
 		pressing(keys...)(m)
 		view = shown(m.(*app))
 		return nil
@@ -72,6 +73,14 @@ func TestContinueHints_importNamesTheCatalogOnlyWhenItHasServersToOffer(t *testi
 	}
 }
 
+func TestContinueHints_importNamesNoCatalogThatFailedToLoad(t *testing.T) {
+	failing := func() (catalog.Catalog, error) { return catalog.Catalog{}, errors.New("offline") }
+	view := screenAfter(t, setupFor(t.TempDir(), stdioAgent("Codex", "files")), failing)
+	if line := continueLine(view); line != "  Continue" {
+		t.Errorf("Continue line on Import = %q, want no hint: Catalog has only its load error to show", line)
+	}
+}
+
 func TestContinueHints_catalogNamesNothingItsSaveCouldChange(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("sentry")}}
 	for name, setup := range map[string]initcmd.Setup{
@@ -96,18 +105,8 @@ func TestContinueHints_loginsNamesConnectOnlyWhenContinueOpensIt(t *testing.T) {
 		if line := continueAfter(t, setup, c, "tab", "enter"); line != "> Continue   add mini to your agents" {
 			t.Errorf("Continue line on Logins = %q, want add mini to your agents", line)
 		}
-		if view := screenAfter(
-			t,
-			setup,
-			c,
-			"tab",
-			"enter",
-			"tab",
-			"enter",
-		); !strings.Contains(
-			view,
-			"Connect mini to Codex",
-		) {
+		view := screenAfter(t, setup, fromCatalog(c), "tab", "enter", "tab", "enter")
+		if !strings.Contains(view, "Connect mini to Codex") {
 			t.Errorf("after Continue on Logins:\n%s\nwant Connect, which the hint named", view)
 		}
 	})

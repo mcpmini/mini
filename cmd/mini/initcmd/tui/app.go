@@ -40,7 +40,7 @@ type screen interface {
 }
 
 // A screen whose rows depend on what earlier screens wrote reads them again each time the app
-// moves past or onto it.
+// moves past or onto it, or onto a screen before it.
 type refresher interface {
 	refresh()
 }
@@ -262,6 +262,8 @@ func (a *app) forward() tea.Cmd {
 
 func (a *app) show(at int) tea.Cmd {
 	a.moveTo(at)
+	// The Continue row names the next screen from its empty(), which only a refresh brings up to date.
+	a.next(at, 1)
 	if s, ok := a.screens[at].(enterer); ok {
 		return s.enter()
 	}

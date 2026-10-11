@@ -299,3 +299,7 @@ func (s *connectScreen) picked() []agents.Agent {
 func (s *connectScreen) chosenConnect() initcmd.ConnectParams {
 	return initcmd.ConnectParams{Agents: s.picked(), Choice: s.chosen, Removals: s.checks.removals}
 }
+
+func (s *connectScreen) arrivalHint() string {
+	return "add mini to your agents"
+}

@@ -96,8 +96,6 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		connects: newConnects(p.Setup, run),
 	}
 	ui.logins = newLogins(p, run, ui.catalog)
-	ui.imports.hint, ui.logins.hint = importHint(catalogs), loginsHint(ui.connects)
-	ui.logins.refreshConnect = ui.connects.refresh
 	return ui
 }
 

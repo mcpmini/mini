@@ -1,6 +1,10 @@
 package tui
 
-import tea "charm.land/bubbletea/v2"
+import (
+	"slices"
+
+	tea "charm.land/bubbletea/v2"
+)
 
 const (
 	continueLabel = "Continue"
@@ -19,19 +23,9 @@ type finisher interface {
 	finished() bool
 }
 
-type hinter interface {
-	continueHint() string
-}
-
-type hinted struct {
-	hint func() string
-}
-
-func (h hinted) continueHint() string {
-	if h.hint == nil {
-		return ""
-	}
-	return h.hint()
+// A screen Continue can open says what opening it does, for the Continue row before it.
+type destination interface {
+	arrivalHint() string
 }
 
 type focus int
@@ -146,17 +140,29 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 }
 
 func (a *app) navigationText(label string) string {
-	if _, choosing := a.current().(chooser); choosing || label != continueLabel {
+	if label != continueLabel {
 		return label
 	}
-	h, ok := a.current().(hinter)
-	if !ok {
-		return label
-	}
-	if hint := h.continueHint(); hint != "" {
+	if hint := a.arrivalHint(); hint != "" {
 		return label + "   " + dim.Render(hint)
 	}
 	return label
+}
+
+// Past the save point the next screen depends on what the save writes, so no hint there could be relied on.
+func (a *app) arrivalHint() string {
+	next := slices.IndexFunc(a.screens[a.at+1:], func(s screen) bool { return !s.empty() })
+	if next < 0 {
+		return ""
+	}
+	next += a.at + 1
+	if a.saves.save != nil && a.at <= a.saves.after && next > a.saves.after {
+		return ""
+	}
+	if d, ok := a.screens[next].(destination); ok {
+		return d.arrivalHint()
+	}
+	return ""
 }
 
 func (a *app) navigationKeys() string {

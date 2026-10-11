@@ -222,3 +222,10 @@ func (s *catalogScreen) empty() bool {
 func (s *catalogScreen) picks() []catalog.Entry {
 	return slices.DeleteFunc(s.offered(), func(e catalog.Entry) bool { return !s.checked[e.Name] })
 }
+
+func (s *catalogScreen) arrivalHint() string {
+	if s.loadErr != nil {
+		return ""
+	}
+	return "browse popular MCPs"
+}

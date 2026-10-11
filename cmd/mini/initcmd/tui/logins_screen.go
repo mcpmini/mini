@@ -50,8 +50,6 @@ type loginsScreen struct {
 	cursorMoved bool
 	// One waiting command covers every running check.
 	waitingOnChecks bool
-	hinted
-	refreshConnect func()
 }
 
 func newLoginsScreen(p loginsParams) *loginsScreen {
@@ -127,9 +125,6 @@ func (s *loginsScreen) forget(servers []string) {
 }
 
 func (s *loginsScreen) enter() tea.Cmd {
-	if s.refreshConnect != nil {
-		s.refreshConnect()
-	}
 	s.cursorMoved = false
 	s.restOnNextLogin()
 	return s.waitWhileChecking()

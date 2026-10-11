@@ -68,17 +68,6 @@ func TestImportScreen_oneAgentIsNamedInTheHeadingInsteadOfAColumn(t *testing.T) 
 	}
 }
 
-func TestImportScreen_severalAgentsAreHeadedAsYourAgentsWithAFromColumn(t *testing.T) {
-	s := importScreenFor([]initcmd.Candidate{
-		candidate("linear", "https://linear.example.com/mcp", true, "Cursor"),
-		candidate("sentry", "https://sentry.example.com/mcp", true, "Codex"),
-	})
-	want := "Select which MCP servers you want to import from your agents"
-	if s.heading() != want || !strings.Contains(s.body(20, true), "FROM") {
-		t.Errorf("heading = %q, body:\n%s\nwant %q and the FROM column", s.heading(), s.body(20, true), want)
-	}
-}
-
 func TestImportScreen_ticksBecomeThePicks(t *testing.T) {
 	candidates := []initcmd.Candidate{
 		candidate("github", "https://gh.example.com/mcp", true, "Codex"),

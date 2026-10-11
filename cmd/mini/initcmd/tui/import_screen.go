@@ -17,7 +17,6 @@ type importScreen struct {
 	inMini     []initcmd.Candidate
 	agents     []string
 	list       *list
-	hinted
 }
 
 func newImportScreen(plan initcmd.ImportPlan) *importScreen {
