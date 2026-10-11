@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/mcpmini/mini/internal/agents"
-	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -71,31 +71,45 @@ func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
 
 func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width int) string {
 	file := config.ServerPath(configDir, s.Name)
-	more := "\n" + strings.Repeat(" ", width+4)
+	if step, ok := stepInFile(file, mini, s); ok {
+		return step
+	}
 	switch s.Readiness {
 	case NeedsToken:
-		return fmt.Sprintf(
-			"needs a token: create one at %s, then add to %s:%s  headers:%s    Authorization: Bearer ${%s}",
-			s.SetupURL,
-			file,
-			more,
-			more,
-			TokenEnvVar(s.Name),
-		)
+		return "needs a token: " + addStep(file, catalog.AuthToken, s.SetupURL, width)
 	case NeedsEnv:
 		return fmt.Sprintf("needs %s set where mini runs (used in %s), or edit %s",
 			strings.Join(s.UnsetEnv.Names, ", "), s.UnsetEnv.Field, file)
 	case NeedsOwnApp:
-		return fmt.Sprintf("needs your own OAuth app: register one at %s with redirect URI %s, then add to %s:%s"+
-			"  auth:%s    type: oauth2%s    client_id: <your app's client ID>%sand run: %s",
-			s.SetupURL, auth.ResolvedCallbackURI(nil), file, more, more, more, more, miniCommand(mini, "auth", s.Name))
+		return "needs your own OAuth app: " + addStep(file, catalog.AuthOAuth2App, s.SetupURL, width) +
+			"\n" + strings.Repeat(" ", width+4) + "and run: " + miniCommand(mini, "auth", s.Name)
 	}
 	return "run: " + miniCommand(mini, "auth", s.Name)
 }
 
-// TokenEnvVar is the variable the token setup step tells the user to hold a server's token in.
-func TokenEnvVar(serverName string) string {
-	return strings.ToUpper(strings.ReplaceAll(serverName, "-", "_")) + "_TOKEN"
+// addStep is the credential step for a server whose file doesn't hold it, indented under its name.
+func addStep(file, authKind, setupURL string, width int) string {
+	intro, block := credentialSteps(authKind, setupURL)
+	more := "\n" + strings.Repeat(" ", width+6)
+	return lowerFirst(intro) + ", then add to " + file + ":" + more + strings.Join(block, more)
+}
+
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
+}
+
+func stepInFile(file string, mini agents.MiniEntry, s ServerStatus) (string, bool) {
+	switch {
+	case s.StepsInFile && s.Readiness == NeedsToken:
+		return "needs a token: finish the steps in " + file, true
+	case s.StepsInFile && s.Readiness == NeedsOwnApp:
+		return fmt.Sprintf("needs your own OAuth app: finish the steps in %s, then run: %s",
+			file, miniCommand(mini, "auth", s.Name)), true
+	}
+	return "", false
 }
 
 // Commands carry the config directory whenever agents are given one, so they act on the same servers.

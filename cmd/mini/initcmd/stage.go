@@ -116,7 +116,7 @@ func (s *stage) commitServer(name string) error {
 	if taken, err := serverNameTaken(s.configDir, name); err != nil || taken {
 		return cmp.Or(err, errAddedOutsideInit)
 	}
-	sc, err := config.ReadUnexpandedServer(s.dir, name)
+	data, err := os.ReadFile(config.ServerPath(s.dir, name))
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (s *stage) commitServer(name string) error {
 	}
 	// Created, not replaced: a server added in the moment since the name check is someone else's. Its
 	// login may already be overwritten; holding a lock across mini's commands would be the only cure.
-	_, err = config.CreateServerFile(s.configDir, sc)
+	_, err = config.CreateServerFileData(s.configDir, name, data)
 	if errors.Is(err, fs.ErrExist) {
 		return errAddedOutsideInit
 	}

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -67,6 +68,38 @@ func TestReplaceServerKey(t *testing.T) {
 			if _, err := ReplaceServerKey([]byte(data), "url", value); err == nil {
 				t.Errorf("ReplaceServerKey(%q) succeeded, want an error", data)
 			}
+		}
+	})
+}
+
+func TestPrependServerComment(t *testing.T) {
+	t.Run("adds the lines as comments before the keys, keeping comments already there", func(t *testing.T) {
+		got, err := PrependServerComment(
+			[]byte("# mine\n\nurl: https://x.example/mcp # kept\n"),
+			"uncomment:\nheaders:\n    A: b",
+		)
+		want := "# uncomment:\n# headers:\n#     A: b\n# mine\n\nurl: https://x.example/mcp # kept\n"
+		if err != nil || string(got) != want {
+			t.Fatalf("PrependServerComment = %q, %v; want %q", got, err, want)
+		}
+	})
+	t.Run("the comment survives a projection saved later", func(t *testing.T) {
+		dir := t.TempDir()
+		data, err := PrependServerComment([]byte("url: https://x.example/mcp\n"), "a hint")
+		if err != nil {
+			t.Fatal(err)
+		}
+		testutil.WriteFileBytes(t, ServerPath(dir, "svc"), data)
+
+		_, err = SaveServerProjection(ServerProjectionParams{
+			ConfigDir: dir, ServerName: "svc", Tool: "list", Projection: &ProjectionConfig{Exclude: []string{"x"}},
+		})
+
+		if got := string(
+			testutil.ReadFile(t, ServerPath(dir, "svc")),
+		); err != nil ||
+			!strings.HasPrefix(got, "# a hint\n") {
+			t.Errorf("after SaveServerProjection = %q, %v; want the hint kept at the top", got, err)
 		}
 	})
 }

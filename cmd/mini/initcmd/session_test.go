@@ -86,12 +86,12 @@ func waitChanged(t *testing.T, s *session) {
 func TestSessionSync_isADeltaAgainstThisRun(t *testing.T) {
 	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
 	kept := config.ServerConfig{Name: "kept", Command: "run"}
-	s.Sync([]config.ServerConfig{httpServer("dropped", "https://dropped.example/mcp"), kept})
+	s.Sync([]config.ServerConfig{httpServer("dropped", "https://dropped.example/mcp"), kept}, nil)
 	keptPath := config.ServerPath(dir, "kept")
 	marked := append(testutil.ReadFile(t, keptPath), "# untouched\n"...)
 	testutil.WriteFileBytes(t, keptPath, marked)
 
-	result := s.Sync([]config.ServerConfig{kept, httpServer("new", "https://new.example/mcp")})
+	result := s.Sync([]config.ServerConfig{kept, httpServer("new", "https://new.example/mcp")}, nil)
 
 	if !reflect.DeepEqual(result.Removed, []string{"dropped"}) || !reflect.DeepEqual(result.Added, []string{"new"}) ||
 		result.Failed != nil {
@@ -107,9 +107,9 @@ func TestSessionSync_isADeltaAgainstThisRun(t *testing.T) {
 
 func TestSessionSync_aChangedSourceIsWrittenAgain(t *testing.T) {
 	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
-	s.Sync([]config.ServerConfig{httpServer("github", "https://catalog.example/mcp")})
+	s.Sync([]config.ServerConfig{httpServer("github", "https://catalog.example/mcp")}, nil)
 
-	result := s.Sync([]config.ServerConfig{httpServer("github", "https://imported.example/mcp")})
+	result := s.Sync([]config.ServerConfig{httpServer("github", "https://imported.example/mcp")}, nil)
 
 	if !reflect.DeepEqual(result.Removed, []string{"github"}) || !reflect.DeepEqual(result.Added, []string{"github"}) {
 		t.Errorf("result = %+v, want github removed and added again", result)
@@ -124,16 +124,33 @@ func TestSessionSync_aChangedSourceIsWrittenAgain(t *testing.T) {
 	}
 }
 
+func TestSessionSync_aServerWhoseSetupCommentChangedIsWrittenAgain(t *testing.T) {
+	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
+	github := httpServer("github", "https://github.example/mcp")
+	s.Sync([]config.ServerConfig{github}, nil)
+
+	s.Sync([]config.ServerConfig{github}, map[string]string{"github": "add your token"})
+
+	if got := string(
+		testutil.ReadFile(t, config.ServerPath(dir, "github")),
+	); !strings.Contains(
+		got,
+		"# add your token",
+	) {
+		t.Errorf("github.yaml:\n%s\nwant the setup comment the second save asked for", got)
+	}
+}
+
 func TestSessionChecks_aChangedServerIsCheckedAgain(t *testing.T) {
 	probe := newFakeProbe(false)
 	s, _ := newTestSession(t, probe, clock.System())
-	s.Sync([]config.ServerConfig{httpServer("github", "https://catalog.example/mcp")})
+	s.Sync([]config.ServerConfig{httpServer("github", "https://catalog.example/mcp")}, nil)
 	waitStarted(t, probe)
 	for s.Running()["github"] {
 		waitChanged(t, s)
 	}
 
-	s.Sync([]config.ServerConfig{httpServer("github", "https://imported.example/mcp")})
+	s.Sync([]config.ServerConfig{httpServer("github", "https://imported.example/mcp")}, nil)
 	s.Close()
 
 	if probed, _ := probe.counts(); !reflect.DeepEqual(probed, []string{"github", "github"}) {
@@ -145,10 +162,10 @@ func TestSessionSync_aChangeMadeThroughSharedMapsIsStillWritten(t *testing.T) {
 	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
 	github := httpServer("github", "https://gh.example/mcp")
 	github.Headers = map[string]string{"X-Team": "first"}
-	s.Sync([]config.ServerConfig{github})
+	s.Sync([]config.ServerConfig{github}, nil)
 
 	github.Headers["X-Team"] = "second"
-	result := s.Sync([]config.ServerConfig{github})
+	result := s.Sync([]config.ServerConfig{github}, nil)
 
 	if !reflect.DeepEqual(result.Added, []string{"github"}) {
 		t.Errorf("result = %+v, want github written again", result)
@@ -160,10 +177,10 @@ func TestSessionSync_aChangeMadeThroughSharedMapsIsStillWritten(t *testing.T) {
 
 func TestSessionSync_aRejectedReplacementKeepsTheWrittenServer(t *testing.T) {
 	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
-	s.Sync([]config.ServerConfig{{Name: "svc", Command: "run"}})
+	s.Sync([]config.ServerConfig{{Name: "svc", Command: "run"}}, nil)
 	before := testutil.ReadFile(t, config.ServerPath(dir, "svc"))
 
-	result := s.Sync([]config.ServerConfig{{Name: "svc", Command: "run", HandshakeTimeout: "nonsense"}})
+	result := s.Sync([]config.ServerConfig{{Name: "svc", Command: "run", HandshakeTimeout: "nonsense"}}, nil)
 
 	if len(result.Failed) != 1 || result.Failed[0].Name != "svc" || result.Removed != nil {
 		t.Errorf("result = %+v, want svc reported as failed and nothing removed", result)
@@ -177,11 +194,11 @@ func TestSessionSync_neverRemovesServersFromBeforeTheRun(t *testing.T) {
 	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "existing", Command: "run"})
 
-	result := s.Sync([]config.ServerConfig{{Name: "existing", Command: "other"}})
+	result := s.Sync([]config.ServerConfig{{Name: "existing", Command: "other"}}, nil)
 	if len(result.Failed) != 1 || !errors.Is(result.Failed[0].Err, ops.ErrAlreadyConfigured) {
 		t.Errorf("failed = %+v, want existing reported as already configured", result.Failed)
 	}
-	s.Sync(nil)
+	s.Sync(nil, nil)
 	if !config.ServerFileExists(dir, "existing") {
 		t.Error("a server configured before the run was removed")
 	}
@@ -200,6 +217,7 @@ func TestSessionChecks_onlyWrittenHTTPServersWithoutCredentials(t *testing.T) {
 			withHeader,
 			{Name: "local", Command: "run"},
 		},
+		nil,
 	)
 	s.Close()
 
@@ -213,7 +231,7 @@ func TestSessionChecks_aBrokenUnrelatedServerFileDoesNotStopTheChecks(t *testing
 	s, dir := newTestSession(t, probe, clock.System())
 	testutil.WriteFile(t, config.ServerPath(dir, "broken"), "transport: [unclosed\n")
 
-	s.Sync([]config.ServerConfig{httpServer("open", "https://open.example/mcp")})
+	s.Sync([]config.ServerConfig{httpServer("open", "https://open.example/mcp")}, nil)
 	s.Close()
 
 	if probed, _ := probe.counts(); !reflect.DeepEqual(probed, []string{"open"}) {
@@ -225,13 +243,13 @@ func TestSessionChecks_resyncCancelsWaitsAndChecksAgain(t *testing.T) {
 	probe := newFakeProbe(true)
 	s, _ := newTestSession(t, probe, clock.System())
 	open := httpServer("open", "https://open.example/mcp")
-	s.Sync([]config.ServerConfig{open})
+	s.Sync([]config.ServerConfig{open}, nil)
 	waitStarted(t, probe)
 	if !s.Running()["open"] {
 		t.Fatal("Checking = false while the check runs")
 	}
 
-	s.Sync([]config.ServerConfig{open})
+	s.Sync([]config.ServerConfig{open}, nil)
 
 	if _, finished := probe.counts(); finished != 1 {
 		t.Errorf("Sync returned with %d checks finished, want the cancelled one finished", finished)
@@ -246,7 +264,7 @@ func TestSessionChecks_aTimedOutCheckIsDone(t *testing.T) {
 	probe, fake := newFakeProbe(true), clock.NewFake()
 	s, _ := newTestSession(t, probe, fake)
 	open := httpServer("open", "https://open.example/mcp")
-	s.Sync([]config.ServerConfig{open})
+	s.Sync([]config.ServerConfig{open}, nil)
 	waitChanged(t, s)
 	waitStarted(t, probe)
 	if err := fake.BlockUntilContext(t.Context(), 1); err != nil {
@@ -259,7 +277,7 @@ func TestSessionChecks_aTimedOutCheckIsDone(t *testing.T) {
 	if s.Running()["open"] {
 		t.Error("Checking = true after the timeout")
 	}
-	s.Sync([]config.ServerConfig{open})
+	s.Sync([]config.ServerConfig{open}, nil)
 	s.Close()
 	if probed, _ := probe.counts(); len(probed) != 1 {
 		t.Errorf("probed = %v, want the finished check not repeated", probed)
@@ -269,7 +287,7 @@ func TestSessionChecks_aTimedOutCheckIsDone(t *testing.T) {
 func TestSessionClose_cancelsAndWaitsForChecks(t *testing.T) {
 	probe := newFakeProbe(true)
 	s, _ := newTestSession(t, probe, clock.System())
-	s.Sync([]config.ServerConfig{httpServer("open", "https://open.example/mcp")})
+	s.Sync([]config.ServerConfig{httpServer("open", "https://open.example/mcp")}, nil)
 	waitStarted(t, probe)
 
 	s.Close()

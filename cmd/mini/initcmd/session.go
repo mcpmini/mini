@@ -3,7 +3,9 @@ package initcmd
 import (
 	"bytes"
 	"context"
+	"log"
 	"maps"
+	"os"
 	"slices"
 	"sync"
 
@@ -11,6 +13,7 @@ import (
 
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/fileio"
 	"github.com/mcpmini/mini/internal/ops"
 )
 
@@ -36,17 +39,18 @@ type session struct {
 
 type writtenServer struct {
 	// Bytes, not the config: the caller still shares its maps and pointers.
-	encoded []byte
+	encoded      []byte
+	setupComment string
 }
 
-func newWrittenServer(sc config.ServerConfig) writtenServer {
+func newWrittenServer(sc config.ServerConfig, setupComment string) writtenServer {
 	encoded, _ := yaml.Marshal(sc) //nolint:errcheck // AddServer just encoded the same config without error
-	return writtenServer{encoded: encoded}
+	return writtenServer{encoded: encoded, setupComment: setupComment}
 }
 
-func (w writtenServer) sameAs(sc config.ServerConfig) bool {
+func (w writtenServer) sameAs(sc config.ServerConfig, setupComment string) bool {
 	encoded, err := yaml.Marshal(sc)
-	return err == nil && bytes.Equal(encoded, w.encoded)
+	return err == nil && bytes.Equal(encoded, w.encoded) && setupComment == w.setupComment
 }
 
 type checkRun struct {
@@ -75,19 +79,19 @@ func newSession(p sessionParams) *session {
 
 // Sync makes this run's servers match want. A changed config that mini would reject leaves the
 // previous one in place, reported as failed.
-func (s *session) Sync(want []config.ServerConfig) syncResult {
+func (s *session) Sync(want []config.ServerConfig, setupComments map[string]string) syncResult {
 	s.stopChecks()
 	var result syncResult
-	s.removeUnwanted(want, &result)
-	s.addMissing(want, &result)
+	s.removeUnwanted(want, setupComments, &result)
+	s.addMissing(want, setupComments, &result)
 	s.startChecks()
 	return result
 }
 
-func (s *session) removeUnwanted(want []config.ServerConfig, result *syncResult) {
+func (s *session) removeUnwanted(want []config.ServerConfig, setupComments map[string]string, result *syncResult) {
 	for _, name := range slices.Sorted(maps.Keys(s.written)) {
 		i := slices.IndexFunc(want, func(sc config.ServerConfig) bool { return sc.Name == name })
-		if i >= 0 && s.written[name].sameAs(want[i]) {
+		if i >= 0 && s.written[name].sameAs(want[i], setupComments[name]) {
 			continue
 		}
 		if i >= 0 {
@@ -108,18 +112,44 @@ func (s *session) removeUnwanted(want []config.ServerConfig, result *syncResult)
 	}
 }
 
-func (s *session) addMissing(want []config.ServerConfig, result *syncResult) {
+func (s *session) addMissing(want []config.ServerConfig, setupComments map[string]string, result *syncResult) {
 	for _, sc := range want {
 		if _, ok := s.written[sc.Name]; ok {
 			continue
 		}
-		if _, err := ops.AddServer(s.p.ConfigDir, sc); err != nil {
+		if err := s.add(sc, setupComments[sc.Name]); err != nil {
 			result.Failed = append(result.Failed, ServerError{Name: sc.Name, Err: err})
 			continue
 		}
-		s.written[sc.Name] = newWrittenServer(sc)
+		s.written[sc.Name] = newWrittenServer(sc, setupComments[sc.Name])
 		result.Added = append(result.Added, sc.Name)
 	}
+}
+
+func (s *session) add(sc config.ServerConfig, setupComment string) error {
+	added, err := ops.AddServer(s.p.ConfigDir, sc)
+	if err != nil {
+		return err
+	}
+	if setupComment != "" {
+		// Without its comment the server still works as written; only the hint is lost.
+		if err := prependSetupComment(added.Path, setupComment); err != nil {
+			log.Printf("init: add setup comment to %s: %v", added.Path, err)
+		}
+	}
+	return nil
+}
+
+func prependSetupComment(path, comment string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	data, err = config.PrependServerComment(data, comment)
+	if err != nil {
+		return err
+	}
+	return fileio.ReplaceFile(path, data, fileio.ReplaceOptions{Perm: 0o600})
 }
 
 func (s *session) Written() []string {

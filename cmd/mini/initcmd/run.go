@@ -23,18 +23,19 @@ type Run struct {
 
 func (s Setup) Start(p Plan) *Run {
 	st := newStage(s.ConfigDir)
-	return &Run{Plan: p, setup: s, stage: st, session: s.newSession(st.dir)}
+	return &Run{Plan: p, setup: s, stage: st, session: newSession(sessionParams{ConfigDir: st.dir, Probe: s.probe()})}
 }
 
 // Save stages the plan's servers and starts checking the new ones for OAuth. It returns the servers
 // it removed, credentials included, so a login done for them no longer applies.
 func (r *Run) Save() (removed []string) {
+	adds := r.Plan.adds()
 	if err := r.stage.create(); err != nil {
-		r.last = syncResult{Failed: failedAll(r.Plan.Servers(), err)}
+		r.last = syncResult{Failed: failedAll(adds.write, err)}
 		return nil
 	}
 	r.stage.touch()
-	r.last = r.session.Sync(r.Plan.Servers())
+	r.last = r.session.Sync(adds.write, adds.setupComments)
 	return r.last.Removed
 }
 
@@ -109,7 +110,7 @@ func (r *Run) report(c commitResult) Report {
 	p := r.Plan
 	report := r.setup.report()
 	report.Import = p.Import
-	adds := planAdds(p.Import.picked(), p.Add, p.written)
+	adds := p.adds()
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
 	report.WriteErrors = slices.Concat(r.last.Failed, c.failed)
 	report.Import.keepOnly(report.Import.importedOf(c.committed))

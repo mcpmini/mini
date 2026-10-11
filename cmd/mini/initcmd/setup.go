@@ -87,13 +87,9 @@ func (s Setup) Write(p Plan) Report {
 	return run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
 }
 
-func (s Setup) newSession(dir string) *session {
-	return newSession(sessionParams{ConfigDir: dir, Probe: s.probe()})
-}
-
-// Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
-func (p Plan) Servers() []config.ServerConfig {
-	return planAdds(p.Import.picked(), p.Add, p.written).write
+// adds is the picked imports, then the catalog adds that nothing configured or imported covers.
+func (p Plan) adds() addPlan {
+	return planAdds(p.Import.picked(), p.Add, p.written)
 }
 
 func (s Setup) report() Report {
@@ -164,10 +160,11 @@ type addPlan struct {
 	write             []config.ServerConfig
 	alreadyConfigured []string
 	coveredByImport   []string
+	setupComments     map[string]string
 }
 
 func planAdds(imports []config.ServerConfig, add []catalog.Entry, written WrittenServers) addPlan {
-	p := addPlan{write: slices.Clone(imports)}
+	p := addPlan{write: slices.Clone(imports), setupComments: map[string]string{}}
 	configuredKeys := NewConfiguredKeys(written)
 	imported := NewConfiguredKeys(p.write)
 	for _, entry := range add {
@@ -178,6 +175,9 @@ func planAdds(imports []config.ServerConfig, add []catalog.Entry, written Writte
 			p.coveredByImport = append(p.coveredByImport, entry.Name)
 		default:
 			p.write = append(p.write, catalogServer(entry))
+			if comment := credentialComment(entry); comment != "" {
+				p.setupComments[entry.Name] = comment
+			}
 		}
 	}
 	return p
