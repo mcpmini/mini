@@ -124,6 +124,23 @@ func TestSessionSync_aChangedSourceIsWrittenAgain(t *testing.T) {
 	}
 }
 
+func TestSessionSync_aServerWhoseSetupCommentChangedIsWrittenAgain(t *testing.T) {
+	s, dir := newTestSession(t, newFakeProbe(false), clock.System())
+	github := httpServer("github", "https://github.example/mcp")
+	s.Sync([]config.ServerConfig{github}, nil)
+
+	s.Sync([]config.ServerConfig{github}, map[string]string{"github": "add your token"})
+
+	if got := string(
+		testutil.ReadFile(t, config.ServerPath(dir, "github")),
+	); !strings.Contains(
+		got,
+		"# add your token",
+	) {
+		t.Errorf("github.yaml:\n%s\nwant the setup comment the second save asked for", got)
+	}
+}
+
 func TestSessionChecks_aChangedServerIsCheckedAgain(t *testing.T) {
 	probe := newFakeProbe(false)
 	s, _ := newTestSession(t, probe, clock.System())

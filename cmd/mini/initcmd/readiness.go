@@ -53,9 +53,7 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 	}
 	if entry, ok := catalogEntryFor(sc, entries); ok {
 		status.SetupURL = entry.SetupURL
-		if data, err := os.ReadFile(config.ServerPath(configDir, sc.Name)); err == nil {
-			status.StepsInFile = setupCommentIn(data, entry) || holdsPlaceholder(sc)
-		}
+		status.StepsInFile = stepsInFile(configDir, sc, entry)
 		switch {
 		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
 			status.Readiness = NeedsToken
@@ -69,6 +67,15 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 		status.Readiness = NeedsLogin
 	}
 	return status
+}
+
+func stepsInFile(configDir string, sc config.ServerConfig, entry catalog.Entry) bool {
+	if holdsPlaceholder(sc) {
+		return true
+	}
+	data, err := os.ReadFile(config.ServerPath(configDir, sc.Name))
+	// A file that can't be read gets the summary's full step, which needs nothing from it.
+	return err == nil && setupCommentIn(data, entry)
 }
 
 // A server is the catalog's when it runs the catalog's URL, under any name; one that only shares

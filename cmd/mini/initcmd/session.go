@@ -39,17 +39,18 @@ type session struct {
 
 type writtenServer struct {
 	// Bytes, not the config: the caller still shares its maps and pointers.
-	encoded []byte
+	encoded      []byte
+	setupComment string
 }
 
-func newWrittenServer(sc config.ServerConfig) writtenServer {
+func newWrittenServer(sc config.ServerConfig, setupComment string) writtenServer {
 	encoded, _ := yaml.Marshal(sc) //nolint:errcheck // AddServer just encoded the same config without error
-	return writtenServer{encoded: encoded}
+	return writtenServer{encoded: encoded, setupComment: setupComment}
 }
 
-func (w writtenServer) sameAs(sc config.ServerConfig) bool {
+func (w writtenServer) sameAs(sc config.ServerConfig, setupComment string) bool {
 	encoded, err := yaml.Marshal(sc)
-	return err == nil && bytes.Equal(encoded, w.encoded)
+	return err == nil && bytes.Equal(encoded, w.encoded) && setupComment == w.setupComment
 }
 
 type checkRun struct {
@@ -81,16 +82,16 @@ func newSession(p sessionParams) *session {
 func (s *session) Sync(want []config.ServerConfig, setupComments map[string]string) syncResult {
 	s.stopChecks()
 	var result syncResult
-	s.removeUnwanted(want, &result)
+	s.removeUnwanted(want, setupComments, &result)
 	s.addMissing(want, setupComments, &result)
 	s.startChecks()
 	return result
 }
 
-func (s *session) removeUnwanted(want []config.ServerConfig, result *syncResult) {
+func (s *session) removeUnwanted(want []config.ServerConfig, setupComments map[string]string, result *syncResult) {
 	for _, name := range slices.Sorted(maps.Keys(s.written)) {
 		i := slices.IndexFunc(want, func(sc config.ServerConfig) bool { return sc.Name == name })
-		if i >= 0 && s.written[name].sameAs(want[i]) {
+		if i >= 0 && s.written[name].sameAs(want[i], setupComments[name]) {
 			continue
 		}
 		if i >= 0 {
@@ -120,7 +121,7 @@ func (s *session) addMissing(want []config.ServerConfig, setupComments map[strin
 			result.Failed = append(result.Failed, ServerError{Name: sc.Name, Err: err})
 			continue
 		}
-		s.written[sc.Name] = newWrittenServer(sc)
+		s.written[sc.Name] = newWrittenServer(sc, setupComments[sc.Name])
 		result.Added = append(result.Added, sc.Name)
 	}
 }
