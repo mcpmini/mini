@@ -40,22 +40,46 @@ func TestReview_withNothingAddedPointsAtTheServersDir(t *testing.T) {
 	}
 }
 
-func TestReview_isEmptyWhileAnEarlierScreenStillShows(t *testing.T) {
+func TestReview_isEmptyWhileAScreenThatEndsTheRunInsteadShows(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		earlier []screen
-		want    bool
+		name          string
+		endingInstead []screen
+		want          bool
 	}{
-		{"nothing earlier shows", []screen{&fakeScreen{nothing: true}, &fakeScreen{nothing: true}}, false},
-		{"Logins shows", []screen{&fakeScreen{}, &fakeScreen{nothing: true}}, true},
-		{"Connect shows", []screen{&fakeScreen{nothing: true}, &fakeScreen{}}, true},
+		{"none shows", []screen{&fakeScreen{nothing: true}}, false},
+		{"one shows", []screen{&fakeScreen{}}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := reviewWith(nil, tc.earlier, []screen{&fakeScreen{}})
+			s := reviewWith(nil, tc.endingInstead, []screen{&fakeScreen{}})
 			if got := s.empty(); got != tc.want {
 				t.Errorf("empty() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestRun_aRunWithAnAgentToConnectEndsOnConnectNotReview(t *testing.T) {
+	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
+	setup := connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex"))
+	view := screenAfter(t, setup, fromCatalog(c), "tab", "enter", "tab", "enter", "down", "enter")
+	if !strings.Contains(view, "Connect mini to Codex") || strings.Contains(view, "Review and finish") {
+		t.Errorf(
+			"after choosing on Connect:\n%s\nwant the run ended on Connect: Review is only for runs without agents",
+			view,
+		)
+	}
+}
+
+func TestRun_aRunThatOnlyImportsEndsOnReview(t *testing.T) {
+	view := screenAfter(
+		t,
+		setupFor(t.TempDir(), stdioAgent("Codex", "files")),
+		fromCatalog(catalog.Catalog{}),
+		"tab",
+		"enter",
+	)
+	if !strings.Contains(view, "Review and finish") || !strings.Contains(view, "will be added to mini: files") {
+		t.Errorf("after Continue on Import:\n%s\nwant Review naming files", view)
 	}
 }
 
