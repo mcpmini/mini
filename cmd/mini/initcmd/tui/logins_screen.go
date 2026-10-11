@@ -292,17 +292,22 @@ func (s *loginsScreen) rowLines(status initcmd.ServerStatus, atCursor bool, widt
 }
 
 func (s *loginsScreen) rowText(status initcmd.ServerStatus, atCursor bool, width int) string {
-	var after []string
-	if state := s.state(status); state != "" {
-		after = append(after, state)
+	state, hint := s.state(status), ""
+	if atCursor {
+		hint = s.hint(status)
 	}
-	if hint := s.hint(status); atCursor && hint != "" {
-		after = append(after, dim.Render(hint))
-	}
-	if len(after) == 0 {
+	if state == "" && hint == "" {
 		return status.Name
 	}
-	return fmt.Sprintf("%-*s  %s", width, status.Name, strings.Join(after, "  "))
+	if hint != "" && state != "" {
+		// A failed login's error can run past the window, and the app would cut the hint after it.
+		room := s.width - len("> ") - width - len("  ") - len("  ") - len(hint)
+		state = ansi.Truncate(state, max(room, 1), "…") + "  "
+	}
+	if hint != "" {
+		hint = dim.Render(hint)
+	}
+	return fmt.Sprintf("%-*s  %s%s", width, status.Name, state, hint)
 }
 
 func (s *loginsScreen) hint(status initcmd.ServerStatus) string {

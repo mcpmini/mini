@@ -105,7 +105,6 @@ func hasOwnApp(sc config.ServerConfig) bool {
 	return !holdsPlaceholder(sc) && sc.Auth != nil && sc.Auth.ClientID != ""
 }
 
-// Requirement says what a server needs before it works, in a few words.
 func (s ServerStatus) Requirement() string {
 	switch s.Readiness {
 	case NeedsToken:

@@ -402,6 +402,22 @@ func TestLoginsScreen_aFailedLoginSaysToTryAgainOnItsRow(t *testing.T) {
 	}
 }
 
+func TestLoginsScreen_aLongLoginErrorIsCutSoTheRetryHintFits(t *testing.T) {
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	logins.ends["linear"] <- errors.New(`token exchange failed: 400 Bad Request: {"error":"invalid_grant"}`)
+	pressAndRun(s, "enter")
+	a := framed(s, false)
+	a.width = 80
+	send(a, "up")
+	row := strings.Split(framedText(a), "\n")[0]
+	if !strings.HasPrefix(row, "> linear  ✗ login failed: token") ||
+		!strings.HasSuffix(row, "…  press enter to try again") ||
+		ansi.StringWidth(row) > 80 {
+		t.Errorf("row %q: want the error cut short so the retry hint fits in 80 columns", row)
+	}
+}
+
 func TestLoginsScreen_aTimedOutLoginSaysSoAndCanBeTriedAgain(t *testing.T) {
 	logins := newFakeLogins("linear")
 	s := loginScreen(logins, "linear")
