@@ -114,7 +114,7 @@ func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
 	want := "> Just connect mini\n" +
 		"  Adds mini to your agent configurations and leaves existing MCP configurations alone.\n" +
 		"  I'll connect mini later\n" +
-		"  Saves the MCPs to mini and leaves your agent configurations alone."
+		"  Leaves your agent configurations alone."
 	if text := connectText(s); s.heading() != "Connect mini to Claude" || text != want {
 		t.Fatalf("%s\n%s\nwant the heading to name Claude, and:\n%s", s.heading(), text, want)
 	}
@@ -143,7 +143,7 @@ func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) 
 	text = framedText(a)
 	saves := strings.Contains(
 		linesUnder(s, initcmd.DontConnect),
-		"Saves the MCPs to mini and leaves your agent configurations alone.",
+		"Leaves your agent configurations alone.",
 	)
 	if !strings.Contains(text, "> [ ] Codex\n") || !saves {
 		t.Errorf(
@@ -286,7 +286,7 @@ func TestConnectScreen_withNoAgentTickedTheConnectChoicesSayToTickOne(t *testing
 	a := framed(s, false)
 	send(a, "up", "a", "tab")
 	want := "  Just connect mini\n  Tick the agents above to connect mini to them\n" +
-		"> I'll connect mini later\n  Saves the MCPs to mini and leaves your agent configurations alone."
+		"> I'll connect mini later\n  Leaves your agent configurations alone."
 	if text := framedText(a); !strings.Contains(text, want) {
 		t.Fatalf(
 			"screen with nothing ticked:\n%s\nwant the connect choices dimmed, the cursor skipping to later, and:\n%s",
@@ -361,7 +361,7 @@ func TestConnectScreen_aTicksEveryAgentAndBackFollowsTheChoices(t *testing.T) {
 	if got := pickedNames(s); strings.Join(got, ",") != "Claude,Codex" {
 		t.Errorf("picked after a again = %v, want both", got)
 	}
-	lastChoice := "  Saves the MCPs to mini and leaves your agent configurations alone.\n  Back"
+	lastChoice := "  Leaves your agent configurations alone.\n  Back"
 	if text := framedText(a); !strings.HasSuffix(text, lastChoice) {
 		t.Errorf("screen:\n%s\nwant Back under the last choice", text)
 	}
@@ -405,7 +405,7 @@ func TestConnectScreen_twoTickedAgentsShowAllThreeChoicesAndTheirLinesAtOnce(t *
 		"  Just connect mini",
 		"  Adds mini to your agent configurations and leaves existing MCP configurations alone.",
 		"  I'll connect mini later",
-		"  Saves the MCPs to mini and leaves your agent configurations alone.",
+		"  Leaves your agent configurations alone.",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("screen:\n%s\nwant all three choices and their lines at once, missing %q", text, want)

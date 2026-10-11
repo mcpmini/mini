@@ -165,7 +165,10 @@ func (s *connectScreen) unavailableBecause(choice initcmd.ConnectChoice) string 
 	if choice != initcmd.ConnectAndRemove {
 		return ""
 	}
-	if s.checks.done && !s.anyPickedRemoves() {
+	if !s.anyHasDuplicates(s.picked()) {
+		return "Nothing to remove from the ticked agents."
+	}
+	if s.checks.done && len(s.picksWithRemovals()) == 0 {
 		return "None of these MCPs work in mini yet, so nothing will be removed."
 	}
 	return ""
@@ -230,19 +233,36 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []subtitle {
 	}
 	switch choice {
 	case initcmd.ConnectAndRemove:
-		return append([]subtitle{
-			{text: "Adds mini to your agent configurations."},
-			{text: "Your existing configurations will be backed up first.", bold: true},
-		}, s.removalSubtitles()...)
+		return s.removeSubtitles()
 	case initcmd.ConnectOnly:
 		return s.connectOnlySubtitles()
+	}
+	if len(s.p.added()) == 0 {
+		return []subtitle{{text: "Leaves your agent configurations alone."}}
 	}
 	return []subtitle{{text: "Saves the MCPs to mini and leaves your agent configurations alone."}}
 }
 
+// An agent is listed with mini already in it while it still has MCPs mini replaces.
+func (s *connectScreen) addsMini() bool {
+	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool { return !s.p.withMini[agent.Name] })
+}
+
+func (s *connectScreen) removeSubtitles() []subtitle {
+	var subtitles []subtitle
+	if s.addsMini() {
+		subtitles = append(subtitles, subtitle{text: "Adds mini to your agent configurations."})
+	}
+	subtitles = append(subtitles, subtitle{text: "Your existing configurations will be backed up first.", bold: true})
+	return append(subtitles, s.removalSubtitles()...)
+}
+
 func (s *connectScreen) connectOnlySubtitles() []subtitle {
-	subtitles := []subtitle{
-		{text: "Adds mini to your agent configurations and leaves existing MCP configurations alone."},
+	subtitles := []subtitle{{text: "mini is already in these agents' configurations, so nothing changes."}}
+	if s.addsMini() {
+		subtitles = []subtitle{
+			{text: "Adds mini to your agent configurations and leaves existing MCP configurations alone."},
+		}
 	}
 	if s.anyHasDuplicates(s.picked()) {
 		subtitles = append(subtitles, subtitle{
@@ -253,12 +273,7 @@ func (s *connectScreen) connectOnlySubtitles() []subtitle {
 }
 
 func (s *connectScreen) removalSubtitles() []subtitle {
-	var removing []agents.Agent
-	for _, agent := range s.picked() {
-		if len(s.checks.removals.ByAgent[agent.Name]) > 0 {
-			removing = append(removing, agent)
-		}
-	}
+	removing := s.picksWithRemovals()
 	width := widest(removing, func(agent agents.Agent) string { return agent.Name }) + len(":")
 	var subtitles []subtitle
 	for _, agent := range removing {
@@ -275,9 +290,9 @@ func (s *connectScreen) removalText(agent agents.Agent) string {
 	return verb + strings.Join(s.checks.removals.ByAgent[agent.Name], ", ")
 }
 
-func (s *connectScreen) anyPickedRemoves() bool {
-	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool {
-		return len(s.checks.removals.ByAgent[agent.Name]) > 0
+func (s *connectScreen) picksWithRemovals() []agents.Agent {
+	return slices.DeleteFunc(slices.Clone(s.picked()), func(agent agents.Agent) bool {
+		return len(s.checks.removals.ByAgent[agent.Name]) == 0
 	})
 }
 

@@ -10,7 +10,7 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
-func TestConnectScreen_saysWhichMCPsWereAddedToMini(t *testing.T) {
+func TestConnectScreen_saysWhichMCPsWereAddedToMiniAndLaterSavesOnlyThose(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		added []string
@@ -30,6 +30,13 @@ func TestConnectScreen_saysWhichMCPsWereAddedToMini(t *testing.T) {
 			s.resize(200, 30)
 			showScreen(s)
 			text := connectText(s)
+			later := "Saves the MCPs to mini and leaves your agent configurations alone."
+			if tc.want == "" {
+				later = "Leaves your agent configurations alone."
+			}
+			if !strings.Contains(linesUnder(s, initcmd.DontConnect), later) {
+				t.Errorf("lines under later:\n%s\nwant %q", linesUnder(s, initcmd.DontConnect), later)
+			}
 			if tc.want == "" {
 				if strings.Contains(text, "added to mini") {
 					t.Errorf("screen:\n%s\nwant no added line: nothing will be added", text)

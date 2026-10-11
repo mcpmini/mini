@@ -111,7 +111,7 @@ func TestConnectScreen_removingStaysListedWhileTicksChangeAndIsDimWithoutRemoval
 	if got := s.choices(); !slices.Contains(got, optionLabel(initcmd.ConnectAndRemove)) {
 		t.Fatalf("choices with Codex unticked = %v, want removing still listed: a listed agent has entries", got)
 	}
-	want := "None of these MCPs work in mini yet, so nothing will be removed."
+	want := "Nothing to remove from the ticked agents."
 	if !s.disabled(0) || !strings.Contains(linesUnder(s, initcmd.ConnectAndRemove), want) {
 		t.Errorf("removing with Claude alone ticked: disabled %v, lines %q; want dim with %q",
 			s.disabled(0), linesUnder(s, initcmd.ConnectAndRemove), want)
@@ -128,5 +128,24 @@ func TestConnectScreen_removingFromAnAgentThatHasMiniOnlyRemoves(t *testing.T) {
 	plan.checksPass(s, check)
 	if text := connectText(s); !strings.Contains(text, "Claude: Removing files\n") {
 		t.Errorf("screen:\n%s\nwant Claude's entry removed without adding mini again", text)
+	}
+}
+
+func TestConnectScreen_anAgentThatAlreadyHasMiniIsNotToldMiniWillBeAdded(t *testing.T) {
+	plan := newFakePlan(map[string][]string{"Claude": {"files"}})
+	s, check := connectScreenFor(t, plan, namedAgents("Claude"), map[string]bool{"Claude": true})
+	plan.checksPass(s, check)
+	removing, connecting := linesUnder(s, initcmd.ConnectAndRemove), linesUnder(s, initcmd.ConnectOnly)
+	if strings.Contains(removing, "Adds mini") || !strings.Contains(removing, "Claude: Removing files") {
+		t.Errorf(
+			"lines under removing:\n%s\nwant only the backup and Claude's removal: mini is already there",
+			removing,
+		)
+	}
+	if want := "mini is already in these agents' configurations, so nothing changes."; !strings.Contains(
+		connecting,
+		want,
+	) {
+		t.Errorf("lines under just connecting:\n%s\nwant %q", connecting, want)
 	}
 }
