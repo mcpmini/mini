@@ -121,11 +121,11 @@ func (s *stage) commitServer(name string) error {
 		return err
 	}
 	// Mini may still hold a login from an earlier server of the same name.
-	if err := ops.ForgetServerState(s.configDir, name); err != nil {
-		return err
+	if forgetErr := ops.ForgetServerState(s.configDir, name); forgetErr != nil {
+		return forgetErr
 	}
-	if err := s.copyState(name); err != nil {
-		return err
+	if copyErr := s.copyState(name); copyErr != nil {
+		return copyErr
 	}
 	// Created, not replaced: a server added in the moment since the name check is someone else's. Its
 	// login may already be overwritten; holding a lock across mini's commands would be the only cure.
