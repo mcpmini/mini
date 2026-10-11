@@ -254,11 +254,15 @@ func TestAddAction_defaultArgs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.TargetTool != "read_file" {
-		t.Errorf("expected TargetTool=read_file, got %s", e.TargetTool)
+	target, ok := e.Target.(registry.ActionTarget)
+	if !ok {
+		t.Fatalf("action target = %T, want ActionTarget", e.Target)
 	}
-	if e.DefaultArgs["path"] != "README.md" {
-		t.Errorf("expected default path=README.md, got %v", e.DefaultArgs["path"])
+	if target.Tool != "read_file" {
+		t.Errorf("expected target tool=read_file, got %s", target.Tool)
+	}
+	if target.DefaultArgs["path"] != "README.md" {
+		t.Errorf("expected default path=README.md, got %v", target.DefaultArgs["path"])
 	}
 }
 

@@ -189,7 +189,11 @@ func (s *Server) callUpstream(
 	entry *registry.ToolEntry,
 	session *Session,
 ) (any, error) {
-	server, tool, params := resolveTarget(p, entry)
+	target, err := resolveTarget(p, entry)
+	if err != nil {
+		return nil, err
+	}
+	server, tool, params := target.Server, target.Tool, target.Params
 	upstream, err := s.getUpstream(server)
 	if err != nil {
 		return nil, err
@@ -225,11 +229,21 @@ func (s *Server) handleToolErr(p toolErrParams) (any, error) {
 	return s.formatEnvelope(p.Server, p.Tool, env, projCfg)
 }
 
-func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool string, params map[string]any) {
-	if entry.TargetTool != "" {
-		return entry.TargetServer, entry.TargetTool, mergeArgs(entry.DefaultArgs, p.Params)
+func resolveTarget(p executeParams, entry *registry.ToolEntry) (executeParams, error) {
+	if entry == nil {
+		return executeParams{}, fmt.Errorf("tool has no dispatch target")
 	}
-	return p.Server, p.Tool, p.Params
+	switch target := entry.Target.(type) {
+	case registry.UpstreamTarget:
+		return executeParams{Server: target.Server, Tool: target.Tool, Params: p.Params}, nil
+	case registry.ActionTarget:
+		return executeParams{
+			Server: target.Server,
+			Tool:   target.Tool,
+			Params: mergeArgs(target.DefaultArgs, p.Params),
+		}, nil
+	}
+	return executeParams{}, fmt.Errorf("tool %q has no dispatch target", entry.FullName)
 }
 
 func mergeArgs(defaults, overrides map[string]any) map[string]any {

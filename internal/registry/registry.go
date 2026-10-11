@@ -79,7 +79,7 @@ func buildEntry(p entryParams) *ToolEntry {
 	name := ToolName{UpstreamName: p.def.Name, Alias: p.alias}
 	full := p.server + "." + name.Name()
 	return &ToolEntry{
-		Kind:          ToolEntryUpstream,
+		Target:        UpstreamTarget{Server: p.server, Tool: p.def.Name},
 		Server:        p.server,
 		ToolName:      name,
 		FullName:      full,
@@ -121,7 +121,7 @@ func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 		targetTool = target.ToolName.UpstreamName
 	}
 	return &ToolEntry{
-		Kind:          ToolEntryAction,
+		Target:        ActionTarget{Server: ac.Server, Tool: targetTool, DefaultArgs: ac.DefaultArgs},
 		Server:        ac.Server,
 		ToolName:      ToolName{UpstreamName: ac.Name},
 		FullName:      full,
@@ -129,9 +129,6 @@ func (r *Registry) buildActionEntry(ac config.ActionConfig) *ToolEntry {
 		Def:           transport.ToolDefinition{Description: ac.Description},
 		DescLower:     strings.ToLower(ac.Description),
 		Permission:    r.actionPermission(ac),
-		TargetServer:  ac.Server,
-		TargetTool:    targetTool,
-		DefaultArgs:   ac.DefaultArgs,
 	}
 }
 
@@ -242,13 +239,13 @@ func (r *Registry) removeServerLocked(serverName string) {
 func (r *Registry) removeServerToolsLocked(serverName string) {
 	entries := r.byServer[serverName]
 	for _, entry := range entries {
-		if entry.Kind == ToolEntryUpstream {
+		if _, ok := entry.Target.(UpstreamTarget); ok {
 			delete(r.tools, entry.FullName)
 		}
 	}
 	delete(r.byServer, serverName)
 	for key, entry := range r.hidden {
-		if entry.Server == serverName && entry.Kind == ToolEntryUpstream {
+		if _, ok := entry.Target.(UpstreamTarget); entry.Server == serverName && ok {
 			delete(r.hidden, key)
 		}
 	}
@@ -268,12 +265,12 @@ func (r *Registry) ReplaceServerTools(p ServerParams) {
 func (r *Registry) serverActionsLocked(serverName string) []*ToolEntry {
 	actions := make([]*ToolEntry, 0, len(r.byServer[serverName])+len(r.hidden))
 	for _, entry := range r.byServer[serverName] {
-		if entry.Kind == ToolEntryAction {
+		if _, ok := entry.Target.(ActionTarget); ok {
 			actions = append(actions, entry)
 		}
 	}
 	for _, entry := range r.hidden {
-		if entry.Server == serverName && entry.Kind == ToolEntryAction {
+		if _, ok := entry.Target.(ActionTarget); entry.Server == serverName && ok {
 			actions = append(actions, entry)
 		}
 	}

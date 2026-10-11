@@ -22,7 +22,7 @@ func (n ToolName) Name() string {
 }
 
 type ToolEntry struct {
-	Kind          ToolEntryKind
+	Target        Target
 	Server        string
 	ToolName      ToolName
 	FullName      string // "server.tool" using visible name (alias if set)
@@ -30,19 +30,26 @@ type ToolEntry struct {
 	Def           transport.ToolDefinition
 	DescLower     string // pre-lowercased for search
 	Permission    config.PermissionLevel
-
-	// Virtual-tool fields (set only for actions).
-	TargetServer string
-	TargetTool   string
-	DefaultArgs  map[string]any
 }
 
-type ToolEntryKind uint8
+//sumtype:decl
+type Target interface {
+	toolTarget()
+}
 
-const (
-	ToolEntryUpstream ToolEntryKind = iota
-	ToolEntryAction
-)
+type UpstreamTarget struct {
+	Server string
+	Tool   string
+}
+
+type ActionTarget struct {
+	Server      string
+	Tool        string
+	DefaultArgs map[string]any
+}
+
+func (UpstreamTarget) toolTarget() {}
+func (ActionTarget) toolTarget()   {}
 
 // CompactEntry is what discover returns per tool — no full schema.
 type CompactEntry struct {

@@ -167,7 +167,11 @@ type proxyCallParams struct {
 }
 
 func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any, error) {
-	server, tool, params := resolveTarget(executeParams{Server: p.Server, Tool: p.Tool, Params: p.Params}, p.Entry)
+	target, err := resolveTarget(executeParams{Server: p.Server, Tool: p.Tool, Params: p.Params}, p.Entry)
+	if err != nil {
+		return nil, err
+	}
+	server, tool, params := target.Server, target.Tool, target.Params
 	upstream, err := s.getUpstream(server)
 	if err != nil {
 		return nil, err

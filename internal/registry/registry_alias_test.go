@@ -158,8 +158,12 @@ func TestAlias_actionTargetingAliasByAliasName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("action lookup failed: %v", err)
 	}
-	if e.TargetTool != "real_tool" {
-		t.Errorf("action should resolve alias to real_tool, got %q", e.TargetTool)
+	target, ok := e.Target.(registry.ActionTarget)
+	if !ok {
+		t.Fatalf("action target = %T, want ActionTarget", e.Target)
+	}
+	if target.Tool != "real_tool" {
+		t.Errorf("action should resolve alias to real_tool, got %q", target.Tool)
 	}
 }
 
@@ -205,7 +209,7 @@ func TestAlias_actionTargetingHiddenAliasedToolByAliasName_resolvesUpstreamTool(
 	})
 	// The target lives in r.hidden under "svc.secret_alias"; an explicit
 	// permission override keeps the action itself visible so we can inspect
-	// its resolved TargetTool via Lookup.
+	// its resolved target via Lookup.
 	reg.AddAction(config.ActionConfig{
 		Name:       "my_action",
 		Server:     "svc",
@@ -217,10 +221,14 @@ func TestAlias_actionTargetingHiddenAliasedToolByAliasName_resolvesUpstreamTool(
 	if err != nil {
 		t.Fatalf("action lookup failed: %v", err)
 	}
-	if e.TargetTool != "secret_op" {
+	target, ok := e.Target.(registry.ActionTarget)
+	if !ok {
+		t.Fatalf("action target = %T, want ActionTarget", e.Target)
+	}
+	if target.Tool != "secret_op" {
 		t.Errorf(
 			"action targeting hidden aliased tool by alias name should resolve to upstream name, got %q",
-			e.TargetTool,
+			target.Tool,
 		)
 	}
 }

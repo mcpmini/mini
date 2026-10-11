@@ -43,8 +43,8 @@ func TestReplaceServerTools_visibleActionKeepsPrecedenceOverCollidingUpstream(t 
 	if err != nil {
 		t.Fatalf("Lookup: %v", err)
 	}
-	if entry.Kind != registry.ToolEntryAction {
-		t.Fatalf("Kind = %v, want action", entry.Kind)
+	if _, ok := entry.Target.(registry.ActionTarget); !ok {
+		t.Fatalf("Target = %T, want ActionTarget", entry.Target)
 	}
 	if names := fullNames(reg.AllFull()); !slices.Equal(names, []string{"svc.base", "svc.shortcut"}) {
 		t.Fatalf("AllFull = %v", names)
