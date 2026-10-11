@@ -24,11 +24,16 @@ func newOutputSink(out io.Writer) *outputSink {
 func (s *outputSink) writeResult(result dispatchResult) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if result.rawWrite != nil {
-		_, err := fmt.Fprintf(s.out, "%s", result.rawWrite)
+	switch r := result.(type) {
+	case responseResult:
+		return s.enc.Encode(r.response)
+	case rawWriteResult:
+		_, err := fmt.Fprintf(s.out, "%s", r.data)
 		return err
+	case continueResult, exitResult:
+		return fmt.Errorf("fault effect has no response to write")
 	}
-	return s.enc.Encode(result.response)
+	return fmt.Errorf("missing dispatch result")
 }
 
 func (s *outputSink) notifyToolsChanged() {
