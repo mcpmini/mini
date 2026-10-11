@@ -23,6 +23,7 @@ func callSetup(t *testing.T, fixtures map[string]string) string {
 }
 
 func TestIntegrationCLICall_BasicInvocation(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":42,"name":"widget"}`,
 	})
@@ -46,6 +47,7 @@ func TestIntegrationCLICall_BasicInvocation(t *testing.T) {
 }
 
 func TestIntegrationCLICall_WithParams(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1,"name":"thing"}`,
 	})
@@ -59,6 +61,7 @@ func TestIntegrationCLICall_WithParams(t *testing.T) {
 }
 
 func TestIntegrationCLICall_RawMode(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":42,"secret":"visible"}`,
 	})
@@ -80,6 +83,7 @@ func TestIntegrationCLICall_RawMode(t *testing.T) {
 }
 
 func TestIntegrationCLICall_ToonFormat(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":42,"name":"widget"}`,
 	})
@@ -96,6 +100,7 @@ func TestIntegrationCLICall_ToonFormat(t *testing.T) {
 }
 
 func TestIntegrationCLICall_WithProjection(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1,"secret":"hidden","name":"Alice"}`,
 	})
@@ -133,6 +138,7 @@ func TestIntegrationCLICall_WithProjection(t *testing.T) {
 }
 
 func TestIntegrationCLICall_ToolError_ExitsOne(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"fail_tool": `{"__mcp_error":"something went wrong"}`,
 	})
@@ -146,6 +152,7 @@ func TestIntegrationCLICall_ToolError_ExitsOne(t *testing.T) {
 }
 
 func TestIntegrationCLICall_ServerNotFound_ExitsTwo(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), "")
 	_, stderr, code := runCLI(t, cfg, "call", "nosuchserver", "some_tool")
@@ -158,6 +165,7 @@ func TestIntegrationCLICall_ServerNotFound_ExitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLICall_MissingArgs_ExitsTwo(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	testutil.WriteFile(t, filepath.Join(cfg, "config.yaml"), "")
 	_, _, code := runCLI(t, cfg, "call", "svc")
@@ -167,6 +175,7 @@ func TestIntegrationCLICall_MissingArgs_ExitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLICall_OutputModesAreMutuallyExclusive(t *testing.T) {
+	t.Parallel()
 	_, stderr, code := runCLI(t, t.TempDir(), "call", "svc", "tool", "-j", "-r")
 	if code != 2 || !strings.Contains(stderr, "choose only one") {
 		t.Fatalf("call exited %d: %s", code, stderr)
@@ -174,6 +183,7 @@ func TestIntegrationCLICall_OutputModesAreMutuallyExclusive(t *testing.T) {
 }
 
 func TestIntegrationCLICall_Help(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, code := runCLI(t, t.TempDir(), "call", "--help")
 	if code != 0 || !strings.Contains(stdout, "--raw") || stderr != "" {
 		t.Fatalf("call help exited %d: stdout=%q stderr=%q", code, stdout, stderr)
@@ -181,6 +191,7 @@ func TestIntegrationCLICall_Help(t *testing.T) {
 }
 
 func TestIntegrationCLICall_DashEscapesLiteralToolName(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{"-r": `{"literal":true}`})
 	stdout, stderr, code := runCLI(t, cfg, "call", "svc", "--", "-r")
 	if code != 0 || !strings.Contains(stdout, `"literal"`) {
@@ -189,6 +200,7 @@ func TestIntegrationCLICall_DashEscapesLiteralToolName(t *testing.T) {
 }
 
 func TestIntegrationCLICall_InvalidJSON_ExitsTwo(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{"get_item": `{}`})
 	_, stderr, code := runCLI(t, cfg, "call", "svc", "get_item", "not-json")
 	if code != 2 {
@@ -200,6 +212,7 @@ func TestIntegrationCLICall_InvalidJSON_ExitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLICall_OutputIsValidJSON(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"list_items": `[{"id":1},{"id":2},{"id":3}]`,
 	})
@@ -214,6 +227,7 @@ func TestIntegrationCLICall_OutputIsValidJSON(t *testing.T) {
 }
 
 func TestIntegrationCLIPermCall_BasicInvocation(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"create_item": `{"id":99,"created":true}`,
 	})
@@ -233,6 +247,7 @@ func TestIntegrationCLIPermCall_BasicInvocation(t *testing.T) {
 }
 
 func TestIntegrationCLIPermCall_RawMode(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"delete_item": `{"deleted":true}`,
 	})
@@ -250,6 +265,7 @@ func TestIntegrationCLIPermCall_RawMode(t *testing.T) {
 }
 
 func TestIntegrationCLICall_ConfigFormatToon(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1,"name":"thing"}`,
 	})
@@ -270,6 +286,7 @@ func TestIntegrationCLICall_ConfigFormatToon(t *testing.T) {
 }
 
 func TestIntegrationCLICall_FlagOverridesConfigFormat(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1}`,
 	})
@@ -290,6 +307,7 @@ func TestIntegrationCLICall_FlagOverridesConfigFormat(t *testing.T) {
 }
 
 func TestIntegrationCLICall_RejectsMiniFormatInConfig(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"get_item": `{"id":1}`,
 	})
@@ -307,6 +325,7 @@ func TestIntegrationCLICall_RejectsMiniFormatInConfig(t *testing.T) {
 }
 
 func TestIntegrationCLICall_StdinParams(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{"get_item": `{"id":42,"name":"widget"}`})
 	stdout, _, code := runCLIWithStdin(t, `{"id":42}`, cfg, "call", "svc", "get_item", "-")
 	if code != 0 {
@@ -328,6 +347,7 @@ func TestIntegrationCLICall_StdinParams(t *testing.T) {
 }
 
 func TestIntegrationCLICall_ProjectionWritesFile(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{
@@ -367,6 +387,7 @@ func TestIntegrationCLICall_ProjectionWritesFile(t *testing.T) {
 }
 
 func TestIntegrationCLICall_NullResult_PreservesDataKey(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{"get_nothing": `null`})
 	stdout, _, code := runCLI(t, cfg, "call", "-j", "svc", "get_nothing")
 	if code != 0 {
@@ -386,6 +407,7 @@ func TestIntegrationCLICall_NullResult_PreservesDataKey(t *testing.T) {
 }
 
 func TestIntegrationCLICall_ToonFormat_ZeroValuesPreserved(t *testing.T) {
+	t.Parallel()
 	cfg := callSetup(t, map[string]string{
 		"list_items": `[{"count":0,"title":"Bug"},{"count":9,"title":"Feat"}]`,
 	})
@@ -402,6 +424,7 @@ func TestIntegrationCLICall_ToonFormat_ZeroValuesPreserved(t *testing.T) {
 }
 
 func TestIntegrationCLICall_UnreachableServer_ExitsNonZero(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	// HTTP transport is lazy — dial succeeds, error surfaces on first call (exit 1).
 	writeHTTPServer(t, cfg, httpServerParams{ServerName: "dead", URL: "http://127.0.0.1:19998"})
