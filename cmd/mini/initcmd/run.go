@@ -23,22 +23,19 @@ type Run struct {
 
 func (s Setup) Start(p Plan) *Run {
 	st := newStage(s.ConfigDir)
-	r := &Run{Plan: p, setup: s, stage: st}
-	// Read at each save: the screens change the plan after Start.
-	comment := func(name string) string { return r.Plan.setupComment(name) }
-	r.session = newSession(sessionParams{ConfigDir: st.dir, Probe: s.probe(), SetupComment: comment})
-	return r
+	return &Run{Plan: p, setup: s, stage: st, session: newSession(sessionParams{ConfigDir: st.dir, Probe: s.probe()})}
 }
 
 // Save stages the plan's servers and starts checking the new ones for OAuth. It returns the servers
 // it removed, credentials included, so a login done for them no longer applies.
 func (r *Run) Save() (removed []string) {
+	adds := r.Plan.adds()
 	if err := r.stage.create(); err != nil {
-		r.last = syncResult{Failed: failedAll(r.Plan.Servers(), err)}
+		r.last = syncResult{Failed: failedAll(adds.write, err)}
 		return nil
 	}
 	r.stage.touch()
-	r.last = r.session.Sync(r.Plan.Servers())
+	r.last = r.session.Sync(adds.write, adds.setupComments)
 	return r.last.Removed
 }
 

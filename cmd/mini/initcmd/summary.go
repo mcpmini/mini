@@ -104,9 +104,9 @@ func lowerFirst(s string) string {
 func stepInFile(file string, mini agents.MiniEntry, s ServerStatus) (string, bool) {
 	switch {
 	case s.StepsInFile && s.Readiness == NeedsToken:
-		return "needs a token: follow the steps at the top of " + file, true
+		return "needs a token: finish the steps in " + file, true
 	case s.StepsInFile && s.Readiness == NeedsOwnApp:
-		return fmt.Sprintf("needs your own OAuth app: follow the steps at the top of %s, then run: %s",
+		return fmt.Sprintf("needs your own OAuth app: finish the steps in %s, then run: %s",
 			file, miniCommand(mini, "auth", s.Name)), true
 	}
 	return "", false

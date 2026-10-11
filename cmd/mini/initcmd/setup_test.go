@@ -232,8 +232,64 @@ func TestRunUnattended_aCatalogAddIsntCreditedWithASwitchedOffConfigOfTheSameNam
 }
 
 func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *testing.T) {
-	configDir := t.TempDir()
-	setup := Setup{ConfigDir: configDir, Add: []catalog.Entry{
+	setup, report := addCredentialServers(t)
+
+	github := string(testutil.ReadFile(t, config.ServerPath(setup.ConfigDir, "github")))
+	if !strings.Contains(github, "# Create a token at https://github.example/tokens, then uncomment:") {
+		t.Errorf("github.yaml:\n%s\nwant the token step as a comment", github)
+	}
+	if status := statusNamed(t, report.Servers, "github"); status.Readiness != NeedsToken || !status.StepsInFile {
+		t.Errorf("github = %+v, want it needing a token with its steps in its file", status)
+	}
+	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(setup.ConfigDir, "linear"))), "#") {
+		t.Error("linear.yaml has a comment, want none: its login needs nothing written by hand")
+	}
+}
+
+func TestServerStatuses_aServerFinishedFromItsCommentedSteps(t *testing.T) {
+	t.Run("a file missing part of its steps falls back to the summary's", func(t *testing.T) {
+		setup, _ := addCredentialServers(t)
+		editServerFile(t, setup.ConfigDir, "github", "# headers:\n", "")
+		if status := currentStatus(t, setup, "github"); status.StepsInFile {
+			t.Errorf("github = %+v, want its steps not counted once headers: is gone", status)
+		}
+	})
+	t.Run("github works once uncommented", func(t *testing.T) {
+		setup, _ := addCredentialServers(t)
+		if sc := uncommented(t, setup.ConfigDir, "github"); sc.Headers["Authorization"] != "Bearer <your token>" {
+			t.Errorf("headers = %v, want the Authorization header", sc.Headers)
+		}
+	})
+	t.Run("asana works once uncommented", func(t *testing.T) {
+		setup, _ := addCredentialServers(t)
+		if sc := uncommented(t, setup.ConfigDir, "asana"); sc.Auth == nil || sc.Auth.ClientID == "" {
+			t.Errorf("auth = %+v, want the app's client ID", sc.Auth)
+		}
+	})
+	t.Run("an uncommented placeholder is no credential until replaced", func(t *testing.T) {
+		setup, _ := addCredentialServers(t)
+		for name, want := range map[string]Readiness{"github": NeedsToken, "asana": NeedsOwnApp} {
+			uncommented(t, setup.ConfigDir, name)
+			if status := currentStatus(t, setup, name); status.Readiness != want || !status.StepsInFile {
+				t.Errorf("%s = %+v, want %v with its steps still in the file: mini would send the placeholder",
+					name, status, want)
+			}
+		}
+	})
+	t.Run("an app with its client ID but the secret's placeholder isn't finished", func(t *testing.T) {
+		setup, _ := addCredentialServers(t)
+		uncommented(t, setup.ConfigDir, "asana")
+		editServerFile(t, setup.ConfigDir, "asana", clientIDPlaceholder, "app-123")
+		if status := currentStatus(t, setup, "asana"); status.Readiness != NeedsOwnApp {
+			t.Errorf("asana = %+v, want it still needing its app: the secret is a placeholder", status)
+		}
+	})
+}
+
+// addCredentialServers adds a token server, an OAuth-app server and a login server from the catalog.
+func addCredentialServers(t *testing.T) (Setup, Report) {
+	t.Helper()
+	setup := Setup{ConfigDir: t.TempDir(), Add: []catalog.Entry{
 		{
 			Name:     "github",
 			URL:      "https://github.example/mcp",
@@ -250,74 +306,35 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 	}}
 	setup.Catalog = setup.Add
 	setup.Probe = func(context.Context, string, config.ServerConfig) error { return nil }
-
 	report := RunUnattended(setup)
-
 	if len(report.WriteErrors) > 0 {
 		t.Fatalf("write errors: %v", report.WriteErrors)
 	}
-	github := string(testutil.ReadFile(t, config.ServerPath(configDir, "github")))
-	if !strings.Contains(github, "# Create a token at https://github.example/tokens, then uncomment:") {
-		t.Errorf("github.yaml:\n%s\nwant the token step as a comment", github)
+	return setup, report
+}
+
+func editServerFile(t *testing.T, configDir, name, old, replacement string) {
+	t.Helper()
+	path := config.ServerPath(configDir, name)
+	testutil.WriteFile(t, path, strings.Replace(string(testutil.ReadFile(t, path)), old, replacement, 1))
+}
+
+func currentStatus(t *testing.T, setup Setup, name string) ServerStatus {
+	t.Helper()
+	statuses, err := ServerStatuses(setup.ConfigDir, setup.Catalog)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if i := slices.IndexFunc(report.Servers, func(s ServerStatus) bool { return s.Name == "github" }); i < 0 ||
-		report.Servers[i].Readiness != NeedsToken {
-		t.Errorf("servers = %+v, want github needing a token: a commented-out header is no token", report.Servers)
+	return statusNamed(t, statuses, name)
+}
+
+func statusNamed(t *testing.T, statuses []ServerStatus, name string) ServerStatus {
+	t.Helper()
+	i := slices.IndexFunc(statuses, func(s ServerStatus) bool { return s.Name == name })
+	if i < 0 {
+		t.Fatalf("statuses = %+v, want %s among them", statuses, name)
 	}
-	if i := slices.IndexFunc(report.Servers, func(s ServerStatus) bool { return s.Name == "github" }); i < 0 ||
-		!report.Servers[i].StepsInFile {
-		t.Errorf("servers = %+v, want github's steps found in its file", report.Servers)
-	}
-	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(configDir, "linear"))), "#") {
-		t.Error("linear.yaml has a comment, want none: its login needs nothing written by hand")
-	}
-	t.Run("a file missing part of its steps falls back to the summary's", func(t *testing.T) {
-		path := config.ServerPath(configDir, "github")
-		edited := strings.Replace(string(testutil.ReadFile(t, path)), "# headers:\n", "", 1)
-		testutil.WriteFile(t, path, edited)
-		statuses, err := ServerStatuses(configDir, setup.Catalog)
-		i := slices.IndexFunc(statuses, func(s ServerStatus) bool { return s.Name == "github" })
-		if err != nil || i < 0 || statuses[i].StepsInFile {
-			t.Errorf("statuses = %+v, %v; want github's steps not counted once headers: is gone", statuses, err)
-		}
-		testutil.WriteFile(t, path, github)
-	})
-	t.Run("github works once uncommented", func(t *testing.T) {
-		if sc := uncommented(t, configDir, "github"); sc.Headers["Authorization"] != "Bearer <your token>" {
-			t.Errorf("headers = %v, want the Authorization header", sc.Headers)
-		}
-	})
-	t.Run("asana works once uncommented", func(t *testing.T) {
-		if sc := uncommented(t, configDir, "asana"); sc.Auth == nil || sc.Auth.ClientID == "" {
-			t.Errorf("auth = %+v, want the app's client ID", sc.Auth)
-		}
-	})
-	t.Run("an uncommented placeholder is no credential until replaced", func(t *testing.T) {
-		statuses, err := ServerStatuses(configDir, setup.Catalog)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := map[string]Readiness{"github": NeedsToken, "asana": NeedsOwnApp}
-		for _, status := range statuses {
-			if r, ok := want[status.Name]; ok && (status.Readiness != r || !status.StepsInFile) {
-				t.Errorf("%s = %+v, want %v with its steps still in the file: mini would send the placeholder",
-					status.Name, status, r)
-			}
-		}
-	})
-	t.Run("an app with its client ID but the secret's placeholder isn't finished", func(t *testing.T) {
-		path := config.ServerPath(configDir, "asana")
-		testutil.WriteFile(
-			t,
-			path,
-			strings.Replace(string(testutil.ReadFile(t, path)), clientIDPlaceholder, "app-123", 1),
-		)
-		statuses, err := ServerStatuses(configDir, setup.Catalog)
-		i := slices.IndexFunc(statuses, func(s ServerStatus) bool { return s.Name == "asana" })
-		if err != nil || i < 0 || statuses[i].Readiness != NeedsOwnApp {
-			t.Errorf("statuses = %+v, %v; want asana still needing its app: the secret is a placeholder", statuses, err)
-		}
-	})
+	return statuses[i]
 }
 
 func TestRunUnattended_anImportThatCoversACatalogAddGetsNoSetupComment(t *testing.T) {

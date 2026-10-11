@@ -10,11 +10,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// Init can't get a token or OAuth app for the user, so the config they need goes in the file, commented out.
-func (p Plan) setupComment(name string) string {
-	return planAdds(p.Import.picked(), p.Add, p.written).setupComments[name]
-}
-
 // The placeholders the steps leave for the user; a value still holding one is no credential yet.
 const (
 	tokenPlaceholder        = "<your token>"
@@ -40,6 +35,8 @@ func setupCommentIn(data []byte, entry catalog.Entry) bool {
 	return true
 }
 
+// Init can't get a token or OAuth app for the user, so planAdds writes the config they need into
+// the file, commented out.
 func credentialComment(entry catalog.Entry) string {
 	intro, block := credentialSteps(entry.Auth, entry.SetupURL)
 	if intro == "" {
@@ -63,7 +60,7 @@ func credentialSteps(authKind, setupURL string) (intro string, block []string) {
 				"auth:",
 				"    type: oauth2",
 				"    client_id: " + clientIDPlaceholder,
-				"    client_secret: " + clientSecretPlaceholder,
+				"    client_secret: " + clientSecretPlaceholder + "  # leave this line out if your app has none",
 			}
 	}
 	return "", nil

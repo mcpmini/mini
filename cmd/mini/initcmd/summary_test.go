@@ -53,8 +53,8 @@ func TestSummary_servers(t *testing.T) {
 		requireLines(
 			t,
 			got,
-			"  github  needs a token: follow the steps at the top of /cfg/servers/github.yaml\n",
-			"  asana   needs your own OAuth app: follow the steps at the top of /cfg/servers/asana.yaml, then run: mini auth asana\n",
+			"  github  needs a token: finish the steps in /cfg/servers/github.yaml\n",
+			"  asana   needs your own OAuth app: finish the steps in /cfg/servers/asana.yaml, then run: mini auth asana\n",
 		)
 	})
 	t.Run("the token step is YAML that sets the header", func(t *testing.T) {

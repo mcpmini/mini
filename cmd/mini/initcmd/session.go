@@ -18,10 +18,9 @@ import (
 )
 
 type sessionParams struct {
-	ConfigDir    string
-	Clock        clock.Clock
-	Probe        probeFunc
-	SetupComment func(name string) string
+	ConfigDir string
+	Clock     clock.Clock
+	Probe     probeFunc
 }
 
 // Only servers this run wrote are ever removed; servers the user had before are never touched.
@@ -79,11 +78,11 @@ func newSession(p sessionParams) *session {
 
 // Sync makes this run's servers match want. A changed config that mini would reject leaves the
 // previous one in place, reported as failed.
-func (s *session) Sync(want []config.ServerConfig) syncResult {
+func (s *session) Sync(want []config.ServerConfig, setupComments map[string]string) syncResult {
 	s.stopChecks()
 	var result syncResult
 	s.removeUnwanted(want, &result)
-	s.addMissing(want, &result)
+	s.addMissing(want, setupComments, &result)
 	s.startChecks()
 	return result
 }
@@ -112,12 +111,12 @@ func (s *session) removeUnwanted(want []config.ServerConfig, result *syncResult)
 	}
 }
 
-func (s *session) addMissing(want []config.ServerConfig, result *syncResult) {
+func (s *session) addMissing(want []config.ServerConfig, setupComments map[string]string, result *syncResult) {
 	for _, sc := range want {
 		if _, ok := s.written[sc.Name]; ok {
 			continue
 		}
-		if err := s.add(sc); err != nil {
+		if err := s.add(sc, setupComments[sc.Name]); err != nil {
 			result.Failed = append(result.Failed, ServerError{Name: sc.Name, Err: err})
 			continue
 		}
@@ -126,14 +125,14 @@ func (s *session) addMissing(want []config.ServerConfig, result *syncResult) {
 	}
 }
 
-func (s *session) add(sc config.ServerConfig) error {
+func (s *session) add(sc config.ServerConfig, setupComment string) error {
 	added, err := ops.AddServer(s.p.ConfigDir, sc)
-	if err != nil || s.p.SetupComment == nil {
+	if err != nil {
 		return err
 	}
-	if comment := s.p.SetupComment(sc.Name); comment != "" {
+	if setupComment != "" {
 		// Without its comment the server still works as written; only the hint is lost.
-		if err := prependSetupComment(added.Path, comment); err != nil {
+		if err := prependSetupComment(added.Path, setupComment); err != nil {
 			log.Printf("init: add setup comment to %s: %v", added.Path, err)
 		}
 	}
