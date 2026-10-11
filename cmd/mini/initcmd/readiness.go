@@ -4,7 +4,6 @@ import (
 	"errors"
 	"os"
 	"slices"
-	"strings"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
@@ -55,7 +54,7 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 	if entry, ok := catalogEntryFor(sc, entries); ok {
 		status.SetupURL = entry.SetupURL
 		if data, err := os.ReadFile(config.ServerPath(configDir, sc.Name)); err == nil {
-			status.StepsInFile = setupCommentIn(data, entry)
+			status.StepsInFile = setupCommentIn(data, entry) || holdsPlaceholder(sc)
 		}
 		switch {
 		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
@@ -92,18 +91,9 @@ func needsLogin(configDir, name string) bool {
 }
 
 func hasCredential(sc config.ServerConfig) bool {
-	if sc.Auth != nil && sc.Auth.Token != "" {
-		return true
-	}
-	for _, value := range sc.Headers {
-		if strings.Contains(value, tokenPlaceholder) {
-			return false
-		}
-	}
-	return len(sc.Headers) > 0
+	return !holdsPlaceholder(sc) && (len(sc.Headers) > 0 || (sc.Auth != nil && sc.Auth.Token != ""))
 }
 
 func hasOwnApp(sc config.ServerConfig) bool {
-	return sc.Auth != nil && sc.Auth.ClientID != "" && sc.Auth.ClientID != clientIDPlaceholder &&
-		sc.Auth.ClientSecret != clientSecretPlaceholder
+	return !holdsPlaceholder(sc) && sc.Auth != nil && sc.Auth.ClientID != ""
 }

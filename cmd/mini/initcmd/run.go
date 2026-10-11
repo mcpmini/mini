@@ -110,7 +110,7 @@ func (r *Run) report(c commitResult) Report {
 	p := r.Plan
 	report := r.setup.report()
 	report.Import = p.Import
-	adds := planAdds(p.Import.picked(), p.Add, p.written)
+	adds := p.adds()
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
 	report.WriteErrors = slices.Concat(r.last.Failed, c.failed)
 	report.Import.keepOnly(report.Import.importedOf(c.committed))

@@ -87,11 +87,7 @@ func (s Setup) Write(p Plan) Report {
 	return run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
 }
 
-// Servers is the picked imports, then the catalog adds that nothing configured or imported covers.
-func (p Plan) Servers() []config.ServerConfig {
-	return p.adds().write
-}
-
+// adds is the picked imports, then the catalog adds that nothing configured or imported covers.
 func (p Plan) adds() addPlan {
 	return planAdds(p.Import.picked(), p.Add, p.written)
 }

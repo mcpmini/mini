@@ -17,15 +17,11 @@ const (
 	clientSecretPlaceholder = "<your app's client secret>"
 )
 
-// A user who deleted part of the block gets the summary's full step instead; one who uncommented it
-// with a placeholder left in still has the steps at hand.
+// A user who deleted part of the block gets the summary's full step instead.
 func setupCommentIn(data []byte, entry catalog.Entry) bool {
 	comment := credentialComment(entry)
 	if comment == "" {
 		return false
-	}
-	if placeholderIn(data) {
-		return true
 	}
 	for line := range strings.SplitSeq(config.CommentLines(comment), "\n") {
 		if !bytes.Contains(data, []byte(line)) {
@@ -35,8 +31,8 @@ func setupCommentIn(data []byte, entry catalog.Entry) bool {
 	return true
 }
 
-// Init can't get a token or OAuth app for the user, so planAdds writes the config they need into
-// the file, commented out.
+// Init can't get a token or OAuth app for the user, so the config they need goes in the file,
+// commented out.
 func credentialComment(entry catalog.Entry) string {
 	intro, block := credentialSteps(entry.Auth, entry.SetupURL)
 	if intro == "" {
@@ -66,13 +62,13 @@ func credentialSteps(authKind, setupURL string) (intro string, block []string) {
 	return "", nil
 }
 
-func placeholderIn(data []byte) bool {
-	for _, placeholder := range []string{tokenPlaceholder, clientIDPlaceholder, clientSecretPlaceholder} {
-		for line := range strings.SplitSeq(string(data), "\n") {
-			if strings.Contains(line, placeholder) && !strings.HasPrefix(strings.TrimSpace(line), "#") {
-				return true
-			}
+// holdsPlaceholder reports whether the user uncommented the steps without finishing them.
+func holdsPlaceholder(sc config.ServerConfig) bool {
+	for _, value := range sc.Headers {
+		if strings.Contains(value, tokenPlaceholder) {
+			return true
 		}
 	}
-	return false
+	return sc.Auth != nil &&
+		(sc.Auth.ClientID == clientIDPlaceholder || sc.Auth.ClientSecret == clientSecretPlaceholder)
 }
