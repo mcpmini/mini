@@ -31,7 +31,7 @@ func TestIntegrationInitUI_writesTheTickedServersConnectsTheAgentAndPrintsTheSum
 	term.waitFor("Which popular MCPs would you like to add?")
 	term.waitFor("[ ] Sentry")
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "tab", "enter")
-	term.waitFor("sentry  needs a login")
+	term.waitFor("press enter to log in")
 	term.press("down", "enter")
 	term.waitFor("Connect mini to Claude Code")
 	term.press("down")
@@ -92,7 +92,7 @@ func TestIntegrationInitUI_ctrlCAfterCatalogWritesNothing(t *testing.T) {
 	term.press("tab", "enter")
 	term.waitFor("Which popular MCPs would you like to add?")
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "tab", "enter")
-	term.waitFor("Finish setting up these servers")
+	term.waitFor("Log in to your MCPs (optional)")
 	term.press("ctrl+c")
 	term.waitFor("no servers were added")
 

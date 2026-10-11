@@ -36,6 +36,7 @@ type loginsParams struct {
 type loginsScreen struct {
 	p        loginsParams
 	rows     []initcmd.ServerStatus
+	byHand   []string
 	checking map[string]bool
 	err      error
 	cursor   int
@@ -62,19 +63,22 @@ func (s *loginsScreen) refresh() {
 	// it signals refreshes the screen again.
 	s.checking = s.p.checking()
 	statuses, err := s.p.statuses()
-	s.rows, s.err = nil, err
+	s.rows, s.byHand, s.err = nil, nil, err
 	for _, status := range statuses {
-		// A tried login's row stays, so the user sees how it went.
-		_, tried := s.results[status.Name]
-		if status.Readiness != initcmd.Ready || s.checking[status.Name] || tried {
+		switch {
+		case s.isLoginRow(status):
 			s.rows = append(s.rows, status)
+		case status.Readiness != initcmd.Ready:
+			s.byHand = append(s.byHand, status.Name)
 		}
 	}
-	sections := []string{logInSection, byHandSection}
-	slices.SortStableFunc(s.rows, func(a, b initcmd.ServerStatus) int {
-		return slices.Index(sections, s.section(a)) - slices.Index(sections, s.section(b))
-	})
 	s.follow(selected)
+}
+
+// A tried login's row stays, so the user sees how it went.
+func (s *loginsScreen) isLoginRow(status initcmd.ServerStatus) bool {
+	_, tried := s.results[status.Name]
+	return tried || s.checking[status.Name] || status.Readiness == initcmd.NeedsLogin
 }
 
 // Rows come and go as checks finish, so the user's pick is found again by name.
@@ -218,27 +222,57 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
 }
 
 func (s *loginsScreen) heading() string {
-	if s.err == nil && len(s.rows) == 0 {
+	if len(s.rows) > 0 {
+		return "Log in to your MCPs (optional)"
+	}
+	if s.empty() {
 		return "Your servers are ready"
 	}
-	return "Finish setting up these servers"
+	return "Finish setting up these MCPs later"
 }
 
 func (s *loginsScreen) body(height int, focused bool) string {
 	if s.err != nil {
 		return "mini's servers couldn't be read: " + s.err.Error()
 	}
+	intro := s.byHandIntro()
 	lines, first, last := s.serverLines(focused)
-	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
+	rowsHeight := height
+	if height > 0 {
+		rowsHeight = max(height-len(intro), 1)
+	}
+	return strings.Join(append(intro, s.scroll.cut(lines, first, last, rowsHeight)...), "\n")
 }
 
-// first and last bound the cursor's block: its section heading, its row and the lines under it.
+// byHandIntro sits above the scrolled rows, so it stays in view however the rows scroll.
+func (s *loginsScreen) byHandIntro() []string {
+	if len(s.byHand) == 0 {
+		return nil
+	}
+	text := fmt.Sprintf(
+		"Browser login isn't available for %s. You will need to configure these manually later.",
+		andList(s.byHand),
+	)
+	lines := strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")
+	if len(s.rows) > 0 {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+func andList(names []string) string {
+	last := len(names) - 1
+	if last == 0 {
+		return names[0]
+	}
+	return strings.Join(names[:last], ", ") + " and " + names[last]
+}
+
+// first and last bound the cursor's block: its row and the lines under it.
 func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last int) {
 	width := widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
-	section := ""
 	for i, status := range s.rows {
 		start := len(lines)
-		lines, section = s.withSectionHeading(lines, section, status)
 		// The cursor's server stays in view while the cursor is on Continue, so a login's result shows.
 		if i == s.cursor {
 			first = start
@@ -248,7 +282,7 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 			last = len(lines) - 1
 		}
 	}
-	if len(lines) == 0 {
+	if len(lines) == 0 && len(s.byHand) == 0 {
 		// The last check cleared the final row while the screen was shown.
 		lines = append(lines, "Every server works; nothing is left to set up.")
 	}
@@ -256,39 +290,36 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 }
 
 func (s *loginsScreen) rowLines(status initcmd.ServerStatus, atCursor bool, width int) []string {
-	lines := []string{cursorMark(atCursor) + fmt.Sprintf("%-*s  %s", width, status.Name, s.state(status))}
+	lines := []string{cursorMark(atCursor) + s.rowText(status, width)}
 	if s.pending != nil && s.pending.name == status.Name && s.pending.url != "" {
 		lines = append(lines, s.urlLines(4+width)...)
+	}
+	if hint := s.hint(status); atCursor && hint != "" {
+		lines = append(lines, cursorMark(false)+dim.Render(hint))
 	}
 	return lines
 }
 
-func (s *loginsScreen) withSectionHeading(
-	lines []string,
-	current string,
-	status initcmd.ServerStatus,
-) ([]string, string) {
-	next := s.section(status)
-	if next == current {
-		return lines, current
+func (s *loginsScreen) rowText(status initcmd.ServerStatus, width int) string {
+	state := s.state(status)
+	if state == "" {
+		return status.Name
 	}
-	if current != "" {
-		lines = append(lines, "")
-	}
-	return append(lines, bold.Render(next)), next
+	return fmt.Sprintf("%-*s  %s", width, status.Name, state)
 }
 
-const (
-	logInSection  = "Log in"
-	byHandSection = "Set up by hand"
-)
-
-// The cursor only stops on servers it can log in to, so the rest are grouped apart from them.
-func (s *loginsScreen) section(status initcmd.ServerStatus) string {
-	if _, tried := s.results[status.Name]; tried || status.Readiness == initcmd.NeedsLogin || s.checking[status.Name] {
-		return logInSection
+func (s *loginsScreen) hint(status initcmd.ServerStatus) string {
+	if s.checking[status.Name] || (s.pending != nil && s.pending.name == status.Name) {
+		return ""
 	}
-	return byHandSection
+	err, tried := s.results[status.Name]
+	if !tried {
+		return "press enter to log in"
+	}
+	if err != nil {
+		return "press enter to try again"
+	}
+	return ""
 }
 
 // Authorize URLs run to hundreds of characters, so the link shows its host and as much of the path as
@@ -315,14 +346,17 @@ func (s *loginsScreen) state(status initcmd.ServerStatus) string {
 	}
 	if err, tried := s.results[status.Name]; tried {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return "✗ timed out; enter to try again"
+			return "✗ login timed out"
 		}
 		if err != nil {
-			return "✗ " + firstLine(err)
+			return "✗ login failed: " + firstLine(err)
 		}
 		return "✓ logged in"
 	}
-	return dim.Render(s.need(status))
+	if s.checking[status.Name] {
+		return dim.Render("checking…")
+	}
+	return ""
 }
 
 // A failed token exchange's error carries the endpoint's raw response body, often a whole HTML
@@ -335,23 +369,6 @@ func firstLine(err error) string {
 		}
 		return r
 	}, line)
-}
-
-func (s *loginsScreen) need(status initcmd.ServerStatus) string {
-	if s.checking[status.Name] {
-		return "checking…"
-	}
-	switch status.Readiness {
-	case initcmd.NeedsLogin:
-		return "needs a login"
-	case initcmd.NeedsToken:
-		return needsToken
-	case initcmd.NeedsOwnApp:
-		return needsOwnApp
-	case initcmd.NeedsEnv:
-		return "needs " + strings.Join(status.UnsetEnv.Names, ", ") + " set"
-	}
-	return ""
 }
 
 func withNotice(notice, keys string) string {
@@ -368,9 +385,9 @@ func (s *loginsScreen) keys() string {
 	if s.pending != nil {
 		return withNotice(s.notice, "↑↓ move · c copy link · esc cancel login · tab continue")
 	}
-	return "↑↓ move · enter log in · tab continue"
+	return "↑↓ move · enter open browser · tab continue"
 }
 
 func (s *loginsScreen) empty() bool {
-	return s.err == nil && len(s.rows) == 0
+	return s.err == nil && len(s.rows) == 0 && len(s.byHand) == 0
 }
