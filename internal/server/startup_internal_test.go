@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/transport"
@@ -18,11 +19,11 @@ func TestRecordStartupFailure_aStaleAttemptDoesNotMarkAServerConfiguredAgainUnde
 	srv.detachAndCloseServer("svc")
 	srv.recordConfigServers([]config.ServerConfig{{Name: "svc"}})
 
-	srv.recordStartupFailure(stale, startupFailure{kind: failureNeedsAuth})
+	srv.recordStartupFailure(stale, needsAuthStatus{})
 
 	srv.stateMu.RLock()
 	defer srv.stateMu.RUnlock()
-	if state := srv.startup.state("svc", srv.clock.Now()); state.phase == phaseFailed {
+	if state := srv.startup.state("svc", srv.clock.Now()); state.phase() == "failed" {
 		t.Error("a failure from before the remove was recorded against the server configured again")
 	}
 }
@@ -44,7 +45,7 @@ func TestDetachAndCloseServer_aServerConfiguredAgainStartsWithoutTheOldStartupSt
 		{name: "had failed", setUp: func(srv *Server) {
 			srv.recordStartupFailure(
 				srv.startupInstall(config.ServerConfig{Name: "svc"}),
-				startupFailure{kind: failureNeedsAuth},
+				needsAuthStatus{},
 			)
 		}},
 	}
@@ -60,8 +61,8 @@ func TestDetachAndCloseServer_aServerConfiguredAgainStartsWithoutTheOldStartupSt
 
 			srv.stateMu.RLock()
 			defer srv.stateMu.RUnlock()
-			if state := srv.startup.state("svc", srv.clock.Now()); state.phase != phaseConnecting {
-				t.Errorf("svc configured again is %s, want connecting", state.phase)
+			if state := srv.startup.state("svc", srv.clock.Now()); state.phase() != "connecting" {
+				t.Errorf("svc configured again is %s, want connecting", state.phase())
 			}
 		})
 	}
@@ -76,5 +77,39 @@ func TestWaitForStartup_endsWhenTheRequestIsCanceled(t *testing.T) {
 
 	if err := srv.waitForStartup(ctx); !errors.Is(err, context.Canceled) {
 		t.Errorf("waitForStartup with a canceled request = %v, want context.Canceled", err)
+	}
+}
+
+func TestConnectedStartupHasNoFailureDiagnostics(t *testing.T) {
+	tracker := newStartupTracker()
+	tracker.recordFailure("svc", needsAuthStatus{})
+	tracker.markReady("svc")
+	state := tracker.state("svc", time.Time{})
+	if code := state.errorCode(); code != "" {
+		t.Errorf("connected error code = %q, want none", code)
+	}
+	if reason := state.reason("svc"); reason != "" {
+		t.Errorf("connected failure reason = %q, want none", reason)
+	}
+	if state.retryable() || state.action() != "" {
+		t.Error("connected server has no startup failure to retry or authorize")
+	}
+}
+
+func TestMissingStartupStatusDoesNotInventATrustFailure(t *testing.T) {
+	tracker := newStartupTracker()
+	tracker.recordFailure("svc", nil)
+	states := []startupState{{}, tracker.state("svc", time.Time{})}
+	for _, state := range states {
+		if code := state.errorCode(); code != "server_failed" {
+			t.Errorf("missing status error code = %q, want server_failed", code)
+		}
+		want := `server "svc" could not start; ask the user to run "mini status".`
+		if reason := state.reason("svc"); reason != want {
+			t.Errorf("missing status reason = %q, want %q", reason, want)
+		}
+		if state.retryable() || state.action() != "" {
+			t.Error("missing startup status must not request retries or authorization")
+		}
 	}
 }

@@ -15,26 +15,47 @@ import (
 // Above the cold start measured in #322 (6 s) and well inside the 30 s request timeouts of Claude Code, Codex and opencode.
 const startupHold = 10 * time.Second
 
-type startupPhase string
+//sumtype:decl
+type startupStatus interface {
+	startupStatus()
+}
 
-const (
-	phaseConnected  startupPhase = "connected"
-	phaseConnecting startupPhase = "connecting"
-	phaseDelayed    startupPhase = "delayed"
-	phaseFailed     startupPhase = "failed"
+//sumtype:decl
+type startupFailure interface {
+	startupStatus
+	startupFailure()
+	logMessage() string
+}
+
+type (
+	connectedStatus  struct{}
+	connectingStatus struct{}
+	delayedStatus    struct{}
+	needsAuthStatus  struct{}
+	needsEnvStatus   struct{ envVars []string }
+	notTrustedStatus struct{}
 )
 
-type failureKind int
+func (connectedStatus) startupStatus()   {}
+func (connectingStatus) startupStatus()  {}
+func (delayedStatus) startupStatus()     {}
+func (needsAuthStatus) startupStatus()   {}
+func (needsEnvStatus) startupStatus()    {}
+func (notTrustedStatus) startupStatus()  {}
+func (needsAuthStatus) startupFailure()  {}
+func (needsEnvStatus) startupFailure()   {}
+func (notTrustedStatus) startupFailure() {}
 
-const (
-	failureNeedsAuth failureKind = iota + 1
-	failureNeedsEnv
-	failureNotTrusted
-)
+func (needsAuthStatus) logMessage() string {
+	return "upstream needs authorization, not retrying"
+}
 
-type startupFailure struct {
-	kind    failureKind
-	envVars []string
+func (needsEnvStatus) logMessage() string {
+	return "upstream needs an environment variable mini didn't start with, not retrying"
+}
+
+func (notTrustedStatus) logMessage() string {
+	return "upstream not allowed to start, not retrying"
 }
 
 type startupTracker struct {
@@ -86,44 +107,46 @@ func (t *startupTracker) windowEnd(name string) time.Time { return t.startedAt[n
 
 func (t *startupTracker) state(name string, now time.Time) startupState {
 	if t.toolsReady[name] {
-		return startupState{phase: phaseConnected}
+		return startupState{status: connectedStatus{}}
 	}
 	if failure, ok := t.failures[name]; ok {
-		return startupState{phase: phaseFailed, failure: failure}
+		return startupState{status: failure}
 	}
 	if now.Before(t.windowEnd(name)) {
-		return startupState{phase: phaseConnecting}
+		return startupState{status: connectingStatus{}}
 	}
-	return startupState{phase: phaseDelayed}
+	return startupState{status: delayedStatus{}}
 }
 
 type startupState struct {
-	phase   startupPhase
-	failure startupFailure
+	status startupStatus
+}
+
+func (st startupState) phase() string {
+	switch st.status.(type) {
+	case connectedStatus:
+		return "connected"
+	case connectingStatus:
+		return "connecting"
+	case delayedStatus:
+		return "delayed"
+	case needsAuthStatus, needsEnvStatus, notTrustedStatus:
+		return "failed"
+	}
+	return "failed"
 }
 
 func terminalStartupFailure(err error) (startupFailure, bool) {
 	var unset *config.UnsetEnvError
 	switch {
 	case errors.Is(err, transport.ErrReauthRequired):
-		return startupFailure{kind: failureNeedsAuth}, true
+		return needsAuthStatus{}, true
 	case errors.Is(err, invoke.ErrAgentCommandNotAllowed):
-		return startupFailure{kind: failureNotTrusted}, true
-	case errors.As(err, &unset):
-		return startupFailure{kind: failureNeedsEnv, envVars: unset.Names}, true
+		return notTrustedStatus{}, true
+	case errors.As(err, &unset) && unset != nil:
+		return needsEnvStatus{envVars: unset.Names}, true
 	}
-	return startupFailure{}, false
-}
-
-func (f startupFailure) logMessage() string {
-	switch f.kind {
-	case failureNeedsAuth:
-		return "upstream needs authorization, not retrying"
-	case failureNeedsEnv:
-		return "upstream needs an environment variable mini didn't start with, not retrying"
-	default:
-		return "upstream not allowed to start, not retrying"
-	}
+	return nil, false
 }
 
 func (s *Server) openConnectWindow(name string) {
@@ -159,11 +182,11 @@ func (s *Server) startupReportLocked() startupReport {
 	report := startupReport{starting: []string{}, unavailable: map[string]any{}}
 	for name := range s.configServers {
 		state := s.startup.state(name, now)
-		switch state.phase {
-		case phaseConnecting:
+		switch state.status.(type) {
+		case connectingStatus:
 			report.starting = append(report.starting, name)
-		case phaseDelayed, phaseFailed:
-			report.unavailable[name] = map[string]any{"state": state.phase, "reason": state.reason(name)}
+		case delayedStatus, needsAuthStatus, needsEnvStatus, notTrustedStatus:
+			report.unavailable[name] = map[string]any{"state": state.phase(), "reason": state.reason(name)}
 		}
 	}
 	slices.Sort(report.starting)
@@ -172,35 +195,31 @@ func (s *Server) startupReportLocked() startupReport {
 
 // Agents read these, so they never include the upstream error: it can hold credentials.
 func (st startupState) reason(name string) string {
-	switch st.phase {
-	case phaseConnecting:
+	switch status := st.status.(type) {
+	case connectedStatus:
+		return ""
+	case connectingStatus:
 		return fmt.Sprintf(
 			"server %q is still connecting; its tools appear when it's ready. Try again in a few seconds.", name)
-	case phaseDelayed:
+	case delayedStatus:
 		return fmt.Sprintf(
 			"server %q hasn't connected yet; mini keeps trying in the background. "+
 				`If this persists, ask the user to run "mini status".`, name)
+	case needsAuthStatus:
+		return status.reason(name)
+	case needsEnvStatus:
+		return status.reason(name)
+	case notTrustedStatus:
+		return status.reason(name)
 	}
-	return st.failure.reason(name)
+	return fmt.Sprintf(`server %q could not start; ask the user to run "mini status".`, name)
 }
 
-func (f startupFailure) reason(name string) string {
-	switch f.kind {
-	case failureNeedsAuth:
-		return fmt.Sprintf(
-			`server %q needs authorization: call config with action "start_auth" and server %q, `+
-				"then finish the login in the browser.", name, name)
-	case failureNeedsEnv:
-		return fmt.Sprintf(
-			"server %q needs %s, which the running mini was started without. "+
-				"Ask the user to provide what's missing; mini picks it up only when it starts again.",
-			name, envVarList(f.envVars))
-	default:
-		return fmt.Sprintf(
-			"server %q runs a command an agent added, so mini won't start it until a person trusts it. "+
-				"Ask the user to delete agent_added from its server file; mini picks the change up only when it starts again.",
-			name)
-	}
+func (status needsEnvStatus) reason(name string) string {
+	return fmt.Sprintf(
+		"server %q needs %s, which the running mini was started without. "+
+			"Ask the user to provide what's missing; mini picks it up only when it starts again.",
+		name, envVarList(status.envVars))
 }
 
 func envVarList(names []string) string {
@@ -208,4 +227,16 @@ func envVarList(names []string) string {
 		return "the environment variable " + names[0]
 	}
 	return "the environment variables " + strings.Join(names, ", ")
+}
+
+func (needsAuthStatus) reason(name string) string {
+	return fmt.Sprintf(
+		`server %q needs authorization: call config with action "start_auth" and server %q, `+
+			"then finish the login in the browser.", name, name)
+}
+
+func (notTrustedStatus) reason(name string) string {
+	return fmt.Sprintf(
+		"server %q runs a command an agent added, so mini won't start it until a person trusts it. "+
+			"Ask the user to delete agent_added from its server file; mini picks the change up only when it starts again.", name)
 }
