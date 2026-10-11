@@ -40,6 +40,27 @@ func TestRun(t *testing.T) {
 		assertNoStage(t, run)
 	})
 
+	t.Run("a login is saved in the stage for a server the run adds, and in mini for the rest", func(t *testing.T) {
+		setup := Setup{
+			ConfigDir: t.TempDir(),
+			Add:       []catalog.Entry{{Name: "notes", URL: "https://notes.example/mcp"}},
+			Probe:     newFakeProbe(false).probe,
+		}
+		configtest.WriteServer(t, setup.ConfigDir, config.ServerConfig{Name: "files", URL: "https://files.example/mcp"})
+		run := mustStart(t, setup, Plan{Add: setup.Add})
+		run.Save()
+
+		if got := run.ConfigDirFor("files"); got != setup.ConfigDir {
+			t.Errorf(
+				"files' login goes to %q, want mini's config dir: quitting mustn't undo a login to a server mini has",
+				got,
+			)
+		}
+		if got := run.ConfigDirFor("notes"); got != run.stage.dir {
+			t.Errorf("notes' login goes to %q, want the stage, which holds notes until Finish", got)
+		}
+	})
+
 	t.Run("finishing commits the saved servers to mini", func(t *testing.T) {
 		setup := Setup{
 			ConfigDir: t.TempDir(),

@@ -23,7 +23,7 @@ type agentDuplicates struct {
 // PlanConnect reads the staged servers with mini's: removing replaces entries with what mini will
 // have once Finish commits.
 func (r *Run) PlanConnect() (ConnectPlan, error) {
-	if !r.staged {
+	if !r.stage.created {
 		return r.setup.planConnect(r.setup.ConfigDir)
 	}
 	return r.setup.planConnect(r.setup.ConfigDir, r.stage.dir)

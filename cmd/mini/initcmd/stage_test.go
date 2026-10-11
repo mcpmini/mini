@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/mcpmini/mini/internal/testutil"
 )
@@ -116,6 +117,45 @@ func TestStage(t *testing.T) {
 			filepath.Join(configDir, "internal", "linear.token.json"),
 		); got != `{"access_token":"theirs"}` {
 			t.Errorf("linear token = %q, want the login of the version kept", got)
+		}
+	})
+
+	t.Run("a stage a killed run left a day ago is removed, a recent one kept", func(t *testing.T) {
+		configDir := t.TempDir()
+		old := filepath.Join(configDir, "internal", "init-stage-old")
+		recent := filepath.Join(configDir, "internal", "init-stage-recent")
+		testutil.WriteFile(t, filepath.Join(old, "internal", "linear.token.json"), `{}`)
+		testutil.WriteFile(t, filepath.Join(recent, "internal", "notes.token.json"), `{}`)
+		dayAgo := time.Now().Add(-staleStageAge - time.Minute)
+		if err := os.Chtimes(old, dayAgo, dayAgo); err != nil {
+			t.Fatal(err)
+		}
+
+		newTestStage(t, configDir)
+
+		if _, err := os.Stat(old); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("old stage: %v, want it removed with the login it held", err)
+		}
+		if _, err := os.Stat(recent); err != nil {
+			t.Errorf("recent stage: %v, want it kept: another init may be using it", err)
+		}
+	})
+
+	t.Run("a server name taken in another case keeps mini's login", func(t *testing.T) {
+		configDir := t.TempDir()
+		s := newTestStage(t, configDir)
+		stageServer(t, s, "linear")
+		testutil.WriteFile(t, filepath.Join(configDir, "servers", "Linear.yaml"), "url: https://theirs.example/mcp\n")
+		theirs := filepath.Join(configDir, "internal", "Linear.token.json")
+		testutil.WriteFile(t, theirs, `{"access_token":"theirs"}`)
+
+		_, failed := s.commit([]string{"linear"})
+
+		if len(failed) != 1 || !errors.Is(failed[0].Err, errAddedOutsideInit) {
+			t.Errorf("failed = %v, want linear reported as added outside init", failed)
+		}
+		if got := readOrMissing(t, theirs); got != `{"access_token":"theirs"}` {
+			t.Errorf("Linear's token = %q, want it untouched", got)
 		}
 	})
 

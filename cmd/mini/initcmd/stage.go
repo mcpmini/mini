@@ -1,14 +1,20 @@
 package initcmd
 
 import (
+	"cmp"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
+	"time"
 
 	"github.com/mcpmini/mini/internal/auth"
+	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/fileio"
 )
@@ -19,6 +25,7 @@ import (
 type stage struct {
 	configDir string
 	dir       string
+	created   bool
 }
 
 var errAddedOutsideInit = errors.New("added to mini outside init while it ran; kept that version")
@@ -30,6 +37,10 @@ func newStage(configDir string) *stage {
 
 // create waits for the first save, so a run that quits before it leaves the config dir as it found it.
 func (s *stage) create() error {
+	if s.created {
+		return nil
+	}
+	sweepStaleStages(s.configDir)
 	for _, sub := range []string{"servers", "internal"} {
 		if err := os.MkdirAll(filepath.Join(s.dir, sub), 0o700); err != nil {
 			return fmt.Errorf("create init stage: %w", err)
@@ -37,10 +48,28 @@ func (s *stage) create() error {
 	}
 	// Probes and logins in the stage read mini's settings.
 	settings, exists, err := readIfExists(filepath.Join(s.configDir, "config.yaml"))
-	if err != nil || !exists {
-		return err
+	if err == nil && exists {
+		err = writeFile(filepath.Join(s.dir, "config.yaml"), settings)
 	}
-	return writeFile(filepath.Join(s.dir, "config.yaml"), settings)
+	s.created = err == nil
+	return err
+}
+
+// A run killed before it could discard its stage leaves it behind, logins included; no run lasts a day.
+const staleStageAge = 24 * time.Hour
+
+func sweepStaleStages(configDir string) {
+	pattern := filepath.Join(configDir, "internal", "init-stage-*")
+	stages, _ := filepath.Glob(pattern) //nolint:errcheck // Glob fails only on a bad pattern, and this one is fixed
+	for _, dir := range stages {
+		info, err := os.Stat(dir)
+		if err != nil || clock.System().Since(info.ModTime()) < staleStageAge {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			log.Printf("init: remove %s: %v", dir, err)
+		}
+	}
 }
 
 // commit moves each named server into mini, its login and state first, so a daemon that sees the
@@ -57,8 +86,9 @@ func (s *stage) commit(names []string) (committed []string, failed []ServerError
 }
 
 func (s *stage) commitServer(name string) error {
-	if config.ServerFileExists(s.configDir, name) {
-		return errAddedOutsideInit
+	// Checked before the login is written over: on a case-insensitive disk Linear's files are linear's.
+	if taken, err := serverNameTaken(s.configDir, name); err != nil || taken {
+		return cmp.Or(err, errAddedOutsideInit)
 	}
 	staged, mini := serverState(s.dir, name), serverState(s.configDir, name)
 	for i := range staged {
@@ -76,6 +106,19 @@ func (s *stage) commitServer(name string) error {
 	}
 	// Created, not replaced: a server added since the check above is someone else's.
 	return fileio.CreateFile(path, data, 0o600)
+}
+
+func serverNameTaken(configDir, name string) (bool, error) {
+	entries, err := os.ReadDir(filepath.Join(configDir, "servers"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(entries, func(e os.DirEntry) bool {
+		return strings.EqualFold(e.Name(), name+".yaml")
+	}), nil
 }
 
 func serverState(configDir, name string) []string {

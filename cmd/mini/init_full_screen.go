@@ -8,7 +8,7 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
 )
 
-var errInitQuit = errors.New("init quit; nothing was written")
+var errInitQuit = errors.New("init quit; no servers were added and no agent was changed")
 
 func runFullScreenInit(configDir string) error {
 	setup, err := setupFromFlags(configDir, initFlags{importAll: true})

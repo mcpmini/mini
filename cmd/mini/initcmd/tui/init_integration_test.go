@@ -68,7 +68,7 @@ func TestIntegrationInitUI_ctrlCLeavesNoServersAndRestoresTheTerminal(t *testing
 
 	term.waitFor("[x] files")
 	term.press("ctrl+c")
-	term.waitFor("nothing was written")
+	term.waitFor("no servers were added")
 
 	if code := term.exitCode(); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -94,7 +94,7 @@ func TestIntegrationInitUI_ctrlCAfterCatalogWritesNothing(t *testing.T) {
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "tab", "enter")
 	term.waitFor("Finish setting up these servers")
 	term.press("ctrl+c")
-	term.waitFor("nothing was written")
+	term.waitFor("no servers were added")
 
 	if code := term.exitCode(); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)

@@ -13,14 +13,13 @@ import (
 // Finish commits them to mini. Checking and ChecksChanged are safe from any goroutine; the other
 // methods belong to one.
 type Run struct {
-	Plan      Plan
-	setup     Setup
-	stage     *stage
-	staged    bool
-	session   *session
-	last      syncResult
-	committed []string
-	commit    []ServerError
+	Plan         Plan
+	setup        Setup
+	stage        *stage
+	session      *session
+	last         syncResult
+	committed    []string
+	commitFailed []ServerError
 }
 
 func (s Setup) Start(p Plan) *Run {
@@ -31,12 +30,9 @@ func (s Setup) Start(p Plan) *Run {
 // Save stages the plan's servers and starts checking the new ones for OAuth. It returns the servers
 // it removed, credentials included, so a login done for them no longer applies.
 func (r *Run) Save() (removed []string) {
-	if !r.staged {
-		if err := r.stage.create(); err != nil {
-			r.last = syncResult{Failed: failedAll(r.Plan.Servers(), err)}
-			return nil
-		}
-		r.staged = true
+	if err := r.stage.create(); err != nil {
+		r.last = syncResult{Failed: failedAll(r.Plan.Servers(), err)}
+		return nil
 	}
 	r.last = r.session.Sync(r.Plan.Servers())
 	return r.last.Removed
@@ -66,7 +62,7 @@ func (r *Run) ConfigDirFor(server string) string {
 // ServerStatuses are mini's servers with the ones this run adds.
 func (r *Run) ServerStatuses(entries []catalog.Entry) ([]ServerStatus, error) {
 	inMini, err := ServerStatuses(r.setup.ConfigDir, entries)
-	if err != nil || !r.staged {
+	if err != nil || !r.stage.created {
 		return inMini, err
 	}
 	added, err := ServerStatuses(r.stage.dir, entries)
@@ -87,7 +83,7 @@ func (r *Run) ChecksChanged() <-chan struct{} {
 // reporting: the report reads both the servers and the agents' configs.
 func (r *Run) Finish(ctx context.Context, connect ConnectParams) Report {
 	r.session.WaitChecks()
-	r.committed, r.commit = r.stage.commit(r.session.Written())
+	r.committed, r.commitFailed = r.stage.commit(r.session.Written())
 	r.discardStage()
 	connected := r.setup.connectAgents(ctx, connect)
 	report := r.report()
@@ -113,7 +109,7 @@ func (r *Run) report() Report {
 	report.Import = p.Import
 	adds := planAdds(p.Import.picked(), p.Add, p.written)
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
-	report.WriteErrors = slices.Concat(r.last.Failed, r.commit)
+	report.WriteErrors = slices.Concat(r.last.Failed, r.commitFailed)
 	report.Import.keepOnly(report.Import.importedOf(r.committed))
 	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, p.Catalog)
 	return report
