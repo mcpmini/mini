@@ -142,7 +142,7 @@ func TestConnectScreen_anAgentThatAlreadyHasMiniIsNotToldMiniWillBeAdded(t *test
 			removing,
 		)
 	}
-	if want := "mini is already in these agents' configurations, so nothing changes."; !strings.Contains(
+	if want := "mini is already connected, so nothing changes."; !strings.Contains(
 		connecting,
 		want,
 	) {

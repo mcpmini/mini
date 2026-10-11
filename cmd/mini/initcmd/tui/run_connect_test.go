@@ -153,7 +153,7 @@ func TestRun_connectAndRemove(t *testing.T) {
 			}
 		})
 	})
-	t.Run("an entry whose mini copy failed its check stays", func(t *testing.T) {
+	t.Run("when its mini copy fails the check, enter just connects and the entry stays", func(t *testing.T) {
 		claude, out := run(t, errors.New("connection refused"))
 		config := string(testutil.ReadFile(t, claude.ConfigPath))
 		if !strings.Contains(config, `"files"`) || !strings.Contains(config, `"mini"`) {

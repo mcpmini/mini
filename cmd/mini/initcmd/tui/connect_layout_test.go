@@ -10,7 +10,7 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
-func TestConnectScreen_saysWhichMCPsWereAddedToMiniAndLaterSavesOnlyThose(t *testing.T) {
+func TestConnectScreen_saysWhichMCPsWereAddedToMiniAndLaterMentionsSavingOnlyThen(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		added []string

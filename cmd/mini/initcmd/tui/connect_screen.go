@@ -258,7 +258,7 @@ func (s *connectScreen) removeSubtitles() []subtitle {
 }
 
 func (s *connectScreen) connectOnlySubtitles() []subtitle {
-	subtitles := []subtitle{{text: "mini is already in these agents' configurations, so nothing changes."}}
+	subtitles := []subtitle{{text: "mini is already connected, so nothing changes."}}
 	if s.addsMini() {
 		subtitles = []subtitle{
 			{text: "Adds mini to your agent configurations and leaves existing MCP configurations alone."},
