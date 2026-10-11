@@ -54,6 +54,7 @@ func (a *app) onNavigation() bool {
 		return false
 	case focusNavigation:
 		return true
+	case focusUnmoved:
 	}
 	f, ok := a.current().(finisher)
 	return ok && f.finished()

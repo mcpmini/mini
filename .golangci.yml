@@ -19,6 +19,7 @@ linters:
     - gocritic
     - makezero
     - asasalint
+    - exhaustive
 
     # Hygiene
     - bodyclose      # unclosed HTTP response bodies

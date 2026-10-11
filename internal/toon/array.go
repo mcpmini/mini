@@ -176,6 +176,8 @@ func writeListItem(sb *strings.Builder, item Value, depth int) error {
 			return err
 		}
 		return writeArray(sb, item.Items, arrayCtx{ItemDepth: depth + 1})
+	case KindNull, KindBool, KindNumber, KindString:
+		fallthrough
 	default:
 		s, err := encodePrimitive(item)
 		if err != nil {
@@ -373,6 +375,7 @@ func isPrimitive(v Value) bool {
 	switch v.Kind {
 	case KindNull, KindBool, KindNumber, KindString:
 		return true
+	case KindObject, KindArray:
 	}
 	return false
 }

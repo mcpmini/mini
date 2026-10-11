@@ -51,6 +51,7 @@ func (h *mcpHandler) applyFault(req transport.Request, f Fault) (dispatchResult,
 		return dispatchResult{exit: true}, true
 	case FaultBadJSON:
 		return dispatchResult{rawWrite: []byte("GARBAGE_NOT_JSON\n")}, true
+	case FaultErrorResult, FaultRPCError, FaultOversized, FaultIntermittent:
 	}
 	return h.applyContentFault(req, f)
 }
@@ -72,6 +73,7 @@ func (h *mcpHandler) applyContentFault(req transport.Request, f Fault) (dispatch
 		return dispatchResult{response: respond(req.ID, errResult(msg))}, true
 	case FaultOversized:
 		return faultOversized(req.ID, f.SizeBytes), true
+	case FaultDelay, FaultHang, FaultBadJSON, FaultDrop, FaultIntermittent, FaultSlowInit:
 	}
 	return dispatchResult{}, false
 }

@@ -43,12 +43,15 @@ func (st startupState) errorCode() string {
 		return "server_starting"
 	case phaseDelayed:
 		return "server_delayed"
+	case phaseConnected, phaseFailed:
 	}
 	switch st.failure.kind {
 	case failureNeedsAuth:
 		return "server_needs_auth"
 	case failureNeedsEnv:
 		return "server_needs_env"
+	case failureNotTrusted:
+		fallthrough
 	default:
 		return "server_not_trusted"
 	}

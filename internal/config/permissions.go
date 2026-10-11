@@ -30,6 +30,8 @@ func defaultPermissionLevel(level string) PermissionLevel {
 		return PermProtected
 	case PermHidden:
 		return PermHidden
+	case PermOpen:
+		fallthrough
 	default:
 		return PermOpen
 	}

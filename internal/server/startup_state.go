@@ -121,6 +121,8 @@ func (f startupFailure) logMessage() string {
 		return "upstream needs authorization, not retrying"
 	case failureNeedsEnv:
 		return "upstream needs an environment variable mini didn't start with, not retrying"
+	case failureNotTrusted:
+		fallthrough
 	default:
 		return "upstream not allowed to start, not retrying"
 	}
@@ -164,6 +166,7 @@ func (s *Server) startupReportLocked() startupReport {
 			report.starting = append(report.starting, name)
 		case phaseDelayed, phaseFailed:
 			report.unavailable[name] = map[string]any{"state": state.phase, "reason": state.reason(name)}
+		case phaseConnected:
 		}
 	}
 	slices.Sort(report.starting)
@@ -180,6 +183,7 @@ func (st startupState) reason(name string) string {
 		return fmt.Sprintf(
 			"server %q hasn't connected yet; mini keeps trying in the background. "+
 				`If this persists, ask the user to run "mini status".`, name)
+	case phaseConnected, phaseFailed:
 	}
 	return st.failure.reason(name)
 }
@@ -195,6 +199,8 @@ func (f startupFailure) reason(name string) string {
 			"server %q needs %s, which the running mini was started without. "+
 				"Ask the user to provide what's missing; mini picks it up only when it starts again.",
 			name, envVarList(f.envVars))
+	case failureNotTrusted:
+		fallthrough
 	default:
 		return fmt.Sprintf(
 			"server %q runs a command an agent added, so mini won't start it until a person trusts it. "+

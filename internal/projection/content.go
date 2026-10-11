@@ -96,6 +96,7 @@ func processHTMLToken(tokenizer *html.Tokenizer, sb *strings.Builder, tt html.To
 		if skipDepth > 0 {
 			return skipDepth - 1
 		}
+	case html.ErrorToken, html.CommentToken, html.DoctypeToken:
 	}
 	return skipDepth
 }
@@ -151,6 +152,8 @@ func StripMarkup(s string) string {
 		return StripHTML(s)
 	case ContentMarkdown:
 		return StripMarkdown(s)
+	case ContentPlain:
+		fallthrough
 	default:
 		return s
 	}
