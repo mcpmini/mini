@@ -19,12 +19,10 @@ type finisher interface {
 	finished() bool
 }
 
-// A screen with no choices of its own may say what Continue leads to.
 type hinter interface {
 	continueHint() string
 }
 
-// hinted gives a screen the hint newScreens sets; a screen built without one says nothing.
 type hinted struct {
 	hint func() string
 }

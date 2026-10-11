@@ -43,8 +43,6 @@ func (ui screens) connectWillShow() bool {
 	return !ui.connects.empty() || ui.agentWithoutMini
 }
 
-// Logins is only known to be non-empty once it has been visited: a server already in mini that needs
-// a login is not predicted before then.
 func (ui screens) loginsLikely() bool {
 	return !ui.logins.empty() || ui.pickNeedsLogin() || ui.tickedMayNeedOAuth()
 }

@@ -15,7 +15,6 @@ import (
 	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
-// continueAfter runs the wizard, presses keys, and returns the Continue row of the screen it is on.
 func continueAfter(t *testing.T, setup initcmd.Setup, c catalog.Catalog, keys ...string) string {
 	t.Helper()
 	var line string
@@ -30,7 +29,6 @@ func continueAfter(t *testing.T, setup initcmd.Setup, c catalog.Catalog, keys ..
 	return line
 }
 
-// connectingSetup lists agents on Connect as well as importing from them.
 func connectingSetup(configDir string, list ...agents.Agent) initcmd.Setup {
 	setup := setupFor(configDir, list...)
 	setup.AgentsToConnect = list
@@ -48,8 +46,7 @@ func entryWithAuth(name, auth string) catalog.Entry {
 	return catalog.Entry{Name: name, URL: "https://" + name + ".example.com/mcp", Auth: auth}
 }
 
-// configWithLoginNeeded has a server in mini that needs a login, so Logins has a row once visited.
-func configWithLoginNeeded(t *testing.T) string {
+func configWithAServerToFinish(t *testing.T) string {
 	t.Helper()
 	configDir := t.TempDir()
 	configtest.WriteServer(
@@ -93,7 +90,7 @@ func TestContinueHints_catalogWithNothingTickedSaysNothingWithNoAgentsAndNoLogin
 
 func TestContinueHints_catalogSaysLogInAfterGoingBackFromLoginsWhichNeedsALogin(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
-	line := continueAfter(t, setupFor(configWithLoginNeeded(t)), c, "tab", "enter", "esc")
+	line := continueAfter(t, setupFor(configWithAServerToFinish(t)), c, "tab", "enter", "esc")
 	if want := "  Continue   log in to your MCPs"; line != want {
 		t.Errorf("Continue line on Catalog after Logins = %q, want %q", line, want)
 	}
@@ -110,13 +107,13 @@ func TestContinueHints_catalogSaysLogInForAnImportThatMayNeedOAuth(t *testing.T)
 func TestContinueHints_loginsSaysAddMiniOnlyWhenAnAgentWillBeListed(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
 	t.Run("with an agent without mini", func(t *testing.T) {
-		line := continueAfter(t, connectingSetup(configWithLoginNeeded(t), stdioAgent("Codex")), c, "tab", "enter")
+		line := continueAfter(t, connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex")), c, "tab", "enter")
 		if !strings.HasSuffix(line, "Continue   add mini to your agents") {
 			t.Errorf("Continue line on Logins = %q, want add mini to your agents", line)
 		}
 	})
 	t.Run("with no agent to connect", func(t *testing.T) {
-		line := continueAfter(t, setupFor(configWithLoginNeeded(t)), c, "tab", "enter")
+		line := continueAfter(t, setupFor(configWithAServerToFinish(t)), c, "tab", "enter")
 		if strings.Contains(line, "add mini") {
 			t.Errorf("Continue line on Logins = %q, want no hint", line)
 		}

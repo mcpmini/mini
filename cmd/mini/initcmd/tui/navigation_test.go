@@ -248,7 +248,6 @@ type hintedScreen struct {
 
 func (s *hintedScreen) continueHint() string { return s.hint }
 
-// continueLine is the row that holds Continue, with its cursor mark.
 func continueLine(view string) string {
 	for _, line := range strings.Split(view, "\n") {
 		if strings.HasPrefix(strings.TrimPrefix(strings.TrimPrefix(line, "> "), "  "), continueLabel) {
