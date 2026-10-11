@@ -572,10 +572,10 @@ func TestIntegrationCLI_init_fromWithOAuthServer_listsTheLoginBeforeHowToConnect
 		t.Fatalf("init exit = %d, stdout:\n%s", code, stdout)
 	}
 	markers := []string{
-		"mini is set up with 1 server, 1 still needs finishing:",
-		"imported-server  run: mini --config ",
+		"The following servers require manual configuration to add to mini:",
+		"imported-server  requires a login  run: ",
 		"auth imported-server\n",
-		"To connect mini to your agent",
+		"To use mini, add it to your agent as an MCP server",
 	}
 	last := -1
 	for _, marker := range markers {

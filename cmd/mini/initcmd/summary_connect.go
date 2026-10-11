@@ -13,20 +13,20 @@ import (
 	"github.com/mcpmini/mini/internal/agents"
 )
 
-func writeHandConnect(b *strings.Builder, c AgentConnections) {
+func writeHandConnect(b *strings.Builder, c AgentConnections, style SummaryStyle) {
 	writeInactiveMini(b, c)
-	if len(c.NoMini) == 0 {
-		if len(c.MiniServes) > 0 || len(c.MiniInactive) > 0 {
-			return
-		}
-		fmt.Fprintf(
-			b,
-			"\nTo connect mini to your agent, add it to its MCP config:\n%s\n",
-			indent(jsonSnippet(c.Mini), "  "),
-		)
-		return
+	switch {
+	case len(c.NoMini) > 0:
+		writeHandSteps(b, c.NoMini, c.Mini)
+	case len(c.MiniServes) == 0 && len(c.MiniInactive) == 0:
+		writeNoAgents(b, c, style)
 	}
-	writeHandSteps(b, c.NoMini, c.Mini)
+}
+
+func writeNoAgents(b *strings.Builder, c AgentConnections, style SummaryStyle) {
+	fmt.Fprintf(b, "\n%s\n", style.warning("⚠ No agents were found automatically"))
+	command := shellCommand(agents.MiniEntry{Command: c.miniName(), Args: c.Mini.Args})
+	fmt.Fprintf(b, "To use mini, add it to your agent as an MCP server with the command: %s\n", style.code(command))
 }
 
 func writeHandSteps(b *strings.Builder, list []agents.Agent, mini agents.MiniEntry) {
@@ -107,9 +107,9 @@ func keptReason(r Report, kept KeptEntry) string {
 	case r.needsFinishing(kept.Server):
 		return "it works in mini once you finish " + kept.Server + " above"
 	case errors.Is(kept.Err, context.DeadlineExceeded):
-		return "mini's check timed out; " + miniCommand(r.Agents.Mini, "test") + " tries again"
+		return "mini's check timed out; " + miniCommand(r.Agents, "test") + " tries again"
 	}
-	return "mini couldn't connect to it; " + miniCommand(r.Agents.Mini, "test") + " shows why"
+	return "mini couldn't connect to it; " + miniCommand(r.Agents, "test") + " shows why"
 }
 
 func (r Report) needsFinishing(server string) bool {

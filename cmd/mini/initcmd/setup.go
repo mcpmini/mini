@@ -27,6 +27,7 @@ type Report struct {
 	ConfigDir string
 	// Import is the plan, with notes only for the imports written and skip lines only for entries left behind.
 	Import             ImportPlan
+	Added              []string
 	AlreadyConfigured  []string
 	AddCoveredByImport []string
 	WriteErrors        []ServerError

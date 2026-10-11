@@ -37,7 +37,7 @@ func TestIntegrationInitUI_writesTheTickedServersConnectsTheAgentAndPrintsTheSum
 	term.waitFor("Nothing will be removed: notes doesn't work in mini yet.")
 	term.waitFor("> Just connect mini")
 	term.press("enter")
-	term.waitFor("mini is set up with 2 servers")
+	term.waitFor("Added 2 servers to mini: ")
 	term.waitFor("Restart Claude Code to start using mini.")
 
 	if code := term.exitCode(); code != 0 {

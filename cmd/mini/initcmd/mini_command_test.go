@@ -47,6 +47,36 @@ func TestBinaryPath(t *testing.T) {
 	}
 }
 
+func TestDisplayName(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	self := filepath.Join(dir, "build", "mini")
+	other := filepath.Join(dir, "other", "mini")
+	testutil.WriteFile(t, self, "binary")
+	testutil.WriteFile(t, other, "another binary")
+	executable := func() (string, error) { return self, nil }
+	onPath := func(path string) func(string) (string, error) {
+		return func(string) (string, error) { return path, nil }
+	}
+	notOnPath := func(string) (string, error) { return "", errors.New("not found") }
+	for _, tt := range []struct {
+		name   string
+		lookup binaryLookup
+		want   string
+	}{
+		{"PATH finds this binary", binaryLookup{executable, onPath(self)}, "mini"},
+		{"PATH finds another binary", binaryLookup{executable, onPath(other)}, self},
+		{"not on PATH", binaryLookup{executable, notOnPath}, self},
+		{"neither PATH nor the executable", binaryLookup{func() (string, error) { return "", errors.New("gone") }, notOnPath}, "mini"},
+	} {
+		if got := tt.lookup.displayName(); got != tt.want {
+			t.Errorf("%s: displayName = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 func TestMiniCommandArgs(t *testing.T) {
 	lookup := binaryLookup{
 		func() (string, error) { return "/opt/mini", nil },

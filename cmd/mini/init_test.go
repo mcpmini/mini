@@ -71,8 +71,8 @@ env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 		}
 	}
 	for _, want := range []string{
-		"mini is set up with 4 servers, 1 still needs finishing:",
-		"search  needs SEARCH_TOKEN set where mini runs (used in headers.Authorization), or edit " +
+		"The following servers require manual configuration to add to mini:",
+		"search  requires SEARCH_TOKEN set  set them where mini runs (used in headers.Authorization), or edit " +
 			filepath.Join(configDir, "servers", "search.yaml"),
 		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
 			filepath.Join(configDir, "servers", "files.yaml"),
@@ -268,7 +268,7 @@ func TestInitCommandDetectsOAuthOnImportedServer(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(out, "1 still needs finishing") || !strings.Contains(out, "auth svc") {
+	if !strings.Contains(out, "svc  requires a login") || !strings.Contains(out, "auth svc") {
 		t.Errorf("init output = %q, want svc listed as needing a login", out)
 	}
 }

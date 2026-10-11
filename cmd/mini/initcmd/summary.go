@@ -6,35 +6,47 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mcpmini/mini/internal/agents"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
+// SummaryStyle colors the lines a person has to act on. A nil func leaves its text plain.
+type SummaryStyle struct {
+	Warning func(string) string
+	Code    func(string) string
+}
+
+func (s SummaryStyle) warning(text string) string { return styled(s.Warning, text) }
+
+func (s SummaryStyle) code(text string) string { return styled(s.Code, text) }
+
+func styled(style func(string) string, text string) string {
+	if style == nil {
+		return text
+	}
+	return style(text)
+}
+
 // Summary is what init prints when it ends: what is set up, what is left for the user, and
 // what failed, each with the step that finishes it.
-func Summary(r Report) string {
+func Summary(r Report, style SummaryStyle) string {
 	var b strings.Builder
-	writeServers(&b, r)
+	writeServers(&b, r, style)
 	writeDroppedSettings(&b, r)
 	writeStaticHeaders(&b, r)
 	writeSkipped(&b, r)
 	writeFailures(&b, r)
 	if r.Connected == nil {
-		writeHandConnect(&b, r.Agents)
+		writeHandConnect(&b, r.Agents, style)
 	} else {
 		writeConnected(&b, r)
 	}
 	return b.String()
 }
 
-func writeServers(b *strings.Builder, r Report) {
-	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Readiness == Ready })
-	writeServersHeadline(b, r, len(unfinished))
-	width := nameWidth(unfinished)
-	for _, s := range unfinished {
-		fmt.Fprintf(b, "  %-*s  %s\n", width, s.Name, finishStep(r.ConfigDir, r.Agents.Mini, s, width))
-	}
+func writeServers(b *strings.Builder, r Report, style SummaryStyle) {
+	writeServersHeadline(b, r)
+	writeUnfinished(b, r, style)
 	if len(r.AlreadyConfigured) > 0 {
 		fmt.Fprintf(b, "Already configured in mini: %s\n", strings.Join(r.AlreadyConfigured, ", "))
 	}
@@ -47,51 +59,81 @@ func writeServers(b *strings.Builder, r Report) {
 	}
 }
 
-func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
+func writeServersHeadline(b *strings.Builder, r Report) {
 	switch {
-	case len(r.Servers) == 0 && r.ReadServersErr != nil:
-	case len(r.Servers) == 0:
-		fmt.Fprintln(b, "mini has no servers yet.")
-	case unfinished == 0:
-		fmt.Fprintf(b, "mini is set up with %s.\n", Plural(len(r.Servers), "server"))
+	case len(r.Added) > 0:
+		fmt.Fprintf(b, "Added %s to mini: %s\n", Plural(len(r.Added), "server"), strings.Join(r.Added, ", "))
+	case r.ReadServersErr != nil:
 	default:
-		verb := "need"
-		if unfinished == 1 {
-			verb = "needs"
-		}
-		fmt.Fprintf(
-			b,
-			"mini is set up with %s, %d still %s finishing:\n",
-			Plural(len(r.Servers), "server"),
-			unfinished,
-			verb,
-		)
+		fmt.Fprintln(b, "No servers were added to mini.")
 	}
 }
 
-func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width int) string {
-	file := config.ServerPath(configDir, s.Name)
-	if step, ok := stepInFile(file, mini, s); ok {
-		return step
+func writeUnfinished(b *strings.Builder, r Report, style SummaryStyle) {
+	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Readiness == Ready })
+	if len(unfinished) == 0 {
+		return
 	}
+	nameW, requirementW := nameWidth(unfinished), requirementWidth(unfinished)
+	layout := stepLayout{column: strings.Repeat(" ", 2+nameW+2+requirementW+2), style: style}
+	fmt.Fprintln(b, "\nThe following servers require manual configuration to add to mini:")
+	for _, s := range unfinished {
+		fmt.Fprintf(b, "  %-*s  %-*s  %s\n", nameW, s.Name, requirementW, s.requirement(), r.finishStep(s, layout))
+	}
+}
+
+func requirementWidth(statuses []ServerStatus) int {
+	width := 0
+	for _, s := range statuses {
+		width = max(width, len(s.requirement()))
+	}
+	return width
+}
+
+func (s ServerStatus) requirement() string {
 	switch s.Readiness {
 	case NeedsToken:
-		return "needs a token: " + addStep(file, catalog.AuthToken, s.SetupURL, width)
-	case NeedsEnv:
-		return fmt.Sprintf("needs %s set where mini runs (used in %s), or edit %s",
-			strings.Join(s.UnsetEnv.Names, ", "), s.UnsetEnv.Field, file)
+		return "requires an access token"
 	case NeedsOwnApp:
-		return "needs your own OAuth app: " + addStep(file, catalog.AuthOAuth2App, s.SetupURL, width) +
-			"\n" + strings.Repeat(" ", width+4) + "and run: " + miniCommand(mini, "auth", s.Name)
+		return "requires an OAuth app"
+	case NeedsEnv:
+		return "requires " + strings.Join(s.UnsetEnv.Names, ", ") + " set"
 	}
-	return "run: " + miniCommand(mini, "auth", s.Name)
+	return "requires a login"
 }
 
-// addStep is the credential step for a server whose file doesn't hold it, indented under its name.
-func addStep(file, authKind, setupURL string, width int) string {
+// stepLayout is where a server's steps go: wrapped lines start at Column, and paths and
+// commands are styled as code.
+type stepLayout struct {
+	column string
+	style  SummaryStyle
+}
+
+// finishStep is what the user does to finish a server. Steps that span lines wrap at the layout's column.
+func (r Report) finishStep(s ServerStatus, layout stepLayout) string {
+	file := config.ServerPath(r.ConfigDir, s.Name)
+	login := layout.style.code(miniCommand(r.Agents, "auth", s.Name))
+	switch {
+	case s.Readiness == NeedsEnv:
+		return fmt.Sprintf("set them where mini runs (used in %s), or edit %s",
+			s.UnsetEnv.Field, layout.style.code(file))
+	case s.Readiness == NeedsLogin:
+		return "run: " + login
+	case s.StepsInFile && s.Readiness == NeedsOwnApp:
+		return "finish the steps in " + layout.style.code(file) + ", then run: " + login
+	case s.StepsInFile:
+		return "finish the steps in " + layout.style.code(file)
+	case s.Readiness == NeedsToken:
+		return layout.addStep(file, catalog.AuthToken, s.SetupURL)
+	}
+	return layout.addStep(file, catalog.AuthOAuth2App, s.SetupURL) + "\n" + layout.column + "then run: " + login
+}
+
+// addStep is the credential step for a server whose file doesn't hold it.
+func (l stepLayout) addStep(file, authKind, setupURL string) string {
 	intro, block := credentialSteps(authKind, setupURL)
-	more := "\n" + strings.Repeat(" ", width+6)
-	return lowerFirst(intro) + ", then add to " + file + ":" + more + strings.Join(block, more)
+	more := "\n" + l.column
+	return lowerFirst(intro) + ", then add to " + l.style.code(file) + ":" + more + strings.Join(block, more)
 }
 
 func lowerFirst(s string) string {
@@ -101,24 +143,14 @@ func lowerFirst(s string) string {
 	return strings.ToLower(s[:1]) + s[1:]
 }
 
-func stepInFile(file string, mini agents.MiniEntry, s ServerStatus) (string, bool) {
-	switch {
-	case s.StepsInFile && s.Readiness == NeedsToken:
-		return "needs a token: finish the steps in " + file, true
-	case s.StepsInFile && s.Readiness == NeedsOwnApp:
-		return fmt.Sprintf("needs your own OAuth app: finish the steps in %s, then run: %s",
-			file, miniCommand(mini, "auth", s.Name)), true
-	}
-	return "", false
-}
-
 func LoginCommand(mini agents.MiniEntry, server string) string {
-	return miniCommand(mini, "auth", server)
+	return miniCommand(AgentConnections{Mini: mini}, "auth", server)
 }
 
 // Commands carry the config directory whenever agents are given one, so they act on the same servers.
-func miniCommand(mini agents.MiniEntry, args ...string) string {
-	words := []string{"mini"}
+func miniCommand(c AgentConnections, args ...string) string {
+	mini := c.Mini
+	words := []string{shellQuote(c.miniName())}
 	if i := slices.Index(mini.Args, "--config"); i >= 0 && i+1 < len(mini.Args) {
 		words = append(words, "--config", shellQuote(mini.Args[i+1]))
 	}
