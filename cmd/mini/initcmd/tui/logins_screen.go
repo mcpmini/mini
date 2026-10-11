@@ -253,7 +253,7 @@ func (s *loginsScreen) byHandList() []string {
 		text = "Browser login isn't available for this MCP, so you will need to configure it manually later:"
 	}
 	lines = append(lines, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
-	width := widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
+	width := initcmd.Widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
 	for _, status := range s.byHand {
 		lines = append(lines, columnLines(status.Name, width, s.p.steps.byHand(status), s.width)...)
 	}
