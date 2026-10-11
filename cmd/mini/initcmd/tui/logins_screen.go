@@ -51,8 +51,7 @@ type loginsScreen struct {
 	// One waiting command covers every running check.
 	waitingOnChecks bool
 	hinted
-	// onEnter lets the screens after this one catch up while it is shown, never while a frame is drawn.
-	onEnter func()
+	refreshConnect func()
 }
 
 func newLoginsScreen(p loginsParams) *loginsScreen {
@@ -128,8 +127,8 @@ func (s *loginsScreen) forget(servers []string) {
 }
 
 func (s *loginsScreen) enter() tea.Cmd {
-	if s.onEnter != nil {
-		s.onEnter()
+	if s.refreshConnect != nil {
+		s.refreshConnect()
 	}
 	s.cursorMoved = false
 	s.restOnNextLogin()

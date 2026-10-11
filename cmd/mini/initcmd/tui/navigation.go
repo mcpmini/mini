@@ -137,7 +137,7 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 		}
 		atCursor := a.onNavigation() && a.nav.at == i
 		start := len(lines)
-		lines = append(append(lines, cursorMark(atCursor)+a.navigationText(label, choosing)), under...)
+		lines = append(append(lines, cursorMark(atCursor)+a.navigationText(label)), under...)
 		if atCursor {
 			first, last = start, len(lines)-1
 		}
@@ -145,8 +145,8 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 	return lines, first, last
 }
 
-func (a *app) navigationText(label string, choosing bool) string {
-	if choosing || label != continueLabel {
+func (a *app) navigationText(label string) string {
+	if _, choosing := a.current().(chooser); choosing || label != continueLabel {
 		return label
 	}
 	h, ok := a.current().(hinter)

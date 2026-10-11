@@ -14,7 +14,6 @@ func importHint(catalogs *catalogScreen) func() string {
 	}
 }
 
-// Connect's list is read when Logins opens, so the hint knows whether Connect follows.
 func loginsHint(connects *connectScreen) func() string {
 	return func() string {
 		if connects.empty() {
