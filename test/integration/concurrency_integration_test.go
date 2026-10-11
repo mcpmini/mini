@@ -10,6 +10,7 @@ import (
 )
 
 func TestIntegrationConcurrency_20SequentialCalls(t *testing.T) {
+	t.Parallel()
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"name":"ok"}`})
 
 	for i := range 20 {
@@ -21,6 +22,7 @@ func TestIntegrationConcurrency_20SequentialCalls(t *testing.T) {
 }
 
 func TestIntegrationConcurrency_100RapidSequential(t *testing.T) {
+	t.Parallel()
 	client := quickServer(t, map[string]string{"get_item": `{"id":1}`})
 	for i := range 100 {
 		if client.execEnvelope("svc", "get_item", nil).Error != "" {
@@ -30,6 +32,7 @@ func TestIntegrationConcurrency_100RapidSequential(t *testing.T) {
 }
 
 func TestIntegrationConcurrency_20ParallelClients(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -53,6 +56,7 @@ func TestIntegrationConcurrency_20ParallelClients(t *testing.T) {
 }
 
 func TestIntegrationConcurrency_parallelHTTPUpstream(t *testing.T) {
+	t.Parallel()
 	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	writeHTTPServer(t, cfg, httpServerParams{ServerName: "svc", URL: f.srv.URL})
@@ -99,6 +103,7 @@ func countRejected(client *mcpClient, n int) int {
 }
 
 func TestIntegrationConcurrency_MaxPendingRequests(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	faultJSON := `{"tool":"get_item","method":"tools/call","type":"delay","delay_ms":2000}`
@@ -116,6 +121,7 @@ func TestIntegrationConcurrency_MaxPendingRequests(t *testing.T) {
 }
 
 func TestIntegrationConcurrency_parallel(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -152,6 +158,7 @@ func runNParallelExecs(client *mcpClient, n int) ([]bool, time.Duration) {
 }
 
 func TestIntegrationConcurrency_pipelinedRequests(t *testing.T) {
+	t.Parallel()
 	const delay = 300 * time.Millisecond
 	f := newFakeHTTPMCP(t, func(int) (int, []byte) {
 		time.Sleep(delay)
@@ -184,6 +191,7 @@ func assertSessionIsolation(t *testing.T, cfg string, existing *mcpClient) {
 }
 
 func TestIntegrationConcurrency_twoClientsSessionIsolation(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})

@@ -11,6 +11,7 @@ import (
 )
 
 func TestIntegrationProjection_readRecoversProjectedData(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		fixture    string

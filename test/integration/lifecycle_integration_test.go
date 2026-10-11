@@ -13,6 +13,7 @@ import (
 )
 
 func TestIntegrationLifecycle_addServerAtRuntime(t *testing.T) {
+	t.Parallel()
 	f := newFakeHTTPMCP(t, nil)
 	cfg := t.TempDir()
 	fixtureConfig := config.DefaultConfig()
@@ -42,6 +43,7 @@ func TestIntegrationLifecycle_addServerAtRuntime(t *testing.T) {
 }
 
 func TestIntegrationLifecycle_removeServerAtRuntime(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -63,6 +65,7 @@ func TestIntegrationLifecycle_removeServerAtRuntime(t *testing.T) {
 }
 
 func TestIntegrationLifecycle_addServerBadURL(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	fixtureConfig := config.DefaultConfig()
 	fixtureConfig.DangerousAllowPrivateURLs = true
@@ -87,6 +90,7 @@ func TestIntegrationLifecycle_addServerBadURL(t *testing.T) {
 }
 
 func TestIntegrationLifecycle_disabledServerNotLoaded(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	cfg := t.TempDir()
 	disabled := false
@@ -103,6 +107,7 @@ func TestIntegrationLifecycle_disabledServerNotLoaded(t *testing.T) {
 }
 
 func TestIntegrationLifecycle_tenServersSimultaneously(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	for i := range 10 {
 		dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})

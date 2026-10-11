@@ -184,6 +184,7 @@ func connectProxy(t *testing.T, cfg string) *mcpClient   { return connect(t, cfg
 func connectCompact(t *testing.T, cfg string) *mcpClient { return connect(t, cfg, "compact") }
 
 func TestIntegrationDaemon_basicToolCall(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	client := connectCompact(t, cfg)
@@ -193,6 +194,7 @@ func TestIntegrationDaemon_basicToolCall(t *testing.T) {
 }
 
 func TestIntegrationDaemon_spawnsOnDemandAndReuses(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	t.Cleanup(func() { reapDaemons(cfg) })
 
@@ -209,6 +211,7 @@ func TestIntegrationDaemon_spawnsOnDemandAndReuses(t *testing.T) {
 }
 
 func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"x","name":"test"}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -230,6 +233,7 @@ func TestIntegrationDaemon_sessionIsolation(t *testing.T) {
 }
 
 func TestIntegrationDaemon_standaloneFlag(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"ping": `{"ok":true}`})
 	cfg := shortConfigDir(t)
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -243,6 +247,7 @@ func TestIntegrationDaemon_standaloneFlag(t *testing.T) {
 
 // /healthz keys on HTTP server readiness, not upstream connectivity (#33).
 func TestIntegrationDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
+	t.Parallel()
 	cfg := shortConfigDir(t)
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 5000}
@@ -263,6 +268,7 @@ func TestIntegrationDaemon_healthyBeforeSlowUpstreamConnects(t *testing.T) {
 }
 
 func TestIntegrationDaemon_coldStartFirstToolsListIncludesASlowServer(t *testing.T) {
+	t.Parallel()
 	cfg := shortConfigDir(t)
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1}`})
 	fault := map[string]any{"method": "initialize", "type": "slow_initialize", "delay_ms": 1500}
@@ -281,6 +287,7 @@ func TestIntegrationDaemon_coldStartFirstToolsListIncludesASlowServer(t *testing
 }
 
 func TestIntegrationDaemon_healthzEndpoint(t *testing.T) {
+	t.Parallel()
 	cfg := shortConfigDir(t)
 	startDaemon(t, cfg)
 
@@ -300,6 +307,7 @@ func TestIntegrationDaemon_healthzEndpoint(t *testing.T) {
 }
 
 func TestIntegrationDaemon_proxyModeToolCall(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	client := connectProxy(t, cfg)
@@ -317,6 +325,7 @@ func TestIntegrationDaemon_proxyModeToolCall(t *testing.T) {
 }
 
 func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
@@ -336,6 +345,7 @@ func TestIntegrationDaemon_recoversAfterGracefulKill(t *testing.T) {
 }
 
 func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
 	tokenBefore := readDaemonToken(t, cfg)
@@ -359,6 +369,7 @@ func TestIntegrationDaemon_recoversAfterSIGKILLWithStaleSocket(t *testing.T) {
 }
 
 func TestIntegrationDaemon_manyClientsRecoverSingleWinner(t *testing.T) {
+	t.Parallel()
 	const n = 20
 	cfg := daemonForTest(t)
 	cmd := startDaemon(t, cfg)
@@ -407,6 +418,7 @@ func recoverAllClients(t *testing.T, clients []*mcpClient) {
 }
 
 func TestIntegrationDaemon_removedServerFile_dropsToolsWithoutRestart(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	client := connectProxy(t, cfg)
