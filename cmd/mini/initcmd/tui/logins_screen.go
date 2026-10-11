@@ -262,7 +262,7 @@ func (s *loginsScreen) byHandList() []string {
 
 // first and last bound the cursor's block: its row and the lines under it.
 func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last int) {
-	width := widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
+	width := initcmd.Widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
 	for i, status := range s.rows {
 		start := len(lines)
 		// The cursor's server stays in view while the cursor is on Continue, so a login's result shows.

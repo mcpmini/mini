@@ -10,7 +10,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// SummaryStyle colors the lines a person has to act on. A nil func leaves its text plain.
+// SummaryStyle marks the warning and the commands and paths a person acts on. A nil func leaves its text plain.
 type SummaryStyle struct {
 	Warning func(string) string
 	Code    func(string) string
@@ -74,20 +74,13 @@ func writeUnfinished(b *strings.Builder, r Report, style SummaryStyle) {
 	if len(unfinished) == 0 {
 		return
 	}
-	nameW, requirementW := nameWidth(unfinished), requirementWidth(unfinished)
+	nameW := Widest(unfinished, func(s ServerStatus) string { return s.Name })
+	requirementW := Widest(unfinished, ServerStatus.requirement)
 	layout := stepLayout{column: strings.Repeat(" ", 2+nameW+2+requirementW+2), style: style}
 	fmt.Fprintln(b, "\nThese servers need one more step before they work:")
 	for _, s := range unfinished {
 		fmt.Fprintf(b, "  %-*s  %-*s  %s\n", nameW, s.Name, requirementW, s.requirement(), r.finishStep(s, layout))
 	}
-}
-
-func requirementWidth(statuses []ServerStatus) int {
-	width := 0
-	for _, s := range statuses {
-		width = max(width, len(s.requirement()))
-	}
-	return width
 }
 
 func (s ServerStatus) requirement() string {
@@ -245,10 +238,11 @@ func writeFailures(b *strings.Builder, r Report) {
 	}
 }
 
-func nameWidth(statuses []ServerStatus) int {
+// Widest is the longest text among items, for padding a column.
+func Widest[T any](items []T, text func(T) string) int {
 	width := 0
-	for _, s := range statuses {
-		width = max(width, len(s.Name))
+	for _, item := range items {
+		width = max(width, len(text(item)))
 	}
 	return width
 }
