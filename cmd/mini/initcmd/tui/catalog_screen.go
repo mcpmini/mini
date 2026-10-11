@@ -30,7 +30,6 @@ type catalogScreen struct {
 	checked           map[string]bool
 	grid              *catalogGrid
 	width, rowsHeight int
-	hinted
 }
 
 type catalogParams struct {

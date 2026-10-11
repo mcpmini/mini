@@ -1,62 +1,25 @@
 package tui
 
-import (
-	"slices"
-
-	"github.com/mcpmini/mini/internal/agents"
-	"github.com/mcpmini/mini/internal/catalog"
-	"github.com/mcpmini/mini/internal/ops"
-)
-
 const (
 	browsePopularHint = "browse popular MCPs"
-	logInHint         = "log in to your MCPs"
 	addToAgentsHint   = "add mini to your agents"
 )
 
-func (ui screens) importHint() string {
-	if !ui.catalogs.empty() {
+func importHint(catalogs *catalogScreen) func() string {
+	return func() string {
+		if catalogs.empty() {
+			return ""
+		}
 		return browsePopularHint
 	}
-	return ui.catalogHint()
 }
 
-func (ui screens) catalogHint() string {
-	switch {
-	case ui.loginsLikely():
-		return logInHint
-	case ui.connectWillShow():
+// Connect's list is read when Logins opens, so the hint knows whether Connect follows.
+func loginsHint(connects *connectScreen) func() string {
+	return func() string {
+		if connects.empty() {
+			return ""
+		}
 		return addToAgentsHint
 	}
-	return ""
-}
-
-func (ui screens) loginsHint() string {
-	if ui.connectWillShow() {
-		return addToAgentsHint
-	}
-	return ""
-}
-
-// An agent without mini is listed on Connect even before Connect has been visited, so it counts now.
-func (ui screens) connectWillShow() bool {
-	return !ui.connects.empty() || ui.agentWithoutMini
-}
-
-func (ui screens) loginsLikely() bool {
-	return !ui.logins.empty() || ui.pickNeedsLogin() || ui.tickedMayNeedOAuth()
-}
-
-func (ui screens) pickNeedsLogin() bool {
-	return slices.ContainsFunc(ui.catalogs.picks(), func(e catalog.Entry) bool {
-		return e.Auth != catalog.AuthNone
-	})
-}
-
-func (ui screens) tickedMayNeedOAuth() bool {
-	return slices.ContainsFunc(ui.imports.ticked(), ops.MayNeedOAuth)
-}
-
-func anyAgentWithout(withMini map[string]bool, list []agents.Agent) bool {
-	return slices.ContainsFunc(list, func(a agents.Agent) bool { return !withMini[a.Name] })
 }

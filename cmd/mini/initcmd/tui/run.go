@@ -74,11 +74,10 @@ func (f *flow) finish() Outcome {
 }
 
 type screens struct {
-	imports          *importScreen
-	catalogs         *catalogScreen
-	logins           *loginsScreen
-	connects         *connectScreen
-	agentWithoutMini bool
+	imports  *importScreen
+	catalogs *catalogScreen
+	logins   *loginsScreen
+	connects *connectScreen
 }
 
 func newScreens(p Params, run *initcmd.Run) screens {
@@ -91,16 +90,15 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		// Nothing to look at while it loads, so wait: if the catalog is empty too, Catalog is skipped.
 		catalogs.update(catalogs.start()())
 	}
-	// Read once from the agents' files, so drawing a frame never reads them.
-	withMini := p.Setup.AgentsWithMini()
 	ui := screens{
-		imports:          imports,
-		catalogs:         catalogs,
-		connects:         newConnects(p.Setup, run, withMini),
-		agentWithoutMini: anyAgentWithout(withMini, p.Setup.AgentsToConnect),
+		imports:  imports,
+		catalogs: catalogs,
+		connects: newConnects(p.Setup, run),
 	}
 	ui.logins = newLogins(p, run, ui.catalog)
-	ui.imports.hint, ui.catalogs.hint, ui.logins.hint = ui.importHint, ui.catalogHint, ui.loginsHint
+	// Catalog gets no hint: what follows it depends on the servers its save stages and their checks.
+	ui.imports.hint, ui.logins.hint = importHint(catalogs), loginsHint(ui.connects)
+	ui.logins.onEnter = ui.connects.refresh
 	return ui
 }
 
@@ -115,10 +113,10 @@ func newLogins(p Params, run *initcmd.Run, catalog func(initcmd.Plan) []catalog.
 	})
 }
 
-func newConnects(setup initcmd.Setup, run *initcmd.Run, withMini map[string]bool) *connectScreen {
+func newConnects(setup initcmd.Setup, run *initcmd.Run) *connectScreen {
 	return newConnectScreen(connectParams{
 		agents:   setup.AgentsToConnect,
-		withMini: withMini,
+		withMini: setup.AgentsWithMini(),
 		plan:     func() (connectPlan, error) { return run.PlanConnect() },
 		added:    run.Added,
 	})

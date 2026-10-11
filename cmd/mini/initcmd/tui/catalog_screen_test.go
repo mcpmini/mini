@@ -363,10 +363,3 @@ func TestCatalogScreen_aInTheCollapsibleLayoutTicksOnlyTheOpenCategory(t *testin
 		t.Errorf("picks after a = %v, want only github: Popular is the one category open", got)
 	}
 }
-
-func TestCatalogScreen_headingAsksWhichPopularMCPsToAdd(t *testing.T) {
-	s := loadedScreen(testCatalog(), noImports)
-	if want := "Which popular MCPs would you like to add?"; s.heading() != want {
-		t.Errorf("heading = %q, want %q", s.heading(), want)
-	}
-}

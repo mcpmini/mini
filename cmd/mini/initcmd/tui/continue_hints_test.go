@@ -17,29 +17,27 @@ import (
 
 func continueAfter(t *testing.T, setup initcmd.Setup, c catalog.Catalog, keys ...string) string {
 	t.Helper()
-	var line string
+	return continueLine(screenAfter(t, setup, c, keys...))
+}
+
+func screenAfter(t *testing.T, setup initcmd.Setup, c catalog.Catalog, keys ...string) string {
+	t.Helper()
+	var view string
 	_, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(c), Program: func(m tea.Model) error {
 		pressing(keys...)(m)
-		line = continueLine(shown(m.(*app)))
+		view = shown(m.(*app))
 		return nil
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return line
+	return view
 }
 
 func connectingSetup(configDir string, list ...agents.Agent) initcmd.Setup {
 	setup := setupFor(configDir, list...)
 	setup.AgentsToConnect = list
 	return setup
-}
-
-func httpAgent(name, url string) agents.Agent {
-	entries := map[string]agents.Server{"remote": {Config: config.ServerConfig{Transport: "http", URL: url}}}
-	return agents.Agent{Name: name, ConfigPath: name, Read: func(string) (map[string]agents.Server, error) {
-		return entries, nil
-	}}
 }
 
 func entryWithAuth(name, auth string) catalog.Entry {
@@ -57,64 +55,64 @@ func configWithAServerToFinish(t *testing.T) string {
 	return configDir
 }
 
-func TestContinueHints_importWithACatalogSaysBrowsePopularMCPs(t *testing.T) {
-	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
-	line := continueAfter(t, setupFor(t.TempDir(), stdioAgent("Codex", "files")), c)
-	if want := "  Continue   browse popular MCPs"; line != want {
-		t.Errorf("Continue line = %q, want %q", line, want)
+func TestContinueHints_importNamesTheCatalogOnlyWhenItHasServersToOffer(t *testing.T) {
+	for name, tc := range map[string]struct {
+		entries []catalog.Entry
+		want    string
+	}{
+		"servers to offer": {[]catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}, "  Continue   browse popular MCPs"},
+		"nothing to offer": {nil, "  Continue"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setup := setupFor(t.TempDir(), stdioAgent("Codex", "files"))
+			if line := continueAfter(t, setup, catalog.Catalog{Entries: tc.entries}); line != tc.want {
+				t.Errorf("Continue line on Import = %q, want %q", line, tc.want)
+			}
+		})
 	}
 }
 
-func TestContinueHints_catalogWithAnOAuthPickSaysLogInToYourMCPs(t *testing.T) {
+func TestContinueHints_catalogNamesNothingItsSaveCouldChange(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("sentry")}}
-	line := continueAfter(t, setupFor(t.TempDir()), c, "space")
-	if want := "  Continue   log in to your MCPs"; line != want {
-		t.Errorf("Continue line = %q, want %q", line, want)
+	for name, setup := range map[string]initcmd.Setup{
+		"an OAuth pick":                 setupFor(t.TempDir()),
+		"a configured server to finish": connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if line := continueAfter(t, setup, c, "space"); line != "  Continue" {
+				t.Errorf(
+					"Continue line on Catalog = %q, want no hint: Logins or Connect follows only after the save",
+					line,
+				)
+			}
+		})
 	}
 }
 
-func TestContinueHints_catalogWithOnlyNoAuthPicksAndAnAgentToConnectSaysAddMini(t *testing.T) {
+func TestContinueHints_loginsNamesConnectOnlyWhenContinueOpensIt(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
-	line := continueAfter(t, connectingSetup(t.TempDir(), stdioAgent("Codex")), c, "space")
-	if want := "  Continue   add mini to your agents"; line != want {
-		t.Errorf("Continue line = %q, want %q", line, want)
-	}
-}
-
-func TestContinueHints_catalogWithNothingTickedSaysNothingWithNoAgentsAndNoLogins(t *testing.T) {
-	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
-	if line := continueAfter(t, setupFor(t.TempDir()), c); line != "  Continue" {
-		t.Errorf("Continue line = %q, want plain Continue", line)
-	}
-}
-
-func TestContinueHints_catalogSaysLogInAfterGoingBackFromLoginsWhichNeedsALogin(t *testing.T) {
-	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
-	line := continueAfter(t, setupFor(configWithAServerToFinish(t)), c, "tab", "enter", "esc")
-	if want := "  Continue   log in to your MCPs"; line != want {
-		t.Errorf("Continue line on Catalog after Logins = %q, want %q", line, want)
-	}
-}
-
-func TestContinueHints_catalogSaysLogInForAnImportThatMayNeedOAuth(t *testing.T) {
-	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
-	setup := setupFor(t.TempDir(), httpAgent("Codex", "https://remote.example.com/mcp"))
-	if line := continueAfter(t, setup, c, "tab", "enter"); line != "  Continue   log in to your MCPs" {
-		t.Errorf("Continue line on Catalog = %q, want log in to your MCPs", line)
-	}
-}
-
-func TestContinueHints_loginsSaysAddMiniOnlyWhenAnAgentWillBeListed(t *testing.T) {
-	c := catalog.Catalog{Entries: []catalog.Entry{entryWithAuth("sentry", catalog.AuthNone)}}
-	t.Run("with an agent without mini", func(t *testing.T) {
-		line := continueAfter(t, connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex")), c, "tab", "enter")
-		if !strings.HasSuffix(line, "Continue   add mini to your agents") {
+	t.Run("with an agent to connect", func(t *testing.T) {
+		setup := connectingSetup(configWithAServerToFinish(t), stdioAgent("Codex"))
+		if line := continueAfter(t, setup, c, "tab", "enter"); line != "> Continue   add mini to your agents" {
 			t.Errorf("Continue line on Logins = %q, want add mini to your agents", line)
+		}
+		if view := screenAfter(
+			t,
+			setup,
+			c,
+			"tab",
+			"enter",
+			"tab",
+			"enter",
+		); !strings.Contains(
+			view,
+			"Connect mini to Codex",
+		) {
+			t.Errorf("after Continue on Logins:\n%s\nwant Connect, which the hint named", view)
 		}
 	})
 	t.Run("with no agent to connect", func(t *testing.T) {
-		line := continueAfter(t, setupFor(configWithAServerToFinish(t)), c, "tab", "enter")
-		if strings.Contains(line, "add mini") {
+		if line := continueAfter(t, setupFor(configWithAServerToFinish(t)), c, "tab", "enter"); line != "> Continue" {
 			t.Errorf("Continue line on Logins = %q, want no hint", line)
 		}
 	})
