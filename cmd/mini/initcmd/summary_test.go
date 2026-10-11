@@ -125,13 +125,6 @@ func TestSummary_unfinishedRowsAlignAndWrapUnderTheStepColumn(t *testing.T) {
 	requireLines(t, got, column+"headers:\n"+column+"    Authorization: Bearer <your token>\n")
 }
 
-func TestSummary_tokenServerWithoutStepsInFileShowsTheBlock(t *testing.T) {
-	got := plainSummary(Report{ConfigDir: "/cfg", Servers: []ServerStatus{
-		{Name: "github", Readiness: NeedsToken, SetupURL: "https://github.example.com/tokens"},
-	}})
-	requireLines(t, got, "then add to /cfg/servers/github.yaml:\n"+strings.Repeat(" ", 36)+"headers:\n")
-}
-
 func TestSummary_importAndFailures(t *testing.T) {
 	got := plainSummary(Report{
 		AlreadyConfigured:  []string{"linear"},

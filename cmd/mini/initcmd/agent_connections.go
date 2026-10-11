@@ -10,7 +10,7 @@ type AgentConnections struct {
 	MiniInactive []agents.Agent
 	// Mini is the entry the agents should run.
 	Mini agents.MiniEntry
-	// MiniName starts the commands the summary prints: mini when PATH finds this binary, else its path.
+	// MiniName starts the commands the summary tells the user to run: mini when PATH finds this binary, else its path.
 	MiniName string
 }
 

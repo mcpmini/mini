@@ -46,7 +46,6 @@ func Summary(r Report, style SummaryStyle) string {
 
 func writeServers(b *strings.Builder, r Report, style SummaryStyle) {
 	writeServersHeadline(b, r)
-	writeUnfinished(b, r, style)
 	if len(r.AlreadyConfigured) > 0 {
 		fmt.Fprintf(b, "Already configured in mini: %s\n", strings.Join(r.AlreadyConfigured, ", "))
 	}
@@ -57,6 +56,7 @@ func writeServers(b *strings.Builder, r Report, style SummaryStyle) {
 			strings.Join(r.AddCoveredByImport, ", "),
 		)
 	}
+	writeUnfinished(b, r, style)
 }
 
 func writeServersHeadline(b *strings.Builder, r Report) {
