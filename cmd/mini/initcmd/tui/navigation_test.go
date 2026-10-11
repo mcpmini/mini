@@ -122,17 +122,17 @@ func TestNavigation_aScreenWithChoicesStartsOnThemAndMovesOnOnceOneIsMade(t *tes
 	s := &choosingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}}
 	a := inApp(100, 30, &fakeScreen{name: "Before"}, s)
 	send(a, "enter")
-	want := "> Keep\n  why Keep\n  Drop\n  Back"
+	want := "> Keep\n  why Keep\n  Drop\n  why Drop\n  Back"
 	if view := shown(a); !strings.Contains(view, want) {
 		t.Fatalf(
-			"view:\n%s\nwant the cursor on the first choice, only its lines shown, and Back under the choices:\n%s",
+			"view:\n%s\nwant the cursor on the first choice, every choice's lines shown, and Back under the choices:\n%s",
 			view,
 			want,
 		)
 	}
 	send(a, "down")
-	if view := shown(a); !strings.Contains(view, "> Drop\n  why Drop") || strings.Contains(view, "why Keep") {
-		t.Fatalf("view after down:\n%s\nwant Drop's lines under the cursor and Keep's gone", view)
+	if view := shown(a); !strings.Contains(view, "  why Keep\n> Drop\n  why Drop") {
+		t.Fatalf("view after down:\n%s\nwant Drop under the cursor and Keep's lines still shown", view)
 	}
 	if send(a, "enter"); a.at != 1 || s.chosen != 1 {
 		t.Fatalf("at %d, chosen %d; want Drop tried and the screen kept: it isn't ready", a.at, s.chosen)
@@ -290,5 +290,79 @@ func TestNavigation_continueNamesNothingPastTheSavePoint(t *testing.T) {
 	a.saves = savePoint{after: 0, save: func() {}}
 	if line := continueLine(shown(a)); line != "> Continue" {
 		t.Errorf("Continue line = %q, want no hint: what follows depends on the save", line)
+	}
+}
+
+type disablingScreen struct {
+	fakeScreen
+	off    map[int]bool
+	chosen int
+}
+
+func (s *disablingScreen) choices() []string          { return []string{"Keep", "Drop", "Park"} }
+func (s *disablingScreen) choiceLines(i int) []string { return []string{"  why " + s.choices()[i]} }
+func (s *disablingScreen) disabled(i int) bool        { return s.off[i] }
+
+func (s *disablingScreen) choose(i int) bool {
+	s.chosen = i
+	return true
+}
+
+func disablingAt(off ...int) (*disablingScreen, *app) {
+	s := &disablingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}, off: map[int]bool{}, chosen: -1}
+	for _, i := range off {
+		s.off[i] = true
+	}
+	return s, inApp(100, 30, &fakeScreen{name: "Before"}, s)
+}
+
+func TestNavigation_aDisabledChoiceIsDimSkippedAndNeverChosen(t *testing.T) {
+	s, a := disablingAt(1)
+	send(a, "enter")
+	if view := a.render(); !strings.Contains(view, dim.Render("Drop")) {
+		t.Errorf("view:\n%s\nwant Drop drawn dim while disabled", shown(a))
+	}
+	send(a, "down")
+	if view := shown(a); !strings.Contains(view, "> Park") {
+		t.Fatalf("view after down:\n%s\nwant down to skip Drop and land on Park", view)
+	}
+	send(a, "up")
+	if view := shown(a); !strings.Contains(view, "> Keep") {
+		t.Errorf("view after up:\n%s\nwant up to skip Drop and land on Keep", view)
+	}
+	s.off[0] = true
+	if cmd := send(a, "enter"); cmd != nil || s.chosen != -1 {
+		t.Errorf("enter on a disabled choice = %v, chosen %d; want nothing chosen", cmd, s.chosen)
+	}
+}
+
+func TestNavigation_theCursorMovesOffAChoiceThatBecomesDisabled(t *testing.T) {
+	t.Run("to the next enabled label below", func(t *testing.T) {
+		s, a := disablingAt()
+		send(a, "enter")
+		s.off[0] = true
+		send(a, "tab")
+		if view := shown(a); !strings.Contains(view, "> Drop") {
+			t.Errorf("view:\n%s\nwant the cursor moved from disabled Keep to Drop", view)
+		}
+	})
+	t.Run("to the nearest enabled label above when none is below", func(t *testing.T) {
+		s := &disablingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}, off: map[int]bool{}}
+		a := inApp(100, 30, s)
+		send(a, "down", "down")
+		s.off[2] = true
+		send(a, "down")
+		if view := shown(a); !strings.Contains(view, "> Drop") {
+			t.Errorf("view:\n%s\nwant the cursor moved from disabled Park up to Drop", view)
+		}
+	})
+}
+
+func TestNavigation_upPastEveryDisabledChoiceReturnsToTheRows(t *testing.T) {
+	_, a := disablingAt(0)
+	send(a, "enter", "up")
+	view := shown(a)
+	if strings.Contains(view, "> Keep") || strings.Contains(view, "> Drop") || strings.Contains(view, "> Park") {
+		t.Errorf("view:\n%s\nwant the cursor back on the rows: no enabled choice is above", view)
 	}
 }

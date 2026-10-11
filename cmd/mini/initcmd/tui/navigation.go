@@ -19,6 +19,11 @@ type finisher interface {
 	finished() bool
 }
 
+// A disabled choice is drawn dim, skipped by the cursor, and never chosen.
+type disabler interface {
+	disabled(choice int) bool
+}
+
 // A screen Continue can open says what opening it does, for the Continue row before it.
 type destination interface {
 	arrivalHint() string
@@ -68,6 +73,34 @@ func (a *app) onBack(at int) bool {
 	return a.canGoBack() && at == len(a.labels())-1
 }
 
+// Back and Continue are never disabled, so only a chooser's choices can be.
+func (a *app) disabledChoice(i int) bool {
+	d, ok := a.current().(disabler)
+	return ok && !a.onBack(i) && d.disabled(i)
+}
+
+// enabledLabel finds the first label from `from` in direction step that the cursor may rest on.
+func (a *app) enabledLabel(from, step int) (int, bool) {
+	for i, n := from, len(a.labels()); i >= 0 && i < n; i += step {
+		if !a.disabledChoice(i) {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// The cursor moves to the next enabled label below a disabled one, or the nearest one above if none is below.
+func (a *app) settleNavigationCursor() {
+	if !a.disabledChoice(a.nav.at) {
+		return
+	}
+	if next, ok := a.enabledLabel(a.nav.at+1, 1); ok {
+		a.nav.at = next
+	} else if prev, ok := a.enabledLabel(a.nav.at-1, -1); ok {
+		a.nav.at = prev
+	}
+}
+
 // Back goes away under the cursor when the screens before this one empty.
 func (a *app) clampNavigationCursor() {
 	a.nav.at = min(a.nav.at, len(a.labels())-1)
@@ -85,7 +118,9 @@ func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
 	case "up":
 		a.moveUpNavigation()
 	case "down":
-		a.nav.at = min(a.nav.at+1, len(a.labels())-1)
+		if next, ok := a.enabledLabel(a.nav.at+1, 1); ok {
+			a.nav.at = next
+		}
 	case "tab":
 		a.nav.at = 0
 	case "enter":
@@ -97,10 +132,11 @@ func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
 }
 
 func (a *app) moveUpNavigation() {
-	switch {
-	case a.nav.at > 0:
-		a.nav.at--
-	case a.current().focusable():
+	if prev, ok := a.enabledLabel(a.nav.at-1, -1); ok {
+		a.nav.at = prev
+		return
+	}
+	if a.current().focusable() {
 		a.nav.focus = focusRows
 	}
 }
@@ -108,6 +144,9 @@ func (a *app) moveUpNavigation() {
 func (a *app) act() tea.Cmd {
 	if a.onBack(a.nav.at) {
 		return a.back()
+	}
+	if a.disabledChoice(a.nav.at) {
+		return nil
 	}
 	if c, ok := a.current().(chooser); ok && !c.choose(a.nav.at) {
 		return nil
@@ -122,12 +161,12 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 	lines, first, last = []string{""}, -1, -1
 	for i, label := range a.labels() {
 		var under []string
-		if choosing && !a.onBack(i) && i == a.nav.at {
+		if choosing && !a.onBack(i) {
 			under = c.choiceLines(i)
 		}
 		atCursor := a.onNavigation() && a.nav.at == i
 		start := len(lines)
-		lines = append(append(lines, cursorMark(atCursor)+a.navigationText(label)), under...)
+		lines = append(append(lines, cursorMark(atCursor)+a.navigationText(i, label)), under...)
 		if atCursor {
 			first, last = start, len(lines)-1
 		}
@@ -135,7 +174,10 @@ func (a *app) navigationLines() (lines []string, first, last int) {
 	return lines, first, last
 }
 
-func (a *app) navigationText(label string) string {
+func (a *app) navigationText(i int, label string) string {
+	if a.disabledChoice(i) {
+		return dim.Render(label)
+	}
 	if label != continueLabel {
 		return label
 	}

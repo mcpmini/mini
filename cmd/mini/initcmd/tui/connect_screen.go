@@ -37,6 +37,12 @@ type connectScreen struct {
 	width  int
 }
 
+// subtitle is a line under a choice; bold marks the one that must be read before choosing.
+type subtitle struct {
+	text string
+	bold bool
+}
+
 func newConnectScreen(p connectParams) *connectScreen {
 	return &connectScreen{p: p, ticked: map[string]bool{}, agents: newList(nil, nil)}
 }
@@ -97,7 +103,11 @@ func (s *connectScreen) options() []initcmd.ConnectChoice {
 }
 
 func (s *connectScreen) removable() bool {
-	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool { return s.plan.HasDuplicates(agent.Name) })
+	return s.anyHasDuplicates(s.listed)
+}
+
+func (s *connectScreen) anyHasDuplicates(list []agents.Agent) bool {
+	return slices.ContainsFunc(list, func(agent agents.Agent) bool { return s.plan.HasDuplicates(agent.Name) })
 }
 
 func (s *connectScreen) heading() string {
@@ -123,25 +133,44 @@ func (s *connectScreen) choices() []string {
 	return labels
 }
 
+func (s *connectScreen) disabled(choice int) bool {
+	return s.unavailableBecause(s.options()[choice]) != ""
+}
+
 func (s *connectScreen) choiceLines(choice int) []string {
 	var lines []string
-	for _, subtitle := range s.subtitles(s.options()[choice]) {
-		lines = append(lines, s.subtitleLines(subtitle)...)
+	for _, sub := range s.subtitles(s.options()[choice]) {
+		lines = append(lines, s.subtitleLines(sub)...)
 	}
 	return lines
 }
 
 func (s *connectScreen) choose(i int) (chosen bool) {
 	choice := s.options()[i]
-	// Removing needs the checks' results; until they arrive its lines say it is checking.
-	if choice == initcmd.ConnectAndRemove && !s.checks.done {
-		return false
-	}
-	if choice != initcmd.DontConnect && len(s.picked()) == 0 {
+	if s.unavailableBecause(choice) != "" || s.waitingOnChecks(choice) {
 		return false
 	}
 	s.chosen = choice
 	return true
+}
+
+// Removing stays enabled while the checks run, so the cursor can rest on it as the first choice.
+func (s *connectScreen) waitingOnChecks(choice initcmd.ConnectChoice) bool {
+	return choice == initcmd.ConnectAndRemove && !s.checks.done
+}
+
+// unavailableBecause is the line saying why a choice can't be picked yet, or "" when it can be.
+func (s *connectScreen) unavailableBecause(choice initcmd.ConnectChoice) string {
+	if choice != initcmd.DontConnect && len(s.picked()) == 0 {
+		return "Tick the agents above to connect mini to them"
+	}
+	if choice != initcmd.ConnectAndRemove {
+		return ""
+	}
+	if s.checks.done && !s.anyPickedRemoves() {
+		return "None of these MCPs work in mini yet, so nothing will be removed."
+	}
+	return ""
 }
 
 func (s *connectScreen) body(height int, focused bool) string {
@@ -165,12 +194,17 @@ func (s *connectScreen) addedLines() []string {
 }
 
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
-func (s *connectScreen) subtitleLines(subtitle string) []string {
-	text := strings.TrimLeft(subtitle, " ")
-	indent := "  " + subtitle[:len(subtitle)-len(text)]
+// Styling follows the wrap: ansi.Wrap drops bold from the lines it continues.
+func (s *connectScreen) subtitleLines(sub subtitle) []string {
+	text := strings.TrimLeft(sub.text, " ")
+	indent := "  " + sub.text[:len(sub.text)-len(text)]
+	style := dim
+	if sub.bold {
+		style = bold
+	}
 	var lines []string
 	for _, line := range strings.Split(ansi.Wrap(text, max(s.width-len(indent), 20), ""), "\n") {
-		lines = append(lines, indent+dim.Render(line))
+		lines = append(lines, indent+style.Render(line))
 	}
 	return lines
 }
@@ -189,86 +223,65 @@ func optionLabel(choice initcmd.ConnectChoice) string {
 	return "I'll connect mini later"
 }
 
-func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
-	if choice != initcmd.DontConnect && len(s.picked()) == 0 {
-		return []string{"Tick the agents above to connect mini to them"}
+func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []subtitle {
+	if reason := s.unavailableBecause(choice); reason != "" {
+		return []subtitle{{text: reason}}
+	}
+	if s.waitingOnChecks(choice) {
+		return []subtitle{{text: "Checking which MCPs mini can run…"}}
 	}
 	switch choice {
 	case initcmd.ConnectAndRemove:
-		if !s.checks.done {
-			return []string{"checking servers…"}
-		}
-		if !s.anyPickedRemoves() {
-			return []string{"Nothing to remove: none of these MCPs work in mini yet"}
-		}
-		return append([]string{"The configs are backed up first"}, s.tickedAgentLines(s.removeLine)...)
+		return append([]subtitle{
+			{text: "Adds mini to your agent configurations."},
+			{text: "Your existing configurations will be backed up first.", bold: true},
+		}, s.removalSubtitles()...)
 	case initcmd.ConnectOnly:
-		return s.tickedAgentLines(s.connectLine)
+		return s.connectOnlySubtitles()
 	}
-	return []string{"Leaves " + withVerb(agentNames(s.listed), "as it is", "as they are")}
+	return []subtitle{{text: "Saves the MCPs to mini and leaves your agent configurations alone."}}
 }
 
-func (s *connectScreen) tickedAgentLines(line func(agent agents.Agent) string) []string {
-	var says []string
-	alike := map[string][]string{}
+func (s *connectScreen) connectOnlySubtitles() []subtitle {
+	subtitles := []subtitle{
+		{text: "Adds mini to your agent configurations and leaves existing MCP configurations alone."},
+	}
+	if s.anyHasDuplicates(s.picked()) {
+		subtitles = append(subtitles, subtitle{
+			text: "⚠ Your agents will see these MCPs twice and may not use mini for smaller responses",
+		})
+	}
+	return subtitles
+}
+
+// removalSubtitles names each picked agent that loses entries, padding the names so the verbs line up.
+func (s *connectScreen) removalSubtitles() []subtitle {
+	var removing []agents.Agent
 	for _, agent := range s.picked() {
-		text := line(agent)
-		if _, seen := alike[text]; !seen {
-			says = append(says, text)
+		if len(s.checks.removals.ByAgent[agent.Name]) > 0 {
+			removing = append(removing, agent)
 		}
-		alike[text] = append(alike[text], agent.Name)
 	}
-	var lines []string
-	for _, text := range says {
-		lines = append(lines, "  "+initcmd.JoinAnd(alike[text])+": "+text)
+	width := widest(removing, func(agent agents.Agent) string { return agent.Name }) + len(":")
+	var subtitles []subtitle
+	for _, agent := range removing {
+		subtitles = append(subtitles, subtitle{text: "  " + pad(agent.Name+":", width) + " " + s.removalText(agent)})
 	}
-	return lines
+	return subtitles
+}
+
+func (s *connectScreen) removalText(agent agents.Agent) string {
+	verb := "Removing "
+	if agent.RemoveDisables {
+		verb = "Disabling "
+	}
+	return verb + strings.Join(s.checks.removals.ByAgent[agent.Name], ", ")
 }
 
 func (s *connectScreen) anyPickedRemoves() bool {
 	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool {
 		return len(s.checks.removals.ByAgent[agent.Name]) > 0
 	})
-}
-
-func (s *connectScreen) removeLine(agent agents.Agent) string {
-	entries := s.checks.removals.ByAgent[agent.Name]
-	verb := "removing "
-	if agent.RemoveDisables {
-		verb = "disabling "
-	}
-	hasMini := s.p.withMini[agent.Name]
-	switch {
-	case len(entries) > 0 && hasMini:
-		return verb + strings.Join(entries, ", ")
-	case len(entries) > 0:
-		return "adding mini, " + verb + strings.Join(entries, ", ")
-	case hasMini:
-		return "mini already connected, nothing to remove"
-	}
-	return "adding mini, nothing to remove"
-}
-
-func (s *connectScreen) connectLine(agent agents.Agent) string {
-	if s.p.withMini[agent.Name] {
-		return "mini already connected, nothing changes"
-	}
-	return "adding mini, leaving existing MCPs"
-}
-
-func agentNames(list []agents.Agent) []string {
-	var names []string
-	for _, agent := range list {
-		names = append(names, agent.Name)
-	}
-	return names
-}
-
-func withVerb(names []string, one, many string) string {
-	if len(names) == 1 {
-		return names[0] + " " + one
-	}
-	return initcmd.JoinAnd(names) + " " + many
 }
 
 func (s *connectScreen) keys() string {
