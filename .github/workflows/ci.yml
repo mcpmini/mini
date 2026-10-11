@@ -78,6 +78,7 @@ jobs:
         run: go test -race -tags test -timeout 120s ./...
 
   integration:
+    name: integration (${{ matrix.shard.name }})
     timeout-minutes: 10
     strategy:
       fail-fast: false
