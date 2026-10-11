@@ -153,14 +153,14 @@ func TestRun_connectAndRemove(t *testing.T) {
 			}
 		})
 	})
-	t.Run("an entry whose mini copy failed its check stays", func(t *testing.T) {
+	t.Run("when its mini copy fails the check, enter just connects and the entry stays", func(t *testing.T) {
 		claude, out := run(t, errors.New("connection refused"))
 		config := string(testutil.ReadFile(t, claude.ConfigPath))
 		if !strings.Contains(config, `"files"`) || !strings.Contains(config, `"mini"`) {
 			t.Errorf("agent config = %s, want files kept next to mini", config)
 		}
-		if got := out.Report.Connected; len(got) != 1 || len(got[0].Kept) != 1 {
-			t.Errorf("connected = %+v, want files kept with the check's error", got)
+		if got := out.Report.Connected; len(got) != 1 || len(got[0].Removed) != 0 {
+			t.Errorf("connected = %+v, want nothing removed: removing is not offered when the check fails", got)
 		}
 	})
 }
@@ -198,7 +198,7 @@ func TestRun_goingBackToUntickAnImportLowersWhatConnectRemoves(t *testing.T) {
 	if !strings.Contains(connect, "1 MCP will be added to mini: notes") {
 		t.Errorf("Connect:\n%s\nwant notes named as added: files was unticked on Import", connect)
 	}
-	if !strings.Contains(connect, "removing notes") || strings.Contains(connect, "removing files") {
+	if !strings.Contains(connect, "Removing notes") || strings.Contains(connect, "Removing files") {
 		t.Errorf("Connect:\n%s\nwant only notes removed: files was unticked on Import", connect)
 	}
 	config := string(testutil.ReadFile(t, claude.ConfigPath))

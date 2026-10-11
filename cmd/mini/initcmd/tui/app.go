@@ -182,6 +182,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd := a.update(msg)
 	if a.hasScreens() {
 		a.clampNavigationCursor()
+		a.settleDefaultChoice()
 	}
 	return a, cmd
 }
@@ -296,6 +297,7 @@ func (a *app) moveTo(at int) {
 	// Picking a choice is what a choosing screen is for.
 	if _, choosing := a.current().(chooser); choosing {
 		a.nav.focus = focusNavigation
+		a.settleDefaultChoice()
 	}
 }
 
@@ -323,7 +325,7 @@ func (a *app) body(height int) string {
 	}
 	nav, first, last := a.navigationLines()
 	var lines []string
-	if body := a.current().body(max(height-len(nav), 1), !a.onNavigation()); body != "" {
+	if body := a.current().body(a.bodyRowsHeight(height, len(nav)), !a.onNavigation()); body != "" {
 		lines = strings.Split(body, "\n")
 	} else {
 		// With nothing above them, the leading blank line would only push the rows down.
@@ -335,6 +337,15 @@ func (a *app) body(height int) string {
 		first, last = len(lines)+first, len(lines)+last
 	}
 	return strings.Join(a.nav.scroll.cut(append(lines, nav...), first, last, height), "\n")
+}
+
+// A chooser's choice lines can be taller than the window, so its rows keep the whole window and the
+// lines below them are cut instead; other screens keep Continue and Back in view.
+func (a *app) bodyRowsHeight(height, navLines int) int {
+	if _, choosing := a.current().(chooser); choosing {
+		return height
+	}
+	return max(height-navLines, 1)
 }
 
 func (a *app) askToEnlarge() string {
