@@ -222,16 +222,13 @@ func (s *loginsScreen) handle(key tea.KeyPressMsg) (reply, tea.Cmd) {
 }
 
 func (s *loginsScreen) heading() string {
-	if len(s.rows) > 0 {
+	switch {
+	case len(s.rows) > 0 || s.err != nil:
 		return "Log in to your MCPs (optional)"
+	case len(s.byHand) > 0:
+		return "Finish setting up these MCPs later"
 	}
-	if s.empty() {
-		return "Your servers are ready"
-	}
-	if s.err != nil {
-		return "Log in to your MCPs (optional)"
-	}
-	return "Finish setting up these MCPs later"
+	return "Your servers are ready"
 }
 
 func (s *loginsScreen) body(height int, focused bool) string {
@@ -306,7 +303,7 @@ func (s *loginsScreen) rowText(status initcmd.ServerStatus, width int) string {
 }
 
 func (s *loginsScreen) hint(status initcmd.ServerStatus) string {
-	if s.checking[status.Name] || s.pending != nil {
+	if s.pending != nil {
 		return ""
 	}
 	err, tried := s.results[status.Name]
@@ -319,8 +316,6 @@ func (s *loginsScreen) hint(status initcmd.ServerStatus) string {
 	return ""
 }
 
-// Authorize URLs run to hundreds of characters, so the link shows its host and as much of the path as
-// fits: the host is what tells the user which server they are signing in to. c copies the whole URL.
 // Authorize URLs run to hundreds of characters, and the app cuts lines at the window's edge.
 func (s *loginsScreen) urlLines(indent int) []string {
 	var lines []string
