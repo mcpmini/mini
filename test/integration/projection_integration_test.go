@@ -11,6 +11,7 @@ import (
 )
 
 func TestIntegrationProjection_excludeAlways(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc","internal_ref":"xyz"}`},
 		Projections: map[string]*config.ProjectionConfig{
@@ -32,6 +33,7 @@ func TestIntegrationProjection_excludeAlways(t *testing.T) {
 }
 
 func TestIntegrationProjection_elidedFieldsReported(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
 		Projections: map[string]*config.ProjectionConfig{
@@ -56,6 +58,7 @@ func TestIntegrationProjection_elidedFieldsReported(t *testing.T) {
 }
 
 func TestIntegrationProjection_includeOnly(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{
 			"get_item": `{"id":1,"title":"hello","body":"long text","created_at":"2024-01-01"}`,
@@ -78,6 +81,7 @@ func TestIntegrationProjection_includeOnly(t *testing.T) {
 }
 
 func TestIntegrationProjection_stringLimit(t *testing.T) {
+	t.Parallel()
 	longStr := strings.Repeat("x", 500)
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1,"body":"` + longStr + `"}`},
@@ -95,6 +99,7 @@ func TestIntegrationProjection_stringLimit(t *testing.T) {
 }
 
 func TestIntegrationProjection_omittedEnvelope(t *testing.T) {
+	t.Parallel()
 	longStr := strings.Repeat("w", 400)
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1,"title":"short","body":"` + longStr + `"}`},
@@ -129,6 +134,7 @@ func TestIntegrationProjection_omittedEnvelope(t *testing.T) {
 }
 
 func TestIntegrationProjection_arrayLimit(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{
 			"get_repo": `{"issues":[{"id":1},{"id":2},{"id":3},{"id":4},{"id":5}],"name":"repo"}`,
@@ -150,6 +156,7 @@ func TestIntegrationProjection_arrayLimit(t *testing.T) {
 }
 
 func TestIntegrationProjection_wildcardAppliesAllTools(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
@@ -167,6 +174,7 @@ func TestIntegrationProjection_wildcardAppliesAllTools(t *testing.T) {
 }
 
 func TestIntegrationProjection_inlineInServerYAML(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"node_id":"abc","title":"hello"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -182,6 +190,7 @@ func TestIntegrationProjection_inlineInServerYAML(t *testing.T) {
 }
 
 func TestIntegrationProjection_sessionOverridesServerLevel(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","body":"long content","extra":"strip this"}`},
 		Projections: map[string]*config.ProjectionConfig{
@@ -199,6 +208,7 @@ func TestIntegrationProjection_sessionOverridesServerLevel(t *testing.T) {
 }
 
 func TestIntegrationProjection_configurePersistsAcrossCalls(t *testing.T) {
+	t.Parallel()
 	client := quickServer(t, map[string]string{"get_item": `{"id":1,"title":"hello","secret":"hidden"}`})
 	client.setProjection("svc", "get_item", map[string]any{"exclude": []string{"secret"}}, true)
 
@@ -211,6 +221,7 @@ func TestIntegrationProjection_configurePersistsAcrossCalls(t *testing.T) {
 }
 
 func TestIntegrationProjection_toolSpecificOverridesWildcard(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{
 			"get_a": `{"id":1,"node_id":"abc","title":"a"}`,
@@ -235,6 +246,7 @@ func TestIntegrationProjection_toolSpecificOverridesWildcard(t *testing.T) {
 }
 
 func TestIntegrationProjection_persistToDisk(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"title":"hello","secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -250,6 +262,7 @@ func TestIntegrationProjection_persistToDisk(t *testing.T) {
 }
 
 func TestIntegrationProjection_depthLimit(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"get_item": `{"a":{"b":{"c":{"d":"deep"}}}}`},
 		Projections: map[string]*config.ProjectionConfig{
@@ -270,6 +283,7 @@ func TestIntegrationProjection_depthLimit(t *testing.T) {
 }
 
 func TestIntegrationProjection_passthrough(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","internal_ref":"xyz"}`},
 		Projections: map[string]*config.ProjectionConfig{
@@ -287,6 +301,7 @@ func TestIntegrationProjection_passthrough(t *testing.T) {
 }
 
 func TestIntegrationProjection_includeAndExclude(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1,"title":"hello","node_id":"abc"}`},
 		Projections: map[string]*config.ProjectionConfig{
@@ -308,6 +323,7 @@ func TestIntegrationProjection_includeAndExclude(t *testing.T) {
 }
 
 func TestIntegrationProjection_globalDefaultsApply(t *testing.T) {
+	t.Parallel()
 	cfg := config.DefaultConfig()
 	cfg.DefaultStringLimit = 50
 	client := quickServerWith(t, quickServerParams{
@@ -331,6 +347,7 @@ func assertToolExcludes(t *testing.T, client *mcpClient, server, tool, field str
 }
 
 func TestIntegrationProjection_persistMergesWithExistingYAML(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{
 		"tool_a": `{"id":1,"secret_a":"x","other":"y"}`,
 		"tool_b": `{"id":2,"secret_b":"x","other":"y"}`,
@@ -347,6 +364,7 @@ func TestIntegrationProjection_persistMergesWithExistingYAML(t *testing.T) {
 }
 
 func TestIntegrationProjection_persistDoesNotAffectRunningSession(t *testing.T) {
+	t.Parallel()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":1,"secret":"hidden"}`})
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "svc", Fixtures: dir})
@@ -361,6 +379,7 @@ func TestIntegrationProjection_persistDoesNotAffectRunningSession(t *testing.T) 
 }
 
 func TestIntegrationProjection_toonFormat(t *testing.T) {
+	t.Parallel()
 	client := quickServerWith(t, quickServerParams{
 		Fixtures: map[string]string{"list_items": `[{"id":1,"name":"foo"},{"id":2,"name":"bar"}]`},
 		Projections: map[string]*config.ProjectionConfig{
@@ -377,6 +396,7 @@ func TestIntegrationProjection_toonFormat(t *testing.T) {
 }
 
 func TestIntegrationProjection_toonFormatGlobal(t *testing.T) {
+	t.Parallel()
 	cfg := config.DefaultConfig()
 	cfg.ResponseFormat = config.FormatToon
 	client := quickServerWith(t, quickServerParams{

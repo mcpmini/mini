@@ -25,6 +25,7 @@ func actionServer(t *testing.T, p actionServerParams) *mcpClient {
 }
 
 func TestIntegrationActions_defaultArgsMergedWithCallArgs(t *testing.T) {
+	t.Parallel()
 	t.Skip("actions not user-visible in v0.1")
 	client := actionServer(t, actionServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":42,"name":"fetched"}`},
@@ -44,6 +45,7 @@ func TestIntegrationActions_defaultArgsMergedWithCallArgs(t *testing.T) {
 }
 
 func TestIntegrationActions_protectedActionRequiresExecProtected(t *testing.T) {
+	t.Parallel()
 	t.Skip("actions not user-visible in v0.1")
 	client := actionServer(t, actionServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1}`},
@@ -67,6 +69,7 @@ func TestIntegrationActions_protectedActionRequiresExecProtected(t *testing.T) {
 }
 
 func TestIntegrationActions_badServerReference(t *testing.T) {
+	t.Parallel()
 	client := actionServer(t, actionServerParams{
 		Fixtures: map[string]string{"get_item": `{"id":1}`},
 		Action: config.ActionConfig{
@@ -84,6 +87,7 @@ func TestIntegrationActions_badServerReference(t *testing.T) {
 }
 
 func TestIntegrationActions_execAction(t *testing.T) {
+	t.Parallel()
 	t.Skip("actions not user-visible in v0.1")
 	cfg := t.TempDir()
 	dir := mockFixtureDir(t, map[string]string{"get_item": `{"id":42,"name":"fetched"}`})

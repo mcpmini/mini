@@ -9,6 +9,7 @@ import (
 )
 
 func TestIntegrationHTTP_basicToolCall(t *testing.T) {
+	t.Parallel()
 	_, client := httpServer(t, nil)
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.Error != "" {
@@ -17,6 +18,7 @@ func TestIntegrationHTTP_basicToolCall(t *testing.T) {
 }
 
 func TestIntegrationHTTP_429ExhaustsRetriesReturnsError(t *testing.T) {
+	t.Parallel()
 	_, client := httpServer(t, func(int) (int, []byte) { return 429, []byte("0") })
 	if envelopeOK(t, client, "svc", "get_item") {
 		t.Error("expected error after exhausting retries on 429")
@@ -24,6 +26,7 @@ func TestIntegrationHTTP_429ExhaustsRetriesReturnsError(t *testing.T) {
 }
 
 func TestIntegrationHTTP_500ReturnsError(t *testing.T) {
+	t.Parallel()
 	_, client := httpServer(t, func(int) (int, []byte) { return 500, nil })
 	if envelopeOK(t, client, "svc", "get_item") {
 		t.Error("expected error on HTTP 500")
@@ -31,6 +34,7 @@ func TestIntegrationHTTP_500ReturnsError(t *testing.T) {
 }
 
 func TestIntegrationHTTP_401ReturnsError(t *testing.T) {
+	t.Parallel()
 	_, client := httpServer(t, func(int) (int, []byte) { return 401, nil })
 	if envelopeOK(t, client, "svc", "get_item") {
 		t.Error("expected error on HTTP 401")
@@ -38,6 +42,7 @@ func TestIntegrationHTTP_401ReturnsError(t *testing.T) {
 }
 
 func TestIntegrationHTTP_503ReturnsError(t *testing.T) {
+	t.Parallel()
 	_, client := httpServer(t, func(int) (int, []byte) { return 503, nil })
 	if envelopeOK(t, client, "svc", "get_item") {
 		t.Error("expected error on HTTP 503")
@@ -45,6 +50,7 @@ func TestIntegrationHTTP_503ReturnsError(t *testing.T) {
 }
 
 func TestIntegrationHTTP_403ReturnsError(t *testing.T) {
+	t.Parallel()
 	_, client := httpServer(t, func(int) (int, []byte) { return 403, nil })
 	if envelopeOK(t, client, "svc", "get_item") {
 		t.Error("expected error on HTTP 403")
@@ -52,6 +58,7 @@ func TestIntegrationHTTP_403ReturnsError(t *testing.T) {
 }
 
 func TestIntegrationHTTP_addServerSSRFBlocked(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	client := startServer(t, cfg)
 	raw := client.mustCall("tools/call", map[string]any{

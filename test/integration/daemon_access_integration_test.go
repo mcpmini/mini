@@ -25,6 +25,7 @@ func initHTTPSession(t *testing.T, cfg, token string) string {
 }
 
 func TestIntegrationDaemon_HTTPClientDirect(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	token := readDaemonToken(t, cfg)
@@ -34,6 +35,7 @@ func TestIntegrationDaemon_HTTPClientDirect(t *testing.T) {
 }
 
 func TestIntegrationDaemon_HTTPRejectsMissingToken(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{})
@@ -44,6 +46,7 @@ func TestIntegrationDaemon_HTTPRejectsMissingToken(t *testing.T) {
 }
 
 func TestIntegrationDaemon_HTTPRejectsWrongToken(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: "wrong-token-value"})
@@ -54,6 +57,7 @@ func TestIntegrationDaemon_HTTPRejectsWrongToken(t *testing.T) {
 }
 
 func TestIntegrationDaemon_HostHeaderRejection(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: readDaemonToken(t, cfg), Host: "evil.com"})
@@ -64,6 +68,7 @@ func TestIntegrationDaemon_HostHeaderRejection(t *testing.T) {
 }
 
 func TestIntegrationDaemon_CrossOriginRejection(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	resp := daemonPost(t, cfg, daemonPostOpts{Token: readDaemonToken(t, cfg), Origin: "http://evil.com"})
@@ -74,6 +79,7 @@ func TestIntegrationDaemon_CrossOriginRejection(t *testing.T) {
 }
 
 func TestIntegrationDaemon_socketAndDirArePrivate(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 
@@ -99,6 +105,7 @@ func TestIntegrationDaemon_socketAndDirArePrivate(t *testing.T) {
 }
 
 func TestIntegrationDaemon_TokenFilePermissions(t *testing.T) {
+	t.Parallel()
 	cfg := daemonForTest(t)
 	startDaemon(t, cfg)
 	fi, err := os.Stat(filepath.Join(cfg, "internal", "daemon", "daemon.token"))

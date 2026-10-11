@@ -45,6 +45,7 @@ func projectedResponseClient(t *testing.T, p projectedResponseParams) (*mcpClien
 }
 
 func TestIntegrationStorage_rawFileExists(t *testing.T) {
+	t.Parallel()
 	client, respDir, _ := projectedResponseClient(t, projectedResponseParams{})
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
@@ -56,6 +57,7 @@ func TestIntegrationStorage_rawFileExists(t *testing.T) {
 }
 
 func TestIntegrationStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	respDir := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -75,6 +77,7 @@ func TestIntegrationStorage_unprojectedResponseDoesNotWriteFile(t *testing.T) {
 }
 
 func TestIntegrationStorage_rawFileIsPrettyPrinted(t *testing.T) {
+	t.Parallel()
 	client, respDir, _ := projectedResponseClient(t, projectedResponseParams{})
 	e := client.execEnvelope("svc", "get_item", nil)
 	if e.File == nil {
@@ -90,6 +93,7 @@ func TestIntegrationStorage_rawFileIsPrettyPrinted(t *testing.T) {
 }
 
 func TestIntegrationStorage_responseDirAutoCreated(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	respDir := filepath.Join(t.TempDir(), "auto_created_responses")
 	writeFakeServer(t, cfg, fakeServerParams{
@@ -120,6 +124,7 @@ func TestIntegrationStorage_responseDirAutoCreated(t *testing.T) {
 }
 
 func TestIntegrationStorage_diskBudgetEvictsOldest(t *testing.T) {
+	t.Parallel()
 	client, respDir, _ := projectedResponseClient(t, projectedResponseParams{DiskBudgetMB: new(0)})
 
 	for range 3 {
@@ -139,6 +144,7 @@ func TestIntegrationStorage_diskBudgetEvictsOldest(t *testing.T) {
 }
 
 func TestIntegrationStorage_cleanupDeletesExpired(t *testing.T) {
+	t.Parallel()
 	client, respDir, cfg := projectedResponseClient(t, projectedResponseParams{})
 
 	e := client.execEnvelope("svc", "get_item", nil)
@@ -155,6 +161,7 @@ func TestIntegrationStorage_cleanupDeletesExpired(t *testing.T) {
 }
 
 func TestIntegrationStorage_cleanupRetainsNonExpired(t *testing.T) {
+	t.Parallel()
 	client, respDir, cfg := projectedResponseClient(t, projectedResponseParams{})
 
 	e := client.execEnvelope("svc", "get_item", nil)
@@ -169,6 +176,7 @@ func TestIntegrationStorage_cleanupRetainsNonExpired(t *testing.T) {
 }
 
 func TestIntegrationStorage_unprojectedLargeResponseInlines(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{ServerName: "github", Fixtures: fixturesDir + "/github"})
 	fixtureConfig := config.DefaultConfig()
@@ -187,6 +195,7 @@ func TestIntegrationStorage_unprojectedLargeResponseInlines(t *testing.T) {
 }
 
 func TestIntegrationStorage_nonJSONResponseFromUpstreamPassedThrough(t *testing.T) {
+	t.Parallel()
 	cfg := t.TempDir()
 	writeFakeServer(t, cfg, fakeServerParams{
 		ServerName: "svc",
