@@ -75,6 +75,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Restore go build cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/go-build
+          key: go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.sha }}
+          restore-keys: |
+            go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+
       - name: Build
         run: go build ./...
 
