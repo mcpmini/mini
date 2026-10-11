@@ -12,8 +12,7 @@ import (
 
 var errInitIncomplete = errors.New("init didn't finish everything; see above")
 
-// summaryStyle colors the summary only when a person is reading it at a terminal.
-func summaryStyle() initcmd.SummaryStyle {
+func terminalSummaryStyle() initcmd.SummaryStyle {
 	if !isTerminal(os.Stdout) {
 		return initcmd.SummaryStyle{}
 	}
@@ -41,7 +40,7 @@ func runUnattendedInit(configDir string, f initFlags) error {
 }
 
 func printReport(report initcmd.Report) error {
-	fmt.Print(initcmd.Summary(report, summaryStyle()))
+	fmt.Print(initcmd.Summary(report, terminalSummaryStyle()))
 	if report.Failed() {
 		return &exitError{code: 1, err: errInitIncomplete}
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// The summary prints mini's program name, which depends on PATH, so the tests fix it to a mini on PATH.
 func plainSummary(r Report) string {
 	return Summary(r, SummaryStyle{})
 }

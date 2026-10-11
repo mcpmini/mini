@@ -102,14 +102,11 @@ func (s ServerStatus) requirement() string {
 	return "requires a login"
 }
 
-// stepLayout is where a server's steps go: wrapped lines start at Column, and paths and
-// commands are styled as code.
 type stepLayout struct {
 	column string
 	style  SummaryStyle
 }
 
-// finishStep is what the user does to finish a server. Steps that span lines wrap at the layout's column.
 func (r Report) finishStep(s ServerStatus, layout stepLayout) string {
 	file := config.ServerPath(r.ConfigDir, s.Name)
 	login := layout.style.code(miniCommand(r.Agents, "auth", s.Name))
