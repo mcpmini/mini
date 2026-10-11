@@ -81,7 +81,6 @@ func framed(s screen, back bool) *app {
 	}
 	a := &app{screens: screens, width: 200, height: 30}
 	a.moveTo(len(screens) - 1)
-	a.settleNavigationCursor()
 	return a
 }
 
@@ -285,15 +284,19 @@ func TestConnectScreen_withNoAgentTickedTheConnectChoicesSayToTickOne(t *testing
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude", "Codex"), nil)
 	a := framed(s, false)
 	send(a, "up", "a", "tab")
-	want := "  Just connect mini\n  Tick the agents above to connect mini to them\n" +
-		"> I'll connect mini later\n  Leaves your agent configurations alone."
+	want := "> Just connect mini\n  Tick the agents above to connect mini to them\n" +
+		"  I'll connect mini later\n  Leaves your agent configurations alone."
 	if text := framedText(a); !strings.Contains(text, want) {
 		t.Fatalf(
-			"screen with nothing ticked:\n%s\nwant the connect choices dimmed, the cursor skipping to later, and:\n%s",
+			"screen with nothing ticked:\n%s\nwant the connect choices dimmed with the cursor still able to rest on them, and:\n%s",
 			text,
 			want,
 		)
 	}
+	if cmd := send(a, "enter"); cmd != nil {
+		t.Errorf("enter on Just connect mini with nothing ticked = %v, want nothing to happen", cmd)
+	}
+	send(a, "down")
 	if !strings.Contains(a.render(), dim.Render("Just connect mini")) {
 		t.Errorf("Just connect mini is not dim while nothing is ticked:\n%s", a.render())
 	}
@@ -317,13 +320,13 @@ func TestConnectScreen_untickingEveryAgentDimsTheConnectChoicesUntilOneIsTickedA
 		)
 	}
 	send(a, "tab")
-	if text := framedText(a); !strings.Contains(text, "> I'll connect mini later") {
-		t.Errorf("view after tab:\n%s\nwant the cursor down on I'll connect mini later", text)
+	if text := framedText(a); !strings.Contains(text, "> Just connect mini") {
+		t.Errorf("view after tab:\n%s\nwant the cursor on disabled Just connect mini", text)
 	}
 	send(a, "up")
 	if text := framedText(a); strings.Contains(text, "> I'll connect") || strings.Contains(text, "> Just") {
 		t.Errorf(
-			"view after up from the first enabled choice:\n%s\nwant the cursor on the rows: no enabled choice is above",
+			"view after up from the first choice:\n%s\nwant the cursor on the rows",
 			text,
 		)
 	}

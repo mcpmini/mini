@@ -182,7 +182,7 @@ func (a *app) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd := a.update(msg)
 	if a.hasScreens() {
 		a.clampNavigationCursor()
-		a.settleNavigationCursor()
+		a.settleDefaultChoice()
 	}
 	return a, cmd
 }
@@ -297,6 +297,7 @@ func (a *app) moveTo(at int) {
 	// Picking a choice is what a choosing screen is for.
 	if _, choosing := a.current().(chooser); choosing {
 		a.nav.focus = focusNavigation
+		a.settleDefaultChoice()
 	}
 }
 

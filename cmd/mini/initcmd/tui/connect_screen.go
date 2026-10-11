@@ -37,11 +37,6 @@ type connectScreen struct {
 	width  int
 }
 
-type subtitle struct {
-	text string
-	bold bool
-}
-
 func newConnectScreen(p connectParams) *connectScreen {
 	return &connectScreen{p: p, ticked: map[string]bool{}, agents: newList(nil, nil)}
 }
@@ -195,17 +190,12 @@ func (s *connectScreen) addedLines() []string {
 }
 
 // Subtitles run past a narrow window, and the app cuts lines at its edge, so they wrap.
-// Styling follows the wrap: ansi.Wrap drops bold from the lines it continues.
-func (s *connectScreen) subtitleLines(sub subtitle) []string {
-	text := strings.TrimLeft(sub.text, " ")
-	indent := "  " + sub.text[:len(sub.text)-len(text)]
-	style := dim
-	if sub.bold {
-		style = bold
-	}
+func (s *connectScreen) subtitleLines(sub string) []string {
+	text := strings.TrimLeft(sub, " ")
+	indent := "  " + sub[:len(sub)-len(text)]
 	var lines []string
 	for _, line := range strings.Split(ansi.Wrap(text, max(s.width-len(indent), 20), ""), "\n") {
-		lines = append(lines, indent+style.Render(line))
+		lines = append(lines, indent+dim.Render(line))
 	}
 	return lines
 }
@@ -224,12 +214,12 @@ func optionLabel(choice initcmd.ConnectChoice) string {
 	return "I'll connect mini later"
 }
 
-func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []subtitle {
+func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 	if reason := s.unavailableBecause(choice); reason != "" {
-		return []subtitle{{text: reason}}
+		return []string{reason}
 	}
 	if s.waitingOnChecks(choice) {
-		return []subtitle{{text: "Checking which MCPs mini can run…"}}
+		return []string{"Checking which MCPs mini can run…"}
 	}
 	switch choice {
 	case initcmd.ConnectAndRemove:
@@ -238,9 +228,9 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []subtitle {
 		return s.connectOnlySubtitles()
 	}
 	if len(s.p.added()) == 0 {
-		return []subtitle{{text: "Leaves your agent configurations alone."}}
+		return []string{"Leaves your agent configurations alone."}
 	}
-	return []subtitle{{text: "Saves the MCPs to mini and leaves your agent configurations alone."}}
+	return []string{"Saves the MCPs to mini and leaves your agent configurations alone."}
 }
 
 // An agent is listed with mini already in it while it still has MCPs mini replaces.
@@ -248,36 +238,37 @@ func (s *connectScreen) addsMini() bool {
 	return slices.ContainsFunc(s.picked(), func(agent agents.Agent) bool { return !s.p.withMini[agent.Name] })
 }
 
-func (s *connectScreen) removeSubtitles() []subtitle {
-	var subtitles []subtitle
+func (s *connectScreen) removeSubtitles() []string {
+	var subtitles []string
 	if s.addsMini() {
-		subtitles = append(subtitles, subtitle{text: "Adds mini to your agent configurations."})
+		subtitles = append(subtitles, "Adds mini to your agent configurations.")
 	}
-	subtitles = append(subtitles, subtitle{text: "Your existing configurations will be backed up first.", bold: true})
+	subtitles = append(subtitles, "Your existing configurations will be backed up first.")
 	return append(subtitles, s.removalSubtitles()...)
 }
 
-func (s *connectScreen) connectOnlySubtitles() []subtitle {
-	subtitles := []subtitle{{text: "mini is already connected, so nothing changes."}}
+func (s *connectScreen) connectOnlySubtitles() []string {
+	subtitles := []string{"mini is already connected, so nothing changes."}
 	if s.addsMini() {
-		subtitles = []subtitle{
-			{text: "Adds mini to your agent configurations and leaves existing MCP configurations alone."},
+		subtitles = []string{
+			"Adds mini to your agent configurations and leaves existing MCP configurations alone.",
 		}
 	}
 	if s.anyHasDuplicates(s.picked()) {
-		subtitles = append(subtitles, subtitle{
-			text: "⚠ Your agents will see these MCPs twice and may not use mini for smaller responses",
-		})
+		subtitles = append(
+			subtitles,
+			"⚠ Your agents will see these MCPs twice and may not use mini for smaller responses",
+		)
 	}
 	return subtitles
 }
 
-func (s *connectScreen) removalSubtitles() []subtitle {
+func (s *connectScreen) removalSubtitles() []string {
 	removing := s.picksWithRemovals()
 	width := widest(removing, func(agent agents.Agent) string { return agent.Name }) + len(":")
-	var subtitles []subtitle
+	var subtitles []string
 	for _, agent := range removing {
-		subtitles = append(subtitles, subtitle{text: "  " + pad(agent.Name+":", width) + " " + s.removalText(agent)})
+		subtitles = append(subtitles, "  "+pad(agent.Name+":", width)+" "+s.removalText(agent))
 	}
 	return subtitles
 }

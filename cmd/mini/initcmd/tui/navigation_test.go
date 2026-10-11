@@ -316,53 +316,61 @@ func disablingAt(off ...int) (*disablingScreen, *app) {
 	return s, inApp(100, 30, &fakeScreen{name: "Before"}, s)
 }
 
-func TestNavigation_aDisabledChoiceIsDimSkippedAndNeverChosen(t *testing.T) {
+func TestNavigation_aDisabledChoiceIsDimTakesTheCursorAndIsNeverChosen(t *testing.T) {
 	s, a := disablingAt(1)
 	send(a, "enter")
 	if view := a.render(); !strings.Contains(view, dim.Render("Drop")) {
 		t.Errorf("view:\n%s\nwant Drop drawn dim while disabled", shown(a))
 	}
 	send(a, "down")
-	if view := shown(a); !strings.Contains(view, "> Park") {
-		t.Fatalf("view after down:\n%s\nwant down to skip Drop and land on Park", view)
+	if view := shown(a); !strings.Contains(view, "> Drop") {
+		t.Fatalf("view after down:\n%s\nwant the cursor on disabled Drop, so it reads as a choice", view)
 	}
-	send(a, "up")
-	if view := shown(a); !strings.Contains(view, "> Keep") {
-		t.Errorf("view after up:\n%s\nwant up to skip Drop and land on Keep", view)
-	}
-	s.off[0] = true
 	if cmd := send(a, "enter"); cmd != nil || s.chosen != -1 {
-		t.Errorf("enter on a disabled choice = %v, chosen %d; want nothing chosen", cmd, s.chosen)
+		t.Errorf("enter on disabled Drop = %v, chosen %d; want nothing chosen", cmd, s.chosen)
+	}
+	if keys := a.keys(a.current()); keys != "↑↓ move" {
+		t.Errorf("keys on disabled Drop = %q, want no enter: it does nothing here", keys)
+	}
+	send(a, "down", "enter")
+	if s.chosen != 2 {
+		t.Errorf("chosen %d after down and enter, want Park (2)", s.chosen)
 	}
 }
 
-func TestNavigation_theCursorMovesOffAChoiceThatBecomesDisabled(t *testing.T) {
-	t.Run("to the next enabled label below", func(t *testing.T) {
-		s, a := disablingAt()
-		send(a, "enter")
-		s.off[0] = true
-		send(a, "tab")
-		if view := shown(a); !strings.Contains(view, "> Drop") {
-			t.Errorf("view:\n%s\nwant the cursor moved from disabled Keep to Drop", view)
-		}
-	})
-	t.Run("to the nearest enabled label above when none is below", func(t *testing.T) {
-		s := &disablingScreen{fakeScreen: fakeScreen{name: "Pick", hasRows: true}, off: map[int]bool{}}
-		a := inApp(100, 30, s)
-		send(a, "down", "down")
-		s.off[2] = true
-		send(a, "down")
-		if view := shown(a); !strings.Contains(view, "> Drop") {
-			t.Errorf("view:\n%s\nwant the cursor moved from disabled Park up to Drop", view)
-		}
-	})
+func TestNavigation_aScreenOpensOnItsFirstEnabledChoice(t *testing.T) {
+	_, a := disablingAt(0)
+	send(a, "enter")
+	if view := shown(a); !strings.Contains(view, "> Drop") {
+		t.Errorf("view:\n%s\nwant the cursor on Drop: Keep is disabled", view)
+	}
 }
 
-func TestNavigation_upPastEveryDisabledChoiceReturnsToTheRows(t *testing.T) {
+func TestNavigation_theUntouchedDefaultLeavesAChoiceThatBecomesDisabled(t *testing.T) {
+	s, a := disablingAt()
+	send(a, "enter")
+	s.off[0] = true
+	a.Update(nil)
+	if view := shown(a); !strings.Contains(view, "> Drop") {
+		t.Fatalf("view:\n%s\nwant the default moved from disabled Keep to Drop", view)
+	}
+	send(a, "down")
+	s.off[2] = true
+	a.Update(nil)
+	if view := shown(a); !strings.Contains(view, "> Park") {
+		t.Errorf("view:\n%s\nwant the cursor kept on Park: the user put it there", view)
+	}
+}
+
+func TestNavigation_upFromTheFirstChoiceReturnsToTheRows(t *testing.T) {
 	_, a := disablingAt(0)
 	send(a, "enter", "up")
+	if view := shown(a); !strings.Contains(view, "> Keep") {
+		t.Fatalf("view:\n%s\nwant up from Drop to stop on disabled Keep", view)
+	}
+	send(a, "up")
 	view := shown(a)
 	if strings.Contains(view, "> Keep") || strings.Contains(view, "> Drop") || strings.Contains(view, "> Park") {
-		t.Errorf("view:\n%s\nwant the cursor back on the rows: no enabled choice is above", view)
+		t.Errorf("view:\n%s\nwant the cursor back on the rows", view)
 	}
 }

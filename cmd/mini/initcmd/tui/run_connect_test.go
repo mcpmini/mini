@@ -103,7 +103,7 @@ func pressingAndDelivering(keys ...string) func(tea.Model) error {
 }
 
 func TestRun_connectAndRemove(t *testing.T) {
-	run := func(t *testing.T, check error) (agents.Agent, Outcome) {
+	run := func(t *testing.T, check error, keys ...string) (agents.Agent, Outcome) {
 		t.Helper()
 		configDir := t.TempDir()
 		configtest.WriteServer(t, configDir, config.ServerConfig{Name: "files", Command: "files-server"})
@@ -111,15 +111,15 @@ func TestRun_connectAndRemove(t *testing.T) {
 		setup := setupFor(configDir)
 		setup.AgentsToConnect = []agents.Agent{claude}
 		setup.Probe = func(context.Context, string, config.ServerConfig) error { return check }
-		// Nothing to import or add, so Connect is the first screen; enter picks the first option.
-		out, err := Run(Params{Setup: setup, LoadCatalog: noCatalog, Program: pressingAndDelivering("enter")})
+		// Nothing to import or add, so Connect is the first screen; enter picks the default choice.
+		out, err := Run(Params{Setup: setup, LoadCatalog: noCatalog, Program: pressingAndDelivering(keys...)})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return claude, out
 	}
 	t.Run("an entry whose mini copy passed its check is replaced by mini", func(t *testing.T) {
-		claude, out := run(t, nil)
+		claude, out := run(t, nil, "enter")
 		config := string(testutil.ReadFile(t, claude.ConfigPath))
 		if strings.Contains(config, `"files"`) || !strings.Contains(config, `"mini"`) {
 			t.Errorf("agent config = %s, want files replaced by mini", config)
@@ -153,16 +153,19 @@ func TestRun_connectAndRemove(t *testing.T) {
 			}
 		})
 	})
-	t.Run("when its mini copy fails the check, enter just connects and the entry stays", func(t *testing.T) {
-		claude, out := run(t, errors.New("connection refused"))
-		config := string(testutil.ReadFile(t, claude.ConfigPath))
-		if !strings.Contains(config, `"files"`) || !strings.Contains(config, `"mini"`) {
-			t.Errorf("agent config = %s, want files kept next to mini", config)
-		}
-		if got := out.Report.Connected; len(got) != 1 || len(got[0].Removed) != 0 {
-			t.Errorf("connected = %+v, want nothing removed: removing is not offered when the check fails", got)
-		}
-	})
+	t.Run(
+		"when its mini copy fails the check, enter just connects and the entry stays",
+		func(t *testing.T) {
+			claude, out := run(t, errors.New("connection refused"), "enter")
+			config := string(testutil.ReadFile(t, claude.ConfigPath))
+			if !strings.Contains(config, `"files"`) || !strings.Contains(config, `"mini"`) {
+				t.Errorf("agent config = %s, want files kept next to mini", config)
+			}
+			if got := out.Report.Connected; len(got) != 1 || len(got[0].Removed) != 0 {
+				t.Errorf("connected = %+v, want nothing removed: removing is not offered when the check fails", got)
+			}
+		},
+	)
 }
 
 func TestRun_goingBackToUntickAnImportLowersWhatConnectRemoves(t *testing.T) {

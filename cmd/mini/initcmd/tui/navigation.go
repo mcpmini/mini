@@ -19,7 +19,7 @@ type finisher interface {
 	finished() bool
 }
 
-// A disabled choice is drawn dim, skipped by the cursor, and never chosen.
+// A disabled choice is drawn dim and never chosen; the cursor still stops on it, so it reads as a choice.
 type disabler interface {
 	disabled(choice int) bool
 }
@@ -39,8 +39,10 @@ const (
 )
 
 type navigation struct {
-	focus  focus
-	at     int
+	focus focus
+	at    int
+	// Until the user moves it, the cursor is the default pick and follows which choices can be taken.
+	moved  bool
 	scroll scroll
 }
 
@@ -78,23 +80,15 @@ func (a *app) disabledChoice(i int) bool {
 	return ok && !a.onBack(i) && d.disabled(i)
 }
 
-func (a *app) enabledLabel(from, step int) (int, bool) {
-	for i, n := from, len(a.labels()); i >= 0 && i < n; i += step {
-		if !a.disabledChoice(i) {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
-func (a *app) settleNavigationCursor() {
-	if !a.disabledChoice(a.nav.at) {
+func (a *app) settleDefaultChoice() {
+	if a.nav.moved || !a.disabledChoice(a.nav.at) {
 		return
 	}
-	if next, ok := a.enabledLabel(a.nav.at+1, 1); ok {
-		a.nav.at = next
-	} else if prev, ok := a.enabledLabel(a.nav.at-1, -1); ok {
-		a.nav.at = prev
+	for i := range a.labels() {
+		if !a.disabledChoice(i) {
+			a.nav.at = i
+			return
+		}
 	}
 }
 
@@ -111,13 +105,14 @@ func (a *app) reachNavigation() {
 // cursor from it.
 func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
 	a.nav.focus = focusNavigation
+	if key.String() == "up" || key.String() == "down" || key.String() == "tab" {
+		a.nav.moved = true
+	}
 	switch key.String() {
 	case "up":
 		a.moveUpNavigation()
 	case "down":
-		if next, ok := a.enabledLabel(a.nav.at+1, 1); ok {
-			a.nav.at = next
-		}
+		a.nav.at = min(a.nav.at+1, len(a.labels())-1)
 	case "tab":
 		a.nav.at = 0
 	case "enter":
@@ -129,8 +124,8 @@ func (a *app) handleNavigation(key tea.KeyPressMsg) tea.Cmd {
 }
 
 func (a *app) moveUpNavigation() {
-	if prev, ok := a.enabledLabel(a.nav.at-1, -1); ok {
-		a.nav.at = prev
+	if a.nav.at > 0 {
+		a.nav.at--
 		return
 	}
 	if a.current().focusable() {
@@ -198,6 +193,8 @@ func (a *app) arrivalHint() string {
 
 func (a *app) navigationKeys() string {
 	switch {
+	case a.disabledChoice(a.nav.at):
+		return "↑↓ move"
 	case len(a.labels()) > 1:
 		return "↑↓ move · enter choose"
 	case a.current().focusable():
