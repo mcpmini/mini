@@ -97,7 +97,7 @@ func (s ServerStatus) requirement() string {
 	case NeedsOwnApp:
 		return "requires an OAuth app"
 	case NeedsEnv:
-		return "requires " + strings.Join(s.UnsetEnv.Names, ", ") + " set"
+		return "requires " + JoinAnd(s.UnsetEnv.Names)
 	}
 	return "requires a login"
 }
@@ -112,8 +112,16 @@ func (r Report) finishStep(s ServerStatus, layout stepLayout) string {
 	login := layout.style.code(miniCommand(r.Agents, "auth", s.Name))
 	switch {
 	case s.Readiness == NeedsEnv:
-		return fmt.Sprintf("set them where mini runs (used in %s), or edit %s",
-			s.UnsetEnv.Field, layout.style.code(file))
+		them := "them"
+		if len(s.UnsetEnv.Names) == 1 {
+			them = "it"
+		}
+		return fmt.Sprintf(
+			"set %s where mini runs (used in %s), or edit %s",
+			them,
+			s.UnsetEnv.Field,
+			layout.style.code(file),
+		)
 	case s.Readiness == NeedsLogin:
 		return "run: " + login
 	case s.StepsInFile && s.Readiness == NeedsOwnApp:

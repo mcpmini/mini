@@ -12,10 +12,8 @@ import (
 
 var errInitIncomplete = errors.New("init didn't finish everything; see above")
 
-func terminalSummaryStyle() initcmd.SummaryStyle {
-	if !isTerminal(os.Stdout) {
-		return initcmd.SummaryStyle{}
-	}
+// lipgloss.Fprint drops these styles when stdout isn't a terminal, NO_COLOR is set or TERM=dumb.
+func summaryStyle() initcmd.SummaryStyle {
 	warning := lipgloss.NewStyle().Bold(true)
 	code := lipgloss.NewStyle().Foreground(lipgloss.Color("6"))
 	return initcmd.SummaryStyle{
@@ -40,7 +38,8 @@ func runUnattendedInit(configDir string, f initFlags) error {
 }
 
 func printReport(report initcmd.Report) error {
-	fmt.Print(initcmd.Summary(report, terminalSummaryStyle()))
+	summary := initcmd.Summary(report, summaryStyle())
+	lipgloss.Fprint(os.Stdout, summary) //nolint:errcheck // a failed stdout write has nowhere to go
 	if report.Failed() {
 		return &exitError{code: 1, err: errInitIncomplete}
 	}

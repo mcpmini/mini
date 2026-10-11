@@ -25,7 +25,8 @@ func writeHandConnect(b *strings.Builder, c AgentConnections, style SummaryStyle
 
 func writeNoAgents(b *strings.Builder, c AgentConnections, style SummaryStyle) {
 	fmt.Fprintf(b, "\n%s\n", style.warning("⚠ No agents were found automatically"))
-	command := shellCommand(agents.MiniEntry{Command: c.miniName(), Args: c.Mini.Args})
+	// Agents started from the desktop get a minimal PATH, so the entry needs mini's full path.
+	command := shellCommand(c.Mini)
 	fmt.Fprintf(b, "To use mini, add it to your agent as an MCP server with the command: %s\n", style.code(command))
 }
 

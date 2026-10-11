@@ -252,7 +252,7 @@ func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 		}
 	}
 
-	// The test binary is never the mini on PATH, so the summary names it by its full path.
+	// Agents may start with a minimal PATH, so the command they are given names the binary by its full path.
 	if want := "with the command: " + bin + " --config "; !strings.Contains(stdout, want) ||
 		!strings.Contains(stdout, " connect\n") {
 		t.Errorf("init output = %q, want the connect command starting %q", stdout, want)

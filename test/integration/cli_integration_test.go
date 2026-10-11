@@ -573,7 +573,8 @@ func TestIntegrationCLI_init_fromWithOAuthServer_listsTheLoginBeforeHowToConnect
 	}
 	markers := []string{
 		"The following servers require manual configuration to add to mini:",
-		"imported-server  requires a login  run: ",
+		// The test binary is never the mini on PATH, so commands name it by its full path.
+		"imported-server  requires a login  run: " + miniBin + " --config ",
 		"auth imported-server\n",
 		"To use mini, add it to your agent as an MCP server",
 	}
