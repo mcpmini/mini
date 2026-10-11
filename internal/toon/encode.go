@@ -200,6 +200,8 @@ func encodePrimitive(v Value) (string, error) {
 			return "", errEncodeTooLarge
 		}
 		return s, nil
+	case KindObject, KindArray:
+		fallthrough
 	default:
 		return "", fmt.Errorf("toon: unknown kind %d", v.Kind)
 	}

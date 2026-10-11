@@ -350,6 +350,7 @@ func (s *loginsScreen) need(status initcmd.ServerStatus) string {
 		return needsOwnApp
 	case initcmd.NeedsEnv:
 		return "needs " + strings.Join(status.UnsetEnv.Names, ", ") + " set"
+	case initcmd.Ready:
 	}
 	return ""
 }

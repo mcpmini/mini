@@ -89,6 +89,7 @@ func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width i
 		return fmt.Sprintf("needs your own OAuth app: register one at %s with redirect URI %s, then add to %s:%s"+
 			"  auth:%s    type: oauth2%s    client_id: <your app's client ID>%sand run: %s",
 			s.SetupURL, auth.ResolvedCallbackURI(nil), file, more, more, more, more, miniCommand(mini, "auth", s.Name))
+	case Ready, NeedsLogin:
 	}
 	return "run: " + miniCommand(mini, "auth", s.Name)
 }
@@ -133,6 +134,7 @@ func skippedLine(s SkippedServer, configDir string) string {
 			name,
 			config.ServerPath(configDir, name),
 		)
+	case SkipNone, SkipUnexpandableRefs:
 	}
 	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))
 }

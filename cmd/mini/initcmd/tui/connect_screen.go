@@ -185,6 +185,7 @@ func optionLabel(choice initcmd.ConnectChoice) string {
 		return "Connect mini and remove existing MCPs"
 	case initcmd.ConnectOnly:
 		return "Just connect mini"
+	case initcmd.DontConnect:
 	}
 	return "I'll connect mini later"
 }
@@ -204,6 +205,7 @@ func (s *connectScreen) subtitles(choice initcmd.ConnectChoice) []string {
 		return append([]string{"The configs are backed up first"}, s.tickedAgentLines(s.removeLine)...)
 	case initcmd.ConnectOnly:
 		return s.tickedAgentLines(s.connectLine)
+	case initcmd.DontConnect:
 	}
 	return []string{"Leaves " + withVerb(agentNames(s.listed), "as it is", "as they are")}
 }
