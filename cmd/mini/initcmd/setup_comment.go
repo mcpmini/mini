@@ -1,25 +1,24 @@
 package initcmd
 
 import (
+	"bytes"
 	"fmt"
-	"slices"
+	"strings"
 
 	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 )
 
-// setupComment is the commented-out config a catalog server needs from the user, written into its
-// file so finishing it is an edit there: init can't get the token or app for them.
+// setupComment is the commented-out config a written catalog server needs from the user, so
+// finishing it is an edit in its file: init can't get the token or app for them.
 func (p Plan) setupComment(name string) string {
-	adds := planAdds(p.Import.picked(), p.Add, p.written)
-	if slices.Contains(adds.alreadyConfigured, name) || slices.Contains(adds.coveredByImport, name) {
-		return ""
-	}
-	i := slices.IndexFunc(p.Add, func(e catalog.Entry) bool { return e.Name == name })
-	if i < 0 {
-		return ""
-	}
-	return credentialComment(p.Add[i])
+	return planAdds(p.Import.picked(), p.Add, p.written).setupComments[name]
+}
+
+// setupCommentIn reports whether a server file holds the setup comment init writes for entry.
+func setupCommentIn(data []byte, entry catalog.Entry) bool {
+	first, _, _ := strings.Cut(credentialComment(entry), "\n")
+	return first != "" && bytes.Contains(data, []byte("# "+first))
 }
 
 func credentialComment(entry catalog.Entry) string {

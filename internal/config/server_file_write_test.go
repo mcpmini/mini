@@ -75,10 +75,10 @@ func TestReplaceServerKey(t *testing.T) {
 func TestPrependServerComment(t *testing.T) {
 	t.Run("adds the lines as comments before the keys, keeping comments already there", func(t *testing.T) {
 		got, err := PrependServerComment(
-			[]byte("url: https://x.example/mcp # kept\n"),
+			[]byte("# mine\n\nurl: https://x.example/mcp # kept\n"),
 			"uncomment:\nheaders:\n    A: b",
 		)
-		want := "# uncomment:\n# headers:\n#     A: b\n\nurl: https://x.example/mcp # kept\n"
+		want := "# uncomment:\n# headers:\n#     A: b\n# mine\n\nurl: https://x.example/mcp # kept\n"
 		if err != nil || string(got) != want {
 			t.Fatalf("PrependServerComment = %q, %v; want %q", got, err, want)
 		}

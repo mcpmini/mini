@@ -72,6 +72,9 @@ func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
 func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width int) string {
 	file := config.ServerPath(configDir, s.Name)
 	more := "\n" + strings.Repeat(" ", width+4)
+	if step, ok := stepInFile(file, mini, s); ok {
+		return step
+	}
 	switch s.Readiness {
 	case NeedsToken:
 		return fmt.Sprintf(
@@ -91,6 +94,17 @@ func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width i
 			s.SetupURL, auth.ResolvedCallbackURI(nil), file, more, more, more, more, miniCommand(mini, "auth", s.Name))
 	}
 	return "run: " + miniCommand(mini, "auth", s.Name)
+}
+
+func stepInFile(file string, mini agents.MiniEntry, s ServerStatus) (string, bool) {
+	switch {
+	case s.StepsInFile && s.Readiness == NeedsToken:
+		return "needs a token: follow the steps at the top of " + file, true
+	case s.StepsInFile && s.Readiness == NeedsOwnApp:
+		return fmt.Sprintf("needs your own OAuth app: follow the steps at the top of %s, then run: %s",
+			file, miniCommand(mini, "auth", s.Name)), true
+	}
+	return "", false
 }
 
 // TokenEnvVar is the variable the token setup step tells the user to hold a server's token in.

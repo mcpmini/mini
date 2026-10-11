@@ -45,6 +45,18 @@ func TestSummary_servers(t *testing.T) {
 			t.Errorf("a ready server is listed:\n%s", got)
 		}
 	})
+	t.Run("a server whose file opens with its steps points there", func(t *testing.T) {
+		got := Summary(Report{ConfigDir: "/cfg", Servers: []ServerStatus{
+			{Name: "github", Readiness: NeedsToken, StepsInFile: true},
+			{Name: "asana", Readiness: NeedsOwnApp, StepsInFile: true},
+		}})
+		requireLines(
+			t,
+			got,
+			"  github  needs a token: follow the steps at the top of /cfg/servers/github.yaml\n",
+			"  asana   needs your own OAuth app: follow the steps at the top of /cfg/servers/asana.yaml, then run: mini auth asana\n",
+		)
+	})
 	t.Run("the token step is YAML that sets the header", func(t *testing.T) {
 		got := Summary(Report{ConfigDir: "/cfg", Servers: []ServerStatus{
 			{Name: "github", Readiness: NeedsToken, SetupURL: "https://github.example.com/tokens"},

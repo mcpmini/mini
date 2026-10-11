@@ -2,6 +2,7 @@ package initcmd
 
 import (
 	"errors"
+	"os"
 	"slices"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -24,7 +25,9 @@ type ServerStatus struct {
 	Name      string
 	Readiness Readiness
 	SetupURL  string
-	UnsetEnv  *config.UnsetEnvError
+	// StepsInFile is set when the server's file opens with the steps that finish it.
+	StepsInFile bool
+	UnsetEnv    *config.UnsetEnvError
 }
 
 // ServerStatuses judges every enabled server as mini would load it. Catalog entries say which
@@ -51,6 +54,9 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 	}
 	if entry, ok := catalogEntryFor(sc, entries); ok {
 		status.SetupURL = entry.SetupURL
+		//nolint:errcheck // an unreadable file only loses the shorter summary step
+		data, _ := os.ReadFile(config.ServerPath(configDir, sc.Name))
+		status.StepsInFile = setupCommentIn(data, entry)
 		switch {
 		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
 			status.Readiness = NeedsToken

@@ -264,19 +264,42 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 		report.Servers[i].Readiness != NeedsToken {
 		t.Errorf("servers = %+v, want github needing a token: a commented-out header is no token", report.Servers)
 	}
+	if i := slices.IndexFunc(report.Servers, func(s ServerStatus) bool { return s.Name == "github" }); i < 0 ||
+		!report.Servers[i].StepsInFile {
+		t.Errorf("servers = %+v, want github's steps found in its file", report.Servers)
+	}
 	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(configDir, "linear"))), "#") {
 		t.Error("linear.yaml has a comment, want none: its login needs nothing written by hand")
 	}
-	for _, name := range []string{"github", "asana"} {
-		t.Run(name+" works once uncommented", func(t *testing.T) {
-			sc := uncommented(t, configDir, name)
-			if name == "github" && sc.Headers["Authorization"] != "Bearer <your token>" {
-				t.Errorf("headers = %v, want the Authorization header", sc.Headers)
-			}
-			if name == "asana" && (sc.Auth == nil || sc.Auth.ClientID == "") {
-				t.Errorf("auth = %+v, want the app's client ID", sc.Auth)
-			}
-		})
+	t.Run("github works once uncommented", func(t *testing.T) {
+		if sc := uncommented(t, configDir, "github"); sc.Headers["Authorization"] != "Bearer <your token>" {
+			t.Errorf("headers = %v, want the Authorization header", sc.Headers)
+		}
+	})
+	t.Run("asana works once uncommented", func(t *testing.T) {
+		if sc := uncommented(t, configDir, "asana"); sc.Auth == nil || sc.Auth.ClientID == "" {
+			t.Errorf("auth = %+v, want the app's client ID", sc.Auth)
+		}
+	})
+}
+
+func TestRunUnattended_anImportThatCoversACatalogAddGetsNoSetupComment(t *testing.T) {
+	configDir := t.TempDir()
+	claude := agentWith("Claude Code", map[string]agents.Server{
+		"github": remoteEntry("https://github.example/mcp", "ghp_test"),
+	})
+	report := RunUnattended(Setup{
+		ConfigDir: configDir,
+		Import:    []agents.Agent{claude},
+		Add:       []catalog.Entry{{Name: "github", URL: "https://github.example/mcp", Auth: catalog.AuthToken}},
+		Probe:     func(context.Context, string, config.ServerConfig) error { return nil },
+	})
+
+	if len(report.WriteErrors) > 0 {
+		t.Fatalf("write errors: %v", report.WriteErrors)
+	}
+	if github := string(testutil.ReadFile(t, config.ServerPath(configDir, "github"))); strings.Contains(github, "#") {
+		t.Errorf("github.yaml:\n%s\nwant no token step: the imported github already holds its token", github)
 	}
 }
 
