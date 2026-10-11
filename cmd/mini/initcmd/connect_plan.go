@@ -20,8 +20,17 @@ type agentDuplicates struct {
 	duplicates map[string]string
 }
 
-func (s Setup) PlanConnect() (ConnectPlan, error) {
-	mini, err := loadMiniServers(s.ConfigDir)
+// PlanConnect reads the staged servers with mini's: removing replaces entries with what mini will
+// have once Finish commits.
+func (r *Run) PlanConnect() (ConnectPlan, error) {
+	if !r.stage.created {
+		return r.setup.planConnect(r.setup.ConfigDir)
+	}
+	return r.setup.planConnect(r.setup.ConfigDir, r.stage.dir)
+}
+
+func (s Setup) planConnect(configDirs ...string) (ConnectPlan, error) {
+	mini, err := loadMiniServers(configDirs...)
 	if err != nil {
 		return ConnectPlan{}, err
 	}
@@ -60,10 +69,9 @@ type Removals struct {
 func (p ConnectPlan) Check(ctx context.Context) Removals {
 	r := Removals{ByAgent: map[string][]string{}}
 	r.Checks = p.mini.Check(ctx, checkParams{
-		configDir: p.setup.ConfigDir,
-		servers:   duplicatedServers(p.allDuplicates()...),
-		clock:     clock.System(),
-		probe:     p.setup.probe(),
+		servers: duplicatedServers(p.allDuplicates()...),
+		clock:   clock.System(),
+		probe:   p.setup.probe(),
 	})
 	rule := p.setup.replacementRule(r.Checks)
 	for agent, a := range p.agents {

@@ -8,10 +8,7 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd/tui"
 )
 
-var (
-	errInitQuit          = errors.New("init quit; nothing was written")
-	errInitQuitAfterSave = errors.New("init quit; the servers above were saved and no agent was changed")
-)
+var errInitQuit = errors.New("init quit; no servers were added and no agent was changed")
 
 func runFullScreenInit(configDir string) error {
 	setup, err := setupFromFlags(configDir, initFlags{importAll: true})
@@ -23,7 +20,7 @@ func runFullScreenInit(configDir string) error {
 	out, runErr := tui.Run(tui.Params{
 		Setup:       setup,
 		LoadCatalog: publishedCatalogSource().load,
-		StartLogin:  startInitLogin(configDir),
+		StartLogin:  startInitLogin,
 	})
 	restore()
 	err = reportFullScreenInit(configDir, out, runErr)
@@ -40,16 +37,9 @@ func reportFullScreenInit(configDir string, out tui.Outcome, runErr error) error
 		}
 		return &exitError{code: 1, err: errInitQuit}
 	}
-	// The servers are already written, so the summary prints however the UI ended.
 	reportErr := printReport(out.Report)
 	if err := createConfigDirs(configDir); err != nil {
 		return fmt.Errorf("create config dirs: %w", err)
-	}
-	switch {
-	case runErr != nil:
-		return runErr
-	case out.Quit:
-		return &exitError{code: 1, err: errInitQuitAfterSave}
 	}
 	return reportErr
 }

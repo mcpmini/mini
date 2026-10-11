@@ -28,9 +28,10 @@ func newFakeChecks(statuses ...initcmd.ServerStatus) *fakeChecks {
 
 func (f *fakeChecks) screen() *loginsScreen {
 	return newLoginsScreen(loginsParams{
-		statuses: func() ([]initcmd.ServerStatus, error) { return f.statuses, nil },
-		checking: func() map[string]bool { return maps.Clone(f.checking) },
-		changed:  f.changed,
+		configDirFor: func(string) string { return "testconfig" },
+		statuses:     func() ([]initcmd.ServerStatus, error) { return f.statuses, nil },
+		checking:     func() map[string]bool { return maps.Clone(f.checking) },
+		changed:      f.changed,
 	})
 }
 
@@ -93,6 +94,7 @@ func TestLoginsScreen_aCheckFinishingWhileTheStatusesAreReadIsNotLost(t *testing
 	checks := newFakeChecks()
 	checks.checking["open"] = true
 	s := newLoginsScreen(loginsParams{
+		configDirFor: func(string) string { return "testconfig" },
 		statuses: func() ([]initcmd.ServerStatus, error) {
 			delete(checks.checking, "open")
 			checks.changed <- struct{}{}
@@ -142,7 +144,7 @@ func newFakeLogins(names ...string) *fakeLogins {
 	return f
 }
 
-func (f *fakeLogins) start(ctx context.Context, name string) (Login, error) {
+func (f *fakeLogins) start(ctx context.Context, _, name string) (Login, error) {
 	wait := func() error {
 		select {
 		case err := <-f.ends[name]:
@@ -162,10 +164,11 @@ func loginScreen(logins *fakeLogins, names ...string) *loginsScreen {
 	}
 	checks := newFakeChecks(statuses...)
 	s := newLoginsScreen(loginsParams{
-		statuses:   func() ([]initcmd.ServerStatus, error) { return checks.statuses, nil },
-		checking:   func() map[string]bool { return nil },
-		changed:    checks.changed,
-		startLogin: logins.start,
+		configDirFor: func(string) string { return "testconfig" },
+		statuses:     func() ([]initcmd.ServerStatus, error) { return checks.statuses, nil },
+		checking:     func() map[string]bool { return nil },
+		changed:      checks.changed,
+		startLogin:   logins.start,
 	})
 	s.resize(80, 30)
 	showScreen(s)
@@ -257,7 +260,7 @@ func TestLoginsScreen_leavingCancelsTheWaitingLogin(t *testing.T) {
 func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *testing.T) {
 	url := "https://auth.example/authorize?" + strings.Repeat("scope=read&", 20)
 	s := loginScreen(newFakeLogins(), "linear")
-	s.p.startLogin = func(ctx context.Context, _ string) (Login, error) {
+	s.p.startLogin = func(ctx context.Context, _, _ string) (Login, error) {
 		return Login{URL: url, Wait: func() error { <-ctx.Done(); return ctx.Err() }}, nil
 	}
 	t.Cleanup(s.cancelLogin)
@@ -419,8 +422,9 @@ func TestLoginsScreen_showingItAgainPutsTheCursorOnTheNextLogin(t *testing.T) {
 
 func TestLoginsScreen_aReadErrorLeavesOnlyTheNavigation(t *testing.T) {
 	s := newLoginsScreen(loginsParams{
-		statuses: func() ([]initcmd.ServerStatus, error) { return nil, errors.New("permission denied") },
-		checking: func() map[string]bool { return nil },
+		configDirFor: func(string) string { return "testconfig" },
+		statuses:     func() ([]initcmd.ServerStatus, error) { return nil, errors.New("permission denied") },
+		checking:     func() map[string]bool { return nil },
 	})
 	showScreen(s)
 	a := framed(s, true)

@@ -160,11 +160,7 @@ func (s *connectScreen) addedLines() []string {
 	if len(added) == 0 {
 		return nil
 	}
-	verb := " were added to mini: "
-	if len(added) == 1 {
-		verb = " was added to mini: "
-	}
-	text := initcmd.Plural(len(added), "MCP") + verb + strings.Join(added, ", ")
+	text := initcmd.Plural(len(added), "MCP") + " will be added to mini: " + strings.Join(added, ", ")
 	return strings.Split(ansi.Wrap(text, max(s.width, 20), ""), "\n")
 }
 

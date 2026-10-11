@@ -36,7 +36,7 @@ func TestStartInitLogin_aCompletedLoginSavesTheToken(t *testing.T) {
 	dir := oauthServerIn(t, tokenServer)
 	browserThat(t, func(authURL string) { go authtest.CompleteAuthorization(t, authURL, "test-auth-code") })
 
-	login, err := startInitLogin(dir)(t.Context(), "svc")
+	login, err := startInitLogin(t.Context(), dir, "svc")
 	if err != nil || login.URL == "" {
 		t.Fatalf("start = %+v, %v; want a login with its URL", login, err)
 	}
@@ -58,7 +58,7 @@ func TestStartInitLogin_aCancelledLoginSavesAndLogsNothing(t *testing.T) {
 	t.Cleanup(func() { log.SetOutput(previous) })
 	ctx, cancel := context.WithCancel(t.Context())
 
-	login, err := startInitLogin(dir)(ctx, "svc")
+	login, err := startInitLogin(ctx, dir, "svc")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestStartInitLogin_aCancelledLoginSavesAndLogsNothing(t *testing.T) {
 func TestStartInitLogin_aServerWithoutOAuthIsAnError(t *testing.T) {
 	dir := t.TempDir()
 	configtest.WriteServer(t, dir, config.ServerConfig{Name: "local", Command: "run"})
-	if _, err := startInitLogin(dir)(t.Context(), "local"); err == nil {
+	if _, err := startInitLogin(t.Context(), dir, "local"); err == nil {
 		t.Error("start on a stdio server returned no error")
 	}
 }

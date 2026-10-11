@@ -10,7 +10,6 @@ import (
 	"testing/synctest"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/agents"
@@ -18,6 +17,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/testutil"
 )
 
 func stdioAgent(name string, servers ...string) agents.Agent {
@@ -97,7 +97,7 @@ func TestRun_quittingBeforeCatalogWritesNothing(t *testing.T) {
 		LoadCatalog: noCatalog,
 		Program:     pressing("ctrl+c"),
 	})
-	if err != nil || !out.Quit || out.Saved {
+	if err != nil || out.Saved {
 		t.Fatalf("Run = %+v, %v; want a quit with nothing saved", out, err)
 	}
 	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
@@ -112,7 +112,7 @@ func TestRun_finishingWritesTheTicksAndReportsThem(t *testing.T) {
 		LoadCatalog: noCatalog,
 		Program:     pressing("space", "tab", "enter"),
 	})
-	if err != nil || out.Quit || !out.Saved {
+	if err != nil || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished and saved", out, err)
 	}
 	if got := writtenNames(t, configDir); !slices.Equal(got, []string{"notes"}) {
@@ -170,7 +170,7 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, continue.
 		Program: pressing("space", "tab", "enter", "esc", "space", "down", "space", "tab", "enter", "down", "enter"),
 	})
-	if err != nil || out.Quit {
+	if err != nil || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished", out, err)
 	}
 	if got := writtenNames(t, configDir); !slices.Equal(got, []string{"sentry"}) {
@@ -178,8 +178,8 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 	}
 }
 
-func TestRun_quittingAfterCatalogKeepsWhatWasWritten(t *testing.T) {
-	configDir := t.TempDir()
+func TestRun_quittingAfterCatalogWritesNothing(t *testing.T) {
+	configDir := filepath.Join(t.TempDir(), "config")
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
 	out, err := Run(
 		Params{
@@ -188,11 +188,11 @@ func TestRun_quittingAfterCatalogKeepsWhatWasWritten(t *testing.T) {
 			Program:     pressing("space", "tab", "enter", "ctrl+c"),
 		},
 	)
-	if err != nil || !out.Quit || !out.Saved {
-		t.Fatalf("Run = %+v, %v; want a quit after saving", out, err)
+	if err != nil || out.Saved {
+		t.Fatalf("Run = %+v, %v; want a quit with nothing saved", out, err)
 	}
-	if got := writtenNames(t, configDir); !slices.Equal(got, []string{"linear"}) {
-		t.Errorf("written = %v, want linear kept", got)
+	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+		t.Errorf("config dir after quitting: %v, want it still missing: linear was only staged", err)
 	}
 }
 
@@ -225,7 +225,7 @@ func TestRun_withNothingToImport(t *testing.T) {
 			return nil
 		}
 		out, err := Run(Params{Setup: setupFor(t.TempDir()), LoadCatalog: noCatalog, Program: program})
-		if err != nil || out.Quit || shown {
+		if err != nil || !out.Saved || shown {
 			t.Errorf("out = %+v, err = %v, UI shown = %v; want a finished run with no UI", out, err, shown)
 		}
 	})
@@ -249,7 +249,7 @@ func TestRun_aRunThatStartsOnLoginsFinishesWithItsSummary(t *testing.T) {
 		config.ServerConfig{Name: "files", Command: "run", Env: []string{"ROOT=${MINI_TEST_UNSET_ROOT}"}},
 	)
 	out, err := Run(Params{Setup: setupFor(configDir), LoadCatalog: noCatalog, Program: pressing("enter")})
-	if err != nil || out.Quit || !out.Saved {
+	if err != nil || !out.Saved {
 		t.Errorf("Run = %+v, %v; want a finished run with a summary, not a quit", out, err)
 	}
 }
@@ -269,25 +269,6 @@ func statusOf(report initcmd.Report, name string) initcmd.Readiness {
 
 func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 	plain := catalog.Catalog{Entries: []catalog.Entry{{Name: "plain", URL: "https://mcp.plain.example/mcp"}}}
-	t.Run("quitting cancels the running check, and the summary says it wasn't checked", func(t *testing.T) {
-		configDir := t.TempDir()
-		setup := setupFor(configDir)
-		setup.Probe = blockUntilCancelled
-		var view string
-		program := func(m tea.Model) error {
-			pressing("space", "tab", "enter")(m)
-			view = ansi.Strip(m.(*app).render())
-			m.Update(press("ctrl+c"))
-			return nil
-		}
-		out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
-		if !strings.Contains(view, "plain  checking…") {
-			t.Errorf("Logins while the check ran:\n%s\nwant plain checking", view)
-		}
-		if err != nil || !out.Quit || statusOf(out.Report, "plain") != initcmd.MayNeedLogin {
-			t.Errorf("out = %+v, %v; want plain marked as maybe needing a login, not set up", out, err)
-		}
-	})
 	t.Run("finishing waits for the running check", func(t *testing.T) {
 		// The check ends only at its own timeout. Time in the bubble moves once Run blocks, so a
 		// finish that waits sees the check done, and one that cancels it sees it unchecked.
@@ -296,7 +277,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 			setup.Probe = blockUntilCancelled
 			program := pressing("space", "tab", "enter", "enter")
 			out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
-			if err != nil || out.Quit || statusOf(out.Report, "plain") != initcmd.Ready {
+			if err != nil || !out.Saved || statusOf(out.Report, "plain") != initcmd.Ready {
 				t.Errorf("out = %+v, %v; want plain checked, so not marked as maybe needing a login", out, err)
 			}
 		})
@@ -305,7 +286,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 
 func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 	cancelled := false
-	startLogin := func(ctx context.Context, _ string) (Login, error) {
+	startLogin := func(ctx context.Context, _, _ string) (Login, error) {
 		<-ctx.Done()
 		cancelled = true
 		return Login{}, ctx.Err()
@@ -317,7 +298,7 @@ func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 		StartLogin:  startLogin,
 		Program:     pressing("space", "tab", "enter", "enter", "ctrl+c"),
 	})
-	if err != nil || !out.Quit {
+	if err != nil || out.Saved {
 		t.Fatalf("Run = %+v, %v; want a quit", out, err)
 	}
 	if !cancelled {
@@ -327,7 +308,7 @@ func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 
 func TestRun_aLoginDoesntOutliveTheServerItWasFor(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear"), oauthEntry("sentry")}}
-	startLogin := func(context.Context, string) (Login, error) {
+	startLogin := func(context.Context, string, string) (Login, error) {
 		return Login{URL: "https://auth.example/linear", Wait: func() error { return nil }}, nil
 	}
 	var screen string
@@ -369,5 +350,44 @@ func TestRun_aLoginDoesntOutliveTheServerItWasFor(t *testing.T) {
 
 	if !strings.Contains(screen, "linear  needs a login") {
 		t.Errorf("Logins:\n%s\nwant linear needing a login: unticking it deleted its credentials", screen)
+	}
+}
+
+func TestRun_aLoginReachesMiniOnlyWhenTheRunFinishes(t *testing.T) {
+	configDir := t.TempDir()
+	token := filepath.Join("internal", "linear.token.json")
+	if err := os.Mkdir(filepath.Join(configDir, "internal"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	startLogin := func(_ context.Context, dir, _ string) (Login, error) {
+		save := func() error {
+			testutil.WriteFile(t, filepath.Join(dir, token), `{}`)
+			return nil
+		}
+		return Login{URL: "https://auth.example/linear", Wait: save}, nil
+	}
+	var savedBeforeFinish bool
+	program := func(m tea.Model) error {
+		// Tick linear, leave Catalog, log in to linear.
+		pressingAndDelivering("space", "tab", "enter", "enter")(m)
+		_, err := os.Stat(filepath.Join(configDir, token))
+		savedBeforeFinish = err == nil
+		for _, key := range []string{"tab", "enter"} {
+			deliver(m, pressKey(m, key))
+		}
+		return nil
+	}
+	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
+	out, err := Run(
+		Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), StartLogin: startLogin, Program: program},
+	)
+	if err != nil || !out.Saved {
+		t.Fatalf("Run = %+v, %v; want it finished", out, err)
+	}
+	if savedBeforeFinish {
+		t.Error("linear's token was in mini before the run finished, want it staged")
+	}
+	if _, err := os.Stat(filepath.Join(configDir, token)); err != nil {
+		t.Errorf("linear's token after finishing: %v, want it saved", err)
 	}
 }
