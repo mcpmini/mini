@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func initHTTPSession(t *testing.T, cfg, token string) string {
@@ -30,8 +32,32 @@ func TestIntegrationDaemon_HTTPClientDirect(t *testing.T) {
 	startDaemon(t, cfg)
 	token := readDaemonToken(t, cfg)
 	sessionID := initHTTPSession(t, cfg, token)
-	resp := postHTTPToolCall(t, cfg, httpToolCall{sessionID: sessionID, token: token, server: "svc", tool: "get_item"})
-	assertInlineGetItem(t, decodeDaemonEnvelope(t, resp))
+	env := callWhenServerConnected(t, cfg, httpToolCall{
+		sessionID: sessionID, token: token, server: "svc", tool: "get_item",
+	})
+	assertInlineGetItem(t, env)
+}
+
+// The daemon connects upstreams after initialize returns, so an early call can hit a server that
+// isn't connected yet and get an error result. Retry until the result is not an error.
+func callWhenServerConnected(t *testing.T, cfg string, c httpToolCall) envelope {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		resp := postHTTPToolCall(t, cfg, c)
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(body, []byte(`"isError":true`)) || time.Now().After(deadline) {
+			return decodeDaemonEnvelope(t, &http.Response{
+				StatusCode: resp.StatusCode,
+				Body:       io.NopCloser(bytes.NewReader(body)),
+			})
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func TestIntegrationDaemon_HTTPRejectsMissingToken(t *testing.T) {
