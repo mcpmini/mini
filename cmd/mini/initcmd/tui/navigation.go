@@ -1,8 +1,6 @@
 package tui
 
-import (
-	tea "charm.land/bubbletea/v2"
-)
+import tea "charm.land/bubbletea/v2"
 
 const (
 	continueLabel = "Continue"
@@ -147,7 +145,7 @@ func (a *app) navigationText(label string) string {
 	return label
 }
 
-// Past the save point the next screen depends on what the save writes, so no hint there could be relied on.
+// When Continue crosses the save point, the next screen depends on what the save writes, so no hint could be relied on.
 func (a *app) arrivalHint() string {
 	next, ok := a.nextShown(a.at, 1)
 	if !ok || a.saves.crossedBy(a.at, next) {
