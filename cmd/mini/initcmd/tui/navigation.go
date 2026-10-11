@@ -7,8 +7,9 @@ const (
 	backLabel              = "Back"
 	saveAndFinishLabel     = "Save and finish"
 	exitWithoutSavingLabel = "Exit without saving"
-	// The rows under a screen with no choices of its own: a blank line, Continue and Back.
-	tallestNavigation = 3
+	// The rows under a screen with no choices of its own, at most a blank line, Save and finish,
+	// Exit without saving and Back.
+	tallestNavigation = 4
 )
 
 type chooser interface {

@@ -100,7 +100,7 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	ui.review = newReviewScreen(reviewParams{
 		added:         run.Added,
 		configDir:     p.Setup.ConfigDir,
-		endingInstead: []screen{ui.logins, ui.connects},
+		endingInstead: []screen{ui.connects},
 		offering:      []screen{ui.imports, ui.catalogs},
 	})
 	return ui

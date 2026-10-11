@@ -64,3 +64,7 @@ func (s *reviewScreen) empty() bool {
 func anyShown(list []screen) bool {
 	return slices.ContainsFunc(list, func(s screen) bool { return !s.empty() })
 }
+
+func (s *reviewScreen) arrivalHint() string {
+	return "review and finish"
+}

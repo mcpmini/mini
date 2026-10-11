@@ -74,13 +74,16 @@ func TestReview_isEmptyOnlyWhenNothingWasOffered(t *testing.T) {
 	})
 }
 
-func TestRun_noAgentsWithAnOAuthPickEndsOnLoginsNeverReview(t *testing.T) {
+func TestRun_noAgentsWithAnOAuthPickGoesFromLoginsToReview(t *testing.T) {
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
-	view := screenAfter(t, setupFor(t.TempDir()), fromCatalog(c), "space", "tab", "enter")
-	if !strings.Contains(view, "Log in to your MCPs (optional)") ||
-		!strings.Contains(view, "Save and finish\n  Exit without saving\n  Back") ||
-		strings.Contains(view, "Review and finish") {
-		t.Errorf("view:\n%s\nwant Logins as the last screen with its final actions and no Review", view)
+	logins := screenAfter(t, setupFor(t.TempDir()), fromCatalog(c), "space", "tab", "enter")
+	if !strings.Contains(logins, "Log in to your MCPs (optional)") || strings.Contains(logins, "Save and finish") {
+		t.Errorf("Logins:\n%s\nwant Continue, not the final actions: Review ends the run", logins)
+	}
+	review := screenAfter(t, setupFor(t.TempDir()), fromCatalog(c), "space", "tab", "enter", "tab", "enter")
+	if !strings.Contains(review, "Review and finish") ||
+		!strings.Contains(review, "Save and finish\n  Exit without saving\n  Back") {
+		t.Errorf("after Continue on Logins:\n%s\nwant Review with the final actions", review)
 	}
 }
 
