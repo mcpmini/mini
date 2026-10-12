@@ -46,9 +46,9 @@ var testSteps = serverSteps{
 // The warnings unwrapped, as a 200-column window shows them.
 const (
 	oneLoginLeft = "\n\n⚠ mini can't use this MCP until you log in to it. " +
-		"You can always log in later using mini auth <server>."
+		"You can always log in later using mini auth <name>."
 	loginsLeft = "\n\n⚠ mini can't use these MCPs until you log in to them. " +
-		"You can always log in later using mini auth <server>."
+		"You can always log in later using mini auth <name>."
 )
 
 func loginsText(s *loginsScreen) string {
@@ -126,12 +126,8 @@ func TestLoginsScreen_byHandServersAreListedBelowTheLoginRowsAndAreNotRows(t *te
 			s := loginScreenWithStatuses(newFakeLogins(), statuses...)
 			s.resize(200, 30)
 			a := framed(s, false)
-			if text := framedText(
-				a,
-			); !strings.HasPrefix(
-				text,
-				"> linear  press enter to log in"+oneLoginLeft+"\n\n"+tc.list+"\n\n",
-			) {
+			rows := "> linear  press enter to log in" + oneLoginLeft
+			if text := framedText(a); !strings.HasPrefix(text, rows+"\n\n"+tc.list+"\n\n") {
 				t.Fatalf("screen:\n%s\nwant the list below the login rows", text)
 			}
 			send(a, "down")
@@ -181,6 +177,9 @@ func TestLoginsScreen_aServerBeingCheckedSaysSoUntilTheCheckFinishes(t *testing.
 	wait := showScreen(s)
 	if text := loginsText(s); !strings.Contains(text, "  open  checking…") || wait == nil {
 		t.Fatalf("screen:\n%s\nwait = %v; want open checking and a wait for the result", text, wait)
+	}
+	if text := loginsText(s); strings.Contains(text, "⚠") {
+		t.Errorf("screen:\n%s\nwant no login warning while the check may still find open ready", text)
 	}
 	if again := showScreen(s); again != nil {
 		t.Error("entering again started a second wait; one is enough")
@@ -326,12 +325,8 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 
 	logins.ends["sentry"] <- errors.New("access denied")
 	pressAndRun(s, "enter")
-	if text := loginsText(
-		s,
-	); !strings.Contains(
-		text,
-		"  sentry  ✗ login failed: access denied\n\n⚠ mini can't use this MCP",
-	) {
+	failed := "  sentry  ✗ login failed: access denied\n\n⚠ mini can't use this MCP"
+	if text := loginsText(s); !strings.Contains(text, failed) {
 		t.Errorf("screen:\n%s\nwant sentry's failure shown, then the warning that it still needs a login", text)
 	}
 }
@@ -416,6 +411,25 @@ func TestLoginsScreen_theWarningGoesOnceEveryMCPIsLoggedIn(t *testing.T) {
 	pressAndRun(s, "enter")
 	if text := loginsText(s); text != "  linear  ✓ logged in\n\n> Continue" {
 		t.Errorf("screen:\n%s\nwant no warning: nothing is left to log in to", text)
+	}
+}
+
+func TestLoginsScreen_aFailedLoginWarnsNoMoreOnceACheckFindsTheMCPReady(t *testing.T) {
+	logins := newFakeLogins("linear")
+	checks := newFakeChecks(initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin})
+	s := checks.screen()
+	s.p.startLogin = logins.start
+	s.resize(200, 30)
+	showScreen(s)
+	logins.ends["linear"] <- errors.New("access denied")
+	pressAndRun(s, "enter")
+	if text := loginsText(s); !strings.Contains(text, oneLoginLeft) {
+		t.Fatalf("screen:\n%s\nwant the warning after the failed login", text)
+	}
+	checks.statuses[0].Readiness = initcmd.Ready
+	s.refresh()
+	if text := loginsText(s); strings.Contains(text, "⚠") {
+		t.Errorf("screen:\n%s\nwant no warning: linear works now", text)
 	}
 }
 

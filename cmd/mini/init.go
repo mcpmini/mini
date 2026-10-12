@@ -25,13 +25,13 @@ type initFlags struct {
 }
 
 const initLong = `Set up mini in four steps:
-  1. import MCP servers from Claude Code, Codex, Cursor, and other agents,
+  1. import MCPs from Claude Code, Codex, Cursor, and other agents,
   2. pick more from the MCP catalog,
-  3. log in to the servers that use OAuth,
+  3. log in to the MCPs that use OAuth,
   4. connect mini to your agents, backing up each config it changes.
-Servers that are already configured are never changed.
+MCPs that are already configured are never changed.
 
-With --import, --from or --add, init asks nothing: it adds those servers, leaves logins and
+With --import, --from or --add, init asks nothing: it adds those MCPs, leaves logins and
 agent configs alone, and prints what is left to do.`
 
 const initExample = `  mini init
@@ -123,7 +123,7 @@ func createConfigDirs(configDir string) error {
 const noTerminalHelp = `mini init asks questions, so it needs a terminal. Without one, say what to set up:
   mini init --import             import the MCPs of every agent found
   mini init --from AGENT|PATH    import the MCPs of one agent or config file
-  mini init --add NAME,...       add servers from the catalog
+  mini init --add NAME,...       add MCPs from the catalog
 `
 
 func isTerminal(f *os.File) bool {

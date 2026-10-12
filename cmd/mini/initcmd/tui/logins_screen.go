@@ -253,13 +253,13 @@ func (s *loginsScreen) skippedLoginWarning() []string {
 	if len(waiting) == 1 {
 		text = "⚠ mini can't use this MCP until you log in to it."
 	}
-	text += " You can always log in later using " + s.p.steps.login("<server>") + "."
+	text += " You can always log in later using " + s.p.steps.login("<name>") + "."
 	return append([]string{""}, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
 }
 
 func (s *loginsScreen) notLoggedIn(status initcmd.ServerStatus) bool {
 	err, tried := s.results[status.Name]
-	return !s.checking[status.Name] && (!tried || err != nil)
+	return status.Readiness == initcmd.NeedsLogin && (!tried || err != nil)
 }
 
 func (s *loginsScreen) byHandList() []string {
