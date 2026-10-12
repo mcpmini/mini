@@ -24,6 +24,7 @@ type connectParams struct {
 	withMini map[string]bool
 	plan     func() (connectPlan, error)
 	added    func() []string
+	statuses serverStatuses
 }
 
 type connectScreen struct {
@@ -36,8 +37,12 @@ type connectScreen struct {
 	agents *list
 	chosen initcmd.ConnectChoice
 	checks connectChecks
-	width  int
+	// needingLogin is read when the checks finish, not on every redraw: it reads token files.
+	needingLogin map[string]bool
+	width        int
 }
+
+const miniConnected = "mini already connected"
 
 func newConnectScreen(p connectParams) *connectScreen {
 	return &connectScreen{p: p, ticked: map[string]bool{}, agents: newList(nil, nil)}
@@ -64,14 +69,25 @@ func (s *connectScreen) refresh() {
 	var rows, connected []row
 	if len(s.listed) > 1 {
 		for _, agent := range s.listed {
-			rows = append(rows, row{key: agent.Name, label: agent.Name})
+			rows = append(rows, row{key: agent.Name, label: agent.Name, detail: s.agentDetail(agent.Name)})
 		}
 	}
 	for _, name := range s.alreadyConnected {
-		connected = append(connected, row{key: name, label: name, detail: "already connected"})
+		connected = append(connected, row{key: name, label: name, detail: miniConnected})
 	}
 	s.agents = newList(rows, s.ticked)
 	s.agents.untickable = connected
+}
+
+func (s *connectScreen) agentDetail(agent string) string {
+	replaced := strings.Join(s.plan.DuplicatedServers(agent), ", ")
+	switch {
+	case replaced == "":
+		return ""
+	case s.p.withMini[agent]:
+		return miniConnected + " · also configured with " + replaced
+	}
+	return "configured with " + replaced
 }
 
 func (s *connectScreen) enter() tea.Cmd {
@@ -87,6 +103,7 @@ func (s *connectScreen) leave() {
 func (s *connectScreen) update(msg tea.Msg) tea.Cmd {
 	if msg, ok := msg.(connectChecked); ok {
 		s.checks.finished(msg)
+		s.needingLogin = s.serversNeedingLogin()
 	}
 	return nil
 }
@@ -176,12 +193,43 @@ func (s *connectScreen) nothingWorksYet() string {
 	for _, agent := range s.picked() {
 		picked = append(picked, agent.Name)
 	}
-	names := s.plan.DuplicatedServers(picked...)
+	login, failing := s.splitNeedingLogin(s.plan.DuplicatedServers(picked...))
+	switch {
+	case len(failing) == 0:
+		return fmt.Sprintf("Nothing will be removed until you log in to %s.", initcmd.JoinAnd(login))
+	case len(login) == 0:
+		return "Nothing will be removed: " + dontWorkYet(failing)
+	}
+	return fmt.Sprintf("Nothing will be removed: log in to %s; %s", initcmd.JoinAnd(login), dontWorkYet(failing))
+}
+
+func dontWorkYet(names []string) string {
 	verb := "don't"
 	if len(names) == 1 {
 		verb = "doesn't"
 	}
-	return fmt.Sprintf("Nothing will be removed: %s %s work in mini yet.", initcmd.JoinAnd(names), verb)
+	return fmt.Sprintf("%s %s work in mini yet.", initcmd.JoinAnd(names), verb)
+}
+
+func (s *connectScreen) serversNeedingLogin() map[string]bool {
+	//nolint:errcheck // Unreadable statuses only lose the login hint; the servers still read as not working.
+	statuses, _ := s.p.statuses()
+	login := map[string]bool{}
+	for _, status := range statuses {
+		login[status.Name] = status.Readiness == initcmd.NeedsLogin
+	}
+	return login
+}
+
+func (s *connectScreen) splitNeedingLogin(servers []string) (login, failing []string) {
+	for _, name := range servers {
+		if s.needingLogin[name] {
+			login = append(login, name)
+		} else {
+			failing = append(failing, name)
+		}
+	}
+	return login, failing
 }
 
 func (s *connectScreen) body(height int, focused bool) string {

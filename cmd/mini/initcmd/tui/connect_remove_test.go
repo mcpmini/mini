@@ -84,6 +84,24 @@ func TestConnectScreen_removingSaysWhatTheChecksLeft(t *testing.T) {
 			t.Errorf("screen with only Claude ticked:\n%s\nwant only linear named", text)
 		}
 	})
+	t.Run("a server needing a login says to log in to it", func(t *testing.T) {
+		plan := newFakePlan(map[string][]string{"Claude": {"linear"}, "Codex": {"sentry", "linear"}})
+		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), nil)
+		s.p.statuses = func() ([]initcmd.ServerStatus, error) {
+			return []initcmd.ServerStatus{{Name: "linear", Readiness: initcmd.NeedsLogin}, {Name: "sentry"}}, nil
+		}
+		plan.release <- initcmd.Removals{}
+		s.update(check())
+		want := "Nothing will be removed: log in to linear; sentry doesn't work in mini yet."
+		if text := connectText(s); !strings.Contains(text, want) {
+			t.Errorf("screen:\n%s\nwant %q", text, want)
+		}
+		s.ticked["Codex"] = false
+		want = "Nothing will be removed until you log in to linear."
+		if text := connectText(s); !strings.Contains(text, want) {
+			t.Errorf("screen with only Claude ticked:\n%s\nwant %q", text, want)
+		}
+	})
 	t.Run("an agent that has mini and nothing to remove gets no line", func(t *testing.T) {
 		plan := newFakePlan(map[string][]string{"Claude": {"files"}, "Codex": {"github"}})
 		s, check := connectScreenFor(t, plan, namedAgents("Claude", "Codex"), map[string]bool{"Claude": true})
