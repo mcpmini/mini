@@ -82,6 +82,38 @@ func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequ
 	}
 }
 
+func TestLoginsScreen_theLineUnderTheRowsSaysWhatTheCursorsRowConnectsTo(t *testing.T) {
+	s := loginScreenWithStatuses(
+		newFakeLogins(),
+		initcmd.ServerStatus{Name: "linear", URL: "https://mcp.linear.app/mcp", Readiness: initcmd.NeedsLoginState{}},
+		initcmd.ServerStatus{
+			Name:      "custom",
+			URL:       "https://mcp.custom.example/mcp",
+			Readiness: initcmd.NeedsLoginState{},
+		},
+	)
+	s.p.describe = func(url string) string {
+		if url == "https://mcp.linear.app/mcp" {
+			return "Issues and projects"
+		}
+		return ""
+	}
+	a := framed(s, false)
+	rows := "> linear  press enter to log in\n  custom\n\n"
+	if text := framedText(a); !strings.HasPrefix(text, rows+"  mcp.linear.app · Issues and projects\n") {
+		t.Errorf("screen:\n%s\nwant linear's host and description under the rows", text)
+	}
+	send(a, "down")
+	if text := framedText(a); !strings.Contains(text, "> custom  press enter to log in\n\n  mcp.custom.example\n") {
+		t.Errorf("screen:\n%s\nwant only the host for a server the catalog doesn't describe", text)
+	}
+	before := strings.Count(framedText(a), "\n")
+	send(a, "tab")
+	if text := framedText(a); strings.Count(text, "\n") != before || strings.Contains(text, "mcp.custom.example") {
+		t.Errorf("screen on Continue:\n%s\nwant the line blank but kept, so nothing below moves", text)
+	}
+}
+
 func TestLoginsScreen_theCursorsUntriedRowAloneGetsAHint(t *testing.T) {
 	s := loginScreen(newFakeLogins(), "linear", "sentry")
 	s.resize(200, 30)

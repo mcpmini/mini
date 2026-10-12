@@ -32,6 +32,7 @@ func (NeedsEnvState) readiness()    {}
 // ServerStatus is one enabled server and what the user still has to do before it works.
 type ServerStatus struct {
 	Name      string
+	URL       string
 	Readiness Readiness
 }
 
@@ -78,7 +79,7 @@ func ServerStatuses(configDir string, findings CheckFindings) ([]ServerStatus, e
 }
 
 func serverStatus(configDir string, sc config.ServerConfig, findings CheckFindings) ServerStatus {
-	status := ServerStatus{Name: sc.Name, Readiness: ReadyState{}}
+	status := ServerStatus{Name: sc.Name, URL: sc.URL, Readiness: ReadyState{}}
 	switch {
 	case sc.UnsetEnv != nil:
 		status.Readiness = envReadiness(sc.UnsetEnv)

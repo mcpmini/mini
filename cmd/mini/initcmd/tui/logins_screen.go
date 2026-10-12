@@ -34,6 +34,8 @@ type loginsParams struct {
 	configDirFor func(name string) string
 	steps        serverSteps
 	copy         func(text string) error
+	// describe is what the catalog says a server URL does, or nothing for one it doesn't list.
+	describe func(url string) string
 	// clock paces the spinner; nil is the system clock.
 	clock clock.Clock
 }
@@ -62,6 +64,9 @@ type loginsScreen struct {
 func newLoginsScreen(p loginsParams) *loginsScreen {
 	if p.clock == nil {
 		p.clock = clock.System()
+	}
+	if p.describe == nil {
+		p.describe = func(string) string { return "" }
 	}
 	return &loginsScreen{p: p, results: map[string]error{}}
 }
@@ -274,7 +279,7 @@ func (s *loginsScreen) body(height int, focused bool) string {
 		return spinnerFrames[s.spinnerFrame%len(spinnerFrames)] + " Checking how to log in to your MCPs…"
 	}
 	rows, first, last := s.serverLines(focused)
-	lines := slices.Concat(rows, s.skippedLoginWarning(), s.byHandList())
+	lines := slices.Concat(rows, s.detailLines(focused), s.skippedLoginWarning(), s.byHandList())
 	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
 }
 
@@ -292,6 +297,23 @@ func (s *loginsScreen) skippedLoginWarning() []string {
 	}
 	text += " You can always log in later using " + s.p.steps.login("<name>") + "."
 	return append([]string{""}, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
+}
+
+// The rows show only names, so the line under them says what the cursor's row connects to. It stays
+// when the cursor leaves the rows, blank, so nothing below moves.
+func (s *loginsScreen) detailLines(focused bool) []string {
+	if !slices.ContainsFunc(s.rows, func(r initcmd.ServerStatus) bool { return r.URL != "" }) {
+		return nil
+	}
+	if !focused || s.cursor < 0 || s.cursor >= len(s.rows) {
+		return []string{"", ""}
+	}
+	r := s.rows[s.cursor]
+	parts := slices.DeleteFunc([]string{host(r.URL), s.p.describe(r.URL)}, func(p string) bool { return p == "" })
+	if len(parts) == 0 {
+		return []string{"", ""}
+	}
+	return []string{"", "  " + dim.Render(strings.Join(parts, " · "))}
 }
 
 func (s *loginsScreen) notLoggedIn(status initcmd.ServerStatus) bool {

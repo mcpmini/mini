@@ -290,6 +290,24 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 	})
 }
 
+func TestRun_LoginsDescribesTheCursorsServerFromTheCatalog(t *testing.T) {
+	linear := oauthEntry("linear")
+	linear.Description = "Issues and projects"
+	var view string
+	program := func(m tea.Model) error {
+		pressingAndDelivering("space", "tab", "enter")(m)
+		view = shown(m.(*app))
+		return nil
+	}
+	c := catalog.Catalog{Entries: []catalog.Entry{linear}}
+	if _, err := Run(Params{Setup: setupFor(t.TempDir()), LoadCatalog: fromCatalog(c), Program: program}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(view, "mcp.linear.example · Issues and projects") {
+		t.Errorf("Logins:\n%s\nwant linear's host and its catalog description", view)
+	}
+}
+
 func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 	cancelled := false
 	startLogin := func(ctx context.Context, _, _ string) (Login, error) {

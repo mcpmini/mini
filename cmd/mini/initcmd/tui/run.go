@@ -97,7 +97,7 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	statuses := run.ServerStatuses
 	ui.connects = newConnects(p.Setup, run, statuses)
 	steps := newServerSteps(p.Setup.ConfigDir)
-	ui.logins = newLogins(p, run, statuses, steps)
+	ui.logins = newLogins(p, run, loginsParams{statuses: statuses, steps: steps, describe: catalogs.description})
 	ui.review = newReviewScreen(reviewParams{
 		added:         run.Added,
 		statuses:      statuses,
@@ -110,16 +110,14 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	return ui
 }
 
-func newLogins(p Params, run *initcmd.Run, statuses serverStatuses, steps serverSteps) *loginsScreen {
-	return newLoginsScreen(loginsParams{
-		statuses:     statuses,
-		checking:     run.Checking,
-		changed:      run.ChecksChanged(),
-		startLogin:   p.StartLogin,
-		configDirFor: run.ConfigDirFor,
-		steps:        steps,
-		copy:         copyLinkToClipboard,
-	})
+// shared holds what Logins shares with the other screens; the rest comes from the run.
+func newLogins(p Params, run *initcmd.Run, shared loginsParams) *loginsScreen {
+	shared.checking = run.Checking
+	shared.changed = run.ChecksChanged()
+	shared.startLogin = p.StartLogin
+	shared.configDirFor = run.ConfigDirFor
+	shared.copy = copyLinkToClipboard
+	return newLoginsScreen(shared)
 }
 
 type serverStatuses func() ([]initcmd.ServerStatus, error)

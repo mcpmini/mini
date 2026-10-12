@@ -56,17 +56,21 @@ func TestServerStatuses(t *testing.T) {
 	})
 
 	want := []ServerStatus{
-		{Name: "appplaceholder", Readiness: NeedsOwnAppState{}},
-		{Name: "keyed", Readiness: ReadyState{}},
+		{Name: "appplaceholder", URL: "https://appplaceholder.example.com/mcp", Readiness: NeedsOwnAppState{}},
+		{Name: "keyed", URL: "https://keyed.example.com/mcp", Readiness: ReadyState{}},
 		{Name: "local", Readiness: ReadyState{}},
-		{Name: "loggedin", Readiness: ReadyState{}},
-		{Name: "login", Readiness: NeedsLoginState{}},
-		{Name: "noregistration", Readiness: NeedsOwnAppState{}},
-		{Name: "ownapp", Readiness: NeedsLoginState{}},
-		{Name: "plain", Readiness: ReadyState{}},
-		{Name: "refused", Readiness: NeedsTokenState{}},
-		{Name: "tokenplaceholder", Readiness: NeedsTokenState{}},
-		{Name: "unset", Readiness: NeedsEnvState{Names: []string{"MINI_TEST_UNSET"}, Field: "headers.Authorization"}},
+		{Name: "loggedin", URL: "https://loggedin.example.com/mcp", Readiness: ReadyState{}},
+		{Name: "login", URL: "https://login.example.com/mcp", Readiness: NeedsLoginState{}},
+		{Name: "noregistration", URL: "https://noregistration.example.com/mcp", Readiness: NeedsOwnAppState{}},
+		{Name: "ownapp", URL: "https://ownapp.example.com/mcp", Readiness: NeedsLoginState{}},
+		{Name: "plain", URL: "https://plain.example.com/mcp", Readiness: ReadyState{}},
+		{Name: "refused", URL: "https://refused.example.com/mcp", Readiness: NeedsTokenState{}},
+		{Name: "tokenplaceholder", URL: "https://tokenplaceholder.example.com/mcp", Readiness: NeedsTokenState{}},
+		{
+			Name:      "unset",
+			URL:       "https://unset.example.com/mcp",
+			Readiness: NeedsEnvState{Names: []string{"MINI_TEST_UNSET"}, Field: "headers.Authorization"},
+		},
 	}
 	if err != nil || !reflect.DeepEqual(statuses, want) {
 		t.Errorf("statuses = %+v, %v\nwant %+v", statuses, err, want)
