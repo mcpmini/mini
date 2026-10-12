@@ -1,6 +1,7 @@
 package toon
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -75,7 +76,7 @@ func Encode(v Value) (string, error) {
 	case arrayValue:
 		return encodeRootArray(payload)
 	default:
-		return "", fmt.Errorf("toon: unknown kind %d", v.kind())
+		return "", errors.New("toon: uninitialized value")
 	}
 }
 
@@ -195,7 +196,7 @@ func encodePrimitive(v Value) (string, error) {
 	case objectValue, arrayValue:
 		return "", fmt.Errorf("toon: kind %d is not primitive", v.kind())
 	}
-	return "", fmt.Errorf("toon: unknown kind %d", v.kind())
+	return "", errors.New("toon: uninitialized value")
 }
 
 func encodeNumber(n numberValue) (string, error) {

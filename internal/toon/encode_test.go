@@ -156,16 +156,16 @@ func splitLines(s string) []string {
 	return lines
 }
 
-func TestEncodeUnknownKindErrors(t *testing.T) {
+func TestEncodeUninitializedValueErrors(t *testing.T) {
 	if _, err := Encode(Value{}); err == nil {
-		t.Error("Encode(zero-value Value) expected error for unknown kind, got nil")
+		t.Error("Encode(zero-value Value) expected error for uninitialized value, got nil")
 	}
 }
 
-func TestEncodeObjectFieldWithUnknownKindErrors(t *testing.T) {
+func TestEncodeObjectFieldWithUninitializedValueErrors(t *testing.T) {
 	v := objVal(Field{Key: "x", Val: Value{}})
 	if _, err := Encode(v); err == nil {
-		t.Error("Encode(object field with unknown kind) expected error, got nil")
+		t.Error("Encode(object field with uninitialized value) expected error, got nil")
 	}
 }
 

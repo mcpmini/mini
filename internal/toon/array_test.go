@@ -416,7 +416,7 @@ func TestEncodeNestedFieldGroups(t *testing.T) {
 	})
 }
 
-func TestEncodeArrayItemWithUnknownKindErrors(t *testing.T) {
+func TestEncodeArrayItemWithUninitializedValueErrors(t *testing.T) {
 	cases := []struct {
 		name string
 		v    Value
@@ -431,7 +431,7 @@ func TestEncodeArrayItemWithUnknownKindErrors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := Encode(tc.v); err == nil {
-				t.Error("Encode expected error for unknown kind, got nil")
+				t.Error("Encode expected error for uninitialized value, got nil")
 			}
 		})
 	}
