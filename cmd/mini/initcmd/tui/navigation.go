@@ -82,9 +82,13 @@ func (a *app) onNavigation() bool {
 		return false
 	case focusNavigation:
 		return true
+	case focusUnmoved:
+		// Until the user moves focus, a finished screen advances to navigation.
+		fallthrough
+	default:
+		f, ok := a.current().(finisher)
+		return ok && f.finished()
 	}
-	f, ok := a.current().(finisher)
-	return ok && f.finished()
 }
 
 func (a *app) onBack(at int) bool {

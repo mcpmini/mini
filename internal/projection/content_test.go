@@ -106,6 +106,18 @@ var stripHTMLCases = []struct {
 		wantAbsent:  []string{"&gt;", "&amp;", "&lt;"},
 	},
 	{
+		name:        "comments and doctypes do not contribute visible text",
+		input:       "<!DOCTYPE html><!-- invisible --><p>visible</p>",
+		wantContain: []string{"visible"},
+		wantAbsent:  []string{"DOCTYPE", "invisible"},
+	},
+	{
+		name:        "tokenizer EOF preserves already extracted text",
+		input:       "<p>visible</p><!-- unfinished",
+		wantContain: []string{"visible"},
+		wantAbsent:  []string{"unfinished"},
+	},
+	{
 		name:        "nested skip tags handled",
 		input:       "<script><script>inner</script></script>after",
 		wantContain: []string{"after"},

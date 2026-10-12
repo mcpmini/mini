@@ -96,6 +96,12 @@ func processHTMLToken(tokenizer *html.Tokenizer, sb *strings.Builder, tt html.To
 		if skipDepth > 0 {
 			return skipDepth - 1
 		}
+	case html.ErrorToken:
+		// EOF and tokenizer errors terminate the outer loop before dispatch.
+		return skipDepth
+	case html.CommentToken, html.DoctypeToken:
+		// Neither carries visible text nor changes element nesting.
+		return skipDepth
 	}
 	return skipDepth
 }
@@ -151,9 +157,10 @@ func StripMarkup(s string) string {
 		return StripHTML(s)
 	case ContentMarkdown:
 		return StripMarkdown(s)
-	default:
+	case ContentPlain:
 		return s
 	}
+	return s
 }
 
 // stripBase64DataURIs removes embedded base64 data URIs (common in HTML emails

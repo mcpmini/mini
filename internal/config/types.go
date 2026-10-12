@@ -246,6 +246,8 @@ func (sc ServerConfig) IsHTTPTransport() bool {
 	switch sc.Transport {
 	case TransportHTTP, TransportSSE, TransportStreamable:
 		return true
+	case TransportStdio:
+		return false
 	}
 	return false
 }

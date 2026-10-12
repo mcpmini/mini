@@ -113,6 +113,8 @@ func (s ServerStatus) Step(file, login string) string {
 		return "requires a login, run: " + login
 	case NeedsOwnAppState:
 		return "requires a custom OAuth app, edit " + file
+	case NeedsTokenState, NeedsEnvState:
+		return "requires manual configuration, edit " + file
 	}
 	return "requires manual configuration, edit " + file
 }

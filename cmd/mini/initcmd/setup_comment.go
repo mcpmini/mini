@@ -45,6 +45,8 @@ func credentialSteps(authKind catalog.AuthKind, setupURL string) (intro string, 
 				"    client_id: " + clientIDPlaceholder,
 				"    client_secret: " + clientSecretPlaceholder + "  # leave this line out if your app has none",
 			}
+	case catalog.AuthOAuth2, catalog.AuthNone:
+		return "", nil
 	}
 	return "", nil
 }
