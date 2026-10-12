@@ -261,10 +261,35 @@ func (s *connectScreen) body(height int, focused bool) string {
 // A server the save couldn't add, change or remove isn't as the user picked it, so the screens after
 // the save say so rather than leave the user to find out after finishing.
 func saveFailureLines(failed []initcmd.ServerError, width int) []string {
-	// A stage that can't be made fails every pick with one error, so servers sharing a reason share
-	// a line, keeping the choices below on the screen.
-	var reasons []string
-	names := map[string][]string{}
+	reasons, names := groupByReason(failed)
+	shown, rest := reasons, 0
+	// A write error names the server's own file, so a full disk gives each server its own reason; past
+	// a couple the rest are counted, keeping the choices below on the screen.
+	if len(reasons) > maxSaveFailureReasons {
+		shown = reasons[:maxSaveFailureReasons]
+		for _, reason := range reasons[maxSaveFailureReasons:] {
+			rest += len(names[reason])
+		}
+	}
+	var texts []string
+	for _, reason := range shown {
+		texts = append(texts, fmt.Sprintf("✗ mini couldn't save %s: %s", strings.Join(names[reason], ", "), reason))
+	}
+	if rest > 0 {
+		texts = append(texts, fmt.Sprintf("✗ mini couldn't save %d more; init lists them when it finishes", rest))
+	}
+	var lines []string
+	for _, text := range texts {
+		lines = append(lines, strings.Split(ansi.Wrap(text, max(width, 20), ""), "\n")...)
+	}
+	return lines
+}
+
+const maxSaveFailureReasons = 2
+
+// A stage that can't be made fails every pick with one error, so those servers share a line.
+func groupByReason(failed []initcmd.ServerError) (reasons []string, names map[string][]string) {
+	names = map[string][]string{}
 	for _, f := range failed {
 		reason := firstLine(f.Err)
 		if _, seen := names[reason]; !seen {
@@ -272,12 +297,7 @@ func saveFailureLines(failed []initcmd.ServerError, width int) []string {
 		}
 		names[reason] = append(names[reason], f.Name)
 	}
-	var lines []string
-	for _, reason := range reasons {
-		text := fmt.Sprintf("✗ mini couldn't save %s: %s", strings.Join(names[reason], ", "), reason)
-		lines = append(lines, strings.Split(ansi.Wrap(text, max(width, 20), ""), "\n")...)
-	}
-	return lines
+	return reasons, names
 }
 
 func addedNote(added []string, width int) []string {

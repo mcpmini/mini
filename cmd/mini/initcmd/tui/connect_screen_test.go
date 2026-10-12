@@ -134,6 +134,26 @@ func TestConnectScreen_saysWhichServersTheSaveCouldNotSave(t *testing.T) {
 	}
 }
 
+func TestConnectScreen_countsTheFailuresPastTheFirstFewReasons(t *testing.T) {
+	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
+	s.p.saveFailures = func() []initcmd.ServerError {
+		var failed []initcmd.ServerError
+		for _, name := range []string{"a", "b", "c", "d", "e"} {
+			failed = append(
+				failed,
+				initcmd.ServerError{Name: name, Err: errors.New("write " + name + ".yaml: disk full")},
+			)
+		}
+		return failed
+	}
+	s.refresh()
+	text := connectText(s)
+	if !strings.Contains(text, "✗ mini couldn't save b: write b.yaml: disk full") ||
+		strings.Contains(text, "c.yaml") || !strings.Contains(text, "✗ mini couldn't save 3 more") {
+		t.Errorf("Connect:\n%s\nwant a and b named, and c, d and e counted", text)
+	}
+}
+
 func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
 	want := "> Just connect mini\n" +
