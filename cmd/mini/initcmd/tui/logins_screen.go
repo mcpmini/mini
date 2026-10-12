@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
-	"github.com/mcpmini/mini/internal/config"
 )
 
 // Login is a browser login that has started: the browser is opening URL, and Wait blocks until the
@@ -31,6 +30,7 @@ type loginsParams struct {
 	startLogin func(ctx context.Context, configDir, name string) (Login, error)
 	// configDirFor runs on the UI goroutine, which the run belongs to; the login runs on its own.
 	configDirFor func(name string) string
+	steps        serverSteps
 	copy         func(text string) error
 }
 
@@ -255,17 +255,9 @@ func (s *loginsScreen) byHandList() []string {
 	lines = append(lines, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
 	width := widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
 	for _, status := range s.byHand {
-		lines = append(lines, fmt.Sprintf("  %-*s  %s", width, status.Name, dim.Render(s.requirement(status))))
+		lines = append(lines, columnLines(status.Name, width, s.p.steps.byHand(status), s.width)...)
 	}
 	return lines
-}
-
-// Only a missing OAuth app is named; any other reason would be a guess, so it points at the file.
-func (s *loginsScreen) requirement(status initcmd.ServerStatus) string {
-	if status.Readiness == initcmd.NeedsOwnApp {
-		return "requires a custom OAuth app"
-	}
-	return "requires manual configuration, edit " + config.ServerPath(s.p.configDirFor(status.Name), status.Name)
 }
 
 // first and last bound the cursor's block: its row and the lines under it.

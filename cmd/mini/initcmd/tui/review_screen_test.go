@@ -4,31 +4,111 @@ package tui
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
 func reviewWith(added []string, endingInstead, offering []screen) *reviewScreen {
+	var statuses []initcmd.ServerStatus
+	for _, name := range added {
+		statuses = append(statuses, initcmd.ServerStatus{Name: name})
+	}
+	return reviewOf(statuses, nil, endingInstead, offering)
+}
+
+func reviewOf(
+	statuses []initcmd.ServerStatus,
+	checking map[string]bool,
+	endingInstead, offering []screen,
+) *reviewScreen {
+	var added []string
+	for _, st := range statuses {
+		added = append(added, st.Name)
+	}
 	s := newReviewScreen(reviewParams{
 		added:         func() []string { return added },
+		statuses:      func() ([]initcmd.ServerStatus, error) { return statuses, nil },
+		checking:      func() map[string]bool { return checking },
+		steps:         testSteps,
 		configDir:     "/example/mini",
 		endingInstead: endingInstead,
 		offering:      offering,
 	})
 	s.resize(200, 20)
+	s.refresh()
 	return s
 }
 
-func TestReview_listsTheServersAddedThisRun(t *testing.T) {
-	s := reviewWith([]string{"linear", "sentry"}, nil, []screen{&fakeScreen{}})
-	if body := s.body(10, false); !strings.Contains(body, "will be added to mini: linear, sentry") {
-		t.Errorf("body:\n%s\nwant the servers this run adds named", body)
+func TestReview_listsEachAddedServerWithWhatItStillNeeds(t *testing.T) {
+	s := reviewOf([]initcmd.ServerStatus{
+		{Name: "canva"},
+		{Name: "sentry", Readiness: initcmd.NeedsLogin},
+		{Name: "asana", Readiness: initcmd.NeedsOwnApp},
+		{Name: "github", Readiness: initcmd.NeedsToken},
+		{Name: "linear"},
+	}, map[string]bool{"linear": true}, nil, []screen{&fakeScreen{}})
+	want := "5 MCPs will be added to mini:\n" +
+		"  canva   ✓ ready\n" +
+		"  sentry  requires a login, run: mini auth sentry\n" +
+		"  asana   requires a custom OAuth app, edit ~/.mini/servers/asana.yaml\n" +
+		"  github  requires manual configuration, edit ~/.mini/servers/github.yaml\n" +
+		"  linear  checking…"
+	if body := ansi.Strip(s.body(10, false)); body != want {
+		t.Errorf("body:\n%s\nwant:\n%s", body, want)
+	}
+}
+
+func TestReview_aFinishedCheckUpdatesTheServersState(t *testing.T) {
+	statuses := []initcmd.ServerStatus{{Name: "linear"}}
+	checking := map[string]bool{"linear": true}
+	s := reviewOf(statuses, checking, nil, []screen{&fakeScreen{}})
+	delete(checking, "linear")
+	statuses[0].Readiness = initcmd.NeedsLogin
+	s.update(checksChanged{})
+	if body := ansi.Strip(
+		s.body(10, false),
+	); !strings.Contains(
+		body,
+		"linear  requires a login, run: mini auth linear",
+	) {
+		t.Errorf("body:\n%s\nwant linear's login named once its check finished", body)
+	}
+}
+
+func TestReview_aLongStepWrapsUnderItsColumn(t *testing.T) {
+	s := reviewOf(
+		[]initcmd.ServerStatus{{Name: "github", Readiness: initcmd.NeedsToken}},
+		nil,
+		nil,
+		[]screen{&fakeScreen{}},
+	)
+	s.resize(40, 20)
+	lines := strings.Split(ansi.Strip(s.body(10, false)), "\n")
+	var joined string
+	for _, line := range lines[1:] {
+		joined += strings.TrimSpace(line)
+	}
+	if len(lines) < 3 || !strings.HasPrefix(lines[2], "          ") ||
+		!strings.HasSuffix(joined, "~/.mini/servers/github.yaml") {
+		t.Errorf(
+			"body at 40 columns:\n%s\nwant the step wrapped under its column, ending in the full path",
+			strings.Join(lines, "\n"),
+		)
+	}
+	for _, line := range lines {
+		if ansi.StringWidth(line) > 40 {
+			t.Errorf("line %q is wider than the window", line)
+		}
 	}
 }
 
@@ -78,7 +158,7 @@ func TestRun_aRunThatOnlyImportsEndsOnReview(t *testing.T) {
 		"tab",
 		"enter",
 	)
-	if !strings.Contains(view, "Review and finish") || !strings.Contains(view, "will be added to mini: files") {
+	if !strings.Contains(view, "Review and finish") || !strings.Contains(view, "will be added to mini:\n  files") {
 		t.Errorf("after Continue on Import:\n%s\nwant Review naming files", view)
 	}
 }
@@ -114,7 +194,7 @@ func TestRun_noAgentsWithAnOAuthPickGoesFromLoginsToReview(t *testing.T) {
 func TestRun_noAgentsWithANoAuthPickReachesReview(t *testing.T) {
 	reviewAfterNoAuthPick(t, t.TempDir(), func(m tea.Model) {
 		if view := shown(m.(*app)); !strings.Contains(view, "Review and finish") ||
-			!strings.Contains(view, "will be added to mini: sentry") {
+			!strings.Contains(view, "will be added to mini:\n  sentry") {
 			t.Errorf("view:\n%s\nwant Review listing sentry as added", view)
 		}
 	})
@@ -172,5 +252,35 @@ func TestRun_catalogOfferedButNothingTickedReviewsWithTheGuidance(t *testing.T) 
 	view := screenAfter(t, setupFor(t.TempDir()), fromCatalog(c), "tab", "enter")
 	if !strings.Contains(view, "Review and finish") || !strings.Contains(view, "No MCPs will be added to mini.") {
 		t.Errorf("view:\n%s\nwant Review with the no-MCPs guidance", view)
+	}
+}
+
+func TestRun_aByHandServerPointsAtTheFileItWillHaveInMini(t *testing.T) {
+	configDir := t.TempDir()
+	setup := setupFor(configDir)
+	setup.Probe = func(context.Context, string, config.ServerConfig) error { return errors.New("401") }
+	token := catalog.Entry{Name: "github", URL: "https://mcp.github.example/mcp", Auth: catalog.AuthToken}
+	var view string
+	program := func(m tea.Model) error {
+		pressingAndDelivering("space", "tab", "enter")(m)
+		view = shown(m.(*app))
+		return nil
+	}
+	if _, err := Run(
+		Params{
+			Setup:       setup,
+			LoadCatalog: fromCatalog(catalog.Catalog{Entries: []catalog.Entry{token}}),
+			Program:     program,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(configDir, "servers", "github.yaml")
+	if !strings.Contains(strings.Join(strings.Fields(view), ""), want) {
+		t.Errorf(
+			"Logins:\n%s\nwant github's step to name %s, where Save and finish puts it, not the staging copy",
+			view,
+			want,
+		)
 	}
 }

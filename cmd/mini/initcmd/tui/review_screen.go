@@ -7,10 +7,15 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
 type reviewParams struct {
 	added         func() []string
+	statuses      func() ([]initcmd.ServerStatus, error)
+	checking      func() map[string]bool
+	steps         serverSteps
 	configDir     string
 	endingInstead []screen
 	offering      []screen
@@ -18,7 +23,12 @@ type reviewParams struct {
 
 type reviewScreen struct {
 	p     reviewParams
+	added []reviewRow
 	width int
+}
+
+type reviewRow struct {
+	name, state string
 }
 
 func newReviewScreen(p reviewParams) *reviewScreen {
@@ -29,9 +39,32 @@ func (s *reviewScreen) heading() string {
 	return "Review and finish"
 }
 
+// Checks before statuses, as Logins reads them: one that finishes in between still reads as running.
+func (s *reviewScreen) refresh() {
+	checking := s.p.checking()
+	//nolint:errcheck // Logins shows the read error; a server missing here still reads as added, with no state.
+	statuses, _ := s.p.statuses()
+	s.added = nil
+	for _, name := range s.p.added() {
+		row := reviewRow{name: name}
+		if i := slices.IndexFunc(statuses, func(st initcmd.ServerStatus) bool { return st.Name == name }); i >= 0 {
+			row.state = s.p.steps.state(statuses[i], checking[name])
+		}
+		s.added = append(s.added, row)
+	}
+}
+
+// A check finishing can turn a server from checking to needing a login.
+func (s *reviewScreen) update(msg tea.Msg) tea.Cmd {
+	if _, ok := msg.(checksChanged); ok {
+		s.refresh()
+	}
+	return nil
+}
+
 func (s *reviewScreen) body(int, bool) string {
-	if added := s.p.added(); len(added) > 0 {
-		return strings.Join(addedNote(added, s.width), "\n")
+	if len(s.added) > 0 {
+		return strings.Join(s.addedLines(), "\n")
 	}
 	servers := filepath.Join(s.p.configDir, "servers")
 	lines := []string{"No MCPs will be added to mini.", ""}
@@ -39,6 +72,15 @@ func (s *reviewScreen) body(int, bool) string {
 		servers + "."
 	lines = append(lines, strings.Split(ansi.Wrap(guidance, max(s.width, 20), ""), "\n")...)
 	return strings.Join(lines, "\n")
+}
+
+func (s *reviewScreen) addedLines() []string {
+	lines := []string{initcmd.Plural(len(s.added), "MCP") + " will be added to mini:"}
+	width := widest(s.added, func(r reviewRow) string { return r.name })
+	for _, r := range s.added {
+		lines = append(lines, columnLines(r.name, width, r.state, s.width)...)
+	}
+	return lines
 }
 
 func (s *reviewScreen) handle(tea.KeyPressMsg) (reply, tea.Cmd) {

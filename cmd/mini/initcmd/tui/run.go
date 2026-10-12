@@ -96,9 +96,13 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		catalogs: catalogs,
 		connects: newConnects(p.Setup, run),
 	}
-	ui.logins = newLogins(p, run, ui.catalog)
+	steps := newServerSteps(p.Setup.ConfigDir)
+	ui.logins = newLogins(p, run, ui.catalog, steps)
 	ui.review = newReviewScreen(reviewParams{
 		added:         run.Added,
+		statuses:      func() ([]initcmd.ServerStatus, error) { return run.ServerStatuses(ui.catalog(run.Plan)) },
+		checking:      run.Checking,
+		steps:         steps,
 		configDir:     p.Setup.ConfigDir,
 		endingInstead: []screen{ui.connects},
 		offering:      []screen{ui.imports, ui.catalogs},
@@ -106,13 +110,19 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	return ui
 }
 
-func newLogins(p Params, run *initcmd.Run, catalog func(initcmd.Plan) []catalog.Entry) *loginsScreen {
+func newLogins(
+	p Params,
+	run *initcmd.Run,
+	catalog func(initcmd.Plan) []catalog.Entry,
+	steps serverSteps,
+) *loginsScreen {
 	return newLoginsScreen(loginsParams{
 		statuses:     func() ([]initcmd.ServerStatus, error) { return run.ServerStatuses(catalog(run.Plan)) },
 		checking:     run.Checking,
 		changed:      run.ChecksChanged(),
 		startLogin:   p.StartLogin,
 		configDirFor: run.ConfigDirFor,
+		steps:        steps,
 		copy:         copyLinkToClipboard,
 	})
 }
