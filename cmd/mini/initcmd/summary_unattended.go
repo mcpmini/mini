@@ -8,8 +8,8 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// A run without screens never showed which servers still need a step or which entries it left in
-// the agents, so the summary does.
+// A run without screens never showed which servers still need a step or which were already in
+// mini, so the summary does.
 func writeWhatNoScreenShowed(b *strings.Builder, r Report) {
 	writeSteps(b, r)
 	if len(r.AlreadyConfigured) > 0 {
@@ -22,6 +22,10 @@ func writeWhatNoScreenShowed(b *strings.Builder, r Report) {
 			strings.Join(r.AddCoveredByImport, ", "),
 		)
 	}
+}
+
+// An entry init never offered, such as one whose command uses an env var, was on no screen.
+func writeSkipped(b *strings.Builder, r Report) {
 	for _, s := range r.Import.Skipped {
 		fmt.Fprintf(b, "Not imported: %s\n", skippedLine(s, r.ConfigDir))
 	}

@@ -572,9 +572,9 @@ func TestIntegrationCLI_init_fromWithOAuthServer_listsTheLoginBeforeHowToConnect
 		t.Fatalf("init exit = %d, stdout:\n%s", code, stdout)
 	}
 	markers := []string{
-		"These servers need one more step before they work:",
+		"These MCPs need one more step:",
 		// The test binary is never the mini on PATH, so commands name it by its full path.
-		"imported-server  requires a login  run: " + miniBin + " --config ",
+		"imported-server  requires a login, run: " + miniBin + " --config ",
 		"auth imported-server\n",
 		"To use mini, add it to your agent as an MCP server",
 	}

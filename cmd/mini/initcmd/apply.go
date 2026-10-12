@@ -28,7 +28,7 @@ type applyParams struct {
 	agents    []agents.Agent
 	choice    ConnectChoice
 	// counted is what Connect said it would remove, per agent name. An entry that is no longer a
-	// duplicate at apply changed since, and is left alone and reported.
+	// duplicate at apply changed since, and is left alone.
 	counted map[string][]string
 	rule    replacementRule
 	now     time.Time

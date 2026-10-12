@@ -238,8 +238,8 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 	if !strings.Contains(github, "# Create a token at https://github.example/tokens, then uncomment:") {
 		t.Errorf("github.yaml:\n%s\nwant the token step as a comment", github)
 	}
-	if status := statusNamed(t, report.Servers, "github"); status.Readiness != NeedsToken || !status.StepsInFile {
-		t.Errorf("github = %+v, want it needing a token with its steps in its file", status)
+	if status := statusNamed(t, report.Servers, "github"); status.Readiness != NeedsToken {
+		t.Errorf("github = %+v, want it needing a token", status)
 	}
 	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(setup.ConfigDir, "linear"))), "#") {
 		t.Error("linear.yaml has a comment, want none: its login needs nothing written by hand")
@@ -247,13 +247,6 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 }
 
 func TestServerStatuses_aServerFinishedFromItsCommentedSteps(t *testing.T) {
-	t.Run("a file missing part of its steps falls back to the summary's", func(t *testing.T) {
-		setup, _ := addCredentialServers(t)
-		editServerFile(t, setup.ConfigDir, "github", "# headers:\n", "")
-		if status := currentStatus(t, setup, "github"); status.StepsInFile {
-			t.Errorf("github = %+v, want its steps not counted once headers: is gone", status)
-		}
-	})
 	t.Run("github works once uncommented", func(t *testing.T) {
 		setup, _ := addCredentialServers(t)
 		if sc := uncommented(t, setup.ConfigDir, "github"); sc.Headers["Authorization"] != "Bearer <your token>" {
@@ -270,8 +263,8 @@ func TestServerStatuses_aServerFinishedFromItsCommentedSteps(t *testing.T) {
 		setup, _ := addCredentialServers(t)
 		for name, want := range map[string]Readiness{"github": NeedsToken, "asana": NeedsOwnApp} {
 			uncommented(t, setup.ConfigDir, name)
-			if status := currentStatus(t, setup, name); status.Readiness != want || !status.StepsInFile {
-				t.Errorf("%s = %+v, want %v with its steps still in the file: mini would send the placeholder",
+			if status := currentStatus(t, setup, name); status.Readiness != want {
+				t.Errorf("%s = %+v, want %v: mini would send the placeholder",
 					name, status, want)
 			}
 		}

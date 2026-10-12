@@ -72,6 +72,7 @@ func (f *flow) finish() Outcome {
 	f.run.Plan.Catalog = f.ui.catalog(f.run.Plan)
 	out := Outcome{Saved: true, Report: f.run.Finish(context.Background(), f.ui.connects.chosenConnect())}
 	out.Report.Interactive = f.interactive
+	out.Report.Import.DropOfferedSkips()
 	return out
 }
 

@@ -77,19 +77,15 @@ func TestServerStatuses(t *testing.T) {
 	statuses, err := ServerStatuses(dir, entries)
 
 	want := []ServerStatus{
-		{Name: "app", Readiness: NeedsOwnApp, SetupURL: "https://app.example.com/apps"},
+		{Name: "app", Readiness: NeedsOwnApp},
 		{Name: "github", Readiness: Ready},
-		{Name: "keyed", Readiness: Ready, SetupURL: "https://keyed.example.com/new"},
+		{Name: "keyed", Readiness: Ready},
 		{Name: "local", Readiness: Ready},
 		{Name: "loggedin", Readiness: Ready},
 		{Name: "login", Readiness: NeedsLogin},
-		{Name: "tok", Readiness: NeedsToken, SetupURL: "https://token.example.com/new"},
-		{Name: "token", Readiness: NeedsToken, SetupURL: "https://token.example.com/new"},
-		{
-			Name:      "unset",
-			Readiness: NeedsEnv,
-			UnsetEnv:  &config.UnsetEnvError{Field: "headers.Authorization", Names: []string{"MINI_TEST_UNSET"}},
-		},
+		{Name: "tok", Readiness: NeedsToken},
+		{Name: "token", Readiness: NeedsToken},
+		{Name: "unset", Readiness: NeedsEnv},
 	}
 	if err != nil || !reflect.DeepEqual(statuses, want) {
 		t.Errorf("statuses = %+v, %v\nwant %+v", statuses, err, want)

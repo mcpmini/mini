@@ -32,12 +32,12 @@ type Report struct {
 	AddCoveredByImport []string
 	WriteErrors        []ServerError
 	Servers            []ServerStatus
-	// Interactive is set when init's screens ran: Import, Logins and Review already showed what was
-	// left out and each unfinished server's step.
+	// Interactive is set when init's screens ran: Logins and Review already showed each unfinished
+	// server's step, and Import each entry it offered.
 	Interactive bool
 	Agents      AgentConnections
 	// Connected holds the agents init tried to connect. Nil means it tried none, and the summary
-	// says how to connect each agent by hand.
+	// says how to connect them later.
 	Connected      []AgentResult
 	ReadServersErr error
 }
@@ -139,6 +139,15 @@ func (plan *ImportPlan) keepOnly(imported []Candidate) {
 		imports := slices.ContainsFunc(imported, func(c Candidate) bool { return slices.Contains(c.From, entry) })
 		// A second config's line says the first is imported instead; untrue once the user unticked it.
 		return imports || (s.Reason == SkipSecondConfig && !importsTheName(imported, s.Name))
+	})
+}
+
+// DropOfferedSkips is for a summary shown after the Import screen: each entry a candidate offered
+// was a row there, so the user already chose to leave it out.
+func (plan *ImportPlan) DropOfferedSkips() {
+	plan.Skipped = slices.DeleteFunc(plan.Skipped, func(s SkippedServer) bool {
+		entry := AgentEntry{Agent: s.Agent, Name: s.Name}
+		return slices.ContainsFunc(plan.Candidates, func(c Candidate) bool { return slices.Contains(c.From, entry) })
 	})
 }
 

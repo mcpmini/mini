@@ -34,6 +34,7 @@ func Summary(r Report, style SummaryStyle) string {
 	if !r.Interactive {
 		writeWhatNoScreenShowed(&b, r)
 	}
+	writeSkipped(&b, r)
 	writeImportNotes(&b, r)
 	writeFailures(&b, r)
 	if r.Connected == nil {

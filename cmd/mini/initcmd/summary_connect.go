@@ -41,7 +41,8 @@ func writeConnected(b *strings.Builder, r Report, style SummaryStyle) {
 	for _, result := range r.Connected {
 		switch {
 		case result.Err != nil:
-			fmt.Fprintf(b, "Could not connect mini to %s: %v\n", result.Agent.Name, result.Err)
+			fmt.Fprintf(b, "Could not connect mini to %s: %v; to try again, run: %s\n",
+				result.Agent.Name, result.Err, style.code(miniCommand(r.Agents, "init")))
 		case result.Backup != "":
 			fmt.Fprintf(b, "%s's config was backed up to %s\n", result.Agent.Name, style.code(result.Backup))
 		}
@@ -94,7 +95,7 @@ func JoinAnd(names []string) string {
 
 func writeInactiveMini(b *strings.Builder, c AgentConnections) {
 	for _, agent := range c.MiniInactive {
-		fmt.Fprintf(b, "\n%s (%s) has a mini entry that may not run these servers: %s. To use them, have it run: %s\n",
+		fmt.Fprintf(b, "%s (%s) has a mini entry that may not run these servers: %s. To use them, have it run: %s\n",
 			agent.Name, agent.ConfigPath, inactiveMiniReasons, shellCommand(c.Mini))
 	}
 }

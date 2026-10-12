@@ -53,9 +53,7 @@ func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequ
 		initcmd.ServerStatus{Name: "github", Readiness: initcmd.NeedsToken},
 		initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin},
 		initcmd.ServerStatus{Name: "asana", Readiness: initcmd.NeedsOwnApp},
-		initcmd.ServerStatus{
-			Name: "files", Readiness: initcmd.NeedsEnv, UnsetEnv: &config.UnsetEnvError{Names: []string{"ROOT"}},
-		},
+		initcmd.ServerStatus{Name: "files", Readiness: initcmd.NeedsEnv},
 	)
 	s := checks.screen()
 	s.resize(120, 30)

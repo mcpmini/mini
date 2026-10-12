@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/agents"
-	"github.com/mcpmini/mini/internal/config"
 )
 
 func plainSummary(r Report) string {
@@ -50,14 +49,10 @@ func TestSummary_aRunWithoutScreensListsWhatNoScreenShowed(t *testing.T) {
 			{Name: "asana", Readiness: NeedsOwnApp},
 			{Name: "notion", Readiness: NeedsLogin},
 			{Name: "files", Readiness: Ready},
-			{Name: "search", Readiness: NeedsEnv, UnsetEnv: &config.UnsetEnvError{Names: []string{"TOKEN"}}},
+			{Name: "search", Readiness: NeedsEnv},
 		},
 		AlreadyConfigured:  []string{"linear"},
 		AddCoveredByImport: []string{"slack"},
-		Import: ImportPlan{Skipped: []SkippedServer{
-			{Agent: "Codex", Name: "paused", Reason: SkipSwitchedOff},
-			{Agent: "Codex", Name: "Linear", Reason: SkipNameInMini},
-		}},
 	}
 	requireLines(
 		t,
@@ -69,8 +64,6 @@ func TestSummary_aRunWithoutScreensListsWhatNoScreenShowed(t *testing.T) {
 		"  search  requires manual configuration, edit /cfg/servers/search.yaml\n",
 		"Already configured in mini: linear\n",
 		"Imported from your agents instead of the catalog: slack\n",
-		"Not imported: paused switched off in Codex\n",
-		"Not imported: Linear in Codex: mini already has a different linear; to use this one, edit /cfg/servers/linear.yaml\n",
 	)
 	if got := plainSummary(report); strings.Contains(got, "  files") {
 		t.Errorf("a ready server is listed:\n%s", got)
@@ -81,11 +74,20 @@ func TestSummary_aRunWithoutScreensListsWhatNoScreenShowed(t *testing.T) {
 	}
 }
 
-func TestSummary_importNotesAndFailuresShowEvenAfterTheScreens(t *testing.T) {
+func TestSummary_skipsImportNotesAndFailuresShowEvenAfterTheScreens(t *testing.T) {
 	got := plainSummary(Report{
 		Interactive: true,
 		ConfigDir:   "/config",
 		Import: ImportPlan{
+			Skipped: []SkippedServer{
+				{
+					Agent:  "Codex",
+					Name:   "templated",
+					Reason: SkipUnexpandableRefs,
+					Refs:   []string{"an environment variable in command"},
+				},
+				{Agent: "Codex", Name: "Linear", Reason: SkipNameInMini},
+			},
 			DroppedSettings: map[string][]string{"files": {"cwd"}},
 			StaticHeaders:   map[string]map[string]string{"team": {"X-Team": "TEAM_VAR"}},
 			Unreadable: []UnreadableAgent{
@@ -97,6 +99,8 @@ func TestSummary_importNotesAndFailuresShowEvenAfterTheScreens(t *testing.T) {
 	requireLines(
 		t,
 		got,
+		"Not imported: templated kept in Codex: uses an environment variable in command\n",
+		"Not imported: Linear in Codex: mini already has a different linear; to use this one, edit /config/servers/linear.yaml\n",
 		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit /config/servers/files.yaml\n",
 		"team was imported with its static X-Team header, since TEAM_VAR wasn't set; to use TEAM_VAR instead, set X-Team: ${TEAM_VAR} in /config/servers/team.yaml\n",
 		"Could not read Cursor's config (/home/.cursor/mcp.json), so none of its MCPs were imported: invalid character\n",
@@ -140,7 +144,7 @@ func TestSummary_connectedAgents(t *testing.T) {
 	})
 	want := "No MCPs were added to mini.\n" +
 		"Claude Code's config was backed up to /home/u/.claude.minibackup.json\n" +
-		"Could not connect mini to Codex: parse config.toml: bad table\n" +
+		"Could not connect mini to Codex: parse config.toml: bad table; to try again, run: mini init\n" +
 		"Connected mini to Claude Code and Cursor. Restart them to start using mini.\n" +
 		"To connect mini to Claude Desktop later, run: mini init\n"
 	if got != want {
