@@ -14,6 +14,7 @@ import (
 
 type reviewParams struct {
 	added         func() []string
+	saveFailures  func() []initcmd.ServerError
 	statuses      func() ([]initcmd.ServerStatus, error)
 	checking      func() map[string]bool
 	steps         serverSteps
@@ -64,11 +65,15 @@ func (s *reviewScreen) update(msg tea.Msg) tea.Cmd {
 }
 
 func (s *reviewScreen) body(height int, _ bool) string {
+	failures := saveFailureLines(s.p.saveFailures(), s.width)
+	if len(failures) > 0 {
+		failures = append(failures, "")
+	}
 	if len(s.added) > 0 {
-		return strings.Join(s.addedLines(height), "\n")
+		return strings.Join(append(failures, s.addedLines(height-len(failures))...), "\n")
 	}
 	servers := filepath.Join(s.p.configDir, "servers")
-	lines := []string{"No MCPs will be added to mini.", ""}
+	lines := slices.Concat(failures, []string{"No MCPs will be added to mini.", ""})
 	guidance := "Go back to pick some, or add them later with mini add or by writing their config files in " +
 		servers + "."
 	lines = append(lines, strings.Split(ansi.Wrap(guidance, max(s.width, 20), ""), "\n")...)

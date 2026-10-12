@@ -30,7 +30,7 @@ func (imp serverImport) addAll(servers map[string]agents.Server) (added []string
 			continue
 		}
 		if reason := notImportedReason(server); reason != "" {
-			printNotice(imp.out, "  %s: %s %s\n", imp.source, name, reason)
+			printNotice(imp.out, "  %s: %s %s\n", imp.source, initcmd.PrintableEntryName(name), reason)
 			continue
 		}
 		switch err := imp.add(server.Config); {

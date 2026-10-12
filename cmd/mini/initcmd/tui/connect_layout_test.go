@@ -22,10 +22,11 @@ func TestConnectScreen_saysWhichMCPsWereAddedToMiniAndLaterMentionsSavingOnlyThe
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newConnectScreen(connectParams{
-				agents:   namedAgents("Claude", "Codex"),
-				plan:     func() (connectPlan, error) { return newFakePlan(nil), nil },
-				statuses: noStatuses,
-				added:    func() []string { return tc.added },
+				saveFailures: noSaveFailures,
+				agents:       namedAgents("Claude", "Codex"),
+				plan:         func() (connectPlan, error) { return newFakePlan(nil), nil },
+				statuses:     noStatuses,
+				added:        func() []string { return tc.added },
 			})
 			t.Cleanup(s.checks.cancelAndWait)
 			s.resize(200, 30)
@@ -57,10 +58,11 @@ func TestConnectScreen_theAddedMCPsWrapWithinTheWindow(t *testing.T) {
 		names = append(names, fmt.Sprintf("server-%02d", i))
 	}
 	s := newConnectScreen(connectParams{
-		agents:   namedAgents("Claude", "Codex"),
-		plan:     func() (connectPlan, error) { return newFakePlan(nil), nil },
-		statuses: noStatuses,
-		added:    func() []string { return names },
+		saveFailures: noSaveFailures,
+		agents:       namedAgents("Claude", "Codex"),
+		plan:         func() (connectPlan, error) { return newFakePlan(nil), nil },
+		statuses:     noStatuses,
+		added:        func() []string { return names },
 	})
 	t.Cleanup(s.checks.cancelAndWait)
 	s.resize(minWidth, 30)
@@ -80,10 +82,11 @@ func TestConnectScreen_atAnOrdinaryWindowTheRowsOrTheCursorsChoiceAreInView(t *t
 	plan := newFakePlan(map[string][]string{"Claude": {"files"}, "Codex": {"github"}})
 	list := namedAgents("Claude", "Codex", "Cursor", "Windsurf", "Zed", "Cline", "Goose")
 	s := newConnectScreen(connectParams{
-		agents:   list,
-		withMini: map[string]bool{"Cline": true, "Goose": true},
-		plan:     func() (connectPlan, error) { return plan, nil },
-		statuses: noStatuses,
+		saveFailures: noSaveFailures,
+		agents:       list,
+		withMini:     map[string]bool{"Cline": true, "Goose": true},
+		plan:         func() (connectPlan, error) { return plan, nil },
+		statuses:     noStatuses,
 		added: func() []string {
 			return []string{"asana", "atlassian", "context7", "github", "notion", "slack", "stripe"}
 		},
@@ -128,10 +131,11 @@ func TestConnectScreen_theAddedNoteIsNeverCut(t *testing.T) {
 		names = append(names, fmt.Sprintf("server-%02d", i))
 	}
 	s := newConnectScreen(connectParams{
-		agents:   namedAgents("Claude", "Codex"),
-		plan:     func() (connectPlan, error) { return newFakePlan(nil), nil },
-		statuses: noStatuses,
-		added:    func() []string { return names },
+		saveFailures: noSaveFailures,
+		agents:       namedAgents("Claude", "Codex"),
+		plan:         func() (connectPlan, error) { return newFakePlan(nil), nil },
+		statuses:     noStatuses,
+		added:        func() []string { return names },
 	})
 	t.Cleanup(s.checks.cancelAndWait)
 	s.resize(minWidth, 30)

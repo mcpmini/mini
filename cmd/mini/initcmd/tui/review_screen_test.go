@@ -4,6 +4,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -36,6 +37,7 @@ func reviewOf(
 		added = append(added, st.Name)
 	}
 	s := newReviewScreen(reviewParams{
+		saveFailures:  noSaveFailures,
 		added:         func() []string { return added },
 		statuses:      func() ([]initcmd.ServerStatus, error) { return statuses, nil },
 		checking:      func() map[string]bool { return checking },
@@ -47,6 +49,29 @@ func reviewOf(
 	s.resize(200, 20)
 	s.refresh()
 	return s
+}
+
+func TestReview_aFailedSaveLeavesRoomForTheServersItAdded(t *testing.T) {
+	s := reviewOf(
+		[]initcmd.ServerStatus{{Name: "canva"}, {Name: "linear"}, {Name: "notion"}},
+		nil,
+		nil,
+		[]screen{&fakeScreen{}},
+	)
+	s.p.saveFailures = func() []initcmd.ServerError {
+		return []initcmd.ServerError{{Name: "sentry", Err: errors.New("disk full")}}
+	}
+
+	body := ansi.Strip(s.body(4, false))
+
+	want := "✗ mini couldn't save sentry: disk full\n\n3 MCPs will be added to mini:\n  … and 3 more"
+	if body != want {
+		t.Errorf(
+			"body in 4 lines:\n%s\nwant the failure, then the heading and a count of what didn't fit:\n%s",
+			body,
+			want,
+		)
+	}
 }
 
 func TestReview_listsEachAddedServerWithWhatItStillNeeds(t *testing.T) {
