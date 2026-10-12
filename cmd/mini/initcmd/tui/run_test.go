@@ -262,7 +262,7 @@ func blockUntilCancelled(ctx context.Context, _ string, _ config.ServerConfig) e
 func statusOf(report initcmd.Report, name string) initcmd.Readiness {
 	i := slices.IndexFunc(report.Servers, func(s initcmd.ServerStatus) bool { return s.Name == name })
 	if i < 0 {
-		return -1
+		return nil
 	}
 	return report.Servers[i].Readiness
 }
@@ -277,7 +277,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 			setup.Probe = blockUntilCancelled
 			program := pressing("space", "tab", "enter", "enter")
 			out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
-			if err != nil || !out.Saved || statusOf(out.Report, "plain") != initcmd.Ready {
+			if err != nil || !out.Saved || statusOf(out.Report, "plain") != (initcmd.ReadyState{}) {
 				t.Errorf("out = %+v, %v; want plain checked, so not marked as maybe needing a login", out, err)
 			}
 		})

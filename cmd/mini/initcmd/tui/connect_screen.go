@@ -216,7 +216,7 @@ func (s *connectScreen) serversNeedingLogin() map[string]bool {
 	statuses, _ := s.p.statuses()
 	login := map[string]bool{}
 	for _, status := range statuses {
-		login[status.Name] = status.Readiness == initcmd.NeedsLogin
+		login[status.Name] = status.NeedsLogin()
 	}
 	return login
 }

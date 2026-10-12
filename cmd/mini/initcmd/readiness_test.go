@@ -77,17 +77,23 @@ func TestServerStatuses(t *testing.T) {
 	statuses, err := ServerStatuses(dir, entries)
 
 	want := []ServerStatus{
-		{Name: "app", Readiness: NeedsOwnApp},
-		{Name: "github", Readiness: Ready},
-		{Name: "keyed", Readiness: Ready},
-		{Name: "local", Readiness: Ready},
-		{Name: "loggedin", Readiness: Ready},
-		{Name: "login", Readiness: NeedsLogin},
-		{Name: "tok", Readiness: NeedsToken},
-		{Name: "token", Readiness: NeedsToken},
-		{Name: "unset", Readiness: NeedsEnv},
+		{Name: "app", Readiness: NeedsOwnAppState{}},
+		{Name: "github", Readiness: ReadyState{}},
+		{Name: "keyed", Readiness: ReadyState{}},
+		{Name: "local", Readiness: ReadyState{}},
+		{Name: "loggedin", Readiness: ReadyState{}},
+		{Name: "login", Readiness: NeedsLoginState{}},
+		{Name: "tok", Readiness: NeedsTokenState{}},
+		{Name: "token", Readiness: NeedsTokenState{}},
+		{Name: "unset", Readiness: NeedsEnvState{Names: []string{"MINI_TEST_UNSET"}, Field: "headers.Authorization"}},
 	}
 	if err != nil || !reflect.DeepEqual(statuses, want) {
 		t.Errorf("statuses = %+v, %v\nwant %+v", statuses, err, want)
+	}
+}
+
+func TestServerStatusStepZeroReadinessNeedsNoStep(t *testing.T) {
+	if got := (ServerStatus{}).Step("server.yaml", "mini auth server"); got != "" {
+		t.Errorf("zero status step = %q, want none", got)
 	}
 }

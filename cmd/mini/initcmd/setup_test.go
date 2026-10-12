@@ -70,7 +70,7 @@ func TestRunUnattended(t *testing.T) {
 	if !reflect.DeepEqual(report.AddCoveredByImport, []string{"files", "github"}) {
 		t.Errorf("from import = %v, want files and github, which the imports cover", report.AddCoveredByImport)
 	}
-	wantSkipped := []SkippedServer{{Agent: "Claude Code", Name: "paused", Reason: SkipSwitchedOff}}
+	wantSkipped := []SkippedServer{{Agent: "Claude Code", Name: "paused", Cause: SwitchedOffSkip{}}}
 	if !reflect.DeepEqual(report.Import.Skipped, wantSkipped) ||
 		!reflect.DeepEqual(report.Import.DroppedSettings, map[string][]string{"files": {"cwd"}}) ||
 		report.Failed() {
@@ -96,7 +96,7 @@ func TestRunUnattended_namesASecondConfigItLeavesOut(t *testing.T) {
 		Setup{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf},
 	)
 
-	want := []SkippedServer{{Agent: "Cursor", Name: "github", Reason: SkipSecondConfig}}
+	want := []SkippedServer{{Agent: "Cursor", Name: "github", Cause: SecondConfigSkip{}}}
 	if !reflect.DeepEqual(report.Import.Skipped, want) ||
 		!reflect.DeepEqual(configuredNames(t, f.configDir), []string{"github"}) {
 		t.Errorf(
@@ -120,7 +120,7 @@ func TestRunUnattended_anEnabledConfigWinsANameFromASwitchedOffOne(t *testing.T)
 	if err != nil || github.Command != "gh-server-b" {
 		t.Errorf("github = %+v, %v; want Cursor's enabled config imported", github, err)
 	}
-	want := []SkippedServer{{Agent: "Claude Code", Name: "github", Reason: SkipSwitchedOff}}
+	want := []SkippedServer{{Agent: "Claude Code", Name: "github", Cause: SwitchedOffSkip{}}}
 	if !reflect.DeepEqual(report.Import.Skipped, want) {
 		t.Errorf("skipped = %+v, want Claude Code's switched-off github named", report.Import.Skipped)
 	}
@@ -224,7 +224,7 @@ func TestRunUnattended_aCatalogAddIsntCreditedWithASwitchedOffConfigOfTheSameNam
 		SelfPath:  testSelf,
 	})
 
-	want := []SkippedServer{{Agent: "Codex", Name: "notion", Reason: SkipSwitchedOff}}
+	want := []SkippedServer{{Agent: "Codex", Name: "notion", Cause: SwitchedOffSkip{}}}
 	if !reflect.DeepEqual(report.Import.Skipped, want) || len(report.Import.DroppedSettings) != 0 {
 		t.Errorf("skipped = %+v, dropped settings = %v; want Codex's notion named as switched off "+
 			"and no cwd note for the catalog's notion", report.Import.Skipped, report.Import.DroppedSettings)
@@ -238,7 +238,7 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 	if !strings.Contains(github, "# Create a token at https://github.example/tokens, then uncomment:") {
 		t.Errorf("github.yaml:\n%s\nwant the token step as a comment", github)
 	}
-	if status := statusNamed(t, report.Servers, "github"); status.Readiness != NeedsToken {
+	if status := statusNamed(t, report.Servers, "github"); status.Readiness != (NeedsTokenState{}) {
 		t.Errorf("github = %+v, want it needing a token", status)
 	}
 	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(setup.ConfigDir, "linear"))), "#") {
@@ -261,7 +261,7 @@ func TestServerStatuses_aServerFinishedFromItsCommentedSteps(t *testing.T) {
 	})
 	t.Run("an uncommented placeholder is no credential until replaced", func(t *testing.T) {
 		setup, _ := addCredentialServers(t)
-		for name, want := range map[string]Readiness{"github": NeedsToken, "asana": NeedsOwnApp} {
+		for name, want := range map[string]Readiness{"github": NeedsTokenState{}, "asana": NeedsOwnAppState{}} {
 			uncommented(t, setup.ConfigDir, name)
 			if status := currentStatus(t, setup, name); status.Readiness != want {
 				t.Errorf("%s = %+v, want %v: mini would send the placeholder",
@@ -273,7 +273,7 @@ func TestServerStatuses_aServerFinishedFromItsCommentedSteps(t *testing.T) {
 		setup, _ := addCredentialServers(t)
 		uncommented(t, setup.ConfigDir, "asana")
 		editServerFile(t, setup.ConfigDir, "asana", clientIDPlaceholder, "app-123")
-		if status := currentStatus(t, setup, "asana"); status.Readiness != NeedsOwnApp {
+		if status := currentStatus(t, setup, "asana"); !status.NeedsOwnApp() {
 			t.Errorf("asana = %+v, want it still needing its app: the secret is a placeholder", status)
 		}
 	})

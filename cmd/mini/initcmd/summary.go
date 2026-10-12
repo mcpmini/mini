@@ -154,7 +154,7 @@ func writeSkipped(b *strings.Builder, r Report) {
 // Logins doesn't name the command, Review is skipped when Connect shows, and a check can finish
 // after the screens close, so every run lists what is still unfinished.
 func writeSteps(b *strings.Builder, r Report) {
-	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Readiness == Ready })
+	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Ready() })
 	if len(unfinished) == 0 {
 		return
 	}
@@ -167,14 +167,14 @@ func writeSteps(b *strings.Builder, r Report) {
 }
 
 func skippedLine(s SkippedServer, configDir string) string {
-	switch s.Reason {
-	case SkipEmptyName:
+	switch cause := s.Cause.(type) {
+	case EmptyNameSkip:
 		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
-	case SkipSwitchedOff:
+	case SwitchedOffSkip:
 		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
-	case SkipSecondConfig:
+	case SecondConfigSkip:
 		return fmt.Sprintf("%s in %s: a different config under that name is imported instead", s.Name, s.Agent)
-	case SkipNameInMini:
+	case NameInMiniSkip:
 		name := NormalizeName(s.Name)
 		return fmt.Sprintf(
 			"%s in %s: mini already has a different %s; to use this one, edit %s",
@@ -183,6 +183,8 @@ func skippedLine(s SkippedServer, configDir string) string {
 			name,
 			config.ServerPath(configDir, name),
 		)
+	case UnexpandableRefsSkip:
+		return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(cause.Refs, ", "))
 	}
-	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))
+	return fmt.Sprintf("%s not imported from %s", s.Name, s.Agent)
 }

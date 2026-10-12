@@ -34,7 +34,7 @@ func (st serverSteps) state(status initcmd.ServerStatus, checking bool) string {
 	switch {
 	case checking:
 		return "checking…"
-	case status.Readiness == initcmd.Ready:
+	case status.Ready():
 		return "✓ ready"
 	}
 	return st.step(status)

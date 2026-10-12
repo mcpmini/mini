@@ -45,11 +45,11 @@ func TestSummary_aRunWithoutScreensListsWhatNoScreenShowed(t *testing.T) {
 		Agents:    AgentConnections{Mini: custom, MiniServes: []agents.Agent{{Name: "Claude Code"}}},
 		Added:     []string{"github", "asana", "notion", "files", "search"},
 		Servers: []ServerStatus{
-			{Name: "github", Readiness: NeedsToken},
-			{Name: "asana", Readiness: NeedsOwnApp},
-			{Name: "notion", Readiness: NeedsLogin},
-			{Name: "files", Readiness: Ready},
-			{Name: "search", Readiness: NeedsEnv},
+			{Name: "github", Readiness: NeedsTokenState{}},
+			{Name: "asana", Readiness: NeedsOwnAppState{}},
+			{Name: "notion", Readiness: NeedsLoginState{}},
+			{Name: "files", Readiness: ReadyState{}},
+			{Name: "search", Readiness: NeedsEnvState{}},
 		},
 		AlreadyConfigured:  []string{"linear"},
 		AddCoveredByImport: []string{"slack"},
@@ -81,7 +81,7 @@ func TestSummary_aServerStillNeedingALoginAfterTheScreensIsNamedWithItsCommand(t
 	got := plainSummary(Report{
 		Interactive: true,
 		Added:       []string{"linear"},
-		Servers:     []ServerStatus{{Name: "linear", Readiness: NeedsLogin}},
+		Servers:     []ServerStatus{{Name: "linear", Readiness: NeedsLoginState{}}},
 		Connected:   []AgentResult{{Agent: claude, Created: true}},
 	})
 	want := "Added 1 MCP to mini: linear.\n" +
@@ -100,12 +100,11 @@ func TestSummary_skipsImportNotesAndFailuresShowEvenAfterTheScreens(t *testing.T
 		Import: ImportPlan{
 			Skipped: []SkippedServer{
 				{
-					Agent:  "Codex",
-					Name:   "templated",
-					Reason: SkipUnexpandableRefs,
-					Refs:   []string{"an environment variable in command"},
+					Agent: "Codex",
+					Name:  "templated",
+					Cause: UnexpandableRefsSkip{Refs: []string{"an environment variable in command"}},
 				},
-				{Agent: "Codex", Name: "Linear", Reason: SkipNameInMini},
+				{Agent: "Codex", Name: "Linear", Cause: NameInMiniSkip{}},
 			},
 			DroppedSettings: map[string][]string{"files": {"cwd"}},
 			StaticHeaders:   map[string]map[string]string{"team": {"X-Team": "TEAM_VAR"}},

@@ -73,7 +73,7 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 			},
 			configured:   nil,
 			wantImported: []string{"github"},
-			wantSkipped:  []SkippedServer{{Agent: "Codex", Name: "github", Reason: SkipSecondConfig}},
+			wantSkipped:  []SkippedServer{{Agent: "Codex", Name: "github", Cause: SecondConfigSkip{}}},
 		},
 		{
 			name: "a server switched on in any agent is imported",
@@ -89,7 +89,7 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 			name:       "a server switched off everywhere is left in its agents",
 			agents:     []agents.Agent{agentWith("Codex", map[string]agents.Server{"github": switchedOff(a)})},
 			configured: nil, wantImported: nil,
-			wantSkipped: []SkippedServer{{Agent: "Codex", Name: "github", Reason: SkipSwitchedOff}},
+			wantSkipped: []SkippedServer{{Agent: "Codex", Name: "github", Cause: SwitchedOffSkip{}}},
 		},
 		{
 			name: "an enabled config claims a shared name before a switched-off one",
@@ -99,7 +99,7 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 			},
 			configured:   nil,
 			wantImported: []string{"github"},
-			wantSkipped:  []SkippedServer{{Agent: "Claude Code", Name: "github", Reason: SkipSwitchedOff}},
+			wantSkipped:  []SkippedServer{{Agent: "Claude Code", Name: "github", Cause: SwitchedOffSkip{}}},
 		},
 		{
 			name: "a second config stays out even when switched on in a later agent",
@@ -111,8 +111,8 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 			configured:   nil,
 			wantImported: []string{"github"},
 			wantSkipped: []SkippedServer{
-				{Agent: "Codex", Name: "github", Reason: SkipSecondConfig},
-				{Agent: "Cursor", Name: "github", Reason: SkipSecondConfig},
+				{Agent: "Codex", Name: "github", Cause: SecondConfigSkip{}},
+				{Agent: "Cursor", Name: "github", Cause: SecondConfigSkip{}},
 			},
 		},
 		{
@@ -141,8 +141,8 @@ func TestPlanImport_oneServerPerConfigAndName(t *testing.T) {
 			configured:   []string{"GitHub"},
 			wantImported: nil,
 			wantSkipped: []SkippedServer{
-				{Agent: "Claude Code", Name: "github", Reason: SkipNameInMini},
-				{Agent: "Codex", Name: "github", Reason: SkipNameInMini},
+				{Agent: "Claude Code", Name: "github", Cause: NameInMiniSkip{}},
+				{Agent: "Codex", Name: "github", Cause: NameInMiniSkip{}},
 			},
 		},
 		{
@@ -242,7 +242,7 @@ func TestPlanImport_anAgentEntryUnderAConfiguredName(t *testing.T) {
 		wantSkipped []SkippedServer
 	}{
 		"with mini's config is already imported": {"https://a.example.com/mcp", nil},
-		"with another config is named":           {"https://b.example.com/mcp", []SkippedServer{{Agent: "Claude Code", Name: "github", Reason: SkipNameInMini}}},
+		"with another config is named":           {"https://b.example.com/mcp", []SkippedServer{{Agent: "Claude Code", Name: "github", Cause: NameInMiniSkip{}}}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			plan := PlanImport(ImportParams{
@@ -312,12 +312,11 @@ func TestPlanImport_namesWhatItCantImport(t *testing.T) {
 	plan := planFor(agentList)
 	want := []SkippedServer{
 		{
-			Agent:  "Codex",
-			Name:   "templated",
-			Reason: SkipUnexpandableRefs,
-			Refs:   []string{"an environment variable in url"},
+			Agent: "Codex",
+			Name:  "templated",
+			Cause: UnexpandableRefsSkip{Refs: []string{"an environment variable in url"}},
 		},
-		{Agent: "Codex", Name: "!!!", Reason: SkipEmptyName},
+		{Agent: "Codex", Name: "!!!", Cause: EmptyNameSkip{}},
 	}
 	if len(plan.picked()) != 0 || !reflect.DeepEqual(plan.Skipped, want) {
 		t.Errorf("servers = %+v\nskipped = %+v\nwant none and %+v", plan.picked(), plan.Skipped, want)
@@ -378,27 +377,27 @@ func TestPlanImport_offersWhatItLeavesOutUnpicked(t *testing.T) {
 		),
 	}, "linear", "github-2")
 	type row struct {
-		name   string
-		from   []AgentEntry
-		picked bool
-		reason SkipReason
+		name        string
+		from        []AgentEntry
+		picked      bool
+		disposition CandidateDisposition
 	}
 	var got []row
 	for _, c := range plan.Candidates {
 		got = append(
 			got,
-			row{name: c.Server.Name, from: c.From, picked: c.Picked, reason: c.Reason},
+			row{name: c.Server.Name, from: c.From, picked: c.Picked, disposition: c.InitialDisposition},
 		)
 	}
 	want := []row{
-		{name: "github", from: []AgentEntry{{"Claude Code", "github"}}, picked: true, reason: SkipNone},
+		{name: "github", from: []AgentEntry{{"Claude Code", "github"}}, picked: true, disposition: SelectedByDefault},
 		{
-			name:   "github-3",
-			from:   []AgentEntry{{"Codex", "github"}},
-			picked: false,
-			reason: SkipSecondConfig,
+			name:        "github-3",
+			from:        []AgentEntry{{"Codex", "github"}},
+			picked:      false,
+			disposition: DuplicateConfig,
 		},
-		{name: "notes", from: []AgentEntry{{"Codex", "notes"}}, picked: false, reason: SkipSwitchedOff},
+		{name: "notes", from: []AgentEntry{{"Codex", "notes"}}, picked: false, disposition: OriginallyDisabled},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf(

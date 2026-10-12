@@ -25,15 +25,11 @@ type ImportPlan struct {
 	StaticHeaders map[string]map[string]string
 }
 
-// Candidate is one server config found in the agents, under the name mini would give it. Picked
-// ones are imported by default; the others (switched off everywhere, or a second config under a
-// name in use) are offered for the user to pick.
 type Candidate struct {
-	Server config.ServerConfig
-	From   []AgentEntry
-	Picked bool
-	// Reason is why an unpicked candidate isn't picked: SkipSwitchedOff or SkipSecondConfig.
-	Reason SkipReason
+	Server             config.ServerConfig
+	From               []AgentEntry
+	Picked             bool
+	InitialDisposition CandidateDisposition
 }
 
 // InMiniServer is a server mini runs that agents have too: mini's config, and where it was found.
@@ -48,24 +44,38 @@ type AgentEntry struct {
 	Name  string
 }
 
-type SkipReason int
+type CandidateDisposition int
 
 const (
-	// SkipNone is a picked candidate's Reason.
-	SkipNone SkipReason = iota
-	SkipEmptyName
-	SkipUnexpandableRefs
-	SkipSwitchedOff
-	SkipSecondConfig
-	SkipNameInMini
+	SelectedByDefault CandidateDisposition = iota
+	OriginallyDisabled
+	DuplicateConfig
 )
+
+//sumtype:decl
+type SkipCause interface {
+	skipCause()
+}
+
+type (
+	EmptyNameSkip        struct{}
+	UnexpandableRefsSkip struct{ Refs []string }
+	SwitchedOffSkip      struct{}
+	SecondConfigSkip     struct{}
+	NameInMiniSkip       struct{}
+)
+
+func (EmptyNameSkip) skipCause()        {}
+func (UnexpandableRefsSkip) skipCause() {}
+func (SwitchedOffSkip) skipCause()      {}
+func (SecondConfigSkip) skipCause()     {}
+func (NameInMiniSkip) skipCause()       {}
 
 // SkippedServer is an agent entry init leaves in the agent; the summary says why.
 type SkippedServer struct {
-	Agent  string
-	Name   string
-	Reason SkipReason
-	Refs   []string
+	Agent string
+	Name  string
+	Cause SkipCause
 }
 
 // UnreadableAgent is an agent whose config couldn't be read, so none of its servers were imported.
@@ -149,7 +159,7 @@ func (p ImportParams) candidatesIn(plan *ImportPlan, agent string, servers map[s
 		}
 		if !e.server.Candidate() {
 			plan.Skipped = append(plan.Skipped, SkippedServer{
-				Agent: e.agent, Name: e.name, Reason: SkipUnexpandableRefs, Refs: e.server.UnexpandableRefs,
+				Agent: e.agent, Name: e.name, Cause: UnexpandableRefsSkip{Refs: e.server.UnexpandableRefs},
 			})
 			continue
 		}
@@ -189,13 +199,13 @@ func (plan *ImportPlan) add(g *serverGroup, taken takenNames) bool {
 	if !g.enabled() {
 		// Importing a server every agent switched off would switch it on for every agent connected
 		// to mini.
-		plan.skipAll(g, func(agentEntry) SkipReason { return SkipSwitchedOff })
+		plan.skipAll(g, func(agentEntry) SkipCause { return SwitchedOffSkip{} })
 		return false
 	}
 	name, ok := taken.firstFree(g)
 	if !ok {
 		// Another config under a name in use would need a new name the user never chose.
-		plan.skipAll(g, taken.noFreeNameReason)
+		plan.skipAll(g, taken.noFreeNameCause)
 		return false
 	}
 	plan.addCandidate(g, name, taken, true)
@@ -212,9 +222,9 @@ func (plan *ImportPlan) offer(g *serverGroup, taken takenNames) {
 	}
 	plan.addCandidate(g, name, taken, false)
 	c := &plan.Candidates[len(plan.Candidates)-1]
-	c.Reason = SkipSecondConfig
+	c.InitialDisposition = DuplicateConfig
 	if !g.enabled() {
-		c.Reason = SkipSwitchedOff
+		c.InitialDisposition = OriginallyDisabled
 	}
 }
 
@@ -222,7 +232,7 @@ func (plan *ImportPlan) addCandidate(g *serverGroup, name string, taken takenNam
 	taken.imported[name] = true
 	sc := g.config
 	sc.Name = name
-	c := Candidate{Server: sc, Picked: picked}
+	c := Candidate{Server: sc, Picked: picked, InitialDisposition: SelectedByDefault}
 	for _, e := range g.entries {
 		c.From = append(c.From, AgentEntry{Agent: e.agent, Name: e.name})
 	}
@@ -255,19 +265,19 @@ func (t takenNames) suffixed(g *serverGroup) (string, bool) {
 	}
 }
 
-func (t takenNames) noFreeNameReason(e agentEntry) SkipReason {
+func (t takenNames) noFreeNameCause(e agentEntry) SkipCause {
 	switch name := NormalizeName(e.name); {
 	case name == "":
-		return SkipEmptyName
+		return EmptyNameSkip{}
 	case t.inMini[name]:
-		return SkipNameInMini
+		return NameInMiniSkip{}
 	}
-	return SkipSecondConfig
+	return SecondConfigSkip{}
 }
 
-func (plan *ImportPlan) skipAll(g *serverGroup, reason func(agentEntry) SkipReason) {
+func (plan *ImportPlan) skipAll(g *serverGroup, cause func(agentEntry) SkipCause) {
 	for _, e := range g.entries {
-		plan.Skipped = append(plan.Skipped, SkippedServer{Agent: e.agent, Name: e.name, Reason: reason(e)})
+		plan.Skipped = append(plan.Skipped, SkippedServer{Agent: e.agent, Name: e.name, Cause: cause(e)})
 	}
 }
 

@@ -135,7 +135,7 @@ func (s *importScreen) columnText(target, agents string, w columns) string {
 }
 
 func unpickedReason(c initcmd.Candidate) string {
-	if !c.Picked && c.Reason == initcmd.SkipSwitchedOff {
+	if !c.Picked && c.InitialDisposition == initcmd.OriginallyDisabled {
 		return "switched off in " + agentList(c)
 	}
 	return ""
