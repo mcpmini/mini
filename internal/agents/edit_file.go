@@ -11,8 +11,6 @@ import (
 	"github.com/mcpmini/mini/internal/fileio"
 )
 
-var ErrConfigKeptChanging = fileio.ErrKeptChanging
-
 // EditFile applies edit with a backup; unchanged files return an empty backup path.
 func EditFile(path string, edit func([]byte) ([]byte, error), now time.Time) (string, error) {
 	var backup string

@@ -123,21 +123,25 @@ func (plan ImportPlan) importedOf(added []string) []Candidate {
 	return imported
 }
 
-// The plan's notes and skips then say what this run did: a picked candidate that failed to write
-// has no notes, and the entries of a candidate the user picked aren't listed as left behind.
-func (plan *ImportPlan) keepOnly(imported []Candidate) {
+// The result's notes and skips say what this run did: a picked candidate that failed to write has
+// no notes, and the entries of a candidate the user picked aren't listed as left behind. The plan
+// itself is left as it was.
+func (plan ImportPlan) keepOnly(imported []Candidate) ImportPlan {
 	notImported := func(name string) bool {
 		return !slices.ContainsFunc(imported, func(c Candidate) bool { return c.Server.Name == name })
 	}
+	plan.DroppedSettings = maps.Clone(plan.DroppedSettings)
+	plan.StaticHeaders = maps.Clone(plan.StaticHeaders)
 	maps.DeleteFunc(plan.DroppedSettings, func(name string, _ []string) bool { return notImported(name) })
 	maps.DeleteFunc(plan.StaticHeaders, func(name string, _ map[string]string) bool { return notImported(name) })
-	plan.Skipped = slices.DeleteFunc(plan.Skipped, func(s SkippedServer) bool {
+	plan.Skipped = slices.DeleteFunc(slices.Clone(plan.Skipped), func(s SkippedServer) bool {
 		entry := AgentEntry{Agent: s.Agent, Name: s.Name}
 		imports := slices.ContainsFunc(imported, func(c Candidate) bool { return slices.Contains(c.From, entry) })
 		// A second config's line says the first is imported instead; untrue once the user unticked it.
 		_, second := s.Cause.(SecondConfigSkip)
 		return imports || (second && !importsTheName(imported, s.Name))
 	})
+	return plan
 }
 
 // DropOfferedSkips is for a summary shown after the Import screen: each entry a candidate offered

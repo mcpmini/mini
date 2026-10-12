@@ -116,7 +116,7 @@ func TestRun_finishingWritesTheTicksAndReportsThem(t *testing.T) {
 	out, err := Run(Params{
 		Setup:       setupFor(configDir, stdioAgent("Codex", "files", "notes")),
 		LoadCatalog: noCatalog,
-		Program:     pressing("space", "tab", "enter"),
+		Program:     pressing("space", "tab", "enter", "enter"),
 	})
 	if err != nil || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished and saved", out, err)
@@ -139,7 +139,7 @@ func TestRun_theSummarySkipsNothingTheImportScreenShowed(t *testing.T) {
 	out, err := Run(Params{
 		Setup:       setupFor(t.TempDir(), githubRunning("Claude Code", "gh-one"), githubRunning("Codex", "gh-two")),
 		LoadCatalog: noCatalog,
-		Program:     pressing("tab", "enter"),
+		Program:     pressing("tab", "enter", "enter"),
 	})
 	if err != nil || len(out.Report.Import.Candidates) < 2 {
 		t.Fatalf("Run = %+v, %v; want github and an unticked github-2", out, err)
@@ -174,7 +174,7 @@ func TestRun_goingBackFromLoginsSyncsAgain(t *testing.T) {
 		Setup:       setupFor(configDir),
 		LoadCatalog: fromCatalog(c),
 		// Tick linear and save; Logins lists it; back, swap linear for sentry, save again, continue.
-		Program: pressing("space", "tab", "enter", "esc", "space", "down", "space", "tab", "enter", "down", "enter"),
+		Program: pressing("space", "tab", "enter", "esc", "space", "down", "space", "tab", "enter", "enter", "enter"),
 	})
 	if err != nil || !out.Saved {
 		t.Fatalf("Run = %+v, %v; want it finished", out, err)
@@ -202,6 +202,21 @@ func TestRun_quittingAfterCatalogWritesNothing(t *testing.T) {
 	}
 }
 
+func TestRun_aProgramEndedPastCatalogWithoutFinishingWritesNothing(t *testing.T) {
+	configDir := filepath.Join(t.TempDir(), "config")
+	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear")}}
+	out, err := Run(
+		// A SIGTERM ends the program with no error, here on Logins after Catalog staged linear.
+		Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "tab", "enter")},
+	)
+	if err != nil || out.Saved {
+		t.Fatalf("Run = %+v, %v; want nothing saved: the user never chose to finish", out, err)
+	}
+	if _, err := os.Stat(configDir); !os.IsNotExist(err) {
+		t.Errorf("config dir: %v, want it still missing: linear was only staged", err)
+	}
+}
+
 func TestRun_theCatalogOffersOnlyServersMiniHasNot(t *testing.T) {
 	configDir := t.TempDir()
 	if _, err := ops.AddServer(
@@ -212,7 +227,11 @@ func TestRun_theCatalogOffersOnlyServersMiniHasNot(t *testing.T) {
 	}
 	c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("linear"), oauthEntry("sentry")}}
 	_, err := Run(
-		Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "tab", "enter")},
+		Params{
+			Setup:       setupFor(configDir),
+			LoadCatalog: fromCatalog(c),
+			Program:     pressing("space", "tab", "enter", "enter", "enter"),
+		},
 	)
 	if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"linear", "sentry"}) {
 		t.Errorf(
@@ -239,7 +258,11 @@ func TestRun_withNothingToImport(t *testing.T) {
 		configDir := t.TempDir()
 		c := catalog.Catalog{Entries: []catalog.Entry{oauthEntry("sentry")}}
 		_, err := Run(
-			Params{Setup: setupFor(configDir), LoadCatalog: fromCatalog(c), Program: pressing("space", "tab", "enter")},
+			Params{
+				Setup:       setupFor(configDir),
+				LoadCatalog: fromCatalog(c),
+				Program:     pressing("space", "tab", "enter", "enter", "enter"),
+			},
 		)
 		if got := writtenNames(t, configDir); err != nil || !slices.Equal(got, []string{"sentry"}) {
 			t.Errorf("written = %v, err = %v; want sentry ticked on the catalog shown first", got, err)
@@ -281,7 +304,7 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			setup := setupFor(t.TempDir())
 			setup.Probe = blockUntilCancelled
-			program := pressing("space", "tab", "enter", "enter")
+			program := pressing("space", "tab", "enter", "enter", "enter")
 			out, err := Run(Params{Setup: setup, LoadCatalog: fromCatalog(plain), Program: program})
 			if err != nil || !out.Saved || statusOf(out.Report, "plain") != (initcmd.ReadyState{}) {
 				t.Errorf("out = %+v, %v; want plain checked, so not marked as maybe needing a login", out, err)
@@ -402,7 +425,7 @@ func TestRun_aLoginReachesMiniOnlyWhenTheRunFinishes(t *testing.T) {
 		pressingAndDelivering("space", "tab", "enter", "enter")(m)
 		_, err := os.Stat(filepath.Join(configDir, token))
 		savedBeforeFinish = err == nil
-		for _, key := range []string{"tab", "enter"} {
+		for _, key := range []string{"tab", "enter", "enter"} {
 			deliver(m, pressKey(m, key))
 		}
 		return nil

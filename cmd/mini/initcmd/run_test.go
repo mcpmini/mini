@@ -159,6 +159,37 @@ func TestRun(t *testing.T) {
 	})
 }
 
+func TestRunFinish_keepsTheAgentsEntryWhenItsServerFailsToCommit(t *testing.T) {
+	f := newApplyFixture(t)
+	claude := f.write(t, "Claude Code", `{"mcpServers":{"files":{"command":"files-server"}}}`)
+	setup := Setup{ConfigDir: f.configDir, Import: []agents.Agent{claude}, SelfPath: f.mini}
+	plan, err := setup.Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := mustStart(t, setup, plan)
+	run.Save()
+	// Someone else adds a different files after the save, so init's can't commit.
+	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "other-files-server"})
+
+	report := run.Finish(context.Background(), ConnectParams{
+		Agents: []agents.Agent{claude},
+		Choice: ConnectAndRemove,
+		Removals: Removals{
+			Checks:  map[string]error{"files": nil},
+			ByAgent: map[string][]string{"Claude Code": {"files"}},
+		},
+	})
+
+	if len(report.WriteErrors) != 1 || !slices.Contains(entryNamesIn(t, claude), "files") {
+		t.Errorf(
+			"write errors = %+v, Claude Code's entries = %v; want files kept: mini doesn't run the agent's files",
+			report.WriteErrors,
+			entryNamesIn(t, claude),
+		)
+	}
+}
+
 func mustStart(t *testing.T, setup Setup, p Plan) *Run {
 	t.Helper()
 	run := setup.Start(p)

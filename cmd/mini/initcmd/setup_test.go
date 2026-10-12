@@ -108,6 +108,31 @@ func TestRunUnattended_namesASecondConfigItLeavesOut(t *testing.T) {
 	}
 }
 
+func TestRunFinish_trimsTheReportsImportButNotTheRunsPlan(t *testing.T) {
+	f := newApplyFixture(t)
+	claude := f.write(t, "Claude Code", `{"mcpServers":{"github":{"command":"gh-server-a"}}}`)
+	cursor := f.write(t, "Cursor", `{"mcpServers":{"github":{"command":"gh-server-b"}}}`)
+	setup := Setup{ConfigDir: f.configDir, Import: []agents.Agent{claude, cursor}, SelfPath: testSelf}
+	plan, err := setup.Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Import.Candidates[0].Picked = false
+	planned := slices.Clone(plan.Import.Skipped)
+	run := setup.Start(plan)
+	defer run.Close()
+	run.Save()
+
+	report := run.Finish(context.Background(), ConnectParams{Choice: DontConnect})
+
+	if len(report.Import.Skipped) != 0 {
+		t.Errorf("report skipped = %+v, want none: nothing named github was imported", report.Import.Skipped)
+	}
+	if !reflect.DeepEqual(run.Plan.Import.Skipped, planned) {
+		t.Errorf("run's plan skipped = %+v after Finish, want it unchanged: %+v", run.Plan.Import.Skipped, planned)
+	}
+}
+
 func TestRunUnattended_anEnabledConfigWinsANameFromASwitchedOffOne(t *testing.T) {
 	f := newApplyFixture(t)
 	claude := f.write(t, "Claude Code", `{"mcpServers":{"github":{"command":"gh-server-a","disabled":true}}}`)
