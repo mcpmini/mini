@@ -100,7 +100,8 @@ jobs:
           scripts/test-bins.sh "$testbin" >> "$GITHUB_ENV"
 
       - name: Integration tests
-        run: go test -race -tags integration,test -run '^TestIntegration' -timeout 180s ./...
+        # Go's test cache can't see the binaries, subprocesses and sockets these tests use, so a cached pass proves nothing.
+        run: go test -race -count=1 -tags integration,test -run '^TestIntegration' -timeout 180s ./...
 
   ci:
     runs-on: ubuntu-latest
