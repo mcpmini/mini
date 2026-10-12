@@ -12,12 +12,12 @@ func TestFromJSONPreservesDocumentKeyOrder(t *testing.T) {
 		t.Fatalf("FromJSON unexpected error: %v", err)
 	}
 	want := []string{"zebra", "apple", "mango"}
-	if len(v.Fields) != len(want) {
-		t.Fatalf("got %d fields, want %d", len(v.Fields), len(want))
+	if len(v.fields()) != len(want) {
+		t.Fatalf("got %d fields, want %d", len(v.fields()), len(want))
 	}
 	for i, k := range want {
-		if v.Fields[i].Key != k {
-			t.Errorf("field %d key = %q, want %q", i, v.Fields[i].Key, k)
+		if v.fields()[i].Key != k {
+			t.Errorf("field %d key = %q, want %q", i, v.fields()[i].Key, k)
 		}
 	}
 
@@ -35,7 +35,7 @@ func TestFromJSONScalarKinds(t *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
-		kind Kind
+		kind valueKind
 	}{
 		{"null", `null`, KindNull},
 		{"bool true", `true`, KindBool},
@@ -51,8 +51,8 @@ func TestFromJSONScalarKinds(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON(%s) unexpected error: %v", tc.raw, err)
 			}
-			if v.Kind != tc.kind {
-				t.Errorf("FromJSON(%s).Kind = %v, want %v", tc.raw, v.Kind, tc.kind)
+			if v.kind() != tc.kind {
+				t.Errorf("FromJSON(%s).kind() = %v, want %v", tc.raw, v.kind(), tc.kind)
 			}
 		})
 	}
@@ -64,24 +64,24 @@ func TestFromJSONPopulatesArrayItemsFully(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON unexpected error: %v", err)
 	}
-	items := v.Fields[0].Val
-	if items.Kind != KindArray {
-		t.Fatalf("items.Kind = %v, want KindArray", items.Kind)
+	items := v.fields()[0].Val
+	if items.kind() != KindArray {
+		t.Fatalf("items.kind() = %v, want KindArray", items.kind())
 	}
-	if len(items.Items) != 5 {
-		t.Fatalf("len(items.Items) = %d, want 5", len(items.Items))
+	if len(items.items()) != 5 {
+		t.Fatalf("len(items.items()) = %d, want 5", len(items.items()))
 	}
-	wantKinds := []Kind{KindNumber, KindString, KindBool, KindNull, KindObject}
+	wantKinds := []valueKind{KindNumber, KindString, KindBool, KindNull, KindObject}
 	for i, k := range wantKinds {
-		if items.Items[i].Kind != k {
-			t.Errorf("items.Items[%d].Kind = %v, want %v", i, items.Items[i].Kind, k)
+		if items.items()[i].kind() != k {
+			t.Errorf("items.items()[%d].kind() = %v, want %v", i, items.items()[i].kind(), k)
 		}
 	}
-	if items.Items[1].Str != "two" {
-		t.Errorf("items.Items[1].Str = %q, want %q", items.Items[1].Str, "two")
+	if items.items()[1].payload != stringValue("two") {
+		t.Errorf("second item payload = %v, want %q", items.items()[1].payload, "two")
 	}
-	if items.Items[4].Fields[0].Key != "k" || items.Items[4].Fields[0].Val.Num != "3" {
-		t.Errorf("items.Items[4] nested object decoded incorrectly: %+v", items.Items[4])
+	if items.items()[4].fields()[0].Key != "k" || items.items()[4].fields()[0].Val.payload != numberValue("3") {
+		t.Errorf("items.items()[4] nested object decoded incorrectly: %+v", items.items()[4])
 	}
 }
 
@@ -91,10 +91,10 @@ func TestFromJSONBigIntegerSurvivesDigitExact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON unexpected error: %v", err)
 	}
-	got := v.Fields[0].Val.Num
+	got := v.fields()[0].Val.payload
 	want := "123456789012345678901234567890"
-	if got != want {
-		t.Errorf("Num = %q, want %q", got, want)
+	if got != numberValue(want) {
+		t.Errorf("number payload = %v, want %q", got, want)
 	}
 }
 
@@ -104,14 +104,14 @@ func TestFromJSONDuplicateKeyLastWinsFirstPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON unexpected error: %v", err)
 	}
-	if len(v.Fields) != 2 {
-		t.Fatalf("got %d fields, want 2 (duplicate key collapsed)", len(v.Fields))
+	if len(v.fields()) != 2 {
+		t.Fatalf("got %d fields, want 2 (duplicate key collapsed)", len(v.fields()))
 	}
-	if v.Fields[0].Key != "a" || v.Fields[0].Val.Num != "3" {
-		t.Errorf("fields[0] = {%q, %v}, want {a, 3}", v.Fields[0].Key, v.Fields[0].Val.Num)
+	if v.fields()[0].Key != "a" || v.fields()[0].Val.payload != numberValue("3") {
+		t.Errorf("fields[0] = {%q, %v}, want {a, 3}", v.fields()[0].Key, v.fields()[0].Val.payload)
 	}
-	if v.Fields[1].Key != "b" || v.Fields[1].Val.Num != "2" {
-		t.Errorf("fields[1] = {%q, %v}, want {b, 2}", v.Fields[1].Key, v.Fields[1].Val.Num)
+	if v.fields()[1].Key != "b" || v.fields()[1].Val.payload != numberValue("2") {
+		t.Errorf("fields[1] = {%q, %v}, want {b, 2}", v.fields()[1].Key, v.fields()[1].Val.payload)
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func arrVal(items ...Value) Value { return Value{Kind: KindArray, Items: items} }
+func arrVal(items ...Value) Value { return Value{payload: arrayValue(items)} }
 
 func encodeOK(t *testing.T, v Value) string {
 	t.Helper()
@@ -416,22 +416,22 @@ func TestEncodeNestedFieldGroups(t *testing.T) {
 	})
 }
 
-func TestEncodeArrayItemWithUnknownKindErrors(t *testing.T) {
+func TestEncodeArrayItemWithUninitializedValueErrors(t *testing.T) {
 	cases := []struct {
 		name string
 		v    Value
 	}{
-		{"inline item", objVal(Field{Key: "xs", Val: arrVal(Value{Kind: Kind(99)})})},
+		{"inline item", objVal(Field{Key: "xs", Val: arrVal(Value{})})},
 		{"tabular cell", objVal(Field{Key: "xs", Val: arrVal(
-			objVal(Field{Key: "a", Val: numVal("1")}, Field{Key: "b", Val: Value{Kind: Kind(99)}}),
+			objVal(Field{Key: "a", Val: numVal("1")}, Field{Key: "b", Val: Value{}}),
 		)})},
-		{"list item", objVal(Field{Key: "xs", Val: arrVal(numVal("1"), Value{Kind: Kind(99)}, objVal())})},
+		{"list item", objVal(Field{Key: "xs", Val: arrVal(numVal("1"), Value{}, objVal())})},
 		{"root array item", arrVal(Value{}, objVal())},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, err := Encode(tc.v); err == nil {
-				t.Error("Encode expected error for unknown kind, got nil")
+				t.Error("Encode expected error for uninitialized value, got nil")
 			}
 		})
 	}
@@ -442,9 +442,9 @@ func BenchmarkTabularClassification(b *testing.B) {
 	for i := range items {
 		fields := make([]Field, 200)
 		for j := range fields {
-			fields[j] = Field{Key: "f" + strconv.Itoa(j), Val: Value{Kind: KindNumber, Num: "1"}}
+			fields[j] = Field{Key: "f" + strconv.Itoa(j), Val: Value{payload: numberValue("1")}}
 		}
-		items[i] = Value{Kind: KindObject, Fields: fields}
+		items[i] = Value{payload: objectValue(fields)}
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

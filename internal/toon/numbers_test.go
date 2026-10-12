@@ -75,7 +75,7 @@ func TestEncodeNumMalformed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			v := Value{Kind: KindNumber, Num: tc.num}
+			v := Value{payload: numberValue(tc.num)}
 			if _, err := Encode(v); err == nil {
 				t.Errorf("Encode(Num=%q) expected error, got nil", tc.num)
 			}
@@ -97,7 +97,7 @@ func TestEncodeNumCanonicalizesNonCanonicalLexemes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			v := Value{Kind: KindNumber, Num: tc.num}
+			v := Value{payload: numberValue(tc.num)}
 			got, err := Encode(v)
 			if err != nil {
 				t.Fatalf("Encode(Num=%q) unexpected error: %v", tc.num, err)
@@ -110,7 +110,7 @@ func TestEncodeNumCanonicalizesNonCanonicalLexemes(t *testing.T) {
 }
 
 func TestEncodeNumValid(t *testing.T) {
-	v := Value{Kind: KindNumber, Num: "42"}
+	v := Value{payload: numberValue("42")}
 	got, err := Encode(v)
 	if err != nil {
 		t.Fatalf("Encode unexpected error: %v", err)

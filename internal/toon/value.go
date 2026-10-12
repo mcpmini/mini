@@ -3,12 +3,10 @@
 // https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L1
 package toon
 
-// Kind is the discriminant for Value.Kind. The zero value is intentionally
-// invalid; Encode rejects it as unknown.
-type Kind int
+type valueKind int
 
 const (
-	KindNull Kind = iota + 1
+	KindNull valueKind = iota + 1
 	KindBool
 	KindNumber
 	KindString
@@ -16,20 +14,61 @@ const (
 	KindArray
 )
 
-// Value is a closed value model mirroring the JSON data model.
+// Value has an invalid zero value; Encode rejects it.
 type Value struct {
-	Kind Kind
-
-	Bool bool
-	// Num holds a canonicalized number lexeme (text, not a parsed value).
-	Num string
-	Str string
-
-	Fields []Field // preserves document order
-	Items  []Value
+	payload valuePayload
 }
 
-// Field is a single key/value pair of a KindObject Value, in document order.
+//sumtype:decl
+type valuePayload interface {
+	valuePayload()
+}
+
+type (
+	nullValue   struct{}
+	boolValue   bool
+	numberValue string
+	stringValue string
+	objectValue []Field
+	arrayValue  []Value
+)
+
+func (nullValue) valuePayload()   {}
+func (boolValue) valuePayload()   {}
+func (numberValue) valuePayload() {}
+func (stringValue) valuePayload() {}
+func (objectValue) valuePayload() {}
+func (arrayValue) valuePayload()  {}
+
+func (v Value) kind() valueKind {
+	switch v.payload.(type) {
+	case nullValue:
+		return KindNull
+	case boolValue:
+		return KindBool
+	case numberValue:
+		return KindNumber
+	case stringValue:
+		return KindString
+	case objectValue:
+		return KindObject
+	case arrayValue:
+		return KindArray
+	default:
+		return 0
+	}
+}
+
+func (v Value) fields() []Field {
+	fields, _ := v.payload.(objectValue)
+	return fields
+}
+
+func (v Value) items() []Value {
+	items, _ := v.payload.(arrayValue)
+	return items
+}
+
 type Field struct {
 	Key string
 	Val Value

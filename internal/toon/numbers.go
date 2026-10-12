@@ -181,6 +181,6 @@ func consumeDigitRun(s string, pos int) int {
 // FromJSON/FromAny already hand encodeNum a canonical lexeme; Values built by
 // hand (e.g. "-0", "1.0") must still satisfy spec §2 on output.
 // https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L192
-func encodeNum(v Value) (string, error) {
-	return canonicalizeNumber(v.Num)
+func encodeNum(n numberValue) (string, error) {
+	return canonicalizeNumber(string(n))
 }

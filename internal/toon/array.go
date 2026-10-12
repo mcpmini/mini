@@ -168,14 +168,14 @@ func writeListItems(sb *strings.Builder, items []Value, depth int) error {
 }
 
 func writeListItem(sb *strings.Builder, item Value, depth int) error {
-	switch item.Kind {
+	switch item.kind() {
 	case KindObject:
 		return writeObjectListItem(sb, item, depth)
 	case KindArray:
 		if err := appendString(sb, strings.Repeat(indentUnit, depth)+"- "); err != nil {
 			return err
 		}
-		return writeArray(sb, item.Items, arrayCtx{ItemDepth: depth + 1})
+		return writeArray(sb, item.items(), arrayCtx{ItemDepth: depth + 1})
 	default:
 		s, err := encodePrimitive(item)
 		if err != nil {
@@ -189,16 +189,16 @@ func writeListItem(sb *strings.Builder, item Value, depth int) error {
 // https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L577
 func writeObjectListItem(sb *strings.Builder, item Value, depth int) error {
 	indent := strings.Repeat(indentUnit, depth)
-	if len(item.Fields) == 0 {
+	if len(item.fields()) == 0 {
 		return appendString(sb, indent+"-\n")
 	}
 	if err := appendString(sb, indent+"- "); err != nil {
 		return err
 	}
-	if err := writeFieldBody(sb, item.Fields[0], depth+1); err != nil {
+	if err := writeFieldBody(sb, item.fields()[0], depth+1); err != nil {
 		return err
 	}
-	return writeFields(sb, item.Fields[1:], depth+1)
+	return writeFields(sb, item.fields()[1:], depth+1)
 }
 
 func joinPrimitives(items []Value) (string, error) {
@@ -224,7 +224,7 @@ func joinPrimitives(items []Value) (string, error) {
 // uniform-primitive or nested-uniform (recursive). Header order follows the first element.
 // https://github.com/toon-format/spec/blob/62f16b369408180f1faf1cba7da1b46d1f336f12/SPEC.md?plain=1#L495
 func tabularFields(items []Value) ([]tabularCol, bool) {
-	if items[0].Kind != KindObject || len(items[0].Fields) == 0 {
+	if items[0].kind() != KindObject || len(items[0].fields()) == 0 {
 		return nil, false
 	}
 	keys := fieldKeys(items[0])
@@ -298,8 +298,8 @@ func columnValues(indexes []map[string]Value, key string) []Value {
 }
 
 func fieldIndex(v Value) map[string]Value {
-	idx := make(map[string]Value, len(v.Fields))
-	for _, f := range v.Fields {
+	idx := make(map[string]Value, len(v.fields()))
+	for _, f := range v.fields() {
 		idx[f.Key] = f.Val
 	}
 	return idx
@@ -307,7 +307,7 @@ func fieldIndex(v Value) map[string]Value {
 
 func allNonEmptyObjects(vals []Value) bool {
 	for _, v := range vals {
-		if v.Kind != KindObject || len(v.Fields) == 0 {
+		if v.kind() != KindObject || len(v.fields()) == 0 {
 			return false
 		}
 	}
@@ -315,8 +315,8 @@ func allNonEmptyObjects(vals []Value) bool {
 }
 
 func fieldKeys(v Value) []string {
-	keys := make([]string, len(v.Fields))
-	for i, f := range v.Fields {
+	keys := make([]string, len(v.fields()))
+	for i, f := range v.fields() {
 		keys[i] = f.Key
 	}
 	return keys
@@ -347,11 +347,11 @@ func leafValues(idx map[string]Value, cols []tabularCol) []Value {
 }
 
 func matchesKeySet(v Value, set map[string]bool) bool {
-	if v.Kind != KindObject || len(v.Fields) != len(set) {
+	if v.kind() != KindObject || len(v.fields()) != len(set) {
 		return false
 	}
 	seen := make(map[string]bool, len(set))
-	for _, f := range v.Fields {
+	for _, f := range v.fields() {
 		if !set[f.Key] || seen[f.Key] {
 			return false
 		}
@@ -370,7 +370,7 @@ func allPrimitive(items []Value) bool {
 }
 
 func isPrimitive(v Value) bool {
-	switch v.Kind {
+	switch v.kind() {
 	case KindNull, KindBool, KindNumber, KindString:
 		return true
 	}

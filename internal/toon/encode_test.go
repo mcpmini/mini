@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-func strVal(s string) Value   { return Value{Kind: KindString, Str: s} }
-func numVal(n string) Value   { return Value{Kind: KindNumber, Num: n} }
-func boolVal(b bool) Value    { return Value{Kind: KindBool, Bool: b} }
-func nullVal() Value          { return Value{Kind: KindNull} }
-func objVal(f ...Field) Value { return Value{Kind: KindObject, Fields: f} }
+func strVal(s string) Value   { return Value{payload: stringValue(s)} }
+func numVal(n string) Value   { return Value{payload: numberValue(n)} }
+func boolVal(b bool) Value    { return Value{payload: boolValue(b)} }
+func nullVal() Value          { return Value{payload: nullValue{}} }
+func objVal(f ...Field) Value { return Value{payload: objectValue(f)} }
 
 func TestEncodeRootScalars(t *testing.T) {
 	cases := []struct {
@@ -156,19 +156,16 @@ func splitLines(s string) []string {
 	return lines
 }
 
-func TestEncodeUnknownKindErrors(t *testing.T) {
+func TestEncodeUninitializedValueErrors(t *testing.T) {
 	if _, err := Encode(Value{}); err == nil {
-		t.Error("Encode(zero-value Value) expected error for unknown kind, got nil")
-	}
-	if _, err := Encode(Value{Kind: Kind(99)}); err == nil {
-		t.Error("Encode(out-of-range Kind) expected error, got nil")
+		t.Error("Encode(zero-value Value) expected error for uninitialized value, got nil")
 	}
 }
 
-func TestEncodeObjectFieldWithUnknownKindErrors(t *testing.T) {
-	v := objVal(Field{Key: "x", Val: Value{Kind: Kind(99)}})
+func TestEncodeObjectFieldWithUninitializedValueErrors(t *testing.T) {
+	v := objVal(Field{Key: "x", Val: Value{}})
 	if _, err := Encode(v); err == nil {
-		t.Error("Encode(object field with unknown kind) expected error, got nil")
+		t.Error("Encode(object field with uninitialized value) expected error, got nil")
 	}
 }
 
@@ -183,7 +180,7 @@ func nestedObj(depth int) Value {
 func nestedListArray(depth int) Value {
 	v := arrVal(numVal("1"))
 	for range depth {
-		v = Value{Kind: KindArray, Items: []Value{v, numVal("1")}}
+		v = Value{payload: arrayValue{v, numVal("1")}}
 	}
 	return v
 }
@@ -242,7 +239,7 @@ func amplifyingArray(depth, itemsPerLevel int) Value {
 	if depth > 0 {
 		items = append(items, amplifyingArray(depth-1, itemsPerLevel))
 	}
-	return Value{Kind: KindArray, Items: items}
+	return Value{payload: arrayValue(items)}
 }
 
 func TestEncodeOutputSizeCap(t *testing.T) {
@@ -327,5 +324,13 @@ func TestEncodeOutputUnderCapSucceeds(t *testing.T) {
 	}
 	if len(got) == 0 {
 		t.Error("expected non-empty output")
+	}
+}
+
+func TestEncodePrimitiveRejectsCompositePayloads(t *testing.T) {
+	for _, v := range []Value{{payload: objectValue{}}, {payload: arrayValue{}}} {
+		if _, err := encodePrimitive(v); err == nil || !strings.Contains(err.Error(), "not primitive") {
+			t.Errorf("primitive encoding of kind %d error = %v, want composite rejection", v.kind(), err)
+		}
 	}
 }

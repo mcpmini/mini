@@ -48,13 +48,13 @@ func valueFromToken(dec *json.Decoder, tok json.Token) (Value, error) {
 	case json.Delim:
 		return valueFromDelim(dec, t)
 	case nil:
-		return Value{Kind: KindNull}, nil
+		return Value{payload: nullValue{}}, nil
 	case bool:
-		return Value{Kind: KindBool, Bool: t}, nil
+		return Value{payload: boolValue(t)}, nil
 	case json.Number:
 		return valueFromNumber(t)
 	case string:
-		return Value{Kind: KindString, Str: t}, nil
+		return Value{payload: stringValue(t)}, nil
 	default:
 		return Value{}, fmt.Errorf("toon: unexpected JSON token type %T", tok)
 	}
@@ -76,11 +76,11 @@ func valueFromNumber(n json.Number) (Value, error) {
 	if err != nil {
 		return Value{}, err
 	}
-	return Value{Kind: KindNumber, Num: num}, nil
+	return Value{payload: numberValue(num)}, nil
 }
 
 func decodeObject(dec *json.Decoder) (Value, error) {
-	v := Value{Kind: KindObject}
+	var fields objectValue
 	keyIndex := make(map[string]int)
 	for dec.More() {
 		keyTok, err := dec.Token()
@@ -96,29 +96,29 @@ func decodeObject(dec *json.Decoder) (Value, error) {
 			return Value{}, err
 		}
 		if idx, dup := keyIndex[key]; dup {
-			v.Fields[idx].Val = val
+			fields[idx].Val = val
 		} else {
-			keyIndex[key] = len(v.Fields)
-			v.Fields = append(v.Fields, Field{Key: key, Val: val})
+			keyIndex[key] = len(fields)
+			fields = append(fields, Field{Key: key, Val: val})
 		}
 	}
 	if err := consumeClosingToken(dec); err != nil {
 		return Value{}, err
 	}
-	return v, nil
+	return Value{payload: fields}, nil
 }
 
 func decodeArray(dec *json.Decoder) (Value, error) {
-	v := Value{Kind: KindArray}
+	var items arrayValue
 	for dec.More() {
 		item, err := decodeValue(dec)
 		if err != nil {
 			return Value{}, err
 		}
-		v.Items = append(v.Items, item)
+		items = append(items, item)
 	}
 	if err := consumeClosingToken(dec); err != nil {
 		return Value{}, err
 	}
-	return v, nil
+	return Value{payload: items}, nil
 }

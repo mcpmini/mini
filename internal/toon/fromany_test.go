@@ -60,12 +60,12 @@ func TestFromAnyMapKeysAreSorted(t *testing.T) {
 		t.Fatalf("FromAny unexpected error: %v", err)
 	}
 	want := []string{"alpha", "delta", "mango", "zebra"}
-	if len(v.Fields) != len(want) {
-		t.Fatalf("got %d fields, want %d", len(v.Fields), len(want))
+	if len(v.fields()) != len(want) {
+		t.Fatalf("got %d fields, want %d", len(v.fields()), len(want))
 	}
 	for i, k := range want {
-		if v.Fields[i].Key != k {
-			t.Errorf("field %d key = %q, want %q", i, v.Fields[i].Key, k)
+		if v.fields()[i].Key != k {
+			t.Errorf("field %d key = %q, want %q", i, v.fields()[i].Key, k)
 		}
 	}
 }
@@ -79,8 +79,8 @@ func TestFromAnyStructFieldOrderIsPreserved(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromAny unexpected error: %v", err)
 	}
-	if len(v.Fields) != 2 || v.Fields[0].Key != "y" || v.Fields[1].Key != "x" {
-		t.Fatalf("field order = %+v, want [y x] (struct declaration order)", v.Fields)
+	if len(v.fields()) != 2 || v.fields()[0].Key != "y" || v.fields()[1].Key != "x" {
+		t.Fatalf("field order = %+v, want [y x] (struct declaration order)", v.fields())
 	}
 }
 
