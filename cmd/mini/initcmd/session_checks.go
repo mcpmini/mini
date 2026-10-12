@@ -13,8 +13,8 @@ import (
 type checkTarget struct {
 	configDir string
 	server    config.ServerConfig
-	// Only a server this run wrote whose auth is unknown is probed: the probe records its OAuth
-	// finding in its config dir, and servers the user had before are never touched.
+	// Only a server whose auth is unknown is probed. Its OAuth finding goes in the config dir's
+	// internal state, as mini's own connections record it; no server file changes.
 	probe bool
 }
 
@@ -44,8 +44,8 @@ func (s *session) checkTargets() []checkTarget {
 		}
 	}
 	for _, sc := range s.unchecked(s.p.MiniDir) {
-		if needsRegistrationCheck(s.p.MiniDir, sc) {
-			targets = append(targets, checkTarget{configDir: s.p.MiniDir, server: sc})
+		if ops.MayNeedOAuth(sc) || needsRegistrationCheck(s.p.MiniDir, sc) {
+			targets = append(targets, checkTarget{configDir: s.p.MiniDir, server: sc, probe: ops.MayNeedOAuth(sc)})
 		}
 	}
 	return targets
@@ -88,10 +88,15 @@ func (s *session) recordFindings(ctx context.Context, configDir, name string, pr
 		return
 	}
 	var unauthorized *transport.UnauthorizedError
-	if errors.As(probeErr, &unauthorized) && !sc.UsesOAuthLogin() {
-		s.mu.Lock()
+	refused := errors.As(probeErr, &unauthorized) && !sc.UsesOAuthLogin()
+	s.mu.Lock()
+	if refused {
 		s.findings.NeedsCredential[name] = true
-		s.mu.Unlock()
+	} else {
+		delete(s.findings.NeedsCredential, name)
+	}
+	s.mu.Unlock()
+	if refused {
 		return
 	}
 	if needsRegistrationCheck(configDir, sc) {

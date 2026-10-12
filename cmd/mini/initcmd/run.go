@@ -28,7 +28,7 @@ func (s Setup) Start(p Plan) *Run {
 	return &Run{Plan: p, setup: s, stage: st, session: session}
 }
 
-// Save stages the plan's servers and starts checking the new ones for OAuth. It returns the servers
+// Save stages the plan's servers and starts the checks that say how each server logs in. It returns the servers
 // it removed, credentials included, so a login done for them no longer applies.
 func (r *Run) Save() (removed []string) {
 	adds := r.Plan.adds()

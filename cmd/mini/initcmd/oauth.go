@@ -19,8 +19,13 @@ type probeParams struct {
 type probeFunc func(ctx context.Context, configDir string, sc config.ServerConfig) error
 
 // The probe saves an OAuth finding itself; its error tells a refusal without OAuth from the rest.
+// A probe cut short may have seen the 401 but not yet the OAuth metadata, so its error proves nothing.
 func checkOAuth(ctx context.Context, p probeParams, probe probeFunc) error {
 	ctx, cancel := clock.WithTimeout(ctx, p.clock, oauthCheckTimeout)
 	defer cancel()
-	return probe(ctx, p.configDir, p.server)
+	err := probe(ctx, p.configDir, p.server)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return err
 }

@@ -152,7 +152,7 @@ func catalogGridEntry(e catalog.Entry, state entryState) gridEntry {
 // description is what the catalog says the server at rawURL does, once it has loaded.
 func (s *catalogScreen) description(rawURL string) string {
 	i := slices.IndexFunc(s.byCategory, func(e catalog.Entry) bool {
-		return strings.TrimSuffix(e.URL, "/") == strings.TrimSuffix(rawURL, "/")
+		return initcmd.SameServerURL(e.URL, rawURL)
 	})
 	if i < 0 {
 		return ""

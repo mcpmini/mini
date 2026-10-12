@@ -381,3 +381,39 @@ func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.
 		}
 	}
 }
+
+func refusesWithoutOAuth(context.Context, string, config.ServerConfig) error {
+	return fmt.Errorf("connect: %w", &transport.UnauthorizedError{WWWAuthenticate: "ApiKey"})
+}
+
+func TestSessionChecks_aServerRefusingWithoutOAuthNeedsACredential(t *testing.T) {
+	t.Run("one already in mini is probed too, its file untouched", func(t *testing.T) {
+		stage, miniDir := t.TempDir(), t.TempDir()
+		configtest.WriteServer(t, miniDir, httpServer("keyed", "https://keyed.example/mcp"))
+		before := testutil.ReadFile(t, config.ServerPath(miniDir, "keyed"))
+		s := newSession(sessionParams{
+			ConfigDir: stage, MiniDir: miniDir, Probe: refusesWithoutOAuth, Discover: (&fakeDiscovery{}).discover,
+		})
+		t.Cleanup(s.Close)
+		s.Sync(nil, nil)
+		s.WaitChecks()
+		if got := s.Findings().NeedsCredential; !reflect.DeepEqual(got, map[string]bool{"keyed": true}) {
+			t.Errorf("needs credential = %v, want keyed, which the user added before this run", got)
+		}
+		if after := testutil.ReadFile(t, config.ServerPath(miniDir, "keyed")); string(after) != string(before) {
+			t.Errorf("keyed.yaml changed:\n%s", after)
+		}
+	})
+	t.Run("a probe cut short proves nothing", func(t *testing.T) {
+		probe := func(ctx context.Context, dir string, sc config.ServerConfig) error {
+			<-ctx.Done()
+			return refusesWithoutOAuth(ctx, dir, sc)
+		}
+		s := newSession(sessionParams{ConfigDir: t.TempDir(), Probe: probe, Discover: (&fakeDiscovery{}).discover})
+		s.Sync([]config.ServerConfig{httpServer("slow", "https://slow.example/mcp")}, nil)
+		s.Close()
+		if got := s.Findings().NeedsCredential; len(got) > 0 {
+			t.Errorf("needs credential = %v, want none: the 401 came before the probe could look for OAuth", got)
+		}
+	})
+}

@@ -42,6 +42,12 @@ func (k ConfiguredKeys) Has(entry catalog.Entry) bool {
 	return k[strings.ToLower(entry.Name)] || k[serverURLKey(entry.URL)]
 }
 
+// SameServerURL reports whether two URLs name one server, ignoring case in the scheme and host and a
+// trailing slash.
+func SameServerURL(a, b string) bool {
+	return serverURLKey(a) == serverURLKey(b)
+}
+
 func serverURLKey(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {

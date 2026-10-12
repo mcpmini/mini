@@ -19,7 +19,7 @@ import (
 
 type sessionParams struct {
 	ConfigDir string
-	// MiniDir holds the servers the user already had; they get only the registration check.
+	// MiniDir holds the servers the user already had; they are checked but never rewritten.
 	MiniDir  string
 	Clock    clock.Clock
 	Probe    probeFunc
