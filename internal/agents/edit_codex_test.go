@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-var testMini = CodexServer{Command: "/usr/local/bin/mini", Args: []string{"connect"}}
+var testMini = codexServer{Command: "/usr/local/bin/mini", Args: []string{"connect"}}
 
 const testMiniTable = `[mcp_servers.mini]
 command = "/usr/local/bin/mini"
@@ -14,9 +14,9 @@ args = ["connect"]
 
 func editCodex(t *testing.T, config string, disable ...string) string {
 	t.Helper()
-	edited, err := EditCodexServers([]byte(config), disable, &testMini)
+	edited, err := editCodexServers([]byte(config), disable, &testMini)
 	if err != nil {
-		t.Fatalf("EditCodexServers: %v", err)
+		t.Fatalf("editCodexServers: %v", err)
 	}
 	return string(edited)
 }
@@ -163,9 +163,9 @@ func TestEditCodexServers_refusesWhatLineEditsCannotChangeSafely(t *testing.T) {
 			if tt.disable != "" {
 				disable = []string{tt.disable}
 			}
-			edited, err := EditCodexServers([]byte(tt.config), disable, &testMini)
+			edited, err := editCodexServers([]byte(tt.config), disable, &testMini)
 			if err == nil || !strings.Contains(err.Error(), tt.want) || edited != nil {
-				t.Fatalf("EditCodexServers = %q, %v; want no output and an error containing %q", edited, err, tt.want)
+				t.Fatalf("editCodexServers = %q, %v; want no output and an error containing %q", edited, err, tt.want)
 			}
 		})
 	}
@@ -229,7 +229,7 @@ func TestEditCodexServers_quoteRunsDoNotHideLaterServerHeaders(t *testing.T) {
 
 func TestEditCodexServers_refusesAnEditThatWouldNotParse(t *testing.T) {
 	config := "[mcp_servers.other]\nenabled = \"\"\"first\nsecond\"\"\"\n"
-	edited, err := EditCodexServers([]byte(config), []string{"other"}, &testMini)
+	edited, err := editCodexServers([]byte(config), []string{"other"}, &testMini)
 	if err == nil || edited != nil || !strings.Contains(err.Error(), "edit would not parse") {
 		t.Fatalf("edit = %q, %v; want refused unparseable result", edited, err)
 	}

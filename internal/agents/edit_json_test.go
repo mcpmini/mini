@@ -29,9 +29,9 @@ func TestEditJSONServers_removesImportedServersAndSetsMini(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := EditJSONServers([]byte(tt.config), tt.remove, map[string]any{"mini": testMiniEntry})
+			got, err := editJSONServers([]byte(tt.config), tt.remove, map[string]any{"mini": testMiniEntry})
 			if err != nil || string(got) != tt.want {
-				t.Errorf("EditJSONServers = %s, %v; want:\n%s", got, err, tt.want)
+				t.Errorf("editJSONServers = %s, %v; want:\n%s", got, err, tt.want)
 			}
 		})
 	}
@@ -40,7 +40,7 @@ func TestEditJSONServers_removesImportedServersAndSetsMini(t *testing.T) {
 func TestEditJSONServers_keepsValuesExactly(t *testing.T) {
 	config := `{"userID":12345678901234567890,"ratio":0.1000,"mcpServers":{"search":{"url":"https://example.com/mcp?a=1&b=<2>"}}}`
 
-	got, err := EditJSONServers([]byte(config), nil, map[string]any{"mini": testMiniEntry})
+	got, err := editJSONServers([]byte(config), nil, map[string]any{"mini": testMiniEntry})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,9 +62,9 @@ func TestEditJSONServers_refusesConfigsItCannotEditSafely(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := EditJSONServers([]byte(tt.config), nil, map[string]any{"mini": testMiniEntry})
+			got, err := editJSONServers([]byte(tt.config), nil, map[string]any{"mini": testMiniEntry})
 			if err == nil || !strings.Contains(err.Error(), tt.want) || got != nil {
-				t.Fatalf("EditJSONServers = %s, %v; want no output and an error containing %q", got, err, tt.want)
+				t.Fatalf("editJSONServers = %s, %v; want no output and an error containing %q", got, err, tt.want)
 			}
 		})
 	}
@@ -77,7 +77,7 @@ func TestEditJSONServers_preservesExistingMiniSettings(t *testing.T) {
 	} {
 		t.Run(entry, func(t *testing.T) {
 			original := []byte(`{"mcpServers":{"other":{"url":"https://example.com/mcp"},"mini":` + entry + `}}`)
-			got, err := EditJSONServers(original, []string{"mini", "other"}, map[string]any{"mini": testMiniEntry})
+			got, err := editJSONServers(original, []string{"mini", "other"}, map[string]any{"mini": testMiniEntry})
 			if err != nil {
 				t.Fatal(err)
 			}

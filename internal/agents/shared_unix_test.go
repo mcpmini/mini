@@ -22,9 +22,9 @@ func TestReadConfigFileReadsAPipe(t *testing.T) {
 		) //nolint:errcheck // a failed write fails the read below //fileiolint:allow FIFO writer must unblock the reader from a goroutine
 	}()
 
-	data, err := ReadConfigFile(fifo)
+	data, err := readConfigFile(fifo)
 
 	if err != nil || string(data) != `{"mcpServers":{}}` {
-		t.Errorf("ReadConfigFile(pipe) = %q, %v; want the written config", data, err)
+		t.Errorf("readConfigFile(pipe) = %q, %v; want the written config", data, err)
 	}
 }

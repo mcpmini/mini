@@ -18,7 +18,7 @@ const maxImportConfigBytes = 64 << 20
 
 // Reads whatever path it is given, including a pipe (--from <(...)), like other CLIs do.
 // os errors already name the path, so they are returned unwrapped.
-func ReadConfigFile(path string) ([]byte, error) {
+func readConfigFile(path string) ([]byte, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
@@ -35,7 +35,7 @@ func ReadConfigFile(path string) ([]byte, error) {
 }
 
 func readParsed(path string, parse func(data []byte) (map[string]Server, error)) (map[string]Server, error) {
-	data, err := ReadConfigFile(path)
+	data, err := readConfigFile(path)
 	if err != nil {
 		return nil, err
 	}
