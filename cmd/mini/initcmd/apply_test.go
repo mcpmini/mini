@@ -155,9 +155,8 @@ func TestApply_removesOnlyVerifiedDuplicates(t *testing.T) {
 	if got := entryNamesIn(t, codex); !reflect.DeepEqual(got, []string{"github", "mini"}) {
 		t.Errorf("Codex entries switched on = %v, want github and mini", got)
 	}
-	wantKept := []KeptEntry{{Entry: "linear", Server: "linear", Err: checks["linear"]}}
-	if !reflect.DeepEqual(results[0].Removed, []string{"github"}) || !reflect.DeepEqual(results[0].Kept, wantKept) {
-		t.Errorf("Claude Code result = %+v, want github removed and linear kept", results[0])
+	if !reflect.DeepEqual(results[0].Removed, []string{"github"}) {
+		t.Errorf("Claude Code removed = %v, want only github: linear failed its check", results[0].Removed)
 	}
 	for _, r := range results {
 		if r.Err != nil || r.Backup == "" {
@@ -177,8 +176,7 @@ func TestApply_keepsDuplicatesWhenTheWrittenMiniWontServeThem(t *testing.T) {
 		removals:     Removals{Checks: map[string]error{"files": nil}},
 	})
 
-	wantKept := []KeptEntry{{Entry: "files", Server: "files", Err: errMiniInactive}}
-	if results[0].Removed != nil || !reflect.DeepEqual(results[0].Kept, wantKept) {
+	if results[0].Removed != nil {
 		t.Errorf("result = %+v, want files kept: the mini written runs the default config directory", results[0])
 	}
 	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, []string{"files", "mini"}) {
@@ -226,8 +224,8 @@ func TestApply_aFailedEditReportsNothingRemoved(t *testing.T) {
 
 	results := f.apply(ConnectAndRemove, map[string]error{"files": nil, "lin": nil}, codex)
 
-	if results[0].Err == nil || results[0].Removed != nil || results[0].Kept != nil {
-		t.Errorf("result = %+v, want the edit's error and nothing reported removed or kept", results[0])
+	if results[0].Err == nil || results[0].Removed != nil {
+		t.Errorf("result = %+v, want the edit's error and nothing reported removed", results[0])
 	}
 	if after := testutil.ReadFile(t, codex.ConfigPath); string(after) != string(before) {
 		t.Errorf("config changed:\n%s", after)
@@ -290,10 +288,6 @@ func TestApply_neverReplaces(t *testing.T) {
 	want := []string{"disabled-in-mini", "never-checked", "old-mini", "unchecked"}
 	if got := entryNamesIn(t, cursor); !reflect.DeepEqual(got, want) || results[0].Removed != nil {
 		t.Errorf("entries = %v, removed = %v; want %v and nothing removed", got, results[0].Removed, want)
-	}
-	wantKept := []KeptEntry{{Entry: "never-checked", Server: "unasked", Err: errNotChecked}}
-	if !reflect.DeepEqual(results[0].Kept, wantKept) {
-		t.Errorf("kept = %+v, want %+v", results[0].Kept, wantKept)
 	}
 }
 
@@ -386,7 +380,7 @@ func TestApply_aConfigTheAgentWritesMeanwhileIsEdited(t *testing.T) {
 	}
 }
 
-func TestApply_reportsEntriesChangedSinceTheCheck(t *testing.T) {
+func TestApply_keepsEntriesChangedSinceTheCheck(t *testing.T) {
 	f := newApplyFixture(t)
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "files", Command: "files-server"})
 	configtest.WriteServer(t, f.configDir, config.ServerConfig{Name: "lin", Command: "lin-server"})
@@ -404,8 +398,13 @@ func TestApply_reportsEntriesChangedSinceTheCheck(t *testing.T) {
 		},
 	})
 
-	if !reflect.DeepEqual(results[0].Changed, []string{"files"}) || results[0].Removed != nil {
-		t.Errorf("result = %+v, want files reported as changed and lin, kept by its failed check, not", results[0])
+	if got := entryNamesIn(
+		t,
+		cursor,
+	); !reflect.DeepEqual(got, []string{"files", "lin", "mini"}) ||
+		results[0].Removed != nil {
+		t.Errorf("entries = %v, removed = %v; want files kept as edited and lin kept by its failed check",
+			got, results[0].Removed)
 	}
 }
 

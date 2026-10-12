@@ -252,8 +252,10 @@ func TestIntegrationCLI_init_createsStructure(t *testing.T) {
 		}
 	}
 
-	if !strings.Contains(stdout, `"connect"`) {
-		t.Errorf("init output should include connect arg in install snippet, got: %q", stdout)
+	// Agents may start with a minimal PATH, so the command they are given names the binary by its full path.
+	if want := "with the command: " + bin + " --config "; !strings.Contains(stdout, want) ||
+		!strings.Contains(stdout, " connect\n") {
+		t.Errorf("init output = %q, want the connect command starting %q", stdout, want)
 	}
 }
 

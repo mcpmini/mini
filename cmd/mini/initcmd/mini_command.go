@@ -35,21 +35,32 @@ func (l binaryLookup) miniCommand(configDir string) agents.MiniEntry {
 	return agents.MiniEntry{Command: l.binaryPath(), Args: args}
 }
 
+func (l binaryLookup) displayName() string {
+	if _, ok := l.selfOnPath(); ok {
+		return "mini"
+	}
+	return l.binaryPath()
+}
+
 // The PATH entry survives upgrades that replace the binary behind it (Homebrew, go install), so
 // it is preferred whenever it is this same binary.
 func (l binaryLookup) binaryPath() string {
+	if onPath, ok := l.selfOnPath(); ok {
+		return onPath
+	}
+	if self, err := l.executable(); err == nil {
+		return self
+	}
+	return "mini"
+}
+
+func (l binaryLookup) selfOnPath() (string, bool) {
 	self, selfErr := l.executable()
 	onPath, err := l.lookPath("mini")
 	if err == nil {
 		onPath, err = filepath.Abs(onPath)
 	}
-	switch {
-	case err == nil && (selfErr != nil || sameFile(onPath, self)):
-		return onPath
-	case selfErr == nil:
-		return self
-	}
-	return "mini"
+	return onPath, err == nil && (selfErr != nil || sameFile(onPath, self))
 }
 
 func sameFile(a, b string) bool {

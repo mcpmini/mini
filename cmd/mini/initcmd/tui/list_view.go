@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
 var (
@@ -34,7 +36,7 @@ func (l *list) headerLine() string {
 
 func (l *list) labelWidth() int {
 	// The first heading starts over the checkbox, so only what it overhangs widens the label column.
-	labels := widest(slices.Concat(l.rows, l.untickable), func(r row) string { return r.label })
+	labels := initcmd.Widest(slices.Concat(l.rows, l.untickable), func(r row) string { return r.label })
 	return max(len(l.header.label)-len(checkbox(false)), labels)
 }
 
@@ -94,14 +96,6 @@ func checkbox(checked bool) string {
 		return "[x] "
 	}
 	return "[ ] "
-}
-
-func widest[T any](items []T, text func(T) string) int {
-	width := 0
-	for _, item := range items {
-		width = max(width, len(text(item)))
-	}
-	return width
 }
 
 func (l *list) line(r row, atCursor bool, width int) string {

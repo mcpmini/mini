@@ -1,8 +1,6 @@
 package initcmd
 
 import (
-	"errors"
-	"os"
 	"slices"
 
 	"github.com/mcpmini/mini/internal/auth"
@@ -22,11 +20,8 @@ const (
 
 // ServerStatus is one enabled server and what the user still has to do before it works.
 type ServerStatus struct {
-	Name        string
-	Readiness   Readiness
-	SetupURL    string
-	StepsInFile bool
-	UnsetEnv    *config.UnsetEnvError
+	Name      string
+	Readiness Readiness
 }
 
 // ServerStatuses judges every enabled server as mini would load it. Catalog entries say which
@@ -47,13 +42,11 @@ func ServerStatuses(configDir string, entries []catalog.Entry) ([]ServerStatus, 
 
 func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.Entry) ServerStatus {
 	status := ServerStatus{Name: sc.Name}
-	if errors.As(sc.UnsetEnv, &status.UnsetEnv) {
+	if sc.UnsetEnv != nil {
 		status.Readiness = NeedsEnv
 		return status
 	}
 	if entry, ok := catalogEntryFor(sc, entries); ok {
-		status.SetupURL = entry.SetupURL
-		status.StepsInFile = stepsInFile(configDir, sc, entry)
 		switch {
 		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
 			status.Readiness = NeedsToken
@@ -67,15 +60,6 @@ func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.En
 		status.Readiness = NeedsLogin
 	}
 	return status
-}
-
-func stepsInFile(configDir string, sc config.ServerConfig, entry catalog.Entry) bool {
-	if holdsPlaceholder(sc) {
-		return true
-	}
-	data, err := os.ReadFile(config.ServerPath(configDir, sc.Name))
-	// A file that can't be read gets the summary's full step, which needs nothing from it.
-	return err == nil && setupCommentIn(data, entry)
 }
 
 // A server is the catalog's when it runs the catalog's URL, under any name; one that only shares
@@ -103,4 +87,18 @@ func hasCredential(sc config.ServerConfig) bool {
 
 func hasOwnApp(sc config.ServerConfig) bool {
 	return !holdsPlaceholder(sc) && sc.Auth != nil && sc.Auth.ClientID != ""
+}
+
+// Step says what the server still needs, naming only a login or a custom OAuth app; for anything
+// else, env vars included, the step is the server's file, to keep init's output simple.
+func (s ServerStatus) Step(file, login string) string {
+	switch s.Readiness {
+	case Ready:
+		return ""
+	case NeedsLogin:
+		return "requires a login, run: " + login
+	case NeedsOwnApp:
+		return "requires a custom OAuth app, edit " + file
+	}
+	return "requires manual configuration, edit " + file
 }

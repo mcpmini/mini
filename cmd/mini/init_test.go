@@ -71,14 +71,11 @@ env_http_headers = { X-Team = "MINI_TEST_NEVER_SET" }
 		}
 	}
 	for _, want := range []string{
-		"mini is set up with 4 servers, 1 still needs finishing:",
-		"search  needs SEARCH_TOKEN set where mini runs (used in headers.Authorization), or edit " +
-			filepath.Join(configDir, "servers", "search.yaml"),
+		"These MCPs need one more step:",
+		"search  requires manual configuration, edit " + filepath.Join(configDir, "servers", "search.yaml"),
 		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit " +
 			filepath.Join(configDir, "servers", "files.yaml"),
-		"[mcp_servers.mini]",
-		"  templated kept in Codex: uses an environment variable in command or args",
-		"  paused switched off in Codex",
+		"To connect mini to Codex later, run: ",
 		"team was imported with its static X-Team header, since MINI_TEST_NEVER_SET wasn't set; to use MINI_TEST_NEVER_SET instead, set X-Team: ${MINI_TEST_NEVER_SET} in " +
 			filepath.Join(configDir, "servers", "team.yaml"),
 	} {
@@ -203,10 +200,8 @@ func TestInitImportWritesEachConfigOnceAndLeavesTheAgentsAlone(t *testing.T) {
 	if after := filesUnder(t, home); !maps.Equal(after, before) {
 		t.Errorf("home changed during init --import:\nbefore %v\nafter  %v", before, after)
 	}
-	for _, want := range []string{"claude mcp add --scope user mini", "Cursor (" + cursorPath + ")"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("output missing the hand-connect step %q:\n%s", want, out)
-		}
+	if !strings.Contains(out, "To connect mini to Claude Code and Cursor later, run: ") {
+		t.Errorf("output:\n%s\nwant the command that connects both agents later", out)
 	}
 }
 
@@ -268,7 +263,7 @@ func TestInitCommandDetectsOAuthOnImportedServer(t *testing.T) {
 		}
 	})
 
-	if !strings.Contains(out, "1 still needs finishing") || !strings.Contains(out, "auth svc") {
+	if !strings.Contains(out, "svc  requires a login") || !strings.Contains(out, "auth svc") {
 		t.Errorf("init output = %q, want svc listed as needing a login", out)
 	}
 }

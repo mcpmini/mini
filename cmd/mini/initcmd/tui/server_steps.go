@@ -12,8 +12,7 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// serverSteps says what a server still needs. Only a login or a custom OAuth app is named; for
-// anything else, env vars included, the step is the server's file, to keep the screens simple.
+// serverSteps fills in the file and login command a server's step names.
 type serverSteps struct {
 	file  func(name string) string
 	login func(name string) string
@@ -21,18 +20,14 @@ type serverSteps struct {
 
 // Steps name the file a server will have once Save and finish commits it, not its staging copy.
 func newServerSteps(configDir string) serverSteps {
-	mini := initcmd.MiniCommand(configDir)
 	return serverSteps{
 		file:  func(name string) string { return homeRelative(config.ServerPath(configDir, name)) },
-		login: func(name string) string { return initcmd.LoginCommand(mini, name) },
+		login: initcmd.LoginCommands(configDir),
 	}
 }
 
-func (st serverSteps) byHand(status initcmd.ServerStatus) string {
-	if status.Readiness == initcmd.NeedsOwnApp {
-		return "requires a custom OAuth app, edit " + st.file(status.Name)
-	}
-	return "requires manual configuration, edit " + st.file(status.Name)
+func (st serverSteps) step(status initcmd.ServerStatus) string {
+	return status.Step(st.file(status.Name), st.login(status.Name))
 }
 
 func (st serverSteps) state(status initcmd.ServerStatus, checking bool) string {
@@ -41,10 +36,8 @@ func (st serverSteps) state(status initcmd.ServerStatus, checking bool) string {
 		return "checking…"
 	case status.Readiness == initcmd.Ready:
 		return "✓ ready"
-	case status.Readiness == initcmd.NeedsLogin:
-		return "requires a login, run: " + st.login(status.Name)
 	}
-	return st.byHand(status)
+	return st.step(status)
 }
 
 // A file path is the step itself, so a long one wraps under its column instead of being cut at the window's edge.

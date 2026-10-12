@@ -1,17 +1,16 @@
 package initcmd
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/mcpmini/mini/internal/agents"
-	"github.com/mcpmini/mini/internal/config"
 )
+
+func plainSummary(r Report) string {
+	return Summary(r, SummaryStyle{})
+}
 
 func requireLines(t *testing.T, got string, want ...string) {
 	t.Helper()
@@ -22,87 +21,90 @@ func requireLines(t *testing.T, got string, want ...string) {
 	}
 }
 
-func TestSummary_servers(t *testing.T) {
-	custom := agents.MiniEntry{Command: "/opt/mini", Args: []string{"--config", "/srv/my mini", "connect"}}
-	t.Run("what is left, with the step that finishes each", func(t *testing.T) {
-		got := Summary(Report{ConfigDir: "/cfg", Agents: AgentConnections{Mini: custom}, Servers: []ServerStatus{
-			{Name: "github", Readiness: NeedsToken, SetupURL: "https://github.example.com/tokens"},
-			{Name: "asana", Readiness: NeedsOwnApp, SetupURL: "https://asana.example.com/apps"},
-			{Name: "notion", Readiness: NeedsLogin},
-			{Name: "files", Readiness: Ready},
-		}})
-		requireLines(
-			t,
-			got,
-			"mini is set up with 4 servers, 3 still need finishing:\n",
-			"  github  needs a token: create a token at https://github.example.com/tokens, then add to /cfg/servers/github.yaml:\n",
-			"  asana   needs your own OAuth app: register an OAuth app at https://asana.example.com/apps",
-			"client_id: <your app's client ID>",
-			"and run: mini --config '/srv/my mini' auth asana\n",
-			"  notion  run: mini --config '/srv/my mini' auth notion\n",
-		)
-		if strings.Contains(got, "files") {
-			t.Errorf("a ready server is listed:\n%s", got)
+func TestSummary_headline(t *testing.T) {
+	t.Run("names what this run added, in commit order", func(t *testing.T) {
+		connected := AgentConnections{MiniServes: []agents.Agent{{Name: "Claude Code"}}}
+		got := plainSummary(Report{Added: []string{"github", "files"}, Interactive: true, Agents: connected})
+		if got != "Added 2 MCPs to mini: github and files.\n" {
+			t.Errorf("summary = %q, want only the headline", got)
 		}
 	})
-	t.Run("a server whose file opens with its steps points there", func(t *testing.T) {
-		got := Summary(Report{ConfigDir: "/cfg", Servers: []ServerStatus{
-			{Name: "github", Readiness: NeedsToken, StepsInFile: true},
-			{Name: "asana", Readiness: NeedsOwnApp, StepsInFile: true},
-		}})
-		requireLines(
-			t,
-			got,
-			"  github  needs a token: finish the steps in /cfg/servers/github.yaml\n",
-			"  asana   needs your own OAuth app: finish the steps in /cfg/servers/asana.yaml, then run: mini auth asana\n",
-		)
+	t.Run("nothing added says so", func(t *testing.T) {
+		requireLines(t, plainSummary(Report{Interactive: true}), "No MCPs were added to mini.\n")
 	})
-	t.Run("the token step is YAML that sets the header", func(t *testing.T) {
-		got := Summary(Report{ConfigDir: "/cfg", Servers: []ServerStatus{
-			{Name: "github", Readiness: NeedsToken, SetupURL: "https://github.example.com/tokens"},
-		}})
-		_, step, _ := strings.Cut(got, "github.yaml:\n")
-		lines := strings.SplitN(step, "\n", 3)[:2]
-		indent := len(lines[0]) - len(strings.TrimLeft(lines[0], " "))
-		var sc config.ServerConfig
-		if err := yaml.Unmarshal(
-			[]byte(lines[0][indent:]+"\n"+lines[1][indent:]),
-			&sc,
-		); err != nil ||
-			sc.Headers["Authorization"] != "Bearer <your token>" {
-			t.Errorf("step %q parses to %+v, %v; want the Authorization header", lines, sc.Headers, err)
-		}
-	})
-	t.Run("nothing left", func(t *testing.T) {
-		got := Summary(Report{Servers: []ServerStatus{{Name: "files"}}})
-		requireLines(t, got, "mini is set up with 1 server.\n")
-	})
-	t.Run("no servers", func(t *testing.T) {
-		requireLines(t, Summary(Report{}), "mini has no servers yet.\n")
-	})
-	t.Run("servers that can't be read aren't called none", func(t *testing.T) {
-		got := Summary(Report{ReadServersErr: errors.New("permission denied")})
-		if strings.Contains(got, "no servers yet") {
-			t.Errorf("summary says there are no servers although it couldn't read them:\n%s", got)
-		}
+	t.Run("a read error still says what this run added, then the error", func(t *testing.T) {
+		got := plainSummary(Report{Added: []string{"github"}, ReadServersErr: errors.New("permission denied")})
+		requireLines(t, got, "Added 1 MCP to mini: github.\n", "Could not read mini's servers: permission denied\n")
 	})
 }
 
-func TestSummary_importAndFailures(t *testing.T) {
-	got := Summary(Report{
+func TestSummary_aRunWithoutScreensListsWhatNoScreenShowed(t *testing.T) {
+	custom := agents.MiniEntry{Command: "/opt/mini", Args: []string{"--config", "/srv/my mini", "connect"}}
+	report := Report{
+		ConfigDir: "/cfg",
+		Agents:    AgentConnections{Mini: custom, MiniServes: []agents.Agent{{Name: "Claude Code"}}},
+		Added:     []string{"github", "asana", "notion", "files", "search"},
+		Servers: []ServerStatus{
+			{Name: "github", Readiness: NeedsToken},
+			{Name: "asana", Readiness: NeedsOwnApp},
+			{Name: "notion", Readiness: NeedsLogin},
+			{Name: "files", Readiness: Ready},
+			{Name: "search", Readiness: NeedsEnv},
+		},
 		AlreadyConfigured:  []string{"linear"},
-		AddCoveredByImport: []string{"github"},
+		AddCoveredByImport: []string{"slack"},
+	}
+	requireLines(
+		t,
+		plainSummary(report),
+		"These MCPs need one more step:\n",
+		"  github  requires manual configuration, edit /cfg/servers/github.yaml\n",
+		"  asana   requires a custom OAuth app, edit /cfg/servers/asana.yaml\n",
+		"  notion  requires a login, run: mini --config '/srv/my mini' auth notion\n",
+		"  search  requires manual configuration, edit /cfg/servers/search.yaml\n",
+		"Already configured in mini: linear\n",
+		"Imported from your agents instead of the catalog: slack\n",
+	)
+	if got := plainSummary(report); strings.Contains(got, "  files") {
+		t.Errorf("a ready server is listed:\n%s", got)
+	}
+	report.Interactive = true
+	got := plainSummary(report)
+	requireLines(t, got, "  notion  requires a login, run: mini --config '/srv/my mini' auth notion\n")
+	if strings.Contains(got, "Already configured") || strings.Contains(got, "Imported from your agents") {
+		t.Errorf("after the screens ran, summary:\n%s\nwant no already-configured lines: Catalog showed them", got)
+	}
+}
+
+func TestSummary_aServerStillNeedingALoginAfterTheScreensIsNamedWithItsCommand(t *testing.T) {
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	got := plainSummary(Report{
+		Interactive: true,
+		Added:       []string{"linear"},
+		Servers:     []ServerStatus{{Name: "linear", Readiness: NeedsLogin}},
+		Connected:   []AgentResult{{Agent: claude, Created: true}},
+	})
+	want := "Added 1 MCP to mini: linear.\n" +
+		"These MCPs need one more step:\n" +
+		"  linear  requires a login, run: mini auth linear\n" +
+		"Connected mini to Claude Code. Restart it to start using mini.\n"
+	if got != want {
+		t.Errorf("summary:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestSummary_skipsImportNotesAndFailuresShowEvenAfterTheScreens(t *testing.T) {
+	got := plainSummary(Report{
+		Interactive: true,
+		ConfigDir:   "/config",
 		Import: ImportPlan{
 			Skipped: []SkippedServer{
 				{
 					Agent:  "Codex",
 					Name:   "templated",
 					Reason: SkipUnexpandableRefs,
-					Refs:   []string{"an environment variable in url"},
+					Refs:   []string{"an environment variable in command"},
 				},
-				{Agent: "Cursor", Name: "!!!", Reason: SkipEmptyName},
-				{Agent: "Codex", Name: "paused", Reason: SkipSwitchedOff},
-				{Agent: "Cursor", Name: "github", Reason: SkipSecondConfig},
 				{Agent: "Codex", Name: "Linear", Reason: SkipNameInMini},
 			},
 			DroppedSettings: map[string][]string{"files": {"cwd"}},
@@ -111,72 +113,37 @@ func TestSummary_importAndFailures(t *testing.T) {
 				{Agent: "Cursor", ConfigPath: "/home/.cursor/mcp.json", Err: errors.New("invalid character")},
 			},
 		},
-		ConfigDir:      "/config",
-		WriteErrors:    []ServerError{{Name: "broken", Err: errors.New("disk full")}},
-		ReadServersErr: errors.New("permission denied"),
+		WriteErrors: []ServerError{{Name: "broken", Err: errors.New("disk full")}},
 	})
 	requireLines(
 		t,
 		got,
-		"Already configured in mini: linear\n",
-		"Imported from your agents instead of the catalog: github\n",
-		"  paused switched off in Codex\n",
-		"  github in Cursor: a different config under that name is imported instead\n",
-		"  Linear in Codex: mini already has a different linear; to use this one, edit /config/servers/linear.yaml\n",
+		"Not imported: templated kept in Codex: uses an environment variable in command\n",
+		"Not imported: Linear in Codex: mini already has a different linear; to use this one, edit /config/servers/linear.yaml\n",
 		"files was imported without its cwd, which mini doesn't support yet; if it fails to start, edit /config/servers/files.yaml\n",
 		"team was imported with its static X-Team header, since TEAM_VAR wasn't set; to use TEAM_VAR instead, set X-Team: ${TEAM_VAR} in /config/servers/team.yaml\n",
-		"  templated kept in Codex: uses an environment variable in url\n",
-		`  "!!!" in Cursor: its name has no letters or digits mini can use`,
+		"Could not read Cursor's config (/home/.cursor/mcp.json), so none of its MCPs were imported: invalid character\n",
 		"Could not add broken: disk full\n",
-		"Could not read Cursor's config (/home/.cursor/mcp.json), so none of its servers were imported: invalid character\n",
-		"Could not read mini's servers: permission denied\n",
 	)
 }
 
-func TestSummary_howToConnectByHand(t *testing.T) {
-	list := []agents.Agent{
-		{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"},
-		{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"},
-		{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"},
-	}
-	mini := agents.MiniEntry{Command: "/Users/u/My Apps/mini", Args: []string{"connect"}}
-	got := Summary(Report{Agents: AgentConnections{Mini: mini, NoMini: list}})
-	requireLines(t, got,
-		"claude mcp add --scope user mini -- '/Users/u/My Apps/mini' connect\n",
-		"[mcp_servers.mini]\n    command = \"/Users/u/My Apps/mini\"\n    args = [\"connect\"]\n",
-		`"command": "/Users/u/My Apps/mini"`,
+func TestSummary_agentsNotConnectedAreToldToRunInitAgain(t *testing.T) {
+	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"--config", "/srv/my mini", "connect"}}
+	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
+	got := plainSummary(
+		Report{Interactive: true, Agents: AgentConnections{Mini: mini, NoMini: []agents.Agent{claude, cursor}}},
 	)
+	requireLines(t, got, "To connect mini to Claude Code and Cursor later, run: mini --config '/srv/my mini' init\n")
 	if strings.Contains(got, "Restart") {
 		t.Errorf("nothing was connected, but the summary asks for a restart:\n%s", got)
 	}
-	requireLines(
-		t,
-		Summary(Report{Agents: AgentConnections{Mini: mini}}),
-		"To connect mini to your agent, add it to its MCP config:\n",
-	)
-	if summary := Summary(
-		Report{Agents: AgentConnections{Mini: mini, MiniServes: list[:1]}},
-	); strings.Contains(
-		summary,
-		"To connect mini",
-	) {
-		t.Errorf("every agent already has mini, but the summary shows how to connect one:\n%s", summary)
+	allConnected := plainSummary(Report{Agents: AgentConnections{Mini: mini, MiniServes: []agents.Agent{claude}}})
+	if strings.Contains(allConnected, "To connect") {
+		t.Errorf("every agent already has mini, but the summary says to connect one:\n%s", allConnected)
 	}
-	got = Summary(Report{Agents: AgentConnections{Mini: mini, MiniInactive: list[2:]}})
-	requireLines(t, got, "Cursor (/home/u/.cursor/mcp.json) has a mini entry that may not run these servers: "+
-		"it's switched off, uses another config directory, or doesn't start mini connect by absolute path. "+
-		"To use them, have it run: '/Users/u/My Apps/mini' connect\n")
-	if strings.Contains(got, "To connect mini") {
-		t.Errorf("the only agent has a mini entry, but the summary adds a generic step:\n%s", got)
-	}
-}
-
-func TestShellQuote(t *testing.T) {
-	for in, want := range map[string]string{"/usr/bin/mini": "/usr/bin/mini", "a b": "'a b'", "it's": `'it'\''s'`, "/opt/$HOME/mini": "'/opt/$HOME/mini'"} {
-		if got := shellQuote(in); got != want {
-			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)
-		}
-	}
+	got = plainSummary(Report{Agents: AgentConnections{Mini: mini, MiniInactive: []agents.Agent{cursor}}})
+	requireLines(t, got, "Cursor (/home/u/.cursor/mcp.json) has a mini entry that may not run these servers: ")
 }
 
 func TestSummary_connectedAgents(t *testing.T) {
@@ -184,20 +151,74 @@ func TestSummary_connectedAgents(t *testing.T) {
 	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
 	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
 	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml"}
-	got := Summary(Report{Agents: AgentConnections{Mini: mini}, Connected: []AgentResult{
-		{Agent: claude, Backup: "/home/u/.claude.minibackup.json"},
-		{Agent: cursor, Created: true},
-		{Agent: codex, Err: errors.New("parse config.toml: bad table")},
-	}})
-	requireLines(t, got,
-		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json\n",
-		"Cursor: created /home/u/.cursor/mcp.json\n",
-		"Couldn't connect Codex: parse config.toml: bad table\nAdd mini to /home/u/.codex/config.toml by hand:\n"+
-			"  [mcp_servers.mini]\n",
-		"Restart Claude Code and Cursor to start using mini.\n",
-	)
-	if strings.Contains(got, "To connect mini to your agents") {
-		t.Errorf("summary:\n%s\nwant no hand steps: every agent was tried", got)
+	desktop := agents.Agent{Name: "Claude Desktop", ConfigPath: "/home/u/desktop.json"}
+	got := plainSummary(Report{
+		Interactive: true,
+		Agents:      AgentConnections{Mini: mini, NoMini: []agents.Agent{desktop}},
+		Connected: []AgentResult{
+			{Agent: claude, Backup: "/home/u/.claude.minibackup.json", Removed: []string{"github"}},
+			{Agent: cursor, Created: true},
+			{Agent: codex, Err: errors.New("parse config.toml: bad table")},
+		},
+	})
+	want := "No MCPs were added to mini.\n" +
+		"Claude Code's config was backed up to /home/u/.claude.minibackup.json\n" +
+		"Could not connect mini to Codex: parse config.toml: bad table; to try again, run: mini init\n" +
+		"Connected mini to Claude Code and Cursor. Restart them to start using mini.\n" +
+		"To connect mini to Claude Desktop later, run: mini init\n"
+	if got != want {
+		t.Errorf("summary:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestSummary_styleWrapsWarningAndCommandsOnly(t *testing.T) {
+	report := Report{
+		Interactive: true,
+		Agents:      AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}},
+	}
+	styled := Summary(report, SummaryStyle{Warning: wrapWith("!"), Code: wrapWith("`")})
+	requireLines(t, styled, "!⚠ No agents were found automatically!\n", "command: `/opt/mini connect`\n")
+	if plain := plainSummary(report); strings.ContainsAny(plain, "!`") {
+		t.Errorf("zero style marked text:\n%s", plain)
+	}
+}
+
+func wrapWith(mark string) func(string) string {
+	return func(s string) string { return mark + s + mark }
+}
+
+func TestSummary_noAgentsFoundGivesTheCommandToAddMini(t *testing.T) {
+	const noAgents = "⚠ No agents were found automatically\n" +
+		"To use mini, add it to your agent as an MCP server with the command: "
+	entry := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}
+	t.Run("the command is the entry agents run, with mini's full path", func(t *testing.T) {
+		c := AgentConnections{Mini: entry, MiniName: "mini"}
+		requireLines(t, plainSummary(Report{Agents: c}), noAgents+"/opt/mini connect\n")
+	})
+	t.Run("a config dir other than the default is passed", func(t *testing.T) {
+		custom := agents.MiniEntry{Command: "/opt/mini", Args: []string{"--config", "/srv/my mini", "connect"}}
+		want := noAgents + "/opt/mini --config '/srv/my mini' connect\n"
+		requireLines(t, plainSummary(Report{Agents: AgentConnections{Mini: custom}}), want)
+	})
+	t.Run("agents that were found but not connected get no no-agents warning", func(t *testing.T) {
+		claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
+		cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
+		for name, c := range map[string]AgentConnections{
+			"with mini":    {Mini: entry, MiniServes: []agents.Agent{claude}},
+			"without mini": {Mini: entry, NoMini: []agents.Agent{cursor}},
+		} {
+			if got := plainSummary(Report{Agents: c}); strings.Contains(got, "No agents were found") {
+				t.Errorf("%s: summary:\n%s\nwant no no-agents warning: an agent was found", name, got)
+			}
+		}
+	})
+}
+
+func TestShellQuote(t *testing.T) {
+	for in, want := range map[string]string{"/usr/bin/mini": "/usr/bin/mini", "a b": "'a b'", "it's": `'it'\''s'`, "/opt/$HOME/mini": "'/opt/$HOME/mini'"} {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
@@ -214,20 +235,6 @@ func TestJoinAnd(t *testing.T) {
 	}
 }
 
-func TestSummary_anAgentLeftUntickedKeepsItsHandStep(t *testing.T) {
-	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect"}}
-	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
-	cursor := agents.Agent{Name: "Cursor", ConfigPath: "/home/u/.cursor/mcp.json"}
-	got := Summary(Report{
-		Agents:    AgentConnections{Mini: mini, MiniServes: []agents.Agent{claude}, NoMini: []agents.Agent{cursor}},
-		Connected: []AgentResult{{Agent: claude, Backup: "/home/u/.claude.minibackup.json"}},
-	})
-	requireLines(t, got, "To connect mini to your agents:\n  Cursor (/home/u/.cursor/mcp.json):\n")
-	if strings.Contains(got, "Claude Code (/home/u/.claude.json)") {
-		t.Errorf("summary:\n%s\nwant no hand step for Claude Code, which was connected", got)
-	}
-}
-
 func TestReport_failsWhenAnAgentCouldNotBeConnected(t *testing.T) {
 	failed := Report{
 		Connected: []AgentResult{{Agent: agents.Agent{Name: "Codex"}, Err: errors.New("permission denied")}},
@@ -238,56 +245,4 @@ func TestReport_failsWhenAnAgentCouldNotBeConnected(t *testing.T) {
 	if (Report{Connected: []AgentResult{{Agent: agents.Agent{Name: "Codex"}}}}).Failed() {
 		t.Error("a run that connected Codex reads as failed")
 	}
-}
-
-func TestSummary_saysWhatRemovingTookOutAndWhyTheRestStayed(t *testing.T) {
-	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
-	mini := agents.MiniEntry{Command: "/opt/mini", Args: []string{"connect", "--config", "/home/u/m"}}
-	got := Summary(Report{
-		Servers: []ServerStatus{{Name: "linear", Readiness: NeedsLogin}, {Name: "github"}, {Name: "slow"}},
-		Agents:  AgentConnections{Mini: mini},
-		Connected: []AgentResult{{
-			Agent:   claude,
-			Backup:  "/home/u/.claude.minibackup.json",
-			Removed: []string{"github", "notion"},
-			Kept: []KeptEntry{
-				{Entry: "lin", Server: "linear", Err: errors.New("401 unauthorized")},
-				{Entry: "npx-slow", Server: "slow", Err: fmt.Errorf("initialize: %w", context.DeadlineExceeded)},
-				{Entry: "gh", Server: "github", Err: errors.New("connection refused")},
-				{Entry: "files", Server: "files", Err: errNotChecked},
-				{Entry: "docs", Server: "docs", Err: errNotCounted},
-			},
-			Changed: []string{"notes"},
-		}},
-	})
-	requireLines(t, got,
-		"Claude Code: /home/u/.claude.json backed up to /home/u/.claude.minibackup.json\n"+
-			"  removed github and notion, which mini runs now\n",
-		"  lin stays in Claude Code: it works in mini once you finish linear above\n",
-		"  npx-slow stays in Claude Code: mini's check timed out; mini --config /home/u/m test tries again\n",
-		"  gh stays in Claude Code: mini couldn't connect to it; mini --config /home/u/m test shows why\n",
-		"  files stays in Claude Code: its connection wasn't checked\n",
-		"  docs stays in Claude Code: it wasn't among the MCPs you chose to remove\n",
-		"  notes stays in Claude Code: it changed after it was checked\n",
-	)
-}
-
-func TestSummary_anAgentThatSwitchesRemovedEntriesOffSaysSo(t *testing.T) {
-	codex := agents.Agent{Name: "Codex", ConfigPath: "/home/u/.codex/config.toml", RemoveDisables: true}
-	got := Summary(Report{Connected: []AgentResult{{
-		Agent: codex, Backup: "/home/u/.codex/config.minibackup.toml", Removed: []string{"github"},
-	}}})
-	requireLines(t, got, "  switched off github, which mini runs now\n")
-}
-
-func TestSummary_anAgentThatAlreadyHadMiniSaysSo(t *testing.T) {
-	claude := agents.Agent{Name: "Claude Code", ConfigPath: "/home/u/.claude.json"}
-	got := Summary(
-		Report{Agents: AgentConnections{Mini: agents.MiniEntry{Command: "/opt/mini"}}, Connected: []AgentResult{{
-			Agent:        claude,
-			ExistingMini: MiniEntryServes,
-			MiniServes:   true,
-		}}},
-	)
-	requireLines(t, got, "\nClaude Code: already has a mini entry; /home/u/.claude.json is unchanged\n")
 }

@@ -138,8 +138,8 @@ func TestRun_theSummarySkipsNothingTheImportScreenShowed(t *testing.T) {
 	if err != nil || len(out.Report.Import.Candidates) < 2 {
 		t.Fatalf("Run = %+v, %v; want github and an unticked github-2", out, err)
 	}
-	if skipped := out.Report.Import.Skipped; len(skipped) != 0 {
-		t.Errorf("skipped = %+v; want none: the user saw github-2 on Import and left it unticked", skipped)
+	if summary := initcmd.Summary(out.Report, initcmd.SummaryStyle{}); strings.Contains(summary, "Not imported") {
+		t.Errorf("summary:\n%s\nwant no skip lines: the user saw github-2 on Import and left it unticked", summary)
 	}
 }
 

@@ -10,10 +10,23 @@ type AgentConnections struct {
 	MiniInactive []agents.Agent
 	// Mini is the entry the agents should run.
 	Mini agents.MiniEntry
+	// MiniName starts the commands the summary tells the user to run: mini when PATH finds this binary, else its path.
+	MiniName string
+}
+
+func (c AgentConnections) miniName() string {
+	if c.MiniName == "" {
+		return "mini"
+	}
+	return c.MiniName
+}
+
+func connectionsFor(configDir string) AgentConnections {
+	return AgentConnections{Mini: MiniCommand(configDir), MiniName: systemLookup.displayName()}
 }
 
 func classifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnections {
-	c := AgentConnections{Mini: MiniCommand(configDir)}
+	c := connectionsFor(configDir)
 	check := miniEntryCheck{configDir: configDir, selfPath: selfPath}
 	for _, agent := range list {
 		switch check.existingMiniIn(agent) {

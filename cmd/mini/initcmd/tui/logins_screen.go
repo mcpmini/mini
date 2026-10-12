@@ -253,16 +253,16 @@ func (s *loginsScreen) byHandList() []string {
 		text = "Browser login isn't available for this MCP, so you will need to configure it manually later:"
 	}
 	lines = append(lines, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
-	width := widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
+	width := initcmd.Widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
 	for _, status := range s.byHand {
-		lines = append(lines, columnLines(status.Name, width, s.p.steps.byHand(status), s.width)...)
+		lines = append(lines, columnLines(status.Name, width, s.p.steps.step(status), s.width)...)
 	}
 	return lines
 }
 
 // first and last bound the cursor's block: its row and the lines under it.
 func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last int) {
-	width := widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
+	width := initcmd.Widest(s.rows, func(status initcmd.ServerStatus) string { return status.Name })
 	for i, status := range s.rows {
 		start := len(lines)
 		// The cursor's server stays in view while the cursor is on Continue, so a login's result shows.

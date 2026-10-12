@@ -27,13 +27,17 @@ type Report struct {
 	ConfigDir string
 	// Import is the plan, with notes only for the imports written and skip lines only for entries left behind.
 	Import             ImportPlan
+	Added              []string
 	AlreadyConfigured  []string
 	AddCoveredByImport []string
 	WriteErrors        []ServerError
 	Servers            []ServerStatus
-	Agents             AgentConnections
+	// Interactive is set when init's screens ran: Import already showed each entry it offered, and
+	// Catalog what was already in mini.
+	Interactive bool
+	Agents      AgentConnections
 	// Connected holds the agents init tried to connect. Nil means it tried none, and the summary
-	// says how to connect each agent by hand.
+	// says how to connect them later.
 	Connected      []AgentResult
 	ReadServersErr error
 }

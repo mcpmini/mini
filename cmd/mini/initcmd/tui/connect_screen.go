@@ -279,7 +279,7 @@ func (s *connectScreen) connectOnlySubtitles() []string {
 
 func (s *connectScreen) removalSubtitles() []string {
 	removing := s.picksWithRemovals()
-	width := widest(removing, func(agent agents.Agent) string { return agent.Name }) + len(":")
+	width := initcmd.Widest(removing, func(agent agents.Agent) string { return agent.Name }) + len(":")
 	var subtitles []string
 	for _, agent := range removing {
 		subtitles = append(subtitles, "  "+pad(agent.Name+":", width)+" "+s.removalText(agent))

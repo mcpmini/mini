@@ -6,169 +6,63 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mcpmini/mini/internal/agents"
-	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// Summary is what init prints when it ends: what is set up, what is left for the user, and
-// what failed, each with the step that finishes it.
-func Summary(r Report) string {
+// SummaryStyle marks the warning and the commands and paths a person acts on. A nil func leaves its text plain.
+type SummaryStyle struct {
+	Warning func(string) string
+	Code    func(string) string
+}
+
+func (s SummaryStyle) warning(text string) string { return styled(s.Warning, text) }
+
+func (s SummaryStyle) code(text string) string { return styled(s.Code, text) }
+
+func styled(style func(string) string, text string) string {
+	if style == nil {
+		return text
+	}
+	return style(text)
+}
+
+// Summary is what init prints when it ends: a headline, then only what the user still has to act
+// on. After an interactive run it leaves out what init's screens already showed.
+func Summary(r Report, style SummaryStyle) string {
 	var b strings.Builder
-	writeServers(&b, r)
-	writeDroppedSettings(&b, r)
-	writeStaticHeaders(&b, r)
+	writeHeadline(&b, r)
+	writeSteps(&b, r)
+	if !r.Interactive {
+		writeWhatNoScreenShowed(&b, r)
+	}
 	writeSkipped(&b, r)
+	writeImportNotes(&b, r)
 	writeFailures(&b, r)
 	if r.Connected == nil {
-		writeHandConnect(&b, r.Agents)
+		writeNotConnected(&b, r.Agents, style)
 	} else {
-		writeConnected(&b, r)
+		writeConnected(&b, r, style)
 	}
 	return b.String()
 }
 
-func writeServers(b *strings.Builder, r Report) {
-	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Readiness == Ready })
-	writeServersHeadline(b, r, len(unfinished))
-	width := nameWidth(unfinished)
-	for _, s := range unfinished {
-		fmt.Fprintf(b, "  %-*s  %s\n", width, s.Name, finishStep(r.ConfigDir, r.Agents.Mini, s, width))
+func writeHeadline(b *strings.Builder, r Report) {
+	if len(r.Added) == 0 {
+		fmt.Fprintln(b, "No MCPs were added to mini.")
+		return
 	}
-	if len(r.AlreadyConfigured) > 0 {
-		fmt.Fprintf(b, "Already configured in mini: %s\n", strings.Join(r.AlreadyConfigured, ", "))
-	}
-	if len(r.AddCoveredByImport) > 0 {
-		fmt.Fprintf(
-			b,
-			"Imported from your agents instead of the catalog: %s\n",
-			strings.Join(r.AddCoveredByImport, ", "),
-		)
-	}
+	fmt.Fprintf(b, "Added %s to mini: %s.\n", Plural(len(r.Added), "MCP"), JoinAnd(r.Added))
 }
 
-func writeServersHeadline(b *strings.Builder, r Report, unfinished int) {
-	switch {
-	case len(r.Servers) == 0 && r.ReadServersErr != nil:
-	case len(r.Servers) == 0:
-		fmt.Fprintln(b, "mini has no servers yet.")
-	case unfinished == 0:
-		fmt.Fprintf(b, "mini is set up with %s.\n", Plural(len(r.Servers), "server"))
-	default:
-		verb := "need"
-		if unfinished == 1 {
-			verb = "needs"
-		}
-		fmt.Fprintf(
-			b,
-			"mini is set up with %s, %d still %s finishing:\n",
-			Plural(len(r.Servers), "server"),
-			unfinished,
-			verb,
-		)
-	}
-}
-
-func finishStep(configDir string, mini agents.MiniEntry, s ServerStatus, width int) string {
-	file := config.ServerPath(configDir, s.Name)
-	if step, ok := stepInFile(file, mini, s); ok {
-		return step
-	}
-	switch s.Readiness {
-	case NeedsToken:
-		return "needs a token: " + addStep(file, catalog.AuthToken, s.SetupURL, width)
-	case NeedsEnv:
-		return fmt.Sprintf("needs %s set where mini runs (used in %s), or edit %s",
-			strings.Join(s.UnsetEnv.Names, ", "), s.UnsetEnv.Field, file)
-	case NeedsOwnApp:
-		return "needs your own OAuth app: " + addStep(file, catalog.AuthOAuth2App, s.SetupURL, width) +
-			"\n" + strings.Repeat(" ", width+4) + "and run: " + miniCommand(mini, "auth", s.Name)
-	}
-	return "run: " + miniCommand(mini, "auth", s.Name)
-}
-
-// addStep is the credential step for a server whose file doesn't hold it, indented under its name.
-func addStep(file, authKind, setupURL string, width int) string {
-	intro, block := credentialSteps(authKind, setupURL)
-	more := "\n" + strings.Repeat(" ", width+6)
-	return lowerFirst(intro) + ", then add to " + file + ":" + more + strings.Join(block, more)
-}
-
-func lowerFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToLower(s[:1]) + s[1:]
-}
-
-func stepInFile(file string, mini agents.MiniEntry, s ServerStatus) (string, bool) {
-	switch {
-	case s.StepsInFile && s.Readiness == NeedsToken:
-		return "needs a token: finish the steps in " + file, true
-	case s.StepsInFile && s.Readiness == NeedsOwnApp:
-		return fmt.Sprintf("needs your own OAuth app: finish the steps in %s, then run: %s",
-			file, miniCommand(mini, "auth", s.Name)), true
-	}
-	return "", false
-}
-
-func LoginCommand(mini agents.MiniEntry, server string) string {
-	return miniCommand(mini, "auth", server)
-}
-
-// Commands carry the config directory whenever agents are given one, so they act on the same servers.
-func miniCommand(mini agents.MiniEntry, args ...string) string {
-	words := []string{"mini"}
-	if i := slices.Index(mini.Args, "--config"); i >= 0 && i+1 < len(mini.Args) {
-		words = append(words, "--config", shellQuote(mini.Args[i+1]))
-	}
-	return strings.Join(append(words, args...), " ")
-}
-
-func writeSkipped(b *strings.Builder, r Report) {
-	if len(r.Import.Skipped) > 0 {
-		fmt.Fprintln(b, "\nNot imported:")
-	}
-	for _, s := range r.Import.Skipped {
-		fmt.Fprintf(b, "  %s\n", skippedLine(s, r.ConfigDir))
-	}
-}
-
-func skippedLine(s SkippedServer, configDir string) string {
-	switch s.Reason {
-	case SkipEmptyName:
-		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
-	case SkipSwitchedOff:
-		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
-	case SkipSecondConfig:
-		return fmt.Sprintf("%s in %s: a different config under that name is imported instead", s.Name, s.Agent)
-	case SkipNameInMini:
-		name := NormalizeName(s.Name)
-		return fmt.Sprintf(
-			"%s in %s: mini already has a different %s; to use this one, edit %s",
-			s.Name,
-			s.Agent,
-			name,
-			config.ServerPath(configDir, name),
-		)
-	}
-	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))
-}
-
-func writeDroppedSettings(b *strings.Builder, r Report) {
+// An imported server can start differently in mini than it did in the agent, which no screen showed.
+func writeImportNotes(b *strings.Builder, r Report) {
 	for _, name := range slices.Sorted(maps.Keys(r.Import.DroppedSettings)) {
-		fmt.Fprintf(
-			b,
-			"\n%s\n",
-			IgnoredSettingsNote(name, r.Import.DroppedSettings[name], config.ServerPath(r.ConfigDir, name)),
-		)
+		file := config.ServerPath(r.ConfigDir, name)
+		fmt.Fprintln(b, IgnoredSettingsNote(name, r.Import.DroppedSettings[name], file))
 	}
-}
-
-func writeStaticHeaders(b *strings.Builder, r Report) {
 	for _, name := range slices.Sorted(maps.Keys(r.Import.StaticHeaders)) {
 		for _, note := range StaticHeaderNotes(name, r.Import.StaticHeaders[name], config.ServerPath(r.ConfigDir, name)) {
-			fmt.Fprintf(b, "\n%s\n", note)
+			fmt.Fprintln(b, note)
 		}
 	}
 }
@@ -203,24 +97,41 @@ func writeFailures(b *strings.Builder, r Report) {
 	for _, u := range r.Import.Unreadable {
 		fmt.Fprintf(
 			b,
-			"\nCould not read %s's config (%s), so none of its servers were imported: %v\n",
+			"Could not read %s's config (%s), so none of its MCPs were imported: %v\n",
 			u.Agent,
 			u.ConfigPath,
 			u.Err,
 		)
 	}
 	for _, failure := range r.WriteErrors {
-		fmt.Fprintf(b, "\nCould not add %s: %v\n", failure.Name, failure.Err)
+		fmt.Fprintf(b, "Could not add %s: %v\n", failure.Name, failure.Err)
 	}
 	if r.ReadServersErr != nil {
-		fmt.Fprintf(b, "\nCould not read mini's servers: %v\n", r.ReadServersErr)
+		fmt.Fprintf(b, "Could not read mini's servers: %v\n", r.ReadServersErr)
 	}
 }
 
-func nameWidth(statuses []ServerStatus) int {
+// LoginCommands gives the command that logs in to a server, written as the summary writes its commands.
+func LoginCommands(configDir string) func(server string) string {
+	c := connectionsFor(configDir)
+	return func(server string) string { return miniCommand(c, "auth", server) }
+}
+
+// Commands carry the config directory whenever agents are given one, so they act on the same servers.
+func miniCommand(c AgentConnections, args ...string) string {
+	mini := c.Mini
+	words := []string{shellQuote(c.miniName())}
+	if i := slices.Index(mini.Args, "--config"); i >= 0 && i+1 < len(mini.Args) {
+		words = append(words, "--config", shellQuote(mini.Args[i+1]))
+	}
+	return strings.Join(append(words, args...), " ")
+}
+
+// Widest is the longest text among items, for padding a column.
+func Widest[T any](items []T, text func(T) string) int {
 	width := 0
-	for _, s := range statuses {
-		width = max(width, len(s.Name))
+	for _, item := range items {
+		width = max(width, len(text(item)))
 	}
 	return width
 }
@@ -231,4 +142,47 @@ func Plural(n int, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// An entry init never offered, such as one whose command uses an env var, was on no screen.
+func writeSkipped(b *strings.Builder, r Report) {
+	for _, s := range r.Import.Skipped {
+		fmt.Fprintf(b, "Not imported: %s\n", skippedLine(s, r.ConfigDir))
+	}
+}
+
+// Logins doesn't name the command, Review is skipped when Connect shows, and a check can finish
+// after the screens close, so every run lists what is still unfinished.
+func writeSteps(b *strings.Builder, r Report) {
+	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Readiness == Ready })
+	if len(unfinished) == 0 {
+		return
+	}
+	fmt.Fprintln(b, "These MCPs need one more step:")
+	width := Widest(unfinished, func(s ServerStatus) string { return s.Name })
+	for _, s := range unfinished {
+		step := s.Step(config.ServerPath(r.ConfigDir, s.Name), miniCommand(r.Agents, "auth", s.Name))
+		fmt.Fprintf(b, "  %-*s  %s\n", width, s.Name, step)
+	}
+}
+
+func skippedLine(s SkippedServer, configDir string) string {
+	switch s.Reason {
+	case SkipEmptyName:
+		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
+	case SkipSwitchedOff:
+		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
+	case SkipSecondConfig:
+		return fmt.Sprintf("%s in %s: a different config under that name is imported instead", s.Name, s.Agent)
+	case SkipNameInMini:
+		name := NormalizeName(s.Name)
+		return fmt.Sprintf(
+			"%s in %s: mini already has a different %s; to use this one, edit %s",
+			s.Name,
+			s.Agent,
+			name,
+			config.ServerPath(configDir, name),
+		)
+	}
+	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))
 }

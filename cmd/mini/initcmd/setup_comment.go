@@ -1,7 +1,6 @@
 package initcmd
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 
@@ -16,20 +15,6 @@ const (
 	clientIDPlaceholder     = "<your app's client ID>"
 	clientSecretPlaceholder = "<your app's client secret>"
 )
-
-// A user who deleted part of the block gets the summary's full step instead.
-func setupCommentIn(data []byte, entry catalog.Entry) bool {
-	comment := credentialComment(entry)
-	if comment == "" {
-		return false
-	}
-	for line := range strings.SplitSeq(config.CommentLines(comment), "\n") {
-		if !bytes.Contains(data, []byte(line)) {
-			return false
-		}
-	}
-	return true
-}
 
 // Init can't get a token or OAuth app for the user, so the config they need goes in the file,
 // commented out.
