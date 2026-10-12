@@ -107,7 +107,7 @@ func writeFailures(b *strings.Builder, r Report) {
 		fmt.Fprintf(b, "Could not add %s: %v\n", failure.Name, failure.Err)
 	}
 	if r.ReadServersErr != nil {
-		fmt.Fprintf(b, "Could not read mini's servers: %v\n", r.ReadServersErr)
+		fmt.Fprintf(b, "Could not read mini's MCPs: %v\n", r.ReadServersErr)
 	}
 }
 

@@ -26,7 +26,7 @@ type initFlags struct {
 
 const initLong = `Set up mini in four steps:
   1. import MCP servers from Claude Code, Codex, Cursor, and other agents,
-  2. pick more from the server catalog,
+  2. pick more from the MCP catalog,
   3. log in to the servers that use OAuth,
   4. connect mini to your agents, backing up each config it changes.
 Servers that are already configured are never changed.
@@ -44,7 +44,7 @@ func newInitCmd(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "init",
 		Aliases: []string{"setup"},
-		Short:   "Set up mini: import servers, pick more from the catalog, log in, connect your agents",
+		Short:   "Set up mini: import MCPs, pick more from the catalog, log in, connect your agents",
 		Long:    initLong,
 		Example: initExample,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -70,10 +70,10 @@ func runInitCommand(configDir string, f initFlags) error {
 }
 
 func addInitFlags(cmd *cobra.Command, f *initFlags) {
-	cmd.Flags().BoolVar(&f.importAll, "import", false, "import the servers of every agent found, without asking")
+	cmd.Flags().BoolVar(&f.importAll, "import", false, "import the MCPs of every agent found, without asking")
 	cmd.Flags().
-		StringVar(&f.from, "from", "", "import the servers of one agent ("+strings.Join(slices.Sorted(maps.Keys(fromClientNames)), ", ")+") or config file, without asking")
-	cmd.Flags().StringSliceVar(&f.add, "add", nil, "catalog servers to add, without asking (comma-separated names)")
+		StringVar(&f.from, "from", "", "import the MCPs of one agent ("+strings.Join(slices.Sorted(maps.Keys(fromClientNames)), ", ")+") or config file, without asking")
+	cmd.Flags().StringSliceVar(&f.add, "add", nil, "catalog MCPs to add, without asking (comma-separated names)")
 }
 
 var fromClientNames = map[string]string{
@@ -121,8 +121,8 @@ func createConfigDirs(configDir string) error {
 }
 
 const noTerminalHelp = `mini init asks questions, so it needs a terminal. Without one, say what to set up:
-  mini init --import             import the servers of every agent found
-  mini init --from AGENT|PATH    import the servers of one agent or config file
+  mini init --import             import the MCPs of every agent found
+  mini init --from AGENT|PATH    import the MCPs of one agent or config file
   mini init --add NAME,...       add servers from the catalog
 `
 

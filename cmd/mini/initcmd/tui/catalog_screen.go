@@ -181,7 +181,7 @@ func (s *catalogScreen) body(height int, focused bool) string {
 	case s.loadErr != nil:
 		return "The catalog couldn't be loaded: " + s.loadErr.Error()
 	case len(s.byCategory) == 0:
-		return "The catalog lists no servers."
+		return "The catalog lists no MCPs."
 	}
 	return s.grid.view(height, focused)
 }

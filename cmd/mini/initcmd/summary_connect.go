@@ -95,7 +95,7 @@ func JoinAnd(names []string) string {
 
 func writeInactiveMini(b *strings.Builder, c AgentConnections) {
 	for _, agent := range c.MiniInactive {
-		fmt.Fprintf(b, "%s (%s) has a mini entry that may not run these servers: %s. To use them, have it run: %s\n",
+		fmt.Fprintf(b, "%s (%s) has a mini entry that may not run these MCPs: %s. To use them, have it run: %s\n",
 			agent.Name, agent.ConfigPath, inactiveMiniReasons, shellCommand(c.Mini))
 	}
 }

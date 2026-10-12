@@ -25,7 +25,7 @@ func TestIntegrationInitUI_writesTheTickedServersConnectsTheAgentAndPrintsTheSum
 	home := homeWithClaudeServers(t)
 	term := startTerminal(t, terminalParams{home: home, configDir: configDir, args: []string{"init"}})
 
-	term.waitFor("Select which MCP servers you want to import from Claude Code")
+	term.waitFor("Select which MCPs you want to import from Claude Code")
 	term.waitFor("[x] files")
 	term.press("space", "tab", "enter")
 	term.waitFor("Which popular MCPs would you like to add?")
@@ -68,7 +68,7 @@ func TestIntegrationInitUI_ctrlCLeavesNoServersAndRestoresTheTerminal(t *testing
 
 	term.waitFor("[x] files")
 	term.press("ctrl+c")
-	term.waitFor("no servers were added")
+	term.waitFor("no MCPs were added")
 
 	if code := term.exitCode(); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
@@ -94,7 +94,7 @@ func TestIntegrationInitUI_ctrlCAfterCatalogWritesNothing(t *testing.T) {
 	term.press("/", "s", "e", "n", "t", "r", "y", "enter", "space", "tab", "enter")
 	term.waitFor("Log in to your MCPs (optional)")
 	term.press("ctrl+c")
-	term.waitFor("no servers were added")
+	term.waitFor("no MCPs were added")
 
 	if code := term.exitCode(); code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
