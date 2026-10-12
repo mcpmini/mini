@@ -31,34 +31,46 @@ func (s *Server) serverNotReadyError(server string) (*response.Envelope, bool) {
 		return nil, false
 	}
 	state := s.startup.state(server, s.clock.Now())
-	if state.phase == phaseConnected {
+	if state.phase() == phaseConnected {
 		return nil, false
 	}
 	return response.BuildError(state.errorCode(), state.reason(server), state.retryable(), state.action()), true
 }
 
 func (st startupState) errorCode() string {
-	switch st.phase {
-	case phaseConnecting:
+	switch st.status.(type) {
+	case connectedStatus:
+		return ""
+	case connectingStatus:
 		return "server_starting"
-	case phaseDelayed:
+	case delayedStatus:
 		return "server_delayed"
-	}
-	switch st.failure.kind {
-	case failureNeedsAuth:
+	case needsAuthStatus:
 		return "server_needs_auth"
-	case failureNeedsEnv:
+	case needsEnvStatus:
 		return "server_needs_env"
-	default:
+	case notTrustedStatus:
 		return "server_not_trusted"
 	}
+	return "server_failed"
 }
 
-func (st startupState) retryable() bool { return st.phase != phaseFailed }
+func (st startupState) retryable() bool {
+	switch st.status.(type) {
+	case connectingStatus, delayedStatus:
+		return true
+	case connectedStatus, needsAuthStatus, needsEnvStatus, notTrustedStatus:
+		return false
+	}
+	return false
+}
 
 func (st startupState) action() string {
-	if st.phase == phaseFailed && st.failure.kind == failureNeedsAuth {
+	switch st.status.(type) {
+	case needsAuthStatus:
 		return "start_auth"
+	case connectedStatus, connectingStatus, delayedStatus, needsEnvStatus, notTrustedStatus:
+		return ""
 	}
 	return ""
 }
