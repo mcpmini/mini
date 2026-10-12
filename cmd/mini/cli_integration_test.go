@@ -43,6 +43,7 @@ func run(t *testing.T, bin, configDir string, args ...string) (stdout, stderr st
 }
 
 func TestIntegrationCLI_ls_empty(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, _, code := run(t, bin, cfg, "ls")
@@ -55,6 +56,7 @@ func TestIntegrationCLI_ls_empty(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_and_ls(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -70,6 +72,7 @@ func TestIntegrationCLI_add_and_ls(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_preservesChildFlags(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	cmd := exec.Command(bin, "add", "svc", "--config", cfg, "--", "/usr/bin/printf", "-h", "--config", "child-value")
@@ -93,6 +96,7 @@ func TestIntegrationCLI_add_preservesChildFlags(t *testing.T) {
 }
 
 func TestIntegrationCLI_configAfterSubcommandIsAccepted(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, stderr, code := run(t, bin, t.TempDir(), "ls", "--config", cfg)
@@ -102,6 +106,7 @@ func TestIntegrationCLI_configAfterSubcommandIsAccepted(t *testing.T) {
 }
 
 func TestIntegrationCLI_addRequiresDashBeforeStdioCommand(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	_, stderr, code := run(t, bin, t.TempDir(), "add", "svc", "printf", "hello")
 	if code != 2 || !strings.Contains(stderr, "require NAME -- CMD") {
@@ -123,6 +128,7 @@ func checkLsContains(t *testing.T, bin, cfg string, want ...string) {
 }
 
 func TestIntegrationCLI_rm(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -140,6 +146,7 @@ func TestIntegrationCLI_rm(t *testing.T) {
 }
 
 func TestIntegrationCLI_rm_nonexistent(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "rm", "ghost")
@@ -149,6 +156,7 @@ func TestIntegrationCLI_rm_nonexistent(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_invalidName(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, stderr, code := run(t, bin, cfg, "add", "bad/name", "--url", "http://localhost:9999")
@@ -161,6 +169,7 @@ func TestIntegrationCLI_add_invalidName(t *testing.T) {
 }
 
 func TestIntegrationCLI_unknownCommand(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "boguscommand")
@@ -170,6 +179,7 @@ func TestIntegrationCLI_unknownCommand(t *testing.T) {
 }
 
 func TestIntegrationCLI_rm_missingName_exitsTwo(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "rm")
@@ -179,6 +189,7 @@ func TestIntegrationCLI_rm_missingName_exitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLI_auth_missingName_exitsTwo(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "auth")
@@ -188,6 +199,7 @@ func TestIntegrationCLI_auth_missingName_exitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLI_ls_tooManyArgs_exitsTwo(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "ls", "a", "b", "c")
@@ -197,6 +209,7 @@ func TestIntegrationCLI_ls_tooManyArgs_exitsTwo(t *testing.T) {
 }
 
 func TestIntegrationCLI_test_noServers(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "test")
@@ -206,6 +219,7 @@ func TestIntegrationCLI_test_noServers(t *testing.T) {
 }
 
 func TestIntegrationCLI_test_unreachableServer(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -221,6 +235,7 @@ func TestIntegrationCLI_test_unreachableServer(t *testing.T) {
 }
 
 func TestIntegrationCLI_status_unreachableServer(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	run(t, bin, cfg, "add", "dead", "--url", "http://127.0.0.1:19999")
@@ -291,6 +306,7 @@ func TestIntegrationCLI_init_importFromClaude(t *testing.T) {
 }
 
 func TestIntegrationCLI_connect_badConfig(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 
@@ -303,6 +319,7 @@ func TestIntegrationCLI_connect_badConfig(t *testing.T) {
 }
 
 func TestIntegrationCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, _, code := run(t, bin, cfg)
@@ -315,6 +332,7 @@ func TestIntegrationCLI_bareMini_printsHelpAndExitsZero(t *testing.T) {
 }
 
 func TestIntegrationCLI_connect_invalidToolMode(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, stderr, code := run(t, bin, cfg, "connect", "--tool-mode", "bogus")
@@ -327,6 +345,7 @@ func TestIntegrationCLI_connect_invalidToolMode(t *testing.T) {
 }
 
 func TestIntegrationCLI_cleanup_empty(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(t, bin, cfg, "cleanup")
@@ -336,6 +355,7 @@ func TestIntegrationCLI_cleanup_empty(t *testing.T) {
 }
 
 func TestIntegrationCLI_daemon_status_noDaemon(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, _, code := run(t, bin, cfg, "daemon", "status")
@@ -348,6 +368,7 @@ func TestIntegrationCLI_daemon_status_noDaemon(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_withHeader(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(
@@ -371,6 +392,7 @@ func TestIntegrationCLI_add_withHeader(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_stdioCommand(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(
@@ -406,6 +428,7 @@ var versionPattern = regexp.MustCompile(
 )
 
 func TestIntegrationCLI_version(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	stdout, _, code := run(t, bin, cfg, "version")
@@ -418,6 +441,7 @@ func TestIntegrationCLI_version(t *testing.T) {
 }
 
 func TestIntegrationCLI_version_flag(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	// --version is a global flag, not a subcommand — run without --config
 	cmd := exec.Command(bin, "--version")
@@ -432,6 +456,7 @@ func TestIntegrationCLI_version_flag(t *testing.T) {
 }
 
 func TestIntegrationCLI_add_protectedTool(t *testing.T) {
+	t.Parallel()
 	bin := miniBin(t)
 	cfg := t.TempDir()
 	_, _, code := run(
