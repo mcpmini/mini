@@ -125,11 +125,12 @@ func pickedNames(s *connectScreen) []string {
 func TestConnectScreen_saysWhichServersTheSaveCouldNotSave(t *testing.T) {
 	s, _ := connectScreenFor(t, newFakePlan(nil), namedAgents("Claude"), nil)
 	s.p.saveFailures = func() []initcmd.ServerError {
-		return []initcmd.ServerError{{Name: "linear", Err: errors.New("disk full")}}
+		full := errors.New("disk full")
+		return []initcmd.ServerError{{Name: "linear", Err: full}, {Name: "sentry", Err: full}}
 	}
 	s.refresh()
-	if text := connectText(s); !strings.Contains(text, "✗ mini couldn't save linear: disk full") {
-		t.Errorf("Connect:\n%s\nwant it to say linear couldn't be saved", text)
+	if text := connectText(s); !strings.Contains(text, "✗ mini couldn't save linear, sentry: disk full") {
+		t.Errorf("Connect:\n%s\nwant one line naming both servers the full disk stopped", text)
 	}
 }
 

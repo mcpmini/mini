@@ -261,9 +261,20 @@ func (s *connectScreen) body(height int, focused bool) string {
 // A server the save couldn't add, change or remove isn't as the user picked it, so the screens after
 // the save say so rather than leave the user to find out after finishing.
 func saveFailureLines(failed []initcmd.ServerError, width int) []string {
-	var lines []string
+	// A stage that can't be made fails every pick with one error, so servers sharing a reason share
+	// a line, keeping the choices below on the screen.
+	var reasons []string
+	names := map[string][]string{}
 	for _, f := range failed {
-		text := fmt.Sprintf("✗ mini couldn't save %s: %s", f.Name, firstLine(f.Err))
+		reason := firstLine(f.Err)
+		if _, seen := names[reason]; !seen {
+			reasons = append(reasons, reason)
+		}
+		names[reason] = append(names[reason], f.Name)
+	}
+	var lines []string
+	for _, reason := range reasons {
+		text := fmt.Sprintf("✗ mini couldn't save %s: %s", strings.Join(names[reason], ", "), reason)
 		lines = append(lines, strings.Split(ansi.Wrap(text, max(width, 20), ""), "\n")...)
 	}
 	return lines

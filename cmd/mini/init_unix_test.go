@@ -21,7 +21,9 @@ func TestInitFromAPipeImportsItsServers(t *testing.T) {
 		t.Fatal(err)
 	}
 	// One writer, so the config can be read once, as from --from <(...).
+	wrote := make(chan struct{})
 	go func() {
+		defer close(wrote)
 		config := []byte(`{"mcpServers":{"search":{"url":"https://search.example/mcp"}}}`)
 		// testutil.WriteFile fails with t.Fatal, which a goroutine can't call.
 		if err := os.WriteFile(pipe, config, 0o600); err != nil { //fileiolint:allow see above
@@ -34,6 +36,7 @@ func TestInitFromAPipeImportsItsServers(t *testing.T) {
 	t.Cleanup(func() {
 		unblock.Stop()
 		closeAnEnd(pipe, os.O_RDONLY) // releases the writer if init never read
+		<-wrote
 	})
 	cmd := newInitCmd(&rootOptions{configDir: configDir})
 	cmd.SetArgs([]string{"--from", pipe})
