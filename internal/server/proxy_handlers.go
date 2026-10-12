@@ -167,14 +167,13 @@ type proxyCallParams struct {
 }
 
 func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any, error) {
-	server, tool, params := resolveTarget(executeParams{Server: p.Server, Tool: p.Tool, Params: p.Params}, p.Entry)
-	upstream, err := s.getUpstream(server)
+	upstream, err := s.getUpstream(p.Server)
 	if err != nil {
 		return nil, err
 	}
 	raw, latencyMs, toolErr := s.dispatchRaw(
 		ctx,
-		dispatchParams{Upstream: upstream, Tool: tool, Params: params, Session: p.Session},
+		dispatchParams{Upstream: upstream, Tool: p.Tool, Params: p.Params, Session: p.Session},
 	)
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
@@ -183,7 +182,7 @@ func (s *Server) proxyCallUpstream(ctx context.Context, p proxyCallParams) (any,
 	}
 	ep := envelopeParams{
 		Entry:     p.Entry,
-		Tool:      tool,
+		Tool:      p.Tool,
 		Raw:       raw,
 		Session:   p.Session,
 		Upstream:  upstream,

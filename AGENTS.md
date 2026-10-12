@@ -108,8 +108,8 @@ agent → Serve() → session handler → handleList / handleExecute / handleExe
 | Package | Role |
 |---|---|
 | `internal/transport` | `Connection` interface; `StdioConnection` (subprocess), `HTTPConnection` (SSE/streamable), `FakeConnection` (tests); `pendingMap` (in-flight request tracking) |
-| `internal/config` | `Config`, `ServerConfig`, `ProjectionConfig`, `ActionConfig` types + YAML loader; `ValidServerName` regex |
-| `internal/registry` | Tool index keyed by `"server.tool"`; permission resolution; action (virtual tool) support |
+| `internal/config` | `Config`, `ServerConfig`, `ProjectionConfig` types + YAML loader; `ValidServerName` regex |
+| `internal/registry` | Tool index keyed by `"server.tool"`; permission resolution |
 | `internal/server` | `Server` struct + `Serve()` loop + handlers; `Session` (per-connection projection overrides) |
 | `internal/projection` | `Apply(value, cfg, defaults)` → `Result{Summary, ExcludedKeys, Passthrough}`; HTML/MD stripping |
 | `internal/response` | `Builder`/`Store`; always-inline projected data; TTL-based raw file lifecycle |

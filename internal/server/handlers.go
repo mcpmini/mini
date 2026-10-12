@@ -189,23 +189,24 @@ func (s *Server) callUpstream(
 	entry *registry.ToolEntry,
 	session *Session,
 ) (any, error) {
-	server, tool, params := resolveTarget(p, entry)
-	upstream, err := s.getUpstream(server)
+	upstream, err := s.getUpstream(p.Server)
 	if err != nil {
 		return nil, err
 	}
 	raw, latencyMs, toolErr := s.dispatchRaw(
 		ctx,
-		dispatchParams{Upstream: upstream, Tool: tool, Params: params, Session: session},
+		dispatchParams{Upstream: upstream, Tool: p.Tool, Params: p.Params, Session: session},
 	)
 	upstream.totalLatencyMs.Add(latencyMs)
 	if toolErr != nil {
 		return s.handleToolErr(
-			toolErrParams{Server: server, Tool: tool, LatencyMs: latencyMs, Err: toolErr, Session: session},
+			toolErrParams{Server: p.Server, Tool: p.Tool, LatencyMs: latencyMs, Err: toolErr, Session: session},
 		)
 	}
 	return s.buildEnvelope(
-		envelopeParams{Entry: entry, Tool: tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs},
+		envelopeParams{
+			Entry: entry, Tool: p.Tool, Raw: raw, Session: session, Upstream: upstream, LatencyMs: latencyMs,
+		},
 	)
 }
 
@@ -223,24 +224,6 @@ func (s *Server) handleToolErr(p toolErrParams) (any, error) {
 	env := response.BuildError("tool_error", p.Err.Error(), false, "")
 	projCfg := s.resolveProjection(p.Server, p.Tool, p.Session)
 	return s.formatEnvelope(p.Server, p.Tool, env, projCfg)
-}
-
-func resolveTarget(p executeParams, entry *registry.ToolEntry) (server, tool string, params map[string]any) {
-	if entry.TargetTool != "" {
-		return entry.TargetServer, entry.TargetTool, mergeArgs(entry.DefaultArgs, p.Params)
-	}
-	return p.Server, p.Tool, p.Params
-}
-
-func mergeArgs(defaults, overrides map[string]any) map[string]any {
-	out := make(map[string]any, len(defaults)+len(overrides))
-	for k, v := range defaults {
-		out[k] = v
-	}
-	for k, v := range overrides {
-		out[k] = v
-	}
-	return out
 }
 
 type envelopeParams struct {

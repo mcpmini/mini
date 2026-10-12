@@ -6,42 +6,6 @@ import (
 	"time"
 )
 
-func TestMergeArgs_overrideWins(t *testing.T) {
-	defaults := map[string]any{"state": "open", "author": "me"}
-	overrides := map[string]any{"state": "closed"}
-	got := mergeArgs(defaults, overrides)
-	if got["state"] != "closed" {
-		t.Errorf("expected override state=closed, got %v", got["state"])
-	}
-	if got["author"] != "me" {
-		t.Errorf("expected default author=me to be preserved, got %v", got["author"])
-	}
-}
-
-func TestMergeArgs_defaultsPreserved(t *testing.T) {
-	defaults := map[string]any{"limit": 10}
-	overrides := map[string]any{}
-	got := mergeArgs(defaults, overrides)
-	if got["limit"] != 10 {
-		t.Errorf("expected limit=10 from defaults, got %v", got["limit"])
-	}
-}
-
-func TestMergeArgs_bothEmpty(t *testing.T) {
-	got := mergeArgs(nil, nil)
-	if len(got) != 0 {
-		t.Errorf("expected empty map, got %v", got)
-	}
-}
-
-func TestMergeArgs_nilDefaults(t *testing.T) {
-	overrides := map[string]any{"k": "v"}
-	got := mergeArgs(nil, overrides)
-	if got["k"] != "v" {
-		t.Errorf("expected k=v, got %v", got)
-	}
-}
-
 func TestUnmarshalOptional_emptyRaw(t *testing.T) {
 	var v map[string]any
 	if err := unmarshalOptional(nil, &v); err != nil {

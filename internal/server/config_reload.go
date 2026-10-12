@@ -245,7 +245,7 @@ func (s *Server) reapplyAliases() {
 		if u.lastDefs == nil {
 			continue
 		}
-		s.reg.ReplaceServerTools(registry.ServerParams{
+		s.reg.ReplaceServer(registry.ServerParams{
 			Name:            u.cfg.Name,
 			Defs:            u.lastDefs,
 			Perm:            u.cfg.Permissions,
