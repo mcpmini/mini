@@ -144,6 +144,8 @@ func (g *catalogGrid) mark(e gridEntry) string {
 		return doneMark
 	case entryWillImport:
 		return willImportMark
+	case entryOffered:
+		return checkbox(g.checked[e.key])
 	}
 	return checkbox(g.checked[e.key])
 }

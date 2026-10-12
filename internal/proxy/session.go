@@ -105,9 +105,18 @@ func (s *proxySession) recoverForwarding(
 }
 
 func (s *proxySession) recoverDaemonLink(state linkState, kind outcomeKind) (linkState, bool) {
-	if kind != outcomeTransportDown && kind != outcomeUnauthorized {
+	switch kind {
+	case outcomeNotInitialized:
 		return state, true
+	case outcomeTransportDown, outcomeUnauthorized:
+		return s.recoverLink(state)
+	case outcomeOK, outcomeOther:
+		return state, false
 	}
+	return state, false
+}
+
+func (s *proxySession) recoverLink(state linkState) (linkState, bool) {
 	next, err := s.link.recover(state.generation, s.resolver)
 	if err != nil || next.generation == state.generation {
 		return state, false

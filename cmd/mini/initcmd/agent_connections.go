@@ -34,6 +34,8 @@ func classifyAgents(configDir, selfPath string, list []agents.Agent) AgentConnec
 			c.NoMini = append(c.NoMini, agent)
 		case MiniEntryServes:
 			c.MiniServes = append(c.MiniServes, agent)
+		case MiniEntryInactive:
+			fallthrough
 		default:
 			c.MiniInactive = append(c.MiniInactive, agent)
 		}

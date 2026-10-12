@@ -176,13 +176,18 @@ func writeListItem(sb *strings.Builder, item Value, depth int) error {
 			return err
 		}
 		return writeArray(sb, item.items(), arrayCtx{ItemDepth: depth + 1})
-	default:
-		s, err := encodePrimitive(item)
-		if err != nil {
-			return err
-		}
-		return appendString(sb, strings.Repeat(indentUnit, depth)+"- "+s+"\n")
+	case KindNull, KindBool, KindNumber, KindString:
+		return writePrimitiveListItem(sb, item, depth)
 	}
+	return writePrimitiveListItem(sb, item, depth)
+}
+
+func writePrimitiveListItem(sb *strings.Builder, item Value, depth int) error {
+	s, err := encodePrimitive(item)
+	if err != nil {
+		return err
+	}
+	return appendString(sb, strings.Repeat(indentUnit, depth)+"- "+s+"\n")
 }
 
 // §10: the first field shares the hyphen line; all others render at hyphen depth+1.
@@ -373,6 +378,8 @@ func isPrimitive(v Value) bool {
 	switch v.kind() {
 	case KindNull, KindBool, KindNumber, KindString:
 		return true
+	case KindObject, KindArray:
+		return false
 	}
 	return false
 }

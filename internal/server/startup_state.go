@@ -196,6 +196,8 @@ func (s *Server) startupReportLocked() startupReport {
 			report.starting = append(report.starting, name)
 		case delayedStatus, needsAuthStatus, needsEnvStatus, notTrustedStatus:
 			report.unavailable[name] = map[string]any{"state": state.phase(), "reason": state.reason(name)}
+		case connectedStatus:
+			continue
 		}
 	}
 	slices.Sort(report.starting)
