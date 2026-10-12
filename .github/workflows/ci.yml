@@ -18,6 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Restore Go toolchain
+        uses: actions/cache@v6.1.0
+        with:
+          path: /opt/hostedtoolcache/go
+          key: go-toolchain-${{ runner.os }}-${{ hashFiles('go.mod') }}
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -50,6 +56,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Restore Go toolchain
+        uses: actions/cache@v6.1.0
+        with:
+          path: /opt/hostedtoolcache/go
+          key: go-toolchain-${{ runner.os }}-${{ hashFiles('go.mod') }}
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -78,6 +90,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
+      - name: Restore Go toolchain
+        uses: actions/cache@v6.1.0
+        with:
+          path: /opt/hostedtoolcache/go
+          key: go-toolchain-${{ runner.os }}-${{ hashFiles('go.mod') }}
 
       - uses: actions/setup-go@v7
         with:
