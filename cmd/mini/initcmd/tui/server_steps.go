@@ -21,10 +21,9 @@ type serverSteps struct {
 
 // Steps name the file a server will have once Save and finish commits it, not its staging copy.
 func newServerSteps(configDir string) serverSteps {
-	mini := initcmd.MiniCommand(configDir)
 	return serverSteps{
 		file:  func(name string) string { return homeRelative(config.ServerPath(configDir, name)) },
-		login: func(name string) string { return initcmd.LoginCommand(mini, name) },
+		login: initcmd.LoginCommands(configDir),
 	}
 }
 

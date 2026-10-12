@@ -131,8 +131,10 @@ func lowerFirst(s string) string {
 	return strings.ToLower(s[:1]) + s[1:]
 }
 
-func LoginCommand(mini agents.MiniEntry, server string) string {
-	return miniCommand(AgentConnections{Mini: mini}, "auth", server)
+// LoginCommands gives the command that logs in to a server, written as the summary writes its commands.
+func LoginCommands(configDir string) func(server string) string {
+	c := AgentConnections{Mini: MiniCommand(configDir), MiniName: systemLookup.displayName()}
+	return func(server string) string { return miniCommand(c, "auth", server) }
 }
 
 // Commands carry the config directory whenever agents are given one, so they act on the same servers.

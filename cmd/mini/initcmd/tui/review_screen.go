@@ -79,7 +79,7 @@ func (s *reviewScreen) body(height int, _ bool) string {
 // are counted on a last line instead, under the heading.
 func (s *reviewScreen) addedLines(height int) []string {
 	lines := []string{initcmd.Plural(len(s.added), "MCP") + " will be added to mini:"}
-	width := widest(s.added, func(r reviewRow) string { return r.name })
+	width := initcmd.Widest(s.added, func(r reviewRow) string { return r.name })
 	for i, r := range s.added {
 		row := columnLines(r.name, width, r.state, s.width)
 		left := len(s.added) - i
