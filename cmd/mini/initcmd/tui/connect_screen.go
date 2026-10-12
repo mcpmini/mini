@@ -24,6 +24,7 @@ type connectParams struct {
 	withMini map[string]bool
 	plan     func() (connectPlan, error)
 	added    func() []string
+	statuses serverStatuses
 }
 
 type connectScreen struct {
@@ -64,14 +65,25 @@ func (s *connectScreen) refresh() {
 	var rows, connected []row
 	if len(s.listed) > 1 {
 		for _, agent := range s.listed {
-			rows = append(rows, row{key: agent.Name, label: agent.Name})
+			rows = append(rows, row{key: agent.Name, label: agent.Name, detail: s.agentDetail(agent.Name)})
 		}
 	}
 	for _, name := range s.alreadyConnected {
-		connected = append(connected, row{key: name, label: name, detail: "already connected"})
+		connected = append(connected, row{key: name, label: name, detail: "mini already connected"})
 	}
 	s.agents = newList(rows, s.ticked)
 	s.agents.untickable = connected
+}
+
+func (s *connectScreen) agentDetail(agent string) string {
+	replaced := strings.Join(s.plan.DuplicatedServers(agent), ", ")
+	switch {
+	case replaced == "":
+		return ""
+	case s.p.withMini[agent]:
+		return "mini already connected · also configured with " + replaced
+	}
+	return "configured with " + replaced
 }
 
 func (s *connectScreen) enter() tea.Cmd {
@@ -176,12 +188,37 @@ func (s *connectScreen) nothingWorksYet() string {
 	for _, agent := range s.picked() {
 		picked = append(picked, agent.Name)
 	}
-	names := s.plan.DuplicatedServers(picked...)
+	login, failing := s.splitNeedingLogin(s.plan.DuplicatedServers(picked...))
+	switch {
+	case len(failing) == 0:
+		return fmt.Sprintf("Nothing will be removed until you log in to %s.", initcmd.JoinAnd(login))
+	case len(login) == 0:
+		return "Nothing will be removed: " + dontWorkYet(failing)
+	}
+	return fmt.Sprintf("Nothing will be removed: log in to %s; %s", initcmd.JoinAnd(login), dontWorkYet(failing))
+}
+
+func dontWorkYet(names []string) string {
 	verb := "don't"
 	if len(names) == 1 {
 		verb = "doesn't"
 	}
-	return fmt.Sprintf("Nothing will be removed: %s %s work in mini yet.", initcmd.JoinAnd(names), verb)
+	return fmt.Sprintf("%s %s work in mini yet.", initcmd.JoinAnd(names), verb)
+}
+
+func (s *connectScreen) splitNeedingLogin(servers []string) (login, failing []string) {
+	//nolint:errcheck // Unreadable statuses only lose the login hint; the servers still read as not working.
+	statuses, _ := s.p.statuses()
+	for _, name := range servers {
+		if slices.ContainsFunc(statuses, func(st initcmd.ServerStatus) bool {
+			return st.Name == name && st.Readiness == initcmd.NeedsLogin
+		}) {
+			login = append(login, name)
+		} else {
+			failing = append(failing, name)
+		}
+	}
+	return login, failing
 }
 
 func (s *connectScreen) body(height int, focused bool) string {

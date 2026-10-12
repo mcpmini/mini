@@ -94,16 +94,14 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		// Nothing to look at while it loads, so wait: if the catalog is empty too, Catalog is skipped.
 		catalogs.update(catalogs.start()())
 	}
-	ui := screens{
-		imports:  imports,
-		catalogs: catalogs,
-		connects: newConnects(p.Setup, run),
-	}
+	ui := screens{imports: imports, catalogs: catalogs}
+	statuses := func() ([]initcmd.ServerStatus, error) { return run.ServerStatuses(ui.catalog(run.Plan)) }
+	ui.connects = newConnects(p.Setup, run, statuses)
 	steps := newServerSteps(p.Setup.ConfigDir)
-	ui.logins = newLogins(p, run, ui.catalog, steps)
+	ui.logins = newLogins(p, run, statuses, steps)
 	ui.review = newReviewScreen(reviewParams{
 		added:         run.Added,
-		statuses:      func() ([]initcmd.ServerStatus, error) { return run.ServerStatuses(ui.catalog(run.Plan)) },
+		statuses:      statuses,
 		checking:      run.Checking,
 		steps:         steps,
 		configDir:     p.Setup.ConfigDir,
@@ -113,14 +111,9 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	return ui
 }
 
-func newLogins(
-	p Params,
-	run *initcmd.Run,
-	catalog func(initcmd.Plan) []catalog.Entry,
-	steps serverSteps,
-) *loginsScreen {
+func newLogins(p Params, run *initcmd.Run, statuses serverStatuses, steps serverSteps) *loginsScreen {
 	return newLoginsScreen(loginsParams{
-		statuses:     func() ([]initcmd.ServerStatus, error) { return run.ServerStatuses(catalog(run.Plan)) },
+		statuses:     statuses,
 		checking:     run.Checking,
 		changed:      run.ChecksChanged(),
 		startLogin:   p.StartLogin,
@@ -130,12 +123,15 @@ func newLogins(
 	})
 }
 
-func newConnects(setup initcmd.Setup, run *initcmd.Run) *connectScreen {
+type serverStatuses func() ([]initcmd.ServerStatus, error)
+
+func newConnects(setup initcmd.Setup, run *initcmd.Run, statuses serverStatuses) *connectScreen {
 	return newConnectScreen(connectParams{
 		agents:   setup.AgentsToConnect,
 		withMini: setup.AgentsWithMini(),
 		plan:     func() (connectPlan, error) { return run.PlanConnect() },
 		added:    run.Added,
+		statuses: statuses,
 	})
 }
 

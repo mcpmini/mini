@@ -66,6 +66,8 @@ func (f *fakePlan) checksPass(s *connectScreen, check tea.Cmd) {
 
 func noneAdded() []string { return nil }
 
+func noStatuses() ([]initcmd.ServerStatus, error) { return nil, nil }
+
 func connectScreenFor(
 	t *testing.T,
 	plan *fakePlan,
@@ -77,6 +79,7 @@ func connectScreenFor(
 		withMini: withMini,
 		plan:     func() (connectPlan, error) { return plan, nil },
 		added:    noneAdded,
+		statuses: noStatuses,
 	})
 	s.resize(200, 30)
 	t.Cleanup(s.checks.cancelAndWait)
@@ -135,11 +138,27 @@ func TestConnectScreen_withOneAgentOffersOnlyTheOptions(t *testing.T) {
 	}
 }
 
+func TestConnectScreen_eachAgentRowNamesTheMCPsMiniWouldReplace(t *testing.T) {
+	plan := newFakePlan(map[string][]string{"Claude": {"linear"}, "Codex": {"github", "sentry"}})
+	withMini := map[string]bool{"Claude": true, "Windsurf": true}
+	s, _ := connectScreenFor(t, plan, namedAgents("Claude", "Codex", "Cursor", "Windsurf"), withMini)
+	want := "[x] Claude    mini already connected · also configured with linear\n" +
+		"  [x] Codex     configured with github, sentry\n" +
+		"  [x] Cursor\n" +
+		"   ✓  Windsurf  mini already connected"
+	if text := connectText(s); !strings.Contains(text, want) {
+		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
+	}
+	if !s.ticked["Claude"] {
+		t.Error("Claude, which has mini, starts unticked; want it ticked so removing its linear is the default")
+	}
+}
+
 func TestConnectScreen_withSeveralAgentsConnectsOnlyTheTickedOnes(t *testing.T) {
 	list := namedAgents("Claude", "Codex", "Cursor", "Windsurf")
 	s, _ := connectScreenFor(t, newFakePlan(nil), list, map[string]bool{"Windsurf": true})
 	text := connectText(s)
-	marked := "[x] Cursor\n   ✓  Windsurf  already connected\n\n> Just connect mini"
+	marked := "[x] Cursor\n   ✓  Windsurf  mini already connected\n\n> Just connect mini"
 	if !strings.Contains(text, marked) {
 		t.Fatalf(
 			"screen:\n%s\nwant Windsurf marked connected under the others and the cursor on the first option",
@@ -274,7 +293,7 @@ func TestConnectScreen_anAgentAlreadyConnectedIsMarkedWithOnlyOneToConnect(t *te
 	t.Cleanup(s.checks.cancelAndWait)
 	s.resize(60, 30)
 	plan.checksPass(s, showScreen(s))
-	want := "   ✓  Codex  already connected\n\n> Just connect mini"
+	want := "   ✓  Codex  mini already connected\n\n> Just connect mini"
 	if text := ansi.Strip(
 		framed(s, false).body(8),
 	); !strings.HasPrefix(text, want) ||
