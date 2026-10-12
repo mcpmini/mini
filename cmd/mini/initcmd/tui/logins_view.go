@@ -13,6 +13,8 @@ import (
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 )
 
+var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+
 func (s *loginsScreen) heading() string {
 	switch {
 	case len(s.rows) > 0 || s.err != nil:

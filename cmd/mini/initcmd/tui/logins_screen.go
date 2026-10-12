@@ -163,8 +163,6 @@ func (s *loginsScreen) update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 const spinnerInterval = 100 * time.Millisecond
 
 type spinnerTicked struct{}

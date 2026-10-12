@@ -55,12 +55,12 @@ func (s *connectScreen) refresh() {
 		plan = initcmd.ConnectPlan{}
 	}
 	s.plan = plan
-	s.separateConnectedAgents()
+	s.listAgentsTickingNewOnes()
 	s.agents = newList(s.agentRows(), s.ticked)
 	s.agents.untickable = s.connectedRows()
 }
 
-func (s *connectScreen) separateConnectedAgents() {
+func (s *connectScreen) listAgentsTickingNewOnes() {
 	s.listed, s.alreadyConnected = nil, nil
 	for _, agent := range s.p.agents {
 		if s.p.withMini[agent.Name] && !s.plan.HasDuplicates(agent.Name) {
