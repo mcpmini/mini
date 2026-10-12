@@ -15,6 +15,11 @@ func TestReadAnyConfig_readsEachAgentsFormat(t *testing.T) {
 			want:   Server{Config: stdio("s", "npx")},
 		},
 		{
+			name: "mcpServers JSON with an unrelated mcp key", file: "team.json",
+			config: `{"mcp":true,"mcpServers":{"s":{"command":"npx"}}}`,
+			want:   Server{Config: stdio("s", "npx")},
+		},
+		{
 			name: "Codex TOML", file: "team.toml",
 			config: "[mcp_servers.s]\ncommand = \"npx\"\n",
 			want:   Server{Config: stdio("s", "npx")},

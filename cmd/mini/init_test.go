@@ -105,6 +105,26 @@ func TestInitFromATOMLPathReadsCodexFormat(t *testing.T) {
 	}
 }
 
+func TestInitFromAnOpenClawPathReadsItsFormat(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CODEX_HOME", "")
+	configDir := t.TempDir()
+	src := filepath.Join(t.TempDir(), "openclaw.json")
+	testutil.WriteFile(t, src, `{"mcp":{"servers":{"search":{"url":"https://search.example/mcp"}}}}`)
+	cmd := newInitCmd(&rootOptions{configDir: configDir})
+	cmd.SetArgs([]string{"--from", src})
+
+	out := testutil.CaptureStdout(t, func() {
+		if err := cmd.Execute(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	if _, err := os.Stat(filepath.Join(configDir, "servers", "search.yaml")); err != nil {
+		t.Errorf("search.yaml not written: %v\n%s", err, out)
+	}
+}
+
 func TestFindKnownAgent_missingHomeDoesNotUseWorkingDirectory(t *testing.T) {
 	t.Setenv("HOME", "")
 	t.Setenv("CODEX_HOME", "")

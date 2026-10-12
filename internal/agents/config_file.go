@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// ReadAnyConfig reads a config file the user named, whichever agent wrote it.
+// ReadAnyConfig reads a config file the user named in Codex's, OpenClaw's or the mcpServers format.
 func ReadAnyConfig(path string) (map[string]Server, error) {
 	if strings.EqualFold(filepath.Ext(path), ".toml") {
 		return ReadCodex(path)
@@ -17,14 +17,12 @@ func ReadAnyConfig(path string) (map[string]Server, error) {
 func parseAnyJSON(data []byte) (map[string]Server, error) {
 	var keys struct {
 		MCPServers json.RawMessage `json:"mcpServers"`
-		MCP        struct {
-			Servers json.RawMessage `json:"servers"`
-		} `json:"mcp"`
+		MCP        json.RawMessage `json:"mcp"`
 	}
 	if err := json.Unmarshal(data, &keys); err != nil {
 		return nil, err
 	}
-	if keys.MCPServers == nil && keys.MCP.Servers != nil {
+	if keys.MCPServers == nil && keys.MCP != nil {
 		return parseOpenClaw(data)
 	}
 	return ParseClaude(data)
