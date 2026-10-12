@@ -29,7 +29,6 @@ func setupFromFlags(configDir string, f initFlags) (initcmd.Setup, error) {
 		ConfigDir:       configDir,
 		Import:          sources,
 		Add:             requested,
-		Catalog:         entries,
 		AgentsToConnect: agentsToConnect(),
 		SelfPath:        selfPath(),
 	}, nil
@@ -53,12 +52,10 @@ func knownAgentsIn(home string) []agents.Agent {
 }
 
 func flagCatalog(f initFlags) ([]catalog.Entry, error) {
-	if f.addGiven {
-		return publishedCatalogSource().entries()
+	if !f.addGiven {
+		return nil, nil
 	}
-	// Without --add the catalog only says which servers need a token or an app, so no fetch.
-	c, err := catalog.Load()
-	return c.Entries, err
+	return publishedCatalogSource().entries()
 }
 
 func importSources(f initFlags) ([]agents.Agent, error) {

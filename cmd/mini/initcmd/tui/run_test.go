@@ -13,6 +13,7 @@ import (
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
 	"github.com/mcpmini/mini/internal/agents"
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -68,11 +69,16 @@ func deliver(m tea.Model, cmd tea.Cmd) {
 
 func noCatalog() (catalog.Catalog, error) { return catalog.Catalog{}, nil }
 
+// Discovery finds every authorization server letting mini register itself, without the network.
 func setupFor(configDir string, list ...agents.Agent) initcmd.Setup {
-	return initcmd.Setup{ConfigDir: configDir, Import: list}
+	return initcmd.Setup{ConfigDir: configDir, Import: list, Discover: selfRegistering}
 }
 
-// oauthEntry is a catalog server that declares OAuth, so writing it starts no network check.
+func selfRegistering(_ context.Context, serverURL string) (*auth.ServerMeta, error) {
+	return &auth.ServerMeta{RegistrationURL: serverURL + "/register"}, nil
+}
+
+// oauthEntry is a catalog server that declares OAuth, so writing it needs no probe.
 func oauthEntry(name string) catalog.Entry {
 	return catalog.Entry{Name: name, URL: "https://mcp." + name + ".example/mcp", Auth: catalog.AuthOAuth2}
 }
@@ -284,6 +290,24 @@ func TestRun_theSummaryIsReadOnlyOnceNoCheckIsRunning(t *testing.T) {
 	})
 }
 
+func TestRun_LoginsDescribesTheCursorsServerFromTheCatalog(t *testing.T) {
+	linear := oauthEntry("linear")
+	linear.Description = "Issues and projects"
+	var view string
+	program := func(m tea.Model) error {
+		pressingAndDelivering("space", "tab", "enter")(m)
+		view = shown(m.(*app))
+		return nil
+	}
+	c := catalog.Catalog{Entries: []catalog.Entry{linear}}
+	if _, err := Run(Params{Setup: setupFor(t.TempDir()), LoadCatalog: fromCatalog(c), Program: program}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(view, "mcp.linear.example · Issues and projects") {
+		t.Errorf("Logins:\n%s\nwant linear's host and its catalog description", view)
+	}
+}
+
 func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 	cancelled := false
 	startLogin := func(ctx context.Context, _, _ string) (Login, error) {
@@ -296,7 +320,13 @@ func TestRun_quittingCancelsAPendingLoginBeforeReturning(t *testing.T) {
 		Setup:       setupFor(t.TempDir()),
 		LoadCatalog: fromCatalog(c),
 		StartLogin:  startLogin,
-		Program:     pressing("space", "tab", "enter", "enter", "ctrl+c"),
+		Program: func(m tea.Model) error {
+			// Delivering the save waits out linear's registration check, so enter starts its login.
+			pressingAndDelivering("space", "tab", "enter")(m)
+			pressKey(m, "enter")
+			pressKey(m, "ctrl+c")
+			return nil
+		},
 	})
 	if err != nil || out.Saved {
 		t.Fatalf("Run = %+v, %v; want a quit", out, err)

@@ -2,10 +2,8 @@ package initcmd
 
 import (
 	"errors"
-	"slices"
 
 	"github.com/mcpmini/mini/internal/auth"
-	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -34,6 +32,7 @@ func (NeedsEnvState) readiness()    {}
 // ServerStatus is one enabled server and what the user still has to do before it works.
 type ServerStatus struct {
 	Name      string
+	URL       string
 	Readiness Readiness
 }
 
@@ -56,9 +55,16 @@ func (s ServerStatus) NeedsOwnApp() bool {
 	return needs
 }
 
-// ServerStatuses judges every enabled server as mini would load it. Catalog entries say which
-// servers need a token or the user's own OAuth app; nothing in the server file can.
-func ServerStatuses(configDir string, entries []catalog.Entry) ([]ServerStatus, error) {
+// CheckFindings is what a run's checks learned that no server file says.
+type CheckFindings struct {
+	// NoSelfRegistration names the servers whose authorization server lets no client register itself.
+	NoSelfRegistration map[string]bool
+	// NeedsCredential names the servers that refused the probe without an OAuth challenge.
+	NeedsCredential map[string]bool
+}
+
+// ServerStatuses judges every enabled server as mini would load it, with what the run's checks found.
+func ServerStatuses(configDir string, findings CheckFindings) ([]ServerStatus, error) {
 	servers, err := config.LoadServers(configDir)
 	if err != nil {
 		return nil, err
@@ -66,44 +72,28 @@ func ServerStatuses(configDir string, entries []catalog.Entry) ([]ServerStatus, 
 	var statuses []ServerStatus
 	for _, sc := range servers.Loaded {
 		if sc.IsEnabled() {
-			statuses = append(statuses, serverStatus(configDir, sc, entries))
+			statuses = append(statuses, serverStatus(configDir, sc, findings))
 		}
 	}
 	return statuses, nil
 }
 
-func serverStatus(configDir string, sc config.ServerConfig, entries []catalog.Entry) ServerStatus {
-	status := ServerStatus{Name: sc.Name, Readiness: ReadyState{}}
-	if sc.UnsetEnv != nil {
+func serverStatus(configDir string, sc config.ServerConfig, findings CheckFindings) ServerStatus {
+	status := ServerStatus{Name: sc.Name, URL: sc.URL, Readiness: ReadyState{}}
+	switch {
+	case sc.UnsetEnv != nil:
 		status.Readiness = envReadiness(sc.UnsetEnv)
-		return status
-	}
-	if entry, ok := catalogEntryFor(sc, entries); ok {
-		switch {
-		case entry.Auth == catalog.AuthToken && !hasCredential(sc):
-			status.Readiness = NeedsTokenState{}
-			return status
-		case entry.Auth == catalog.AuthOAuth2App && !hasOwnApp(sc):
+	case holdsTokenPlaceholder(sc), findings.NeedsCredential[sc.Name]:
+		status.Readiness = NeedsTokenState{}
+	case holdsAppPlaceholder(sc):
+		status.Readiness = NeedsOwnAppState{}
+	case sc.UsesOAuthLogin() && needsLogin(configDir, sc.Name):
+		status.Readiness = NeedsLoginState{}
+		if sc.Auth.ClientID == "" && findings.NoSelfRegistration[sc.Name] {
 			status.Readiness = NeedsOwnAppState{}
-			return status
 		}
 	}
-	if sc.UsesOAuthLogin() && needsLogin(configDir, sc.Name) {
-		status.Readiness = NeedsLoginState{}
-	}
 	return status
-}
-
-// A server is the catalog's when it runs the catalog's URL, under any name; one that only shares
-// the name, like a local stdio github, isn't.
-func catalogEntryFor(sc config.ServerConfig, entries []catalog.Entry) (catalog.Entry, bool) {
-	i := slices.IndexFunc(entries, func(e catalog.Entry) bool {
-		return sc.URL != "" && serverURLKey(e.URL) == serverURLKey(sc.URL)
-	})
-	if i < 0 {
-		return catalog.Entry{}, false
-	}
-	return entries[i], true
 }
 
 // A refreshable token needs no login; ReadTokenState already counts it as usable.
@@ -111,14 +101,6 @@ func needsLogin(configDir, name string) bool {
 	//nolint:errcheck // Unreadable token state conservatively requires login.
 	state, _ := auth.ReadTokenState(configDir, name)
 	return state.NeedsLogin()
-}
-
-func hasCredential(sc config.ServerConfig) bool {
-	return !holdsPlaceholder(sc) && (len(sc.Headers) > 0 || (sc.Auth != nil && sc.Auth.Token != ""))
-}
-
-func hasOwnApp(sc config.ServerConfig) bool {
-	return !holdsPlaceholder(sc) && sc.Auth != nil && sc.Auth.ClientID != ""
 }
 
 // Step says what the server still needs, naming only a login or a custom OAuth app; for anything

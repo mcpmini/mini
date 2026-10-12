@@ -19,8 +19,11 @@ import (
 
 type sessionParams struct {
 	ConfigDir string
-	Clock     clock.Clock
-	Probe     probeFunc
+	// MiniDir holds the servers the user already had; they are checked but never rewritten.
+	MiniDir  string
+	Clock    clock.Clock
+	Probe    probeFunc
+	Discover discoverFunc
 }
 
 // Only servers this run wrote are ever removed; servers the user had before are never touched.
@@ -35,6 +38,7 @@ type session struct {
 	mu       sync.Mutex
 	checking map[string]bool
 	checked  map[string]bool
+	findings CheckFindings
 }
 
 type writtenServer struct {
@@ -74,6 +78,8 @@ func newSession(p sessionParams) *session {
 		changed:  make(chan struct{}, 1),
 		checking: map[string]bool{},
 		checked:  map[string]bool{},
+
+		findings: CheckFindings{NoSelfRegistration: map[string]bool{}, NeedsCredential: map[string]bool{}},
 	}
 }
 
@@ -164,6 +170,15 @@ func (s *session) Running() map[string]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return maps.Clone(s.checking)
+}
+
+func (s *session) Findings() CheckFindings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return CheckFindings{
+		NoSelfRegistration: maps.Clone(s.findings.NoSelfRegistration),
+		NeedsCredential:    maps.Clone(s.findings.NeedsCredential),
+	}
 }
 
 func (s *session) WaitChecks() {

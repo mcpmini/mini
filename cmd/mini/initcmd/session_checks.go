@@ -2,49 +2,122 @@ package initcmd
 
 import (
 	"context"
+	"errors"
+	"slices"
 
 	"github.com/mcpmini/mini/internal/config"
+	"github.com/mcpmini/mini/internal/ops"
+	"github.com/mcpmini/mini/internal/transport"
 )
+
+type checkTarget struct {
+	configDir string
+	server    config.ServerConfig
+	// Only a server whose auth is unknown is probed. Its OAuth finding goes in the config dir's
+	// internal state, as mini's own connections record it; no server file changes.
+	probe bool
+}
 
 func (s *session) startChecks() {
 	targets := s.checkTargets()
 	ctx, cancel := context.WithCancel(context.Background())
 	s.checks.cancel = cancel
 	s.mu.Lock()
-	for _, sc := range targets {
-		s.checking[sc.Name] = true
+	for _, t := range targets {
+		s.checking[t.server.Name] = true
 	}
 	s.mu.Unlock()
-	for _, sc := range targets {
-		s.checks.wg.Go(func() { s.check(ctx, sc) })
+	for _, t := range targets {
+		s.checks.wg.Go(func() { s.check(ctx, t) })
 	}
 	// stopChecks cleared every check, so watchers must hear these run again.
 	s.notifyChanged()
 }
 
-func (s *session) checkTargets() []config.ServerConfig {
-	var unchecked []string
-	s.mu.Lock()
-	for name := range s.written {
-		if !s.checked[name] {
-			unchecked = append(unchecked, name)
+func (s *session) checkTargets() []checkTarget {
+	var targets []checkTarget
+	// Read back from disk, so bundled and already-detected auth count.
+	for _, sc := range s.unchecked(s.p.ConfigDir) {
+		_, written := s.written[sc.Name]
+		if written && (ops.MayNeedOAuth(sc) || needsRegistrationCheck(s.p.ConfigDir, sc)) {
+			targets = append(targets, checkTarget{configDir: s.p.ConfigDir, server: sc, probe: ops.MayNeedOAuth(sc)})
 		}
 	}
-	s.mu.Unlock()
-	// Read back from disk, so bundled and already-detected auth count.
-	return oauthTargets(s.p.ConfigDir, unchecked)
+	for _, sc := range s.unchecked(s.p.MiniDir) {
+		if ops.MayNeedOAuth(sc) || needsRegistrationCheck(s.p.MiniDir, sc) {
+			targets = append(targets, checkTarget{configDir: s.p.MiniDir, server: sc, probe: ops.MayNeedOAuth(sc)})
+		}
+	}
+	return targets
 }
 
-func (s *session) check(ctx context.Context, sc config.ServerConfig) {
-	checkOAuth(ctx, probeParams{configDir: s.p.ConfigDir, server: sc, clock: s.p.Clock}, s.p.Probe)
+func (s *session) unchecked(configDir string) []config.ServerConfig {
+	if configDir == "" {
+		return nil
+	}
+	servers, err := config.LoadServers(configDir)
+	if err != nil {
+		return nil // a later init step hits the same error and reports it
+	}
 	s.mu.Lock()
-	delete(s.checking, sc.Name)
+	defer s.mu.Unlock()
+	return slices.DeleteFunc(servers.Loaded, func(sc config.ServerConfig) bool { return s.checked[sc.Name] })
+}
+
+func (s *session) check(ctx context.Context, t checkTarget) {
+	var probeErr error
+	if t.probe {
+		probeErr = checkOAuth(ctx, probeParams{configDir: t.configDir, server: t.server, clock: s.p.Clock}, s.p.Probe)
+	}
+	s.recordFindings(ctx, t.configDir, t.server.Name, probeErr)
+	s.mu.Lock()
+	delete(s.checking, t.server.Name)
 	// A cancelled check proved nothing, so the next sync runs it again; a timed-out one is done.
 	if ctx.Err() == nil {
-		s.checked[sc.Name] = true
+		s.checked[t.server.Name] = true
 	}
 	s.mu.Unlock()
 	s.notifyChanged()
+}
+
+// Reads the server again after the probe, which may have found that it needs an OAuth login. One
+// that refused the probe without an OAuth challenge needs a credential the user must supply.
+func (s *session) recordFindings(ctx context.Context, configDir, name string, probeErr error) {
+	sc, err := config.LoadServer(configDir, name)
+	if err != nil {
+		return
+	}
+	var unauthorized *transport.UnauthorizedError
+	refused := errors.As(probeErr, &unauthorized) && !sc.UsesOAuthLogin()
+	s.mu.Lock()
+	if refused {
+		s.findings.NeedsCredential[name] = true
+	} else {
+		delete(s.findings.NeedsCredential, name)
+	}
+	s.mu.Unlock()
+	if refused {
+		return
+	}
+	if needsRegistrationCheck(configDir, sc) {
+		s.checkRegistration(ctx, sc)
+	}
+}
+
+func (s *session) checkRegistration(ctx context.Context, sc config.ServerConfig) {
+	name := sc.Name
+	check := registrationCheck{server: sc, clock: s.p.Clock, discover: s.p.Discover}
+	selfRegisters, known := check.selfRegisters(ctx)
+	if !known {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if selfRegisters {
+		delete(s.findings.NoSelfRegistration, name)
+	} else {
+		s.findings.NoSelfRegistration[name] = true
+	}
 }
 
 func (s *session) notifyChanged() {

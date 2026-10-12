@@ -25,7 +25,6 @@ type catalogScreen struct {
 	loaded            bool
 	loadErr           error
 	popular           []string
-	loadedEntries     []catalog.Entry
 	byCategory        []catalog.Entry
 	checked           map[string]bool
 	grid              *catalogGrid
@@ -61,7 +60,7 @@ func (s *catalogScreen) update(msg tea.Msg) tea.Cmd {
 	}
 	s.loaded, s.loadErr = true, loaded.err
 	c := loaded.catalog
-	s.popular, s.loadedEntries = c.Popular, c.Entries
+	s.popular = c.Popular
 	if loaded.err == nil {
 		s.byCategory = initcmd.GroupByCategory(c.Entries)
 	}
@@ -150,6 +149,17 @@ func catalogGridEntry(e catalog.Entry, state entryState) gridEntry {
 	}
 }
 
+// description is what the catalog says the server at rawURL does, once it has loaded.
+func (s *catalogScreen) description(rawURL string) string {
+	i := slices.IndexFunc(s.byCategory, func(e catalog.Entry) bool {
+		return initcmd.SameServerURL(e.URL, rawURL)
+	})
+	if i < 0 {
+		return ""
+	}
+	return s.byCategory[i].Description
+}
+
 func host(rawURL string) string {
 	if u, err := url.Parse(rawURL); err == nil && u.Host != "" {
 		return u.Host
@@ -202,11 +212,6 @@ func (s *catalogScreen) keys() string {
 
 func (s *catalogScreen) filterLine() string {
 	return s.grid.filter.line()
-}
-
-// entries is the catalog the screen offered from, once it has loaded.
-func (s *catalogScreen) entries() ([]catalog.Entry, bool) {
-	return s.loadedEntries, s.loaded && s.loadErr == nil
 }
 
 // Until it loads the screen isn't empty: the user waits on it rather than skipping it.

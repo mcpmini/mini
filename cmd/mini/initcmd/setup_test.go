@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/mcpmini/mini/internal/agents"
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
@@ -238,8 +239,8 @@ func TestRunUnattended_aServerNeedingTheUsersCredentialsGetsThemCommentedOut(t *
 	if !strings.Contains(github, "# Create a token at https://github.example/tokens, then uncomment:") {
 		t.Errorf("github.yaml:\n%s\nwant the token step as a comment", github)
 	}
-	if status := statusNamed(t, report.Servers, "github"); status.Readiness != (NeedsTokenState{}) {
-		t.Errorf("github = %+v, want it needing a token", status)
+	if status := statusNamed(t, report.Servers, "github"); !status.NeedsOwnApp() {
+		t.Errorf("github = %+v, want its own app: its authorization server lets no client register itself", status)
 	}
 	if strings.Contains(string(testutil.ReadFile(t, config.ServerPath(setup.ConfigDir, "linear"))), "#") {
 		t.Error("linear.yaml has a comment, want none: its login needs nothing written by hand")
@@ -297,13 +298,27 @@ func addCredentialServers(t *testing.T) (Setup, Report) {
 		},
 		{Name: "linear", URL: "https://linear.example/mcp", Auth: catalog.AuthOAuth2},
 	}}
-	setup.Catalog = setup.Add
-	setup.Probe = func(context.Context, string, config.ServerConfig) error { return nil }
+	setup.Probe = answersWithOAuth
+	setup.Discover = registersOnlyAt("https://linear.example/mcp")
 	report := RunUnattended(setup)
 	if len(report.WriteErrors) > 0 {
 		t.Fatalf("write errors: %v", report.WriteErrors)
 	}
 	return setup, report
+}
+
+// answersWithOAuth stands in for a probe whose server answered with an OAuth challenge.
+func answersWithOAuth(_ context.Context, configDir string, sc config.ServerConfig) error {
+	return config.MarkOAuthDetected(configDir, sc.Name)
+}
+
+func registersOnlyAt(selfRegistering ...string) discoverFunc {
+	return func(_ context.Context, serverURL string) (*auth.ServerMeta, error) {
+		if slices.Contains(selfRegistering, serverURL) {
+			return &auth.ServerMeta{RegistrationURL: serverURL + "/register"}, nil
+		}
+		return &auth.ServerMeta{}, nil
+	}
 }
 
 func editServerFile(t *testing.T, configDir, name, old, replacement string) {
@@ -314,7 +329,7 @@ func editServerFile(t *testing.T, configDir, name, old, replacement string) {
 
 func currentStatus(t *testing.T, setup Setup, name string) ServerStatus {
 	t.Helper()
-	statuses, err := ServerStatuses(setup.ConfigDir, setup.Catalog)
+	statuses, err := ServerStatuses(setup.ConfigDir, CheckFindings{})
 	if err != nil {
 		t.Fatal(err)
 	}

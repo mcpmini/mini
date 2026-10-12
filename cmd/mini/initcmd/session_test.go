@@ -5,6 +5,7 @@ package initcmd
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -12,11 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mcpmini/mini/internal/auth"
 	"github.com/mcpmini/mini/internal/clock"
 	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/config/configtest"
 	"github.com/mcpmini/mini/internal/ops"
 	"github.com/mcpmini/mini/internal/testutil"
+	"github.com/mcpmini/mini/internal/transport"
 )
 
 func httpServer(name, url string) config.ServerConfig {
@@ -295,4 +298,141 @@ func TestSessionClose_cancelsAndWaitsForChecks(t *testing.T) {
 	if _, finished := probe.counts(); finished != 1 || s.Running()["open"] {
 		t.Errorf("after Close: finished = %d, checking = %v; want the check finished", finished, s.Running()["open"])
 	}
+}
+
+// fakeDiscovery answers each server URL with its authorization server's metadata, or an error.
+type fakeDiscovery struct {
+	mu         sync.Mutex
+	metas      map[string]*auth.ServerMeta
+	discovered []string
+}
+
+func (f *fakeDiscovery) discover(_ context.Context, serverURL string) (*auth.ServerMeta, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.discovered = append(f.discovered, serverURL)
+	if meta, ok := f.metas[serverURL]; ok {
+		return meta, nil
+	}
+	return nil, errors.New("discovery failed")
+}
+
+func oauthServer(name, clientID string) config.ServerConfig {
+	sc := httpServer(name, "https://"+name+".example/mcp")
+	sc.Auth = &config.AuthConfig{Type: config.AuthTypeOAuth2, ClientID: clientID}
+	return sc
+}
+
+func TestSessionChecks_discoveryNamesTheLoginsThatNeedTheUsersOwnApp(t *testing.T) {
+	stage, miniDir := t.TempDir(), t.TempDir()
+	for _, sc := range []config.ServerConfig{oauthServer("asana", ""), oauthServer("own", "my-app"), oauthServer("box", "")} {
+		configtest.WriteServer(t, miniDir, sc)
+	}
+	if err := auth.SaveRegistration(miniDir, "box", &auth.Registration{ClientID: "registered-earlier"}); err != nil {
+		t.Fatal(err)
+	}
+	discovery := &fakeDiscovery{metas: map[string]*auth.ServerMeta{
+		"https://asana.example/mcp":  {},
+		"https://github.example/mcp": {},
+		"https://linear.example/mcp": {RegistrationURL: "https://linear.example/register"},
+		"https://notion.example/mcp": {CIMDSupported: true},
+		"https://sentry.example/mcp": {CIMDSupported: true},
+	}}
+	var probed []string
+	var mu sync.Mutex
+	probe := func(_ context.Context, dir string, sc config.ServerConfig) error {
+		mu.Lock()
+		probed = append(probed, sc.Name)
+		mu.Unlock()
+		if sc.Name == "keyed" {
+			return fmt.Errorf("connect: %w", &transport.UnauthorizedError{WWWAuthenticate: "ApiKey"})
+		}
+		return config.MarkOAuthDetected(dir, sc.Name)
+	}
+	s := newSession(sessionParams{ConfigDir: stage, MiniDir: miniDir, Probe: probe, Discover: discovery.discover})
+	t.Cleanup(s.Close)
+
+	s.Sync([]config.ServerConfig{
+		httpServer("github", "https://github.example/mcp"), httpServer("linear", "https://linear.example/mcp"),
+		httpServer("notion", "https://notion.example/mcp"), httpServer("flaky", "https://flaky.example/mcp"),
+		httpServer("keyed", "https://keyed.example/mcp"), oauthServer("sentry", ""),
+	}, nil)
+	s.WaitChecks()
+
+	findings := s.Findings()
+	if got := findings.NoSelfRegistration; !reflect.DeepEqual(got, map[string]bool{"asana": true, "github": true}) {
+		t.Errorf("no self-registration = %v, want asana and github: neither offers DCR or CIMD, and flaky's "+
+			"failed discovery proves nothing", got)
+	}
+	if got := findings.NeedsCredential; !reflect.DeepEqual(got, map[string]bool{"keyed": true}) {
+		t.Errorf("needs credential = %v, want keyed: it refused the probe without an OAuth challenge", got)
+	}
+	slices.Sort(probed)
+	if !slices.Equal(probed, []string{"flaky", "github", "keyed", "linear", "notion"}) {
+		t.Errorf("probed = %v, want this run's servers of unknown auth: asana was the user's before, "+
+			"and sentry already declares OAuth", probed)
+	}
+	if !slices.Contains(discovery.discovered, "https://sentry.example/mcp") {
+		t.Error("sentry's authorization server wasn't discovered, want it checked without a probe")
+	}
+	for _, url := range []string{"https://own.example/mcp", "https://box.example/mcp"} {
+		if slices.Contains(discovery.discovered, url) {
+			t.Errorf("discovered %s, want it skipped: it already has a client ID", url)
+		}
+	}
+}
+
+func refusesWithoutOAuth(context.Context, string, config.ServerConfig) error {
+	return fmt.Errorf("connect: %w", &transport.UnauthorizedError{WWWAuthenticate: "ApiKey"})
+}
+
+func TestSessionChecks_aServerRefusingWithoutOAuthNeedsACredential(t *testing.T) {
+	t.Run("one already in mini is probed too, its file untouched", func(t *testing.T) {
+		stage, miniDir := t.TempDir(), t.TempDir()
+		configtest.WriteServer(t, miniDir, httpServer("keyed", "https://keyed.example/mcp"))
+		before := testutil.ReadFile(t, config.ServerPath(miniDir, "keyed"))
+		s := newSession(sessionParams{
+			ConfigDir: stage, MiniDir: miniDir, Probe: refusesWithoutOAuth, Discover: (&fakeDiscovery{}).discover,
+		})
+		t.Cleanup(s.Close)
+		s.Sync(nil, nil)
+		s.WaitChecks()
+		if got := s.Findings().NeedsCredential; !reflect.DeepEqual(got, map[string]bool{"keyed": true}) {
+			t.Errorf("needs credential = %v, want keyed, which the user added before this run", got)
+		}
+		if after := testutil.ReadFile(t, config.ServerPath(miniDir, "keyed")); string(after) != string(before) {
+			t.Errorf("keyed.yaml changed:\n%s", after)
+		}
+	})
+	t.Run("a server rewritten so it no longer refuses loses the mark", func(t *testing.T) {
+		var refuse sync.Map
+		refuse.Store("https://old.example/mcp", true)
+		probe := func(ctx context.Context, dir string, sc config.ServerConfig) error {
+			if _, ok := refuse.Load(sc.URL); ok {
+				return refusesWithoutOAuth(ctx, dir, sc)
+			}
+			return nil
+		}
+		s := newSession(sessionParams{ConfigDir: t.TempDir(), Probe: probe, Discover: (&fakeDiscovery{}).discover})
+		t.Cleanup(s.Close)
+		s.Sync([]config.ServerConfig{httpServer("files", "https://old.example/mcp")}, nil)
+		s.WaitChecks()
+		s.Sync([]config.ServerConfig{httpServer("files", "https://new.example/mcp")}, nil)
+		s.WaitChecks()
+		if got := s.Findings().NeedsCredential; len(got) > 0 {
+			t.Errorf("needs credential = %v, want none: the rewritten files answered its probe", got)
+		}
+	})
+	t.Run("a probe cut short proves nothing", func(t *testing.T) {
+		probe := func(ctx context.Context, dir string, sc config.ServerConfig) error {
+			<-ctx.Done()
+			return refusesWithoutOAuth(ctx, dir, sc)
+		}
+		s := newSession(sessionParams{ConfigDir: t.TempDir(), Probe: probe, Discover: (&fakeDiscovery{}).discover})
+		s.Sync([]config.ServerConfig{httpServer("slow", "https://slow.example/mcp")}, nil)
+		s.Close()
+		if got := s.Findings().NeedsCredential; len(got) > 0 {
+			t.Errorf("needs credential = %v, want none: the 401 came before the probe could look for OAuth", got)
+		}
+	})
 }

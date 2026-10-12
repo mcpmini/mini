@@ -69,7 +69,6 @@ func (f *flow) save() {
 }
 
 func (f *flow) finish() Outcome {
-	f.run.Plan.Catalog = f.ui.catalog(f.run.Plan)
 	out := Outcome{Saved: true, Report: f.run.Finish(context.Background(), f.ui.connects.chosenConnect())}
 	out.Report.Interactive = f.interactive
 	out.Report.Import.DropOfferedSkips()
@@ -95,10 +94,10 @@ func newScreens(p Params, run *initcmd.Run) screens {
 		catalogs.update(catalogs.start()())
 	}
 	ui := screens{imports: imports, catalogs: catalogs}
-	statuses := func() ([]initcmd.ServerStatus, error) { return run.ServerStatuses(ui.catalog(run.Plan)) }
+	statuses := run.ServerStatuses
 	ui.connects = newConnects(p.Setup, run, statuses)
 	steps := newServerSteps(p.Setup.ConfigDir)
-	ui.logins = newLogins(p, run, statuses, steps)
+	ui.logins = newLogins(p, run, loginsParams{statuses: statuses, steps: steps, describe: catalogs.description})
 	ui.review = newReviewScreen(reviewParams{
 		added:         run.Added,
 		statuses:      statuses,
@@ -111,16 +110,14 @@ func newScreens(p Params, run *initcmd.Run) screens {
 	return ui
 }
 
-func newLogins(p Params, run *initcmd.Run, statuses serverStatuses, steps serverSteps) *loginsScreen {
-	return newLoginsScreen(loginsParams{
-		statuses:     statuses,
-		checking:     run.Checking,
-		changed:      run.ChecksChanged(),
-		startLogin:   p.StartLogin,
-		configDirFor: run.ConfigDirFor,
-		steps:        steps,
-		copy:         copyLinkToClipboard,
-	})
+// shared holds what Logins shares with the other screens; the rest comes from the run.
+func newLogins(p Params, run *initcmd.Run, shared loginsParams) *loginsScreen {
+	shared.checking = run.Checking
+	shared.changed = run.ChecksChanged()
+	shared.startLogin = p.StartLogin
+	shared.configDirFor = run.ConfigDirFor
+	shared.copy = copyLinkToClipboard
+	return newLoginsScreen(shared)
 }
 
 type serverStatuses func() ([]initcmd.ServerStatus, error)
@@ -147,14 +144,6 @@ func (ui screens) savePoint() int {
 func (ui screens) pick(plan *initcmd.Plan) {
 	ui.imports.pick(plan.Import.Candidates)
 	plan.Add = ui.catalogs.picks()
-	plan.Catalog = ui.catalog(*plan)
-}
-
-func (ui screens) catalog(plan initcmd.Plan) []catalog.Entry {
-	if entries, ok := ui.catalogs.entries(); ok {
-		return entries
-	}
-	return plan.Catalog
 }
 
 func (p Params) program() func(m tea.Model) error {
