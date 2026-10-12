@@ -112,12 +112,11 @@ func (r *Run) discardStage() {
 func (r *Run) report(c commitResult) Report {
 	p := r.Plan
 	report := r.setup.report()
-	report.Import = p.Import
+	report.Import = p.Import.keepOnly(p.Import.importedOf(c.committed))
 	report.Added = c.committed
 	adds := p.adds()
 	report.AlreadyConfigured, report.AddCoveredByImport = adds.alreadyConfigured, adds.coveredByImport
 	report.WriteErrors = slices.Concat(r.last.Failed, c.failed)
-	report.Import.keepOnly(report.Import.importedOf(c.committed))
 	report.Servers, report.ReadServersErr = ServerStatuses(r.setup.ConfigDir, r.session.Findings())
 	return report
 }

@@ -51,7 +51,7 @@ func Run(p Params) (Outcome, error) {
 	f.ui.logins.cancelLogin()
 	f.ui.connects.checks.cancelAndWait()
 	// A ctrl+c queued behind the enter that chose to connect still ends the run early.
-	if a.quit || err != nil || !a.saves.saved {
+	if a.quit || err != nil || !a.finished {
 		return Outcome{}, err
 	}
 	return f.finish(), nil

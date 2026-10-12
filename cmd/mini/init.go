@@ -92,10 +92,7 @@ func resolveFromSource(from string) (agents.Agent, error) {
 		}
 		return agent, nil
 	}
-	if strings.EqualFold(filepath.Ext(from), ".toml") {
-		return agents.Agent{Name: from, ConfigPath: from, Read: agents.ReadCodex}, nil
-	}
-	return agents.Agent{Name: from, ConfigPath: from, Read: agents.ReadClaude}, nil
+	return agents.Agent{Name: from, ConfigPath: from, Read: agents.ReadAnyConfig}, nil
 }
 
 func findKnownAgent(name string) (agents.Agent, bool) {

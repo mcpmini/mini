@@ -119,11 +119,14 @@ const minWidth, minHeight = 60, 12
 const headingLines, blankLinesAroundBody = 1, 2
 
 type app struct {
-	screens        []screen
-	at             int
-	width          int
-	height         int
-	quit           bool
+	screens []screen
+	at      int
+	width   int
+	height  int
+	quit    bool
+	// Set only by moving past the last screen; a program that ends any other way, such as on a
+	// SIGTERM, saves nothing.
+	finished       bool
 	saves          savePoint
 	firstScreenCmd tea.Cmd
 	nav            navigation
@@ -280,6 +283,7 @@ func (a *app) forward() tea.Cmd {
 	}
 	a.leave()
 	if !ok {
+		a.finished = true
 		return tea.Quit
 	}
 	return a.show(next)
