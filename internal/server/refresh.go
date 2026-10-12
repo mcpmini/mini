@@ -98,7 +98,7 @@ func (s *Server) publishRefreshedTools(
 	}
 	changed := !reflect.DeepEqual(u.lastDefs, tools)
 	u.lastDefs = tools
-	s.reg.ReplaceServerTools(registry.ServerParams{
+	s.reg.ReplaceServer(registry.ServerParams{
 		Name:            u.cfg.Name,
 		Defs:            tools,
 		Perm:            u.cfg.Permissions,

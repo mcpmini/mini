@@ -314,29 +314,6 @@ const (
 	PermHidden    PermissionLevel = "hidden"
 )
 
-// ActionConfig defines a virtual tool that pre-fills arguments for a real tool.
-// Actions live in ~/.mini/internal/actions/<name>.yaml.
-type ActionConfig struct {
-	// Name is the virtual tool name (without server prefix).
-	Name string `yaml:"name"`
-
-	// Description shown in list output.
-	Description string `yaml:"description"`
-
-	// Server is the upstream to delegate to.
-	Server string `yaml:"server"`
-
-	// Tool is the real tool name on the upstream server.
-	Tool string `yaml:"tool"`
-
-	// DefaultArgs are merged with call-time args (call-time wins on conflicts).
-	// Values support ${ENV_VAR} expansion.
-	DefaultArgs map[string]any `yaml:"default_args,omitempty"`
-
-	// Permission overrides the target tool's permission. Default: inherit.
-	Permission string `yaml:"permission,omitempty"`
-}
-
 // ProjectionConfig defines how to trim tool responses.
 type ProjectionConfig struct {
 	// Alias replaces the upstream tool name for agents; mini translates back when calling upstream.

@@ -482,43 +482,6 @@ func TestExecuteUnknownServer(t *testing.T) {
 	requireToolError(t, resp, "not found")
 }
 
-func TestActionDispatchMergesDefaultArgs(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	fake := fakeConn("list_pull_requests")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)
-	addTestConnection(t, srv, config.ServerConfig{Name: "gh"}, fake)
-	srv.RegisterAction(config.ActionConfig{
-		Name:        "my_prs",
-		Description: "My open PRs",
-		Server:      "gh",
-		Tool:        "list_pull_requests",
-		DefaultArgs: map[string]any{"state": "open", "author": "me"},
-	})
-
-	resp := serve(t, srv, callTool("call", map[string]any{
-		"server": "gh",
-		"tool":   "my_prs",
-		"params": map[string]any{"state": "closed"},
-	}))
-	if resp["error"] != nil {
-		t.Fatalf("unexpected error: %v", resp["error"])
-	}
-	assertUpstreamArgs(t, fake, map[string]any{"state": "closed", "author": "me"})
-}
-
-func assertUpstreamArgs(t *testing.T, fake *transport.FakeConnection, want map[string]any) {
-	t.Helper()
-	var callParams transport.ToolCallParams
-	if err := json.Unmarshal(fake.LastParams, &callParams); err != nil {
-		t.Fatalf("unmarshal upstream params: %v", err)
-	}
-	for k, wantVal := range want {
-		if got := callParams.Arguments[k]; got != wantVal {
-			t.Errorf("expected %s=%v, got %v", k, wantVal, got)
-		}
-	}
-}
-
 func TestConfigureStatus(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	ctx := context.Background()

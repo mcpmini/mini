@@ -448,28 +448,3 @@ func TestProjectionReload_setProjectionFinalValuePersistedAndSurvivesReload(t *t
 		t.Errorf("persisted include_only = %v, want last set value [a]", got)
 	}
 }
-
-func TestProjectionReload_actionSurvivesReload(t *testing.T) {
-	e := newReloadEnv(t, reloadEnvParams{})
-	e.startPoller()
-
-	e.srv.RegisterAction(config.ActionConfig{
-		Name:        "getA",
-		Server:      "svc",
-		Tool:        "getData",
-		Description: "Get field a with defaults",
-	})
-
-	e.writeProjections(map[string]*config.ProjectionConfig{"getData": {IncludeOnly: []string{"b"}}})
-	e.advanceTick()
-
-	listResp := serve(t, e.srv, callTool("list", map[string]any{"query": "getA"}))
-	text := toolResultText(t, listResp)
-	var results []map[string]any
-	if err := json.Unmarshal([]byte(text), &results); err != nil {
-		t.Fatalf("list response not JSON: %s", text)
-	}
-	if len(results) == 0 {
-		t.Errorf("action getA not found after projection reload: %s", text)
-	}
-}

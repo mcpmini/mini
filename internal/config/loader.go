@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -84,88 +83,6 @@ func bundledAuth(sc ServerConfig) *AuthConfig {
 		return nil
 	}
 	return &ac
-}
-
-func readAndInterpolate(path string) ([]byte, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
-	}
-	data, err = interpolateEnv(data)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	return data, nil
-}
-
-func LoadActions(dir string) ([]ActionConfig, error) {
-	pattern := filepath.Join(dir, "internal", "actions", "*.yaml")
-	paths, err := filepath.Glob(pattern)
-	if err != nil {
-		return nil, err
-	}
-	var actions []ActionConfig
-	for _, p := range paths {
-		a, err := loadActionConfig(p)
-		if err != nil {
-			return nil, err
-		}
-		actions = append(actions, *a)
-	}
-	return actions, nil
-}
-
-func loadActionConfig(p string) (*ActionConfig, error) {
-	data, err := readAndInterpolate(p)
-	if err != nil {
-		return nil, err
-	}
-	return parseActionConfig(p, data)
-}
-
-func parseActionConfig(p string, data []byte) (*ActionConfig, error) {
-	var a ActionConfig
-	if err := yaml.Unmarshal(data, &a); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", p, err)
-	}
-	if a.Name == "" {
-		a.Name = filepath.Base(p[:len(p)-5])
-	}
-	if err := validateActionConfig(p, a); err != nil {
-		return nil, err
-	}
-	return &a, nil
-}
-
-func validateActionConfig(path string, a ActionConfig) error {
-	if !ValidServerName.MatchString(a.Name) {
-		return fmt.Errorf("action %s: invalid name %q", path, a.Name)
-	}
-	if a.Server != "" && !ValidServerName.MatchString(a.Server) {
-		return fmt.Errorf("action %s: invalid server name %q", path, a.Server)
-	}
-	if a.Tool != "" && !ValidToolName.MatchString(a.Tool) {
-		return fmt.Errorf("action %s: invalid tool name %q", path, a.Tool)
-	}
-	return nil
-}
-
-func interpolateEnv(data []byte) ([]byte, error) {
-	var missing []string
-	seen := map[string]bool{}
-	result := envVarRef.ReplaceAllStringFunc(string(data), func(match string) string {
-		key := match[2 : len(match)-1]
-		val, ok := os.LookupEnv(key)
-		if !ok && !seen[key] {
-			seen[key] = true
-			missing = append(missing, key)
-		}
-		return val
-	})
-	if len(missing) > 0 {
-		return nil, fmt.Errorf("config references undefined environment variable(s): %s", strings.Join(missing, ", "))
-	}
-	return []byte(result), nil
 }
 
 func DefaultConfigDir() (string, error) {

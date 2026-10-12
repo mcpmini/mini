@@ -10,77 +10,66 @@ import (
 	"github.com/mcpmini/mini/internal/registry"
 )
 
-func TestReplaceServerTools_preservesHiddenActions(t *testing.T) {
+func TestReplaceServer_removesStaleHiddenTools(t *testing.T) {
 	reg := registry.New()
-	reg.AddServer(registry.ServerParams{Name: "svc", Defs: defs("base", "gone")})
-	reg.AddAction(config.ActionConfig{
-		Name:       "hidden_action",
-		Server:     "svc",
-		Tool:       "base",
-		Permission: string(config.PermHidden),
+	reg.AddServer(registry.ServerParams{
+		Name: "svc",
+		Defs: defs("visible", "secret"),
+		Perm: &config.PermissionsConfig{Hidden: []string{"secret"}},
 	})
-
-	before := compactNames(reg.AllWithHidden())
-	reg.ReplaceServerTools(registry.ServerParams{Name: "svc", Defs: defs("base", "new")})
-	after := compactNames(reg.AllWithHidden())
-
-	if !slices.Contains(before, "svc.hidden_action") {
-		t.Fatalf("hidden action missing before replace: %v", before)
+	reg.AddServer(registry.ServerParams{Name: "other", Defs: defs("untouched")})
+	if _, ok := reg.LookupWithHidden("svc.secret"); !ok {
+		t.Fatal("hidden tool was not registered before replacement")
 	}
-	if !slices.Contains(after, "svc.hidden_action") {
-		t.Fatalf("hidden action missing after replace: %v", after)
+
+	reg.ReplaceServer(registry.ServerParams{Name: "svc", Defs: defs("visible")})
+
+	if _, ok := reg.LookupWithHidden("svc.secret"); ok {
+		t.Fatal("removed hidden tool remained in LookupWithHidden")
 	}
-}
-
-func TestReplaceServerTools_visibleActionKeepsPrecedenceOverCollidingUpstream(t *testing.T) {
-	reg := registry.New()
-	reg.AddServer(registry.ServerParams{Name: "svc", Defs: defs("base")})
-	reg.AddAction(config.ActionConfig{Name: "shortcut", Server: "svc", Tool: "base"})
-
-	reg.ReplaceServerTools(registry.ServerParams{Name: "svc", Defs: defs("base", "shortcut")})
-
-	entry, err := reg.Lookup("svc.shortcut")
-	if err != nil {
-		t.Fatalf("Lookup: %v", err)
-	}
-	if entry.Kind != registry.ToolEntryAction {
-		t.Fatalf("Kind = %v, want action", entry.Kind)
-	}
-	if names := fullNames(reg.AllFull()); !slices.Equal(names, []string{"svc.base", "svc.shortcut"}) {
-		t.Fatalf("AllFull = %v", names)
-	}
-}
-
-func TestReplaceServerTools_hiddenActionKeepsPrecedenceOverCollidingUpstream(t *testing.T) {
-	reg := registry.New()
-	reg.AddServer(registry.ServerParams{Name: "svc", Defs: defs("base")})
-	reg.AddAction(config.ActionConfig{
-		Name:       "shortcut",
-		Server:     "svc",
-		Tool:       "base",
-		Permission: string(config.PermHidden),
-	})
-
-	reg.ReplaceServerTools(registry.ServerParams{Name: "svc", Defs: defs("base", "shortcut")})
-
-	if _, err := reg.Lookup("svc.shortcut"); err == nil {
-		t.Fatal("hidden action collision should stay hidden")
-	}
-	if names := compactNames(reg.AllWithHidden()); !slices.Equal(names, []string{"svc.base", "svc.shortcut"}) {
+	if names := compactNames(reg.AllWithHidden()); !slices.Equal(names, []string{"other.untouched", "svc.visible"}) {
 		t.Fatalf("AllWithHidden = %v", names)
 	}
-	if names := fullNames(reg.AllFull()); !slices.Equal(names, []string{"svc.base"}) {
-		t.Fatalf("AllFull = %v", names)
+	if _, err := reg.Lookup("other.untouched"); err != nil {
+		t.Fatalf("other server entry was removed: %v", err)
 	}
 }
 
-func TestReplaceServerTools_readersSeeOnlyCompleteCatalogs(t *testing.T) {
+func TestReplaceServer_replacesAliases(t *testing.T) {
+	reg := registry.New()
+	reg.AddServer(registry.ServerParams{
+		Name:            "svc",
+		Defs:            defs("real_tool"),
+		AliasByToolName: map[string]string{"real_tool": "old_alias"},
+	})
+	if _, err := reg.Lookup("svc.old_alias"); err != nil {
+		t.Fatalf("old alias was not registered before replacement: %v", err)
+	}
+
+	reg.ReplaceServer(registry.ServerParams{
+		Name:            "svc",
+		Defs:            defs("real_tool"),
+		AliasByToolName: map[string]string{"real_tool": "new_alias"},
+	})
+
+	if _, err := reg.Lookup("svc.old_alias"); err == nil {
+		t.Fatal("old alias remained after replacement")
+	}
+	entry, err := reg.Lookup("svc.new_alias")
+	if err != nil {
+		t.Fatalf("new alias was not registered: %v", err)
+	}
+	if entry.ToolName.UpstreamName != "real_tool" {
+		t.Fatalf("new alias routes to %q, want real_tool", entry.ToolName.UpstreamName)
+	}
+}
+
+func TestReplaceServer_readersSeeOnlyCompleteCatalogs(t *testing.T) {
 	reg := registry.New()
 	reg.AddServer(registry.ServerParams{Name: "svc", Defs: defs("old")})
-	reg.AddAction(config.ActionConfig{Name: "act", Server: "svc", Tool: "old"})
 
-	wantOld := []string{"svc.act", "svc.old"}
-	wantNew := []string{"svc.act", "svc.new"}
+	wantOld := []string{"svc.old"}
+	wantNew := []string{"svc.new"}
 	errs := make(chan []string, 1)
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
@@ -109,10 +98,10 @@ func TestReplaceServerTools_readersSeeOnlyCompleteCatalogs(t *testing.T) {
 	}
 
 	for i := 0; i < 100; i++ {
-		reg.ReplaceServerTools(registry.ServerParams{Name: "svc", Defs: defs("new")})
-		reg.ReplaceServerTools(registry.ServerParams{Name: "svc", Defs: defs("old")})
+		reg.ReplaceServer(registry.ServerParams{Name: "svc", Defs: defs("new")})
+		reg.ReplaceServer(registry.ServerParams{Name: "svc", Defs: defs("old")})
 	}
-	reg.ReplaceServerTools(registry.ServerParams{Name: "svc", Defs: defs("new")})
+	reg.ReplaceServer(registry.ServerParams{Name: "svc", Defs: defs("new")})
 	close(stop)
 	wg.Wait()
 

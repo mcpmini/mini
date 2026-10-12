@@ -3,7 +3,6 @@ package registry_test
 import (
 	"testing"
 
-	"github.com/mcpmini/mini/internal/config"
 	"github.com/mcpmini/mini/internal/registry"
 )
 
@@ -139,114 +138,6 @@ func TestAlias_collisionWithAnotherAlias(t *testing.T) {
 	})
 }
 
-func TestAlias_actionTargetingAliasByAliasName(t *testing.T) {
-	reg := registry.New()
-	reg.AddServer(registry.ServerParams{
-		Name: "svc",
-		Defs: defs("real_tool"),
-		AliasByToolName: map[string]string{
-			"real_tool": "aliased_tool",
-		},
-	})
-	reg.AddAction(config.ActionConfig{
-		Name:   "my_action",
-		Server: "svc",
-		Tool:   "aliased_tool",
-	})
-
-	e, err := reg.Lookup("svc.my_action")
-	if err != nil {
-		t.Fatalf("action lookup failed: %v", err)
-	}
-	if e.TargetTool != "real_tool" {
-		t.Errorf("action should resolve alias to real_tool, got %q", e.TargetTool)
-	}
-}
-
-func TestAlias_actionTargetingAliasByRealName_inheritsPermission(t *testing.T) {
-	reg := registry.New()
-	perm := &config.PermissionsConfig{Protected: []string{"real_tool"}}
-	reg.AddServer(registry.ServerParams{
-		Name: "svc",
-		Defs: defs("real_tool"),
-		Perm: perm,
-		AliasByToolName: map[string]string{
-			"real_tool": "aliased_tool",
-		},
-	})
-	// The entry lives at "svc.aliased_tool"; targeting it by its real name
-	// forces resolution through ToolName.UpstreamName in
-	// permissionByUpstreamToolLocked rather than a direct map lookup.
-	reg.AddAction(config.ActionConfig{
-		Name:   "my_action",
-		Server: "svc",
-		Tool:   "real_tool",
-	})
-
-	e, err := reg.Lookup("svc.my_action")
-	if err != nil {
-		t.Fatalf("action lookup failed: %v", err)
-	}
-	if e.Permission != config.PermProtected {
-		t.Errorf("action should inherit protected permission from aliased real_tool, got %s", e.Permission)
-	}
-}
-
-func TestAlias_actionTargetingHiddenAliasedToolByAliasName_resolvesUpstreamTool(t *testing.T) {
-	reg := registry.New()
-	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
-	reg.AddServer(registry.ServerParams{
-		Name: "svc",
-		Defs: defs("secret_op"),
-		Perm: perm,
-		AliasByToolName: map[string]string{
-			"secret_op": "secret_alias",
-		},
-	})
-	// The target lives in r.hidden under "svc.secret_alias"; an explicit
-	// permission override keeps the action itself visible so we can inspect
-	// its resolved TargetTool via Lookup.
-	reg.AddAction(config.ActionConfig{
-		Name:       "my_action",
-		Server:     "svc",
-		Tool:       "secret_alias",
-		Permission: string(config.PermOpen),
-	})
-
-	e, err := reg.Lookup("svc.my_action")
-	if err != nil {
-		t.Fatalf("action lookup failed: %v", err)
-	}
-	if e.TargetTool != "secret_op" {
-		t.Errorf(
-			"action targeting hidden aliased tool by alias name should resolve to upstream name, got %q",
-			e.TargetTool,
-		)
-	}
-}
-
-func TestAlias_actionTargetingHiddenAliasedToolByRealName_inheritsHidden(t *testing.T) {
-	reg := registry.New()
-	perm := &config.PermissionsConfig{Hidden: []string{"secret_op"}}
-	reg.AddServer(registry.ServerParams{
-		Name: "svc",
-		Defs: defs("secret_op"),
-		Perm: perm,
-		AliasByToolName: map[string]string{
-			"secret_op": "secret_alias",
-		},
-	})
-	reg.AddAction(config.ActionConfig{
-		Name:   "my_action",
-		Server: "svc",
-		Tool:   "secret_op",
-	})
-
-	if e, err := reg.Lookup("svc.my_action"); err == nil {
-		t.Errorf("action targeting a hidden aliased tool by real name should inherit hidden, got %v", e)
-	}
-}
-
 func TestAlias_reconnectYieldsToNewRealTool(t *testing.T) {
 	reg := registry.New()
 	reg.AddServer(registry.ServerParams{
@@ -261,7 +152,7 @@ func TestAlias_reconnectYieldsToNewRealTool(t *testing.T) {
 		t.Fatalf("alias should be reachable before reconnect: %v", err)
 	}
 
-	reg.ReplaceServerTools(registry.ServerParams{
+	reg.ReplaceServer(registry.ServerParams{
 		Name: "gh",
 		Defs: defs("list_pull_requests", "list_prs"),
 		AliasByToolName: map[string]string{

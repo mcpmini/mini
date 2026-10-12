@@ -141,30 +141,6 @@ func TestProxy_LegacyFlatCall_RejectedWithActionableError(t *testing.T) {
 	requireRPCError(t, resp, -32602, "args")
 }
 
-func TestProxy_Action_DispatchesToRealUpstreamTool(t *testing.T) {
-	srv := newTestServer(t, server.Params{})
-	defer srv.Close()
-	fake := fakeConn("list_pull_requests")
-	fake.Responses["tools/call"] = json.RawMessage(`{"content":[{"type":"text","text":"[]"}]}`)
-	addProxyConn(t, srv, "gh", fake)
-	srv.RegisterAction(config.ActionConfig{
-		Name:        "my_prs",
-		Description: "My open PRs",
-		Server:      "gh",
-		Tool:        "list_pull_requests",
-		DefaultArgs: map[string]any{"state": "open", "author": "me"},
-	})
-
-	resp := serveProxy(t, srv, callTool("gh__my_prs", map[string]any{"args": map[string]any{"state": "closed"}}))
-	text := toolResultText(t, resp)
-	t.Logf("action response: %s", text)
-
-	assertUpstreamArgs(t, fake, map[string]any{"state": "closed", "author": "me"})
-	if got := lastCalledTool(t, fake); got != "list_pull_requests" {
-		t.Errorf("action should dispatch to real upstream tool, got %q", got)
-	}
-}
-
 func TestProxy_Alias_DispatchesToRealUpstreamName(t *testing.T) {
 	srv := newTestServer(t, server.Params{})
 	defer srv.Close()

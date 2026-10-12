@@ -204,21 +204,6 @@ func TestValidateServerFile_allowsUndefinedSecretsAndRejectsInvalidConfig(t *tes
 	}
 }
 
-func TestInterpolateActionConfig(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("MY_TOKEN", "secretval")
-	configtest.WriteAction(t, dir, config.ActionConfig{
-		Name:        "myaction",
-		Server:      "gh",
-		Tool:        "list_issues",
-		DefaultArgs: map[string]any{"token": "${MY_TOKEN}"},
-	})
-	ac := mustLoadOneAction(t, dir)
-	if ac.DefaultArgs["token"] != "secretval" {
-		t.Errorf("expected token substituted, got %v", ac.DefaultArgs["token"])
-	}
-}
-
 func TestProjectionNotInterpolated(t *testing.T) {
 	dir := t.TempDir()
 	os.Unsetenv("UNSET_PROJ_VAR_XXXX")

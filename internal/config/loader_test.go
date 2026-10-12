@@ -33,18 +33,6 @@ func mustLoadOneServer(t *testing.T, dir string) config.ServerConfig {
 	return servers[0]
 }
 
-func mustLoadOneAction(t *testing.T, dir string) config.ActionConfig {
-	t.Helper()
-	actions, err := config.LoadActions(dir)
-	if err != nil {
-		t.Fatalf("LoadActions: %v", err)
-	}
-	if len(actions) != 1 {
-		t.Fatalf("expected 1 action, got %d", len(actions))
-	}
-	return actions[0]
-}
-
 func mustLoadServers(t *testing.T, dir string) config.Servers {
 	t.Helper()
 	servers, err := config.LoadServers(dir)
@@ -79,13 +67,6 @@ func expectBrokenServer(t *testing.T, dir, name string) {
 	servers := mustLoadServers(t, dir)
 	if !servers.IsBroken(name) {
 		t.Fatalf("LoadServers: %s isn't broken; loaded %+v", name, servers.Loaded)
-	}
-}
-
-func expectLoadActionsError(t *testing.T, dir string) {
-	t.Helper()
-	if _, err := config.LoadActions(dir); err == nil {
-		t.Fatal("expected LoadActions error")
 	}
 }
 
@@ -235,53 +216,6 @@ func TestLoadProjectionMerges_dirWinsOverInline(t *testing.T) {
 	}
 	if len(proj.IncludeOnly) != 1 || proj.IncludeOnly[0] != "dir_field" {
 		t.Errorf("expected dir projection to win, got include_only=%v", proj.IncludeOnly)
-	}
-}
-
-func TestLoadActions_basic(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteAction(t, dir, config.ActionConfig{
-		Name:        "my_prs",
-		Description: "My open PRs",
-		Server:      "gh",
-		Tool:        "list_pull_requests",
-		DefaultArgs: map[string]any{"author": "@me", "state": "open"},
-	})
-	ac := mustLoadOneAction(t, dir)
-	assertActionDefaults(t, ac, "my_prs", "state", "open")
-}
-
-func assertActionDefaults(t *testing.T, ac config.ActionConfig, wantName, wantKey string, wantValue any) {
-	t.Helper()
-	if ac.Name != wantName {
-		t.Errorf("expected name=%s, got %q", wantName, ac.Name)
-	}
-	if ac.DefaultArgs[wantKey] != wantValue {
-		t.Errorf("expected %s=%v in default_args, got %v", wantKey, wantValue, ac.DefaultArgs[wantKey])
-	}
-}
-
-func TestLoadActions_nameFromFilename(t *testing.T) {
-	dir := t.TempDir()
-	// action file with no name field → name derived from filename
-	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "my_action.yaml"), `
-server: gh
-tool: list_issues
-`)
-	ac := mustLoadOneAction(t, dir)
-	if ac.Name != "my_action" {
-		t.Errorf("expected name from filename, got %q", ac.Name)
-	}
-}
-
-func TestLoadActions_emptyDir(t *testing.T) {
-	dir := t.TempDir()
-	actions, err := config.LoadActions(dir)
-	if err != nil {
-		t.Fatalf("unexpected error for empty dir: %v", err)
-	}
-	if len(actions) != 0 {
-		t.Errorf("expected 0 actions, got %d", len(actions))
 	}
 }
 
@@ -466,32 +400,4 @@ func TestEffectiveFormat(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestLoadActions_malformedYAML_returnsError(t *testing.T) {
-	dir := t.TempDir()
-	testutil.WriteFile(t, filepath.Join(dir, "internal", "actions", "bad.yaml"), `not: valid: yaml: [`)
-	expectLoadActionsError(t, dir)
-}
-
-func TestLoadActions_invalidActionName_returnsError(t *testing.T) {
-	dir := t.TempDir()
-	testutil.WriteFile(
-		t,
-		filepath.Join(dir, "internal", "actions", "bad.yaml"),
-		"name: \"bad name\"\nserver: gh\ntool: list\n",
-	)
-	expectLoadActionsError(t, dir)
-}
-
-func TestLoadActions_invalidServerName_returnsError(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteAction(t, dir, config.ActionConfig{Name: "act", Server: "bad server", Tool: "list"})
-	expectLoadActionsError(t, dir)
-}
-
-func TestLoadActions_invalidToolName_returnsError(t *testing.T) {
-	dir := t.TempDir()
-	configtest.WriteAction(t, dir, config.ActionConfig{Name: "act", Server: "gh", Tool: "bad/tool"})
-	expectLoadActionsError(t, dir)
 }

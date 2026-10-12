@@ -28,23 +28,3 @@ func TestWriteConfigPreservesDefaultsAndExplicitZeros(t *testing.T) {
 		})
 	}
 }
-
-func TestWriteActionPreservesSerializedNameArgsAndPermission(t *testing.T) {
-	dir := t.TempDir()
-	want := config.ActionConfig{
-		Name:        "fetch",
-		Description: "Fetch item",
-		Server:      "svc",
-		Tool:        "get_item",
-		DefaultArgs: map[string]any{"id": 42, "state": "open"},
-		Permission:  "protected",
-	}
-	WriteAction(t, dir, want)
-	got, err := config.LoadActions(dir)
-	if err != nil {
-		t.Fatalf("LoadActions: %v", err)
-	}
-	if !reflect.DeepEqual(got, []config.ActionConfig{want}) {
-		t.Fatalf("loaded actions = %#v, want %#v", got, want)
-	}
-}
