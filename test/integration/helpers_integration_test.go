@@ -311,10 +311,15 @@ func startServerWithUnreachable(t *testing.T, configDir string, unreachable []st
 // Upstreams connect after initialize returns (#33), so a call made before then finds no tools.
 func waitForServersConnected(t *testing.T, c *mcpClient, names []string) {
 	t.Helper()
+	waitUntilConnected(t, names, c.connectedServers)
+}
+
+func waitUntilConnected(t *testing.T, names []string, connectedServers func() map[string]bool) {
+	t.Helper()
 	const ceiling = 10 * time.Second
 	deadline := time.Now().Add(ceiling)
 	for {
-		connected := c.connectedServers()
+		connected := connectedServers()
 		missing := slices.DeleteFunc(slices.Clone(names), func(name string) bool { return connected[name] })
 		if len(missing) == 0 {
 			return
@@ -328,11 +333,21 @@ func waitForServersConnected(t *testing.T, c *mcpClient, names []string) {
 
 func (c *mcpClient) connectedServers() map[string]bool {
 	c.t.Helper()
-	raw := c.mustCall("tools/call", map[string]any{"name": "config", "arguments": map[string]any{"action": "status"}})
+	raw := c.mustCall("tools/call", configStatusParams())
+	return connectedInStatus(c.t, toolCallText(c.t, raw))
+}
+
+func configStatusParams() map[string]any {
+	return map[string]any{"name": "config", "arguments": map[string]any{"action": "status"}}
+}
+
+// config status lists a server under "servers" only once it is ready; one still connecting is under "starting".
+func connectedInStatus(t *testing.T, statusText string) map[string]bool {
+	t.Helper()
 	var status struct {
 		Servers map[string]json.RawMessage `json:"servers"`
 	}
-	mustUnmarshal(c.t, []byte(toolCallText(c.t, raw)), &status)
+	mustUnmarshal(t, []byte(statusText), &status)
 	connected := make(map[string]bool, len(status.Servers))
 	for name := range status.Servers {
 		connected[name] = true
