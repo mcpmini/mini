@@ -255,7 +255,7 @@ func (s *loginsScreen) byHandList() []string {
 	lines = append(lines, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
 	width := initcmd.Widest(s.byHand, func(status initcmd.ServerStatus) string { return status.Name })
 	for _, status := range s.byHand {
-		lines = append(lines, columnLines(status.Name, width, s.p.steps.byHand(status), s.width)...)
+		lines = append(lines, columnLines(status.Name, width, s.p.steps.step(status), s.width)...)
 	}
 	return lines
 }

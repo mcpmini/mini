@@ -1,60 +1,75 @@
 package initcmd
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/mcpmini/mini/internal/agents"
 )
 
-func writeHandConnect(b *strings.Builder, c AgentConnections, style SummaryStyle) {
+func writeNotConnected(b *strings.Builder, c AgentConnections, style SummaryStyle) {
 	writeInactiveMini(b, c)
 	switch {
 	case len(c.NoMini) > 0:
-		writeHandSteps(b, c.NoMini, c.Mini)
+		writeConnectLater(b, c, c.NoMini, style)
 	case len(c.MiniServes) == 0 && len(c.MiniInactive) == 0:
 		writeNoAgents(b, c, style)
 	}
 }
 
 func writeNoAgents(b *strings.Builder, c AgentConnections, style SummaryStyle) {
-	fmt.Fprintf(b, "\n%s\n", style.warning("⚠ No agents were found automatically"))
+	fmt.Fprintln(b, style.warning("⚠ No agents were found automatically"))
 	// Agents started from the desktop get a minimal PATH, so the entry needs mini's full path.
 	command := shellCommand(c.Mini)
 	fmt.Fprintf(b, "To use mini, add it to your agent as an MCP server with the command: %s\n", style.code(command))
 }
 
-func writeHandSteps(b *strings.Builder, list []agents.Agent, mini agents.MiniEntry) {
-	fmt.Fprintln(b, "\nTo connect mini to your agents:")
-	for _, agent := range list {
-		fmt.Fprintf(b, "  %s (%s):\n%s\n", agent.Name, agent.ConfigPath, indent(handConnectStep(agent, mini), "    "))
-	}
+func writeConnectLater(b *strings.Builder, c AgentConnections, list []agents.Agent, style SummaryStyle) {
+	fmt.Fprintf(
+		b,
+		"To connect mini to %s later, run: %s\n",
+		JoinAnd(agentNames(list)),
+		style.code(miniCommand(c, "init")),
+	)
 }
 
-func writeConnected(b *strings.Builder, r Report) {
+func writeConnected(b *strings.Builder, r Report, style SummaryStyle) {
 	writeInactiveMini(b, r.Agents)
 	var changed []string
 	for _, result := range r.Connected {
-		writeAgentResult(b, r, result)
+		switch {
+		case result.Err != nil:
+			fmt.Fprintf(b, "Could not connect mini to %s: %v\n", result.Agent.Name, result.Err)
+		case result.Backup != "":
+			fmt.Fprintf(b, "%s's config was backed up to %s\n", result.Agent.Name, style.code(result.Backup))
+		}
 		if result.Err == nil && (result.Backup != "" || result.Created) {
 			changed = append(changed, result.Agent.Name)
 		}
 	}
-	if left := notTried(r); len(left) > 0 {
-		writeHandSteps(b, left, r.Agents.Mini)
-	}
 	if len(changed) > 0 {
-		fmt.Fprintf(b, "\nRestart %s to start using mini.\n", JoinAnd(changed))
+		them := "them"
+		if len(changed) == 1 {
+			them = "it"
+		}
+		fmt.Fprintf(b, "Connected mini to %s. Restart %s to start using mini.\n", JoinAnd(changed), them)
+	}
+	if left := notTried(r); len(left) > 0 {
+		writeConnectLater(b, r.Agents, left, style)
 	}
 }
 
-// An agent init tried and failed to connect already got its hand step, with the error.
+func agentNames(list []agents.Agent) []string {
+	var names []string
+	for _, agent := range list {
+		names = append(names, agent.Name)
+	}
+	return names
+}
+
+// An agent init tried and failed to connect already has its error line.
 func notTried(r Report) []agents.Agent {
 	var left []agents.Agent
 	for _, agent := range r.Agents.NoMini {
@@ -67,54 +82,6 @@ func notTried(r Report) []agents.Agent {
 		}
 	}
 	return left
-}
-
-func writeAgentResult(b *strings.Builder, r Report, result AgentResult) {
-	name, file, mini := result.Agent.Name, result.Agent.ConfigPath, r.Agents.Mini
-	switch {
-	case result.Err != nil:
-		fmt.Fprintf(b, "\nCouldn't connect %s: %v\nAdd mini to %s by hand:\n%s\n",
-			name, result.Err, file, indent(handConnectStep(result.Agent, mini), "  "))
-	case result.Created:
-		fmt.Fprintf(b, "\n%s: created %s\n", name, file)
-	case result.Backup != "":
-		fmt.Fprintf(b, "\n%s: %s backed up to %s\n", name, file, result.Backup)
-	case result.ExistingMini != NoMiniEntry:
-		fmt.Fprintf(b, "\n%s: already has a mini entry; %s is unchanged\n", name, file)
-	}
-	if len(result.Removed) > 0 {
-		fmt.Fprintf(b, "  %s %s, which mini runs now\n", removedVerb(result.Agent), JoinAnd(result.Removed))
-	}
-	for _, kept := range result.Kept {
-		fmt.Fprintf(b, "  %s stays in %s: %s\n", kept.Entry, name, keptReason(r, kept))
-	}
-	for _, entry := range result.Changed {
-		fmt.Fprintf(b, "  %s stays in %s: it changed after it was checked\n", entry, name)
-	}
-}
-
-func removedVerb(agent agents.Agent) string {
-	if agent.RemoveDisables {
-		return "switched off"
-	}
-	return "removed"
-}
-
-// The check's error is a protocol detail, so the reason says what the user can do next.
-func keptReason(r Report, kept KeptEntry) string {
-	switch {
-	case errors.Is(kept.Err, errNotChecked) || errors.Is(kept.Err, errNotCounted) || errors.Is(kept.Err, errMiniInactive):
-		return kept.Err.Error()
-	case r.needsFinishing(kept.Server):
-		return "it works in mini once you finish " + kept.Server + " above"
-	case errors.Is(kept.Err, context.DeadlineExceeded):
-		return "mini's check timed out; " + miniCommand(r.Agents, "test") + " tries again"
-	}
-	return "mini couldn't connect to it; " + miniCommand(r.Agents, "test") + " shows why"
-}
-
-func (r Report) needsFinishing(server string) bool {
-	return slices.ContainsFunc(r.Servers, func(s ServerStatus) bool { return s.Name == server && s.Readiness != Ready })
 }
 
 // JoinAnd lists names as people write them: "a", "a and b", "a, b and c".
@@ -132,37 +99,6 @@ func writeInactiveMini(b *strings.Builder, c AgentConnections) {
 	}
 }
 
-func handConnectStep(agent agents.Agent, mini agents.MiniEntry) string {
-	switch agent.Name {
-	case "Claude Code":
-		return "claude mcp add --scope user " + agents.MiniKey + " -- " + shellCommand(mini)
-	case "Codex":
-		return codexSnippet(mini)
-	}
-	return jsonSnippet(mini)
-}
-
-func codexSnippet(mini agents.MiniEntry) string {
-	args := make([]string, len(mini.Args))
-	for i, arg := range mini.Args {
-		args[i] = strconv.Quote(arg)
-	}
-	return fmt.Sprintf(
-		"[mcp_servers.%s]\ncommand = %s\nargs = [%s]",
-		agents.MiniKey,
-		strconv.Quote(mini.Command),
-		strings.Join(args, ", "),
-	)
-}
-
-func jsonSnippet(mini agents.MiniEntry) string {
-	doc := map[string]any{
-		"mcpServers": map[string]any{agents.MiniKey: map[string]any{"command": mini.Command, "args": mini.Args}},
-	}
-	data, _ := json.MarshalIndent(doc, "", "  ") //nolint:errcheck // strings and string slices always marshal
-	return string(data)
-}
-
 func shellCommand(mini agents.MiniEntry) string {
 	words := []string{shellQuote(mini.Command)}
 	for _, arg := range mini.Args {
@@ -178,8 +114,4 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
-
-func indent(s, prefix string) string {
-	return prefix + strings.ReplaceAll(s, "\n", "\n"+prefix)
 }

@@ -45,6 +45,7 @@ func Run(p Params) (Outcome, error) {
 		f.save()
 		return f.finish(), nil
 	}
+	f.interactive = true
 	err = p.program()(a)
 	// A login still waiting on the browser when the UI ends would otherwise save a token later.
 	f.ui.logins.cancelLogin()
@@ -57,8 +58,9 @@ func Run(p Params) (Outcome, error) {
 }
 
 type flow struct {
-	run *initcmd.Run
-	ui  screens
+	run         *initcmd.Run
+	ui          screens
+	interactive bool
 }
 
 func (f *flow) save() {
@@ -69,7 +71,7 @@ func (f *flow) save() {
 func (f *flow) finish() Outcome {
 	f.run.Plan.Catalog = f.ui.catalog(f.run.Plan)
 	out := Outcome{Saved: true, Report: f.run.Finish(context.Background(), f.ui.connects.chosenConnect())}
-	out.Report.Import.DropOfferedSkips()
+	out.Report.Interactive = f.interactive
 	return out
 }
 

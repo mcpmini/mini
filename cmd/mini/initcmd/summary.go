@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -27,170 +26,41 @@ func styled(style func(string) string, text string) string {
 	return style(text)
 }
 
-// Summary is what init prints when it ends: what is set up, what is left for the user, and
-// what failed, each with the step that finishes it.
+// Summary is what init prints when it ends: a headline, then only what the user still has to act
+// on. After an interactive run it leaves out what init's screens already showed.
 func Summary(r Report, style SummaryStyle) string {
 	var b strings.Builder
-	writeServers(&b, r, style)
-	writeDroppedSettings(&b, r)
-	writeStaticHeaders(&b, r)
-	writeSkipped(&b, r)
+	writeHeadline(&b, r)
+	if !r.Interactive {
+		writeWhatNoScreenShowed(&b, r)
+	}
+	writeImportNotes(&b, r)
 	writeFailures(&b, r)
 	if r.Connected == nil {
-		writeHandConnect(&b, r.Agents, style)
+		writeNotConnected(&b, r.Agents, style)
 	} else {
-		writeConnected(&b, r)
+		writeConnected(&b, r, style)
 	}
 	return b.String()
 }
 
-func writeServers(b *strings.Builder, r Report, style SummaryStyle) {
-	writeServersHeadline(b, r)
-	if len(r.AlreadyConfigured) > 0 {
-		fmt.Fprintf(b, "Already configured in mini: %s\n", strings.Join(r.AlreadyConfigured, ", "))
-	}
-	if len(r.AddCoveredByImport) > 0 {
-		fmt.Fprintf(
-			b,
-			"Imported from your agents instead of the catalog: %s\n",
-			strings.Join(r.AddCoveredByImport, ", "),
-		)
-	}
-	writeUnfinished(b, r, style)
-}
-
-func writeServersHeadline(b *strings.Builder, r Report) {
-	switch {
-	case len(r.Added) > 0:
-		fmt.Fprintf(b, "Added %s to mini: %s\n", Plural(len(r.Added), "server"), strings.Join(r.Added, ", "))
-	default:
-		fmt.Fprintln(b, "No servers were added to mini.")
-	}
-}
-
-func writeUnfinished(b *strings.Builder, r Report, style SummaryStyle) {
-	unfinished := slices.DeleteFunc(slices.Clone(r.Servers), func(s ServerStatus) bool { return s.Readiness == Ready })
-	if len(unfinished) == 0 {
+func writeHeadline(b *strings.Builder, r Report) {
+	if len(r.Added) == 0 {
+		fmt.Fprintln(b, "No MCPs were added to mini.")
 		return
 	}
-	nameW := Widest(unfinished, func(s ServerStatus) string { return s.Name })
-	requirementW := Widest(unfinished, ServerStatus.requirement)
-	layout := stepLayout{column: strings.Repeat(" ", 2+nameW+2+requirementW+2), style: style}
-	fmt.Fprintln(b, "\nThese servers need one more step before they work:")
-	for _, s := range unfinished {
-		fmt.Fprintf(b, "  %-*s  %-*s  %s\n", nameW, s.Name, requirementW, s.requirement(), r.finishStep(s, layout))
-	}
+	fmt.Fprintf(b, "Added %s to mini: %s.\n", Plural(len(r.Added), "MCP"), JoinAnd(r.Added))
 }
 
-func (s ServerStatus) requirement() string {
-	switch s.Readiness {
-	case NeedsToken:
-		return "requires an access token"
-	case NeedsOwnApp:
-		return "requires an OAuth app"
-	case NeedsEnv:
-		return "requires " + JoinAnd(s.UnsetEnv.Names)
-	}
-	return "requires a login"
-}
-
-type stepLayout struct {
-	column string
-	style  SummaryStyle
-}
-
-func (r Report) finishStep(s ServerStatus, layout stepLayout) string {
-	file := config.ServerPath(r.ConfigDir, s.Name)
-	login := layout.style.code(miniCommand(r.Agents, "auth", s.Name))
-	switch {
-	case s.Readiness == NeedsEnv:
-		return envStep(s.UnsetEnv, layout.style.code(file))
-	case s.Readiness == NeedsLogin:
-		return "run: " + login
-	case s.StepsInFile && s.Readiness == NeedsOwnApp:
-		return "finish the steps in " + layout.style.code(file) + ", then run: " + login
-	case s.StepsInFile:
-		return "finish the steps in " + layout.style.code(file)
-	case s.Readiness == NeedsToken:
-		return layout.addStep(file, catalog.AuthToken, s.SetupURL)
-	}
-	return layout.addStep(file, catalog.AuthOAuth2App, s.SetupURL) + "\n" + layout.column + "then run: " + login
-}
-
-// addStep is the credential step for a server whose file doesn't hold it.
-func (l stepLayout) addStep(file, authKind, setupURL string) string {
-	intro, block := credentialSteps(authKind, setupURL)
-	more := "\n" + l.column
-	return lowerFirst(intro) + ", then add to " + l.style.code(file) + ":" + more + strings.Join(block, more)
-}
-
-func lowerFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToLower(s[:1]) + s[1:]
-}
-
-// LoginCommands gives the command that logs in to a server, written as the summary writes its commands.
-func LoginCommands(configDir string) func(server string) string {
-	c := AgentConnections{Mini: MiniCommand(configDir), MiniName: systemLookup.displayName()}
-	return func(server string) string { return miniCommand(c, "auth", server) }
-}
-
-// Commands carry the config directory whenever agents are given one, so they act on the same servers.
-func miniCommand(c AgentConnections, args ...string) string {
-	mini := c.Mini
-	words := []string{shellQuote(c.miniName())}
-	if i := slices.Index(mini.Args, "--config"); i >= 0 && i+1 < len(mini.Args) {
-		words = append(words, "--config", shellQuote(mini.Args[i+1]))
-	}
-	return strings.Join(append(words, args...), " ")
-}
-
-func writeSkipped(b *strings.Builder, r Report) {
-	if len(r.Import.Skipped) > 0 {
-		fmt.Fprintln(b, "\nNot imported:")
-	}
-	for _, s := range r.Import.Skipped {
-		fmt.Fprintf(b, "  %s\n", skippedLine(s, r.ConfigDir))
-	}
-}
-
-func skippedLine(s SkippedServer, configDir string) string {
-	switch s.Reason {
-	case SkipEmptyName:
-		return fmt.Sprintf("%q in %s: its name has no letters or digits mini can use", s.Name, s.Agent)
-	case SkipSwitchedOff:
-		return fmt.Sprintf("%s switched off in %s", s.Name, s.Agent)
-	case SkipSecondConfig:
-		return fmt.Sprintf("%s in %s: a different config under that name is imported instead", s.Name, s.Agent)
-	case SkipNameInMini:
-		name := NormalizeName(s.Name)
-		return fmt.Sprintf(
-			"%s in %s: mini already has a different %s; to use this one, edit %s",
-			s.Name,
-			s.Agent,
-			name,
-			config.ServerPath(configDir, name),
-		)
-	}
-	return fmt.Sprintf("%s kept in %s: uses %s", s.Name, s.Agent, strings.Join(s.Refs, ", "))
-}
-
-func writeDroppedSettings(b *strings.Builder, r Report) {
+// An imported server can start differently in mini than it did in the agent, which no screen showed.
+func writeImportNotes(b *strings.Builder, r Report) {
 	for _, name := range slices.Sorted(maps.Keys(r.Import.DroppedSettings)) {
-		fmt.Fprintf(
-			b,
-			"\n%s\n",
-			IgnoredSettingsNote(name, r.Import.DroppedSettings[name], config.ServerPath(r.ConfigDir, name)),
-		)
+		file := config.ServerPath(r.ConfigDir, name)
+		fmt.Fprintln(b, IgnoredSettingsNote(name, r.Import.DroppedSettings[name], file))
 	}
-}
-
-func writeStaticHeaders(b *strings.Builder, r Report) {
 	for _, name := range slices.Sorted(maps.Keys(r.Import.StaticHeaders)) {
 		for _, note := range StaticHeaderNotes(name, r.Import.StaticHeaders[name], config.ServerPath(r.ConfigDir, name)) {
-			fmt.Fprintf(b, "\n%s\n", note)
+			fmt.Fprintln(b, note)
 		}
 	}
 }
@@ -225,18 +95,34 @@ func writeFailures(b *strings.Builder, r Report) {
 	for _, u := range r.Import.Unreadable {
 		fmt.Fprintf(
 			b,
-			"\nCould not read %s's config (%s), so none of its servers were imported: %v\n",
+			"Could not read %s's config (%s), so none of its MCPs were imported: %v\n",
 			u.Agent,
 			u.ConfigPath,
 			u.Err,
 		)
 	}
 	for _, failure := range r.WriteErrors {
-		fmt.Fprintf(b, "\nCould not add %s: %v\n", failure.Name, failure.Err)
+		fmt.Fprintf(b, "Could not add %s: %v\n", failure.Name, failure.Err)
 	}
 	if r.ReadServersErr != nil {
-		fmt.Fprintf(b, "\nCould not read mini's servers: %v\n", r.ReadServersErr)
+		fmt.Fprintf(b, "Could not read mini's servers: %v\n", r.ReadServersErr)
 	}
+}
+
+// LoginCommands gives the command that logs in to a server, written as the summary writes its commands.
+func LoginCommands(configDir string) func(server string) string {
+	c := AgentConnections{Mini: MiniCommand(configDir), MiniName: systemLookup.displayName()}
+	return func(server string) string { return miniCommand(c, "auth", server) }
+}
+
+// Commands carry the config directory whenever agents are given one, so they act on the same servers.
+func miniCommand(c AgentConnections, args ...string) string {
+	mini := c.Mini
+	words := []string{shellQuote(c.miniName())}
+	if i := slices.Index(mini.Args, "--config"); i >= 0 && i+1 < len(mini.Args) {
+		words = append(words, "--config", shellQuote(mini.Args[i+1]))
+	}
+	return strings.Join(append(words, args...), " ")
 }
 
 // Widest is the longest text among items, for padding a column.
@@ -254,12 +140,4 @@ func Plural(n int, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
-}
-
-func envStep(unset *config.UnsetEnvError, file string) string {
-	them := "them"
-	if len(unset.Names) == 1 {
-		them = "it"
-	}
-	return fmt.Sprintf("set %s where mini runs (used in %s), or edit %s", them, unset.Field, file)
 }

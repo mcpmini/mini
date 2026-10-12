@@ -104,3 +104,17 @@ func hasCredential(sc config.ServerConfig) bool {
 func hasOwnApp(sc config.ServerConfig) bool {
 	return !holdsPlaceholder(sc) && sc.Auth != nil && sc.Auth.ClientID != ""
 }
+
+// Step says what the server still needs, naming only a login or a custom OAuth app; for anything
+// else, env vars included, the step is the server's file, to keep init's output simple.
+func (s ServerStatus) Step(file, login string) string {
+	switch s.Readiness {
+	case Ready:
+		return ""
+	case NeedsLogin:
+		return "requires a login, run: " + login
+	case NeedsOwnApp:
+		return "requires a custom OAuth app, edit " + file
+	}
+	return "requires manual configuration, edit " + file
+}

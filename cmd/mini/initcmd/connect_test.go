@@ -16,14 +16,6 @@ import (
 	"github.com/mcpmini/mini/internal/config/configtest"
 )
 
-func agentNames(list []agents.Agent) []string {
-	var names []string
-	for _, a := range list {
-		names = append(names, a.Name)
-	}
-	return names
-}
-
 func TestConnectableAgents(t *testing.T) {
 	f := newApplyFixture(t)
 	f.write(t, "Claude Code", `{"mcpServers":{}}`)
