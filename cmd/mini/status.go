@@ -16,7 +16,7 @@ import (
 	"github.com/mcpmini/mini/internal/server"
 )
 
-const noServersConfigured = "no servers configured; run `mini init` to choose from the server catalog, or `mini add NAME --url URL`"
+const noServersConfigured = "no servers configured; run `mini init` to choose from the MCP catalog, or `mini add NAME --url URL`"
 
 func newLsCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{

@@ -30,7 +30,7 @@ func TestResolveCatalogNames(t *testing.T) {
 	})
 	t.Run("unknown names reject all", func(t *testing.T) {
 		got, err := resolveCatalogNames(entries, []string{"nope", "linear", "zzz"})
-		if err == nil || err.Error() != "not in the server catalog: nope, zzz" || got != nil {
+		if err == nil || err.Error() != "not in the MCP catalog: nope, zzz" || got != nil {
 			t.Fatalf("resolve = %v, %v", got, err)
 		}
 	})
@@ -58,7 +58,7 @@ func TestInitRejectsEmptyAddBeforeChangingAnything(t *testing.T) {
 
 			err := cmd.Execute()
 
-			if err == nil || !strings.Contains(err.Error(), "at least one server name") {
+			if err == nil || !strings.Contains(err.Error(), "at least one MCP name") {
 				t.Fatalf("init %s: error %v, want one asking for a server name", arg, err)
 			}
 			if _, statErr := os.Stat(configDir); !errors.Is(statErr, fs.ErrNotExist) {

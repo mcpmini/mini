@@ -43,6 +43,14 @@ var testSteps = serverSteps{
 	login: func(name string) string { return "mini auth " + name },
 }
 
+// The warnings unwrapped, as a 200-column window shows them.
+const (
+	oneLoginLeft = "\n\n⚠ mini can't use this MCP until you log in to it. " +
+		"You can always log in later using mini auth <name>."
+	loginsLeft = "\n\n⚠ mini can't use these MCPs until you log in to them. " +
+		"You can always log in later using mini auth <name>."
+)
+
 func loginsText(s *loginsScreen) string {
 	return framedText(framed(s, false))
 }
@@ -58,7 +66,7 @@ func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequ
 	s := checks.screen()
 	s.resize(120, 30)
 	showScreen(s)
-	want := "> linear  press enter to log in\n\n" +
+	want := "> linear  press enter to log in" + oneLoginLeft + "\n\n" +
 		"Browser login isn't available for these MCPs, so you will need to configure them manually later:\n" +
 		"  github  requires manual configuration, edit ~/.mini/servers/github.yaml\n" +
 		"  asana   requires a custom OAuth app, edit ~/.mini/servers/asana.yaml\n" +
@@ -73,7 +81,8 @@ func TestLoginsScreen_listsOnlyLoginRowsAndListsTheByHandServersWithWhatTheyRequ
 
 func TestLoginsScreen_theCursorsUntriedRowAloneGetsAHint(t *testing.T) {
 	s := loginScreen(newFakeLogins(), "linear", "sentry")
-	want := "> linear  press enter to log in\n  sentry\n\n  Continue"
+	s.resize(200, 30)
+	want := "> linear  press enter to log in\n  sentry" + loginsLeft + "\n\n  Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%s\nwant:\n%s", text, want)
 	}
@@ -117,11 +126,12 @@ func TestLoginsScreen_byHandServersAreListedBelowTheLoginRowsAndAreNotRows(t *te
 			s := loginScreenWithStatuses(newFakeLogins(), statuses...)
 			s.resize(200, 30)
 			a := framed(s, false)
-			if text := framedText(a); !strings.HasPrefix(text, "> linear  press enter to log in\n\n"+tc.list+"\n\n") {
+			rows := "> linear  press enter to log in" + oneLoginLeft
+			if text := framedText(a); !strings.HasPrefix(text, rows+"\n\n"+tc.list+"\n\n") {
 				t.Fatalf("screen:\n%s\nwant the list below the login rows", text)
 			}
 			send(a, "down")
-			if text := framedText(a); text != "  linear\n\n"+tc.list+"\n\n> Continue" {
+			if text := framedText(a); text != "  linear"+oneLoginLeft+"\n\n"+tc.list+"\n\n> Continue" {
 				t.Errorf(
 					"screen after down:\n%s\nwant the by-hand servers out of the cursor's reach, Continue next",
 					text,
@@ -171,6 +181,9 @@ func TestLoginsScreen_aServerBeingCheckedSaysSoUntilTheCheckFinishes(t *testing.
 	if text := loginsText(s); !strings.Contains(text, "  open  checking…") || wait == nil {
 		t.Fatalf("screen:\n%s\nwait = %v; want open checking and a wait for the result", text, wait)
 	}
+	if text := loginsText(s); strings.Contains(text, "⚠") {
+		t.Errorf("screen:\n%s\nwant no login warning while the check may still find open ready", text)
+	}
 	if again := showScreen(s); again != nil {
 		t.Error("entering again started a second wait; one is enough")
 	}
@@ -219,8 +232,8 @@ func TestLoginsScreen_saysEverythingIsReadyWhenTheLastCheckFindsNothingToFinish(
 	delete(checks.checking, "open")
 	checks.changed <- struct{}{}
 	s.update(wait())
-	if s.heading() != "Your servers are ready" ||
-		loginsText(s) != "Every server works; nothing is left to set up.\n\n> Continue" {
+	if s.heading() != "Your MCPs are ready" ||
+		loginsText(s) != "Every MCP works; nothing is left to set up.\n\n> Continue" {
 		t.Errorf("%s\n%s\nwant the screen to say every server is ready, not an empty list", s.heading(), loginsText(s))
 	}
 	if keys := framed(s, false).keys(s); keys != "enter continue" {
@@ -315,8 +328,9 @@ func TestLoginsScreen_aLoginShowsItsURLThenHowItEnded(t *testing.T) {
 
 	logins.ends["sentry"] <- errors.New("access denied")
 	pressAndRun(s, "enter")
-	if text := loginsText(s); !strings.Contains(text, "  sentry  ✗ login failed: access denied\n\n> Continue") {
-		t.Errorf("screen:\n%s\nwant sentry's failure shown and the cursor on Continue", text)
+	failed := "  sentry  ✗ login failed: access denied\n\n⚠ mini can't use this MCP"
+	if text := loginsText(s); !strings.Contains(text, failed) {
+		t.Errorf("screen:\n%s\nwant sentry's failure shown, then the warning that it still needs a login", text)
 	}
 }
 
@@ -389,12 +403,46 @@ func TestLoginsScreen_aLongLoginURLWrapsWithinTheWindowAndLinksToTheWholeURL(t *
 	}
 }
 
+func TestLoginsScreen_theWarningGoesOnceEveryMCPIsLoggedIn(t *testing.T) {
+	logins := newFakeLogins("linear")
+	s := loginScreen(logins, "linear")
+	s.resize(200, 30)
+	if text := loginsText(s); !strings.Contains(text, oneLoginLeft) {
+		t.Fatalf("screen:\n%s\nwant the warning while linear needs a login", text)
+	}
+	logins.ends["linear"] <- nil
+	pressAndRun(s, "enter")
+	if text := loginsText(s); text != "  linear  ✓ logged in\n\n> Continue" {
+		t.Errorf("screen:\n%s\nwant no warning: nothing is left to log in to", text)
+	}
+}
+
+func TestLoginsScreen_aFailedLoginWarnsNoMoreOnceACheckFindsTheMCPReady(t *testing.T) {
+	logins := newFakeLogins("linear")
+	checks := newFakeChecks(initcmd.ServerStatus{Name: "linear", Readiness: initcmd.NeedsLogin})
+	s := checks.screen()
+	s.p.startLogin = logins.start
+	s.resize(200, 30)
+	showScreen(s)
+	logins.ends["linear"] <- errors.New("access denied")
+	pressAndRun(s, "enter")
+	if text := loginsText(s); !strings.Contains(text, oneLoginLeft) {
+		t.Fatalf("screen:\n%s\nwant the warning after the failed login", text)
+	}
+	checks.statuses[0].Readiness = initcmd.Ready
+	s.refresh()
+	if text := loginsText(s); strings.Contains(text, "⚠") {
+		t.Errorf("screen:\n%s\nwant no warning: linear works now", text)
+	}
+}
+
 func TestLoginsScreen_aFailedLoginShowsOnlyTheFirstLineOfItsError(t *testing.T) {
 	logins := newFakeLogins("linear")
 	s := loginScreen(logins, "linear")
 	logins.ends["linear"] <- errors.New("oauth2: cannot fetch token: 502\rBad Gateway\nResponse: <html>\n<body>\x1b[31mdown</body>")
 	pressAndRun(s, "enter")
-	want := "  linear  ✗ login failed: oauth2: cannot fetch token: 502Bad Gateway\n\n> Continue"
+	s.resize(200, 30)
+	want := "  linear  ✗ login failed: oauth2: cannot fetch token: 502Bad Gateway" + oneLoginLeft + "\n\n> Continue"
 	if text := loginsText(s); text != want {
 		t.Errorf("screen:\n%q\nwant the error's first line, without control characters, on linear's row", text)
 	}

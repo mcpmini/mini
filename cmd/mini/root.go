@@ -28,7 +28,7 @@ func newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:     "mini [--config DIR]",
 		Short:   "mini connects agents to MCP servers",
-		Long:    "mini connects agents to MCP servers and trims their responses.\n\nNew here? Run `mini init` to import servers from your other tools and pick more from the server catalog.",
+		Long:    "mini connects agents to MCP servers and trims their responses.\n\nNew here? Run `mini init` to import MCPs from your other tools and pick more from the MCP catalog.",
 		Version: version.Version,
 	}
 	configureRootCmd(root, opts)

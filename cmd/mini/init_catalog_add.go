@@ -43,7 +43,7 @@ func unknownCatalogNamesError(unknown []string) error {
 	if len(unknown) == 0 {
 		return nil
 	}
-	return fmt.Errorf("not in the server catalog: %s", strings.Join(unknown, ", "))
+	return fmt.Errorf("not in the MCP catalog: %s", strings.Join(unknown, ", "))
 }
 
 func requestedCatalogEntries(f initFlags, entries []catalog.Entry) ([]catalog.Entry, error) {
@@ -53,7 +53,7 @@ func requestedCatalogEntries(f initFlags, entries []catalog.Entry) ([]catalog.En
 	return resolveCatalogNames(entries, nonBlankNames(f.add))
 }
 
-var errEmptyAdd = errors.New("--add needs at least one server name")
+var errEmptyAdd = errors.New("--add needs at least one MCP name")
 
 func nonBlankNames(names []string) []string {
 	var kept []string

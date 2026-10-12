@@ -229,15 +229,37 @@ func (s *loginsScreen) heading() string {
 	case len(s.byHand) > 0:
 		return "Finish setting up these MCPs later"
 	}
-	return "Your servers are ready"
+	return "Your MCPs are ready"
 }
 
 func (s *loginsScreen) body(height int, focused bool) string {
 	if s.err != nil {
-		return "mini's servers couldn't be read: " + s.err.Error()
+		return "mini's MCPs couldn't be read: " + s.err.Error()
 	}
 	rows, first, last := s.serverLines(focused)
-	return strings.Join(s.scroll.cut(append(rows, s.byHandList()...), first, last, height), "\n")
+	lines := slices.Concat(rows, s.skippedLoginWarning(), s.byHandList())
+	return strings.Join(s.scroll.cut(lines, first, last, height), "\n")
+}
+
+// The heading calls logins optional, so the screen says what skipping one costs.
+func (s *loginsScreen) skippedLoginWarning() []string {
+	waiting := slices.DeleteFunc(slices.Clone(s.rows), func(status initcmd.ServerStatus) bool {
+		return !s.notLoggedIn(status)
+	})
+	if len(waiting) == 0 {
+		return nil
+	}
+	text := "⚠ mini can't use these MCPs until you log in to them."
+	if len(waiting) == 1 {
+		text = "⚠ mini can't use this MCP until you log in to it."
+	}
+	text += " You can always log in later using " + s.p.steps.login("<name>") + "."
+	return append([]string{""}, strings.Split(ansi.Wordwrap(text, max(s.width, 20), ""), "\n")...)
+}
+
+func (s *loginsScreen) notLoggedIn(status initcmd.ServerStatus) bool {
+	err, tried := s.results[status.Name]
+	return status.Readiness == initcmd.NeedsLogin && (!tried || err != nil)
 }
 
 func (s *loginsScreen) byHandList() []string {
@@ -276,7 +298,7 @@ func (s *loginsScreen) serverLines(focused bool) (lines []string, first, last in
 	}
 	if len(lines) == 0 && len(s.byHand) == 0 {
 		// The last check cleared the final row while the screen was shown.
-		lines = append(lines, "Every server works; nothing is left to set up.")
+		lines = append(lines, "Every MCP works; nothing is left to set up.")
 	}
 	return lines, first, last
 }

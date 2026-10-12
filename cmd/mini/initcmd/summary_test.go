@@ -34,7 +34,7 @@ func TestSummary_headline(t *testing.T) {
 	})
 	t.Run("a read error still says what this run added, then the error", func(t *testing.T) {
 		got := plainSummary(Report{Added: []string{"github"}, ReadServersErr: errors.New("permission denied")})
-		requireLines(t, got, "Added 1 MCP to mini: github.\n", "Could not read mini's servers: permission denied\n")
+		requireLines(t, got, "Added 1 MCP to mini: github.\n", "Could not read mini's MCPs: permission denied\n")
 	})
 }
 
@@ -142,7 +142,7 @@ func TestSummary_agentsNotConnectedAreToldToRunInitAgain(t *testing.T) {
 		t.Errorf("every agent already has mini, but the summary says to connect one:\n%s", allConnected)
 	}
 	got = plainSummary(Report{Agents: AgentConnections{Mini: mini, MiniInactive: []agents.Agent{cursor}}})
-	requireLines(t, got, "Cursor (/home/u/.cursor/mcp.json) has a mini entry that may not run these servers: ")
+	requireLines(t, got, "Cursor (/home/u/.cursor/mcp.json) has a mini entry that may not run these MCPs: ")
 }
 
 func TestSummary_connectedAgents(t *testing.T) {
