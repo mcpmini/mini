@@ -4,7 +4,7 @@ package tui
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -82,6 +82,35 @@ func TestReview_aFinishedCheckUpdatesTheServersState(t *testing.T) {
 		"linear  requires a login, run: mini auth linear",
 	) {
 		t.Errorf("body:\n%s\nwant linear's login named once its check finished", body)
+	}
+}
+
+func TestReview_aListTallerThanTheWindowCountsWhatDoesntFit(t *testing.T) {
+	var statuses []initcmd.ServerStatus
+	for i := range 22 {
+		statuses = append(statuses, initcmd.ServerStatus{Name: fmt.Sprintf("s%02d", i)})
+	}
+	s := reviewOf(statuses, nil, nil, []screen{&fakeScreen{}})
+	a := inApp(80, 24, &fakeScreen{name: "Before"}, s)
+	send(a, "enter")
+	view := shown(a)
+	if !strings.Contains(view, "22 MCPs will be added to mini:") || !strings.Contains(view, "  s00") ||
+		!strings.Contains(view, "… and 7 more") || !strings.Contains(view, "> Continue") {
+		t.Errorf("view at 80x24:\n%s\nwant the heading, the first servers, a count of the rest, and the actions", view)
+	}
+	if lines := strings.Count(view, "\n") + 1; lines > 24 {
+		t.Errorf("view is %d lines, want at most 24", lines)
+	}
+}
+
+func TestHomeRelative_shortensOnlyPathsUnderHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if got := homeRelative(filepath.Join(home, ".mini", "servers", "x.yaml")); got != "~/.mini/servers/x.yaml" {
+		t.Errorf("under home = %q, want ~/.mini/servers/x.yaml", got)
+	}
+	if got := homeRelative(home + "-other/x.yaml"); got != home+"-other/x.yaml" {
+		t.Errorf("sibling of home = %q, want it unchanged", got)
 	}
 }
 
@@ -252,35 +281,5 @@ func TestRun_catalogOfferedButNothingTickedReviewsWithTheGuidance(t *testing.T) 
 	view := screenAfter(t, setupFor(t.TempDir()), fromCatalog(c), "tab", "enter")
 	if !strings.Contains(view, "Review and finish") || !strings.Contains(view, "No MCPs will be added to mini.") {
 		t.Errorf("view:\n%s\nwant Review with the no-MCPs guidance", view)
-	}
-}
-
-func TestRun_aByHandServerPointsAtTheFileItWillHaveInMini(t *testing.T) {
-	configDir := t.TempDir()
-	setup := setupFor(configDir)
-	setup.Probe = func(context.Context, string, config.ServerConfig) error { return errors.New("401") }
-	token := catalog.Entry{Name: "github", URL: "https://mcp.github.example/mcp", Auth: catalog.AuthToken}
-	var view string
-	program := func(m tea.Model) error {
-		pressingAndDelivering("space", "tab", "enter")(m)
-		view = shown(m.(*app))
-		return nil
-	}
-	if _, err := Run(
-		Params{
-			Setup:       setup,
-			LoadCatalog: fromCatalog(catalog.Catalog{Entries: []catalog.Entry{token}}),
-			Program:     program,
-		},
-	); err != nil {
-		t.Fatal(err)
-	}
-	want := filepath.Join(configDir, "servers", "github.yaml")
-	if !strings.Contains(strings.Join(strings.Fields(view), ""), want) {
-		t.Errorf(
-			"Logins:\n%s\nwant github's step to name %s, where Save and finish puts it, not the staging copy",
-			view,
-			want,
-		)
 	}
 }

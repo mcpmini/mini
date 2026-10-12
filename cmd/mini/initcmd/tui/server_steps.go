@@ -12,8 +12,8 @@ import (
 	"github.com/mcpmini/mini/internal/config"
 )
 
-// serverSteps says what a server still needs, naming only what mini knows for certain: a missing
-// OAuth app or login; anything else points at the server's file.
+// serverSteps says what a server still needs. Only a login or a custom OAuth app is named; for
+// anything else, env vars included, the step is the server's file, to keep the screens simple.
 type serverSteps struct {
 	file  func(name string) string
 	login func(name string) string
@@ -21,9 +21,10 @@ type serverSteps struct {
 
 // Steps name the file a server will have once Save and finish commits it, not its staging copy.
 func newServerSteps(configDir string) serverSteps {
+	mini := initcmd.MiniCommand(configDir)
 	return serverSteps{
 		file:  func(name string) string { return homeRelative(config.ServerPath(configDir, name)) },
-		login: func(name string) string { return initcmd.LoginCommand(configDir, name) },
+		login: func(name string) string { return initcmd.LoginCommand(mini, name) },
 	}
 }
 

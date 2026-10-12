@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/mcpmini/mini/cmd/mini/initcmd"
+	"github.com/mcpmini/mini/internal/catalog"
 	"github.com/mcpmini/mini/internal/config"
 )
 
@@ -747,5 +749,35 @@ func TestLoginsScreen_whileALoginWaitsTheFooterGivesEscOneMeaning(t *testing.T) 
 	); !strings.Contains(footer, "esc cancel login") ||
 		strings.Contains(footer, "esc back") {
 		t.Errorf("footer:\n%s\nwant esc named once, as cancelling the login", footer)
+	}
+}
+
+func TestRun_aByHandServerPointsAtTheFileItWillHaveInMini(t *testing.T) {
+	configDir := t.TempDir()
+	setup := setupFor(configDir)
+	setup.Probe = func(context.Context, string, config.ServerConfig) error { return errors.New("401") }
+	token := catalog.Entry{Name: "github", URL: "https://mcp.github.example/mcp", Auth: catalog.AuthToken}
+	var view string
+	program := func(m tea.Model) error {
+		pressingAndDelivering("space", "tab", "enter")(m)
+		view = shown(m.(*app))
+		return nil
+	}
+	if _, err := Run(
+		Params{
+			Setup:       setup,
+			LoadCatalog: fromCatalog(catalog.Catalog{Entries: []catalog.Entry{token}}),
+			Program:     program,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(configDir, "servers", "github.yaml")
+	if !strings.Contains(strings.Join(strings.Fields(view), ""), want) {
+		t.Errorf(
+			"Logins:\n%s\nwant github's step to name %s, where Save and finish puts it, not the staging copy",
+			view,
+			want,
+		)
 	}
 }

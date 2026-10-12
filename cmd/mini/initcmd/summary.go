@@ -112,12 +112,11 @@ func stepInFile(file string, mini agents.MiniEntry, s ServerStatus) (string, boo
 	return "", false
 }
 
-// Commands carry the config directory whenever agents are given one, so they act on the same servers.
-// LoginCommand is the shell command that logs in to server, for the configDir init writes to.
-func LoginCommand(configDir, server string) string {
-	return miniCommand(MiniCommand(configDir), "auth", server)
+func LoginCommand(mini agents.MiniEntry, server string) string {
+	return miniCommand(mini, "auth", server)
 }
 
+// Commands carry the config directory whenever agents are given one, so they act on the same servers.
 func miniCommand(mini agents.MiniEntry, args ...string) string {
 	words := []string{"mini"}
 	if i := slices.Index(mini.Args, "--config"); i >= 0 && i+1 < len(mini.Args) {

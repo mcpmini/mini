@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -62,9 +63,9 @@ func (s *reviewScreen) update(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-func (s *reviewScreen) body(int, bool) string {
+func (s *reviewScreen) body(height int, _ bool) string {
 	if len(s.added) > 0 {
-		return strings.Join(s.addedLines(), "\n")
+		return strings.Join(s.addedLines(height), "\n")
 	}
 	servers := filepath.Join(s.p.configDir, "servers")
 	lines := []string{"No MCPs will be added to mini.", ""}
@@ -74,11 +75,18 @@ func (s *reviewScreen) body(int, bool) string {
 	return strings.Join(lines, "\n")
 }
 
-func (s *reviewScreen) addedLines() []string {
+// Review takes no cursor, so a list taller than the window can't scroll; the servers that don't fit
+// are counted on a last line instead, under the heading.
+func (s *reviewScreen) addedLines(height int) []string {
 	lines := []string{initcmd.Plural(len(s.added), "MCP") + " will be added to mini:"}
 	width := widest(s.added, func(r reviewRow) string { return r.name })
-	for _, r := range s.added {
-		lines = append(lines, columnLines(r.name, width, r.state, s.width)...)
+	for i, r := range s.added {
+		row := columnLines(r.name, width, r.state, s.width)
+		left := len(s.added) - i
+		if room := height - len(lines); len(row) > room || left > 1 && len(row) == room {
+			return append(lines, dim.Render(fmt.Sprintf("  … and %d more", left)))
+		}
+		lines = append(lines, row...)
 	}
 	return lines
 }
